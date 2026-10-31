@@ -43,4 +43,19 @@ describe("warmupLayout", () => {
     expect("x" in input[0]).toBe(false)
     expect(Number.isFinite(out[0]) && Number.isFinite(out[1])).toBe(true)
   })
+
+  it("reports every step without changing the result", () => {
+    const { nodes, links } = fixture(300)
+    const plain = warmupLayout(nodes, links, params)
+    const seen: number[] = []
+    let atTen: Float64Array | null = null
+    const reported = warmupLayout(nodes, links, params, (step, read) => {
+      seen.push(step)
+      if (step === 10) atTen = read()
+    })
+    expect(seen).toEqual(Array.from({ length: params.ticks + 1 }, (_, i) => i))
+    expect(Array.from(reported)).toEqual(Array.from(plain))
+    // a copy of the positions at that step: the ten-step layout, not the final one
+    expect(Array.from(atTen!)).toEqual(Array.from(warmupLayout(nodes, links, { ...params, ticks: 10 })))
+  })
 })

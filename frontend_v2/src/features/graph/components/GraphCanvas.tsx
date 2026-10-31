@@ -8,6 +8,7 @@ import { useGraphStore } from "@/stores/graph.store"
 import { getNodeColor, getCanvasColors } from "@/lib/theme"
 import { useTheme } from "@/lib/theme-context"
 import type { GraphData } from "@/types/graph.types"
+import type { LayoutMessage } from "../lib/warmup-layout"
 
 /* ------------------------------------------------------------------ */
 /*  Types for react-force-graph-2d                                     */
@@ -150,33 +151,49 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
   /* ---- Large graphs: warm-up layout steps in a worker ---- */
   // The warm-up steps of a large graph block the page in one piece before anything is drawn (BNB2,
-  // 35,693 nodes: 2.4-10 s on the server's test browser). A worker runs the same steps and the canvas
-  // draws its positions without warming up again. Until they arrive the canvas is empty and says so:
-  // a previous graph left on it could be clicked, for a hidden node or another case.
-  // Without a worker the canvas warms up itself, as before.
-  const [workerLayout, setWorkerLayout] = useState<{ data: typeof fgData; laidOut: boolean } | null>(null)
+  // 35,693 nodes: 31 s on the server's test browser). A worker runs the same steps. It sends the
+  // positions reached so far about once a second; the canvas draws them without stepping the layout
+  // itself (no steps on the page, no dragging) and says the graph is still being arranged. When the
+  // worker has run every step the canvas takes its final positions and settles as before. Until the
+  // first positions arrive the canvas is empty: a previous graph left on it could be clicked, for a
+  // hidden node or another case. Without a worker the canvas warms up itself, as before.
+  const [workerLayout, setWorkerLayout] = useState<{
+    data: typeof fgData
+    phase: "arranging" | "laidOut" | "onPage"
+    step: number
+    // the graph object handed to the canvas: a new one makes the canvas start its layout afresh
+    shown: typeof fgData
+  } | null>(null)
   useEffect(() => {
     if (!isLargeGraph) return
     let worker: Worker
     try {
       worker = new Worker(new URL("../lib/warmup-layout.worker.ts", import.meta.url), { type: "module" })
     } catch {
-      setWorkerLayout({ data: fgData, laidOut: false })
+      setWorkerLayout({ data: fgData, phase: "onPage", step: 0, shown: fgData })
       return
     }
-    worker.onmessage = (event: MessageEvent<{ positions: Float64Array }>) => {
-      const { positions } = event.data
+    worker.onmessage = (event: MessageEvent<LayoutMessage>) => {
+      const { positions, step, done } = event.data
       fgData.nodes.forEach((node, i) => {
         node.x = positions[i * 4]
         node.y = positions[i * 4 + 1]
         node.vx = positions[i * 4 + 2]
         node.vy = positions[i * 4 + 3]
       })
-      setWorkerLayout({ data: fgData, laidOut: true })
-      worker.terminate()
+      setWorkerLayout({ data: fgData, phase: done ? "laidOut" : "arranging", step, shown: fgData })
+      if (done) worker.terminate()
     }
     worker.onerror = () => {
-      setWorkerLayout({ data: fgData, laidOut: false })
+      // positions already drawn are dropped and the canvas warms up from fresh starting positions, as
+      // before; the new graph object makes it start afresh even when the arranged graph is on show
+      fgData.nodes.forEach((node) => {
+        delete node.x
+        delete node.y
+        delete node.vx
+        delete node.vy
+      })
+      setWorkerLayout({ data: fgData, phase: "onPage", step: 0, shown: { ...fgData } })
       worker.terminate()
     }
     const { linkDistance, chargeStrength, centerStrength } = useGraphStore.getState()
@@ -196,9 +213,20 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
     // the force settings are read when the layout starts; changing them later reheats the canvas (below)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fgData, isLargeGraph])
-  const shownData = isLargeGraph ? (workerLayout?.data === fgData ? fgData : EMPTY_GRAPH) : fgData
-  const shownWarmupTicks = isLargeGraph && workerLayout?.laidOut ? 0 : simWarmupTicks
-  const layingOut = isLargeGraph && workerLayout?.data !== fgData
+  const currentLayout = isLargeGraph && workerLayout?.data === fgData ? workerLayout : null
+  const shownData = isLargeGraph ? (currentLayout?.shown ?? EMPTY_GRAPH) : fgData
+  const shownWarmupTicks = isLargeGraph && currentLayout?.phase !== "onPage" ? 0 : simWarmupTicks
+  const layingOut = isLargeGraph && (!currentLayout || currentLayout.phase === "arranging")
+  const arranging = currentLayout?.phase === "arranging"
+
+  // Draw each set of positions the worker sends without stepping the layout on the page (cooldownTicks
+  // 0 stops the engine after one frame); when it has finished, run the canvas's own settling from the
+  // worker's final positions, as a fresh graph does.
+  const layoutStep = currentLayout?.step
+  const layoutPhase = currentLayout?.phase
+  useEffect(() => {
+    if (layoutPhase === "arranging" || layoutPhase === "laidOut") fgRef.current?.d3ReheatSimulation()
+  }, [layoutStep, layoutPhase, fgRef])
 
   /* ---- Apply force parameters ---- */
   useEffect(() => {
@@ -212,12 +240,13 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
   /* ---- Auto zoom-to-fit on first data load ---- */
   const handleEngineStop = useCallback(() => {
+    if (arranging) return // zoom to the arranged graph, not to its first positions
     if (!hasZoomedToFit.current && fgRef.current && shownData.nodes.length > 0) {
       hasZoomedToFit.current = true
       setTimeout(() => fgRef.current?.zoomToFit(400, 50), 100)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shownData.nodes.length])
+  }, [shownData.nodes.length, arranging])
 
   /* ---- Custom node renderer with LOD tiers ---- */
   const paintNode = useCallback(
@@ -594,17 +623,19 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         onNodeDragEnd={handleNodeDragEnd}
         onBackgroundClick={handleBackgroundClick}
         onEngineStop={handleEngineStop}
-        enableNodeDrag={selectionMode === "click"}
+        enableNodeDrag={selectionMode === "click" && !arranging}
         enablePanInteraction={selectionMode !== "drag"}
         cooldownTime={simCooldownTime}
         d3AlphaDecay={simAlphaDecay}
         d3VelocityDecay={simVelocityDecay}
         warmupTicks={shownWarmupTicks}
+        cooldownTicks={arranging ? 0 : Infinity}
       />
 
       {layingOut && (
         <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-md bg-slate-100/90 dark:bg-slate-900/80 px-2 py-1 text-xs text-slate-500 dark:text-slate-400">
           Arranging {fgData.nodes.length} nodes…
+          {arranging && ` step ${currentLayout.step} of ${simWarmupTicks}`}
         </div>
       )}
 

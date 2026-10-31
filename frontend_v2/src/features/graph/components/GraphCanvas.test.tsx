@@ -2,7 +2,7 @@ import { act, render, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { useGraphStore } from "@/stores/graph.store"
 import type { GraphData } from "@/types/graph.types"
-import { warmupLayout, type WarmupLink, type WarmupNode, type WarmupParams } from "../lib/warmup-layout"
+import { warmupLayout, type LayoutMessage, type WarmupLink, type WarmupNode, type WarmupParams } from "../lib/warmup-layout"
 import { GraphCanvas } from "./GraphCanvas"
 
 interface MockNode {
@@ -14,9 +14,11 @@ interface MockNode {
 interface MockProps {
   graphData: { nodes: MockNode[]; links: unknown[] }
   warmupTicks?: number
+  cooldownTicks?: number
+  enableNodeDrag?: boolean
 }
 
-const mocks = vi.hoisted(() => ({ props: [] as MockProps[] }))
+const mocks = vi.hoisted(() => ({ props: [] as MockProps[], reheats: 0 }))
 
 vi.mock("react-force-graph-2d", async () => {
   const React = await vi.importActual<typeof import("react")>("react")
@@ -26,7 +28,9 @@ vi.mock("react-force-graph-2d", async () => {
       mocks.props.push(props)
       React.useImperativeHandle(ref, () => ({
         d3Force: () => force,
-        d3ReheatSimulation: vi.fn(),
+        d3ReheatSimulation: () => {
+          mocks.reheats++
+        },
         zoomToFit: vi.fn(),
       }))
       return React.createElement("div", { "data-testid": "force-graph-2d" })
@@ -34,7 +38,8 @@ vi.mock("react-force-graph-2d", async () => {
   }
 })
 
-// A worker that answers with the real warm-up function, as the layout worker does.
+// A worker that answers with the real warm-up function, as the layout worker does: the starting
+// positions first, then the final ones.
 class FakeLayoutWorker {
   static created = 0
   onmessage: ((event: MessageEvent) => void) | null = null
@@ -43,8 +48,30 @@ class FakeLayoutWorker {
     FakeLayoutWorker.created++
   }
   postMessage(data: { nodes: WarmupNode[]; links: WarmupLink[]; params: WarmupParams }) {
-    const positions = warmupLayout(data.nodes, data.links, data.params)
-    setTimeout(() => this.onmessage?.({ data: { positions } } as MessageEvent), 0)
+    const messages: LayoutMessage[] = []
+    const positions = warmupLayout(data.nodes, data.links, data.params, (step, read) => {
+      if (step === 0) messages.push({ positions: read(), step, done: false })
+    })
+    messages.push({ positions, step: data.params.ticks, done: true })
+    messages.forEach((m, i) => setTimeout(() => this.onmessage?.({ data: m } as MessageEvent), i * 5))
+  }
+  terminate() {}
+}
+
+// A worker whose messages the test sends itself.
+class ManualLayoutWorker {
+  static last: ManualLayoutWorker | null = null
+  onmessage: ((event: MessageEvent) => void) | null = null
+  onerror: (() => void) | null = null
+  request: { nodes: WarmupNode[]; links: WarmupLink[]; params: WarmupParams } | null = null
+  constructor() {
+    ManualLayoutWorker.last = this
+  }
+  postMessage(data: { nodes: WarmupNode[]; links: WarmupLink[]; params: WarmupParams }) {
+    this.request = data
+  }
+  send(message: LayoutMessage) {
+    act(() => this.onmessage?.({ data: message } as MessageEvent))
   }
   terminate() {}
 }
@@ -61,7 +88,9 @@ const last = () => mocks.props[mocks.props.length - 1]
 describe("GraphCanvas layout", () => {
   beforeEach(() => {
     mocks.props = []
+    mocks.reheats = 0
     FakeLayoutWorker.created = 0
+    ManualLayoutWorker.last = null
     vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} })
     useGraphStore.setState({
       linkDistance: 200, chargeStrength: -50, centerStrength: 0.4,
@@ -109,5 +138,59 @@ describe("GraphCanvas layout", () => {
     expect(mocks.props[0].graphData.nodes.length).toBe(20)
     expect(last().warmupTicks).toBe(0)
     expect(FakeLayoutWorker.created).toBe(0)
+  })
+
+  it("draws the graph while the worker arranges it, without layout steps or dragging on the page", async () => {
+    vi.stubGlobal("Worker", ManualLayoutWorker)
+    render(<GraphCanvas data={makeGraph(600)} caseId="case-1" />)
+    const worker = ManualLayoutWorker.last!
+    const { nodes, links, params } = worker.request!
+    const steps: Float64Array[] = []
+    const final = warmupLayout(nodes, links, params, (step, read) => {
+      if (step === 0 || step === 20) steps.push(read())
+    })
+    expect(last().graphData.nodes.length).toBe(0)
+
+    worker.send({ positions: steps[0], step: 0, done: false })
+    expect(last().graphData.nodes.length).toBe(600)
+    expect(last().cooldownTicks).toBe(0) // drawn, never stepped on the page
+    expect(last().warmupTicks).toBe(0)
+    expect(last().enableNodeDrag).toBe(false)
+    expect(last().graphData.nodes[5].x).toBe(steps[0][20])
+
+    const shown = last().graphData
+    const reheatsBefore = mocks.reheats
+    worker.send({ positions: steps[1], step: 20, done: false })
+    expect(last().graphData).toBe(shown) // same graph, positions moved in place
+    expect(shown.nodes[5].x).toBe(steps[1][20])
+    expect(mocks.reheats).toBeGreaterThan(reheatsBefore) // asks the canvas to draw them
+    expect(last().cooldownTicks).toBe(0)
+
+    worker.send({ positions: final.slice(), step: 50, done: true })
+    expect(last().graphData).toBe(shown)
+    expect(last().cooldownTicks).toBe(Infinity) // the canvas settles from here, as a fresh graph does
+    expect(last().enableNodeDrag).toBe(true)
+    shown.nodes.forEach((n, i) => {
+      expect([n.x, n.y]).toEqual([final[i * 4], final[i * 4 + 1]])
+    })
+  })
+
+  it("starts the canvas afresh, warming up on the page, when the worker fails after drawing", async () => {
+    vi.stubGlobal("Worker", ManualLayoutWorker)
+    render(<GraphCanvas data={makeGraph(600)} caseId="case-1" />)
+    const worker = ManualLayoutWorker.last!
+    const { nodes, links, params } = worker.request!
+    let start: Float64Array | null = null
+    warmupLayout(nodes, links, { ...params, ticks: 0 }, (_, read) => {
+      start = read()
+    })
+    worker.send({ positions: start!, step: 0, done: false })
+    const shown = last().graphData
+    act(() => worker.onerror?.())
+    expect(last().graphData).not.toBe(shown) // a new graph object: the canvas lays it out again
+    expect(last().graphData.nodes.length).toBe(600)
+    expect(last().warmupTicks).toBe(50)
+    expect(last().cooldownTicks).toBe(Infinity)
+    expect(last().graphData.nodes.every((n) => n.x === undefined)).toBe(true)
   })
 })
