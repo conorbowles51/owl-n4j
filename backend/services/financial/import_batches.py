@@ -1228,8 +1228,32 @@ def hydrate_comparison_inputs(session, *, case_id, item_ids=None, budget_seconds
     return dict(hydrated=written, skipped=len(updates) - written, remaining=len(candidates) - written)
 
 
+READS_OUTSIDE_TRANSACTION = 'reads_outside_transaction'
+
+
+def _read_outside_transaction(session):
+    """For a session marked by the background sweep: its next reads run each in their own transaction.
+
+    Postgres here runs READ COMMITTED, so every statement already reads its own snapshot and an open transaction
+    gives the sweep no consistency. It did hold the tables' locks for as long as the Python work between reads
+    took (measured 31 Oct 02:45: one batch_rounds transaction 270-337 s on financial_import_batches, which made a
+    release's VACUUM FULL skip). Writes still go through _write_items' locked, checked transaction.
+    """
+    if session.info.get(READS_OUTSIDE_TRANSACTION):
+        session.connection(execution_options={'isolation_level': 'AUTOCOMMIT'})
+
+
 def _write_items(session, updates, apply):
     """Apply computed changes only to items nobody changed meanwhile, then commit."""
+    if session.info.get(READS_OUTSIDE_TRANSACTION):
+        # Leave the reading connection; the lock, the check and the write below share one real transaction.
+        session.commit()
+    written = _write_checked(session, updates, apply)
+    _read_outside_transaction(session)
+    return written
+
+
+def _write_checked(session, updates, apply):
     if not updates:
         session.commit()
         return 0
@@ -1407,6 +1431,8 @@ def refresh_stale_readiness(factory, *, budget_seconds=20.0, max_cases=50):
             break
         try:
             with factory() as db:
+                db.info[READS_OUTSIDE_TRANSACTION] = True
+                _read_outside_transaction(db)
                 outcome = refresh_case_readiness(db, case_id=case_id, budget_seconds=left)
             if outcome['hydrated'] or outcome['refreshed']:
                 results[str(case_id)] = outcome

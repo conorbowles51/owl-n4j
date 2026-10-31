@@ -1196,8 +1196,11 @@ def statement_model_work_view(session, case_id, source_document_id):
         if not _table_ready(connection, 'financial_judgements'):
             return None
         # A savepoint keeps a failed read from aborting a Postgres transaction; on SQLite it would hold a read
-        # transaction open and lock out writers, and SQLite survives a failed statement anyway.
-        with connection.begin_nested() if connection.dialect.name != 'sqlite' else nullcontext():
+        # transaction open and lock out writers, and SQLite survives a failed statement anyway. A connection in
+        # autocommit (the background readiness sweep's reads) has no transaction to abort, and Postgres refuses a
+        # savepoint outside one.
+        autocommit = connection.get_execution_options().get('isolation_level') == 'AUTOCOMMIT'
+        with connection.begin_nested() if connection.dialect.name != 'sqlite' and not autocommit else nullcontext():
             return statement_model_work(session, case_id, source_document_id)
     except Exception:  # noqa: BLE001 - the statement itself still shows
         log.exception('Reading the model work of statement %s failed; it is shown without its marker',
