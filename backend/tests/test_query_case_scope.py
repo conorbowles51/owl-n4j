@@ -178,6 +178,22 @@ class QueryCaseScopeTests(unittest.TestCase):
         # The server asks for one row past the limit so a cut is detected, not guessed.
         self.assertTrue(self.fake.calls[-1][0].rstrip().endswith(f"LIMIT {query.ROW_LIMIT + 1}"))
 
+    def test_property_named_limit_is_not_the_limit_clause(self):
+        self._sign_in(GlobalRole.user)
+        body = self._post(query="MATCH (n {case_id: $case_id}) RETURN n.limit AS limit", case_id=CASE_A).json()
+        self.assertTrue(body["success"], body)
+        self.assertTrue(self.fake.calls[-1][0].rstrip().endswith(f"LIMIT {query.ROW_LIMIT + 1}"))
+
+    def test_parameter_limit_within_the_cap_is_kept(self):
+        self._sign_in(GlobalRole.user)
+        body = self._post(query="MATCH (n {case_id: $case_id}) RETURN n.name AS name LIMIT $n",
+                          case_id=CASE_A, params={"n": 1}).json()
+        self.assertTrue(body["success"], body)
+        self.assertTrue(self.fake.calls[-1][0].rstrip().endswith("LIMIT $n"))
+        body = self._post(query="MATCH (n {case_id: $case_id}) RETURN n.name AS name LIMIT $n",
+                          case_id=CASE_A, params={"n": 10_000}).json()
+        self.assertTrue(self.fake.calls[-1][0].rstrip().endswith(f"LIMIT {query.ROW_LIMIT + 1}"))
+
     def test_whole_answer_reports_its_total(self):
         self._sign_in(GlobalRole.user)
         body = self._post(query="MATCH (n {case_id: $case_id}) RETURN n.name AS name", case_id=CASE_A).json()

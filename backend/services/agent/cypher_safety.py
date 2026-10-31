@@ -184,12 +184,20 @@ def _tokens(query: str) -> list[_Token]:
     return result
 
 
-def _enforce_limit(query: str, limit: int, max_limit: int = 200) -> str:
+def _enforce_limit(
+    query: str,
+    limit: int,
+    max_limit: int = 200,
+    params: dict[str, Any] | None = None,
+) -> str:
     safe_limit = max(1, min(int(limit or 100), max_limit))
     tokens = _tokens(query)
+    # LIMIT the clause, not a property, alias or map key called "limit" (n.limit, AS limit, {limit: 1}).
     matches = [
         index for index, token in enumerate(tokens)
         if token.kind == "word" and token.value.upper() == "LIMIT"
+        and not (index and (tokens[index - 1].value == "." or tokens[index - 1].value.upper() == "AS"))
+        and not (index + 1 < len(tokens) and tokens[index + 1].value == ":")
     ]
     if not matches:
         return f"{query}\nLIMIT {safe_limit}"
@@ -199,6 +207,11 @@ def _enforce_limit(query: str, limit: int, max_limit: int = 200) -> str:
     value = tokens[index + 1]
     if value.kind == "number" and int(value.value) <= safe_limit:
         return query
+    if value.kind == "parameter":
+        # A parameter LIMIT is kept when its value is a whole number within the cap.
+        supplied = (params or {}).get(value.value[1:])
+        if isinstance(supplied, int) and not isinstance(supplied, bool) and 0 <= supplied <= safe_limit:
+            return query
     return query[:value.start] + str(safe_limit) + query[value.end:]
 
 
@@ -441,7 +454,13 @@ def repair_common_cypher(query: str) -> str:
     return repaired.strip()
 
 
-def validate_readonly_cypher(query: str, *, limit: int = 100, max_limit: int = 200) -> str:
+def validate_readonly_cypher(
+    query: str,
+    *,
+    limit: int = 100,
+    max_limit: int = 200,
+    params: dict[str, Any] | None = None,
+) -> str:
     normalized_query = _single_statement(query)
     tokens = _tokens(normalized_query)
     squashed = " ".join(token.value for token in tokens)
@@ -461,7 +480,7 @@ def validate_readonly_cypher(query: str, *, limit: int = 100, max_limit: int = 2
         raise UnsafeCypherError(f"Cypher contains disallowed keyword(s): {', '.join(found)}")
 
     _assert_case_scope(tokens)
-    return _enforce_limit(normalized_query, limit, max_limit)
+    return _enforce_limit(normalized_query, limit, max_limit, params)
 
 
 # Every case-bound read gets a database-side time limit, so a runaway pattern cannot hold the graph.
@@ -483,7 +502,9 @@ def run_case_cypher(
     reported (truncated=True) rather than presented as the whole answer. The session and transaction
     are READ, so the database refuses any write whatever the text says.
     """
-    safe_query = validate_readonly_cypher(query, limit=max_rows + 1, max_limit=max_rows + 1)
+    safe_query = validate_readonly_cypher(
+        query, limit=max_rows + 1, max_limit=max_rows + 1, params=params
+    )
     safe_params = dict(params or {})
     safe_params["case_id"] = case_id
 
