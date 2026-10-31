@@ -558,6 +558,33 @@ describe("FinancialPage", () => {
     ).not.toBeInTheDocument()
   })
 
+  it("reads the graph's records only where they are shown: Other financial records", () => {
+    graphEmpty()
+    renderPage()
+    const enabled = () =>
+      graph.useTransactions.mock.calls.map((call) => call[2]?.enabled)
+    // Overview, then Transactions with statement payments: the graph's 33.6 MB read (d5b330d1) is not asked for.
+    expect(enabled().every((value) => value === false)).toBe(true)
+    selectTab("Transactions")
+    expect(enabled().every((value) => value === false)).toBe(true)
+    fireEvent.click(
+      screen.getByRole("button", { name: "Other financial records" })
+    )
+    expect(enabled().at(-1)).toBe(true)
+  })
+
+  it("says it is loading until the graph's answer arrives, never no records", () => {
+    // The first render after the read is enabled: no answer yet, and no fetch flag either.
+    graph.useTransactions.mockReturnValue({ data: undefined, isLoading: false, isError: false })
+    renderPage()
+    selectTab("Transactions")
+    fireEvent.click(
+      screen.getByRole("button", { name: "Other financial records" })
+    )
+    expect(screen.getByTestId("records-loading")).toBeInTheDocument()
+    expect(screen.queryByText("No other financial records")).not.toBeInTheDocument()
+  })
+
   it("shows the graph's empty state inside the graph tab, not over the page", () => {
     graphEmpty()
     renderPage()

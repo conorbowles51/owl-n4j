@@ -288,15 +288,21 @@ function FinancialPageContent() {
     if (store.mainView !== "statements" && panel.graphPanelTab === "detail")
       panel.setGraphPanelCollapsed(true)
   }, [caseId, store.mainView])
+  // The graph's records (d5b330d1: 33.6 MB, 6-14 s of server time) are shown only by the graph sections of
+  // Transactions, Counterparties and Trends in "Other financial records" mode, so they are read only there.
+  const graphShown =
+    RECORDS_SWITCH_VIEWS.has(store.mainView) && store.mode !== "transactions"
   const {
     data: transactionsResponse,
-    isLoading,
+    isLoading: graphFetching,
     isError: transactionsFailed,
     error: transactionsError,
   } = useTransactions(caseId, {
     mode: store.mode,
-  })
-  const loadingSeconds = useElapsedSeconds(isLoading)
+  }, { enabled: graphShown })
+  // Until its answer arrives a graph section says it is loading: never an empty case or a count of 0.
+  const isLoading = graphFetching || (!transactionsResponse && !transactionsFailed)
+  const loadingSeconds = useElapsedSeconds(isLoading && graphShown)
   const { data: categories = [] } = useFinancialCategories(caseId, store.mode)
   const { data: caseEntities = [] } = useFinancialEntities(caseId)
   const transactions = transactionsResponse?.transactions ?? []

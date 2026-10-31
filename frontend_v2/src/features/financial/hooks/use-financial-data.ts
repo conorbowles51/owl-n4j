@@ -6,7 +6,7 @@ export function useTransactions(caseId: string | undefined, params?: {
   startDate?: string
   endDate?: string
   categories?: string[]
-}) {
+}, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ["financial", caseId, params],
     queryFn: () =>
@@ -17,7 +17,7 @@ export function useTransactions(caseId: string | undefined, params?: {
         endDate: params?.endDate,
         categories: params?.categories,
       }),
-    enabled: !!caseId,
+    enabled: !!caseId && (options?.enabled ?? true),
   })
 }
 
