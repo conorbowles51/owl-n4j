@@ -148,3 +148,28 @@ def test_a_write_after_the_records_were_read_is_repaired_on_the_next_recheck(Ses
         assert evidence_job_sync.reconcile_case_poll(db, str(case_id), [job]) == 1
         assert db.get(EvidenceFile, ids[0]).status == "processed"
         db.commit()
+
+
+def test_a_write_still_open_while_the_poll_settles_is_repaired_once_committed(Session, monkeypatch):
+    case_id, ids, calls = _settled_case(Session, monkeypatch)
+    job = dict(id=str(uuid4()), source_evidence_file_id=str(ids[0]), status="completed")
+    with Session() as db:
+        assert evidence_job_sync.reconcile_case_poll(db, str(case_id), [job]) == 1
+        db.commit()
+    other = Session()
+    other.execute(text("UPDATE evidence_files SET status = 'failed' WHERE id = :id"), dict(id=ids[0]))
+    # Not yet committed: this poll sees the repaired record, writes nothing, takes no lock on it and keeps a version.
+    with Session() as db:
+        assert evidence_job_sync.reconcile_case_poll(db, str(case_id), [job]) == 0
+        db.commit()
+    with Session() as db:
+        assert evidence_job_sync.reconcile_case_poll(db, str(case_id), [job]) == 0
+        db.commit()
+    assert len(calls) == 2
+    other.commit()
+    other.close()
+    with Session() as db:
+        assert evidence_job_sync.reconcile_case_poll(db, str(case_id), [job]) == 1
+        assert db.get(EvidenceFile, ids[0]).status == "processed"
+        db.commit()
+    assert len(calls) == 3
