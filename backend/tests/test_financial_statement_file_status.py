@@ -298,8 +298,9 @@ class StatementFileStatusTests(DuplicateTestCase):
                 status=status, summary={'can_import': True}))
         self.db.commit()
         # SQLite's authorizer names every column each statement reads, whatever the SQL's form (an alias, a JOIN,
-        # an unqualified name or SELECT *), which a regex over the SQL text cannot (review of 57534862). The register
-        # has no dialect-specific branch, so its reads here are its reads on PostgreSQL.
+        # an unqualified name or SELECT *), which a regex over the SQL text cannot (review of 57534862). The register's
+        # PostgreSQL-only branches (geometry digest, saved scopes, metadata_once) read no batch column, so its batch
+        # reads here are its batch reads on PostgreSQL.
         import sqlite3
         read = set()
         def authorize(action, table, column, database, trigger):
@@ -315,6 +316,8 @@ class StatementFileStatusTests(DuplicateTestCase):
         watched = set(view_cache._COLUMNS['statement-import-files']['financial_import_batches'])
         self.assertTrue(read, 'the register reads the batches')
         self.assertLessEqual(read, watched)
+        # Any change in how the register reads the batches shows up here, so the watched columns are reconsidered.
+        self.assertEqual(read, {'id', 'case_id', 'status'})
 
     def test_sqlite_is_never_cached(self):
         from services.financial.statement_file_status import status_fingerprint
