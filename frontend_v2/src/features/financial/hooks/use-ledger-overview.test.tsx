@@ -59,6 +59,23 @@ it.each([
   expect(api).toHaveBeenCalledTimes(2)
 })
 
+// A failed fetch marks a query out of date too: that must never turn into requests on every render.
+it("asks once per showing when the server keeps failing, never in a loop", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 120000 } } })
+  const api = vi.spyOn(financialAPI, "getLedgerOverviewPanels").mockRejectedValue(Error("down"))
+  const view = renderHook(({ active }) => useLedgerOverviewPanels("case", active), { initialProps: { active: true }, wrapper: wrapper(client) })
+  await waitFor(() => expect(view.result.current.isError).toBe(true))
+  for (let i = 0; i < 3; i++) view.rerender({ active: true })
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  expect(api).toHaveBeenCalledTimes(1)
+  view.rerender({ active: false })
+  view.rerender({ active: true })
+  await waitFor(() => expect(api).toHaveBeenCalledTimes(2))
+  await waitFor(() => expect(view.result.current.isFetching).toBe(false))
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  expect(api).toHaveBeenCalledTimes(2)
+})
+
 it("orders the server's lists as the page always has", () => {
   const ordered = orderOverviewPanels(panels(["Zeta", "alpha", "Beta"]))
   expect(ordered.totals.inventory.accounts.map((account) => account.label)).toEqual(["alpha", "Beta", "Zeta"])

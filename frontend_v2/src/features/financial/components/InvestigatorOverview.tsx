@@ -312,7 +312,7 @@ export function InvestigatorOverview({
       ) : (<>
         {(panels.isFetching || totals.isFetching) && (
           <p role="status" className="text-sm text-muted-foreground">
-            Updating these figures after a change…
+            Updating these figures…
           </p>
         )}
         <PaymentTotalsView

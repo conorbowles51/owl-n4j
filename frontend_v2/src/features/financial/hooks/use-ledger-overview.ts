@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query"
 import { financialAPI } from "../api"
 import { useInvestigationScope } from "../stores/investigation-scope"
@@ -47,16 +47,20 @@ export function useLedgerOverview(caseId: string, active = true) {
  * again with its figures out of date, they are fetched again (the page says it is updating meanwhile).
  */
 function useRefreshWhenShown(
-  query: { isFetching: boolean; refetch: () => Promise<unknown> },
+  query: { refetch: () => Promise<unknown> },
   queryKey: QueryKey,
   active: boolean
 ) {
   const client = useQueryClient()
-  const outOfDate = active && client.getQueryState(queryKey)?.isInvalidated === true
-  const { isFetching, refetch } = query
+  const shown = useRef(active)
+  const { refetch } = query
   useEffect(() => {
-    if (outOfDate && !isFetching) void refetch()
-  }, [outOfDate, isFetching, refetch])
+    // Only at the moment the Overview is shown again: a failed fetch also marks a query out of date, so checking on
+    // every render would ask again and again while the server keeps failing.
+    const wasShown = shown.current
+    shown.current = active
+    if (active && !wasShown && client.getQueryState(queryKey)?.isInvalidated === true) void refetch()
+  })
 }
 
 /**
