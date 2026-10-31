@@ -58,6 +58,7 @@ STREAM = ' (stream)'  # appended to an event-stream route: long by design, never
 # Appended to a route answered 304 (the browser already holds the bytes): kept apart so a route's
 # time and bytes compare like for like with hours before 304s existed.
 NOT_MODIFIED = ' (304)'
+ROUTE_ROOM = 255 - max(len(STREAM), len(NOT_MODIFIED))  # route column width minus the longest suffix
 METHODS = frozenset(('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'))
 # Bucket i holds durations in (BUCKET_EDGES_MS[i-1], BUCKET_EDGES_MS[i]]; the last bucket
 # holds everything above the last edge. 1 ms .. ~11 min in 15% steps (98 buckets).
@@ -210,7 +211,9 @@ def server_timing(app_ms, holder):
 def _template(scope):
     route = scope.get('route')
     template = getattr(route, 'path_format', None) or getattr(route, 'path', None)
-    return template[:255] if template else UNMATCHED
+    # The route column holds 255 characters; room is kept for a STREAM or NOT_MODIFIED suffix so
+    # the database never refuses (and loses) a row for an over-long template.
+    return template[:ROUTE_ROOM] if template else UNMATCHED
 
 
 def _case(scope):

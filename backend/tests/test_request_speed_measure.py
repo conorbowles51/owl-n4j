@@ -158,6 +158,14 @@ class ServerTiming(Captured):
         routes = {(item[3], item[5]) for item in self.drained()}
         self.assertEqual(routes, {('/api/etag' + rs.NOT_MODIFIED, 304), ('/api/plain', 200)})
 
+    def test_an_over_long_route_with_its_suffix_still_fits_the_route_column(self):
+        class Route:
+            path_format = '/api/' + 'x' * 300
+        route = rs._template({'route': Route()})
+        self.assertLessEqual(len(route + rs.STREAM), 255)
+        self.assertLessEqual(len(route + rs.NOT_MODIFIED), 255)
+        self.assertTrue(Route.path_format.startswith(route))
+
     def test_postgres_session_hands_its_pool_wait_to_the_request(self):
         from postgres import session as pg_session
         holder = {}
