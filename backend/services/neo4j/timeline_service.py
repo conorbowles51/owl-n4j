@@ -401,11 +401,11 @@ class TimelineService:
                 AND n.key IN $event_keys
                 AND sort_date IS NOT NULL
                 AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
-                AND coalesce(properties(n)['system_node'], false) <> true
+                AND coalesce(n.system_node, false) <> true
             OPTIONAL MATCH (n)-[r]-(connected)
             WHERE connected IS NULL OR (
               NONE(label IN labels(connected) WHERE label IN ['Document', 'Case', 'RecycleBin', 'RecycleBinItem'])
-              AND coalesce(properties(connected)['system_node'], false) <> true
+              AND coalesce(connected.system_node, false) <> true
               AND connected.case_id = $case_id
             )
             WITH n, sort_date, sort_time, collect(DISTINCT {{

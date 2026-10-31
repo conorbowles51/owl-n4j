@@ -74,14 +74,14 @@ class GeoService:
                 WHERE n.latitude IS NOT NULL
                   AND n.longitude IS NOT NULL
                   AND NONE(label IN labels(n) WHERE label IN ['Document', 'RecycleBin', 'RecycleBinItem'])
-                  AND coalesce(properties(n)['system_node'], false) <> true
+                  AND coalesce(n.system_node, false) <> true
                   {type_filter}
                   {scope_filter}
                   AND n.case_id = $case_id
                 OPTIONAL MATCH (n)-[r]-(connected)
                 WHERE connected IS NULL OR (
                   NONE(label IN labels(connected) WHERE label IN ['Document', 'RecycleBin', 'RecycleBinItem'])
-                  AND coalesce(properties(connected)['system_node'], false) <> true
+                  AND coalesce(connected.system_node, false) <> true
                   AND connected.case_id = $case_id
                   {connected_scope_filter}
                 )
@@ -180,7 +180,7 @@ class GeoService:
                     WHERE field IN ['latitude', 'longitude', 'location_name', 'location_formatted']
                   )
                   AND NONE(label IN labels(n) WHERE label IN ['Document', 'RecycleBin', 'RecycleBinItem'])
-                  AND coalesce(properties(n)['system_node'], false) <> true
+                  AND coalesce(n.system_node, false) <> true
                 RETURN
                     n.key AS key,
                     n.name AS name,

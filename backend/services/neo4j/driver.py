@@ -22,7 +22,7 @@ def active_node_predicate(alias: str, case_scoped: bool = True) -> str:
     """Cypher predicate for nodes that belong to the active investigation graph."""
     clauses = [
         f"NONE(label IN labels({alias}) WHERE label IN ['RecycleBin', 'RecycleBinItem'])",
-        f"coalesce(properties({alias})['system_node'], false) <> true",
+        f"coalesce({alias}.system_node, false) <> true",
     ]
     if case_scoped:
         clauses.insert(0, f"{alias}.case_id = $case_id")
