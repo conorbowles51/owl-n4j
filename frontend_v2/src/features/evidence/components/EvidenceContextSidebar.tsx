@@ -865,7 +865,8 @@ export function EvidenceContextSidebar({
     detailFileId && !folderDetailFile ? detailFileId : null
   )
   const detailFile = folderDetailFile ?? deepLinkedFile ?? null
-  // Polls only while a job is unfinished (see useJobs); the Processing tab dot shows the same thing.
+  // Polls every 5 s while a job is unfinished, otherwise once a minute (see useJobs); the Processing tab dot
+  // shows whether a job is unfinished.
   const { data: jobs } = useJobs(caseId, true)
   const hasActiveJobs = useMemo(() => hasUnfinishedJobs(jobs), [jobs])
 

@@ -249,7 +249,7 @@ function BackgroundTaskCard({
 
 export function JobsPanel({ caseId }: JobsPanelProps) {
   const queryClient = useQueryClient()
-  // Polls while a job is unfinished (see useJobs).
+  // Polls every 5 s while a job is unfinished, otherwise once a minute (see useJobs).
   const { data: jobs, isLoading: jobsLoading } = useJobs(caseId, true)
   const { data: backgroundTasks, isLoading: tasksLoading } = useBackgroundTasks(
     caseId,

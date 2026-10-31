@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react"
 import { Disclosure } from "./Disclosure"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useJobs } from "@/features/evidence/hooks/use-jobs"
@@ -44,6 +45,18 @@ export function BatchReadingJobs({
       void client.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
     },
   })
+  // A reading the server starts after a click (retry, the automatic sweep) arrives here as a new job id before the
+  // job list has it: fetch the list again once for each new set of missing ids instead of waiting for the next poll.
+  const missingIds = jobs.data
+    ? jobIds.filter((id) => !jobs.data.some((job) => job.id === id)).join(",")
+    : ""
+  const fetchedForMissing = useRef("")
+  const { isFetching, refetch } = jobs
+  useEffect(() => {
+    if (!missingIds || isFetching || fetchedForMissing.current === missingIds) return
+    fetchedForMissing.current = missingIds
+    void refetch()
+  }, [missingIds, isFetching, refetch])
   if (!jobIds.length) return null
   const readings =
     jobs.data?.filter(
