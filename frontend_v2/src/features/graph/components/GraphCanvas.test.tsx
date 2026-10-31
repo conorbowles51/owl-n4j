@@ -17,6 +17,7 @@ interface MockProps {
   cooldownTicks?: number
   enableNodeDrag?: boolean
   onRenderFramePost?: () => void
+  linkPointerAreaPaint?: (...args: unknown[]) => void
 }
 
 const mocks = vi.hoisted(() => ({ props: [] as MockProps[], reheats: 0 }))
@@ -132,6 +133,18 @@ describe("GraphCanvas layout", () => {
     render(<GraphCanvas data={makeGraph(600)} caseId="case-1" />)
     await waitFor(() => expect(last().graphData.nodes.length).toBe(600))
     expect(last().warmupTicks).toBe(50)
+  })
+
+  it("draws nothing for links on the hit-test canvas (links have no click or hover action)", async () => {
+    vi.stubGlobal("Worker", FakeLayoutWorker)
+    await act(async () => {
+      render(<GraphCanvas data={makeGraph(20)} caseId="case-1" />)
+    })
+    const paint = last().linkPointerAreaPaint
+    expect(typeof paint).toBe("function")
+    const ctx = { beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), fill: vi.fn() }
+    paint!({ source: { x: 0, y: 0 }, target: { x: 10, y: 10 } }, "#000001", ctx, 1)
+    for (const fn of Object.values(ctx)) expect(fn).not.toHaveBeenCalled()
   })
 
   it("draws a small graph at once, with no worker", async () => {

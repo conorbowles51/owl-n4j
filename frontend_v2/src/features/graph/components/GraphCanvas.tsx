@@ -37,6 +37,12 @@ type ForceLink = LinkObject<FGNode, FGLink>
 
 const EMPTY_GRAPH: { nodes: ForceNode[]; links: ForceLink[] } = { nodes: [], links: [] }
 
+// Links have no click or hover action, so nothing is drawn for them on the hidden
+// hit-test canvas. Without this, force-graph strokes every link there on every frame
+// (89,862 on BNB2: about 6 s of a 25 s arranging trace). A click on a link line now
+// counts as a click on the background.
+const NO_LINK_POINTER_AREA = () => {}
+
 // While a large graph is arranged, positions in between are drawn only after the page has been free for
 // this many times the length of the previous drawing (the page is then blocked at most 1/(1+4) = 20% of
 // the time by these drawings).
@@ -651,6 +657,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
           ctx.fill()
         }}
         linkCanvasObject={paintLink}
+        linkPointerAreaPaint={NO_LINK_POINTER_AREA}
         onNodeClick={handleNodeClick}
         onNodeRightClick={handleNodeRightClick}
         onNodeHover={handleNodeHover}
