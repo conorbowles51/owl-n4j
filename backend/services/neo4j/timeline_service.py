@@ -195,17 +195,23 @@ class TimelineService:
         case_id: str = None,
         entity_keys: Optional[List[str]] = None,
     ) -> List[Dict]:
-        """Backward-compatible full timeline fetch."""
-        page = self.get_timeline_page(
-            event_types=event_types,
-            start_date=start_date,
-            end_date=end_date,
-            case_id=case_id,
-            entity_keys=entity_keys,
-            limit=10000,
-            cursor=None,
-        )
-        return page["events"]
+        """Backward-compatible full timeline fetch: every page, not only the first 2,000 events."""
+        events: List[Dict] = []
+        cursor = None
+        while True:
+            page = self.get_timeline_page(
+                event_types=event_types,
+                start_date=start_date,
+                end_date=end_date,
+                case_id=case_id,
+                entity_keys=entity_keys,
+                limit=2000,
+                cursor=cursor,
+            )
+            events.extend(page["events"])
+            cursor = page["next_cursor"]
+            if not cursor:
+                return events
 
     def get_timeline_page(
         self,

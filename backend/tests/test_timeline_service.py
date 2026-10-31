@@ -234,6 +234,15 @@ class TimelineServiceTests(unittest.TestCase):
             self.assertEqual(page["total"], 7)
             self.assertEqual(sum("RETURN count(n) AS total" in c["query"] for c in captured), 1)
 
+    def test_full_fetch_returns_every_page(self):
+        pages = iter([
+            {"events": [{"key": "a"}], "count": 1, "total": 2, "next_cursor": "c1"},
+            {"events": [{"key": "b"}], "count": 1, "total": 2, "next_cursor": None},
+        ])
+        with patch.object(TimelineService, "get_timeline_page", side_effect=lambda **kw: next(pages)) as paged:
+            events = TimelineService().get_timeline_events(case_id="case-1")
+        self.assertEqual([e["key"] for e in events], ["a", "b"])
+        self.assertEqual(paged.call_args_list[1].kwargs["cursor"], "c1")
 
 if __name__ == "__main__":
     unittest.main()
