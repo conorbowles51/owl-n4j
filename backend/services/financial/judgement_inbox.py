@@ -53,10 +53,15 @@ def _known():
         return ''
 
 
+def _ids(text):
+    """The judgement ids the inbox holds: each line ends with its own id (a reason can quote another one)."""
+    return set(re.findall(r'judgement ([0-9a-f-]{36})$', text, re.M))
+
+
 def append_correction(session, item, statement=None):
     if item.get('status') != 'corrected':
         return False
-    if f"judgement {item['id']}" in _known():
+    if str(item['id']) in _ids(_known()):
         return False
     text = line(item, _statement(session, item) if statement is None else statement)
     # Two corrections at once (two workers, or two threads in one) must not both write the header or the same line:
@@ -64,7 +69,7 @@ def append_correction(session, item, statement=None):
     with INBOX.open('a') as out:
         fcntl.flock(out.fileno(), fcntl.LOCK_EX)
         try:
-            if f"judgement {item['id']}" in _known():
+            if str(item['id']) in _ids(_known()):
                 return False
             if out.seek(0, os.SEEK_END) == 0:
                 out.write(HEADER)
@@ -78,7 +83,7 @@ def append_correction(session, item, statement=None):
 def missing(session):
     """Ids of corrections in the database with no line in the inbox (an append that failed and was not caught up)."""
     from postgres.models.financial_judgements import FinancialJudgement as J
-    known = set(re.findall(r'judgement ([0-9a-f-]{36})', _known()))
+    known = _ids(_known())
     return [str(i) for i in session.scalars(select(J.id).where(J.status == 'corrected').order_by(J.resolved_at))
             if str(i) not in known]
 

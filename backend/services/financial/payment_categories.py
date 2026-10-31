@@ -220,6 +220,7 @@ def _append_to_inbox(session, judgement):
         if settled:
             return
         settled.append('committed')
+        event.remove(session, 'after_soft_rollback', rolled_back)  # not left on the session once settled
         try:
             from services.financial.judgement_inbox import append_correction
             append_correction(session, item, statement=statement)

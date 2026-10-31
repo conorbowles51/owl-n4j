@@ -163,6 +163,24 @@ class PaymentCategoryTests(LedgerQueryTestCase):
             transactions=[dict(id=row.id, version=0)], category='Payroll'))
         self.assertEqual(self.inbox.read_text().count('category.model'), 1)
 
+    def test_a_reason_quoting_another_judgement_does_not_count_as_its_line(self):
+        from services.financial import judgement_inbox
+        other = '11111111-2222-3333-4444-555555555555'
+        self.inbox.write_text(judgement_inbox.HEADER + f"- x | category.model | case c | f | a -> b | as judgement {other} said | link | judgement 99999999-2222-3333-4444-555555555555\n")
+        item = dict(id=other, status='corrected', rule_id='category.model', case_id='c' * 36, evidence={}, resolution_reason='r')
+        self.assertTrue(judgement_inbox.append_correction(self.db, item, statement='s.pdf'))
+        self.assertTrue(self.inbox.read_text().rstrip().endswith(f'judgement {other}'))
+
+    def test_a_committed_correction_leaves_no_listener_on_the_session(self):
+        (row,) = self.rows('105413834')
+        pc.classify_with_model(self.db, self.case.id, model_id='test-model', reader=lambda prompt: json.dumps(
+            {'items': [{'id': 0, 'category': 'Transfers', 'confidence': 0.4, 'why': 'Only a number.'}]}))
+        self.db.commit()
+        update_payment_labels(self.db, case_id=self.case.id, actor=ACTOR, request=PaymentLabelsRequest(
+            transactions=[dict(id=row.id, version=0)], category='Payroll'))
+        self.assertFalse([fn for fn in self.db.dispatch.after_soft_rollback
+                          if getattr(fn, '__name__', '') == 'rolled_back'])
+
     def test_a_failed_inbox_append_is_reported_and_the_check_adds_the_line(self):
         from services.financial import judgement_inbox
         (row,) = self.rows('105413834')
