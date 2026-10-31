@@ -1376,6 +1376,7 @@ async def process_evidence_background(
         messages = []
         job_ids = []
         copies = []
+        user_id = current_user.id  # read before the Financial intake commits (a load on the event loop after)
 
         if db_backed_ids and request.preparation_mode == "pdf_review" and request.case_id:
             # Financial reading: exact copies of a file already in Financial are
@@ -1397,7 +1398,7 @@ async def process_evidence_background(
                 file_ids=db_backed_ids,
                 force_reprocess=False,
                 preparation_mode=request.preparation_mode,
-                requested_by_user_id=current_user.id,
+                requested_by_user_id=user_id,
             )
             job_ids = engine_result.get("job_ids", [])
             if engine_result.get("message"):

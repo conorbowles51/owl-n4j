@@ -66,8 +66,8 @@ def test_the_handlers_measured_in_use_run_in_the_thread_pool():
 # (perf-analysis lens-evidence): the engine jobs poll held a worker's loop 5-19 s this way. Each remaining entry is
 # work in progress for fin-eventloop item A2(b), with the reason it is not converted yet.
 NOT_YET_OFFLOADED = {
-    # Upload, processing and deletion actions: they await process_db_files / engine uploads that interleave database
-    # writes with engine calls on the shared async engine client; converted with process_db_files in A2(b).
+    # Upload, folder-processing, deletion and Financial send actions: database work around engine calls on the
+    # shared async engine client, still on the loop in the handler itself; next in A2(b).
     'routers/evidence.py:upload_evidence', 'routers/evidence.py:process_cellebrite_folder',
     'routers/evidence.py:delete_evidence_file', 'routers/evidence_folders.py:process_folder',
     'routers/financial_statement_import.py:prepare_existing',
