@@ -1,6 +1,6 @@
 """Request speed: page views posted by the browser, and the admin Speed page."""
 from uuid import UUID
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from postgres.session import get_db
@@ -27,10 +27,15 @@ class PageViews(BaseModel):
 
 
 @router.post('/page-views', status_code=202)
-def page_views(body: PageViews, token: dict = Depends(get_current_user)):
+def page_views(body: PageViews, request: Request, token: dict = Depends(get_current_user)):
     """Time from opening a page to its data being shown, measured in the browser. Queued, never awaited."""
     email = token.get('username')
-    accepted = sum(request_speed.enqueue_page_view(v.page, v.method, v.case_id, v.ms, email, v.detail) for v in body.views)
+    routes = request.app.router.routes
+
+    def route_of(path):
+        return request_speed.route_template(routes, path)
+    accepted = sum(request_speed.enqueue_page_view(v.page, v.method, v.case_id, v.ms, email, v.detail, route_of)
+                   for v in body.views)
     return dict(accepted=accepted)
 
 

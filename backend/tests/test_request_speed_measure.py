@@ -181,7 +181,8 @@ class PageViews(Captured):
         detail = dict(queue_max_ms=812.4, resources=31, resource_bytes=1234567, largest_route='/api/timeline',
                       largest_ms=5300.5, effective_type='4g', downlink_mbps=9.5, rtt_ms=50, heap_used_mb=410.2,
                       longest_task_ms=-5, nav_dom_ms='soon', long_tasks=float('nan'))
-        self.assertTrue(rs.enqueue_page_view('case/timeline', 'LOAD', CASE, 9000, 'a@b', detail))
+        self.assertTrue(rs.enqueue_page_view('case/timeline', 'LOAD', CASE, 9000, 'a@b', detail,
+                                             lambda path: '/api/timeline' if path == '/api/timeline' else None))
         [row] = list(rs._pages)
         self.assertEqual((row['page'], row['method'], row['case_id'], row['ms']), ('case/timeline', 'LOAD', CASE, 9000.0))
         self.assertEqual((row['queue_max_ms'], row['resources'], row['resource_bytes']), (812.4, 31, 1234567))
@@ -191,25 +192,49 @@ class PageViews(Captured):
         self.assertIsNone(row['long_tasks'])  # NaN
         self.assertEqual(set(row) - {'at', 'page', 'method', 'case_id', 'ms', 'email'}, set(rs.PAGE_COLUMNS))
 
-    def test_a_route_with_an_id_or_query_is_not_kept(self):
-        for route in (f'/api/cases/{CASE}/x', '/api/evidence/12345/page', '/api/x?case_id=1', 'api/x', '/a b'):
-            self.assertIsNone(rs.page_detail({'largest_route': route})['largest_route'], route)
-        self.assertEqual(rs.page_detail({'largest_route': '/api/evidence/{id}/page/{id}'})['largest_route'],
-                         '/api/evidence/{id}/page/{id}')
+    def test_the_browser_route_is_kept_only_as_an_app_route_template(self):
+        app = FastAPI()
+
+        @app.get('/api/graph/node/{node_key}')
+        def node(node_key: str):
+            return {}
+
+        @app.post('/api/cases/{case_id}/notes')
+        def notes(case_id: str):
+            return {}
+
+        def route_of(path):
+            return rs.route_template(app.router.routes, path)
+        kept = lambda route: rs.page_detail({'largest_route': route}, route_of)['largest_route']  # noqa: E731
+        # A name in a path (graph entity keys are name slugs) is never stored, only the template.
+        self.assertEqual(kept('/api/graph/node/john-smith'), '/api/graph/node/{node_key}')
+        self.assertEqual(kept('/api/graph/node/{id}'), '/api/graph/node/{node_key}')
+        self.assertEqual(kept(f'/api/cases/{CASE}/notes'), '/api/cases/{case_id}/notes')  # path matches, method not
+        for route in ('/api/unknown/john-smith', '/api/x?case_id=1', 'api/x', '/a b', '/cases/john-smith'):
+            self.assertIsNone(kept(route), route)
+        self.assertIsNone(rs.page_detail({'largest_route': '/api/graph/node/john-smith'})['largest_route'])
+        self.assertEqual(kept('/assets/index-Bx12.js'), '/assets/index-Bx12.js')
+        self.assertIsNone(kept('/assets/../john'))
         self.assertIsNone(rs.page_detail({'effective_type': 'fast'})['effective_type'])
 
     def test_router_passes_the_detail(self):
         from routers import request_speed as router
         app = FastAPI()
         app.include_router(router.router)
+
+        @app.get('/api/graph/node/{node_key}')
+        def node(node_key: str):
+            return {}
         app.dependency_overrides[router.get_current_user] = lambda: {'username': 'a@b'}
         response = TestClient(app).post('/api/request-speed/page-views', json={'views': [
-            {'page': 'case/graph', 'method': 'VIEW', 'case_id': CASE, 'ms': 900, 'detail': {'queue_max_ms': 12}},
+            {'page': 'case/graph', 'method': 'VIEW', 'case_id': CASE, 'ms': 900,
+             'detail': {'queue_max_ms': 12, 'largest_route': '/api/graph/node/john-smith'}},
             {'page': 'case/graph', 'method': 'VIEW', 'ms': 900}]})
         self.assertEqual((response.status_code, response.json()), (202, {'accepted': 2}))
         self.assertEqual(len(rs._queue), 2)
         [row] = list(rs._pages)
         self.assertEqual(row['queue_max_ms'], 12.0)
+        self.assertEqual(row['largest_route'], '/api/graph/node/{node_key}')
 
 
 class LoopLagProbe(TestCase):
@@ -381,3 +406,34 @@ class HostRecorder(TestCase):
         down = hr.probe('app', '/', base=f'http://127.0.0.1:{free}', timeout=2)
         self.assertIsNone(down['status'])
         self.assertIn('refused', down['error'].lower())
+
+
+class RecorderWatchdog(TestCase):
+    def test_a_stalled_loop_exits_to_be_restarted(self):
+        from scripts import host_recorder as hr
+        progress = [time.monotonic() - 10]
+        with patch.object(hr.os, '_exit', side_effect=SystemExit(3)) as exited, patch.object(hr.time, 'sleep'):
+            with self.assertRaises(SystemExit):
+                hr.watchdog(progress, stall=5)
+        exited.assert_called_once_with(3)
+
+
+class SqlListenersNeverRaise(Captured):
+    def test_a_broken_connection_info_does_not_replace_the_result(self):
+        rs.install_sql_timing()
+        before, after, failed = rs._SQL_TIMED[0]
+
+        class Broken:
+            @property
+            def info(self):
+                raise RuntimeError('invalidated')
+        token = rs._person.set({})
+        try:
+            before(Broken(), None, 'SELECT 1', None, None, False)
+            after(Broken(), None, 'SELECT 1', None, None, False)
+
+            class Context:
+                connection = Broken()
+            failed(Context())
+        finally:
+            rs._person.reset(token)

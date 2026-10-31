@@ -11,6 +11,7 @@ Every minute, one ``host_load_minute`` row (migration 20261031_lx_measure):
     CPU and IO pressure (% of the minute), memory and swap in MB;
   * ``top``: the 5 processes that used the most CPU in the minute (pid, name, cores, nice, cgroup);
   * ``recorder_cpu_ms``: this process's own CPU in the minute, so its cost is measured, not assumed.
+A watchdog thread exits the process (systemd restarts it) if the loop stalls for 5 minutes.
 Every 10 seconds, one ``availability_probe`` row per target: the app page (``app``) and ``/api/health``
 (``api``) on the address people open, with status, time and bytes, or the error.
 
@@ -317,7 +318,10 @@ class Store:
         from psycopg.types.json import Jsonb
         try:
             if self.conn is None or self.conn.closed:
-                self.conn = psycopg.connect(self.url, connect_timeout=5, application_name='loupe-host-recorder')
+                # Keepalives and a TCP user timeout end a write to a database that stopped answering.
+                self.conn = psycopg.connect(self.url, connect_timeout=5, application_name='loupe-host-recorder',
+                                            keepalives=1, keepalives_idle=10, keepalives_interval=5,
+                                            keepalives_count=3, tcp_user_timeout=30000)
             with self.conn.transaction(), self.conn.cursor() as cur:
                 cur.execute("SET LOCAL statement_timeout = '10s'")
                 for h in self.hosts:
@@ -341,11 +345,27 @@ class Store:
                 print(f'host recorder: could not save, will retry ({type(e).__name__}: {str(e)[:200]})', flush=True)
 
 
+STALL_SECONDS = 300
+
+
+def watchdog(progress, stall=STALL_SECONDS):
+    """Exit (systemd restarts the unit) if the main loop has made no progress for ``stall`` seconds, e.g. a
+    database write that never returns; a stuck recorder would otherwise look alive and record nothing."""
+    while True:
+        time.sleep(stall / 5)
+        if time.monotonic() - progress[0] > stall:
+            print(f'host recorder: no progress for {stall} s, exiting to be restarted', flush=True)
+            os._exit(3)
+
+
 def run(url):
     sampler, store = Sampler(), Store(url)
     sampler.sample()
+    progress = [time.monotonic()]
+    threading.Thread(target=watchdog, args=(progress,), daemon=True).start()
     next_minute = time.time() - time.time() % 60 + 60
     while True:
+        progress[0] = time.monotonic()
         tick = time.time()
         store.add(probes=probe_all())
         if time.time() >= next_minute:

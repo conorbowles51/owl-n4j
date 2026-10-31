@@ -30,8 +30,8 @@ SELECT s.at, s.started_at, s.pid, s.method, s.route, left(CAST(s.case_id AS text
        h.cpu_busy_cores, h.psi_cpu_some, h.load1, h.swap_in_pages,
        (SELECT sum((v->>'cores')::float) FROM jsonb_each(h.groups) g(k, v)
          WHERE k ~ '(fin-watchdog|fleet)' AND k ~ '/') AS fleet_cores,
-       (SELECT (v->>'cores')::float FROM jsonb_each(h.groups) g(k, v) WHERE k ~ 'owl-backend-v2') AS backend_cores,
-       (SELECT (v->>'cpu_some')::float FROM jsonb_each(h.groups) g(k, v) WHERE k ~ 'owl-backend-v2') AS backend_cpu_some,
+       (SELECT sum((v->>'cores')::float) FROM jsonb_each(h.groups) g(k, v) WHERE k ~ 'owl-backend-v2') AS backend_cores,
+       (SELECT max((v->>'cpu_some')::float) FROM jsonb_each(h.groups) g(k, v) WHERE k ~ 'owl-backend-v2') AS backend_cpu_some,
        (SELECT count(*) FROM availability_probe a WHERE date_trunc('minute', a.at) = s.m
           AND (a.status IS NULL OR a.status >= 500)) AS probe_failures
        {release_columns}

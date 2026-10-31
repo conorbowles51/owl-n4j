@@ -136,22 +136,32 @@ def install_sql_timing():
     from sqlalchemy import event
     from sqlalchemy.engine import Engine
 
+    # A listener that raised would replace the statement's own result or error: each one swallows its own.
     def before(conn, cursor, statement, parameters, context, executemany):
-        if _person.get() is not None:
-            conn.info.setdefault('request_speed_started', []).append(time.perf_counter())
+        try:
+            if _person.get() is not None:
+                conn.info.setdefault('request_speed_started', []).append(time.perf_counter())
+        except Exception:
+            pass
 
     def after(conn, cursor, statement, parameters, context, executemany):
-        holder = _person.get()
-        started = conn.info.get('request_speed_started')
-        if holder is None or not started:
-            return
-        holder['pg_ms'] = holder.get('pg_ms', 0.0) + (time.perf_counter() - started.pop()) * 1000
-        holder['pg_n'] = holder.get('pg_n', 0) + 1
+        try:
+            holder = _person.get()
+            started = conn.info.get('request_speed_started')
+            if holder is None or not started:
+                return
+            holder['pg_ms'] = holder.get('pg_ms', 0.0) + (time.perf_counter() - started.pop()) * 1000
+            holder['pg_n'] = holder.get('pg_n', 0) + 1
+        except Exception:
+            pass
 
     def failed(context):
-        started = context.connection.info.get('request_speed_started') if context.connection is not None else None
-        if started:
-            started.pop()
+        try:
+            started = context.connection.info.get('request_speed_started') if context.connection is not None else None
+            if started:
+                started.pop()
+        except Exception:
+            pass
 
     event.listen(Engine, 'before_cursor_execute', before)
     event.listen(Engine, 'after_cursor_execute', after)
@@ -562,7 +572,7 @@ PAGES = frozenset([f'financial/{v}' for v in FINANCIAL_VIEWS] + [f'financial/sta
 PAGE_METHODS = ('LOAD', 'VIEW', 'LEFT')  # LEFT: left before the data was shown (time waited)
 PAGE_MAX_MS = 600000
 EFFECTIVE_TYPES = ('slow-2g', '2g', '3g', '4g')
-_ROUTE_TEXT = re.compile(r'^/[A-Za-z0-9_./{}-]{0,159}$')
+_ASSET = re.compile(r'^/assets/[A-Za-z0-9_.-]{1,120}$')
 
 
 def _number(value, high):
@@ -574,8 +584,12 @@ def _number(value, high):
     return value if math.isfinite(value) and 0 <= value <= high else None
 
 
-def page_detail(detail):
-    """The browser's figures for one view, each checked; anything malformed is left out, never guessed."""
+def page_detail(detail, route_of=None):
+    """The browser's figures for one view, each checked; anything malformed is left out, never guessed.
+
+    ``largest_route`` is never kept as the browser sent it (a path segment can be a person's name, e.g. a
+    graph entity key): it is kept only as the template of the API route it matches (``route_of``, given
+    by the router from the app's own routes) or as a built asset's file name, else left out."""
     detail = detail or {}
     row = {}
     for name in ('nav_response_ms', 'nav_dom_ms', 'nav_load_ms', 'queue_max_ms', 'queue_total_ms',
@@ -594,15 +608,38 @@ def page_detail(detail):
     row['effective_type'] = effective if effective in EFFECTIVE_TYPES else None
     route = detail.get('largest_route')
     # Only a route shape the browser has already reduced (ids replaced by {id}, no query) is kept.
-    row['largest_route'] = route if isinstance(route, str) and _ROUTE_TEXT.match(route) and not _has_id(route) else None
+    kept = None
+    if isinstance(route, str) and len(route) <= 600:
+        if _ASSET.match(route):
+            kept = route
+        elif route.startswith('/api/') and route_of is not None:
+            try:
+                kept = route_of(route)
+            except Exception:
+                kept = None
+    row['largest_route'] = kept[:160] if kept else None
     return row
 
 
-def _has_id(route):
-    return any(_UUID.match(part) or (part.isdigit() and len(part) > 3) for part in route.split('/'))
+def route_template(routes, path):
+    """The route template (path_format) of the first app route matching ``path`` for GET, or None."""
+    from starlette.routing import Match
+    scope = {'type': 'http', 'path': path, 'method': 'GET', 'root_path': ''}
+    partial = None
+    for route in routes:
+        try:
+            match, _ = route.matches(scope)
+        except Exception:
+            continue
+        template = getattr(route, 'path_format', None)
+        if match == Match.FULL and template:
+            return template
+        if match == Match.PARTIAL and template and partial is None:
+            partial = template  # the path matches, the method does not
+    return partial
 
 
-def enqueue_page_view(page, method, case_id, ms, email, detail=None):
+def enqueue_page_view(page, method, case_id, ms, email, detail=None, route_of=None):
     if page not in PAGES or method not in PAGE_METHODS:
         return False
     if not (0 <= ms <= PAGE_MAX_MS):
@@ -612,7 +649,7 @@ def enqueue_page_view(page, method, case_id, ms, email, detail=None):
     if detail is not None:
         try:
             _pages.append(dict(at=datetime.now(timezone.utc), page=page, method=method, case_id=case, ms=float(ms),
-                               email=email, **page_detail(detail)))
+                               email=email, **page_detail(detail, route_of)))
         except Exception:  # pragma: no cover - a full deque drops the oldest; nothing else can fail here
             pass
     return True
