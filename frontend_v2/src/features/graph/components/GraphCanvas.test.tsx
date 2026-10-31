@@ -235,6 +235,18 @@ describe("GraphCanvas layout", () => {
       expect(mocks.reheats).toBe(reheats + 1)
       reheats = mocks.reheats
 
+      now += 2000
+      frame() // that drawing took 2.1 s
+      now += 9000
+      const hidden = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden")
+      worker.send({ positions: sets[2], step: 40, done: false })
+      expect(mocks.reheats).toBe(reheats) // nothing asked of a hidden page
+      hidden.mockRestore()
+      now += 30000 // back after 30 s: the next set is drawn at once
+      worker.send({ positions: sets[3], step: 45, done: false })
+      expect(mocks.reheats).toBe(reheats + 1)
+      reheats = mocks.reheats
+
       now += 100 // the final positions are always drawn, even while a drawing is under way
       worker.send({ positions: final.slice(), step: 50, done: true })
       expect(mocks.reheats).toBe(reheats + 1)

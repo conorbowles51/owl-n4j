@@ -244,7 +244,9 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
     const timing = drawTiming.current
     const now = performance.now()
     const first = layoutPhase === "arranging" && layoutStep === 0
+    // a hidden page draws no frames: asking then would count the hidden time as one drawing's length
     const idleEnough =
+      typeof document !== "undefined" && document.visibilityState !== "hidden" &&
       timing.requestedAt === null && now - timing.lastEnd >= DRAW_IDLE_FACTOR * timing.lastMs
     if (layoutPhase === "laidOut" || first || idleEnough) {
       timing.requestedAt = now
