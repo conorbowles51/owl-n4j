@@ -380,3 +380,103 @@ def test_a_304_passes_the_services_middleware_chain_without_a_body():
         assert again.status_code == 304 and again.content == b'' and again.headers['etag'] == first.headers['etag']
     other = client.get('/api/financial', headers={'Accept-Encoding': 'gzip', 'If-None-Match': 'W/"other"'})
     assert other.status_code == 200 and other.json() == first.json()
+
+
+def test_a_kept_answer_is_compressed_once_and_served_compressed_to_a_browser_accepting_gzip():
+    """A d5b330d1 ledger hit spent 0.99 s of 1.18 s compressing the same 60 MB again (live 2026-10-31 12:25)."""
+    import gzip
+    body = b'{"rows":[' + b','.join(b'"%d"' % n for n in range(3000)) + b']}'
+    entry = view_cache._Entry(('payments',), (('payments', 1, 'x'),), body, 200, 'application/json')
+    token = view_cache._accepts_gzip.set(True)
+    try:
+        first = view_cache._current_answer(entry)
+        stored = entry.gzipped
+        second = view_cache._current_answer(entry)
+    finally:
+        view_cache._accepts_gzip.reset(token)
+    assert first.headers['content-encoding'] == 'gzip' and 'Accept-Encoding' in first.headers['vary']
+    assert gzip.decompress(first.body) == body and second.body is stored
+    assert first.headers['etag'] == second.headers['etag'] == view_cache._etag(entry)
+    plain = view_cache._current_answer(entry)  # a request not accepting gzip
+    assert plain.body == body and 'content-encoding' not in plain.headers
+    small = view_cache._Entry(('payments',), (('payments', 1, 'x'),), b'{"total":5}', 200, 'application/json')
+    token = view_cache._accepts_gzip.set(True)
+    try:
+        assert view_cache._current_answer(small).body == b'{"total":5}'  # under the middleware's minimum size
+    finally:
+        view_cache._accepts_gzip.reset(token)
+
+
+def test_a_compressed_kept_answer_passes_the_middleware_chain_unchanged():
+    import gzip
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from services.json_gzip import JSONGZipMiddleware
+    from services.financial.request_timing import FinancialTimingMiddleware
+    body = b'{"rows":[' + b','.join(b'"%d"' % n for n in range(3000)) + b']}'
+    entry = view_cache._Entry(('payments',), (('payments', 1, 'x'),), body, 200, 'application/json')
+    app = FastAPI()
+
+    @app.get('/api/financial/ledger')
+    def ledger():
+        return view_cache._current_answer(entry)
+    app.add_middleware(JSONGZipMiddleware)
+    app.add_middleware(FinancialTimingMiddleware)
+    app.add_middleware(view_cache.AcceptsUpdatingMiddleware)
+    client = TestClient(app)
+    answer = client.get('/api/financial/ledger', headers={'Accept-Encoding': 'gzip'})
+    assert answer.status_code == 200 and answer.headers['content-encoding'] == 'gzip'
+    assert answer.content == body  # decoded once by the client: compressed once, not twice
+    assert int(answer.headers['content-length']) == len(entry.gzipped)
+    plain = client.get('/api/financial/ledger', headers={'Accept-Encoding': 'identity'})
+    assert plain.content == body and 'content-encoding' not in plain.headers
+
+
+@needs_pg
+def test_a_graph_view_is_never_answered_updating_while_the_graph_state_cannot_be_read(engine, memo, slow, monkeypatch):
+    """Nothing could compute it again in the background: the request computes it and shows its own answer or error."""
+    case, counter = uuid.uuid4(), Counter()
+    graph = {'state': ('graph', 0, 'FB:1@db1')}
+    monkeypatch.setattr(view_cache, '_graph_state', lambda: graph['state'])
+
+    @view_cache.cached_view('graph-down-test', graph=True)
+    def view(case_id, db):
+        counter.calls += 1
+        total = db.execute(text('SELECT coalesce(sum(amount), 0) FROM payments WHERE case_id = :c'), dict(c=case_id)).scalar()
+        return dict(total=int(total))
+    write(engine, 'INSERT INTO payments (case_id, amount) VALUES (:c, 5)', c=case)
+    call(engine, view, case)
+    graph['state'] = None
+    answer = call(engine, view, case)
+    assert counter.calls == 2 and 'x-financial-view-state' not in answer.headers
+    assert asks(memo) == []
+    graph['state'] = ('graph', 0, 'FB:2@db1')  # readable and changed: the previous copy, marked updating
+    assert call(engine, view, case).headers['x-financial-view-state'] == 'updating'
+
+
+def test_the_real_graph_state_is_none_when_the_graph_refuses(monkeypatch):
+    from importlib import import_module
+    driver_module = import_module('services.neo4j.driver')
+
+    class _Refusing:
+        def session(self, **kwargs):
+            raise RuntimeError('no password configured')
+    monkeypatch.setattr(driver_module, 'driver', _Refusing())
+    assert view_cache._graph_state() is None
+
+
+def test_a_graph_views_refresh_that_raced_a_graph_commit_is_tried_once_more(memo, monkeypatch):
+    from services.financial import view_warmup
+    monkeypatch.setattr(view_cache, '_GRAPH', {'graph-records'})
+    directory = memo / view_refresh.WANTED_DIR
+    directory.mkdir()
+    path = view_refresh._path(directory, ('graph-records', '{}'))
+    ask_ = dict(key=['graph-records', '{}'], case_id='c', asked=1.0, code='code-1')
+    view_refresh._write(path, ask_)
+    tries = []
+    monkeypatch.setattr(view_refresh, 'refresh_one', lambda path, ask_: tries.append(1) or len(tries) == 2)
+    monkeypatch.setattr(view_refresh, 'IDLE_EXIT_SECONDS', 0.3)
+    monkeypatch.setattr(view_refresh, 'POLL_SECONDS', 0.05)
+    monkeypatch.setattr(view_warmup, '_preparing', lambda: False)
+    assert view_refresh.run_child() == 1
+    assert len(tries) == 2 and not path.exists()

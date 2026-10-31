@@ -120,6 +120,8 @@ class _Entry:
     computed_at: float = field(default=0.0, compare=False)
     # The body's ETag, computed on first use (_etag).
     etag: str = field(default='', compare=False)
+    # The body gzipped as the service's gzip middleware would (level 1), on first use by a request accepting it.
+    gzipped: bytes = field(default=b'', compare=False, repr=False)
 
 
 _TOKEN = re.compile(r'[a-z_][a-z0-9_]*')
@@ -767,6 +769,10 @@ def _serve(handler, key, engine, case_id, kwargs, state):
                 logger.info('Financial view %s served from the saved copy (%.2f s)', key[0], time.perf_counter() - started)
                 return _kept(saved, state)
             previous = _previous(entry, saved)
+            # A graph view whose graph state cannot be read (the graph database down) cannot be computed again in
+            # the background either: the request computes it and shows its own answer or error, never "updating".
+            if previous is not None and key[0] in _GRAPH and _graph_state() is None:
+                previous = None
             if previous is not None and _serve_previous(key, case_id, previous):
                 stats['updating'] += 1
                 note_cache('updating')
@@ -871,7 +877,27 @@ def _etag(entry):
 
 
 def _current_answer(entry):
-    return _tagged(_etag(entry), lambda: _response(entry))
+    return _tagged(_etag(entry), lambda: _compressed(entry) if _accepts_gzip.get() and len(entry.body) >= GZIP_MINIMUM_SIZE
+                   else _response(entry))
+
+
+# A kept answer is compressed once, not on every request (live 2026-10-31 12:25: a d5b330d1 ledger hit took 1.18 s
+# on the server, 0.99 s of it gzip of the same 60 MB again). As services/json_gzip.JSONGZipMiddleware: level 1,
+# bodies from 4096 bytes; it passes an answer already encoded through unchanged.
+GZIP_MINIMUM_SIZE = 4096
+_accepts_gzip: ContextVar[bool] = ContextVar('financial_view_accepts_gzip', default=False)
+
+
+def _compressed(entry):
+    import gzip
+    from fastapi.responses import Response
+    from services.request_speed import note_gzip
+    if not entry.gzipped:
+        began = time.perf_counter()
+        object.__setattr__(entry, 'gzipped', gzip.compress(entry.body, compresslevel=1, mtime=0))
+        note_gzip(time.perf_counter() - began)
+    return Response(content=entry.gzipped, status_code=entry.status_code, media_type=entry.media_type,
+                    headers={'Content-Encoding': 'gzip', 'Vary': 'Accept-Encoding'})
 
 
 def etagged(response):
@@ -956,8 +982,8 @@ def note_visit(key):
 
 
 class AcceptsUpdatingMiddleware:
-    """Marks a GET request that carries UPDATING_ACCEPT_HEADER: updating, and keeps its If-None-Match (pure ASGI,
-    so both reach the route's thread)."""
+    """Marks a GET request that carries UPDATING_ACCEPT_HEADER: updating, and keeps its If-None-Match and whether it
+    accepts gzip (pure ASGI, so they reach the route's thread)."""
     def __init__(self, app):
         self.app = app
 
@@ -967,14 +993,16 @@ class AcceptsUpdatingMiddleware:
         headers = scope.get('headers') or ()
         accepts = any(name == b'x-financial-view-accept' and b'updating' in value.lower() for name, value in headers)
         sent = b','.join(value for name, value in headers if name == b'if-none-match')
-        if not accepts and not sent:
+        gzipped = any(name == b'accept-encoding' and b'gzip' in value for name, value in headers)
+        if not accepts and not sent and not gzipped:
             return await self.app(scope, receive, send)
-        tokens = (_accepts_updating.set(accepts), _if_none_match.set(sent.decode('latin-1')))
+        tokens = (_accepts_updating.set(accepts), _if_none_match.set(sent.decode('latin-1')), _accepts_gzip.set(gzipped))
         try:
             return await self.app(scope, receive, send)
         finally:
             _accepts_updating.reset(tokens[0])
             _if_none_match.reset(tokens[1])
+            _accepts_gzip.reset(tokens[2])
 
 
 def _as_of(entry):

@@ -226,6 +226,9 @@ def run_child():
                 _write(path, {**ask_, 'started': dict(pid=os.getpid(), at=time.time())})
                 try:
                     kept = refresh_one(path, ask_)
+                    if not kept and ask_['key'][0] in view_cache._GRAPH:
+                        # A graph view is not kept when the graph committed while it was computed: once more.
+                        kept = refresh_one(path, ask_)
                 except Exception as exc:  # noqa: BLE001 - marked failed; its request computes it after the limit
                     logger.warning('Financial view %s refresh failed (%s: %s)', ask_['key'][0], type(exc).__name__, exc)
                     kept = False
