@@ -101,11 +101,12 @@ def test_a_state_file_left_by_an_earlier_release_is_not_reported(tmp_path):
     assert system.calls == [] and not (tmp_path / 'log').exists() and not state.exists()
 
 
-def test_the_release_waits_before_the_frontend_stops_and_after_dependencies_are_installed():
+def test_the_release_waits_before_the_frontend_switches_and_after_dependencies_are_installed():
+    # The frontend is built aside and never stopped (48035271); the wait comes before the build switch and restart.
     script = (Path(__file__).resolve().parents[2] / 'deploy' / 'deploy.sh').read_text()
     wait = script.index('"${PREPARE_VIEWS}" wait')
     assert script.index('step "Installing backend dependencies"') < wait
-    assert wait < script.index('step "Stopping frontend for dependency installation"')
+    assert wait < script.index('frontend_switch "${FRONTEND_ID}"')
     assert wait < script.index('restart_backend_bounded; then')
     assert 'services/financial/view_prepare.py' in script
 
