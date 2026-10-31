@@ -14,6 +14,7 @@ const graphMocks = vi.hoisted(() => ({
   clearJob: vi.fn(),
   rejectMergePair: vi.fn(),
   startScan: vi.fn(),
+  removePair: vi.fn(),
 }))
 
 vi.mock("../hooks/use-similar-entities", () => ({
@@ -35,6 +36,7 @@ vi.mock("../hooks/use-similar-entities", () => ({
     error: null,
     startScan: graphMocks.startScan,
     cancel: vi.fn(),
+    removePair: graphMocks.removePair,
   }),
 }))
 
@@ -96,6 +98,29 @@ describe("SimilarEntitiesView", () => {
     graphMocks.clearJob.mockReset()
     graphMocks.rejectMergePair.mockReset()
     graphMocks.startScan.mockReset()
+    graphMocks.removePair.mockReset()
+  })
+
+  it("removes a pair from the list once the server records it as not a duplicate", async () => {
+    graphMocks.rejectMergePair.mockResolvedValue({ id: "r-1" })
+    render(<SimilarEntitiesView caseId="case-1" graphData={graphData} onRefresh={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /not a duplicate/i }))
+
+    await waitFor(() => expect(graphMocks.removePair).toHaveBeenCalledWith("entity-a", "entity-b"))
+    expect(graphMocks.rejectMergePair).toHaveBeenCalledWith("case-1", "entity-a", "entity-b")
+  })
+
+  it("keeps the pair and says so when the server refuses", async () => {
+    graphMocks.rejectMergePair.mockRejectedValue(new Error("Not Found"))
+    render(<SimilarEntitiesView caseId="case-1" graphData={graphData} onRefresh={vi.fn()} />)
+
+    fireEvent.click(screen.getByRole("button", { name: /not a duplicate/i }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not mark Alpha and Alpha Inc as not duplicates: Not Found"
+    )
+    expect(graphMocks.removePair).not.toHaveBeenCalled()
   })
 
   it("refreshes on completed merge without closing the dialog directly", async () => {

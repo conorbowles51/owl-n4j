@@ -87,6 +87,19 @@ export function useSimilarEntities(caseId: string) {
     setIsScanning(false)
   }, [])
 
+  // Drop one pair from the shown results (after it is recorded as not a duplicate).
+  const removePair = useCallback((key1: string, key2: string) => {
+    setResults((current) =>
+      current.filter(
+        (pair) =>
+          !(
+            (pair.key1 === key1 && pair.key2 === key2) ||
+            (pair.key1 === key2 && pair.key2 === key1)
+          )
+      )
+    )
+  }, [])
+
   return {
     isScanning,
     progress,
@@ -95,5 +108,6 @@ export function useSimilarEntities(caseId: string) {
     error,
     startScan,
     cancel,
+    removePair,
   }
 }

@@ -295,19 +295,20 @@ export const graphAPI = {
       },
     }),
 
+  // "Not a duplicate": the backend records the pair for the case, and later scans leave it out.
   rejectMergePair: (caseId: string, entityKey1: string, entityKey2: string) =>
-    fetchAPI<void>("/api/graph/reject-merge-pair", {
+    fetchAPI<RejectedMergePair>("/api/graph/reject-merge", {
       method: "POST",
-      body: { case_id: caseId, entity_key1: entityKey1, entity_key2: entityKey2 },
+      body: { case_id: caseId, entity_key_1: entityKey1, entity_key_2: entityKey2 },
     }),
 
   getRejectedMergePairs: (caseId: string) =>
-    fetchAPI<{ pairs: RejectedMergePair[] }>(
-      `/api/graph/rejected-merge-pairs?case_id=${caseId}`
+    fetchAPI<{ rejected_pairs: RejectedMergePair[]; total: number }>(
+      `/api/graph/rejected-merges?case_id=${encodeURIComponent(caseId)}`
     ),
 
   undoRejection: (rejectionId: string) =>
-    fetchAPI<void>(`/api/graph/rejected-merge-pairs/${rejectionId}`, {
+    fetchAPI<void>(`/api/graph/rejected-merges/${encodeURIComponent(rejectionId)}`, {
       method: "DELETE",
     }),
 

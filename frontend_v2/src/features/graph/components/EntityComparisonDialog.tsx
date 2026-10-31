@@ -104,7 +104,7 @@ export function EntityComparisonDialog({
               }}
             >
               <X className="size-3.5" />
-              Dismiss
+              Not a duplicate
             </Button>
           )}
           {pair && onMerge && (

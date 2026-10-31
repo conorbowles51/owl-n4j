@@ -38,7 +38,10 @@ export function SimilarEntitiesView({
     error,
     startScan,
     cancel,
+    removePair,
   } = useSimilarEntities(caseId)
+  const [rejectError, setRejectError] = useState<string | null>(null)
+  const [rejecting, setRejecting] = useState<string | null>(null)
   const { data: entityTypesData } = useEntityTypes(caseId)
 
   const [compareOpen, setCompareOpen] = useState(false)
@@ -123,8 +126,20 @@ export function SimilarEntitiesView({
     setMergeOpen(true)
   }
 
+  // The pair leaves the list only once the server has recorded it; later scans leave it out.
   const handleReject = async (pair: SimilarPair) => {
-    await graphAPI.rejectMergePair(caseId, pair.key1, pair.key2)
+    const pairId = `${pair.key1}-${pair.key2}`
+    setRejectError(null)
+    setRejecting(pairId)
+    try {
+      await graphAPI.rejectMergePair(caseId, pair.key1, pair.key2)
+      removePair(pair.key1, pair.key2)
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "unknown error"
+      setRejectError(`Could not mark ${pair.name1} and ${pair.name2} as not duplicates: ${reason}`)
+    } finally {
+      setRejecting(null)
+    }
   }
 
   return (
@@ -259,6 +274,11 @@ export function SimilarEntitiesView({
               )}
             </div>
           )}
+          {rejectError && (
+            <p role="alert" className="rounded-md bg-red-50 p-2 text-xs text-red-600 dark:bg-red-500/10 dark:text-red-400">
+              {rejectError}
+            </p>
+          )}
           {!isScanning && results.length === 0 && !error && (
             <p className="text-center text-xs text-muted-foreground py-4">
               Click Scan to find potential duplicate entities
@@ -303,10 +323,11 @@ export function SimilarEntitiesView({
                 <Button
                   variant="ghost"
                   size="sm"
+                  disabled={rejecting === `${pair.key1}-${pair.key2}`}
                   onClick={() => handleReject(pair)}
                 >
                   <X className="size-3" />
-                  Dismiss
+                  Not a duplicate
                 </Button>
               </div>
             </div>

@@ -179,4 +179,45 @@ describe("graphAPI edit helpers", () => {
       { fileId: "report.pdf", fileName: "report.pdf" },
     ])
   })
+
+  it("records 'not a duplicate' on the route the backend serves, with its field names", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "r-1",
+          case_id: "case-1",
+          entity_key_1: "a",
+          entity_key_2: "b",
+          rejected_at: "2026-10-31T00:00:00",
+        }),
+        { status: 200 }
+      )
+    )
+
+    await graphAPI.rejectMergePair("case-1", "a", "b")
+
+    const [url, options] = vi.mocked(globalThis.fetch).mock.calls[0]
+    expect(url).toBe("/api/graph/reject-merge")
+    expect(options?.method).toBe("POST")
+    expect(JSON.parse(options?.body as string)).toEqual({
+      case_id: "case-1",
+      entity_key_1: "a",
+      entity_key_2: "b",
+    })
+  })
+
+  it("lists and undoes rejections on the served routes", async () => {
+    vi.mocked(globalThis.fetch).mockImplementation(async () =>
+      new Response(JSON.stringify({ rejected_pairs: [], total: 0 }), { status: 200 })
+    )
+
+    await graphAPI.getRejectedMergePairs("case 1")
+    await graphAPI.undoRejection("r-1")
+
+    expect(vi.mocked(globalThis.fetch).mock.calls[0][0]).toBe(
+      "/api/graph/rejected-merges?case_id=case%201"
+    )
+    expect(vi.mocked(globalThis.fetch).mock.calls[1][0]).toBe("/api/graph/rejected-merges/r-1")
+    expect(vi.mocked(globalThis.fetch).mock.calls[1][1]?.method).toBe("DELETE")
+  })
 })

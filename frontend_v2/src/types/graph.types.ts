@@ -96,9 +96,11 @@ export interface SimilarPair {
 
 export interface RejectedMergePair {
   id: string
-  entity_key1: string
-  entity_key2: string
+  case_id: string
+  entity_key_1: string
+  entity_key_2: string
   rejected_at: string
+  rejected_by_user_id: string | null
 }
 
 export interface PageRankResult {
