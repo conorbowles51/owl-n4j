@@ -216,6 +216,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# A 422 reply never echoes submitted values, such as a password sent under a wrong field name.
+from services.validation_reply import install as _validation_reply_without_input
+_validation_reply_without_input(app)
+
 # JSON responses are gzipped for browsers that accept it (services.json_gzip). Added first, so it is the
 # innermost layer: the timing middlewares below record the bytes actually sent and the compression time.
 from services.json_gzip import JSONGZipMiddleware
