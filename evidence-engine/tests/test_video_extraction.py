@@ -150,3 +150,12 @@ async def test_frame_extraction_failure_is_stated(monkeypatch, video):
     doc = await module._extract_video("v.mp4", "v.mp4")
     assert doc.metadata["frame_count"] == 0
     assert "No frames could be taken from the video: ffmpeg exited 1" in doc.text
+
+
+async def test_audio_without_speech_is_recorded_not_written_into_the_text(monkeypatch, video):
+    monkeypatch.setattr(module.settings, "image_provider", "tesseract")
+    video["audio"] = ""
+    doc = await module._extract_video("v.mp4", "v.mp4")
+    assert doc.metadata["transcription_status"] == "no_speech"
+    assert "extraction_incomplete" not in doc.metadata
+    assert "speech" not in doc.text

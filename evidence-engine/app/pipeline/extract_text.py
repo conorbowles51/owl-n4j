@@ -1073,8 +1073,8 @@ async def _extract_video(file_path: str, file_name: str) -> ExtractedDocument:
                     metadata["transcription"] = audio_doc.text
                     metadata["transcription_status"] = "transcribed"
                 else:
+                    # Not a failure: recorded in metadata, kept out of the text entity extraction reads.
                     metadata["transcription_status"] = "no_speech"
-                    parts.append("[Audio Transcription]\nNo speech was transcribed from the audio track.")
         elif metadata.get("has_audio"):
             metadata["transcription_status"] = "failed"
             metadata["transcription_error"] = "the audio track could not be extracted"
