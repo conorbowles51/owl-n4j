@@ -451,6 +451,31 @@ class SavedGraphReadTests(unittest.TestCase):
         self.assertEqual(cache.stats["hit"], 1)
         self.assertEqual(self.calls, 2)
 
+    def test_an_unreadable_marker_then_a_new_one_empties_the_memory_cache(self):
+        import itertools
+        from services.neo4j import graph_read_cache as module
+        clock = itertools.count(0, module.MARKER_SECONDS + 1)
+        cache = GraphReadCache(saved_as="g", marker=self.marker)
+        with patch("time.monotonic", lambda: next(clock)):
+            cache.read(self.session, "k", self.compute())
+            self.started = RuntimeError("graph database stopping")
+            cache.read(self.session, "k", self.compute())  # memory still used while the marker is unknown
+            self.assertEqual(cache.stats["hit"], 1)
+            self.started = "db1@2026-10-31T10:30:00"
+            cache.read(self.session, "k", self.compute())
+        self.assertEqual(cache.stats["hit"], 1)
+        self.assertEqual(self.calls, 2)
+
+    def test_a_disk_load_uses_the_marker_of_that_moment(self):
+        """A restart within the marker interval: the copy saved before it is refused on the next miss."""
+        GraphReadCache(saved_as="g", marker=self.marker).read(self.session, "k", self.compute())
+        cache = GraphReadCache(saved_as="g", marker=self.marker)
+        cache.read(self.session, "other", self.compute())  # marker read and kept for the interval
+        self.started = "db1@2026-10-31T10:30:00"
+        cache.read(self.session, "k", self.compute())
+        self.assertEqual(cache.stats["saved_hit"], 0)
+        self.assertEqual(self.calls, 3)
+
     def test_the_marker_is_read_at_most_once_per_interval(self):
         reads = []
 
@@ -460,7 +485,7 @@ class SavedGraphReadTests(unittest.TestCase):
         cache = GraphReadCache(saved_as="g", marker=marker)
         for _ in range(5):
             cache.read(self.session, "k", self.compute())
-        self.assertEqual(len(reads), 1)
+        self.assertEqual(len(reads), 2)  # once for the hits' interval, once fresh for the one miss
 
     def test_without_saved_as_nothing_is_written(self):
         import pathlib

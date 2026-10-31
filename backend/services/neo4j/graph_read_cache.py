@@ -179,21 +179,25 @@ class GraphReadCache:
             return None, None
         return directory / self.saved_as, code
 
-    def _current_marker(self) -> Optional[str]:
-        """The graph database's marker (id and last start), read at most every MARKER_SECONDS; None if there is no
-        marker or it cannot be read. When it changed, the memory cache is emptied first. Never raises."""
+    def _current_marker(self, fresh: bool = False) -> Optional[str]:
+        """The graph database's marker (id and last start), read at most every MARKER_SECONDS unless ``fresh``; None
+        if there is no marker or it cannot be read. When it changed, the memory cache is emptied first. Never
+        raises."""
         import time
         if self.marker is None:
             return None
         now = time.monotonic()
         with self._lock:
-            if now - self._marker_at < MARKER_SECONDS:
+            if not fresh and now - self._marker_at < MARKER_SECONDS:
                 return self._marker_now
         try:
             marker = self.marker() or None
         except Exception:  # noqa: BLE001 - then nothing is read from or written to disk
-            if now - self._marker_warned >= MARKER_WARNING_SECONDS:
-                self._marker_warned = now
+            with self._lock:
+                warn = now - self._marker_warned >= MARKER_WARNING_SECONDS
+                if warn:
+                    self._marker_warned = now
+            if warn:
                 logger.warning("Graph database marker unreadable; graph reads kept in memory only", exc_info=True)
             marker = None
         with self._lock:
@@ -326,6 +330,9 @@ class GraphReadCache:
             self._count("miss")
             return compute()
         try:
+            # Read now for the disk (a miss costs seconds; the marker 10-26 ms): a copy is loaded and saved only
+            # under the marker of this moment, never one up to MARKER_SECONDS old.
+            marker = self._current_marker(fresh=True)
             saved = self._load_saved(key, before, marker)
             if saved is not None:
                 value = _unpack(saved)
