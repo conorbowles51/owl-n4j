@@ -66,6 +66,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from services.financial import printed_holders
+from services.financial.read_only_session import WriteInReadOnlyComparison
 from services.financial.journal import journal
 
 # Every outcome is a journal line (journal: INFO lines reach the service journal under uvicorn).
@@ -2881,6 +2882,31 @@ def read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for
     return record
 
 
+READS_OUTSIDE = 'vision_reads_outside_transaction'
+
+
+def _reads_outside_transaction(db):
+    """The reading's checks run each statement in its own transaction (read_only_session): read_statement_import
+    parses between its selects, and one open transaction held the vacuum horizon and the tables' locks for up to
+    133 s per statement (pg_stat_activity, live 2026-10-31 15:15-15:24, 484 of 498 samples idle in transaction).
+    Postgres here runs READ COMMITTED, so each statement already read its own snapshot; nothing it sees changes.
+    A write before _write_phase is refused (it would be committed at once)."""
+    from sqlalchemy.orm import Session
+    from services.financial.read_only_session import ENABLED, reads_outside_transaction
+    if ENABLED and isinstance(db, Session):  # tests' stand-in sessions keep their own behaviour
+        reads_outside_transaction(db)
+        db.info[READS_OUTSIDE] = True
+
+
+def _write_phase(db):
+    """Before a write: the lock, the check and the write share one real transaction again, as before."""
+    if db.info.pop(READS_OUTSIDE, False):
+        from sqlalchemy import event
+        from services.financial.read_only_session import _refuse_writes
+        event.remove(db, 'before_flush', _refuse_writes)
+        db.commit()  # gives the autocommit connection back; the next statement takes one in a real transaction
+
+
 def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_for=None, apply=True, force=False,
                numbers_of=None):
     """Read one held statement from its page images. Returns the outcome record. Never raises.
@@ -2908,6 +2934,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
     again, stored, claim_id = False, None, 'none'
     try:
         with factory() as db:
+            _reads_outside_transaction(db)
             item = db.get(Item, item_id)
             batch = db.get(Batch, item.batch_id) if item else None
             file = db.get(EvidenceFile, item.file_id) if item else None
@@ -2974,6 +3001,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 # now read with more pages (SUMMARY_PAGES) is not marked as looked at: it is read anew next time.
                 if apply:
                     # Under the file's lock, only while it is still that outcome (rejudgeable, any reading).
+                    _write_phase(db)
                     _store(db, file_id, key, _judged(stored, **({'pages_rule': PAGES_RULE} if same_pages else
                                                               {'read_anew_at': datetime.now(timezone.utc).isoformat()})),
                            rejudge=(None, None, None))
@@ -2984,6 +3012,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
             if _current(stored, proposal['revision'], model_id, pages) and not force and not again:
                 if apply and (stored.get('pages_rule') or 0) != PAGES_RULE:
                     # Its pages are still the ones read (SUMMARY_PAGES adds none): marked looked at, nothing read.
+                    _write_phase(db)
                     _store(db, file_id, key, dict(stored, pages_rule=PAGES_RULE), unchanged=stored)
                     db.commit()
                 return dict(stored, reason='already_read')
@@ -3005,6 +3034,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 if apply:
                     # The claim keeps the stored reading (and is checked again under the file's lock).
                     claim_id = str(uuid4())
+                    _write_phase(db)
                     if not _store(db, file_id, key, dict(stored, status='reading', rejudging=True, claim_id=claim_id,
                                   at=datetime.now(timezone.utc).isoformat()),
                                   rejudge=(proposal['revision'], model_id, pages, due)):
@@ -3015,6 +3045,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                     db.rollback()
             elif apply:
                 # The claim, checked again under the file's lock (another worker may hold it).
+                _write_phase(db)
                 if not _store(db, file_id, key, dict(record, status='reading'), claim=(proposal['revision'], model_id, pages)):
                     db.rollback()
                     return dict(record, reason='being_read')
@@ -3225,6 +3256,11 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
         if offer:
             return _offer(factory, item_id, file_id, key, record, request)
         return _save(factory, item_id, case_id, file_id, key, record, request)
+    except WriteInReadOnlyComparison:
+        # A check tried to write before the reading's own write: refused, nothing written, not a failed reading
+        # (no failure is counted); the statement is read again in a later round.
+        log.exception('Page-image reading stopped: a check tried to write; nothing was written')
+        return dict(record, reason='write_refused')
     except Exception as error:  # noqa: BLE001 - fail closed: the statement stays held
         log.exception('Page-image reading failed; the statement stays held')
         if again:
