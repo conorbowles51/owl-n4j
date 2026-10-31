@@ -120,9 +120,22 @@ def _write_counts(connection, tables=None):
     return {name: int(count) for name, count in rows if tables is None or name in tables}
 
 
+def _graph_now():
+    """The graph database's last committed transaction as a list (graph_read_cache's key), or None. Never raises."""
+    try:
+        from services.neo4j.driver import driver
+        from services.neo4j.graph_read_cache import graph_bookmark
+        with driver.session() as session:
+            return list(graph_bookmark(session))
+    except Exception:  # noqa: BLE001 - the graph then starts no pass of its own
+        logger.warning('Financial view re-warm: graph state unavailable', exc_info=True)
+        return None
+
+
 def _rewarm_due(now=None):
     """True if the last pass finished at least REWARM_MIN_SECONDS ago and a table its views read was written since
-    it started. False with no record of a pass (the first pass writes it), or on any doubt."""
+    it started, or the graph database committed since (the graph records the pass reads, graph_read_cache). False
+    with no record of a pass (the first pass writes it), or on any doubt."""
     import json
     from services.financial import view_cache
     directory = view_cache._memo_dir()
@@ -138,7 +151,12 @@ def _rewarm_due(now=None):
     with _get_engine().connect() as connection:
         current = _write_counts(connection, set(state['tables']))
     if current == state.get('counts'):
-        return False
+        graph = state.get('graph')
+        if graph is None:
+            return False
+        now_graph = _graph_now()
+        if now_graph is None or now_graph == graph:
+            return False
     # A release writes the next code to disk before preparing it: this process's views are about to be replaced
     # (seen live 2026-10-31 02:57: a pass began 3 s after a prepare ended, before the restart).
     on_disk = view_cache._identity_now()
@@ -155,15 +173,15 @@ def _rewarm_due(now=None):
 _skipped_for = None  # the disk identity last reported as skipped (one journal line per change)
 
 
-def _record_pass(counts, started):
-    """After a pass: the tables its views read and their write counts taken before it started, so a write during the
-    pass starts the next one."""
+def _record_pass(counts, started, graph=None):
+    """After a pass: the tables its views read and their write counts taken before it started, and the graph's last
+    commit then (``graph``), so a write during the pass starts the next one."""
     import json
     from services.financial import view_cache
     directory = view_cache._memo_dir()
     tables = sorted(view_cache.tables_read)
     state = dict(tables=tables, counts={table: counts[table] for table in tables if table in counts},
-                 started=started, finished=time.time())
+                 started=started, finished=time.time(), graph=graph)
     temporary = directory / (REWARM_STATE + '.%d.tmp' % os.getpid())
     temporary.write_text(json.dumps(state, sort_keys=True))
     os.replace(temporary, directory / REWARM_STATE)
@@ -270,11 +288,11 @@ def warm_account_history(lock_held=False):
         from services.financial import view_cache
         if view_cache._memo_dir() is None:
             return
-        counts, started = _counts_now(), time.time()
+        counts, graph, started = _counts_now(), _graph_now(), time.time()
         computed = view_cache.stats['misses']
         warmed, failed = _warm_cases(stop_if_preparing=True)
         if counts is not None and not process_shutdown_requested() and not _preparing():
-            _record_pass(counts, started)
+            _record_pass(counts, started, graph)
         logger.info('Financial view warm-up pass: %d views in %.0f s, %d computed again, %d failed', warmed + failed,
                     time.time() - started, view_cache.stats['misses'] - computed, failed)
         return

@@ -4,6 +4,7 @@ Opt-in PostgreSQL checks (FINANCIAL_VIEW_CACHE_TEST_DATABASE_URL, a disposable s
 import fcntl
 import json
 import os
+import time
 import uuid
 
 import pytest
@@ -22,6 +23,7 @@ FULL_RANGE_VIEWS = (('get_working_ledger_analysis', 'working'), ('get_ledger_pos
                     ('get_ledger_timeline', 'timeline'), ('get_ledger_transfer_candidates', 'transfers'),
                     ('get_pattern_review', 'patterns'))
 PER_CASE = 19  # views warmed for each case
+GRAPH = {}  # the graph database's last commit as the tests set it (never a real graph database)
 
 
 @pytest.fixture
@@ -56,6 +58,8 @@ def periods(tmp_path, monkeypatch):
         monkeypatch.setattr(routers.financial_ledger, route, lambda view=view, **kw: calls.append(dict(kw, view=view)))
     # The graph records read (its own saved copies, graph_read_cache); never a real graph database here.
     monkeypatch.setattr(view_warmup, '_graph_records', lambda **kw: calls.append(dict(kw, view='graph-' + kw['mode'])))
+    GRAPH['now'] = ['FB:1']
+    monkeypatch.setattr(view_warmup, '_graph_now', lambda: GRAPH['now'] and list(GRAPH['now']))
 
     def add(case, count):
         with engine.begin() as connection:
@@ -215,6 +219,31 @@ def test_a_pass_is_due_only_after_a_write_to_a_table_its_views_read(periods, mon
     finally:
         view_cache.clear()
         view_cache._tables_cache.clear()
+
+
+@needs_pg
+def test_a_graph_commit_since_the_last_pass_starts_a_pass(periods, monkeypatch):
+    """The pass reads the graph records (graph_read_cache, saved per graph commit): a graph write with no
+    PostgreSQL write must still have them read again before a person opens the tab."""
+    from services.financial import view_cache
+    add, calls, directory = periods
+    add(uuid.uuid4(), 1)
+    monkeypatch.setattr(view_cache, '_identity_now', lambda: view_cache.code_identity())
+    view_cache.clear()
+    view_cache.tables_read.add('financial_statement_periods')
+    try:
+        view_warmup.warm_account_history(lock_held=True)
+        state = json.loads((directory / view_warmup.REWARM_STATE).read_text())
+        assert state['graph'] == ['FB:1']
+        later = time.time() + view_warmup.REWARM_MIN_SECONDS + 1
+        assert view_warmup._rewarm_due(now=later) is False  # nothing committed anywhere
+        GRAPH['now'] = None
+        assert view_warmup._rewarm_due(now=later) is False  # graph state unknown: no pass on doubt
+        GRAPH['now'] = ['FB:2']
+        assert view_warmup._rewarm_due(now=later) is True
+    finally:
+        view_cache.clear()
+        view_cache.tables_read.discard('financial_statement_periods')
 
 
 @needs_pg
