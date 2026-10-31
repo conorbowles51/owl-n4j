@@ -92,9 +92,25 @@ def pool_options(environ=None, prefix='POSTGRES', defaults=(5, 10, 30)):
     """Pool size, overflow and wait timeout from <prefix>_POOL_SIZE / _MAX_OVERFLOW / _POOL_TIMEOUT; the request
     pool's defaults are SQLAlchemy's own (5, 10, 30 s)."""
     environ = os.environ if environ is None else environ
-    return dict(pool_size=int(environ.get(prefix + '_POOL_SIZE', str(defaults[0]))),
-                max_overflow=int(environ.get(prefix + '_MAX_OVERFLOW', str(defaults[1]))),
-                pool_timeout=float(environ.get(prefix + '_POOL_TIMEOUT', str(defaults[2]))))
+
+    def read(suffix, kind, default):
+        # A value that is not a number (or is negative) keeps the default and says so, instead of failing every
+        # request at its first database use.
+        raw = environ.get(prefix + suffix)
+        if raw is None or not str(raw).strip():
+            return kind(default)
+        try:
+            value = kind(str(raw).strip())
+        except ValueError:
+            value = None
+        if value is None or value < 0:
+            logger.warning('%s%s=%r is not a usable number; using the default %s', prefix, suffix, raw, default)
+            return kind(default)
+        return value
+
+    return dict(pool_size=read('_POOL_SIZE', int, defaults[0]),
+                max_overflow=read('_MAX_OVERFLOW', int, defaults[1]),
+                pool_timeout=read('_POOL_TIMEOUT', float, defaults[2]))
 
 
 # The web worker's background pool: 2 kept + 6 more when busy (POSTGRES_BACKGROUND_*).

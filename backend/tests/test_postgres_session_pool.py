@@ -44,6 +44,16 @@ class PoolOptionsTest(unittest.TestCase):
                                                'POSTGRES_POOL_TIMEOUT': '7.5'}),
                          dict(pool_size=12, max_overflow=3, pool_timeout=7.5))
 
+    def test_an_unusable_value_keeps_the_default_and_is_logged(self):
+        with self.assertLogs(session.logger, logging.WARNING) as logs:
+            options = session.pool_options({'POSTGRES_POOL_SIZE': 'ten', 'POSTGRES_MAX_OVERFLOW': '-1',
+                                            'POSTGRES_POOL_TIMEOUT': '30s'})
+        self.assertEqual(options, dict(pool_size=5, max_overflow=10, pool_timeout=30.0))
+        self.assertEqual(len(logs.output), 3)
+        self.assertIn('POSTGRES_POOL_SIZE', logs.output[0])
+        self.assertEqual(session.pool_options({'POSTGRES_POOL_SIZE': ' '}),
+                         dict(pool_size=5, max_overflow=10, pool_timeout=30.0))
+
 
 class TimedPoolTest(unittest.TestCase):
     def test_a_long_wait_is_logged_with_the_pool_state(self):
