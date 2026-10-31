@@ -151,3 +151,24 @@ it("says the figures are updating while the first view is read again after a cha
   release()
   await waitFor(() => expect(screen.queryByText("Updating transactions for these filters…")).toBeNull())
 })
+
+it("counts nothing about a selection until every payment is read, and keeps the date range reachable", async () => {
+  let release: () => void = () => {}
+  const held = new Promise<void>((resolve) => (release = resolve))
+  fetchAPI.mockImplementation(async (url: string) => {
+    if (new URL(url, "http://test").pathname === "/api/financial/ledger") await held
+    return answer(url)
+  })
+  show()
+  await screen.findByText(/60 of 60 imported transactions/)
+  // Tick one payment: the page reads every payment before it says anything about the selection.
+  const [tick] = screen.getAllByRole("checkbox", { name: /select/i })
+  fireEvent.click(tick)
+  expect(screen.queryByText(/selected payments are (hidden|outside)/)).toBeNull()
+  expect(screen.queryByText("Selected payments in this account/date range")).toBeNull()
+  expect(screen.getByTestId("ledger-loading")).toBeTruthy()
+  // The date range stays reachable while they are read.
+  expect(screen.getAllByText(/First available date|Date range/).length).toBeGreaterThan(0)
+  release()
+  expect(await screen.findByText(/60 of 60 imported transactions/)).toBeTruthy()
+})

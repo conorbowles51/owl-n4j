@@ -1300,7 +1300,7 @@ export function LedgerRowBrowser({
           </Button>
         </div>
       )}
-      {notesCsv && exportContext && (
+      {notesCsv && exportContext && !waiting && (
         <TransactionNotesCsv
           caseId={exportContext.caseId}
           rows={transactions}
@@ -1572,6 +1572,7 @@ export function LedgerRowBrowser({
               change this order; currencies are not converted.
             </p>
           )}
+          {!waiting && (
           <TransactionAnalysisPanels
             hideControls
             rows={sectionRows.analysis}
@@ -1579,6 +1580,7 @@ export function LedgerRowBrowser({
             panels={view}
             onChange={changeView}
           />
+          )}
           <div className="space-y-3">
             {selection.length > 0 && (
               <div className="flex flex-wrap items-center gap-2">
@@ -1670,10 +1672,17 @@ export function LedgerRowBrowser({
                 )}
                 <Disclosure className="text-sm" label="Selected amounts and saved selections">
                   <div className="space-y-3 pt-2">
-                    <PaymentTotals
-                      rows={selectedHere}
-                      label="Selected payments in this account/date range"
-                    />
+                    {/* While every row is read nothing here is counted: the selection's rows are not in yet. */}
+                    {waiting ? (
+                      <p className="text-muted-foreground" role="status">
+                        The selected amounts are added up once every payment is read.
+                      </p>
+                    ) : (
+                      <PaymentTotals
+                        rows={selectedHere}
+                        label="Selected payments in this account/date range"
+                      />
+                    )}
                     <SavePaymentSelection
                       onReviewSelection={() => setReviewSelection(true)}
                       caseId={exportContext.caseId}
@@ -1681,7 +1690,7 @@ export function LedgerRowBrowser({
                     />
                   </div>
                 </Disclosure>
-                {selection.length >
+                {!waiting && selection.length >
                   rows.filter((row) => selectedIds.has(row.key)).length && (
                   <p className="text-sm rounded border p-2">
                     {selection.length -
@@ -1691,7 +1700,7 @@ export function LedgerRowBrowser({
                     or review the selection to see every attached payment.
                   </p>
                 )}
-                {selection.length > selectedHere.length && (
+                {!waiting && selection.length > selectedHere.length && (
                   <p>
                     {selection.length - selectedHere.length} selected payments
                     are outside this account/date range. They will also be
@@ -1798,7 +1807,7 @@ export function LedgerRowBrowser({
         </p>
       )}
       {/* An action that needs every row (CSV, select all, naming one by one) runs once they are read. */}
-      {(waiting || (firstData && pendingAction)) && firstView?.status}
+      {waiting ? firstView?.loading : firstData && pendingAction && firstView?.status}
       {investigation && exportContext && !waiting && (unnamedCount > 0 || view.unnamedOnly) && (
         <div
           className="flex flex-wrap items-center gap-2 rounded border bg-card px-3 py-2 text-sm"
