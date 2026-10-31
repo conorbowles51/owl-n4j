@@ -336,8 +336,9 @@ def _graph_reads(graph, plan):
     marker = graph.run('MATCH (m:FinancialIdentitySync {case_id:$case}) RETURN m.revision AS revision',
         case=plan['case_id']).data()
     matches = _graph_target_matches(graph, plan)
-    return hashlib.sha256(json.dumps([marker, {k: sorted(map(sorted, v)) for k, v in matches.items()}],
+    digest = hashlib.sha256(json.dumps([marker, {k: sorted(map(sorted, v)) for k, v in matches.items()}],
         sort_keys=True).encode()).hexdigest()
+    return digest, (marker[0]['revision'] if marker else None)
 
 
 def _snapshot(case_id, known=None):
@@ -372,7 +373,9 @@ def synchronize_case(case_id):
     inputs, plan = snapshot
     if plan is None:
         with neo4j_service.session(connection_acquisition_timeout=GRAPH_CONNECTION_TIMEOUT) as graph:
-            if _graph_reads(graph, known['plan']) == known['graph']:
+            if _graph_reads(graph, known['plan'])[0] == known['graph']:
+                # The old code cleared any retry state when it found the graph current.
+                _clear_deferral(case_id)
                 return False
         snapshot = _snapshot(case_id)
         if snapshot is None:
@@ -393,13 +396,15 @@ def synchronize_case(case_id):
         # refused). A graph write landing after those reads changes the next round's reads. The inputs were
         # read before the plan in the same transaction, so a later commit only causes one more build.
         if inputs is not None and not applied and sweep_deferral(case_id) is None:
+            # apply also returns False when the revalidation found the source changed or the case row busy
+            # (skip_locked): only a marker already at this plan's revision means the graph is current.
             after = _graph_reads(graph, plan)
-            if after == before:
+            if after == before and after[1] == plan['revision']:
                 keys = dict(case_id=plan['case_id'], accounts=[dict(key=r['key']) for r in plan['accounts']],
                     parties=[dict(key=r['key']) for r in plan['parties']],
                     entity_links=[dict(target=r['target']) for r in plan['entity_links']])
                 with _unchanged_lock:
-                    _unchanged[str(case_id)] = dict(inputs=inputs, graph=after, plan=keys, at=time.monotonic())
+                    _unchanged[str(case_id)] = dict(inputs=inputs, graph=after[0], plan=keys, at=time.monotonic())
         return applied
 
 

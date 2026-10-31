@@ -253,3 +253,19 @@ def test_a_link_to_another_cases_account_is_reported_and_the_rest_drawn(world, c
     assert ig.synchronize_case(f.case.id)  # the case is still drawn
     status = ig.identity_graph_status(f.db, f.case.id)
     assert status['out_of_case_links'] == 1
+
+
+def test_a_round_refused_because_the_case_row_was_busy_is_not_remembered(world, monkeypatch):
+    """apply returns False both when the graph is current and when revalidation could not lock the case row
+    (another writer held it). Only the first may be remembered, or the write waits for the next full sync."""
+    _settle(world)
+    row = world.f.db.query(FinancialTransaction).filter_by(case_id=world.f.case.id).first()
+    _touch(world, row, investigation_labels={'counterparty_link': {'kind': 'account', 'id': str(world.f.account.id)}})
+    revision = world.graph.revision
+    real = ig._identity_snapshot
+    monkeypatch.setattr(ig, '_identity_snapshot', lambda case_id: None)  # the case row is locked elsewhere
+    assert not ig.synchronize_case(world.f.case.id)
+    assert world.graph.revision == revision
+    monkeypatch.setattr(ig, '_identity_snapshot', real)
+    assert _round(world)[0] == 2  # not skipped: the change is written on the next round, as before
+    assert world.graph.revision != revision
