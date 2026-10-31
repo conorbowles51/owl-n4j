@@ -9,6 +9,11 @@ by a process with the service's own environment.
     python3 services/financial/view_prepare.py start   (deploy-now.sh, right after it pulls the release)
     python3 services/financial/view_prepare.py follow  (deploy/deploy.sh, right after its own fetch: other code -> again)
     python3 services/financial/view_prepare.py wait    (deploy/deploy.sh, before the frontend stops)
+    python3 services/financial/view_prepare.py after-migrations  (deploy/deploy.sh, right after its migrations)
+
+A prepare is skipped while the database is behind the release's migrations (views computed against the old schema
+must not be saved under the new code), so a release that migrates used to start cold. ``wait`` notes that skip;
+``after-migrations`` then runs the prepare again once deploy.sh has migrated, before the restart, under the same cap.
 
 ``start`` runs ``python -m services.financial.view_warmup --prepare`` as a unit of its own with the backend unit's
 user, group, working directory, environment file and environment settings (drop-ins included, read from systemd)
@@ -29,6 +34,9 @@ SERVICE = 'owl-backend-v2.service'
 UNIT = 'loupe-financial-prepare'
 PREPARE_CAP_SECONDS = 600
 STATE = '/run/loupe-financial-prepare.json'
+# Left by ``wait`` when the prepare was skipped for pending migrations; ``after-migrations`` prepares again.
+AFTER_MIGRATIONS = '/run/loupe-financial-prepare-after-migrations'
+MIGRATIONS_SKIP = 'prepare: skipped, database migrations pending'
 SUMMARY_PREFIX = 'prepare: '
 
 
@@ -132,8 +140,13 @@ def follow(log=None, run=_run, state=STATE):
     return start(log, run=run, state=state)
 
 
-def wait(log=None, run=_run, state=STATE, cap=PREPARE_CAP_SECONDS, poll=2.0, clock=time.time, sleep=time.sleep):
+def wait(log=None, run=_run, state=STATE, cap=PREPARE_CAP_SECONDS, poll=2.0, clock=time.time, sleep=time.sleep,
+         after_migrations_marker=AFTER_MIGRATIONS):
     """Wait for the prepare unit, at most ``cap`` seconds from its start; returns 0 always."""
+    try:
+        os.unlink(after_migrations_marker)  # left by a release that stopped before migrating
+    except OSError:
+        pass
     try:
         with open(state) as saved:
             started = json.load(saved)['started']
@@ -158,7 +171,25 @@ def wait(log=None, run=_run, state=STATE, cap=PREPARE_CAP_SECONDS, poll=2.0, clo
     _say(log, summary[-1] if summary else 'prepare: ended without a summary after %d s (see journalctl -u %s)'
          % (round(clock() - started), UNIT))
     _say(log, 'prepare: release waited %d s' % round(clock() - began))
+    if summary and summary[-1].startswith(MIGRATIONS_SKIP):
+        try:
+            with open(after_migrations_marker, 'w') as out:
+                out.write(summary[-1] + '\n')
+        except OSError:
+            pass
     return 0
+
+
+def after_migrations(log=None, run=_run, state=STATE, marker=AFTER_MIGRATIONS, **wait_options):
+    """deploy.sh has run the release's migrations: if this release's prepare was skipped for them, prepare now (the
+    old service keeps serving meanwhile) and wait for it under the same cap. Nothing otherwise. Returns 0 always."""
+    try:
+        os.unlink(marker)
+    except OSError:
+        return 0
+    _say(log, 'prepare: migrations applied; preparing the views now')
+    start(log, run=run, state=state)
+    return wait(log, run=run, state=state, after_migrations_marker=marker + '.again', **wait_options)
 
 
 if __name__ == '__main__':
@@ -170,5 +201,7 @@ if __name__ == '__main__':
         sys.exit(wait(log))
     if action == 'follow':
         sys.exit(follow(log))
+    if action == 'after-migrations':
+        sys.exit(after_migrations(log))
     print(__doc__)
     sys.exit(2)

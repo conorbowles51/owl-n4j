@@ -149,3 +149,49 @@ def test_deploy_follows_its_own_fetch_before_the_party_gate():
     script = (Path(__file__).resolve().parents[2] / 'deploy' / 'deploy.sh').read_text()
     follow = script.index('view_prepare.py" follow')
     assert script.index('NEW_COMMIT="$(git rev-parse HEAD)"') < follow < script.index('PARTY_GATE=')
+
+
+def test_a_prepare_skipped_for_migrations_runs_again_after_them(tmp_path):
+    # Release 3745be94 (2026-10-31 02:36): 'prepare: skipped, database migrations pending', then a cold start.
+    state, marker = tmp_path / 'state.json', tmp_path / 'after-migrations'
+    state.write_text(json.dumps(dict(started=1000.0)))
+    skipped = FakeSystem(journal='prepare: skipped, database migrations pending (20261031_batches_compact)\n')
+    now = iter(range(1000, 2000))
+    view_prepare.wait(log=str(tmp_path / 'log'), run=skipped, state=str(state), clock=lambda: next(now),
+                      sleep=lambda s: None, after_migrations_marker=str(marker))
+    assert marker.exists()
+
+    prepared = FakeSystem(active_polls=1, journal='prepare: 119 views warmed in 240 s (0 failed, 3 processes, code 0)\n')
+    view_prepare.after_migrations(log=str(tmp_path / 'log'), run=prepared, state=str(state), marker=str(marker),
+                                  clock=lambda: next(now), sleep=lambda s: None)
+    logged = (tmp_path / 'log').read_text()
+    assert 'prepare: migrations applied; preparing the views now' in logged
+    assert 'prepare: 119 views warmed in 240 s' in logged
+    assert any(call[:1] == ['systemd-run'] for call in prepared.calls)
+    assert not marker.exists() and not state.exists()
+
+
+def test_after_migrations_does_nothing_when_the_prepare_ran(tmp_path):
+    state, marker = tmp_path / 'state.json', tmp_path / 'after-migrations'
+    state.write_text(json.dumps(dict(started=1000.0)))
+    view_prepare.wait(run=FakeSystem(journal='prepare: 119 views warmed in 240 s\n'), state=str(state),
+                      clock=lambda: 1100.0, sleep=lambda s: None, after_migrations_marker=str(marker))
+    assert not marker.exists()
+    system = FakeSystem()
+    assert view_prepare.after_migrations(run=system, state=str(state), marker=str(marker)) == 0
+    assert system.calls == []
+
+
+def test_the_release_prepares_again_after_its_migrations_and_before_the_restart():
+    script = (Path(__file__).resolve().parents[2] / 'deploy' / 'deploy.sh').read_text()
+    migrate = script.index('alembic" upgrade head')
+    again = script.index('"${PREPARE_VIEWS}" after-migrations')
+    assert migrate < again < script.index('restart_backend_bounded; then')
+    assert script.index('PREPARE_VIEWS="') < migrate
+
+
+def test_a_marker_left_by_an_earlier_release_is_cleared_by_the_next_wait(tmp_path):
+    marker = tmp_path / 'after-migrations'
+    marker.write_text('prepare: skipped, database migrations pending (old)\n')
+    view_prepare.wait(run=FakeSystem(), state=str(tmp_path / 'absent.json'), after_migrations_marker=str(marker))
+    assert not marker.exists()

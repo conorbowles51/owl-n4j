@@ -410,6 +410,10 @@ if [ "${STEP_BACKEND}" = run ]; then
     cd "${BACKEND_DIR}"
     $RUN_AS "${VENV_DIR}/bin/alembic" upgrade head
     success "Database migrations complete"
+    # A prepare skipped for these migrations runs now, before the restart (view_prepare.py). Never fails the release.
+    if [ -f "${PREPARE_VIEWS}" ] && [ "$(id -u)" -eq 0 ]; then
+        python3 "${PREPARE_VIEWS}" after-migrations || warn "Financial view prepare after migrations failed; release continues"
+    fi
     cd "${PROJECT_DIR}"
 else
     success "Backend unchanged; migrations skipped"
