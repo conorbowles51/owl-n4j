@@ -45,7 +45,8 @@ def _resolve(session, case_id, transaction_id):
     return ledger_source(session, case_id=case_id, transaction_id=transaction_id)
 
 
-def _open(session, case_id, source, *, resolve_path, open_pdf):
+def _file(session, case_id, source, *, resolve_path):
+    """(record, path) of the payment's statement file, a PDF on this server, or the LedgerSourceError it is not."""
     record = session.scalar(select(EvidenceFile).where(EvidenceFile.id == UUID(source['evidence_file_id']),
                                                        EvidenceFile.case_id == case_id))
     path = resolve_path(record.stored_path) if record is not None else None
@@ -53,10 +54,18 @@ def _open(session, case_id, source, *, resolve_path, open_pdf):
         raise LedgerSourceError('The statement file is not available on this server.', 404)
     if path.suffix.lower() != '.pdf':
         raise LedgerSourceError('The statement file is not a PDF, so there is no page to show.', 422)
+    return record, path
+
+
+def _open_path(path, open_pdf):
     try:
         return open_pdf(path)
     except Exception as exc:  # noqa: BLE001 - any library failure is the same answer to the person
         raise LedgerSourceError('The statement file could not be opened as a PDF.', 422) from exc
+
+
+def _open(session, case_id, source, *, resolve_path, open_pdf):
+    return _open_path(_file(session, case_id, source, resolve_path=resolve_path)[1], open_pdf)
 
 
 def _amount_texts(amount_minor, currency):
@@ -181,8 +190,9 @@ def payment_page(session, *, case_id, transaction_id, resolve_path, open_pdf):
     return result
 
 
-def payment_page_png(session, *, case_id, transaction_id, page, width, resolve_path, open_pdf):
-    """The payment's page, or the page just before or after it, as a PNG ``width`` pixels wide."""
+def payment_page_file(session, *, case_id, transaction_id, page, resolve_path):
+    """(path, sha256) of the statement file whose ``page`` may be shown for this payment: its own page or the
+    page just before or after it.  The same checks, in the same order, as before any page is rendered."""
     source = _resolve(session, case_id, transaction_id)
     locator = source['locator'] if source['locator_state'] == 'stored' else None
     stored = locator.get('page') if locator else None
@@ -190,10 +200,23 @@ def payment_page_png(session, *, case_id, transaction_id, page, width, resolve_p
         raise LedgerSourceError('No page is stored for this payment. Open the statement file instead.', 404)
     if page not in (stored - 1, stored, stored + 1):
         raise LedgerSourceError('Only the payment’s own page and the pages next to it can be shown here.', 422)
-    document = _open(session, case_id, source, resolve_path=resolve_path, open_pdf=open_pdf)
+    record, path = _file(session, case_id, source, resolve_path=resolve_path)
+    return path, record.sha256
+
+
+def render_statement_page(path, *, page, width, open_pdf):
+    """(png, page_count) of one page of a statement file already checked by payment_page_file."""
+    document = _open_path(path, open_pdf)
     try:
         return render_page_png(document, page_number=page, width=width), document.page_count
     except PageRenderError as exc:
         raise LedgerSourceError(str(exc), 404) from exc
     finally:
         document.close()
+
+
+def payment_page_png(session, *, case_id, transaction_id, page, width, resolve_path, open_pdf):
+    """The payment's page, or the page just before or after it, as a PNG ``width`` pixels wide."""
+    path, _ = payment_page_file(session, case_id=case_id, transaction_id=transaction_id, page=page,
+                                resolve_path=resolve_path)
+    return render_statement_page(path, page=page, width=width, open_pdf=open_pdf)

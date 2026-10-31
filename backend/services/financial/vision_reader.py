@@ -1863,40 +1863,68 @@ def build_request(proposal, reading, by=None):
 # Reading the images
 # ---------------------------------------------------------------------------
 
-def render_pages(path, page_numbers, width=IMAGE_WIDTH, strips=None):
+def render_pages(path, page_numbers, width=IMAGE_WIDTH, strips=None, sha256=None):
     """[(page, [png, ...])]: each page as ``strips`` overlapping horizontal strips, top to bottom.
 
     One whole portrait page is shrunk by the model to about 768 pixels wide, too
     small for dense statement print; strips keep the rendered width.
+
+    Given the file's stored ``sha256``, each image is kept in the page image cache
+    (services/page_image_cache.py) and taken from it next time; the variant in its
+    key names the strip count, the overlap and this function's own code, so a
+    change to how strips are cut is a new key.
     """
     import fitz
+    from services import page_image_cache
     from services.financial.page_render import render_page_png
     strips = STRIPS if strips is None else strips
     pages = []
     with fitz.open(str(path)) as document:
+        count = document.page_count
         for number in page_numbers:
             if strips <= 1:
-                pages.append((number, [render_page_png(document, page_number=number, width=width)]))
+                entry = page_image_cache.entry_for(path, sha256, page=number, width=width)
+                png, _, _ = page_image_cache.get_or_render(
+                    entry, lambda: (render_page_png(document, page_number=number, width=width), count))
+                pages.append((number, [png]))
                 continue
             render_page_png(document, page_number=number, width=8)  # validates the page number
-            page = document.load_page(number - 1)
-            rect = page.rect
-            zoom = width / rect.width
-            height = rect.height / strips
-            overlap = height * STRIP_OVERLAP
             images = []
             for index in range(strips):
-                top = max(rect.y0, rect.y0 + index * height - overlap)
-                bottom = min(rect.y1, rect.y0 + (index + 1) * height + overlap)
-                clip = fitz.Rect(rect.x0, top, rect.x1, bottom)
-                images.append(page.get_pixmap(matrix=(zoom, 0.0, 0.0, zoom, 0.0, 0.0), clip=clip).tobytes('png'))
+                entry = page_image_cache.entry_for(path, sha256, page=number, width=width,
+                                                   variant=f'strip{index + 1}of{strips}-o{STRIP_OVERLAP}-{_STRIPS_CODE}')
+                png, _, _ = page_image_cache.get_or_render(
+                    entry, lambda: (_strip_png(fitz, document, number, width, strips, index), count))
+                images.append(png)
             pages.append((number, images))
     return pages
 
 
-def _render(path, pages, reader):
+def _strip_png(fitz, document, number, width, strips, index):
+    page = document.load_page(number - 1)
+    rect = page.rect
+    zoom = width / rect.width
+    height = rect.height / strips
+    overlap = height * STRIP_OVERLAP
+    top = max(rect.y0, rect.y0 + index * height - overlap)
+    bottom = min(rect.y1, rect.y0 + (index + 1) * height + overlap)
+    clip = fitz.Rect(rect.x0, top, rect.x1, bottom)
+    return page.get_pixmap(matrix=(zoom, 0.0, 0.0, zoom, 0.0, 0.0), clip=clip).tobytes('png')
+
+
+def _code_digest(function):
+    import hashlib
+    import inspect
+    return hashlib.sha256(inspect.getsource(function).encode()).hexdigest()[:10]
+
+
+_STRIPS_CODE = _code_digest(_strip_png)
+
+
+def _render(path, pages, reader, sha256=None):
     """The pages in this reader's strips (a reader without its own strips: the default)."""
-    return render_pages(path, pages) if reader.strips is None else render_pages(path, pages, strips=reader.strips)
+    return (render_pages(path, pages, sha256=sha256) if reader.strips is None
+            else render_pages(path, pages, strips=reader.strips, sha256=sha256))
 
 
 # Each provider's request settings (in code, never .env). DeepSeek (benchmarked 2026-10-28): max thinking, 6 strips a
@@ -2775,6 +2803,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 return _finish(factory, item_id, file_id, key, dict(record, status='failed', reason='failed_repeatedly',
                                message=GAVE_UP), apply)
             path = resolve_path(file.stored_path)
+            file_sha256 = file.sha256
             if again:
                 record.update(failures=0, cost_usd=stored.get('cost_usd'), page_costs=stored.get('page_costs'),
                               read_at=stored.get('read_at') or stored.get('at'), rejudged=True)
@@ -2828,7 +2857,7 @@ def _read_item(factory, item_id, resolve_path, *, page_reader=None, knowledge_fo
                 continue
             if raw is None:
                 # Outside any lock or transaction: render (in this reader's strips) and read.
-                images = _render(path, pages, reader)
+                images = _render(path, pages, reader, sha256=file_sha256)
                 reserved = reserve_usd(reader.model, images, reader.max_output_tokens)
                 # The most it can cost is counted before the request is sent, and settled after.
                 if not _reserve(case_id, reserved):
@@ -3630,6 +3659,7 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
                           if raw is None or ((reader.provider, reader.model) not in not_used
                                              and not switched_off(db, reader.provider or 'openai'))]
             path = resolve_path(file.stored_path)
+            file_sha256 = file.sha256
             file_id = file.id
             db.rollback()
         record.update(revision=proposal['revision'], model=model_id, reader=model_id, pages=pages,
@@ -3653,7 +3683,7 @@ def read_saved(factory, document_id, resolve_path, *, page_reader=None, knowledg
                                      message='not enough time was left to read it in this round'))
                 continue
             if raw is None:
-                images = _render(path, pages, reader)
+                images = _render(path, pages, reader, sha256=file_sha256)
                 reserved = reserve_usd(reader.model, images, reader.max_output_tokens)
                 if not _reserve(case_id, reserved):
                     attempts.append(dict(attempt, status='budget', message='the reading budget for this case is used for now'))

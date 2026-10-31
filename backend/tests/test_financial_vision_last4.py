@@ -354,7 +354,7 @@ class LastFourFlowTest(unittest.TestCase):
         calls = calls if calls is not None else []
         chain = [vr.PageReader(provider='deepseek', model=model, read=lambda images: calls.append(model) or (document, {}),
                                unavailable='', strips=1, max_output_tokens=1000)]
-        with patch.object(vr, 'render_pages', lambda path, pages, width=None, strips=None: [(p, [b'png']) for p in pages]), \
+        with patch.object(vr, 'render_pages', lambda path, pages, width=None, strips=None, sha256=None: [(p, [b'png']) for p in pages]), \
                 patch.object(batches, 'read_statement_import', self.card_reader), \
                 patch('services.financial.statement_import.read_statement_import', self.card_reader), \
                 patch.object(vr, 'check_neighbours', lambda *a: None):

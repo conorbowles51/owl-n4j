@@ -51,7 +51,7 @@ class ChainTests(TestCase):
     def read(self, batch, held, page_reader, knowledge, neighbours=lambda *a: None):
         rendered = []
 
-        def render(path, pages, width=None, strips=None):
+        def render(path, pages, width=None, strips=None, sha256=None):
             rendered.append(strips)
             return [(p, [b'png'] * (strips or 1)) for p in pages]
         with patch.object(vr, 'render_pages', render), \

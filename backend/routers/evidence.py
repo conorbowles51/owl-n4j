@@ -36,6 +36,7 @@ from services.evidence_db_storage import EvidenceDBStorage
 from services.evidence_text_search_service import search_case_text, search_document_text
 from services import evidence_engine_client
 from services.financial import PageRenderError, UnadmittedFileError, render_page_png
+from services import page_image_cache
 from .auth import get_current_user
 from routers.case_access import (
     authorize_case,
@@ -2350,7 +2351,8 @@ def _load_pymupdf():
 
 
 @router.get("/{evidence_id}/page/{page_number}/image")
-def get_evidence_page_image(
+async def get_evidence_page_image(
+    request: Request,
     evidence_id: str,
     page_number: int = PathParam(ge=1),
     width: int = Query(1200, ge=100, le=3000),
@@ -2365,9 +2367,42 @@ def get_evidence_page_image(
     it where the value was actually read.  The caller chooses only the
     width; height follows from the page's own aspect ratio.
 
-    Deliberately synchronous: rendering is CPU-bound, and a sync route runs
-    in FastAPI's threadpool instead of blocking the event loop.
+    A page is rendered once and kept (services/page_image_cache.py); the
+    answer carries an ETag with ``private, no-cache``, so every view runs
+    the access check above and the lookup here, and a browser holding the
+    image gets a 304.  The database work and the render run off the event
+    loop; a render waits for one of the render slots, and is skipped when
+    the browser has gone away while it waited.
     """
+    file_path, sha256 = await run_in_threadpool(_page_image_source, db, evidence_id)
+    entry = page_image_cache.entry_for(file_path, sha256, page=page_number, width=width)
+
+    def render():
+        pdf_library = _load_pymupdf()
+        if pdf_library is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Page rendering is unavailable: PyMuPDF is not installed on this server",
+            )
+        try:
+            document = pdf_library.open(file_path)
+        except Exception:
+            raise HTTPException(status_code=422, detail="The file could not be opened as a PDF")
+        try:
+            return render_page_png(document, page_number=page_number, width=width), document.page_count
+        except PageRenderError as error:
+            # The service's messages are written to be shown to the person who
+            # asked, unedited; a page that does not exist is a 404 like any
+            # other missing resource.
+            raise HTTPException(status_code=404, detail=str(error))
+        finally:
+            document.close()
+
+    return await page_image_cache.serve(request, entry, render)
+
+
+def _page_image_source(db: Session, evidence_id: str):
+    """(path, sha256) of a PDF evidence file, or the 404/400 a page request gets."""
     # Look up by UUID or legacy ID, as get_evidence_file does.
     record = _evidence_record_for_id(db, evidence_id)
     if not record:
@@ -2379,34 +2414,7 @@ def get_evidence_page_image(
 
     if file_path.suffix.lower() != ".pdf":
         raise HTTPException(status_code=400, detail="File is not a PDF")
-
-    pdf_library = _load_pymupdf()
-    if pdf_library is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Page rendering is unavailable: PyMuPDF is not installed on this server",
-        )
-
-    try:
-        document = pdf_library.open(file_path)
-    except Exception:
-        raise HTTPException(status_code=422, detail="The file could not be opened as a PDF")
-
-    try:
-        page_count = document.page_count
-        png = render_page_png(document, page_number=page_number, width=width)
-    except PageRenderError as error:
-        # The service's messages are written to be shown to the person who
-        # asked, unedited; a page that does not exist is a 404 like any
-        # other missing resource.
-        raise HTTPException(status_code=404, detail=str(error))
-    finally:
-        document.close()
-
-    return Response(content=png, media_type="image/png", headers={
-        "X-PDF-Page-Count": str(page_count),
-        "Cache-Control": "private, no-store",
-    })
+    return file_path, record.sha256
 
 
 FRAMES_CACHE_DIR = BASE_DIR / "data" / "video_frames"

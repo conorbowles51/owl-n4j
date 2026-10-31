@@ -701,20 +701,38 @@ def get_payment_statement_page(transaction_id: UUID, case_id: UUID = Query(...),
 
 
 @router.get("/ledger/{transaction_id}/statement-page/{page}/image")
-def get_payment_statement_page_image(transaction_id: UUID, page: int, case_id: UUID = Query(...),
-                                     width: int = Query(1400, ge=200, le=2400), db: Session = Depends(get_db)):
-    """The payment's page or the page next to it as a PNG; another case's payment or file is a 404."""
-    from services.financial.statement_page import payment_page_png
+async def get_payment_statement_page_image(request: Request, transaction_id: UUID, page: int,
+                                           case_id: UUID = Query(...), width: int = Query(1400, ge=200, le=2400),
+                                           db: Session = Depends(get_db)):
+    """The payment's page or the page next to it as a PNG; another case's payment or file is a 404.
+
+    Kept once rendered (services/page_image_cache.py) and answered with an ETag and ``private, no-cache``: every
+    view runs the case check and the payment's page check here before a 304 or a stored copy is served.
+    """
+    from starlette.concurrency import run_in_threadpool
+    from services import page_image_cache
+    from services.financial.statement_page import payment_page_file, render_statement_page
+
+    def failure(exc):
+        if isinstance(exc, LedgerSourceError):
+            return HTTPException(status_code=exc.status_code, detail=str(exc))
+        logger.error("Statement page image failed for case %s", case_id, exc_info=exc)
+        return HTTPException(status_code=500, detail="The statement page could not be rendered.")
+
     try:
-        png, count = payment_page_png(db, case_id=case_id, transaction_id=transaction_id, page=page, width=width,
-                                      resolve_path=_resolve_stored_path, open_pdf=_open_statement_pdf)
-    except LedgerSourceError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-    except Exception:
-        logger.exception("Statement page image failed for case %s", case_id)
-        raise HTTPException(status_code=500, detail="The statement page could not be rendered.")
-    return Response(content=png, media_type="image/png",
-                    headers={"X-PDF-Page-Count": str(count), "Cache-Control": "private, no-store"})
+        path, sha256 = await run_in_threadpool(payment_page_file, db, case_id=case_id, transaction_id=transaction_id,
+                                               page=page, resolve_path=_resolve_stored_path)
+    except Exception as exc:
+        raise failure(exc) from exc
+
+    def render():
+        try:
+            return render_statement_page(path, page=page, width=width, open_pdf=_open_statement_pdf)
+        except Exception as exc:
+            raise failure(exc) from exc
+
+    entry = page_image_cache.entry_for(path, sha256, page=page, width=width)
+    return await page_image_cache.serve(request, entry, render)
 
 
 class AmountAssessmentRequest(BaseModel):

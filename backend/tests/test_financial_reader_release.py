@@ -215,7 +215,7 @@ class ReaderReleaseTests(TestCase):
         document, knowledge = self._image_reading(held, nudge=nudge)
         read = read or (lambda images: (document, dict(prompt_tokens=1000, completion_tokens=100)))
         reader = lambda db, case_id: ('gpt-test', read)
-        with patch.object(vision_reader, 'render_pages', lambda path, pages: [(p, [b'png']) for p in pages]), \
+        with patch.object(vision_reader, 'render_pages', lambda path, pages, sha256=None: [(p, [b'png']) for p in pages]), \
                 patch.object(batches, 'read_statement_import', old_reader), \
                 patch('services.financial.statement_import.read_statement_import', old_reader), \
                 patch.object(vision_reader, 'check_neighbours', lambda *a: None), \

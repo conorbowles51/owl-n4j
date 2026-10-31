@@ -327,6 +327,9 @@ class EndpointTests(unittest.TestCase):
     def endpoint(self):
         return named_function("get_evidence_page_image")
 
+    def lookup_and_endpoint_source(self):
+        return ast.unparse(named_function("_page_image_source")) + ast.unparse(self.endpoint())
+
     def test_the_endpoint_exists_and_is_a_get(self):
         paths = [
             decorator.args[0].value
@@ -339,11 +342,26 @@ class EndpointTests(unittest.TestCase):
         ]
         self.assertEqual(paths, ["/{evidence_id}/page/{page_number}/image"])
 
-    def test_the_render_runs_in_the_threadpool(self):
-        """A sync ``def``: FastAPI runs it in the threadpool, and the
-        CPU-bound render never blocks the event loop.  Declared ``async``,
-        every concurrent page request would queue behind this one."""
-        self.assertIsInstance(self.endpoint(), ast.FunctionDef)
+    def test_the_render_runs_off_the_event_loop(self):
+        """Declared ``async`` so it can see a browser that has gone away
+        before rendering, the database lookup is awaited in the thread pool
+        and the render is handed to the page image cache, which runs it in
+        its own render threads: nothing blocking runs on the event loop,
+        where every concurrent request would queue behind it."""
+        endpoint = self.endpoint()
+        self.assertIsInstance(endpoint, ast.AsyncFunctionDef)
+        source = ast.unparse(endpoint)
+        self.assertIn("await run_in_threadpool(_page_image_source, db, evidence_id)", source)
+        self.assertIn("return await page_image_cache.serve(request, entry, render)", source)
+        top_level_calls = {
+            ast.unparse(node.func)
+            for statement in endpoint.body
+            if not isinstance(statement, ast.FunctionDef)
+            for node in ast.walk(statement)
+            if isinstance(node, ast.Call)
+        }
+        self.assertNotIn("render_page_png", top_level_calls)
+        self.assertNotIn("_evidence_record_for_id", top_level_calls)
 
     def test_page_and_width_are_bounded_at_the_edge(self):
         """FastAPI turns an out-of-bounds value into a 422 before the
@@ -361,20 +379,20 @@ class EndpointTests(unittest.TestCase):
         container."""
         self.assertIn(
             "_resolve_stored_path(record.stored_path)",
-            ast.unparse(self.endpoint()),
+            self.lookup_and_endpoint_source(),
         )
 
     def test_the_lookup_and_its_absences_match_the_file_endpoint(self):
         """The same record can be fetched at ``/{id}/file`` and rendered at
         ``/{id}/page/{n}/image``; the two saying different things about the
         same absence would send an investigator looking for two faults."""
-        source = ast.unparse(self.endpoint())
+        source = self.lookup_and_endpoint_source()
         self.assertIn("_evidence_record_for_id", source)
         self.assertIn("'Evidence not found'", source)
         self.assertIn("'File not found on disk'", source)
 
     def test_only_pdfs_are_rendered(self):
-        source = ast.unparse(self.endpoint())
+        source = self.lookup_and_endpoint_source()
         self.assertIn("file_path.suffix.lower() != '.pdf'", source)
         self.assertIn("'File is not a PDF'", source)
 
