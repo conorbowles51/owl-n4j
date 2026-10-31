@@ -43,7 +43,7 @@ release_component_hashes() {
     echo "frontend=$( { _release_object "${rev}" frontend_v2; _release_env_part "${env_file}" vite; echo "${node_version}"; } | _release_digest)"
     echo "npm=$( { _release_object "${rev}" frontend_v2/package-lock.json; echo "${node_version}"; } | _release_digest)"
     echo "pip=$(_release_object "${rev}" backend/requirements.txt)"
-    echo "backend=$( { echo "${backend_tree}"; _release_object "${rev}" deploy/ingestion-safety.sh; _release_object "${rev}" deploy/backend-stop.sh; echo "${env_rest}"; } | _release_digest)"
+    echo "backend=$( { echo "${backend_tree}"; _release_object "${rev}" deploy/ingestion-safety.sh; _release_object "${rev}" deploy/backend-stop.sh; _release_object "${rev}" deploy/backend-socket.sh; _release_object "${rev}" deploy/backend-socket.conf; echo "${env_rest}"; } | _release_digest)"
     echo "engine=$( { _release_object "${rev}" evidence-engine; _release_object "${rev}" docker-compose.yml; echo "${backend_tree}"; echo "${env_rest}"; } | _release_digest)"
 }
 

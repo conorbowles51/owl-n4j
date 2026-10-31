@@ -26,7 +26,7 @@ def release_sandbox(tmp_path):
         (project / directory).mkdir(parents=True)
     for name in ('deploy.sh', 'rollback.sh', 'ingestion-safety.sh', 'check_ingestion_idle.py', 'backend-stop.sh', 'git-update.sh',
                  'release-plan.sh', 'frontend-release.sh', 'frontend-server.sh', 'frontend-server.conf',
-                 'nginx-loupe-frontend.conf', 'record_release.py'):
+                 'nginx-loupe-frontend.conf', 'record_release.py', 'backend-socket.sh', 'backend-socket.conf'):
         shutil.copy(DEPLOY / name, project / 'deploy' / name)
     # Exercise real install/mv commands, but target a synthetic unit directory.
     helper = project / 'deploy/ingestion-safety.sh'
@@ -133,7 +133,9 @@ def run_release(project, script, *, arrives_after=None, initially_active=False, 
     env = {**os.environ, 'PATH': str(project / 'commands') + ':/usr/bin:/bin',
            'RELEASE_SANDBOX': str(project), 'GATE_DATABASE': str(project / 'jobs.sqlite'),
            'FRONTEND_NGINX_SITE': str(project / 'nginx/sites-enabled/loupe-frontend'),
-           'FRONTEND_NGINX_AVAILABLE': str(project / 'nginx/sites-available/loupe-frontend')}
+           'FRONTEND_NGINX_AVAILABLE': str(project / 'nginx/sites-available/loupe-frontend'),
+           # The held API socket's units go to the sandbox, never the host's /etc/systemd/system.
+           'BACKEND_SOCKET_UNIT_DIR': str(project / 'units')}
     if arrives_after:
         env['WORK_ARRIVES_AFTER'] = arrives_after
     if health_failure:
@@ -190,6 +192,25 @@ def test_automatic_rollback_retains_checks_after_reset(release_sandbox):
     reset = next(index for index, event in enumerate(events) if event.startswith('git reset'))
     assert events[reset + 1] == 'gate'
     assert not any(event.startswith(('pip ', 'npm ', 'docker compose ', 'systemctl restart', 'systemctl start owl-backend')) for event in events[reset + 1:])
+
+
+@pytest.mark.parametrize('script', ['deploy.sh', 'rollback.sh'])
+def test_release_holds_the_api_port_open_across_the_backend_restart(release_sandbox, script):
+    """deploy/backend-socket.conf 'held': the socket unit takes the port after the old backend stopped and before the
+    new one starts, so requests wait in its queue instead of being refused (11-14 s per release before)."""
+    (release_sandbox / 'units').mkdir(exist_ok=True)
+    (release_sandbox / 'units/owl-backend-v2.service').write_text(
+        "[Service]\nExecStart=/bin/bash -lc 'exec uvicorn main:app --host 0.0.0.0 --port ${API_PORT:-8002} --workers 2'\n")
+    (release_sandbox / 'deploy/backend-socket.conf').write_text('held\n')
+    result, events = run_release(release_sandbox, script)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'ListenStream=0.0.0.0:8002' in (release_sandbox / 'units/owl-backend-v2.socket').read_text()
+    dropin = (release_sandbox / 'units/owl-backend-v2.service.d/60-lx-release-socket.conf').read_text()
+    assert "--fd 3 --workers 2'" in dropin and '--port' not in dropin
+    stop = events.index('systemctl stop --no-block owl-backend-v2')
+    hold = events.index('systemctl enable --now owl-backend-v2.socket')
+    start = events.index('systemctl start owl-backend-v2')
+    assert stop < hold < start, events
 
 
 @pytest.mark.parametrize('script', ['deploy.sh', 'rollback.sh'])

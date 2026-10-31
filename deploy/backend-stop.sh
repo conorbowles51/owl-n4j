@@ -82,5 +82,9 @@ restart_backend_bounded() {
     if [ "${BACKEND_STOP_ESCALATED}" != none ]; then
         echo "  ${BACKEND_UNIT} stopped after escalation (${BACKEND_STOP_ESCALATED}); durable work resumes on start"
     fi
+    # The port is free only now: hold it open (or release it) before the start (deploy/backend-socket.sh).
+    if declare -F backend_socket_apply >/dev/null; then
+        backend_socket_apply
+    fi
     $SYSTEMCTL start "${BACKEND_UNIT}"
 }

@@ -99,6 +99,8 @@ fi
 source "${PROJECT_DIR}/deploy/ingestion-safety.sh"
 # shellcheck source=deploy/backend-stop.sh
 source "${PROJECT_DIR}/deploy/backend-stop.sh"
+# shellcheck source=deploy/backend-socket.sh
+source "${PROJECT_DIR}/deploy/backend-socket.sh"
 # shellcheck source=deploy/release-plan.sh
 source "${PROJECT_DIR}/deploy/release-plan.sh"
 
