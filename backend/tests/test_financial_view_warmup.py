@@ -22,7 +22,7 @@ SUMMARY_VIEWS = (('get_ledger_summary', 'summary'), ('get_working_ledger_summary
 FULL_RANGE_VIEWS = (('get_working_ledger_analysis', 'working'), ('get_ledger_posting_graph', 'graph'), ('get_counterparty_party_analysis', 'cpa'),
                     ('get_ledger_timeline', 'timeline'), ('get_ledger_transfer_candidates', 'transfers'),
                     ('get_pattern_review', 'patterns'))
-PER_CASE = 19  # views warmed for each case
+PER_CASE = 20  # views warmed for each case
 GRAPH = {}  # the graph database's last commit as the tests set it (never a real graph database)
 
 
@@ -42,6 +42,7 @@ def periods(tmp_path, monkeypatch):
     import routers.financial_ledger
     monkeypatch.setattr(routers.financial_ledger, 'get_account_history', lambda **kw: calls.append(kw))
     monkeypatch.setattr(routers.financial_ledger, 'get_ledger_transactions', lambda **kw: calls.append(dict(kw, view='transactions')))
+    monkeypatch.setattr(routers.financial_ledger, 'get_ledger_overview', lambda **kw: calls.append(dict(kw, view='overview')))
     import routers.financial_statement_import
     monkeypatch.setattr(routers.financial_statement_import, 'files', lambda **kw: calls.append(dict(kw, view='files')))
     import routers.evidence
@@ -83,11 +84,11 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
     add(small, 1); add(large, 3)
     view_warmup.warm_account_history()
     assert [(str(call['case_id']), call.get('view')) for call in calls] == [
-        (str(large), None), (str(large), 'transactions'), (str(large), 'files'), (str(large), 'evidence'),
+        (str(large), None), (str(large), 'transactions'), (str(large), 'overview'), (str(large), 'files'), (str(large), 'evidence'),
         (str(large), 'parties'), (str(large), 'types'), (str(large), 'consolidations'), (str(large), 'queue'),
         (str(large), 'batches'), (str(large), 'summary'), (str(large), 'working-summary'),
         (str(large), 'graph-transactions'), (str(large), 'graph-intelligence'),
-        (str(small), None), (str(small), 'transactions'), (str(small), 'files'), (str(small), 'evidence'),
+        (str(small), None), (str(small), 'transactions'), (str(small), 'overview'), (str(small), 'files'), (str(small), 'evidence'),
         (str(small), 'parties'), (str(small), 'types'), (str(small), 'consolidations'), (str(small), 'queue'),
         (str(small), 'batches'), (str(small), 'summary'), (str(small), 'working-summary'),
         (str(small), 'graph-transactions'), (str(small), 'graph-intelligence'),
@@ -97,12 +98,12 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
         (str(small), 'working'), (str(small), 'graph'), (str(small), 'cpa'), (str(small), 'timeline'),
         (str(small), 'transfers'), (str(small), 'patterns')]
     # The batch list takes only the case, as a UUID (FastAPI's type for it): the same cached-view key.
-    assert {key: value for key, value in calls[8].items() if key != 'db'} == dict(case_id=large, view='batches')
+    assert {key: value for key, value in calls[9].items() if key != 'db'} == dict(case_id=large, view='batches')
     # The three account views take only the case: the same cached-view key as a first visit.
-    assert {key for key in calls[4] if key != 'db'} == {'case_id', 'view'}
-    assert calls[3]['case_id'] == str(large)  # as text, as FastAPI gives the evidence listing
+    assert {key for key in calls[5] if key != 'db'} == {'case_id', 'view'}
+    assert calls[4]['case_id'] == str(large)  # as text, as FastAPI gives the evidence listing
     # The graph records as a first visit asks for them (case as text, every filter unset): the same cached-view key.
-    assert {key: value for key, value in calls[11].items() if key != 'db'} == dict(
+    assert {key: value for key, value in calls[12].items() if key != 'db'} == dict(
         case_id=str(large), mode='transactions', types=None, start_date=None, end_date=None, categories=None,
         view='graph-transactions')
     assert {key: value for key, value in calls[0].items() if key != 'db'} == dict(
@@ -110,6 +111,10 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
     assert {key: value for key, value in calls[1].items() if key != 'db'} == dict(
         case_id=large, source_document_id=None, account_id=None, ledger_status=None, start_date=None, end_date=None,
         account_ids=None, account_holders=None, view='transactions')
+    # The Overview's top card as a first visit asks for it: the transactions' defaults and no categories.
+    assert {key: value for key, value in calls[2].items() if key != 'db'} == dict(
+        case_id=large, source_document_id=None, account_id=None, ledger_status=None, start_date=None, end_date=None,
+        account_ids=None, account_holders=None, categories=None, view='overview')
 
 
 @needs_pg
