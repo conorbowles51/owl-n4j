@@ -4,7 +4,7 @@ import { MoneyConnections } from "./InvestigatorFollowMoney"
 import { paymentFixture } from "../lib/payment-fixture.test-support"
 import type { LedgerTransaction } from "../api"
 afterEach(cleanup)
-it("separates unnamed transaction descriptions from named counterparties and opens exact groups", () => {
+it("separates unnamed transaction descriptions from named counterparties and opens exact groups", async () => {
   const make = (
     key: string,
     description: string,
@@ -34,6 +34,7 @@ it("separates unnamed transaction descriptions from named counterparties and ope
   ]
   const onOpen = vi.fn()
   render(<MoneyConnections rows={rows} onOpen={onOpen} />)
+  await screen.findByText("4 payments without an identified counterparty")
   expect(screen.queryByText("Name not recorded")).not.toBeInTheDocument()
   expect(
     screen.getByText("4 payments without an identified counterparty")
@@ -53,7 +54,7 @@ it("separates unnamed transaction descriptions from named counterparties and ope
   fireEvent.click(screen.getByRole("button", { name: /Tax entries/ }))
   expect(onOpen).toHaveBeenLastCalledWith(["tax", "tax-fee"], "Tax entries")
 })
-it("honours an explicit name clear and keeps currencies separate", () => {
+it("honours an explicit name clear and keeps currencies separate", async () => {
   const row = {
     ...paymentFixture,
     from_name: "",
@@ -71,7 +72,7 @@ it("honours an explicit name clear and keeps currencies separate", () => {
       onOpen={vi.fn()}
     />
   )
-  expect(screen.getByText("Name cleared during review")).toBeInTheDocument()
+  expect(await screen.findByText("Name cleared during review")).toBeInTheDocument()
   fireEvent.change(
     screen.getByLabelText("Connection currency and account type"),
     { target: { value: "USD:bank" } }
@@ -79,4 +80,23 @@ it("honours an explicit name clear and keeps currencies separate", () => {
   expect(
     screen.queryByText("Name cleared during review")
   ).not.toBeInTheDocument()
+})
+
+it("says it is grouping the payments until its figures are worked out, and again for a new row list", async () => {
+  const rows: LedgerTransaction[] = [
+    { ...paymentFixture, key: "a", direction: "debit", from_name: "Owner", to_name: "Shop", currency: "USD", amount_minor: "100" },
+    { ...paymentFixture, key: "b", direction: "credit", from_name: "Payer", to_name: "Owner", currency: "USD", amount_minor: "250" },
+  ]
+  const view = render(<MoneyConnections rows={rows} onOpen={vi.fn()} />)
+  // The render that first shows the payments does not group them; the panel says so.
+  expect(screen.getByRole("status")).toHaveTextContent("Grouping 2 payments by name and account…")
+  expect(screen.queryByRole("button", { name: /Payer|Shop/ })).not.toBeInTheDocument()
+  expect(await screen.findAllByRole("button", { name: /Payer|Shop/ })).not.toHaveLength(0)
+  expect(screen.queryByText(/Grouping/)).not.toBeInTheDocument()
+  // A changed row list (e.g. after a correction) never shows the previous figures as its own.
+  view.rerender(<MoneyConnections rows={[rows[0]]} onOpen={vi.fn()} />)
+  expect(screen.getByRole("status")).toHaveTextContent("Grouping 1 payment by name and account…")
+  expect(screen.queryByRole("button", { name: /Payer/ })).not.toBeInTheDocument()
+  expect(await screen.findAllByRole("button", { name: /Shop/ })).not.toHaveLength(0)
+  expect(screen.queryByRole("button", { name: /Payer/ })).not.toBeInTheDocument()
 })

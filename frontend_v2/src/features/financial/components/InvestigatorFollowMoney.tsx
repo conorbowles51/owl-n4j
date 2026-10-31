@@ -4,7 +4,7 @@ import { Disclosure } from "./Disclosure"
 import { InfoTip } from "./InfoTip"
 import { ReviewedMoneyTrails } from "./ReviewedMoneyTrails"
 import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   ArrowRight,
   GitCompareArrows,
@@ -40,8 +40,30 @@ export function MoneyConnections({
   // Grouped once per row list, not on every render: on d5b330d1 (27,926 payments) grouping the profiles took about
   // 0.7 s of main thread per render, and the Overview renders as each of its requests lands (browser profile,
   // 2026-10-31). The inputs are the same array while the answer and categories are (useInvestigatorPayments).
-  const groups = useMemo(() => connectionGroups(rows), [rows])
-  return <MoneyConnectionsView payments={rows.length} groups={groups} onOpen={onOpen} />
+  // The grouping runs in its own task after the page has drawn, not inside the render that first shows the
+  // payments: together they held the main thread 1.0-1.2 s on d5b330d1 Follow money (live long-task trace,
+  // 2026-10-31 23:05), longer than the page may sit without redrawing. Until it is done, and again for a new row
+  // list, the panel says what it is doing; figures for an older row list are never shown for the new one.
+  const [grouped, setGrouped] = useState<{ rows: LedgerTransaction[]; groups: PanelGroup[] } | null>(null)
+  useEffect(() => {
+    if (grouped?.rows === rows) return
+    const timer = setTimeout(() => setGrouped({ rows, groups: connectionGroups(rows) }), 0)
+    return () => clearTimeout(timer)
+  }, [rows, grouped])
+  if (grouped?.rows !== rows)
+    return (
+      <section
+        className="rounded-xl border bg-card p-5 space-y-2"
+        aria-label="Recorded payment connections"
+        aria-busy="true"
+      >
+        <h3 className="font-semibold text-lg">Who paid in, and where payments went</h3>
+        <p role="status" className="text-sm text-muted-foreground">
+          Grouping {rows.length.toLocaleString("en-US")} {rows.length === 1 ? "payment" : "payments"} by name and account…
+        </p>
+      </section>
+    )
+  return <MoneyConnectionsView payments={rows.length} groups={grouped.groups} onOpen={onOpen} />
 }
 
 /** The connections panel from its figures: worked out from every payment (MoneyConnections) or answered by the
