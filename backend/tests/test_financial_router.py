@@ -40,28 +40,28 @@ class FinancialRouterTests(unittest.IsolatedAsyncioTestCase):
             categories=None,
         )
 
-    def test_graph_records_a_browser_already_holds_are_answered_304(self):
-        """d5b330d1's records are 2.9 MB gzipped per visit of the Other financial records tab."""
+    def test_graph_records_are_a_graph_view_scoped_to_the_case_files_geometry(self):
+        """Kept whole like every cached Financial view (2.2-2.7 s on d5b330d1 otherwise), with the graph's state and
+        the case's files' table geometry in its fingerprint."""
         from services.financial import view_cache
-        response = {"transactions": [{"key": "t1", "amount": 5.0}], "total": 1}
+        self.assertIs(view_cache.handlers["graph-records"], financial.get_financial_transactions)
+        self.assertIn("graph-records", view_cache._GRAPH)
+        self.assertEqual(view_cache._FILE_SCOPED["graph-records"], frozenset({"evidence_table_geometry"}))
 
-        def get():
-            with patch.object(financial.neo4j_service, "get_financial_transactions", return_value=response):
-                return financial.get_financial_transactions(case_id="case-1", mode="transactions", types=None,
-                                                            start_date=None, end_date=None, categories=None, db=None)
-        first = get()
-        self.assertEqual(first.headers["cache-control"], "private, no-cache")
-        token = view_cache._if_none_match.set(first.headers["etag"])
+    def test_records_whose_locators_failed_are_shown_but_not_kept(self):
+        from services.financial import view_cache
+        recording = view_cache._Recording(owner=None, snapshot=None)
+        token = view_cache._recording.set(recording)
         try:
-            again = get()
-            self.assertEqual((again.status_code, again.body), (304, b""))
-            response["total"] = 2
-            changed = get()
+            with patch.object(financial.neo4j_service, "get_financial_transactions",
+                              return_value={"transactions": [{"key": "t1"}], "total": 1}), \
+                    patch.object(financial, "attach_transaction_locators", side_effect=RuntimeError("geometry")):
+                result = financial.get_financial_transactions(case_id="case-1", mode="transactions", types=None,
+                                                              start_date=None, end_date=None, categories=None, db=None)
         finally:
-            view_cache._if_none_match.reset(token)
-        self.assertEqual(changed.status_code, 200)
-        self.assertNotEqual(changed.headers["etag"], first.headers["etag"])
-
+            view_cache._recording.reset(token)
+        self.assertEqual(result["transactions"], [{"key": "t1"}])  # the plain result, encoded by the view
+        self.assertFalse(recording.keep)
 
 if __name__ == "__main__":
     unittest.main()

@@ -1043,3 +1043,76 @@ def test_a_persons_request_notes_a_visit_and_a_warm_up_does_not(engine, tmp_path
     call(engine, view, case)
     [note] = list(visited.glob('*.visit'))
     assert json.loads(note.read_text())['key'] == list(view_cache.view_key('payments', dict(case_id=case)))
+
+
+def _geometry_tables(engine):
+    with engine.begin() as connection:
+        connection.execute(text('CREATE TABLE evidence_files (id uuid PRIMARY KEY, case_id uuid NOT NULL)'))
+        connection.execute(text('CREATE TABLE evidence_table_geometry (evidence_file_id uuid NOT NULL, '
+                                'page_number int NOT NULL, payload text NOT NULL)'))
+    view_cache._tables_cache.clear()
+
+
+def geometry_view(counter, graph=False, name='geometry-test'):
+    @view_cache.cached_view(name, file_scoped=('evidence_table_geometry',), graph=graph)
+    def handler(case_id, db):
+        counter.calls += 1
+        rows = db.execute(text('SELECT g.payload FROM evidence_table_geometry g JOIN evidence_files f '
+                               'ON f.id = g.evidence_file_id WHERE f.case_id = :c ORDER BY g.payload'),
+                          dict(c=case_id)).scalars().all()
+        return dict(rows=list(rows))
+    return handler
+
+
+def test_a_file_scoped_table_recomputes_only_for_this_cases_files(engine):
+    """evidence_table_geometry has no case_id (170 MB live, too large to check whole): a view that reads only its
+    case's files' rows is fingerprinted by exactly those."""
+    _geometry_tables(engine)
+    case, other, counter = uuid.uuid4(), uuid.uuid4(), Counter()
+    mine, theirs = uuid.uuid4(), uuid.uuid4()
+    write(engine, 'INSERT INTO evidence_files VALUES (:a, :c), (:b, :o)', a=mine, c=case, b=theirs, o=other)
+    write(engine, "INSERT INTO evidence_table_geometry VALUES (:a, 1, 'p1')", a=mine)
+    view = geometry_view(counter)
+    assert call(engine, view, case).body == b'{"rows":["p1"]}'
+    write(engine, "INSERT INTO evidence_table_geometry VALUES (:b, 1, 'other case')", b=theirs)
+    assert call(engine, view, case).body == b'{"rows":["p1"]}' and counter.calls == 1, "another case's file"
+    write(engine, "UPDATE evidence_table_geometry SET payload = 'p2' WHERE evidence_file_id = :a", a=mine)
+    assert call(engine, view, case).body == b'{"rows":["p2"]}' and counter.calls == 2
+    write(engine, "DELETE FROM evidence_table_geometry WHERE evidence_file_id = :a", a=mine)
+    assert call(engine, view, case).body == b'{"rows":[]}' and counter.calls == 3
+
+
+def test_a_graph_view_is_reused_only_while_the_graph_state_is_the_same(engine, monkeypatch):
+    _geometry_tables(engine)
+    case, counter = uuid.uuid4(), Counter()
+    graph = {'state': ('graph', 0, 'FB:1@db1')}
+    monkeypatch.setattr(view_cache, '_graph_state', lambda: graph['state'])
+    view = geometry_view(counter, graph=True, name='geometry-graph-test')
+    call(engine, view, case); call(engine, view, case)
+    assert counter.calls == 1
+    graph['state'] = ('graph', 0, 'FB:2@db1')  # a commit to the graph
+    call(engine, view, case); call(engine, view, case)
+    assert counter.calls == 2
+    graph['state'] = ('graph', 0, 'FB:2@db1-restarted')  # the graph database was restarted (a restore needs one)
+    call(engine, view, case)
+    assert counter.calls == 3
+    graph['state'] = None  # the graph state cannot be read: computed every time, never kept
+    call(engine, view, case); call(engine, view, case)
+    assert counter.calls == 5
+
+
+def test_a_graph_view_computed_while_the_graph_committed_is_not_kept(engine, monkeypatch):
+    _geometry_tables(engine)
+    case, counter = uuid.uuid4(), Counter()
+    seen = []
+
+    def state():
+        seen.append(len(seen))
+        return ('graph', 0, 'FB:1@db1' if len(seen) == 1 else 'FB:2@db1')
+    monkeypatch.setattr(view_cache, '_graph_state', state)
+    view = geometry_view(counter, graph=True, name='geometry-graph-test-2')
+    call(engine, view, case)  # nothing kept yet: before FB:1, after FB:2 -> shown, not kept
+    assert len(seen) == 2 and view_cache.stats['not_stored'] >= 1
+    call(engine, view, case)  # FB:2 before and after: computed again, now kept
+    call(engine, view, case)  # reused
+    assert counter.calls == 2

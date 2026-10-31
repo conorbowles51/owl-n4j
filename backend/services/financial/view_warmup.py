@@ -406,14 +406,6 @@ def _visited_views(listed):
     return found
 
 
-def _graph_records(case_id, mode, db=None):
-    """The "Other financial records" tab's graph read (GET /api/financial, no filters), saved for the workers and
-    the next start (graph_read_cache) while the graph is unchanged. Measured live 2026-10-31 09:09, first visit
-    after a release: d5b330d1 14.0 s (7.8 s of it the graph read), 49494305 4.1 s."""
-    from services.neo4j_service import neo4j_service
-    neo4j_service.get_financial_transactions(case_id=str(case_id), mode=mode)
-
-
 def _warm_cases(share=None, stop_if_preparing=False):
     """``share`` (k, n): only every n-th case-and-view task from the k-th, for a prepare split over n processes."""
     from services.financial import view_cache
@@ -448,6 +440,8 @@ def _warm_cases_now(share, stop_if_preparing):
                                           get_ledger_summary, get_working_ledger_analysis, get_working_ledger_summary)
     from fastapi import HTTPException
     from services import process_shutdown
+    from routers.financial import get_financial_transactions as get_financial_records
+    graph_defaults = dict(types=None, start_date=None, end_date=None, categories=None)
     full_range_dates = dict(account_id=None, start_date=None, end_date=None)
     full_range = dict(full_range_dates, population='working')
     # Each route with its defaults, as FastAPI passes them for a first visit: the same cached-view key.
@@ -478,8 +472,10 @@ def _warm_cases_now(share, stop_if_preparing):
                                                     account_holders=None)),
         ('working ledger summary', get_working_ledger_summary, dict(full_range_dates, include_contributions=True,
                                                                     account_ids=None, account_holders=None)),
-        ('graph records', _graph_records, dict(mode='transactions')),
-        ('graph intelligence records', _graph_records, dict(mode='intelligence')),
+        # The Other financial records tab (GET /api/financial, a cached view of graph records and their locators):
+        # first visit after release 48 14.0 s on d5b330d1 (live 2026-10-31 09:09), 2.7 s after release 49.
+        ('graph records', get_financial_records, dict(graph_defaults, mode='transactions')),
+        ('graph intelligence records', get_financial_records, dict(graph_defaults, mode='intelligence')),
     )
     # The full-range analyses as the page first asks for them (the counterparty tab opens on the working analysis
     # by counterparty; the identities analysis is one tick away). First visit on d5b330d1 live 2026-10-30
@@ -517,8 +513,8 @@ def _warm_cases_now(share, stop_if_preparing):
         started = time.perf_counter()
         try:
             with SessionLocal() as db:
-                # Each route gets case_id as FastAPI gives it (the evidence listing declares it as text).
-                route(case_id=str(case_id) if route is list_evidence else case_id, **defaults, db=db)
+                # Each route gets case_id as FastAPI gives it (the evidence listing and graph records declare it as text).
+                route(case_id=str(case_id) if route in (list_evidence, get_financial_records) else case_id, **defaults, db=db)
             logger.info('Financial %s warmed for case %s (%.1f s)', name, case_id, time.perf_counter() - started)
             warmed += 1
         except HTTPException as refusal:

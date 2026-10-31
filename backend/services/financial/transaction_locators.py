@@ -49,7 +49,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from postgres.models.enums import LocatorKind
-from postgres.models.evidence import EvidenceTableGeometry
+from postgres.models.evidence import EvidenceFile, EvidenceTableGeometry
 from services.financial.locators import Locator, LocatorError, SourceRectangle
 from services.financial.transactions import LOCATOR_PROVENANCE_KEY
 
@@ -237,7 +237,7 @@ def locate_transaction(
     return _fallback(source_page)
 
 
-def attach_transaction_locators(db: Session, transactions: Sequence[Any]) -> None:
+def attach_transaction_locators(db: Session, transactions: Sequence[Any], case_id: Any = None) -> None:
     """Attach a locator, under ``LOCATOR_PROVENANCE_KEY``, to every transaction.
 
     Mutates the dicts in place, which is how the router hands the enriched
@@ -247,6 +247,10 @@ def attach_transaction_locators(db: Session, transactions: Sequence[Any]) -> Non
     pipeline falls back to the filename when no evidence file id was known)
     means there is nothing to look up, and the transaction gets the honest
     ``page_only``/``unlocated`` fallback rather than nothing.
+
+    With ``case_id`` only that case's evidence files are read (a cached view is fingerprinted by exactly those
+    rows); a transaction naming another case's file gets the fallback. Measured 2026-10-31 on d5b330d1 and
+    49494305, both modes: no transaction names another case's file.
     """
     wanted: dict[uuid.UUID, set[int]] = {}
     keyed: list[tuple[dict, Optional[uuid.UUID], Any]] = []
@@ -274,6 +278,9 @@ def attach_transaction_locators(db: Session, transactions: Sequence[Any]) -> Non
             ).where(
                 EvidenceTableGeometry.evidence_file_id == file_id,
                 EvidenceTableGeometry.page_number.in_(sorted(pages)),
+                *(() if case_id is None else (
+                    EvidenceTableGeometry.evidence_file_id.in_(
+                        select(EvidenceFile.id).where(EvidenceFile.case_id == uuid.UUID(str(case_id)))),)),
             )
         ).all()
         for page_number, payload in rows:

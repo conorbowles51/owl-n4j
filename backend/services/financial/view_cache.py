@@ -24,8 +24,9 @@ A view's own refusal (the route's 422, e.g. "exceeds 64 MiB" or "more than 1,000
 result and raised again with the same text while the fingerprint is equal: it is computed from the same rows.
 Not stored: other errors, non-JSON responses, views that read a large table without ``case_id`` (the check would
 cost more than it saves), and anything over the size limits. Off on databases other than PostgreSQL.
-Views whose result depends on anything besides these tables and their parameters (the clock, files, the
-graph database, other threads) must not use this.
+Views whose result depends on anything besides these tables and their parameters (the clock, files, other
+threads) must not use this; one that reads the graph database says so (``graph``), and the graph's state is then
+part of its fingerprint.
 """
 from __future__ import annotations
 
@@ -138,6 +139,11 @@ def _load_tables(connection):
     return _tables_cache
 
 
+def in_view():
+    """True while a cached view is being computed in this thread (its plain result is encoded and kept by it)."""
+    return _recording.get() is not None
+
+
 def not_kept():
     """Called by a view whose answer is shown but incomplete for a passing reason (a lookup that failed): the answer
     is returned as computed and not kept, so the next request computes it again. Called in the view's own thread (a
@@ -177,7 +183,7 @@ def _join_snapshot(conn):
     conn.exec_driver_sql('SET TRANSACTION READ ONLY')
 
 
-def fingerprint(connection, tables, case_id, columns=None):
+def fingerprint(connection, tables, case_id, columns=None, file_scoped=()):
     """(table, rows, md5 of the sorted xmin of those rows) per table; None when a table cannot be checked.
 
     Rows are the case's rows (case_id), or the whole table when it has no case_id and is small. A row
@@ -187,6 +193,9 @@ def fingerprint(connection, tables, case_id, columns=None):
     ``columns`` ({table: column names}, a case-scoped table) fingerprints that table by those columns of each
     row instead: for a view that reads nothing else of it (see cached_view), a write to its other columns
     leaves the view as it was. Its entry is named ``table(columns)``.
+
+    ``file_scoped`` (tables without case_id, keyed by evidence_file_id) fingerprints only the rows of this case's
+    evidence files, for a view that reads no other rows of them (see cached_view). Named ``table[case files]``.
     """
     known = _mapped_tables()
     result = []
@@ -202,6 +211,13 @@ def fingerprint(connection, tables, case_id, columns=None):
                         f'SELECT count(*), md5(coalesce(string_agg({row}, \',\' ORDER BY {row}), \'\')) '
                         f'FROM "{table}" WHERE case_id = :case_id'), dict(case_id=parameter)).one()
                     result.append(('%s(%s)' % (table, ','.join(projected)), int(rows), digest))
+                    continue
+                if case_type is None and table in file_scoped:
+                    rows, digest = connection.execute(text(
+                        f'SELECT count(*), md5(coalesce(string_agg(g.xmin::text, \',\' ORDER BY g.xmin::text::bigint), \'\')) '
+                        f'FROM "{table}" g JOIN evidence_files f ON f.id = g.evidence_file_id '
+                        f'WHERE f.case_id = CAST(:case_id AS uuid)'), dict(case_id=str(case_id))).one()
+                    result.append(('%s[case files]' % table, int(rows), digest))
                     continue
                 if case_type is not None:
                     parameter = case_id if case_type == 'uuid' else str(case_id)
@@ -629,6 +645,10 @@ def json_response(result):
 _COLUMNS = {}
 # View name -> its decorated route handler (view_refresh computes asked views through them).
 handlers = {}
+# View name -> tables it reads only the case's evidence files' rows of (cached_view's ``file_scoped``).
+_FILE_SCOPED = {}
+# Views that also read the graph database (cached_view's ``graph``): its state is part of their fingerprint.
+_GRAPH = set()
 
 
 def view_key(name, kwargs):
@@ -636,14 +656,23 @@ def view_key(name, kwargs):
     return (name, json.dumps({k: _parameter(v) for k, v in kwargs.items() if k != 'db'}, sort_keys=True))
 
 
-def cached_view(name, *, columns=None):
+def cached_view(name, *, columns=None, file_scoped=(), graph=False):
     """Decorate a synchronous route handler that has ``case_id`` and ``db`` parameters.
+
+    ``file_scoped``: tables without case_id (keyed by evidence_file_id) the view reads only this case's files' rows
+    of; they are fingerprinted by those rows (fingerprint). ``graph``: the view also reads the graph database (only
+    through graph_read_cache's rules: nothing else); the graph's last commit and the database's id and last start
+    are part of its fingerprint, taken before and after computing it, and it is kept only when they are equal.
 
     ``columns`` ({table: column names}): case-scoped tables the view reads only these columns of, so a write to
     their other columns does not compute it again (fingerprint). Only for a view whose every read of the table
     is proved to use nothing else (a test records its statements)."""
     if columns:
         _COLUMNS[name] = {table: tuple(names) for table, names in columns.items()}
+    if file_scoped:
+        _FILE_SCOPED[name] = frozenset(file_scoped)
+    if graph:
+        _GRAPH.add(name)
     def decorate(handler):
         @functools.wraps(handler)
         def wrapper(*args, **kwargs):
@@ -674,6 +703,41 @@ def cached_view(name, *, columns=None):
     return decorate
 
 
+def _graph_state():
+    """The graph database's state as a fingerprint part: its last committed transaction and its id and last start
+    (graph_read_cache). None when either cannot be read: the view is then not kept or reused. Never raises."""
+    try:
+        from services.neo4j.driver import driver
+        from services.neo4j.graph_read_cache import financial_graph_reads, graph_bookmark
+        with driver.session() as session:
+            bookmark = graph_bookmark(session)
+        marker = financial_graph_reads._current_marker(fresh=True)
+    except Exception:  # noqa: BLE001
+        logger.warning('Graph database state unavailable; the view is computed', exc_info=True)
+        return None
+    if marker is None or not bookmark:
+        return None
+    return ('graph', 0, '%s@%s' % (','.join(bookmark), marker))
+
+
+def _state(connection, tables, case_id, name, graph=None):
+    """The view's fingerprint: its tables' (fingerprint) and, for a graph view, the graph's state (``graph`` if
+    given, else read now). None when any part cannot be taken."""
+    current = fingerprint(connection, tables, case_id, _COLUMNS.get(name), _FILE_SCOPED.get(name, ()))
+    if current is None or name not in _GRAPH:
+        return current
+    graph = _graph_state() if graph is None else graph
+    return None if graph is None else current + (graph,)
+
+
+def _kept_state(connection, tables, case_id, name, graph_before):
+    """The fingerprint to keep a just-computed view under; for a graph view None unless the graph's state was read
+    before and is the same now (nothing committed to the graph while it was computed)."""
+    if name in _GRAPH and (graph_before is None or _graph_state() != graph_before):
+        return None
+    return _state(connection, tables, case_id, name, graph=graph_before)
+
+
 def _serve(handler, key, engine, case_id, kwargs, state):
     from fastapi.responses import Response
     from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -689,14 +753,14 @@ def _serve(handler, key, engine, case_id, kwargs, state):
             snapshot = owner.exec_driver_sql('SELECT pg_export_snapshot()').scalar()
             _load_tables(owner)
             entry = _lookup(key)
-            if entry is not None and fingerprint(owner, entry.tables, case_id, _COLUMNS.get(key[0])) == entry.fingerprint:
+            if entry is not None and _state(owner, entry.tables, case_id, key[0]) == entry.fingerprint:
                 stats['hits'] += 1
                 note_cache('hit')
                 logger.info('Financial view %s served unchanged (%.2f s)', key[0], time.perf_counter() - started)
                 return _kept(entry, state)
             scope, xmax = _saved_scope(owner)
             saved = _load_saved(key, scope, xmax) if scope is not None else None
-            if saved is not None and saved != entry and fingerprint(owner, saved.tables, case_id, _COLUMNS.get(key[0])) == saved.fingerprint:
+            if saved is not None and saved != entry and _state(owner, saved.tables, case_id, key[0]) == saved.fingerprint:
                 _store(key, saved)
                 stats['saved_hits'] += 1
                 note_cache('saved')
@@ -711,6 +775,8 @@ def _serve(handler, key, engine, case_id, kwargs, state):
                 return _kept(previous, state, updating=True)
             stats['misses'] += 1
             note_cache('miss')
+            # A graph view: the graph's state before it is computed, compared with the state after (kept only if equal).
+            graph_before = _graph_state() if key[0] in _GRAPH else None
             recording = _Recording(owner=_dbapi(owner), snapshot=snapshot)
             token = _recording.set(recording)
             session = Session(bind=owner, autoflush=False, join_transaction_mode='create_savepoint')
@@ -738,7 +804,7 @@ def _serve(handler, key, engine, case_id, kwargs, state):
                 # Only the route's plain 422 with a text reason: the same rows give the same refusal.
                 tables = tuple(sorted(recording.tables))
                 if refusal.status_code == 422 and refusal.headers is None and isinstance(refusal.detail, str) and tables:
-                    current = fingerprint(owner, tables, case_id, _COLUMNS.get(key[0]))
+                    current = _kept_state(owner, tables, case_id, key[0], graph_before)
                     if current is not None:
                         kept = _Entry(tables, current, b'', 422, 'application/json', refusal=refusal.detail,
                                       seconds=time.perf_counter() - started, computed_at=computed_at)
@@ -756,7 +822,7 @@ def _serve(handler, key, engine, case_id, kwargs, state):
                 stats['not_stored'] += 1
                 return response
             tables = tuple(sorted(recording.tables))
-            current = fingerprint(owner, tables, case_id, _COLUMNS.get(key[0])) if tables else None
+            current = _kept_state(owner, tables, case_id, key[0], graph_before) if tables else None
             if current is None or len(response.body) > MAX_ENTRY_BYTES:
                 stats['not_stored'] += 1
                 return response

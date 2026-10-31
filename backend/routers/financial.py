@@ -17,7 +17,7 @@ from postgres.session import get_db
 from routers.case_access import case_access_dependency
 from routers.users import get_current_db_user
 from services.financial import attach_transaction_locators
-from services.financial.view_cache import etagged, json_response
+from services.financial.view_cache import cached_view, in_view, json_response, not_kept
 from services.neo4j_service import neo4j_service
 from services.neo4j.driver import is_transaction_timeout
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
@@ -259,6 +259,10 @@ class AutoExtractFromToRequest(BaseModel):
 
 
 @router.get("")
+# Kept whole (graph read, locators and encoding: 2.2-2.7 s on d5b330d1 after release 49, 2026-10-31 12:12) while
+# the graph has committed nothing and the case files' table geometry is unchanged; reused, saved, warmed, answered
+# updating after a write and 304 to a browser holding it, as every cached Financial view.
+@cached_view("graph-records", file_scoped=("evidence_table_geometry",), graph=True)
 def get_financial_transactions(
     case_id: str = Query(..., description="REQUIRED: Filter to transactions in this case"),
     mode: str = Query("transactions", description="Dataset mode: transactions or intelligence"),
@@ -296,13 +300,14 @@ def get_financial_transactions(
             # A locator is auxiliary to the row it decorates: a failure here
             # costs the click-through highlight, never the transaction list.
             try:
-                attach_transaction_locators(db, rows)
+                attach_transaction_locators(db, rows, case_id=case_id)
             except Exception:
                 logger.exception("Attaching transaction locators failed for case %s", case_id)
-        # The same bytes as FastAPI's own encoding, without its pass over every value
-        # (2.7 s of d5b330d1's 33 MB body, against 0.5 s to write it). A browser that holds these
-        # bytes is answered 304 without them (d5b330d1: 2.9 MB gzipped per visit of the tab).
-        return etagged(json_response(transactions))
+                not_kept()  # shown without its locators this once, never kept that way
+        # Inside the cached view the plain result is returned: the view encodes it (view_cache.json_response) and
+        # keeps those bytes. Otherwise the same bytes as FastAPI's own encoding, without its pass over every value
+        # (2.7 s of d5b330d1's 33 MB body, against 0.5 s to write it).
+        return transactions if in_view() else json_response(transactions)
     except Exception as e:
         raise _graph_read_failed(e, "transactions", case_id)
 

@@ -571,6 +571,19 @@ class TheAttachedTransactions(unittest.TestCase):
             transaction[LOCATOR_PROVENANCE_KEY], payroll_union(page=3)
         )
 
+    def test_with_its_case_the_row_rectangle_is_the_same(self):
+        transaction = self.transaction()
+        attach_transaction_locators(self.db, [transaction], case_id=self.case.id)
+        self.assertEqual(transaction[LOCATOR_PROVENANCE_KEY], payroll_union(page=3))
+
+    def test_with_another_case_the_files_geometry_is_not_read(self):
+        """The Other financial records view is fingerprinted by its case's files' geometry only."""
+        transaction, without = self.transaction(), self.transaction()
+        attach_transaction_locators(self.db, [transaction], case_id=uuid.uuid4())
+        attach_transaction_locators(self.db, [without], case_id=None)
+        self.assertNotEqual(transaction[LOCATOR_PROVENANCE_KEY], payroll_union(page=3))
+        self.assertEqual(without[LOCATOR_PROVENANCE_KEY], payroll_union(page=3))
+
     def test_a_filename_document_id_gets_the_honest_page(self):
         # The extraction pipeline falls back to the filename when no evidence
         # file id was known.  There is nothing to look up, and the transaction

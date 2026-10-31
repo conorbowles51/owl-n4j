@@ -57,7 +57,9 @@ def periods(tmp_path, monkeypatch):
     for route, view in SUMMARY_VIEWS + FULL_RANGE_VIEWS:
         monkeypatch.setattr(routers.financial_ledger, route, lambda view=view, **kw: calls.append(dict(kw, view=view)))
     # The graph records read (its own saved copies, graph_read_cache); never a real graph database here.
-    monkeypatch.setattr(view_warmup, '_graph_records', lambda **kw: calls.append(dict(kw, view='graph-' + kw['mode'])))
+    import routers.financial
+    monkeypatch.setattr(routers.financial, 'get_financial_transactions',
+                        lambda **kw: calls.append(dict(kw, view='graph-' + kw['mode'])))
     GRAPH['now'] = ['FB:1']
     monkeypatch.setattr(view_warmup, '_graph_now', lambda: GRAPH['now'] and list(GRAPH['now']))
 
@@ -99,6 +101,10 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
     # The three account views take only the case: the same cached-view key as a first visit.
     assert {key for key in calls[4] if key != 'db'} == {'case_id', 'view'}
     assert calls[3]['case_id'] == str(large)  # as text, as FastAPI gives the evidence listing
+    # The graph records as a first visit asks for them (case as text, every filter unset): the same cached-view key.
+    assert {key: value for key, value in calls[11].items() if key != 'db'} == dict(
+        case_id=str(large), mode='transactions', types=None, start_date=None, end_date=None, categories=None,
+        view='graph-transactions')
     assert {key: value for key, value in calls[0].items() if key != 'db'} == dict(
         case_id=large, account_id=None, account_ids=None, account_holders=None, start_date=None, end_date=None)
     assert {key: value for key, value in calls[1].items() if key != 'db'} == dict(

@@ -34,7 +34,7 @@ POLL_SECONDS = 1.0
 IDLE_EXIT_SECONDS = 120
 CHILD_FLAG = '--refresh-child'
 # Route modules whose cached views can be asked for (importing them registers their handlers).
-ROUTE_MODULES = ('routers.financial_ledger', 'routers.financial_statement_import', 'routers.evidence')
+ROUTE_MODULES = ('routers.financial_ledger', 'routers.financial_statement_import', 'routers.evidence', 'routers.financial')
 
 
 def _wanted_dir():

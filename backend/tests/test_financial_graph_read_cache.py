@@ -494,41 +494,6 @@ class SavedGraphReadTests(unittest.TestCase):
 
 
 class GraphRecordsWarmTests(unittest.TestCase):
-    def test_the_release_warms_the_key_a_first_visit_reads(self):
-        """The warm-up's graph read and the tab's first visit (GET /api/financial with no filters) use one key."""
-        import uuid as uuid_module
-        from services.financial import view_warmup
-        from importlib import import_module
-        financial_service = import_module("services.neo4j.financial_service")
-        import routers.financial as route_module
-        keys = []
-
-        class _Driver:
-            def session(self, **kwargs):
-                return _Context()
-
-        class _Context:
-            def __enter__(self):
-                return object()
-
-            def __exit__(self, *exc):
-                return False
-
-        def read(session, key, compute):
-            keys.append(key)
-            return {"transactions": [], "total": 0}
-        case = uuid_module.uuid4()
-        with patch.object(financial_service, "driver", _Driver()), \
-                patch.object(financial_service.financial_graph_reads, "read", read):
-            for mode in ("transactions", "intelligence"):
-                view_warmup._graph_records(case_id=case, mode=mode)
-                route_module.get_financial_transactions(case_id=str(case), mode=mode, types=None, start_date=None,
-                                                        end_date=None, categories=None, db=None)
-        self.assertEqual(len(keys), 4)
-        self.assertEqual(keys[0], keys[1])
-        self.assertEqual(keys[2], keys[3])
-        self.assertNotEqual(keys[0], keys[2])
-
     def test_the_re_warm_reads_no_graph_state_when_the_graph_refuses(self):
         from services.financial import view_warmup
         from importlib import import_module
