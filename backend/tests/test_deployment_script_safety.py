@@ -282,3 +282,15 @@ def test_a_frontend_only_release_never_stops_or_restarts_the_backend(release_san
                                      'systemctl start owl-backend', 'systemctl stop owl-backend')) for event in events), events
     current = (release_sandbox.parent / 'loupe-frontend/current').resolve()
     assert (current / 'index.html').exists()
+
+
+def test_a_manual_rollback_builds_aside_and_switches_like_a_release(release_sandbox):
+    """frontend_v2/dist is a link to a read-only build, and nginx may hold the port: rollback.sh must never build in
+    the live checkout or restart vite preview by hand."""
+    result, events = run_release(release_sandbox, 'rollback.sh')
+    assert result.returncode == 0, result.stdout + result.stderr
+    builds = [event for event in events if event.startswith('npm run build')]
+    assert builds and all('--outDir' in event and '/loupe-frontend/builds/' in event for event in builds), builds
+    assert 'systemctl restart owl-frontend-v2' not in events
+    dist = release_sandbox / 'frontend_v2/dist'
+    assert dist.is_symlink() and dist.resolve() == (release_sandbox.parent / 'loupe-frontend/current').resolve()

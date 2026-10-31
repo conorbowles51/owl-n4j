@@ -71,7 +71,7 @@ frontend_build_aside() {
     if [ "$(cat "${marker}" 2>/dev/null)" != "${npm_hash}" ]; then
         step "Installing frontend dependencies in the build worktree (package-lock or node changed)"
         (cd "${wt}/frontend_v2" && $RUN_AS rm -f "${marker}" && $scope $RUN_AS nice -n 15 npm ci --silent) || return 1
-        echo "${npm_hash}" | $RUN_AS tee "${marker}" >/dev/null
+        $RUN_AS mkdir -p "$(dirname "${marker}")" && echo "${npm_hash}" | $RUN_AS tee "${marker}" >/dev/null
     else
         success "Frontend dependencies unchanged; node_modules kept"
     fi

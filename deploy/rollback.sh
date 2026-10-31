@@ -40,6 +40,7 @@ set +a
 
 API_PORT="${API_PORT:-8002}"
 HEALTH_URL="http://127.0.0.1:${API_PORT}/health"
+FRONTEND_PORT="${FRONTEND_PORT:-5174}"
 
 if [ "$(id -u)" -eq 0 ]; then
     DEPLOY_USER="$(stat -c '%U' "${PROJECT_DIR}")"
@@ -50,6 +51,12 @@ else
     RUN_AS=""
     SYSTEMCTL="sudo systemctl"
 fi
+# The frontend is built aside and switched in one step, as a release does (deploy/frontend-release.sh); it is never
+# rebuilt in place: frontend_v2/dist is a link to the build being served, and nginx may be the server.
+# shellcheck source=deploy/frontend-release.sh
+source "${PROJECT_DIR}/deploy/frontend-release.sh"
+# shellcheck source=deploy/frontend-server.sh
+source "${PROJECT_DIR}/deploy/frontend-server.sh"
 
 if [ -n "${1:-}" ]; then
     TARGET_COMMIT="$1"
@@ -92,6 +99,8 @@ fi
 source "${PROJECT_DIR}/deploy/ingestion-safety.sh"
 # shellcheck source=deploy/backend-stop.sh
 source "${PROJECT_DIR}/deploy/backend-stop.sh"
+# shellcheck source=deploy/release-plan.sh
+source "${PROJECT_DIR}/deploy/release-plan.sh"
 
 cd "${PROJECT_DIR}"
 
@@ -103,11 +112,11 @@ success "Code reverted to ${TARGET_SHORT}"
 step "Reinstalling dependencies"
 check_ingestion_idle
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet
-cd "${FRONTEND_DIR}"
-$RUN_AS npm ci --silent
-$RUN_AS npm run build
-cd "${PROJECT_DIR}"
-success "Dependencies installed and frontend production bundle rebuilt"
+ROLLBACK_COMPONENTS="$(release_component_hashes HEAD "${ENV_FILE}")"
+ROLLBACK_FRONTEND_ID="$(echo "${ROLLBACK_COMPONENTS}" | sed -n 's/^frontend=//p')"
+frontend_build_aside "$(git rev-parse HEAD)" "${ROLLBACK_FRONTEND_ID}" \
+    "$(echo "${ROLLBACK_COMPONENTS}" | sed -n 's/^npm=//p')"
+success "Dependencies installed and frontend build ${ROLLBACK_FRONTEND_ID:0:12} ready"
 
 step "Rebuilding Docker stack"
 docker compose build
@@ -122,7 +131,13 @@ check_ingestion_idle
 if ! restart_backend_bounded; then
     fail "owl-backend-v2 did not restart; the health check below will report it"
 fi
-$SYSTEMCTL restart owl-frontend-v2
+ROLLBACK_FRONTEND_CHANGED=false
+if [ "$(frontend_current_build)" != "${ROLLBACK_FRONTEND_ID}" ]; then
+    frontend_switch "${ROLLBACK_FRONTEND_ID}"
+    ROLLBACK_FRONTEND_CHANGED=true
+fi
+frontend_server_apply "${ROLLBACK_FRONTEND_CHANGED}"
+frontend_prune || true
 success "V2 services restarted"
 
 step "Health check"
