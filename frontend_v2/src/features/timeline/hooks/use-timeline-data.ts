@@ -1,4 +1,4 @@
-import { fetchAPI } from "@/lib/api-client"
+import { ApiError, fetchAPI } from "@/lib/api-client"
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { timelineAPI } from "../api"
@@ -38,29 +38,46 @@ export function useTimelineData({
     // A superseded load (scope change, unmount, refetch) is cancelled through `signal`, so its
     // remaining pages are not fetched.
     queryFn: async ({ signal }) => {
-      const events: TimelineEvent[] = []
+      const tooLarge =
+        "The Timeline is too large to load completely. Narrow the case scope."
+      let events: TimelineEvent[] = []
       let cursor: string | undefined
       let total = 0
       let pageCount = 0
-
-      do {
-        const page = await timelineAPI.getEvents({
+      // The whole Timeline in one response (served from the server's saved copy while the graph is
+      // unchanged). If that one call fails for any other reason than size, load it page by page as before.
+      let whole: Awaited<ReturnType<typeof timelineAPI.getEvents>> | null = null
+      try {
+        whole = await timelineAPI.getEvents({
           caseId: caseId!,
-          limit: 2000,
-          cursor,
           scope,
+          whole: true,
           signal,
         })
-        events.push(...page.events)
-        total = page.total
-        cursor = page.next_cursor ?? undefined
-        pageCount += 1
-      } while (cursor && pageCount < 100)
+      } catch (error) {
+        if (signal?.aborted) throw error
+        if (error instanceof ApiError && error.status === 413) throw Error(tooLarge)
+      }
+      if (whole) {
+        events = whole.events
+        total = whole.total
+      } else {
+        do {
+          const page = await timelineAPI.getEvents({
+            caseId: caseId!,
+            limit: 2000,
+            cursor,
+            scope,
+            signal,
+          })
+          events.push(...page.events)
+          total = page.total
+          cursor = page.next_cursor ?? undefined
+          pageCount += 1
+        } while (cursor && pageCount < 100)
+      }
 
-      if (cursor)
-        throw Error(
-          "The Timeline is too large to load completely. Narrow the case scope."
-        )
+      if (cursor) throw Error(tooLarge)
       let offset: number | null = 0
       const additions: TimelineEvent[] = []
       do {

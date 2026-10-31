@@ -16,6 +16,10 @@ from services.neo4j.driver import driver
 logger = logging.getLogger(__name__)
 
 
+class TimelineTooLarge(ValueError):
+    """The whole Timeline holds more events than one response may carry; nothing is returned in part."""
+
+
 class TimelineService:
     # Repeated from _build_filters so the planner applies it before the sort-date expressions.
     _NODE_PREFILTER = "n.case_id = $case_id AND coalesce(n.system_node, false) <> true"
@@ -213,6 +217,24 @@ class TimelineService:
             if not cursor:
                 return events
 
+    def get_timeline_whole(
+        self,
+        event_types: Optional[List[str]] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        case_id: str = None,
+        entity_keys: Optional[List[str]] = None,
+        max_events: int = 200000,
+    ) -> Dict:
+        """Every event in one response: the pages of get_timeline_page, concatenated, with no cursor.
+
+        Counted first: above ``max_events`` it raises TimelineTooLarge and returns nothing, never a part.
+        """
+        return self.get_timeline_page(
+            event_types=event_types, start_date=start_date, end_date=end_date, case_id=case_id,
+            entity_keys=entity_keys, _whole_max=max_events,
+        )
+
     def get_timeline_page(
         self,
         event_types: Optional[List[str]] = None,
@@ -222,8 +244,12 @@ class TimelineService:
         limit: int = 500,
         cursor: str | None = None,
         entity_keys: Optional[List[str]] = None,
+        _whole_max: int | None = None,
     ) -> Dict:
         """Get timeline events using stable keyset pagination."""
+        whole = _whole_max is not None
+        if whole:
+            cursor = None
         limit = max(1, min(int(limit or 500), 2000))
         if entity_keys is not None:
             entity_keys = list(dict.fromkeys(entity_keys))
@@ -280,7 +306,7 @@ class TimelineService:
             WHERE {where_clause}
             WITH n, sort_date, sort_time
             ORDER BY sort_date ASC, coalesce(sort_time, '99:99') ASC, n.key ASC
-            LIMIT $limit
+            {"" if whole else "LIMIT $limit"}
             OPTIONAL MATCH (n)-[r]-(connected)
             WHERE connected IS NULL OR (
               NONE(label IN labels(connected) WHERE label IN ['Document', 'Case', 'RecycleBin', 'RecycleBinItem'])
@@ -337,6 +363,15 @@ class TimelineService:
             else None
         )
         with driver.session() as session:
+            if whole:
+                total_record = session.run(count_query, **count_params).single()
+                total = int(total_record["total"] or 0) if total_record else 0
+                if total > _whole_max:
+                    raise TimelineTooLarge(
+                        f"The Timeline has {total:,} events, more than {_whole_max:,} can be loaded at once."
+                    )
+                rows = [self._event_from_record(record) for record in session.run(query, **params)]
+                return {"events": rows, "count": len(rows), "total": total, "next_cursor": None}
             rows = [self._event_from_record(record) for record in session.run(query, **page_params)]
             if carried_total is None:
                 total_record = session.run(count_query, **count_params).single()

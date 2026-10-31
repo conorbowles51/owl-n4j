@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from services.neo4j.timeline_service import TimelineService
+from services.neo4j.timeline_service import TimelineService, TimelineTooLarge
 
 
 class _FakeResult:
@@ -243,6 +243,29 @@ class TimelineServiceTests(unittest.TestCase):
             events = TimelineService().get_timeline_events(case_id="case-1")
         self.assertEqual([e["key"] for e in events], ["a", "b"])
         self.assertEqual(paged.call_args_list[1].kwargs["cursor"], "c1")
+    def test_whole_timeline_is_every_event_in_one_response_counted_first(self):
+        captured = []
+        rows = [self._row("a"), self._row("b"), self._row("c")]
+        with patch(
+            "services.neo4j.timeline_service.driver.session",
+            return_value=_FakeSession(captured, rows=rows, total=3),
+        ):
+            whole = TimelineService().get_timeline_whole(case_id="case-1", event_types=["Event"])
+        self.assertIn("RETURN count(n) AS total", captured[0]["query"])
+        self.assertNotIn("LIMIT", captured[1]["query"])
+        self.assertNotIn("limit", captured[1]["params"])
+        self.assertEqual([e["key"] for e in whole["events"]], ["a", "b", "c"])
+        self.assertEqual((whole["count"], whole["total"], whole["next_cursor"]), (3, 3, None))
+
+    def test_whole_timeline_above_the_ceiling_is_refused_not_cut(self):
+        captured = []
+        with patch(
+            "services.neo4j.timeline_service.driver.session",
+            return_value=_FakeSession(captured, rows=[self._row("a")], total=5),
+        ):
+            with self.assertRaises(TimelineTooLarge):
+                TimelineService().get_timeline_whole(case_id="case-1", max_events=4)
+        self.assertEqual(len(captured), 1)
 
 if __name__ == "__main__":
     unittest.main()

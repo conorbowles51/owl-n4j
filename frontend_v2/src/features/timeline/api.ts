@@ -156,9 +156,11 @@ export const timelineAPI = {
     limit?: number
     cursor?: string
     scope?: CaseLayer
+    whole?: boolean
     signal?: AbortSignal
   }) => {
     const qs = new URLSearchParams({ case_id: params.caseId })
+    if (params.whole) qs.set("whole", "true")
     if (params.types?.length) qs.set("types", params.types.join(","))
     if (params.startDate) qs.set("start_date", params.startDate)
     if (params.endDate) qs.set("end_date", params.endDate)

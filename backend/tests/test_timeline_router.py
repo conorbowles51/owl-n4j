@@ -41,6 +41,28 @@ class TimelineRouterTests(unittest.IsolatedAsyncioTestCase):
             cursor=None,
         )
 
+    async def test_whole_timeline_uses_the_whole_read_and_too_large_is_413(self):
+        from fastapi import HTTPException
+        from services.neo4j.timeline_service import TimelineTooLarge
+        whole = {"events": [], "count": 0, "total": 0, "next_cursor": None}
+        graph_response_cache.graph_responses.clear()
+        common = dict(types=None, start_date=None, end_date=None, case_id="case-1", limit=25, cursor="ignored",
+                      scope="all", db=object(), current_user=object())
+        with (
+            patch.object(graph_response_cache.driver, "session", side_effect=lambda: contextlib.nullcontext(object())),
+            patch("services.neo4j.graph_read_cache.graph_bookmark", return_value=("bookmark-1",)),
+            patch.object(timeline, "get_case_if_allowed"),
+            patch.object(timeline.neo4j_service, "get_timeline_page", side_effect=AssertionError("paged")),
+            patch.object(timeline.neo4j_service, "get_timeline_whole", return_value=whole) as get_whole,
+        ):
+            result = timeline.get_timeline(whole=True, **common)
+            self.assertEqual(json.loads(result.body), whole)
+            get_whole.assert_called_once_with(event_types=None, start_date=None, end_date=None, case_id="case-1")
+            get_whole.side_effect = TimelineTooLarge("too many")
+            graph_response_cache.graph_responses.clear()
+            with self.assertRaises(HTTPException) as refused:
+                timeline.get_timeline(whole=True, **common)
+            self.assertEqual(refused.exception.status_code, 413)
 
 if __name__ == "__main__":
     unittest.main()
