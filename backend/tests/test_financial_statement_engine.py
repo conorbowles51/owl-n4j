@@ -1600,6 +1600,45 @@ class AddresseeConfirmationTests(unittest.TestCase):
         fiscal = ('DOMICILIO FISCAL', 'OTRA CALLE 99', 'COLONIA CENTRO NORTE', 'OTRO MUNICIPIO C.P. 06000')
         self.assertEqual(self.holder(addressee_statement(fiscal)), '')
 
+    def test_a_heading_line_printing_the_recipient_with_a_space_inside_a_word_confirms_it(self):
+        # 01 MIDA BBVA CREDITO ENE 26: the scan lost the block's name line; the page prints the name again under the
+        # postal line as 'MIDA INGENIERIA Y SE RVICIOS SA DE CV', and the receipt names 'MIDA INGENIERIA Y SERVICIOS'.
+        self.assertEqual(E._respaced_recipient('EMPRESA DE PRU EBA SA DE CV', 'EMPRESA DE PRUEBA'),
+                         'EMPRESA DE PRUEBA SA DE CV')
+        # Other letters, a missing legal form, or the same spacing (the plain rule's case) do not match here.
+        self.assertEqual(E._respaced_recipient('EMPRESA DE PRU EBO SA DE CV', 'EMPRESA DE PRUEBA'), '')
+        self.assertEqual(E._respaced_recipient('EMPRESA DE PRU EBA', 'EMPRESA DE PRUEBA'), '')
+        self.assertEqual(E._respaced_recipient('EMPRESA DE PRUEBA SA DE CV', 'EMPRESA DE PRUEBA'), '')
+        with mock.patch.object(E, 'LEGAL_FORM_UNANCHORED', False):
+            sources = addressee_statement(receipt='EMPRESA DE PRUEBA')
+            for row in sources[0]['rows']:
+                for c in row['cells']:
+                    if c['expected_text'] == 'EMPRESA DE PRUEBA SA DE CV':
+                        c['expected_text'] = 'EMPRESA DE PRU EBA SA DE CV'
+            self.assertEqual(self.holder(sources), 'EMPRESA DE PRUEBA SA DE CV')
+            with mock.patch.object(E, 'RECEIPT_SPACING', False):
+                E._READINGS.clear()
+                E._LIVE_READINGS.clear()
+                self.assertEqual(self.holder(sources), '')
+
+    def test_a_fiscal_domicile_heading_ends_the_block_grown_from_its_postal_line(self):
+        # ECO May 2023 DOLARES: the addressee's postal line was read split (no block); the fiscal block's growth
+        # climbed over 'DOMICILIO FISCAL' and stopped at the addressee's street line, leaving 'POLANCO | SECCION' as
+        # the holder. Stopped at the heading, the fiscal block reprints the addressee's lines and confirms its name.
+        lines = [[('EMPRESA DE PRUEBA SA DE CV', 52000, 238000), ('No. de Cuenta 0118897425', 325000, 596000)],
+                 [('CALLE EJEMPLO 11 PISO 3', 52000, 184000), ('No. de Cliente A1634204', 325000, 596000)],
+                 [('POLANCO | SECCION', 52000, 132000)],
+                 [('MIGUEL HIDALGO', 52000, 119000), ('R.F.C XAXX010101000', 325000, 595000)],
+                 [('CIU', 52000, 65000), ('MEXICO', 132000, 163000), ('No. Cuenta CLABE 012180001188974253', 324000, 595000)],
+                 [('DOMICILIO FISCAL', 53000, 123000), ('DIRECCION: EJERCITO NACIONAL 1019', 320000, 586000)],
+                 [('CALLE EJEMPLO 11 PISO 3 B TORRE D', 52000, 229000)],
+                 [('POLANCO | SECCION', 53000, 132000), ('PLAZA: CIUDAD DE MEXICO', 320000, 488000)],
+                 [('MIGUEL HIDALGO CIU CP 11510', 52000, 257000)]]
+        rows = E._pages([page(1, lines)])[1]
+        self.assertEqual(E.address_holder(rows), 'EMPRESA DE PRUEBA SA DE CV')
+        with mock.patch.object(E, 'FISCAL_HEADING_ENDS_BLOCK', False):
+            self.assertEqual(E.address_holder(rows), 'POLANCO | SECCION')
+
     def test_the_fiscal_receipt_recipient_agreeing_with_the_heading_line_confirms_it(self):
         self.assertEqual(self.holder(addressee_statement(receipt='EMPRESA DE PRUEBA')), 'EMPRESA DE PRUEBA SA DE CV')
         self.assertEqual(self.holder(addressee_statement(receipt='EMPRESA DE PRUEBA SA DE CV')), 'EMPRESA DE PRUEBA SA DE CV')
@@ -2672,10 +2711,37 @@ class UnanchoredHolderTests(unittest.TestCase):
 
     def test_the_top_line_reprinted_on_another_page_confirms_the_block(self):
         self.assertEqual(self.holder(barcoded_statement()), 'EMPRESA DE PRUEBA SA DE CV')
-        self.assertEqual(self.holder(barcoded_statement(reprint=None)), '')
+        with mock.patch.object(E, 'LEGAL_FORM_UNANCHORED', False):
+            self.assertEqual(self.holder(barcoded_statement(reprint=None)), '')
+            # A name printed among another page's movements is not the page heading's reprint.
+            self.assertEqual(self.holder(barcoded_statement(reprint_below_movements=True)), '')
         self.assertEqual(self.holder(barcoded_statement(reprint='OTRA EMPRESA SA DE CV')), '')
-        # A name printed among another page's movements is not the page heading's reprint.
-        self.assertEqual(self.holder(barcoded_statement(reprint_below_movements=True)), '')
+
+    def test_a_top_line_closing_with_a_whole_legal_form_needs_no_reprint(self):
+        # 11 ARRENDO BBVA USD NOV 2024: 'ARRENDO SERV SA DE CV' over three address lines, the postal line lost and
+        # no other page reprinting the name. A street or district line never ends in 'SA DE CV'.
+        self.assertEqual(self.holder(barcoded_statement(reprint=None)), 'EMPRESA DE PRUEBA SA DE CV')
+        self.assertEqual(self.holder(barcoded_statement(reprint_below_movements=True)), 'EMPRESA DE PRUEBA SA DE CV')
+        # No whole legal form (a personal name, a legal form misread 'SA DE CY', a bare 'SA'): a reprint is needed.
+        for name in ('JUAN PRUEBA EJEMPLO', 'EMPRESA DE PRUEBA SA DE CY', 'EMPRESA DE PRUEBA SA'):
+            self.assertEqual(self.holder(barcoded_statement(reprint=None, name=name)), '', name)
+        # Another legal name heading another page contradicts it.
+        self.assertEqual(self.holder(barcoded_statement(reprint='OTRA EMPRESA SA DE CV')), '')
+        # A line lost just above the top line: the top line may not be the block's top.
+        self.assertEqual(self.holder(barcoded_statement(reprint=None, unread=[(20000, 70000, 200000, 79000)])), '')
+
+    def test_a_receipt_naming_someone_else_contradicts_the_legal_name_block(self):
+        sources = barcoded_statement(reprint=None)
+        sources.append(page(2, [[('INFORMACION FISCAL', 20000, 200000)],
+                                [('Nombre del Receptor : OTRA EMPRESA', 20000, 300000)]]))
+        self.assertEqual(self.holder(sources), '')
+        sources[-1] = page(2, [[('INFORMACION FISCAL', 20000, 200000)],
+                               [('Nombre del Receptor : EMPRESA DE PRUEBA', 20000, 300000)]])
+        self.assertEqual(self.holder(sources), 'EMPRESA DE PRUEBA SA DE CV')
+
+    def test_the_legal_form_switch_turns_it_off(self):
+        with mock.patch.object(E, 'LEGAL_FORM_UNANCHORED', False):
+            self.assertEqual(self.holder(barcoded_statement(reprint=None)), '')
 
     def test_an_unread_text_line_at_the_block_gives_no_holder_and_a_barcode_does_not_count(self):
         lost = (20000, 70000, 200000, 79000)  # a line just above the name: the name may not be the block's top
