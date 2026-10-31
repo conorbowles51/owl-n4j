@@ -197,7 +197,12 @@ def test_a_pass_is_due_only_after_a_write_to_a_table_its_views_read(periods, mon
         assert view_warmup._rewarm_due(now=later) is False  # a table no view read
         write('INSERT INTO payments (case_id) VALUES (:c)')
         assert view_warmup._rewarm_due(now=clock.time()) is False  # too soon after the last pass
+        # (This test changed the environment, which the identity includes: the code on disk is pinned as unchanged.)
+        monkeypatch.setattr(view_cache, '_identity_now', lambda: view_cache.code_identity())
         assert view_warmup._rewarm_due(now=later) is True
+        monkeypatch.setattr(view_cache, '_identity_now', lambda: 'the next release, written to disk')
+        assert view_warmup._rewarm_due(now=later) is False  # this process's code is about to be replaced
+        monkeypatch.setattr(view_cache, '_identity_now', lambda: view_cache.code_identity())
         with open(directory / view_warmup.PREPARE_LOCK, 'a') as preparing:
             fcntl.flock(preparing, fcntl.LOCK_EX)
             assert view_warmup._rewarm_due(now=later) is False  # a release is preparing

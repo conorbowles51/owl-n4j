@@ -94,7 +94,22 @@ def _rewarm_due(now=None):
     from postgres.session import _get_engine
     with _get_engine().connect() as connection:
         current = _write_counts(connection, set(state['tables']))
-    return current != state.get('counts')
+    if current == state.get('counts'):
+        return False
+    # A release writes the next code to disk before preparing it: this process's views are about to be replaced
+    # (seen live 2026-10-31 02:57: a pass began 3 s after a prepare ended, before the restart).
+    on_disk = view_cache._identity_now()
+    if on_disk == view_cache.code_identity():
+        return True
+    global _skipped_for
+    if on_disk != _skipped_for:
+        _skipped_for = on_disk
+        logger.info('Financial view re-warm skipped: the code on disk (%s) is not the code this process runs (%s)',
+                    (on_disk or 'unreadable')[:12], (view_cache.code_identity() or 'unreadable')[:12])
+    return False
+
+
+_skipped_for = None  # the disk identity last reported as skipped (one journal line per change)
 
 
 def _record_pass(counts, started):
