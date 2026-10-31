@@ -8,7 +8,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "20261031_pg_stat_statements"
-down_revision = "20261029_model_work_origin"
+down_revision = "20261031_lx_measure"
 branch_labels = None
 depends_on = None
 
