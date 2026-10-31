@@ -42,14 +42,19 @@ def _plain(value):
     return value is None or kind in _PLAIN
 
 
+def _is_plain(content):
+    """_plain, False when the data is too deep to check (it then goes through jsonable_encoder, as before)."""
+    try:
+        return _plain(content)
+    except RecursionError:
+        return False
+
+
 def plain_or_encoded(content):
     """``jsonable_encoder(content)`` for a route that builds its own JSONResponse: the content itself when it is
     already plain JSON data (the same bytes, without the walk)."""
-    try:
-        if _plain(content):
-            return content
-    except RecursionError:
-        pass
+    if _is_plain(content):
+        return content
     from fastapi.encoders import jsonable_encoder
     return jsonable_encoder(content)
 
@@ -60,11 +65,8 @@ def _encode(arguments):
     # jsonable_encoder took 0.19 s (31 Oct). Anything else goes through FastAPI's own function, as before.
     if arguments.get('field') is None:
         content = arguments.get('response_content')
-        try:
-            if _plain(content):
-                return content
-        except RecursionError:
-            pass
+        if _is_plain(content):
+            return content
     # is_coroutine=True: FastAPI then validates inline (it is already in a thread) and the coroutine
     # finishes without suspending; driving it to completion here returns its value.
     coroutine = _original(**{**arguments, 'is_coroutine': True})

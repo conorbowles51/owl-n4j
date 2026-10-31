@@ -89,6 +89,7 @@ def test_the_engine_list_is_not_walked_and_its_bytes_are_unchanged(monkeypatch):
     monkeypatch.setattr(fastapi.encoders, "jsonable_encoder",
                         lambda value, *a, **k: walked.append(value) or original(value, *a, **k))
     assert router._jobs_answer(plain, None).body == expected[id(plain)]
-    assert plain not in walked
+    # No walk at all, however jsonable_encoder is bound: its own recursion goes through the module global.
+    assert walked == []
     assert router._jobs_answer(odd, None).body == expected[id(odd)]
     assert odd in walked

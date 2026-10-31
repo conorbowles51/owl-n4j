@@ -204,3 +204,29 @@ def test_plain_json_data_is_not_walked_by_jsonable_encoder(monkeypatch):
         assert len(calls) == 3
     finally:
         routing.serialize_response = response_encoding._original
+
+
+def test_plain_data_gives_the_bytes_jsonable_encoder_gives():
+    # Pins the identity the plain path rests on (jsonable_encoder hands str/int/float/bool/None back unchanged,
+    # keeps None values and key order, drops only "_sa" keys): a FastAPI upgrade that changes it fails here.
+    from fastapi.encoders import jsonable_encoder
+    from fastapi.responses import JSONResponse
+    from services.response_encoding import _is_plain, plain_or_encoded
+
+    samples = [
+        [{"id": "j1", "status": "completed", "progress": 1.0, "files": [], "error": None, "ok": True}],
+        {"b": 2 ** 80, "a": [True, False, 0, 1, -1.5, None, "", [[["deep"]]]], "z": {"y": {"x": None}}},
+        "text", 7, 0.1, None, [],
+    ]
+    for sample in samples:
+        assert _is_plain(sample)
+        assert JSONResponse(plain_or_encoded(sample)).body == JSONResponse(jsonable_encoder(sample)).body
+    for odd in ({"_sa_instance_state": 1, "k": 2}, {1: "int key"}, (1, 2)):
+        assert not _is_plain(odd)
+        assert plain_or_encoded(odd) == jsonable_encoder(odd)
+    deep = []
+    node = deep
+    for _ in range(100000):
+        node.append([])
+        node = node[0]
+    assert not _is_plain(deep)
