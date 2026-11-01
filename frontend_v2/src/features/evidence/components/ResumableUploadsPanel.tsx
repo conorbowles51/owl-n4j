@@ -13,6 +13,8 @@ import {
   useResumableUploadGroups,
 } from "../use-resumable-uploads"
 import {
+  DISCARD_CONFIRM,
+  discardUploadGroup,
   hasLocalUploadGroup,
   isCompletingUploadGroup,
   pauseUploadGroup,
@@ -25,6 +27,7 @@ function GroupRow({ group }: { group: UploadGroup }) {
   const picker = useRef<HTMLInputElement>(null)
   const [error, setError] = useState("")
   const [busy, setBusy] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   const client = useQueryClient()
   const attached = hasLocalUploadGroup(group.id)
   const completing = isCompletingUploadGroup(group.id)
@@ -137,6 +140,44 @@ function GroupRow({ group }: { group: UploadGroup }) {
                   : "Reselect archive to resume"}
         </Button>
       )}
+      {!completing && !group.receipt && group.status !== "dispatching" ? (
+        confirmDiscard ? (
+          <div role="alertdialog" aria-label="Discard this upload" className="space-y-2 rounded-md border p-2 text-xs">
+            <p>{DISCARD_CONFIRM}</p>
+            <div className="flex gap-2">
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true)
+                  void discardUploadGroup(group.id)
+                    .then((result) => {
+                      toast.success(
+                        `Upload discarded. ${result.saved_count.toLocaleString("en-US")} saved ${result.saved_count === 1 ? "file was" : "files were"} removed from the server.`
+                      )
+                      refresh()
+                    })
+                    .catch((cause) => setError((cause as Error).message))
+                    .finally(() => {
+                      setBusy(false)
+                      setConfirmDiscard(false)
+                    })
+                }}
+              >
+                Discard upload
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setConfirmDiscard(false)}>
+                Keep it
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => setConfirmDiscard(true)}>
+            Discard upload
+          </Button>
+        )
+      ) : null}
       <input
         ref={(node) => {
           picker.current = node

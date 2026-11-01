@@ -14,6 +14,39 @@ export interface UploadProgress {
   startedAt: number
   bytesAtStart: number
   kind: "folder" | "archive" | "files"
+  /** Files finished in this phase, for a selection of many files (see {@link addFileCost}). */
+  fit?: FileCostFit
+}
+
+/**
+ * Running least-squares sums over the files finished in this phase: seconds = perFile + perByte x size. A phone
+ * folder is tens of thousands of small files and a few large ones, so the time a file costs is not its bytes alone:
+ * on a 43,123-file report (801 MB) hashing ran at 2 MB/s against 35 MB/s on 200 files, and a byte rate taken while
+ * the large files went first promised 23 s for what took 402 s.
+ */
+export interface FileCostFit {
+  n: number
+  sx: number
+  sy: number
+  sxx: number
+  sxy: number
+}
+/** Files that must have finished in this phase before a time left is given for a selection of many files. */
+export const MIN_FILES_FOR_FIT = 20
+
+export function addFileCost(fit: FileCostFit | undefined, size: number, seconds: number): FileCostFit {
+  const f = fit ?? { n: 0, sx: 0, sy: 0, sxx: 0, sxy: 0 }
+  return { n: f.n + 1, sx: f.sx + size, sy: f.sy + seconds, sxx: f.sxx + size * size, sxy: f.sxy + size * seconds }
+}
+
+/** perFile and perByte seconds from the fit, neither negative. */
+export function fileCosts(f: FileCostFit) {
+  const denom = f.n * f.sxx - f.sx * f.sx
+  let perByte = denom > 0 ? (f.n * f.sxy - f.sx * f.sy) / denom : 0
+  let perFile = (f.sy - perByte * f.sx) / f.n
+  if (perByte < 0) [perByte, perFile] = [0, f.sy / f.n]
+  if (perFile < 0) [perFile, perByte] = [0, f.sx > 0 ? f.sy / f.sx : 0]
+  return { perFile, perByte }
 }
 
 /** The shortest measured interval before a rate is trusted. */
@@ -45,8 +78,14 @@ export function formatTimeLeft(seconds: number) {
   return `about ${h} h ${m} min left`
 }
 
-/** Time left from this phase's measured byte rate, or null while no rate is measured yet. */
+/** Time left measured in this phase, or null while there is no measurement yet. A selection of many files uses the
+ * per-file and per-byte costs of the files already finished here; a single file uses its byte rate. */
 export function secondsLeft(p: UploadProgress, now: number): number | null {
+  if (p.filesTotal > 1) {
+    if (!p.fit || p.fit.n < MIN_FILES_FOR_FIT) return null
+    const { perFile, perByte } = fileCosts(p.fit)
+    return Math.max(0, p.filesTotal - p.filesDone) * perFile + Math.max(0, p.bytesTotal - p.bytesDone) * perByte
+  }
   const elapsed = now - p.startedAt
   const moved = p.bytesDone - p.bytesAtStart
   if (elapsed < RATE_MIN_MS || moved <= 0) return null

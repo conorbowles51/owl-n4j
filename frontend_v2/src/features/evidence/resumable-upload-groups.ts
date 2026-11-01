@@ -1,6 +1,6 @@
 import { fetchAPI } from "@/lib/api-client"
 import type { EvidenceUploadOptions, UploadResponse } from "./api"
-import type { UploadProgress } from "./upload-progress"
+import { addFileCost, type UploadProgress } from "./upload-progress"
 import {
   randomUUID,
   setLocalUploadPaused,
@@ -42,6 +42,24 @@ export const listUploadGroups = (caseId: string) =>
 export const hasLocalUploadGroup = (id: string) => active.has(id)
 export const isCompletingUploadGroup = (id: string) =>
   active.get(id)?.completing ?? false
+
+export const DISCARD_CONFIRM =
+  "Discard this upload? The parts saved so far are removed from the server. Nothing from this selection is in Evidence yet."
+
+/** Abandon a selection that has registered nothing (the server refuses once its files are evidence). A transfer
+ * running in this tab is stopped first. */
+export async function discardUploadGroup(id: string) {
+  const transfer = active.get(id)
+  if (transfer?.completing)
+    throw new Error("Files have arrived and are being registered, so this upload can no longer be discarded.")
+  if (transfer) transfer.paused = true
+  const result = await fetchAPI<{ id: string; status: "discarded"; file_count: number; saved_count: number }>(
+    `${endpoint}/${id}/discard`,
+    { method: "POST" }
+  )
+  active.delete(id)
+  return result
+}
 
 export async function pauseUploadGroup(id: string) {
   const transfer = active.get(id)
@@ -159,11 +177,13 @@ function runGroup(
       if (!file)
         throw new Error(`Reselect ${member.path} to finish this selection.`)
       transfer.memberId = member.id
+      const began = performance.now()
       await transferFile(member, file, (bytes) => {
         sent.bytesDone += bytes
         onProgress?.({ ...sent })
       })
       transfer.memberId = undefined
+      sent.fit = addFileCost(sent.fit, file.size, (performance.now() - began) / 1000)
       sent.filesDone++
       onProgress?.({ ...sent })
     }
@@ -213,6 +233,7 @@ export async function uploadFolderOrArchive(
   onProgress?.({ ...hashed })
   const manifest = []
   for (const file of files) {
+    const began = performance.now()
     manifest.push({
       path: relativePath(file, kind),
       size: file.size,
@@ -221,6 +242,7 @@ export async function uploadFolderOrArchive(
         onProgress?.({ ...hashed })
       })),
     })
+    hashed.fit = addFileCost(hashed.fit, file.size, (performance.now() - began) / 1000)
     hashed.filesDone++
     onProgress?.({ ...hashed })
   }

@@ -318,3 +318,51 @@ def test_selection_identity_and_case_are_checked_before_resume(groups):
     assert f.client.get('/api/evidence-upload-groups', params={'case_id': str(uuid4())}).status_code == 403
     f.user.id = uuid4()
     assert control(f, state, 'resume').status_code == 404
+
+
+def test_the_polled_list_counts_without_loading_members_and_a_group_lock_leaves_the_manifest_unread(groups):
+    """A phone folder has tens of thousands of members. The uploads list (polled every 2 s) must give the same counts
+    as the full snapshot without loading them, and each chunk or completion, which locks the group, must not decode
+    the manifest (measured live: the cost per file grew with the folder)."""
+    f = groups
+    content = {'Bundle/saved.txt': b'saved ' * 12, 'Bundle/partial.txt': b'partial ' * 12, 'Bundle/untouched.txt': b'x' * 70}
+    state, _ = start(f, content)
+    by_path = {m['path']: m for m in state['members']}
+    stage(f, dict(state, members=[by_path['Bundle/saved.txt']]), content)
+    assert send(f, by_path['Bundle/partial.txt'], content['Bundle/partial.txt'], 0).status_code == 200
+    with Session(f.engine) as db:
+        group = api.get_group(db, UUID(state['id']), f.user, lock=True)
+        assert 'manifest' not in group.__dict__  # deferred: not decoded by a lock
+        full = api.snapshot(db, group, include_members=False)
+        assert api.summary(db, group) == full
+    assert full['staged_count'] == 1 and full['file_count'] == 3
+    assert full['received_bytes'] == len(content['Bundle/saved.txt']) + 32
+    listed = f.client.get('/api/evidence-upload-groups', params={'case_id': str(f.case)}).json()
+    assert listed == [full]
+
+
+def test_an_unfinished_selection_can_be_discarded_and_a_registered_one_cannot(groups):
+    f = groups
+    content = {'Bundle/saved.txt': b'saved ' * 12, 'Bundle/partial.txt': b'partial ' * 12}
+    state, _ = start(f, content)
+    by_path = {m['path']: m for m in state['members']}
+    stage(f, dict(state, members=[by_path['Bundle/saved.txt']]), content)
+    assert send(f, by_path['Bundle/partial.txt'], content['Bundle/partial.txt'], 0).status_code == 200
+    pending = f.root / 'pending' / str(f.case)
+    assert sorted(p.name for p in pending.iterdir()) == sorted(m['id'] for m in state['members'])
+    response = control(f, state, 'discard')
+    assert response.status_code == 200, response.text
+    assert response.json() == dict(id=state['id'], status='discarded', file_count=2, saved_count=1)
+    assert list(pending.iterdir()) == []
+    assert f.client.get('/api/evidence-upload-groups', params={'case_id': str(f.case)}).json() == []
+    with Session(f.engine) as db:
+        assert db.scalars(select(EvidenceUploadGroup)).all() == [] and db.scalars(select(EvidenceFile)).all() == []
+    assert control(f, state, 'discard').status_code == 404
+    # a registered selection is evidence: refused, nothing removed
+    other, _ = start(f, {'One/a.txt': b'one ' * 10})
+    stage(f, other, {'One/a.txt': b'one ' * 10})
+    assert control(f, other, 'complete').json()['status'] == 'completed'
+    refused = control(f, other, 'discard')
+    assert (refused.status_code, refused.json()['detail']) == (409, api.ALREADY_REGISTERED)
+    with Session(f.engine) as db:
+        assert len(db.scalars(select(EvidenceFile)).all()) == 1

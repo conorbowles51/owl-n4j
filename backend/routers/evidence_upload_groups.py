@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import stat
 import tempfile
 from types import SimpleNamespace
@@ -19,9 +20,9 @@ import zipfile
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, defer
 
 from postgres.models.evidence import EvidenceFolder
 from postgres.models.evidence_upload import EvidenceUploadGroup, EvidenceUploadSession
@@ -68,7 +69,11 @@ def safe_path(raw):
 
 
 def get_group(db, identity, user, *, lock=False):
-    query = select(EvidenceUploadGroup).where(EvidenceUploadGroup.id == identity)
+    # The manifest (one entry per file: 43,123 on a measured phone folder) loads only when read. Every chunk and every
+    # file completion locks its group, and decoding the whole manifest each time made a folder's cost grow with its
+    # square (measured live: about 2 s per file at 300 of 43,123).
+    query = select(EvidenceUploadGroup).options(defer(EvidenceUploadGroup.manifest)).where(
+        EvidenceUploadGroup.id == identity)
     if lock:
         query = query.with_for_update().execution_options(populate_existing=True)
     group = db.scalar(query)
@@ -97,6 +102,37 @@ def snapshot(db, group, *, include_members=True):
     if include_members:
         result['members'] = states
     return result
+
+
+STAGED = ('staged', 'completed')
+
+
+def summary(db, group):
+    """The group's counts as ``snapshot(..., include_members=False)`` gives them, without loading its members: the
+    uploads list is polled every 2 s and a phone folder has tens of thousands of members. Totals come from one
+    aggregate query; the bytes of members not yet saved come from the chunk files of the few that have a chunk
+    folder (a saved member keeps all its chunks, so it counts in full)."""
+    S = EvidenceUploadSession
+    saved = S.status.in_(STAGED)
+    file_count, size, staged_count, staged_bytes = db.execute(select(
+        func.count(), func.coalesce(func.sum(S.size), 0), func.coalesce(func.sum(case((saved, 1), else_=0)), 0),
+        func.coalesce(func.sum(case((saved, S.size), else_=0)), 0)).where(S.group_id == group.id)).one()
+    received = int(staged_bytes)
+    try:
+        started = {entry.name for entry in os.scandir(uploads.ROOT / str(group.case_id)) if entry.is_dir()}
+    except FileNotFoundError:
+        started = set()
+    if started:
+        open_ids = [i for i in db.scalars(select(S.id).where(S.group_id == group.id, ~saved)) if str(i) in started]
+        for at in range(0, len(open_ids), 1000):
+            for row in db.scalars(select(S).where(S.id.in_(open_ids[at:at + 1000]))):
+                received += sum(min(row.chunk_size, row.size - index * row.chunk_size)
+                                for index in uploads.snapshot(row)['received'])
+    return dict(id=str(group.id), case_id=str(group.case_id), name=group.name,
+        folder_id=str(group.folder_id) if group.folder_id else None,
+        kind=group.kind, status=group.status, replace_existing=group.replace_existing,
+        file_count=int(file_count), staged_count=int(staged_count), size=int(size), received_bytes=received,
+        receipt=group.receipt)
 
 
 @router.post('')
@@ -150,8 +186,8 @@ def list_groups(case_id: UUID, user: User = Depends(get_current_db_user), db: Se
     authorize_case(db, case_id, user, ('evidence', 'upload'))
     groups = db.scalars(select(EvidenceUploadGroup).where(EvidenceUploadGroup.case_id == case_id,
         EvidenceUploadGroup.user_id == user.id, EvidenceUploadGroup.status != 'completed')
-        .order_by(EvidenceUploadGroup.created_at))
-    return [snapshot(db, group, include_members=False) for group in groups]
+        .options(defer(EvidenceUploadGroup.manifest)).order_by(EvidenceUploadGroup.created_at))
+    return [summary(db, group) for group in groups]
 
 
 @router.get('/{identity}')
@@ -414,8 +450,34 @@ def engine_detector(case_id):
     return detect
 
 
+ALREADY_REGISTERED = ('Files from this selection are already in Evidence, so it cannot be discarded. Nothing was '
+                      'removed.')
+
+
+def discard_group(db, identity, user):
+    """Abandon a selection that has registered nothing: its saved parts, any copy made by an interrupted finish,
+    its member rows and the group row are removed. Refused once the selection holds a receipt (its files are
+    evidence then, and evidence is removed only through Evidence)."""
+    group = get_group(db, identity, user, lock=True)
+    if group.receipt or group.status in ('dispatching', 'completed'):
+        raise HTTPException(409, ALREADY_REGISTERED)
+    S = EvidenceUploadSession
+    rows = db.execute(select(S.id, S.case_id, S.status).where(S.group_id == group.id)).all()
+    for row in rows:
+        shutil.rmtree(uploads.directory(row), ignore_errors=True)
+    shutil.rmtree(payload_root(group).parent, ignore_errors=True)
+    result = dict(id=str(group.id), status='discarded', file_count=len(rows),
+                  saved_count=sum(1 for row in rows if row.status in STAGED))
+    db.execute(delete(S).where(S.group_id == group.id))
+    db.execute(delete(EvidenceUploadGroup).where(EvidenceUploadGroup.id == group.id))
+    db.commit()
+    return result
+
+
 @router.post('/{identity}/{action}')
 async def group_action(identity: UUID, action: str, user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
+    if action == 'discard':
+        return await run_in_threadpool(discard_group, db, identity, user)
     if action not in {'pause', 'resume', 'complete'}:
         raise HTTPException(404, 'Unknown upload action')
     # Async for the engine calls; every database step runs in the thread pool, in the same order and transaction

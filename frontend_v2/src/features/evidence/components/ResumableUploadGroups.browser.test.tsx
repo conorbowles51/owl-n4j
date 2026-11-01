@@ -486,3 +486,50 @@ it("a selection whose reading jobs are starting says so, and asks for Finish reg
   expect(screen.queryByText(/Reading needs to be started/)).toBeNull()
   client.clear()
 })
+
+it("an unfinished selection can be discarded after saying what is removed", async () => {
+  let discarded = false
+  const calls: string[] = []
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    calls.push(`${options?.method ?? "GET"} ${url.split("?")[0]}`)
+    if (url.startsWith("/api/evidence-upload-sessions?")) return []
+    if (url.startsWith("/api/evidence-upload-groups?"))
+      return discarded
+        ? []
+        : ([
+            {
+              id: "unfinished",
+              case_id: "case",
+              name: "Phone folder",
+              kind: "folder",
+              status: "uploading",
+              file_count: 3,
+              staged_count: 1,
+              size: 30,
+              received_bytes: 10,
+              replace_existing: false,
+              folder_id: null,
+              receipt: null,
+            },
+          ] satisfies UploadGroup[])
+    if (url === "/api/evidence-upload-groups/unfinished/discard") {
+      discarded = true
+      return { id: "unfinished", status: "discarded", file_count: 3, saved_count: 1 }
+    }
+    throw new Error(`unexpected ${url}`)
+  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <ResumableUploadsPanel caseId="case" />
+    </QueryClientProvider>
+  )
+  fireEvent.click(await screen.findByRole("button", { name: "Discard upload" }))
+  const dialog = await screen.findByRole("alertdialog", { name: "Discard this upload" })
+  expect(dialog.textContent).toContain("Nothing from this selection is in Evidence yet.")
+  expect(calls).not.toContain("POST /api/evidence-upload-groups/unfinished/discard")
+  fireEvent.click(screen.getAllByRole("button", { name: "Discard upload" }).at(-1)!)
+  await waitFor(() => expect(calls).toContain("POST /api/evidence-upload-groups/unfinished/discard"))
+  await waitFor(() => expect(screen.queryByText("Phone folder")).toBeNull())
+  client.clear()
+})
