@@ -108,3 +108,34 @@ def test_real_http_route_returns_actionable_conflict_without_mutation(action, bl
     assert f'This request did not {action} recovery.' in response.json()['detail']
     assert 'private' not in response.text
     assert session.run.status == state and session.commits == 0 and session.rollbacks == 1
+
+
+class WaitingControlSession(ControlSession):
+    def execute(self, statement, params=None):
+        self.statements.append((statement, params))
+        if self.blocked == 'case' and params is None:
+            raise self.error
+        return SimpleNamespace(all=lambda: [])
+
+    def scalar(self, statement):
+        self.statements.append((statement, None))
+        return self.run
+
+
+def test_the_release_waits_a_bounded_time_for_the_case_so_a_running_review_gives_it_back():
+    # 1 Nov: a statement review hands the case over only when a transaction waits for it; with NOWAIT every
+    # release pause and resume of run a67871bf was refused for over 3 h.
+    session = WaitingControlSession(state='running')
+    assert recovery.control(session, uuid4(), 'pause', wait_seconds=90) == {'status': 'paused'}
+    (timeout, params), *locks = session.statements
+    assert 'lock_timeout' in str(timeout) and params == {'t': '90000ms'}
+    for statement, _ in locks:
+        sql = str(statement.compile(dialect=postgresql.dialect()))
+        assert sql.endswith('FOR UPDATE'), sql
+
+
+def test_a_release_wait_that_runs_out_is_still_a_busy_case_409():
+    session = WaitingControlSession(blocked='case', state='running')
+    with pytest.raises(PdfMappingError) as failure:
+        recovery.control(session, uuid4(), 'pause', wait_seconds=90)
+    assert failure.value.status_code == 409 and session.run.status == 'running'

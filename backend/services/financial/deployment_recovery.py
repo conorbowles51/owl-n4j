@@ -445,12 +445,22 @@ def status(session, case_id, *, offset=0, limit=50, run_id=None):
         total=sum(counts.values()), items=[dict(id=str(item.id), file_id=str(item.file_id), status=item.status, **item.result) for item in rows])
 
 
-def control(session, case_id, action, run_id=None):
+def control(session, case_id, action, run_id=None, wait_seconds=None):
+    """``wait_seconds``: wait that long for the case instead of refusing at once (the release's pause and resume).
+    A statement review holding the case gives it back at its next statement only when a transaction waits for it,
+    so a request that never waits is refused for as long as reviews run (1 Nov: every release pause and resume of
+    run a67871bf refused for over 3 h)."""
     try:
-        # Pause/Resume is a user control, not a queued write. Report a busy
-        # case promptly rather than leaving the button saving behind a worker.
-        session.execute(select(Case.id).where(Case.id == case_id).with_for_update(nowait=True)).all()
-        run = _case_run(session, case_id, run_id, lock=True, nowait=True)
+        if wait_seconds:
+            from sqlalchemy import text
+            session.execute(text("SELECT set_config('lock_timeout', :t, true)"), dict(t=f'{int(wait_seconds * 1000)}ms'))
+            session.execute(select(Case.id).where(Case.id == case_id).with_for_update()).all()
+            run = _case_run(session, case_id, run_id, lock=True)
+        else:
+            # Pause/Resume is a user control, not a queued write. Report a busy
+            # case promptly rather than leaving the button saving behind a worker.
+            session.execute(select(Case.id).where(Case.id == case_id).with_for_update(nowait=True)).all()
+            run = _case_run(session, case_id, run_id, lock=True, nowait=True)
     except DBAPIError as error:
         if (getattr(error.orig, 'sqlstate', None) or getattr(error.orig, 'pgcode', None)) != '55P03':
             raise
