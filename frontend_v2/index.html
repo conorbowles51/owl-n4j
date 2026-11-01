@@ -4,7 +4,12 @@
     <meta charset="UTF-8" />
     <script>
       (() => {
-        const storedTheme = localStorage.getItem("owl-theme")
+        let storedTheme = null
+        try {
+          storedTheme = localStorage.getItem("owl-theme")
+        } catch {
+          // site storage refused: the default theme
+        }
         const savedTheme = ["dark", "light", "system"].includes(storedTheme)
           ? storedTheme
           : "dark"
