@@ -335,6 +335,18 @@ def assess(proposal, request=None):
 # the case this long it gives it back at the next statement boundary whenever
 # another transaction is waiting for it.
 REVIEW_LOCK_SLICE_SECONDS = 1.0
+
+# A batch told to pause (by a person or by a release) stops at the next statement
+# boundary of the file it is reviewing, not only between files: 1 Nov two batches
+# re-reviewing one 217-statement file under contention took over an hour each,
+# and every release waited behind their 'pausing' leases. The work done so far
+# is committed exactly as at a lock slice; the file stays where it was and the
+# next turn resumes it (statements already prepared are not prepared again).
+REVIEW_STOP_CHECK_SECONDS = 5.0
+
+
+class ReviewStopped(Exception):
+    """A file review stopped at a statement boundary because its batch was told to stop."""
 _READING_KEYS = ('printed_header', 'geometry_pages')
 _READING_DERIVED_KEYS = ('catalog', 'currencies', 'checks')
 
@@ -562,7 +574,9 @@ def carry_person_skips(session, case_id, *, apply=False):
     return changes
 
 
-def prepare_reviews(session, batch, file, *, lock_slice=None):
+def prepare_reviews(session, batch, file, *, lock_slice=None, stop=None):
+    """``stop``: called (at most every REVIEW_STOP_CHECK_SECONDS) at statement boundaries; when it returns
+    True the work so far is committed and ReviewStopped is raised."""
     cache = {}
     fid = UUID(file['file_id'])
     batch_id, case_id = batch.id, batch.case_id
@@ -576,7 +590,14 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
     if not identifiers: identifiers=[None]
     produced = set()
     carried_from_file_level = False
-    for statement_id in identifiers:
+    checked_stop = time.monotonic()
+    for position, statement_id in enumerate(identifiers):
+        if stop is not None and position and time.monotonic() - checked_stop >= REVIEW_STOP_CHECK_SECONDS:
+            checked_stop = time.monotonic()
+            if stop():
+                session.flush()
+                session.commit()
+                raise ReviewStopped()
         review_lock.yield_case()
         proposal = read_statement_import(session,case_id=batch.case_id,evidence_file_id=fid,currency=file.get('currency') or None,statement_id=statement_id,_cache=cache)
         key = statement_id or proposal.get('statement_id') or ''
@@ -2505,7 +2526,8 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                         file.pop('error', None)
                         _reading_progress(file, 'complete', SHARED_PREPARATION_DONE, review_file_id=file['file_id'], prepared_in_batch=shared[1])
                     else:
-                        reviewed = await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file))
+                        reviewed = await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file),
+                                                        lambda: shutdown_requested() or stopped())
                         if isinstance(reviewed, dict) and reviewed.get('carry_refused'):
                             # Nothing was prepared (held_reprepare: her work could not be carried now). The file
                             # keeps the stamps of the reader that did prepare it; only the mark records why.
@@ -2541,6 +2563,11 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                             file.pop('error', None)
                             file['prepared_reading'] = await asyncio.to_thread(_prepared_reading, factory, case_id, UUID(file['file_id']))
                             _reading_progress(file, 'complete', 'The reading is complete. Open its statement review to check reconciliation before importing.', review_file_id=file['file_id'])
+            except ReviewStopped:
+                # Told to stop mid-file: what was prepared is saved, the file is left as it was and
+                # the next turn resumes it. Not a failure and not a retry.
+                busy = True
+                log.info('Financial preparation stopped mid-file: batch %s was told to stop', batch_id)
             except Exception as error:
                 retries = file.get('preparation_retries', 0)
                 if _lock_busy_error(error):
@@ -2693,7 +2720,7 @@ def _turn_candidates(files):
     return chosen + waiting[:room]
 
 
-def _review_file(factory,batch_id,case_id,file):
+def _review_file(factory,batch_id,case_id,file,stop=None):
     with factory() as db:
         # held_reprepare with investigator work: carried onto the current reading first (reprepare_carry). When it
         # cannot be carried now, nothing is prepared and the file's statements stay exactly as they are.
@@ -2701,7 +2728,7 @@ def _review_file(factory,batch_id,case_id,file):
         refused = carry_before_preparing(db, case_id, batch_id, file)
         if refused:
             return dict(carry_refused=refused)
-        prepare_reviews(db,batch_for(db,case_id,batch_id),file,lock_slice=REVIEW_LOCK_SLICE_SECONDS)
+        prepare_reviews(db,batch_for(db,case_id,batch_id),file,lock_slice=REVIEW_LOCK_SLICE_SECONDS,stop=stop)
         # Saved reviews, earlier imports or duplicate decisions on this file can
         # leave its periods needing a reading at list time. Store it now.
         refresh_file_readiness(db, case_id=case_id, file_id=UUID(file['file_id']))

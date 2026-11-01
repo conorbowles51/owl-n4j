@@ -1437,6 +1437,58 @@ class BatchImportTests(TestCase):
         self.assertEqual(outcomes[0][1],outcomes[None][1])
         self.assertEqual(sorted(v[1] for v in outcomes[0][1].values()),['attention','ready','ready'])
 
+    def _three_period_reading(self, on_read=None):
+        base=self.f.preview();choices=[dict(id='a'*64),dict(id='b'*64),dict(id='c'*64)]
+        def reading(*args,**kwargs):
+            result=deepcopy(base);result['statement_choices']=choices
+            result['statement_id']=kwargs.get('statement_id')
+            if on_read and result['statement_id']:
+                on_read(result['statement_id'])
+            return result
+        return reading
+
+    def _item_keys(self,batch):
+        with self.f.SessionLocal() as db:
+            return sorted(i.statement_key[:1] for i in db.scalars(select(Item).where(Item.batch_id==batch)))
+
+    def test_a_review_told_to_stop_saves_the_periods_so_far_and_the_next_review_completes_it(self):
+        # 1 Nov: a pause was only seen between files, and one 217-statement file kept two batches
+        # 'pausing' for over an hour, deferring every release.
+        from unittest.mock import patch
+        f=self.f;batch=self.create()
+        with patch.object(service,'read_statement_import',side_effect=self._three_period_reading()), \
+                patch.object(service,'REVIEW_STOP_CHECK_SECONDS',0):
+            with f.SessionLocal() as db:
+                owner=db.get(Batch,batch)
+                with self.assertRaises(service.ReviewStopped):
+                    service.prepare_reviews(db,owner,owner.files[0],lock_slice=0,stop=lambda:True)
+            self.assertEqual(self._item_keys(batch),['a'])
+            with f.SessionLocal() as db:
+                owner=db.get(Batch,batch)
+                service.prepare_reviews(db,owner,owner.files[0],lock_slice=0)
+        self.assertEqual(self._item_keys(batch),['a','b','c'])
+
+    def test_a_batch_paused_mid_file_ends_its_turn_and_resumes_the_file_later(self):
+        from unittest.mock import patch
+        f=self.f;batch=self.create()
+        def pause_after_first(statement_id):
+            if statement_id=='a'*64:
+                with f.SessionLocal() as db:
+                    service.control_batch(db,case_id=f.case.id,batch_id=batch,action='pause')
+        with patch.object(service,'read_statement_import',side_effect=self._three_period_reading(pause_after_first)), \
+                patch.object(service,'REVIEW_STOP_CHECK_SECONDS',0):
+            self.advance(batch)
+            paused=self.status(batch)
+            self.assertEqual(paused['status'],'paused')
+            self.assertNotEqual(paused['files'][0]['status'],'checked')
+            self.assertEqual(self._item_keys(batch),['a'])
+        with patch.object(service,'read_statement_import',side_effect=self._three_period_reading()):
+            with f.SessionLocal() as db:
+                service.control_batch(db,case_id=f.case.id,batch_id=batch,action='resume')
+            self.advance(batch)
+        self.assertEqual(self.status(batch)['files'][0]['status'],'checked')
+        self.assertEqual(self._item_keys(batch),['a','b','c'])
+
     def test_sliced_review_keeps_only_reading_cache_entries_across_a_release(self):
         case=str(self.f.case.id);source=(case,str(self.f.file.id),'sha')
         cache={('printed_header',str(self.f.file.id),'sha'):1,('geometry_pages',*source):2,source:3,
