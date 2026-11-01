@@ -151,3 +151,5 @@ from postgres.models.financial_recovery import FinancialRecoveryRelease, Financi
 __all__ += ['FinancialRecoveryRelease', 'FinancialRecoveryRun', 'FinancialRecoveryItem']
 from postgres.models.financial_payment_category import FinancialPaymentCategory, FinancialCategoryModelCache, FinancialCategoryRule
 __all__ += ["FinancialPaymentCategory", "FinancialCategoryModelCache", "FinancialCategoryRule"]
+from postgres.models.ui_problem_report import UiProblemReport
+__all__ += ["UiProblemReport"]

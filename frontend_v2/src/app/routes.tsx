@@ -41,6 +41,7 @@ const CellebritePage = lazy(() =>
   }))
 )
 const PhonePrototypePage = lazy(() => import("@/features/phones/prototype/PhonePrototypePage"))
+const PhoneGuidePage = lazy(() => import("@/features/phones/PhoneGuidePage"))
 const DossiersPage = lazy(() =>
   import("@/features/dossiers/components/DossiersPage").then((m) => ({
     default: m.DossiersPage,
@@ -199,6 +200,7 @@ export function AppRoutes() {
 
           <Route path="/settings" element={<LazyPage><SettingsPage /></LazyPage>} />
           <Route path="/settings/ai" element={<LazyPage><AISettingsPage /></LazyPage>} />
+          <Route path="/guide/phones" element={<LazyPage><PhoneGuidePage /></LazyPage>} />
         </Route>
       </Route>
     </Routes>

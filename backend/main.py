@@ -290,6 +290,8 @@ from routers.activity import router as activity_router
 app.include_router(activity_router)
 from routers.request_speed import router as request_speed_router
 app.include_router(request_speed_router)
+from routers.ui_problem_reports import router as ui_problem_reports_router
+app.include_router(ui_problem_reports_router)
 
 
 @app.get("/")

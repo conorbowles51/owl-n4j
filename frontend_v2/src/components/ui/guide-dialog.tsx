@@ -34,6 +34,8 @@ export function GuideDialog({
   initial,
   defaultOpen = false,
   preloaded,
+  anchor,
+  onOpenChange,
 }: {
   guides: GuideSource[]
   trigger?: string
@@ -41,6 +43,9 @@ export function GuideDialog({
   defaultOpen?: boolean
   /** Documents already in hand (stories, tests); otherwise each is fetched when first shown. */
   preloaded?: Record<string, string>
+  /** A heading to land on in the initial guide, e.g. a glossary term ("Learn more" links). */
+  anchor?: string
+  onOpenChange?: (open: boolean) => void
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const [active, setActive] = useState(initial ?? guides[0].id)
@@ -66,12 +71,28 @@ export function GuideDialog({
     return () => controller.abort()
   }, [open, markdown, attempt, guide])
 
+  const [landed, setLanded] = useState(false)
+  useEffect(() => {
+    if (!open || !anchor || landed || markdown === undefined || guide.id !== (initial ?? guides[0].id)) return
+    const frame = requestAnimationFrame(() => {
+      const target = document.getElementById(`${guide.prefix}-${anchor}`)
+      if (target) {
+        target.scrollIntoView({ block: "start" })
+        target.setAttribute("tabindex", "-1")
+        target.focus({ preventScroll: true })
+      }
+      setLanded(true)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [open, anchor, landed, markdown, guide, initial, guides])
+
   return (
     <Dialog
       open={open}
       onOpenChange={(value) => {
         setOpen(value)
         setError(false)
+        onOpenChange?.(value)
       }}
     >
       <DialogTrigger asChild>

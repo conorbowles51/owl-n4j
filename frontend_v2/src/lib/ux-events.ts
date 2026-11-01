@@ -9,8 +9,8 @@ import FIELDS from "./ux-event-fields.json"
  * Events go to Loupe's own records (/api/request-speed/ux-events); nothing goes to a third party.
  */
 
-type FieldSpec = { enum?: string[]; ref?: string; int?: [number, number]; number?: [number, number]; bool?: boolean; uuid?: boolean }
-const TYPES = FIELDS.field_types as Record<string, FieldSpec>
+type FieldSpec = { enum?: string[]; ref?: string; int?: number[]; number?: number[]; bool?: boolean; uuid?: boolean }
+const TYPES = FIELDS.field_types as unknown as Record<string, FieldSpec>
 const EVENTS = FIELDS.events as Record<string, string[]>
 const REQUIRED = FIELDS.required as Record<string, string[]>
 

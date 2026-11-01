@@ -47,6 +47,12 @@ interface FetchOptions extends Omit<RequestInit, "body"> {
 let inFlight = 0
 
 /** API requests started through fetchAPI that have not finished yet (the page-speed post waits for none). */
+let lastRequest: string | null = null
+/** The server's id for the most recent API answer (X-Request-ID), for Report a problem. */
+export function lastRequestId() {
+  return lastRequest
+}
+
 export function apiRequestsInFlight() {
   return inFlight
 }
@@ -109,6 +115,8 @@ export async function fetchAPI<T>(
     } else if (marksUpdating) {
       noteViewAnswer(endpoint, updatingAsOf(response), requestNumber)
     }
+    const requestId = response.headers?.get?.("X-Request-ID")
+    if (requestId && /^[0-9a-f-]{8,64}$/.test(requestId)) lastRequest = requestId
     if (response.ok && isOwnWrite(endpoint, init.method, read)) noteOwnWrite()
 
     if (!response.ok) {

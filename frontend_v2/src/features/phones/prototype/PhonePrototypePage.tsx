@@ -3,6 +3,8 @@ import { trackUx } from "@/lib/ux-events"
 import { Link, Navigate, useLocation, useParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { GuideDialog } from "@/components/ui/guide-dialog"
+import { ReportProblem } from "@/components/ui/report-problem"
+import { PHONE_GUIDES } from "../guide"
 import { PageHeader } from "@/components/ui/page-header"
 import { installKeymap } from "@/lib/keymap"
 import { useSwitch } from "@/lib/ui-switches"
@@ -20,10 +22,6 @@ import { pickCase } from "./proto-data"
  * on synthetic phones, behind the "phone-prototype" switch, which is off. With the switch off the route sends
  * the person back to the case and the sidebar shows nothing. Nothing here reads or writes case data.
  */
-export const PHONE_GUIDES = [
-  { id: "user", label: "User guide", title: "Phone user guide", url: `${import.meta.env.BASE_URL}docs/phone-guide/phone-user-guide.md`, directory: `${import.meta.env.BASE_URL}docs/phone-guide/`, heading: "# Phone user guide", prefix: "phone-guide" },
-  { id: "checklist", label: "Team checklist", title: "Phone team checklist", url: `${import.meta.env.BASE_URL}docs/phone-guide/phone-team-checklist.md`, directory: `${import.meta.env.BASE_URL}docs/phone-guide/`, heading: "# Phone team checklist", prefix: "phone-checklist" },
-]
 
 const VIEWS = [
   { id: "summary", words: "Phone summary" },
@@ -97,6 +95,14 @@ export default function PhonePrototypePage() {
           <>
             <Button size="sm" variant="outline" onClick={() => setKeysOpen(true)}>Keys</Button>
             <GuideDialog guides={PHONE_GUIDES} />
+            {caseId && (
+              <ReportProblem
+                caseId={caseId}
+                screen={`prototype-${view}`}
+                scope={{ phones: fx.phones.length, people: fx.people.length, messages: fx.messages.length }}
+                components={["prototype", `prototype-${view}`]}
+              />
+            )}
           </>
         }
       />
