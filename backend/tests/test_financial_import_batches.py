@@ -996,7 +996,7 @@ class BatchImportTests(TestCase):
         actual = service._review_file
         calls = []
         def reviewed(*args):
-            calls.append(args[-1]['file_id'])
+            calls.append(args[3]['file_id'])  # (factory, batch_id, case_id, file, stop)
             with self.f.SessionLocal() as db:
                 state = service.control_batch(db, case_id=self.f.case.id, batch_id=batch, action='pause')
                 self.assertEqual(state['status'], 'pausing')
