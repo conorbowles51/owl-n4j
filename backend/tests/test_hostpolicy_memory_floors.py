@@ -67,5 +67,40 @@ class InstallAppliesToRunningUnits(unittest.TestCase):
             self.assertIn('MemoryMin=11G', line[0].split())
 
 
+    def test_a_drop_in_without_resource_lines_does_not_stop_the_install(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / 'policy'
+            subprocess.run(['cp', '-r', str(POLICY), str(src)], check=True)
+            (src / 'aa.service.d').mkdir()
+            (src / 'aa.service.d' / '50-lx-hostpolicy.conf').write_text('[Service]\nSlice=x.slice\n')
+            calls = Path(tmp) / 'calls'
+            stub = Path(tmp) / 'systemctl'
+            stub.write_text('#!/bin/sh\necho "$@" >> %s\nexit 0\n' % calls)
+            stub.chmod(0o755)
+            (Path(tmp) / 'units').mkdir()
+            env = dict(os.environ, SYSTEMCTL=str(stub), HOSTPOLICY_UNIT_DIR=str(Path(tmp) / 'units'))
+            subprocess.run(['bash', str(src / 'install.sh')], env=env, check=True, capture_output=True)
+            self.assertTrue(any(l.startswith('set-property --runtime owl-backend-v2.service ')
+                                for l in calls.read_text().splitlines()))
+
+    def test_remove_clears_the_runtime_copies(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            control = Path(tmp) / 'control'
+            for unit in ('loupe.slice', 'owl-backend-v2.service'):
+                (control / (unit + '.d')).mkdir(parents=True)
+                (control / (unit + '.d') / '50-MemoryMin.conf').write_text('x')
+            (control / 'loupe.slice.d' / '50-Other.conf').write_text('x')
+            stub = Path(tmp) / 'systemctl'
+            stub.write_text('#!/bin/sh\nexit 0\n')
+            stub.chmod(0o755)
+            (Path(tmp) / 'units').mkdir()
+            env = dict(os.environ, SYSTEMCTL=str(stub), HOSTPOLICY_UNIT_DIR=str(Path(tmp) / 'units'),
+                       HOSTPOLICY_CONTROL_DIR=str(control))
+            subprocess.run(['bash', str(POLICY / 'install.sh'), '--remove'], env=env, check=True, capture_output=True)
+            self.assertFalse((control / 'loupe.slice.d' / '50-MemoryMin.conf').exists())
+            self.assertFalse((control / 'owl-backend-v2.service.d' / '50-MemoryMin.conf').exists())
+            self.assertTrue((control / 'loupe.slice.d' / '50-Other.conf').exists())
+
+
 if __name__ == '__main__':
     unittest.main()
