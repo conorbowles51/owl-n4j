@@ -6,7 +6,8 @@ counting, capturing, reconciling, indexing_files (a resumed capture skips stages
 target could not be reached after a later one). The seed draws, within a share of that stage's duration in the uninterrupted run, how long after the child reports that stage the kill lands. A child that
 has already passed its target is killed in the stage it is in, and the stage actually killed is recorded. After the
 kills the capture runs to the end, and its row digest (``app.phone.digest``) is compared with an uninterrupted
-capture of the same report in a second case.
+capture of the same report in a second case. ``--stages`` limits the kills to some stages; ``--reference-json``
+reuses the uninterrupted run recorded in an earlier result file of the same report and database.
 
     python -m scripts.phone_kill_resume --url postgresql://... --data-root /data --report-root /path/to/report \
         --label C3 --kills 20 --seed 1000 --out result.json
@@ -97,8 +98,12 @@ def _kill_once(case, k):
     """One child, killed once. Returns the record of the kill, or None if it finished first."""
     seed = ARGS.seed + k
     rng = random.Random(seed)
-    target = STAGES[k * len(STAGES) // ARGS.kills]
-    delay = rng.uniform(0.0, max(0.05, SHARE * DURATION.get(target, 1.0)) * ARGS.delay_scale)
+    stages = ARGS.stages or STAGES
+    target = stages[k * len(stages) // ARGS.kills]
+    # The i-th kill in a stage draws from SHARE x duration / (i + 1): each resume continues from its cursor, so the
+    # stage left to run gets shorter with every kill in it (C8's last indexing_files kill once drew past its end).
+    before = sum(1 for j in range(k) if stages[j * len(stages) // ARGS.kills] == target)
+    delay = rng.uniform(0.0, max(0.05, SHARE * DURATION.get(target, 1.0) / (before + 1)) * ARGS.delay_scale)
     p, lines = _spawn(case)
     current, due, t0 = None, None, time.time()
     while True:
@@ -127,8 +132,16 @@ def main():
     from app.phone import store
     from app.phone.digest import extraction_digest, reconciliation_runs
     conn = store.connect(ARGS.url)
-    reference_case, killed_case = _case(conn, "kill-resume reference"), _case(conn, "kill-resume killed")
-    reference, reference_s, stages = _run_to_end(reference_case)
+    if ARGS.reference_json:
+        # Reuse an earlier uninterrupted run of the same report in the same database (its case and result).
+        prior = json.load(open(ARGS.reference_json))
+        reference_case, killed_case = prior["cases"][0], _case(conn, "kill-resume killed")
+        ref = prior["reference"]
+        stages, reference_s = ref["stage_seconds"], ref["seconds"]
+        reference = {k: v for k, v in ref.items() if k not in ("seconds", "stage_seconds")}
+    else:
+        reference_case, killed_case = _case(conn, "kill-resume reference"), _case(conn, "kill-resume killed")
+        reference, reference_s, stages = _run_to_end(reference_case)
     DURATION.update(stages)
     kills = []
     for k in range(ARGS.kills):
@@ -162,6 +175,8 @@ if __name__ == "__main__":
     ap.add_argument("--seed", type=int, default=1000)
     ap.add_argument("--out")
     ap.add_argument("--delay-scale", type=float, default=1.0, help="multiplies each stage's delay bound (small reports)")
+    ap.add_argument("--stages", nargs="+", choices=STAGES, help="kill only in these stages (default: all five)")
+    ap.add_argument("--reference-json", help="an earlier result file of this report whose uninterrupted run is reused")
     ap.add_argument("--child", action="store_true")
     ARGS = ap.parse_args()
     child(ARGS) if ARGS.child else main()

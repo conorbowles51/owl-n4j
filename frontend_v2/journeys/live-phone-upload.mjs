@@ -40,16 +40,26 @@ try {
   if ((await page.evaluate(() => window.isSecureContext)) !== false) throw new Error("isSecureContext was not false")
   const masks = () => [page.getByText(name, { exact: false }), page.getByText(name.replace(/\.zip$/i, ""), { exact: false })]
   let shot = 0
-  const snap = async (what) => {
+  // Screenshots are of this report's own elements only (the case may hold other evidence and jobs), with the report's
+  // name masked; when the element cannot be found the screenshot is skipped, never widened to the page.
+  const snap = async (what, target) => {
     shot += 1
     const file = `${shots}/${label}-${String(shot).padStart(2, "0")}-${what}.png`
-    await page.screenshot({ path: file, fullPage: false, mask: masks(), maskColor: "#888" })
-    console.log(`${secs()} s screenshot ${file.split("/").pop()}`)
+    try {
+      await target.screenshot({ path: file, mask: masks(), maskColor: "#888", timeout: 5000 })
+      console.log(`${secs()} s screenshot ${file.split("/").pop()}`)
+    } catch {
+      console.log(`${secs()} s screenshot skipped (${what}: element not found)`)
+    }
   }
+  // the innermost element holding both the text and the upload card's title
+  const uploadCard = (re) => page.locator("div").filter({ has: page.getByText(re) }).filter({ hasText: /(upload|ZIP) \(|upload/i }).last()
   await page.getByRole("button", { name: "Add phone report (folder or ZIP)" }).click()
   const chooser = page.waitForEvent("filechooser")
   await page.getByRole("menuitem", { name: kind === "folder" ? "Phone report folder" : "Phone report ZIP file" }).click()
   await (await chooser).setFiles(path)
+  // until the menu closes itself on a pick (3765860e), close it so the page is not left hidden
+  if (await page.getByRole("menu").count()) await page.keyboard.press("Escape")
   t0 = Date.now() // the clock starts at the pick
   const watch = [
     ["hashing", /Checking files before upload: [\d,]+ of [\d,]+/],
@@ -71,7 +81,8 @@ try {
       if (await scope(stage).getByText(re).first().isVisible().catch(() => false)) {
         seen.push({ stage, at: Number(secs()) })
         console.log(`${secs()} s ${stage}`)
-        await snap(stage.replace(/\W+/g, "-").toLowerCase())
+        const where = ["hashing", "sending"].includes(stage) ? uploadCard(re) : card.first()
+        await snap(stage.replace(/\W+/g, "-").toLowerCase(), where)
       }
     }
     if (seen.some((s) => s.stage === "finished")) break
@@ -90,14 +101,16 @@ try {
   if (!seen.some((s) => s.stage === "finished")) failed = `not finished within ${minutes} min`
   // the end state: the card, the outcome lines and the attention feed
   await page.waitForTimeout(2000)
-  await snap("end-evidence")
+  await snap("end-card", card.first())
   const outcomes = await card.getByText(/^[\d,]+ files? (match|are|do not|have)/).allTextContents()
   for (const o of outcomes) console.log(`outcome: ${o}`)
   const message = await card.getByText(/Every record was read and checked against the report[^.]*\./).first().textContent().catch(() => "")
   if (message) console.log(`message: ${message.replace(name, "[report]")}`)
   await page.goto(`${login.url}/cases/${caseId}`, { waitUntil: "domcontentloaded" })
   await page.waitForTimeout(4000)
-  await snap("attention-feed")
+  const feedItem = page.locator("div, li, article").filter({ has: page.getByText(/^Phone report (ready|being read)$/) })
+    .filter({ has: page.getByText(name.replace(/\.zip$/i, ""), { exact: false }) }).last()
+  await snap("attention-feed-item", feedItem)
 } catch (e) {
   failed = String(e?.message ?? e).split("\n")[0].slice(0, 200)
 } finally {
