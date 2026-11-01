@@ -43,6 +43,8 @@ class ContactIn(BaseModel):
     label: str | None = Field(default=None, max_length=128)
     value: str = Field(min_length=1, max_length=2000)
     evidence_file_id: UUID | None = None
+    # {"type": "manual" | "evidence" | "phone_record", "target_id": ...}; derived when absent.
+    record_source: dict[str, Any] | None = None
 
 
 class DossierCreate(BaseModel):

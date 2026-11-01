@@ -345,10 +345,69 @@ def _contacts(db: Session, case_id: uuid.UUID, user: User, raw_contacts: list[di
             _get_evidence(db, case_id, evidence_id)
         previous = by_id.get(contact_id, {})
         evidence_id = str(evidence_id) if evidence_id else None
-        unchanged = previous.get("value") == value and previous.get("kind") == kind and previous.get("evidence_file_id") == evidence_id
+        source = _contact_source(db, case_id, raw.get("record_source"), evidence_id, previous)
+        unchanged = (previous.get("value") == value and previous.get("kind") == kind
+                     and previous.get("evidence_file_id") == evidence_id
+                     and _source_key(_stored_source(previous)) == _source_key(source))
         result.append({"id": contact_id, "kind": kind, "label": _text(raw.get("label")), "value": value,
-                       "evidence_file_id": evidence_id,
+                       "evidence_file_id": evidence_id, "record_source": source,
                        "recorded_by_user_id": previous.get("recorded_by_user_id") if unchanged else str(user.id)})
+    return result
+
+
+CONTACT_SOURCE_TYPES = ("manual", "evidence", "phone_record")
+
+
+def _stored_source(contact: dict) -> dict:
+    """A stored contact's source; contacts saved before sources were recorded derive it from their evidence file."""
+    if isinstance(contact.get("record_source"), dict):
+        return contact["record_source"]
+    if contact.get("evidence_file_id"):
+        return {"type": "evidence", "target_id": contact["evidence_file_id"]}
+    return {"type": "manual"}
+
+
+def _source_key(source: Any) -> tuple[str, str | None]:
+    source = source if isinstance(source, dict) else {}
+    return (source.get("type") or "manual", source.get("target_id"))
+
+
+def _contact_source(db: Session, case_id: uuid.UUID, raw: Any, evidence_id: str | None, previous: dict) -> dict:
+    """Where a contact detail came from (07 section 6.4 item 6): typed by a person, read from an evidence file,
+    or copied from a phone record, which is checked against the case and keeps its mapping version set."""
+    raw = raw if isinstance(raw, dict) else {}
+    kind = raw.get("type") or ("evidence" if evidence_id else "manual")
+    if kind not in CONTACT_SOURCE_TYPES:
+        raise ValueError(f"A contact's source must be one of {', '.join(CONTACT_SOURCE_TYPES)}")
+    if kind == "phone_record":
+        target_id = _text(raw.get("target_id"))
+        if not target_id:
+            raise ValueError("A contact copied from a phone needs the phone record it came from")
+        old = _stored_source(previous)
+        if _source_key(old) == ("phone_record", target_id) and "mapping_versions" in old:
+            return dict(old)  # unchanged: the mapping version set at copy time is kept
+        phone = link_types.resolve_phone_target(db, case_id, "phone_record", target_id)
+        return {"type": "phone_record", "target_id": target_id, "mapping_versions": dict(phone.mapping_versions)}
+    if kind == "evidence":
+        if not evidence_id:
+            raise ValueError("A contact read from evidence needs its evidence file")
+        return {"type": "evidence", "target_id": evidence_id}
+    return {"type": "manual"}
+
+
+def contacts_for_suggestions(db: Session, case_id: uuid.UUID) -> list[dict[str, Any]]:
+    """The dossier contact details that identity suggestions may match against (07 sections 6.4 item 6 and 7.1).
+
+    Contacts copied from phones are excluded: matching a phone's identifier against a copy of itself would only
+    confirm the copy. Archived dossiers are excluded. Each item names its dossier.
+    """
+    rows = db.scalars(select(CaseProfile).where(CaseProfile.case_id == case_id, CaseProfile.archived_at.is_(None))).all()
+    result = []
+    for dossier in rows:
+        for contact in dossier.contacts or []:
+            if _stored_source(contact).get("type") == "phone_record":
+                continue
+            result.append({"dossier_id": str(dossier.id), **contact})
     return result
 
 

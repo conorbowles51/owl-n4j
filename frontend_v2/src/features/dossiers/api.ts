@@ -88,6 +88,12 @@ export interface DossierContact {
   value: string
   evidence_file_id?: string | null
   recorded_by_user_id?: string | null
+  /** Where the detail came from; a contact copied from a phone names its phone record. Sent back unchanged. */
+  record_source?: {
+    type: "manual" | "evidence" | "phone_record"
+    target_id?: string
+    mapping_versions?: Record<string, unknown>
+  } | null
 }
 export interface Dossier {
   id: string
