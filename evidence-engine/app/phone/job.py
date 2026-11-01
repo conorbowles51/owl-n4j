@@ -52,6 +52,35 @@ class ThreadReporter(Reporter):
         return False
 
 
+CANCELLED_TEXT = "Reading cancelled. The upload is kept and can be read again."
+
+
+def set_evidence_status(conn, evidence_id, status, error=None) -> None:
+    """The phone report's evidence row follows its reading: processing while it runs, processed when it is read in
+    full, failed (with the reason the job shows) otherwise. Only a phone report row is ever touched."""
+    if not evidence_id:
+        return
+    with conn.transaction():
+        conn.execute("UPDATE evidence_files SET status = %s, last_error = %s, processed_at = CASE WHEN %s = "
+                     "'processed' THEN now() ELSE processed_at END WHERE id = %s AND source_type = "
+                     "'phone_extraction'", (status, error, status, evidence_id))
+
+
+async def _evidence_status(job, status, error=None):
+    evidence_id = (job.merge_payload or {}).get("container_evidence_id")
+    if not evidence_id:
+        return
+
+    def go():
+        conn = connect(settings.database_url)
+        try:
+            set_evidence_status(conn, evidence_id, status, error)
+        finally:
+            conn.close()
+    with suppress(Exception):  # the reading's own result is already saved; the row catches up on the next run
+        await asyncio.to_thread(go)
+
+
 def cancel_rows(conn, extraction_id) -> bool:
     """Remove a pending extraction's partial capture; keep container, hashes, evidence row and job (10.6)."""
     with conn.transaction():
@@ -145,6 +174,7 @@ async def run_phone_capture(job_id: str, db) -> None:
         finally:
             conn.close()
 
+    await _evidence_status(job, "processing")
     await _publish(job, db, JobStatus.VERIFYING_SOURCE, job.progress or 0.0, "Checking the report",
                    stage="verifying_container")
     worker = asyncio.create_task(asyncio.to_thread(work))
@@ -204,6 +234,7 @@ async def _fail(job, db, code, message, reference=None):
     job.pipeline_state = state
     await db.commit()
     await asyncio.to_thread(_mark_extraction_failed, job.id)
+    await _evidence_status(job, "failed", message)
     await _publish(job, db, JobStatus.FAILED, job.progress or 0.0, message, stage=phone.get("stage"),
                    error_message=message)
 
@@ -229,6 +260,7 @@ async def _cancel(job, db):
         finally:
             conn.close()
     await asyncio.to_thread(go)
+    await _evidence_status(job, "failed", CANCELLED_TEXT)
     await db.refresh(job, ["pipeline_state"])
     state = dict(job.pipeline_state or {})
     phone = dict(state.get("phone") or {})
@@ -260,6 +292,8 @@ async def _finish(job, db, result):
     job.pipeline_state = json.loads(json.dumps(state, default=str))
     job.entity_count = int(result.get("records") or 0)
     await db.commit()
+    read = result["state"] in ("captured", "captured_incomplete")
+    await _evidence_status(job, "processed" if read else "failed", None if read else (result.get("message") or ""))
     if result["state"] in ("captured", "captured_incomplete", "not_readable"):
         await _publish(job, db, JobStatus.COMPLETED, 1.0, result.get("message") or "Ready", stage="finishing",
                        counts={"records": result.get("records"), "files": result.get("files")})

@@ -419,3 +419,26 @@ def test_extra_info_nodes_resolve_by_id_then_path_then_path_without_its_source_n
                                    ("q2", "tagged_file_subpath", "t1"), ("q3", "unresolved", None),
                                    ("q4", "unresolved", None), ("q5", "unresolved", None)])
     assert res["summary"]["store_extra_nodes"]["tagged_file_subpath"] == 1
+
+
+@pytest.mark.skipif(not PG, reason="Requires LOUPE_TEST_PHONE_PG_URL (a scratch PostgreSQL at the alembic head)")
+def test_the_phone_report_evidence_row_follows_its_reading_and_no_other_row_is_touched(pg_case):
+    from app.phone.job import CANCELLED_TEXT, set_evidence_status
+    conn, case_id = pg_case
+    phone, other = uuid.uuid4(), uuid.uuid4()
+    for i, source in ((phone, "phone_extraction"), (other, None)):
+        conn.execute("INSERT INTO evidence_files (id, case_id, original_filename, stored_path, sha256, status, "
+                     "source_type) VALUES (%s, %s, 'x', 'x', %s, 'processing', %s)", (i, case_id, "a" * 64, source))
+    try:
+        state = lambda i: conn.execute("SELECT status, last_error, processed_at IS NOT NULL FROM evidence_files "
+                                       "WHERE id = %s", (i,)).fetchone()
+        set_evidence_status(conn, phone, "failed", CANCELLED_TEXT)
+        assert state(phone) == ("failed", CANCELLED_TEXT, False)
+        set_evidence_status(conn, phone, "processing")
+        set_evidence_status(conn, phone, "processed")
+        assert state(phone) == ("processed", None, True)
+        set_evidence_status(conn, other, "processed")  # an ordinary row is never changed by the phone job
+        assert state(other) == ("processing", None, False)
+        set_evidence_status(conn, None, "processed")  # a job with no evidence row does nothing
+    finally:
+        conn.execute("DELETE FROM evidence_files WHERE id IN (%s, %s)", (phone, other))

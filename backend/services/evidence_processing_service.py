@@ -205,13 +205,13 @@ def _prepare_files(
             continue
         if str(ef.case_id) != str(case_id):
             raise ValueError("Evidence file does not belong to this case")
-        if ef.status == "processing":
-            skipped_processing += 1
-            continue
         if ef.source_type == "phone_extraction":
             # A phone report is read by its capture job when it is uploaded (01 section 4.4); a folder processed
-            # as a whole leaves it out.
+            # as a whole, or a selection with ordinary files, leaves it out and says so.
             skipped_phone_reports += 1
+            continue
+        if ef.status == "processing":
+            skipped_processing += 1
             continue
         if not phone_files.external_processing_allowed(db, ef):
             # A phone file used in a dossier is never sent for processing (or embedding) without the case's

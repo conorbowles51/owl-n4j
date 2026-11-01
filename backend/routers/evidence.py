@@ -1348,14 +1348,25 @@ async def check_evidence_financial_route(
                 detail=f"{len(malformed)} file id(s) are not valid UUIDs: {', '.join(malformed[:5])}",
             )
 
-        await run_in_threadpool(_refuse_phone_containers, db, file_uuids)
-        checks = await run_in_threadpool(
+        # A phone report is answered as what it is for this check, not a bank file (not_native), without opening
+        # it: the phone reading owns it, processing skips it, and one in a page of files must not take the route
+        # badges of the others away or hold a selection.
+        phone = await run_in_threadpool(_phone_container_ids, db, file_uuids)
+        others = [f for f in file_uuids if f not in phone]
+        checks = [] if not others else await run_in_threadpool(
             check_case_files,
             db,
             case_id=case_uuid,
-            file_ids=file_uuids,
+            file_ids=others,
             resolve_path=_resolve_stored_path,
         )
+        if phone:
+            from services.financial.route_check import FileRouteCheck
+            names = dict(await run_in_threadpool(lambda: db.execute(
+                select(EvidenceFile.id, EvidenceFile.original_filename).where(EvidenceFile.id.in_(phone))).all()))
+            answered = {c.file_id: c for c in checks}
+            answered.update({str(i): FileRouteCheck(file_id=str(i), file_name=names.get(i)) for i in phone})
+            checks = [answered[str(f)] for f in file_uuids if str(f) in answered]
         return {
             "case_id": str(case_uuid),
             "files": [check.as_dict() for check in checks],
@@ -1437,16 +1448,25 @@ async def process_evidence(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _refuse_phone_containers(db: Session, file_ids) -> None:
-    """409 when a phone report's evidence row is asked to be processed: the capture job reads it (01 section 4.4)."""
+def _phone_container_ids(db: Session, file_ids) -> set:
     ids = []
     for raw in file_ids or []:
         try:
             ids.append(UUID(str(raw)))
         except (ValueError, TypeError, AttributeError):
             continue
-    if ids and db.scalar(select(EvidenceFile.id).where(EvidenceFile.id.in_(ids),
-                                                        EvidenceFile.source_type == "phone_extraction").limit(1)):
+    if not ids:
+        return set()
+    return set(db.scalars(select(EvidenceFile.id).where(EvidenceFile.id.in_(ids),
+                                                         EvidenceFile.source_type == "phone_extraction")))
+
+
+def _refuse_phone_containers(db: Session, file_ids) -> None:
+    """409 only when every requested row is a phone report: the capture job reads those (01 section 4.4). In a
+    mixed selection the phone rows are skipped by the processing service and the others go ahead."""
+    ids = [raw for raw in (file_ids or [])]
+    phone = _phone_container_ids(db, ids)
+    if ids and phone and len(phone) >= len({str(i) for i in ids}):
         raise HTTPException(status_code=409, detail=PHONE_PROCESS_REFUSED)
 
 

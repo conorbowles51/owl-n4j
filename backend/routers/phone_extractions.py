@@ -16,6 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
+from postgres.models.financial import AdjudicationEvent
 from postgres.models.phone_extraction import CAPTURED_STATES, PhoneExtraction, PhoneExtractionContainer, PhoneTimestamp
 from postgres.models.user import User
 from postgres.session import get_db
@@ -33,6 +34,7 @@ NOT_ACTIVE = "Only a report the case currently stands on can be replaced."
 SAME_REPORT = "A report cannot replace itself."
 OTHER_CASE = "Both reports must belong to the same case."
 EXTRACTION_START = "DeviceInfoExtractionStartDateTime"
+NOT_FOUND = "Phone report not found"
 
 
 class Supersede(BaseModel):
@@ -69,6 +71,15 @@ def describe(db: Session, extractions: list[PhoneExtraction]) -> list[dict]:
     if users:
         people = {u.id: (u.name or u.email) for u in db.scalars(select(User).where(User.id.in_(users)))}
     label = {e.id: names.get(e.first_container_id) or "Phone report" for e in extractions}
+    # Which report replaced each retired one, from the decision ledger: a newer report can replace several, and its
+    # own supersedes_id names only the last of them.
+    replaced_by = {}
+    if ids:
+        for subject, after in db.execute(select(AdjudicationEvent.subject_id, AdjudicationEvent.after).where(
+                AdjudicationEvent.subject_type == AdjudicationSubject.phone_extraction.value,
+                AdjudicationEvent.decision == AdjudicationDecision.supersede_phone_extraction.value,
+                AdjudicationEvent.subject_id.in_(ids)).order_by(AdjudicationEvent.subject_sequence)):
+            replaced_by[subject] = (after or {}).get("replaced_by")
     out = []
     for e in extractions:
         first, last = extracted.get(e.id, (None, None))
@@ -81,11 +92,19 @@ def describe(db: Session, extractions: list[PhoneExtraction]) -> list[dict]:
             supersedes_id=str(e.supersedes_id) if e.supersedes_id else None,
             superseded_at=_iso(e.superseded_at), superseded_reason=e.superseded_reason,
             superseded_by=people.get(e.superseded_by_user_id),
-            replaced_by_id=next((str(o.id) for o in extractions if o.supersedes_id == e.id), None),
+            replaced_by_id=replaced_by.get(e.id),
             possible_same_device=[dict(extraction_id=str(p.get("extraction_id")), name=p.get("name"))
                                   for p in flags.get("possible_same_device") or []],
         ))
     return out
+
+
+def _can_view(db: Session, case_id, user) -> bool:
+    try:
+        authorize_case(db, case_id, user, ("case", "view"))
+        return True
+    except HTTPException:
+        return False
 
 
 @router.get("")
@@ -106,8 +125,13 @@ def supersede(new_id: UUID, body: Supersede, user: User = Depends(get_current_db
         raise HTTPException(409, SAME_REPORT)
     probe = db.get(PhoneExtraction, new_id)
     if probe is None:
-        raise HTTPException(404, "Phone report not found")
-    authorize_case(db, probe.case_id, user, ("evidence", "upload"))
+        raise HTTPException(404, NOT_FOUND)
+    try:
+        authorize_case(db, probe.case_id, user, ("evidence", "upload"))
+    except HTTPException as exc:
+        # The same answer as a missing report, so an id in a case the caller cannot see stays unknown to them.
+        raise HTTPException(404, NOT_FOUND) if exc.status_code == 404 or not _can_view(db, probe.case_id, user) \
+            else exc
     try:
         actor = actor_from_user(user)
     except ActorError as exc:
@@ -117,7 +141,7 @@ def supersede(new_id: UUID, body: Supersede, user: User = Depends(get_current_db
                                            .order_by(PhoneExtraction.id).with_for_update().execution_options(populate_existing=True))}
     new, previous = locked.get(new_id), locked.get(body.previous_id)
     if new is None or previous is None:
-        raise HTTPException(404, "Phone report not found")
+        raise HTTPException(404, NOT_FOUND)
     if previous.case_id != new.case_id:
         raise HTTPException(409, OTHER_CASE)
     if new.capture_state not in CAPTURED_STATES:

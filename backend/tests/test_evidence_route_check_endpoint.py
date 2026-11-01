@@ -59,7 +59,7 @@ def endpoint(monkeypatch):
         "status": status,
         "run_in_threadpool": run_in_threadpool,
         "_resolve_stored_path": Mock(),
-        "_refuse_phone_containers": Mock(),
+        "_phone_container_ids": Mock(return_value=set()),
     }
     exec(compile(ast.Module(body=[handler], type_ignores=[]), str(source), "exec"), namespace)
     namespace[handler.name].namespace = namespace
@@ -67,16 +67,29 @@ def endpoint(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_preflight_refuses_a_phone_report_before_classifying_anything(endpoint):
+async def test_a_phone_report_in_the_selection_is_answered_as_not_a_bank_file_and_the_others_are_checked(endpoint):
+    """A phone report row is never opened by this check and never takes the other files' answers away: it is
+    answered as not a bank file (processing then skips it), and every other id is classified as before."""
     handler, access, classifier = endpoint
-
-    def refuse(db, ids):
-        raise HTTPException(status_code=409, detail="Phone reports are read automatically when uploaded.")
-    handler.namespace["_refuse_phone_containers"] = Mock(side_effect=refuse)
-    with pytest.raises(HTTPException) as e:
-        await handler(SimpleNamespace(case_id=str(uuid4()), file_ids=[str(uuid4())]), object(), object())
-    assert (e.value.status_code, e.value.detail) == (409, "Phone reports are read automatically when uploaded.")
-    classifier.check_case_files.assert_not_called()
+    phone_id, other_ids = uuid4(), [uuid4(), uuid4()]
+    handler.namespace["_phone_container_ids"] = Mock(return_value={phone_id})
+    statement = Mock()
+    statement.where.return_value = statement
+    handler.namespace["select"] = Mock(return_value=statement)
+    handler.namespace["EvidenceFile"] = SimpleNamespace(id=Mock(), original_filename=Mock())
+    classifier.check_case_files.side_effect = lambda db, **kwargs: [
+        SimpleNamespace(file_id=str(fid), as_dict=lambda fid=fid: {"file_id": str(fid), "outcome": "native"})
+        for fid in kwargs["file_ids"]
+    ]
+    classifier.FileRouteCheck = lambda file_id, file_name: SimpleNamespace(
+        file_id=file_id, as_dict=lambda: {"file_id": file_id, "file_name": file_name, "outcome": "not_native"})
+    db = SimpleNamespace(execute=lambda q: SimpleNamespace(all=lambda: [(phone_id, "Phone report.zip")]))
+    ids = [str(other_ids[0]), str(phone_id), str(other_ids[1])]
+    result = await handler(SimpleNamespace(case_id=str(uuid4()), file_ids=ids), object(), db)
+    assert [(f["file_id"], f["outcome"]) for f in result["files"]] == [
+        (ids[0], "native"), (ids[1], "not_native"), (ids[2], "native")]
+    assert classifier.check_case_files.call_args.kwargs["file_ids"] == other_ids
+    assert result["files"][1]["file_name"] == "Phone report.zip"
 
 
 @pytest.mark.asyncio

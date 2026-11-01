@@ -147,3 +147,36 @@ def test_replace_twice_other_cases_and_self_are_refused(world):
     assert post(uuid.uuid4(), older).status_code == 404
     with Session() as db:
         assert len(db.scalars(select(AdjudicationEvent)).all()) == 1
+
+
+def test_one_newer_report_can_replace_two_older_ones_and_both_say_so(world):
+    client, Session, case_id, _, _ = world
+    first, second, newest = (add_report(Session, case_id, n) for n in ("First", "Second", "Newest"))
+    for older in (first, second):
+        r = client.post("/api/phone-extractions/%s/supersede" % newest, json={"previous_id": str(older), "reason": "x"})
+        assert r.status_code == 200, r.text
+    listed = {row["id"]: row for row in client.get("/api/phone-extractions", params={"case_id": str(case_id)}).json()}
+    assert [listed[str(i)]["replaced_by_id"] for i in (first, second)] == [str(newest), str(newest)]
+    assert listed[str(newest)]["standing"] == "active"
+
+
+def test_a_caller_who_cannot_see_the_case_gets_not_found_and_a_viewer_without_upload_is_refused(world):
+    from fastapi import HTTPException
+    client, Session, case_id, _, _ = world
+    older, newer = add_report(Session, case_id, "A"), add_report(Session, case_id, "B")
+    post = lambda: client.post("/api/phone-extractions/%s/supersede" % newer,
+                               json={"previous_id": str(older), "reason": "x"})
+
+    def stranger(db, c, u, p):
+        raise HTTPException(403, "Not a member")
+    with patch.object(phone_extractions, "authorize_case", side_effect=stranger):
+        r = post()
+    assert (r.status_code, r.json()["detail"]) == (404, phone_extractions.NOT_FOUND)
+
+    def viewer(db, c, u, p):
+        if p != ("case", "view"):
+            raise HTTPException(403, "No upload permission")
+    with patch.object(phone_extractions, "authorize_case", side_effect=viewer):
+        r = post()
+    assert (r.status_code, r.json()["detail"]) == (403, "No upload permission")
+    assert snapshot(Session, older, newer) == [("active", None, None), ("active", None, None)]

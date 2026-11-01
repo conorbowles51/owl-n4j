@@ -317,6 +317,9 @@ def register_payload(db, group, user, prepared):
                 metadata={'upload_group_id': str(group.id), 'relative_path': phone['path'],
                           'phone_container_kind': phone['kind'], 'phone_detect_outcome': phone['outcome'],
                           'phone_detect_messages': phone['messages']})])
+        # Never offered to document processing: the phone reading owns it, and the engine sets processed or failed
+        # when the reading ends (evidence-engine app/phone/job.py).
+        record.status = 'processing'
         db.flush()
         files.append(str(record.id))
         notices.extend(m['text'] for m in phone['messages'])
@@ -336,7 +339,8 @@ def register_payload(db, group, user, prepared):
                 container_path=container, root_path=rp, evidence_folder_id=str(folder) if folder else None,
                 container_evidence_id=str(record.id), upload_sha256=phone['sha256'], original_name=phone['name']))
     count = len(prepared['members']) + sum(len(p.get('member_paths') or [1]) for p in prepared['phones'])
-    message = f'Uploaded {count} files.' + (' Folder structure is retained.' if group.kind != 'files' else '')
+    message = f"Uploaded {count:,} {'file' if count == 1 else 'files'}." + (
+        ' Folder structure is retained.' if group.kind != 'files' else '')
     if notices:
         message += ' ' + ' '.join(notices)
     elif prepared['members']:
