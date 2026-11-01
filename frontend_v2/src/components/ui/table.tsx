@@ -12,10 +12,19 @@ function Table({
   /** "dense" for tables to compare (rows of 32 px), "comfortable" for everything else (lx-style F). */
   density?: "comfortable" | "dense"
 }) {
+  const container = React.useRef<HTMLDivElement>(null)
+  const overflowing = useOverflowsSideways(container)
+  // A table wider than its panel scrolls sideways; by keyboard only when its scroll area can take focus, so while
+  // it overflows the area is a named, focusable region (axe scrollable-region-focusable).
+  const name =
+    props["aria-label"] ??
+    (overflowing ? container.current?.querySelector("caption")?.textContent?.trim() || "Table" : undefined)
   return (
     <div
+      ref={container}
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className="relative w-full overflow-x-auto focus-visible:outline-2 focus-visible:outline-ring"
+      {...(overflowing ? { tabIndex: 0, role: "region", "aria-label": name } : {})}
     >
       <table
         data-slot="table"
@@ -25,6 +34,23 @@ function Table({
       />
     </div>
   )
+}
+
+/** True while the element's content is wider than the element; followed as either one changes size. */
+function useOverflowsSideways(ref: React.RefObject<HTMLElement | null>) {
+  const [overflowing, setOverflowing] = React.useState(false)
+  React.useLayoutEffect(() => {
+    const element = ref.current
+    if (!element) return
+    const update = () => setOverflowing(element.scrollWidth > element.clientWidth + 1)
+    update()
+    if (typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(update)
+    observer.observe(element)
+    if (element.firstElementChild) observer.observe(element.firstElementChild)
+    return () => observer.disconnect()
+  }, [ref])
+  return overflowing
 }
 
 function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
