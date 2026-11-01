@@ -947,9 +947,24 @@ def preview_financial_batch(body: FinancialBatchPreview, case_id: UUID = Query(.
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
+class QueueSelection(BaseModel):
+    file_ids: list[UUID]
+
+
+@router.post('/review/queue/selections')
+def save_queue_selection(body: QueueSelection, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Keep a large selection of files for the review queue under a short id (queue_selection): its file ids do not
+    fit in an address. Read access is enough; nothing in the case is changed."""
+    from services.financial import queue_selection
+    try:
+        return dict(selection_id=queue_selection.save(db, case_id=case_id, file_ids=body.file_ids))
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 @router.get('/review/queue')
 def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Query([]),
-        batch_id: UUID | None = Query(None), limit: int | None = Query(None, ge=0, le=5000), offset: int = Query(0, ge=0),
+        batch_id: UUID | None = Query(None), selection_id: str | None = Query(None, max_length=64), limit: int | None = Query(None, ge=0, le=5000), offset: int = Query(0, ge=0),
         page_list: Literal['waiting', 'ready', 'filled', 'reader_fix', 'rechecking', 'copies', 'unreadable'] = Query('waiting'),
         issue: str | None = Query(None, max_length=64), fresh: bool | None = Query(None),
         db: Session = Depends(get_db), response: Response = None):
@@ -962,7 +977,8 @@ def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Que
     predate paging), wait for the current one.
 
     ``batch_id`` filters to that batch's files (with any ``file_id`` given): a large batch's file ids do not fit
-    in an address (a 1,452-file batch was a 65,455-character address, refused 414).
+    in an address (a 1,452-file batch was a 65,455-character address, refused 414). ``selection_id`` likewise
+    names a large selection of files saved by POST /review/queue/selections.
     """
     from services.financial.review_queue import case_review_queue, previous_as_of
     from services.financial.request_timing import stage
@@ -978,6 +994,12 @@ def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Que
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
         # A batch without files shows nothing, never the whole case (an empty filter means every file).
         file_id = [*file_id, *in_batch] or [UUID(int=0)]
+    if selection_id is not None:
+        from services.financial import queue_selection
+        try:
+            file_id = [*file_id, *queue_selection.file_ids(case_id, selection_id)]
+        except PdfMappingError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     token = previous_as_of.set(0.0)
     try:
         with stage('review_queue'):

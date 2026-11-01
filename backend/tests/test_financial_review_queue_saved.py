@@ -242,7 +242,7 @@ def test_the_queue_route_marks_an_answer_from_the_previous_queue_as_updating(mon
     token = view_cache._accepts_updating.set(True)
     try:
         response = Response()
-        routes.financial_review_queue(case_id=uuid4(), file_id=[], limit=None, offset=0, page_list='waiting',
+        routes.financial_review_queue(case_id=uuid4(), file_id=[], batch_id=None, selection_id=None, limit=None, offset=0, page_list='waiting',
                                       issue=None, fresh=None, db=object(), response=response)
     finally:
         view_cache._accepts_updating.reset(token)
@@ -250,7 +250,7 @@ def test_the_queue_route_marks_an_answer_from_the_previous_queue_as_updating(mon
     assert response.headers['x-financial-view-state'] == 'updating'
     assert response.headers['x-financial-view-as-of'] == '2026-10-31T07:00:00+00:00'
     seen.clear()
-    routes.financial_review_queue(case_id=uuid4(), file_id=[], limit=None, offset=0, page_list='waiting',
+    routes.financial_review_queue(case_id=uuid4(), file_id=[], batch_id=None, selection_id=None, limit=None, offset=0, page_list='waiting',
                                   issue=None, fresh=None, db=object(), response=Response())
     assert seen['stale_ok'] is False and seen['updating'] is False, 'other callers still wait for a current queue'
 

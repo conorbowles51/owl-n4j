@@ -19,7 +19,15 @@ import {
 import { FinancialFileAction } from "./FinancialFileAction"
 import { EvidenceFinancialPicker } from "./EvidenceFinancialPicker"
 import { BatchStartChoice } from "./BatchStartChoice"
-import { fetchReviewQueue, fillAndSaveReady, queueFileWork, queueHref, useReviewQueue } from "../lib/review-queue"
+import {
+  fetchReviewQueue,
+  fillAndSaveReady,
+  QUEUE_ADDRESS_FILES,
+  queueFileWork,
+  queueHref,
+  saveQueueSelection,
+  useReviewQueue,
+} from "../lib/review-queue"
 import {
   needsBatchStartChoice,
   previewBatchStart,
@@ -410,7 +418,20 @@ export function StatementFilesPanel({
             item.incomplete_count)
       )
   )
-  const openQueue = (ids: string[]) => navigate(queueHref(caseId, ids))
+  // A selection too large for an address is saved on the server first and opened by its id (saveQueueSelection).
+  const openQueue = async (ids: string[]) => {
+    if (ids.length <= QUEUE_ADDRESS_FILES) return navigate(queueHref(caseId, ids))
+    setError("")
+    try {
+      navigate(queueHref(caseId, ids, undefined, await saveQueueSelection(caseId, ids)))
+    } catch (failure) {
+      setError(
+        `The review queue for the ${ids.length.toLocaleString()} selected files could not be opened: ${
+          failure instanceof Error ? failure.message : String(failure)
+        }`
+      )
+    }
+  }
   const isPrepared = (id: string) =>
     !!imports.data?.files.some(
       (item) =>

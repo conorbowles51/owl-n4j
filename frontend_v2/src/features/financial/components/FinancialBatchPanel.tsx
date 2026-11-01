@@ -1,4 +1,5 @@
 import { Disclosure } from "./Disclosure"
+import { QUEUE_KEYS } from "../lib/queue-address"
 import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { BatchProgressSummary } from "./BatchProgressSummary"
@@ -378,7 +379,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
     setParams((current) => {
       const next = new URLSearchParams(current)
       for (const key of ["batch", "batchItem", "batchRow", "batchCheck", "files", "reviewFile", "returnBatch",
-        "returnBatchCheck", "queueItem", "queueList", "queueFiles"])
+        "returnBatchCheck", ...QUEUE_KEYS])
         next.delete(key)
       next.set("view", "statements")
       next.set("queue", "1")
@@ -1826,8 +1827,7 @@ export function BatchStatementReview({
       await beforeNavigate.current?.()
       setParams((current) => {
         const next = new URLSearchParams(current)
-        for (const key of ["batch", "batchItem", "batchRow", "batchCheck", "queueItem", "queueList", "queueFiles",
-          "queueBatch"])
+        for (const key of ["batch", "batchItem", "batchRow", "batchCheck", ...QUEUE_KEYS])
           next.delete(key)
         next.set("view", "statements")
         next.set("queue", "1")

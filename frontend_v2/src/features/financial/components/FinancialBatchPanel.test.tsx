@@ -221,7 +221,8 @@ it("counts a large batch in the review queue by the batch's id and opens the que
   }
   vi.mocked(fetchAPI).mockImplementation(async (url) =>
     (String(url).includes("/review/queue") ? queued : { ...batch, files }) as never)
-  mount()
+  // An issue filter picked earlier in the queue stays in the address; opening this batch's queue must not keep it.
+  mount("/cases/case/financial?view=statements&batch=batch&queueIssue=currency&queueList=ready")
   fireEvent.click(await screen.findByRole("button", { name: "Review 4 in the queue" }))
   const reads = vi.mocked(fetchAPI).mock.calls.map(([url]) => String(url)).filter((url) => url.includes("/review/queue"))
   expect(reads.length).toBeGreaterThan(0)
@@ -233,6 +234,8 @@ it("counts a large batch in the review queue by the batch's id and opens the que
   const destination = new URLSearchParams(screen.getByLabelText("Location").textContent || "")
   expect(destination.get("queueBatch")).toBe("batch")
   expect(destination.has("queueFiles")).toBe(false)
+  expect(destination.has("queueIssue")).toBe(false)
+  expect(destination.has("queueList")).toBe(false)
 })
 
 it("opens the recovered file in Statement files and preserves the originating batch filter", async () => {

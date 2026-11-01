@@ -245,8 +245,29 @@ export const QUEUE_BULK_LIMIT = 5000
 function scopeSearch(caseId: string, fileIds: string[], batchId?: string) {
   const search = new URLSearchParams({ case_id: caseId })
   for (const id of new Set(fileIds)) search.append("file_id", id)
-  if (batchId) search.set("batch_id", batchId)
+  if (batchId?.startsWith(SELECTION_SCOPE)) search.set("selection_id", batchId.slice(SELECTION_SCOPE.length))
+  else if (batchId) search.set("batch_id", batchId)
   return search
+}
+
+/**
+ * A large selection of files is saved on the server and named by its id, in the address and in every queue read:
+ * its file ids do not fit (45 characters each; beyond about 720 files nginx refuses the address, 414). Passed where
+ * a batch id goes, as `selectionScope(id)`.
+ */
+const SELECTION_SCOPE = "selection:"
+export const selectionScope = (selectionId: string) => `${SELECTION_SCOPE}${selectionId}`
+/** Above this many files a selection goes to the queue by its saved id, not its file ids. */
+export const QUEUE_ADDRESS_FILES = 100
+
+export async function saveQueueSelection(caseId: string, fileIds: string[]) {
+  const result = z.object({ selection_id: z.string() }).parse(
+    await fetchAPI(`/api/financial/statement-import/review/queue/selections?case_id=${encodeURIComponent(caseId)}`, {
+      method: "POST",
+      body: JSON.stringify({ file_ids: [...new Set(fileIds)] }),
+    })
+  )
+  return result.selection_id
 }
 
 /**
@@ -459,11 +480,17 @@ export function queueFileWork(data: ReviewQueue | undefined) {
   return byFile
 }
 
-/** The queue route for some files (one file, a few), optionally at one entry. A whole batch: `queueBatch`. */
-export function queueHref(caseId: string, fileIds: string[] = [], itemId?: string) {
+/**
+ * The queue route for some files (one file, a few), optionally at one entry. A whole batch: `queueBatch`. More than
+ * QUEUE_ADDRESS_FILES files: pass the id `saveQueueSelection` returned, and the address carries it and the count.
+ */
+export function queueHref(caseId: string, fileIds: string[] = [], itemId?: string, selectionId?: string) {
   const search = new URLSearchParams({ view: "statements", queue: "1" })
   const ids = [...new Set(fileIds)].filter(Boolean)
-  if (ids.length) search.set("queueFiles", ids.join(","))
+  if (selectionId) {
+    search.set("queueSelection", selectionId)
+    search.set("queueSelectionFiles", String(ids.length))
+  } else if (ids.length) search.set("queueFiles", ids.join(","))
   if (itemId) search.set("queueItem", itemId)
   return `/cases/${caseId}/financial?${search}`
 }

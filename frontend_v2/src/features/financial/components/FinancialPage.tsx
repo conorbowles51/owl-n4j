@@ -1,4 +1,5 @@
 import { OverviewStatementCoverage } from "./OverviewStatementCoverage"
+import { QUEUE_KEYS } from "../lib/queue-address"
 import { Disclosure } from "./Disclosure"
 import { BatchSavedAccounts } from "./BatchSavedAccounts"
 import { ActiveCategoryNotice } from "./PaymentCategoryFilter"
@@ -229,7 +230,7 @@ function FinancialPageContent() {
       const updated = new URLSearchParams(current)
       for (const key of [
         "batch", "batchItem", "batchRow", "batchCheck", "files", "accounts", "savedBatch", "savedOperation",
-        "reviewFile", "returnBatch", "returnBatchCheck", "queue", "queueItem", "queueList", "queueFiles", "queueBatch",
+        "reviewFile", "returnBatch", "returnBatchCheck", "queue", ...QUEUE_KEYS,
         "judgements",
         ...JUDGEMENT_KEYS,
       ])
@@ -244,7 +245,7 @@ function FinancialPageContent() {
     setStatementSection({ caseId, section: "batches" })
     setParams((current) => {
       const updated = new URLSearchParams(current)
-      for (const key of ["queue", "queueItem", "queueList", "queueFiles", "queueBatch", "files", "batchItem", "batchRow"])
+      for (const key of ["queue", ...QUEUE_KEYS, "files", "batchItem", "batchRow"])
         updated.delete(key)
       updated.set("view", "statements")
       updated.set("batch", batchId)

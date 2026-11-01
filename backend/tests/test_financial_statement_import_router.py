@@ -80,6 +80,35 @@ class StatementImportAuthorizationTests(unittest.TestCase):
             files.side_effect = module.PdfMappingError('Financial processing batch not found in this case.', 404)
             self.assertEqual(self.client.get(url).status_code, 404)
 
+    def test_a_large_selection_of_files_is_read_by_its_saved_id_not_its_file_ids(self):
+        # Statement files > Review selected put every chosen file's id in the address: over ~720 files nginx refuses it.
+        import tempfile
+        from services.financial import queue_selection
+        chosen = [uuid4() for _ in range(900)]
+        base = f'/api/financial/statement-import/review/queue'
+        self.user({'case': {'view': True, 'edit': False}})
+        with tempfile.TemporaryDirectory() as directory, patch.dict('os.environ', {'FINANCIAL_VIEW_MEMO_DIR': directory}), \
+                patch.object(queue_selection, '_case_file_ids', lambda session, case_id, ids: set(ids)), \
+                patch('services.financial.review_queue.case_review_queue', return_value={'items': []}) as queue:
+            saved = self.client.post(f'{base}/selections?case_id={self.db.case.id}', json={'file_ids': [str(i) for i in chosen]})
+            self.assertEqual(saved.status_code, 200, saved.text)
+            selection = saved.json()['selection_id']
+            url = f'{base}?case_id={self.db.case.id}&selection_id={selection}&limit=50'
+            self.assertLess(len(url), 200)
+            self.assertEqual(self.client.get(url).status_code, 200)
+            self.assertEqual(sorted(queue.call_args.kwargs['file_ids']), sorted(chosen))
+            # The same files give the same id; an unknown id or another case's is refused, never read as every file.
+            again = self.client.post(f'{base}/selections?case_id={self.db.case.id}', json={'file_ids': [str(i) for i in reversed(chosen)]})
+            self.assertEqual(again.json()['selection_id'], selection)
+            self.assertEqual(self.client.get(f'{base}?case_id={self.db.case.id}&selection_id={"0" * 32}').status_code, 404)
+            self.assertEqual(self.client.get(f'{base}?case_id={uuid4()}&selection_id={selection}').status_code, 404)
+            self.assertEqual(self.client.get(f'{base}?case_id={self.db.case.id}&selection_id=../x').status_code, 404)
+        with tempfile.TemporaryDirectory() as directory, patch.dict('os.environ', {'FINANCIAL_VIEW_MEMO_DIR': directory}), \
+                patch.object(queue_selection, '_case_file_ids', lambda session, case_id, ids: set(ids[1:])):
+            refused = self.client.post(f'{base}/selections?case_id={self.db.case.id}', json={'file_ids': [str(i) for i in chosen]})
+            self.assertEqual(refused.status_code, 422)
+            self.assertIn('1 of the chosen files is not in this case', refused.text)
+
     def setUp(self):
         self.app=FastAPI()
         self.app.include_router(module.router)

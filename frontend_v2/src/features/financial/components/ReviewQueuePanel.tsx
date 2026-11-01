@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { QUEUE_KEYS } from "../lib/queue-address"
 import { Disclosure } from "./Disclosure"
 import { InfoTip } from "./InfoTip"
 import { useSearchParams } from "react-router-dom"
@@ -19,6 +20,7 @@ import {
   checkUnreadableAgain,
   useReviewQueue,
   useReviewQueuePage,
+  selectionScope,
   fetchReviewQueue,
   putBackNotPaymentStatement,
   QUEUE_PAGE_SIZE,
@@ -70,7 +72,6 @@ const PAGE_LISTS: Record<ListName, QueuePageList> = {
   unreadable: "unreadable",
   not_payment: "not_payment",
 }
-const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles", "queueBatch", "queueIssue"]
 export { ISSUE_LABELS }
 // Issues one shared answer can fix for many statements at once.
 const BULK_ISSUES = new Set(["currency", "institution", "holder", "account", "dates", "no_activity"])
@@ -234,8 +235,12 @@ export function ReviewQueuePanel({
     () => (params.get("queueFiles") || "").split(",").filter(Boolean),
     [params]
   )
-  // One batch's files, named by the batch's id (the server finds them; their ids would not fit in an address).
-  const batchId = params.get("queueBatch") || undefined
+  // One batch's files, named by the batch's id (the server finds them; their ids would not fit in an address), or a
+  // large selection of files saved on the server, named by its id (saveQueueSelection).
+  const queueBatch = params.get("queueBatch") || undefined
+  const selectionId = queueBatch ? undefined : params.get("queueSelection") || undefined
+  const selectionFiles = Number(params.get("queueSelectionFiles")) || 0
+  const batchId = queueBatch ?? (selectionId ? selectionScope(selectionId) : undefined)
   const filterKey = `${fileIds.join(",")}${batchId ? `|batch:${batchId}` : ""}`
   const itemId = params.get("queueItem")
   const list = (params.get("queueList") as ListName | null) || "waiting"
@@ -642,7 +647,11 @@ export function ReviewQueuePanel({
       {(fileIds.length > 0 || batchId) && (
         <div role="status" className="flex flex-wrap items-center gap-2 rounded border p-2 text-sm">
           <span>
-            {batchId ? (
+            {selectionId ? (
+              <>
+                Showing the {selectionFiles > 0 ? `${selectionFiles.toLocaleString()} ` : ""}selected files
+              </>
+            ) : batchId ? (
               <>
                 Showing{fileIds.length > 0 ? ` the ${fileIds.length} selected ${fileIds.length === 1 ? "file" : "files"} and` : ""}{" "}
                 the files of one batch

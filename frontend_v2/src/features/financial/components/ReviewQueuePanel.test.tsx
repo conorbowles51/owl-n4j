@@ -250,6 +250,37 @@ it("filters to one batch by its id, never its file ids, so a large batch's addre
   await waitFor(() => expect(where()).not.toContain("queueBatch"))
 })
 
+it("filters to a large saved selection by its id, never its file ids, and clears it with the other queue keys", async () => {
+  // Statement files > Review selected over ~720 files put every id in the address and each read: nginx refuses (414).
+  mount("/cases/case/financial?view=statements&queue=1&queueSelection=0123456789abcdef0123456789abcdef&queueSelectionFiles=1363")
+  expect(await screen.findByText(/Showing the 1,363 selected files, from their saved readings/)).toBeVisible()
+  const urls = vi.mocked(fetchAPI).mock.calls.map(([url]) => String(url)).filter((url) => url.includes("/review/queue"))
+  expect(urls.length).toBeGreaterThan(0)
+  for (const url of urls) {
+    expect(url).toContain("selection_id=0123456789abcdef0123456789abcdef")
+    expect(url).not.toContain("file_id=")
+    expect(url).not.toContain("batch_id=")
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Show the whole case" }))
+  await waitFor(() => expect(where()).not.toContain("queueSelection"))
+})
+
+it("opens a selection too large for an address by its saved id", async () => {
+  const { queueHref, saveQueueSelection, QUEUE_ADDRESS_FILES } = await import("../lib/review-queue")
+  const ids = Array.from({ length: 900 }, (_, n) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`)
+  vi.mocked(fetchAPI).mockResolvedValueOnce({ selection_id: "0123456789abcdef0123456789abcdef" } as never)
+  const selection = await saveQueueSelection("case", ids)
+  const [url, options] = vi.mocked(fetchAPI).mock.calls.at(-1)!
+  expect(String(url)).toContain("/review/queue/selections?case_id=case")
+  expect((options as { method: string }).method).toBe("POST")
+  expect(JSON.parse((options as { body: string }).body).file_ids).toHaveLength(900)
+  const href = queueHref("case", ids, undefined, selection)
+  expect(href.length).toBeLessThan(200)
+  expect(new URL(href, "http://x").searchParams.get("queueSelectionFiles")).toBe("900")
+  expect(href).not.toContain("queueFiles")
+  expect(QUEUE_ADDRESS_FILES).toBeLessThan(720)
+})
+
 it("saves ready statements across batches from the queue and says the result in one line", async () => {
   const posts: unknown[] = []
   vi.mocked(fetchAPI).mockImplementation(async (url: string, options?: unknown) => {
