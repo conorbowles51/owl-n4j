@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
     JSON,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -100,6 +101,11 @@ class EvidenceFile(Base, TimestampMixin):
         Index("ix_evidence_files_source_type", "source_type"),
         Index("ix_evidence_files_case_source", "case_id", "source_type"),
         Index("ix_evidence_files_case_cellebrite_report", "case_id", "cellebrite_report_key"),
+        # One evidence row per phone file per case (07 section 6.4 item 4).
+        Index(
+            "uq_evidence_files_case_phone_file", "case_id", "source_ref", unique=True,
+            postgresql_where=text("source_type = 'phone_file'"), sqlite_where=text("source_type = 'phone_file'"),
+        ),
         Index("ix_evidence_files_case_cellebrite_file", "case_id", "cellebrite_file_id"),
         Index("ix_evidence_files_case_cellebrite_model", "case_id", "cellebrite_model_id"),
         Index(
@@ -169,6 +175,8 @@ class EvidenceFile(Base, TimestampMixin):
         nullable=True,
     )
     source_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # For source_type phone_file: the phone file id the row was registered for.
+    source_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
     cellebrite_report_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     cellebrite_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     cellebrite_model_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

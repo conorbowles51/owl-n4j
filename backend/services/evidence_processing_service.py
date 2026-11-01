@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from postgres.models.evidence import EvidenceFile
-from services import evidence_engine_client
+from services import evidence_engine_client, phone_files
 from services.evidence_db_storage import EvidenceDBStorage
 from services.evidence_job_sync import reconcile_case_jobs
 from services.financial.admission_gate import gate_document_processing
@@ -195,6 +195,7 @@ def _prepare_files(
 
     candidates: list[EvidenceFile] = []
     skipped_processing = 0
+    skipped_external = 0
     missing_on_disk = 0
 
     for file_id in file_ids:
@@ -206,6 +207,11 @@ def _prepare_files(
         if ef.status == "processing":
             skipped_processing += 1
             continue
+        if not phone_files.external_processing_allowed(db, ef):
+            # A phone file used in a dossier is never sent for processing (or embedding) without the case's
+            # external-processing decision (07 section 6.4 item 4).
+            skipped_external += 1
+            continue
         if ef.status == "processed" and not force_reprocess:
             skipped_processing += 1
             continue
@@ -214,11 +220,16 @@ def _prepare_files(
         candidates.append(ef)
 
     if not candidates:
+        message = "No eligible files to process"
+        if skipped_external:
+            message += (f"; {skipped_external} phone file(s) were not sent because this case has no decision "
+                        "allowing phone material to be processed outside Loupe")
         return {
             "job_ids": [],
             "file_count": 0,
-            "skipped_count": skipped_processing,
-            "message": "No eligible files to process",
+            "skipped_count": skipped_processing + skipped_external,
+            "skipped_phone_files": skipped_external,
+            "message": message,
         }
 
     file_tuples: list[tuple[str, Path, str]] = []
@@ -304,7 +315,7 @@ def _prepare_files(
         )
     valid_ids = [str(ef.id) for ef in valid_files]  # read before the commit expires the rows
     db.commit()
-    return file_tuples, per_file_metadata, valid_files, valid_ids, skipped_processing, missing_on_disk
+    return file_tuples, per_file_metadata, valid_files, valid_ids, skipped_processing + skipped_external, missing_on_disk
 
 
 def _record_recovered_jobs(db: Session, valid_files: list[EvidenceFile], recovered_jobs: list[dict[str, Any]]) -> list[str]:

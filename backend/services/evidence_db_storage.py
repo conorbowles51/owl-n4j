@@ -1116,6 +1116,10 @@ class EvidenceDBStorage:
             "relationship_count": ef.relationship_count,
             "last_processed_folder_id": str(ef.last_processed_folder_id) if ef.last_processed_folder_id else None,
             "source_type": ef.source_type,
+            # A phone file used in a dossier: labelled, and linked back to its phone record (07 section 6.4 item 4).
+            "source_ref": ef.source_ref,
+            "origin_label": (ef.metadata_ or {}).get("origin_label") if ef.source_type == "phone_file" else None,
+            "phone_record_id": (ef.metadata_ or {}).get("phone_record_id") if ef.source_type == "phone_file" else None,
             "cellebrite_report_key": ef.cellebrite_report_key,
             "cellebrite_file_id": ef.cellebrite_file_id,
             "cellebrite_model_id": ef.cellebrite_model_id,

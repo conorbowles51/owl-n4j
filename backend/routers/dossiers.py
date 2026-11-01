@@ -93,7 +93,9 @@ class AssessmentCreate(BaseModel):
 
 
 class MediaCreate(BaseModel):
-    evidence_file_id: UUID
+    # Exactly one of the two: an evidence file, or a phone file registered as evidence on first use.
+    evidence_file_id: UUID | None = None
+    phone_file_id: str | None = Field(default=None, min_length=1, max_length=255)
     is_cover: bool = False
     ordinal: int | None = Field(default=None, ge=0)
     caption: str | None = None

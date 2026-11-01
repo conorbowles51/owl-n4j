@@ -25,6 +25,7 @@ from services.ai_provider_credentials import get_provider_api_key
 from services.dossier_service import create_assessment
 from services.llm_service import LLMExecutionContext
 from services.mandate_context_service import mandate_context_service
+from services import phone_files
 from services.workspace_entry_service import add_entry_links
 
 
@@ -304,7 +305,9 @@ def _load_evidence_with_text(db: Session, evidence_ids: list[uuid.UUID]) -> list
         .options(joinedload(EvidenceFile.document_text))
         .where(EvidenceFile.id.in_(evidence_ids))
     ).unique().all()
-    by_id = {item.id: item for item in rows}
+    # A phone file used in a dossier is not an AI source without the case's external-processing decision
+    # (07 section 6.4 item 4).
+    by_id = {item.id: item for item in rows if phone_files.external_processing_allowed(db, item)}
     return [by_id[item_id] for item_id in evidence_ids if item_id in by_id]
 
 
@@ -338,11 +341,16 @@ def _interview_sources(
         if link.evidence_file_id not in evidence_ids:
             evidence_ids.append(link.evidence_file_id)
     files = {item.id: item for item in _load_evidence_with_text(db, evidence_ids)}
+    withheld = set(db.scalars(select(EvidenceFile.id).where(
+        EvidenceFile.id.in_(evidence_ids), EvidenceFile.source_type == phone_files.SOURCE_TYPE,
+    )).all()) - set(files) if evidence_ids else set()
     raw: list[dict[str, Any]] = []
     for interview_id in interview_ids:
         if not links_by_interview.get(interview_id):
             raise WorkspaceAIError("Every selected interview needs at least one linked evidence file")
         for link in links_by_interview[interview_id]:
+            if link.evidence_file_id in withheld:
+                continue
             file = files.get(link.evidence_file_id)
             if file is None or file.case_id != case_id:
                 raise WorkspaceAIError("Selected interview evidence is not available in this case")
@@ -384,6 +392,9 @@ def _candidate_document_ids(
         .order_by(EvidenceFile.created_at.desc())
         .limit(12)
     )
+    if not phone_files.external_processing_check_registered():
+        # No case can allow phone files yet, so none may take one of the 12 places.
+        statement = statement.where(or_(EvidenceFile.source_type.is_(None), EvidenceFile.source_type != phone_files.SOURCE_TYPE))
     if conditions:
         statement = statement.where(or_(*conditions))
     return list(db.scalars(statement).all())

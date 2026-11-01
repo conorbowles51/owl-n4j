@@ -799,14 +799,25 @@ def _get_evidence(db: Session, case_id: uuid.UUID, evidence_file_id: uuid.UUID) 
 
 def add_media(db: Session, *, dossier_id: uuid.UUID, user: User, data: dict[str, Any]) -> dict[str, Any]:
     dossier = _write(db, dossier_id, user)
-    try: evidence_id = uuid.UUID(str(data.get("evidence_file_id")))
-    except (TypeError, ValueError) as exc: raise ValueError("Invalid evidence_file_id") from exc
-    file = _get_evidence(db, dossier.case_id, evidence_id)
+    if data.get("phone_file_id") and data.get("evidence_file_id"):
+        raise ValueError("Give either an evidence file or a phone file, not both")
+    if data.get("phone_file_id"):
+        # A phone file becomes an evidence row only now, when it is added as dossier media (07 section 6.4 item 4).
+        from services import phone_files
+
+        file, _ = phone_files.ensure_phone_file_evidence(
+            db, case_id=dossier.case_id, phone_file_id=str(data["phone_file_id"]), user=user)
+        evidence_id = file.id
+    else:
+        try: evidence_id = uuid.UUID(str(data.get("evidence_file_id")))
+        except (TypeError, ValueError) as exc: raise ValueError("Invalid evidence_file_id") from exc
+        file = _get_evidence(db, dossier.case_id, evidence_id)
     mime = mimetypes.guess_type(file.original_filename)[0] or ""
     if not mime.startswith("image/") and Path(file.original_filename).suffix.lower() not in IMAGE_EXTENSIONS:
         raise ValueError("The initial Dossier gallery supports image evidence only")
     existing = db.scalar(select(DossierMedia).where(DossierMedia.dossier_id == dossier.id, DossierMedia.evidence_file_id == evidence_id))
     if existing is not None:
+        db.commit()
         return _serialize_media(existing)
     is_cover = bool(data.get("is_cover"))
     if is_cover:
