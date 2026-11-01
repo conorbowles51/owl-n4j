@@ -376,9 +376,13 @@ def _contact_source(db: Session, case_id: uuid.UUID, raw: Any, evidence_id: str 
     """Where a contact detail came from (07 section 6.4 item 6): typed by a person, read from an evidence file,
     or copied from a phone record, which is checked against the case and keeps its mapping version set."""
     raw = raw if isinstance(raw, dict) else {}
-    kind = raw.get("type") or ("evidence" if evidence_id else "manual")
-    if kind not in CONTACT_SOURCE_TYPES:
+    kind = raw.get("type")
+    if kind not in (None, *CONTACT_SOURCE_TYPES):
         raise ValueError(f"A contact's source must be one of {', '.join(CONTACT_SOURCE_TYPES)}")
+    if kind != "phone_record":
+        # Typed or read from evidence: always worked out from the evidence file the request carries, never from
+        # the copy of the stored source the editor sends back, so adding or removing a file updates it.
+        kind = "evidence" if evidence_id else "manual"
     if kind == "phone_record":
         target_id = _text(raw.get("target_id"))
         if not target_id:
@@ -572,7 +576,11 @@ def replace_links(db: Session, *, dossier_id: uuid.UUID, user: User, links: list
         select(DossierLink).where(DossierLink.dossier_id == dossier.id)
     ).all()}
     removed = [link for key, link in existing.items() if key not in wanted]
+    from services import collection_index
+
     for link in removed:
+        if link.target_type == "phone_selection":
+            collection_index.remove_members(db, link_id=link.id)
         db.delete(link)
     added = kept = 0
     for (target_type, target_id), raw in wanted.items():
@@ -580,7 +588,7 @@ def replace_links(db: Session, *, dossier_id: uuid.UUID, user: User, links: list
         if current is not None:
             kept += 1
             current.relationship_type = _text(raw.get("relationship_type"))
-            current.label = _text(raw.get("label")) or current.label
+            current.label = _text(raw.get("label"))
             anchor = dict(raw.get("source_anchor") or {})
             if "mapping_versions" in (current.source_anchor or {}):
                 # The mapping version set is what the record was at collect time; it is never rewritten.
@@ -588,12 +596,18 @@ def replace_links(db: Session, *, dossier_id: uuid.UUID, user: User, links: list
             current.source_anchor = anchor
             continue
         phone = _validate_target(db, dossier.case_id, target_type, target_id)
-        db.add(DossierLink(
-            dossier_id=dossier.id, case_id=dossier.case_id, target_type=target_type,
+        row = DossierLink(
+            id=uuid.uuid4(), dossier_id=dossier.id, case_id=dossier.case_id, target_type=target_type,
             target_id=target_id, relationship_type=_text(raw.get("relationship_type")),
             label=_text(raw.get("label")) or (phone.label if phone else None), source_anchor=_link_anchor(phone, raw),
             created_by_user_id=user.id,
-        ))
+        )
+        db.add(row)
+        if phone is not None and target_type == "phone_selection":
+            collection_index.write_members(
+                db, case_id=dossier.case_id, container_type="dossier", container_id=str(dossier.id),
+                link_id=row.id, members=phone.members,
+            )
         added += 1
     dossier.updated_by_user_id = user.id
     db.flush()

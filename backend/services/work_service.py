@@ -293,6 +293,11 @@ def _replace_links(
     user: User,
 ) -> None:
     anchors = [_validate_link(db, task.case_id, link) for link in links]
+    from services import collection_index
+
+    for old_id in db.scalars(select(CaseTaskLink.id).where(
+            CaseTaskLink.task_id == task.id, CaseTaskLink.target_type == "phone_selection")).all():
+        collection_index.remove_members(db, link_id=old_id)
     db.query(CaseTaskLink).filter(CaseTaskLink.task_id == task.id).delete(synchronize_session=False)
     for link, phone_anchor in zip(links, anchors):
         members = phone_anchor.pop("_members", None) if phone_anchor is not None else None

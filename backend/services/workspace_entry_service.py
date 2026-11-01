@@ -597,6 +597,11 @@ def _replace_links(
             continue
         seen.add(key)
         sanitized.append(data)
+    from services import collection_index
+
+    for old in entry.links:
+        if old.target_type == "phone_selection":
+            collection_index.remove_members(db, link_id=old.id)
     entry.links.clear()
     db.flush()
     for data in sanitized:
@@ -1283,19 +1288,22 @@ def convert_theory_to_finding(
     db.add(finding)
     db.flush()
     for link in theory.links:
-        _append_link(
-            db,
-            finding,
-            current_user,
-            {
-                "target_type": link.target_type,
-                "target_id": link.target_id,
-                "target_label": link.target_label,
-                "relationship": link.relationship_type,
-                "source_anchor": dict(link.source_anchor or {}),
-                "metadata": dict(link.link_metadata or {}),
-            },
-        )
+        copied = {
+            "target_type": link.target_type,
+            "target_id": link.target_id,
+            "target_label": link.target_label,
+            "relationship": link.relationship_type,
+            "source_anchor": dict(link.source_anchor or {}),
+            "metadata": dict(link.link_metadata or {}),
+        }
+        if link_types.is_phone_type(link.target_type):
+            # A phone link was checked when it was collected; the copy keeps its mapping version set as collected.
+            from services import collection_index
+
+            copied["phone_members"] = collection_index.members_of(db, link_id=link.id)
+            _append_link(db, finding, current_user, copied, prepared=True)
+        else:
+            _append_link(db, finding, current_user, copied)
     _record_revision(db, finding, current_user)
     _record_event(
         db,

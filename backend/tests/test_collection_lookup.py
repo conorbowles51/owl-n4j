@@ -152,3 +152,48 @@ def test_route(world):
     refused = client.get(f"/api/workspace/{case_id}/collections",
                          params=[("target_type", "phone_record")] + [("target_ids[]", f"r{n}") for n in range(201)])
     assert refused.status_code == 400 and "at most 200" in refused.json()["detail"]
+
+
+def test_replacing_links_keeps_the_selection_index_in_step_and_conversion_keeps_collected_versions(world):
+    factory, user_id, case_id = world
+    with factory() as db:
+        user = db.get(User, user_id)
+        dossier_id = uuid.UUID(dossier_service.create_dossier(db, case_id=case_id, user=user,
+                                                             data={"display_name": "Subject"})["id"])
+        dossier_service.replace_links(db, dossier_id=dossier_id, user=user, links=[
+            {"target_type": "phone_selection", "target_id": "sel-small"}])
+        found = collection_lookup.lookup(db, case_id=case_id, target_type="phone_record", target_ids=["rec-1"])
+        assert found["results"][0]["counts"] == {"dossier": 1}
+        dossier_service.replace_links(db, dossier_id=dossier_id, user=user, links=[])
+        assert db.query(CollectionMembership).count() == 0
+
+        theory = uuid.UUID(entries.create_entry(db, case_id=case_id, current_user=user, entry_type="theory",
+                                                title="Theory", body="synthetic")["id"])
+        entries.batch_add_entry_links(db, case_id=case_id, entry_id=theory, current_user=user, rationale="t", links=[
+            {"target_type": "phone_record", "target_id": "rec-1"}, {"target_type": "phone_selection", "target_id": "sel-small"}])
+        link_types._RESOLVERS.clear()  # conversion must not re-resolve what was collected
+        version = entries.get_entry(db, case_id=case_id, entry_id=theory)["version"]
+        finding = entries.convert_theory_to_finding(db, case_id=case_id, theory_id=theory, current_user=user,
+                                                    expected_version=version, significance="medium",
+                                                    title="Finding", body="synthetic")
+        copied = {link["target_type"]: link for link in finding["finding"]["links"]}
+        assert copied["phone_record"]["source_anchor"]["mapping_versions"] == {"m": 1}
+        result = collection_lookup.lookup(db, case_id=case_id, target_type="phone_record", target_ids=["rec-2"])
+        assert result["results"][0]["counts"].get("finding") == 1
+
+
+def test_interview_evidence_files_are_found_by_evidence_id(world):
+    from postgres.models.evidence import EvidenceFile
+
+    factory, user_id, case_id = world
+    with factory() as db:
+        user = db.get(User, user_id)
+        file = EvidenceFile(id=uuid.uuid4(), case_id=case_id, original_filename="a.pdf", stored_path="/x", size=1,
+                            sha256="a" * 64, status="processed")
+        db.add(file)
+        db.commit()
+        dossier_id = uuid.UUID(dossier_service.create_dossier(db, case_id=case_id, user=user,
+                                                             data={"display_name": "Subject"})["id"])
+        dossier_service.create_interview(db, dossier_id=dossier_id, user=user, data={"evidence_links": [{"evidence_file_id": file.id}]})
+        result = collection_lookup.lookup(db, case_id=case_id, target_type="evidence", target_ids=[str(file.id), "not-a-uuid"])
+        assert [item["counts"] for item in result["results"]] == [{"interview": 1}, {}]

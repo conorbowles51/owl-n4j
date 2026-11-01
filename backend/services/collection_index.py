@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from typing import Iterable
 
-from sqlalchemy import delete, insert
+from sqlalchemy import delete, insert, select
 from sqlalchemy.orm import Session
 
 from postgres.models.collection_membership import CONTAINER_TYPES, CollectionMembership
@@ -32,3 +32,7 @@ def write_members(
 
 def remove_members(db: Session, *, link_id: uuid.UUID) -> None:
     db.execute(delete(CollectionMembership).where(CollectionMembership.link_id == link_id))
+
+
+def members_of(db: Session, *, link_id: uuid.UUID) -> tuple[str, ...]:
+    return tuple(db.scalars(select(CollectionMembership.record_id).where(CollectionMembership.link_id == link_id)).all())

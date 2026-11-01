@@ -87,3 +87,21 @@ def test_a_contact_saved_before_sources_keeps_its_recorder_when_someone_else_edi
         assert updated["contacts"][0]["recorded_by_user_id"] == str(user_id)
         assert updated["contacts"][0]["record_source"] == {"type": "evidence", "target_id": str(source_id)}
         assert dossier_service.contacts_for_suggestions(db, case_id)[0]["value"] == "+1 555 0100"
+
+
+def test_the_editor_sending_back_a_stored_source_can_still_add_and_remove_the_file(setup_db):
+    factory, user_id, case_id, _, source_id, _ = setup_db
+    with factory() as db:
+        user = db.get(User, user_id)
+        dossier = dossier_service.create_dossier(db, case_id=case_id, user=user, data={"display_name": "Witness", "contacts": [
+            {"kind": "phone", "value": "+1 555 0100", "evidence_file_id": source_id}]})
+        dossier_id = uuid.UUID(dossier["id"])
+        saved = dossier_service.update_dossier(db, dossier_id=dossier_id, user=user, data={"contacts": dossier["contacts"]})
+        contact = dict(saved["contacts"][0])
+        assert contact["record_source"] == {"type": "evidence", "target_id": str(source_id)}
+        removed = dossier_service.update_dossier(db, dossier_id=dossier_id, user=user,
+                                                 data={"contacts": [{**contact, "evidence_file_id": None}]})
+        assert removed["contacts"][0]["record_source"] == {"type": "manual"}
+        added = dossier_service.update_dossier(db, dossier_id=dossier_id, user=user,
+                                               data={"contacts": [{**removed["contacts"][0], "evidence_file_id": source_id}]})
+        assert added["contacts"][0]["record_source"] == {"type": "evidence", "target_id": str(source_id)}

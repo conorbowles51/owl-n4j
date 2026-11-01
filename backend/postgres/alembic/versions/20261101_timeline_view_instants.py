@@ -3,7 +3,8 @@
 The old columns stay and saved views keep ordering by sort_date, sort_time and position, so every existing view
 renders exactly as before (07 CO-21). Backfill: a valid written date and time becomes the instant with zone
 "wall_clock" (no zone was recorded); a date-only event (time "99:99") gets zone "wall_clock" and no instant, since
-inventing a time would claim precision the event does not have. The upgrade counts rows and checks every view's
+inventing a time would claim precision the event does not have. An impossible date (2024-02-30) gets no
+instant rather than stopping the migration. The upgrade counts rows and checks every view's
 order before and after, and refuses to finish if either moved.
 """
 from alembic import op
@@ -14,12 +15,15 @@ down_revision = '20261101_interview_evidence_targets'
 branch_labels = None
 depends_on = None
 
-ORDER = "SELECT view_id, event_key FROM timeline_view_events ORDER BY view_id, sort_date, sort_time, position"
+# Saved views order by sort_date, sort_time, position; rows tied on all three have no defined order in the app
+# either, so the check breaks ties by id to compare like with like.
+ORDER = "SELECT view_id, event_key FROM timeline_view_events ORDER BY view_id, sort_date, sort_time, position, id"
 BACKFILL = """
 UPDATE timeline_view_events SET
   sort_zone = CASE WHEN sort_date IS NULL THEN NULL ELSE 'wall_clock' END,
   sort_instant = CASE
     WHEN sort_date ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND sort_time ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+         AND pg_input_is_valid(sort_date || ' ' || sort_time, 'timestamp')
     THEN (sort_date || ' ' || sort_time)::timestamp AT TIME ZONE 'UTC'
     ELSE NULL END
 """

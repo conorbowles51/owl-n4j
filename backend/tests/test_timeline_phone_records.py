@@ -125,18 +125,18 @@ def test_existing_saved_views_render_exactly_as_before_and_the_row_count_is_unch
             shape = [("2024-01-02", "99:99"), ("2024-01-02", "08:00"), ("2024-01-01", "23:59"), (None, "99:99"),
                      ("2024-01-02", "08:00"), ("2023-12-31", "00:00")]
             for v, view in enumerate(views):
-                for n, (day, time) in enumerate(shape * 7):
+                for n, (day, time) in enumerate(shape * 7 + [("2024-02-30", "10:00")]):
                     connection.execute(text("INSERT INTO timeline_view_events VALUES (:i, :v, :k, :d, :t, :p, '{}')"),
                                        {"i": uuid.uuid4(), "v": view, "k": f"e{v}-{n}", "d": day, "t": time, "p": (n * 5) % 11})
-            order = "SELECT view_id, event_key FROM timeline_view_events ORDER BY view_id, sort_date, sort_time, position"
+            order = "SELECT view_id, event_key FROM timeline_view_events ORDER BY view_id, sort_date, sort_time, position, id"
             before = connection.execute(text(order)).all()
             with Operations.context(MigrationContext.configure(connection)):
                 migration.upgrade()
-            assert connection.execute(text(order)).all() == before and len(before) == 84
+            assert connection.execute(text(order)).all() == before and len(before) == 86
             counts = connection.execute(text(
                 "SELECT count(sort_instant), count(*) FILTER (WHERE sort_zone = 'wall_clock') FROM timeline_view_events")).one()
-            assert tuple(counts) == (56, 70)
-            assert "before 84, after 84" in capsys.readouterr().out
+            assert tuple(counts) == (56, 72)  # the impossible 2024-02-30 gets no instant and stops nothing
+            assert "before 86, after 86" in capsys.readouterr().out
             with Operations.context(MigrationContext.configure(connection)):
                 migration.downgrade()
     finally:

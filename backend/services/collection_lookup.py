@@ -111,17 +111,26 @@ def _dossiers(db, case_id, target_type, ids, found):
     ).all():
         found[link.target_id].append(_use("assessment", assessment.id, assessment.category, link.id, "direct",
                                           extra={"dossier_id": str(dossier.id)}))
-    if target_type in link_types.INTERVIEW_EVIDENCE_TYPES and target_type != "evidence":
+    if target_type in link_types.INTERVIEW_EVIDENCE_TYPES:
+        if target_type == "evidence":
+            by_uuid = {}
+            for value in ids:
+                try:
+                    by_uuid[uuid.UUID(value)] = value
+                except ValueError:
+                    continue
+            matches = DossierInterviewEvidenceLink.evidence_file_id.in_(list(by_uuid))
+        else:
+            matches = (DossierInterviewEvidenceLink.target_type == target_type) & DossierInterviewEvidenceLink.target_id.in_(ids)
         for link, interview, dossier in db.execute(
             select(DossierInterviewEvidenceLink, DossierInterview, CaseProfile)
             .join(DossierInterview, DossierInterview.id == DossierInterviewEvidenceLink.interview_id)
             .join(CaseProfile, CaseProfile.id == DossierInterview.dossier_id)
-            .where(DossierInterviewEvidenceLink.case_id == case_id,
-                   DossierInterviewEvidenceLink.target_type == target_type,
-                   DossierInterviewEvidenceLink.target_id.in_(ids), CaseProfile.archived_at.is_(None))
+            .where(DossierInterviewEvidenceLink.case_id == case_id, matches, CaseProfile.archived_at.is_(None))
         ).all():
-            found[link.target_id].append(_use("interview", interview.id, interview.date_value, link.id, "direct",
-                                              extra={"dossier_id": str(dossier.id)}))
+            key = by_uuid[link.evidence_file_id] if target_type == "evidence" else link.target_id
+            found[key].append(_use("interview", interview.id, interview.date_value, link.id, "direct",
+                                   extra={"dossier_id": str(dossier.id)}))
 
 
 def _tasks(db, case_id, target_type, ids, found):
