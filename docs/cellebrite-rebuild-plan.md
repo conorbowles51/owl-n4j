@@ -144,7 +144,7 @@ count files on the server show every one of the 14 phones under-counted at least
 |---|---|
 | Distinct record types | 62 (v1 lists 47) |
 | Distinct (type, field name, field kind) | 470 |
-| Named value sets | 57 |
+| Named value sets | 55 with 210 values, plus `DecodingSourceOptions` |
 | Types present in every report | 6 |
 | Types present in one report only | 5 |
 | New types contributed by each report in turn | 16, 25, 7, 1, 1, 0, 0, 0, 0, 0, 5, 1, 4, 2, 0, 0, 0 |
@@ -159,7 +159,8 @@ of the second group may occur only nested; not yet established.
 
 - Every `<value>` carries a data type. Basic: String, TimeStamp, Boolean, Int64, Int32, Double, TimeSpan,
   Guid. Named sets, e.g. `ModelDirections` {Incoming, Outgoing}, `PartyRole` {From, To, General},
-  `TelephonyCallStatus` (7 values), `MessageStatus` (6 values).
+  `TelephonyCallStatus` (8 values: Established, Missed, NotEstablishedUnknownReason, Rejected, Canceled,
+  Unknown, BusyLine, Voicemail), `MessageStatus` (6 values).
 - Nested records name their type (Party, Coordinate, PhoneNumber, UserID, ...).
 - Records carry `id`, `deleted_state`, `decoding_confidence`, `extractionId`, `source_index`, `file_id`,
   `labels`, `isrelated` (and `originalId` in 8.5).
@@ -294,8 +295,9 @@ intake ─▶ capture (lossless) ─▶ registry + generic interpretation ─▶
 
 ### 6.7 Time
 - Store each timestamp as an exact instant plus its original offset and the original string.
-- The device zone comes from the report's `timeZoneConfigurations` and extraction metadata, never a
-  constant. Offset-less values are flagged, not guessed.
+- The device zone comes from the device's own setting in the report metadata or from a recorded
+  decision, never a constant. `timeZoneConfigurations` holds the examiner's display setting and is shown
+  as such. Offset-less values are flagged, not guessed.
 
 ---
 
@@ -320,7 +322,9 @@ Each unit is finished, tested and committed before the next.
 
 ## 8. Reference corpus
 
-- Local: C3, C9, C8 (the readable sections). Never committed.
+- Reference values: C3, C9 and C8 as first measured on Neil's Mac. Nothing is copied from the Mac
+  (decision 2); the server C3 and C9 match those copies record for record, and the server C8 is a different
+  export. Never committed.
 - Server: the 14 phones v1 ingested, under `/mnt/owl-data/ingestion-data/` (read-only use). Each has
   v1's `owl_ingest_report.json` with per-type counts and ingest duration, which serve as a baseline.
   These folders are Alex's XML exports of the UFDRs in the production (Neil, 2026-10-31); C2 and C3 are
@@ -454,7 +458,8 @@ to be applied to five timeline hosts, and one copy-paste fix to two swim lanes.
 - The Reports page calls `/api/reports`, which no backend route serves.
 - Map and Graph load the whole case with no cap.
 - No global search exists; text search is a `LIKE` over document text and cannot see messages.
-- Chat's prompt says to cite page 1 when no page is known (`llm_service.py:503`).
+- Chat's prompt says to cite page 1 when no page is known (the `CITE SOURCES` line in
+  `backend/services/llm_service.py`: "If no page number is available, use page 1.").
 - Agent answers render without a document opener, so their links do nothing.
 - The query panel posts to a route that does not exist; the fallback `/api/query` is not scoped to the
   case and runs in a write transaction.

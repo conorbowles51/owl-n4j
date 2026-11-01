@@ -535,9 +535,8 @@ what is stored. The exact bytes remain in the hashed container (3).
   `resource.getrusage`; exceeding it raises `CaptureMemoryBudgetExceeded`, which fails the job
   with "Reading stopped because the report needed more memory than allowed. Nothing read so far
   is lost." and leaves the cursor (10.5) for a resume after the limit is raised.
-- Container limit: `mem_limit: 1g` on the phone worker (10.2). Host: 31 GB RAM plus 32 GB swap,
-  with Neo4j and Nominatim pressure noted (`v1_memory/MEMORY.md:41`, index line; the linked note
-  `project_host_no_swap_oom.md` was not available to read).
+- Container limit: `mem_limit: 1g` on the phone worker (10.2). Host: 31 GB RAM and 32 GB swap,
+  shared with Neo4j, Postgres and Nominatim; the host ran out of memory on 2026-10-24.
 
 ### 5.5 Writing
 
@@ -588,8 +587,9 @@ largest phone; then add a value table populated from the bodies without re-readi
 ### 6.2 Tables
 
 Migration `backend/postgres/alembic/versions/20261101_phone_capture.py` (date set on the day it is
-written), `revision = "20261101_phone_capture"`, `down_revision` = the head at that time; today
-the single head is `"20261019_workspace_setup"` (computed from all 95 revision files). Style as
+written), `revision = "20261101_phone_capture"`, `down_revision` = the single head at that time,
+measured with `alembic heads` at the start of the job and written to its STATUS (other work adds
+migrations daily, so no head is fixed here). Style as
 the existing files: module docstring, `revision`, `down_revision`, `branch_labels = None`,
 `depends_on = None`, `upgrade()` and `downgrade()`; the `evidence-db-migrate` service runs it
 (`docker-compose.yml:60-69`). Backend ORM models in `backend/postgres/models/phone_extraction.py`,
@@ -637,7 +637,6 @@ CREATE TABLE phone_extractions (
   case_id               uuid NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
   report_set_sha256     char(64) NOT NULL,   -- section 6.3
   first_container_id    uuid NOT NULL REFERENCES phone_extraction_containers(id),
-  root_path             text NOT NULL,       -- report root inside the container
   form                  varchar(20) NOT NULL CHECK (form IN ('full','split_sections','ufdr')),
   capture_state         phone_capture_state NOT NULL DEFAULT 'received',
   standing              phone_extraction_standing NOT NULL DEFAULT 'pending',
@@ -656,15 +655,16 @@ CREATE TABLE phone_extractions (
   capture_code_version  varchar(32) NOT NULL, -- e.g. 'phone-capture-1'
   created_at            timestamptz NOT NULL DEFAULT now(),
   captured_at           timestamptz,
-  CONSTRAINT uq_phone_extraction_report UNIQUE (case_id, report_set_sha256, root_path)
+  CONSTRAINT uq_phone_extraction_report UNIQUE (case_id, report_set_sha256)
 );
 CREATE UNIQUE INDEX uq_phone_extraction_supersedes ON phone_extractions(supersedes_id) WHERE supersedes_id IS NOT NULL;
 CREATE INDEX ix_phone_extractions_case_standing ON phone_extractions(case_id, standing);
 
-CREATE TABLE phone_extraction_container_links (   -- a second receipt of the same report
+CREATE TABLE phone_extraction_container_links (   -- every receipt of the report, the first included
   extraction_id uuid NOT NULL REFERENCES phone_extractions(id) ON DELETE CASCADE,
   container_id  uuid NOT NULL REFERENCES phone_extraction_containers(id) ON DELETE CASCADE,
-  PRIMARY KEY (extraction_id, container_id)
+  root_path     text NOT NULL,              -- report root inside this container
+  PRIMARY KEY (extraction_id, container_id, root_path)
 );
 
 CREATE TABLE phone_extraction_documents (
@@ -800,8 +800,11 @@ Estimated rows for the largest phone: 967,543 records; timestamps about 13 perce
 
 - **Report-set key** `report_set_sha256 = sha256("\n".join(sorted(f"{role}:{sha256}" for each non-empty document)))`.
   Two uploads of byte-identical report XML (zip and folder of the same export, or the same file
-  twice) produce the same key. Unique per `(case_id, report_set_sha256, root_path)`.
-- On a job start where an extraction with that key exists in the case:
+  twice) produce the same key. Unique per `(case_id, report_set_sha256)`: the zip and the folder of one
+  export have different root paths but one key, so they are one extraction with two containers (unit
+  1.3). `root_path` belongs to each container link, the first container's included.
+- On a job start, the existing extraction is looked up by `(case_id, report_set_sha256)`. Where one
+  exists in the case:
   - `captured` or `captured_incomplete`: link the new container
     (`phone_extraction_container_links`), write nothing else, finish with
     "This phone report is already in the case. The new upload is recorded as a second copy of the
@@ -1263,18 +1266,31 @@ over the Neo4j nodes the old ingester wrote) is replaced by later files and remo
 Engine tests run in the engine's environment (Python 3.12, `evidence-engine/Dockerfile`); note the
 build-state warning that the full engine suite does not run on 3.10 (`docs/loupe-build-state.md`,
 "The full engine pytest suite cannot run on 3.10"). New engine code under `evidence-engine/app/phone/`.
-Corpus tests read `LOUPE_PHONE_CORPUS`, a local JSON mapping `c3`, `c9`, `c8` to paths, and are
-skipped (with a visible skip reason) when it is unset. Case material is never committed.
+Corpus tests read `LOUPE_PHONE_CORPUS`, a JSON file on the server mapping `c3`, `c9`, `c8` (and P01 to
+P14) to paths under `/mnt/owl-data/ingestion-data/`, and are skipped (with a visible skip reason) when it
+is unset. The reference corpus is the 14 server reports, read-only; the server C3 and C9 are the Mac
+copies record for record, and the server C8 (P02) is a different export from the Mac's split-section C8.
+Nothing is copied from the Mac (plan decision 2). Numbers in this file measured only on the Mac copies
+(C3 zip, split C8, file outcomes) are reference values: the server-folder numbers are reported beside them
+and neither is adjusted. Synthetic fixtures for zip, split-section and protected forms are built from the
+server folders in `/mnt/owl-data/cellebrite-corpus/` and labelled synthetic. v1's
+`owl_ingest_report.json` in each server folder is not part of the production; file counts exclude it.
+Case material is never committed.
 
 ### Phase 0
 
 **Unit 0.1: reference corpus manifest.**
-`evidence-engine/tests/phone/corpus.py` loads `LOUPE_PHONE_CORPUS`. A committed file
+The manifest of the 14 server reports (paths, sizes, container sha256, report version, producer,
+extraction dates, `NodeCount` and `ModelCount`) lives in `/mnt/owl-data/cellebrite-corpus/manifest.json`
+and is never committed; a structure-only summary (counts, versions) is committed in
+`docs/cellebrite/measurements/`. `evidence-engine/tests/phone/corpus.py` loads `LOUPE_PHONE_CORPUS`. A committed file
 `evidence-engine/tests/phone/corpus_expected.json` holds **counts only** for C3, C9, C8: the totals
 in 1.2, the per-path element counts, record and file counts. Hash sums are not committed (they are
 derived from content); they live in a local file next to the corpus.
-*Acceptance:* the manifest's totals equal 1.2 exactly (C3 1,451,062 / 3,448,982 / 653,473; C9
-689,601 / 1,674,326 / 284,541; C8 1,269,819 / 2,743,889 / 574,716).
+*Acceptance:* the manifest's totals equal 1.2 exactly for C3 and C9 (C3 1,451,062 / 3,448,982 / 653,473;
+C9 689,601 / 1,674,326 / 284,541); C8's 1.2 figures (1,269,819 / 2,743,889 / 574,716) are the Mac
+split-section reference values, and the server C8's totals are recorded beside them; a rerun gives an
+identical manifest.
 
 **Unit 0.2: element-level counter.** `app/phone/counter.py` (lxml) per 8.1 to 8.2, with document
 SHA-256 and MD5. Unit tests on synthetic XML for each measure, including a truncated document, a
@@ -1320,17 +1336,19 @@ value present on disk resolves (`container_entry`) in C3 and C9; the 228 C9 file
 contents each keep their own row and references.
 
 **Unit 1.6: timestamps.** `app/phone/timestamps.py` per section 9. *Acceptance:* `explicit` rows
-22,859 / 5,218 / 59,666 for record TimeStamp values, `absent` 22 / 0 / 6; device zone C9
-`America/New_York` from `timeZoneConfigurations`, C3 the configured zone, C8 NULL with source
-`not_stated`; `formatted_text` kept on every row.
+22,859 / 5,218 / 59,666 for record TimeStamp values, `absent` 22 / 0 / 6; device zone C9 from the
+device metadata item `Time zone settings (ID)` with source `device_metadata`; C3 and C8 NULL unless a
+device metadata item exists (section 9.3); `device_zone_source` takes only `device_metadata`, `decision`
+or NULL; the examiner's selected zone is stored in `flags.examiner_selected_zone` and never as the device
+zone; `formatted_text` kept on every row.
 
 **Unit 1.7: upload path and removal.** Section 4 and 11. *Acceptance:* backend test: a resumable
 archive group whose zip holds a report is not extracted, registers one `phone_extraction` evidence
 row, dispatches one `phone_capture` job, and a repeated `complete` after a lost response
 dispatches nothing new (`request_id` stable); a folder group of 43,144 members is accepted; a
 `.ufdr` archive group is accepted; `POST /api/evidence/upload` with a phone zip returns 409; the
-removed files are gone and both suites pass (financial suite baseline per
-`docs/loupe-build-state.md`); auto-read skips `phone_extraction` rows.
+removed files are gone and both suites pass against the baselines measured at the start of the job and
+written to its STATUS; auto-read skips `phone_extraction` rows.
 
 ### Phase 2
 
@@ -1382,6 +1400,7 @@ uninterrupted run. Durations of uninterrupted runs recorded against 10.8.
 | D19 | Three new `jobstatus` values and JobCard labels instead of reusing "Extracting Text" | the card would otherwise mislabel the stage | never |
 | D20 | Upload messages say what is needed "from whoever produced it", never how to re-export | the reader receives productions | Neil rules otherwise |
 | D21 | Old Cellebrite columns on `evidence_files` kept; read side kept until replaced | migrations are history; the deployed database may hold old rows | counts show no rows use them |
+| D22 | An extraction is unique per `(case_id, report_set_sha256)`; `root_path` belongs to each container link | the zip and the folder of one export have different root paths but byte-identical report XML, and unit 1.3 requires one extraction with two containers | never; the report-set key is a function of the report bytes |
 
 ---
 
@@ -1401,6 +1420,5 @@ uninterrupted run. Durations of uninterrupted runs recorded against 10.8.
   off still stores `+00:00`).
 - Whether the deployed Loupe database holds rows written by the old Cellebrite ingester.
 - The backend's request body limit for a 200,000-member manifest.
-- The content of `v1_memory/project_host_no_swap_oom.md` (only its index line was available).
 - Whether `project@ModelCount` excludes a definable set of records (it differs from the counted
   top-level models by 2 in C3 and C8).

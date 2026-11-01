@@ -506,8 +506,9 @@ Spec 04 refines kinds and radii through its reference data; the generic kind is 
 ### 5.5 Sensitive fields (generic list, reviewed)
 
 `Password.Data`, `Password.GenericAttribute`, `WirelessNetwork.Password`, `UserAccount.Password`,
-`CreditCard.CreditCardNumber`, `Cookie.Value`, `Autofill.Value`, `DictionaryWord.Word` (plan 12.1 rule 4;
-plan 11.1). Held in `mappings/data/sensitive_fields.json` (a mapping kind, section 6.3), so adding one is a
+`CreditCard.CreditCardNumber`, `Cookie.Value`, `Autofill.Value`, `DictionaryWord.Word`, `KeyValueModel.Value`
+(plan 12.1 rule 4; plan 11.1). `KeyValueModel.Value` (395,831 values on 13 phones) is sensitive until a
+reviewed mapping shows a key's values hold no credential. This list and 05 section 3.8 are one list. Held in `mappings/data/sensitive_fields.json` (a mapping kind, section 6.3), so adding one is a
 reviewed data change.
 
 ### 5.6 Derived tables (case-scoped; all rebuildable)
@@ -904,8 +905,8 @@ fallback; *reverse if* a case's numbers are mostly foreign without a `+`.
 
 ### 8.4 Name folding
 
-One function, `backend/services/phone/fold.py:fold(text, exact=False)`, shared with search (spec 03 section
-11.3 defines it; this file adds step 3 and fixes the order). Steps:
+One function, `backend/services/phone/fold.py:fold(text, exact=False)`, defined here and used by search
+(spec 03 section 11.3). Steps:
 
 1. `unicodedata.normalize("NFKC", text)`: maps mathematical alphanumerics, fullwidth, circled, superscript and
    modifier letters to plain letters.
@@ -1174,7 +1175,7 @@ section 14.2; up to 13,053 contacts on one phone).
 
 `COMMUNICATED` counts only events with exactly two identities (sender and one recipient, or the two call
 parties, the owner side included through `owner_implicit`). Group messages count on `POSTED_IN`, so a
-group of 200 does not draw 19,900 pair edges. Spec 03 section 4.3 now defines `between` with `group_scope` defaulting to `direct`, matching
+group of 200 does not draw 19,900 pair edges. Spec 03 section 4.3 defines `between` with `group_scope` defaulting to `direct`, matching
 `COMMUNICATED`, and reports group totals separately, matching `POSTED_IN` (settled 2026-10-29).
 
 ### 9.4 Membership and deletion semantics
@@ -1289,7 +1290,7 @@ client is `AsyncOpenAI` (`app/services/openai_client.py:74-86`, `embed_texts` at
 evidence goes to a third-party service unless Neil decides so for a case.
 
 **Decision:** phone text is not embedded while the only provider is a third party. It is embedded when
-either a local embedding provider exists, or a per-case decision `allow_external_processing` (recorded by
+either a local embedding provider exists, or a per-case decision `allow_phone_external_processing` (recorded by
 Neil through the decision log on each `phone_extraction`, reason mandatory) permits it. When embedded:
 collection `chunks` (the one the chat searches, `backend/services/vector_db_service.py:55-58`), ids
 `<evidence_file_id>:<content_sha256>:chunk:<n>` (engine format, `chunk_embed.py:235-238`), chunks built
@@ -1465,7 +1466,7 @@ reaching the ledger only through claim comparison (plan 6.6, 12.1 rule 5).
 | `pv_time` | `time_uid` | from `phone_time_values`: `record_uid`, `field_path`, `instant` (effective), `original_text`, `original_offset_minutes`, `offset_present`; plus `machine_instant`, `instant_basis`, `producer_format` |
 | `pv_timeline_entry` | `entry_uid` (= `time_uid`) | `entry_uid`, `record_uid`, `extraction_id`, `case_id`, `model_type`, `field_path`, `field_meaning` and `semantics` (timestamp-meaning rows, 6.5b), `instant`, `activity_class` (from 04's strength view over `phone_mapping_rows`; `unknown` where 04 has no row), `summary` (`phone_record_summaries.title`), `identity_keys` (participations of the record and its top-level ancestor) |
 | `pv_location_point` | `point_uid` | from `phone_location_points`: `point_uid`, `record_uid`, `extraction_id`, `case_id`, `lat`, `lon`, `accuracy_m`, `accuracy_basis` (`gps_horizontal`, `precision_field`, `none`), `source_kind`, `affiliation`, `instant`, `end_instant` |
-| `pv_file` | `file_uid` | from 01 `phone_files`: `file_uid`, `extraction_id`, `cellebrite_file_id` (`source_file_id`), `category` (`tags`), `local_path`, `size` (`disk_size`, else `declared_size`), `md5`, `sha256` (disk values, else declared, with which in `hash_basis`), `verification` (01 `outcome` mapped to `match`, `mismatch`, `missing`, `unverified`), `deleted_state` (file body attribute `deleted`), `is_carved` (true when the row was captured from the report's `carvedFiles` section; whether any production populates it is open, 01's last section), `taken_instant` (the file's EXIF or `accessInfo` timestamp from `phone_timestamps` with `owner_kind = 'file'`, chosen by the rule in spec 03 section 8), `exif` |
+| `pv_file` | `file_uid` | from 01 `phone_files`: `file_uid`, `extraction_id`, `cellebrite_file_id` (`source_file_id`), `category` (`tags`), `local_path`, `size` (`disk_size`, else `declared_size`), `md5`, `sha256` (disk values, else declared, with which in `hash_basis`), `verification` (01 `outcome` carried as is, all seven values of 01 section 7.2: `no_local_path`, `missing`, `empty_placeholder`, `size_mismatch`, `match`, `mismatch`, `no_hash`; an `empty_placeholder` is never shown as mismatched, missing or unverified), `deleted_state` (file body attribute `deleted`), `is_carved` (true when the row was captured from the report's `carvedFiles` section; whether any production populates it is open, 01's last section), `taken_instant` (the file's EXIF or `accessInfo` timestamp from `phone_timestamps` with `owner_kind = 'file'`, chosen by the rule in spec 03 section 8), `exif` |
 | `pv_attachment_link` | (`record_uid`, `mechanism`, `body_path`) | from 01 `phone_file_references`: `record_uid`, `file_uid` (resolved row or null), `mechanism` (01's `jumptarget`, `file_id_attribute`, `extracted_path_value` shown under 03's names `jump_target`, `attachment_field`, `tagged_file`), `extracted_path` (`reference_text` when a path), `resolved` (`resolution <> 'unresolved'`) |
 | `pv_text` | `text_uid` | from `phone_texts`: `record_uid`, `extraction_id`, `case_id`, `field_path`, `value` (effective), `value_folded` (`fold()`), `is_sensitive` |
 | `pv_coverage` | (`extraction_id`, `model_type`, `field_name`, `field_kind`) | section 7: `records`, `interpretation` (03's three values: `reviewed`, `generic` for `generic_role` and `generic_text`, `captured_only`; plus `suspended` and the finer level in `level_detail`) |
@@ -1539,8 +1540,7 @@ Each with its reason and what would reverse it.
    offset is the examiner's display setting. *Reverse if* Cellebrite documentation shows the offset in
    `formattedTimestamp` is the device's.
 5. **The device zone comes only from the metadata item `Time zone settings (ID)` or a decision;** the
-   examiner-selected zone is shown but not used. This disagrees with 01 section 9.3, which prefers the
-   selected zone; 01's column stays as captured and `pv_extraction.device_zone` follows this rule.
+   examiner-selected zone is shown but not used (01 section 9.3 holds the same rule).
    *Reverse if* the 14 server phones show the two equal wherever both exist.
 6. **Doubles are Decimals; coordinates alone are doubles.** Same reason as the ledger's ban on floats.
 7. **Participant role combines container field and `Role`,** with conflicts flagged, because `Role` is
@@ -1598,6 +1598,11 @@ Each with its reason and what would reverse it.
 37. **A document whose reconciliation differs is held from interpretation** until a person records
     `accept_phone_reconciliation_difference`; it is shown, not interpreted silently.
 
+38. **`KeyValueModel.Value` is in the sensitive list (5.5), which is one list with 05 section 3.8.** Its
+    395,831 values on 13 phones have unknown contents per key, and a credential among them would otherwise
+    be searchable and exportable. *Reverse if* a reviewed mapping shows a key's values hold no credential
+    (then that key is excluded by the mapping, not the field).
+
 ## 15. Not yet established
 
 - Whether `phonenumbers` 9.0.31 classifies the reserved fictional ranges used in tests as valid (tests use
@@ -1612,7 +1617,6 @@ Each with its reason and what would reverse it.
 - Owner tier results for C9, C8 and the 14 server phones (v1's memory note records three phones of the
   10-report case ingested with no owner number, before tier 2 existed).
 - Count of communicating identities per case (sizes the graph; spec 03 20.9).
-- Whether spec 03's Conversations `between` filter includes group messages (decision 24).
 - Interpretation time on the largest phone (decision 1).
 - How a payment-only counterparty party can be linked to a case entity (8.9 point 4); a financial change.
 - Whether a local embedding model is available on Owl's server (decision 26).

@@ -64,8 +64,7 @@ of it for pattern of life belongs to 04.
 
 Spec 01 (capture) stores every element of a report losslessly in Postgres with a locator. Spec 02
 (registry and interpretation) derives, from that capture, the interpreted rows these screens read.
-Neither sibling file existed when this file was written (`docs/cellebrite/` was empty), so the read
-contract below is stated as the set of columns these screens need. Spec 02 owns the physical names and
+The read contract below is the set of columns these screens need. Spec 02 owns the physical names and
 may implement each as a table or a view; it must provide every column listed, or this file must be amended
 in the same commit that diverges.
 
@@ -77,14 +76,14 @@ extraction twice is a no-op"). `extraction_id` is the id of one ingested report 
 | `pv_extraction` | ingested extraction | `extraction_id uuid`, `case_id uuid`, `label text` (C1, C2 ...), `state text` (ingested, partial, failed, replaced), `owner_identity_key text null`, `owner_basis text` (extracted, inferred, manual), `device` jsonb (manufacturer, model, os), `report_version text`, `producer text`, `extraction_type text`, `selection` jsonb (IsSelectiveExtraction, IsPartialData, IsStoppedByUser, IsTriageExtraction as captured, chosen types and ranges if present), `time_zone` jsonb (the report's `timeZoneConfigurations` values verbatim), `device_zone text null` with `device_zone_basis text` (see 3.2), `container_sha256`, `report_sha256`, `ingested_at`, `reconciliation_state text` |
 | `pv_record` | captured record (any type, top level or nested) | `record_uid`, `extraction_id`, `cellebrite_id text`, `model_type text`, `parent_record_uid null`, `deleted_state text` (as captured: Intact, Deleted, Trash, Unknown, or null), `decoding_confidence text null`, `source_index text null`, `file_id text null`, `is_carved bool` (02 defines from the capture), `locator` jsonb (01's locator) |
 | `pv_comm_event` | message, call, email, voicemail, chat activity | `event_uid`, `record_uid`, `extraction_id`, `case_id`, `kind text` (message, call, email, voicemail, chat_activity), `thread_key text`, `app text null` (SourceApplication or Source as captured), `direction text` (incoming, outgoing, unknown), `sort_instant timestamptz null`, `time_field text` (which field supplied it, e.g. TimeStamp), `body text null` (complete, never cut), `subject text null`, `status text null`, `call_duration_s numeric null`, `call_status text null`, `video bool null`, `dup_group_uid text` (3.4), `dup_rule_version int`, `interpretation_level text` (generic, reviewed; plan 1.5) |
-| `pv_comm_party` | party on an event | `event_uid`, `identity_key text`, `role text` (From, To, General, as captured; or owner_implicit when 02 supplies the owner side), `name_in_record text null`, `identifier_raw text null`, `is_phone_owner bool null`, `date_read`, `date_delivered`, `date_played` (timestamptz null each) |
+| `pv_comm_party` | party on an event | `event_uid`, `identity_key text`, `role text` (02 section 5.3's computed role: sender, recipient, cc, bcc, caller, callee, participant, activity_subject, attendee, author, owner_of_item, original_sender, `party:<FieldName>`, unknown, or owner_implicit when 02 supplies the owner side), `role_basis text` (02 section 5.3: container, role, direction_inferred); the captured `Role` text (From, To, General) stays visible in the record panel (3.6), `name_in_record text null`, `identifier_raw text null`, `is_phone_owner bool null`, `date_read`, `date_delivered`, `date_played` (timestamptz null each) |
 | `pv_thread` | conversation thread | `thread_key`, `extraction_id`, `app`, `thread_kind text` (chat, sms_group, call_log, email_folder), `chat_type text null` (OneOnOne, Group, Broadcast, Unknown), `title_in_record text null`, `first_instant`, `last_instant`, `event_count int`, `party_identity_keys text[]` |
 | `pv_identity` | identifier across the case (E.164 number, app user id, email) | `identity_key`, `case_id`, `kind text` (phone, app_user, email, other), `value_normalised text`, `value_display text`, `person_id uuid null` (reviewed People link, section 10) |
 | `pv_identity_name` | name a given phone holds for an identity | `identity_key`, `extraction_id`, `name text`, `basis text` (contact_entry, contact, name_in_record), `record_uid`, `time_created`, `time_modified` |
 | `pv_time` | every captured TimeStamp value | `record_uid`, `field_path text`, `instant timestamptz null`, `original_text text`, `original_offset_minutes int null`, `offset_present bool` |
 | `pv_timeline_entry` | timeline entry (plan 6.4: one per TimeStamp field) | `entry_uid`, `record_uid`, `extraction_id`, `case_id`, `model_type`, `field_path`, `field_meaning text null` (reviewed meaning, plan 11.2 rule 2), `instant timestamptz null`, `activity_class text` (interaction, device_state, passive, unknown; plan 11.2), `summary text`, `identity_keys text[]` |
-| `pv_location_point` | positioned record | `point_uid`, `record_uid`, `extraction_id`, `case_id`, `lat double`, `lon double`, `accuracy_m double null`, `accuracy_basis text` (gps_horizontal, precision_field, none), `source_kind text` (gps, wifi, cell, app, photo, account, unknown), `affiliation text null` (DeviceLocationAffiliation as captured), `instant timestamptz null`, `end_instant timestamptz null` |
-| `pv_file` | tagged or carved file | `file_uid`, `extraction_id`, `cellebrite_file_id`, `category text` (as captured: Image, Audio, Video, Text, Archives, Document, Application, Configuration, Database, Uncategorized), `local_path text`, `size bigint null`, `md5 text null`, `sha256 text null`, `verification text` (match, mismatch, missing, unverified), `deleted_state text null`, `is_carved bool`, `taken_instant timestamptz null`, `exif` jsonb null |
+| `pv_location_point` | positioned record | `point_uid`, `record_uid`, `extraction_id`, `case_id`, `lat double`, `lon double`, `accuracy_m double null`, `accuracy_basis text` (gps_horizontal, precision_field, none), `source_kind text` (02 section 5.4's values: `device_location`, `wifi`, `other:<ParentType>`; cell towers are `not_positionable` and are not points), `affiliation text null` (DeviceLocationAffiliation as captured), `instant timestamptz null`, `end_instant timestamptz null` |
+| `pv_file` | tagged or carved file | `file_uid`, `extraction_id`, `cellebrite_file_id`, `category text` (as captured: Image, Audio, Video, Text, Archives, Document, Application, Configuration, Database, Uncategorized), `local_path text`, `size bigint null`, `md5 text null`, `sha256 text null`, `verification text` (01 section 7.2's seven outcomes, carried as is: no_local_path, missing, empty_placeholder, size_mismatch, match, mismatch, no_hash), `deleted_state text null`, `is_carved bool`, `taken_instant timestamptz null`, `exif` jsonb null |
 | `pv_attachment_link` | link from a record to a file | `record_uid`, `file_uid null`, `mechanism text` (tagged_file, jump_target, attachment_field; plan 3.4), `extracted_path text null`, `resolved bool` |
 | `pv_text` | searchable string value | `record_uid`, `extraction_id`, `case_id`, `field_path`, `value text`, `value_folded text` (3 rules in 11.3), `is_sensitive bool` |
 | `pv_coverage` | (type, field) per extraction | `extraction_id`, `model_type`, `field_name`, `field_kind`, `records int`, `interpretation text` (reviewed, generic, captured_only) |
@@ -256,7 +255,7 @@ Display of one participant, `ParticipantLabel`:
 | Name and email | `Maria Lopez (maria@example.com)` |
 | No name | `(no name on this phone) (+1 202-555-0143)` |
 | The phone's owner | `Owner of C3: Name (+1 202-555-0100)`; when the owner number is not in the extraction, `Owner of C3 (number not in the extraction)` |
-| Owner number supplied by hand at intake | as above with the badge `Number entered by hand` |
+| Owner set by a person after ingest (a `set_phone_owner` decision, 02 section 8.6) | as above with the badge `Owner set by a person` |
 | Identifier present but cannot be normalised | the captured value verbatim, with `Not a recognised number format` on hover |
 
 The numbers above are illustrative formats, not evidence. Phone numbers are displayed from
@@ -324,7 +323,7 @@ Badges are words, not colours alone. Each has a tooltip giving the captured valu
 | `Decoding confidence: <value>` | `decoding_confidence` present and not `High` | as captured |
 | `App: WhatsApp` | always, from `app` | `SourceApplication` and `Source` |
 | `No time recorded`, `No offset in report` | 3.2 | |
-| `File missing from production`, `File does not match its hash`, `File not checked` | attachment `verification` | stored and computed hashes |
+| `File missing from production` (`missing`), `No file path in report` (`no_local_path`), `Empty placeholder in production` (`empty_placeholder`), `File size differs from report` (`size_mismatch`), `File does not match its hash` (`mismatch`), `File not checked` (`no_hash`) | attachment `verification`, one badge per outcome of 01 section 7.2 other than `match`; the longer text is 01 section 7.2's UI copy | stored and computed hashes, stated and on-disk sizes |
 | `Unreadable message` | ScrambledMessageData present on the event | |
 | `Read by owner`, `Played by owner` | owner party `date_read` / `date_played` | the timestamps, formatted as 3.2 |
 | `Generic reading` | `interpretation_level = generic` | "Loupe has not yet reviewed how this record type maps to messages. Fields are read by their names." |
@@ -829,7 +828,7 @@ absence, and what lets them state the limits of the phone evidence.
                 "triage": "...", "chosen_types": [], "chosen_ranges": []},
   "completeness": {"reconciliation": "exact | failed", "truncated_sections": [{"section", "detail"}],
                    "stated_vs_read": [{"what": "files", "stated": 72849, "read": 11663}]},
-  "files": {"total": 43043, "by_category": {"Image": 33584}, "verification": {"match": 0, "mismatch": 0, "missing": 229, "unverified": 0},
+  "files": {"total": 43043, "by_category": {"Image": 33584}, "verification": {"match": 21155, "missing": 224, "empty_placeholder": 21664, "size_mismatch": 0, "mismatch": 0, "no_local_path": 0, "no_hash": 0},
             "sha256_present": 224},
   "deleted": [{"model_type", "intact", "deleted", "trash", "unknown"}],
   "coverage": [{"model_type", "records", "interpretation": "reviewed | generic | captured_only", "fields": [{"name", "kind", "records", "interpretation"}]}],
@@ -849,8 +848,8 @@ state, the three headline counts (messages, calls, locations) and a completeness
 `Partly read`, `Still reading`, `Failed`. A row opens `/cases/:id/phones/:extractionId` with sections:
 
 1. **Whose phone**: owner label, how established (`Read from the device information in the report`,
-   `Worked out from messages the phone sent` with the records listed, or `Entered by hand at intake by
-   <user> on <date>`).
+   `Worked out from messages the phone sent` with the records listed, or `Set by <user> on <date>` for a
+   `set_phone_owner` decision recorded after ingest, 02 section 8.6; there is no owner field at intake).
 2. **Device and report**: device fields; report file, form, version, producer, extraction type and period;
    SHA-256 of what was received; the report's own MD5 and whether it matched.
 3. **What the production says it contains**: the selection flags verbatim with plain meaning ("The examiner
@@ -873,7 +872,7 @@ phone still ingesting shows progress from 01's job state and every count marked 
 |---|---|
 | P-1 | For a fixture extraction, every number on the page equals the corresponding count query over the contract views |
 | P-2 | A split-section fixture with a truncated file index shows `Partly read` and the stated and read counts |
-| P-3 | An owner entered by hand is labelled as such everywhere the owner label appears (unit over `ParticipantLabel`) |
+| P-3 | An owner set by a `set_phone_owner` decision is labelled as such everywhere the owner label appears (unit over `ParticipantLabel`) |
 | P-4 | Missing-file count links to Media with `verification=missing` and the list total equals the count |
 | P-5 | The selection flags render verbatim plus the plain meaning; "not stated" when the attribute is absent |
 
@@ -898,7 +897,7 @@ output labelled and the original always beside it (plan 1.9).
 | `POST /api/phones/media/{file_uid}/derive` | `{"kind": "transcript | ocr", "case_id"}` | `202 {"job_id"}`; reuses the evidence-engine queue (plan 6.1) and local models (plan 1.8) |
 | `GET /api/phones/media/{file_uid}/derived?case_id=` | | `[{"kind", "text", "model", "model_version", "created_at", "created_by", "segments": [...]}]` |
 
-`MediaFilter`: `{case_id, phones, apps, categories, verification, deleted_states, carved, linked_to_message:
+`MediaFilter`: `{case_id, phones, apps, categories, verification (any of the seven outcomes of 01 section 7.2), deleted_states, carved, linked_to_message:
 true|false|null, participants, from_instant, to_instant, include_no_time, sort}`.
 
 `MediaItem`: `{file_uid, phone_label, category, filename, size, taken_or_sent: {instant, full,
@@ -912,7 +911,7 @@ message_count, thumbnail_url or null, has_derived: ["transcript"]}`.
 
 - Grid (default) and list views, both virtualized; the grid sizes to the exact total like 3.1.
 - Filter bar: phones, apps, categories (from the captured category, plan 5 lesson 9), state
-  (verification, deleted, carved), linked to a message or not, participants (files carried by messages with
+  (verification by each of 01 section 7.2's seven outcomes, deleted, carved), linked to a message or not, participants (files carried by messages with
   them), dates.
 - Open an item: right panel with the file (image, `<video>`, `<audio>` with seeking; PDF and text in
   `DocumentViewer`), hashes, state badges, linked messages (each opens Conversations at that message),
@@ -1089,7 +1088,7 @@ The existing Dossiers page (`/cases/:id/dossiers`) is Loupe's people surface: a 
 | `GET /api/phones/identities/{identity_key}?case_id` | detail: names per phone with records, counts per phone and direction, first/last, suggestions |
 | `GET /api/phones/people/{dossier_id}/phones?case_id` | the dossier panel |
 | `GET /api/phones/identity-suggestions?case_id&status=open` | suggestions with reasons |
-| `POST /api/phones/identity-decisions` | `{case_id, decision: "link" | "reject" | "unlink" | "split", identity_keys: [], dossier_id, reason}`; returns the decision row; 409 if the state changed since the client read it |
+| `POST /api/phones/identity-decisions` | 02 section 8.8's body: `{case_id, decision, identity_keys: [], dossier_id, new_person_name, reason, expected_revision}`, `decision` one of 02's names (`link_phone_identity`, `unlink_phone_identity`, `reject_phone_identity_link`, `restore_phone_identity_link`) or `split` (written as `unlink_phone_identity` decisions in one transaction); returns the decision row; 409 when `expected_revision` no longer matches the current link rows |
 
 ### 10.5 Acceptance tests (People)
 
@@ -1131,19 +1130,18 @@ Financial ledger search is not in this unit (19, D-14).
 
 ### 11.3 Matching
 
-- **Default:** case-insensitive substring match after folding both the query and the text. Folding:
-  1. Unicode NFKC (maps mathematical, fullwidth, circled, superscript and similar styled letters to plain
-     letters: the measured complaint in plan 10.2).
-  2. A supplementary table for styled letters NFKC leaves alone, kept in `services/phone/fold.py` with a
-     test per range: negative circled and negative squared Latin capitals (U+1F150 to U+1F169, U+1F170 to
-     U+1F189), regional indicator letters (U+1F1E6 to U+1F1FF), small capitals (for example U+1D00 ᴀ,
-     U+0299 ʙ), and others found by the corpus measurement in 20.6.
-  3. Remove zero-width and variation selectors (U+200B to U+200D, U+FE0E, U+FE0F) and combining marks
-     after NFD, so `Jose` finds `José`.
-  4. Case fold (`str.casefold()`); collapse whitespace.
-  5. Phone numbers: a query that is mostly digits also matches identities whose digits contain it, so
-     `2025550143` finds `+1 (202) 555-0143`.
-- **`Exact characters`** toggle turns all folding off except case.
+- **Default:** case-insensitive substring match after folding both the query and the text with 02 section
+  8.4's `fold()` (`backend/services/phone/fold.py`, 02's root, 06 section 2), whose steps and order 02
+  defines: NFKC; the supplementary styled-letter table (negative circled and negative squared Latin
+  capitals, regional indicator letters, small capitals, and others found by the corpus measurement in
+  20.6); mixed-script confusables inside a token that mixes Latin with Cyrillic or Greek (a token wholly in
+  Cyrillic or Greek is left alone); removal of format and control characters; removal of combining marks,
+  so `Jose` finds `José`; case fold; punctuation and other non-letter, non-digit characters to spaces with
+  whitespace collapsed.
+- Phone numbers: a query that is mostly digits also matches identities whose digits contain it, so
+  `2025550143` finds `+1 (202) 555-0143` (D-12).
+- **`Exact characters`** toggle calls `fold(text, exact=True)`, which applies only 02's steps 4 (format and
+  control characters removed) and 6 (case fold).
 - No typo-tolerant or fuzzy matching by default; a fuzzy match is not what a person typed.
 - The same `fold()` runs at ingest (02 fills `value_folded`) and at query; a mirror in
   `frontend_v2/src/features/search/lib/fold.ts` highlights matches in the browser, and both are tested
@@ -1187,7 +1185,7 @@ best group in its screen. Component: `src/features/search/components/SearchDialo
 - Phone passages given to the chat carry `[C3 WhatsApp message, Tue, Mar 14, 2023, 3:07 PM EDT,
   rec://...]` headers, so the model cites a record, not a page.
 - The chat prompt line that tells the model to "use page 1" when no page is known
-  (`backend/services/llm_service.py:503`) is changed: cite `rec://` for phone records; cite `doc://file/N`
+  (the `CITE SOURCES` line in `backend/services/llm_service.py`; cited by its text, since its line moves) is changed: cite `rec://` for phone records; cite `doc://file/N`
   only with a known page; otherwise cite `doc://file` with no page, which opens the document at its start
   and shows "No page was given for this citation."
 - Workspace AI citations (`frontend_v2/src/features/workspace-ai/api.ts:19-29`, `source_anchor`) gain
@@ -1366,7 +1364,8 @@ to a lookup service.
 ### 14.1 Purpose
 
 See who was in contact with whom across all phones, and how that sits beside the money: one link per pair
-with its counts and sums ("14 calls, 230 messages, $8,400 in 6 payments", plan 13), sliceable by time,
+with its counts and sums ("14 calls, 230 messages, 6 payments totalling USD 8,400.00 (p0 to p2); 2 more
+payments USD 1,100.00 (p3)", 02 section 11.2), sliceable by time,
 each link opening to the records behind it.
 
 ### 14.2 Projection policy
@@ -1382,8 +1381,10 @@ Individual messages and calls are not graph nodes (377,648 messages). The graph 
 - `person_id` on identity nodes linked to dossiers, so a person's identities can be shown collapsed into the
   person when the case-name toggle is on.
 
-Money edges come from the existing financial flows; the combined edge label is computed by the graph
-endpoint, not stored.
+Money on an edge follows 02 section 11: p0 to p2 summed, p3 stated separately, p4 never summed,
+currencies never summed together, the label computed and never stored. One module computes it,
+`backend/services/phone/link_edges.py` (02 section 11.1); the graph endpoint calls it and has no money
+logic of its own.
 
 The number of communicating identities per case is not measured (20.9); the graph endpoint fix in 15.3
 applies regardless.
@@ -1439,7 +1440,8 @@ that sentence, *reverse if* measured node counts (20.9) fit unlimited.
 
 ### 15.4 Chat tells the model to cite page 1
 
-`backend/services/llm_service.py:503`. **Scope:** 11.5.
+The `CITE SOURCES` line in `backend/services/llm_service.py` ending "If no page number is available, use page 1." (cited by text, not line
+number, because the file changes often). **Scope:** 11.5.
 
 ### 15.5 Agent answers' links do nothing
 
@@ -1707,7 +1709,7 @@ Each is a decision the plan did not already settle, with its reason and what rev
 | D-8 | Phone view names come from the phone the record came from, line by line, even in case-wide lists; case view is a label change only | plan 10.2 and v1's perspective-first rule; a toggle that changed results would break A3 | none |
 | D-9 | Duplicate rule v1: same phone, kind, direction, sender, recipients, body hash and instant; never across phones; thread participant-subset folding not carried | matches v1's tested rule while keeping cross-phone matching for approach 2; subset folding merged distinct threads | measurement 20.1 shows equal-second matching misses copies or merges distinct messages |
 | D-10 | Arrow on screen `→`, in copied text and exports `->` | matches the form in the recorded feedback and pastes cleanly | none |
-| D-11 | Search folding default: NFKC + supplementary styled-letter table + accents + case; `Exact characters` turns it off; no fuzzy matching; no homoglyph or transliteration folding | finds what a person types without matching different letters | Neil wants accents significant by default |
+| D-11 | Search folding is 02 section 8.4's `fold()`: NFKC, supplementary styled-letter table, mixed-script confusables, format characters removed, accents, case, punctuation to spaces; `Exact characters` applies 02's steps 4 and 6 only; no fuzzy matching; no transliteration | finds what a person types without matching different letters | Neil wants accents significant by default |
 | D-12 | Digit-only queries also match identity digits | numbers are typed in many formats | none |
 | D-13 | Search lives in a Cmd/Ctrl+K dialog mounted on the existing unused event, plus a header box | the shortcut already exists and does nothing | none |
 | D-14 | Financial ledger is not a Search group in this unit | the ledger has its own filtered views and the plan names messages, documents and people | Neil wants one box for everything; then add a ledger group reading the existing ledger query |

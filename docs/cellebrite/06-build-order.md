@@ -27,14 +27,21 @@ Contents
    is written first or alongside, and the unit is not committed until it passes. A "no tests" result is
    never green (`CLAUDE.md`, Tests).
 3. **Test suites per tree:**
-   - backend: Python 3.10, `cd backend && python3 -m unittest discover -s tests -p 'test_*.py' -t .`
-     (the financial suite baseline in `CLAUDE.md` must stay green: 3057 tests, OK, skipped 12);
+   - backend: both commands in `CLAUDE.md` under Tests (the financial `unittest discover` and the pytest
+     command); the baselines are measured at the start of each job and written to its STATUS, and they
+     must stay green; no fixed test count is used;
    - evidence-engine: Python 3.12 or later, run inside the engine container (the build-state file
      records that the engine suite cannot run on Python 3.10);
    - frontend_v2: `npx vitest run --project unit` and `--project browser` with `VITE_CACHE_DIR` set per
      `CLAUDE.md`, plus `npx tsc -b` and `npx eslint .`.
-4. **Reference corpus:** C3, C9 and the readable part of C8 on the development machine; the 14 phones
-   under `/mnt/owl-data/ingestion-data/` on the server, read-only. Case material is never committed;
+4. **Reference corpus:** the 14 phone reports on the server under `/mnt/owl-data/ingestion-data/`,
+   read-only (C3 = P06 and C9 = P09 match the Mac copies record for record; the server C8, P02, is a
+   different export from the Mac's split-section C8). Nothing is copied from the Mac (plan decision 2);
+   numbers measured only on the Mac copies (the C3 zip, the split C8, their file outcomes) are reference
+   values, reported beside the server numbers and never adjusted. The corpus manifest, synthetic fixtures
+   built from the server folders and every measurement scratch output live in
+   `/mnt/owl-data/cellebrite-corpus/` (mode 700), never in the repo. v1 wrote `owl_ingest_report.json`
+   into each server folder; it is not part of the production and file counts exclude it. Case material is never committed;
    fixtures are synthetic or structure-only.
 5. **Measure before building** wherever a spec names a gate (plan 12.1 rule 1). A gate result is recorded
    in `docs/cellebrite/measurements/` (counts only) before the unit that depends on it starts.
@@ -64,7 +71,7 @@ If two specs name different roots for the same thing, the owning spec in this ta
 |---|---|---|---|
 | A Ground truth | 0 | 01-0.1, 01-0.2, A3 server measurement batch | Counts recorded for C3, C9, C8 and all 14 server phones |
 | B Capture | 1, 2 | 01-1.1 to 01-1.7, 01-2.1 to 01-2.4 | Exact reconciliation on every reference document; kill-and-resume proven |
-| C Interpretation | 3 | 02-U1 to 02-U7, 04-U1 | A type absent from all code reaches timeline, map and identities |
+| C Interpretation | 3 | 02-U1 to 02-U7, 02-U17, 04-U1 | A type absent from all code reaches timeline, map and identities |
 | D Identity and projections | 4 | 02-U8, U9, U10, U12, U13, U15 | Deleting one of two phones sharing a contact leaves the other intact |
 | E Screens | 5 | 03-1 to 03-11 | Every testing-hub item (03 section 17.0) has a passing test |
 | F Pattern of life | 7 | 04-U2 to 04-U13 | A statement window shows supporting, contradicting and missing data with sources |
@@ -85,7 +92,7 @@ is authoritative).
 
 | # | Unit | Delivers | Depends on | Done when |
 |---|---|---|---|---|
-| 1 | 01-0.1 | Reference corpus manifest: paths, sizes, container hashes, report version, producer for C3, C9, C8 | nothing | Manifest file in `docs/cellebrite/measurements/` (no content); rerun is identical |
+| 1 | 01-0.1 | Reference corpus manifest: paths, sizes, container hashes, report version, producer for the 14 server reports | nothing | Manifest in `/mnt/owl-data/cellebrite-corpus/manifest.json` (never committed); a structure-only summary (counts, versions) in `docs/cellebrite/measurements/`; rerun is identical |
 | 2 | 01-0.2 | Element-level counter (lxml) per 01 section 8 | 1 | Counts for C3, C9, C8 stable across runs and equal to the expat cross-check recorded in 01 section 1 |
 | 3 | A3 | Server measurement batch, section 5 below | 2 | Every listed measurement recorded; each dependent gate marked pass, fail or changed |
 
@@ -114,6 +121,7 @@ is authoritative).
 | 17 | 02-U3 | Observation pass and review queue | 16 | Samples raise no flag after seed; a synthetic extraction with six kinds of novelty raises exactly six |
 | 18 | 02-U4 | Generic interpretation by value role | 16 | C3 22,881 time rows and 31 points; C8 171 Locations `not_positionable`; a synthetic unknown type appears on timeline and map |
 | 19 | 02-U5 | Mapping loader, versions, retroactive applier, suspension on drift | 18 | Changing a mapping re-derives with no capture table written |
+| 19a | 02-U17 | Sweep and runtime (02 sections 1.3 and 5.7) | 19 | Killing the backend mid-pass leaves the previous generation readable and the next start completes it; timing at C6 scale recorded and 02 section 1.3's reverse-if judged on it; the size of 02 section 5.7's one-transaction generation swap measured at C6 and P14 scale |
 | 20 | 02-U6 | Initial type mappings for the core types | 19, A3 | C3: 1,657 calls each with caller and callee; 2,917 messages threaded |
 | 21 | 04-U1 | Timestamp-meaning, activity-strength and attribution mapping rows | 19, A3 (04 M1 to M12) | Every (type, time field) has a meaning or explicit `unknown`; DeviceEvent rows written from server-measured values |
 | 22 | 02-U7 | Coverage map and endpoint | 20 | C3 lists 35 types and 178 combinations; selection flags verbatim |
@@ -176,7 +184,7 @@ then F's views (04-U6, U7), then E8 to E11, then the rest of F.
 | 56 | 05-S0 | Analysis framework: tables, jobs, endpoints, coverage, directions, decisions, sensitive reveals | 24 | Framework tests in 05 section 3 |
 | 57 | 05-S1 | Measurement module M-1 to M-13 as read-only functions | 56 | Produces every gate value of section 5 |
 | 58 | 05-S2 | Raw record view requirements met | 31, 32 | 05 section 17.1 checks pass on screens built in E |
-| 59 | 05-S3 | Approach 1a: money signals, institution directory, readings, binding, corroboration, account leads | 56, 53 | 05 section 4.7 gate and tests |
+| 59 | 05-S3 | Approach 1a: money signals, institution directory, readings, binding, corroboration, account leads | 56, 53; first run waits for CB-INDEX question 3 (none of the three phone cases exists in Loupe) | 05 section 4.7 gate and tests |
 | 60 | 05-S4 | Approach 1b: coverage join and contradictions | 59 | 05 section 4.7 gate plus a bound account with a continuous reconciled run |
 | 61 | 03-12 | RSMF export | 38; RSMF specification read and cited (03 20.8) | E-6 |
 
@@ -191,7 +199,7 @@ Each unit starts only after its gate in 05 passes on the server measurements.
 | 64 | 05-S7 | 4 knowledge and awareness | 7.6 |
 | 65 | 05-S8 | 5 who used which phone | 8.6 |
 | 66 | 05-S9 | 11 relationships over time | 14.6 |
-| 67 | 05-S10 | Link edges in the graph (section 17.8) | a case with a reviewed phone-to-counterparty link |
+| 67 | 05-S10 | Approach screen wired to 02-U16's `backend/services/phone/link_edges.py` (05 section 17.8; money per 02 section 11, no second implementation) | 54; a case with a reviewed phone-to-counterparty link |
 | 68 | 05-S11 | 6, 7, 9, 10, each as its own unit | 9.6, 10.6, 12.6, 13.6 |
 | 69 | 05-S15 | 12 extraction comparison | 15.6 (needs the C1 identity answer from A3) |
 | 70 | 05-S16 | 13 incident window | 16.6 |
@@ -213,7 +221,8 @@ Each unit starts only after its gate in 05 passes on the server measurements.
 ## 5. Server measurement batch (stage A3)
 
 Run read-only on the server at lowest priority (`nice -n 19`, `ionice -c3`), counts and salted hashes
-only, results written to `docs/cellebrite/measurements/` on the development machine. No content leaves
+only, scratch output in `/mnt/owl-data/cellebrite-corpus/`, and the structure-only results committed to
+`docs/cellebrite/measurements/`. No content leaves
 the server in any form a person could read.
 
 | Measurement | For | Settles |
@@ -234,15 +243,17 @@ Each is built inside the unit named, not as a separate project.
 | Fix | Found in | Built in unit |
 |---|---|---|
 | Resumable upload caps folders and zips at 20,000 files; old route deletes zips after extraction | 01 section 4 | 01-1.7 |
-| Engine audio transcription calls OpenAI only; video frames always go to OpenAI | 05 section 17.4 | 05-S12 |
+| Engine audio transcription calls OpenAI only | 05 section 17.4 | 05-S12 |
+| Engine video frames go to OpenAI whatever `image_provider` says | 05 section 17.4 | job `lx-defects`, because it affects all evidence today, not only phones |
 | No global search; Cmd/Ctrl+K fires an event nothing listens for | 03 section 15 | 03-5 |
-| Chat tells the model to cite page 1 when no page is known (`llm_service.py:503`) | 03 section 15 | 03-5 |
+| Chat tells the model to cite page 1 when no page is known (the `CITE SOURCES` line in `backend/services/llm_service.py`: "If no page number is available, use page 1.") | 03 section 15 | 03-5 |
 | Agent answers render without a document opener | 03 section 15 | 03-5 |
 | Timeline stops at 200,000 events, drops undated events, shows 24-hour time in the browser's zone | 03 section 15 | 03-6 |
 | Timeline PDF uses system fonts and caps linked entities and notes; backend image has no fonts | 03 section 15 | 03-7 |
 | Map and Graph load the whole case uncapped | 03 section 15 | 03-10, 03-11 |
-| Reports page calls `/api/reports`, which no route serves | 03 section 15 | not in this plan (03 D-23); recorded for Neil |
-| Query panel posts to a missing route; fallback `/api/query` not case-scoped and runs in a write transaction | Loupe screen survey (plan 10.6) | not in this plan; recorded for Neil as a security defect |
+| Reports page calls `/api/reports`, which no route serves | 03 section 15 | where Neil's answer to CB-INDEX question 4 puts it (recommended: `cb-screens` with 03-7, as the case's list of exports); until then the sidebar entry stays as is (03 D-23) |
+| Query panel posts to a missing route; fallback `/api/query` not case-scoped and runs in a write transaction | Loupe screen survey (plan 10.6) | job `lx-defects` (security defect, outside this plan's units) |
+| "Not a duplicate" calls `/api/graph/reject-merge-pair`, which nothing serves; the served route is `/reject-merge` | Loupe screen survey | job `lx-defects` |
 
 ## 7. Removal of the old Cellebrite code
 
@@ -262,7 +273,7 @@ Per 01 section 11 and 03 D-25: the new code is built beside the old under new na
 |---|---|---|
 | A | B | Counter stable on C3, C9, C8; server batch recorded |
 | B | C | Reconciliation exact on every reference document; kill and resume proven (01-2.4) |
-| C | D | Unknown-type test passes (02-U4); mappings re-derive without re-capture (02-U5) |
+| C | D | Unknown-type test passes (02-U4); mappings re-derive without re-capture (02-U5); sweep kill test passes and the C6 and P14 timing and swap-size measurements are recorded (02-U17) |
 | D | E, F | Membership deletion test (02-U12) |
 | E | G | Every testing-hub item in 03 section 17.0 has a passing test |
 | F | H | Gate F (row 52) |

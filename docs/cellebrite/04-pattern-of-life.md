@@ -49,7 +49,7 @@ the report names; they repeat across cases, so this file uses P01 to P14.
 | Id | Case | Exhibit label | Local copy | Model elements (all levels) |
 |---|---|---|---|---|
 | P01 | 1-phone case | (single report) | | 32,332 |
-| P02 | 10-report case | C8 | C8 (same per-type counts as the local split export) | 73,608 |
+| P02 | 10-report case | C8 | none: the local C8 is a different export (below) | 73,608 |
 | P03 | 10-report case | C1, extraction 2023-01-20 | | 44,949 |
 | P04 | 10-report case | C2 | | 251,466 |
 | P05 | 10-report case | C5 | | 70,487 |
@@ -63,10 +63,10 @@ the report names; they repeat across cases, so this file uses P01 to P14.
 | P13 | 3-phone case | C2 | | 523,024 |
 | P14 | 3-phone case | C1 | | 967,543 |
 
-The catalogue holds 10 reports from the case the plan calls the 10-report case (plan 12 notes two C1
-reports, P03 and P10). The local-copy matches are by identical per-type counts (C3 vs P06: Location 31,
-DeviceEvent 2, NetworkUsage 5,181; C8 vs P02: Location 206, NetworkUsage 20,961; C9 vs P09: Location 7,
-SearchedItem 13).
+The 10-report case holds two C1 reports, P03 and P10 (plan 12). The local C3 and C9 match P06 and P09
+exactly (every per-type count and every (type, field, kind) entry). The server C8 (P02) is a different
+export from the local C8: 9 record types differ in count and 37 (type, field, kind) entries are on one
+side only (P02 73,608 models against the local 73,637). Only C3 and C9 match the server exactly.
 
 ### 1.2 Measurements used in this file
 
@@ -116,17 +116,19 @@ UserMapping values come from POL-S only.
 
 ### 1.4 Sibling specifications referred to abstractly
 
-- **Capture** (plan 6.2): every record, nested record, field and value with a locator `(extraction_id,
-  record_id, field path, value index)`. This file reads captured values through that locator and never
-  re-parses XML.
+- **Capture** (plan 6.2): every record, nested record, field and value, addressed by `record_uid` (uuid,
+  02 section 1.2) plus `field_path`; report record ids are not unique (01 section 1.3) and are never an
+  address. This file reads captured values through that address and never re-parses XML.
 - **Mapping format** (spec 02): versioned, reviewed mapping data. The activity-strength mapping, the
   timestamp-meaning mapping and the attribution mapping in this file are three mapping kinds in that
   format. This file defines their content and match semantics, not their storage.
 - **Time** (plan 6.7): each timestamp as exact instant, original offset and original string. This file
   uses `instant_utc`, `offset_status` in {`explicit`, `absent`} and `original` from it.
-- **Identity**: phone identities, the owner identity of each extraction, and reviewed links from
-  identities to persons (Loupe entities). This file uses `owner_identity_id` per extraction and
-  `person -> [extraction]` resolution, and never merges identities itself.
+- **Identity** (02 section 8): an identity is an identifier; a person is a dossier. Phone identities, the
+  owner identity of each extraction, and 02's reviewed identity-to-dossier links. This file uses
+  `owner_identity_id` per extraction and `dossier -> [extraction]` resolution through those links, and
+  never merges identities itself. Every person subject in this file is
+  `{"kind": "dossier", "dossier_id": ...}`.
 
 ---
 
@@ -374,6 +376,10 @@ Two qualifiers sit beside the class. They are part of the same mapping rows:
 | `weak` | class `interaction` with a group-A flag; or `device_state` with any flag; or `aggregate_bucket` semantics; or `physical` true with class `passive` |
 | `none` | class `passive` without `physical`, or class `unknown` |
 
+Actor `counterpart`: an event whose actor is `counterpart` is never counted for the owner, whatever its
+class. Its strength for the counterpart's subject is computed by the same table with the actor treated as
+`owner`.
+
 Strength is a display and ordering aid and an input to the statement check (9.4). It is never stored as an
 editable column; it is recomputed from its inputs whenever a mapping version changes.
 
@@ -554,9 +560,9 @@ attribution mapping kind (spec 02 format), initial content:
 Group A flags demote an `interaction` event to `weak`; one group-B flag demotes it to `moderate`; two or
 more group-B flags demote it to `weak` (3.1).
 
-**Owner.** "Owner" means the owner identity of the extraction as resolved by the identity spec. For a
-person-level view, an event counts for the person only if its extraction is linked to the person by a
-reviewed identity link. Two extractions of one device (P03 and P10 may be one) are both included and
+**Owner.** "Owner" means the owner identity of the extraction as resolved by 02. For a person-level
+view (subject `{"kind": "dossier", "dossier_id": ...}`), an event counts for the person only if its
+extraction's owner identity is linked to the dossier by a reviewed identity-to-dossier link (02 section 8). Two extractions of one device (P03 and P10 may be one) are both included and
 their events deduplicated by (record source identity, instant, type, value) with the duplicate shown,
 never dropped (plan 10.4 item 1).
 
@@ -649,7 +655,17 @@ time:
   `transaction` (a card payment place, 8.5);
 - `presence_basis`: which rule decided `presence`;
 - `source_kind`: `gps`, `device_location`, `app_location`, `account_location`, `wifi_position`,
-  `wifi_case_anchor`, `cell_reference`, `media_exif`, `calendar`, `checkin`, `journey`, `manual`;
+  `wifi_case_anchor`, `cell_reference`, `media_exif`, `calendar`, `checkin`, `journey`, `manual`. This is
+  a column derived here, separate from 02's point `source_kind` (02 section 5.4: `device_location`,
+  `wifi`, `other:<ParentType>`; cell towers `not_positionable`), which it never replaces. Each value comes
+  from 02's as follows, the choice inside a row made by the reviewed rows of 04-U1 from the record's own
+  fields: 02 `device_location` gives `gps`, `device_location`, `app_location` or `account_location` (by
+  the Location's accuracy field, `Origin` and affiliation); 02 `wifi` gives `wifi_position`; 02
+  `not_positionable` with reason `cell_identity_only` gives `cell_reference` only when the offline
+  reference resolves the tower (6.4), and no observation otherwise; 02 `other:<ParentType>` gives
+  `media_exif`, `calendar`, `checkin` or `journey` by parent type (6.2); `wifi_case_anchor` comes from the
+  case-derived anchors (6.3) and `manual` from a place a person records (8.5), neither of which has a 02
+  point;
 - attribution flags (4.2).
 
 Only `presence` and `media` observations with attribution allowing it enter routine detection and
@@ -761,7 +777,7 @@ One row per (record, time field) with an activity-relevant semantics (all of 2.3
 | id | bigint identity PK | |
 | case_id | uuid not null | |
 | extraction_id | uuid not null | |
-| record_locator | text not null | capture locator of the record |
+| record_uid | uuid not null | the record's `record_uid` (02 section 1.2); with `time_field` it addresses the value |
 | record_type | varchar(64) not null | |
 | time_field | varchar(64) not null | |
 | instant_utc | timestamptz not null | start for intervals |
@@ -788,7 +804,7 @@ Strength is not a column; it is computed in SQL from the columns above by a view
 
 Indexes: `(extraction_id, instant_utc)`; `(case_id, instant_utc)`; partial
 `(extraction_id, instant_utc) WHERE activity_class = 'interaction'`; `(case_id, counterpart_identity_id,
-instant_utc)`; unique `(extraction_id, record_locator, time_field)` (idempotent rebuild).
+instant_utc)`; unique `(extraction_id, record_uid, time_field)` (idempotent rebuild).
 
 ### 7.3 `pol_place_observation`
 
@@ -796,7 +812,8 @@ instant_utc)`; unique `(extraction_id, record_locator, time_field)` (idempotent 
 |---|---|---|
 | id | bigint identity PK | |
 | case_id, extraction_id | uuid not null | extraction null for manual and transaction places |
-| record_locator | text null | |
+| record_uid | uuid null | `record_uid` of the place-bearing record (02 section 1.2); null for manual and transaction places |
+| field_path | varchar(512) null | the field within the record that gave the place |
 | kind | varchar(16) not null | 6.1 |
 | source_kind | varchar(24) not null | 6.1 |
 | lat, lon | double precision not null | |
@@ -877,15 +894,16 @@ table directly; flagged in the response).
 
 ### 8.0 Time zone in every view
 
-Default display zone: the device zone from the report's time zone configuration (C9:
-`_America/New_York`; C3: `_Africa/Abidjan` with convert-to-UTC on, per `c3.json`/`c9.json` tz entries),
-resolved by the time spec. UTC one click away. 12-hour time with date always shown (plan 10.2). Every
+Default display zone: the device zone as 01 section 9.3 resolves it (the device's own setting in the
+report metadata, or a recorded decision). When there is none, the view shows UTC and says "Phone time
+zone not recorded". The examiner's selected zone is never the default. UTC one click away. 12-hour time with date always shown (plan 10.2). Every
 item opens to its original string, offset status, field name and time semantics. Days are local-zone
 days; a day containing a DST change has 23 or 25 hours and the grid shows that.
 
 ### 8.1 Day view
 
-- Subject: one extraction, or one person (all extractions linked to the person, 4.2), one local date.
+- Subject: one extraction, or one person as a dossier (`{"kind": "dossier", "dossier_id": ...}`: all
+  extractions whose owner identity has a reviewed link to the dossier, 4.2), one local date.
 - Lanes, top to bottom: **availability** strip (5.3 hour states, per extraction); **interaction**;
   **device state**; **communications** (messages and calls, with name and number, plan 10.4 item 1);
   **places** (observations with radius, kind and source); **money** (8.5); **passive** (collapsed by
@@ -910,7 +928,8 @@ days; a day containing a DST change has 23 or 25 hours and the grid shows that.
 - **Nights that break it**: days with at least one `strong` or `moderate` interaction inside the quiet
   hours, listed with the items, and days whose quiet hours are `no_data`, listed separately as
   "not observed".
-- Per person across phones: a cell is `interaction` if any linked phone has interaction; the cell lists
+- Per person (a dossier, 1.4) across phones: a cell is `interaction` if any phone linked to the dossier
+  through 02's reviewed identity-to-dossier links has interaction; the cell lists
   which phones. Availability is the best state across phones and states that.
 - Large ranges: the API returns at most one response for the full extraction span of the largest phone
   (11) using the hourly rollup; no paging needed at that size.
@@ -955,7 +974,7 @@ observations longer than 2 hours are drawn as gaps, not lines. Uses the existing
 
 ### 8.4 Together and apart
 
-For two or more subjects (phones or persons) and a time window.
+For two or more subjects (phones, or persons as dossiers, 1.4) and a time window.
 
 **Observation pairs.** For subjects A and B, presence observations a, b with
 `dt = max(0, gap between [a.start, a.end] and [b.start, b.end])`, considered when `dt ≤ W`, where
@@ -1030,7 +1049,8 @@ the rest of the replaced Cellebrite code.
 
 ### 9.1 Claim kinds and schema
 
-`subject` = `{"kind": "person", "entity_id": ...}` or `{"kind": "extraction", "extraction_id": ...}`.
+`subject` = `{"kind": "dossier", "dossier_id": ...}` (a person, resolved through 02's reviewed
+identity-to-dossier links) or `{"kind": "extraction", "extraction_id": ...}`.
 Window = `[window_start, window_end)` instants, with `window_zone` and `window_text` (the words of the
 statement, e.g. "from about eleven until seven").
 
@@ -1042,7 +1062,7 @@ statement, e.g. "from about eleven until seven").
 | `not_at_place` | `place` | never went to the address |
 | `with_subject` | `counterpart: subject` | was with B that night |
 | `apart_from_subject` | `counterpart: subject` | had not seen B since Monday |
-| `no_contact` | `counterpart: {"identity_ids": [...]} or person` | no contact with B after a date |
+| `no_contact` | `counterpart: {"identity_ids": [...]} or {"kind": "dossier", "dossier_id": ...}` | no contact with B after a date |
 | `contact` | `counterpart` | spoke to B that morning |
 
 An approximate time in the statement is entered as a window that covers it ("about eleven" becomes a
@@ -1149,7 +1169,7 @@ compatible episodes support `with_subject`, separated episodes contradict it, an
              "display": {"time_local": "2:14 AM, Fri 2 Dec 2022", "field": "TimeStamp",
                          "meaning": "sent time", "type": "InstantMessage", "source_app": "...",
                          "phone": "P14", "flags": []},
-             "record_locator": "..."}],
+             "record_uid": "uuid", "field_path": "TimeStamp"}],
   "counts": {"contradicting": {"strong": 2, "moderate": 0, "weak": 1}, "supporting": {}, "gap": 1, "context": 7},
   "inputs": {"activity_mapping_version": "...", "meaning_mapping_version": "...",
              "attribution_mapping_version": "...", "cell_dataset_id": null, "params": {}}
@@ -1164,9 +1184,10 @@ Every item is returned; no limit. The example dates are illustrative.
    (`workspace_entry.py:43-53`) and to `ck_workspace_entry_links_target_type` (`:269-272`).
 2. From an evaluation, the person chooses a finding or theory and selects items. The service calls
    `add_entry_links` (`workspace_entry_service.py:1352`) with, per selected item,
-   `target_type = "phone_record"`, `target_id = record_locator`, `relationship` = `contradicts` for
+   `target_type = "phone_record"`, `target_id = record_uid` (02 section 1.2, so `rec://` links and the
+   record panel open it, 03 section 11.5), `field_path` in `metadata`, `relationship` = `contradicts` for
    contradicting items and `supports` for supporting items, `context` for context and gap items,
-   `source_anchor = {"time_field": ..., "instant_utc": ...}`, and `metadata = {"evaluation_id",
+   `source_anchor = {"time_field": ..., "instant_utc": ...}`, and `metadata = {"field_path", "evaluation_id",
    "claim_id", "strength", "class_basis", "activity_mapping_version"}`; plus one link
    `target_type = "statement_check"`, `target_id = evaluation_id`, `relationship` = `contradicts` when the
    outcome is `contradicted`/`contradicted_weakly`, `supports` when `supported`/`consistent`, else
@@ -1184,13 +1205,14 @@ Router `backend/routers/pattern_of_life.py`, `APIRouter(prefix="/api/pattern", t
 service package `backend/services/pattern_of_life/` (`activity.py`, `availability.py`, `places.py`,
 `routine.py`, `colocation.py`, `money.py`, `claims.py`, `evaluation.py`, `drafting.py`). Reads use
 `require_case_view`; writes `require_case_edit` (`routers/case_access.py:102`, `:112`). Times in and out
-are ISO 8601 with offset; `zone` is an IANA name or `device` or `UTC`. Errors: 400 invalid range or
+are ISO 8601 with offset; `zone` is an IANA name or `device` or `UTC`. `subject` is
+`{"kind": "extraction", "extraction_id": ...}` or `{"kind": "dossier", "dossier_id": ...}` (1.4). Errors: 400 invalid range or
 subject, 404 unknown subject, 409 projection `building` (body states progress), 422 claim not
 confirmable (field list).
 
 | Method and path | Request | Response |
 |---|---|---|
-| GET `/{case_id}/subjects` | | extractions with owner identity, families present, first and last, projection status; persons with linked extractions |
+| GET `/{case_id}/subjects` | | extractions with owner identity, families present, first and last, projection status; persons as dossiers (`{"kind": "dossier", "dossier_id"}`) with the extractions linked through 02's reviewed identity-to-dossier links |
 | GET `/{case_id}/availability` | `subject`, `start`, `end` | bands per extraction and family; streams with first, last, max_gap |
 | GET `/{case_id}/day` | `subject`, `date` (local), `zone`, `include_passive` (bool) | `{lanes: {...}, availability: [...], totals: {...}, truncated: false}`; lane items as 9.5 `display` plus ids |
 | GET `/{case_id}/grid` | `subject`, `start_date`, `end_date`, `zone`, `min_strength`, `classes` | `{days: [{date, hours: [{state, counts, phones}]}], quiet_hours: {...} | null, breaks: [...]}` |
@@ -1271,7 +1293,7 @@ evidence; corpus checks are separate and gated.
 
 ## 13. Corpus measurements to run before building
 
-Scripts live in `scripts/cellebrite_corpus/` (repo root `scripts/` already holds audit scripts). Each is
+Scripts live in `docs/cellebrite/measurements/scripts/`, beside the existing measurement scripts. Each is
 standard-library Python, compatible with 3.10, streams with `xml.etree.ElementTree.iterparse` and clears
 top-level models, runs with `python3 -I`, takes the report path (or zip and inner path) and an output
 path, and writes JSON of counts only. Common guards:
@@ -1364,7 +1386,6 @@ Each is a decision with its reasoning and what would reverse it.
 - Whether `DeviceConnectivity` `Paired` times are pairing moments. M4.
 - Sensor nesting and whether any sensor records come from a wearable. M9.
 - Whether P03 and P10 are the same device (plan 12).
-- Why the catalogue holds 10 reports for the case the plan calls the 10-report case.
 - OpenCelliD licence obligations for Loupe outputs; whether the current export covers the case's
   2022-2023 towers.
 - Whether any production states selected date ranges (`IsSelectiveExtraction`, `IsPartialData` were not

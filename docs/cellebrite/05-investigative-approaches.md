@@ -158,7 +158,7 @@ What these establish, stated once here and used below:
 
 | Interface | From | What this file needs |
 |---|---|---|
-| Record locator | 01 | `(extraction_id, record_id, field_path, value_index)` addressing any captured value, top-level or nested. |
+| Record address | 01 / 02 | `record_uid` (uuid, 02 section 1.2) plus `field_path` (and value index where a field repeats), addressing any captured value, top-level or nested. Report record ids are not unique (01 section 1.3) and are never an address; workspace links use `target_id = record_uid`. |
 | Captured record read | 01 | All fields, values and data types; model attributes (`deleted_state`, `decoding_confidence`, `extractionId`, `source_index`, `file_id`, `labels`, `isrelated`, `originalId`); parent chain for nested models; resolved files with hash verification state. |
 | Instants | 01 / 04 | Every TimeStamp as instant (UTC), original offset, original string, and a flag where the offset was absent (plan 6.7). Approaches never parse raw strings themselves. |
 | Message view | 02 | Interpreted messages: sender and recipient party records, owner flag, platform family, source app, chat record, body, attachments, deleted_state, timestamps by meaning. |
@@ -195,7 +195,7 @@ root for phone code; then this package moves under it unchanged.
 | `relationships.py` | 11 |
 | `extraction_comparison.py` | 12 |
 | `incident_window.py` | 13 |
-| `link_edges.py` | 17.8 |
+| none (uses `backend/services/phone/link_edges.py`, 02 section 11.1) | 17.8; 05-S10 wires the approach screen to 02-U16 |
 | `measurements.py` | the gate measurements of every approach |
 
 ### 3.3 Tables (Postgres, Alembic migration in `backend/postgres/alembic/versions/`)
@@ -250,12 +250,12 @@ Unique `(run_id, result_key)`. Index `(case_id, kind)`, `(case_id, period_start)
 |---|---|---|
 | `result_id` | uuid fk results on delete cascade | |
 | `extraction_id` | uuid null | null when the row is a ledger row |
-| `record_id` | varchar(128) null | report record id |
+| `record_uid` | uuid null | 02 section 1.2; null when the row is a ledger row |
 | `field_path` | varchar(512) null | e.g. `From/Party/Identifier` |
 | `ledger_transaction_id` | uuid null | `financial_transactions.id` |
 | `role` | varchar(40) not null | e.g. `sender_copy`, `recipient_copy`, `alert`, `ledger_row`, `evidence` |
 
-Primary key `(result_id, coalesce(extraction_id,…), record_id, field_path, ledger_transaction_id, role)` as a
+Primary key `(result_id, coalesce(extraction_id,…), record_uid, field_path, ledger_transaction_id, role)` as a
 unique index with `NULLS NOT DISTINCT` is not available on every Postgres version in use; decision: use a
 surrogate `id` pk and a unique index over `md5` of the concatenated nullable columns.
 
@@ -274,8 +274,12 @@ surrogate `id` pk and a unique index over `md5` of the concatenated nullable col
 
 ### 3.4 Jobs and endpoints
 
-Runs execute on the phone queue's worker (plan 6.1) as job kind `analysis`, with checkpoints per
-extraction and cooperative cancel. A run never writes to captured records, interpreted records, the ledger
+Runs execute on their own arq queue and worker settings (`arq:phone-analysis`, an `AnalysisWorkerSettings`
+on the `PdfReviewWorkerSettings` pattern, `evidence-engine/app/worker.py`), one job at a time
+(`max_jobs = 1`) under the phone worker's memory cap (01 section 10.2), as job kind `analysis`, with
+checkpoints per extraction and cooperative cancel. An analysis never queues behind an ingest and an
+ingest never queues behind an analysis (the phone capture worker has `max_jobs = 1`, 01 D14). *Reverse
+if* measured host memory cannot hold both workers. A run never writes to captured records, interpreted records, the ledger
 or the graph; its only writes are the three tables above.
 
 | Method and path | Body or query | Returns |
@@ -340,13 +344,16 @@ by default):
 | Type.field | Corpus presence |
 |---|---|
 | `Password.Data` | 7,555 values, 10 phones |
+| `Password.GenericAttribute` | 1,621 values, 5 phones |
 | `UserAccount.Password` | 25, 8 phones |
 | `WirelessNetwork.Password` | 26, 2 phones |
 | `Cookie.Value` | 13,593, 10 phones |
 | `CreditCard.CreditCardNumber` | 1, B-C3 |
 | `Autofill.Value` | 70, 6 phones |
 | `DictionaryWord.Word` | 14,256, 4 phones |
-| `KeyValueModel.Value` | 395,831, 13 phones (contents unknown per key; sensitive until a reviewed mapping says otherwise) |
+| `KeyValueModel.Value` | 395,831, 13 phones (contents unknown per key; sensitive until a reviewed mapping shows a key's values hold no credential) |
+
+This list and 02 section 5.5 are one list (`mappings/data/sensitive_fields.json`).
 
 Rules: values render masked (`••••` plus, for card and account numbers, the last four characters) until a
 person presses Reveal; each reveal is logged (actor, time, locator, field) in an append-only
@@ -616,8 +623,10 @@ Local evidence so far: short-code SMS with amounts exist on two of three local p
 Notification exists only in the 3-phone case. Gate: **build** if, on any case with financial records, at least
 20 readings bind to an account (M-1c) or at least one `no_statement_found` lead of class `transactional` or
 `account` exists (M-1e). **Do not build** the correlation half if M-1c is zero on every case; the lead half
-is still built if M-1e has any `account` or `transactional` lead. The first case to run it on is the
-3-phone case (notifications) if it has financial records; whether it does is not established.
+is still built if M-1e has any `account` or `transactional` lead. None of the three phone cases exists in Loupe (their ids are v1 case ids and no
+Loupe case has a matching name), so approach 1's first run waits for the answer on where the phones are
+loaded (CB-INDEX question 3); the 3-phone case (notifications) is the first candidate once it is in a case
+with financial records.
 
 ### 4.8 Dependencies
 
@@ -776,7 +785,8 @@ a match).
 | M-2d | deleted-one-side and recovered-from-other-side counts |
 
 Local result: one pair of three (A-C9 & A-C8) has 18 distinct-body matches, all app messages, server-stamped,
-none deleted on one side. Gate: **build** if the 10-report case (55 pairs, measured on the server) yields at
+none deleted on one side. Gate: **build** if the 10-report case (45 phone pairs, C(10,2), or 44 if the two C1 extractions prove to be one device;
+measured on the server) yields at
 least 100 `matched_strong` pairs in total or at least 10 `deleted_one_side`/`recovered_from_other_side`
 results; the local three-phone figure (18) alone is **inconclusive**.
 
@@ -1009,10 +1019,12 @@ passwords); `SIMData` 87 on 9 (`Name`, `Value`, `Category`); report metadata `IC
    SIMData), Bluetooth peer names and addresses, WiFi BSSIDs. Each kind is listed with its count; strength
    per kind: `strong` (same SIM ICCID or IMSI; same owner E.164), `medium` (same account username on a
    service), `weak` (same BSSID, same Bluetooth peer name).
-2. **Co-location.** 15-minute bins. In a bin a phone is placed if it has a location with uncertainty radius r
-   (04: GPS accuracy, else source default; Synced points excluded unless the run includes them). X and Y are
-   `together` in a bin when their uncertainty discs overlap (`distance ≤ r_X + r_Y`), `apart` when
-   `distance > r_X + r_Y + 500 m`, else `indeterminate`. Statistic: `C = together / (together + apart)` over
+2. **Co-location.** 15-minute bins. In a bin a phone is placed if it has a presence observation (04 section
+   6.1; Synced points excluded unless the run includes them). Together and apart per bin come from 04
+   section 8.4's verdict function, the one implementation: radius `2 × accuracy` (04 section 6.2), an
+   unknown radius replaced by the run's stated assumed radius and the pair marked `assumed`; X and Y are
+   `together` in a bin when the verdict is `compatible` (`d ≤ R`), `apart` only when it is `separated`
+   (beyond the 40 m/s movement allowance, `d - R > v × dt`), else `indeterminate`. Statistic: `C = together / (together + apart)` over
    bins where both are placed, with n. A WiFi bin counts as together when both phones report the same BSSID
    within the bin (no position needed).
 3. **Complementary use.** Per 15-minute bin, each phone's interaction indicator (04 class `interaction`).
@@ -1688,7 +1700,8 @@ the reviewed path (plan 6.6; `account_identity.py`, `identity_graph.py:77-128`).
    phones: n" and never added to any sum.
 4. Label example (UI copy, no em dashes): "14 calls, 230 messages, 6 payments totalling USD 8,400.00 (p0 to p2);
    2 more payments USD 1,100.00 (p3)".
-5. Computed in Postgres (`link_edges.py`) per case and time slice, cached by input revision; projected to Neo4j as
+5. Computed in Postgres by the one module `backend/services/phone/link_edges.py` (02 section 11.1, built in
+   02-U16; 05-S10 only wires the approach screen to it) per case and time slice, cached by input revision; projected to Neo4j as
    rebuildable edges per plan decision 6; every edge opens to its calls, messages and ledger rows (`ref_id`).
 6. Chart export carries for every edge the record locators and ledger `ref_id`s.
 
@@ -1746,13 +1759,17 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | Sensitive values never in search, AI or exports by default; reveals logged | plan 12.1 rule 4 | Neil per case |
 | Local providers for OCR, transcription, translation, image search; third party only by recorded case setting; video frames to honour the setting | standing decision 8; engine today sends audio and video frames out | Neil per case |
 | `MobileCard` excluded from money signals until mapped | Type only `Unknown`; meaning not shown | a reviewed mapping |
+| One sensitive list shared with 02 section 5.5: `Password.GenericAttribute` and `KeyValueModel.Value` included | the two lists must agree, or a field sensitive in one spec would be searchable or exportable through the other; `KeyValueModel.Value` contents are unknown per key | a reviewed mapping shows a key's values hold no credential |
+| Analysis runs have their own arq queue and worker settings, one job at a time, under the phone worker's memory cap (3.4) | the phone capture worker runs `max_jobs = 1`, so a shared queue would make an analysis wait behind an ingest and an ingest behind an analysis | measured host memory cannot hold both workers |
 
 ---
 
 ## 20. Not yet established
 
 - Notification amount and institution counts (M-1a, M-1b): no local sample carries Notification; server run needed.
-- Whether the 3-phone case has financial records in Loupe (decides where approach 1 is first measured).
+- Which Loupe case the phones are loaded into (CB-INDEX question 3). None of the three phone cases exists in
+  Loupe: their ids are v1 case ids and no Loupe case has a matching name. Approach 1's first run waits for
+  that answer.
 - Whether per-section card endings are persisted on admitted transaction rows (row-level binding in 4.3.4).
 - Meaning of `ScrambledMessageData`, `MobileCard`, `ApplicationUsage.LastScreenshot`, and of the Party on
   `ChatActivity` (actor or subject).

@@ -38,7 +38,7 @@ all-models figure above.
 | `catalogue-14-phones.json` | Per phone: `model_types` {type: count, nested included}; `catalog` [[type, field, field kind, {value data type: count}]]; `enums` {named set: values, at most 50 kept per set} | `scripts/catalog_remote.py`, run on the server at lowest priority |
 | `catalogue-local-samples.json` | The same for local C3, C9 and C8 (C8 from the `.xmlModel` section) | `scripts/catalog.py` |
 | `v1-ingest-reconciliation.json` | v1's per-phone `owl_ingest_report.json`: ingest duration in minutes and v1's per-type reconciliation (XML count, persisted count, status). Report key, case id and report name removed | copied from the server |
-| `scripts/` | Every measurement script used by the research and the specifications. Paths and identifiers are replaced by placeholders such as `<C3_REPORT_PATH>`, `<CASE_A_ID>`, `<REPO>`, `<SCRATCH>`; the real paths come from the reference corpus manifest built in unit 01-0.1, which stays on the development machine and is never committed | research session and spec writers |
+| `scripts/` | Every measurement script used by the research and the specifications. Paths and identifiers are replaced by placeholders such as `<C3_REPORT_PATH>`, `<CASE_A_ID>`, `<REPO>`, `<SCRATCH>`; the real paths come from the reference corpus manifest built in unit 01-0.1, which stays on the server in `/mnt/owl-data/cellebrite-corpus/manifest.json` and is never committed | research session and spec writers |
 | `scripts/s05/` | Spec 05's measurements (M1 to M16, X1 to X11): counts and salted hashes only | spec 05 |
 | `scripts/spec02/` | Spec 02's registry, coordinate, fold and nesting checks; `nest_c*.txt` are nesting counts per sample | spec 02 |
 
@@ -58,6 +58,13 @@ all-models figure above.
 
 ## Rerunning
 
-Run read-only. On the server: `nice -n 19 ionice -c3`, one report at a time; the VM ran out of memory
-on 2026-10-24 under other load. Python with `-I`, scripts outside the evidence folders, outputs to a
-private scratch directory, and only aggregate counts brought back.
+The reference corpus and every measurement output live on the server: the 14 reports under
+`/mnt/owl-data/ingestion-data/` (read-only), with the manifest, synthetic fixtures and scratch outputs in
+`/mnt/owl-data/cellebrite-corpus/` (mode 700). Nothing is copied from the Mac; numbers measured only on
+the Mac copies are reference values. v1's `owl_ingest_report.json` in each server folder is not part of
+the production, and file counts exclude it.
+
+Run read-only, one report at a time, under
+`systemd-run --scope -p MemoryMax=2G nice -n 19 ionice -c3 python3 -I <script> ...` (the host has 31 GB
+RAM and 32 GB swap shared with Postgres, Neo4j and Nominatim, and ran out of memory on 2026-10-24). Scripts
+outside the evidence folders, nothing written beside them, and only aggregate counts committed.
