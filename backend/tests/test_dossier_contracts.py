@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 
 @pytest.fixture(scope="module")
@@ -14,7 +14,7 @@ def contracts():
     path = Path(__file__).parents[1] / "routers/dossiers.py"
     tree = ast.parse(path.read_text(encoding="utf-8"))
     definitions = [node for node in tree.body if isinstance(node, ast.ClassDef) or isinstance(node, ast.FunctionDef) and node.name == "_payload"]
-    namespace = {"BaseModel": BaseModel, "Field": Field, "Any": Any, "UUID": UUID, "date": date, "datetime": datetime}
+    namespace = {"BaseModel": BaseModel, "Field": Field, "field_validator": field_validator, "Any": Any, "UUID": UUID, "date": date, "datetime": datetime}
     exec(compile(ast.Module(body=definitions, type_ignores=[]), str(path), "exec"), namespace)
     return namespace
 

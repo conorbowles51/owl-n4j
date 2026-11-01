@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from postgres.models.user import User
@@ -17,7 +17,7 @@ from services.dossier_service import (
     create_dossier, create_interview, delete_assessment, delete_interview, delete_media,
     add_evidence_links, get_dossier, link_dossier, list_dossiers,
     remove_evidence_link, reorder_media, replace_links, add_links, remove_link,
-    update_dossier, update_interview, update_media,
+    update_dossier, update_interview, update_media, LINKS_ADD_LIMIT,
 )
 
 
@@ -35,6 +35,11 @@ class LinkIn(BaseModel):
     relationship_type: str | None = None
     label: str | None = None
     source_anchor: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("source_anchor", mode="before")
+    @classmethod
+    def _no_anchor_is_empty(cls, value):
+        return {} if value is None else value
 
 
 class ContactIn(BaseModel):
@@ -225,6 +230,11 @@ def put_links(dossier_id: UUID, request: LinksRequest, db: Session = Depends(get
 @router.post("/{dossier_id}/links:add")
 def post_links_add(dossier_id: UUID, request: LinksAddRequest, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
     """Append links; already-present targets are skipped. Returns the added and skipped counts."""
+    if len(request.links) > LINKS_ADD_LIMIT:
+        # Refused before anything is read or written, never cut; the caller sends the rest in parts.
+        raise HTTPException(status_code=413, detail=(
+            f"{len(request.links):,} links were sent; one request takes at most {LINKS_ADD_LIMIT:,}. "
+            "Send them in parts; nothing was added."))
     try:
         payload = _payload(request)
         return add_links(db, dossier_id=dossier_id, user=user, links=payload["links"], origin=payload.get("origin"))

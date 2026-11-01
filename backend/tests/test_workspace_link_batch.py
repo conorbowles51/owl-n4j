@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from postgres import link_types
 from postgres.base import Base
@@ -23,7 +24,8 @@ BACKEND = Path(__file__).resolve().parents[1]
 
 @pytest.fixture()
 def world():
-    engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
+    engine = create_engine("sqlite+pysqlite:///:memory:", future=True, poolclass=StaticPool,
+                           connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine, tables=ENTRY_TABLES + [CollectionMembership.__table__])
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     user_id, case_id = uuid.uuid4(), uuid.uuid4()
@@ -104,3 +106,35 @@ def test_the_ai_acceptance_rationale_is_written_only_by_the_workspace_ai_service
     assert "rationale" in [arg.arg for arg in function.args.kwonlyargs]
     rationale_default = dict(zip([a.arg for a in function.args.kwonlyargs], function.args.kw_defaults))["rationale"]
     assert rationale_default is None  # required: no caller gets the AI wording by default
+
+
+def test_route_refuses_more_than_the_limit_with_413_and_adds_nothing(world):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from postgres.session import get_db
+    from routers import workspace_entries
+    from routers.case_access import require_case_edit
+    from routers.users import get_current_db_user
+
+    factory, user_id, case_id, entry_id = world
+    app = FastAPI()
+    app.include_router(workspace_entries.router)
+
+    def db_dependency():
+        with factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = db_dependency
+    app.dependency_overrides[get_current_db_user] = lambda: factory().get(User, user_id)
+    app.dependency_overrides[require_case_edit] = lambda: None
+    client = TestClient(app)
+    url = f"/api/workspace/{case_id}/entries/{entry_id}/links:batch"
+    over = [{"target_type": "phone_record", "target_id": f"r{n}", "source_anchor": None}
+            for n in range(service.ENTRY_LINKS_BATCH_LIMIT + 1)]
+    refused = client.post(url, json={"links": over, "rationale": "Added from Conversations"})
+    assert refused.status_code == 413, refused.text
+    assert refused.json()["detail"] == "5,001 links were sent; one request takes at most 5,000. Send them in parts; nothing was added."
+    with factory() as db:
+        assert db.scalar(select(WorkspaceEntryLink.id)) is None
+    added = client.post(url, json={"links": over[:2], "rationale": "Added from Conversations"})
+    assert added.status_code == 200 and added.json()["added"] == 2, added.text

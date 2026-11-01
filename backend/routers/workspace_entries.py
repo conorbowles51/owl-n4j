@@ -7,7 +7,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,7 @@ from services.workspace_entry_service import (
     WorkspaceEntryValidationError,
     add_entry_link,
     batch_add_entry_links,
+    ENTRY_LINKS_BATCH_LIMIT,
     change_confidence,
     change_lifecycle,
     change_significance,
@@ -55,6 +56,11 @@ class EntryLinkInput(BaseModel):
     relationship: LinkRelationship = "unclassified"
     source_anchor: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("source_anchor", "metadata", mode="before")
+    @classmethod
+    def _none_is_empty(cls, value):
+        return {} if value is None else value
 
 
 class EntryLinkResponse(EntryLinkInput):
@@ -603,6 +609,11 @@ def batch_case_entry_links(
     current_user: User = Depends(get_current_db_user),
 ):
     """Add links a person chose, with their rationale. Returns the added and skipped counts."""
+    if len(request.links) > ENTRY_LINKS_BATCH_LIMIT:
+        # Refused before anything is read or written, never cut; the caller sends the rest in parts.
+        raise HTTPException(status_code=413, detail=(
+            f"{len(request.links):,} links were sent; one request takes at most {ENTRY_LINKS_BATCH_LIMIT:,}. "
+            "Send them in parts; nothing was added."))
     try:
         return batch_add_entry_links(
             db,

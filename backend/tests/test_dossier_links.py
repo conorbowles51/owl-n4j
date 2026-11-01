@@ -177,3 +177,31 @@ def test_routes_add_and_delete(world):
     link_id = response.json()["added_link_ids"][0]
     assert client.delete(f"/api/dossiers/{dossier_id}/links/{link_id}").status_code == 200
     assert client.delete(f"/api/dossiers/{dossier_id}/links/{link_id}").status_code == 404
+
+
+def test_route_refuses_more_than_the_limit_with_413_before_reading_the_dossier_and_takes_a_null_anchor(world):
+    """The kit's Add to... (journey CO-kit) sends parts of 5,000; one more is refused, never cut."""
+    from postgres.session import get_db
+    from routers import dossiers
+    from routers.users import get_current_db_user
+
+    factory, owner, _, _, dossier_id, entries = world
+    app = FastAPI()
+    app.include_router(dossiers.router)
+
+    def db_dependency():
+        with factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = db_dependency
+    app.dependency_overrides[get_current_db_user] = lambda: factory().get(User, owner)
+    client = TestClient(app)
+    over = [{"target_type": "phone_record", "target_id": f"x{n}", "source_anchor": None}
+            for n in range(dossier_service.LINKS_ADD_LIMIT + 1)]
+    for target in (dossier_id, uuid.uuid4()):  # an unknown dossier gets the same refusal: nothing is read
+        refused = client.post(f"/api/dossiers/{target}/links:add", json={"links": over, "origin": "test"})
+        assert refused.status_code == 413, refused.text
+        assert refused.json()["detail"] == "5,001 links were sent; one request takes at most 5,000. Send them in parts; nothing was added."
+    links = [{**link, "source_anchor": None} for link in _entry_links(entries[:1])]
+    added = client.post(f"/api/dossiers/{dossier_id}/links:add", json={"links": links})
+    assert added.status_code == 200 and added.json()["added"] == 1, added.text
