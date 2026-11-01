@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useEffect, type ReactNode } from "react"
 import { Link, useLocation, useParams } from "react-router-dom"
 import {
   FolderOpen,
@@ -37,6 +37,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useMediaQuery } from "@/hooks/use-media-query"
+import { applySwitchesFromSearch, useSwitch } from "@/lib/ui-switches"
 
 interface NavItem {
   label: string
@@ -256,7 +257,10 @@ function LogoMark({ expanded }: { expanded: boolean }) {
 
 export function AppSidebar() {
   const { id: caseId } = useParams()
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
+  // ?phone-prototype=on|off turns the prototype switch on or off for this browser (07 12.1 item D).
+  useEffect(() => applySwitchesFromSearch(search), [search])
+  const phonePrototype = useSwitch("phone-prototype")
   const { sidebarExpanded: storedSidebarExpanded, toggleSidebar } = useAppStore()
   const narrowViewport = useMediaQuery("(max-width: 767px)")
   const sidebarExpanded = storedSidebarExpanded && !narrowViewport
@@ -354,6 +358,13 @@ export function AppSidebar() {
                 active={isItemActive(pathname, item)}
               />
             ))}
+            {phonePrototype && (
+              <SidebarLink
+                item={{ label: "Phones (prototype)", icon: Smartphone, to: `/cases/${caseId}/phones-prototype/summary` }}
+                expanded={sidebarExpanded}
+                active={pathname.startsWith(`/cases/${caseId}/phones-prototype`)}
+              />
+            )}
           </SidebarSection>
         )}
 
