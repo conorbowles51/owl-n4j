@@ -167,7 +167,27 @@ export function EvidenceExplorer() {
       }
       deleteEvidenceMutation.mutate(
         { evidenceId: ids[index], deleteExclusiveEntities },
-        { onSuccess: () => deleteNext(index + 1) }
+        {
+          onSuccess: () => deleteNext(index + 1),
+          // A refused file stops the run; the files before it are deleted and
+          // the rest are untouched, so say both rather than failing silently.
+          onError: (err) => {
+            const done = index
+              ? `Deleted ${index} of ${ids.length} files. `
+              : ""
+            const left = ids.length - index - 1
+            const rest =
+              left === 1
+                ? " The other selected file was not deleted."
+                : left > 1
+                  ? ` The other ${left} selected files were not deleted.`
+                  : ""
+            toast.error(`${done}${err.message}${rest}`)
+            setDeleteEvidenceOpen(false)
+            setDeleteEvidenceTarget(null)
+            if (index) clearSelection()
+          },
+        }
       )
     }
     deleteNext(0)

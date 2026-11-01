@@ -24,7 +24,12 @@ from routers import evidence as router
 def world(tmp_path):
     engine = create_engine("sqlite+pysqlite:///:memory:", poolclass=StaticPool,
                            connect_args={"check_same_thread": False})
-    Base.metadata.create_all(engine, tables=[EvidenceFolder.__table__, EvidenceFile.__table__])
+    from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
+    from postgres.models.financial_import_batches import FinancialImportBatch
+    # The delete asks Financial whether it still holds the file.
+    Base.metadata.create_all(engine, tables=[EvidenceFolder.__table__, EvidenceFile.__table__,
+                                             FinancialImportBatch.__table__, FinancialSourceDocument.__table__,
+                                             FinancialTransaction.__table__])
     db = Session(engine)
     case_id = uuid4()
     path = tmp_path / "statement.pdf"

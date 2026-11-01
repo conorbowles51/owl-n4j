@@ -2251,6 +2251,10 @@ async def delete_evidence_file(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Cannot delete file while it is being processed. Wait for processing to complete."
                 )
+            from services.financial.import_removal import financial_hold, financial_hold_message
+            hold = financial_hold(db, case_id=db_record.case_id, file_ids=[db_record.id])
+            if hold:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=financial_hold_message(hold))
 
             filename = db_record.original_filename
             stored_path = db_record.stored_path

@@ -183,6 +183,17 @@ class EvidenceDBStorage:
         return folder
 
     @staticmethod
+    def folder_tree_file_ids(db: Session, folder_id: uuid.UUID) -> List[uuid.UUID]:
+        """Ids of every file in a folder and its subfolders: what deleting the folder deletes."""
+        ids: List[uuid.UUID] = []
+        pending = [folder_id]
+        while pending:
+            fid = pending.pop()
+            ids.extend(db.scalars(select(EvidenceFile.id).where(EvidenceFile.folder_id == fid)).all())
+            pending.extend(db.scalars(select(EvidenceFolder.id).where(EvidenceFolder.parent_id == fid)).all())
+        return ids
+
+    @staticmethod
     def delete_folder(db: Session, folder_id: uuid.UUID, case_id: uuid.UUID) -> List[str]:
         """
         Delete a folder and collect stored_paths of all files that will be removed.

@@ -224,3 +224,104 @@ class FinancialImportRemovalTests(TestCase):
             batches = client.get(f'{prefix}/batches/list{query}')
             self.assertEqual(batches.status_code, 200, batches.text)
             self.assertEqual(batches.json()['batches'], [])
+
+
+class EvidenceDeleteKeepsFinancialWholeTests(TestCase):
+    """Deleting evidence that Financial still holds is refused with what it holds and how to release it.
+
+    The payments of a removed PDF must not stay in the totals with no original
+    to open, and a batch must not keep listing a PDF that no longer exists
+    (that made Remove imports answer 404 for the whole batch)."""
+    setUp = FinancialImportRemovalTests.setUp
+    tearDown = FinancialImportRemovalTests.tearDown
+    preview = FinancialImportRemovalTests.preview
+    remove = FinancialImportRemovalTests.remove
+
+    def _delete_file(self, evidence_id):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock, patch
+        from routers import evidence as router
+        graph = MagicMock()
+        graph.find_document_node.return_value = None
+        with patch('services.case_service.check_case_access'), patch.object(router, 'neo4j_service', graph), \
+                patch('services.vector_db_service.get_vector_db_service', return_value=None), \
+                patch.object(router.evidence_engine_client, 'delete_file', new=AsyncMock()):
+            return asyncio.run(router.delete_evidence_file(str(evidence_id), case_id=str(self.f.case.id),
+                delete_exclusive_entities=False, current_user=SimpleNamespace(email='a@example.test'), db=self.f.db))
+
+    def _payments(self):
+        self.f.db.expire_all()
+        return len(list_transactions(self.f.db, self.f.case.id))
+
+    def test_deleting_an_imported_pdf_is_refused_until_its_imports_are_removed(self):
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException) as refused:
+            self._delete_file(self.f.file.id)
+        self.assertEqual(refused.exception.status_code, 409)
+        self.assertIn('12 payments from it count', refused.exception.detail)
+        self.assertIn('Nothing was deleted', refused.exception.detail)
+        self.f.db.rollback()
+        self.assertIsNotNone(self.f.db.get(EvidenceFile, self.f.file.id))
+        self.assertTrue(self.f.path.exists())
+        self.assertEqual(self._payments(), 12)
+        self.remove(file_ids=[self.f.file.id])
+        self._delete_file(self.f.file.id)
+        self.f.db.expire_all()
+        self.assertIsNone(self.f.db.get(EvidenceFile, self.f.file.id))
+
+    def test_deleting_the_original_of_a_separate_prepared_reading_is_refused(self):
+        # The batch lists an original PDF whose payments were read from a
+        # separate prepared reading: the original's own record holds nothing.
+        from fastapi import HTTPException
+        original = self.f.evidence('c' * 64)
+        original.original_filename = 'Original statement.pdf'
+        original.status = 'processed'
+        batch = self.f.db.get(Batch, self.batch)
+        batch.files = [{**entry, 'source_id': str(original.id)} for entry in batch.files]
+        self.f.db.commit()
+        with self.assertRaises(HTTPException) as refused:
+            self._delete_file(original.id)
+        self.assertEqual(refused.exception.status_code, 409)
+        self.assertIn('Original statement.pdf is still in Financial: 12 payments', refused.exception.detail)
+        self.assertIn('1 Financial import batch', refused.exception.detail)
+        self.f.db.rollback()
+        self.assertIsNotNone(self.f.db.get(EvidenceFile, original.id))
+        self.assertEqual(self._payments(), 12)
+
+    def test_deleting_a_folder_holding_an_imported_pdf_is_refused(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from fastapi import HTTPException
+        from postgres.models.evidence import EvidenceFolder
+        from routers import evidence_folders
+        folder = EvidenceFolder(id=uuid4(), case_id=self.f.case.id, name='Statements')
+        child = EvidenceFolder(id=uuid4(), case_id=self.f.case.id, name='2025', parent_id=folder.id)
+        self.f.db.add_all([folder, child])
+        self.f.db.flush()
+        self.f.db.get(EvidenceFile, self.f.file.id).folder_id = child.id
+        self.f.db.commit()
+        with patch.object(evidence_folders, '_check_case_access'):
+            with self.assertRaises(HTTPException) as refused:
+                evidence_folders.delete_folder(str(folder.id), case_id=str(self.f.case.id),
+                    current_user=SimpleNamespace(email='a@example.test'), db=self.f.db)
+        self.assertEqual(refused.exception.status_code, 409)
+        self.assertIn('still in Financial', refused.exception.detail)
+        self.f.db.rollback()
+        self.assertIsNotNone(self.f.db.get(EvidenceFolder, folder.id))
+        self.assertEqual(self._payments(), 12)
+
+    def test_a_batch_listing_pdfs_deleted_from_evidence_can_still_be_removed(self):
+        batch = self.f.db.get(Batch, self.batch)
+        ghost = dict(source_id=str(uuid4()), file_id=str(uuid4()), filename='Deleted earlier.pdf',
+                     status='checked', expected_revision='initial')
+        batch.files = [*batch.files, ghost]
+        self.f.db.commit()
+        preview = self.preview()
+        self.assertEqual((preview['transaction_count'], preview['archived_batch_count']), (12, 1))
+        self.remove(preview)
+        self.f.db.expire_all()
+        self.assertEqual(self.f.db.get(Batch, self.batch).status, 'removed')
+        self.assertEqual(self._payments(), 0)
+        # A file chosen by name must still exist.
+        with self.assertRaisesRegex(PdfMappingError, 'unavailable'):
+            self.preview(file_ids=[UUID(ghost['file_id'])])

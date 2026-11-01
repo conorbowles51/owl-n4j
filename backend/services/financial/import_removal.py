@@ -25,19 +25,27 @@ def _selection(session, case_id, batch_ids, file_ids, lock=False):
     if {b.id for b in chosen} != set(batch_ids):
         raise PdfMappingError('A selected batch is unavailable in this case. Refresh the batch list.', 409)
     ids = set(file_ids)
+    listed = set()
     for batch in chosen:
-        ids.update(UUID(f['file_id']) for f in batch.files)
-        ids.update(UUID(f['source_id']) for f in batch.files)
+        listed.update(UUID(f['file_id']) for f in batch.files)
+        listed.update(UUID(f['source_id']) for f in batch.files)
     query = select(EvidenceFile).where(EvidenceFile.case_id == case_id).order_by(EvidenceFile.id).execution_options(populate_existing=True)
     files = list(session.scalars(query.with_for_update().execution_options(populate_existing=True) if lock else query))
+    present = {f.id for f in files}
+    # A file chosen by name must exist. A batch may still list PDFs deleted
+    # from Evidence before deletes checked Financial (5 batches in one case,
+    # 1 Nov): their records went with them, so the rest of the batch stays
+    # removable and the missing entries are taken out with it.
+    ids |= listed & present
     selected = [f for f in files if f.id in ids]
     if {f.id for f in selected} != ids or any(not f.original_filename.lower().endswith('.pdf') for f in selected):
         raise PdfMappingError('A selected PDF is unavailable in this case.', 404)
+    gone = {str(i) for i in listed - present}
     # Include prior readings and duplicate copies: otherwise the next ingestion
     # could silently adopt the same old import through its content hash.
     hashes = {f.sha256 for f in selected}
     affected = [f for f in files if f.sha256 in hashes]
-    affected_ids = {str(f.id) for f in affected}
+    affected_ids = {str(f.id) for f in affected} | gone
     related = [b for b in batches if b.status != 'removed' and
                any(f['file_id'] in affected_ids or f['source_id'] in affected_ids for f in b.files)]
     source_query = select(Source).where(Source.case_id == case_id,
@@ -46,11 +54,11 @@ def _selection(session, case_id, batch_ids, file_ids, lock=False):
     row_query = select(Transaction).where(Transaction.case_id == case_id,
         Transaction.source_document_id.in_([s.id for s in sources])).order_by(Transaction.id).execution_options(populate_existing=True)
     rows = list(session.scalars(row_query.with_for_update().execution_options(populate_existing=True) if lock else row_query))
-    return affected, related, sources, rows
+    return affected, related, sources, rows, gone
 
 
 def preview_removal(session, *, case_id, batch_ids=(), file_ids=(), lock=False):
-    files, batches, sources, rows = _selection(session, case_id, batch_ids, file_ids, lock)
+    files, batches, sources, rows, gone = _selection(session, case_id, batch_ids, file_ids, lock)
     now = datetime.now(timezone.utc)
     busy = [b for b in batches if b.worker_token and b.lease_until and
             (b.lease_until.replace(tzinfo=timezone.utc) if b.lease_until.tzinfo is None else b.lease_until) > now]
@@ -72,7 +80,7 @@ def preview_removal(session, *, case_id, batch_ids=(), file_ids=(), lock=False):
     representatives = {}
     for file in files:
         representatives.setdefault(file.sha256, file)
-    affected_ids = {str(f.id) for f in files}
+    affected_ids = {str(f.id) for f in files} | gone
     archived = sum(all(f['file_id'] in affected_ids or f['source_id'] in affected_ids for f in b.files) for b in batches)
     return dict(case_id=str(case_id), revision=revision, archived_batch_count=archived, updated_batch_count=len(batches) - archived, file_count=len(representatives),
         reading_count=len(files), transaction_count=payments, incomplete_count=incomplete,
@@ -89,7 +97,7 @@ def remove_imports(session, *, case_id, batch_ids=(), file_ids=(), expected_revi
         raise PdfMappingError('These imports changed since the preview. Refresh the preview before removing them.', 409)
     if not preview['can_remove']:
         raise PdfMappingError(preview['blocked_reason'], 409)
-    files, batches, sources, rows = _selection(session, case_id, batch_ids, file_ids)
+    files, batches, sources, rows, gone = _selection(session, case_id, batch_ids, file_ids)
     removal = dict(id=str(uuid4()), at=datetime.now(timezone.utc).isoformat(),
         actor=dict(user_id=str(actor.user_id), name=actor.name, email=actor.email, **origin_field(actor)))
     representatives = {}
@@ -113,7 +121,7 @@ def remove_imports(session, *, case_id, batch_ids=(), file_ids=(), expected_revi
             **removal, 'previous_status': row.ledger_status, 'previous_quarantine_reason': row.quarantine_reason}}
         row.ledger_status = 'rejected'
         row.quarantine_reason = None
-    affected_ids = {str(f.id) for f in files}
+    affected_ids = {str(f.id) for f in files} | gone
     for batch in batches:
         removed_files = [f for f in batch.files if f['file_id'] in affected_ids or f['source_id'] in affected_ids]
         remaining = [f for f in batch.files if f not in removed_files]
@@ -132,3 +140,60 @@ def remove_imports(session, *, case_id, batch_ids=(), file_ids=(), expected_revi
     session.commit()
     return {**preview, 'removal_id': removal['id'], 'removed': True,
         'restart_file_ids': [str(f.id) for f in representatives.values()]}
+
+
+def financial_hold(session, *, case_id, file_ids):
+    """What Financial still holds from these evidence files, or None when it holds nothing.
+
+    A file is held while an open import batch lists it (as the original PDF or
+    as a prepared reading) or while an admitted statement was read from it.
+    Deleting a held file would leave a batch that can no longer be removed and,
+    for an original whose prepared reading is a separate file, payments in the
+    totals with no original to open. Remove imports releases the hold.
+    """
+    ids = {str(value) for value in file_ids}
+    if not ids:
+        return None
+    batches, readings, held = set(), set(ids), set()
+    for batch in session.scalars(select(Batch).where(Batch.case_id == case_id, Batch.status != 'removed')):
+        for entry in batch.files or []:
+            keys = {entry.get('file_id'), entry.get('source_id')} - {None}
+            if keys & ids:
+                batches.add(batch.id)
+                held |= keys & ids
+                readings |= keys
+    reading_ids = []
+    for value in readings:
+        try:
+            reading_ids.append(UUID(value))
+        except ValueError:
+            continue
+    sources = list(session.scalars(select(Source).where(Source.case_id == case_id,
+        Source.evidence_file_id.in_(reading_ids), Source.status == 'admitted')))
+    held |= {str(s.evidence_file_id) for s in sources} & ids
+    if not held:
+        return None
+    payments = len(list(session.scalars(select(Transaction.id).where(Transaction.case_id == case_id,
+        Transaction.source_document_id.in_([s.id for s in sources]), Transaction.ledger_status == 'admitted',
+        Transaction.superseded_by_id.is_(None))))) if sources else 0
+    names = sorted(session.scalars(select(EvidenceFile.original_filename).where(EvidenceFile.case_id == case_id,
+        EvidenceFile.id.in_([UUID(value) for value in held]))))
+    return dict(file_ids=sorted(held), filenames=names, batch_count=len(batches),
+        statement_count=len(sources), payment_count=payments)
+
+
+def financial_hold_message(hold):
+    """Plain words for a refused evidence delete: what Financial holds and how to release it."""
+    count = len(hold['file_ids'])
+    shown = ', '.join(hold['filenames'][:3]) + (f' and {count - 3} more' if count > 3 else '')
+    subject = f'{shown} is' if count == 1 else f'{count} of these files ({shown}) are'
+    parts = []
+    if hold['payment_count']:
+        parts.append(f"{hold['payment_count']} payment{'s' if hold['payment_count'] != 1 else ''} from "
+                     f"{'it' if count == 1 else 'them'} count in this case's totals")
+    if hold['batch_count']:
+        parts.append(f"{'it is' if count == 1 else 'they are'} in {hold['batch_count']} Financial import "
+                     f"batch{'es' if hold['batch_count'] != 1 else ''}")
+    return (f"{subject} still in Financial: {' and '.join(parts) or 'a statement was imported from it'}. "
+            "Nothing was deleted. To delete, first remove the imports in Financial (Statements & accounts: select the "
+            "file, then Review removal); the original stays in Evidence until you delete it here.")

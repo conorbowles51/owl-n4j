@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   openDetail: vi.fn(),
   revealFile: vi.fn(),
   queryClient: { invalidateQueries: vi.fn() },
+  deleteMutate: vi.fn(),
+  selected: new Set<string>(),
 }))
 
 vi.mock("@tanstack/react-query", () => ({
@@ -20,7 +22,7 @@ vi.mock("../evidence.store", () => {
   const state = {
     sortBy: "name", sortDirection: "asc",
     currentFolderId: null,
-    selectedFileIds: new Set<string>(),
+    selectedFileIds: mocks.selected,
     clearSelection: vi.fn(),
     resetForCase: mocks.resetForCase,
     openDetail: mocks.openDetail,
@@ -35,14 +37,18 @@ vi.mock("../hooks/use-folder-mutations", () => ({
   useDeleteFolder: () => ({ mutate: vi.fn(), isPending: false }),
 }))
 vi.mock("../hooks/use-evidence-detail", () => ({
-  useDeleteEvidence: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteEvidence: () => ({ mutate: mocks.deleteMutate, isPending: false }),
 }))
 vi.mock("./EvidenceMoveProvider", () => ({ EvidenceMoveProvider: ({ children }: { children: React.ReactNode }) => children }))
 vi.mock("./FolderTreeSidebar", () => ({ FolderTreeSidebar: () => <div /> }))
 vi.mock("./FileListPanel", () => ({ FileListPanel: () => <div /> }))
 vi.mock("./CreateFolderDialog", () => ({ CreateFolderDialog: () => null }))
 vi.mock("./DeleteFolderDialog", () => ({ DeleteFolderDialog: () => null }))
-vi.mock("./DeleteEvidenceDialog", () => ({ DeleteEvidenceDialog: () => null }))
+vi.mock("./DeleteEvidenceDialog", () => ({
+  DeleteEvidenceDialog: ({ onConfirm }: { onConfirm: (exclusive: boolean) => void }) => (
+    <button onClick={() => onConfirm(false)}>Confirm delete</button>
+  ),
+}))
 vi.mock("./FolderContextDialog", () => ({ FolderContextDialog: () => null }))
 vi.mock("./CaseProcessingProfileDialog", () => ({
   CaseProcessingProfileDialog: () => null,
@@ -169,4 +175,30 @@ it("opens a selected financial source and gives the investigator a direct way ba
   expect(mocks.openDetail).toHaveBeenCalledWith("csv-file", expect.any(Object))
   fireEvent.click(screen.getByRole("link", { name: "Back to Financial sources" }))
   expect(screen.getByText("Financial source list")).toBeVisible()
+})
+
+
+it("says which files were deleted and passes on the refusal when a delete is refused", () => {
+  mocks.selected.clear()
+  ;["a", "b", "c"].forEach((id) => mocks.selected.add(id))
+  const error = vi.spyOn(toast, "error")
+  mocks.deleteMutate.mockReset()
+  mocks.deleteMutate.mockImplementation(
+    (
+      { evidenceId }: { evidenceId: string },
+      handlers: { onSuccess: () => void; onError?: (err: Error) => void }
+    ) => {
+      if (evidenceId === "a") handlers.onSuccess()
+      else handlers.onError?.(new Error("statement.pdf is still in Financial."))
+    }
+  )
+  render(<MemoryRouter initialEntries={["/cases/case-1/evidence"]}>
+    <Routes><Route path="/cases/:id/evidence" element={<EvidenceExplorer />} /></Routes>
+  </MemoryRouter>)
+  fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }))
+  expect(mocks.deleteMutate).toHaveBeenCalledTimes(2)
+  expect(error).toHaveBeenCalledWith(
+    "Deleted 1 of 3 files. statement.pdf is still in Financial. The other selected file was not deleted."
+  )
+  mocks.selected.clear()
 })

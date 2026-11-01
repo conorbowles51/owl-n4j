@@ -305,6 +305,11 @@ def delete_folder(
     """Delete a folder and all its contents recursively."""
     try:
         _check_case_access(db, case_id, current_user, permission=("evidence", "delete"))
+        from services.financial.import_removal import financial_hold, financial_hold_message
+        hold = financial_hold(db, case_id=uuid.UUID(case_id),
+                              file_ids=EvidenceDBStorage.folder_tree_file_ids(db, uuid.UUID(folder_id)))
+        if hold:
+            raise HTTPException(status_code=409, detail=financial_hold_message(hold))
         stored_paths = EvidenceDBStorage.delete_folder(
             db, uuid.UUID(folder_id), uuid.UUID(case_id)
         )
