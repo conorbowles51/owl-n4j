@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // Live check of a real phone report upload (cb-capture H): signed in once with the jobs login over plain http, into
-// the verification case only. Picks a folder or a ZIP, watches the hashing and sending panels and the readiness card
+// one of the restricted phone reference cases only (CB-INDEX P3). Picks a folder or a ZIP, watches the hashing and sending panels and the readiness card
 // to the end, and prints one line per stage seen with seconds since the pick. Prints counts and stage words only,
 // never the report's name or page text beyond the card's step lines (which hold counts). Screenshots are of the
 // evidence page with every element naming the report masked.
-//   node journeys/live-phone-upload.mjs --kind folder|zip --path <path> --shots <dir> --label <short> [--minutes 90]
+//   node journeys/live-phone-upload.mjs --kind folder|zip --path <path> --shots <dir> --label <short>
+//     --case phoneRef1|phoneRef2|phoneRef3 [--minutes 90]
 import { mkdirSync } from "node:fs"
 import { basename } from "node:path"
 import { chromium } from "playwright"
-import { CASES, readLogin, signIn } from "./lib.mjs"
+import { PHONE_REFERENCE_CASES, readLogin, signIn } from "./lib.mjs"
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`)
@@ -25,8 +26,8 @@ if (!["folder", "zip"].includes(kind) || !path || !shots) {
 }
 mkdirSync(shots, { recursive: true })
 const name = basename(path)
-const caseId = CASES[arg("case", "verification")]
-if (!caseId) { console.error("--case must be verification, phonesOnly or training"); process.exit(2) }
+const caseId = PHONE_REFERENCE_CASES[arg("case")]
+if (!caseId) { console.error("--case must be phoneRef1, phoneRef2 or phoneRef3"); process.exit(2) }
 const login = readLogin()
 const browser = await chromium.launch()
 let t0 = Date.now()

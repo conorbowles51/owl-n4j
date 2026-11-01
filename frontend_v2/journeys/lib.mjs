@@ -10,6 +10,13 @@ export const CASES = {
 }
 /** Writes and screenshots happen only in these cases (CB-INDEX rule 6). */
 export const SYNTHETIC = new Set(Object.values(CASES))
+/** Real phone reports load only into these restricted cases, each with its owner as the only member (CB-INDEX P3);
+ * never into the verification case or any financial case. */
+export const PHONE_REFERENCE_CASES = {
+  phoneRef1: "88e01b57-d472-452a-b103-b694292ed012",
+  phoneRef2: "7006c0ab-9c93-473a-900a-76d06d9d0603",
+  phoneRef3: "574a9752-7d19-4f42-8f98-2112615f4a48",
+}
 
 export function readLogin(path = "/root/.config/loupe-jobs/login") {
   const fields = Object.fromEntries(
