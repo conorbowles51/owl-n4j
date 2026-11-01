@@ -12,8 +12,11 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 import uuid
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 
 from app.phone import detect
 from app.phone.capture import CAPTURE_CODE_VERSION, Capture, CaptureMemoryBudgetExceeded
@@ -24,6 +27,10 @@ from app.phone.recount import recount_document
 from app.phone.store import CopySink, prepare_resume
 
 HASH_CHUNK = 4 << 20
+# Files of a folder are hashed this many at a time. On the server's persistent disk one reader is bound by read
+# latency (measured on cold P14 files: 47 files/s with one reader, 777 to 794 files/s with 16, order reversed between
+# runs), and a phone folder is mostly small files. Read buffers cost at most HASH_THREADS * HASH_CHUNK.
+HASH_THREADS = 16
 CAPTURED = ("captured", "captured_incomplete")
 TERMINAL_OK = CAPTURED + ("not_readable",)
 
@@ -69,25 +76,62 @@ def hash_stream(fh, on_bytes=None):
     return sha.hexdigest(), md5.hexdigest(), n
 
 
-def hash_container(path, on_bytes=None, should_stop=None):
+def hash_container(path, on_bytes=None, should_stop=None, threads=HASH_THREADS):
     """Container digests (01 section 3 step 1). A folder's digest is over its sorted manifest lines
     ``"{sha256}  {size}  {relative path}\\n"`` of every non-skipped file; each member keeps its own digests.
     Returns (sha256, md5, size_bytes, members) with members {relpath: (size, sha256, md5)} for a folder."""
     if os.path.isdir(path):
         src = detect.FolderSource(path)
+        todo = [rel for rel, _ in src.entries() if detect.skip_rule(rel) is None]
         members = {}
         lines = []
         total = 0
-        for rel, size in src.entries():
-            if detect.skip_rule(rel) is not None:
-                continue
+        read = [0]
+        lock = threading.Lock()
+
+        def count(n):  # worker threads add; only this thread reports progress
+            with lock:
+                read[0] += n
+
+        def one(rel):
             with src.open(rel) as fh:
-                s, m, n = hash_stream(fh, on_bytes)
-            members[rel] = (n, s, m)
-            total += n
-            lines.append("%s  %d  %s\n" % (s, n, rel))
-            if should_stop is not None and should_stop():
-                raise StopRequested()
+                return hash_stream(fh, count)
+
+        reported = 0
+        pending = deque()
+        nxt = 0
+        ex = ThreadPoolExecutor(max(1, threads), thread_name_prefix="phone-hash")
+        try:
+            while nxt < len(todo) or pending:
+                while nxt < len(todo) and len(pending) < 4 * max(1, threads):
+                    pending.append((todo[nxt], ex.submit(one, todo[nxt])))
+                    nxt += 1
+                rel, fut = pending[0]
+                while True:  # report progress while the oldest file is still being read
+                    try:
+                        s, m, n = fut.result(timeout=0.5)
+                        break
+                    except TimeoutError:
+                        pass
+                    finally:
+                        with lock:
+                            now = read[0]
+                        if on_bytes is not None and now > reported:
+                            on_bytes(now - reported)
+                            reported = now
+                    if should_stop is not None and should_stop():
+                        raise StopRequested()
+                pending.popleft()
+                members[rel] = (n, s, m)
+                total += n
+                lines.append("%s  %d  %s\n" % (s, n, rel))
+                if should_stop is not None and should_stop():
+                    raise StopRequested()
+        except BaseException:
+            # a stop or a failed read: queued reads are dropped and nothing waits for the ones under way
+            ex.shutdown(wait=False, cancel_futures=True)
+            raise
+        ex.shutdown(wait=True)
         manifest = "".join(lines).encode("utf-8")
         return hashlib.sha256(manifest).hexdigest(), hashlib.md5(manifest).hexdigest(), total, members
     with open(path, "rb") as fh:

@@ -221,42 +221,75 @@ def walk_body(body, path=""):
             stack.append((c, (p + "." if p else "") + str(i)))
 
 
+REFS_BATCH = 1000
+
+
+def _scan_refs(body, top_dirs, entries):
+    """Every reference-like element of one record body: (path, kind, text) with kind model, file, file_id or path."""
+    for p, el in walk_body(body):
+        tag, attrs = el[0], el[1] or {}
+        if tag == "targetid" and el[2]:
+            yield p, ("model" if (attrs.get("ismodel") or "").lower() == "true" else "file"), el[2]
+        elif tag == "model" and attrs.get("file_id"):
+            yield p, "file_id", attrs["file_id"]
+        elif tag == "value" and el[2] and el[3] is None:
+            v = norm(el[2])
+            if "/" in v and v.split("/", 1)[0] in top_dirs:
+                yield p, "path", el[2]
+
+
+def _lookup(conn, sql, ext, keys):
+    out = {}
+    if keys:
+        with conn.cursor() as cur:
+            cur.execute(sql, (ext, list(keys)))
+            for row in cur.fetchall():
+                out.setdefault(row[0], []).append(row[1:])
+    return out
+
+
 def resolve_references(conn, ctx, reporter=None) -> dict:
+    """Links from records to files, records and container entries (01 section 7). Records are read in batches and
+    only the ids and paths a batch names are looked up, so memory does not grow with the number of records (P14:
+    967,543 records held as one id map peaked 476 MiB above the stage's start)."""
     ext = ctx["extraction_id"]
     if "entries" not in ctx:
         list_entries(conn, ctx)
     entries = ctx["entries"]
     top_dirs = {e.split("/", 1)[0] for e in entries if "/" in e}
-    with conn.cursor() as cur:
-        cur.execute("SELECT source_file_id, document_index, ordinal, disk_sha256 FROM phone_files "
-                    "WHERE extraction_id = %s AND source_file_id IS NOT NULL ORDER BY document_index, ordinal", (ext,))
-        files = {}
-        for fid, doc, o, sha in cur.fetchall():
-            files.setdefault(fid, []).append((doc, o, sha))
-        cur.execute("SELECT source_model_id, document_index, ordinal FROM phone_records "
-                    "WHERE extraction_id = %s AND source_model_id IS NOT NULL ORDER BY document_index, ordinal", (ext,))
-        models = {}
-        for mid, doc, o in cur.fetchall():
-            models.setdefault(mid, []).append((doc, o))
-        cur.execute("SELECT relpath, sha256 FROM phone_container_entries WHERE extraction_id = %s", (ext,))
-        entry_sha = dict(cur.fetchall())
-    rows = []
     conflicts = []
     stats = {"jumptarget_file": 0, "jumptarget_file_resolved": 0, "jumptarget_model": 0, "file_id_attribute": 0,
              "file_id_attribute_resolved": 0, "extracted_path_value": 0, "extracted_path_value_resolved": 0,
              "ambiguous": 0}
+    n_rows = 0
+    after = (-1, -1)
     with conn.transaction():
-        cur = conn.cursor(name="refs_scan")
-        cur.itersize = 2000
-        cur.execute("SELECT document_index, ordinal, body FROM phone_records WHERE extraction_id = %s "
-                    "ORDER BY document_index, ordinal", (ext,))
-        for doc, ordinal, body in cur:
-            record_rows = []
-            for p, el in walk_body(body):
-                tag, attrs = el[0], el[1] or {}
-                if tag == "targetid" and el[2]:
-                    ref = el[2]
-                    if (attrs.get("ismodel") or "").lower() == "true":
+        with conn.cursor() as c:
+            c.execute("DELETE FROM phone_file_references WHERE extraction_id = %s", (ext,))
+        while True:
+            with conn.cursor() as cur:
+                cur.execute("SELECT document_index, ordinal, body FROM phone_records WHERE extraction_id = %s AND "
+                            "(document_index, ordinal) > (%s, %s) ORDER BY document_index, ordinal LIMIT %s",
+                            (ext, after[0], after[1], REFS_BATCH))
+                batch = cur.fetchall()
+            if not batch:
+                break
+            after = (batch[-1][0], batch[-1][1])
+            found = [(doc, ordinal, list(_scan_refs(body, top_dirs, entries))) for doc, ordinal, body in batch]
+            del batch
+            model_ids = {t for _, _, refs in found for _, k, t in refs if k == "model"}
+            file_ids = {t for _, _, refs in found for _, k, t in refs if k in ("file", "file_id")}
+            models = _lookup(conn, "SELECT source_model_id, document_index, ordinal FROM phone_records WHERE "
+                                   "extraction_id = %s AND source_model_id = ANY(%s) ORDER BY document_index, ordinal",
+                             ext, model_ids)
+            files = _lookup(conn, "SELECT source_file_id, document_index, ordinal, disk_sha256 FROM phone_files WHERE "
+                                  "extraction_id = %s AND source_file_id = ANY(%s) ORDER BY document_index, ordinal",
+                            ext, file_ids)
+            rows = []
+            for doc, ordinal, refs in found:
+                record_rows = []
+                for p, kind, ref in refs:
+                    if kind == "model":
                         stats["jumptarget_model"] += 1
                         cands = models.get(ref, [])
                         if not cands:
@@ -267,51 +300,57 @@ def resolve_references(conn, ctx, reporter=None) -> dict:
                             stats["ambiguous"] += amb
                             record_rows.append((doc, ordinal, p + ("#%d" % k if amb else ""), "jumptarget", ref,
                                                 mdoc, mo, None, "model", amb))
-                    else:
+                    elif kind == "file":
                         stats["jumptarget_file"] += 1
                         record_rows.extend(_file_refs(doc, ordinal, p, "jumptarget", ref, files, stats,
                                                       "jumptarget_file_resolved"))
-                elif tag == "model" and attrs.get("file_id"):
-                    stats["file_id_attribute"] += 1
-                    record_rows.extend(_file_refs(doc, ordinal, p, "file_id_attribute", attrs["file_id"], files,
-                                                  stats, "file_id_attribute_resolved"))
-                elif tag == "value" and el[2] and el[3] is None:
-                    v = norm(el[2])
-                    if "/" in v and v.split("/", 1)[0] in top_dirs:
-                        # a path under a folder of this production: linked when the entry exists, else kept
-                        # as unresolved (the production lacks that file)
+                    elif kind == "file_id":
+                        stats["file_id_attribute"] += 1
+                        record_rows.extend(_file_refs(doc, ordinal, p, "file_id_attribute", ref, files, stats,
+                                                      "file_id_attribute_resolved"))
+                    else:
+                        v = norm(ref)
                         stats["extracted_path_value"] += 1
                         if v in entries:
                             stats["extracted_path_value_resolved"] += 1
-                            record_rows.append((doc, ordinal, p, "extracted_path_value", el[2], None, None, v,
+                            record_rows.append((doc, ordinal, p, "extracted_path_value", ref, None, None, v,
                                                 "container_entry", False))
                         else:
-                            record_rows.append((doc, ordinal, p, "extracted_path_value", el[2], None, None, None,
+                            record_rows.append((doc, ordinal, p, "extracted_path_value", ref, None, None, None,
                                                 "unresolved", False))
-            shas = {}
-            for r in record_rows:
-                sha = None
-                if r[8] == "tagged_file":
-                    sha = next((s for d, o, s in files.get(r[4], []) if (d, o) == (r[5], r[6])), None)
-                elif r[8] == "container_entry":
-                    sha = entry_sha.get(r[7])
-                if sha:
-                    shas.setdefault(sha, set()).add(r[3])
-            if len(shas) > 1 and len(set().union(*shas.values())) > 1:
-                conflicts.append("%s/%d/r%d" % (ext, doc, ordinal))
-            rows.extend((ext,) + r for r in record_rows)
-        cur.close()
-    with conn.transaction():
-        with conn.cursor() as c:
-            c.execute("DELETE FROM phone_file_references WHERE extraction_id = %s", (ext,))
-            with c.copy("COPY phone_file_references (extraction_id, document_index, record_ordinal, body_path, "
-                        "mechanism, reference_text, file_document_index, file_ordinal, container_relpath, "
-                        "resolution, ambiguous) FROM STDIN") as cp:
-                for r in rows:
-                    cp.write_row(r)
+                rows.append((doc, ordinal, record_rows))
+            paths = {r[7] for _, _, rr in rows for r in rr if r[8] == "container_entry"}
+            entry_sha = {k: v[0][0] for k, v in _lookup(
+                conn, "SELECT relpath, sha256 FROM phone_container_entries WHERE extraction_id = %s AND "
+                      "relpath = ANY(%s)", ext, paths).items()}
+            out = []
+            for doc, ordinal, record_rows in rows:
+                shas = {}
+                for r in record_rows:
+                    sha = None
+                    if r[8] == "tagged_file":
+                        sha = next((f[2] for f in files.get(r[4], []) if (f[0], f[1]) == (r[5], r[6])), None)
+                    elif r[8] == "container_entry":
+                        sha = entry_sha.get(r[7])
+                    if sha:
+                        shas.setdefault(sha, set()).add(r[3])
+                if len(shas) > 1 and len(set().union(*shas.values())) > 1:
+                    conflicts.append("%s/%d/r%d" % (ext, doc, ordinal))
+                out.extend((ext,) + r for r in record_rows)
+            if out:
+                with conn.cursor() as c:
+                    with c.copy("COPY phone_file_references (extraction_id, document_index, record_ordinal, "
+                                "body_path, mechanism, reference_text, file_document_index, file_ordinal, "
+                                "container_relpath, resolution, ambiguous) FROM STDIN") as cp:
+                        for r in out:
+                            cp.write_row(r)
+            n_rows += len(out)
+            if reporter is not None and reporter.should_stop():
+                from app.phone.runner import StopRequested
+                raise StopRequested()
     if conflicts:
         _merge_flags(conn, ext, {"attachment_reference_conflict": conflicts})
-    stats["rows"] = len(rows)
+    stats["rows"] = n_rows
     stats["conflicts"] = len(conflicts)
     return stats
 

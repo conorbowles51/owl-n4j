@@ -442,3 +442,62 @@ def test_the_phone_report_evidence_row_follows_its_reading_and_no_other_row_is_t
         set_evidence_status(conn, None, "processed")  # a job with no evidence row does nothing
     finally:
         conn.execute("DELETE FROM evidence_files WHERE id IN (%s, %s)", (phone, other))
+
+
+def _refs_report(n):
+    """N records, each linking to the previous record, to a tagged file and to a path under files/."""
+    files = "".join('<file id="t%d" path="files/f%d.bin" size="1" />' % (k, k) for k in range(50))
+    models = "".join(
+        '<model type="Note" id="m%d"><field name="Body"><value type="String">files/f%d.bin</value></field>'
+        '<jumptargets><targetid ismodel="true">m%d</targetid><targetid>t%d</targetid></jumptargets></model>'
+        % (i, i % 50, max(i - 1, 0), i % 50) for i in range(n))
+    return ('<?xml version="1.0" encoding="utf-8"?>\n<project id="p-refs" extractionType="Logical" '
+            'xmlns="http://pa.cellebrite.com/report/2.0"><sourceExtractions><extractionInfo id="0" name="E" />'
+            '</sourceExtractions><taggedFiles>%s</taggedFiles><decodedData><modelType type="Note">%s</modelType>'
+            '</decodedData></project>\n' % (files, models))
+
+
+def _refs_digest(conn, ext):
+    return conn.execute("SELECT count(*), md5(string_agg(concat_ws('|', document_index, record_ordinal, body_path, "
+                        "mechanism, reference_text, file_document_index, file_ordinal, container_relpath, resolution, "
+                        "ambiguous), ',' ORDER BY document_index, record_ordinal, body_path)) FROM "
+                        "phone_file_references WHERE extraction_id = %s", (ext,)).fetchone()
+
+
+@pytest.mark.skipif(not PG, reason="Requires LOUPE_TEST_PHONE_PG_URL (a scratch PostgreSQL at the alembic head)")
+def test_reference_links_take_memory_that_does_not_grow_with_the_records_and_batches_change_nothing(
+        pg_case, tmp_path, monkeypatch):
+    # P14 (967,543 records): holding every record's id at once took 476 MiB of a 1 GB worker
+    import tracemalloc
+    from app.phone import detect, files
+    from app.phone.runner import run_capture
+    conn, case_id = pg_case
+    monkeypatch.setattr(files, "REFS_BATCH", 100, raising=False)
+    peaks, exts = {}, {}
+    for n in (1000, 8000):
+        folder = tmp_path / str(case_id) / ("R%d" % n)
+        (folder / "files").mkdir(parents=True)
+        for k in range(50):
+            (folder / "files" / ("f%d.bin" % k)).write_bytes(b"x")
+        (folder / "report.xml").write_text(_refs_report(n))
+        res = run_capture(conn, data_root=str(tmp_path), case_id=case_id, container_path="R%d" % n, root_path="")
+        assert res["state"] == "captured", res
+        ext = exts[n] = res["extraction_id"]
+        assert res["summary"]["resolve_references"]["rows"] == 3 * n
+        assert res["summary"]["resolve_references"]["jumptarget_file_resolved"] == n
+        assert res["summary"]["resolve_references"]["extracted_path_value_resolved"] == n
+        ctx = {"extraction_id": ext, "source": detect.FolderSource(str(folder)), "root_path": "", "members": None}
+        files.list_entries(conn, ctx)
+        tracemalloc.start()
+        files.resolve_references(conn, ctx)
+        peaks[n] = tracemalloc.get_traced_memory()[1]
+        tracemalloc.stop()
+    assert peaks[8000] < 2 * peaks[1000], peaks
+    # one record per batch gives the same rows as the default batches
+    before = _refs_digest(conn, exts[1000])
+    monkeypatch.setattr(files, "REFS_BATCH", 1, raising=False)
+    ctx = {"extraction_id": exts[1000], "source": detect.FolderSource(str(tmp_path / str(case_id) / "R1000")),
+           "root_path": "", "members": None}
+    files.list_entries(conn, ctx)
+    files.resolve_references(conn, ctx)
+    assert _refs_digest(conn, exts[1000]) == before and before[0] == 3000

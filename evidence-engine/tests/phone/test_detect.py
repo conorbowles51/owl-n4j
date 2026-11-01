@@ -159,3 +159,59 @@ def test_skip_rules():
     assert detect.skip_rule("Thumbs.db") == "thumbs_db"
     assert detect.skip_rule("x/desktop.ini") == "desktop_ini"
     assert detect.skip_rule("x/a.jpg") is None
+
+
+def _many_files(root, n=300):
+    """A folder shaped like a phone's files: mostly small files, a few large ones, and skip-set entries."""
+    for i in range(n):
+        d = root / "files" / ("d%02d" % (i % 17))
+        d.mkdir(parents=True, exist_ok=True)
+        size = 3 << 20 if i % 97 == 0 else 50 + (i * 37) % 900
+        (d / ("f%04d.bin" % i)).write_bytes(bytes((i * 7 + k) % 251 for k in range(size)))
+    (root / "files" / "d00" / ".DS_Store").write_bytes(b"skip me")
+    (root / "files" / "d01" / "._f0001.bin").write_bytes(b"appledouble")
+    return root
+
+
+def test_folder_hash_is_the_same_with_one_reader_and_with_many(tmp_path):
+    root = _many_files(tmp_path / "F")
+    seen = []
+    one = hash_container(str(root), threads=1)
+    many = hash_container(str(root), on_bytes=seen.append)
+    assert one == many
+    assert sum(seen) == many[2] == sum(m[0] for m in many[3].values())
+    assert not any(detect.skip_rule(rel) for rel in many[3])
+    assert len(many[3]) == 300
+
+
+def test_folder_files_are_read_several_at_a_time(tmp_path, monkeypatch):
+    # one reader is bound by the disk's read latency (cold P14 files: 47 files/s alone, about 780 with 16 readers)
+    import threading
+    import time as _time
+    root = _many_files(tmp_path / "F", n=64)
+    lock, now, most = threading.Lock(), [0], [0]
+    real_open = detect.FolderSource.open
+
+    def slow_open(self, rel):
+        with lock:
+            now[0] += 1
+            most[0] = max(most[0], now[0])
+        _time.sleep(0.01)
+        with lock:
+            now[0] -= 1
+        return real_open(self, rel)
+
+    monkeypatch.setattr(detect.FolderSource, "open", slow_open)
+    hash_container(str(root))
+    assert most[0] > 4
+
+
+def test_a_stop_during_folder_hashing_stops_without_reading_the_rest(tmp_path, monkeypatch):
+    from app.phone.runner import StopRequested
+    root = _many_files(tmp_path / "F")
+    opened = []
+    real_open = detect.FolderSource.open
+    monkeypatch.setattr(detect.FolderSource, "open", lambda self, rel: (opened.append(rel), real_open(self, rel))[1])
+    with pytest.raises(StopRequested):
+        hash_container(str(root), should_stop=lambda: len(opened) > 0)
+    assert len(opened) < 300
