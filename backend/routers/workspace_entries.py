@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from postgres import link_types
 from postgres.models.user import User
 from postgres.session import get_db
 from routers.case_access import require_case_edit, require_case_view
@@ -43,17 +44,7 @@ router = APIRouter(prefix="/api/workspace", tags=["workspace-entries"])
 EntryType = Literal["note", "finding", "theory"]
 FindingSignificance = Literal["high", "medium", "low"]
 LinkRelationship = Literal["unclassified", "supports", "contradicts", "context"]
-LinkTargetType = Literal[
-    "evidence",
-    "graph_entity",
-    "dossier",
-    "entry",
-    "task",
-    "deadline",
-    "timeline_event",
-    "agent_artifact",
-    "witness",
-]
+LinkTargetType = Literal[link_types.WORKSPACE_TYPES]  # type: ignore[valid-type]
 
 
 class EntryLinkInput(BaseModel):

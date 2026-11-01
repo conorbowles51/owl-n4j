@@ -2,6 +2,7 @@ import { z } from "zod"
 import { zipSync, strToU8 } from "fflate"
 import { sha256Hex } from "@/lib/browser-crypto"
 import { fetchAPI } from "@/lib/api-client"
+import { WORKSPACE_LINK_TYPES } from "@/generated/link-types"
 import type {
   CaseworkEntry,
   CaseworkCreateInput,
@@ -42,17 +43,7 @@ const savedEntry = z.object({
       entry_id: text,
       case_id: text,
       target_id: text,
-      target_type: z.enum([
-        "evidence",
-        "graph_entity",
-        "dossier",
-        "entry",
-        "task",
-        "deadline",
-        "timeline_event",
-        "agent_artifact",
-        "witness",
-      ]),
+      target_type: z.enum(WORKSPACE_LINK_TYPES),
       target_label: text.nullish(),
       relationship: z.enum([
         "unclassified",

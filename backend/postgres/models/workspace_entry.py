@@ -21,6 +21,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from postgres import link_types
 from postgres.base import Base
 from postgres.models.mixins import TimestampMixin
 
@@ -40,17 +41,7 @@ THEORY_STATES = (
 FINDING_SIGNIFICANCE = ("high", "medium", "low")
 ENTRY_REVIEW_STATES = ("accepted", "pending", "rejected")
 ENTRY_LINK_RELATIONSHIPS = ("unclassified", "supports", "contradicts", "context")
-ENTRY_LINK_TARGET_TYPES = (
-    "evidence",
-    "graph_entity",
-    "dossier",
-    "entry",
-    "task",
-    "deadline",
-    "timeline_event",
-    "agent_artifact",
-    "witness",
-)
+ENTRY_LINK_TARGET_TYPES = link_types.WORKSPACE_TYPES
 ENTRY_EVENT_TYPES = (
     "created",
     "updated",
@@ -267,8 +258,7 @@ class WorkspaceEntryLink(Base, TimestampMixin):
             name="ck_workspace_entry_links_relationship",
         ),
         CheckConstraint(
-            "target_type IN ('evidence', 'graph_entity', 'dossier', 'entry', 'task', "
-            "'deadline', 'timeline_event', 'agent_artifact', 'witness')",
+            link_types.sql_in_check("target_type", link_types.WORKSPACE_TYPES),
             name="ck_workspace_entry_links_target_type",
         ),
         UniqueConstraint(

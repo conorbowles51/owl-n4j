@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import String, asc, cast, desc, or_, select, func, exists
 from sqlalchemy.orm import Session, selectinload
 
+from postgres import link_types
 from postgres.models.case_deadline import CaseDeadline
 from postgres.models.case_profile import CaseProfile
 from postgres.models.agent import AgentArtifactRecord, AgentThread
@@ -503,10 +504,7 @@ def _sanitize_link(
 ) -> dict[str, Any]:
     target_type = _clean_optional_text(link.get("target_type"), max_length=32)
     target_id = _clean_optional_text(link.get("target_id"), max_length=512)
-    if target_type == "entity":
-        target_type = "graph_entity"
-    elif target_type == "document":
-        target_type = "evidence"
+    target_type = link_types.NOTEBOOK_ALIASES.get(target_type, target_type)
     if target_type not in ENTRY_LINK_TARGET_TYPES:
         raise WorkspaceEntryValidationError(f"Unsupported link type: {target_type}")
     if not target_id:
@@ -523,7 +521,16 @@ def _sanitize_link(
         raise WorkspaceEntryValidationError("source_anchor must be an object")
     if metadata is not None and not isinstance(metadata, dict):
         raise WorkspaceEntryValidationError("metadata must be an object")
-    if validate_target:
+    if link_types.is_phone_type(target_type):
+        # A phone link is always checked against the case, and carries the mapping version set at collect time.
+        try:
+            phone = link_types.resolve_phone_target(db, case_id, target_type, target_id)
+        except link_types.LinkTargetError as exc:
+            raise WorkspaceEntryValidationError(str(exc)) from exc
+        source_anchor = link_types.phone_anchor(phone, source_anchor)
+        if not _clean_optional_text(link.get("target_label"), max_length=512) and phone.label:
+            link = {**link, "target_label": phone.label}
+    elif validate_target:
         _validate_link_target(
             db, case_id=case_id, target_type=target_type, target_id=target_id
         )

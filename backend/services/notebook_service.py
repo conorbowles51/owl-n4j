@@ -8,19 +8,14 @@ from uuid import UUID, uuid4
 from sqlalchemy import desc, or_
 from sqlalchemy.orm import Session, selectinload
 
+from postgres import link_types
 from postgres.models.user import User
 from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
 from services.system_log_service import LogOrigin, LogType, system_log_service
 from services.workspace_entry_service import create_entry, soft_delete_entry, update_entry
 
 
-NOTEBOOK_TARGET_TYPES = {
-    "entity",
-    "evidence",
-    "document",
-    "timeline_event",
-    "agent_artifact",
-}
+NOTEBOOK_TARGET_TYPES = link_types.NOTEBOOK_TYPES
 
 
 class NotebookNoteNotFound(Exception):
@@ -183,10 +178,7 @@ def list_notes(
     if linked_type or linked_id:
         if linked_type not in NOTEBOOK_TARGET_TYPES or not linked_id:
             raise ValueError("Both linked_type and linked_id are required for link filtering")
-        canonical_type = {
-            "entity": "graph_entity",
-            "document": "evidence",
-        }.get(linked_type, linked_type)
+        canonical_type = link_types.NOTEBOOK_ALIASES.get(linked_type, linked_type)
         query = query.join(WorkspaceEntryLink).filter(
             WorkspaceEntryLink.target_type == canonical_type,
             WorkspaceEntryLink.target_id == linked_id,

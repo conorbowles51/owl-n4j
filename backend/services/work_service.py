@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
+from postgres import link_types
 from postgres.models.case import Case
 from postgres.models.case_deadline import CaseDeadline
 from postgres.models.case_membership import CaseMembership
@@ -20,7 +21,7 @@ from services.case_service import check_case_access
 
 TASK_STATUSES = {"todo", "in_progress", "done"}
 TASK_PRIORITIES = {"low", "standard", "high", "urgent"}
-TASK_LINK_TYPES = {"dossier", "entry", "evidence"}
+TASK_LINK_TYPES = link_types.TASK_TYPES
 
 
 class WorkValidationError(ValueError):
@@ -125,11 +126,18 @@ def _validate_parent(
     return parent
 
 
-def _validate_link(db: Session, case_id: UUID, link: dict[str, Any]) -> None:
+def _validate_link(db: Session, case_id: UUID, link: dict[str, Any]) -> dict[str, Any] | None:
+    """Check a task link target is in the case; a phone target returns its stored anchor."""
     target_type = str(link.get("target_type") or "").strip().lower()
     target_id = str(link.get("target_id") or "").strip()
     if target_type not in TASK_LINK_TYPES or not target_id:
         raise WorkValidationError("Task links require a supported target type and identifier")
+    if link_types.is_phone_type(target_type):
+        try:
+            phone = link_types.resolve_phone_target(db, case_id, target_type, target_id)
+        except link_types.LinkTargetError as exc:
+            raise WorkValidationError(str(exc)) from exc
+        return link_types.phone_anchor(phone, link.get("source_anchor"))
     try:
         target_uuid = UUID(target_id)
     except (TypeError, ValueError) as exc:
@@ -158,6 +166,7 @@ def _validate_link(db: Session, case_id: UUID, link: dict[str, Any]) -> None:
         )
     if not exists:
         raise WorkValidationError(f"Linked {target_type} was not found in this case")
+    return None
 
 
 def _task_links(task: CaseTask, db: Session) -> list[dict[str, Any]]:
@@ -277,10 +286,9 @@ def _replace_links(
     links: list[dict[str, Any]],
     user: User,
 ) -> None:
-    for link in links:
-        _validate_link(db, task.case_id, link)
+    anchors = [_validate_link(db, task.case_id, link) for link in links]
     db.query(CaseTaskLink).filter(CaseTaskLink.task_id == task.id).delete(synchronize_session=False)
-    for link in links:
+    for link, phone_anchor in zip(links, anchors):
         db.add(
             CaseTaskLink(
                 task_id=task.id,
@@ -288,7 +296,7 @@ def _replace_links(
                 target_type=str(link["target_type"]).lower(),
                 target_id=str(link["target_id"]),
                 label=link.get("label"),
-                source_anchor=link.get("source_anchor") or {},
+                source_anchor=phone_anchor if phone_anchor is not None else (link.get("source_anchor") or {}),
                 created_by_user_id=user.id,
             )
         )

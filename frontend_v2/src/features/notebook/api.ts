@@ -1,11 +1,7 @@
 import { fetchAPI } from "@/lib/api-client"
+import type { NotebookLinkType } from "@/generated/link-types"
 
-export type NotebookTargetType =
-  | "entity"
-  | "evidence"
-  | "document"
-  | "timeline_event"
-  | "agent_artifact"
+export type NotebookTargetType = NotebookLinkType
 
 export interface NotebookLinkInput {
   target_type: NotebookTargetType

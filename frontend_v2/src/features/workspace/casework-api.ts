@@ -1,4 +1,5 @@
 import { fetchAPI } from "@/lib/api-client"
+import type { WorkspaceLinkType } from "@/generated/link-types"
 
 export type CaseworkEntryType = "note" | "finding" | "theory"
 export type FindingSignificance = "high" | "medium" | "low"
@@ -7,16 +8,7 @@ export type LinkRelationship =
   | "supports"
   | "contradicts"
   | "context"
-export type CaseworkLinkTargetType =
-  | "evidence"
-  | "graph_entity"
-  | "dossier"
-  | "entry"
-  | "task"
-  | "deadline"
-  | "timeline_event"
-  | "agent_artifact"
-  | "witness"
+export type CaseworkLinkTargetType = WorkspaceLinkType
 
 export interface CaseworkLinkInput {
   target_type: CaseworkLinkTargetType

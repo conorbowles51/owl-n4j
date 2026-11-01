@@ -17,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from postgres import link_types
 from postgres.base import Base
 from postgres.models.mixins import TimestampMixin
 
@@ -87,7 +88,7 @@ class CaseTaskLink(Base, TimestampMixin):
     __tablename__ = "case_task_links"
     __table_args__ = (
         CheckConstraint(
-            "target_type IN ('dossier', 'entry', 'evidence')",
+            link_types.sql_in_check("target_type", link_types.TASK_TYPES),
             name="ck_case_task_links_target_type",
         ),
         UniqueConstraint("task_id", "target_type", "target_id", name="uq_case_task_link_target"),

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from postgres import link_types
 from postgres.models.user import User
 from postgres.session import get_db
 from routers.users import get_current_db_user
@@ -26,7 +27,7 @@ from services.notebook_service import (
 
 router = APIRouter(prefix="/api/notebook", tags=["notebook"])
 
-NotebookTargetType = Literal["entity", "evidence", "document", "timeline_event", "agent_artifact"]
+NotebookTargetType = Literal[link_types.NOTEBOOK_TYPES]  # type: ignore[valid-type]
 
 
 class NotebookLinkIn(BaseModel):

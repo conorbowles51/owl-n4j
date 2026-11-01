@@ -282,3 +282,24 @@ it("preserves all 250 findings in order through save, reopen and report download
     notes[249].links[0].metadata.transactions
   )
 })
+it("builds and reopens a report whose finding holds a phone link (07 CO-5)", async () => {
+  const finding = note("phone")
+  finding.links.push({
+    id: "link-phone",
+    entry_id: "phone",
+    case_id: "case",
+    target_type: "phone_record",
+    target_id: "rec-synthetic-1",
+    target_label: "Message, synthetic",
+    relationship: "supports",
+    source_anchor: { mapping_versions: { sender: "v1" } },
+    metadata: {},
+  })
+  const report = await prepare([finding])
+  expect(report.html).toContain("Message, synthetic")
+  const reopened = await readSavedFinancialReport(saved(report), "case")
+  expect(reopened.data.notes[0].links.map((link) => link.target_type)).toEqual([
+    "evidence",
+    "phone_record",
+  ])
+})

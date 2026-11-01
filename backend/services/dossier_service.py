@@ -27,6 +27,7 @@ from postgres.models.evidence import EvidenceFile
 from postgres.models.timeline_view import TimelineViewEvent
 from postgres.models.user import User
 from postgres.models.work import CaseTask
+from postgres import link_types
 from postgres.models.workspace_entry import WorkspaceEntry
 from services.case_service import check_case_access, get_case_if_allowed
 from services.significant_service import add_significant_entities
@@ -38,7 +39,7 @@ BUILTIN_ROLES = {
 }
 LITIGATION_ROLES = {"friendly", "neutral", "adverse"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tif", ".tiff", ".heic", ".avif"}
-LINK_TARGET_TYPES = {"entry", "task", "evidence", "deadline", "timeline_event", "agent_artifact", "graph_entity", "dossier"}
+LINK_TARGET_TYPES = link_types.DOSSIER_TYPES
 
 
 class DossierNotFound(Exception):
@@ -569,7 +570,12 @@ def remove_evidence_link(
     return serialize_dossier(db, _load(db, dossier.id))
 
 
-def _validate_target(db: Session, case_id: uuid.UUID, target_type: str, target_id: str) -> None:
+def _validate_target(
+    db: Session, case_id: uuid.UUID, target_type: str, target_id: str
+) -> link_types.PhoneTarget | None:
+    """Check a link target is in the case. A phone target returns what its resolver confirmed."""
+    if link_types.is_phone_type(target_type):
+        return link_types.resolve_phone_target(db, case_id, target_type, target_id)
     if target_type == "evidence":
         try: target_uuid = uuid.UUID(target_id)
         except ValueError as exc: raise ValueError("Invalid evidence identifier") from exc
@@ -609,6 +615,12 @@ def _validate_target(db: Session, case_id: uuid.UUID, target_type: str, target_i
             raise ValueError("Agent artifact is not in this case")
     elif target_type == "graph_entity":
         _require_graph_identity(case_id, target_id)
+    return None
+
+
+def _link_anchor(phone: link_types.PhoneTarget | None, raw: dict[str, Any]) -> dict[str, Any]:
+    anchor = dict(raw.get("source_anchor") or {})
+    return link_types.phone_anchor(phone, anchor) if phone is not None else anchor
 
 
 def create_assessment(
@@ -634,10 +646,11 @@ def create_assessment(
         target_type, target_id = _text(raw.get("target_type")) or "", _text(raw.get("target_id")) or ""
         if target_type not in LINK_TARGET_TYPES or not target_id:
             raise ValueError("Invalid assessment supporting link")
-        _validate_target(db, dossier.case_id, target_type, target_id)
+        phone = _validate_target(db, dossier.case_id, target_type, target_id)
         db.add(DossierAssessmentLink(
             assessment_id=assessment.id, case_id=dossier.case_id, target_type=target_type,
-            target_id=target_id, label=_text(raw.get("label")), source_anchor=dict(raw.get("source_anchor") or {}),
+            target_id=target_id, label=_text(raw.get("label")) or (phone.label if phone else None),
+            source_anchor=_link_anchor(phone, raw),
         ))
     if commit:
         db.commit()
