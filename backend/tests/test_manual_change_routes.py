@@ -177,6 +177,14 @@ class EveryRouteKindTests(FeedTestBase):
         self.assertNotIn('alex@example.com', str(line['after']))
         self.assertEqual(line['subject_id'], 'n1')
 
+    def test_the_payments_a_change_applies_to_are_its_subject_not_a_field(self):
+        def route(body=None, case_id=None, current_user=None):
+            return {'ok': True}
+        mc.records('payment_label_change', 'change')(route)(
+            body={'transactions': [{'id': 't1', 'version': 0}], 'to_name': 'X'}, case_id=CASE, current_user=PERSON)
+        self.assertEqual(self.lines()[0]['field'], 'to_name')
+        self.assertEqual((self.lines()[0]['subject_type'], self.lines()[0]['subject_id']), ('transaction', 't1'))
+
     def test_the_route_signature_fastapi_reads_is_unchanged(self):
         for key, (endpoint, _config) in self.routes.items():
             with self.subTest(route=key):

@@ -342,7 +342,9 @@ def check(session):
 
 # ---- the route decorator ---------------------------------------------------------------------------------------
 
-_NOT_FIELDS = {'reason', 'case_id', 'expected_revision', 'revision', 'expected_version', 'version', 'note'}
+_NOT_FIELDS = {'reason', 'case_id', 'expected_revision', 'revision', 'expected_version', 'version', 'note',
+               # the payments or files a change applies to: its subject, not a field it changed
+               'transactions', 'transaction_ids', 'file_ids', 'item_ids', 'evidence_ids', 'entity_keys', 'updates'}
 
 
 def _body(kwargs):
@@ -396,6 +398,9 @@ def _infer_subject(kwargs, body):
         for key, kind in _SUBJECT_KEYS:
             if source.get(key) is not None:
                 return kind, str(source[key])
+    targets = (body or {}).get('transactions')
+    if isinstance(targets, list) and targets and isinstance(targets[0], dict) and targets[0].get('id'):
+        return 'transaction', str(targets[0]['id']) + (f' (+{len(targets) - 1})' if len(targets) > 1 else '')
     for key, kind in _SUBJECT_KEYS:
         many = (body or {}).get(key + 's') or (body or {}).get(key.replace('_id', '_ids'))
         if isinstance(many, list) and many:
