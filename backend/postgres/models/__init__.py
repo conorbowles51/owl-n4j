@@ -19,6 +19,7 @@ from postgres.models.case_context import (
     CaseMandateVersion,
 )
 from postgres.models.work import CaseTask, CaseTaskLink, SharedEvidencePin, WorkLegacyMapping
+from postgres.models.collection_membership import CollectionMembership
 from postgres.models.workspace_attention import WorkspaceAttentionState
 from postgres.models.workspace_ai import WorkspaceAIOutput
 from postgres.models.notebook import NotebookNote, NotebookNoteLink
@@ -153,3 +154,4 @@ from postgres.models.financial_payment_category import FinancialPaymentCategory,
 __all__ += ["FinancialPaymentCategory", "FinancialCategoryModelCache", "FinancialCategoryRule"]
 from postgres.models.ui_problem_report import UiProblemReport
 __all__ += ["UiProblemReport"]
+__all__ += ["CollectionMembership"]

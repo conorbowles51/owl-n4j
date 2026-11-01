@@ -476,28 +476,153 @@ def archive_dossier(db: Session, *, dossier_id: uuid.UUID, user: User, archived:
     return serialize_dossier(db, _load(db, dossier.id))
 
 
+LINKS_ADD_LIMIT = 5000
+
+
+def _clean_link(raw: dict[str, Any]) -> tuple[str, str]:
+    target_type = _text(raw.get("target_type")) or ""
+    target_id = _text(raw.get("target_id")) or ""
+    if target_type not in LINK_TARGET_TYPES or not target_id:
+        raise ValueError("Invalid Dossier link target")
+    return target_type, target_id
+
+
+def _record_link_event(db: Session, action: str, dossier: CaseProfile, user: User, details: dict[str, Any]) -> None:
+    from services import activity_trail
+
+    activity_trail.record(action, db=db, user=user, case_id=dossier.case_id,
+                          details={"dossier_id": str(dossier.id), **details})
+
+
 def replace_links(db: Session, *, dossier_id: uuid.UUID, user: User, links: list[dict[str, Any]]) -> dict[str, Any]:
+    """Make the Dossier's links exactly `links`.
+
+    A link that stays keeps who added it and when; only its relationship, label and anchor follow the request.
+    Links that go are removed; new links are added by `user`. One event row records the counts.
+    """
     dossier = _write(db, dossier_id, user)
-    db.execute(delete(DossierLink).where(DossierLink.dossier_id == dossier.id))
-    seen: set[tuple[str, str]] = set()
+    wanted: dict[tuple[str, str], dict[str, Any]] = {}
     for raw in links:
-        target_type = _text(raw.get("target_type")) or ""
-        target_id = _text(raw.get("target_id")) or ""
-        if target_type not in LINK_TARGET_TYPES or not target_id:
-            raise ValueError("Invalid Dossier link target")
-        if (target_type, target_id) in seen:
+        key = _clean_link(raw)
+        wanted.setdefault(key, raw)
+    existing = {(link.target_type, link.target_id): link for link in db.scalars(
+        select(DossierLink).where(DossierLink.dossier_id == dossier.id)
+    ).all()}
+    removed = [link for key, link in existing.items() if key not in wanted]
+    for link in removed:
+        db.delete(link)
+    added = kept = 0
+    for (target_type, target_id), raw in wanted.items():
+        current = existing.get((target_type, target_id))
+        if current is not None:
+            kept += 1
+            current.relationship_type = _text(raw.get("relationship_type"))
+            current.label = _text(raw.get("label")) or current.label
+            anchor = dict(raw.get("source_anchor") or {})
+            if "mapping_versions" in (current.source_anchor or {}):
+                # The mapping version set is what the record was at collect time; it is never rewritten.
+                anchor["mapping_versions"] = current.source_anchor["mapping_versions"]
+            current.source_anchor = anchor
             continue
-        _validate_target(db, dossier.case_id, target_type, target_id)
-        seen.add((target_type, target_id))
+        phone = _validate_target(db, dossier.case_id, target_type, target_id)
         db.add(DossierLink(
             dossier_id=dossier.id, case_id=dossier.case_id, target_type=target_type,
             target_id=target_id, relationship_type=_text(raw.get("relationship_type")),
-            label=_text(raw.get("label")), source_anchor=dict(raw.get("source_anchor") or {}),
+            label=_text(raw.get("label")) or (phone.label if phone else None), source_anchor=_link_anchor(phone, raw),
             created_by_user_id=user.id,
         ))
+        added += 1
     dossier.updated_by_user_id = user.id
+    db.flush()
+    _record_link_event(db, "dossier_links_replaced", dossier, user,
+                       {"added": added, "kept": kept, "removed": len(removed)})
     db.commit()
     return serialize_dossier(db, _load(db, dossier.id))
+
+
+def add_links(
+    db: Session, *, dossier_id: uuid.UUID, user: User, links: list[dict[str, Any]], origin: str | None = None,
+) -> dict[str, Any]:
+    """Append links. Idempotent: a target already on the Dossier is skipped and keeps its adder and time.
+
+    Returns the added and skipped counts. More than LINKS_ADD_LIMIT links in one request is refused, never cut;
+    the caller sends the rest in further parts.
+    """
+    dossier = _write(db, dossier_id, user)
+    if not links:
+        raise ValueError("At least one link is required")
+    if len(links) > LINKS_ADD_LIMIT:
+        raise ValueError(
+            f"{len(links):,} links were sent; one request takes at most {LINKS_ADD_LIMIT:,}. "
+            "Send them in parts; nothing was added."
+        )
+    requested: dict[tuple[str, str], dict[str, Any]] = {}
+    for raw in links:
+        requested.setdefault(_clean_link(raw), raw)
+    present: set[tuple[str, str]] = set()
+    by_type: dict[str, list[str]] = {}
+    for target_type, target_id in requested:
+        by_type.setdefault(target_type, []).append(target_id)
+    for target_type, ids in by_type.items():
+        for start in range(0, len(ids), 500):
+            present.update((target_type, value) for value in db.scalars(select(DossierLink.target_id).where(
+                DossierLink.dossier_id == dossier.id, DossierLink.target_type == target_type,
+                DossierLink.target_id.in_(ids[start:start + 500]),
+            )).all())
+    new_rows: list[DossierLink] = []
+    for (target_type, target_id), raw in requested.items():
+        if (target_type, target_id) in present:
+            continue
+        phone = _validate_target(db, dossier.case_id, target_type, target_id)
+        row = DossierLink(
+            id=uuid.uuid4(), dossier_id=dossier.id, case_id=dossier.case_id, target_type=target_type,
+            target_id=target_id, relationship_type=_text(raw.get("relationship_type")),
+            label=_text(raw.get("label")) or (phone.label if phone else None), source_anchor=_link_anchor(phone, raw),
+            created_by_user_id=user.id,
+        )
+        db.add(row)
+        new_rows.append(row)
+        if phone is not None and target_type == "phone_selection":
+            from services import collection_index
+
+            collection_index.write_members(
+                db, case_id=dossier.case_id, container_type="dossier", container_id=str(dossier.id),
+                link_id=row.id, members=phone.members,
+            )
+    skipped = len(links) - len(new_rows)
+    if new_rows:
+        dossier.updated_by_user_id = user.id
+    db.flush()
+    _record_link_event(db, "dossier_links_added", dossier, user, {
+        "added": len(new_rows), "skipped": skipped, "origin": _text(origin),
+        "types": sorted({row.target_type for row in new_rows}),
+    })
+    db.commit()
+    return {
+        "dossier_id": str(dossier.id),
+        "added": len(new_rows),
+        "skipped": skipped,
+        "added_link_ids": [str(row.id) for row in new_rows],
+        "total_links": db.scalar(select(func.count()).select_from(DossierLink).where(DossierLink.dossier_id == dossier.id)),
+    }
+
+
+def remove_link(db: Session, *, dossier_id: uuid.UUID, link_id: uuid.UUID, user: User) -> dict[str, Any]:
+    dossier = _write(db, dossier_id, user)
+    link = db.scalar(select(DossierLink).where(DossierLink.id == link_id, DossierLink.dossier_id == dossier.id))
+    if link is None:
+        raise DossierNotFound("Link not found")
+    details = {"link_id": str(link.id), "target_type": link.target_type, "target_id": link.target_id}
+    if link.target_type == "phone_selection":
+        from services import collection_index
+
+        collection_index.remove_members(db, link_id=link.id)
+    db.delete(link)
+    dossier.updated_by_user_id = user.id
+    db.flush()
+    _record_link_event(db, "dossier_link_removed", dossier, user, details)
+    db.commit()
+    return {"dossier_id": str(dossier.id), "removed": 1}
 
 
 def add_evidence_links(

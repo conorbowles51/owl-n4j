@@ -16,7 +16,7 @@ from services.dossier_service import (
     DossierConflict, DossierNotFound, add_media, archive_dossier, create_assessment,
     create_dossier, create_interview, delete_assessment, delete_interview, delete_media,
     add_evidence_links, get_dossier, link_dossier, list_dossiers,
-    remove_evidence_link, reorder_media, replace_links,
+    remove_evidence_link, reorder_media, replace_links, add_links, remove_link,
     update_dossier, update_interview, update_media,
 )
 
@@ -73,6 +73,12 @@ class LinkDossierRequest(BaseModel):
 
 class LinksRequest(BaseModel):
     links: list[LinkIn] = Field(default_factory=list, max_length=500)
+
+
+class LinksAddRequest(BaseModel):
+    # The service refuses more than dossier_service.LINKS_ADD_LIMIT with a stated message; nothing is cut.
+    links: list[LinkIn] = Field(default_factory=list)
+    origin: str | None = Field(default=None, max_length=128)
 
 
 class EvidenceLinksRequest(BaseModel):
@@ -205,6 +211,21 @@ def restore(dossier_id: UUID, db: Session = Depends(get_db), user: User = Depend
 @router.put("/{dossier_id}/links")
 def put_links(dossier_id: UUID, request: LinksRequest, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
     try: return replace_links(db, dossier_id=dossier_id, user=user, links=_payload(request)["links"])
+    except Exception as exc: _error(exc)
+
+
+@router.post("/{dossier_id}/links:add")
+def post_links_add(dossier_id: UUID, request: LinksAddRequest, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Append links; already-present targets are skipped. Returns the added and skipped counts."""
+    try:
+        payload = _payload(request)
+        return add_links(db, dossier_id=dossier_id, user=user, links=payload["links"], origin=payload.get("origin"))
+    except Exception as exc: _error(exc)
+
+
+@router.delete("/{dossier_id}/links/{link_id}")
+def delete_link(dossier_id: UUID, link_id: UUID, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    try: return remove_link(db, dossier_id=dossier_id, link_id=link_id, user=user)
     except Exception as exc: _error(exc)
 
 
