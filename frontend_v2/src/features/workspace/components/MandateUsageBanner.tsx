@@ -31,13 +31,13 @@ export function MandateUsageBanner({
     try { await onAdoptCurrent() } finally { setAdopting(false) }
   }
 
-  return <div className={`border-b px-4 py-2 ${stale ? "border-amber-500/20 bg-amber-500/5" : "border-border bg-muted/10"}`}>
+  return <div className={`border-b px-4 py-2 ${stale ? "border-status-warning/50 bg-status-warning-soft" : "border-border bg-muted/10"}`}>
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex items-center gap-2 text-xs">
         <BookOpenCheck className={`size-3.5 ${incomplete ? "text-muted-foreground" : "text-violet-500"}`} />
         {incomplete ? <span className="text-muted-foreground">No saved case objective</span> : <><span className="font-medium">Using case objective</span><Badge variant="secondary">v{versionNumber}</Badge></>}
         {temporaryOverride.trim() && <Badge variant="outline">Request override</Badge>}
-        {stale && <span className="text-amber-700 dark:text-amber-300">A newer version {activeVersionNumber ? `(v${activeVersionNumber})` : ""} is active.</span>}
+        {stale && <span className="text-status-warning">A newer version {activeVersionNumber ? `(v${activeVersionNumber})` : ""} is active.</span>}
       </div>
       <div className="flex items-center gap-1">
         {stale && onAdoptCurrent && <Button variant="ghost" size="sm" onClick={adopt} disabled={adopting}><RefreshCw className={`size-3.5 ${adopting ? "animate-spin" : ""}`} /> Adopt current</Button>}

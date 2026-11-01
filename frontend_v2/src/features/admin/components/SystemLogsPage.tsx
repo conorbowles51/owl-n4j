@@ -44,7 +44,7 @@ export function SystemLogsPage() {
   const levelColor = (lvl: string) => {
     switch (lvl.toLowerCase()) {
       case "error": return "text-red-500"
-      case "warning": return "text-amber-500"
+      case "warning": return "text-status-warning"
       case "info": return "text-blue-500"
       case "debug": return "text-muted-foreground"
       default: return "text-foreground"

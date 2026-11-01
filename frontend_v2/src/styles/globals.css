@@ -64,7 +64,11 @@
     /* Semantic status set (lx-style D), one family with the phone kit's tokens above. --status-<x> is the
        text and icon colour (4.5:1 or more on every surface and its soft fill); -soft is the fill.
          info, success: below.   error: --status-error (shared with the kit).
-         neutral: --status-deleted (same values, one source).   warning: followups' amber B token.
+         neutral: --status-deleted (same values, one source).
+         warning: --status-review (same values, one source): the amber that says "needs a look". The amber-*
+         utilities are drawn in brand red (the July rebrand), so a warning drawn with them looks like the brand
+         accent; warnings use status-warning instead (Neil, amber B, 1 Nov). It is at least dE2000 15 from Loupe
+         red and from the error colour.
        Each is at least dE2000 15 from every area hue (tokens.test.ts). */
     --status-info: 227 65% 22%;
     --status-info-soft: 227 80% 95%;
@@ -72,6 +76,8 @@
     --status-success-soft: 125 60% 94%;
     --status-neutral: var(--status-deleted);
     --status-neutral-soft: var(--status-deleted-soft);
+    --status-warning: var(--status-review);
+    --status-warning-soft: var(--status-review-soft);
 
     /* Area identity (lx-style B): one hue per area family, drawn from the brand and node palettes. The base token
        marks icons, rules and the active mark (3:1 or more on every surface); -soft is the area's tinted surface;
@@ -352,6 +358,8 @@
   --color-status-success-soft: hsl(var(--status-success-soft));
   --color-status-neutral: hsl(var(--status-neutral));
   --color-status-neutral-soft: hsl(var(--status-neutral-soft));
+  --color-status-warning: hsl(var(--status-warning));
+  --color-status-warning-soft: hsl(var(--status-warning-soft));
   --color-area-investigate: hsl(var(--area-investigate));
   --color-area-investigate-soft: hsl(var(--area-investigate-soft));
   --color-area-investigate-foreground: hsl(var(--area-investigate-foreground));

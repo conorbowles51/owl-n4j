@@ -111,7 +111,7 @@ export function CaseworkEditor({
   return (
     <div className="space-y-3">
       {conflict && (
-        <div className="rounded-lg border border-amber-300/70 bg-amber-50 p-3 text-amber-950 dark:border-amber-800 dark:bg-amber-950/35 dark:text-amber-100" role="alert">
+        <div className="rounded-lg border border-status-warning/50 bg-status-warning-soft p-3 text-status-warning" role="alert">
           <div className="flex items-start gap-2">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
             <div className="min-w-0 flex-1">

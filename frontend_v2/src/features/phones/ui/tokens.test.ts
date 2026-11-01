@@ -30,7 +30,7 @@ const THEMES = { light: resolved(block(":root")), dark: resolved({ ...block(":ro
 const SURFACES = ["background", "card", "muted", "popover", "panel"]
 const STATUSES = ["status-review", "status-model", "status-deleted", "status-error"]
 /** lx-style D: the semantic status set. error is the kit's; neutral is the kit's deleted (one source). */
-const SEMANTIC = ["status-info", "status-success", "status-error", "status-neutral"]
+const SEMANTIC = ["status-info", "status-success", "status-error", "status-neutral", "status-warning"]
 
 describe("phone status tokens (07 4.2 item 3)", () => {
   for (const [theme, vars] of Object.entries(THEMES)) {
@@ -64,6 +64,18 @@ describe("semantic status set (lx-style D)", () => {
       })
     }
   }
+  for (const [theme, vars] of Object.entries(THEMES))
+    it(`warning is dE2000 15 or more from Loupe red and the error colour, ${theme}`, () => {
+      // amber B (Neil, 1 Nov): amber-* utilities are brand red, so a warning drawn with them reads as the accent.
+      for (const other of ["primary", "destructive", "status-error"]) {
+        const d = deltaE2000(tripletToRgb(vars["status-warning"]), tripletToRgb(vars[other]))
+        expect(d, `status-warning vs ${other} (${theme}) = ${d.toFixed(1)}`).toBeGreaterThanOrEqual(15)
+      }
+    })
+  it("warning is the kit's review token, not a copy", () => {
+    expect(css).toContain("--status-warning: var(--status-review);")
+    expect(css).toContain("--status-warning-soft: var(--status-review-soft);")
+  })
   it("neutral is the kit's deleted token, not a copy", () => {
     expect(css).toContain("--status-neutral: var(--status-deleted);")
     expect(css).toContain("--status-neutral-soft: var(--status-deleted-soft);")

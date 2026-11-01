@@ -165,7 +165,7 @@ function StatementDuplicateDecisionView({
   return (
     <section
       aria-label="Statement duplicate decision"
-      className="min-w-0 space-y-3 rounded border border-amber-300 bg-amber-50/40 p-3 text-sm dark:bg-amber-950/20"
+      className="min-w-0 space-y-3 rounded border border-status-warning/50 bg-status-warning-soft p-3 text-sm"
     >
       <h3 className="font-semibold">
         {stale

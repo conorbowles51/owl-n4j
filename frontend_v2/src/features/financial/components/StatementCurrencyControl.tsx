@@ -76,7 +76,7 @@ export function StatementCurrencyControl({
       {conflict && (
         <div
           role="alert"
-          className="rounded border border-amber-500/40 bg-amber-500/5 p-3 space-y-2"
+          className="rounded border border-status-warning/50 bg-status-warning-soft p-3 space-y-2"
         >
           <p>
             The automatic reading suggests {detectedCurrency}; this review uses{" "}

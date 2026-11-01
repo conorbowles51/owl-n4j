@@ -510,7 +510,7 @@ export function AISettingsPage() {
                   </Select>
                 </div>
                 {isDirty ? (
-                  <div className="flex items-start gap-2 rounded-md border border-amber-500/25 bg-amber-500/[0.055] p-3 text-[11px] text-amber-800 dark:text-amber-200">
+                  <div className="flex items-start gap-2 rounded-md border border-status-warning/50 bg-status-warning-soft p-3 text-[11px] text-status-warning">
                     <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> Routing changes are staged. Save routing to make them active.
                   </div>
                 ) : null}
@@ -607,7 +607,7 @@ export function AISettingsPage() {
                       </div>
                       <div className="shrink-0 text-right">
                         <p className="text-[10px] font-medium">{providerDisplay(service.provider)}</p>
-                        <p className={cn("mt-0.5 flex items-center justify-end gap-1 text-[9px]", service.status === "ready" ? "text-emerald-600" : "text-amber-600")}>
+                        <p className={cn("mt-0.5 flex items-center justify-end gap-1 text-[9px]", service.status === "ready" ? "text-emerald-600" : "text-status-warning")}>
                           {service.status === "ready" ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}
                           {service.status === "ready" ? "Ready" : "Needs key"}
                         </p>

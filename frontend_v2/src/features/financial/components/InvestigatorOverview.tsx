@@ -158,7 +158,7 @@ export function InvestigatorOverview({
   return (
     <div className="space-y-6 bg-[#f4f3ef] p-4 sm:p-5 dark:bg-transparent">
       {stale.length > 0 && (
-        <p role="alert" className="rounded border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950">
+        <p role="alert" className="rounded border border-status-warning/50 bg-status-warning-soft px-4 py-2 text-sm text-status-warning">
           {`These could not be updated and show the last ones loaded: ${stale.map(({ what }) => what).join(", ")}.`}{" "}
           <button
             type="button"

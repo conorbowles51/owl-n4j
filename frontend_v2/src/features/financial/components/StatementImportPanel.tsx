@@ -1074,7 +1074,7 @@ function FailedStatementReading({
   return (
     <div className="space-y-4 py-4">
       <div
-        className="rounded border border-amber-500/50 bg-amber-50/60 dark:bg-amber-950/20 p-4 space-y-2"
+        className="rounded border border-status-warning/50 bg-status-warning-soft p-4 space-y-2"
         role="alert"
       >
         <h3 className="font-semibold">
@@ -4471,7 +4471,7 @@ function EditableStatement({
           </div>
         )}
         {!data.assignment_only && warnings.length > 0 && (
-          <div className="rounded border border-amber-500 p-3">
+          <div className="rounded border border-status-warning/50 p-3">
             <h4 className="font-semibold">Check statement details</h4>
             {warnings.map((message) => (
               <p key={message}>{message}</p>

@@ -95,8 +95,8 @@ function AmountEditForm({
 
         <div className="space-y-3">
           {transaction.amount_corrected && (
-            <div className="flex items-center gap-2 rounded-md bg-amber-500/10 px-3 py-2">
-              <AlertCircle className="size-4 text-amber-500 shrink-0" />
+            <div className="flex items-center gap-2 rounded-md bg-status-warning-soft px-3 py-2">
+              <AlertCircle className="size-4 text-status-warning shrink-0" />
               <div className="text-xs">
                 <p>Previously corrected</p>
                 <p className="text-muted-foreground">

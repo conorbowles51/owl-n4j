@@ -125,7 +125,7 @@ export function ProcessHoldDialog({ gate }: ProcessHoldDialogProps) {
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="size-4 text-amber-500" />
+              <AlertTriangle className="size-4 text-status-warning" />
               {holdTitle(held)}
             </DialogTitle>
             <DialogDescription>{describeHold(held)}</DialogDescription>
