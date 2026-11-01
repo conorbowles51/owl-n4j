@@ -414,7 +414,7 @@ it("keeps the preview usable on a small screen after a stale save, then retries"
   )
   await screen.findByRole("alert")
   expect(saved).toHaveLength(0)
-  await page.screenshot({ path: "/tmp/loupe-timeline-retry-mobile.png" })
+  await page.screenshot({ path: "/tmp/loupe-timeline-retry-narrow.png" })
   expect(
     screen
       .getByRole("button", { name: "Refresh preview" })
@@ -427,7 +427,7 @@ it("keeps the preview usable on a small screen after a stale save, then retries"
   expect(saved).toHaveLength(1)
 })
 
-// Timeline filters on a phone: below 768 px the filter column would be squeezed to about 56 px, so the
+// Timeline filters on a narrow screen: below 768 px the filter column would be squeezed to about 56 px, so the
 // filters open as a sheet from the Filters button instead.
 const accountEvent: TimelineEvent = {
   key: "event-account",
@@ -470,7 +470,7 @@ const focusButtons = (root: ParentNode = document) =>
     (button) => button.textContent === "Focus"
   )
 
-it("on a phone the filters open as a sheet wide enough to use, and Focus closes it", async () => {
+it("on a narrow screen the filters open as a sheet wide enough to use, and Focus closes it", async () => {
   await page.viewport(390, 844)
   saved = [accountEvent]
   renderTimelineOnly()

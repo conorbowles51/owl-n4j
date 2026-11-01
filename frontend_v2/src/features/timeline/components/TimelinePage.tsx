@@ -56,7 +56,7 @@ export function TimelinePage() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [exportOpen, setExportOpen] = useState(false)
   // Below 768 px (the app's narrow breakpoint) the filters open as a sheet over the Timeline instead of a
-  // resizable column, which a phone squeezes to about 56 px. Closed until the user asks for it.
+  // resizable column, which a narrow screen squeezes to about 56 px. Closed until the user asks for it.
   const narrowViewport = useMediaQuery("(max-width: 767px)")
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
   const [exportSource, setExportSource] = useState<TimelineExportSource | null>(
@@ -231,7 +231,7 @@ export function TimelinePage() {
   const handleFocusEntity = useCallback(
     (key: string) => {
       setSelectedEntities(new Set([key]))
-      // On a phone the sheet covers the events; Focus closes it so the focused events are in view.
+      // On a narrow screen the sheet covers the events; Focus closes it so the focused events are in view.
       setFilterSheetOpen(false)
     },
     [setSelectedEntities]
