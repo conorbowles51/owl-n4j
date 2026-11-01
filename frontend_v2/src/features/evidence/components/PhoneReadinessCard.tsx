@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { cn } from "@/lib/cn"
 import type { EvidenceJob, PhoneJobState } from "@/types/evidence.types"
-import { FIRST_RUN_TEXT, formatTimeLeft } from "../upload-progress"
+import { FIRST_RUN_INLINE, formatTimeLeft } from "../upload-progress"
 import {
   CANCEL_KEEPS,
   measureOf,
@@ -94,7 +94,7 @@ export function PhoneReadinessCard({ job, onPause, onResume, onCancel, onClear, 
               {running && !job.paused ? (
                 <span className="ml-[18px] block text-[11px] text-muted-foreground" aria-live="polite">
                   {stepText(stage, counts)}
-                  {measureOf(stage, counts) ? `, ${seen?.left != null ? formatTimeLeft(seen.left) : FIRST_RUN_TEXT}` : ""}
+                  {measureOf(stage, counts) ? `, ${seen?.left != null ? formatTimeLeft(seen.left) : FIRST_RUN_INLINE}` : ""}
                 </span>
               ) : null}
             </li>

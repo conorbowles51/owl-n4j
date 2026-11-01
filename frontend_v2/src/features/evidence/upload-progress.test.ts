@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   addFileCost,
   describeUploadProgress,
-  FIRST_RUN_TEXT,
+  FIRST_RUN_INLINE,
   type FileCostFit,
   percentOf,
   type UploadProgress,
@@ -29,7 +29,7 @@ const base: UploadProgress = {
 describe("upload progress words (07 J-1, 4.7)", () => {
   it("says it is working out time left until a rate has been measured", () => {
     expect(describeUploadProgress({ ...base, bytesDone: 100 }, 1000)).toBe(
-      `Checking files before upload: 12,400 of 43,144, ${FIRST_RUN_TEXT}`
+      `Checking files before upload: 12,400 of 43,144, ${FIRST_RUN_INLINE}`
     )
   })
 
@@ -43,7 +43,7 @@ describe("upload progress words (07 J-1, 4.7)", () => {
     // The live C3 shape: 801 MB in 43,123 files; large files went first, so 300 MB were hashed in 30 s with no file
     // finished. A byte rate promised under a minute for what took 402 s.
     const p: UploadProgress = { ...base, filesDone: 0, filesTotal: 43123, bytesDone: 300e6, bytesTotal: 801e6 }
-    expect(describeUploadProgress(p, 30_000)).toBe(`Checking files before upload: 0 of 43,123, ${FIRST_RUN_TEXT}`)
+    expect(describeUploadProgress(p, 30_000)).toBe(`Checking files before upload: 0 of 43,123, ${FIRST_RUN_INLINE}`)
     // then 1,000 small files at 9 ms each, after one 300 MB file in 30 s: per file and per byte both count
     const fit = fitOf([[300e6, 30]].concat(Array(1000).fill([10e3, 0.009])) as [number, number][])
     const later = { ...p, filesDone: 1001, bytesDone: 310e6, fit }
@@ -53,7 +53,7 @@ describe("upload progress words (07 J-1, 4.7)", () => {
 
   it("waits for enough finished files before giving a many-file time left", () => {
     const p: UploadProgress = { ...base, fit: fitOf([[10e3, 0.01]], 19), filesDone: 19 }
-    expect(describeUploadProgress(p, 60_000)).toContain(FIRST_RUN_TEXT)
+    expect(describeUploadProgress(p, 60_000)).toContain(FIRST_RUN_INLINE)
     expect(describeUploadProgress({ ...p, fit: fitOf([[10e3, 0.01]], 20), filesDone: 20 }, 60_000)).toContain("min left")
   })
 

@@ -19,7 +19,7 @@ describe("phone readiness card (07 J-1a)", () => {
     expect(screen.getByText("Reading records")).toBeTruthy()
     expect(screen.getByText("Checking nothing is missing")).toBeTruthy()
     expect(screen.getByText(/12,400 records and 300 files read/)).toBeTruthy()
-    expect(screen.getByText(/Working out time left \(first run of this step\)/)).toBeTruthy()
+    expect(screen.getByText(/, working out time left \(first run of this step\)/)).toBeTruthy()
   })
 
   it("maps engine stages to the three steps", () => {

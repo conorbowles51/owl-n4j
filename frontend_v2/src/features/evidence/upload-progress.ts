@@ -51,7 +51,8 @@ export function fileCosts(f: FileCostFit) {
 
 /** The shortest measured interval before a rate is trusted. */
 export const RATE_MIN_MS = 2000
-export const FIRST_RUN_TEXT = "Working out time left (first run of this step)"
+/** The same words inside a sentence, after a count. */
+export const FIRST_RUN_INLINE = "working out time left (first run of this step)"
 
 const n = (value: number) => value.toLocaleString("en-US")
 
@@ -95,7 +96,7 @@ export function secondsLeft(p: UploadProgress, now: number): number | null {
 
 export function describeUploadProgress(p: UploadProgress, now: number): string {
   const left = secondsLeft(p, now)
-  const time = left === null ? FIRST_RUN_TEXT : formatTimeLeft(left)
+  const time = left === null ? FIRST_RUN_INLINE : formatTimeLeft(left)
   if (p.phase === "hashing")
     return p.filesTotal > 1
       ? `Checking files before upload: ${n(p.filesDone)} of ${n(p.filesTotal)}, ${time}`
