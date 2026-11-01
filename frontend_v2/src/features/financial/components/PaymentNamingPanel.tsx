@@ -112,6 +112,21 @@ export function PaymentNamingPanel({
   const [last, setLast] = useState<{ originals: LedgerTransaction[]; name: string } | null>(null)
   const input = useRef<HTMLInputElement>(null)
   const panel = useRef<HTMLElement>(null)
+  // The panel sticks inside the page's scrolling area, not the window: its height is that area's height (the page's
+  // own headers sit above it), so its lowest part shows while it is stuck. Without a scrolling area: the window.
+  const [room, setRoom] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    let area = panel.current?.parentElement ?? null
+    while (area && !/(auto|scroll)/.test(getComputedStyle(area).overflowY)) area = area.parentElement
+    if (!area) return
+    const scroller = area
+    const update = () => setRoom(scroller.clientHeight || null)
+    update()
+    if (typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(update)
+    observer.observe(scroller)
+    return () => observer.disconnect()
+  }, [])
   const position = queue.findIndex((item) => item.key === currentId)
   const neighbour = (step: 1 | -1) => {
     if (position >= 0) return queue[position + step]?.key ?? null
@@ -277,8 +292,11 @@ export function PaymentNamingPanel({
       ref={panel}
       tabIndex={-1}
       aria-label={readOnly ? "Statement lines of payments without a name" : "Name payments from the statement"}
-      className="finance-panel min-w-0 space-y-3 overflow-auto rounded-lg border p-4 outline-none xl:max-h-[calc(100vh-var(--naming-top)-var(--view-header-h,0px)-8px)]"
-      style={{ "--naming-top": `${stickyTop + 8}px` } as CSSProperties}
+      className="finance-panel min-w-0 space-y-3 overflow-auto rounded-lg border p-4 outline-none xl:max-h-[calc(var(--naming-room)-var(--naming-top)-8px)]"
+      style={{
+        "--naming-top": `${stickyTop + 8}px`,
+        "--naming-room": room ? `${room}px` : "calc(100vh - var(--view-header-h, 0px))",
+      } as CSSProperties}
       data-finance-tone="info"
       onKeyDown={keys}
     >

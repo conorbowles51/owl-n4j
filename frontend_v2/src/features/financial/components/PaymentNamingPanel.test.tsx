@@ -240,7 +240,35 @@ it("leaves room for the sticky tools bar above it when it sits beside the table"
   mount([payment("a")])
   const panel = await screen.findByRole("complementary", { name: "Name payments from the statement" })
   expect(panel.style.getPropertyValue("--naming-top")).toBe("248px")
-  expect(panel.className).toContain("xl:max-h-[calc(100vh-var(--naming-top)-var(--view-header-h,0px)-8px)]")
+  expect(panel.className).toContain("xl:max-h-[calc(var(--naming-room)-var(--naming-top)-8px)]")
+  // No scrolling area around it: the window, less the view band.
+  expect(panel.style.getPropertyValue("--naming-room")).toBe("calc(100vh - var(--view-header-h, 0px))")
+})
+
+it("takes its height from the scrolling area it sticks in, not the whole window", async () => {
+  // lx-style 1 Nov: sized from 100vh, the panel ran under the window's bottom edge by the height of the Financial
+  // page's own header (about 130 px at 1440), which sits above the scrolling area.
+  const height = Object.getOwnPropertyDescriptor(Element.prototype, "clientHeight")!
+  Object.defineProperty(Element.prototype, "clientHeight", {
+    configurable: true,
+    get(this: Element) { const room = this.getAttribute("data-test-room"); return room ? Number(room) : 0 },
+  })
+  try {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <div style={{ overflowY: "auto" }} data-test-room="642">
+          <div>
+            <Harness rows={[payment("a")]} start="a" />
+          </div>
+        </div>
+      </QueryClientProvider>
+    )
+    const panel = await screen.findByRole("complementary", { name: "Name payments from the statement" })
+    expect(panel.style.getPropertyValue("--naming-room")).toBe("642px")
+  } finally {
+    Object.defineProperty(Element.prototype, "clientHeight", height)
+  }
 })
 
 it("shows a viewer the statement line and the queue with no name field, and never saves", async () => {
