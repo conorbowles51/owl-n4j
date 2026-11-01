@@ -45,14 +45,16 @@ services:
     # lx-hostpolicy: the live slice (CPU weight 1000 above the jobs fleet) and protected memory, sized from the
     # memory table in headless/LX-HOSTPOLICY-STATUS.md. Changing either recreates the container.
     cgroup_parent: loupe-live.slice
-    mem_reservation: 1536m
+    # lx-datastores (item e, 1 Nov): protection raised from 1536m by the 1 GB of shared_buffers below.
+    mem_reservation: 2560m
     # lx-datastores: query statistics (pg_stat_statements, created in owl_db by migration 20261031), plans of
     # statements over 2 s (auto_explain, plan only, no ANALYZE cost), named temp spills over 10 MB, lock waits,
     # JIT off. Plans are logged without their parameter values (measured 31 Oct: the values were 6.7 of the
     # first 14 MB, from IN lists of thousands of ids). The log goes to postgres/data/log (one file per weekday,
-    # overwritten a week later) so it survives a container recreate. Memory settings (work_mem, shared_buffers)
-    # are unchanged until 24 h of these statistics size them. Way back: remove this command block and recreate
-    # the container.
+    # overwritten a week later) so it survives a container recreate. Memory (measured 31 Oct 03:10 - 1 Nov 03:11):
+    # buffer hit ratio 72.7% at shared_buffers 128MB, and the tables read most fit in 773 MB, so shared_buffers is
+    # 1GB; 673 temp files over 10 MB, the largest 31.8 MB, so work_mem is 64MB (at most 5 active sessions in 288
+    # samples). Way back: remove the two memory lines (or this command block) and recreate the container.
     command:
       - postgres
       - -c
@@ -77,6 +79,10 @@ services:
       - track_io_timing=on
       - -c
       - jit=off
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - work_mem=64MB
       - -c
       - logging_collector=on
       - -c

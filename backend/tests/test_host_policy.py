@@ -72,3 +72,15 @@ def test_neo4j_heap_and_page_cache_fit_under_a_hard_memory_floor():
     need = _bytes(env['NEO4J_server_memory_heap_max__size']) + _bytes(env['NEO4J_server_memory_pagecache_size'])
     for slice_ in ('loupe.slice', 'loupe-live.slice'):
         assert _bytes(_unit(POLICY / slice_)['Slice']['MemoryMin']) >= need, slice_
+
+
+def test_postgres_protection_covers_shared_buffers_and_sessions():
+    # lx-datastores item e: shared_buffers is shared memory charged to the Postgres container, so its protected
+    # memory must hold it plus the sessions (measured 1 Nov: 185 MB anon for 30 sessions, at most 5 active, each
+    # sort up to work_mem). Raising shared_buffers without raising mem_reservation fails here.
+    pg = yaml.safe_load((ROOT / 'docker-compose.yml').read_text())['services']['postgres']
+    settings = dict(a.split('=', 1) for a in pg['command'] if '=' in a)
+    shared = _bytes(settings['shared_buffers'].replace('GB', 'g').replace('MB', 'm'))
+    work = _bytes(settings['work_mem'].replace('GB', 'g').replace('MB', 'm'))
+    assert shared >= 1024 ** 3 and work >= 64 * 1024 ** 2
+    assert _bytes(pg['mem_reservation']) >= shared + 30 * 16 * 1024 ** 2 + 5 * 2 * work
