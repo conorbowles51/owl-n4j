@@ -72,6 +72,9 @@ def test_conflicting_incomplete_or_nonliteral_crop_results_are_retained_for_revi
 
 
 def test_card_dates_whose_slash_the_layer_read_as_a_digit_are_reread_from_their_own_cells(monkeypatch):
+    # With the backend's printed-format rule off, the cell itself is reread.
+    from services.financial import statement_import_credit_one as credit_one
+    monkeypatch.setattr(credit_one,'PRINTED_FORMAT',False)
     original,result,records=refine(monkeypatch,['01/04']*6,amount='20.00',trans='01104',post='01104')
     before=original[0].geometry.cells;after=result[0].geometry.cells
     assert [(a.row,a.column,b.text) for a,b in zip(before,after) if a.text!=b.text]==[(8,1,'01/04'),(8,2,'01/04')]
@@ -79,6 +82,21 @@ def test_card_dates_whose_slash_the_layer_read_as_a_digit_are_reread_from_their_
         ('date','01104','01/04','unreadable_native_statement_date'),
         ('booking_date','01104','01/04','unreadable_native_statement_date')]
     assert records[0]['refined_quality']['unreadable']==0
+
+
+def test_card_dates_whose_slash_the_layer_read_as_a_digit_need_no_reread_under_the_printed_format(monkeypatch):
+    # The backend reads MM1DD in a card date column as MM/DD (statement_import_credit_one.PRINTED_FORMAT,
+    # on since 26 Oct), so the page is already complete: nothing is reread and no cell changes.
+    from services.financial import statement_import_credit_one as credit_one
+    monkeypatch.setattr(credit_one,'PRINTED_FORMAT',True)
+    read=Mock(return_value=observations(['01/04']*6))
+    original=tables('20.00',trans='01104',post='01104')
+    monkeypatch.setattr(cells,'_cleaned_line_readings',read)
+    with fitz.open() as doc:
+        page=doc.new_page(width=600,height=800)
+        result,records=cells.refine_credit_one_native_cells(page,original,deadline=time.monotonic()+30,language='eng')
+    assert result is original and records==[]
+    read.assert_not_called()
 
 
 @pytest.mark.parametrize('values,trans',[
