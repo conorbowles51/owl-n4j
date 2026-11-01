@@ -765,6 +765,141 @@ def build_case(case: CaseSpec, out: Path) -> dict:
     return manifest
 
 
+# -- intake forms (01 unit 1.2): zip, split sections, UFDR and protected single-file reports ------------------
+# These rewrap a report folder; they invent nothing. Given a synthetic folder from this module the result is
+# synthetic; given a server folder (corpus acceptance runs only, written under /mnt/owl-data/cellebrite-corpus)
+# it is labelled synthetic as a form, and never committed.
+
+PROTECTED_MAGIC = bytes.fromhex("2D06526D")
+
+
+def _report_files(folder: Path) -> list[Path]:
+    return sorted(p for p in folder.rglob("*") if p.is_file() and p.name != "owl_ingest_report.json")
+
+
+def zip_folder(folder: Path, out: Path, *, wrapper: str | None = "", mac_extras: bool = True,
+               compress: bool = True) -> dict:
+    """A zip of a report folder as a Mac makes one: one wrapping folder, ``__MACOSX/`` AppleDouble copies of
+    every entry and a ``.DS_Store``. Returns entry counts."""
+    import zipfile
+    folder = Path(folder)
+    wrapper = folder.name if wrapper == "" else wrapper
+    files = _report_files(folder)
+    counts = {"files": 0, "macosx": 0, "ds_store": 0}
+    mode = zipfile.ZIP_DEFLATED if compress else zipfile.ZIP_STORED
+    with zipfile.ZipFile(out, "w", mode, allowZip64=True) as zf:
+        for f in files:
+            rel = f.relative_to(folder).as_posix()
+            name = f"{wrapper}/{rel}" if wrapper else rel
+            zf.write(f, name)
+            counts["files"] += 1
+            if mac_extras:
+                parent, _, base = name.rpartition("/")
+                zf.writestr(f"__MACOSX/{parent + '/' if parent else ''}._{base}", b"\x00\x05\x16\x07" + b"\x00" * 78)
+                counts["macosx"] += 1
+        if mac_extras:
+            zf.writestr(f"{wrapper + '/' if wrapper else ''}.DS_Store", b"\x00\x00\x00\x01Bud1" + b"\x00" * 24)
+            counts["ds_store"] += 1
+    return counts
+
+
+def _find(fh, needle: bytes, start: int = 0) -> int:
+    """Byte offset of the first ``needle`` at or after ``start``, streaming."""
+    fh.seek(start)
+    pos, tail = start, b""
+    while True:
+        b = fh.read(1 << 20)
+        if not b:
+            return -1
+        buf = tail + b
+        i = buf.find(needle)
+        if i >= 0:
+            return pos - len(tail) + i
+        tail = buf[-(len(needle) - 1):] if len(needle) > 1 else b""
+        pos += len(b)
+
+
+def _copy_range(src, dst, start: int, end: int) -> None:
+    src.seek(start)
+    left = end - start
+    while left > 0:
+        b = src.read(min(1 << 20, left))
+        if not b:
+            break
+        dst.write(b)
+        left -= len(b)
+
+
+def split_sections(report: Path, out_dir: Path, stem: str = "Synthetic_Report", *,
+                   truncate_tagged_fraction: float | None = None) -> dict:
+    """Split a full report into the C8 shape (01 section 1.1): ``.xmlModel`` holds ``decodedData`` with no
+    declaration and no namespace; ``.xmlTagged`` holds the rest under ``project``; six empty siblings. With
+    ``truncate_tagged_fraction`` the tagged section is cut at that fraction of its bytes (inside the tagged
+    files when the fraction is small enough), as C8's was."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with open(report, "rb") as fh:
+        a = _find(fh, b"<decodedData")
+        b = _find(fh, b"</decodedData>", a)
+        if a < 0 or b < 0:
+            raise ValueError("no decodedData section")
+        b += len(b"</decodedData>")
+        size = fh.seek(0, 2)
+        with open(out_dir / f"{stem}.xmlModel", "wb") as m:
+            _copy_range(fh, m, a, b)
+        tagged = out_dir / f"{stem}.xmlTagged"
+        with open(tagged, "wb") as t:
+            _copy_range(fh, t, 0, a)
+            _copy_range(fh, t, b, size)
+    if truncate_tagged_fraction is not None:
+        n = tagged.stat().st_size
+        with open(tagged, "r+b") as t:
+            t.truncate(int(n * truncate_tagged_fraction))
+    for suffix in ("xmlExtra", "xmlLast", "xmlMdfSource", "xmlModelSource", "xmlNodeSource", "xmlTranslation"):
+        (out_dir / f"{stem}.{suffix}").write_bytes(b"")
+    return {"model": (out_dir / f"{stem}.xmlModel").stat().st_size, "tagged": tagged.stat().st_size, "empty": 6}
+
+
+def ufdr_from_folder(folder: Path, out: Path) -> dict:
+    """A readable UFDR: a zip whose root holds ``report.xml`` and the report folder's files."""
+    import zipfile
+    folder = Path(folder)
+    files = _report_files(folder)
+    full = [f for f in files if f.parent == folder and f.suffix.lower() == ".xml"]
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+        for f in files:
+            name = "report.xml" if full and f == full[0] else f.relative_to(folder).as_posix()
+            zf.write(f, name)
+    return {"files": len(files)}
+
+
+def protected_ufdr(out: Path, kind: str, seed: int = 7) -> None:
+    """A protected single-file report, with invented bytes. ``kind``:
+
+    - ``magic``: ``report.xml`` starts ``2D 06 52 6D`` (``protected_no_password``);
+    - ``encrypted``: the entry's encryption flag is set (``protected_password``);
+    - ``no_header``: random bytes with none of the header strings, the shape of both real protected UFDRs
+      measured (they start ``24 65 2E 01`` and ``2E 0F C8 E8``; 01 section 2.1 note) (``protected_or_invalid``).
+    """
+    import zipfile
+    rng = random.Random(seed)
+    body = bytes(rng.randrange(256) for _ in range(4096))
+    if kind == "magic":
+        body = PROTECTED_MAGIC + body
+    elif kind == "no_header":
+        body = bytes.fromhex("24652E01") + body
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED) as zf:
+        zf.writestr("report.xml", body)
+        zf.writestr("files/Image/a.bin", bytes(rng.randrange(256) for _ in range(64)))
+    if kind == "encrypted":  # zipfile cannot write encrypted entries: set the flag bit in both headers
+        data = bytearray(out.read_bytes())
+        assert data[:4] == b"PK\x03\x04"
+        data[6] |= 0x1
+        cd = data.find(b"PK\x01\x02")
+        assert data[cd + 46:cd + 56] == b"report.xml"
+        data[cd + 8] |= 0x1
+        out.write_bytes(bytes(data))
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("shape", choices=["phones-only", "training", "phone"])
