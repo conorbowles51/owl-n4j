@@ -300,6 +300,7 @@ export const graphAPI = {
   ) =>
     fetchAPI<{ similar_pairs: SimilarPair[] }>("/api/graph/find-similar-entities", {
       method: "POST",
+      read: true,
       body: {
         case_id: caseId,
         entity_types: entityTypes,
@@ -479,6 +480,7 @@ export const graphAPI = {
   runCaseQuery: (caseId: string, query: string) =>
     fetchAPI<CaseQueryResponse>("/api/query", {
       method: "POST",
+      read: true,
       body: { query, case_id: caseId },
     }),
 }

@@ -152,6 +152,27 @@ it("keeps asking to be answered as updating after the page posts its speed recor
     vi.useRealTimers()
   }
 })
+it("keeps asking to be answered as updating after read-flagged posts and previews (XF-9)", async () => {
+  const { clearUpdatingViews, noteOwnWrite } = await import("./financial-view-updates")
+  clearUpdatingViews()
+  vi.useFakeTimers()
+  try {
+    noteOwnWrite(0) // long ago
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response("{}", { status: 200 })))
+    vi.stubGlobal("fetch", fetch)
+    await fetchAPI("/api/evidence/route-check", { method: "POST", body: { file_ids: [] }, read: true })
+    await fetchAPI("/api/activity/files?case_id=c1", { method: "POST", body: { file_ids: [] }, read: true })
+    await fetchAPI("/api/financial/judgements/preview?case_id=c1", { method: "POST", body: {} })
+    await fetchAPI("/api/financial/ledger?case_id=c1")
+    expect(fetch.mock.calls[3][1].headers["X-Financial-View-Accept"]).toBe("updating")
+    // A real save still turns updating answers off, so an editor reads its own save back.
+    await fetchAPI("/api/financial/judgements/apply?case_id=c1", { method: "POST", body: {} })
+    await fetchAPI("/api/financial/ledger?case_id=c1")
+    expect(fetch.mock.calls[5][1].headers["X-Financial-View-Accept"]).toBeUndefined()
+  } finally {
+    vi.useRealTimers()
+  }
+})
 it("ignores an answer to an earlier request that arrives after a later one", async () => {
   const { clearUpdatingViews, nextRequestNumber, noteViewAnswer, updatingViews } = await import("./financial-view-updates")
   clearUpdatingViews()

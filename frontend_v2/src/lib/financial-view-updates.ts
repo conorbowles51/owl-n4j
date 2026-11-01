@@ -32,10 +32,26 @@ export function noteOwnWrite(now = Date.now()) {
  */
 const NOT_DATA_WRITES = ["/api/request-speed/", "/api/auth/"]
 
-/** True when a successful request with this method may have changed what a Financial view shows. */
-export function isOwnWrite(endpoint: string, method?: string) {
+/**
+ * A preview answers what a change would do and saves nothing (every `/preview` route in Loupe is read only).
+ */
+const PREVIEW = /\/preview(\?|$)/
+
+/**
+ * True when a successful request with this method may have changed what a Financial view shows. ``read``: the
+ * caller says the request only reads (a POST that carries a long id list or a query, e.g. the evidence route
+ * check, file activity or the graph query); counting it kept Financial's updating answers off for 2 minutes
+ * (live 1 Nov: 63 file-activity and 40 route-check posts in 24 h).
+ */
+export function isOwnWrite(endpoint: string, method?: string, read = false) {
   const verb = (method ?? "GET").toUpperCase()
-  return verb !== "GET" && verb !== "HEAD" && !NOT_DATA_WRITES.some((prefix) => endpoint.startsWith(prefix))
+  return (
+    !read &&
+    verb !== "GET" &&
+    verb !== "HEAD" &&
+    !NOT_DATA_WRITES.some((prefix) => endpoint.startsWith(prefix)) &&
+    !PREVIEW.test(endpoint.split("#")[0])
+  )
 }
 
 /** Financial reads that may be answered as updating. */

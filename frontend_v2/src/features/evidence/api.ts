@@ -116,6 +116,7 @@ export const evidenceAPI = {
   routeCheck: (caseId: string, fileIds: string[]) =>
     fetchAPI<RouteCheckResponse>("/api/evidence/route-check", {
       method: "POST",
+      read: true,
       body: { case_id: caseId, file_ids: fileIds },
     }),
 

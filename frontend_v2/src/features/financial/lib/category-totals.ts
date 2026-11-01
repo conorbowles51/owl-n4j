@@ -48,6 +48,7 @@ export function useScopedCategoryTotals(
         rows: { category: string; currency: string; money_in_minor: string; money_out_minor: string; count: number }[]
       }>(`/api/financial/ledger/category-breakdown?${new URLSearchParams({ case_id: caseId })}`, {
         method: "POST",
+        read: true,
         body: { group_by: "all", ...scope },
       })
       if (result.case_id !== caseId) throw Error("Category totals came from a different case.")

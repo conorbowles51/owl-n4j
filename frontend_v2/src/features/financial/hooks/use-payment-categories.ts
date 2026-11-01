@@ -59,6 +59,7 @@ export function useStatementNames(caseId: string) {
         rows: { group_key: string; group_label: string }[]
       }>(`/api/financial/ledger/category-breakdown?${new URLSearchParams({ case_id: caseId })}`, {
         method: "POST",
+        read: true,
         body: { group_by: "statement" },
       })
       if (result.case_id !== caseId) throw Error("Statements came from a different case.")

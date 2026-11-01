@@ -37,6 +37,11 @@ interface FetchOptions extends Omit<RequestInit, "body"> {
    * d5b330d1 ledger is 64 MB) only to read its headers.
    */
   headersOnly?: boolean
+  /**
+   * The request only reads, whatever its method (a POST carrying an id list or a query): it is not counted as
+   * this tab's own write, so Financial's updating answers stay on (financial-view-updates isOwnWrite).
+   */
+  read?: boolean
 }
 
 let inFlight = 0
@@ -51,7 +56,7 @@ export async function fetchAPI<T>(
   options: FetchOptions = {}
 ): Promise<T> {
   const token = localStorage.getItem("authToken")
-  const { body, timeout, signal: callerSignal, onViewAnswer, headersOnly, ...init } = options
+  const { body, timeout, signal: callerSignal, onViewAnswer, headersOnly, read, ...init } = options
 
   const headers: Record<string, string> = {
     ...(init.headers as Record<string, string>),
@@ -103,7 +108,7 @@ export async function fetchAPI<T>(
     } else if (marksUpdating) {
       noteViewAnswer(endpoint, updatingAsOf(response), requestNumber)
     }
-    if (response.ok && isOwnWrite(endpoint, init.method)) noteOwnWrite()
+    if (response.ok && isOwnWrite(endpoint, init.method, read)) noteOwnWrite()
 
     if (!response.ok) {
       let errorData: unknown

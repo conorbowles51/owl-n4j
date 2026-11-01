@@ -37,7 +37,7 @@ export function useFileProvenance(caseId: string, fileIds: string[]) {
         .parse(
           await fetchAPI(
             `/api/activity/files?case_id=${encodeURIComponent(caseId)}`,
-            { method: "POST", body: { file_ids: ids } }
+            { method: "POST", body: { file_ids: ids }, read: true }
           )
         ).files,
   })
