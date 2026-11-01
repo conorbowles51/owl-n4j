@@ -203,5 +203,6 @@ try {
   await ctx.close()
 } finally {
   await browser.close()
-  writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 1))
+  // The gate run captures only the Financial pages; it never replaces the full set's manifest.
+  if (only !== "gate") writeFileSync(join(outDir, "manifest.json"), JSON.stringify(manifest, null, 1))
 }
