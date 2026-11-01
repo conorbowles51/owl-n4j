@@ -115,7 +115,15 @@ function ViewLoadProgress({ caseId, page }: { caseId: string; page: string }) {
   const longerThanUsual = usual !== null && elapsed > usual * 1.25 + 1000
 
   let left: string | null = null
-  if (view.bytes && view.current?.answered != null && view.bytes.received > 0) {
+  if (view.unpack) {
+    // All bytes are in: time left only from the measured rate of rows unpacked so far (none while the rows are
+    // still being found, as there is no rate yet to go on).
+    const spent = now - view.unpack.started
+    if (view.unpack.unit === "rows" && view.unpack.done > 0 && spent > 0) {
+      const remaining = ((view.unpack.total - view.unpack.done) * spent) / view.unpack.done
+      if (Number.isFinite(remaining)) left = `about ${seconds(remaining)} s left for this part`
+    }
+  } else if (view.bytes && view.current?.answered != null && view.bytes.received > 0) {
     const rate = view.bytes.received / Math.max(1, now - view.current.answered)
     const remaining = (view.bytes.total - view.bytes.received) / rate
     if (Number.isFinite(remaining)) left = `about ${seconds(remaining)} s left for this part`

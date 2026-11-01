@@ -21,7 +21,7 @@ export interface RequestState {
   ended: number | null
   failed: string | null
   /** After the bytes are in: the answer being unpacked (rows of rows, or characters looked through of all). */
-  unpack?: { done: number; total: number; unit: "characters" | "rows" } | null
+  unpack?: { done: number; total: number; unit: "characters" | "rows"; started: number } | null
 }
 
 const requests = new Map<number, RequestState>()
@@ -149,7 +149,9 @@ export function receiveBytes(id: number, bytes: number) {
 export function unpackProgress(id: number, done: number, total: number, unit: "characters" | "rows") {
   const request = requests.get(id)
   if (!request) return
-  request.unpack = { done, total, unit }
+  // When this unit started (a rate for time left is measured within one unit only).
+  const started = request.unpack?.unit === unit ? request.unpack.started : now()
+  request.unpack = { done, total, unit, started }
   changed()
 }
 

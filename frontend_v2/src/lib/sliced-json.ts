@@ -183,6 +183,8 @@ async function parseInPieces(text: string, progress: UnpackProgress | undefined)
   const result = JSON.parse(pieces.join("")) as unknown
   const rows = spans.reduce((sum, span) => sum + span.starts.length, 0)
   let done = 0
+  // Rows start here: the panel measures its rate (time left) from this point.
+  progress?.(0, rows, "rows")
   const arrays: unknown[][] = []
   for (const span of spans) {
     const values: unknown[] = []

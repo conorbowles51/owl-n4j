@@ -45,7 +45,7 @@ export interface LoadPicture {
   partsAsked: number
   bytes: { received: number; total: number } | null
   /** The current answer is all in and being unpacked: rows done of rows, or characters looked through of all. */
-  unpack: { done: number; total: number; unit: "characters" | "rows" } | null
+  unpack: { done: number; total: number; unit: "characters" | "rows"; started: number } | null
   current: RequestState | null
   failed: RequestState[]
 }

@@ -122,3 +122,23 @@ it("says the answer is being unpacked, with rows of rows, once its bytes are in,
   expect(screen.getByRole("status").textContent).not.toMatch(/Still/)
   expect(screen.getByRole("status").textContent).toMatch(/24,000 of 27,926 rows unpacked/)
 })
+
+it("estimates time left while unpacking only from the measured rate of rows, never from bytes already in", () => {
+  mount()
+  const id = startRequest("/api/financial/ledger?case_id=case-1")
+  act(() => {
+    answerRequest(id, 2 * 1024 * 1024)
+    receiveBytes(id, 2 * 1024 * 1024)
+    unpackProgress(id, 1000, 2000, "characters")
+  })
+  act(() => vi.advanceTimersByTime(600))
+  expect(screen.getByRole("status").textContent).toMatch(/finding the rows: 50% looked through/)
+  expect(screen.getByRole("status").textContent).not.toMatch(/left/)
+  act(() => unpackProgress(id, 0, 20000, "rows"))
+  act(() => vi.advanceTimersByTime(2000))
+  act(() => unpackProgress(id, 5000, 20000, "rows"))
+  act(() => vi.advanceTimersByTime(500))
+  // At the redraw 2.5 s after rows started, 5,000 done: 15,000 left at that rate is 7.5 s, shown as about 8 s.
+  expect(screen.getByRole("status").textContent).toMatch(/5,000 of 20,000 rows unpacked/)
+  expect(screen.getByRole("status").textContent).toMatch(/about 8 s left for this part/)
+})
