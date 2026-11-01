@@ -5,6 +5,9 @@ under its 6G memory.low, and request threads stalled 5-6 s on swap-in. Live serv
 hard floor (MemoryMin), and every parent slice carries at least the sum of its children's floors, because a child's
 effective memory.min is capped by its parents'.
 """
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -38,6 +41,30 @@ class HostPolicyMemoryFloors(unittest.TestCase):
     def test_floors_leave_the_slice_protection_above_them(self):
         for unit in ('loupe-live.slice', 'loupe.slice'):
             self.assertGreaterEqual(_setting(POLICY / unit, 'MemoryLow'), _setting(POLICY / unit, 'MemoryMin'), unit)
+
+
+class InstallAppliesToRunningUnits(unittest.TestCase):
+    """daemon-reload alone left a new MemoryMin at 0 on the running backend and slices (1 Nov)."""
+
+    def test_install_sets_the_floors_on_running_units(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = Path(tmp) / 'calls'
+            stub = Path(tmp) / 'systemctl'
+            stub.write_text('#!/bin/sh\necho "$@" >> %s\nexit 0\n' % calls)
+            stub.chmod(0o755)
+            dest = Path(tmp) / 'units'
+            dest.mkdir()
+            env = dict(os.environ, SYSTEMCTL=str(stub), HOSTPOLICY_UNIT_DIR=str(dest))
+            subprocess.run(['bash', str(POLICY / 'install.sh')], env=env, check=True, capture_output=True)
+            lines = calls.read_text().splitlines()
+        self.assertIn('daemon-reload', lines)
+        backend = [l for l in lines if l.startswith('set-property --runtime owl-backend-v2.service ')]
+        self.assertEqual(len(backend), 1, lines)
+        self.assertIn('MemoryMin=6G', backend[0].split())
+        for unit in ('loupe.slice', 'loupe-live.slice'):
+            line = [l for l in lines if l.startswith('set-property --runtime %s ' % unit)]
+            self.assertEqual(len(line), 1, lines)
+            self.assertIn('MemoryMin=11G', line[0].split())
 
 
 if __name__ == '__main__':
