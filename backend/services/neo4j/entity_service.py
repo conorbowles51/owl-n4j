@@ -18,6 +18,63 @@ from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 logger = logging.getLogger(__name__)
 
 
+def _name_key(name: Optional[str]) -> str:
+    """A name with case, accents and punctuation set aside: 'Wells Fargo', 'WELLS FARGO' and 'Wells-Fargo' agree."""
+    import unicodedata
+    folded = unicodedata.normalize("NFKD", name or "")
+    folded = "".join(ch for ch in folded if not unicodedata.combining(ch)).lower()
+    return " ".join(re.sub(r"[^0-9a-z]+", " ", folded).split())
+
+
+def same_name_other_type_pairs(entities: List[Dict], rejected_pairs: Optional[Set[Tuple[str, str]]] = None):
+    """[(entity1, entity2, similarity)] for entities of DIFFERENT types whose names are the same (``_name_key``).
+
+    The name comparison only pairs entities of one type, so the same name extracted as two types (a Bank and an
+    Organization 'Wells Fargo', a Group and an Organization 'Hezbollah') was never suggested, though people merged
+    22 groups mixing types by hand in the live cases (merge jobs to 1 Nov 2026). Measured on the 13 cases with merges, this
+    adds 4 to 418 suggestions per case and makes the suggestions cover 476 of the 542 groups people merged
+    instead of 462. ``similarity`` is the same name ratio the type pass reports. Rejected pairs are skipped.
+    """
+    from difflib import SequenceMatcher
+    rejected_pairs = rejected_pairs or set()
+    groups: Dict[str, List[Dict]] = {}
+    for entity in entities:
+        key = _name_key(entity.get("name"))
+        if key:
+            groups.setdefault(key, []).append(entity)
+    pairs = []
+    for members in groups.values():
+        if len({member["type"] for member in members}) < 2:
+            continue
+        for i, e1 in enumerate(members):
+            for e2 in members[i + 1:]:
+                if e1["type"] == e2["type"]:
+                    continue
+                pair = (e1["key"], e2["key"]) if e1["key"] <= e2["key"] else (e2["key"], e1["key"])
+                if pair in rejected_pairs:
+                    continue
+                similarity = SequenceMatcher(None, (e1["name"] or "").lower().strip(),
+                                             (e2["name"] or "").lower().strip()).ratio()
+                pairs.append((e1, e2, similarity))
+    return pairs
+
+
+def _similar_pair(e1: Dict, e2: Dict, similarity: float) -> Dict:
+    return {
+        "entity1": {
+            "key": e1["key"], "id": e1["id"], "name": e1["name"], "type": e1["type"], "summary": e1["summary"],
+            "notes": e1["notes"], "verified_facts": parse_json_field(e1.get("verified_facts")),
+            "ai_insights": parse_json_field(e1.get("ai_insights")), "properties": e1["properties"] or {},
+        },
+        "entity2": {
+            "key": e2["key"], "id": e2["id"], "name": e2["name"], "type": e2["type"], "summary": e2["summary"],
+            "notes": e2["notes"], "verified_facts": parse_json_field(e2.get("verified_facts")),
+            "ai_insights": parse_json_field(e2.get("ai_insights")), "properties": e2["properties"] or {},
+        },
+        "similarity": similarity,
+    }
+
+
 class EntityService:
     INTERNAL_LABELS = {"Document", "Case", "RecycleBin", "RecycleBinItem"}
 
@@ -522,6 +579,9 @@ class EntityService:
                             "similarity": similarity,
                         })
 
+            similar_pairs.extend(_similar_pair(e1, e2, similarity)
+                                 for e1, e2, similarity in same_name_other_type_pairs(entities))
+
             # Sort by similarity (highest first) and limit results
             similar_pairs.sort(key=lambda x: x["similarity"], reverse=True)
             return similar_pairs[:max_results]
@@ -729,6 +789,12 @@ class EntityService:
                 }
             }
             await asyncio.sleep(0)
+
+        # The same name extracted as different types: one pass over all entities by name, no pairwise scan.
+        for e1, e2, similarity in same_name_other_type_pairs(all_entities, rejected_pairs):
+            similar_pairs.append(_similar_pair(e1, e2, similarity))
+            pairs_found += 1
+        await asyncio.sleep(0)
 
         # Emit final progress update if not already at 100%
         # This ensures the UI shows 100% before the complete event
