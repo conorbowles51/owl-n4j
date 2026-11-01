@@ -67,3 +67,49 @@ def test_an_archive_holding_one_path_twice_keeps_both_copies_and_each_hash_match
     assert [u["relative_path"] for u in uploads] == ["bank/statement.pdf", "bank/statement (2).pdf"]
     for u in uploads:
         assert hashlib.sha256(Path(u["staged_path"]).read_bytes()).hexdigest() == u["sha256"]
+
+
+def test_an_archive_copy_equal_to_any_earlier_copy_of_its_path_is_kept_once(tmp_path):
+    import zipfile
+    from routers.evidence import _extract_archive_to_staging
+    archive = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("statement.pdf", b"%PDF X")
+        zf.writestr("statement.pdf", b"%PDF Y")
+        zf.writestr("statement.pdf", b"%PDF Y")  # equal to the second copy, not the first
+    uploads = _extract_archive_to_staging(archive, tmp_path / "out")
+    assert [u["relative_path"] for u in uploads] == ["statement.pdf", "statement (2).pdf"]
+
+
+def test_a_failed_move_gives_the_name_back(tmp_path, monkeypatch):
+    import shutil
+    import pytest
+    from routers.evidence import _place_staged
+    target = tmp_path / "statement.pdf"
+    staged = tmp_path / "staged.bin"
+    staged.write_bytes(b"%PDF mine")
+
+    def full_disk(src, dst):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(shutil, "move", full_disk)
+    with pytest.raises(OSError):
+        _place_staged(staged, target, hashlib.sha256(b"%PDF mine").hexdigest())
+    assert not target.exists() and staged.read_bytes() == b"%PDF mine"
+
+
+def test_a_directory_or_a_broken_link_at_the_name_keeps_it_and_the_upload_goes_beside(tmp_path):
+    from routers.evidence import _place_staged
+    for blocker in ("directory", "broken link"):
+        folder = tmp_path / blocker.replace(" ", "-")
+        folder.mkdir()
+        target = folder / "statement.pdf"
+        if blocker == "directory":
+            target.mkdir()
+        else:
+            target.symlink_to(folder / "gone.pdf")
+        staged = folder / "staged.bin"
+        staged.write_bytes(b"%PDF mine")
+        placed = _place_staged(staged, target, hashlib.sha256(b"%PDF mine").hexdigest())
+        assert placed == folder / "statement (2).pdf", blocker
+        assert placed.read_bytes() == b"%PDF mine", blocker

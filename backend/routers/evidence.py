@@ -379,6 +379,7 @@ def _extract_archive_to_staging(zip_path: Path, extract_dir: Path) -> List[dict]
     extract_root = extract_dir.resolve()
     uploads: List[dict] = []
     extracted: Dict[Path, str] = {}
+    copies_of: Dict[Path, set] = {}  # a path's first target -> the hashes of every copy kept for it
 
     with zipfile.ZipFile(zip_path) as zf:
         for info in zf.infolist():
@@ -401,8 +402,8 @@ def _extract_archive_to_staging(zip_path: Path, extract_dir: Path) -> List[dict]
                 continue
             # The same path twice in one archive: the second copy gets "name (n).ext" rather than overwriting the
             # first (which would leave the first row's hash describing bytes no longer on disk). A copy with the
-            # same bytes as the first is the same file and is kept once.
-            first_sha = extracted.get(target)
+            # same bytes as any earlier copy of that path is the same file and is kept once.
+            earlier_copies = copies_of.setdefault(target, set())
             base, n = relative_path, 1
             while target in extracted:
                 n += 1
@@ -429,9 +430,10 @@ def _extract_archive_to_staging(zip_path: Path, extract_dir: Path) -> List[dict]
                 raise
 
             digest = hasher.hexdigest()
-            if first_sha == digest:
+            if digest in earlier_copies:
                 target.unlink(missing_ok=True)
                 continue
+            earlier_copies.add(digest)
             extracted[target] = digest
             uploads.append({
                 "original_filename": relative_path.name,
@@ -496,9 +498,14 @@ def _file_sha256(path: Path) -> str:
 
 
 def _holds_other_bytes(target: Path, sha256: Optional[str]) -> bool:
-    """True when target is an existing file whose bytes differ from the upload's."""
-    if not target.exists():
+    """True when something holds target other than a file with the upload's bytes.
+
+    A directory, a link (even a broken one) or any other non-regular entry keeps
+    its name: the upload is never taken to be stored there."""
+    if not os.path.lexists(target):
         return False
+    if target.is_symlink() or not target.is_file():
+        return True
     if not sha256:
         return True
     return _file_sha256(target) != sha256
@@ -542,8 +549,15 @@ def _place_staged(staged_path: Path, target: Path, sha256: Optional[str] = None)
         return target
     while True:
         if _claim(target):
-            shutil.move(str(staged_path), str(target))
+            try:
+                shutil.move(str(staged_path), str(target))
+            except BaseException:
+                # The staged file is still where it was; the empty claim must not keep the name.
+                target.unlink(missing_ok=True)
+                raise
             return target
+        if not os.path.lexists(target):
+            continue  # removed since the claim was refused: claim it again
         if not _holds_other_bytes(target, sha256):
             staged_path.unlink(missing_ok=True)
             return target
