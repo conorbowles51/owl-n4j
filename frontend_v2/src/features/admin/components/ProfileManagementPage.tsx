@@ -1,3 +1,4 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useState } from "react"
 import { Cpu, Plus, Trash2, Edit2, Save, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -13,7 +14,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { profilesAPI, type Profile } from "../api"
@@ -118,7 +118,7 @@ export function ProfileManagementPage() {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoadingSpinner size="lg" />
+        <LoadProgress caseId={null} page="admin/profiles" />
       </div>
     )
   }

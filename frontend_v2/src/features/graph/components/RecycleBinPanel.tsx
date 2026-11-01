@@ -1,9 +1,9 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useCallback, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { Trash2, RotateCcw, AlertTriangle, Search } from "lucide-react"
@@ -104,7 +104,7 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
   if (isLoading) {
     return (
       <div className="flex justify-center py-8">
-        <LoadingSpinner />
+        <LoadProgress caseId={caseId} page="case/recycle-bin" />
       </div>
     )
   }

@@ -1,3 +1,4 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { AccountOwnershipReview } from "@/features/financial/components/AccountOwnershipReview"
 import { useMemo, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
@@ -11,7 +12,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { DocumentViewer } from "@/components/ui/document-viewer"
 import { MarkdownSummary } from "@/components/ui/markdown-summary"
 import { collectSummarySources } from "@/lib/summary-sources"
@@ -285,7 +285,7 @@ export function NodeDetailSheet({
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center border-l border-border bg-card">
-        <LoadingSpinner />
+        <LoadProgress caseId={caseId} page="case/node" />
       </div>
     )
   }

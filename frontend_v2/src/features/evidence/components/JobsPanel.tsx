@@ -1,3 +1,4 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useMemo, useState } from "react"
 import {
   AlertCircle,
@@ -12,7 +13,6 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { fetchAPI } from "@/lib/api-client"
 import { cn } from "@/lib/cn"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
@@ -514,7 +514,7 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
         </div>
         {isLoading ? (
           <div className="flex justify-center py-8">
-            <LoadingSpinner size="sm" />
+            <LoadProgress caseId={caseId} page="case/jobs" />
           </div>
         ) : !hasActivity ? (
           <div className="flex h-full flex-col items-center justify-center gap-2 px-6 py-8 text-center">

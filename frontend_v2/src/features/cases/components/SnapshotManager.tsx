@@ -1,10 +1,10 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useState } from "react"
 import { Camera, Trash2, Download, ChevronDown, ChevronRight, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -52,7 +52,7 @@ export function SnapshotManager({ caseId, onLoad }: SnapshotManagerProps) {
   if (isLoading) {
     return (
       <div className="flex justify-center py-8">
-        <LoadingSpinner />
+        <LoadProgress caseId={caseId} page="case/snapshots" />
       </div>
     )
   }

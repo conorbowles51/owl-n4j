@@ -1,9 +1,9 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { Activity, RefreshCw, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { EmptyState } from "@/components/ui/empty-state"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
 
@@ -38,7 +38,7 @@ export function BackgroundTasksPage() {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoadingSpinner size="lg" />
+        <LoadProgress caseId={null} page="admin/tasks" />
       </div>
     )
   }

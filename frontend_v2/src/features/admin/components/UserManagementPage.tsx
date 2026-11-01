@@ -1,3 +1,4 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useMemo, useState } from "react"
 import { Users, Plus, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -18,7 +19,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { EmptyState } from "@/components/ui/empty-state"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { authAPI } from "@/features/auth/api"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
@@ -117,7 +117,7 @@ export function UserManagementPage() {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoadingSpinner size="lg" />
+        <LoadProgress caseId={null} page="admin/users" />
       </div>
     )
   }

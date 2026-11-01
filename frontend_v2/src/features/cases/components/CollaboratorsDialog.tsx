@@ -1,3 +1,4 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useState } from "react"
 import {
   Users,
@@ -14,7 +15,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { EmptyState } from "@/components/ui/empty-state"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import {
   useCaseMembers,
   useAddCaseMember,
@@ -92,7 +92,7 @@ export function CollaboratorsDialog({
 
         {isLoading ? (
           <div className="flex justify-center py-8">
-            <LoadingSpinner />
+            <LoadProgress caseId={caseId} page="case/collaborators" />
           </div>
         ) : (
           <div className="space-y-4">

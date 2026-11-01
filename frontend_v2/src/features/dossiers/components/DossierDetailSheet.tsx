@@ -1,3 +1,4 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { lazy, Suspense, useEffect, useMemo, useState } from "react"
 import {
   Archive,
@@ -37,7 +38,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { MarkdownSummary } from "@/components/ui/markdown-summary"
 import { DossierSourceViewer } from "./DossierSourceViewer"
 import { AddDossierEvidenceDialog } from "./AddDossierEvidenceDialog"
@@ -658,7 +658,7 @@ export function DossierDetailSheet({
           </div>
         ) : query.isLoading || !dossier ? (
           <div className="flex h-full items-center justify-center">
-            <LoadingSpinner />
+            <LoadProgress caseId={caseId} page="case/dossier" />
           </div>
         ) : (
           <>

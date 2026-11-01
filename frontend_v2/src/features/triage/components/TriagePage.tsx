@@ -1,3 +1,4 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useMemo, useState, type FormEvent } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -279,7 +280,7 @@ function TriageCaseList({
       <ScrollArea className="flex-1">
         {casesQuery.isLoading ? (
           <div className="flex justify-center py-8">
-            <LoadingSpinner />
+            <LoadProgress caseId={null} page="triage" />
           </div>
         ) : filtered.length === 0 ? (
           <EmptyState
@@ -566,7 +567,7 @@ function DirectoryBrowser({
             <div className="h-[360px] overflow-hidden rounded-md border border-border">
               {browseQuery.isFetching ? (
                 <div className="flex h-full items-center justify-center">
-                  <LoadingSpinner />
+                  <LoadProgress caseId={null} page="triage/browse" />
                 </div>
               ) : browseQuery.isError ? (
                 <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted-foreground">
@@ -718,7 +719,7 @@ function TriageWorkbench({
   if (caseQuery.isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoadingSpinner size="lg" />
+        <LoadProgress caseId={null} page="triage/case" />
       </div>
     )
   }
@@ -1516,7 +1517,7 @@ function FileListPanel({ caseId }: { caseId: string }) {
       </div>
       <ScrollArea className="min-h-0 flex-1">
         {filesQuery.isLoading ? (
-          <div className="flex justify-center py-8"><LoadingSpinner /></div>
+          <div className="flex justify-center py-8"><LoadProgress caseId={null} page="triage/files" /></div>
         ) : files.length === 0 ? (
           <EmptyState title="No files found" description="Run scan or adjust filters." className="py-10" />
         ) : (
@@ -1586,7 +1587,7 @@ function ActivityPanel({
   tasks: Array<{ id: string; task_name: string; status: string; progress?: Record<string, unknown>; error?: string | null; created_at: string }>
   loading: boolean
 }) {
-  if (loading) return <div className="flex justify-center py-8"><LoadingSpinner /></div>
+  if (loading) return <div className="flex justify-center py-8"><LoadProgress caseId={null} page="triage/activity" /></div>
   if (!tasks.length) return <EmptyState title="No triage activity" className="py-10" />
   return (
     <ScrollArea className="h-full">

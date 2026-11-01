@@ -1,3 +1,4 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
@@ -18,7 +19,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CostBadge } from "@/components/ui/cost-badge"
 import { Input } from "@/components/ui/input"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import {
   Select,
   SelectContent,
@@ -226,7 +226,7 @@ export function AICostsPage() {
 
       {isLoading && !summary ? (
         <div className="flex flex-1 items-center justify-center">
-          <LoadingSpinner size="lg" />
+          <LoadProgress caseId={null} page="admin/ai-costs" />
         </div>
       ) : (
         <>

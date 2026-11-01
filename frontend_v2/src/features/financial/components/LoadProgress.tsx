@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { QueryClientContext } from "@tanstack/react-query"
+import { queryClient } from "@/lib/query-client"
 import { Button } from "@/components/ui/button"
 import { requestsSince, subscribeRequests } from "@/lib/request-progress"
 import { whenSettled } from "../lib/page-speed"
@@ -92,7 +93,8 @@ function nextClock(previous: Clock, since: number, work: PageWork | null, shared
 }
 
 function ViewLoadProgress({ caseId, page, opened, work }: { caseId: string; page: string; opened?: number; work: PageWork | null }) {
-  const client = useQueryClient()
+  // The app's own client (app/providers) when a screen is drawn outside its provider (a component test).
+  const client = useContext(QueryClientContext) ?? queryClient
   // Taken at first render, before the view's own requests start in their effects.
   // A panel that closed and opens again for new work of the page's own (a graph arranged afresh) counts from then.
   const [fresh] = useState(() => opened !== undefined && openingOver(opened))

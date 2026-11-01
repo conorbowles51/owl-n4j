@@ -1,3 +1,4 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useMemo, useState } from "react"
 import { Plus, Search, FolderOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -10,7 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { useArchiveCase, useCases, useUnarchiveCase } from "../hooks/use-cases"
 import { useCaseManagementStore } from "../case-management.store"
@@ -133,7 +133,7 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
       <div className="flex-1 overflow-auto px-2 py-1.5">
         {isLoading ? (
           <div className="flex justify-center py-8">
-            <LoadingSpinner />
+            <LoadProgress caseId={null} page="cases/sidebar" />
           </div>
         ) : !filtered?.length ? (
           <EmptyState

@@ -99,6 +99,15 @@ const WORDS: [string, string][] = [
   ["/api/timeline/entries", "timeline additions"],
   ["/api/timeline/views", "timeline views"],
   ["/api/cases", "cases"],
+  ["/api/users", "users"],
+  ["/api/profiles", "processing profiles"],
+  ["/api/admin/tasks", "background tasks"],
+  ["/api/admin/usage", "usage"],
+  ["/api/admin/ai-costs", "AI costs"],
+  ["/api/snapshots", "snapshots"],
+  ["/api/triage/cases", "triage cases"],
+  ["/api/workspace", "the workspace"],
+  ["/api/auth/me", "your sign-in"],
 ]
 
 export function requestWords(endpoint: string): string {

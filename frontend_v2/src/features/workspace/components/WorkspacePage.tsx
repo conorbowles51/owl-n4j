@@ -1,5 +1,5 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useParams } from "react-router-dom"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { WorkspaceRedesignPage } from "./WorkspaceRedesignPage"
 
 export function WorkspacePage() {
@@ -8,7 +8,7 @@ export function WorkspacePage() {
   if (!caseId) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoadingSpinner size="lg" />
+        <LoadProgress caseId={null} page="case/workspace" />
       </div>
     )
   }

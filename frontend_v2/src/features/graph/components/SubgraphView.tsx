@@ -1,3 +1,4 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { lazy, Suspense, useRef, useMemo, useState, useEffect, useCallback } from "react"
 import ForceGraph2D, {
   type ForceGraphMethods,
@@ -25,7 +26,6 @@ import {
   useSignificantManifest,
 } from "@/features/significant/hooks/use-significant"
 import { useCaseLayerStore } from "@/features/significant/stores/case-layer.store"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 
 const GraphCanvas3D = lazy(() =>
   import("./GraphCanvas3D").then((module) => ({ default: module.GraphCanvas3D }))
@@ -207,7 +207,7 @@ export function SubgraphView({ caseId, graphData }: SubgraphViewProps) {
           <Suspense
             fallback={
               <div className="flex h-full items-center justify-center bg-canvas">
-                <LoadingSpinner size="sm" />
+                <LoadProgress caseId={caseId} page="case/subgraph" />
               </div>
             }
           >

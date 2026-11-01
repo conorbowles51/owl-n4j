@@ -1,8 +1,8 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { DollarSign, TrendingUp } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CostBadge } from "@/components/ui/cost-badge"
 import { Badge } from "@/components/ui/badge"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { useQuery } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
@@ -35,7 +35,7 @@ export function UsagePage() {
   if (summaryLoading || entriesLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoadingSpinner size="lg" />
+        <LoadProgress caseId={null} page="admin/usage" />
       </div>
     )
   }

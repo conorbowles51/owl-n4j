@@ -1,10 +1,10 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useQuery } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { Users, Cpu, FileText, Activity, CloudDownload } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { authAPI } from "@/features/auth/api"
 import { partyCoverageAPI, platformUpdateAPI, profilesAPI, readerGapsAPI } from "../api"
 import { getPlatformUpdatePresentation } from "../platform-update-status"
@@ -37,7 +37,7 @@ export function AdminDashboardPage() {
   if (usersLoading || profilesLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoadingSpinner size="lg" />
+        <LoadProgress caseId={null} page="admin" />
       </div>
     )
   }

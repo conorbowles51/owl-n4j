@@ -1,3 +1,4 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useState, type FormEvent } from "react"
 import {
   AlertCircle,
@@ -23,7 +24,6 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { PageHeader } from "@/components/ui/page-header"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/cn"
@@ -294,7 +294,7 @@ export function CaseSettingsPage() {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center bg-background">
-        <LoadingSpinner size="lg" />
+        <LoadProgress caseId={id ?? null} page="case/settings" />
       </div>
     )
   }

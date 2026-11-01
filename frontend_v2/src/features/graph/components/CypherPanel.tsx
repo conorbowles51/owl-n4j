@@ -1,3 +1,4 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useState } from "react"
 import { Play, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -157,7 +158,7 @@ export function CypherPanel({ caseId, className }: CypherPanelProps) {
 
       {loading && (
         <div className="flex justify-center py-8">
-          <LoadingSpinner />
+          <LoadProgress caseId={caseId} page="case/graph-query" />
         </div>
       )}
 

@@ -1,8 +1,8 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useEvidenceDropTarget } from "../hooks/use-evidence-moves"
 import { FolderPlus, PanelLeftClose, Play, Settings2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import {
   ContextMenu,
@@ -130,7 +130,7 @@ export function FolderTreeSidebar({
       <ScrollArea className="flex-1 px-1 py-1">
         {isLoading ? (
           <div className="flex justify-center py-8">
-            <LoadingSpinner size="sm" />
+            <LoadProgress caseId={caseId} page="case/evidence-folders" />
           </div>
         ) : (
           <div className="space-y-0.5">

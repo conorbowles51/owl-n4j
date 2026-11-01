@@ -1,7 +1,7 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useState } from "react"
 import { CalendarClock, Camera, FolderOpen } from "lucide-react"
 import { EmptyState } from "@/components/ui/empty-state"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useCase } from "../hooks/use-cases"
 import { useCasePermissions } from "../hooks/use-case-permissions"
 import { useCaseManagementStore } from "../case-management.store"
@@ -42,7 +42,7 @@ export function CaseDetailPanel() {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoadingSpinner size="lg" />
+        <LoadProgress caseId={selectedCaseId ?? null} page="case/details" />
       </div>
     )
   }

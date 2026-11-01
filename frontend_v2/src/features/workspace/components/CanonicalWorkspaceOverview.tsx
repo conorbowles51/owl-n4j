@@ -1,3 +1,4 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { toast } from "sonner"
@@ -22,7 +23,6 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { cn } from "@/lib/cn"
 import type { WorkspaceAttentionItem } from "../api"
 import {
@@ -225,7 +225,7 @@ export function CanonicalWorkspaceOverview({
   if (overview.isLoading) {
     return (
       <div className="flex min-h-96 items-center justify-center">
-        <LoadingSpinner size="lg" />
+        <LoadProgress caseId={caseId} page="case/workspace" />
       </div>
     )
   }

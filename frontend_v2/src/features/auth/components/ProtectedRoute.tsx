@@ -1,8 +1,8 @@
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useEffect, useState } from "react"
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { useAuthStore } from "../hooks/use-auth"
 import { authAPI } from "../api"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Button } from "@/components/ui/button"
 import { ApiError } from "@/lib/api-client"
 
@@ -84,7 +84,7 @@ export function ProtectedRoute() {
     }
     return (
       <div className="flex h-screen items-center justify-center">
-        <LoadingSpinner size="lg" />
+        <LoadProgress caseId={null} page="sign-in" />
       </div>
     )
   }
