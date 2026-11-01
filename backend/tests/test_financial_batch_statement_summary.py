@@ -73,7 +73,8 @@ class BatchStatementSummaryTests(TestCase):
         summary = full['statement_summary']
         self.assertEqual(summary, dict(total=14, available=7, blocked=6, imported=1,
             pending_import=0, skipped=0, duplicate_ignored=0, possible_duplicates=0, assigned=0, other=0,
-            available_with_payments=0, available_no_activity=7, available_other=0))
+            available_with_payments=0, available_no_activity=7, available_other=0,
+            queue=None))  # no review queue built for this case: the page keeps its own words
         self.assertEqual(len(full['files']), 11)
         self.assertEqual(sum(file['status'] == 'checked' for file in full['files']), 11)
         self.assertEqual(full['available_transactions'], 0)
