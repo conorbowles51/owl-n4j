@@ -1033,6 +1033,25 @@ def _refresh_in_background(bind, key, case_id):
     threading.Thread(target=run, name=f'review-queue-{key[:8]}', daemon=True).start()
 
 
+def current_view(session, case_id):
+    """The whole-case view if one built at the case's current fingerprint is in memory or saved, else None.
+
+    Never builds: for pages that only name statements the way the queue does and fall back to their own words
+    when the queue has not been built yet (the batch page's progress line)."""
+    fingerprint = queue_fingerprint(session, case_id)
+    if fingerprint is None:
+        return None
+    key = str(case_id)
+    with _lock:
+        hit = _cache.get(key)
+    if hit and hit[0] == fingerprint:
+        return hit[1]
+    saved, computed_at = _load_saved_entry(session, key, fingerprint)
+    if saved is not None:
+        _store_saved(key, fingerprint, saved, computed_at)
+    return saved
+
+
 def _view(session, case_id, use_cache=True, note=True, stale_ok=False, updating=False):
     """(whole-case view, refreshing). Reused while the case's rows are unchanged.
 

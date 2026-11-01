@@ -180,3 +180,59 @@ it("names files removed from Financial instead of counting them as still to read
   expect(screen.getByText(/1 files still need reading · 5 files removed from Financial · 1 file no longer in the case/)).toBeVisible()
   expect(screen.getByText(/1 of 8 files read · 1 need a reading check · 6 set aside/)).toBeVisible()
 })
+
+it("names unsaved statements and unread files by the review queue's lists, not as work still to finish", () => {
+  // d5b330d1 batch 30231f0a, 1 Nov: 25 unsaved statements were copies, fund statements, waiting for a reader and
+  // unreadable; 7 failed files had been read in other batches or were copies of files already read.
+  const files = [
+    ...Array.from({ length: 3 }, () => ({ status: "checked" })),
+    { status: "error", set_aside: "removed" },
+    { status: "error", set_aside: "read_elsewhere" },
+    { status: "error", set_aside: "copy" },
+  ]
+  render(
+    <BatchProgressSummary
+      files={files}
+      summary={{
+        ...summary,
+        available: 0,
+        blocked: 11,
+        possible_duplicates: 14,
+        queue: {
+          still_to_finish: 0, ready: 0, filled: 0, saving: 0, rechecking: 0, reader_fix: 2, unreadable: 1,
+          copies: 15, not_payment: 7, left_unimported: 0, imported: 0, assigned: 0,
+        },
+      }}
+      available={0}
+      imported={0}
+      pending={0}
+      skipped={0}
+      duplicates={0}
+      assigned={0}
+    />
+  )
+  const line = within(screen.getByLabelText("Your batch progress")).getAllByRole("status")[0]
+  expect(line).toHaveTextContent(
+    "1 saved to Financial · 0 prepared reviews still to finish · 2 waiting for a better reader · 1 couldn't be read · 15 copies set aside · 7 fund statements set aside · 2 files read in another batch or upload · 1 file removed from Financial"
+  )
+  expect(line).not.toHaveTextContent("still need reading")
+  expect(screen.queryByText(/have not finished reading/)).toBeNull()
+})
+
+it("keeps its own count of statements still to finish until the queue has been built", () => {
+  render(
+    <BatchProgressSummary
+      files={[{ status: "checked" }]}
+      summary={{ ...summary, queue: null }}
+      available={0}
+      imported={0}
+      pending={0}
+      skipped={0}
+      duplicates={0}
+      assigned={0}
+    />
+  )
+  expect(within(screen.getByLabelText("Your batch progress")).getAllByRole("status")[0]).toHaveTextContent(
+    "1 saved to Financial · 13 prepared reviews still to finish"
+  )
+})

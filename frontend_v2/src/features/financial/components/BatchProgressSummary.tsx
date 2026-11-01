@@ -41,7 +41,29 @@ export function BatchProgressSummary({
   // counted as "still need reading" (d5b330d1 batch 30231f0a: 208 of its 214 unread files, 1 Nov).
   const removed = files.filter((file) => file.status !== "checked" && file.set_aside === "removed").length
   const gone = files.filter((file) => file.status !== "checked" && file.set_aside === "gone").length
-  const unread = files.length - read - removed - gone
+  // Read in another batch, or identical bytes read from another upload: the queue's words, not reading work.
+  const readElsewhere = files.filter(
+    (file) => file.status !== "checked" && (file.set_aside === "read_elsewhere" || file.set_aside === "copy"),
+  ).length
+  const unread = files.length - read - removed - gone - readElsewhere
+  const queue = summary?.queue
+  // The queue's lists for the unsaved statements, named by what they are (d5b330d1 batch 30231f0a, 1 Nov: "11
+  // prepared reviews still to finish" while the queue had nothing waiting). Without the queue: the page's own count.
+  const stillToFinish = queue ? queue.still_to_finish : summary ? summary.available + summary.blocked : 0
+  const named: [number, string][] = queue
+    ? [
+        [queue.ready + queue.filled, "ready to import"],
+        [queue.saving, "importing now"],
+        [queue.rechecking, "being checked again"],
+        [queue.reader_fix, "waiting for a better reader"],
+        [queue.unreadable, "couldn't be read"],
+        [queue.copies, "copies set aside"],
+        [queue.not_payment, "fund statements set aside"],
+        [queue.left_unimported, "left unimported"],
+        [queue.imported, "already imported from another file"],
+        [queue.assigned, "assigned to another statement"],
+      ]
+    : []
   return (
     <section
       aria-label="Batch progress"
@@ -52,9 +74,11 @@ export function BatchProgressSummary({
           <h3 className="font-semibold">Your progress through this batch</h3>
           <p role="status">
             {summary.imported} saved to Financial ·{" "}
-            {summary.available + summary.blocked} prepared reviews still to
-            finish
+            {stillToFinish} prepared reviews still to finish
+            {named.filter(([count]) => count > 0).map(([count, label]) => ` · ${count} ${label}`).join("")}
             {unread > 0 && ` · ${unread} files still need reading`}
+            {readElsewhere > 0 &&
+              ` · ${readElsewhere} ${readElsewhere === 1 ? "file" : "files"} read in another batch or upload`}
             {removed > 0 && ` · ${removed} ${removed === 1 ? "file" : "files"} removed from Financial`}
             {gone > 0 && ` · ${gone} ${gone === 1 ? "file" : "files"} no longer in the case`}
           </p>

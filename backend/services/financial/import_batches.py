@@ -1823,6 +1823,65 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
             only_problems=only_problems, review_group=review_group)
 
 
+# Queue lists a statement can stand in when it is not the investigator's work: named on the progress line by what
+# it is, not counted as "still to finish". Every other list (waiting, unexplained, or no queue entry) stays work.
+SETTLED_QUEUE_LISTS = ('ready', 'filled', 'saving', 'rechecking', 'reader_fix', 'unreadable', 'copies', 'not_payment',
+                       'left_unimported', 'imported', 'assigned')
+
+
+def _as_the_queue_lists(session, case_id, items, files):
+    """What the review queue says about this batch's unsaved statements and unread files, or None.
+
+    d5b330d1 batch 30231f0a, 1 Nov: the page said "11 prepared reviews still to finish" (+14 possible duplicates)
+    and "7 files still need reading" while the queue held nothing waiting: the 25 statements were copies (15), fund
+    statements (7), waiting for a reader fix (2) and unreadable (1); 6 of the 7 files had been read in other batches
+    and the 7th was a copy of a file already read. Read from the queue's current view only (never built here: the
+    page keeps its own words until the queue exists); each statement is matched by file and statement key, and a
+    statement the queue does not list stays "still to finish".
+
+    Files: an unread (failed) file is marked on ``files`` with set_aside 'read_elsewhere' when the queue lists a
+    statement from it, or 'copy' when the queue links it to identical bytes read from another upload."""
+    open_items = [item for item in items if item.status in ('ready', 'attention')]
+    unread = [file for file in files if file.get('status') == 'error' and not file.get('set_aside')]
+    if not open_items and not unread:
+        return None
+    from services.financial.review_queue import current_view, _rechecked_by_recovery, REREAD_BUCKETS
+    try:
+        view = current_view(session, case_id)
+    except Exception:
+        session.rollback()
+        return None
+    if view is None:
+        return None
+    by_statement, by_file = {}, {}
+    for entry in view['entries']:
+        for file_id in entry.get('file_ids') or ():
+            by_file.setdefault(file_id, []).append(entry)
+            by_statement.setdefault((file_id, entry.get('statement_id') or ''), []).append(entry)
+    copies = {record.get('file_id') for record in view.get('copy_files') or ()} | {
+        record.get('source_id') for record in view.get('copy_files') or ()}
+    wanted = {}
+    for item in open_items:
+        found = by_statement.get((str(item.file_id), item.statement_key or ''), [])
+        if len({entry['bucket'] for entry in found}) == 1:
+            wanted[str(item.id)] = dict(found[0])
+    moved = _rechecked_by_recovery(session, case_id, [entry for entry in wanted.values()
+                                                      if entry['bucket'] in REREAD_BUCKETS]) if wanted else []
+    moved = {entry['id']: entry['bucket'] for entry in moved or ()}
+    result = dict(still_to_finish=0, **{name: 0 for name in SETTLED_QUEUE_LISTS})
+    for item in open_items:
+        entry = wanted.get(str(item.id))
+        bucket = moved.get(entry['id'], entry['bucket']) if entry else None
+        result[bucket if bucket in SETTLED_QUEUE_LISTS else 'still_to_finish'] += 1
+    for file in unread:
+        ids = {file.get('file_id'), file.get('source_id')} - {None}
+        if any(by_file.get(i) for i in ids):
+            file['set_aside'] = 'read_elsewhere'
+        elif ids & copies:
+            file['set_aside'] = 'copy'
+    return result
+
+
 def _batch_view(session, case_id, batch_id, batch, items, *, offset, limit, only_problems, review_group):
     from services.financial.import_operations import operations_for
     from services.financial.batch_review_summary import matches_group, review_summary, statement_summary, group_label, needs_decision
@@ -1841,9 +1900,11 @@ def _batch_view(session, case_id, batch_id, batch, items, *, offset, limit, only
             reason = _set_aside_reason(session, case_id, file)
             if reason:
                 file['set_aside'] = reason
+    summary = statement_summary(items)
+    summary['queue'] = _as_the_queue_lists(session, case_id, items, files)
     from services.financial.batch_file_overview import file_overview
     return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=files,counts=counts, reading_job_ids=job_ids,
-        statement_summary=statement_summary(items), file_overview=file_overview(items),
+        statement_summary=summary, file_overview=file_overview(items),
         review_summary=review_summary(items), review_group=review_group, review_group_label=group_label(review_group),
         operations=operations_for(session, case_id, batch_id),
         statements_with_issues=sum(needs_decision(i) for i in items),

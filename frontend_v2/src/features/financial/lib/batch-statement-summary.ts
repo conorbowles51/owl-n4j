@@ -16,5 +16,22 @@ export const batchStatementSummary = z.object({
   available_with_payments: z.number().int().nonnegative(),
   available_no_activity: z.number().int().nonnegative(),
   available_other: z.number().int().nonnegative(),
+  /** The review queue's lists for this batch's unsaved statements; null until the queue has been built. */
+  queue: z
+    .object({
+      still_to_finish: z.number().int().nonnegative(),
+      ready: z.number().int().nonnegative().default(0),
+      filled: z.number().int().nonnegative().default(0),
+      saving: z.number().int().nonnegative().default(0),
+      rechecking: z.number().int().nonnegative().default(0),
+      reader_fix: z.number().int().nonnegative().default(0),
+      unreadable: z.number().int().nonnegative().default(0),
+      copies: z.number().int().nonnegative().default(0),
+      not_payment: z.number().int().nonnegative().default(0),
+      left_unimported: z.number().int().nonnegative().default(0),
+      imported: z.number().int().nonnegative().default(0),
+      assigned: z.number().int().nonnegative().default(0),
+    })
+    .nullish(),
 })
 export type BatchStatementSummary = z.infer<typeof batchStatementSummary>
