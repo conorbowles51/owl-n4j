@@ -11,7 +11,7 @@ export default [
     await ctx.open(ctx.cases.verification, "?phone-prototype=off")
     await ctx.step("no sidebar item and the route sends the person back", async () => {
       await page.waitForLoadState("networkidle")
-      if (await page.getByRole("link", { name: /Phones \(pre/ }).count()) throw new StepFailed("sidebar", "preview link shown with the switch off")
+      if (await page.getByRole("link", { name: /Phones \(prototype\)/ }).count()) throw new StepFailed("sidebar", "preview link shown with the switch off")
       await ctx.open(ctx.cases.verification, "/phones-prototype")
       await page.waitForLoadState("networkidle")
       if (await page.getByRole("heading", { name: /\(prototype\)/ }).count()) throw new StepFailed("route", "preview page shown with the switch off")
@@ -21,7 +21,7 @@ export default [
     const { page } = ctx
     await ctx.open(ctx.cases.verification, "?phone-prototype=on")
     await ctx.step("sidebar item opens the Phone summary", async () => {
-      await ctx.click(page.getByRole("link", { name: /Phones \(pre/ }))
+      await ctx.click(page.getByRole("link", { name: /Phones \(prototype\)/ }))
       await ctx.see(page.getByRole("heading", { name: /Phone summary \(prototype\)/ }), 10000)
     })
     for (const [name, heading] of [["Conversations", /Conversations \(prototype\)/], ["Needs a decision", /Needs a decision \(prototype\)/]]) {
