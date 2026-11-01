@@ -99,3 +99,28 @@ def prepare_resume(conn, extraction_id, document_index, cursor) -> dict:
                             % KIND_TABLE[kind].name, (extraction_id, document_index, int(cursor.get(key, 0))))
                 removed[kind] = cur.rowcount
     return removed
+
+
+class BufferedCopy:
+    """COPY rows in batches. A COPY cannot run while a server-side cursor on the same connection is fetching, so
+    rows are buffered and written between fetches."""
+
+    def __init__(self, conn, sql, batch=5000):
+        self.conn, self.sql, self.batch = conn, sql, batch
+        self.rows = []
+        self.written = 0
+
+    def write_row(self, row):
+        self.rows.append(row)
+        if len(self.rows) >= self.batch:
+            self.flush()
+
+    def flush(self):
+        if not self.rows:
+            return
+        with self.conn.cursor() as cur:
+            with cur.copy(self.sql) as cp:
+                for r in self.rows:
+                    cp.write_row(r)
+        self.written += len(self.rows)
+        self.rows = []

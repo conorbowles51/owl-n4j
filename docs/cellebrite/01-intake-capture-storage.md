@@ -1562,6 +1562,10 @@ uninterrupted run. Durations of uninterrupted runs recorded against 10.8.
 | D24 | Each `extraInfos/extraInfo` is a row of `phone_extra_infos` with its full element as the body, streamed like records and reconciled by the same counter; each `nodeInfo` inside it is also indexed as a `phone_extra_info_nodes` row resolved to a tagged file (by id, then by path) | `extraInfos` is up to 2,833,087 elements on one report (1.8), far too large for the skeleton | never |
 | D25 | Every `model` is a record row unless it lies inside a tagged-file or extraInfo row, where it stays inline; in the skeleton, consecutive row children are one span marker `["@r"|"@f"|"@x", first, last]` | keeps the skeleton small (338,715 top-level records would otherwise be 338,715 skeleton markers) while every element is still rejoined exactly by the recount | never |
 | D26 | A resumed document first deletes its rows above the cursor, then re-parses and writes from the cursor | the cursor is the highest ordinal below every row still open at the flush, so nested rows of an open record may already be stored above it; deleting them makes the resume exactly-once | never |
+| D27 | The device's `Time zone settings (ID)` item is stored without a leading `_` when the rest is an IANA name, with the text as written in `flags.device_zone_as_written` | the server C9 writes it `_America/New_York`, the same form as the examiner's zone | never |
+| D28 | A value under one of the production's own top-level folders that names no entry is kept as an `extracted_path_value` reference with resolution `unresolved` | server C9 holds 852 such values; 822 name a file present, 30 name files the server folder lacks (it has 29,107 files to the Mac zip's 29,784) | never |
+| D29 | A US-style header time written `AM(UTC-5)` is explicit, parse rule `us_ampm_utc_label` | measured on the server reports (1.9 Headers); the offset is stated, so it is not offset-less | never |
+| D30 | A folder container's MD5 is the MD5 of the same manifest text whose SHA-256 is its digest | the table holds both digests for every container (section 3) | never |
 
 ---
 
