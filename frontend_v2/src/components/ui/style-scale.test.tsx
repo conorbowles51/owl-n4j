@@ -81,11 +81,12 @@ describe("density and elevation (lx-style F)", () => {
 })
 
 describe("badge status variants use the semantic status set (lx-style D)", () => {
-  it("success, danger, info and slate read the status tokens, not the raw palette", async () => {
+  it("success, danger, warning, info and slate read the status tokens, not the raw palette", async () => {
     const { Badge } = await import("./badge")
     const cases = [
       ["success", "status-success"],
       ["danger", "status-error"],
+      ["warning", "status-warning"],
       ["info", "status-info"],
       ["slate", "status-neutral"],
     ] as const
@@ -94,7 +95,7 @@ describe("badge status variants use the semantic status set (lx-style D)", () =>
       const cls = screen.getByText(variant).className
       expect(cls).toContain(`bg-${token}-soft`)
       expect(cls).toContain(`text-${token}`)
-      expect(cls).not.toMatch(/\b(emerald|red|blue|slate)-\d/)
+      expect(cls).not.toMatch(/\b(emerald|red|blue|slate|yellow|amber)-\d/)
     }
   })
 })

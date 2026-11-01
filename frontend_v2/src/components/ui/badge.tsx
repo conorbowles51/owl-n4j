@@ -18,11 +18,9 @@ const badgeVariants = cva(
         outline:
           "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         // Status variants: the semantic status set (lx-style D, globals.css), 4.5:1 or more in light and dark.
-        // warning stays on its old colours until followups' warning token (amber B) is live.
         success: "bg-status-success-soft text-status-success",
         danger: "bg-status-error-soft text-status-error",
-        warning:
-          "bg-yellow-500/15 text-yellow-600 dark:bg-yellow-500/15 dark:text-yellow-400",
+        warning: "bg-status-warning-soft text-status-warning",
         info: "bg-status-info-soft text-status-info",
         amber:
           "bg-primary/15 text-brand-700 dark:bg-primary/15 dark:text-brand-300",
