@@ -2054,8 +2054,41 @@ export function BatchStatementReview({
       )}
       {item?.status === "skipped" && (
         <p className="rounded border p-3">
-          This statement was left unimported. Return to the batch and choose
-          Restore to review to edit or import it. {item.import_decision?.reason}
+          {item.import_decision?.carried_from
+            ? `This statement was left unimported in another batch${
+                item.import_decision.actor?.name
+                  ? ` by ${item.import_decision.actor.name}`
+                  : ""
+              }.`
+            : "This statement was left unimported."}{" "}
+          Return to the batch and choose Restore to review to edit or import
+          it.
+          {item.import_decision?.reason && (
+            <> Reason: {item.import_decision.reason}</>
+          )}
+          {item.import_decision?.carried_from && (
+            <>
+              {" "}
+              <button
+                type="button"
+                className="underline"
+                onClick={() => {
+                  const origin = item.import_decision!.carried_from!
+                  setParams((current) => {
+                    const next = new URLSearchParams(current)
+                    for (const key of ["batchRow", "batchCheck", "returnBatch", "returnBatchCheck"])
+                      next.delete(key)
+                    next.set("view", "statements")
+                    next.set("batch", origin.batch_id)
+                    next.set("batchItem", origin.item_id)
+                    return next
+                  })
+                }}
+              >
+                Open the batch where this was decided
+              </button>
+            </>
+          )}
         </p>
       )}
       {navigationError && <p role="alert">{navigationError}</p>}

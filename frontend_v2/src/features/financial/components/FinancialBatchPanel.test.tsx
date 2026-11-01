@@ -861,6 +861,33 @@ it("names a skip carried from another batch, who made it, and opens that batch",
   )
 })
 
+it("an opened statement whose skip was carried says where and by whom, and opens that batch", async () => {
+  const carried = {
+    action: "skip",
+    reason: "not a bank statement",
+    actor: { name: "Alexandra Solorzano", user_id: "u1" },
+    carried_from: { batch_id: "earlier-batch", item_id: "earlier-item" },
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (url.includes("/items/"))
+      return { ...item, status: "skipped", review_revision: "b".repeat(64), import_decision: carried } as never
+    return { ...batch, items: [{ ...item, status: "skipped", import_decision: carried }] } as never
+  })
+  mount("/cases/case/financial?view=statements&batch=batch&batchItem=item")
+  expect(
+    await screen.findByText(
+      /This statement was left unimported in another batch by Alexandra Solorzano\..*Reason: not a bank statement/
+    )
+  ).toBeVisible()
+  const open = screen.getAllByRole("button", { name: "Open the batch where this was decided" })
+  fireEvent.click(open[open.length - 1])
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location").textContent).toContain(
+      "batch=earlier-batch&batchItem=earlier-item"
+    )
+  )
+})
+
 it("keeps completed assignments separate from ready imports and removes the skip action", async () => {
   vi.mocked(fetchAPI).mockResolvedValue({
     ...batch,
