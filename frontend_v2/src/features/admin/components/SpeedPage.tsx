@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { fetchAPI } from "@/lib/api-client"
+import { PhoneJourneys } from "./PhoneJourneys"
 import { describePageCache, formatDuration, type PageCacheStats, type SpeedSummary } from "../speed"
 
 const ALL = "all"
@@ -147,6 +148,7 @@ export function SpeedPage() {
             {query.isLoading ? "Loading…" : query.isError ? "Speed could not be loaded." : "Nothing recorded in this period."}
           </p>
         )}
+        <PhoneJourneys days={days} />
         <h2 className="border-t border-border px-4 pb-1 pt-4 text-sm font-semibold">
           Slow requests (over {data?.slow_row_seconds ?? 2} s, kept {data?.slow_keep_days ?? 30} days)
         </h2>

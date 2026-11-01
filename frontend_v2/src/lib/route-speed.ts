@@ -11,6 +11,30 @@ const CASE_ROUTES = new Set([
   "graph", "timeline", "map", "table", "financial", "cellebrite", "dossiers", "evidence", "chat", "agent",
   "workspace", "reports", "settings",
 ])
+/** Phone record types named in a page (backend PHONE_RECORD_TYPES); any other type is "other". */
+export const PHONE_RECORD_TYPES = new Set([
+  "messages", "calls", "contacts", "locations", "media", "apps", "web", "notes", "events", "accounts", "devices", "other",
+])
+const PROTOTYPE_VIEWS = new Set(["summary", "conversations", "needs-a-decision"])
+
+/** Phone pages below /cases/:id (07 4.13). Extraction ids and approach names are never part of the page name. */
+function phonePage(rest: string[]): string | null {
+  const [view, sub, kind, type] = rest
+  if (view === "phones") {
+    if (!sub) return "case/phones"
+    if (!kind) return "case/phones/summary"
+    if (kind === "records" && type && rest.length === 4 && PHONE_RECORD_TYPES.has(type)) return `case/phones/records/${type}`
+    return null
+  }
+  if ((view === "phone-review" || view === "phone-patterns") && rest.length === 1) return `case/${view}`
+  if (view === "phone-analyses" && rest.length <= 2) return "case/phone-analyses"
+  if (view === "phones-prototype" && rest.length <= 2) {
+    const v = sub ?? "summary"
+    return PROTOTYPE_VIEWS.has(v) ? `case/phones-prototype/${v}` : null
+  }
+  return null
+}
+
 const ADMIN_ROUTES = new Set(["ai-costs", "users", "profiles", "logs", "activity", "speed", "tasks", "updates"])
 
 /** The page name and case for a path (routes.tsx); the redirecting addresses are named after their target. */
@@ -22,6 +46,8 @@ export function routePage(pathname: string): { page: string | null; caseId: stri
   if (first === "cases") {
     if (!second) return { page: "cases", caseId: null }
     if (!third) return { page: "case/workspace", caseId: second } // index redirects to workspace
+    const phone = phonePage(parts.slice(2))
+    if (phone) return { page: phone, caseId: second }
     const view = third === "profiles" ? "dossiers" : third
     return { page: CASE_ROUTES.has(view) && parts.length === 3 ? `case/${view}` : "other", caseId: second }
   }

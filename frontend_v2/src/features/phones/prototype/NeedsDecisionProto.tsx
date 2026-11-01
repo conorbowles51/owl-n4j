@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { trackUx } from "@/lib/ux-events"
 import { Button } from "@/components/ui/button"
 import { register } from "@/lib/keymap"
 import { messageView, type FixtureCase, type FixtureMessage } from "../fixtures"
@@ -57,7 +58,7 @@ export function readingsFor(fx: FixtureCase): Reading[] {
 
 type Outcome = { kind: "confirmed" | "not-right" | "skipped"; words: string }
 
-export function NeedsDecisionProto({ fx, reviewer }: { fx: FixtureCase; reviewer: string }) {
+export function NeedsDecisionProto({ fx, reviewer, caseId = null }: { fx: FixtureCase; reviewer: string; caseId?: string | null }) {
   const readings = useMemo(() => readingsFor(fx), [fx])
   const [index, setIndex] = useState(0)
   const [viewed, setViewed] = useState<Record<string, Set<number>>>({})
@@ -68,6 +69,13 @@ export function NeedsDecisionProto({ fx, reviewer }: { fx: FixtureCase; reviewer
   const allSeen = r ? seen.size >= r.kinds.length : false
   const decided = Object.values(outcomes).filter((o) => o.kind !== "skipped").length
 
+  const shownAt = useRef(performance.now())
+  useEffect(() => {
+    shownAt.current = performance.now()
+  }, [index])
+  const decision = (decision_kind: "confirm" | "correct" | "skip") =>
+    trackUx(caseId, { event: "review_item", queue: "readings", decision_kind, ms: performance.now() - shownAt.current,
+      examples_opened: seen.size > 0, kinds_viewed: seen.size, kinds_total: r.kinds.length })
   const view = (i: number) => setViewed((v) => ({ ...v, [r.id]: new Set([...(v[r.id] ?? []), i]) }))
   const next = () => {
     setNotRight(false)
@@ -75,10 +83,12 @@ export function NeedsDecisionProto({ fx, reviewer }: { fx: FixtureCase; reviewer
   }
   const confirm = () => {
     if (!allSeen) return
+    decision("confirm")
     setOutcomes((o) => ({ ...o, [r.id]: { kind: "confirmed", words: `Confirmed by ${reviewer}. Standard reason: Confirmed on the review screen after viewing ${r.kinds.length} examples across ${r.kinds.length} kinds.` } }))
     next()
   }
   const skip = () => {
+    decision("skip")
     setOutcomes((o) => ({ ...o, [r.id]: { kind: "skipped", words: "Skipped" } }))
     next()
   }
@@ -152,6 +162,7 @@ export function NeedsDecisionProto({ fx, reviewer }: { fx: FixtureCase; reviewer
                 variant="outline"
                 className="mr-2 mt-1"
                 onClick={() => {
+                  decision("correct")
                   setOutcomes((o) => ({ ...o, [r.id]: { kind: "not-right", words: `Corrected by ${reviewer}: ${c}. Applies to ${r.phone} in this case.` } }))
                   next()
                 }}

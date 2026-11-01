@@ -600,9 +600,15 @@ STATEMENT_SECTIONS = ('queue', 'files', 'accounts', 'batches', 'remove', 'judgem
 # "admin/<view>" and so on; a Financial view is also reported in detail by its own page-speed hook.
 CASE_ROUTES = ('graph', 'timeline', 'map', 'table', 'financial', 'cellebrite', 'dossiers', 'evidence', 'chat',
                'agent', 'workspace', 'reports', 'settings')
+# Phone pages below /cases/:id (07 4.13 and 10.2), so they are timed as themselves, never as "other".
+PHONE_PAGES = ('phones', 'phones/summary', 'phone-review', 'phone-patterns', 'phone-analyses',
+               'phones-prototype/summary', 'phones-prototype/conversations', 'phones-prototype/needs-a-decision')
+PHONE_RECORD_TYPES = ('messages', 'calls', 'contacts', 'locations', 'media', 'apps', 'web', 'notes', 'events',
+                      'accounts', 'devices', 'other')
 ADMIN_ROUTES = ('ai-costs', 'users', 'profiles', 'logs', 'activity', 'speed', 'tasks', 'updates')
 APP_PAGES = (['cases', 'triage', 'admin', 'settings', 'settings/ai', 'login', 'other']
-             + [f'case/{r}' for r in CASE_ROUTES] + [f'admin/{r}' for r in ADMIN_ROUTES])
+             + [f'case/{r}' for r in CASE_ROUTES] + [f'admin/{r}' for r in ADMIN_ROUTES]
+             + [f'case/{r}' for r in PHONE_PAGES] + [f'case/phones/records/{t}' for t in PHONE_RECORD_TYPES])
 # The page names the browser may report (frontend financialMainViews and statement sections, and every route).
 PAGES = frozenset([f'financial/{v}' for v in FINANCIAL_VIEWS] + [f'financial/statements/{s}' for s in STATEMENT_SECTIONS]
                   + APP_PAGES)

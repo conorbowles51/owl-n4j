@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
+import { trackUx } from "@/lib/ux-events"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { ProgressPanel } from "@/components/ui/progress-panel"
@@ -116,6 +117,8 @@ export function AddToMenu({
       )
       setReply({ text: resultSentence(result, noun, target), target, result })
       setOpen(false)
+      trackUx(caseId, { event: "collect", target_kind: target.kind, count, added: result.added, skipped: result.skipped,
+        refused: result.refused, ms: performance.now() - t0 })
     } catch (e) {
       setError(`${e instanceof Error ? e.message : "The add stopped"}. Your ${count.toLocaleString("en-US")} ${noun} are still selected. Add them again.`)
     } finally {

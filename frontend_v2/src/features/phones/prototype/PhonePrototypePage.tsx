@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { trackUx } from "@/lib/ux-events"
 import { Link, Navigate, useLocation, useParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { GuideDialog } from "@/components/ui/guide-dialog"
@@ -66,6 +67,14 @@ export default function PhonePrototypePage() {
     [fx]
   )
   const title = VIEWS.find((v) => v.id === view)?.words ?? "Phone summary"
+  const lastView = useRef<string | null>(null)
+  useEffect(() => {
+    if (!on) return
+    const screen = `prototype-${view}`
+    if (lastView.current && lastView.current !== screen)
+      trackUx(caseId ?? null, { event: "screen_switch", from_screen: lastView.current, to_screen: screen })
+    lastView.current = screen
+  }, [view, on, caseId])
   useEffect(() => {
     installKeymap()
     usePhoneSelection.getState().setCase(`prototype:${caseId}`)
@@ -110,7 +119,7 @@ export default function PhonePrototypePage() {
       {view === "conversations" ? (
         <ConversationsProto fx={fx} client={client} targets={targets} />
       ) : view === "needs-a-decision" ? (
-        <NeedsDecisionProto fx={fx} reviewer="you" />
+        <NeedsDecisionProto fx={fx} reviewer="you" caseId={caseId ?? null} />
       ) : (
         <PhoneSummaryProto fx={fx} phone={phone} base={base} owners={owners} setOwner={(p, k) => setOwners((o) => ({ ...o, [p]: k }))} />
       )}

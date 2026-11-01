@@ -6,8 +6,8 @@ from sqlalchemy.orm import Session
 from postgres.session import get_db
 from postgres.models.user import User
 from routers.auth import get_current_user
-from routers.users import require_admin
-from services import request_speed
+from routers.users import get_current_db_user, require_admin
+from services import request_speed, ux_events
 
 router = APIRouter(prefix='/api/request-speed', tags=['request-speed'])
 
@@ -52,3 +52,29 @@ def page_cache(admin: User = Depends(require_admin)):
     """Rendered page images kept on disk: where, how many, how much of the cap, and whether new ones are kept."""
     from services import page_image_cache
     return page_image_cache.stats()
+
+
+class UxEvents(BaseModel):
+    case_id: UUID | None = None
+    # Each event is checked field by field in services.ux_events (07 10.2); this only bounds the size.
+    events: list[dict] = Field(default_factory=list, max_length=50)
+
+
+@router.post('/ux-events', status_code=202)
+def ux_event_post(body: UxEvents, user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """Phone screen events: ids, kinds, counts and milliseconds only. An event with any other field is refused."""
+    case_id = None
+    if body.case_id is not None:
+        from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
+        try:
+            check_case_access(db, body.case_id, user)
+            case_id = str(body.case_id)
+        except (CaseAccessDenied, CaseNotFound):
+            case_id = None  # recorded without the case rather than refused: the counts carry no case material
+    return ux_events.record(body.events, user=user, case_id=case_id, db=db)
+
+
+@router.get('/ux-funnels')
+def ux_funnels(days: int = Query(14, ge=1, le=90), admin: User = Depends(require_admin), db: Session = Depends(get_db)):
+    """Journey funnels for the admin Speed page. Admins only."""
+    return ux_events.funnels(db, days)

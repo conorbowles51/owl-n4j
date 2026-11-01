@@ -69,3 +69,22 @@ describe("one opening, seen by every timer", () => {
     }
   })
 })
+
+describe("phone pages below /cases/:id (07 10.2)", () => {
+  it("names each phone page, never the extraction id or approach, and never 'other'", async () => {
+    const { routePage } = await import("./route-speed")
+    const c = "/cases/4aa79795-1076-4c75-985f-784936abb71f"
+    const x = "9d0e6a59-2a31-4c1c-8f3c-0b8f0a1c2d3e"
+    expect(routePage(`${c}/phones`).page).toBe("case/phones")
+    expect(routePage(`${c}/phones/${x}`).page).toBe("case/phones/summary")
+    expect(routePage(`${c}/phones/${x}/records/messages`).page).toBe("case/phones/records/messages")
+    expect(routePage(`${c}/phones/${x}/records/made-up`).page).toBe("other")
+    expect(routePage(`${c}/phone-review`).page).toBe("case/phone-review")
+    expect(routePage(`${c}/phone-patterns`).page).toBe("case/phone-patterns")
+    expect(routePage(`${c}/phone-analyses/co-location`).page).toBe("case/phone-analyses")
+    expect(routePage(`${c}/phones-prototype`).page).toBe("case/phones-prototype/summary")
+    expect(routePage(`${c}/phones-prototype/needs-a-decision`).page).toBe("case/phones-prototype/needs-a-decision")
+    expect(routePage(`${c}/phones/${x}`).caseId).toBe("4aa79795-1076-4c75-985f-784936abb71f")
+    expect(routePage(`${c}/financial`).page).toBe("case/financial")
+  })
+})

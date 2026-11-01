@@ -45,7 +45,12 @@ let client: QueryClient
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(fetchAPI).mockImplementation(async (url: string) =>
-    url === "/api/request-speed/page-cache" ? pageCache : summary
+    url === "/api/request-speed/page-cache"
+      ? pageCache
+      : url.startsWith("/api/request-speed/ux-funnels")
+        ? { days: 1, journeys: [{ journey: "J-3", started: 4, completed: 3, abandoned: 1, median_ms: 42000, steps: [{ step: 1, reached: 4 }] }],
+            waits: { over_2s: 2, over_2s_without_panel: 1, left_before_data: 0 }, collect: { actions: 1, records: 12 }, review_median_ms: {} }
+        : summary
   )
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 })
@@ -88,6 +93,8 @@ describe("SpeedPage", () => {
     const older = screen.getByText("Before").closest("tr")!
     expect(within(older).queryByText(/%|computed|0 ms/)).toBeNull()
     expect(vi.mocked(fetchAPI)).toHaveBeenCalledWith("/api/request-speed/summary?days=1")
+    expect(await screen.findByText("Everything with one person, or between two")).toBeTruthy()
+    expect(screen.getByLabelText("Phone waits and collecting").textContent).toContain("1 showed no progress panel")
   })
 
   it("says how full the page image store is", async () => {

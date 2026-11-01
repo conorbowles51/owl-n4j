@@ -225,6 +225,9 @@ def list_events(db, *, case_id=None, user=None, action=None, since=None, until=N
         query = query.where(or_(*conditions))
     if action:
         query = query.where(E.action.in_(action if isinstance(action, (list, tuple)) else [action]))
+    else:
+        # Screen-use counts (services.ux_events) are for the Speed page, not the activity list.
+        query = query.where(E.action != 'ux_event')
     if since:
         query = query.where(E.at >= since)
     if until:
