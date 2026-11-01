@@ -273,10 +273,18 @@ def review_saves(session, users):
                             readings[key] = None
                             unread[key] = (' '.join(str(exc).split()).split('.')[0][:80] or type(exc).__name__)
                     proposal = readings[key]
+                    stored = False
                     if proposal is not None:
                         producer, layout = reading_producer(proposal)
                         if baseline is None and proposal.get('revision') == request.get('expected_revision'):
                             baseline = initial_request(proposal)
+                    if baseline is None and previous is None:
+                        # The file was removed or read again since: the reading this save was made on may still be
+                        # the one stored with the statement it saved.
+                        kept = stored_reading(session, r['id'], request.get('expected_revision'))
+                        if kept is not None:
+                            baseline, stored = kept['request'], True
+                            producer, layout = reading_producer(kept['proposal'])
                     if baseline is not None:
                         fields, old, new = request_diff(_normal(baseline), _normal(request))
                     else:
@@ -284,16 +292,42 @@ def review_saves(session, users):
                         fields, old, new = ([f'(not compared: {why})'] if why else
                                             ['(not compared: the reading this save was made on is not the current one)'],
                                             None, None)
+                    ref = f"review-save:{r['id']}:{statement[:16]}:{entry.get('review_revision') or n}"
+                    if not fields and stored:
+                        # Compared at last and saved as read: a confirmation, which replaces its "(not compared)".
+                        fields, change_type = ['(saved unchanged)'], 'confirm'
+                    else:
+                        change_type = 'change'
                     if fields:
-                        yield dict(kind='statement_review_edit', change_type='change', case_id=r['case_id'],
+                        yield dict(kind='statement_review_edit', change_type=change_type, case_id=r['case_id'],
+                                   **({'replaces_ref': ref + ':'} if stored else {}),
                                    subject=('evidence_file', f"{r['id']}#{statement}"), before=old, after=new,
                                    per_field=(fields, old or {}, new or {}),
                                    actor=_actor(users, actor.get('user_id'), actor.get('name'), actor.get('email')),
                                    reason='', field=','.join(fields), producer=producer, layout=layout,
                                    at=_when(entry.get('saved_at')),
                                    link=f"/cases/{r['case_id']}/financial?file={r['id']}&statement={statement}",
-                                   source_ref=f"review-save:{r['id']}:{statement[:16]}:{entry.get('review_revision') or n}")
+                                   source_ref=ref)
                 previous = request
+
+
+def stored_reading(session, evidence_file_id, revision):
+    """{'proposal', 'request'} of the reading a statement of this file was saved from, when its revision is
+    ``revision`` (kept on the saved statement as ``statement_import_original``), or None."""
+    from services.financial.import_batches import initial_request
+    if not revision:
+        return None
+    for r in _rows(session, "select d.metadata->'statement_import_original' as original from financial_source_documents d "
+                            "where d.evidence_file_id = :file and d.metadata->'statement_import_original'->>'revision' = :rev "
+                            "order by d.created_at desc limit 1", file=str(evidence_file_id), rev=str(revision)):
+        original = r['original']
+        if isinstance(original, str):
+            original = json.loads(original)
+        try:
+            return dict(proposal=original, request=initial_request(original))
+        except Exception as exc:  # noqa: BLE001 - an older reading shape: not compared, as before
+            log.info('Stored reading of %s could not be compared: %s', evidence_file_id, exc)
+    return None
 
 
 def graph_deletes(session, users):
@@ -380,6 +414,7 @@ def backfill(session, apply=False, sources=SOURCES):
     if apply and not _ready(session):
         return dict(applied=False, error='the manual_changes table does not exist yet')
     kinds, patterns, tests, skipped, errors = Counter(), Counter(), Counter(), 0, []
+    replaced = set()
     pending = 0
     for source in sources:
         try:
@@ -399,12 +434,20 @@ def backfill(session, apply=False, sources=SOURCES):
                     kinds[item['kind']] += 1
                     if item['change_type'] != 'confirm' and not tests_here(item, actor):
                         patterns[key] += 1
+                    replaces = None
+                    if item.get('replaces_ref') and _ready(session):
+                        # The record this save got when it could not be compared ("(not compared: ...)").
+                        replaces = session.scalar(select(ManualChange.id).where(
+                            ManualChange.source_ref.startswith(item['replaces_ref'], autoescape=True),
+                            ManualChange.field.startswith('(not compared', autoescape=True)).limit(1))
+                    if replaces is not None:
+                        replaced.add(replaces)
                     if apply:
                         record_change(session, item['kind'], item['case_id'], item['subject'], item.get('before'),
                                       item.get('after'), actor, item.get('reason', ''), item.get('link', '') or '',
                                       change_type=item['change_type'], field=item.get('field', ''), producer=producer or '',
                                       layout=layout or '', source='backfill', historic=True, source_ref=item['source_ref'],
-                                      at=item.get('at') or datetime.now(timezone.utc))
+                                      at=item.get('at') or datetime.now(timezone.utc), replaces=replaces)
                         pending += 1
                         if pending >= 200:
                             session.commit()
@@ -418,4 +461,5 @@ def backfill(session, apply=False, sources=SOURCES):
         session.commit()
     return dict(applied=apply, kinds=dict(kinds), tests=dict(tests), patterns=len(patterns),
                 changes=sum(patterns.values()), skipped_already_recorded=skipped, errors=errors,
+                replaced_records=len(replaced),
                 pattern_counts=dict(patterns.most_common()))

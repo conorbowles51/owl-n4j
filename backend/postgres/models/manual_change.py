@@ -51,4 +51,6 @@ class ManualChange(Base):
     source: Mapped[str] = mapped_column(String(20), nullable=False, default='app')
     # The record the change came from when it is recorded from another table (backfill): one row per source record.
     source_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # A record this one corrects (a historic save compared later): the original stays visible, this one counts.
+    replaces_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

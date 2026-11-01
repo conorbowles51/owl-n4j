@@ -109,13 +109,14 @@ def _ready(session):
 
 def record_change(session, kind, case_id, subject, before, after, actor, reason='', link='', pattern_key=None, *,
                   change_type='change', field='', producer='', layout='', source='app', committed=False,
-                  historic=False, source_ref=None, after_commit=None, at=None):
+                  historic=False, source_ref=None, after_commit=None, at=None, replaces=None):
     """Record one manual change. Returns the new row id, or None when nothing could be recorded (logged).
 
     ``committed=False`` (the default): the record joins the caller's transaction and the inbox line is written once
     that transaction commits; a rollback leaves neither. ``committed=True``: the caller's save has already committed
     (a route calling after its service), so the record is committed on its own and the line written at once.
-    ``after_commit`` runs once the record is committed (the judgement inbox line uses it).
+    ``after_commit`` runs once the record is committed (the judgement inbox line uses it). ``replaces``: the id of
+    an earlier record this one corrects; the earlier one stays, and the lessons feed counts only this one.
     """
     try:
         if change_type not in CHANGE_TYPES:
@@ -130,7 +131,7 @@ def record_change(session, kind, case_id, subject, before, after, actor, reason=
                            before=_jsonable(before), after=_jsonable(after), reason=str(reason or ''),
                            link=str(link or ''), actor_name=name[:300], actor_email=email[:300],
                            actor_user_id=user_id[:64], is_test=is_test(case_id, email, reason), historic=historic,
-                           source=source, source_ref=source_ref,
+                           source=source, source_ref=source_ref, replaces_id=_uuid(replaces) if replaces else None,
                            created_at=at or datetime.now(timezone.utc))
         if not _ready(session):
             log.warning('manual_changes table missing: %s on %s not recorded', kind, subject_id)
@@ -267,6 +268,8 @@ def as_line(row):
         out.update(before=_clip(row.before), after=_clip(row.after), reason=' '.join((row.reason or '').split())[:400])
     if row.kind in DELIVERED_ELSEWHERE:
         out['delivered_by'] = DELIVERED_ELSEWHERE[row.kind]
+    if getattr(row, 'replaces_id', None):
+        out['replaces'] = str(row.replaces_id)
     return json.dumps(out, ensure_ascii=False, sort_keys=True) + '\n'
 
 
