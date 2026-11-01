@@ -21,7 +21,7 @@ const SHORTCUTS = [
   { keys: "Ctrl+3", description: "Map view" },
   { keys: "Ctrl+4", description: "Table view" },
   { keys: "Ctrl+5", description: "Financial view" },
-  { keys: "Ctrl+6", description: "Cellebrite view" },
+  { keys: "Ctrl+6", description: "Phones view" },
   { keys: "Ctrl+7", description: "Dossiers view" },
   { keys: "Ctrl+8", description: "Evidence view" },
   { keys: "Escape", description: "Close modal / panel" },

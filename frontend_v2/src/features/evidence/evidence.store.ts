@@ -5,6 +5,8 @@ import type { EvidenceFileLocation } from "./folders.api"
 
 type StatusFilter = "all" | "unprocessed" | "processing" | "processed" | "failed"
 export type EvidenceSearchMode = "files" | "subtree" | "text"
+import type { UploadProgress } from "./upload-progress"
+
 export type UploadActivityStatus = "running" | "completed" | "failed"
 
 export interface EvidenceDetailAnchor {
@@ -24,6 +26,8 @@ export interface UploadActivity {
   updatedAt: string
   message?: string
   error?: string
+  /** Hashing and sending progress, rendered in words each second (07 J-1). */
+  progress?: UploadProgress
 }
 
 interface EvidenceState {

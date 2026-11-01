@@ -1,6 +1,7 @@
 import { fetchAPI } from "@/lib/api-client"
 import { uploadOrdinaryFiles } from "./resumable-upload"
 import { uploadFolderOrArchive } from "./resumable-upload-groups"
+import type { UploadProgress } from "./upload-progress"
 import type {
   EvidenceFile,
   EvidenceFileRecord,
@@ -28,8 +29,9 @@ export interface UploadResponse {
 export interface EvidenceUploadOptions {
   isFolder?: boolean
   isArchive?: boolean
-  replaceExisting?: boolean
   folderId?: string
+  /** Hashing and sending progress for folder and archive uploads (07 J-1). */
+  onProgress?: (progress: UploadProgress) => void
 }
 
 export const evidenceAPI = {

@@ -854,6 +854,7 @@ export const ADJUDICATION_SUBJECTS = [
   "source_document",
   "account",
   "evidence_file",
+  "phone_extraction",
 ] as const
 export type AdjudicationSubject = (typeof ADJUDICATION_SUBJECTS)[number]
 
@@ -880,6 +881,7 @@ export const ADJUDICATION_DECISIONS = [
   "set_counterparty_party",
   "set_account_identity",
   "keep_printed_holders",
+  "supersede_phone_extraction",
 ] as const
 export type AdjudicationDecision = (typeof ADJUDICATION_DECISIONS)[number]
 

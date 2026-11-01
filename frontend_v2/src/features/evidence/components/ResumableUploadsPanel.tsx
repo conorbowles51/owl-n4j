@@ -59,16 +59,16 @@ function GroupRow({ group }: { group: UploadGroup }) {
       <p className="text-sm font-medium break-words">{group.name}</p>
       <p className="text-xs">
         {completing
-          ? "Files received — finishing registration"
+          ? "Files received. Finishing registration"
           : group.status === "dispatching"
-            ? "Files saved — processing needs to be connected"
+            ? "Files saved. Reading needs to be started: choose Finish registration"
             : group.status === "paused"
               ? "Upload paused"
               : attached
                 ? "Uploading selection"
                 : allSaved
-                  ? "Files received — finish registration"
-                  : "Upload open — check the original upload tab"}
+                  ? "Files received. Finish registration"
+                  : "Upload open in another tab. Check that tab"}
       </p>
       {!attached &&
         !completing &&
@@ -145,7 +145,7 @@ function GroupRow({ group }: { group: UploadGroup }) {
         }}
         type="file"
         multiple={group.kind !== "archive"}
-        accept={group.kind === "archive" ? ".zip" : undefined}
+        accept={group.kind === "archive" ? ".zip,.ufdr" : undefined}
         className="sr-only"
         aria-label={`Original ${group.kind} for ${group.name}`}
         onChange={(event) => {
@@ -202,7 +202,7 @@ function UploadRow({ upload }: { upload: UploadSession }) {
           ? "Upload paused"
           : attached
             ? "Uploading"
-            : "Upload open — check the original upload tab"}
+            : "Upload open in another tab. Check that tab"}
       </p>
       {!attached && upload.status === "uploading" && (
         <p className="text-xs text-muted-foreground">

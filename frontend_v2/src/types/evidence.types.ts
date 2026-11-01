@@ -360,6 +360,10 @@ export interface JobProgressMessage {
   status: string
   progress: number
   message: string
+  /** Phone readings: the step and its true counts, published every second (01 section 10). */
+  stage?: string
+  counts?: Record<string, number>
+  error_message?: string
 }
 
 export type PipelineStage =
@@ -373,6 +377,12 @@ export type PipelineStage =
   | "resolving_relationships"
   | "generating_summaries"
   | "writing_graph"
+  // phone readings (01 section 10.3; 07 section 5 Intake)
+  | "verifying_source"
+  | "capturing"
+  | "reconciling"
+  | "interpreting"
+  | "building_views"
   | "completed"
   | "failed"
 
@@ -398,6 +408,33 @@ export interface EvidenceJob {
   sha256: string | null
   created_at: string
   updated_at: string
+  /** The engine's run state; a phone reading keeps its stage, counts and outcome under `phone`. */
+  pipeline_state?: { phone?: PhoneJobState; [key: string]: unknown }
+  /** Live from the progress channel (phone readings). */
+  stage?: string
+  counts?: Record<string, number>
+  received_at?: number
+}
+
+export interface PhoneJobState {
+  stage?: string
+  stage_started_at?: string
+  changed_at?: string
+  counts?: Record<string, number>
+  message?: string
+  state?: string
+  records?: number
+  files?: number
+  outcome?: string
+  already_in_case?: boolean
+  difference_count?: number
+  file_outcomes?: Record<string, number>
+  failure_code?: string
+  failure_stage?: string
+  reference?: string
+  cancel_requested?: boolean
+  cancelled?: boolean
+  extraction_id?: string
 }
 
 // Profile templates

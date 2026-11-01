@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { evidenceAPI } from "../api"
 import { useEvidenceStore } from "../evidence.store"
+import type { UploadProgress } from "../upload-progress"
 
 function createActivityId() {
   return globalThis.crypto?.randomUUID?.() ?? `upload-${Date.now()}-${Math.random()}`
@@ -14,20 +15,34 @@ export function useUploadToFolder(caseId: string) {
       folderId?: string | null
       isFolder?: boolean
       isArchive?: boolean
-      replaceExisting?: boolean
-    }) =>
-      evidenceAPI.upload(caseId, data.files, {
+      activityId?: string
+    }) => {
+      // Progress reaches the store at most every 250 ms; the card redraws its words every second (07 4.7).
+      let last = 0
+      let lastPhase = ""
+      const onProgress = (progress: UploadProgress) => {
+        const now = Date.now()
+        if (!data.activityId) return
+        if (progress.phase === lastPhase && now - last < 250) return
+        last = now
+        lastPhase = progress.phase
+        useEvidenceStore.getState().updateUploadActivity(data.activityId, { progress })
+      }
+      return evidenceAPI.upload(caseId, data.files, {
         isFolder: data.isFolder,
         isArchive: data.isArchive,
-        replaceExisting: data.replaceExisting,
         folderId: data.folderId || undefined,
-      }),
+        onProgress,
+      })
+    },
     onMutate: (data) => {
       const id = createActivityId()
+      // The same variables object reaches mutationFn, which reports progress against this activity.
+      data.activityId = id
       const fileCount = data.files.length
       const firstFile = data.files[0]
       const name = data.isArchive
-        ? firstFile?.name || "Cellebrite ZIP upload"
+        ? firstFile?.name || "Archive upload"
         : data.isFolder
           ? `Folder upload (${fileCount.toLocaleString()} files)`
           : fileCount === 1
@@ -40,9 +55,7 @@ export function useUploadToFolder(caseId: string) {
         caseId,
         name,
         detail: data.isArchive
-          ? data.replaceExisting
-            ? "Uploading archive and replacing matching report"
-            : "Uploading archive and queuing phone ingest"
+          ? "Uploading archive"
           : data.isFolder
             ? "Uploading folder"
             : "Uploading files",

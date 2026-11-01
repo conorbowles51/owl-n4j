@@ -81,7 +81,7 @@ export function LocationsTable({
             </th>
             <th
               className="w-20 px-3 py-2 font-medium"
-              title="Cellebrite confidence"
+              title="Confidence given in the phone report"
             >
               Conf.
             </th>

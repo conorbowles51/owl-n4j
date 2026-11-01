@@ -87,7 +87,7 @@ it.each(["selection", "file"] as const)(
     })
     try {
       mount(client)
-      await screen.findByText("Upload open — check the original upload tab")
+      await screen.findByText("Upload open in another tab. Check that tab")
       expect(screen.queryByText(/Upload interrupted/)).not.toBeInTheDocument()
       expect(
         screen.getByText(/resume here only if it has stopped/)
@@ -105,7 +105,7 @@ it.each(["selection", "file"] as const)(
       await waitFor(
         () =>
           expect(
-            screen.queryByText("Upload open — check the original upload tab")
+            screen.queryByText("Upload open in another tab. Check that tab")
           ).not.toBeInTheDocument(),
         { timeout: 5000 }
       )

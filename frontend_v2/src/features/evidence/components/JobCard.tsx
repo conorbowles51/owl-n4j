@@ -32,13 +32,18 @@ const STAGE_LABELS: Record<PipelineStage, string> = {
   pending: "Pending",
   extracting_text: "Extracting Text",
   generating_document_summary: "Summarizing Document",
-  chunking: "Chunking",
-  extracting_entities: "Extracting Entities",
+  chunking: "Splitting the text into passages",
+  extracting_entities: "Finding people, places and events",
   consolidating_entities: "Consolidating Entities",
   resolving_entities: "Resolving Entities",
   resolving_relationships: "Resolving Relationships",
   generating_summaries: "Generating Summaries",
   writing_graph: "Writing Graph",
+  verifying_source: "Checking the report",
+  capturing: "Reading records",
+  reconciling: "Checking nothing is missing",
+  interpreting: "Reading messages and calls",
+  building_views: "Building case views",
   completed: "Completed",
   failed: "Failed",
 }
@@ -57,6 +62,11 @@ const STAGE_COLORS: Record<PipelineStage, string> = {
     "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
   generating_summaries: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   writing_graph: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+  verifying_source: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  capturing: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  reconciling: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
+  interpreting: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  building_views: "bg-amber-500/10 text-amber-500 border-amber-500/20",
   completed: "bg-green-500/10 text-green-600 border-green-500/20",
   failed: "bg-red-500/10 text-red-600 border-red-500/20",
 }
@@ -110,10 +120,7 @@ export function JobCard({
         ? "Ready for review"
         : (STAGE_LABELS[job.status] ?? job.status)
   const stageColor = STAGE_COLORS[job.status] ?? STAGE_COLORS.pending
-  const displayName =
-    job.job_type === "cellebrite_ingestion"
-      ? `Cellebrite: ${job.file_name || "Phone report"}`
-      : job.file_name
+  const displayName = job.file_name
 
   return (
     <div

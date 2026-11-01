@@ -21,8 +21,10 @@ export default [
         if (vendor) throw new StepFailed("vendor name", `${vendor} elements name the vendor`)
       })
       await ctx.step("pick the folder", async () => {
-        const chooser = page.waitForEvent("filechooser")
+        // The button opens a menu of the two forms (folder, ZIP); the folder item opens the picker.
         await ctx.click(page.getByRole("button", { name: "Add phone report (folder or ZIP)" }))
+        const chooser = page.waitForEvent("filechooser")
+        await ctx.click(page.getByRole("menuitem", { name: "Phone report folder" }))
         await (await chooser).setFiles(`${FIXTURES}/C1`)
       })
       await ctx.step("checking files in words within 2 s", async () => {

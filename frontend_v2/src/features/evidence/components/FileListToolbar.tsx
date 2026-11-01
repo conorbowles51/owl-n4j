@@ -1,10 +1,11 @@
-import { useRef, useState, type ChangeEvent, type InputHTMLAttributes } from "react"
+import { useRef, type ChangeEvent, type InputHTMLAttributes } from "react"
 import {
   Search,
   X,
   FolderPlus,
   Upload,
   FolderUp,
+  Smartphone,
   FileArchive,
   ChevronDown,
   Play,
@@ -25,7 +26,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { useEvidenceStore } from "../evidence.store"
@@ -69,7 +70,6 @@ export function FileListToolbar({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const archiveInputRef = useRef<HTMLInputElement>(null)
-  const [replaceCellebriteReport, setReplaceCellebriteReport] = useState(false)
   const uploadMutation = useUploadToFolder(caseId)
   // Kept whole as well as destructured, because the dialog takes the gate
   // rather than its pieces. See `ProcessGate`.
@@ -86,8 +86,8 @@ export function FileListToolbar({
 
     const uploadFiles = mode === "archive" ? files.slice(0, 1) : files
     const archive = uploadFiles[0]
-    if (mode === "archive" && !archive.name.toLowerCase().endsWith(".zip")) {
-      toast.error("Choose a .zip archive")
+    if (mode === "archive" && !/\.(zip|ufdr)$/i.test(archive.name)) {
+      toast.error("Choose a ZIP file or a phone report file")
       return
     }
 
@@ -97,7 +97,6 @@ export function FileListToolbar({
         folderId: currentFolderId,
         isFolder: mode === "folder" || mode === "archive",
         isArchive: mode === "archive",
-        replaceExisting: mode === "archive" ? replaceCellebriteReport : false,
       },
       {
         onSuccess: (result) => {
@@ -254,9 +253,9 @@ export function FileListToolbar({
               </Button>
             </DropdownMenuTrigger>
           </TooltipTrigger>
-          <TooltipContent>Upload files, folders, or Cellebrite ZIP archives</TooltipContent>
+          <TooltipContent>Upload files, folders, ZIP archives or phone reports</TooltipContent>
         </Tooltip>
-        <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuItem
             onSelect={(event) => {
               event.preventDefault()
@@ -275,7 +274,6 @@ export function FileListToolbar({
             <FolderUp className="size-3.5" />
             Folder
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={(event) => {
               event.preventDefault()
@@ -283,14 +281,42 @@ export function FileListToolbar({
             }}
           >
             <FileArchive className="size-3.5" />
-            Cellebrite ZIP
+            ZIP file
           </DropdownMenuItem>
-          <DropdownMenuCheckboxItem
-            checked={replaceCellebriteReport}
-            onCheckedChange={(checked) => setReplaceCellebriteReport(Boolean(checked))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {/* 07 J-1a: the phone start, named without the vendor. Same inputs as Upload; the server detects the report. */}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled={uploadMutation.isPending}>
+            <Smartphone className="size-3.5" />
+            Add phone report (folder or ZIP)
+            <ChevronDown className="size-3" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuItem
+            onSelect={(event) => {
+              event.preventDefault()
+              folderInputRef.current?.click()
+            }}
           >
-            Replace duplicate report
-          </DropdownMenuCheckboxItem>
+            <FolderUp className="size-3.5" />
+            Phone report folder
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={(event) => {
+              event.preventDefault()
+              archiveInputRef.current?.click()
+            }}
+          >
+            <FileArchive className="size-3.5" />
+            Phone report ZIP file
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+            The whole report is read and checked against itself when it arrives.
+          </DropdownMenuLabel>
         </DropdownMenuContent>
       </DropdownMenu>
       <input
@@ -313,7 +339,7 @@ export function FileListToolbar({
       <input
         ref={archiveInputRef}
         type="file"
-        accept=".zip,application/zip,application/x-zip-compressed"
+        accept=".zip,.ufdr,application/zip,application/x-zip-compressed"
         className="hidden"
         disabled={uploadMutation.isPending}
         onChange={handleArchiveChange}

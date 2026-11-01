@@ -44,6 +44,9 @@ export function useJobProgress(options: UseJobProgressOptions) {
                   status: data.status as EvidenceJob["status"],
                   progress: data.progress <= 1 ? data.progress * 100 : data.progress,
                   message: data.message,
+                  ...(data.stage !== undefined
+                    ? { stage: data.stage, counts: data.counts, received_at: Date.now() }
+                    : {}),
                   error_message:
                     data.status === "failed"
                       ? data.message || job.error_message

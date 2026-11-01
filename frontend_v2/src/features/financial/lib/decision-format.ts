@@ -121,7 +121,11 @@ const SUBJECT_COPY: Record<AdjudicationSubject, TermCopy> = {
   evidence_file: {
     label: "Evidence file",
     description:
-      "A file as it arrived, before anything was read out of it. The only subject here that is not part of the ledger.",
+      "A file as it arrived, before anything was read out of it. Not part of the financial ledger.",
+  },
+  phone_extraction: {
+    label: "Phone report",
+    description: "One phone report as it was read into the case, with every record and file it lists. Not part of the financial ledger.",
   },
 }
 
@@ -155,6 +159,11 @@ export function readDecisionSubject(
  * proved.
  */
 const DECISION_COPY: Record<AdjudicationDecision, TermCopy> = {
+  supersede_phone_extraction: {
+    label: "Phone report retired in favour of a newer one",
+    description:
+      "A person retired this phone report and named the newer report of the same phone that replaces it, with a typed reason. Nothing was deleted: its records stay readable and are marked as from a replaced report.",
+  },
   keep_printed_holders: {
     label: "Each statement keeps the holder printed on it",
     description:
@@ -252,6 +261,7 @@ const DECISION_VARIANT: Record<AdjudicationDecision, BadgeVariant> = {
   set_counterparty_party: "info",
   set_account_identity: "info",
   keep_printed_holders: "info",
+  supersede_phone_extraction: "slate",
   admit_financial_document: "danger",
 }
 
@@ -287,6 +297,7 @@ const CHANGED_STORED_STATE: Record<AdjudicationDecision, boolean> = {
   set_counterparty_party: true,
   set_account_identity: true,
   keep_printed_holders: true,
+  supersede_phone_extraction: true,
   admit_financial_document: false,
 }
 

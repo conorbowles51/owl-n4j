@@ -42,6 +42,11 @@ export function EvidenceExplorer() {
   }, [caseId, resetForCase])
 
   useEffect(() => {
+    // The attention feed's phone reading items open the processing panel, where the readiness card is.
+    if (caseId && searchParams.get("panel") === "processing") useEvidenceStore.getState().openSidebarTo("processing")
+  }, [caseId, searchParams])
+
+  useEffect(() => {
     const fileId = searchParams.get("file")
     if (!caseId || !fileId) return
     if (searchParams.get("reveal") === "1") {

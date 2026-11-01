@@ -1,5 +1,6 @@
 import { fetchAPI } from "@/lib/api-client"
 import type { EvidenceUploadOptions, UploadResponse } from "./api"
+import type { UploadProgress } from "./upload-progress"
 import {
   randomUUID,
   setLocalUploadPaused,
@@ -68,7 +69,8 @@ export async function pauseUploadGroup(id: string) {
 
 export async function resumeUploadGroup(
   id: string,
-  files?: File[]
+  files?: File[],
+  onProgress?: (progress: UploadProgress) => void
 ): Promise<UploadGroup> {
   const checkSession = uploadSessionGuard()
   const state = await fetchAPI<UploadGroup>(`${endpoint}/${id}`)
@@ -110,10 +112,14 @@ export async function resumeUploadGroup(
   checkSession()
   if (state.status === "paused")
     await fetchAPI(`${endpoint}/${id}/resume`, { method: "POST" })
-  return runGroup(state, files || [])
+  return runGroup(state, files || [], onProgress)
 }
 
-function runGroup(state: UploadGroup, files: File[]) {
+function runGroup(
+  state: UploadGroup,
+  files: File[],
+  onProgress?: (progress: UploadProgress) => void
+) {
   const checkSession = uploadSessionGuard()
   const prior = active.get(state.id)
   if (prior) return prior.promise
@@ -128,8 +134,22 @@ function runGroup(state: UploadGroup, files: File[]) {
     const selected = new Map(
       files.map((file) => [relativePath(file, state.kind), file])
     )
+    const sent: UploadProgress = {
+      phase: "sending",
+      filesDone: 0,
+      filesTotal: state.file_count,
+      bytesDone: state.received_bytes,
+      bytesTotal: state.size,
+      startedAt: Date.now(),
+      bytesAtStart: state.received_bytes,
+      kind: state.kind,
+    }
+    onProgress?.({ ...sent })
     for (const member of state.members || []) {
-      if (member.status === "staged" || member.status === "completed") continue
+      if (member.status === "staged" || member.status === "completed") {
+        sent.filesDone++
+        continue
+      }
       while (transfer.paused)
         await new Promise<void>((resolve) => {
           transfer.wake = resolve
@@ -139,14 +159,20 @@ function runGroup(state: UploadGroup, files: File[]) {
       if (!file)
         throw new Error(`Reselect ${member.path} to finish this selection.`)
       transfer.memberId = member.id
-      await transferFile(member, file)
+      await transferFile(member, file, (bytes) => {
+        sent.bytesDone += bytes
+        onProgress?.({ ...sent })
+      })
       transfer.memberId = undefined
+      sent.filesDone++
+      onProgress?.({ ...sent })
     }
     while (transfer.paused)
       await new Promise<void>((resolve) => {
         transfer.wake = resolve
       })
     transfer.completing = true
+    onProgress?.({ ...sent, phase: "registering", bytesDone: sent.bytesTotal })
     checkSession()
     try {
       return await fetchAPI<UploadGroup>(`${endpoint}/${state.id}/complete`, {
@@ -173,13 +199,31 @@ export async function uploadFolderOrArchive(
   const checkSession = uploadSessionGuard()
   if (!files.length) throw new Error("Select files to upload.")
   const kind = selectionKind || (options.isArchive ? "archive" : "folder")
+  const onProgress = options.onProgress
+  const hashed: UploadProgress = {
+    phase: "hashing",
+    filesDone: 0,
+    filesTotal: files.length,
+    bytesDone: 0,
+    bytesTotal: files.reduce((sum, file) => sum + file.size, 0),
+    startedAt: Date.now(),
+    bytesAtStart: 0,
+    kind,
+  }
+  onProgress?.({ ...hashed })
   const manifest = []
-  for (const file of files)
+  for (const file of files) {
     manifest.push({
       path: relativePath(file, kind),
       size: file.size,
-      ...(await uploadFingerprint(file)),
+      ...(await uploadFingerprint(file, (bytes) => {
+        hashed.bytesDone += bytes
+        onProgress?.({ ...hashed })
+      })),
     })
+    hashed.filesDone++
+    onProgress?.({ ...hashed })
+  }
   const name =
     kind === "files"
       ? `Selected files (${files.length})`
@@ -193,7 +237,7 @@ export async function uploadFolderOrArchive(
       group.kind === kind &&
       group.name === name &&
       group.folder_id === (options.folderId || null) &&
-      group.replace_existing === !!options.replaceExisting &&
+      !group.replace_existing &&
       group.file_count === files.length
   )) {
     const full = await fetchAPI<UploadGroup>(`${endpoint}/${candidate.id}`)
@@ -222,19 +266,20 @@ export async function uploadFolderOrArchive(
         folder_id: options.folderId || null,
         name,
         kind,
-        replace_existing: !!options.replaceExisting,
+        // Replacing a phone report is an explicit action on its extraction, never part of an upload (01 4.2).
+        replace_existing: false,
         members: manifest,
       },
     }))
   checkSession()
   const result = prior
-    ? await resumeUploadGroup(group.id, files)
-    : await runGroup(group, files)
+    ? await resumeUploadGroup(group.id, files, onProgress)
+    : await runGroup(group, files, onProgress)
   if (!result.receipt)
     throw new Error(
       "The selection is saved. Finish registration from upload activity."
     )
-  // The evidence queries refresh from the committed receipt; no 20,000-file
+  // The evidence queries refresh from the committed receipt; no per-file
   // fan-out is needed just to reconstruct an upload acknowledgement.
   return {
     files: [],

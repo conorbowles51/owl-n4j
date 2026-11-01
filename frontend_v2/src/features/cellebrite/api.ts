@@ -479,39 +479,6 @@ export const evidenceTagsAPI = {
 
 }
 
-export const evidenceCellebriteAPI = {
-  checkFolder: (caseId: string, folderPath: string) => {
-    const params = new URLSearchParams({
-      case_id: caseId,
-      folder_path: folderPath,
-    })
-    return fetchAPI<CellebriteRecord>(
-      `/api/evidence/cellebrite/check?${params}`
-    )
-  },
-
-  processFolder: (
-    caseId: string,
-    folderPath: string,
-    opts: { force?: boolean; replaceExisting?: boolean } = {}
-  ) =>
-    fetchAPI<{
-      success: boolean
-      message: string
-      task_id?: string | null
-      job_id?: string | null
-      job_ids?: string[] | null
-    }>("/api/evidence/cellebrite/process", {
-      method: "POST",
-      body: {
-        case_id: caseId,
-        folder_path: folderPath,
-        force: opts.force,
-        replace_existing: opts.replaceExisting,
-      },
-    }),
-}
-
 export function normaliseTracks(data: EventTracksResponse): EventTrack[] {
   return data.tracks ?? []
 }

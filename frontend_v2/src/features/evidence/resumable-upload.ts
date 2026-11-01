@@ -39,7 +39,10 @@ export function uploadSessionGuard() {
   }
 }
 
-export async function uploadFingerprint(file: File) {
+export async function uploadFingerprint(
+  file: File,
+  onBytes?: (bytes: number) => void
+) {
   const whole = sha256.create()
   const chunks: string[] = []
   for (let offset = 0; offset < file.size; offset += CHUNK_SIZE) {
@@ -48,6 +51,7 @@ export async function uploadFingerprint(file: File) {
     )
     whole.update(bytes)
     chunks.push(bytesToHex(sha256(bytes)))
+    onBytes?.(bytes.length)
   }
   return { sha256: bytesToHex(whole.digest()), chunks }
 }
@@ -107,7 +111,11 @@ export async function resumeUpload(
   return transferFile(saved, file)
 }
 
-export function transferFile(session: UploadSession, file: File) {
+export function transferFile(
+  session: UploadSession,
+  file: File,
+  onBytes?: (bytes: number) => void
+) {
   const checkSession = uploadSessionGuard()
   const existing = transfers.get(session.id)
   if (existing) return existing.promise
@@ -138,9 +146,13 @@ export function transferFile(session: UploadSession, file: File) {
             headers: { "Content-Type": "application/octet-stream" },
           }
         )
+        onBytes?.(chunk.size)
       } catch (error) {
         state = await fetchAPI<UploadSession>(`${endpoint}/${session.id}`)
-        if (state.received.includes(index)) continue // Lost acknowledgement.
+        if (state.received.includes(index)) {
+          onBytes?.(chunk.size)
+          continue // Lost acknowledgement.
+        }
         if (state.status === "paused" || transfer.paused) {
           transfer.paused = true
           index--

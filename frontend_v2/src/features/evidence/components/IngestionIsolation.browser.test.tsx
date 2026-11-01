@@ -104,7 +104,7 @@ it("keeps AI visible through a second reading, failure, resume, completion and r
     })
     await refresh()
     await screen.findByText("2 running · 0 queued")
-    expect(ai().getByText("Extracting Entities")).toBeTruthy()
+    expect(ai().getByText("Finding people, places and events")).toBeTruthy()
     expect(pdf().getByText("Financial statement reading")).toBeTruthy()
 
     jobs = jobs.map((job) =>
@@ -124,7 +124,7 @@ it("keeps AI visible through a second reading, failure, resume, completion and r
     )
     await waitFor(() => expect(pdf().getByText("Pending")).toBeTruthy())
     expect(screen.getByText("1 running · 1 queued")).toBeVisible()
-    expect(ai().getByText("Extracting Entities")).toBeTruthy()
+    expect(ai().getByText("Finding people, places and events")).toBeTruthy()
 
     jobs = jobs.map((job) =>
       job.id === "pdf-job"
@@ -170,9 +170,10 @@ it("pauses a phone report, returns to its saved state and resumes while AI inges
   let phone: EvidenceJob = {
     ...base,
     id: "phone-job",
-    job_type: "cellebrite_ingestion",
+    job_type: "phone_capture",
     file_name: "Synthetic phone",
-    status: "writing_graph",
+    status: "capturing",
+    pipeline_state: { phone: { stage: "capturing", counts: { records: 1200, files: 30 } } },
   }
   const ai: EvidenceJob = {
     ...base,
@@ -216,18 +217,18 @@ it("pauses a phone report, returns to its saved state and resumes while AI inges
   const refresh = () =>
     client.invalidateQueries({ queryKey: ["evidence-jobs", "synthetic-case"] })
   const card = () =>
-    within(screen.getByRole("group", { name: "Processing: Synthetic phone" }))
+    within(screen.getByRole("group", { name: "Phone report: Synthetic phone" }))
   try {
     mount()
-    await screen.findByText("Cellebrite: Synthetic phone")
+    await screen.findByText("Getting Synthetic phone ready")
     fireEvent.click(card().getByRole("button", { name: "Pause" }))
     await waitFor(() =>
-      expect(card().getByRole("button", { name: "Pausing…" })).toBeDisabled()
+      expect(card().getByRole("button", { name: "Pausing" })).toBeDisabled()
     )
-    expect(screen.getByText("Extracting Entities")).toBeVisible()
+    expect(screen.getByText("Finding people, places and events")).toBeVisible()
     phone = { ...phone, paused: true, status: "pending" }
     await refresh()
-    await waitFor(() => expect(card().getByText("Paused")).toBeVisible())
+    await waitFor(() => expect(card().getByText(": paused")).toBeVisible())
     cleanup()
     client.clear()
     mount()
@@ -235,15 +236,15 @@ it("pauses a phone report, returns to its saved state and resumes while AI inges
     expect(screen.getByText("1 running · 0 queued")).toBeVisible()
     await page.screenshot({ path: "/tmp/loupe-phone-pause-resume.png" })
     fireEvent.click(card().getByRole("button", { name: "Resume" }))
-    await waitFor(() => expect(card().getByText("Pending")).toBeVisible())
+    await waitFor(() => expect(card().getByRole("button", { name: "Pause" })).toBeVisible())
     expect(calls).toEqual([
       "/api/evidence/engine/jobs/phone-job/pause?case_id=synthetic-case",
       "/api/evidence/engine/jobs/phone-job/resume?case_id=synthetic-case",
     ])
-    expect(screen.getByText("Extracting Entities")).toBeVisible()
-    phone = { ...phone, status: "completed", progress: 1, entity_count: 40 }
+    expect(screen.getByText("Finding people, places and events")).toBeVisible()
+    phone = { ...phone, status: "completed", progress: 1, pipeline_state: { phone: { stage: "completed", message: "Every record was read and checked against the report: 1,200 records and 30 files.", file_outcomes: { match: 30 } } } }
     await refresh()
-    await waitFor(() => expect(card().getByText("Completed")).toBeVisible())
+    await waitFor(() => expect(card().getByText("30 files match the report's fingerprint")).toBeVisible())
     expect(screen.getByText("1 running · 0 queued")).toBeVisible()
   } finally {
     cleanup()

@@ -64,7 +64,7 @@ function getLayerAwareCaseNav(caseId: string): NavItem[] {
 function getFullDataCaseNav(caseId: string): NavItem[] {
   return [
     { label: "Financial", icon: DollarSign, to: `/cases/${caseId}/financial`, shortcut: "5" },
-    { label: "Cellebrite", icon: Smartphone, to: `/cases/${caseId}/cellebrite`, shortcut: "6" },
+    { label: "Phones", icon: Smartphone, to: `/cases/${caseId}/cellebrite`, shortcut: "6" },
     { label: "Evidence", icon: FileText, to: `/cases/${caseId}/evidence`, shortcut: "8" },
   ]
 }

@@ -5,7 +5,6 @@ import {
   cellebriteEventsAPI,
   cellebriteFilesAPI,
   cellebriteOverviewAPI,
-  evidenceCellebriteAPI,
 } from "../api"
 import type {
   CommsFilterParams,
@@ -444,32 +443,3 @@ export function useCellebriteFilesTree(
   })
 }
 
-export function useCheckCellebriteFolder(caseId: string) {
-  return useMutation({
-    mutationFn: (folderPath: string) =>
-      evidenceCellebriteAPI.checkFolder(caseId, folderPath),
-  })
-}
-
-export function useProcessCellebriteFolder(caseId: string) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({
-      folderPath,
-      force,
-      replaceExisting,
-    }: {
-      folderPath: string
-      force?: boolean
-      replaceExisting?: boolean
-    }) =>
-      evidenceCellebriteAPI.processFolder(caseId, folderPath, {
-        force,
-        replaceExisting,
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: cellebriteKeys.all })
-      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
-    },
-  })
-}

@@ -1,5 +1,5 @@
 import { LoadProgress } from "@/features/financial/components/LoadProgress"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import {
   AlertCircle,
   CheckCircle2,
@@ -22,7 +22,10 @@ import { useBackgroundTasks } from "../hooks/use-background-tasks"
 import { useJobProgress } from "../hooks/use-job-progress"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { useEvidenceStore, type UploadActivity } from "../evidence.store"
+import { describeUploadProgress, percentOf } from "../upload-progress"
 import { JobCard } from "./JobCard"
+import { PhoneReadinessCard } from "./PhoneReadinessCard"
+import { PhoneReportsPanel } from "./PhoneReportsPanel"
 import { ResumableUploadsPanel } from "./ResumableUploadsPanel"
 import {
   useResumableUploads,
@@ -48,6 +51,11 @@ const ACTIVE_STATUSES: Set<PipelineStage> = new Set([
   "resolving_relationships",
   "generating_summaries",
   "writing_graph",
+  "verifying_source",
+  "capturing",
+  "reconciling",
+  "interpreting",
+  "building_views",
 ])
 
 const ACTIVE_TASK_STATUSES = new Set(["pending", "running"])
@@ -81,12 +89,24 @@ function getTaskProgress(task: BackgroundTask) {
 }
 
 function taskTypeLabel(taskType: string) {
-  if (taskType === "cellebrite_ingestion") return "Cellebrite ingest"
+  if (taskType === "cellebrite_ingestion") return "Phone report reading (old)"
   if (taskType === "wiretap_processing") return "Wiretap processing"
   return taskType.replaceAll("_", " ")
 }
 
+/** Re-renders every second while `active`, so words with time left never sit still (07 4.7). */
+function useSecondTick(active: boolean) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!active) return
+    const timer = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [active])
+  return now
+}
+
 function UploadActivityCard({ activity }: { activity: UploadActivity }) {
+  const now = useSecondTick(activity.status === "running")
   const isActive = activity.status === "running"
   const isFailed = activity.status === "failed"
   const isCompleted = activity.status === "completed"
@@ -124,12 +144,26 @@ function UploadActivityCard({ activity }: { activity: UploadActivity }) {
         </Badge>
       </div>
 
-      <p className="mt-1 truncate text-[10px] text-muted-foreground">
-        {activity.error ||
-          activity.message ||
-          activity.detail ||
-          "Upload in progress"}
-      </p>
+      {isActive && activity.progress ? (
+        <>
+          <div className="mt-2 flex items-center gap-2">
+            <Progress value={percentOf(activity.progress)} className="h-1.5 flex-1" />
+            <span className="text-[10px] font-mono text-muted-foreground tabular-nums">
+              {percentOf(activity.progress)}%
+            </span>
+          </div>
+          <p className="mt-1 text-[10px] text-muted-foreground" aria-live="polite">
+            {describeUploadProgress(activity.progress, now)}
+          </p>
+        </>
+      ) : (
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          {activity.error ||
+            activity.message ||
+            activity.detail ||
+            "Upload in progress"}
+        </p>
+      )}
 
       <div className="mt-2 flex items-center gap-3 text-[10px] text-muted-foreground">
         <span className="flex items-center gap-1">
@@ -280,15 +314,25 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
       action,
     }: {
       job: EvidenceJob
-      action: "pause" | "resume"
+      action: "pause" | "resume" | "cancel"
     }) =>
-      fetchAPI<{ state: string; affected_jobs: number }>(
+      fetchAPI<{ state: string; affected_jobs?: number }>(
         `/api/evidence/engine/jobs/${job.id}/${action}?case_id=${caseId}`,
         { method: "POST" }
       ),
-    onSuccess: (result) => {
+    onSuccess: (result, { job }) => {
       queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
-      toast.success(`${result.affected_jobs} file(s): ${result.state}`)
+      if (job.job_type === "phone_capture")
+        toast.success(
+          result.state === "cancelled"
+            ? "Reading cancelled. The upload is kept and can be read again."
+            : result.state === "cancelling"
+              ? "Cancelling. The reading stops after the step it is on saves."
+              : result.state === "queued"
+                ? "Reading resumes from the last saved point."
+                : "Pausing after the step it is on saves."
+        )
+      else toast.success(`${result.affected_jobs ?? 0} file(s): ${result.state}`)
     },
     onError: (error) => toast.error(error.message),
   })
@@ -511,6 +555,7 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
       <ScrollArea className="flex-1">
         <div className="space-y-2 p-2">
           <ResumableUploadsPanel caseId={caseId} />
+          <PhoneReportsPanel caseId={caseId} />
         </div>
         {isLoading ? (
           <div className="flex justify-center py-8">
@@ -544,7 +589,18 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
                 }
               />
             ))}
-            {sortedJobs.map((job) => (
+            {sortedJobs.map((job) =>
+              job.job_type === "phone_capture" ? (
+                <PhoneReadinessCard
+                  key={job.id}
+                  job={job}
+                  controlling={controlMutation.isPending}
+                  onPause={(selectedJob) => controlMutation.mutate({ job: selectedJob, action: "pause" })}
+                  onResume={(selectedJob) => controlMutation.mutate({ job: selectedJob, action: "resume" })}
+                  onCancel={(selectedJob) => controlMutation.mutate({ job: selectedJob, action: "cancel" })}
+                  onClear={(selectedJob) => clearJobMutation.mutate(selectedJob.id)}
+                />
+              ) : (
               <JobCard
                 key={job.id}
                 job={job}
@@ -576,7 +632,8 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
                   clearJobMutation.variables === job.id
                 }
               />
-            ))}
+              )
+            )}
           </div>
         )}
       </ScrollArea>
