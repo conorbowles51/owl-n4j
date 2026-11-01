@@ -314,10 +314,14 @@ def delete_folder(
             db, uuid.UUID(folder_id), uuid.UUID(case_id)
         )
 
-        # Clean up physical files
+        # Clean up physical files. The folder's rows are already flushed away, so any row still pointing at a path
+        # lives outside this folder and keeps its file.
         from pathlib import Path
         deleted_files = 0
-        for path_str in stored_paths:
+        shared = EvidenceDBStorage.stored_paths_in_use(db, stored_paths)
+        for path_str in dict.fromkeys(stored_paths):
+            if not path_str or path_str in shared:
+                continue
             try:
                 p = Path(path_str)
                 if p.exists():

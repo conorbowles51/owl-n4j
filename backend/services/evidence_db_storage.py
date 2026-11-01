@@ -761,6 +761,22 @@ class EvidenceDBStorage:
         return ef
 
     @staticmethod
+    def stored_paths_in_use(db: Session, paths: Iterable[Optional[str]],
+                            excluding_ids: Iterable[uuid.UUID] = ()) -> set:
+        """Stored paths that another evidence row (any case) still points at.
+
+        Two rows can share one file on disk (the same upload recorded twice). Deleting one row must not remove the
+        file the other row still serves, so callers unlink only paths not in this set."""
+        wanted = sorted({p for p in paths if p})
+        if not wanted:
+            return set()
+        query = select(EvidenceFile.stored_path).where(EvidenceFile.stored_path.in_(wanted))
+        excluded = [i for i in excluding_ids if i is not None]
+        if excluded:
+            query = query.where(EvidenceFile.id.notin_(excluded))
+        return set(db.scalars(query).all())
+
+    @staticmethod
     def move_file(db: Session, file_id: uuid.UUID, new_folder_id: Optional[uuid.UUID]) -> EvidenceFile:
         EvidenceDBStorage.move_files(db, [file_id], new_folder_id)
         return db.get(EvidenceFile, file_id)

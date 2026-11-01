@@ -39,3 +39,31 @@ def test_the_same_bytes_again_keep_the_one_file(app_world):
         paths = {Path(r.stored_path) for r in db.query(EvidenceFile)}
     assert len(paths) == 1 and next(iter(paths)).read_bytes() == data
     assert not (next(iter(paths)).parent / "statement (2).pdf").exists()
+
+
+def test_a_name_taken_after_the_free_check_sends_the_upload_to_the_next_free_name(tmp_path):
+    # Two same-name uploads at once: both find the name free, the other one lands first.
+    from routers.evidence import _place_staged
+    target = tmp_path / "statement.pdf"
+    staged = tmp_path / "staged.bin"
+    mine = b"%PDF mine"
+    staged.write_bytes(mine)
+    target.write_bytes(b"%PDF theirs, landed in between")
+    placed = _place_staged(staged, target, hashlib.sha256(mine).hexdigest())
+    assert placed == tmp_path / "statement (2).pdf"
+    assert placed.read_bytes() == mine
+    assert target.read_bytes() == b"%PDF theirs, landed in between"
+
+
+def test_an_archive_holding_one_path_twice_keeps_both_copies_and_each_hash_matches(tmp_path):
+    import zipfile
+    from routers.evidence import _extract_archive_to_staging
+    archive = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("bank/statement.pdf", b"%PDF first")
+        zf.writestr("bank/statement.pdf", b"%PDF second, different")
+        zf.writestr("bank/statement.pdf", b"%PDF first")  # the same file again: kept once
+    uploads = _extract_archive_to_staging(archive, tmp_path / "out")
+    assert [u["relative_path"] for u in uploads] == ["bank/statement.pdf", "bank/statement (2).pdf"]
+    for u in uploads:
+        assert hashlib.sha256(Path(u["staged_path"]).read_bytes()).hexdigest() == u["sha256"]

@@ -94,3 +94,39 @@ def test_refusals_keep_their_status_and_touch_nothing(world, status_code):
     engine_delete.assert_not_awaited()
     assert path.exists() and db.get(EvidenceFile, evidence_id) is not None
     assert loop_sql == []
+
+
+def test_a_delete_keeps_the_file_when_another_evidence_row_shares_its_stored_path(world):
+    # Live 1 Nov: 8 stored paths were each recorded by two rows; deleting one row removed the other row's file.
+    db, case_id, evidence_id, path, loop_sql, watching = world
+    twin = EvidenceFile(case_id=case_id, original_filename=path.name, stored_path=str(path), sha256="a" * 64,
+                        status="processed")
+    db.add(twin)
+    db.commit()
+    result = _delete(db, case_id, evidence_id, watching, AsyncMock())
+    assert result["file_deleted"] is False and result["file_kept_shared"] is True
+    assert path.exists()
+    db.expire_all()
+    assert db.get(EvidenceFile, evidence_id) is None and db.get(EvidenceFile, twin.id) is not None
+
+
+def test_a_folder_delete_keeps_a_file_still_used_by_a_row_outside_the_folder(world, tmp_path):
+    from routers import evidence_folders
+    db, case_id, evidence_id, path, loop_sql, watching = world
+    folder = EvidenceFolder(case_id=case_id, name="Bank")
+    db.add(folder)
+    db.flush()
+    own = tmp_path / "own.pdf"
+    own.write_bytes(b"%PDF own")
+    db.add_all([EvidenceFile(case_id=case_id, folder_id=folder.id, original_filename=path.name,
+                             stored_path=str(path), sha256="a" * 64, status="processed"),
+                EvidenceFile(case_id=case_id, folder_id=folder.id, original_filename=own.name,
+                             stored_path=str(own), sha256="b" * 64, status="processed")])
+    db.commit()
+    with patch.object(evidence_folders, "_check_case_access"):
+        result = evidence_folders.delete_folder(str(folder.id), case_id=str(case_id),
+                                                current_user=SimpleNamespace(email="a@example.test"), db=db)
+    assert result["deleted_files"] == 1
+    assert path.exists() and not own.exists()
+    db.expire_all()
+    assert db.get(EvidenceFile, evidence_id) is not None

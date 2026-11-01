@@ -378,6 +378,7 @@ def _extract_archive_to_staging(zip_path: Path, extract_dir: Path) -> List[dict]
     extract_dir.mkdir(parents=True, exist_ok=True)
     extract_root = extract_dir.resolve()
     uploads: List[dict] = []
+    extracted: Dict[Path, str] = {}
 
     with zipfile.ZipFile(zip_path) as zf:
         for info in zf.infolist():
@@ -398,6 +399,15 @@ def _extract_archive_to_staging(zip_path: Path, extract_dir: Path) -> List[dict]
                 target.relative_to(extract_root)
             except ValueError:
                 continue
+            # The same path twice in one archive: the second copy gets "name (n).ext" rather than overwriting the
+            # first (which would leave the first row's hash describing bytes no longer on disk). A copy with the
+            # same bytes as the first is the same file and is kept once.
+            first_sha = extracted.get(target)
+            base, n = relative_path, 1
+            while target in extracted:
+                n += 1
+                relative_path = base.with_name(f"{base.stem} ({n}){base.suffix}")
+                target = (extract_dir / relative_path).resolve()
 
             target.parent.mkdir(parents=True, exist_ok=True)
             hasher = hashlib.sha256()
@@ -418,10 +428,15 @@ def _extract_archive_to_staging(zip_path: Path, extract_dir: Path) -> List[dict]
                     pass
                 raise
 
+            digest = hasher.hexdigest()
+            if first_sha == digest:
+                target.unlink(missing_ok=True)
+                continue
+            extracted[target] = digest
             uploads.append({
                 "original_filename": relative_path.name,
                 "staged_path": target,
-                "sha256": hasher.hexdigest(),
+                "sha256": digest,
                 "size": size,
                 "relative_path": str(relative_path).replace("\\", "/"),
             })
@@ -505,14 +520,34 @@ def _free_target(target: Path, sha256: Optional[str]) -> Path:
     return candidate
 
 
-def _place_staged(staged_path: Path, target: Path) -> None:
-    """Move a staged file to target; a file already there holds the same bytes."""
+def _claim(target: Path) -> bool:
+    """Create target empty if nothing is there, atomically; False when a file already holds the name."""
+    try:
+        os.close(os.open(str(target), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644))
+        return True
+    except FileExistsError:
+        return False
+
+
+def _place_staged(staged_path: Path, target: Path, sha256: Optional[str] = None) -> Path:
+    """
+    Move a staged file to target, or to the next free "name (n).ext" when a
+    different file took target in the meantime; returns where it went.
+
+    The name is claimed with an exclusive create, so two uploads of the same
+    name at the same moment cannot both see it free and the second overwrite
+    the first. A file already there with the same bytes is kept as it is.
+    """
     if staged_path.resolve() == target:
-        return
-    if target.exists():
-        staged_path.unlink(missing_ok=True)
-        return
-    shutil.move(str(staged_path), str(target))
+        return target
+    while True:
+        if _claim(target):
+            shutil.move(str(staged_path), str(target))
+            return target
+        if not _holds_other_bytes(target, sha256):
+            staged_path.unlink(missing_ok=True)
+            return target
+        target = _free_target(target, sha256)
 
 
 def _persist_staged_uploads(
@@ -550,7 +585,7 @@ def _persist_staged_uploads(
         staged_path = Path(upload["staged_path"])
         if staged_path.resolve() != target:
             target = _free_target(target, upload.get("sha256"))
-        _place_staged(staged_path, target)
+        target = _place_staged(staged_path, target, upload.get("sha256"))
 
         if not register_files:
             continue
@@ -2165,8 +2200,10 @@ async def delete_evidence_file(
             except Exception as e:
                 logger.warning(f"ChromaDB cleanup error: {e}")
 
-            # 4. Delete physical file from backend disk
-            if stored_path:
+            # 4. Delete physical file from backend disk, unless another evidence row still uses the same file
+            if stored_path and EvidenceDBStorage.stored_paths_in_use(db, [stored_path], [db_record.id]):
+                result_info["file_kept_shared"] = True
+            elif stored_path:
                 file_path = _resolve_stored_path(stored_path) or Path(stored_path)
                 if file_path.exists():
                     try:
