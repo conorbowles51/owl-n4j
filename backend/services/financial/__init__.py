@@ -2364,3 +2364,5 @@ from services.financial.manual_change_kinds import record_review_edit, request_d
 __all__ += ["record_review_edit", "request_diff"]
 from services.financial.queue_selection import selection_file_ids
 __all__ += ["selection_file_ids"]
+from services.financial.forgotten_batches import close_forgotten_batch
+__all__ += ["close_forgotten_batch"]

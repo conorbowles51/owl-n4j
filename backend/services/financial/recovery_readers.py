@@ -336,6 +336,9 @@ def classify(session, case_id, batch, entry, campaign, scope, group=False, refre
     # work saved elsewhere on the same statement is still investigator work.
     items = list(session.scalars(select(BatchItem).join(Batch, BatchItem.batch_id == Batch.id).where(
         Batch.case_id == case_id, Batch.status != 'removed', BatchItem.file_id.in_([file.id for file in pair]))))
+    # A batch closed as forgotten keeps carrying its investigator decisions (forgotten_batches).
+    from services.financial.forgotten_batches import decision_items
+    items += decision_items(session, case_id, [file.id for file in pair])
     if any(item.review_request for item in items):
         if not CARRY_EDITS or (refresh and not carry_edits):
             return 'investigator_edits', {}
@@ -764,7 +767,11 @@ def _follow(session, item, file, batches, handoff):
     handed = handoff.get('batches') or [dict(batch_id=handoff['batch_id'], source_id=handoff['source_id'],
         from_file_id=item.result['from_file_id'], attempt_id=handoff['attempt_id'])]
     states = []
-    for member in handed:
+    # A batch closed as forgotten no longer decides the outcome while another handed batch remains.
+    from services.financial.forgotten_batches import closed_as_forgotten
+    live = [member for member in handed if not (batches.get(UUID(member['batch_id'])) is not None
+        and closed_as_forgotten(batches[UUID(member['batch_id'])]))]
+    for member in live or handed:
         batch = batches.get(UUID(member['batch_id']))
         entry = next((value for value in (batch.files or []) if value.get('source_id') == member['source_id']), None) if batch else None
         states.append((*_member_state(session, batch, entry, member, member['attempt_id']), entry))

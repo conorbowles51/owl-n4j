@@ -1183,3 +1183,36 @@ def test_a_held_santander_statement_of_the_same_product_stays_a_copy(f, monkeypa
         item.summary = {**item.summary, 'account': '000001-2'}
         db.commit()
     assert selection(f) == ([], {'copy_of_saved': 1})
+
+
+def _close_as_forgotten(f, batch_id):
+    from services.financial.forgotten_batches import close_forgotten_batch
+    with f.SessionLocal() as db:
+        close_forgotten_batch(db, case_id=f.case.id, batch_id=batch_id, decision='Neil Byrne, 2026-11-01: test',
+            apply=True)
+
+
+def test_a_decision_held_only_by_a_batch_closed_as_forgotten_still_protects_the_statement(f):
+    set_reader(f, f.file.id)
+    older, newer = two_batch_original(f, second_statuses=('attention', 'skipped'))
+    _close_as_forgotten(f, newer.id)
+    assert selection(f) == ([], {'investigator_decision': 1})
+
+
+def test_a_handed_batch_closed_as_forgotten_does_not_decide_the_recovery_outcome(f):
+    set_reader(f, f.file.id)
+    older, newer = two_batch_original(f)
+    _, (item_id,) = snapshot(f)
+    recovery.recover_one(f.SessionLocal, item_id, Path)
+    assert len(item_state(f, item_id)[1]['handoff']['batches']) == 2
+    with f.SessionLocal() as db:
+        batch = db.get(Batch, older.id)
+        files = [dict(entry) for entry in batch.files]
+        files[0].update(status='error', error='The new reading needs review.')
+        batch.files = files
+        batch.status = 'review'
+        db.commit()
+    _close_as_forgotten(f, newer.id)
+    recovery.recover_one(f.SessionLocal, item_id, Path)
+    status, result = item_state(f, item_id)
+    assert status == 'review' and result['message'] == 'The new reading needs review.'

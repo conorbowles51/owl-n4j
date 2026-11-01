@@ -173,6 +173,9 @@ def _guard(session, item, file):
         return 'waiting', 'Waiting for the existing processing batch. Its reading and pause choices are unchanged.'
     batches = session.execute(select(BatchItem.status, Batch.status).join(Batch, BatchItem.batch_id == Batch.id).where(
         Batch.case_id == file.case_id, Batch.status != 'removed', BatchItem.file_id.in_(ids))).all()
+    # A batch closed as forgotten keeps carrying its investigator decisions (forgotten_batches).
+    from services.financial.forgotten_batches import decision_items
+    batches += [(item.status, 'removed') for item in decision_items(session, file.case_id, ids)]
     if any(status == 'skipped' for status, _ in batches):
         return 'kept', 'An investigator chose to leave this statement unimported. That choice was retained.'
     if any(status == 'duplicate_ignored' for status, _ in batches):

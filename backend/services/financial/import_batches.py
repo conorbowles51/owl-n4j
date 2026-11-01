@@ -2268,6 +2268,9 @@ def control_batch(session, *, case_id, batch_id, action):
     batch = batch_for(session, case_id, batch_id, True)
     now = datetime.now(timezone.utc)
     active = bool(batch.worker_token and batch.lease_until and batch.lease_until.replace(tzinfo=timezone.utc) > now)
+    if (batch.actor or {}).get('release_pause'):
+        # A person's own pause or resume is theirs: a release never restores this batch afterwards.
+        batch.actor = {key: value for key, value in batch.actor.items() if key != 'release_pause'}
     if action == 'pause':
         if batch.status in ('preparing', 'pausing'):
             batch.status = 'pausing' if active else 'paused'
@@ -2282,6 +2285,62 @@ def control_batch(session, *, case_id, batch_id, action):
         raise PdfMappingError('Unknown batch action.', 404)
     session.commit()
     return dict(case_id=str(case_id), batch_id=str(batch_id), status=batch.status)
+
+
+# A batch idle in 'preparing' that changed this recently is a start the worker has not claimed yet (a person's
+# action just before or during a release); older idle batches are left paused by a release (Neil, 2026-11-01).
+RELEASE_FRESH_SECONDS = 600
+
+
+def release_pause(session, release_id, *, now=None):
+    """Pause every 'preparing' batch for a release and stamp it ``actor.release_pause``.
+
+    ``kind``: 'held' (a worker held a live lease), 'fresh' (idle, changed within RELEASE_FRESH_SECONDS) or 'idle'.
+    Only held and fresh batches are restored by release_resume; an idle batch stays paused (it was not being worked,
+    e.g. a forgotten run) and is reported. Batches paused by anyone else are never touched. Commits per batch."""
+    now = now or datetime.now(timezone.utc)
+    done = []
+    for batch_id in list(session.scalars(select(Batch.id).where(Batch.status == 'preparing').order_by(Batch.id))):
+        batch = session.scalar(select(Batch).where(Batch.id == batch_id).with_for_update())
+        if batch is None or batch.status != 'preparing':
+            session.rollback()
+            continue
+        held = bool(batch.worker_token and batch.lease_until and batch.lease_until.replace(tzinfo=timezone.utc) > now)
+        changed = batch.updated_at.replace(tzinfo=batch.updated_at.tzinfo or timezone.utc) if batch.updated_at else None
+        kind = 'held' if held else ('fresh' if changed and (now - changed).total_seconds() <= RELEASE_FRESH_SECONDS else 'idle')
+        batch.status = 'pausing' if held else 'paused'
+        batch.actor = {**(batch.actor or {}), 'release_pause': dict(release=str(release_id), kind=kind, at=now.isoformat())}
+        session.commit()
+        done.append(dict(case_id=str(batch.case_id), batch_id=str(batch.id), kind=kind, status=batch.status))
+    return done
+
+
+def release_resume(session, release_id):
+    """Resume the batches this release paused from a worked state (held or fresh). An idle one is left paused and
+    reported as skipped; a batch a person paused, resumed or removed since (stamp cleared or status changed) is
+    never resumed. Returns one dict per stamped batch: action 'resumed' | 'skipped' | 'waiting' (still finishing)."""
+    out = []
+    now = datetime.now(timezone.utc)
+    rows = session.scalars(select(Batch).where(Batch.status.in_(PAUSED_STATES)).order_by(Batch.id))
+    for batch in [row for row in rows if ((row.actor or {}).get('release_pause') or {}).get('release') == str(release_id)]:
+        stamp = batch.actor['release_pause']
+        entry = dict(case_id=str(batch.case_id), batch_id=str(batch.id), kind=stamp.get('kind'))
+        if stamp.get('kind') not in ('held', 'fresh'):
+            batch.actor = {**batch.actor, 'release_pause': {**stamp, 'left_paused': now.isoformat()}}
+            session.commit()
+            out.append({**entry, 'action': 'skipped'})
+            continue
+        active = bool(batch.worker_token and batch.lease_until and batch.lease_until.replace(tzinfo=timezone.utc) > now)
+        if batch.status == 'pausing' and active:
+            out.append({**entry, 'action': 'waiting'})
+            continue
+        batch.status = 'preparing'
+        batch.worker_token = None
+        batch.lease_until = None
+        batch.actor = {key: value for key, value in batch.actor.items() if key != 'release_pause'}
+        session.commit()
+        out.append({**entry, 'action': 'resumed'})
+    return out
 
 
 async def _finish_atomic(function, *args):
