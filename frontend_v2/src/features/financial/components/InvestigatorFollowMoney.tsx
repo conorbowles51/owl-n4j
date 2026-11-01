@@ -20,7 +20,7 @@ import {
   type FinancialMainView,
 } from "../stores/financial.store"
 import { nearbyPayments } from "../lib/investigator-workspace"
-import { connectionGroups, type PanelGroup, type PanelTotal } from "../lib/overview-panels"
+import { connectionGroupsInSteps, type PanelGroup, type PanelTotal } from "../lib/overview-panels"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import {
@@ -48,11 +48,23 @@ export function MoneyConnections({
   // (the view is not drawn then), as they were when the grouping ran inside the render.
   const choice = useState("")
   const pageChoice = useState(0)
+  // The grouping itself runs in steps that give the browser a turn (connectionGroupsInSteps): in one piece it held
+  // the main thread 0.6 s on d5b330d1 with the host idle and 1.2-1.6 s with it busy (2026-11-01). The line below says
+  // which step it is on, from the true count of steps.
   const [grouped, setGrouped] = useState<{ rows: LedgerTransaction[]; groups: PanelGroup[] } | null>(null)
+  const [step, setStep] = useState<{ rows: LedgerTransaction[]; done: number; total: number } | null>(null)
   useEffect(() => {
     if (grouped?.rows === rows) return
-    const timer = setTimeout(() => setGrouped({ rows, groups: connectionGroups(rows) }), 0)
-    return () => clearTimeout(timer)
+    const signal = { cancelled: false }
+    const timer = setTimeout(() => {
+      void connectionGroupsInSteps(rows, (done, total) => setStep({ rows, done, total }), signal).then((groups) => {
+        if (groups && !signal.cancelled) setGrouped({ rows, groups })
+      })
+    }, 0)
+    return () => {
+      signal.cancelled = true
+      clearTimeout(timer)
+    }
   }, [rows, grouped])
   if (grouped?.rows !== rows)
     return (
@@ -63,6 +75,7 @@ export function MoneyConnections({
         <h3 className="font-semibold text-lg">Who paid in, and where payments went</h3>
         <p role="status" className="text-sm text-muted-foreground">
           Grouping {rows.length.toLocaleString("en-US")} {rows.length === 1 ? "payment" : "payments"} by name and account…
+          {step?.rows === rows && ` step ${step.done} of ${step.total}`}
         </p>
       </section>
     )

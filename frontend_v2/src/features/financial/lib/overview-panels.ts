@@ -8,6 +8,7 @@
 import type { LedgerTransaction } from "../api"
 import { minorAmount, paymentGroup, paymentProfiles } from "./investigator-workspace"
 import { unidentifiedGroups, unidentifiedPayment } from "./unidentified-payments"
+import { yieldToBrowser } from "@/lib/sliced-json"
 
 /** A sum in minor units as text, or null where the page says "Amount needs checking". */
 export type PanelTotal = string | null
@@ -91,25 +92,80 @@ const sumOf = (payments: LedgerTransaction[]): PanelTotal => {
  * calculation the server makes (services/financial/overview_panels.py money_connections), for pages that already
  * hold every payment. */
 export function connectionGroups(rows: LedgerTransaction[]): PanelGroup[] {
+  const steps = connectionSteps(rows)
+  for (;;) {
+    const next = steps.next()
+    if (next.done) return next.value
+  }
+}
+
+/** Steps done of steps in all, for the page's status line while it groups. */
+export type GroupingProgress = (done: number, total: number) => void
+
+/**
+ * connectionGroups in steps (each person/account list, then each currency group), giving the browser a turn whenever
+ * a step has run past BUDGET_MS so the page keeps redrawing: on d5b330d1 (27,673 payments) the whole calculation held
+ * the main thread 0.6 s on an idle host and 1.2-1.6 s on a busy one (live long-task trace, 2026-11-01). The value is
+ * the one connectionGroups gives: both run connectionSteps. `signal.cancelled` stops it early (a newer row list).
+ */
+export async function connectionGroupsInSteps(
+  rows: LedgerTransaction[],
+  progress?: GroupingProgress,
+  signal?: { cancelled: boolean }
+): Promise<PanelGroup[] | null> {
+  const steps = connectionSteps(rows)
+  let since = performance.now()
+  for (;;) {
+    const next = steps.next()
+    if (next.done) return next.value
+    if (signal?.cancelled) return null
+    if (performance.now() - since > BUDGET_MS) {
+      progress?.(next.value.done, next.value.total)
+      await yieldToBrowser()
+      if (signal?.cancelled) return null
+      since = performance.now()
+    }
+  }
+}
+
+const BUDGET_MS = 25
+
+function* connectionSteps(rows: LedgerTransaction[]): Generator<{ done: number; total: number }, PanelGroup[]> {
+  // Each row's currency and account type, worked out once (paymentGroup is a pure function of the row).
+  const groupOf = new Map<LedgerTransaction, string>()
+  const group = (row: LedgerTransaction) => {
+    let value = groupOf.get(row)
+    if (value === undefined) {
+      value = paymentGroup(row)
+      groupOf.set(row, value)
+    }
+    return value
+  }
+  for (const row of rows) group(row)
+  const order = [...new Set(rows.map(group))].sort()
+  const total = order.length + 2
   const names = paymentProfiles(rows.filter((row) => !unidentifiedPayment(row))).filter(
     (profile) => profile.kind === "name"
   )
+  yield { done: 1, total }
   const accounts = paymentProfiles(rows).filter((profile) => profile.kind === "account")
+  yield { done: 2, total }
   const side = (payments: LedgerTransaction[], field: "from_name" | "to_name"): PanelSide => ({
     keys: payments.map((row) => row.key),
     total: sumOf(payments),
     suggested: payments.some((row) => row.label_sources?.[field]?.source === "description"),
   })
-  return [...new Set(rows.map(paymentGroup))].sort().map((group) => {
-    const members = rows.filter((row) => paymentGroup(row) === group)
-    return {
-      group,
+  const result: PanelGroup[] = []
+  for (const name of order) {
+    const members = rows.filter((row) => group(row) === name)
+    result.push({
+      group: name,
       credit_total: sumOf(members.filter((row) => row.direction === "credit")),
       debit_total: sumOf(members.filter((row) => row.direction === "debit")),
       names: names
-        .filter((profile) => profile.rows.some((row) => paymentGroup(row) === group))
+        .filter((profile) => profile.rows.some((row) => group(row) === name))
         .map((profile) => {
-          const mine = profile.rows.filter((row) => paymentGroup(row) === group)
+          const mine = profile.rows.filter((row) => group(row) === name)
           return {
             id: profile.id,
             name: profile.name,
@@ -118,11 +174,11 @@ export function connectionGroups(rows: LedgerTransaction[]): PanelGroup[] {
           }
         }),
       accounts: accounts
-        .filter((profile) => profile.rows.some((row) => paymentGroup(row) === group))
+        .filter((profile) => profile.rows.some((row) => group(row) === name))
         .map((profile) => ({
           id: profile.id,
           name: profile.name,
-          keys: profile.rows.filter((row) => paymentGroup(row) === group).map((row) => row.key),
+          keys: profile.rows.filter((row) => group(row) === name).map((row) => row.key),
         })),
       unnamed: unidentifiedGroups(members).map((item) => ({
         direction: item.direction,
@@ -132,6 +188,8 @@ export function connectionGroups(rows: LedgerTransaction[]): PanelGroup[] {
         keys: item.rows.map((row) => row.key),
         total: sumOf(item.rows),
       })),
-    }
-  })
+    })
+    yield { done: result.length + 2, total }
+  }
+  return result
 }

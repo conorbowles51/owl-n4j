@@ -1,7 +1,7 @@
-import { expect, it } from "vitest"
+import { expect, it, vi } from "vitest"
 import type { LedgerTransaction } from "../api"
 import { paymentFixture } from "./payment-fixture.test-support"
-import { connectionGroups } from "./overview-panels"
+import { connectionGroups, connectionGroupsInSteps } from "./overview-panels"
 
 const payment = (key: string, fields: Partial<LedgerTransaction>): LedgerTransaction => ({
   ...paymentFixture,
@@ -33,4 +33,31 @@ it("works out the connections the page has always shown, per currency and accoun
   expect(bank.accounts.map((account) => account.keys)).toEqual([["in", "out", "tax"]])
   expect(bank.unnamed.map((item) => [item.direction, item.kind, item.keys, item.total])).toEqual([["debit", "tax", ["tax"], null]])
   expect(groups[0].names.map((name) => name.name)).toEqual(["Shop"])
+})
+
+it("works out the same connections in steps, giving the browser a turn between them, and stops for a newer list", async () => {
+  const rows = Array.from({ length: 60 }, (_, index) =>
+    payment(`p${index}`, {
+      direction: index % 2 ? "credit" : "debit",
+      from_name: index % 2 ? `Payer ${index % 7}` : "Owner",
+      to_name: index % 2 ? "Owner" : `Payee ${index % 5}`,
+      currency: ["USD", "MXN", "EUR"][index % 3],
+      account_type: index % 4 ? "checking" : "credit_card",
+      amount_minor: String(100 + index),
+    })
+  )
+  // Every step "runs past" the time budget, so it gives a turn after each one and reports it.
+  let clock = 0
+  const spy = vi.spyOn(performance, "now").mockImplementation(() => (clock += 100))
+  try {
+    const seen: [number, number][] = []
+    const groups = await connectionGroupsInSteps(rows, (done, total) => seen.push([done, total]))
+    expect(JSON.stringify(groups)).toBe(JSON.stringify(connectionGroups(rows)))
+    expect(seen).toEqual([1, 2, 3, 4, 5, 6, 7, 8].map((done) => [done, 8]))
+    const signal = { cancelled: false }
+    const stopped = connectionGroupsInSteps(rows, () => (signal.cancelled = true), signal)
+    expect(await stopped).toBeNull()
+  } finally {
+    spy.mockRestore()
+  }
 })
