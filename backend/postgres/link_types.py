@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Mapping
 
 CORE_TYPES: tuple[str, ...] = (
@@ -124,6 +124,8 @@ class PhoneTarget:
     mapping_versions: Mapping[str, Any]
     members: tuple[str, ...] = ()
     metadata: Mapping[str, Any] | None = None
+    # For phone_analysis: the frozen snapshot (PHONE_ANALYSIS_SNAPSHOT_FIELDS), set by resolve_phone_target.
+    snapshot: Mapping[str, Any] | None = None
 
 
 # resolver(db, case_id, target_id) -> PhoneTarget, or None when the target is not in that case.
@@ -156,6 +158,13 @@ def resolve_phone_target(db: Any, case_id: Any, target_type: str, target_id: str
         raise LinkTargetError(f"The phone item {target_id} ({target_type}) was not found in this case")
     if not isinstance(target.mapping_versions, Mapping):
         raise LinkTargetError(f"The phone item {target_id} has no mapping version set; it cannot be linked")
+    if target_type == "phone_analysis":
+        # A result is linked as the frozen snapshot that produced it; a recompute is a different snapshot id.
+        snapshot = (target.metadata or {}).get("snapshot")
+        canonical = validate_phone_analysis_snapshot(snapshot)
+        if phone_analysis_snapshot_id(canonical) != target_id:
+            raise LinkTargetError(f"The phone analysis {target_id} does not match its snapshot; it cannot be linked")
+        target = replace(target, snapshot=canonical, mapping_versions=canonical["mapping_versions"])
     return target
 
 
@@ -164,6 +173,8 @@ def phone_anchor(target: PhoneTarget, source_anchor: Mapping[str, Any] | None) -
 
     anchor = dict(source_anchor or {})
     anchor["mapping_versions"] = dict(target.mapping_versions)
+    if target.snapshot is not None:
+        anchor["snapshot"] = dict(target.snapshot)
     return anchor
 
 

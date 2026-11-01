@@ -149,3 +149,17 @@ def test_phone_analysis_snapshot_has_the_frozen_shape_and_a_stable_id():
                 _snapshot(summary_counts={"meetings": -1}), _snapshot(record_ids=[""])):
         with pytest.raises(link_types.LinkTargetError):
             link_types.validate_phone_analysis_snapshot(bad)
+
+
+def test_a_phone_analysis_link_freezes_its_snapshot_and_refuses_one_that_does_not_match():
+    from services.workspace_entry_service import WorkspaceEntryValidationError, _sanitize_link
+
+    snapshot = _snapshot()
+    snapshot_id = link_types.phone_analysis_snapshot_id(snapshot)
+    link_types.register_phone_resolver("phone_analysis", lambda db, case, target: PhoneTarget(
+        label="Co-location", mapping_versions={}, metadata={"snapshot": snapshot}))
+    data = _sanitize_link(object(), case_id=CASE, link={"target_type": "phone_analysis", "target_id": snapshot_id})
+    assert data["source_anchor"]["snapshot"] == link_types.validate_phone_analysis_snapshot(snapshot)
+    assert data["source_anchor"]["mapping_versions"] == {"location": "m1"}
+    with pytest.raises(WorkspaceEntryValidationError, match="does not match its snapshot"):
+        _sanitize_link(object(), case_id=CASE, link={"target_type": "phone_analysis", "target_id": "pa_recomputed"})
