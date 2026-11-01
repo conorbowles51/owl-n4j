@@ -23,6 +23,9 @@ import {
 } from "../resumable-upload-groups"
 import { toast } from "sonner"
 
+const megabytes = (bytes: number) =>
+  (bytes / 1048576).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+
 function GroupRow({ group }: { group: UploadGroup }) {
   const picker = useRef<HTMLInputElement>(null)
   const [error, setError] = useState("")
@@ -88,9 +91,9 @@ function GroupRow({ group }: { group: UploadGroup }) {
         value={group.size ? (group.received_bytes / group.size) * 100 : 100}
       />
       <p className="text-xs text-muted-foreground">
-        {group.staged_count} of {group.file_count} files verified ·{" "}
-        {(group.received_bytes / 1048576).toFixed(1)} of{" "}
-        {(group.size / 1048576).toFixed(1)} MB saved.
+        {group.staged_count.toLocaleString("en-US")} of{" "}
+        {group.file_count.toLocaleString("en-US")} files verified ·{" "}
+        {megabytes(group.received_bytes)} of {megabytes(group.size)} MB saved.
       </p>
       <p className="text-xs text-muted-foreground">
         Your selection and received parts are kept. After an interruption, only

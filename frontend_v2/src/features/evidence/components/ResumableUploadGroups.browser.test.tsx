@@ -533,3 +533,35 @@ it("an unfinished selection can be discarded after saying what is removed", asyn
   await waitFor(() => expect(screen.queryByText("Phone folder")).toBeNull())
   client.clear()
 })
+
+it("a phone-sized selection shows its counts with thousands separators", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (url.startsWith("/api/evidence-upload-sessions?")) return []
+    if (url.startsWith("/api/evidence-upload-groups?"))
+      return [
+        {
+          id: "big",
+          case_id: "case",
+          name: "Phone folder",
+          kind: "folder",
+          status: "uploading",
+          file_count: 43123,
+          staged_count: 1300,
+          size: 46_137_344_000,
+          received_bytes: 1_258_291,
+          replace_existing: false,
+          folder_id: null,
+          receipt: null,
+        },
+      ] satisfies UploadGroup[]
+    throw new Error(`unexpected ${url}`)
+  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <ResumableUploadsPanel caseId="case" />
+    </QueryClientProvider>
+  )
+  expect(await screen.findByText("1,300 of 43,123 files verified · 1.2 of 44,000.0 MB saved.")).toBeVisible()
+  client.clear()
+})
