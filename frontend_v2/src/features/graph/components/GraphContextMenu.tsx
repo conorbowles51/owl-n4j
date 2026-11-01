@@ -16,6 +16,8 @@ import {
   ContactRound,
 } from "lucide-react"
 import { useGraphStore } from "@/stores/graph.store"
+import { useNavigate } from "react-router-dom"
+import { isPhoneIdentityNode, phoneIdentityDecisionHref } from "@/features/phones/phone-links"
 import { toast } from "sonner"
 import {
   useAddSignificantEntities,
@@ -46,6 +48,7 @@ export function GraphContextMenu({
   onMergeSelected,
 }: GraphContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
+  const navigate = useNavigate()
   const {
     contextMenu,
     closeContextMenu,
@@ -106,6 +109,13 @@ export function GraphContextMenu({
   }
 
   const addToDossiers = async () => {
+    if (isPhoneIdentityNode(contextMenu.nodeType)) {
+      // A phone identity joins a dossier only through the identity decision (link_phone_identity), never as a
+      // new dossier keyed on the graph node (07 section 6.4 item 12).
+      navigate(phoneIdentityDecisionHref(caseId, nodeKey))
+      closeContextMenu()
+      return
+    }
     try {
       await createDossier.mutateAsync({ canonical_entity_key: nodeKey, display_name: nodeLabel })
       toast.success("Added to Dossiers")

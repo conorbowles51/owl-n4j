@@ -16,6 +16,8 @@ interface ContextMenuData {
   y: number
   nodeKey: string
   nodeLabel: string
+  /** The node's graph type, e.g. "Person" or "PhoneIdentity". */
+  nodeType?: string
 }
 
 type ContextMenuState = ContextMenuData | null

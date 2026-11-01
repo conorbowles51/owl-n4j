@@ -54,10 +54,17 @@ export interface DossierAssessment {
 }
 export interface InterviewEvidenceLink {
   id: string
-  evidence_file_id: string
+  /** Set for an evidence file; null for a registry target such as a phone record. */
+  evidence_file_id: string | null
+  /** "evidence", or a registry type (phone_record, phone_analysis, statement_check). */
+  target_type?: string
+  target_id?: string
   source_anchor: Record<string, unknown>
-  evidence: DossierEvidence
+  evidence: DossierEvidence | null
 }
+export type InterviewEvidenceInput =
+  | { evidence_file_id: string; source_anchor?: Record<string, unknown> }
+  | { target_type: string; target_id: string; source_anchor?: Record<string, unknown> }
 export interface DossierInterview {
   id: string
   date_value?: string | null
@@ -282,10 +289,7 @@ export const dossiersAPI = {
       interviewer_user_ids?: string[]
       status?: string
       working_notes?: string | null
-      evidence_links?: Array<{
-        evidence_file_id: string
-        source_anchor?: Record<string, unknown>
-      }>
+      evidence_links?: InterviewEvidenceInput[]
     }
   ) =>
     fetchAPI<DossierInterview>(
@@ -296,10 +300,7 @@ export const dossiersAPI = {
     id: string,
     interviewId: string,
     input: Partial<Omit<DossierInterview, "evidence_links">> & {
-      evidence_links?: Array<{
-        evidence_file_id: string
-        source_anchor?: Record<string, unknown>
-      }>
+      evidence_links?: InterviewEvidenceInput[]
     }
   ) =>
     fetchAPI<DossierInterview>(

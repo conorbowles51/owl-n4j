@@ -1,6 +1,8 @@
 import { CaseworkHistory } from "./CaseworkHistory"
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
+import { PhoneLinkDetail } from "@/features/phones/PhoneLinkDetail"
+import { isPhoneLinkType, phoneLinkHref, phoneLinkSummary } from "@/features/phones/phone-links"
 import {
   ArchiveRestore,
   ArrowRight,
@@ -10,6 +12,7 @@ import {
   Link2,
   Loader2,
   RotateCcw,
+  Smartphone,
   Sparkles,
   Trash2,
 } from "lucide-react"
@@ -147,7 +150,7 @@ export function CaseworkDetailSheet({
     }
     if (!entry) return groups
     for (const link of entry.links.filter(
-      (item) => item.target_type === "evidence"
+      (item) => item.target_type === "evidence" || isPhoneLinkType(item.target_type)
     )) {
       groups[link.relationship ?? "unclassified"].push(link)
     }
@@ -155,6 +158,14 @@ export function CaseworkDetailSheet({
   }, [entry])
 
   const openLink = (targetType: string, targetId: string) => {
+    if (isPhoneLinkType(targetType)) {
+      const link = entry?.links.find(
+        (item) => item.target_type === targetType && item.target_id === targetId
+      )
+      const href = link ? phoneLinkHref(caseId, link) : null
+      if (href) navigate(href)
+      return
+    }
     if (targetType === "evidence") {
       if (onOpenEvidence) {
         const link = entry?.links.find(
@@ -463,14 +474,17 @@ export function CaseworkDetailSheet({
                                   "entry",
                                   "dossier",
                                 ] as string[]
-                              ).includes(link.target_type)
+                              ).includes(link.target_type) &&
+                              !isPhoneLinkType(link.target_type)
                             }
                             className="flex min-h-10 w-full min-w-0 items-center gap-2 py-2 text-left transition-colors enabled:hover:bg-muted/35 disabled:cursor-default"
                             onClick={() =>
                               openLink(link.target_type, link.target_id)
                             }
                           >
-                            {link.target_type === "evidence" ? (
+                            {isPhoneLinkType(link.target_type) ? (
+                              <Smartphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                            ) : link.target_type === "evidence" ? (
                               <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                             ) : link.target_type === "graph_entity" ? (
                               <GitBranch className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
@@ -490,6 +504,9 @@ export function CaseworkDetailSheet({
                                     {anchor}
                                   </span>
                                 )}
+                                {isPhoneLinkType(link.target_type) && (
+                                  <PhoneLinkDetail link={link} />
+                                )}
                               </span>
                             </span>
                           </button>
@@ -500,7 +517,7 @@ export function CaseworkDetailSheet({
                 )}
 
                 {entry.links.some(
-                  (link) => link.target_type === "evidence"
+                  (link) => link.target_type === "evidence" || isPhoneLinkType(link.target_type)
                 ) && (
                   <details className="space-y-3 border-t border-border pt-3">
                     <summary className="cursor-pointer text-xs font-semibold">
@@ -522,10 +539,10 @@ export function CaseworkDetailSheet({
                                     type="button"
                                     className="block w-full truncate rounded-md bg-background px-2.5 py-2 text-left text-xs font-medium hover:bg-muted"
                                     onClick={() =>
-                                      openLink("evidence", link.target_id)
+                                      openLink(link.target_type, link.target_id)
                                     }
                                   >
-                                    {link.target_label || "Evidence"}
+                                    {link.target_label || (isPhoneLinkType(link.target_type) ? phoneLinkSummary(link).kind : "Evidence")}
                                   </button>
                                 ))
                               ) : (

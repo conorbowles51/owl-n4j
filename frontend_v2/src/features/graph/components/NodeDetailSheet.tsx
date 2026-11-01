@@ -3,6 +3,8 @@ import { AccountOwnershipReview } from "@/features/financial/components/AccountO
 import { useMemo, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
+import { useNavigate } from "react-router-dom"
+import { isPhoneIdentityNode, phoneIdentityDecisionHref } from "@/features/phones/phone-links"
 import { useGraphStore } from "@/stores/graph.store"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useNodeDetails } from "../hooks/use-node-details"
@@ -85,6 +87,7 @@ export function NodeDetailSheet({
   const addSignificant = useAddSignificantEntities(caseId)
   const removeSignificant = useRemoveSignificantEntities(caseId)
   const createDossier = useCreateDossier(caseId)
+  const navigate = useNavigate()
   const caseQuery = useCase(caseId)
   const { canEdit } = useCasePermissions(caseQuery.data)
 
@@ -373,6 +376,11 @@ export function NodeDetailSheet({
               title="Add to Dossiers"
               disabled={createDossier.isPending}
               onClick={async () => {
+                if (isPhoneIdentityNode(detail.type)) {
+                  // Through the identity decision only (07 section 6.4 item 12).
+                  navigate(phoneIdentityDecisionHref(caseId, detail.key))
+                  return
+                }
                 try {
                   await createDossier.mutateAsync({
                     canonical_entity_key: detail.key,

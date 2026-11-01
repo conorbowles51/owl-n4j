@@ -538,6 +538,7 @@ export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: G
         y: event.clientY,
         nodeKey: node.key,
         nodeLabel: node.label,
+        nodeType: node.type,
       })
     },
     [openContextMenu, selectedNodeKeys, addToSelection]

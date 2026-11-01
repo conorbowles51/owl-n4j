@@ -20,6 +20,9 @@ import {
   UserRound,
 } from "lucide-react"
 import { toast } from "sonner"
+import { useNavigate } from "react-router-dom"
+import { PhoneLinkDetail } from "@/features/phones/PhoneLinkDetail"
+import { isPhoneLinkType, phoneLinkHref, phoneLinkSummary } from "@/features/phones/phone-links"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -526,6 +529,7 @@ export function DossierDetailSheet({
   const [entryId, setEntryId] = useState<string | null>(null)
   const [linkedDossierId, setLinkedDossierId] = useState<string | null>(null)
   const [removeLink, setRemoveLink] = useState<DossierLink | null>(null)
+  const navigate = useNavigate()
   const removeInterview = useDossierMutation(
     caseId,
     dossierId ?? "",
@@ -563,6 +567,10 @@ export function DossierDetailSheet({
             ? link.source_anchor.start_seconds
             : undefined,
       })
+    else if (isPhoneLinkType(link.target_type)) {
+      const href = phoneLinkHref(caseId, link)
+      if (href) navigate(href)
+    }
     else if (link.target_type === "entry") setEntryId(link.target_id)
     else if (link.target_type === "dossier" && link.target_id !== dossierId)
       setLinkedDossierId(link.target_id)
@@ -574,7 +582,8 @@ export function DossierDetailSheet({
       className="min-h-10 break-all text-left text-xs text-amber-600 underline underline-offset-2 hover:text-amber-700 dark:text-amber-400"
       onClick={() => openLinkedItem(link)}
     >
-      {link.label || "Open source evidence"}
+      {link.label || (isPhoneLinkType(link.target_type) ? phoneLinkSummary(link).kind : "Open source evidence")}
+      {isPhoneLinkType(link.target_type) && <PhoneLinkDetail link={link} />}
     </button>
   )
   const openDocument = async (filename: string, page?: number) => {
@@ -862,9 +871,9 @@ export function DossierDetailSheet({
                             {item.evidence_links.map((link) =>
                               renderSourceLink({
                                 id: link.id,
-                                target_type: "evidence",
-                                target_id: link.evidence_file_id,
-                                label: link.evidence.original_filename,
+                                target_type: link.evidence_file_id ? "evidence" : (link.target_type ?? "evidence"),
+                                target_id: link.evidence_file_id ?? link.target_id ?? "",
+                                label: link.evidence?.original_filename ?? null,
                                 source_anchor: link.source_anchor,
                               })
                             )}
@@ -1179,17 +1188,25 @@ export function DossierDetailSheet({
                       ) : null}
                       {item.evidence_links.length ? (
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-                          {item.evidence_links.map((link) => (
+                          {item.evidence_links.map((link) => !link.evidence_file_id ? (
+                            renderSourceLink({
+                              id: link.id,
+                              target_type: link.target_type ?? "",
+                              target_id: link.target_id ?? "",
+                              label: null,
+                              source_anchor: link.source_anchor,
+                            })
+                          ) : (
                             <button
                               type="button"
                               key={link.id}
                               onClick={() =>
                                 setViewerDoc({
-                                  evidenceId: link.evidence_file_id,
+                                  evidenceId: link.evidence_file_id!,
                                   url: evidenceAPI.getFileUrl(
-                                    link.evidence_file_id
+                                    link.evidence_file_id!
                                   ),
-                                  name: link.evidence.original_filename,
+                                  name: link.evidence?.original_filename ?? "Evidence file",
                                   page:
                                     typeof link.source_anchor?.page === "number"
                                       ? link.source_anchor.page
@@ -1204,7 +1221,7 @@ export function DossierDetailSheet({
                               className="inline-flex min-h-10 items-center gap-1.5 break-all text-left text-xs text-amber-500 underline underline-offset-2 hover:text-amber-400"
                             >
                               <FileText className="size-3" />{" "}
-                              {link.evidence.original_filename}
+                              {link.evidence?.original_filename ?? "Evidence file"}
                             </button>
                           ))}
                         </div>

@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { phoneLinkSummary } from "@/features/phones/phone-links"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
@@ -44,12 +45,29 @@ export function DossierInterviewDialog({
   )
   const [notes, setNotes] = useState(interview?.working_notes ?? "")
   const [error, setError] = useState("")
-  const [sources, setSources] = useState(
-    (interview?.evidence_links ?? []).map((link) => ({
-      id: link.evidence_file_id,
-      label: link.evidence.original_filename,
-      source_anchor: link.source_anchor,
-    }))
+  // Evidence files are edited here; phone records, analyses and statement checks attached elsewhere are kept
+  // unchanged and listed, so an edit never drops them.
+  const [sources, setSources] = useState<
+    Array<{ id: string; label: string; source_anchor: Record<string, unknown>; target_type?: string }>
+  >(
+    (interview?.evidence_links ?? []).map((link) =>
+      link.evidence_file_id
+        ? {
+            id: link.evidence_file_id,
+            label: link.evidence?.original_filename ?? "Evidence file",
+            source_anchor: link.source_anchor,
+          }
+        : {
+            id: link.target_id ?? link.id,
+            label: phoneLinkSummary({
+              target_type: link.target_type ?? "",
+              target_id: link.target_id ?? "",
+              source_anchor: link.source_anchor,
+            }).label,
+            source_anchor: link.source_anchor,
+            target_type: link.target_type,
+          }
+    )
   )
   const mutation = useDossierMutation<void>(
     dossier.case_id,
@@ -69,10 +87,11 @@ export function DossierInterviewDialog({
           .filter(Boolean),
         working_notes: notes || null,
         status: interview?.status ?? "completed",
-        evidence_links: sources.map((item) => ({
-          evidence_file_id: item.id,
-          source_anchor: item.source_anchor,
-        })),
+        evidence_links: sources.map((item) =>
+          item.target_type
+            ? { target_type: item.target_type, target_id: item.id, source_anchor: item.source_anchor }
+            : { evidence_file_id: item.id, source_anchor: item.source_anchor }
+        ),
       }
       return interview
         ? dossiersAPI.updateInterview(dossier.id, interview.id, input)

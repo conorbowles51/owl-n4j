@@ -294,6 +294,7 @@ export function GraphCanvas3D({
         y: event.clientY,
         nodeKey: node.key,
         nodeLabel: node.label,
+        nodeType: node.type,
       })
     },
     [addToSelection, isSpotlight, openContextMenu, selectedNodeKeys]
