@@ -6,14 +6,14 @@ import { graphAPI } from "@/features/graph/api"
 import { useEvidenceStore } from "@/features/evidence/evidence.store"
 import { useGraphStore } from "@/stores/graph.store"
 import { caseworkAPI } from "../casework-api"
-import { usePhoneSelectionStore } from "../stores/phone-selection.store"
+import { usePhoneSelection } from "@/stores/phone-selection.store"
 import { useCurrentCaseworkLinks } from "./use-current-casework-links"
 
 afterEach(() => {
   vi.restoreAllMocks()
   useGraphStore.setState({ selectedNodeKeys: new Set() })
   useEvidenceStore.setState({ selectedFileIds: new Set(), detailFileId: null })
-  usePhoneSelectionStore.setState({ selection: null })
+  usePhoneSelection.setState({ caseId: null, ids: [], anchor: null, focus: null, whole: null })
 })
 
 it("returns the whole selection with a phone source and never cuts it to 6 (07 6.4 item 10)", async () => {
@@ -29,26 +29,25 @@ it("returns the whole selection with a phone source and never cuts it to 6 (07 6
       Promise.resolve({ items: (ids ?? []).map((id) => ({ target_type: "evidence", target_id: id, label: `Doc ${id}`, metadata: {} })) } as never))
   useGraphStore.setState({ selectedNodeKeys: new Set(nodeKeys) })
   useEvidenceStore.setState({ selectedFileIds: new Set(fileIds), detailFileId: null })
-  usePhoneSelectionStore.setState({ selection: { caseId: "case-1", recordCount: 12345, screen: "Conversations", links: [
-    { target_type: "phone_selection", target_id: "sel-1", target_label: "12,345 messages", relationship: "unclassified" },
-  ] } })
+  usePhoneSelection.getState().setCase("case-1")
+  usePhoneSelection.setState({ ids: Array.from({ length: 700 }, (_, n) => `rec-${n}`) })
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
   const { result } = renderHook(() => useCurrentCaseworkLinks("case-1"), { wrapper })
 
   await waitFor(() => expect(result.current.filter((l) => l.target_label?.startsWith("Doc "))).toHaveLength(60))
   await waitFor(() => expect(result.current.filter((l) => l.target_label?.startsWith("Fetched "))).toHaveLength(2))
-  expect(result.current).toHaveLength(9 + 60 + 1)
+  expect(result.current).toHaveLength(9 + 60 + 700)
   expect(details.mock.calls.map((call) => call[0]).sort()).toEqual(["node-7", "node-8"])
   expect(options.mock.calls.map((call) => (call[4] ?? []).length)).toEqual([50, 10])
-  const phone = result.current.at(-1)!
-  expect(phone.target_type).toBe("phone_selection")
-  expect(phone.metadata).toMatchObject({ source: "current_selection", screen: "Conversations" })
+  const phone = result.current.filter((link) => link.target_type === "phone_record")
+  expect(phone.map((link) => link.target_id)).toEqual(Array.from({ length: 700 }, (_, n) => `rec-${n}`))
+  expect(phone[0].metadata).toMatchObject({ source: "current_selection" })
 })
 
 it("ignores a phone selection made in another case", () => {
   const client = new QueryClient()
-  usePhoneSelectionStore.setState({ selection: { caseId: "case-2", recordCount: 1, screen: "Search", links: [
-    { target_type: "phone_record", target_id: "r1" }] } })
+  usePhoneSelection.getState().setCase("case-2")
+  usePhoneSelection.setState({ ids: ["r1"] })
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>
   const { result } = renderHook(() => useCurrentCaseworkLinks("case-1"), { wrapper })
   expect(result.current).toEqual([])

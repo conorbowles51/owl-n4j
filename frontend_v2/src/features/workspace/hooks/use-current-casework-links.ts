@@ -6,7 +6,7 @@ import { useGraphStore } from "@/stores/graph.store"
 import type { GraphNode, NodeDetail } from "@/types/graph.types"
 import { caseworkAPI, type CaseworkLinkInput } from "../casework-api"
 import { caseworkKeys } from "./use-casework"
-import { usePhoneSelectionStore } from "../stores/phone-selection.store"
+import { usePhoneSelection } from "@/stores/phone-selection.store"
 
 /** The attachment-options endpoint names at most this many ids per request; larger selections go in parts. */
 export const EVIDENCE_LABEL_PART = 50
@@ -27,15 +27,21 @@ function cachedNodeLabels(queryClient: ReturnType<typeof useQueryClient>, caseId
 }
 
 /**
- * Everything the person has selected, as links: graph nodes, evidence files and phone items. Nothing is cut:
+ * Everything the person has selected, as links: graph nodes, evidence files and phone records. Nothing is cut:
  * every selected item is returned, and the count shown beside "Attach selection" is the whole selection.
+ *
+ * Phone records come from the phone kit's selection store (`@/stores/phone-selection.store`), the one selection
+ * every phone screen writes. Picked record ids become `phone_record` links. A "whole filtered result" selection is
+ * not a set of ids and needs a frozen `phone_selection` id from the server before it can be a link, so it is not
+ * returned here; it is added from the phone screen's Add to… (owner: the phone screens build).
  */
 export function useCurrentCaseworkLinks(caseId: string) {
   const queryClient = useQueryClient()
   const selectedNodeSet = useGraphStore((state) => state.selectedNodeKeys)
   const selectedFileSet = useEvidenceStore((state) => state.selectedFileIds)
   const detailFileId = useEvidenceStore((state) => state.detailFileId)
-  const phoneSelection = usePhoneSelectionStore((state) => state.selection)
+  const phoneCaseId = usePhoneSelection((state) => state.caseId)
+  const phoneRecordIds = usePhoneSelection((state) => state.ids)
 
   const selectedNodeKeys = useMemo(() => Array.from(selectedNodeSet), [selectedNodeSet])
   const selectedFileIds = useMemo(() => {
@@ -99,14 +105,18 @@ export function useCurrentCaseworkLinks(caseId: string) {
         metadata: { ...(option?.metadata ?? {}), source: "current_selection" },
       })
     }
-    if (phoneSelection && phoneSelection.caseId === caseId) {
-      for (const link of phoneSelection.links) {
+    if (phoneCaseId === caseId) {
+      for (const id of phoneRecordIds) {
         links.push({
-          ...link,
-          metadata: { ...(link.metadata ?? {}), source: "current_selection", screen: phoneSelection.screen },
+          target_type: "phone_record",
+          target_id: id,
+          target_label: "Selected phone record",
+          relationship: "unclassified",
+          source_anchor: {},
+          metadata: { source: "current_selection" },
         })
       }
     }
     return links
-  }, [evidenceQueries, knownLabels, nodeQueries, phoneSelection, caseId, selectedFileIds, selectedNodeKeys, unlabelledKeys])
+  }, [evidenceQueries, knownLabels, nodeQueries, phoneCaseId, phoneRecordIds, caseId, selectedFileIds, selectedNodeKeys, unlabelledKeys])
 }
