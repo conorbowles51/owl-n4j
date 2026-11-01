@@ -1,10 +1,10 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
-import { MemoryRouter, Route, Routes } from "react-router-dom"
+import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppSidebar } from "@/components/ui/sidebar"
 import { dispatchKey, resetKeymapForTest } from "@/lib/keymap"
-import { isSwitchOn, setSwitch } from "@/lib/ui-switches"
+import { applySwitchesAtStart, isSwitchOn, setSwitch } from "@/lib/ui-switches"
 import { TRAINING } from "../fixtures"
 import PhonePrototypePage from "./PhonePrototypePage"
 import { readingsFor } from "./NeedsDecisionProto"
@@ -60,6 +60,31 @@ describe("the prototype switch (07 12.1 item D)", () => {
     expect(isSwitchOn("phone-prototype")).toBe(true)
     act(() => setSwitch("phone-prototype", false))
     await waitFor(() => expect(screen.queryByRole("link", { name: "Phones (prototype)" })).toBeNull())
+  })
+})
+
+describe("the switch survives the case redirect (live check 1 November)", () => {
+  function redirecting(path: string) {
+    return render(
+      <MemoryRouter initialEntries={[path]}>
+        <TooltipProvider>
+          <Routes>
+            <Route path="/cases/:id" element={<Navigate to="workspace" replace />} />
+            <Route path="/cases/:id/*" element={<AppSidebar />} />
+          </Routes>
+        </TooltipProvider>
+      </MemoryRouter>
+    )
+  }
+  it("the redirect drops the query, so the sidebar alone never sees ?phone-prototype=on", async () => {
+    redirecting("/cases/case-1?phone-prototype=on")
+    await screen.findByRole("navigation")
+    expect(screen.queryByRole("link", { name: "Phones (prototype)" })).toBeNull()
+  })
+  it("read at app start, before routing, the switch is on after the redirect", async () => {
+    applySwitchesAtStart({ search: "?phone-prototype=on" })
+    redirecting("/cases/case-1?phone-prototype=on")
+    expect(await screen.findByRole("link", { name: "Phones (prototype)" })).toBeInTheDocument()
   })
 })
 

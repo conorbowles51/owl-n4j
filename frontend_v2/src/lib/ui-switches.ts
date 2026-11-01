@@ -39,6 +39,11 @@ export function applySwitchesFromSearch(search: string) {
   }
 }
 
+/** At app start, before routing: a redirect such as /cases/:id to its workspace drops the query string. */
+export function applySwitchesAtStart(address: { search: string } = window.location) {
+  applySwitchesFromSearch(address.search)
+}
+
 export function useSwitch(name: SwitchName): boolean {
   return useSyncExternalStore(
     (l) => {
