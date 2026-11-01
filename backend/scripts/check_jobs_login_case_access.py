@@ -16,7 +16,7 @@ import sys
 ALLOWED = {
     "cded78d0-e659-44cc-940d-d8f8c8012760",  # Verification (automated checks)
     "4aa79795-1076-4c75-985f-784936abb71f",  # Phones-only check (synthetic)
-    "6587637c-0dff-45fa-8852-a6e4f7131c0c",  # Phone training (synthetic)
+    "d9945277-6c80-4a39-82c7-93a95d420384",  # Phone training (synthetic)
 }
 
 

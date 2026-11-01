@@ -80,6 +80,25 @@ class BuilderShapes(unittest.TestCase):
         c6 = [t for t in ui["threads"] if t["phone"] == "C6"]
         self.assertTrue(any("p0" in t["participants"] for t in c6))
 
+    def test_training_ledger_is_also_monthly_single_page_pdf_statements_with_every_row(self):
+        """The ledger goes through Loupe's real Financial intake, which reads PDF statements (item I)."""
+        rows = list(csv.DictReader(open(self.tr_dir / self.tr["ledger"]["file"])))
+        printed, closing = [], None
+        for name in self.tr["ledger"]["pdfs"]:
+            pdf = (self.tr_dir / name).read_bytes()
+            self.assertTrue(pdf.startswith(b"%PDF-1.4") and pdf.rstrip().endswith(b"%%EOF"))
+            self.assertEqual(pdf.count(b"/Type /Page "), 1, name)
+            dates = re.findall(rb"\((\d{4}-\d\d-\d\d)\) Tj", pdf)[1:-1]  # between the opening and closing rows
+            printed += [d.decode() for d in dates]
+            balances = re.findall(rb"Tm \((-?\d+\.\d\d)\) Tj", pdf)
+            if closing is not None:  # each month opens at the previous month's closing balance
+                self.assertEqual(balances[0].decode(), closing, name)
+            closing = balances[-1].decode()
+            for word in (b"Opening Balance", b"Closing Balance", b"Account Number", b"Statement Period", b"Currency: USD",
+                         fb.SYNTHETIC_MARK.encode()):
+                self.assertIn(word, pdf)
+        self.assertEqual(printed, ["{2}-{0}-{1}".format(*r["Date"].split("/")) for r in rows])
+
     def test_failure_states_present(self):
         c2 = self.po["phones"][1]
         self.assertFalse(c2["owner_number_in_report"])  # J-1 / J-2 owner unknown

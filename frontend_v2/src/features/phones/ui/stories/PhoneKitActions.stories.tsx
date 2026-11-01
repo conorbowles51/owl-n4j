@@ -40,7 +40,7 @@ export const KeysDark: Story = { render: Keys, parameters: { theme: "dark" } }
 const Report = () => (
   <ReportProblem
     defaultOpen
-    caseId="6587637c-0dff-45fa-8852-a6e4f7131c0c"
+    caseId="d9945277-6c80-4a39-82c7-93a95d420384"
     screen="conversations"
     scope={{ messages: 2140, phones: 2 }}
     components={["scope-bar", "phone-table"]}

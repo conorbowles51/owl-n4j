@@ -638,6 +638,8 @@ def write_ledger(case: CaseSpec, out: Path, phones_period: tuple[dt.datetime, dt
         if rng.random() < 0.35:
             payee = rng.choice(payees)
             amount = round(rng.choice([-1, -1, -1, 1]) * rng.uniform(15, 900), 2)
+            if balance + amount < 100:  # the account never goes overdrawn: an invented payment in instead
+                amount = abs(amount)
             balance = round(balance + amount, 2)
             kind = "TRANSFER TO" if amount < 0 else "TRANSFER FROM"
             rows.append({"Date": day.strftime("%m/%d/%Y"), "Description": f"{kind} {payee.upper()}",
@@ -649,7 +651,90 @@ def write_ledger(case: CaseSpec, out: Path, phones_period: tuple[dt.datetime, dt
         w = csv.DictWriter(fh, fieldnames=["Date", "Description", "Amount", "Balance"])
         w.writeheader()
         w.writerows(rows)
-    return {"file": str(path.relative_to(out)), "rows": len(rows), "payees_on_phones": payees[:5]}
+    # One single-page PDF statement per calendar month, the shape Financial's intake reads (item I).
+    pdfs, opening = [], 2500.00
+    months = sorted({(dt.datetime.strptime(r["Date"], "%m/%d/%Y").year, dt.datetime.strptime(r["Date"], "%m/%d/%Y").month) for r in rows})
+    for year, month in months:
+        first = dt.date(year, month, 1)
+        last = (dt.date(year + (month == 12), month % 12 + 1, 1) - dt.timedelta(days=1))
+        month_rows = [r for r in rows if r["Date"].startswith(f"{month:02d}/") and r["Date"].endswith(str(year))]
+        pdf = out / "ledger" / "statements" / f"statement-{year}-{month:02d}.pdf"
+        pdf.parent.mkdir(parents=True, exist_ok=True)
+        write_statement_pdf(month_rows, pdf, opening=opening, start=first, end=last)
+        opening = float(month_rows[-1]["Balance"])
+        pdfs.append(str(pdf.relative_to(out)))
+    return {"file": str(path.relative_to(out)), "pdfs": pdfs, "rows": len(rows), "payees_on_phones": payees[:5]}
+
+
+def _pdf_text(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def write_statement_pdf(rows: list[dict], path: Path, *, opening: float, start: dt.date, end: dt.date,
+                        per_page: int = 34) -> None:
+    """The same ledger as a text-layer PDF bank statement, so the training case's ledger goes through Loupe's real
+    Financial intake (Evidence upload, statement detection, statement reading). Stdlib only and deterministic:
+    no creation date, fixed fonts. Every name and number in it is invented (SYNTHETIC_MARK is printed)."""
+    closing = float(rows[-1]["Balance"]) if rows else opening
+
+    def right(edge: float, text: str, size: int = 9) -> float:  # right-align digits (Helvetica digits are 0.556 em)
+        return round(edge - sum(0.278 if c in ".," else 0.556 for c in text) * size, 3)
+
+    head = [
+        (25, 810, 14, "BANK STATEMENT"),
+        (25, 793, 8, f"{SYNTHETIC_MARK}. No real customer or payment."),
+        (25, 775, 10, "Account Name: EMRYS JUNIPER"),
+        (25, 757, 10, "Account Number: 000555010/0100"),
+        (25, 739, 10, "Bank: Synthetic Community Bank"),
+        (25, 721, 10, f"Statement Period: {start:%Y-%m-%d} - {end:%Y-%m-%d}"),
+        (25, 703, 10, "Currency: USD"),
+    ]
+    body = [(dict(date=start.strftime("%Y-%m-%d"), desc="Opening Balance", credit="", debit="", balance=f"{opening:.2f}"))]
+    for r in rows:
+        amount = float(r["Amount"])
+        month, day, year = r["Date"].split("/")
+        body.append(dict(date=f"{year}-{month}-{day}", desc=r["Description"].title()[:40],
+                         credit=f"{amount:.2f}" if amount > 0 else "", debit=f"{-amount:.2f}" if amount < 0 else "",
+                         balance=f"{float(r['Balance']):.2f}"))
+    body.append(dict(date=end.strftime("%Y-%m-%d"), desc="Closing Balance", credit="", debit="", balance=f"{closing:.2f}"))
+    pages = []
+    if len(body) > 26:
+        raise ValueError("a statement page holds 24 payments; split by month")
+    parts = [body]
+    for n, part in enumerate(parts):
+        lines = list(head) if n == 0 else []
+        y = 660 if n == 0 else 800
+        lines += [(31, y, 9, "Date"), (113, y, 9, "Description"), (391, y, 9, "Credit"), (464, y, 9, "Debit"), (537, y, 9, "Balance")]
+        y -= 26
+        for row in part:
+            lines += [(31, y, 9, row["date"]), (113, y, 9, row["desc"])]
+            if row["credit"]:
+                lines.append((right(452, row["credit"]), y, 9, row["credit"]))
+            if row["debit"]:
+                lines.append((right(525, row["debit"]), y, 9, row["debit"]))
+            lines.append((right(598, row["balance"]), y, 9, row["balance"]))
+            y -= 20
+        stream = "\n".join(f"BT /F1 {size} Tf 1 0 0 1 {x} {yy} Tm ({_pdf_text(text)}) Tj ET" for x, yy, size, text in lines)
+        pages.append(stream.encode("latin-1"))
+    objects: list[bytes] = []
+    kids = " ".join(f"{4 + 2 * i} 0 R" for i in range(len(pages)))
+    objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
+    objects.append(f"<< /Type /Pages /Kids [{kids}] /Count {len(pages)} >>".encode())
+    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    for i, stream in enumerate(pages):
+        objects.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 623 842] /Resources << /Font << /F1 3 0 R >> >> "
+                       f"/Contents {5 + 2 * i} 0 R >>".encode())
+        objects.append(f"<< /Length {len(stream)} >>\nstream\n".encode() + stream + b"\nendstream")
+    data = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, body in enumerate(objects):
+        offsets.append(len(data))
+        data += f"{i + 1} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref = len(data)
+    data += f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode()
+    data += "".join(f"{o:010d} 00000 n \n" for o in offsets).encode()
+    data += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
+    path.write_bytes(bytes(data))
 
 
 def build_case(case: CaseSpec, out: Path) -> dict:
