@@ -512,12 +512,12 @@ def _canonical_integrity_errors(db: Session, case_id: UUID) -> list[dict[str, An
         )
     ):
         interview = db.get(DossierInterview, link.interview_id)
-        evidence = db.get(EvidenceFile, link.evidence_file_id)
+        # A registry target (a phone record, say) has no evidence file; its case is checked when it is added.
+        evidence = db.get(EvidenceFile, link.evidence_file_id) if link.evidence_file_id else None
         if (
             interview is None
-            or evidence is None
             or interview.case_id != case_id
-            or evidence.case_id != case_id
+            or (link.evidence_file_id is not None and (evidence is None or evidence.case_id != case_id))
         ):
             errors.append(
                 {"kind": "interview_evidence_case_mismatch", "id": str(link.id)}

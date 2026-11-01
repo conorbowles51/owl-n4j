@@ -120,7 +120,11 @@ class MediaOrder(BaseModel):
 
 
 class InterviewEvidenceIn(BaseModel):
-    evidence_file_id: UUID
+    # An evidence file (evidence_file_id), or a registry target: phone_file, phone_record, phone_analysis or
+    # statement_check with its target_id. The service checks each against the case.
+    evidence_file_id: UUID | None = None
+    target_type: str | None = Field(default=None, max_length=64)
+    target_id: str | None = Field(default=None, max_length=512)
     source_anchor: dict[str, Any] = Field(default_factory=dict)
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -142,13 +142,28 @@ class DossierInterview(Base, TimestampMixin):
 
 
 class DossierInterviewEvidenceLink(Base, TimestampMixin):
+    """One item of an interview's evidence: an evidence file, or a registry target such as a phone record.
+
+    Exactly one of `evidence_file_id` and (`target_type`, `target_id`) is set (07 section 6.4 item 5).
+    """
+
     __tablename__ = "dossier_interview_evidence_links"
-    __table_args__ = (UniqueConstraint("interview_id", "evidence_file_id", name="uq_dossier_interview_evidence"),)
+    __table_args__ = (
+        UniqueConstraint("interview_id", "evidence_file_id", name="uq_dossier_interview_evidence"),
+        UniqueConstraint("interview_id", "target_type", "target_id", name="uq_dossier_interview_evidence_target"),
+        CheckConstraint(
+            "(evidence_file_id IS NOT NULL AND target_type IS NULL AND target_id IS NULL) OR "
+            "(evidence_file_id IS NULL AND target_type IS NOT NULL AND target_id IS NOT NULL)",
+            name="ck_dossier_interview_evidence_one_target",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     interview_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("dossier_interviews.id", ondelete="CASCADE"), nullable=False, index=True)
     case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True)
-    evidence_file_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("evidence_files.id", ondelete="RESTRICT"), nullable=False, index=True)
+    evidence_file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("evidence_files.id", ondelete="RESTRICT"), nullable=True, index=True)
+    target_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String(512), nullable=True)
     source_anchor: Mapped[dict] = mapped_column(JSON_DOCUMENT, nullable=False, default=dict)
 
     interview = relationship("DossierInterview", foreign_keys=[interview_id])

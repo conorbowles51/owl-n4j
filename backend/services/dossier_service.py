@@ -201,8 +201,12 @@ def _serialize_interview(db: Session, item: DossierInterview) -> dict[str, Any]:
         "updated_by_user_id": str(item.updated_by_user_id) if item.updated_by_user_id else None,
         "created_at": _dt(item.created_at), "updated_at": _dt(item.updated_at),
         "evidence_links": [
-            {"id": str(link.id), "evidence_file_id": str(link.evidence_file_id),
-             "source_anchor": dict(link.source_anchor or {}), "evidence": _evidence_summary(link.evidence_file)}
+            {"id": str(link.id),
+             "evidence_file_id": str(link.evidence_file_id) if link.evidence_file_id else None,
+             "target_type": link.target_type or "evidence",
+             "target_id": link.target_id or str(link.evidence_file_id),
+             "source_anchor": dict(link.source_anchor or {}),
+             "evidence": _evidence_summary(link.evidence_file) if link.evidence_file_id else None}
             for link in evidence_links
         ],
     }
@@ -899,16 +903,56 @@ def create_interview(db: Session, *, dossier_id: uuid.UUID, user: User, data: di
         created_by_user_id=user.id, updated_by_user_id=user.id,
     )
     db.add(item); db.flush()
-    for raw in data.get("evidence_links") or []:
-        try: evidence_id = uuid.UUID(str(raw.get("evidence_file_id")))
-        except (TypeError, ValueError) as exc: raise ValueError("Invalid evidence_file_id") from exc
-        _get_evidence(db, dossier.case_id, evidence_id)
-        db.add(DossierInterviewEvidenceLink(
-            interview_id=item.id, case_id=dossier.case_id, evidence_file_id=evidence_id,
-            source_anchor=dict(raw.get("source_anchor") or {}),
-        ))
+    _add_interview_evidence(db, dossier, item, data.get("evidence_links") or [], user)
     db.commit(); db.refresh(item)
     return _serialize_interview(db, item)
+
+
+def _add_interview_evidence(
+    db: Session, dossier: CaseProfile, interview: DossierInterview, items: list[dict[str, Any]], user: User,
+) -> None:
+    """Add an interview's evidence items: evidence files, phone files and registry targets (07 section 6.4 item 5).
+
+    A phone file is registered as one evidence row on first use (item 4) and linked as evidence. A phone record,
+    analysis or statement check is linked by its registry type and id, checked against the case, and keeps the
+    mapping version set behind it. A repeated item is kept once.
+    """
+    seen: set[tuple[str, str]] = set()
+    for raw in items:
+        target_type = _text(raw.get("target_type")) or "evidence"
+        if target_type not in link_types.INTERVIEW_EVIDENCE_TYPES:
+            raise ValueError(f"Interview evidence cannot be a {target_type}")
+        anchor = dict(raw.get("source_anchor") or {})
+        if target_type == "phone_file":
+            from services import phone_files
+
+            phone_file_id = _text(raw.get("target_id")) or ""
+            file, _ = phone_files.ensure_phone_file_evidence(
+                db, case_id=dossier.case_id, phone_file_id=phone_file_id, user=user)
+            evidence_id = file.id
+            anchor = {**anchor, "phone_file_id": phone_file_id}
+            target_type = "evidence"
+        elif target_type == "evidence":
+            try: evidence_id = uuid.UUID(str(raw.get("evidence_file_id") or raw.get("target_id")))
+            except (TypeError, ValueError) as exc: raise ValueError("Invalid evidence_file_id") from exc
+            _get_evidence(db, dossier.case_id, evidence_id)
+        if target_type == "evidence":
+            if ("evidence", str(evidence_id)) in seen:
+                continue
+            seen.add(("evidence", str(evidence_id)))
+            db.add(DossierInterviewEvidenceLink(
+                interview_id=interview.id, case_id=dossier.case_id, evidence_file_id=evidence_id, source_anchor=anchor))
+            continue
+        target_id = _text(raw.get("target_id")) or ""
+        if not target_id:
+            raise ValueError("Interview evidence needs a target id")
+        if (target_type, target_id) in seen:
+            continue
+        seen.add((target_type, target_id))
+        phone = link_types.resolve_phone_target(db, dossier.case_id, target_type, target_id)
+        db.add(DossierInterviewEvidenceLink(
+            interview_id=interview.id, case_id=dossier.case_id, target_type=target_type, target_id=target_id,
+            source_anchor=link_types.phone_anchor(phone, anchor)))
 
 
 def _case_member_ids(db: Session, case_id: uuid.UUID) -> set[str]:
@@ -932,10 +976,7 @@ def update_interview(db: Session, *, dossier_id: uuid.UUID, interview_id: uuid.U
             setattr(item, field, data[field])
     if "evidence_links" in data:
         db.execute(delete(DossierInterviewEvidenceLink).where(DossierInterviewEvidenceLink.interview_id == item.id))
-        for raw in data.get("evidence_links") or []:
-            evidence_id = uuid.UUID(str(raw.get("evidence_file_id")))
-            _get_evidence(db, dossier.case_id, evidence_id)
-            db.add(DossierInterviewEvidenceLink(interview_id=item.id, case_id=dossier.case_id, evidence_file_id=evidence_id, source_anchor=dict(raw.get("source_anchor") or {})))
+        _add_interview_evidence(db, dossier, item, data.get("evidence_links") or [], user)
     item.updated_by_user_id = user.id
     db.commit(); db.refresh(item)
     return _serialize_interview(db, item)

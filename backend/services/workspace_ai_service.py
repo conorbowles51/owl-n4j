@@ -337,6 +337,9 @@ def _interview_sources(
     links_by_interview: dict[uuid.UUID, list[DossierInterviewEvidenceLink]] = defaultdict(list)
     evidence_ids: list[uuid.UUID] = []
     for link in links:
+        if link.evidence_file_id is None:
+            # A phone record, analysis or statement check: read through the phone sources, not as a file here.
+            continue
         links_by_interview[link.interview_id].append(link)
         if link.evidence_file_id not in evidence_ids:
             evidence_ids.append(link.evidence_file_id)
