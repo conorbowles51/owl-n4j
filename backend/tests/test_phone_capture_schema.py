@@ -64,7 +64,9 @@ def test_upgrade_downgrade_upgrade_and_one_row_per_table():
             assert r.returncode == 0, r.stderr[-3000:]
         eng = create_engine(url)
         with eng.begin() as c:
-            assert c.scalar(text("SELECT version_num FROM alembic_version")) == "20261101_phone_capture"
+            assert c.scalar(text("SELECT version_num FROM alembic_version")) == "20261101_phone_job_states"
+            assert {"verifying_source", "capturing", "reconciling"} <= set(c.scalars(text(
+                "SELECT unnest(enum_range(NULL::jobstatus))::text")))
         case_id, user_id = uuid.uuid4(), uuid.uuid4()
         from postgres.models.case import Case
         from postgres.models.user import User

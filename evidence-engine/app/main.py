@@ -7,7 +7,7 @@ from arq.connections import RedisSettings
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
-from app.api.routes import cellebrite, files, health, jobs, merge, upload
+from app.api.routes import cellebrite, files, health, jobs, merge, phone, upload
 from app.api.websocket import router as ws_router
 from app.config import settings
 from app.services.neo4j_client import close_neo4j
@@ -52,6 +52,8 @@ app.include_router(health.router, tags=["health"])
 app.include_router(upload.router, tags=["upload"])
 app.include_router(cellebrite.router, tags=["cellebrite"])
 app.include_router(files.router, tags=["files"])
+# before jobs: POST /jobs/{id}/cancel must not fall into the generic /jobs/{id}/{action}
+app.include_router(phone.router, tags=["phone"])
 app.include_router(jobs.router, tags=["jobs"])
 app.include_router(merge.router, tags=["merge"])
 app.include_router(ws_router, tags=["websocket"])

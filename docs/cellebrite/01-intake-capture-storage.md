@@ -1566,6 +1566,9 @@ uninterrupted run. Durations of uninterrupted runs recorded against 10.8.
 | D28 | A value under one of the production's own top-level folders that names no entry is kept as an `extracted_path_value` reference with resolution `unresolved` | server C9 holds 852 such values; 822 name a file present, 30 name files the server folder lacks (it has 29,107 files to the Mac zip's 29,784) | never |
 | D29 | A US-style header time written `AM(UTC-5)` is explicit, parse rule `us_ampm_utc_label` | measured on the server reports (1.9 Headers); the offset is stated, so it is not offset-less | never |
 | D30 | A folder container's MD5 is the MD5 of the same manifest text whose SHA-256 is its digest | the table holds both digests for every container (section 3) | never |
+| D31 | The phone worker's `job_timeout` is 21,600 s (six hours), not 14,400 | v1's longest phone ingest took 292 minutes (1.7), longer than four hours; the largest phone's target is 30 minutes (10.8) | measured capture times on the 14 server phones all far under the limit, then it may come down |
+| D32 | On its first pass after start the phone worker clears arq's in-progress marks of phone jobs still waiting in its queue | arq keeps a killed job's mark for the whole timeout; there is one phone worker, so nothing of its own runs yet, and the capture resumes from its cursor | a second phone worker is added |
+| D33 | A cancel request is `pipeline_state.phone.cancel_requested` plus `pause_requested`; the worker stops at a committed flush, then removes the pending extraction's rows | reuses the pause boundary, so a cancel never interrupts a write | never |
 
 ---
 

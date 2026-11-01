@@ -309,6 +309,13 @@ services:
     container_name: owl-v2-evidence-pdf-worker
     command: arq app.worker.PdfReviewWorkerSettings
 
+  evidence-phone-worker:
+    <<: *evidence-worker
+    container_name: owl-v2-evidence-phone-worker
+    command: arq app.worker.PhoneCaptureWorkerSettings
+    # one phone at a time inside a hard 1 GB limit; the capture keeps itself under 512 MiB (01 sections 5.4, 10.2)
+    mem_limit: 1g
+
 volumes:
   evidence-files:
   chromadb-data:

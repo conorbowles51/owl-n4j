@@ -21,6 +21,9 @@ class JobStatus(str, enum.Enum):
     GENERATING_SUMMARIES = "generating_summaries"
     MERGING_PROPERTIES = "merging_properties"
     WRITING_GRAPH = "writing_graph"
+    VERIFYING_SOURCE = "verifying_source"  # phone capture: container, detection, counting (01 section 10.3)
+    CAPTURING = "capturing"
+    RECONCILING = "reconciling"
     COMPLETED = "completed"
     FAILED = "failed"
 

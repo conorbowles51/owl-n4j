@@ -69,6 +69,15 @@ async def process_cellebrite(ctx: dict, job_id: str, case_id: str) -> None:
     logger.info("Completed Cellebrite job %s", job_id)
 
 
+async def process_phone_capture(ctx: dict, job_id: str, case_id: str) -> None:
+    """Capture one phone report root (01 section 10)."""
+    from app.phone.job import run_phone_capture
+    logger.info("Processing phone capture job %s for case %s", job_id, case_id)
+    async with async_session() as db:
+        await run_controlled(job_id, case_id, lambda: run_phone_capture(job_id, db), batch=False)
+    logger.info("Completed phone capture job %s", job_id)
+
+
 class WorkerSettings:
     functions = [process_file, process_batch, process_merge, process_cellebrite]
     cron_jobs = [
@@ -98,5 +107,21 @@ class PdfReviewWorkerSettings:
     max_jobs = 2
     job_timeout = 14400
     job_completion_wait = 14430
+    retry_jobs = True
+    max_tries = 3
+
+
+class PhoneCaptureWorkerSettings:
+    """Phone extractions get their own slot so a long read never blocks statements or documents."""
+    from app.services.processing_queues import PHONE_CAPTURE_QUEUE as queue_name
+    from app.phone.recovery import recover_waiting_phone_jobs
+    functions = [process_phone_capture]
+    cron_jobs = [cron(recover_waiting_phone_jobs, minute=set(range(0, 60)), run_at_startup=True)]
+    redis_settings = RedisSettings.from_dsn(settings.redis_url)
+    max_jobs = 1
+    # v1's longest phone ingest took 292 minutes (01 section 1.7); the 10.8 target for the largest phone is 30.
+    # Six hours leaves room for the largest phone on a loaded host without a run being cut off midway.
+    job_timeout = 21600
+    job_completion_wait = 21630
     retry_jobs = True
     max_tries = 3

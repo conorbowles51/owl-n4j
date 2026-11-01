@@ -2,6 +2,7 @@
 from arq.constants import default_queue_name
 
 PDF_REVIEW_QUEUE = 'arq:pdf-review'
+PHONE_CAPTURE_QUEUE = 'arq:phone-capture'  # one phone at a time on its own worker (01 section 10.2)
 
 
 def batch_queue(jobs):
