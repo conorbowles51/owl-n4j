@@ -6,7 +6,7 @@ extractions on the development Mac, the 14 phone reports v1 ingested on the serv
 material on the Cellebrite formats and the tools that read them.
 
 This file holds the standing decisions, the evidence behind them and the summary of each area. The
-detail lives in six specifications in `docs/cellebrite/`. **Where this file and a specification differ in
+detail lives in seven specifications in `docs/cellebrite/`. **Where this file and a specification differ in
 detail, the specification governs**; where they differ on a standing decision, this file governs and the
 specification is corrected.
 
@@ -18,10 +18,11 @@ specification is corrected.
 | [04 Pattern of life](cellebrite/04-pattern-of-life.md) | Signal inventory, timestamp meanings, activity strength, attribution, availability, places, day and pattern views, routine, together and apart, statement check | 11 |
 | [05 Investigative approaches](cellebrite/05-investigative-approaches.md) | All thirteen approaches with method, measurement gate and tests; closing the gaps with other tools | 12, 13 |
 | [06 Build order](cellebrite/06-build-order.md) | Every unit in one sequence with dependencies, gates, the server measurement batch, cross-cutting fixes, removal of old code, risks | 7 |
+| [07 User experience](cellebrite/07-user-experience.md) | Users and their jobs, journeys with targets, rules for every phone screen and layer, screen by screen, collecting phone material into dossiers, workspaces and the timeline, ties to the rest of Loupe, phones-only use, learnability, measuring, gates, the research base | 10, 11, 12 |
 
-Behind them: [eight research reports](cellebrite/research/README.md) (v1 code, v1 history, sample
+Behind them: [nine research reports](cellebrite/research/README.md) (v1 code, v1 history, sample
 structure, formats and market, Loupe landing zone, v1 screens and Alex's feedback, competitor features,
-Loupe's case-wide screens), a snapshot that the plan and specifications supersede where they differ; and
+Loupe's case-wide screens, user experience and investigative methods), a snapshot that the plan and specifications supersede where they differ; and
 [structure-only measurements](cellebrite/measurements/README.md) (the 14-phone catalogue, v1's per-phone
 reconciliation and durations, and every measurement script with paths replaced by placeholders).
 
@@ -37,11 +38,12 @@ and direct calls by default, with shared group chats counted separately and one 
 
 Each decision carries what would reverse it.
 
-1. **Rebuild the core; use v1 as the specification.** v1 holds the domain knowledge (47 type handlers,
-   field-name aliasing across PA versions, owner inference, E.164 identity keys, per-type
-   reconciliation, the investigator UI). Its storage and write layer is not ported: it can destroy
-   evidence across phones and cannot prove provenance (section 4). Loupe's existing Cellebrite code
-   (copied from v1 around 2026-05-15, before about 130 of v1's 220 Cellebrite commits) is replaced.
+1. **Rebuild the core; replace the existing phone piece and keep only its lessons.** v1 holds the domain
+   knowledge (47 type handlers, field-name aliasing across PA versions, owner inference, E.164 identity
+   keys, per-type reconciliation, the investigator UI); the specifications keep it as behaviour rules with
+   tests, and no v1 code or function is carried over. Its storage and write layer can destroy evidence
+   across phones and cannot prove provenance (section 4). Loupe's existing Cellebrite code (copied from
+   v1 around 2026-05-15, before about 130 of v1's 220 Cellebrite commits) is replaced.
    *Reverse if* a phone case needs support within weeks: then patch v1's three destructive defects
    (4.1 to 4.3) as a stopgap first.
 2. **`.ufdr` is a first-class input**, alongside a PA XML report folder, a zip of one, and the split
@@ -273,8 +275,9 @@ intake ─▶ capture (lossless) ─▶ registry + generic interpretation ─▶
 
 ### 6.5 Reviewed mappings and curated views
 - Mappings are versioned data, not code: e.g. "type X: field Y is the event time; role From is the
-  sender". Applied to everything already captured, no re-ingest. AI may draft a mapping; a person
-  reviews it; it is never applied automatically.
+  sender". Applied to everything already captured, no re-ingest. AI may draft a mapping. A mapping row
+  no person has confirmed is applied as `applied_unconfirmed` and shown as "Mapped by the system, not yet
+  confirmed" wherever its output appears, until a person confirms it; a `draft` is never applied.
 - Curated views (conversations, calls, co-location and so on) are built on mapped types.
 - The coverage map (per type and field: interpreted, captured only) is the backlog and is shown in the
   product beside the report's own statement of what was selected (`IsSelectiveExtraction`,
@@ -352,8 +355,8 @@ Summary. Full specification: [03 Screens](cellebrite/03-screens.md).
 ### 10.1 Evidence used
 
 - **Alex's own words:** the v1 testing hub (`/home/conorbowles51/app_v2/data/testing-feedback.json` on the
-  server): 12 items she filed on 2026-06-09 and 10, 2 comments, 14 checklist verdicts (8 pass, 5 fail,
-  1 partial). All concern the Comms Center and the Timeline.
+  server): the testing file holds 13 checklist entries (6 pass, 6 fail, 1 with no status) plus 1 note on a
+  filed item (03 section 17.0). All concern the Comms Center and the Timeline.
 - **Work directed with Alex:** per Neil, all committed v1 work. Iteration per screen: Comms Center 37
   commits, Cross-Phone Graph 32, Timeline 27, Locations 19, Location & Events 17, Overview 7,
   Communications 6, Files 5, Report 3, Unified Contacts 3, Search & Discovery 1.
@@ -425,8 +428,8 @@ Each item names the Loupe screen it lives in.
 7. **Case Map** (existing) with a phone layer: source, accuracy radius and carved status on every point;
    trajectories and playback. Co-location ("together") as an analysis that respects accuracy and reports
    any limit. Loupe already has unused MovementTrails, RouteAnalysis and Hotspot panels.
-8. **Case Graph** (existing) with communication edges across phones beside financial flows; v1's path
-   and flow features carried over.
+8. **Case Graph** (existing) with communication edges across phones beside financial flows. The path
+   and flow features are rebuilt from the lessons of the existing phone piece, which is replaced.
 9. **Media** (phone-specific screen): gallery by phone and app; transcription and OCR through Loupe's
    pipeline on demand, so voice notes and screenshots become searchable.
 

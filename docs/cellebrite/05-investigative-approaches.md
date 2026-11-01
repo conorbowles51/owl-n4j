@@ -1,7 +1,8 @@
 # 05. Investigative approaches and closing the gaps
 
 Purpose. This file specifies, to build level, the thirteen investigative approaches accepted in plan
-section 12 and the gap-closing work of plan section 13 (validation against the raw data, media AI and
+section 12, three more drawn from investigative practice in spec 07 section 14 (approaches 14 to 16), the
+shared results layout every approach uses, and the gap-closing work of plan section 13 (validation against the raw data, media AI and
 translation, identity consolidation as the approaches depend on it, and combined communication and money
 link analysis). For each approach it states what the investigation can establish, the exact report types
 and fields it rests on (with counts and the number of phones carrying them), the method with thresholds,
@@ -21,7 +22,7 @@ data-availability bands, day view, statement check, places).
 
 1. Sources, phone labels and what was measured for this file
 2. Corrections to the plan's section 12 table
-3. Shared framework for every approach (tables, jobs, endpoints, results, decisions, coverage, sensitivity)
+3. Shared framework for every approach (tables, jobs, endpoints, results, decisions, coverage, sensitivity, results layout)
 4. Approach 1: money signals on the phone
 5. Approach 2: cross-phone message reconciliation
 6. Approach 3: deletion and concealment timeline
@@ -35,6 +36,8 @@ data-availability bands, day view, statement check, places).
 14. Approach 11: relationships over time
 15. Approach 12: extraction comparison
 16. Approach 13: incident window
+    16a. Approach 14: common contacts · 16b. Approach 15: directional from/to frequency matrix ·
+    16c. Approach 16: number switching
 17. Section 13: closing the gaps
     17.1 Raw record view · 17.2 Source database view · 17.3 Independent re-parse (ALEAPP, iLEAPP) ·
     17.4 Local media pipeline · 17.5 Translation · 17.6 Image search by description ·
@@ -195,6 +198,9 @@ root for phone code; then this package moves under it unchanged.
 | `relationships.py` | 11 |
 | `extraction_comparison.py` | 12 |
 | `incident_window.py` | 13 |
+| `common_contacts.py` | 14 |
+| `contact_matrix.py` | 15 |
+| `number_switching.py` | 16 |
 | none (uses `backend/services/phone/link_edges.py`, 02 section 11.1) | 17.8; 05-S10 wires the approach screen to 02-U16 |
 | `measurements.py` | the gate measurements of every approach |
 
@@ -225,7 +231,8 @@ twice returns the existing run (idempotent). A run on changed inputs is a new ro
 
 Approach codes: `money_signals`, `message_reconciliation`, `deletion_timeline`, `awareness`,
 `device_users`, `other_devices`, `typed_words`, `media_spread`, `intent`, `plans`, `relationships`,
-`extraction_comparison`, `incident_window`, `link_edges`, `reparse_comparison`.
+`extraction_comparison`, `incident_window`, `common_contacts`, `contact_matrix`, `number_switching`,
+`link_edges`, `reparse_comparison`.
 
 `phone_analysis_results`
 
@@ -362,6 +369,28 @@ by default, never sent to any model, never included in exports unless the export
 is chosen (and the export manifest then lists every revealed field). Approaches that need to compare a
 sensitive value (approach 1 card endings, approach 7 typed words) compare inside the backend and return only
 the match and the masked display.
+
+### 3.9 Shared results layout
+
+Every approach screen uses one layout, built from the cb-ux shared kit (07 section 5), in this order:
+
+1. **What it does**: one plain sentence stating the question the approach answers (its section's first
+   subsection) and what it does not show.
+2. **Run**, with progress: records read per phone against the total, and Cancel (3.4). A run on unchanged
+   inputs opens the existing result (3.3 idempotency).
+3. **The coverage sentence** (3.6), built from the data, above the results.
+4. **Results with the total** under the filter (`total` from 3.4), never a clipped list presented as whole.
+5. **The record panel** (03 section 3.6) for any result, opening the records behind it (17.1).
+6. **Add to…** on one result, a selection or the whole filtered total (07 section 6.2).
+7. **Confirm or reject** with a typed reason (3.7); the decision never changes a computed field.
+
+Every result is labelled **"Lead for enquiry"**: an investigative result that points to records to examine,
+not an evaluation of probative value (research note 09 section 5, investigative versus evaluative output).
+The label travels with the result into findings and exports (07 J-17).
+
+Test AP-1: for each approach screen, the seven parts appear in this order; the coverage sentence equals the
+`coverage` of the run; the stated total equals the result count under the filter; every result carries
+"Lead for enquiry"; a reject without a reason is refused.
 
 ---
 
@@ -1464,6 +1493,14 @@ An extraction comparison page: identity check result with the identifiers compar
 that disappeared between extractions with attribution, state changes (intact then deleted), new records after
 the first extraction.
 
+Two other surfaces read this result:
+- **Comparing phones for a person or a pair** (07 J-16): the per-pair counts "on both", "only on one (reason)"
+  and "only on the other" equal this approach's `present_in_both`, `only_in_earlier` and `only_in_later`
+  counts for the same pair and scope.
+- **Links from a replaced copy** (01 section 10.7; 07 CO-9a and CO-9b): a Workspace link to a record of a
+  replaced report shows "from a replaced copy" and offers the record with the equal natural key (15.3 step 3)
+  in the newer report. When no record has an equal key it says so and offers none.
+
 ### 15.5 Undercuts
 
 Different extraction methods (logical against file system) recover different data; different PA versions decode
@@ -1488,6 +1525,9 @@ overlap above 95 percent on the A-C8 control).
 2. Message intact in earlier, deleted in later: `state_changed`.
 3. Record newer than the earlier extraction's end: `only_in_later` with "created after the first extraction".
 4. Type not selected in the earlier extraction: its later-only records attributed to selection.
+5. J-16 equality: on a synthetic pair, the compare-phones counts equal this approach's diff-kind counts.
+6. CO-9b: after Replace, a link to a record of the older report offers the record with the equal key in the
+   newer one; a record with no equal key offers none and says so.
 
 ---
 
@@ -1504,7 +1544,12 @@ All timestamped records (generic interpretation, plan 6.4), 04's activity streng
 
 ### 16.3 Method
 
-The 04 day view generalised to: all phones, a window `[anchor − before, anchor + after]` (defaults 2 h each,
+**Entry points** (07 J-5): "Open the window around this" from a record, a key date (04 section 8.6) or the
+Timeline Lanes; from a ledger payment (a date-only anchor opens the whole day and says "This payment has a
+date but no time. Showing the whole day."); from a statement claim (its window, 04 section 9); and from this
+approach's own screen with a typed anchor. Each entry opens the same view with the anchor and its zone named.
+
+The 04 day view generalised, drawn with the shared Lanes component (04 section 8.6), to: all phones, a window `[anchor − before, anchor + after]` (defaults 2 h each,
 up to 7 days), one lane group per phone, lanes per class (interaction, device state, communications, places,
 money), approach 2's offsets shown beside times (not applied), availability bands drawn per phone so that no
 data reads as no data. Counts per phone and class; filter by identity.
@@ -1531,6 +1576,172 @@ as part of 04's day view work; the measurement only sets the default window.
 1. A phone with no data in the window shows a "no data" band, not an empty lane.
 2. Window of 7 days loads every record under the filter (plan 10.2: complete results when filtered), with the
    total stated.
+3. J-5c: the incident window opens from a statement claim with the claim's window and zone, and from a key
+   date, record and Timeline Lanes with the same anchor; each entry shows the same counts per phone and class.
+
+---
+
+## 16a. Approach 14: common contacts
+
+### 16a.1 Question it answers
+
+Who links person A and person B: the identities that both are in contact with, on any phone in the case, with
+the volume and the first and last contact on each side (contact chaining, one step).
+
+### 16a.2 Data it rests on
+
+`Call` 30,205 on 14 phones (`TimeStamp`, `Direction`, `Duration`, parties); `InstantMessage` 377,648 on 14
+(`<modelField>From` and `To` parties, `TimeStamp`); `Email` 25,727 on 12; `Contact` 43,624 on 13 (saved
+entries, not contact events); 02's identities, reviewed identity-to-dossier links and owner of each
+extraction.
+
+### 16a.3 Method
+
+1. Resolve A and B to their identities (dossier links, 02 section 8) and the extractions they own.
+2. For each identity X other than A and B: communications between A and X and between B and X, from both
+   sides of every phone in the case (a message present only on X's phone counts, marked "seen on the other
+   phone"), by channel and direction, with first and last instant.
+3. X is a common contact when both sides have at least one communication in the window (parameter, default
+   the whole span). A saved contact entry with no communication is listed separately as "saved, no contact
+   seen".
+4. Rank by the smaller of the two sides' counts, then by recency; every count opens to its records.
+
+### 16a.4 What the investigator gets
+
+A table: common contact, counts with A and with B by channel, first and last on each side, the phones the
+records come from; an "Add to…" on any row. The agent's "who links A and B" tool reads the same result
+(07 section 7.1, XF-3).
+
+### 16a.5 Undercuts
+
+`identity_unreviewed` when X's identifiers are joined only by normalised identifier; apps not extracted;
+selective extractions; numbers shared by more than one person; deleted call logs (approach 3).
+
+### 16a.6 Measurement first
+
+M-14a: per case, per pair of owner identities, the number of identities with at least one communication on
+both sides; M-14b: the share of those that rest on an unreviewed identity join. Gate: **build** if at least
+one case has a pair of owners with 3 or more common contacts.
+
+### 16a.7 Dependencies
+
+02 (identities, dossier links, owners), approach 3 (deletion caveats).
+
+### 16a.8 Acceptance tests
+
+1. A calls X and B messages X: X listed with both counts; Y called only by A is not listed.
+2. A message from B to X present only on X's phone counts and is marked "seen on the other phone".
+3. A saved contact X on A's phone with no communication is listed as "saved, no contact seen", not as a
+   common contact.
+
+---
+
+## 16b. Approach 15: directional from/to frequency matrix
+
+### 16b.1 Question it answers
+
+Who contacts whom, and how often in each direction: a square association matrix over the case's identities,
+rows "from" and columns "to" (research note 09 section 5, telephone analysis and the frequency matrix).
+
+### 16b.2 Data it rests on
+
+As 16a.2: calls, messages and emails with their parties and direction, and 02's identities.
+
+### 16b.3 Method
+
+1. Population: the owners of the case's extractions and every identity with at least N communications
+   (parameter, default 1) in the window.
+2. Cell (X, Y) = count of communications sent or placed by X to Y, by channel, with the call total duration
+   for calls. A message counted from both phones is counted once (approach 2's matches); unmatched copies
+   count once each.
+3. Calls by status (answered, missed, rejected) are separate counts in the cell, never summed into
+   "contact".
+4. Row and column totals; the asymmetry per pair (X to Y against Y to X) is stated as two counts, never as
+   a ratio alone.
+
+### 16b.4 What the investigator gets
+
+The matrix with sortable rows and columns, the "Sent by" and "Sent to" counts on each person (07 J-2, J-3),
+and every cell opening to its records.
+
+### 16b.5 Undercuts
+
+`clock_offset_unknown` does not apply (counts only); approach 2's matching decides double counting, so
+unmatched copies of one message on two phones count twice and the result says how many such copies exist;
+`identity_unreviewed`; apps not extracted; selective extractions.
+
+### 16b.6 Measurement first
+
+M-15a: per case, the number of identities in the population at N = 1 and N = 5; M-15b: the share of
+message pairs counted on two phones that approach 2 matches. Gate: **build** if a case has at least 3 owners
+with communications between them; M-15a sets the default N.
+
+### 16b.7 Dependencies
+
+02 (identities), approach 2 (cross-phone matching).
+
+### 16b.8 Acceptance tests
+
+1. X sends Y 3 messages and Y calls X twice, one missed: cell (X, Y) messages 3; cell (Y, X) calls 2 with
+   missed 1.
+2. One message present on both phones and matched by approach 2 counts once.
+3. Cell totals equal the record query under the same scope.
+
+---
+
+## 16c. Approach 16: number switching
+
+### 16c.1 Question it answers
+
+Whether one person appears to move from one number or account to another: an identity whose contact stops
+while another identity, with a similar set of counterparts, starts near the same time.
+
+### 16c.2 Data it rests on
+
+As 16a.2, with first and last communication per identity and per (identity, counterpart); 02's identities;
+`Contact` saved entries that hold two numbers under one entry.
+
+### 16c.3 Method
+
+1. For each identity X with a last communication before the end of the data, and each identity Y whose first
+   communication falls within a gap parameter (default 14 days) after X's last: the counterpart sets of X
+   before its end and of Y after its start, each over a window (default 90 days).
+2. Jaccard similarity of the two sets and the count of shared counterparts. A pair is listed when the
+   similarity is at least a threshold (default 0.5) and shared counterparts are at least 5 (parameters).
+3. Supporting markers listed beside the pair: a saved contact entry holding both identifiers; the same
+   display name on one phone for both; X and Y never active on the same day.
+4. Nothing is merged. A listed pair is a lead; joining the identities is a 02 identity decision made by a
+   person.
+
+### 16c.4 What the investigator gets
+
+Candidate pairs with the gap, the similarity, the shared counterparts and the markers, each opening to the
+records; "Add to…" and the identity-link action of 03 section 10.
+
+### 16c.5 Undercuts
+
+Counterparts who changed phone together; a group chat that makes many counterparts shared; short data
+spans; a phone whose data starts or stops (availability bands, 04 section 5) creating artificial starts and
+stops; `identity_unreviewed`.
+
+### 16c.6 Measurement first
+
+M-16a: per case, identities whose last communication falls before the case's last data by more than the
+gap; M-16b: for those, the distribution of Jaccard similarity with identities starting within the gap;
+M-16c: the same on shuffled start times, as a base rate. Gate: **build** only if M-16b has pairs above the
+threshold at a rate clearly above M-16c; M-16b and M-16c set the defaults. *Reverse if* the base rate equals
+the observed rate.
+
+### 16c.7 Dependencies
+
+02 (identities, identity decisions), 04 (availability bands).
+
+### 16c.8 Acceptance tests
+
+1. Fixture: X talks to 8 counterparts until day 30; Y talks to 7 of them from day 35: pair listed with
+   similarity and shared count.
+2. An identity that stops because the phone's data stops is not paired (availability band boundary).
+3. Listing a pair changes no identity; a link made from it is a recorded 02 decision.
 
 ---
 
@@ -1717,8 +1928,8 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 
 | Step | Unit | Depends on | Gate (from its section) |
 |---|---|---|---|
-| 0 | Framework (3): tables, jobs, endpoints, coverage, directions, decisions, sensitive reveals | 01, 02 registry | none |
-| 1 | Measurement module with M-1 to M-13 implemented as read-only functions | 01, 02 | none; produces the gates |
+| 0 | Framework (3): tables, jobs, endpoints, coverage, directions, decisions, sensitive reveals, shared results layout (3.9, AP-1) | 01, 02 registry, cb-ux shared kit | none |
+| 1 | Measurement module with M-1 to M-16 implemented as read-only functions | 01, 02 | none; produces the gates |
 | 2 | 17.1 raw record view requirements met in 01 and 03 | 01, 03 | none |
 | 3 | Approach 1a: institution directory, parser, readings, binding, corroboration (no contradiction), leads | step 0, financial modules | 4.7 |
 | 4 | Approach 1b: coverage join `read_account_continuity` → `coverage_from_continuity` with reconciliation status; contradictions enabled | step 3 | 4.7 plus at least one bound account with a continuous reconciled run over a reading's window |
@@ -1733,7 +1944,10 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | 13 | Approach 8 exact tier, then perceptual tier | 01 files, step 12 engine | 11.6 |
 | 14 | 17.5 translation, 17.6 image search | step 12 | 17.5, 17.6 |
 | 15 | Approach 12 | 01 metadata, 02 natural keys | 15.6 |
-| 16 | Approach 13 | 04 day view, step 5 offsets | 16.6 |
+| 16 | Approach 13, with its entry points (J-5c) | 04 day view and shared Lanes, step 5 offsets | 16.6 |
+| 16a | Approach 14 | 02 identities | 16a.6 |
+| 16b | Approach 15 | 02 identities, step 5 matches | 16b.6 |
+| 16c | Approach 16 | 02 identities, 04 availability | 16c.6 |
 | 17 | 17.2 source database view, 17.3 re-parse | a production with database files | 17.2, 17.3 |
 
 ---
@@ -1760,6 +1974,8 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | Local providers for OCR, transcription, translation, image search; third party only by recorded case setting; video frames to honour the setting | standing decision 8; engine today sends audio and video frames out | Neil per case |
 | `MobileCard` excluded from money signals until mapped | Type only `Unknown`; meaning not shown | a reviewed mapping |
 | One sensitive list shared with 02 section 5.5: `Password.GenericAttribute` and `KeyValueModel.Value` included | the two lists must agree, or a field sensitive in one spec would be searchable or exportable through the other; `KeyValueModel.Value` contents are unknown per key | a reviewed mapping shows a key's values hold no credential |
+| Every approach uses one results layout and labels its results "Lead for enquiry" (3.9) | an approach result points to records to examine and does not state probative value | a result kind is shown to be evaluative, then it carries the evaluative label with its propositions |
+| Approaches 14 to 16 measured first like the others (16a.6, 16b.6, 16c.6) | the same gate discipline as approaches 1 to 13 | |
 | Analysis runs have their own arq queue and worker settings, one job at a time, under the phone worker's memory cap (3.4) | the phone capture worker runs `max_jobs = 1`, so a shared queue would make an analysis wait behind an ingest and an ingest behind an analysis | measured host memory cannot hold both workers |
 
 ---
@@ -1777,6 +1993,7 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 - Whether `SocialMediaActivity` check-ins carry a nested place record.
 - Whether report record ids are stable across exports or extractions (M-12c on the A-C8 pair).
 - Whether A-C1a and A-C1b are one device (M-12a, M-12b).
+- Common contacts per owner pair, matrix population size and number-switching base rates (M-14a to M-16c).
 - PA's element and attribute names for record-to-source information in `extraInfos` and the `.xmlModelSource` /
   `.xmlNodeSource` sections: empty in every local sample.
 - Pinned versions of ALEAPP or iLEAPP, the exact LAVA output schema of that version, and how to disable all network

@@ -1,10 +1,12 @@
 # 06. Build order
 
-Purpose: one sequence for every build unit defined in specs 01 to 05, with what each depends on, the
+Purpose: one sequence for every build unit defined in specs 01 to 05 and 07, with what each depends on, the
 test that defines done, and the gates that must pass before the next stage starts. A session picks the
 next unit from this file, builds it, tests it, commits it, and rewrites `docs/loupe-build-state.md`, as
 `CLAUDE.md` requires. Unit ids are the owning spec's ids (`01-1.3` is spec 01 unit 1.3; `02-U4` is
-spec 02 unit U4; `03-5` is spec 03 unit 5; `04-U7`; `05-S3` is spec 05 step 3).
+spec 02 unit U4; `03-5` is spec 03 unit 5; `04-U7`; `05-S3` is spec 05 step 3). Spec 07 names its work by
+section: `07-12.1C` is the cb-ux shared kit (07 section 12.1 item C), `07-6.4` is the lx-collect registry and
+routes (07 section 6.4), `07-7.1` is the agent phone tools (07 section 7.1).
 
 Contents
 1. Rules for every unit
@@ -62,6 +64,8 @@ Contents
 | Investigative approaches (`phone_analysis_*`) | `backend/services/phone_analysis/` | 05 |
 | Media derivation (OCR, transcription, translation) | `evidence-engine/app/pipeline/phone_media/` | 05 |
 | Frontend | `frontend_v2/src/features/phones/` and related feature folders per 03 | 03, 04 |
+| Shared phone interface kit | `frontend_v2/src/features/phones/ui`, plus `components/ui` where Loupe-wide (07 section 5) | 07 |
+| Link-type registry, dossier and workspace link routes | backend and frontend, per 07 section 6.4 | 07 |
 
 If two specs name different roots for the same thing, the owning spec in this table governs.
 
@@ -73,10 +77,10 @@ If two specs name different roots for the same thing, the owning spec in this ta
 | B Capture | 1, 2 | 01-1.1 to 01-1.7, 01-2.1 to 01-2.4 | Exact reconciliation on every reference document; kill-and-resume proven |
 | C Interpretation | 3 | 02-U1 to 02-U7, 02-U17, 04-U1 | A type absent from all code reaches timeline, map and identities |
 | D Identity and projections | 4 | 02-U8, U9, U10, U12, U13, U15 | Deleting one of two phones sharing a contact leaves the other intact |
-| E Screens | 5 | 03-1 to 03-11 | Every testing-hub item (03 section 17.0) has a passing test |
-| F Pattern of life | 7 | 04-U2 to 04-U13 | A statement window shows supporting, contradicting and missing data with sources |
-| G Cross-evidence | 6 | 02-U11, 02-U14, 02-U16, 05-S0 to 05-S4, 03-12 | Phone money readings corroborate ledger rows as p4; RSMF export |
-| H Investigative approaches | 8 | 05-S5 to 05-S11, 05-S15, 05-S16 | Each approach built only after its gate passes |
+| E Screens | 5 | 07-12.1C, 07-6.4, 03-1 to 03-11 | Every testing-hub item (03 section 17.0) has a passing test |
+| F Pattern of life | 7 | 04-U2 to 04-U14 | A statement window shows supporting, contradicting and missing data with sources |
+| G Cross-evidence | 6 | 02-U11, 02-U14, 02-U16, 05-S0 to 05-S4, 03-12, 07-7.1 | Phone money readings corroborate ledger rows as p4; RSMF export; agent phone tools under both external-processing settings |
+| H Investigative approaches | 8 | 05-S5 to 05-S11, 05-S15, 05-S16, 05-S16a to 05-S16c | Each approach built only after its gate passes |
 | I Media | 9 | 05-S12 to 05-S14 | Local OCR, transcription and translation; video path honours the provider setting |
 | J Conditional | | 05-S17 | Runs when a production includes source databases |
 
@@ -146,7 +150,9 @@ then F's views (04-U6, U7), then E8 to E11, then the rest of F.
 |---|---|---|---|---|
 | 29 | 03-1 | Shared backend: filters (incl. `group_scope`), time display, labels, streams, records, `/api/phones` router | 20, 24 | 03 backend tests for 3.1 rules and A2, A6 pass |
 | 30 | 03-2 | Shared frontend: time cell, participant label, stream list, record panel, badges, copy | 29 | A4, A5, A6, A7, A13 pass |
-| 31 | 03-3 | Conversations screen; sidebar change; old Cellebrite feature removed (section 7) | 30 | C-1 to C-9, A1, A14, A16 pass |
+| 30a | 07-12.1C | cb-ux shared phone interface kit (07 section 5): semantic tokens and phone palette, keymap registry with `?`, copy helper, phone selection store, docked record panel slot, read-flagged progress requests; built on synthetic fixtures, needs no phone data | nothing | 07 section 12.1 finish list; Storybook stories in light and dark with accessibility checks; Financial tests stay green |
+| 30b | 07-6.4 | lx-collect: one link-type registry replacing the hard-coded lists, dossier and workspace link routes, interview evidence with registry targets, reverse lookup, Add to Timeline for phone records, `phone_analysis` snapshots (07 section 6.4 items 1 to 13); phone types refused with a stated message until their resolvers register | nothing | CO-2 (API), CO-3, CO-5, CO-16 (API), CO-17 (API), CO-21 and the registry tests pass |
+| 31 | 03-3 | Conversations screen; sidebar change; old Cellebrite feature removed (section 7); Add to Workspace and Add to… through the registry | 30, 30a, 30b | C-1 to C-13, A1, A14, A16 pass |
 | 32 | 03-4 | Extraction profile (examiner zone shown as such; coverage; verification outcomes) | 22, 8 | P-1 to P-5 pass |
 | 33 | 04-U2 | `pol_activity_event` projection and strength view | 21 | Outgoing owner message strong interaction; Web platform demoted |
 | 34 | 04-U3 | Attribution flags | 33 | Synced location flagged |
@@ -170,8 +176,9 @@ then F's views (04-U6, U7), then E8 to E11, then the rest of F.
 | 47 | 04-U9 | Together and apart, no cap, no SSID matching | 44 | 25,000 pairs all returned; separated and compatible cases as specified |
 | 48 | 04-U10 | Money lane and manual places | 33; financial admitted rows | Superseded rows absent; no time of day given to a transaction |
 | 49 | 04-U11 | Claims and evaluation | 35, 46, 47 | Every claim kind's outcome rules pass; evaluation reproducible |
-| 50 | 04-U13 | Workspace attachment of records and statement checks | 49 | New link targets accepted; stale evaluation shown on the link |
-| 51 | 04-U12 | AI claim drafting (local model only) | 49; a local model provider | With no local provider: 409 and no network call |
+| 50 | 04-U13 | Workspace attachment of records and statement checks through the registry; statement check linked to the dossier interview | 49, 30b | Registry accepts the link targets; stale evaluation shown on the link |
+| 51 | 04-U12 | AI claim drafting (only under the external-processing decision) | 49; 02 section 8.8 decision `allow_phone_external_processing` | Without the decision: 409 and no network call |
+| 51a | 04-U14 | Patterns screen at `/cases/:id/phone-patterns`, shared Lanes component, key dates and case terms (04 section 8.6) | 39, 40, 49, 30a | POL-1 and J-5a pass |
 | 52 | Gate F | End-to-end statement check on a synthetic two-phone case, plus a corpus run on the largest phone | 49, 50 | Recorded in the build state |
 
 ### Stage G: cross-evidence
@@ -181,12 +188,13 @@ then F's views (04-U6, U7), then E8 to E11, then the rest of F.
 | 53 | 02-U11 | Financial identifier kinds `phone_number` and `email` | 23 | Existing account-identity tests unchanged and new kinds match by normalised value |
 | 54 | 02-U16 | Combined communication and money edges | 26, 53 | Edge counts equal Conversations `between` totals under the same `group_scope`; money sums p0 to p2 only |
 | 55 | 02-U14 | Embedding gate, chat and workspace anchors | 27 | No phone text sent to an external embedding service without a per-case decision |
-| 56 | 05-S0 | Analysis framework: tables, jobs, endpoints, coverage, directions, decisions, sensitive reveals | 24 | Framework tests in 05 section 3 |
-| 57 | 05-S1 | Measurement module M-1 to M-13 as read-only functions | 56 | Produces every gate value of section 5 |
+| 56 | 05-S0 | Analysis framework: tables, jobs, endpoints, coverage, directions, decisions, sensitive reveals, shared results layout (05 section 3.9) | 24, 30a | Framework tests in 05 section 3; AP-1 |
+| 57 | 05-S1 | Measurement module M-1 to M-16 as read-only functions | 56 | Produces every gate value of section 5 |
 | 58 | 05-S2 | Raw record view requirements met | 31, 32 | 05 section 17.1 checks pass on screens built in E |
 | 59 | 05-S3 | Approach 1a: money signals, institution directory, readings, binding, corroboration, account leads | 56, 53; first run waits for CB-INDEX question 3 (none of the three phone cases exists in Loupe) | 05 section 4.7 gate and tests |
 | 60 | 05-S4 | Approach 1b: coverage join and contradictions | 59 | 05 section 4.7 gate plus a bound account with a continuous reconciled run |
 | 61 | 03-12 | RSMF export | 38; RSMF specification read and cited (03 20.8) | E-6 |
+| 61a | 07-7.1 | Agent phone tools (schema `loupe.agent.phone_*/1`) to the ledger-tool standard; without the external-processing decision they return record ids, counts, times and opaque labels only | 27, 55 | SA-7 and XF-3 pass; the agent evaluation set of 07 section 7.1 measured under both settings |
 
 ### Stage H: investigative approaches
 
@@ -202,7 +210,10 @@ Each unit starts only after its gate in 05 passes on the server measurements.
 | 67 | 05-S10 | Approach screen wired to 02-U16's `backend/services/phone/link_edges.py` (05 section 17.8; money per 02 section 11, no second implementation) | 54; a case with a reviewed phone-to-counterparty link |
 | 68 | 05-S11 | 6, 7, 9, 10, each as its own unit | 9.6, 10.6, 12.6, 13.6 |
 | 69 | 05-S15 | 12 extraction comparison | 15.6 (needs the C1 identity answer from A3) |
-| 70 | 05-S16 | 13 incident window | 16.6 |
+| 70 | 05-S16 | 13 incident window, with its entry points (J-5c) | 16.6 |
+| 70a | 05-S16a | 14 common contacts | 16a.6 |
+| 70b | 05-S16b | 15 directional from/to frequency matrix | 16b.6 |
+| 70c | 05-S16c | 16 number switching | 16c.6 |
 
 ### Stage I: media
 
@@ -269,15 +280,19 @@ Per 01 section 11 and 03 D-25: the new code is built beside the old under new na
 
 ## 8. Gates between stages
 
-| From | To | Gate |
-|---|---|---|
-| A | B | Counter stable on C3, C9, C8; server batch recorded |
-| B | C | Reconciliation exact on every reference document; kill and resume proven (01-2.4) |
-| C | D | Unknown-type test passes (02-U4); mappings re-derive without re-capture (02-U5); sweep kill test passes and the C6 and P14 timing and swap-size measurements are recorded (02-U17) |
-| D | E, F | Membership deletion test (02-U12) |
-| E | G | Every testing-hub item in 03 section 17.0 has a passing test |
-| F | H | Gate F (row 52) |
-| G | H | Approach 1 gate (05 section 4.7) recorded either way |
+The last column lists the tests that 07 section 11 adds to each gate; 07 section 11 is authoritative for them.
+
+| From | To | Gate | 07 section 11 tests added |
+|---|---|---|---|
+| A | B | Counter stable on C3, C9, C8; server batch recorded | The 07 section 15 spec changes applied, 07 merged, research note 09 written |
+| B | C | Reconciliation exact on every reference document; kill and resume proven (01-2.4) | I-1, I-2, J-1a |
+| C | D | Unknown-type test passes (02-U4); mappings re-derive without re-capture (02-U5); sweep kill test passes and the C6 and P14 timing and swap-size measurements are recorded (02-U17) | RQ-1 to RQ-8, U-backend, J-8a, one feed test per review action |
+| D | E, F | Membership deletion test (02-U12) | (with C to D) |
+| E | G | Every testing-hub item in 03 section 17.0 has a passing test | Row 30a: the 07 section 12.1 finish list. Row 30b: CO-2 (API), CO-3, CO-5, CO-16 (API), CO-17 (API), CO-21, registry tests. Stage E: J-1b, J-2, J-3a, J-4, J-6, J-7, J-8b, J-10a, J-11, J-12, J-13, J-13b, J-14a, J-15, J-16, J-17, UX-1 to UX-5, C-10 to C-13, MD-1, P-6 to P-8, U-5 to U-8, S-8 to S-10, G-5, G-6, T-7, E-8 to E-10, XF-5, XF-6, XF-9, XF-11, SA-1, SA-2, SA-3 (existing parts), SA-6, SA-8 (first part), CO cells for its surfaces, CO-2, CO-4, CO-6 to CO-8, CO-9a, CO-12, CO-14 to CO-17, CO-19, CO-20 |
+| F | H | Gate F (row 52) | J-5a, J-9, J-10b, POL-1, CO cells for Patterns and Lanes; J-10c in the gate of whichever of stages E and F finishes second |
+| G | H | Approach 1 gate (05 section 4.7) recorded either way | J-3b, J-5b, XF-1 to XF-4, XF-7, XF-8, XF-10, XF-12, SA-3 (rest), SA-4, SA-7, SA-8 (second part), CO-10, CO-11, CO-13, CO-18 (agent), CO cells for Graph, the agent evaluation set measured under both settings |
+| H | done | Each approach's gate in 05 | J-5c, J-14b, the J-16 equality with approach 12, AP-1, CO-9b, CO cells for analyses |
+| I | done | 05 sections 17.4 to 17.6 | M-5, M-6, M-7, CO-18 (transcript) |
 
 ## 9. Risks and what to do if they occur
 

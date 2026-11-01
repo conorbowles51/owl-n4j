@@ -112,7 +112,10 @@ the dedicated phone worker of plan 6.1.
 
 - **Extraction**: one ingested report, one phone. Labelled C1, C2 ... as in the plan.
 - **Record**: one captured `model`, top level or nested.
-- **Interpretation level** (plan decision 5): `captured_only`, `generic`, `reviewed`. Computed, never set.
+- **Interpretation level** (plan decision 5): `captured_only`, `generic`, `applied_unconfirmed`, `reviewed`.
+  Computed, never set. `applied_unconfirmed` is a row produced by a mapping row that no person has confirmed
+  for that extraction in that case; screens show it as "Mapped by the system, not yet confirmed" and name the
+  rule. `reviewed` is a row produced by a confirmed or reviewed mapping row (6.7, 6.8).
 - **Identity**: one identifier in the case (a phone number, an app account, an email address). Keyed by
   `identity_key` (section 8.2). Not a person.
 - **Person**: a Loupe dossier (`case_profiles` row; `backend/postgres/models/dossier.py:22` points
@@ -563,7 +566,8 @@ everything already captured with no re-ingest (plan 6.5). Readers query the curr
 
 A mapping is data that says what a type's fields mean: which TimeStamp is the event time, which party is
 the sender, which fields are the text, where the place is. It is not code. Plan 6.5: applied to everything
-already captured, AI may draft one, a person reviews it, it is never applied automatically.
+already captured; AI may draft one; a row no person has confirmed is applied as `applied_unconfirmed` and
+shown as not yet confirmed until a person confirms it; a `draft` is never applied (section 6.2).
 
 ### 6.2 Format and location
 
@@ -615,7 +619,9 @@ version into `phone_mapping_rows` so the view can join in SQL.
 }
 ```
 
-- `status`: `draft` or `reviewed`. The applier loads only `reviewed`.
+- `status`: `draft`, `applied_unconfirmed` or `reviewed`. The applier loads `applied_unconfirmed` and
+  `reviewed`, never `draft`. An `applied_unconfirmed` file is applied at once and carries no `reviewed_by`;
+  it is never stored under a person's name.
 - `origin`: `human` or `ai_draft`. An `ai_draft` file can only become `reviewed` in a commit that also sets
   `review.reviewed_by` to a person's name; the loader refuses a `reviewed` file whose `reviewed_by` is
   empty or names a model.
@@ -718,7 +724,7 @@ tested against one fixture (`backend/tests/fixtures/mapping_rows_cases.json`).
   `kind`, `name`, `version`, `content_sha256`, `content jsonb`, `status`, `origin`, `reviewed_by`,
   `reviewed_on`, `loaded_at`. Written by the loader at startup; append only. Spec 04's `*_mapping_version`
   columns hold these ids.
-- The **mapping set** is the sorted list of loaded reviewed version ids; `mapping_set_id` = uuid5 of its
+- The **mapping set** is the sorted list of loaded version ids (`applied_unconfirmed` and `reviewed`); `mapping_set_id` = uuid5 of its
   joined text. A deploy that changes any reviewed file changes the set id, and the sweep (5.7) re-derives
   every extraction.
 - `phone_mapping_applications`: `extraction_id`, `mapping_version_id`, `generation`, `records_matched`,
@@ -734,24 +740,63 @@ For each extraction and each reviewed `type` mapping whose `applies_to` occurs i
    that type; `records_suspended` and the reason are recorded; the coverage map shows `suspended`.
 2. Otherwise produce, for each record of the type: the event time (`is_event_time` on the named
    `phone_time_values` row), the comm event and thread rows, the participants with mapped roles, the title.
-   The record's derived rows carry `interpretation_level = reviewed` and `mapping_version_id`.
+   The record's derived rows carry `mapping_version_id`, the id of the mapping row that produced them, and
+   `interpretation_level`: `reviewed` when the version's status is `reviewed` or a current
+   `confirm_phone_reading` decision covers (case, extraction, mapping row, mapping version), otherwise
+   `applied_unconfirmed`. A current `correct_phone_reading` decision on the same key replaces the mapping
+   row's choice for that extraction with the corrected one, at level `reviewed` (6.8).
 3. Generic rows are not discarded: every TimeStamp still has its own timeline entry; the mapping only marks
    which one is the event time and supplies meaning.
 
 ### 6.8 Review workflow and AI drafts
 
-1. A draft is written as a file with `status: draft` (by hand, or by an AI draft job).
+**Global registry (admin only).** Neil is the reviewer of record (CLAUDE.md: only engineer).
+
+1. A draft is written as a file with `status: draft` (by hand, or by an AI draft job). A build job may write
+   a file with `status: applied_unconfirmed`, which is applied at once (6.4); a job never writes `reviewed`.
 2. AI drafts: `POST /api/phones/registry/mapping-drafts {"type_name"}` (admin) runs a local model (plan
    decision 8) over the registry rows of that type only (names, kinds, value types, set values, counts; no
    case values), and stores the proposal in `phone_mapping_proposals` (`id`, `kind`, `name`, `content
-   jsonb`, `model`, `model_version`, `created_at`, `state` in `draft`, `rejected`, `exported`). It is
-   exported as a file for a person to edit and commit. Nothing reads `phone_mapping_proposals` at
-   interpretation time; a test asserts that the applier never queries it.
+   jsonb`, `model`, `model_version`, `origin` in `ai_draft`, `case_correction`, `decision_id null`,
+   `created_at`, `state` in `draft`, `rejected`, `exported`). It is exported as a file for a person to edit
+   and commit. Nothing reads `phone_mapping_proposals` at interpretation time; a test asserts that the
+   applier never queries it.
 3. Review means: a person checks each named field against the registry and the coverage counts on at least
-   one extraction, writes the `review` block, sets `status: reviewed`, and commits. Neil is the reviewer of
-   record (CLAUDE.md: only engineer). The loader records the version.
+   one extraction, writes the `review` block, sets `status: reviewed`, and commits. The loader records the
+   version.
 4. Removing a mapping is a reviewed change too (delete the file, commit); the next set id re-derives with
    generic interpretation.
+5. Case corrections appear in the admin list as proposals: each `correct_phone_reading` decision writes a
+   `phone_mapping_proposals` row with `origin = case_correction` and its `decision_id`. Only an admin turns
+   one into a global change, through steps 3 and 4. The admin list also holds registry flags (3.4).
+
+**Case review (the Needs a decision page, readings group; 07 section 5).**
+
+6. A reading decision is case-scoped: `confirm_phone_reading` or `correct_phone_reading` (8.8) on the key
+   (case, extraction, mapping row, mapping version). It changes nothing in the global registry.
+7. Confirming sets the rows that mapping row produced on that extraction to `reviewed` in that case, with the
+   deciding person as reviewer.
+8. Correcting offers choices from a closed list per mapping kind, so nobody edits JSON. A correction
+   re-derives only that extraction (5.7), with progress in the job tray (07 section 4.7). By explicit choice
+   it applies instead to the phones in the case with the same report format, listed by label before it runs.
+   No other extraction and no other case changes. The original reading stays visible beside the corrected
+   one.
+9. Examples are drawn from the whole affected set and cover each kind present in it: direction, one-to-one or
+   group, app version, and edge cases. **Looks right** is disabled until every kind has been viewed. Whether
+   the examples were opened is recorded with each decision.
+
+Tests (cb-interpret gate, 07 section 11):
+
+| Test | Assertion |
+|---|---|
+| RQ-1 | No field names in the page's body copy |
+| RQ-2 | Examples cover each kind, and Looks right is disabled until they are viewed |
+| RQ-3 | A confirmation stores a standard reason (8.8), labelled "Standard reason" |
+| RQ-4 | A correction re-derives only its scope, with progress |
+| RQ-5 | One feed line per action |
+| RQ-6 | Conflict wording (07 section 5) |
+| RQ-7 | A case correction leaves other cases' derived values unchanged |
+| RQ-8 | Whether examples were opened is recorded with each decision |
 
 ### 6.9 Initial `type` mappings (to be reviewed; field names are the catalogue's)
 
@@ -793,8 +838,9 @@ Per extraction, per (type, field path, kind, value type) from `phone_schema_obse
 
 | Level | Rule |
 |---|---|
-| `reviewed` | a reviewed `type` mapping of this type names the field (any role), and it is not suspended |
-| `suspended` | a reviewed mapping names it but is suspended on this extraction (6.7) |
+| `reviewed` | a `type` mapping of this type names the field (any role), is not suspended, and is `reviewed` or confirmed for this extraction in this case (6.7) |
+| `applied_unconfirmed` | as `reviewed`, but the mapping is `applied_unconfirmed` and not confirmed for this extraction in this case |
+| `suspended` | a loaded mapping names it but is suspended on this extraction (6.7) |
 | `generic_role` | the field's value type or child type has a role in 5.2 other than text: TimeStamp, TimeSpan, Coordinate, Party, PhoneNumber, UserID, EmailAddress, ModelDirections, PartyRole, IsPhoneOwner, file references, UserMapping, location affiliations |
 | `generic_text` | a String field with no other role (searchable only) |
 | `captured_only` | anything else (Boolean, Int, Double, Guid and named sets with no role) |
@@ -864,13 +910,23 @@ its number). Everything else is a suggestion a person decides (plan 13; spec 03 
 None`, where `Identifier = (kind, subkind, value_normalised, value_display, identity_key, region_basis)`.
 `kind` is spec 03's (`phone`, `app_user`, `email`, `other`).
 
-Phone numbers use libphonenumber. Loupe does not have it today: `backend/services/phone_normalise.py`
-is a regex normaliser accepting only E.164-shaped strings and US 10/11-digit numbers (lines 29-71); v1
-replaced the same module with a libphonenumber implementation (`backend/services/phone_normalise.py` on
-`origin/main`, `normalise()`, using `parse` then `is_valid_number` then E.164) pinned at
-`phonenumbers==9.0.31` in v1's `backend/requirements.txt`. **Decision:** port v1's module and pin; add the
-package to `backend/requirements.txt` and to the CLAUDE.md bootstrap line in the same commit (that edit is
-the build unit's, not this file's).
+Phone numbers are read by one phone-number module, `backend/services/phone/numbers.py`, written for the
+rebuild against the pinned library `phonenumbers==9.0.31` (the libphonenumber port, at the version v1
+pinned). Loupe's current backend normaliser is a regular expression that accepts only E.164-shaped strings
+and US 10- and 11-digit numbers; the module replaces it, and nothing reads the old normaliser once the module
+lands. **Decision:** write the module against the pinned library; add the package to
+`backend/requirements.txt` and to the CLAUDE.md bootstrap line in the same commit (that edit is the build
+unit's, not this file's).
+
+Behaviour of the module, each a test in U8:
+
+| Rule | Input | Observable result |
+|---|---|---|
+| PN-1 | A number written with `+` | Parsed with no region; a valid number gives its E.164 form |
+| PN-2 | A number written without `+` | Parsed under the region of 8.3; the sighting records `region_basis` |
+| PN-3 | A number the library does not report valid | Never given a `phone:` key (rule P3 below gives `other:digits:`) |
+| PN-4 | A valid number | `value_display` is the library's INTERNATIONAL format |
+| PN-5 | The four written forms of one number in the 8.4 equivalence class | One identical key |
 
 Rules, in order (first match wins):
 
@@ -898,8 +954,11 @@ column (`backend/postgres/models/case.py`). Order:
    settings page), basis `case_setting`;
 3. `US`, basis `assumed_default`.
 
-Every identity parsed from a number without `+` records `region_basis` on its sighting; the Extraction
-profile states how many numbers were read with an assumed region. Changing the region re-derives the
+Every identity parsed from a number without `+` records `region_basis` on its sighting; the Phone summary
+states how many numbers were read with an assumed region. Every response that returns an extraction's default
+region (the Phone summary's Needs a decision box and the case settings Phones section, 07 section 5) carries
+that extraction's count of numbers read under the assumed region, shown as "{n} numbers were read assuming
+{region}". Changing the region re-derives the
 identities of that extraction (5.7). Owl works from Washington DC (CLAUDE.md), which is why `US` is the
 fallback; *reverse if* a case's numbers are mostly foreign without a `+`.
 
@@ -981,25 +1040,33 @@ INTERNATIONAL format for phones, as v1's `display_format`), `sighting_count`, `f
 2. `basis = name_in_record`: distinct Party `Name` values for the identity on that extraction with counts.
 3. The **phone's name** for display is the most frequent `contact` name; ties broken by latest
    `TimeModified`, then lowest `record_uid`. Else the most frequent `name_in_record` with the same tie rule.
-   Else none ("(no name on this phone)" in spec 03). This follows v1's per-device saved name
-   (`device_contact_names`, `backend/services/neo4j_service.py:8388-8414` on `origin/main`, most common
-   saved name per identity and report) and v1's recorded rule that per-device naming is the default
-   (`feedback_cellebrite_perspective_primary.md`).
-4. Names that are the identifier echoed back are not names (v1 `_is_real_name`,
-   `neo4j_writer.py:204-228`): equal to the raw identifier, phone-shaped, JID-shaped.
+   Else none ("(no name on this phone)" in spec 03). Naming per phone is the default, the rule v1 recorded
+   (`feedback_cellebrite_perspective_primary.md`) and v1's per-phone saved name followed (the most common
+   saved name per identity and report).
+4. A name that is the identifier echoed back is not a name: a value equal to the raw identifier, a value of
+   phone shape (the input shape of rule P3), or a value of JID shape (rules P1 and P2).
 
 All names on all phones are kept and shown; no name is ever chosen as the identity's "real" name.
 
+Behaviour rules, each a test in U9 (synthetic fixtures; lessons from v1):
+
+| Rule | Situation | Observable result |
+|---|---|---|
+| NM-1 | One identity saved under two names on two phones | Both names shown, each with its phone (spec 03 U-1) |
+| NM-2 | Several contact names for one identity on one phone | The phone's name is the most frequent; a tie goes to the latest `TimeModified`, then the lowest `record_uid` |
+| NM-3 | No contact name on that phone | The most frequent name in records, same tie rule; with none, "(no name on this phone)" |
+| NM-4 | A contact or party name equal to the identifier, of phone shape or of JID shape | Never shown as a name, never a phone's name, never an owner name |
+| NM-5 | Names that differ between phones | Every name stays; the identity has no single "real" name, and no suggestion is made from the names alone (8.7) |
+
 ### 8.6 Owner identity of each phone
 
-Computed in `backend/services/phone/owner.py`, rebuilt from v1's three tiers (`ingestion/scripts/
-cellebrite/ingestion.py:298-322`, `neo4j_writer.py:683-940` on `origin/main`):
+Computed in `backend/services/phone/owner.py`, rebuilt from v1's three tiers (on `origin/main`):
 
-| Tier | Evidence | v1 source | Basis (spec 03) |
-|---|---|---|---|
-| 1 | Header numbers: metadata item `MSISDN` (v1 `parser.py:325-327`); `SIMData` records with `Category = SIM/USIM MSISDN` (measured in C3) | parse_header | `extracted` |
-| 2 | Inference: count the `Account` field of every record (any type; the field exists on Call, Chat, Contact, Email, Location, CalendarEntry, FileUpload, Journey, Note, Password, SearchedItem, SocialMediaActivity, RemoteServiceSession) plus 1 for each identifier on a Party with `IsPhoneOwner = True`; keep those that classify as `phone`; the highest count wins, ties by E.164 string (`infer_owner_msisdn`, `neo4j_writer.py:894-940`) | infer_owner_msisdn | `inferred` |
-| 3 | A person's decision `set_phone_owner` | manual identifier at intake | `manual` |
+| Tier | Evidence | Basis (spec 03) |
+|---|---|---|
+| 1 | Header numbers: metadata item `MSISDN`; `SIMData` records with `Category = SIM/USIM MSISDN` (measured in C3) | `extracted` |
+| 2 | Inference: count the `Account` field of every record (any type; the field exists on Call, Chat, Contact, Email, Location, CalendarEntry, FileUpload, Journey, Note, Password, SearchedItem, SocialMediaActivity, RemoteServiceSession) plus 1 for each identifier on a Party with `IsPhoneOwner = True`; keep those that classify as `phone`; the highest count wins, ties by E.164 string | `inferred` |
+| 3 | A person's decision `set_phone_owner` (v1 took a manual identifier at intake; here the Phone summary prompts after capture, 07 J-1) | `manual` |
 
 Differences from v1, each a decision (14):
 
@@ -1012,10 +1079,21 @@ Differences from v1, each a decision (14):
   (`extraction_id`, `identity_id`, `tier`, `count`, `basis_detail jsonb`). The computed owner is tier 1 if
   any, else tier 2's top, else none; a decision overrides and is shown as such.
 - **Owner names** are candidates, not decisions: `Party.Name` where `IsPhoneOwner = True` and
-  `UserAccount.Name` filtered by the 8.5 rule 4 (v1 `_scan_for_phone_owner`, `neo4j_writer.py:688-737`).
+  `UserAccount.Name`, filtered by the 8.5 rule 4.
 - **Owner's app identities** (identities in `Account` fields and on `IsPhoneOwner` parties of that phone)
-  are listed as `owner_accounts` suggestions (8.7 reason R2), not merged. v1 flagged them without merging
-  (`flag_owner_app_identities`); this keeps that separation.
+  are listed as `owner_accounts` suggestions (8.7 reason R2), not merged. v1 flagged them without merging;
+  this keeps that separation.
+
+Behaviour rules, each a test in U9:
+
+| Rule | Situation | Observable result |
+|---|---|---|
+| OW-1 | Header `MSISDN` present (C3) | Owner basis `extracted`, tier 1 |
+| OW-2 | No owner evidence at all | Capture and interpretation complete; owner `unidentified`; every comm event still has its `owner_implicit` participation and the label for an unidentified owner; the Phone summary shows the non-blocking prompt "No owner number was found. Set the owner" |
+| OW-3 | Candidates in more than one tier | Every candidate stored with tier, count and basis; the computed owner is tier 1, else tier 2's top, else none |
+| OW-4 | Two tier 2 candidates with equal counts | The lower E.164 string wins |
+| OW-5 | A `set_phone_owner` decision | It overrides the computed owner, is shown as decided, and the computed candidates stay visible |
+| OW-6 | Owner names and owner app identities | Names are candidates that pass NM-4; app identities appear as `owner_accounts` suggestions and are never merged with the owner identity |
 
 `pv_extraction.owner_identity_key` and `owner_basis` come from here.
 
@@ -1080,6 +1158,25 @@ not only financial: `postgres/models/enums.py:112-124`). Changes:
 | `accept_phone_reconciliation_difference` | `phone_extraction` | `{"accepted_documents": [...]}` | another of the same |
 | `set_phone_label` | `phone_extraction` | `{"label": "<computed>"}` / `{"label": "<decided>"}` | another of the same |
 | `confirm_phone_result`, `reject_phone_result` | `phone_analysis_result` | as spec 05 section 3.7 | each other |
+| `confirm_phone_reading` | `phone_extraction` | `{"reading:<mapping row id>@<mapping version id>": "applied_unconfirmed"}` / `"reviewed"`, with the examples shown and whether each was opened (6.8) | `correct_phone_reading` |
+| `correct_phone_reading` | `phone_extraction` | `{"reading:<mapping row id>@<mapping version id>": <the mapping's choice>}` / `{...: <the corrected choice>, "scope": [extraction ids]}` (6.8) | another `correct_phone_reading` back to the mapping's choice |
+| `mark_not_duplicate` | `phone_record` | `{"dup_group_uid": "<group>"}` / `{"dup_group_uid": null}` (spec 03 section 3.4, test C-13) | another `mark_not_duplicate` restoring the group |
+
+**Reasons.** Every decision is recorded through `decisions.record`, which refuses a blank reason, and through
+`services.manual_changes` (`record_change`, or `record_confirmation` for a confirmation) in the same
+transaction (CB-INDEX rule 11). `adjudications` gains `reason_kind` (`typed`, `standard`):
+
+- Routine confirmations (`confirm_phone_reading`) and identity links (`link_phone_identity`) store a
+  **standard reason** generated from what was shown, for example "Confirmed on the review screen after viewing
+  12 examples across 4 kinds", with `reason_kind = standard`. It is displayed as "Standard reason", never as the
+  person's words; an optional note is added.
+- A typed reason (`reason_kind = typed`) is required for value corrections (`correct_phone_value`), Unlink and
+  Split (`unlink_phone_identity`), replacing or retiring a report (01 section 10.7), accepting a reconciliation
+  difference (`accept_phone_reconciliation_difference`) and external processing
+  (`allow_phone_external_processing`).
+
+Rows the system mapped and no person has confirmed carry the origin wording "Mapped by the system, not yet
+confirmed" wherever they are shown, with the rule named (1.4).
 
 `split` (spec 03's action) is a set of `unlink_phone_identity` decisions written in one transaction with
 one reason. Linking to a new person creates the dossier through `create_dossier`
@@ -1302,8 +1399,17 @@ from consecutive message lines up to 3,500 characters, metadata the engine's key
 
 Until then, chat reaches phone text by lexical retrieval: `rag_service._retrieve_chunks` (vector only today,
 `backend/services/rag_service.py:673-689`) gains a step that runs the folded search over `phone_text`
-documents and `phone_texts` for the question's terms and adds up to 8 message windows as chunks with the
-same metadata. *Reverse if* Neil records the per-case decision or a local model is installed.
+documents and `phone_texts` for the question's terms. *Reverse if* Neil records the per-case decision or a
+local model is installed.
+
+**What reaches an external model.** Chat retrieval and the agent's phone tools send no phone text and no
+identifier (names, numbers, account ids, addresses) to an external model without the case's
+`allow_phone_external_processing` decision.
+
+- With the decision, lexical retrieval adds up to 8 message windows as chunks with the metadata above.
+- Without it, retrieval and phone tools return only record ids, counts, times and opaque labels such as
+  "Identity 3 on C2" or "Phone C2". The chat interface expands the labels on screen, so the person reads the
+  names and the model never receives them. A tool that cannot answer this way refuses with a stated reason.
 
 ### 9.9 Citation anchors
 
@@ -1311,8 +1417,11 @@ New anchor kind for phone records, used in workspace AI, chat and dossier links:
 
 ```json
 {"kind": "phone_record", "record_uid": "uuid", "extraction_id": "uuid",
- "field_path": "Body", "start_char": 120, "end_char": 302}
+ "field_path": "Body", "start_char": 120, "end_char": 302, "mapping_set_id": "uuid"}
 ```
+
+`mapping_set_id` (6.6) is set when the item is collected, so a link records which mapping versions produced
+the reading it cites.
 
 `record_uid` is the anchor; character offsets are a convenience and may go stale when a thread document is
 regenerated, the record id never does. Spec 03 uses `{"record_uid"}` anchors and `rec://` links (03 section
@@ -1456,7 +1565,7 @@ reaching the ledger only through claim comparison (plan 6.6, 12.1 rule 5).
 
 | View | Key | Columns (03's names) and where each comes from |
 |---|---|---|
-| `pv_extraction` | `extraction_id` | `extraction_id`, `case_id` (01 `phone_extractions`); `label` (`phone_extraction_labels`, 12.3); `state` (`ingested` when captured and interpreted, `partial` when `captured_incomplete`, `failed`, `replaced` when superseded); `owner_identity_key`, `owner_basis` (8.6); `device` jsonb (skeleton metadata `DeviceInfoSelectedManufacturer`, `DeviceInfoSelectedDeviceName`, `DeviceInfoOSType`); `report_version`, `producer` (= `producer_version`), `extraction_type` (01); `selection` jsonb (7.2 `selection`); `time_zone` jsonb (skeleton `timeZoneConfigurations` verbatim); `device_zone`, `device_zone_basis` (4.2); `container_sha256` (01 `phone_extraction_containers.sha256` of `first_container_id`); `report_sha256` (01 `report_set_sha256`); `ingested_at` (01 `captured_at`); `reconciliation_state` (latest `phone_reconciliations.result` per document, `exact` only if all are) |
+| `pv_extraction` | `extraction_id` | `extraction_id`, `case_id` (01 `phone_extractions`); `label` (`phone_extraction_labels`, 12.3); `state` (`interpreting` while 02 interpretation runs, `building_views` while projections and thread documents are built (01 section 10.3), `ingested` when captured and interpreted, `partial` when `captured_incomplete`, `failed`, `replaced` when superseded); `owner_identity_key`, `owner_basis` (8.6); `device` jsonb (skeleton metadata `DeviceInfoSelectedManufacturer`, `DeviceInfoSelectedDeviceName`, `DeviceInfoOSType`); `report_version`, `producer` (= `producer_version`), `extraction_type` (01); `selection` jsonb (7.2 `selection`); `time_zone` jsonb (skeleton `timeZoneConfigurations` verbatim); `device_zone`, `device_zone_basis` (4.2); `container_sha256` (01 `phone_extraction_containers.sha256` of `first_container_id`); `report_sha256` (01 `report_set_sha256`); `ingested_at` (01 `captured_at`); `reconciliation_state` (latest `phone_reconciliations.result` per document, `exact` only if all are) |
 | `pv_record` | `record_uid` | `record_uid`, `extraction_id`, `cellebrite_id` (`source_model_id`), `model_type`, `parent_record_uid` (from `parent_ordinal`), `deleted_state` (01), `decoding_confidence`, `source_index`, `file_id` (from body attrs), `is_carved` (false until a marker is established, 15; the column comment says so), `locator` (01 6.4) |
 | `pv_comm_event` | `event_uid` | from `phone_comm_events` (6.9 mappings): `event_uid` (= uuid5 of `record_uid`, `comm`), `record_uid`, `extraction_id`, `case_id`, `kind` (`message`, `call`, `email`, `voicemail`, `chat_activity`), `thread_key`, `app`, `direction` (5.3), `sort_instant` (effective instant of the event-time field), `time_field`, `body` (complete), `subject`, `status`, `call_duration_s`, `call_status`, `video`, `dup_group_uid`, `dup_rule_version` (03 section 3.4 rule, evaluated here), `interpretation_level` |
 | `pv_comm_party` | (`event_uid`, `participation_uid`) | from `phone_participations`: `event_uid`, `identity_key`, `role` (5.3, including `owner_implicit`), `name_in_record`, `identifier_raw`, `is_phone_owner`, `date_read`, `date_delivered`, `date_played` (effective instants of the Party's own fields) |
@@ -1469,7 +1578,7 @@ reaching the ledger only through claim comparison (plan 6.6, 12.1 rule 5).
 | `pv_file` | `file_uid` | from 01 `phone_files`: `file_uid`, `extraction_id`, `cellebrite_file_id` (`source_file_id`), `category` (`tags`), `local_path`, `size` (`disk_size`, else `declared_size`), `md5`, `sha256` (disk values, else declared, with which in `hash_basis`), `verification` (01 `outcome` carried as is, all seven values of 01 section 7.2: `no_local_path`, `missing`, `empty_placeholder`, `size_mismatch`, `match`, `mismatch`, `no_hash`; an `empty_placeholder` is never shown as mismatched, missing or unverified), `deleted_state` (file body attribute `deleted`), `is_carved` (true when the row was captured from the report's `carvedFiles` section; whether any production populates it is open, 01's last section), `taken_instant` (the file's EXIF or `accessInfo` timestamp from `phone_timestamps` with `owner_kind = 'file'`, chosen by the rule in spec 03 section 8), `exif` |
 | `pv_attachment_link` | (`record_uid`, `mechanism`, `body_path`) | from 01 `phone_file_references`: `record_uid`, `file_uid` (resolved row or null), `mechanism` (01's `jumptarget`, `file_id_attribute`, `extracted_path_value` shown under 03's names `jump_target`, `attachment_field`, `tagged_file`), `extracted_path` (`reference_text` when a path), `resolved` (`resolution <> 'unresolved'`) |
 | `pv_text` | `text_uid` | from `phone_texts`: `record_uid`, `extraction_id`, `case_id`, `field_path`, `value` (effective), `value_folded` (`fold()`), `is_sensitive` |
-| `pv_coverage` | (`extraction_id`, `model_type`, `field_name`, `field_kind`) | section 7: `records`, `interpretation` (03's three values: `reviewed`, `generic` for `generic_role` and `generic_text`, `captured_only`; plus `suspended` and the finer level in `level_detail`) |
+| `pv_coverage` | (`extraction_id`, `model_type`, `field_name`, `field_kind`) | section 7: `records`, `interpretation` (03's three values: `reviewed`, `generic` for `generic_role` and `generic_text`, `captured_only`; plus `applied_unconfirmed`, `suspended` and the finer level in `level_detail`) |
 
 ### 12.3 Phone labels
 
@@ -1505,16 +1614,16 @@ file.
 | U2 | Registry tables and seed | After seed: 62 types, 471 field rows over 470 (type, field, kind), 55 named sets with 210 values plus `DecodingSourceOptions` = `Decoding`, 47 nesting rows, `ChatActivity.SystemMessageId` drift flag `acknowledged`; re-running the seed changes nothing; the seed file contains no path and no String/Guid value (test scans it) |
 | U3 | Observation pass and review queue | Observing C3, C9, C8 after the seed raises no flag for anything in the seed; a synthetic extraction with one new type, field, set value, nesting, attribute and a drifted value type raises exactly six flags; two concurrent observations of the same new field raise one flag; flag transitions write events before state; `QuotedMessageData.Label` on C8 gives `max_values_in_one_field` 2 or more |
 | U4 | Generic interpretation (5) | C3: 22,881 time rows, 31 location points; C9: 5,218 and 9 (7 Location, 2 WirelessNetwork); C8: 59,672 and 38, and 171 Locations counted `not_positionable` with reason `no_coordinate`; a type absent from all code (synthetic `ZzzUnknown` with a TimeStamp, a nested Coordinate and a Party) gets a timeline entry, a point and a participant (plan 7 phase 3 done-when); every C3 Party yields a participation (count equals Party records under parents, 7,504 in `c3.json` `mt_all`); roles follow 5.3 on the measured combinations; no derived row lacks `record_uid` |
-| U5 | Mapping loader, versions, applier, suspension (6) | A `draft` file is ignored; a `reviewed` file with empty `reviewed_by` fails start-up; changing a file changes the set id and the sweep re-derives without re-capture (asserted: no capture table written); a registry requirement under an open drift flag suspends the mapping on that extraction only and coverage shows `suspended`; the applier never reads `phone_mapping_proposals` |
+| U5 | Mapping loader, versions, applier, suspension (6) | A `draft` file is ignored; an `applied_unconfirmed` file is applied and its rows carry level `applied_unconfirmed`; RQ-1 to RQ-8 (6.8); a `reviewed` file with empty `reviewed_by` fails start-up; changing a file changes the set id and the sweep re-derives without re-capture (asserted: no capture table written); a registry requirement under an open drift flag suspends the mapping on that extraction only and coverage shows `suspended`; the applier never reads `phone_mapping_proposals` |
 | U6 | Initial type mappings (6.9) reviewed and committed | On C3: 1,657 calls, every call has a `caller` and a `callee` participation (owner side `owner_implicit` when absent); 2,917 messages with threads (2,716 under Chats, 201 top-level by counterpart set); 294 emails with full bodies (longest body length equals the captured length); direction conflicts counted and listed |
 | U7 | Coverage map and endpoint (7) | C3 response lists 35 types and 178 value combinations plus nested-only types; selection flags returned verbatim from all three `extractionInfo` elements; a field becomes `reviewed` when its mapping loads and back to generic when removed |
-| U8 | Identifiers, fold, region (8.2 to 8.4) | All fold vectors in 8.4 on Python 3.10; phone equivalence classes in 8.4; JID and number give one identity; group JIDs never become persons; numbers parsed with assumed region carry `region_basis = assumed_default` and are counted on the profile |
-| U9 | Sightings, phone names, owner (8.5, 8.6) | An identity on two phones with two saved names shows both, each with its phone (spec 03 U-1); C3 owner basis `extracted` from header MSISDN; C9 and C8 owner result recorded with tier and candidates (expected tier not yet established); an extraction with no evidence of owner still produces `owner_implicit` participations and the label for an unidentified owner |
+| U8 | Identifiers, fold, region (8.2 to 8.4) | All fold vectors in 8.4 on Python 3.10; phone equivalence classes in 8.4; JID and number give one identity; group JIDs never become persons; PN-1 to PN-5 (8.2); numbers parsed with assumed region carry `region_basis = assumed_default` and are counted on the Phone summary and in every default-region response |
+| U9 | Sightings, phone names, owner (8.5, 8.6) | NM-1 to NM-5 and OW-1 to OW-6; an identity on two phones with two saved names shows both, each with its phone (spec 03 U-1); C3 owner basis `extracted` from header MSISDN; C9 and C8 owner result recorded with tier and candidates (expected tier not yet established); an extraction with no evidence of owner still produces `owner_implicit` participations and the label for an unidentified owner |
 | U10 | Suggestions and decisions (8.7, 8.8) | No suggestion from names alone (spec 03 U-3); link then unlink restores state and both decisions appear with actor in order (spec 03 U-2); a rejected pair is not suggested again; `split` writes one decision per identity in one transaction; stale `expected_revision` returns 409; enum and constraint migration round-trips |
 | U11 | Financial identifier kinds (8.9) | `phone_number` and `email` identifiers validate and match by normalised value (`(202) 555-0143` matches `+1 202 555 0143` under US); existing kinds behave as before (existing account identity tests pass unchanged); R4 suggestion appears only when the account holder party is linked to a dossier |
 | U12 | Graph projection (9.3 to 9.5) | No projected node has a property named in 9.2 (test over the plan); after projecting C3 and C9 into one case, deleting C9 leaves every identity also seen on C3 with its C3 edges and removes C9-only identities (plan phase 4 done-when, spec 03 R-2); `--drop-first` rebuild yields the same revision; existing Timeline, Map and Graph endpoint results for the case are unchanged except for the added identity nodes in Graph; `COMMUNICATED` counts equal the Postgres counts per pair |
 | U13 | Thread documents and search hits (9.7) | Every C3 chat yields thread text whose line count equals its message count; every location's `record_uid` exists; text search for a word in a message returns a hit carrying that `record_uid`; thread files do not appear in evidence listings; a thread over the part limit splits only at message boundaries; deleting the extraction removes the files and texts |
-| U14 | Embedding gate, chat and workspace anchors (9.8, 9.9) | With no decision and the OpenAI provider, no phone chunk is sent to `embed_texts` (test patches it and asserts not called); lexical retrieval returns phone message windows to chat; `ChatSource` round-trips `record_uid`; two messages from one thread are two sources; a workspace theory citing a message stores a `phone_record` anchor whose URL opens the record |
+| U14 | Embedding gate, chat and workspace anchors (9.8, 9.9) | With no decision and the OpenAI provider, no phone chunk is sent to `embed_texts` (test patches it and asserts not called); with no decision, lexical retrieval and phone tools return record ids, counts, times and opaque labels only, and with the decision they return message windows; no outbound payload to an external model carries any fixture identifier or display name (test patches every outbound client and scans each payload for the fixture's names, numbers, account ids and addresses); an anchor stores the `mapping_set_id` current when it is collected; `ChatSource` round-trips `record_uid`; two messages from one thread are two sources; a workspace theory citing a message stores a `phone_record` anchor whose URL opens the record |
 | U15 | Corrections (10) | A corrected timestamp moves the event in streams and thread text and both values are shown; search finds the corrected body text and not the machine text in default mode; undo restores ordering and keeps the chain; a clock offset applies only within its period |
 | U16 | Combined edges (11) | Edge communication counts equal Conversations `between` totals (spec 03 R-1) and time-sliced counts equal windowed totals (R-3); money sums use only admitted, current transactions, per currency (2 USD and 1 MXN payments give two totals, 05 17.8); p3 stated separately and p4 never in a total; undoing a link removes its contribution on recompute; a superseded correction's original amount is never counted; `edge-records` totals equal edge counts |
 | U17 | Sweep and runtime (1.3, 5.7) | Killing the backend mid-pass leaves the previous generation readable and the next start completes it; the C6-scale timing measurement is recorded before the reverse-if in 1.3 is judged |
@@ -1553,15 +1662,16 @@ Each with its reason and what would reverse it.
     and triggers re-derivation everywhere.
 11. **A mapping is suspended per extraction when a field it names is under an open drift flag;** generic
     interpretation stands meanwhile.
-12. **Coverage levels are five** (`reviewed`, `suspended`, `generic_role`, `generic_text`, `captured_only`),
-    computed on read.
+12. **Coverage levels are six** (`reviewed`, `applied_unconfirmed`, `suspended`, `generic_role`,
+    `generic_text`, `captured_only`), computed on read.
 13. **Identity = identifier; person = dossier.** Matches spec 03 section 10; no third "cluster" object that
     could drift from dossiers.
 14. **The only automatic equivalence is a valid WhatsApp user JID to its number.** True by construction;
     v1 learnt it from a split thread.
 15. **Short codes and unverified digit strings are kept as `other` identities,** not discarded as v1 did,
     because bank and service SMS come from short codes (plan 12 approach 1).
-16. **libphonenumber is adopted (`phonenumbers==9.0.31`, v1's pin), replacing Loupe's regex normaliser.**
+16. **libphonenumber is adopted (`phonenumbers==9.0.31`, v1's pin) through one phone-number module written for
+    the rebuild, replacing Loupe's regex normaliser.**
 17. **Default region: extraction decision, then case setting, then US with the basis recorded.**
 18. **`fold()` adds a mixed-script confusable step** to spec 03's rules, limited to tokens mixing Latin with
     Cyrillic or Greek, so names written wholly in Cyrillic are untouched.

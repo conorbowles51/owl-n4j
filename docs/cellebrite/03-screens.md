@@ -1,7 +1,7 @@
 # Cellebrite rebuild, spec 03: screens
 
 This file specifies every screen through which phone data reaches an investigator in Loupe: the three
-phone-specific screens (Conversations, Extraction profile, Media) and phone data inside six existing
+phone-specific screens (Conversations, Phone summary, Media) and phone data inside six existing
 Loupe surfaces (case Timeline, People, a Loupe-wide Search that does not exist yet, Export, case Map,
 case Graph). For each it states what the investigator can find out or do, the data it reads, every
 interaction, filter and sort, how completeness is guaranteed when filters are applied, how time, names
@@ -30,10 +30,11 @@ and 10.6; it does not change any standing decision in plan section 1.
    - 3.9 Keyboard
    - 3.10 Sensitive fields
    - 3.11 Access and case scoping
+   - 3.12 Rules from 07
 4. Shared backend: router, query module, envelope, common endpoints
 5. Shared frontend: placement and conventions
 6. Conversations
-7. Extraction profile
+7. Phone summary (the extraction profile), with the list for each record type
 8. Media
 9. Case Timeline phone lens, with the single swim-lane mode
 10. People with a per-phone lens
@@ -73,7 +74,7 @@ extraction twice is a no-op"). `extraction_id` is the id of one ingested report 
 
 | Contract view | One row per | Columns these screens need |
 |---|---|---|
-| `pv_extraction` | ingested extraction | `extraction_id uuid`, `case_id uuid`, `label text` (C1, C2 ...), `state text` (ingested, partial, failed, replaced), `owner_identity_key text null`, `owner_basis text` (extracted, inferred, manual), `device` jsonb (manufacturer, model, os), `report_version text`, `producer text`, `extraction_type text`, `selection` jsonb (IsSelectiveExtraction, IsPartialData, IsStoppedByUser, IsTriageExtraction as captured, chosen types and ranges if present), `time_zone` jsonb (the report's `timeZoneConfigurations` values verbatim), `device_zone text null` with `device_zone_basis text` (see 3.2), `container_sha256`, `report_sha256`, `ingested_at`, `reconciliation_state text` |
+| `pv_extraction` | ingested extraction | `extraction_id uuid`, `case_id uuid`, `label text` (C1, C2 ...), `state text` (interpreting, building_views, ingested, partial, failed, replaced; 02 section 12.2), `owner_identity_key text null`, `owner_basis text` (extracted, inferred, manual), `device` jsonb (manufacturer, model, os), `report_version text`, `producer text`, `extraction_type text`, `selection` jsonb (IsSelectiveExtraction, IsPartialData, IsStoppedByUser, IsTriageExtraction as captured, chosen types and ranges if present), `time_zone` jsonb (the report's `timeZoneConfigurations` values verbatim), `device_zone text null` with `device_zone_basis text` (see 3.2), `container_sha256`, `report_sha256`, `ingested_at`, `reconciliation_state text` |
 | `pv_record` | captured record (any type, top level or nested) | `record_uid`, `extraction_id`, `cellebrite_id text`, `model_type text`, `parent_record_uid null`, `deleted_state text` (as captured: Intact, Deleted, Trash, Unknown, or null), `decoding_confidence text null`, `source_index text null`, `file_id text null`, `is_carved bool` (02 defines from the capture), `locator` jsonb (01's locator) |
 | `pv_comm_event` | message, call, email, voicemail, chat activity | `event_uid`, `record_uid`, `extraction_id`, `case_id`, `kind text` (message, call, email, voicemail, chat_activity), `thread_key text`, `app text null` (SourceApplication or Source as captured), `direction text` (incoming, outgoing, unknown), `sort_instant timestamptz null`, `time_field text` (which field supplied it, e.g. TimeStamp), `body text null` (complete, never cut), `subject text null`, `status text null`, `call_duration_s numeric null`, `call_status text null`, `video bool null`, `dup_group_uid text` (3.4), `dup_rule_version int`, `interpretation_level text` (generic, reviewed; plan 1.5) |
 | `pv_comm_party` | party on an event | `event_uid`, `identity_key text`, `role text` (02 section 5.3's computed role: sender, recipient, cc, bcc, caller, callee, participant, activity_subject, attendee, author, owner_of_item, original_sender, `party:<FieldName>`, unknown, or owner_implicit when 02 supplies the owner side), `role_basis text` (02 section 5.3: container, role, direction_inferred); the captured `Role` text (From, To, General) stays visible in the record panel (3.6), `name_in_record text null`, `identifier_raw text null`, `is_phone_owner bool null`, `date_read`, `date_delivered`, `date_played` (timestamptz null each) |
@@ -86,7 +87,7 @@ extraction twice is a no-op"). `extraction_id` is the id of one ingested report 
 | `pv_file` | tagged or carved file | `file_uid`, `extraction_id`, `cellebrite_file_id`, `category text` (as captured: Image, Audio, Video, Text, Archives, Document, Application, Configuration, Database, Uncategorized), `local_path text`, `size bigint null`, `md5 text null`, `sha256 text null`, `verification text` (01 section 7.2's seven outcomes, carried as is: no_local_path, missing, empty_placeholder, size_mismatch, match, mismatch, no_hash), `deleted_state text null`, `is_carved bool`, `taken_instant timestamptz null`, `exif` jsonb null |
 | `pv_attachment_link` | link from a record to a file | `record_uid`, `file_uid null`, `mechanism text` (tagged_file, jump_target, attachment_field; plan 3.4), `extracted_path text null`, `resolved bool` |
 | `pv_text` | searchable string value | `record_uid`, `extraction_id`, `case_id`, `field_path`, `value text`, `value_folded text` (3 rules in 11.3), `is_sensitive bool` |
-| `pv_coverage` | (type, field) per extraction | `extraction_id`, `model_type`, `field_name`, `field_kind`, `records int`, `interpretation text` (reviewed, generic, captured_only) |
+| `pv_coverage` | (type, field) per extraction | `extraction_id`, `model_type`, `field_name`, `field_kind`, `records int`, `interpretation text` (reviewed, applied_unconfirmed, generic, captured_only) |
 
 If 02 decides the owner side of a call is implicit (v1's calls carried one Person edge; see v1 memory
 note `project_cellebrite_call_one_edge.md`), `pv_comm_party` must still return a row for the owner with
@@ -173,8 +174,11 @@ Rules:
    new phone lands mid-scroll.
 4. **Full load where it fits.** When the filtered total is at most `FULL_LOAD_ROWS = 5,000`, the client
    fetches every window immediately after the index (sequential requests of 1,000 rows), so the whole
-   result is in memory, in-page find (Ctrl+F) works, and "Select all" needs no further fetch. Above that,
-   windows are fetched as they come into view, two windows ahead and one behind. 5,000 is chosen because a
+   result is in memory and "Select all" needs no further fetch. Above that, windows are fetched as they
+   come into view, two windows ahead and one behind. **Find in these results:** a visible Find control and
+   the first Ctrl/Cmd+F search the whole result on the server ("Match 3 of 214"); a second press passes to
+   the browser. Browser find is not relied on over virtual lists. Test UX-2 (07 section 4.8): find covers
+   rows outside the viewport. 5,000 is chosen because a
    message row averages under 1 KB of JSON with its parties (a body is complete but most bodies are
    short; the longest measured is 155,838 characters and is paged within the row, not truncated), so 5,000
    rows stay under about 5 MB, which a browser holds comfortably; *reverse if* measured row size on the
@@ -327,12 +331,27 @@ Badges are words, not colours alone. Each has a tooltip giving the captured valu
 | `Unreadable message` | ScrambledMessageData present on the event | |
 | `Read by owner`, `Played by owner` | owner party `date_read` / `date_played` | the timestamps, formatted as 3.2 |
 | `Generic reading` | `interpretation_level = generic` | "Loupe has not yet reviewed how this record type maps to messages. Fields are read by their names." |
+| `Mapped by the system, not yet confirmed` | the row was derived by a mapping row that no person has confirmed (`interpretation_level = applied_unconfirmed`, 02 section 8.8) | the rule in plain words, on click |
+| `Machine-generated by <model> <version> on <date>, not yet confirmed` | derived text (transcript or text read from an image, 8.3) that no person has confirmed | the source file, which stays above the text |
+| `Confirmed by <name> on <date>` | a person confirmed the reading (02 section 6.8) | shown in the record panel |
+| `Read by <model>, accepted by <name> on <date>` | a person accepted a model reading | the model reading |
+| `Corrected by <name> on <date>: <reason>` | a correction decision (02 section 10.4) | the original value, shown beside the corrected value; only the corrected value is searched, summed or exported as the value |
+
+These origin states are the origin mark of 07 section 4.6; the shared formatter (3.2) prints the same mark
+on screen, in copy and in exports.
+
+- **Badge priority:** corrected, not confirmed, deleted or recovered, from another device, duplicate, then
+  others. A row shows two badges and `+N`, which lists the rest.
+- **Meaning sentence:** every badge has a meaning sentence, read from one glossary file shared with the
+  guide (07 section 9).
+- **Totals:** a totals line states `N not yet confirmed` whenever the result holds unconfirmed readings.
 
 ### 3.6 The record behind this
 
 Every row, point, file, edge record and search hit has an action `Open the record behind this` (key `r`).
-It opens the **Record panel**, a right-side sheet (`frontend_v2/src/features/phones/components/RecordPanel.tsx`),
-reading `GET /api/phones/records/{record_uid}` (4.4). It shows:
+It opens the **Record panel** (`frontend_v2/src/features/phones/components/RecordPanel.tsx`), which is the
+Details content of the existing case side panel. The panel is non-modal: `j`/`k` keep moving through the
+list and the panel follows the focused row (test UX-4). It reads `GET /api/phones/records/{record_uid}` (4.4). It shows:
 
 1. Header: phone label, record type, Cellebrite record id, and the report file name with its SHA-256.
 2. State: deleted, carved, decoding confidence, source index, interpretation level.
@@ -345,7 +364,18 @@ reading `GET /api/phones/records/{record_uid}` (4.4). It shows:
    does not, the sentence "The production does not include the app database this record was read from."
    (plan 13, validation row). Only C8 has a database folder among the local samples (plan 13).
 7. Actions: `Copy record as text`, `Copy record id`, `Show in Conversations`, `Show on Timeline`, `Show on
-   Map` (when positioned).
+   Map` (when positioned); `Add to…` (dossier, finding or theory, note, Timeline, label; 07 section 6);
+   `Correct this value` (02 section 10.4: typed reason, original kept and shown beside the corrected value);
+   the reading choice `Looks right` / `Not right` beside the origin mark (3.5); `Around this time`; `Open
+   the window around this`.
+8. Blocks: `Used in this case: N findings, N dossiers`, resolving the record's membership of
+   `phone_selection` collections (07 section 6), and the link state of each participant identity (10.3).
+
+When Chat or the Notebook opens from a record, the composer shows a compact pinned preview of the record or
+records with `Open the record`, so writing about a message never hides it (07 section 4.3).
+
+Tests: UX-5 (a corrected value shows both values, and only the corrected value is searched, summed and
+exported); CO-7 (`Used in this case` equals the reverse lookup, 07 section 6.5).
 
 Absence follows the pattern of `SourceHighlight` (`frontend_v2/src/features/financial/components/SourceHighlight.tsx:10-20,80-159`):
 each kind of absence has its own sentence, and none is collapsed into "unavailable":
@@ -397,15 +427,18 @@ States every list and panel implements, with the exact copy:
 
 | State | Copy |
 |---|---|
-| Loading the index | skeleton rows plus "Counting matching messages" |
+| Loading the index | the shared progress panel (07 section 4.7), shown after 300 ms: the step in words ("Counting matching messages on 3 phones"), completion from true counts ("98,000 of 186,787"), time left from the measured rate of this step or this view's last load, or "Working out time left (first run of this step)", updated at least every 1 s; the one stall rule: "Still working on <step>" after 3 s with no movement, and the slow part named with Try again after 10 s |
 | Index loaded, windows loading | the header total is shown immediately; placeholder rows in place |
 | No phone in the case | "No phone extractions have been added to this case. Add one from Evidence." with a link |
-| Filter matches nothing | "No messages match these filters." followed by the active filters as removable chips and `Clear filters` |
+| Filter matches nothing | "No messages match these 3 filters. The date filter removed 2,140; remove it?", naming the filter that removed most, followed by the active filters as removable chips and `Clear filters` |
+| Conversations, nothing selected | "Pick a thread or a person. The busiest are listed first." |
+| Needs a decision, empty | "Nothing needs a decision. New items appear when a phone is added or a reading changes." |
+| Patterns, owner unknown | "Patterns need to know whose phone C3 is. Set the owner." |
 | Phone present, kind absent | "C3's report contains no calls." (from `pv_coverage`, which distinguishes "not in the report" from "filtered out") |
 | Phone still ingesting | "C3 is still being read (62%). Results will be incomplete until it finishes." and every total carries `(incomplete)` |
-| Phone ingest failed or partial | "C8's report could only be partly read. Results from C8 are incomplete. See Extraction profile." |
+| Phone ingest failed or partial | "C8's report could only be partly read. Results from C8 are incomplete. See Phone summary." |
 | Window failed | "These messages could not be loaded. Retry." |
-| Index failed | "The message list could not be loaded. Retry. If this keeps happening, tell Neil the time it happened." |
+| Index failed | "The message list could not be loaded. Reference: <id>." with `Try again`, inline on the page (`role=alert`), never a toast |
 | Stale snapshot | "New data arrived while you were reading. The list has been refreshed and kept your place." |
 | Limited (any 3.1 rule 7 case) | "Showing 5,000 of 12,431 points in this area. Zoom in or narrow the dates to see each one." |
 
@@ -419,8 +452,13 @@ Consistent with the existing Timeline bindings (`frontend_v2/src/features/timeli
 |---|---|
 | `j` / `ArrowDown`, `k` / `ArrowUp` | next / previous row |
 | `PageDown`, `PageUp`, `Home`, `End` | by screen; first / last row of the whole result |
-| `[` / `]` | previous / next day |
-| `g` then type a date, `Enter` | jump to that day |
+| `Alt+K` / `Alt+J` | previous / next day; also the visible `Previous day` and `Next day` buttons in the day header |
+| `g` then type a date, `Enter` | jump to that day; also the visible `Go to date` button beside it |
+| `Ctrl/Cmd+F` | first press: find in these results (3.1 rule 4); second press: the browser's own find |
+| `a` | around this time |
+| `c` then `d` / `w` / `n` / `t` / `l` | add to dossier / finding or theory / note / Timeline / label |
+| `m` | mark reviewed |
+| `y` / `x` / `s` | Yes / No / Skip, with one meaning in every queue; the visible label names the outcome (`Looks right` / `Not right`, `Link` / `Not the same person`) |
 | `Enter` | open the selected thread or row detail |
 | `r` | open the record behind this |
 | `o` | original time value popover |
@@ -434,6 +472,9 @@ Consistent with the existing Timeline bindings (`frontend_v2/src/features/timeli
 
 Every action has a visible control; keys are accelerators only. Focus is visible on every row. The
 virtual list keeps focus on the same event when windows load (focus is tracked by `event_uid`, not index).
+A key-triggered action on more than 5,000 records asks for confirmation. A key is kept only where a browser
+test on the plain http address shows the page receives it (07 section 4.9); `Alt+J`/`Alt+K` replace the
+Timeline's `[`/`]` for day navigation on phone screens (D-27).
 
 ### 3.10 Sensitive fields
 
@@ -450,6 +491,14 @@ Every endpoint takes `case_id` and calls `get_case_if_allowed` (`backend/service
 the timeline router does (`backend/routers/timeline.py:141`); every SQL statement filters on `case_id`
 (plan 5 lesson 7). A record, file or thread uid from another case returns 404, not 403, so ids do not leak
 existence across matters.
+
+### 3.12 Rules from 07
+
+07 section 4 applies to every phone screen in this file and to every phone layer on a shared screen
+(Timeline, People, Search, Export, Map, Graph): its tests UX-1 to UX-5 and its rules in 07 sections 4.3 to
+4.13 (layout, density and row anatomy, one scope carried everywhere, the origin mark, the waiting standard,
+no silent truncation, keyboard, plain http, decisions and reasons, defaults that do not move, routes). The
+rules are kept in 07 and are not copied here.
 
 ---
 
@@ -500,7 +549,7 @@ phone in scope is not fully ingested.
   "phones": ["extraction_id"],
   "threads": ["thread_key"],
   "participants": ["identity_key"],
-  "participant_mode": "any | all | between",
+  "participant_mode": "any | all | between | sent_by | sent_to",
   "expand_person_identities": false,
   "apps": ["WhatsApp"],
   "kinds": ["message", "call", "email", "voicemail", "chat_activity"],
@@ -519,7 +568,11 @@ phone in scope is not fully ingested.
 ```
 
 Empty or omitted arrays mean "no restriction". `between` requires exactly two participants and matches
-events where one is sender and the other a recipient, either way.
+events where one is sender and the other a recipient, either way. `sent_by` matches events whose sender is
+the first participant and, when a second is given, with the second among the recipients ("Sent by X to
+Y"); `sent_to` matches events with the first participant among the recipients and, when a second is given,
+the second as sender. The Conversations participant modes map onto these values: `Sent by` to `sent_by`,
+`Sent to` to `sent_to`, `Between` to `between`, `Involving` to `any` (6.4).
 
 **Group messages under `between` (settled 2026-10-29, aligned with 02's edge definition):** a further
 filter key `"group_scope": "direct | include_groups"`, default `direct`. With `direct`, `between`
@@ -654,16 +707,27 @@ in the same commit that adds the new routes.
 | Route | Page |
 |---|---|
 | `/cases/:id/conversations` | Conversations |
-| `/cases/:id/phones` | Extraction profile (list of phones; `/cases/:id/phones/:extractionId` one phone) |
+| `/cases/:id/phones` | Phone summary list (list of phones; `/cases/:id/phones/:extractionId` one phone's Phone summary) |
+| `/cases/:id/phones/:extractionId/records/:type` | list for one record type on one phone (7.5) |
 | `/cases/:id/media` | Media |
+| `/cases/:id/phone-review` | Needs a decision (02 section 6.8; 07 section 5) |
+| `/cases/:id/phone-patterns` | Patterns (04) |
+| `/cases/:id/phone-analyses/:approach` | one analysis approach (05) |
 | `/cases/:id/cellebrite` | `Navigate` to `phones`, so old links still land |
 
+The case-wide phone pages use their own segments (`phone-review`, `phone-patterns`, `phone-analyses`), so
+they cannot be matched as extraction ids. A router test asserts every route above, including that `review`
+and `patterns` are never matched as an `:extractionId`.
+
 Sidebar (`frontend_v2/src/components/ui/sidebar.tsx:60-66`): the "Cellebrite" item (`shortcut: "6"`) becomes
-three items in the same group: `Conversations` (`MessagesSquare`, shortcut 6), `Phones`
-(`Smartphone`), `Media` (`Images`). The global shortcut list (`use-global-shortcuts.ts:34-43`) replaces
-`"cellebrite"` with `"conversations"` so Ctrl/Cmd+6 still opens the phone screen people use most. The three
-items show only when the case has at least one phone (`GET /api/phones` non-empty), so a case with no phone
-does not gain three empty screens.
+a sidebar group **Phones** holding `Phone summary` list (`Smartphone`), `Conversations` (`MessagesSquare`,
+shortcut 6), `Media` (`Images`), `Patterns` and `Needs a decision` with its open count. The global shortcut
+list (`use-global-shortcuts.ts:34-43`) replaces `"cellebrite"` with `"conversations"` so Ctrl/Cmd+6 still
+opens the phone screen people use most. The group shows only when the case has at least one phone (`GET
+/api/phones` non-empty), so a case with no phone does not gain empty screens. The palette covers
+every phone screen (07 section 4.13).
+
+Test UX-1: every route above is reachable from visible controls.
 
 ### 5.3 Tests
 
@@ -698,7 +762,20 @@ dependency), stream (right). Two modes, switched by tabs above the thread list:
 - **People**: pick one person or two (a pair); the stream shows every event involving them across all
   apps and phones in scope, in time order, each line labelled with phone and app. This is plan 13's
   "one stream per person or pair across apps and phones". The left pane lists participants instead of
-  threads, with counts.
+  threads, with counts. `All channels` merges SMS, calls and apps into one stream, with an app and phone chip
+  on each row: "2,140 messages and 96 calls between A and B on 3 phones" (07 J-3).
+
+**Opening state.** With nothing selected the stream shows "Pick a thread or a person. The busiest are listed
+first." (3.8).
+
+**Thread list.** A quick-find box above the list narrows threads by title or participant as the person
+types. Sorts: recent (last activity), volume (message count) and unreviewed (threads with messages not yet
+marked reviewed first). Threads are grouped under a header per phone with its count ("C3 (1,204
+conversations)").
+
+**Time strip.** Under the stream, a strip showing message density for the scope, 48 px high by default,
+resizable and collapsible. Clicking a day moves the stream to that day (07 J-4). The time strip and the
+stream fill the space they are given (A15).
 
 ### 6.3 Data
 
@@ -724,7 +801,7 @@ All in the filter bar, all reflected in the URL (`filter-url.ts`), all shown as 
 | Filter | Control | Notes |
 |---|---|---|
 | Phones | multi-select of `PhoneSummary`, each with owner label | default: all phones; a single-phone entry point (from Phones) pre-selects one |
-| Participants | identity picker (`/api/phones/identities`), each option a `ParticipantLabel` with all phone names | mode any / all / between; `Include this person's other numbers and accounts` |
+| Participants | identity picker (`/api/phones/identities`), each option a `ParticipantLabel` with all phone names | modes `Sent by`, `Sent to`, `Between`, `Involving`; `Include this person's other numbers and accounts` |
 | Apps | multi-select from the distinct `app` values in scope, each with count | |
 | Kinds | messages, calls, emails, voicemail, group activity | |
 | Direction | incoming, outgoing, unknown | |
@@ -735,7 +812,7 @@ All in the filter bar, all reflected in the URL (`filter-url.ts`), all shown as 
 
 ### 6.5 Sorting
 
-Threads: last activity (default), first activity, message count, name. Stream: oldest first (default,
+Threads: last activity (default; "recent"), first activity, message count ("volume"), unreviewed, name. Stream: oldest first (default,
 conversations read forward) or newest first. Sort choice persists per case in `localStorage`, as v1's
 `nav-sort-toggle` did (v1 checklist line 77-78).
 
@@ -755,6 +832,9 @@ NotEstablishedUnknownReason not connected, Unknown status not recorded). Video c
 Emails: subject in bold, full body, `To`, `Cc` and every recipient (plan 4.5: v1 dropped multi-party `To`).
 Group activity: `Name (+1...) added Name (+1...)` from `ChatActivityAction`.
 
+Replies, quotes and forwards are shown: a reply or a quote shows as an indented block linked to the
+original (07 section 4.4); a forwarded message is marked as forwarded.
+
 Media plays and displays inline: images as thumbnails (opens `DocumentViewer`), audio with a play control
 that fetches bytes only on play (v1 checklist `media-voice-preload`). Missing or mismatched files show the
 3.6 sentence in place of the thumbnail.
@@ -768,8 +848,20 @@ that fetches bytes only on play (v1 checklist `media-voice-preload`). Missing or
 - `Found N times`: list of copies.
 - Row menu: `Open the record behind this`, `Show on Timeline` (opens Timeline lens at this instant with the
   same participants), `Show on Map` (nearest location points on the same phone within the hour, a 04
-  feature linked here), `Add to Workspace` (existing workspace entry flow), `Copy`.
-- Jump to date (`g`), day navigation (`[`/`]`).
+  feature linked here), `Add to…` (07 section 6), `Copy`.
+- `Around this time` (key `a`) opens inside the record panel: the same people on other apps and phones
+  within a chosen window (30 min, 1 h, 24 h), the nearest positioned records within an hour, and same-day
+  case events and payments worded "same day", each group counted (07 J-4). Closing it leaves focus and the
+  scroll anchor unchanged (C-12).
+- Multi-select (3.7 row selection) then `Add to…` adds the selected rows in one action.
+- `Mark reviewed` (key `m`) on a thread: the header then reads "Reviewed by [name] on [date] (N messages);
+  M added since".
+- `Attachments (N)` in the thread header opens the Media grid filtered to the thread scope, with the scope
+  chips, next and previous with the parent message shown, and `Back to the stream`, which returns to the
+  anchored position (MD-1). The thread header states the referenced and missing attachment counts ("14
+  attachments referenced, 3 not in the report").
+- Jump to date (`g` or the `Go to date` button), day navigation (`Alt+K`/`Alt+J` or the `Previous day` and
+  `Next day` buttons in the day header, 3.9).
 - Export (section 12) from the toolbar: exports exactly the current filter.
 - Toolbar always shows: total (3.1 rule 6), zone selector, names toggle, `Show every copy`, sort.
 
@@ -799,10 +891,23 @@ events table) on a generated Postgres fixture of 200,000 events.
 | C-7 | Switching names toggle changes labels and nothing else: same event_uids in the same order, same counts |
 | C-8 | Long body of 155,838 characters is delivered whole in the row payload and expands in place without a request |
 | C-9 | Stale snapshot (409) re-reads the index and keeps the focused event_uid in view |
+| C-10 | `Sent by X to Y` for a pair that excludes the owner equals the record query for that pair |
+| C-11 | A search hit opens in the full thread |
+| C-12 | `Around this time` opens in place and leaves the anchor unchanged |
+| C-13 | A person's `Not a copy` decision on a duplicate (02 section 8.8 decision `mark_not_duplicate`) is recorded with the person and reason and shows the copy as its own row |
+| MD-1 | Attachment counts equal Media under the same scope, and `Back to the stream` restores the anchor |
+| UX-3 | Copy works on the plain http address (an insecure context, 07 section 4.10) |
+| UX-4 | The record panel is non-modal and `j`/`k` move through the list while it is open |
+
+A15 (17.1) tests that the time strip and stream fill their space; A16 (17.1) tests the error wording with a
+reference id.
 
 ---
 
-## 7. Extraction profile
+## 7. Phone summary (the extraction profile)
+
+The screen is called **Phone summary** in the product (D-28); "extraction profile" names the same screen in
+the specs and in code (`features/extraction-profile/`, the `/profile` endpoint).
 
 ### 7.1 Purpose
 
@@ -831,7 +936,7 @@ absence, and what lets them state the limits of the phone evidence.
   "files": {"total": 43043, "by_category": {"Image": 33584}, "verification": {"match": 21155, "missing": 224, "empty_placeholder": 21664, "size_mismatch": 0, "mismatch": 0, "no_local_path": 0, "no_hash": 0},
             "sha256_present": 224},
   "deleted": [{"model_type", "intact", "deleted", "trash", "unknown"}],
-  "coverage": [{"model_type", "records", "interpretation": "reviewed | generic | captured_only", "fields": [{"name", "kind", "records", "interpretation"}]}],
+  "coverage": [{"model_type", "records", "interpretation": "reviewed | applied_unconfirmed | generic | captured_only", "fields": [{"name", "kind", "records", "interpretation"}]}],
   "data_periods": [{"signal", "first_instant", "last_instant", "records"}]
 }
 ```
@@ -845,7 +950,30 @@ file entries is to be confirmed by 01 (20.4).
 
 `/cases/:id/phones` lists phones as rows: label, owner label, device, report form and version, ingest
 state, the three headline counts (messages, calls, locations) and a completeness word: `Complete`,
-`Partly read`, `Still reading`, `Failed`. A row opens `/cases/:id/phones/:extractionId` with sections:
+`Partly read`, `Still reading`, `Failed`. A row opens `/cases/:id/phones/:extractionId`.
+
+The top of one phone's Phone summary holds, in this order (07 J-2):
+
+- **Verdict line:** "Read in full: 338,715 records, [first date] to [last date], 6 apps. 2 apps could not be
+  decoded. 3 things need a decision." It matches the reconciliation result (P-7).
+- **Needs a decision box,** with a working control for each: owner; device zone, and applying it to times
+  with no offset; default region, with the count of numbers read under it ("N numbers were read assuming
+  <region>"); clock offset; phone label; identity label; accepting a reconciliation difference (typed
+  reason); `Replace` or `Retire` (typed reason, 01 section 10.7); and a link to the external-processing
+  setting in Case settings. Each control writes a decision and a feed line, and appears in history (P-6).
+- **Triage block:** coverage bands by month, with `No data` kept apart from quiet periods; the top 10 people
+  by contact, with name, number, and message and call counts; busiest weeks and apps; deleted and recovered
+  counts; files missing. Every number links to the matching filtered screen.
+- **Where to start:** suggestions computed from counts and labelled as suggestions.
+- **Continue reading** (threads opened and not finished, each with its last position), **Since you last
+  looked** (counts per change kind: new phone, Replace, re-readings, colleagues' confirmations and links)
+  and **export history** (07 J-15).
+
+After capture, when no owner number was found, a non-blocking prompt reads "No owner number was found.
+Person-level views stay off until an owner is set. Set the owner." `Set the owner` writes a
+`set_phone_owner` decision (02 section 8.6). The prompt never blocks reading the phone.
+
+The sections below follow:
 
 1. **Whose phone**: owner label, how established (`Read from the device information in the report`,
    `Worked out from messages the phone sent` with the records listed, or `Set by <user> on <date>` for a
@@ -859,14 +987,14 @@ state, the three headline counts (messages, calls, locations) and a completeness
 6. **Deleted and recovered**: table by type, each count a link to Conversations or Timeline filtered.
 7. **What Loupe reads** (coverage map, plan 6.5): one row per record type with records and a state word
    (`Interpreted`, `Read generically`, `Held, not yet read`), expandable to fields. Each type links to its
-   generic list (plan 6.4: "Every type gets a generic list and detail view").
+   list (7.5; plan 6.4: "Every type gets a generic list and detail view").
 8. **When there is data**: per signal type, first and last time and count (plan 11.2 rule 4), so "no data"
    is visible as a period.
 
 Actions: `Copy profile as text`; `Export profile as PDF` (section 12, same renderer). Profile page for a
 phone still ingesting shows progress from 01's job state and every count marked `(so far)`.
 
-### 7.4 Acceptance tests (Extraction profile)
+### 7.4 Acceptance tests (Phone summary)
 
 | Id | Test |
 |---|---|
@@ -875,6 +1003,19 @@ phone still ingesting shows progress from 01's job state and every count marked 
 | P-3 | An owner set by a `set_phone_owner` decision is labelled as such everywhere the owner label appears (unit over `ParticipantLabel`) |
 | P-4 | Missing-file count links to Media with `verification=missing` and the list total equals the count |
 | P-5 | The selection flags render verbatim plus the plain meaning; "not stated" when the attribute is absent |
+| P-6 | Each control in the Needs a decision box writes a decision and a feed line, and appears in history |
+| P-7 | The verdict line matches the reconciliation result |
+| P-8 | Every record type with records on the phone has a list (7.5) whose total equals the Phone summary count for that type |
+
+Journey test J-2 (07 section 3) runs on this screen.
+
+### 7.5 List for each record type
+
+`/cases/:id/phones/:extractionId/records/:type` lists every record of one type on one phone in the shared
+phone table (07 section 4.4): columns come from the type's mapping (02), or from its field names for a type
+read generically; filters; the exact total (3.1); the record panel (3.6) for any row; and `Add to…`. Every
+count on the Phone summary (coverage map, deleted and recovered, triage block) opens the list it counts.
+Test P-8 (7.4).
 
 ---
 
@@ -914,11 +1055,25 @@ message_count, thumbnail_url or null, has_derived: ["transcript"]}`.
   (verification by each of 01 section 7.2's seven outcomes, deleted, carved), linked to a message or not, participants (files carried by messages with
   them), dates.
 - Open an item: right panel with the file (image, `<video>`, `<audio>` with seeking; PDF and text in
-  `DocumentViewer`), hashes, state badges, linked messages (each opens Conversations at that message),
-  `Open the record behind this`.
+  `DocumentViewer`), hashes, state badges, linked messages, `Open the record behind this`. A linked message
+  opens Conversations at that message and keeps the reader's place in Media, so Back returns to the same
+  item and scroll position.
+- Viewer: `Next` and `Previous` controls, each with a key in the keymap (3.9), step through the
+  filtered result; a thumbnail size control sets the grid size.
+- Blur: thumbnails are blurred until opened, revealed one at a time or per phone; blur is a per-person
+  setting, on by default in criminal cases (07 section 4.11; Case settings holds the case default).
+- A file the report refers to but the production does not contain shows the 3.6 sentence "The report
+  refers to a file that is not in the production." in the viewer and in place of the thumbnail.
 - `Read text in this image` / `Transcribe this audio`: starts a job; the panel shows `Reading text (local
   model)` then the text with the label `Machine-generated by <model> <version> on <date>. The original is
   above.` Derived text enters search (11.2) as its own kind, tagged machine-generated.
+- Batch derivation: `Transcribe all 312 voice notes in this scope` (and the same for text in images) runs as
+  one job in the job tray (07 section 4.7), with progress from true counts updated every 1 s. CPU speed is
+  measured before time targets are set.
+- **Machine text is confirmed on use.** Adding machine text to a dossier, finding, note or Timeline, quoting
+  it in a finding, or exporting it prompts "This transcript is machine-generated. Listen and confirm, or
+  keep it marked", with the audio inline. Text not confirmed stays marked (3.5). Needs a decision lists only
+  machine text already in use.
 - Audio that the browser cannot play (container or codec) is transcoded on demand to a playable copy kept
   beside the original (plan 5 lesson 9); the player says `Playing a converted copy. The original file is
   unchanged.` Which formats the corpus holds is not yet measured (20.5).
@@ -941,6 +1096,9 @@ message_count, thumbnail_url or null, has_derived: ["transcript"]}`.
 | M-2 | A file absent from the production renders the 3.6 sentence, is counted under `missing`, and is not shown as a broken image |
 | M-3 | Derived text displays model and version and the original stays visible; search finds the derived text with the machine-generated tag |
 | M-4 | Grid total equals the profile's file count for the same phone |
+| M-5 | Batch derivation progress updates every 1 s from true counts |
+| M-6 | A corrected transcript is searched by its corrected text, and its original stays visible |
+| M-7 | Exporting an added, unconfirmed transcript shows the confirm prompt and prints the machine-generated mark |
 
 ---
 
@@ -993,13 +1151,21 @@ Timeline's dateless events, dropped today, are a defect fixed in 15.6.
 
 Added to `frontend_v2/src/features/timeline/components/TimelineToolbar.tsx` and `FilterSidebar.tsx`:
 
-- `Phones` lens toggle and phone picker (default: off, so a case's existing Timeline is unchanged until
-  someone turns phones on; when the case has phones the toggle shows their count).
+- `Phones` lens toggle and phone picker. The lens is on at first use when the case has no other dated
+  events, and off otherwise ("48,912 phone entries hidden. Show"). That state is stored per person and case
+  at first use and is never recomputed from case contents; when case contents change the state stays and
+  the screen says "Phone entries are shown. This case now also has documents." (07 section 4.12). When the
+  case has phones the toggle shows their count.
+- Default kinds: messages, calls, emails, media and location stays. Device events and sensor samples are
+  off, with a per-case sentence stating how many are hidden ("[N] device events and sensor readings hidden.
+  Show"). Repeated device events are grouped into one row with their count.
 - Lens filters: phones, participants (with `between`), kinds of record (record types grouped as
   Messages and calls, Locations, Device activity, Web and searches, Apps, Accounts, Other), activity class
   (plan 11.2), state badges, text.
 - Zone selector and names toggle (3.2, 3.3) apply to phone rows; existing events keep their current
   display, and the zone selector applies to them only once 15.6 lands.
+- `Add to Timeline` works for phone records (row menu, record panel and `c` then `t`), through the existing
+  Timeline curation (07 section 6).
 - `Full load`: under any lens filter whose total is at most `FULL_LOAD_ROWS`, every row is fetched
   immediately (3.1 rule 4), which is the recorded request "when filters are at play, the timeline should
   load in full" (plan 10.2). Above that, windows load as they come into view with the exact total shown;
@@ -1008,8 +1174,10 @@ Added to `frontend_v2/src/features/timeline/components/TimelineToolbar.tsx` and 
 ### 9.6 The single swim-lane mode
 
 v1 had two swim-lane components (`CellebriteTimelineSwimLane.jsx` and `comms/CommsCrossTypeSwimLane.jsx`
-on `origin/main`) and fixed copy-paste twice (plan 10.5). Loupe has one: `TimelineLanes.tsx` in
-`src/features/timeline/components/`, opened by a `Stream / Lanes` switch.
+on `origin/main`) and fixed copy-paste twice (plan 10.5). Loupe has one Lanes component,
+`TimelineLanes.tsx` in `src/features/timeline/components/`, opened by a `Stream / Lanes` switch; every lane
+view in the phone screens and in 04 uses it. The whole Timeline (case events and phone rows, on screen, in
+copy and in PDF) formats time through the one formatter `lib/evidence-time.ts` (3.2, 15.6).
 
 - Lanes are chosen by `lane_by`: one lane per phone (default), per person (from the participant filter,
   up to the people selected), per activity class, or per kind of record. Case events form their own lane
@@ -1032,8 +1200,9 @@ on `origin/main`) and fixed copy-paste twice (plan 10.5). Loupe has one: `Timeli
 | T-2 | A filter with 4,000 matching rows loads all 4,000 without scrolling (network log shows the windows; DOM shows no load-more) |
 | T-3 | Lens rows show day header and 12-hour time with zone; the original popover shows the report text |
 | T-4 | Lanes mode and stream mode copy the same text for the same selected entries |
-| T-5 | Turning the lens off restores the existing Timeline unchanged (snapshot of the existing page) |
+| T-5 | Turning the lens off restores the existing Timeline page exactly (snapshot of the existing page) |
 | T-6 | A phone with no data in a period shows `No data` in its lane for that period, distinct from zero matches |
+| T-7 | The lens's default kinds are messages, calls, emails, media and location stays; device events and sensor samples are off and the hidden-count sentence states their number for the case |
 
 ---
 
@@ -1068,11 +1237,20 @@ The existing Dossiers page (`/cases/:id/dossiers`) is Loupe's people surface: a 
   a phone contact name equal after folding (11.3) to a dossier name *and* a shared number. Each suggestion
   lists its reasons and the records behind each. Names alone never produce a suggestion (names collide;
   `feedback_cellebrite_number_alongside_name.md`).
+- **Suggestion panel.** A docked, non-modal panel (07 section 4.3) steps through one suggestion at a time,
+  highest score first, with a filter by reason. Each suggestion shows the name saved on each phone with its
+  number, the reasons, and 3 example records per reason with counts. Keys: `y` `Link`, `x` `Not the same
+  person`, `s` Skip, `j`/`k` move (3.9). A progress line reads "12 of 36 decided". The decision stores a
+  labelled standard reason built from the reasons shown (`reason_kind = standard`, 02 section 8.8), plus an
+  optional note. A batch is allowed only within one reason, after a preview, and each item gets its own
+  decision record (07 J-7).
 - **Decisions** go through a decision log with a named actor, both states kept (plan 6.6;
   `backend/services/financial/decisions.py:252-262` is the pattern: the event is written before the state
   changes). Actions: `Link to this person`, `Not the same person` (stored so the suggestion does not
-  return), `Unlink`, `Split` (move identities out of a person). Every action is reversible from the
-  history list on the dossier.
+  return), `Unlink`, `Split` (move identities out of a person). `Unlink` and `Split` each preview their
+  effect and need a typed reason. Every action is reversible from the history list on the dossier.
+- **Graph entry.** `Add to Dossiers` on a PhoneIdentity graph node routes into this link decision (a link
+  suggestion opened in the suggestion panel), never a direct dossier write.
 - **Bank counterparties**: suggestions to link a phone identity to a financial counterparty come only
   through the reviewed identity path (`backend/services/financial/account_identity.py`,
   `identity_graph.py`; plan 6.6), are shown on the dossier as `Suggested, not reviewed` until a person
@@ -1098,6 +1276,10 @@ The existing Dossiers page (`/cases/:id/dossiers`) is Loupe's people surface: a 
 | U-2 | Linking then unlinking leaves counts, names and Conversations results as before, and both decisions appear in history with the actor |
 | U-3 | A suggestion is never produced from a name match alone |
 | U-4 | Message counts in the dossier panel equal Conversations totals for the same person and phone (A3) |
+| U-5 | The suggestion panel orders suggestions highest score first and `y`, `x`, `s` and `j`/`k` do what their labels say |
+| U-6 | A batch within one reason writes one decision record per item |
+| U-7 | A person without permission to change links sees the controls disabled with the reason ("A case admin can change links.") |
+| U-8 | `Unlink` and `Split` show a preview, refuse a blank reason, and are reversible from the dossier history |
 
 ---
 
@@ -1120,13 +1302,18 @@ see phone records.
 
 | Group | Source | Hit opens |
 |---|---|---|
-| Messages, calls and emails | `pv_text` for comm event fields joined to `pv_comm_event` | Conversations at that event |
+| Messages | `pv_text` for comm event fields joined to `pv_comm_event`, message kinds | Conversations: the whole unfiltered thread at that message, matches highlighted |
+| Calls | the same, call kinds | Conversations at that call |
+| Emails | the same, email kind | Conversations: the whole unfiltered email thread at that email, matches highlighted |
 | People and identifiers | `pv_identity`, `pv_identity_name`, dossier names | People |
 | Other phone records | `pv_text` for any other type (notes, searches, visited pages, calendar, accounts ...) | record panel; Timeline lens if timed |
 | Documents and transcripts | existing `evidence_document_texts` (`backend/postgres/models/evidence.py:204-226`) | `DocumentViewer` at the page |
 | Machine-generated text from media | derived texts (8.2) | Media item |
 
 Financial ledger search is not in this unit (19, D-14).
+
+**Saved keyword lists.** A search can be saved as a keyword list. A saved list runs on every phone in the
+case, including phones added later, and its results are reached from the list (07 J-6).
 
 ### 11.3 Matching
 
@@ -1153,7 +1340,7 @@ Financial ledger search is not in this unit (19, D-14).
 
 ### 11.4 Results
 
-`GET /api/search?case_id&q&exact=false&groups=messages,people,records,documents,media&phones=&from=&to=`
+`GET /api/search?case_id&q&exact=false&groups=messages,calls,emails,people,records,documents,media&phones=&from=&to=`
 returns:
 
 ```json
@@ -1166,15 +1353,21 @@ returns:
 ```
 
 `SearchHit` = `{kind, title, snippet: {before, match, after} from the original text, phone_label, time,
-participants: [ParticipantLabel], record_uid or evidence_file_id, open: {screen, params}}`. Each group
+participants: [ParticipantLabel], record_uid or evidence_file_id, score, open: {screen, params}}`, where
+`score` orders groups for the Enter rule only. Each group
 returns its exact total and the first 20 hits; `GET /api/search/group?case_id&q&group&cursor&limit<=200`
 pages the rest, sorted by time (messages, records) or relevance-free name order (people, documents) so the
 order is reproducible. `Show all 1,874 in Conversations` opens Conversations with the text filter, which is
 the full stream with 3.1 guarantees.
 
 UI: a command dialog (the existing `cmdk` wrapper `frontend_v2/src/components/ui/command.tsx`) opened by
-Cmd/Ctrl+K and a search box in the case header, rendering grouped results with totals; `Enter` opens the
-best group in its screen. Component: `src/features/search/components/SearchDialog.tsx`, mounted in
+Cmd/Ctrl+K and a search box in the case header, rendering grouped results with totals. Arrow keys move.
+**Enter rule:** `Enter` opens the highlighted hit, and the highlight starts on the top hit of the group whose
+top hit scores highest. A message hit opens the whole unfiltered thread at that message with the matches
+highlighted: "Showing the whole conversation. Your search matched 12 messages here. Next match." `Back to
+results`, or browser Back, restores the query and the scroll position. Queries containing slashes and plus
+signs are searched as typed (S-10). Recent queries are kept in `sessionStorage` only, every access wrapped in
+try/catch, and are gone when the tab closes. Component: `src/features/search/components/SearchDialog.tsx`, mounted in
 `src/app/layouts/CaseLayout.tsx` and listening for `owl:toggle-command-palette`.
 
 ### 11.5 AI chat and agent citations to records
@@ -1211,6 +1404,9 @@ best group in its screen. Component: `src/features/search/components/SearchDialo
 | S-5 | Highlights fall on the original characters in the snippet, including after folding changed the string length |
 | S-6 | A chat answer citing a phone message renders a link that opens the record panel; a citation with no page never shows "p.1" |
 | S-7 | Agent answers open documents and records from their links (15.5) |
+| S-8 | A message hit opens in the full unfiltered thread at that message, with the matches highlighted |
+| S-9 | Back restores the results and the scroll position |
+| S-10 | Queries containing slashes and plus signs return the hits that contain them |
 
 ---
 
@@ -1235,7 +1431,7 @@ Exports run as jobs so size never forces a cap.
 
 | Method and path | Request | Response |
 |---|---|---|
-| `POST /api/phones/exports` | `{"case_id", "format": "pdf | rsmf", "source": "stream | timeline_lens", "filter": StreamFilter or TimelineLensFilter, "options": ExportOptions}` | `202 {"export_id"}` |
+| `POST /api/phones/exports` | `{"case_id", "format": "pdf | rsmf", "source": "stream | timeline_lens | collection | finding | dossier | statement_check | analysis_result | incident_window", "filter": StreamFilter or TimelineLensFilter (for `stream` and `timeline_lens`), "source_id" (for the other sources: the collection, finding, dossier, statement check, analysis result or incident window exported), "options": ExportOptions}` | `202 {"export_id"}` |
 | `GET /api/phones/exports/{export_id}?case_id` | | `{"state": "queued | rendering | done | failed", "progress": 0..1, "counts": {...}, "file": {"filename", "size", "sha256"} or null, "error": string or null}` |
 | `GET /api/phones/exports/{export_id}/file?case_id` | | the file, `Content-Disposition` as the timeline export builds it (`backend/routers/timeline.py:302-306`) |
 | `GET /api/phones/exports?case_id` | | export history for the case |
@@ -1249,18 +1445,41 @@ progress real, counts jsonb, filename text, size bigint, sha256 text, storage_pa
 filter and snapshot are stored so an export can be reproduced and its content explained. Queue: the
 evidence-engine arq pattern (plan 6.1).
 
+**Export dialog** (07 J-14):
+
+1. The scope stated in words: "All 2,140 messages and 48 calls between A and B, 1 Jan to 31 Mar, on 3 phones,
+   times in Eastern time. Saved passwords and card numbers left out."
+2. The reading state: "412 of these 2,188 rows rely on readings not yet confirmed by a person; 6 transcripts
+   are machine-generated and unconfirmed. Review them first.", where the last sentence links to Needs a
+   decision. The same counts print on the cover.
+3. Choices: the conversation, or an all-channel timeline; plus the appendix of what was examined.
+4. A first-page preview drawn by the same formatter as the PDF (`time_display.py` and the origin mark,
+   3.5). This preview meets the 5.3 PDF-preview browser test.
+5. Progress in the job tray (07 section 4.7): "Drawing page 140 of about 310, about 40 s left". A notice
+   when done, and the history kept on the dialog and on the Phone summary (7.3).
+
+A failed render keeps the choices and offers Try again with a reference id (3.8); nothing is half-delivered.
+
 ### 12.3 PDF content
 
 1. Cover: case name, title, generated by and when, Loupe build, export id, SHA-256 of the file in the export
    history (computed after render, so it is listed in Loupe rather than printed in the PDF itself).
 2. **What this export contains**, in plain words: phones, participants, apps, kinds, dates and zone, names
    mode, whether repeated copies are collapsed and how many, sensitive fields included or not, and totals
-   (3.1 rule 6). Any limit (an incomplete phone) is stated here.
+   (3.1 rule 6). Any limit (an incomplete phone) is stated here. The cover states how many rows rely on
+   readings not yet confirmed and how many transcripts are machine-generated and unconfirmed.
 3. Body: grouped by day (day header as 3.2 with zone), each event as on screen: time with seconds, phone,
    app, `Name (number) -> Name (number)`, full body, attachments (thumbnails or list), badges as words,
-   `Found 3 times` with the sources, and the record id in small type (`Record C3-1234567`).
-4. Appendix: participants (every identifier and each phone's name for it); and **Characters that could
-   not be drawn** if any (below).
+   `Found 3 times` with the sources, and the record id in small type (`Record C3-1234567`). Each row prints
+   its origin mark (3.5); a corrected row prints the original beside the corrected value. Copied text
+   (3.7) does the same.
+4. Appendix: participants (every identifier and each phone's name for it); **What was examined**, when
+   chosen: the phones, kinds and periods in scope and the coverage of what was and was not reviewed (07
+   J-13); and **Characters that could not be drawn** if any (below).
+5. For a finding export, the first page is the finding's generated **How this was found** block (07 J-17):
+   the saved scope and the searches behind it, the identity decisions and readings the finding relies on
+   with their confirmation state, the assumptions (owner, clock, completeness), and the label `Lead for
+   enquiry` or `Result for report`.
 
 Rendering: WeasyPrint (`backend/requirements.txt:123`, `weasyprint==68.1`), from HTML built by
 `services/phone/exports/pdf.py`, using `time_display.py` for every time so the PDF shows the same text as the
@@ -1300,6 +1519,9 @@ available, else against a JSON schema written from the specification.
 | E-5 | Sensitive values are absent unless the option is set, and the cover says which |
 | E-6 | RSMF for a 3-day conversation is one file, not three; every event and attachment present; validates against the schema |
 | E-7 | No list in the PDF is cut (no entity, participant or note cap) |
+| E-8 | The dialog's first-page preview equals page 1 of the rendered PDF |
+| E-9 | A `collection` export's total equals the collected count |
+| E-10 | An export of a scope with unconfirmed readings prints the origin mark on each such row and the count on the cover, and copied text does the same |
 
 ---
 
@@ -1336,7 +1558,14 @@ to a lookup service.
 ### 13.3 Display and interactions
 
 - A `Phones` layer toggle in `MapToolbar.tsx`, with per-phone colour and a legend listing phone labels and
-  owners.
+  owners. The layer is on at first use when the case has no other located items, and off otherwise; that
+  state is stored per person and case at first use and is never recomputed (07 section 4.12).
+- **Palette:** 10 colour-blind-safe hues, each always paired with the phone label and with a marker shape,
+  so no phone is told apart by colour alone (G-5).
+- **Keyboard:** clusters and points can be stepped through with the keyboard.
+- **Area selection:** drawing an area lists "Phones seen in this area" (07 J-10).
+- **Empty `Show on Map`:** when `Show on Map` from a row finds nothing, the map says "No positioned records
+  within 1 hour of this message. The nearest is 3 h 12 min earlier. Show it." (G-6).
 - Each point is drawn with its uncertainty: a circle of radius `accuracy_m` when known; a point with a
   dashed outline and the label `Accuracy not recorded` when not (51,056 of 63,784 Location records have no
   `GpsHorizontalAccuracy`; whether `Precision` gives a usable radius is 02's mapping).
@@ -1356,6 +1585,8 @@ to a lookup service.
 | G-2 | A point without accuracy is drawn with the dashed style and its label; a point with accuracy draws the radius |
 | G-3 | Cell tower records without a position are counted under `not_positionable` and never sent to any network service (backend test asserts no outbound HTTP during the request) |
 | G-4 | Turning the phone layer on does not change `/api/graph/locations` results (phone points are not graph locations) |
+| G-5 | The 10 phone hues meet contrast in light and dark, and every phone marker carries its label and shape |
+| G-6 | `Show on Map` with no positioned records in the window shows the empty-result wording with the nearest record, never a blank map |
 
 ---
 
@@ -1375,7 +1606,8 @@ Individual messages and calls are not graph nodes (377,648 messages). The graph 
 - one node per identity that took part in at least one communication event (owners included), labelled in
   case-name mode with the phone names on hover; identities that appear only in contact books stay in
   People, so contact lists (up to 13,053 on one phone) do not flood the canvas;
-- one `COMMUNICATED` relationship per unordered identity pair with properties `messages_ab`, `messages_ba`,
+- one aggregated `COMMUNICATED` relationship per unordered identity pair (never one edge per message or
+  call), with its counts, and sums where a ledger is linked (02 section 11), and properties `messages_ab`, `messages_ba`,
   `calls_ab`, `calls_ba`, `emails_ab`, `emails_ba`, `first_instant`, `last_instant`, `phones` (labels whose
   records support it), rebuilt from Postgres (plan 1.6);
 - `person_id` on identity nodes linked to dossiers, so a person's identities can be shown collapsed into the
@@ -1391,13 +1623,15 @@ applies regardless.
 
 ### 14.3 Interactions
 
+- Node panel: a person or identity node shows "Conversations on the phones (1,204 messages, 38 calls on 3
+  phones). Open", which opens Conversations People mode for that person (XF-2).
 - Edge click: side panel with counts by kind and direction, first and last contact, by phone, and the money
   summary; `Open these messages` opens Conversations People mode for the pair (`between`), so the counts
   match (A3); `Open these payments` opens the ledger filtered to the linked counterparties.
 - Time slider: recomputes edge counts for a window through
   `POST /api/phones/graph/edges {case_id, from_instant, to_instant, identity_keys?}` returning
   `{edges: [{a, b, counts..., first, last}]}`; the canvas restyles without reloading nodes.
-- Carried from v1 (16): flow view with arrows and thickness by volume and direction, trace path between
+- From the lessons of the existing phone piece (16.2): flow view with arrows and thickness by volume and direction, trace path between
   two people, drill (re-anchor on a person), expand neighbours, edge detail never empty.
 
 ### 14.4 Acceptance tests (Graph)
@@ -1407,6 +1641,12 @@ applies regardless.
 | R-1 | Edge counts equal Conversations totals for the pair with `between` (A3) |
 | R-2 | Deleting one of two phones that share an identity leaves the identity and the other phone's edges (plan 7 phase 4 done-when) |
 | R-3 | A time-sliced edge count equals the Conversations total for the pair in that window |
+| R-4 | Graph search finds phone identities and their aggregated edges on the phone graph |
+| R-5 | First draw of a 2,000-node phone graph completes within 3 s (target, to be measured before it is a gate) |
+
+Crossing test XF-2 (07 section 7.2, in the cb-crossev gate): from a Graph person node, "Conversations on the
+phones" opens with a count equal to the dossier panel and the Conversations total, and Back restores the
+graph selection and viewport.
 
 ---
 
@@ -1418,7 +1658,7 @@ Each item: what is wrong (verified), why these screens depend on it, and the fix
 
 `frontend_v2/src/features/reports/hooks/use-reports.ts:26,35,49` calls `/api/reports`; no router in
 `backend/main.py:202-251` serves it. **Scope here:** phone exports do not use the Reports page; their
-history is listed in the export dialog and on the Extraction profile (12.2). The Reports page itself is
+history is listed in the export dialog and on the Phone summary (12.2). The Reports page itself is
 not fixed in this work; the sidebar entry (`sidebar.tsx:79`) is left as is. *Reverse if* Neil wants
 exports listed under Reports: then the Reports page reads `GET /api/phones/exports` and becomes a list of
 export jobs.
@@ -1443,12 +1683,13 @@ that sentence, *reverse if* measured node counts (20.9) fit unlimited.
 The `CITE SOURCES` line in `backend/services/llm_service.py` ending "If no page number is available, use page 1." (cited by text, not line
 number, because the file changes often). **Scope:** 11.5.
 
-### 15.5 Agent answers' links do nothing
+### 15.5 Agent answers' links open records
 
-`frontend_v2/src/features/agent/components/AgentPage.tsx:1236-1239` and `:2453-2456` render `Markdown`
-without `onOpenDocument`, so `doc://` links fall through to a plain `<a target="_blank">`
-(`frontend_v2/src/components/ui/markdown.tsx:66-90`). **Scope:** pass `onOpenDocument` and the new
-`onOpenRecord` in both places, with a `DocumentViewer` and `RecordPanel` mounted in `AgentPage`; test S-7.
+Agent answers and reports already open `doc://` citations through the agent citation component
+(`frontend_v2/src/features/agent/components/AgentCitations.tsx`: `AgentCitationProvider` mounts a
+`DocumentViewer`, and `AgentMarkdown` passes `onOpenDocument` to `Markdown`), which `AgentPage.tsx` uses.
+**Scope:** the record-link opener goes in that component: `AgentMarkdown` also passes `onOpenRecord` for
+`rec://` links (11.5), and `AgentCitationProvider` mounts the record panel content (3.6); test S-7.
 
 ### 15.6 Timeline drops and misreads time
 
@@ -1486,8 +1727,8 @@ the default is Overview (`:63`).
 
 | v1 tab | Loupe home (plan 10.5) |
 |---|---|
-| Overview | Extraction profile (7); drill tables become Conversations filters (6) |
-| Report | Extraction profile (7) and Export (12) |
+| Overview | Phone summary (7); drill tables become Conversations filters (6) |
+| Report | Phone summary (7) and Export (12) |
 | Search & Discovery | Loupe-wide Search (11) |
 | Comms Center | Conversations (6) |
 | Contacts (unified) | People, Phone identities tab (10) |
@@ -1498,7 +1739,10 @@ the default is Overview (`:63`).
 | Timeline | Timeline phone lens (9) |
 | Communications | Conversations People mode (6.2) and People (10) |
 
-### 16.2 Capabilities carried over
+### 16.2 Lessons from the existing phone piece
+
+Each row is a lesson only: what the existing phone piece did, and the requirement Loupe builds in its place.
+No existing phone code, screen or data model is carried forward (07 section 13).
 
 | v1 capability (origin/main) | Loupe | Change |
 |---|---|---|
@@ -1514,24 +1758,24 @@ the default is Overview (`:63`).
 | Deep message search jumping to first match (`CellebriteCommsCenter.jsx:588`) | Conversations text filter + Search pivot (11.4) | every match counted and reachable, not the first 300 |
 | Message bubble with From -> To, time, app, phone chip (`comms/CommsMessageBubble.jsx:145-160,220-229`) | stream row (6.6) | |
 | Deleted badge when `deleted_state` is not intact (`comms/CommsMessageBubble.jsx:65-66,188-193`) | badges (3.5) | Deleted, In trash and Unknown are distinguished |
-| Participants filter Split (From/To) or Any (`comms/CommsParticipantsFilter.jsx:198-228`) | participant filter any / all / between (4.3) | no 50-per-page paging in the picker; search-as-you-type over all identities |
+| Participants filter Split (From/To) or Any (`comms/CommsParticipantsFilter.jsx:198-228`) | participant modes Sent by, Sent to, Between, Involving (4.3, 6.4) | no 50-per-page paging in the picker; search-as-you-type over all identities |
 | Type pills, apps popover, attachment toggle, date chips (`comms/CommsCompactToolbar.jsx:89-222`) | filter bar (6.4) | dates are instants in the chosen zone, not strings |
 | Cross-type stream "List / Lanes" by cursor (`comms/CommsCrossTypeTimeline.jsx:59,115,250-373`) | Conversations People mode (6.2) and the single Lanes mode (9.6) | one lanes component instead of two |
 | Timeline swim lane with "Apply as filter" and "Open in Comms" (`CellebriteTimelineSwimLane.jsx:365-383`) | Lanes mode (9.6): bucket click filters the stream; row menu opens Conversations | |
 | Inline media, voice notes fetched only on play (v1 checklist `media-voice-inline`, `media-voice-preload`) | 6.6 | |
 | Message dedup "+N sources" (v1 checklist `dedup-*`, `backend/services/testing_checklist.py:101-112`) | 3.4 | never across phones; total states records collapsed; `Show every copy` |
-| Overview device cards, edit device name (`CellebriteOverview.jsx:138,168,198-210`) | Extraction profile (7.3) | label edit recorded with actor; detected name kept beside it |
-| Delete a phone report (`CellebriteOverview.jsx:187,421`) | Extraction profile action, backed by 01/02's staged replace and membership delete | must not delete shared identities (plan 4.1, test R-2) |
-| Reconciliation panel (`CellebriteOverview.jsx:276,541`) | Extraction profile section 4 (7.3) | element-level, not per-type |
+| Overview device cards, edit device name (`CellebriteOverview.jsx:138,168,198-210`) | Phone summary (7.3) | label edit recorded with actor; detected name kept beside it |
+| Delete a phone report (`CellebriteOverview.jsx:187,421`) | Phone summary action, backed by 01/02's staged replace and membership delete | must not delete shared identities (plan 4.1, test R-2) |
+| Reconciliation panel (`CellebriteOverview.jsx:276,541`) | Phone summary section 4 (7.3) | element-level, not per-type |
 | Merge identities dialog (`overview/MergeIdentitiesDialog.jsx:33,53`; `shared/rail/UnifiedContactAccordion.jsx:91-106`) | People decisions (10.3) | through a decision log with actor; reversible; split; suggestions with reasons |
 | Unified contacts rollup by canonical number (`CellebriteUnifiedContacts.jsx:54-56,151-165`) | Phone identities tab (10.2) | no 1,000-row cap (`:56`); exact total |
 | Contact frequency table and shared-contacts panel (`CellebriteCommunicationView.jsx:64,248-256,337-343`) | Phone identities tab columns and filter `On more than one phone` | |
-| Report per-device summary (`CellebriteReport.jsx:30,147-153`) | Extraction profile, PDF of profile (7.3) | |
-| Star callouts into the report PDF (`CellebriteTimeline.jsx:341-392`; `utils/cellebritePdfExport.js:337-341`) | `Add to Workspace` on every row (6.7) | the Workspace already holds pinned findings; a second starring system is not built |
+| Report per-device summary (`CellebriteReport.jsx:30,147-153`) | Phone summary, PDF of profile (7.3) | |
+| Star callouts into the report PDF (`CellebriteTimeline.jsx:341-392`; `utils/cellebritePdfExport.js:337-341`) | `Add to…` on every row (6.7) | the Workspace already holds pinned findings; a second starring system is not built |
 | Discovery: one search across types, type toggles, open in native tab (`CellebriteDiscovery.jsx:104,147-174,228-238`) | Search (11) | no 10-per-type limit (`:84`); exact group totals; folding |
 | Files tree by category, app, path (`CellebriteFilesExplorer.jsx:116`) | Media filters (8.3) | |
 | Files filters: EXIF capture date, geotag (`CellebriteFilesExplorer.jsx:281-329`) | Media date filter on `taken_instant`; `Has position` filter | |
-| File detail: tags, entity link, relevant, pin, download (`files/FileDetailPanel.jsx:128-218`) | Media detail: `Add to Workspace`, `Link to person` (via People), download original | tags and relevance belong to Evidence; not duplicated |
+| File detail: tags, entity link, relevant, pin, download (`files/FileDetailPanel.jsx:128-218`) | Media detail: `Add to…`, `Link to person` (via People), download original | tags and relevance belong to Evidence; not duplicated |
 | Media analysis panel (`files/MediaAnalysisPanel.jsx:55,66`) | Media `Read text` / `Transcribe` (8.3) | local models by default (plan 1.8); v1 sent images to OpenAI by default (plan 4.8) |
 | Cross-phone graph with edge-type chips, depth, capped badge (`CellebriteCrossPhoneGraph.jsx:89-113,239,840`) | Case Graph (14) | aggregated edges with counts and money |
 | Trace path between two people, PathFlowPanel (`CellebriteCrossPhoneGraph.jsx:1690-1707`; `shared/PathFlowPanel.jsx:47-48,82-83`) | 14.3, on Loupe's existing `/api/graph/shortest-paths` (`frontend_v2/src/features/graph/api.ts:244`) | hop and per-hop limits stated on screen |
@@ -1629,8 +1873,8 @@ to it during the screens build unit.
 | A12 | Faithful export: filtered conversation or timeline between two people and dates | Export of `between` two identities over a date range has exactly the on-screen events (E-4) and states the filter on its cover | backend |
 | A13 | Basics: copy and paste in timelines | In Conversations, Timeline lens stream and Lanes mode, selecting 3 rows and pressing Ctrl/Cmd+C writes `text/plain` and `text/html` with day, 12-hour time, zone, phone, app, labels and full body; `Ctrl/Cmd+A` then copy covers the whole filtered total; native text selection works within visible rows | browser |
 | A14 | Basics: duplicate messages | Three copies of one message from Native Messages, IMS Service and Android CallLog database on one phone show as one row `Found 3 times` listing the three sources; two different messages at the same second stay separate; the same message on two phones stays two rows; totals state records collapsed; `Show every copy` shows three rows | backend + unit |
-| A15 | Reading space: the communications timeline uses the space it is given | At 1280x800 and 1920x1080, with the timeline panel expanded, the panel's scroll container fills the panel height with no unused band below it; resizing the panel resizes the list; row count visible grows with height | browser |
-| A16 | Filtered loads never fail with an unexplained error | For every filter combination of participants by number, by contact, by identity and by dossier (including identities with no number and numbers with no contact), the Conversations index returns 200; a backend failure returns the 3.8 error wording with a retry and a reference id, never "unknown error" | backend (parametrised) + browser |
+| A15 | Reading space: the communications timeline uses the space it is given | At 1280x800 and 1920x1080, the Conversations time strip and stream fill their space with no unused band below them; resizing or collapsing the time strip resizes the stream; row count visible grows with height | browser |
+| A16 | Filtered loads never fail with an unexplained error | For every filter combination of participants by number, by contact, by identity and by dossier (including identities with no number and numbers with no contact), the Conversations index returns 200; a backend failure returns the 3.8 error wording ("Reference: <id>" with Try again, inline `role=alert`), never "unknown error" | backend (parametrised) + browser |
 
 ### 17.2 v1 checklist items mapped
 
@@ -1677,15 +1921,17 @@ Each unit is finished, tested and committed before the next (CLAUDE.md, chunked 
 |---|---|---|
 | 1 | Shared backend: `filters.py`, `time_display.py`, `labels.py`, `streams.py` index/window/locate, `records.py`, `/api/phones` router, case display settings migration | backend tests for 3.1 rules 2-6, A2, A6 and C-2 to C-5 pass |
 | 2 | Shared frontend: `evidence-time.ts`, `schemas.ts`, `use-stream.ts`, `StreamList`, `ParticipantLabel`, `TimeCell`, `OriginalTimePopover`, `RecordPanel`, badges, `copy-rows.ts` | unit and browser tests A4, A5, A6, A7, A13 pass |
-| 3 | Conversations screen, routes, sidebar change, removal of `features/cellebrite` and `/api/cellebrite` | C-1 to C-9, A1, A14 |
-| 4 | Extraction profile | P-1 to P-5 |
-| 5 | Search with fold, document folding backfill, dialog on Cmd/Ctrl+K, `rec://` citations, chat prompt fix (15.4), agent links (15.5) | S-1 to S-7, A8 |
-| 6 | Timeline phone lens, Lanes mode, Timeline fixes 15.6 | T-1 to T-6, A3 for the lens |
-| 7 | Export jobs: PDF, fonts, coverage check; Timeline PDF caps (15.7) | E-1 to E-5, E-7, A9 to A12 |
-| 8 | People: Phone identities tab, dossier panel, suggestions, decisions | U-1 to U-4 |
-| 9 | Media | M-1 to M-4 |
-| 10 | Map phone layer | G-1 to G-4 |
-| 11 | Graph edges and graph cap statement (15.3) | R-1 to R-3, A3 complete |
+| 2a | cb-ux shared kit (07 sections 5 and 12.1 item C): scope bar, phone table, record panel content, Add to… menu, origin mark, result count, progress panel and job tray, time strip, phone chip, keymap overlay, guide dialog, copy helper, semantic tokens and the phone palette, the phone selection store, the docked record panel slot, read-flagged progress requests | each component has Storybook stories in light and dark with accessibility checks that fail the build; shared screens keep every filter, action and state; Financial tests stay green |
+| 2b | lx-collect dependency (07 sections 6.4 and 12.1): the link-type registry with phone types, dossier and workspace link routes, reverse lookup, Add to Timeline for `phone_record`, built by the lx-collect job, not by this spec's units | lx-collect is live before unit 3 starts; phone types are refused with a stated message until their resolvers register |
+| 3 | Conversations screen, routes, sidebar group, removal of `features/cellebrite` and `/api/cellebrite` | C-1 to C-13, MD-1, UX-1 to UX-5, A1, A14 to A16 |
+| 4 | Phone summary and the list for each record type (7.5) | P-1 to P-8, J-2 |
+| 5 | Search with fold, document folding backfill, dialog on Cmd/Ctrl+K, `rec://` citations, chat prompt fix (15.4), agent links (15.5) | S-1 to S-10, A8 |
+| 6 | Timeline phone lens, Lanes mode, Timeline fixes 15.6 | T-1 to T-7, A3 for the lens |
+| 7 | Export jobs: PDF, fonts, coverage check, export dialog; Timeline PDF caps (15.7) | E-1 to E-5, E-7 to E-10, A9 to A12 |
+| 8 | People: Phone identities tab, dossier panel, suggestion panel, decisions | U-1 to U-8 |
+| 9 | Media | M-1 to M-7 |
+| 10 | Map phone layer | G-1 to G-6 |
+| 11 | Graph edges and graph cap statement (15.3) | R-1 to R-5, A3 complete; XF-2 in the cb-crossev gate |
 | 12 | RSMF (plan phase 6) | E-6, after 20.8 |
 
 Units 1 to 8 belong to plan phase 5; 9 to 12 to phases 6 and 9 as the plan orders them. The corpus
@@ -1707,7 +1953,7 @@ Each is a decision the plan did not already settle, with its reason and what rev
 | D-6 | Locale fixed to en-US, 12-hour with zone abbreviation; seconds in detail, copy and export | the recorded request; one rendering for everyone; the firm is in Washington DC | Neil asks for another locale |
 | D-7 | Zone choices: phone, case, UTC; case zone is a new case setting defaulting to the phones' shared zone or UTC | v1's constant zone was wrong for some phones; mixed-zone cases need one day grouping | 02 establishes per-phone zones are always present and Neil prefers per-row zones |
 | D-8 | Phone view names come from the phone the record came from, line by line, even in case-wide lists; case view is a label change only | plan 10.2 and v1's perspective-first rule; a toggle that changed results would break A3 | none |
-| D-9 | Duplicate rule v1: same phone, kind, direction, sender, recipients, body hash and instant; never across phones; thread participant-subset folding not carried | matches v1's tested rule while keeping cross-phone matching for approach 2; subset folding merged distinct threads | measurement 20.1 shows equal-second matching misses copies or merges distinct messages |
+| D-9 | Duplicate rule v1: same phone, kind, direction, sender, recipients, body hash and instant; never across phones; thread participant-subset folding not carried | every collapse is visible (`Found 3 times`, listing each copy) and a person can undo one with a `Not a copy` decision (C-13), so a wrong collapse is seen and reversed; cross-phone matching stays for approach 2; subset folding merged distinct threads | measurement 20.1 shows equal-second matching misses copies or merges distinct messages |
 | D-10 | Arrow on screen `→`, in copied text and exports `->` | matches the form in the recorded feedback and pastes cleanly | none |
 | D-11 | Search folding is 02 section 8.4's `fold()`: NFKC, supplementary styled-letter table, mixed-script confusables, format characters removed, accents, case, punctuation to spaces; `Exact characters` applies 02's steps 4 and 6 only; no fuzzy matching; no transliteration | finds what a person types without matching different letters | Neil wants accents significant by default |
 | D-12 | Digit-only queries also match identity digits | numbers are typed in many formats | none |
@@ -1715,8 +1961,8 @@ Each is a decision the plan did not already settle, with its reason and what rev
 | D-14 | Financial ledger is not a Search group in this unit | the ledger has its own filtered views and the plan names messages, documents and people | Neil wants one box for everything; then add a ledger group reading the existing ledger query |
 | D-15 | Record citations use a new `rec://<record_uid>` scheme; chat stops defaulting to page 1 | a phone record has no page; plan 10.3 names untraceable AI answers as the main criticism | none |
 | D-16 | Exports are server jobs rendered with WeasyPrint and bundled Noto fonts; uncovered characters print as `[U+XXXX]` tokens with an appendix | the recorded failure was boxes and cut text; the backend image has no fonts | color emoji become a requirement and WeasyPrint cannot draw them |
-| D-17 | Star callouts are not rebuilt; `Add to Workspace` covers pinning | the Workspace already models findings | Neil wants a phone-only highlight list |
-| D-18 | Navigation: the Cellebrite item becomes Conversations (Ctrl/Cmd+6), Phones and Media, shown only when the case has a phone | three phone screens per plan 10.5; no empty screens on other cases | none |
+| D-17 | Star callouts are not rebuilt; `Add to…` covers pinning | the Workspace already models findings | Neil wants a phone-only highlight list |
+| D-18 | Navigation: the Cellebrite item becomes the sidebar group Phones (Phone summary list, Conversations on Ctrl/Cmd+6, Media, Patterns, Needs a decision with its open count), shown only when the case has a phone (5.2) | the phone screens per plan 10.5 and 07 section 4.13; no empty screens on other cases | none |
 | D-19 | People additions live in the Dossiers page (tab and panel), not a new page | dossiers are Loupe's existing people surface | Neil wants a separate People page |
 | D-20 | Identity suggestions never come from a name match alone | names collide; numbers are the disambiguator (v1 memory note) | none |
 | D-21 | Graph shows identities with at least one communication, aggregated pair edges; top 2,000 nodes by degree with a stated limit on phone cases | 377,648 messages and contact books up to 13,053 would swamp the canvas | measurement 20.9 shows the full set renders |
@@ -1725,6 +1971,8 @@ Each is a decision the plan did not already settle, with its reason and what rev
 | D-24 | Sensitive values masked in lists, revealed per value with an audit entry, excluded from copy and export by default | plan 12.1 rule 4 | none |
 | D-25 | Router prefix `/api/phones`, feature folders `phones`, `conversations`, `extraction-profile`, `media`, `search` | lets the new code be built beside `/api/cellebrite` and swapped in one commit | none |
 | D-26 | Long bodies show 2,000 characters with an in-place expand, the full text already loaded | keeps rows scannable without truncating data | none |
+| D-27 | Phone-screen keys (3.9): `o`, `p`, `/` and Shift+J/K keep their 3.9 meanings; `Alt+J`/`Alt+K` with visible `Previous day` and `Next day` buttons replace `[`/`]` for day navigation; a visible `Go to date` button beside `g`; first Ctrl/Cmd+F finds in these results; `a`, `c` then d/w/n/t/l, `m`, and `y`/`x`/`s` with one meaning in every queue; a key-triggered action on more than 5,000 records asks for confirmation; a key is kept only where a browser test on http shows the page receives it | one keymap with one meaning per key across queues (07 section 4.9); every key has a visible control, so a key the browser withholds loses nothing | the browser test shows Alt+J/K is not received |
+| D-28 | The extraction profile screen is called **Phone summary** in the product (7) | 07 section 4.11 sets the screen's name in its wording rules; a plain name in place of a technical one | Alex prefers the old name |
 
 ---
 

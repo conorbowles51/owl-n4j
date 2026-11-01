@@ -472,7 +472,7 @@ Changed:
    inside a phone root are not registered (as today, `:249-250`). Protected and unreadable phone
    containers get the evidence row and no dispatch item.
 5. `dispatch_reports` (`:276-285`): call `evidence_engine_client.create_phone_capture_job`
-   (new) instead of `create_cellebrite_job`. `replace_existing` (`:55`) is not passed: replacing a
+   (new) instead of the client call that creates the old Cellebrite ingestion job. `replace_existing` (`:55`) is not passed: replacing a
    phone extraction is an explicit action on an already-captured extraction (10.7).
 
 ### 4.3 Engine endpoints (new, `evidence-engine/app/api/routes/phone.py`)
@@ -480,14 +480,29 @@ Changed:
 | Method and path | Body | Returns |
 |---|---|---|
 | `POST /cases/{case_id}/phone/detect` | `{"path": "<relative to data root>"}` | `IntakeClassification` (2.5) |
-| `POST /cases/{case_id}/phone/jobs` | `{"request_id": uuid, "container_path": str, "root_path": str, "evidence_folder_id": uuid|null, "container_evidence_id": uuid, "requested_by_user_id": uuid|null}` | `JobResponse`; idempotent on `request_id` exactly as `create_cellebrite_job` is today (`evidence-engine/app/api/routes/cellebrite.py:80-110`) |
+| `POST /cases/{case_id}/phone/jobs` | `{"request_id": uuid, "container_path": str, "root_path": str, "evidence_folder_id": uuid|null, "container_evidence_id": uuid, "requested_by_user_id": uuid|null}` | `JobResponse`; idempotent on `request_id` (rules PA-7 to PA-10 below) |
 | `POST /jobs/{job_id}/cancel?case_id=` | none | `{"state": "cancelling|cancelled"}` (10.6) |
 
-Path safety reuses `_safe_report_folder`'s rules (`cellebrite.py:36-56`), moved to
-`app/phone/paths.py`, generalised to files as well as folders. The data root is
-`settings.cellebrite_data_root` (`evidence-engine/app/config.py:71`, mounted at `/data/evidence`,
-`docker-compose.yml:132,216`); the setting keeps its name (renaming touches compose and both
-containers for no behavioural gain).
+The data root is `settings.cellebrite_data_root` (`evidence-engine/app/config.py:71`, mounted at
+`/data/evidence`, `docker-compose.yml:132,216`); the setting keeps its name (renaming touches compose and both
+containers for no behavioural gain). Path handling lives in `app/phone/paths.py` and applies to files as well as
+folders. Each path in a request is relative to `<data root>/<case_id>`.
+
+**Behaviour rules.** Each rule is a test in `evidence-engine/tests/test_phone_paths.py` (PA-1 to PA-6) or
+`test_phone_jobs.py` (PA-7 to PA-10), named by its rule id.
+
+| Rule | Request | Observable result |
+|---|---|---|
+| PA-1 | A path written with backslashes, or with leading slashes | Treated as the same path written with forward slashes and no leading slash |
+| PA-2 | An empty path, or `.` | The case root `<data root>/<case_id>` |
+| PA-3 | A path with any empty, `.` or `..` component | 403 "Path outside case directory"; nothing is read |
+| PA-4 | A path that resolves outside `<data root>/<case_id>`, including through a symbolic link | 403 "Path outside case directory"; nothing is read |
+| PA-5 | A path inside the case root that does not exist | 404, naming the path as not found |
+| PA-6 | A container given as a file and a root given as a folder | Both accepted under PA-1 to PA-5; a file where a folder is expected, or the reverse, is 404 |
+| PA-7 | A second `POST .../phone/jobs` with the same `request_id` and the same case, job type and body | The same job, with no second job row |
+| PA-8 | A reused `request_id` with a different case, job type or body | 409 "This processing request belongs to another selection" |
+| PA-9 | Two concurrent requests with one new `request_id` | One job row; both callers receive it |
+| PA-10 | A repeat of a request whose job is already dispatched | The job is returned and is not dispatched again |
 
 ### 4.4 The container as evidence
 
@@ -1182,7 +1197,7 @@ stage in `pipeline_state.phone.stage` and `phone_extractions.capture_state`:
 | `finishing` | state `captured` or `captured_incomplete`, standing `active` unless superseding (10.7) | 1.00 |
 
 Progress is published on Loupe's existing channel `job:{job_id}:progress`
-(`evidence-engine/app/services/redis_client.py:25-27`), at most once per second and at every
+(`evidence-engine/app/services/redis_client.py:25-27`), every 1 s while a stage runs and at every
 stage change, with the existing keys plus structured ones, never parsed back from log text (the
 old pipeline derives progress by regex over log lines, `cellebrite_ingestion.py:80-101`):
 
@@ -1199,9 +1214,39 @@ so new non-terminal statuses pass through it. `jobstatus` gains `verifying_sourc
 and `reconciling` (migration in unit 2.1: `ALTER TYPE jobstatus ADD VALUE IF NOT EXISTS ...`),
 `JobStatus` (`job.py:14-25`) gains the members, and `JobCard.tsx` `STAGE_LABELS` and
 `STAGE_COLORS` (`frontend_v2/src/features/evidence/components/JobCard.tsx:31-60`) gain "Checking
-source", "Reading report", "Checking completeness"; without the labels the card shows the raw
-status string (`:111`). `counting` maps to `verifying_source`; `indexing_files` and `detecting`
-map to `capturing`.
+the report", "Reading records", "Checking nothing is missing" (the stage words of 07 J-1); without
+the labels the card shows the raw status string (`:111`). `counting` and `detecting` map to
+`verifying_source`; `indexing_files` maps to `reconciling`.
+
+**Progress in the browser before the job.** Both panels follow 07 section 4.7.
+
+- Hashing: within 2 s of the folder or ZIP being picked, "Checking files before upload: 12,400 of
+  43,144, about 3 min left", from true counts of files and bytes, updated every 1 s.
+- Sending: "Sending 2.1 of 6.4 GB, about 9 min left. If this tab closes, choose the same folder again
+  to continue."
+- Time left comes from the measured rate of the step. Browser hashing speed is measured on a
+  synthetic folder of the same shape (section 12) before any time-left figure is shown for hashing;
+  until a rate exists the panel says "Working out time left (first run of this step)".
+
+**The readiness card.** Each extraction has one card, "Getting {label} ready", from the end of the
+upload until the phone is usable. It lists the stages of 07 J-1 in words, each with true counts and
+time left: Checking the report (`verifying_container`, `detecting`, `counting`); Reading records
+(`capturing`); Checking nothing is missing (`reconciling`, `indexing_files`); Reading messages and
+calls (02 interpretation); Building case views (02 projections); Making it searchable; Making
+thumbnails.
+
+- It updates every 1 s, and the same card appears in the case attention feed, so the person can
+  leave the page.
+- `pv_extraction.state` (02 section 12.2) takes `interpreting` and `building_views` while those
+  stages run.
+- Stalls follow the one stall rule of 07 section 4.7: "No change on {step} for {n} s. The server is
+  still on this step. Last change at {time}" after the threshold for the step kind, which starts at
+  30 s for intake stages and is set from measured step rates once they exist. Try again appears only
+  when the server reports that the step stopped.
+- A failure names the step and gives a reference id and Retry (10.4). "Unknown error" never appears.
+- Cancel sits on the card while the extraction is `pending` and states what is kept before it runs:
+  "Cancel reading this report? The upload, its hashes and the evidence item are kept, and it can be
+  read again. Records read so far are removed." (10.6).
 
 ### 10.4 Failure states
 
@@ -1216,6 +1261,11 @@ map to `capturing`.
 
 A failed job keeps its cursor and is resumable through the existing Resume control
 (`jobs.py:40-63`).
+
+A protected single-file report (`protected_no_password`, `protected_password`,
+`protected_or_invalid`, 2.4) also creates one Workspace task in the case (`case_tasks`, linked to the
+container's evidence row): "A copy without a password is needed from whoever produced it." Uploading
+the same container again creates no second task.
 
 ### 10.5 Pause, resume, checkpoints
 
@@ -1259,11 +1309,20 @@ Replacing an extraction never deletes first (v1 defect 4.2, and Loupe's copy:
    values), both stay active and the investigator is told: "This case already has a
    report that appears to be from the same phone ({name}). Both are kept. Use Replace on the newer
    one to retire the older one."
-3. `POST /api/phone-extractions/{new_id}/supersede {"previous_id": ...}` (backend, case
+3. **Replace and Retire.** The newer extraction offers Replace, naming the older one; the older
+   offers Retire, which asks for the newer one that replaces it. Both run the supersede in step 4,
+   show its consequence first ("{older label} (extracted {date}) will be retired. Its records stay readable and
+   marked as from a replaced report."), and require a typed reason, recorded through
+   `decisions.record` (02 section 8.8).
+4. `POST /api/phone-extractions/{new_id}/supersede {"previous_id": ...}` (backend, case
    permission `evidence:upload`) runs in one transaction: previous `standing='superseded'`,
    `superseded_at`, `superseded_by_user_id`; new `supersedes_id=previous_id`. Requires the new one
-   to be `captured` or `captured_incomplete`. Projections (later files) switch on that flip.
-4. Superseded extractions are kept. Purging one is a separate, explicit action not specified here.
+   to be `captured` or `captured_incomplete`. The body also carries the typed reason; a blank reason
+   is refused. Projections (later files) switch on that flip.
+5. Superseded extractions are kept. Purging one is a separate, explicit action not specified here.
+6. Until the device identity rule exists, a collected link (07 section 6) that points at a record in a
+   superseded extraction shows that state ("From a replaced report: {label}, retired on {date}") and makes no
+   offer to match it to a record in the newer extraction.
 
 ### 10.8 Performance targets
 
@@ -1321,7 +1380,11 @@ copies record for record, and the server C8 (P02) is a different export from the
 Nothing is copied from the Mac (plan decision 2). Numbers in this file measured only on the Mac copies
 (C3 zip, split C8, file outcomes) are reference values: the server-folder numbers are reported beside them
 and neither is adjusted. Synthetic fixtures for zip, split-section and protected forms are built from the
-server folders in `/mnt/owl-data/cellebrite-corpus/` and labelled synthetic. v1's
+server folders in `/mnt/owl-data/cellebrite-corpus/` and labelled synthetic. The same fixture builder
+also makes synthetic phones with invented content at the structure and scale of the real reports, and
+two case shapes: a phones-only case (synthetic phones and no other evidence) and a training case (two
+synthetic phones and a small synthetic ledger). Invented content holds no value from a real report, and
+no second generator is built (07 UXD-33). v1's
 `owl_ingest_report.json` in each server folder is not part of the production; file counts exclude it.
 Case material is never committed.
 
@@ -1403,8 +1466,10 @@ written to its STATUS; auto-read skips `phone_extraction` rows.
 **Unit 2.1: queue, worker, container.** Section 10.1 to 10.3. *Acceptance:* a phone job is
 enqueued on `arq:phone-capture` and runs on the phone worker while the default and PDF workers
 are each busy with a long job; progress messages on `job:{id}:progress` carry `stage` and
-`counts`, are at most one per second, and every stage appears in order; `JobCard` shows the new
-labels (unit test).
+`counts`, arrive every 1 s while a stage runs, and every stage appears in order; `JobCard` shows the new
+labels (unit test). I-1: the hashing panel appears within 2 s of picking a folder, updates every 1 s,
+and shows true counts, and so does the readiness card. J-1a (07 J-1, browser test over plain http):
+pick, hash, send, and the stages through "Checking nothing is missing" on a synthetic phone.
 
 **Unit 2.2: pause, resume, cancel.** *Acceptance:* pause during `capturing` stops after a committed
 flush; resume completes; captured rows and the reconciliation result equal an uninterrupted run
@@ -1414,7 +1479,8 @@ and keeps the container and evidence row; cancel on an `active` one returns 409.
 **Unit 2.3: staged replace.** *Acceptance:* with C9 active, capture a second copy of C9 altered by
 one byte in one value (synthetic, built in a temp directory from C9, never committed) and
 supersede: the old one becomes `superseded` only after the new one is `captured`; a forced
-failure of the new capture leaves the old one `active` and untouched.
+failure of the new capture leaves the old one `active` and untouched; a supersede with a blank reason
+is refused. I-2: Replace retires the older report and every count on the case changes once.
 
 **Unit 2.4: kill and resume.** *Acceptance:* on C3 and C8, `SIGKILL` the phone worker at a random
 point in each stage (verifying, counting, capturing, reconciling, indexing_files), restart, resume;

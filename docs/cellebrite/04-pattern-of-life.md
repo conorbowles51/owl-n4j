@@ -28,7 +28,8 @@ set), 6 (Postgres is the record), 7 (flag, don't refuse) and 8 (evidence stays i
 6. Places
 7. Storage (tables)
 8. Views
-   8.1 Day view · 8.2 Pattern view · 8.3 Places over time · 8.4 Together and apart · 8.5 Money as place and time
+   8.1 Day view · 8.2 Pattern view · 8.3 Places over time · 8.4 Together and apart · 8.5 Money as place and time ·
+   8.6 Patterns screen, shared Lanes and key dates
 9. Statement check
 10. API
 11. Performance targets
@@ -183,6 +184,17 @@ that field. Phones are P numbers.
 | RemoteServiceSession | 6 | 1 | P14 | DateStarted 6 |
 | MobileCard | 4 | 4 | | PurchaseTime 4; ModifyTime 4 |
 | CreditCard | 1 | 1 | P12 | ExpirationDate 1; DateLastUsed 1 |
+
+The Records column sums the 14 server phones across the three cases, so it is a corpus-wide figure, not
+one case's. Per case (CAT, from the per-phone table below):
+
+| Type | 10-report case | 3-phone case | 1-phone case |
+|---|---|---|---|
+| DeviceEvent | 30,862 on 8 phones (P02 to P08, P11) | 104,321 on 2 phones (P13, P14) | none |
+| ActivitySensorDataSample | 113,290 on 1 phone (P11) | 311,367 on 2 phones (P13, P14) | none |
+
+Screens and targets that size a case use the per-case figure; 135,183 DeviceEvent records on 10 phones
+and 424,657 sensor samples on 3 phones are the corpus totals.
 
 Note the field name `Voicemail.Timestamp` (lower-case s) differs from every other type's `TimeStamp`;
 the registry treats them as distinct fields.
@@ -904,7 +916,7 @@ days; a day containing a DST change has 23 or 25 hours and the grid shows that.
 
 - Subject: one extraction, or one person as a dossier (`{"kind": "dossier", "dossier_id": ...}`: all
   extractions whose owner identity has a reviewed link to the dossier, 4.2), one local date.
-- Lanes, top to bottom: **availability** strip (5.3 hour states, per extraction); **interaction**;
+- Drawn by the shared Lanes component (8.6). Lanes, top to bottom: **availability** strip (5.3 hour states, per extraction); **interaction**;
   **device state**; **communications** (messages and calls, with name and number, plan 10.4 item 1);
   **places** (observations with radius, kind and source); **money** (8.5); **passive** (collapsed by
   default with a count).
@@ -1043,6 +1055,35 @@ the rest of the replaced Cellebrite code.
   context, and can contradict a claim spanning whole days ("away all week") when the place is attached.
 - Money stays p4 when read from a phone (plan 12.1 rule 5); this section only reads the ledger.
 
+### 8.6 Patterns screen, shared Lanes and key dates
+
+**Patterns screen.** The views of this file sit on one screen at `/cases/:id/phone-patterns`, reachable
+from the sidebar's Phones group (03 section 5.2). It holds five views: Day view (8.1), Pattern grid
+(8.2), Places over time (8.3), Together (8.4) and Statement check (section 9), with one subject picker
+for the screen (an extraction or a person as a dossier, 1.4). Places over time and Together draw with
+the existing Case Map panels (8.3) inside the screen. Spec 07 sections 4 and 5 set its shared interaction
+rules.
+
+**One shared Lanes component.** The Case Timeline, the Day view and the incident window (05 section 16)
+use one Lanes component: one lane per phone, a Case events lane, and a money lane when a ledger exists,
+with money on its day and never at a time of day (8.5). Window chips (plus or minus 1 hour, 6 hours, 24
+hours, custom) name the zone. Communications show by default; device events and sensor samples are
+counted and one click away. "No data" is drawn apart from "Phone recording, no use seen" (5.3). A code
+check counts one Lanes component across the three hosts (07 J-5).
+
+**Key dates and case terms.** A key date is a Workspace entry with a key-date marker holding an instant
+and its zone; a case term is a Workspace entry of the same kind holding a keyword or phrase. Each is
+entered once per case and reused by every view here and every analysis in 05. "Open the window around
+this" starts from a record, a key date or the Timeline Lanes, and the anchor of a window can be saved as a
+key date (07 J-5).
+
+**Tests.**
+- POL-1: the Patterns screen is reachable from the sidebar, opens each of its five views for a chosen
+  subject, and keeps the subject when switching view.
+- J-5a: from a record and from a key date, the window opens with one lane per phone and the Case events
+  lane, in 5 s or less, and the code check counts one Lanes component serving Timeline, Day view and the
+  incident window.
+
 ---
 
 ## 9. Statement check
@@ -1088,11 +1129,13 @@ segment (`source_anchor` = `{"evidence_file_id", "start_seconds", "end_seconds"}
    counterpart (date pickers seeded by a deterministic parser of `window_text` against the interview
    date), then confirms. Accepting creates `pol_claim` rows with `origin = 'ai_draft'`, `status =
    'draft'`; each becomes `confirmed` only by an explicit confirm with the confirming user recorded.
-4. **Model location**: the drafting runs under a new workload `statement_claim_drafting` which must
-   resolve to a local model provider (standing decision 8). Loupe has no local provider today
-   (`ai_model_policy.py:17-58`, `:64-97`), so AI drafting is unavailable until one exists, and the panel
-   says "AI drafting needs a local model on this server" rather than falling back to a hosted provider.
-   Reverse per case by Neil's decision, recorded with the case.
+4. **Model location**: the drafting runs under a new workload `statement_claim_drafting`, and only
+   where the external-processing decision (`allow_phone_external_processing`, 02 section 8.8) allows
+   phone material from every extraction in the request to be sent out. Loupe has no local provider
+   (`ai_model_policy.py:17-58`, `:64-97`), so without that decision AI drafting is unavailable and the
+   panel says "AI drafting is off for phone material in this case. Enter claims by hand, or ask the case
+   owner." (07 J-9). Claims are then typed. A drafted claim is marked "Drafted by <model>, not confirmed"
+   until each field is confirmed.
 
 ### 9.3 Evaluation inputs
 
@@ -1178,10 +1221,20 @@ compatible episodes support `with_subject`, separated episodes contradict it, an
 
 Every item is returned; no limit. The example dates are illustrative.
 
+**Dispute and Check again.** Each item carries "This item is wrong", which opens the record correction
+(02 section 10) or marks the item disputed with a typed reason, recorded through `decisions.record`. A
+disputed item stays in the list with its mark; the computed outcome is never set by hand (decision 11). A
+correction changes the inputs, so the evaluation turns `stale` (9.3), and a stale result shows
+**Check again**, which runs a new evaluation and keeps the earlier one visible.
+
 ### 9.6 Attaching to Workspace
 
-1. Migration adds `phone_record` and `statement_check` to `ENTRY_LINK_TARGET_TYPES`
-   (`workspace_entry.py:43-53`) and to `ck_workspace_entry_links_target_type` (`:269-272`).
+1. The target types `phone_record` and `statement_check` come from the one link-type registry that
+   lx-collect builds (07 section 6.4 item 1), which replaces the hard-coded `ENTRY_LINK_TARGET_TYPES`
+   (`workspace_entry.py:43-53`) and `ck_workspace_entry_links_target_type` (`:269-272`). This file does
+   not migrate those lists itself; it registers its types with the registry. A `phone_analysis` snapshot
+   of a pattern result (kind, subject, window, parameters, mapping versions, record ids, summary counts)
+   is saved through the same registry (07 section 6.4 item 13).
 2. From an evaluation, the person chooses a finding or theory and selects items. The service calls
    `add_entry_links` (`workspace_entry_service.py:1352`) with, per selected item,
    `target_type = "phone_record"`, `target_id = record_uid` (02 section 1.2, so `rec://` links and the
@@ -1196,6 +1249,9 @@ Every item is returned; no limit. The example dates are illustrative.
    `stale` in the Workspace link list ("A newer check of this statement gives a different result").
 4. The claim's source anchor (the interview segment) is shown on the finding beside the phone items, so
    the statement and the records that test it sit together.
+5. A statement check is linked to the interview on the dossier through interview evidence that takes
+   registry targets (lx-collect item E, 07 section 6.4 item 5): the link has `target_type =
+   "statement_check"` and the claim's source anchor.
 
 ---
 
@@ -1231,13 +1287,14 @@ confirmable (field list).
 | POST `/{case_id}/claims/{id}/evaluate` | | evaluation (9.5) |
 | GET `/{case_id}/claims/{id}/evaluations` | | list with outcome and stale flag |
 | POST `/{case_id}/claims/{id}/evaluations/{eid}/attach` | `{entry_id, expected_version, item_ordinals: [...], include_check_link: true}` | added link ids |
-| POST `/{case_id}/claim-drafts` | `{dossier_id, interview_ids}` or `{conversation_locator}`, `subject` | Workspace AI output id (`statement_claims`); 409 when no local model |
+| POST `/{case_id}/claim-drafts` | `{dossier_id, interview_ids}` or `{conversation_locator}`, `subject` | Workspace AI output id (`statement_claims`); 409 when the external-processing decision does not allow it |
 | POST `/{case_id}/reference/cell` (admin) | `{file_path_on_server, name, licence, attribution, retrieved_on}` | dataset id, row count, sha256 |
 
 Frontend: `frontend_v2/src/features/pattern/` (`api.ts`, `types.ts`, `components/DayView.tsx`,
-`PatternGrid.tsx`, `StatementCheckPanel.tsx`, `ClaimForm.tsx`, `EvaluationResult.tsx`), a "Pattern of
-life" screen with subject picker; Places over time and Together as Case Map panels in
-`frontend_v2/src/features/map/components/`. Tests use `fireEvent` (CLAUDE.md).
+`PatternGrid.tsx`, `StatementCheckPanel.tsx`, `ClaimForm.tsx`, `EvaluationResult.tsx`), the Patterns
+screen at `/cases/:id/phone-patterns` with its subject picker (8.6); Places over time and Together draw
+with the Case Map panels in `frontend_v2/src/features/map/components/`. The Lanes component is shared
+with the Case Timeline and the incident window (8.6). Tests use `fireEvent` (CLAUDE.md).
 
 ---
 
@@ -1285,8 +1342,9 @@ evidence; corpus checks are separate and gated.
 | U9 | Together and apart | Two phones 120 m apart with radii 50 and 100 → compatible; 5 km apart, dt 0, radii 100 → separated; 25,000 pairs → all returned with totals (no cap); SSID-only match → no item; v1 contrast cases encoded as tests |
 | U10 | Money lane and manual places | Superseded row absent, corrected row present; posted-only row labelled; transaction never placed at a time of day; manual place recorded as a decision with Actor |
 | U11 | Claims and evaluation | Each kind's outcome rules in 9.4 on synthetic data; evaluation reproducible from fingerprint; mapping change marks evaluation stale; confirm requires a user |
-| U12 | AI claim drafting | Uncited claim rejected; model output never sets instants; with no local provider the endpoint returns 409 with the stated message and makes no network call |
-| U13 | Workspace attachment | Migration accepts `phone_record` and `statement_check`; attach adds links with the right relationships through `add_entry_links`; version conflict returns 409; stale evaluation shown on the link |
+| U12 | AI claim drafting | Uncited claim rejected; model output never sets instants; without the external-processing decision the endpoint returns 409 with the stated message and makes no network call |
+| U13 | Workspace attachment. Depends on lx-collect's link-type registry and interview targets (07 section 6.4 items 1 and 5) | The registry accepts `phone_record` and `statement_check`; attach adds links with the right relationships through `add_entry_links`; version conflict returns 409; stale evaluation shown on the link; a statement check links to the dossier interview; Dispute keeps the item with its mark and Check again keeps the earlier evaluation visible |
+| U14 | Patterns screen, shared Lanes and key dates (8.6) | POL-1; J-5a; a key date entered once is offered by Day view and by an analysis in 05 |
 | Gate | Phase 7 done-when (plan 7): a statement window shows supporting, contradicting and missing data with sources | End-to-end test on synthetic two-phone case through the HTTP API, plus a corpus run on P14 recorded in the build state |
 
 ---
@@ -1359,16 +1417,19 @@ Each is a decision with its reasoning and what would reverse it.
     the financial subsystem first).
 11. **Claim outcome is computed from fixed rules**, like proof class; a person can withdraw a claim or
     add links but never set an outcome. Follows standing decision 5.
-12. **AI claim drafting only on a local model; otherwise unavailable.** Standing decision 8. Reverse per
-    case by Neil.
+12. **AI claim drafting only under the external-processing decision; otherwise unavailable.** Standing
+    decision 8 keeps evidence in house unless a case decision allows otherwise; 02 section 8.8 records that
+    decision with a typed reason. Reverse if a local model provider exists (then drafting runs on it with
+    no external-processing decision).
 13. **New Workspace link target types `phone_record` and `statement_check`** rather than overloading
-    `evidence` or `timeline_event`. A phone record is not an evidence file and must open to its locator.
+    `evidence` or `timeline_event`, registered in lx-collect's link-type registry rather than migrated
+    here. A phone record is not an evidence file and must open to its locator.
 14. **Pattern-of-life tables live in the backend Alembic tree** with models in
     `backend/postgres/models/pattern_of_life.py`. Reverse if the capture spec puts phone tables in the
     evidence-engine tree.
-15. **A "Pattern of life" screen** for Day view, Pattern view and Statement check; Places over time and
-    Together as Case Map panels. Day lanes differ from the Case Timeline's swim lanes. Reverse if Neil
-    wants them as Timeline modes.
+15. **One Patterns screen** at `/cases/:id/phone-patterns` for Day view, Pattern grid, Places over time,
+    Together and Statement check, and one Lanes component shared with the Case Timeline and the incident
+    window (8.6). Reverse if Neil wants them as Timeline modes.
 16. **Stay and routine parameters** (100 m, 10 min, eps 150 m, 3 stays, 4 days, 95th percentile and 3
     bits) as stated in 8.3, echoed with every result. Reverse after M5 and M12.
 17. **Approximate times handled by a 30-minute context margin** rather than fuzzy windows. Keeps the
@@ -1390,4 +1451,4 @@ Each is a decision with its reasoning and what would reverse it.
   2022-2023 towers.
 - Whether any production states selected date ranges (`IsSelectiveExtraction`, `IsPartialData` were not
   among the header items seen in C3 and C9). M11.
-- Whether a local model provider will exist for claim drafting, and which.
+- Whether a local model provider will exist, and which (decision 12).
