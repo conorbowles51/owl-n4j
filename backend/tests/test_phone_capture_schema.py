@@ -64,8 +64,8 @@ def test_upgrade_downgrade_upgrade_and_one_row_per_table():
             assert r.returncode == 0, r.stderr[-3000:]
         eng = create_engine(url)
         with eng.begin() as c:
-            assert c.scalar(text("SELECT version_num FROM alembic_version")) == "20261101_phone_job_states"
-            assert {"verifying_source", "capturing", "reconciling"} <= set(c.scalars(text(
+            assert c.scalar(text("SELECT version_num FROM alembic_version")) == "20261101_phone_supersede_decision"
+            assert {"verifying_source", "capturing", "reconciling", "interpreting", "building_views"} <= set(c.scalars(text(
                 "SELECT unnest(enum_range(NULL::jobstatus))::text")))
         case_id, user_id = uuid.uuid4(), uuid.uuid4()
         from postgres.models.case import Case
@@ -86,7 +86,7 @@ def test_upgrade_downgrade_upgrade_and_one_row_per_table():
             m.PhoneExtractionContainerLink(extraction_id=ext_id, container_id=cont_id, root_path="r"),
             m.PhoneExtractionDocument(path="r.xml", role="full", size_bytes=1, sha256="d" * 64, md5="e" * 32, **doc),
             m.PhoneRecord(ordinal=1, top_ordinal=1, depth=0, model_type="Call", body=["model", None, None, None], **doc),
-            m.PhoneFile(ordinal=1, body=["file", None, None, None], outcome="match", **doc),
+            m.PhoneFile(ordinal=1, file_uid=uuid.uuid4(), body=["file", None, None, None], outcome="match", **doc),
             m.PhoneContainerEntry(extraction_id=ext_id, relpath="files/a", size_bytes=0),
             m.PhoneFileReference(record_ordinal=1, body_path="0", mechanism="jumptarget", reference_text="x",
                                  resolution="unresolved", **doc),
@@ -112,6 +112,27 @@ def test_upgrade_downgrade_upgrade_and_one_row_per_table():
                 s.add(m.PhoneExtraction(case_id=case_id, report_set_sha256="c" * 64, first_container_id=cont_id,
                                         form="full", capture_code_version="phone-capture-1"))
                 s.commit()
+        from services.phone import resolvers  # the resolvers' SQL against the real tables
+        with Session(eng) as s:
+            assert resolvers.resolve_extraction(s, case_id, str(ext_id)).label == "n"
+            assert resolvers.resolve_extraction(s, uuid.uuid4(), str(ext_id)) is None
+            uid = s.scalar(select(m.PhoneFile.file_uid))
+            target = resolvers.resolve_file(s, case_id, str(uid))
+            assert target.metadata["stored_path"] is None and target.metadata["ordinal"] == 1  # not on disk
+            assert resolvers.resolve_file(s, uuid.uuid4(), str(uid)) is None
+        from services.financial import decisions  # the widened ledger constraints accept Replace (01 section 10.7)
+        from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
+        with Session(eng) as s:
+            e = s.get(m.PhoneExtraction, ext_id)
+            decisions.record(s, case_id=case_id, subject=e, subject_type=AdjudicationSubject.phone_extraction,
+                             decision=AdjudicationDecision.supersede_phone_extraction, reason="synthetic",
+                             actor=decisions.Actor(name="Synthetic", email=name + "@x.test", user_id=user_id),
+                             before={"standing": "active"}, after={"standing": "superseded"})
+            s.commit()
+        r = _alembic(url, "downgrade", "20261101_phone_job_states")
+        assert r.returncode != 0 and "Cannot remove retained phone report decisions" in (r.stderr + r.stdout)
+        with eng.begin() as c:  # the scratch decision removed so the older guard below is the one reached
+            c.execute(text("DELETE FROM adjudications WHERE subject_type = 'phone_extraction'"))
         r = _alembic(url, "downgrade", "20261101_timeline_view_instants")
         assert r.returncode != 0 and "phone extractions exist" in (r.stderr + r.stdout)
         eng.dispose()

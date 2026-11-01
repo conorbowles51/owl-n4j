@@ -196,6 +196,7 @@ def _prepare_files(
     candidates: list[EvidenceFile] = []
     skipped_processing = 0
     skipped_external = 0
+    skipped_phone_reports = 0
     missing_on_disk = 0
 
     for file_id in file_ids:
@@ -206,6 +207,11 @@ def _prepare_files(
             raise ValueError("Evidence file does not belong to this case")
         if ef.status == "processing":
             skipped_processing += 1
+            continue
+        if ef.source_type == "phone_extraction":
+            # A phone report is read by its capture job when it is uploaded (01 section 4.4); a folder processed
+            # as a whole leaves it out.
+            skipped_phone_reports += 1
             continue
         if not phone_files.external_processing_allowed(db, ef):
             # A phone file used in a dossier is never sent for processing (or embedding) without the case's
@@ -224,10 +230,12 @@ def _prepare_files(
         if skipped_external:
             message += (f"; {skipped_external} phone file(s) were not sent because this case has no decision "
                         "allowing phone material to be processed outside Loupe")
+        if skipped_phone_reports:
+            message += f"; {skipped_phone_reports} phone report(s) are read automatically when uploaded"
         return {
             "job_ids": [],
             "file_count": 0,
-            "skipped_count": skipped_processing + skipped_external,
+            "skipped_count": skipped_processing + skipped_external + skipped_phone_reports,
             "skipped_phone_files": skipped_external,
             "message": message,
         }
@@ -315,7 +323,8 @@ def _prepare_files(
         )
     valid_ids = [str(ef.id) for ef in valid_files]  # read before the commit expires the rows
     db.commit()
-    return file_tuples, per_file_metadata, valid_files, valid_ids, skipped_processing + skipped_external, missing_on_disk
+    skipped = skipped_processing + skipped_external + skipped_phone_reports
+    return file_tuples, per_file_metadata, valid_files, valid_ids, skipped, missing_on_disk
 
 
 def _record_recovered_jobs(db: Session, valid_files: list[EvidenceFile], recovered_jobs: list[dict[str, Any]]) -> list[str]:

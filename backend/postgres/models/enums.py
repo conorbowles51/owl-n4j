@@ -128,6 +128,9 @@ class AdjudicationSubject(str, Enum):
     source_document = "source_document"
     account = "account"
     evidence_file = "evidence_file"
+    # A phone report (01 section 10.7): Replace and Retire are decisions about which report of a phone the case
+    # stands on. 02 section 8.8 adds its other phone decisions against the same subject.
+    phone_extraction = "phone_extraction"
 
 
 class AdjudicationDecision(str, Enum):
@@ -226,6 +229,10 @@ class AdjudicationDecision(str, Enum):
     # A card or account printed under different holder names on different statements: each statement is filed with
     # the name printed on it, recorded as a judgement call; who holds the account is not decided (printed_holders).
     keep_printed_holders = "keep_printed_holders"
+    # Replace or Retire (01 section 10.7): the older phone report is retired in favour of a newer one, with a typed
+    # reason. The subject is the retired report; ``after`` names the report that replaces it. Its records stay
+    # readable. It has no reversal member yet because nothing can undo it: there is no restore action.
+    supersede_phone_extraction = "supersede_phone_extraction"
 
 
 class IngestionRunStatus(str, Enum):

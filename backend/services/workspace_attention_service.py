@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from sqlalchemy.orm import Session, joinedload
 
 from postgres.models.case_context import CaseContext, CaseMandateVersion
@@ -42,6 +42,9 @@ REASON_LABELS = {
     "contradiction_recorded": "Contradiction recorded",
     "personal_draft": "Your draft",
     "recent_casework_update": "Recent casework update",
+    "phone_reading": "Phone report being read",
+    "phone_needs_attention": "Phone report needs attention",
+    "phone_ready": "Phone report ready",
 }
 
 
@@ -435,7 +438,58 @@ def _shared_candidates(
         )
         for entry in recent_entries
     )
+    candidates.extend(_phone_candidates(db, case_id=case_id, now=now))
     return _merge(candidates)
+
+
+PHONE_STEP_WORDS = {
+    "verifying_container": "Checking the report", "detecting": "Checking the report", "counting": "Checking the report",
+    "capturing": "Reading records", "reconciling": "Checking nothing is missing",
+    "indexing_files": "Checking nothing is missing", "interpreting": "Reading messages and calls",
+    "building_views": "Building case views",
+}
+
+_PHONE_JOBS = text(
+    "SELECT id, file_name, status::text AS status, progress, paused, pipeline_state, updated_at FROM jobs "
+    "WHERE case_id = :case AND job_type = 'phone_capture' ORDER BY created_at DESC LIMIT 20")
+
+
+def phone_candidate(case_id: UUID, row: Any, *, now: datetime) -> AttentionCandidate | None:
+    """The readiness card's mirror in the attention feed (07 J-1 step 3): one item per phone reading, so the person
+    can leave the Evidence page. A finished reading stays for the material-change window."""
+    phone = dict((row.pipeline_state or {}).get("phone") or {})
+    name = row.file_name or "Phone report"
+    updated = _aware(row.updated_at)
+    href = f"/cases/{case_id}/evidence?panel=processing"
+    status = str(row.status)
+    state = phone.get("state")
+    if status == "completed" and state == "captured":
+        if updated is not None and updated < now - timedelta(days=MATERIAL_CHANGE_DAYS):
+            return None
+        reason, band, title = "phone_ready", 4, f"{name} is ready"
+        summary = phone.get("message")
+    elif status == "failed" and phone.get("cancelled"):
+        return None
+    elif status in ("completed", "failed"):
+        reason, band, title = "phone_needs_attention", 1, f"{name} needs attention"
+        summary = phone.get("message")
+    else:
+        step = PHONE_STEP_WORDS.get(phone.get("stage") or "", "Checking the report")
+        reason, band = "phone_reading", 2
+        title = f"Getting {name} ready"
+        summary = f"{step}: paused." if row.paused else f"{step}, {int(round(float(row.progress or 0) * 100))}% done."
+    return AttentionCandidate(
+        source_type="phone_reading", source_id=str(row.id),
+        version_token=_version_token(updated), reason_code=reason, priority_band=band,
+        sort_value=_timestamp(updated, recent=True), title=title, summary=_short(summary), occurred_at=updated,
+        due_at=None, href=href, metadata={"stage": phone.get("stage"), "status": status, "state": state})
+
+
+def _phone_candidates(db: Session, *, case_id: UUID, now: datetime) -> list[AttentionCandidate]:
+    if db.get_bind().dialect.name != "postgresql":
+        return []  # the engine's jobs table lives only in the PostgreSQL deployment
+    rows = db.execute(_PHONE_JOBS, {"case": str(case_id)}).all()
+    return [c for c in (phone_candidate(case_id, row, now=now) for row in rows) if c is not None]
 
 
 def _personal_candidates(

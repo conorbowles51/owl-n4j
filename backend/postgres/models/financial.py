@@ -99,7 +99,7 @@ _PERIOD_BOUNDS_SOURCES = "('printed', 'derived', 'absent')"
 # ledger polymorphic in practice; subject_id has never carried a foreign key.
 _ADJUDICATION_SUBJECTS = (
     "('transaction', 'statement_period', 'source_document', 'account', "
-    "'evidence_file')"
+    "'evidence_file', 'phone_extraction')"
 )
 # Closed for the reason the quarantine reasons are closed: "how many rows did
 # you set aside, and how many did you put back" is answered by a GROUP BY, and
@@ -118,7 +118,7 @@ _ADJUDICATION_DECISIONS = (
     "('supersede_duplicate', 'restore_document', 'purge_duplicate', "
     "'quarantine_row', 'release_row', 'explain_balance_failure', "
     "'reclassify_document', 'admit_financial_document', 'correct_transaction', 'set_account_party', 'set_counterparty_party', 'set_account_identity', "
-    "'keep_printed_holders')"
+    "'keep_printed_holders', 'supersede_phone_extraction')"
 )
 _QUARANTINE_REASONS = (
     "('balance_break', 'unreadable_row', 'currency_mismatch', "

@@ -73,6 +73,9 @@ BACKFILL_LIMIT = 200
 SWEEP_BUDGET_SECONDS = 8.0
 LOCK_TIMEOUT = '2s'
 ACTIVE_STATES = ('preparing', 'pausing', 'paused')
+# Phone material is never read as a statement: the old ingester's files and the phone report container rows, which
+# the phone capture job reads (01 section 4.4).
+PHONE_SOURCE_TYPES = ('cellebrite', 'phone_extraction')
 
 
 def enabled():
@@ -115,7 +118,8 @@ def mark_registered(file_record):
     registered before this existed get the same marker from the sweep
     (``_backfill_marks``).
     """
-    if not detect_enabled() or not _is_pdf(file_record.original_filename) or file_record.source_type == 'cellebrite':
+    if (not detect_enabled() or not _is_pdf(file_record.original_filename)
+            or file_record.source_type in PHONE_SOURCE_TYPES):
         return
     metadata = dict(file_record.metadata_ or {})
     if MARK not in metadata:
@@ -407,7 +411,7 @@ def _backfill_marks(session):
 def _marked_none(session):
     query = (select(EvidenceFile).where(EvidenceFile.metadata_[MARK]['state'].as_string().is_(None),
              func.lower(EvidenceFile.original_filename).like('%.pdf'),
-             func.coalesce(EvidenceFile.source_type, '') != 'cellebrite')
+             func.coalesce(EvidenceFile.source_type, '').notin_(PHONE_SOURCE_TYPES))
              .order_by(EvidenceFile.created_at, EvidenceFile.id).limit(BACKFILL_LIMIT))
     if session.get_bind().dialect.name == 'postgresql':
         query = query.with_for_update(skip_locked=True)
@@ -573,7 +577,7 @@ def evidence_statements(session, *, case_id, resolve_path, limit=None):
     library = financial_file_ids(session, case_id=case_id)
     files = [f for f in session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id)
              .order_by(EvidenceFile.created_at, EvidenceFile.id))
-             if _is_pdf(f.original_filename) and f.id not in library and f.source_type != 'cellebrite'
+             if _is_pdf(f.original_filename) and f.id not in library and f.source_type not in PHONE_SOURCE_TYPES
              and f.status != 'processing' and not ((f.metadata_ or {}).get(MARK) or {}).get('state')
              in ('statement', 'enrolled', 'copy', 'not_statement')]
     if limit:

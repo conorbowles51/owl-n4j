@@ -64,6 +64,7 @@ from typing import TYPE_CHECKING, Any, Mapping, Optional
 
 from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
 from postgres.models.evidence import EvidenceFile
+from postgres.models.phone_extraction import PhoneExtraction
 from postgres.models.financial import (
     FinancialAccount,
     AdjudicationEvent,
@@ -104,6 +105,7 @@ _SUBJECT_MODELS: dict[AdjudicationSubject, type] = {
     AdjudicationSubject.source_document: FinancialSourceDocument,
     AdjudicationSubject.account: FinancialAccount,
     AdjudicationSubject.evidence_file: EvidenceFile,
+    AdjudicationSubject.phone_extraction: PhoneExtraction,
 }
 
 # Every member of the vocabulary must be reachable, or a decision that the

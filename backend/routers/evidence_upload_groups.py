@@ -33,7 +33,9 @@ from routers import evidence_uploads as uploads
 from services.evidence_db_storage import EvidenceDBStorage
 
 router = APIRouter(prefix='/api/evidence-upload-groups', tags=['evidence'])
-MAX_MEMBERS = 20_000
+MAX_MEMBERS = 200_000  # folder groups; the largest phone folder measured holds 93,150 files (01 D9)
+MAX_ARCHIVE_ENTRIES = 20_000  # an ordinary zip unpacked into evidence rows
+PHONE_CONTAINER_SUFFIXES = ('.zip', '.ufdr')
 MAX_EXPANDED_BYTES = 64 * 1024**3
 SKIP_NAMES = {'.DS_Store', 'Thumbs.db', 'desktop.ini'}
 
@@ -116,8 +118,9 @@ def start_group(body: StartGroup, user: User = Depends(get_current_db_user), db:
             raise HTTPException(400, 'The upload manifest does not match its file sizes')
     if sum(m['size'] for m in manifest) > MAX_EXPANDED_BYTES:
         raise HTTPException(413, 'This selection exceeds the 64 GB upload limit. Split it into smaller selections.')
-    if body.kind == 'archive' and (len(manifest) != 1 or not manifest[0]['path'].lower().endswith('.zip')):
-        raise HTTPException(400, 'Select one ZIP archive')
+    if body.kind == 'archive' and (len(manifest) != 1
+                                   or not manifest[0]['path'].lower().endswith(PHONE_CONTAINER_SUFFIXES)):
+        raise HTTPException(400, 'Select one ZIP or UFDR file')
     if body.kind == 'files' and any('/' in m['path'] for m in manifest):
         raise HTTPException(400, 'Use folder upload to retain nested file paths')
     values = body.model_dump(exclude={'members'})
@@ -185,7 +188,7 @@ def extract_archive(source, root):
     try:
         with zipfile.ZipFile(source) as archive:
             infos = archive.infolist()
-            if len(infos) > MAX_MEMBERS:
+            if len(infos) > MAX_ARCHIVE_ENTRIES:
                 raise HTTPException(413, 'Archive has too many entries. Split it into smaller archives.')
             for info in infos:
                 if info.is_dir(): continue
@@ -220,7 +223,33 @@ def extract_archive(source, root):
     return result
 
 
-def prepare_payload(group, rows):
+NOT_A_PHONE_REPORT = 'not_a_phone_report'
+DETECT_UNAVAILABLE = ('Files are saved, but they could not be checked for phone reports. Choose Finish registration '
+                      'to retry; files will not be uploaded again.')
+
+
+def skipped_name(relpath):
+    """The engine's skip set (01 section 2.3 step 2), the same names extraction leaves out."""
+    parts = [p for p in relpath.split('/') if p]
+    return bool(parts) and ('__MACOSX' in parts or parts[-1].startswith('._') or parts[-1] in SKIP_NAMES)
+
+
+def folder_container_sha256(members):
+    """A folder container's digest, as the engine computes it (01 section 3 step 1): SHA-256 of the sorted lines
+    ``"{sha256}  {size}  {relative path}\\n"`` over every non-skipped file. ``members`` are (relpath, size, sha256)."""
+    lines = ''.join('%s  %d  %s\n' % (sha, size, rel) for rel, size, sha in sorted(members) if not skipped_name(rel))
+    return hashlib.sha256(lines.encode('utf-8')).hexdigest()
+
+
+def case_relative(group, path):
+    return Path(path).relative_to(Path(uploads.EVIDENCE_DATA_ROOT) / str(group.case_id)).as_posix()
+
+
+def prepare_payload(group, rows, detect):
+    """Verified copy into the payload root. ``detect(case_relative_path)`` is the engine's phone classification
+    (01 section 2.5). A phone container is never unpacked here: a zip or UFDR holding a phone report, readable or
+    protected, is copied whole (01 section 4.2 step 3); an ordinary zip is unpacked as before. Returns the ordinary
+    members and the phone containers."""
     root = payload_root(group)
     prepared = []
     by_id = {row.id: row for row in rows}
@@ -229,26 +258,47 @@ def prepare_payload(group, rows):
         # Reassemble from retained verified chunks if a prior finalisation was interrupted.
         source = uploads.assemble(row)
         if group.kind == 'archive':
-            return extract_archive(source, root)
+            found = detect(case_relative(group, source))
+            if found.get('outcome', NOT_A_PHONE_REPORT) == NOT_A_PHONE_REPORT:
+                return dict(members=extract_archive(source, root), phones=[])
+            target = root / safe_path(member['path'])
+            copy_verified(source, target, member['sha256'], member['size'])
+            return dict(members=[], phones=[dict(
+                path=member['path'], stored_path=str(target), sha256=member['sha256'], size=member['size'],
+                name=PurePosixPath(member['path']).name, kind=found.get('container_kind'), outcome=found['outcome'],
+                roots=[r['root_path'] for r in found.get('roots') or []] or [''],
+                messages=found.get('messages') or [])])
         target = root / safe_path(member['path'])
         copy_verified(source, target, member['sha256'], member['size'])
         prepared.append(dict(path=member['path'], size=member['size'], sha256=member['sha256'], stored_path=str(target)))
-    return prepared
+    found = detect(case_relative(group, root))
+    phones = []
+    for r in (found.get('roots') or []) if found.get('outcome') != NOT_A_PHONE_REPORT else []:
+        # Each report folder is its own container; other files in the same selection stay ordinary evidence,
+        # because documents arriving together need not be related (decision D34).
+        rp = r['root_path']
+        inside = [m for m in prepared if not rp or m['path'].startswith(rp + '/')]
+        phones.append(dict(path=rp, stored_path=str(root / rp) if rp else str(root),
+            sha256=folder_container_sha256([(m['path'][len(rp) + 1:] if rp else m['path'], m['size'], m['sha256'])
+                                            for m in inside]),
+            size=sum(m['size'] for m in inside), name=PurePosixPath(rp).name if rp else group.name,
+            kind='folder', outcome=found['outcome'], roots=[''], member_paths=[m['path'] for m in inside],
+            messages=[m for m in found.get('messages') or [] if m.get('code') != 'several_roots']))
+    claimed = {p for phone in phones for p in phone['member_paths']}
+    return dict(members=[m for m in prepared if m['path'] not in claimed], phones=phones)
+
+
+PROTECTED_TASK_TITLE = 'Unprotected copy needed: {name}'
 
 
 def register_payload(db, group, user, prepared):
-    from routers.evidence import _find_cellebrite_report_roots_from_uploads
-    phone_roots = _find_cellebrite_report_roots_from_uploads([
-        dict(relative_path=m['path'], staged_path=m['stored_path']) for m in prepared])
-    # A parent report owns its nested exports. Do not enqueue that subtree a
-    # second time just because a nested XML also carries the UFED namespace.
-    phone_roots = [root for root in phone_roots if not any(
-        other != root and (not other or root.startswith(other + '/')) for other in phone_roots)]
-    files, dispatch = [], []
-    for member in prepared:
+    """One evidence row per ordinary file; one ``phone_extraction`` evidence row per phone container and one
+    dispatch item per report root in it (01 sections 4.2 step 4 and 4.4). A protected container is dispatched too:
+    the capture job records its container row and hashes and stops with the explanation (2.4, decision D35).
+    A protected container also opens a Workspace task, linked to its evidence row (07 J-1a)."""
+    files, dispatch, notices = [], [], []
+    for member in prepared['members']:
         path = PurePosixPath(member['path'])
-        if any(not root or member['path'].startswith(root + '/') for root in phone_roots):
-            continue
         folder = folder_for_path(db, group, user, str(path.parent))
         records = EvidenceDBStorage.add_files(db, case_id=group.case_id, folder_id=folder,
             owner=user.email, created_by_id=user.id, files_data=[dict(
@@ -257,14 +307,41 @@ def register_payload(db, group, user, prepared):
                     **({'original_archive_sha256': group.manifest[0]['sha256']} if group.kind == 'archive' else {})})])
         db.flush()
         files.extend(str(record.id) for record in records)
-    for root in phone_roots:
-        folder = folder_for_path(db, group, user, root)
-        dispatch.append(dict(request_id=str(uuid5(group.id, 'processing:' + root)),
-            folder_path=str(PurePosixPath('_upload_groups', str(group.id), 'payload', root)),
-            evidence_folder_id=str(folder) if folder else None))
-    return dict(file_ids=files, job_ids=[], dispatch=dispatch,
-        message=f'Uploaded {len(prepared)} files.' + (' Folder structure is retained.' if group.kind != 'files' else '')
-            + (' Phone reports are queued separately for processing.' if dispatch else ' Select Process to start ingestion.'))
+    payload = PurePosixPath('_upload_groups', str(group.id), 'payload')
+    for phone in prepared['phones']:
+        folder = folder_for_path(db, group, user, str(PurePosixPath(phone['path']).parent))
+        [record] = EvidenceDBStorage.add_files(db, case_id=group.case_id, folder_id=folder, owner=user.email,
+            created_by_id=user.id, files_data=[dict(
+                original_filename=phone['name'], stored_path=phone['stored_path'], sha256=phone['sha256'],
+                size=phone['size'], source_type='phone_extraction',
+                metadata={'upload_group_id': str(group.id), 'relative_path': phone['path'],
+                          'phone_container_kind': phone['kind'], 'phone_detect_outcome': phone['outcome'],
+                          'phone_detect_messages': phone['messages']})])
+        db.flush()
+        files.append(str(record.id))
+        notices.extend(m['text'] for m in phone['messages'])
+        if phone['outcome'] != 'readable':
+            from postgres.models.work import CaseTask
+            from services.work_service import _replace_links
+            text = phone['messages'][0]['text'] if phone['messages'] else ''
+            task = CaseTask(case_id=group.case_id, title=PROTECTED_TASK_TITLE.format(name=phone['name'])[:512],
+                            description=text or None, status='todo', priority='standard',
+                            created_by_user_id=user.id, updated_by_user_id=user.id)
+            db.add(task)
+            db.flush()
+            _replace_links(db, task=task, links=[dict(target_type='evidence', target_id=str(record.id))], user=user)
+        container = str(payload / phone['path']) if phone['path'] else str(payload)
+        for rp in phone['roots']:
+            dispatch.append(dict(request_id=str(uuid5(group.id, 'phone-capture:%s:%s' % (phone['path'], rp))),
+                container_path=container, root_path=rp, evidence_folder_id=str(folder) if folder else None,
+                container_evidence_id=str(record.id), upload_sha256=phone['sha256'], original_name=phone['name']))
+    count = len(prepared['members']) + sum(len(p.get('member_paths') or [1]) for p in prepared['phones'])
+    message = f'Uploaded {count} files.' + (' Folder structure is retained.' if group.kind != 'files' else '')
+    if notices:
+        message += ' ' + ' '.join(notices)
+    elif prepared['members']:
+        message += ' Select Process to start ingestion.'
+    return dict(file_ids=files, job_ids=[], dispatch=dispatch, message=message)
 
 
 def folder_for_path(db, group, user, relative_path):
@@ -278,12 +355,27 @@ async def dispatch_reports(group, user):
     from services import evidence_engine_client
     jobs = []
     for item in group.receipt.get('dispatch', []):
-        job = await evidence_engine_client.create_cellebrite_job(str(group.case_id),
-            folder_path=item['folder_path'], evidence_folder_id=item['evidence_folder_id'],
-            owner=user.email, force=group.replace_existing, requested_by_user_id=str(user.id),
-            request_id=item['request_id'])
+        job = await evidence_engine_client.create_phone_capture_job(
+            str(group.case_id), request_id=item['request_id'], container_path=item['container_path'],
+            root_path=item['root_path'], container_evidence_id=item['container_evidence_id'],
+            evidence_folder_id=item['evidence_folder_id'], requested_by_user_id=str(user.id),
+            original_name=item.get('original_name'), upload_sha256=item.get('upload_sha256'),
+            upload_group_id=str(group.id))
         jobs.append(str(job['id']))
     return jobs
+
+
+def engine_detector(case_id):
+    """The engine's classification, called from the worker thread that prepares the payload."""
+    import anyio.from_thread
+    from services import evidence_engine_client
+
+    def detect(path):
+        try:
+            return anyio.from_thread.run(evidence_engine_client.detect_phone_container, str(case_id), path)
+        except Exception as exc:
+            raise HTTPException(503, DETECT_UNAVAILABLE) from exc
+    return detect
 
 
 @router.post('/{identity}/{action}')
@@ -316,7 +408,7 @@ async def group_action(identity: UUID, action: str, user: User = Depends(get_cur
         return answer
     if not group.receipt:
         try:
-            prepared = await run_in_threadpool(prepare_payload, group, rows)
+            prepared = await run_in_threadpool(prepare_payload, group, rows, engine_detector(group.case_id))
         except HTTPException as exc:
             if exc.status_code == 409:
                 def mark_unfinished():
@@ -337,7 +429,7 @@ async def group_action(identity: UUID, action: str, user: User = Depends(get_cur
         await run_in_threadpool(register)
     # What the engine calls read, loaded here: after a commit the objects reload on first use.
     dispatch = await run_in_threadpool(lambda: None if group.status != 'dispatching' else (
-        SimpleNamespace(case_id=group.case_id, receipt=group.receipt, replace_existing=group.replace_existing),
+        SimpleNamespace(id=group.id, case_id=group.case_id, receipt=group.receipt),
         SimpleNamespace(email=user.email, id=user.id)))
     if dispatch is not None:
         try:

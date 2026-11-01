@@ -588,6 +588,7 @@ class ProcessingRouteRefusalTestCase(unittest.TestCase):
             original_filename=path.name,
             engine_job_id=None,
             last_error=None,
+            source_type=None,
         )
 
     def run_process(self, rows, *, held):

@@ -60,7 +60,8 @@ async def close():
 
 
 async def control_job(job_id: str, case_id: str, action: str):
-    if action not in {"pause", "resume"}:
+    """pause, resume, or cancel (phone readings only; the engine refuses it for an extraction already in the case)."""
+    if action not in {"pause", "resume", "cancel"}:
         raise ValueError("Invalid ingestion action")
     response = await _get_client().post(f"/jobs/{job_id}/{action}", params={"case_id": case_id})
     response.raise_for_status()
@@ -161,48 +162,42 @@ async def upload_file_paths_batch(
         return response.json()
 
 
-async def create_cellebrite_job(
-    case_id: str,
-    *,
-    folder_path: str,
-    evidence_folder_id: str | None = None,
-    report_name: str | None = None,
-    report_key: str | None = None,
-    owner: str | None = None,
-    force: bool = False,
-    requested_by_user_id: str | None = None,
-    request_id: str | None = None,
-) -> Dict[str, Any]:
-    """
-    Create a real evidence-engine job for a staged Cellebrite report folder.
-
-    folder_path is relative to the shared evidence data root for {case_id}; the evidence-engine
-    worker resolves it under its mounted CELLEBRITE_DATA_ROOT.
-    """
+async def detect_phone_container(case_id: str, path: str) -> Dict[str, Any]:
+    """Classify a staged upload as a phone report (01 section 2.5). Detection never writes and never extracts."""
     client = _get_client()
-    response = await client.post(
-        f"/cases/{case_id}/cellebrite/jobs",
-        json={
-            "folder_path": folder_path,
-            "evidence_folder_id": evidence_folder_id,
-            "report_name": report_name,
-            "report_key": report_key,
-            "owner": owner,
-            "force": force,
-            "requested_by_user_id": requested_by_user_id,
-            "request_id": request_id,
-        },
-    )
+    response = await client.post(f"/cases/{case_id}/phone/detect", json={"path": path})
     response.raise_for_status()
     return response.json()
 
 
-async def check_cellebrite_folder(case_id: str, *, folder_path: str) -> Dict[str, Any]:
-    """Check a staged folder for a Cellebrite UFED report via evidence-engine."""
+async def create_phone_capture_job(
+    case_id: str,
+    *,
+    request_id: str,
+    container_path: str,
+    root_path: str,
+    container_evidence_id: str,
+    evidence_folder_id: str | None = None,
+    requested_by_user_id: str | None = None,
+    original_name: str | None = None,
+    upload_sha256: str | None = None,
+    upload_group_id: str | None = None,
+) -> Dict[str, Any]:
+    """Create (or return, on a repeated ``request_id``) the phone capture job for one report root."""
     client = _get_client()
-    response = await client.get(
-        f"/cases/{case_id}/cellebrite/check",
-        params={"folder_path": folder_path},
+    response = await client.post(
+        f"/cases/{case_id}/phone/jobs",
+        json={
+            "request_id": request_id,
+            "container_path": container_path,
+            "root_path": root_path,
+            "container_evidence_id": container_evidence_id,
+            "evidence_folder_id": evidence_folder_id,
+            "requested_by_user_id": requested_by_user_id,
+            "original_name": original_name,
+            "upload_sha256": upload_sha256,
+            "upload_group_id": upload_group_id,
+        },
     )
     response.raise_for_status()
     return response.json()

@@ -39,6 +39,7 @@ async def test_process_files_recovers_jobs_when_upload_response_fails_after_acce
         id=evidence_id,
         case_id=case_id,
         status="unprocessed",
+        source_type=None,
         processing_stale=False,
         stored_path=str(stored_file),
         folder_id=None,

@@ -89,6 +89,9 @@ async def lifespan(app: FastAPI):
     # What this process runs, for /health (deploy records it as last good).
     from services.runtime_version import record_started_commit
     record_started_commit()
+    # Phone links (phone_extraction, phone_file) are checked against the capture tables (07 section 6).
+    from services.phone import resolvers as phone_resolvers
+    phone_resolvers.register()
     try:
         # Reload snapshots from disk (non-blocking)
         snapshot_storage.reload()
@@ -292,6 +295,8 @@ from routers.request_speed import router as request_speed_router
 app.include_router(request_speed_router)
 from routers.ui_problem_reports import router as ui_problem_reports_router
 app.include_router(ui_problem_reports_router)
+from routers.phone_extractions import router as phone_extractions_router
+app.include_router(phone_extractions_router)
 
 
 @app.get("/")

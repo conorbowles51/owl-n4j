@@ -55,6 +55,7 @@ CREATE TABLE phone_extractions (
   supersedes_id         uuid REFERENCES phone_extractions(id),
   superseded_at         timestamptz,
   superseded_by_user_id uuid REFERENCES users(id) ON DELETE SET NULL,
+  superseded_reason     text,                -- the typed reason for Replace or Retire (01 section 10.7, D35)
   report_version        varchar(32),
   producer_version      varchar(64),
   extraction_type       varchar(64),
@@ -120,6 +121,7 @@ CREATE TABLE phone_files (
   extraction_id    uuid NOT NULL,
   document_index   smallint NOT NULL,
   ordinal          integer NOT NULL,
+  file_uid         uuid NOT NULL,          -- 02 section 1.2: uuid5 of the positional key, written at capture
   parent_ordinal   integer,
   source_file_id   varchar(128),
   local_path       text,
@@ -139,6 +141,7 @@ CREATE TABLE phone_files (
   FOREIGN KEY (extraction_id, document_index) REFERENCES phone_extraction_documents ON DELETE CASCADE
 );
 CREATE INDEX ix_phone_files_source_id ON phone_files(extraction_id, source_file_id);
+CREATE UNIQUE INDEX uq_phone_files_file_uid ON phone_files(file_uid);
 CREATE INDEX ix_phone_files_path ON phone_files(extraction_id, lower(replace(local_path, '\', '/')));
 CREATE INDEX ix_phone_files_content ON phone_files(disk_sha256) WHERE disk_sha256 IS NOT NULL;
 

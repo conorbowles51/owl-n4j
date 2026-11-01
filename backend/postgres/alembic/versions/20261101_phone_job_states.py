@@ -1,4 +1,5 @@
-"""Engine job states for phone capture (01 section 10.3, unit 2.1): verifying_source, capturing, reconciling.
+"""Engine job states for phone capture (01 section 10.3, unit 2.1): verifying_source, capturing, reconciling; and
+the two stages after capture, interpreting and building_views (07 section 5, Intake).
 
 Without them the job card would show a phone reading as "Extracting Text" or a raw status string (decision D19).
 PostgreSQL cannot drop an enum value, so downgrade leaves them; no row uses them until a phone job runs.
@@ -12,7 +13,7 @@ depends_on = None
 
 
 def upgrade():
-    for value in ("verifying_source", "capturing", "reconciling"):
+    for value in ("verifying_source", "capturing", "reconciling", "interpreting", "building_views"):
         op.execute("ALTER TYPE jobstatus ADD VALUE IF NOT EXISTS '%s'" % value)
 
 

@@ -59,9 +59,24 @@ def endpoint(monkeypatch):
         "status": status,
         "run_in_threadpool": run_in_threadpool,
         "_resolve_stored_path": Mock(),
+        "_refuse_phone_containers": Mock(),
     }
     exec(compile(ast.Module(body=[handler], type_ignores=[]), str(source), "exec"), namespace)
+    namespace[handler.name].namespace = namespace
     return namespace[handler.name], case_service, classifier
+
+
+@pytest.mark.asyncio
+async def test_preflight_refuses_a_phone_report_before_classifying_anything(endpoint):
+    handler, access, classifier = endpoint
+
+    def refuse(db, ids):
+        raise HTTPException(status_code=409, detail="Phone reports are read automatically when uploaded.")
+    handler.namespace["_refuse_phone_containers"] = Mock(side_effect=refuse)
+    with pytest.raises(HTTPException) as e:
+        await handler(SimpleNamespace(case_id=str(uuid4()), file_ids=[str(uuid4())]), object(), object())
+    assert (e.value.status_code, e.value.detail) == (409, "Phone reports are read automatically when uploaded.")
+    classifier.check_case_files.assert_not_called()
 
 
 @pytest.mark.asyncio

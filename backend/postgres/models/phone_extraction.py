@@ -68,6 +68,7 @@ class PhoneExtraction(Base):
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     superseded_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         _uuid(), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    superseded_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     report_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     producer_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     extraction_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -140,6 +141,8 @@ class PhoneFile(Base):
     extraction_id: Mapped[uuid.UUID] = mapped_column(_uuid(), primary_key=True)
     document_index: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
     ordinal: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # 02 section 1.2: the id a phone file is linked by, uuid5 of the positional key (services.phone.ids)
+    file_uid: Mapped[uuid.UUID] = mapped_column(_uuid(), nullable=False, unique=True)
     parent_ordinal: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source_file_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     local_path: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -59,14 +59,19 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 EVIDENCE_ROOT_DIR = EVIDENCE_DATA_ROOT
 
-# Uploaded bytes land here first so large evidence and Cellebrite archives are
-# streamed to disk instead of being held in memory.
-_UPLOAD_STAGING_ROOT = EVIDENCE_ROOT_DIR / "_staging"
+# Uploaded bytes land in <case>/_staging/<id> first so large evidence is streamed to disk instead of being held in
+# memory, inside the case so the engine's phone detector can read it.
+_UPLOAD_STAGING_NAME = "_staging"
+# An uploaded zip, kept as received after its members are registered (01 section 3 step 4).
+_RECEIVED_ARCHIVES_NAME = "_received_archives"
+# Case-directory entries that are Loupe's own working areas, never evidence to register by a filesystem sync.
+_SYNC_SKIP_DIRS = {_UPLOAD_STAGING_NAME, _RECEIVED_ARCHIVES_NAME}
+PHONE_UPLOAD_REFUSED = "Upload phone reports with the folder or archive upload"
+PHONE_PROCESS_REFUSED = "Phone reports are read automatically when uploaded."
 _STAGE_CHUNK_SIZE = 1024 * 1024
 
-# Cellebrite Reader exports commonly include these platform sidecars.
+# Platform sidecars that archive tools add; never evidence.
 _ARCHIVE_SKIP_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
-_CELLEBRITE_NS_MARKER = b"http://pa.cellebrite.com/report/2.0"
 
 # Most file ids one ``/route-check`` request may ask about. Only that read
 # endpoint is limited; processing requests are uncapped since 7d04cb24. The
@@ -280,21 +285,6 @@ def _stream_sha256(path: Path) -> tuple[str, int]:
     return hasher.hexdigest(), size
 
 
-def _is_cellebrite_report_root(dir_path: Path) -> bool:
-    """Cheaply detect a Cellebrite UFED report root by reading XML headers."""
-    try:
-        for xml_file in dir_path.glob("*.xml"):
-            try:
-                with xml_file.open("rb") as handle:
-                    if _CELLEBRITE_NS_MARKER in handle.read(4096):
-                        return True
-            except (OSError, IOError):
-                continue
-    except (OSError, IOError):
-        return False
-    return False
-
-
 def _stage_upload_files(files: List[StarletteUploadFile], staging_dir: Path) -> List[dict]:
     """
     Stream UploadFile objects into staging and return metadata for persistence.
@@ -348,13 +338,42 @@ def _stage_upload_files(files: List[StarletteUploadFile], staging_dir: Path) -> 
     return staged
 
 
+async def _detect_phone(case_id: str, path: Path) -> dict:
+    """The engine's phone classification (01 section 2.5) of a path inside the case directory."""
+    rel = path.relative_to(EVIDENCE_ROOT_DIR / case_id).as_posix()
+    return await evidence_engine_client.detect_phone_container(case_id, rel)
+
+
+async def _refuse_phone_report(case_id: str, path: Path) -> None:
+    """409 when the staged upload holds a phone report, readable or protected (01 section 4.1)."""
+    if not USE_EVIDENCE_ENGINE:
+        return  # no phone reading on this installation; the upload is ordinary evidence, as before the engine
+    try:
+        found = await _detect_phone(case_id, path)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="The upload could not be checked for phone reports. Nothing "
+                                                    "was registered. Try again shortly.") from exc
+    if found.get("outcome", "not_a_phone_report") != "not_a_phone_report":
+        raise HTTPException(status_code=409, detail=PHONE_UPLOAD_REFUSED)
+
+
+def _keep_original_archive(case_id: str, upload: dict) -> Path:
+    """Move an uploaded zip out of staging into the case's received-archives area, never overwriting."""
+    staged = Path(upload["staged_path"])
+    target = EVIDENCE_ROOT_DIR / case_id / _RECEIVED_ARCHIVES_NAME / uuid_mod.uuid4().hex / staged.name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(staged), str(target))
+    return target
+
+
 def _extract_archive_to_staging(zip_path: Path, extract_dir: Path) -> List[dict]:
     """
     Extract a zip safely into staging and return upload metadata.
 
-    This is the Neil flow, adapted for Postgres storage: a single large
-    Cellebrite zip can be posted as one multipart part, then unpacked server
-    side with zip-slip protection.
+    An ordinary zip posted as one multipart part is unpacked server side with
+    zip-slip protection. Phone reports never reach here: the upload refuses
+    them first and they go through the resumable group upload, which keeps the
+    container whole.
     """
     extract_dir.mkdir(parents=True, exist_ok=True)
     extract_root = extract_dir.resolve()
@@ -410,41 +429,6 @@ def _extract_archive_to_staging(zip_path: Path, extract_dir: Path) -> List[dict]
     return uploads
 
 
-def _find_cellebrite_report_roots(extract_dir: Path) -> List[str]:
-    roots: List[str] = []
-    if _is_cellebrite_report_root(extract_dir):
-        roots.append("")
-    try:
-        for child in extract_dir.iterdir():
-            if child.is_dir() and _is_cellebrite_report_root(child):
-                roots.append(child.name)
-    except OSError:
-        pass
-    return roots
-
-
-def _find_cellebrite_report_roots_from_uploads(uploads: List[dict]) -> List[str]:
-    """Detect Cellebrite report roots from staged folder-upload metadata."""
-    roots: List[str] = []
-    seen = set()
-    for upload in uploads:
-        relative_path = _safe_relative_path(upload.get("relative_path") or "")
-        if relative_path.suffix.lower() != ".xml":
-            continue
-        try:
-            with Path(upload["staged_path"]).open("rb") as handle:
-                if _CELLEBRITE_NS_MARKER not in handle.read(4096):
-                    continue
-        except (OSError, IOError):
-            continue
-
-        root = "" if len(relative_path.parts) == 1 else str(relative_path.parent).replace("\\", "/")
-        if root not in seen:
-            seen.add(root)
-            roots.append(root)
-    return roots
-
-
 def _get_folder_parts(db: Session, folder_id: Optional[UUID]) -> List[str]:
     if not folder_id:
         return []
@@ -488,106 +472,6 @@ def _get_or_create_folder_chain(
     return current_folder.id if current_folder else parent_id
 
 
-def _resolve_case_folder(case_id: str, folder_path: str) -> Path:
-    case_data_dir = EVIDENCE_ROOT_DIR / case_id
-    full_folder_path = (case_data_dir / folder_path).resolve()
-    try:
-        full_folder_path.relative_to(case_data_dir.resolve())
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Path outside case directory")
-    return full_folder_path
-
-
-def _combine_case_relative_path(prefix_parts: List[str], root: str) -> str:
-    root_parts = [part for part in PurePosixPath(root).parts if part not in ("", ".")]
-    parts = [*prefix_parts, *root_parts]
-    return str(PurePosixPath(*parts)).replace("\\", "/") if parts else "."
-
-
-async def _enqueue_cellebrite_engine_job(
-    *,
-    case_id: str,
-    folder_path: str,
-    evidence_folder_id: Optional[UUID] = None,
-    current_user: User,
-    force: bool,
-    fail_on_duplicate: bool,
-) -> tuple[dict, dict]:
-    if not USE_EVIDENCE_ENGINE:
-        raise HTTPException(status_code=503, detail="Evidence engine is not enabled")
-
-    full_folder_path = _resolve_case_folder(case_id, folder_path)
-    if not full_folder_path.exists() or not full_folder_path.is_dir():
-        raise HTTPException(status_code=404, detail="Folder not found")
-
-    detection = await evidence_engine_client.check_cellebrite_folder(
-        case_id,
-        folder_path=folder_path,
-    )
-    if not detection.get("suitable"):
-        raise HTTPException(
-            status_code=400,
-            detail=detection.get("message", "Not a valid Cellebrite report"),
-        )
-
-    if fail_on_duplicate and detection.get("duplicate") and not force:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "reason": "duplicate_phone_report",
-                "message": detection.get("message"),
-                "existing": detection.get("existing"),
-                "incoming": {
-                    "report_key": detection.get("report_key"),
-                    "device_model": detection.get("device_model"),
-                    "case_number": detection.get("case_number"),
-                    "evidence_number": detection.get("evidence_number"),
-                    "imei": detection.get("imei"),
-                },
-            },
-        )
-
-    job = await evidence_engine_client.create_cellebrite_job(
-        case_id,
-        folder_path=folder_path,
-        evidence_folder_id=str(evidence_folder_id) if evidence_folder_id else None,
-        report_name=detection.get("report_name") or full_folder_path.name,
-        report_key=detection.get("report_key"),
-        owner=current_user.email,
-        force=force,
-        requested_by_user_id=str(current_user.id) if current_user.id else None,
-    )
-    return job, detection
-
-
-def _move_staged_uploads_to_case(
-    *,
-    case_id_text: str,
-    uploads: List[dict],
-    root_parts: List[str],
-) -> None:
-    """Move staged files into a case directory without registering DB rows."""
-    case_dir = EVIDENCE_ROOT_DIR / case_id_text
-    case_dir.mkdir(parents=True, exist_ok=True)
-    case_resolved = case_dir.resolve()
-
-    for upload in uploads:
-        relative_path = _safe_relative_path(upload.get("relative_path") or upload.get("original_filename"))
-        target_relative = PurePosixPath(*root_parts, *relative_path.parts) if root_parts else relative_path
-        target = (case_dir / target_relative).resolve()
-        try:
-            target.relative_to(case_resolved)
-        except ValueError:
-            raise HTTPException(status_code=403, detail="Upload path escaped the case directory")
-
-        target.parent.mkdir(parents=True, exist_ok=True)
-        staged_path = Path(upload["staged_path"])
-        if staged_path.resolve() != target:
-            if target.exists():
-                target.unlink()
-            shutil.move(str(staged_path), str(target))
-
-
 def _persist_staged_uploads(
     *,
     db: Session,
@@ -598,13 +482,11 @@ def _persist_staged_uploads(
     folder_id: Optional[UUID],
     created_by_id: Optional[UUID],
     register_files: bool,
+    metadata: Optional[dict] = None,
 ) -> List[dict]:
     """
     Move staged files into the case directory and optionally create DB rows.
-
-    Cellebrite archives use register_files=False: the raw extraction must exist
-    on disk for the phone ingester, but only linked media should become
-    `source_type='cellebrite'` evidence rows during the Cellebrite ingest.
+    ``metadata`` is added to every registered row.
     """
     case_dir = EVIDENCE_ROOT_DIR / case_id_text
     case_dir.mkdir(parents=True, exist_ok=True)
@@ -644,6 +526,7 @@ def _persist_staged_uploads(
             "stored_path": str(target),
             "sha256": upload["sha256"],
             "size": upload.get("size", 0),
+            **({"metadata": dict(metadata)} if metadata else {}),
         })
 
     created = []
@@ -1015,6 +898,20 @@ def update_transcript_speakers(
 
 
 
+def _phone_report_dirs(case_id: str, case_dir: Path) -> set:
+    """Report folders under the case directory, from the engine's detector, so a sync never registers a phone
+    report's files one by one. Refuses when the detector cannot be reached rather than guessing."""
+    if not USE_EVIDENCE_ENGINE:
+        return set()
+    import anyio.from_thread
+    try:
+        found = anyio.from_thread.run(evidence_engine_client.detect_phone_container, case_id, "")
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Phone report folders could not be identified, so nothing was "
+                                                    "synced. Try again shortly.") from exc
+    return {case_dir / r["root_path"] for r in found.get("roots") or [] if r.get("root_path")}
+
+
 @router.post("/sync-filesystem")
 def sync_filesystem(
     case_id: str = Query(..., description="Case ID to sync"),
@@ -1063,20 +960,21 @@ def sync_filesystem(
                 except Exception:
                     pass
 
-        # Walk the case directory for files without evidence records. Prune
-        # Cellebrite report roots; those are ingested through the dedicated
-        # phone-report pipeline and can contain tens of thousands of artifacts.
+        # Walk the case directory for files without evidence records. Pruned: Loupe's own working areas, phone
+        # containers already registered as one evidence row (a folder container's stored path is the folder), and
+        # phone report folders the engine's detector finds (01 section 4.1). A phone report's files are not
+        # evidence rows (01 D7); one report can hold tens of thousands of them.
         created_count = 0
         grouped: Dict[Optional[UUID], List[dict]] = defaultdict(list)
-        skipped_cellebrite_dirs: List[str] = []
+        phone_roots = _phone_report_dirs(case_id, case_dir)
+        skipped_phone_dirs: List[str] = []
 
         for dirpath, dirnames, filenames in os.walk(case_dir):
             current_dir = Path(dirpath)
-            if current_dir == _UPLOAD_STAGING_ROOT:
-                dirnames[:] = []
-                continue
-            if _is_cellebrite_report_root(current_dir):
-                skipped_cellebrite_dirs.append(str(current_dir.relative_to(case_dir)) or ".")
+            if current_dir == case_dir:
+                dirnames[:] = [name for name in dirnames if name not in _SYNC_SKIP_DIRS]
+            if current_dir != case_dir and (str(current_dir) in known_stored_paths or current_dir in phone_roots):
+                skipped_phone_dirs.append(current_dir.relative_to(case_dir).as_posix())
                 dirnames[:] = []
                 continue
 
@@ -1130,13 +1028,9 @@ def sync_filesystem(
 
         if created_count:
             logger.info(f"Filesystem sync: created {created_count} evidence records for case {case_id}")
-        if skipped_cellebrite_dirs:
-            logger.info(
-                "Filesystem sync: skipped %s Cellebrite report folder(s) for case %s: %s",
-                len(skipped_cellebrite_dirs),
-                case_id,
-                skipped_cellebrite_dirs[:5],
-            )
+        if skipped_phone_dirs:
+            logger.info("Filesystem sync: left %s phone report folder(s) for case %s to the phone upload",
+                        len(skipped_phone_dirs), case_id)
         db.commit()
 
         return {"created": created_count, "message": f"Synced {created_count} file(s)"}
@@ -1180,9 +1074,9 @@ async def upload_evidence(
     Files are streamed to disk-backed staging first, then moved into the case
     evidence directory and registered in Postgres. Folder uploads preserve the
     browser-provided relative paths. Archive uploads (`is_archive=true`) unpack
-    a single .zip server-side; Cellebrite report archives are staged on disk but
-    not registered as generic evidence rows because the dedicated Cellebrite
-    ingester registers linked media with `source_type='cellebrite'`.
+    a single .zip server-side and keep the zip as received. A phone report is
+    refused with 409 before anything is registered: phone reports go through
+    the resumable group upload, which keeps the container whole (01 section 4.1).
     """
     try:
         form = await request.form(max_files=20000, max_fields=20000)
@@ -1225,116 +1119,60 @@ async def upload_evidence(
 
         await run_in_threadpool(check_target)
 
-        staging_dir = _UPLOAD_STAGING_ROOT / uuid_mod.uuid4().hex
-        archive_extract_dir: Optional[Path] = None
+        # Staged inside the case directory so the engine's phone detector can read it (its paths are case-relative).
+        staging_dir = EVIDENCE_ROOT_DIR / str(case_uuid) / _UPLOAD_STAGING_NAME / uuid_mod.uuid4().hex
         try:
             uploads = await run_in_threadpool(_stage_upload_files, files, staging_dir)
             if not uploads:
                 raise HTTPException(status_code=400, detail="No extractable files uploaded")
 
-            cellebrite_roots: List[str] = []
+            kept_archive: Optional[dict] = None
             if is_archive:
                 zip_path = Path(uploads[0]["staged_path"])
                 if not zipfile.is_zipfile(zip_path):
                     raise HTTPException(status_code=400, detail="Uploaded archive is not a valid .zip file")
-                archive_extract_dir = staging_dir / "_extracted"
-                uploads = await run_in_threadpool(_extract_archive_to_staging, zip_path, archive_extract_dir)
-                try:
-                    zip_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                await _refuse_phone_report(str(case_uuid), zip_path)
+                kept_archive = uploads[0]
+                uploads = await run_in_threadpool(_extract_archive_to_staging, zip_path, staging_dir / "_extracted")
                 if not uploads:
                     raise HTTPException(status_code=400, detail="Archive contained no extractable files")
-                cellebrite_roots = _find_cellebrite_report_roots(archive_extract_dir)
-            elif is_folder:
-                cellebrite_roots = _find_cellebrite_report_roots_from_uploads(uploads)
+            else:
+                await _refuse_phone_report(str(case_uuid), staging_dir)
 
             # The user is handed on as its two fields, read here: after the commit the row would reload on the loop.
             def register():
-                register_files = not bool(cellebrite_roots)
-                if register_files:
-                    records = _persist_staged_uploads(
-                        db=db,
-                        case_id=case_uuid,
-                        case_id_text=case_id,
-                        uploads=uploads,
-                        owner=current_user.email,
-                        folder_id=folder_uuid,
-                        created_by_id=current_user.id,
-                        register_files=True,
-                    )
-                else:
-                    root_parts = _get_folder_parts(db, folder_uuid)
-                    _move_staged_uploads_to_case(
-                        case_id_text=case_id,
-                        uploads=uploads,
-                        root_parts=root_parts,
-                    )
-                    records = []
-
-                report_folder_ids: Dict[str, Optional[UUID]] = {}
-                if cellebrite_roots:
-                    for root in cellebrite_roots:
-                        root_parts = [part for part in PurePosixPath(root).parts if part]
-                        if root_parts:
-                            report_folder_ids[root] = _get_or_create_folder_chain(
-                                db,
-                                case_id=case_uuid,
-                                parts=root_parts,
-                                parent_id=folder_uuid,
-                                created_by_id=current_user.id,
-                            )
-                        else:
-                            report_folder_ids[root] = folder_uuid
-
-                db.commit()
-                prefix_parts = _get_folder_parts(db, folder_uuid) if cellebrite_roots and folder_uuid else []
-                return records, report_folder_ids, prefix_parts, SimpleNamespace(email=current_user.email,
-                                                                                 id=current_user.id)
-
-            records, report_folder_ids, prefix_parts, owner = await run_in_threadpool(register)
-
-            if cellebrite_roots:
-                queued_jobs = []
-                queued_roots = []
-                for root in cellebrite_roots:
-                    report_folder = _combine_case_relative_path(prefix_parts, root)
-                    job, _detection = await _enqueue_cellebrite_engine_job(
-                        case_id=case_id,
-                        folder_path=report_folder,
-                        evidence_folder_id=report_folder_ids.get(root),
-                        current_user=owner,
-                        force=replace_existing,
-                        fail_on_duplicate=False,
-                    )
-                    queued_jobs.append(str(job.get("id")))
-                    queued_roots.append(report_folder)
-
-                roots_display = ", ".join(queued_roots)
-                return UploadResponse(
-                    files=[],
-                    job_ids=queued_jobs,
-                    message=(
-                        "Uploaded Cellebrite archive and queued processing for "
-                        f"{roots_display}"
-                    ),
+                metadata = None
+                if kept_archive is not None:
+                    # The uploaded zip is kept beside the case as received (01 section 3 step 4); every member row
+                    # names it.
+                    kept = _keep_original_archive(str(case_uuid), kept_archive)
+                    metadata = {"original_archive_sha256": kept_archive["sha256"],
+                                "original_archive_path": str(kept)}
+                records = _persist_staged_uploads(
+                    db=db,
+                    case_id=case_uuid,
+                    case_id_text=case_id,
+                    uploads=uploads,
+                    owner=current_user.email,
+                    folder_id=folder_uuid,
+                    created_by_id=current_user.id,
+                    register_files=True,
+                    metadata=metadata,
                 )
+                db.commit()
+                return records
 
+            records = await run_in_threadpool(register)
             upload_kind = "folder" if is_folder or is_archive else "file"
             return UploadResponse(
                 files=records,
                 job_ids=None,
                 message=f"Uploaded {len(records)} {upload_kind}{'' if len(records) == 1 else 's'}",
             )
-        except Exception:
-            shutil.rmtree(staging_dir, ignore_errors=True)
-            raise
         finally:
-            try:
-                if staging_dir.exists() and not any(staging_dir.iterdir()):
-                    staging_dir.rmdir()
-            except OSError:
-                pass
+            # On success every staged file has moved into the case and only empty directories remain; on failure
+            # nothing staged was registered.
+            shutil.rmtree(staging_dir, ignore_errors=True)
     except HTTPException:
         raise
     except Exception as e:
@@ -1381,6 +1219,7 @@ async def process_evidence_background(
             except (CaseNotFound, CaseAccessDenied) as e:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
+        await run_in_threadpool(_refuse_phone_containers, db, request.file_ids)
         db_backed_ids, missing_ids = await run_in_threadpool(_split_db_backed_legacy, request.file_ids, db)
         if missing_ids:
             raise HTTPException(
@@ -1438,13 +1277,10 @@ async def process_evidence_background(
         # ``/route-check`` -- whose answer, taken later, may not be the one
         # this refusal was based on.
         #
-        # Placed before the catch-all below, which is the only reason this
-        # survives at all.  That catch-all has no ``except HTTPException:
-        # raise`` in front of it, so this handler's own 404 for unknown file
-        # ids is currently reported as a 500; see ``/route-check``, which says
-        # so.  That defect is not fixed here and this branch does not depend on
-        # it being fixed.
         raise HTTPException(status_code=409, detail=e.as_dict())
+    except HTTPException:
+        # A 403, 404 or 409 raised above stays what it is; only an unexpected failure is a 500.
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1465,10 +1301,9 @@ async def check_evidence_financial_route(
     The result is indistinguishable downstream from a parsed reading, so the
     only place to tell them apart is before the choice is made.
 
-    Mirrors the role of ``/cellebrite/check`` -- a cheap "what is this?" ahead
-    of an expensive process -- but takes ``file_ids`` rather than a folder path,
-    because that is what this pipeline processes and what the caller is about to
-    pass to ``/process/background``.  For the same reason there is no path
+    A cheap "what is this?" ahead of an expensive process. It takes
+    ``file_ids``, because that is what this pipeline processes and what the
+    caller is about to pass to ``/process/background``.  For the same reason there is no path
     traversal guard: the paths come from evidence rows scoped to a case the
     caller can already see, not from the caller, which is a stronger guarantee
     than checking a string for "..".
@@ -1485,8 +1320,7 @@ async def check_evidence_financial_route(
         except ValueError:
             raise HTTPException(status_code=400, detail="case_id is not a valid UUID")
 
-        # A read, so viewing the case is the right bar -- the same one
-        # ``/cellebrite/check`` sets, and lower than the ``evidence:upload``
+        # A read, so viewing the case is the right bar -- lower than the ``evidence:upload``
         # that ``/process/background`` requires.  Someone who may look at a case
         # may ask what its files are without being able to spend money on them.
         try:
@@ -1514,6 +1348,7 @@ async def check_evidence_financial_route(
                 detail=f"{len(malformed)} file id(s) are not valid UUIDs: {', '.join(malformed[:5])}",
             )
 
+        await run_in_threadpool(_refuse_phone_containers, db, file_uuids)
         checks = await run_in_threadpool(
             check_case_files,
             db,
@@ -1527,9 +1362,7 @@ async def check_evidence_financial_route(
             "summary": summarise(checks),
         }
     except HTTPException:
-        # Re-raised before the catch-all so that a 400 or a 403 stays what it
-        # is.  ``/process/background`` above omits this and turns its own
-        # permission denials into 500s; that is not copied here.
+        # Re-raised before the catch-all so that a 400, 403 or 409 stays what it is.
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1561,6 +1394,7 @@ async def process_evidence(
             except (CaseNotFound, CaseAccessDenied) as e:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
+        await run_in_threadpool(_refuse_phone_containers, db, request.file_ids)
         db_backed_ids, missing_ids = await run_in_threadpool(_split_db_backed_legacy, request.file_ids, db)
         if missing_ids:
             raise HTTPException(
@@ -1592,6 +1426,8 @@ async def process_evidence(
         # the same shape.  Both routes reach ``process_db_files``, so a gate on
         # only one of them would be a door with a lock beside it.
         raise HTTPException(status_code=409, detail=e.as_dict())
+    except HTTPException:
+        raise
     except ImportError as e:
         raise HTTPException(
             status_code=500,
@@ -1599,6 +1435,19 @@ async def process_evidence(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _refuse_phone_containers(db: Session, file_ids) -> None:
+    """409 when a phone report's evidence row is asked to be processed: the capture job reads it (01 section 4.4)."""
+    ids = []
+    for raw in file_ids or []:
+        try:
+            ids.append(UUID(str(raw)))
+        except (ValueError, TypeError, AttributeError):
+            continue
+    if ids and db.scalar(select(EvidenceFile.id).where(EvidenceFile.id.in_(ids),
+                                                        EvidenceFile.source_type == "phone_extraction").limit(1)):
+        raise HTTPException(status_code=409, detail=PHONE_PROCESS_REFUSED)
 
 
 def _split_db_backed_legacy(file_ids: List[str], db: Session) -> tuple:
@@ -1780,14 +1629,24 @@ async def delete_engine_job(
 @router.post("/engine/jobs/{job_id}/{action}")
 async def control_engine_job(job_id: str, action: str,
     current_user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
-    if action not in {"pause", "resume"}:
+    if action not in {"pause", "resume", "cancel"}:
         raise HTTPException(status_code=404, detail="Unknown job action")
     record = await run_in_threadpool(EvidenceDBStorage.find_by_engine_job_id, db, job_id)
-    if record is None:
-        raise HTTPException(status_code=404, detail="Evidence job not found")
-    await run_in_threadpool(authorize_case, db, record.case_id, current_user, ("evidence", "upload"))
+    case_id = record.case_id if record is not None else None
+    if case_id is None:
+        # A phone reading belongs to its container's evidence row, not to one row per job; its case is the job's.
+        try:
+            job = await evidence_engine_client.get_job(job_id)
+        except Exception:
+            job = None
+        if not job or job.get("job_type") != "phone_capture":
+            raise HTTPException(status_code=404, detail="Evidence job not found")
+        case_id = UUID(str(job["case_id"]))
+    if action == "cancel" and (record is not None):
+        raise HTTPException(status_code=409, detail="Only phone report readings can be cancelled")
+    await run_in_threadpool(authorize_case, db, case_id, current_user, ("evidence", "upload"))
     try:
-        return await evidence_engine_client.control_job(job_id, str(record.case_id), action)
+        return await evidence_engine_client.control_job(job_id, str(case_id), action)
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=exc.response.status_code,
             detail=exc.response.json().get("detail", "Could not change processing state")) from exc
@@ -1870,23 +1729,6 @@ class WiretapProcessResponse(BaseModel):
     success: bool
     message: str
     task_id: Optional[str] = None  # First task ID for backwards compatibility
-
-
-class CellebriteProcessRequest(BaseModel):
-    """Request to process a Cellebrite UFED report folder."""
-    case_id: str
-    folder_path: str
-    force: bool = False
-    replace_existing: bool = False
-
-
-class CellebriteProcessResponse(BaseModel):
-    """Response from Cellebrite processing."""
-    success: bool
-    message: str
-    task_id: Optional[str] = None
-    job_id: Optional[str] = None
-    job_ids: Optional[List[str]] = None
 
 
 @router.post("/wiretap/process", response_model=WiretapProcessResponse)
@@ -2093,105 +1935,6 @@ def process_wiretap_folders(
             success=True,
             message=f"Processing {len(validated_paths)} wiretap folder(s) in background ({len(task_ids)} task(s) created)",
             task_id=task_ids[0] if task_ids else None
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ------------------------------------------------------------------
-# Cellebrite UFED Report endpoints
-# ------------------------------------------------------------------
-
-
-@router.get("/cellebrite/check")
-async def check_cellebrite_folder(
-    case_id: str = Query(..., description="Case ID"),
-    folder_path: str = Query(..., description="Relative folder path from case data directory"),
-    current_user: User = Depends(get_current_db_user),
-    db: Session = Depends(get_db),
-):
-    """Check if a case folder contains a Cellebrite UFED report."""
-    try:
-        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
-        case_uuid = UUID(case_id)
-        try:
-            await run_in_threadpool(check_case_access, db, case_uuid, current_user, required_permission=("case", "view"))
-        except (CaseNotFound, CaseAccessDenied) as e:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
-
-        if not folder_path or ".." in folder_path or folder_path.startswith(("/", "\\")):
-            raise HTTPException(status_code=403, detail="Path outside case directory")
-
-        if not USE_EVIDENCE_ENGINE:
-            raise HTTPException(status_code=503, detail="Evidence engine is not enabled")
-
-        return await evidence_engine_client.check_cellebrite_folder(
-            case_id,
-            folder_path=folder_path,
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/cellebrite/process", response_model=CellebriteProcessResponse)
-async def process_cellebrite_folder(
-    request: CellebriteProcessRequest,
-    current_user: User = Depends(get_current_db_user),
-    db: Session = Depends(get_db),
-):
-    """Queue a Cellebrite UFED report folder for evidence-engine processing."""
-    try:
-        # Async for the engine calls; the access check and the folder chain run in the thread pool. The user is
-        # handed on as its two fields, read there: after the commit the row would reload on the event loop.
-        def register_folders():
-            from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
-            case_uuid = UUID(request.case_id)
-            try:
-                check_case_access(db, case_uuid, current_user, required_permission=("evidence", "upload"))
-            except (CaseNotFound, CaseAccessDenied) as e:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
-
-            if (
-                not request.folder_path
-                or ".." in request.folder_path
-                or request.folder_path.startswith(("/", "\\"))
-            ):
-                raise HTTPException(status_code=403, detail="Path outside case directory")
-
-            force = bool(request.force or request.replace_existing)
-            evidence_folder_id = _get_or_create_folder_chain(
-                db,
-                case_id=case_uuid,
-                parts=[
-                    part
-                    for part in PurePosixPath(request.folder_path).parts
-                    if part not in ("", ".", "..")
-                ],
-                created_by_id=current_user.id,
-            )
-            db.commit()
-            return case_uuid, force, evidence_folder_id, SimpleNamespace(email=current_user.email, id=current_user.id)
-
-        case_uuid, force, evidence_folder_id, owner = await run_in_threadpool(register_folders)
-        job, detection = await _enqueue_cellebrite_engine_job(
-            case_id=request.case_id,
-            folder_path=request.folder_path,
-            evidence_folder_id=evidence_folder_id,
-            current_user=owner,
-            force=force,
-            fail_on_duplicate=True,
-        )
-
-        return CellebriteProcessResponse(
-            success=True,
-            message=f"Cellebrite ingestion queued ({detection.get('model_count', 0)} models to process)",
-            task_id=None,
-            job_id=str(job.get("id")),
-            job_ids=[str(job.get("id"))],
         )
     except HTTPException:
         raise

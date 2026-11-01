@@ -54,6 +54,8 @@ from postgres.models.enums import (
     TransactionDirection,
 )
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
+from postgres.models.phone_extraction import PhoneExtraction, PhoneExtractionContainer
+from postgres.models.evidence_upload import EvidenceUploadGroup
 from postgres.models.financial import (
     FinancialAccount,
     AdjudicationEvent,
@@ -92,6 +94,9 @@ TABLES = [
     FinancialStatementPeriod.__table__,
     FinancialTransaction.__table__,
     AdjudicationEvent.__table__,
+    EvidenceUploadGroup.__table__,
+    PhoneExtractionContainer.__table__,
+    PhoneExtraction.__table__,
 ]
 
 USD = "USD"
@@ -333,6 +338,20 @@ class TheSubject(DecisionTestCase):
         self.assertIn("FinancialTransaction", message)
         self.assertIn("FinancialSourceDocument", message)
 
+    def _phone_report(self):
+        container = PhoneExtractionContainer(
+            id=uuid.uuid4(), case_id=self.case.id, container_kind="folder", stored_path="p",
+            original_name="Phone report", size_bytes=1, sha256="a" * 64, md5="b" * 32,
+            intake_outcome="readable", classification={})
+        report = PhoneExtraction(
+            id=uuid.uuid4(), case_id=self.case.id, report_set_sha256="c" * 64,
+            first_container_id=container.id, form="folder", capture_code_version="t", flags={})
+        self.db.add(container)
+        self.db.flush()
+        self.db.add(report)
+        self.db.flush()
+        return report
+
     def test_every_subject_type_in_the_vocabulary_maps_to_a_model(self):
         """A member with no model would raise ``KeyError`` at the first use."""
         subjects = {
@@ -341,6 +360,7 @@ class TheSubject(DecisionTestCase):
             AdjudicationSubject.source_document: self.document,
             AdjudicationSubject.account: self.account,
             AdjudicationSubject.evidence_file: self.evidence_file,
+            AdjudicationSubject.phone_extraction: self._phone_report(),
         }
         self.assertEqual(set(subjects), set(AdjudicationSubject))
 
