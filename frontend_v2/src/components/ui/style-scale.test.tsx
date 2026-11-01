@@ -98,3 +98,13 @@ describe("badge status variants use the semantic status set (lx-style D)", () =>
     }
   })
 })
+
+describe("callers can still override the shared spacing (lx-style F review)", () => {
+  it("cn lets p-0, h-8 and p-5 replace p-cell, h-row and p-panel", async () => {
+    const { cn } = await import("@/lib/cn")
+    expect(cn("p-cell", "p-0")).toBe("p-0")
+    expect(cn("h-row", "h-8")).toBe("h-8")
+    expect(cn("p-panel", "p-5")).toBe("p-5")
+    expect(cn("p-cell in-data-[density=dense]:py-cell-dense", "px-4")).toBe("p-cell in-data-[density=dense]:py-cell-dense px-4")
+  })
+})

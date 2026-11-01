@@ -277,7 +277,7 @@ export function PaymentNamingPanel({
       ref={panel}
       tabIndex={-1}
       aria-label={readOnly ? "Statement lines of payments without a name" : "Name payments from the statement"}
-      className="finance-panel min-w-0 space-y-3 overflow-auto rounded-lg border p-4 outline-none xl:max-h-[calc(100vh-var(--naming-top)-8px)]"
+      className="finance-panel min-w-0 space-y-3 overflow-auto rounded-lg border p-4 outline-none xl:max-h-[calc(100vh-var(--naming-top)-var(--view-header-h,0px)-8px)]"
       style={{ "--naming-top": `${stickyTop + 8}px` } as CSSProperties}
       data-finance-tone="info"
       onKeyDown={keys}

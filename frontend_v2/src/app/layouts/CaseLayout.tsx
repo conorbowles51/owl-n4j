@@ -27,7 +27,7 @@ export function CaseLayout() {
 
   return (
     <AreaContext.Provider value={view?.area ?? null}>
-    <div className="flex h-full" data-area={view?.area}>
+    <div className="flex h-full [--view-header-h:2.25rem] md:[--view-header-h:2.5rem]" data-area={view?.area}>
       <div className="flex flex-1 flex-col overflow-hidden">
         {view && <ViewHeader view={view} />}
         <div className="flex flex-1 overflow-hidden">

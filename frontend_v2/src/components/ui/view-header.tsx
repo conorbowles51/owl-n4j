@@ -15,7 +15,11 @@ export function ViewHeader({ view, className }: { view: CaseView; className?: st
   const a = AREA_CLASSES[view.area]
   const Icon = view.icon
   useEffect(() => {
+    const previous = document.title
     document.title = `${view.title} · Loupe`
+    return () => {
+      document.title = previous
+    }
   }, [view.title])
   return (
     <header
