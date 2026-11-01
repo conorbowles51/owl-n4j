@@ -124,3 +124,27 @@ class BatchReviewSummaryTests(TestCase):
         self.assertEqual(summary['possible_duplicates'], 1)
         self.assertEqual(summary['total'], 4)
         validate_group('duplicates')
+
+
+class EveryReasonHasALabelTests(TestCase):
+    def test_a_statement_with_printed_pages_missing_is_grouped_with_its_label(self):
+        gap = item(dict(kind='printed_pages_missing', row_id=None, pages=[3],
+                        message='Page 3 of 4 printed pages are not in this PDF.'), can_import=False)
+        result = review_summary([gap])
+        groups = {group['id']: group for group in result['groups']}
+        self.assertEqual(groups['pages_missing']['statement_count'], 1)
+        self.assertEqual(groups['pages_missing']['blocked_statements'], 1)
+        self.assertTrue(groups['pages_missing']['label'])
+
+    def test_every_reason_the_classifier_can_return_has_a_label(self):
+        import ast, inspect
+        from services.financial import batch_review_summary as module
+        tree = ast.parse(inspect.getsource(module.reason))
+        returned = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.isidentifier() \
+                    and node.value == node.value.lower():
+                returned.add(node.value)
+        candidates = {name for name in returned if name in module.REASONS or any(
+            isinstance(n, ast.Return) and isinstance(n.value, ast.Constant) and n.value.value == name for n in ast.walk(tree))}
+        self.assertFalse(candidates - set(module.REASONS))

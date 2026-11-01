@@ -15,6 +15,7 @@ REASONS = {
     'count': ('Possible missing payments', 'The selected payments do not match the printed count, or possible payments were left out. Compare the source rows.'),
     'overlap': ('Overlapping statement dates', 'Compare the statements for duplicate payments. Overlapping dates alone do not establish a duplicate.'),
     'duplicate': ('Possible duplicate statements', 'A separate file has matching bank, account, holder, currency and statement dates. Compare the original, then leave the copy unimported or record why both are needed.'),
+    'pages_missing': ('Printed pages missing from the file', 'The statement numbers its pages and some of those pages are not in this PDF, so payments on them cannot be read. Find the complete statement and add it to the case, or, after checking the original, save a note that the missing pages hold nothing for this period.'),
     'reprint': ('Statement printed twice in one file', 'The same statement period is printed more than once in one PDF and the printings read differently. Compare both printings, then record which one to import.'),
     'saved_review': ('Earlier corrections need comparison', 'Compare and keep the investigator’s saved corrections before confirming the new reading.'),
     'assignment': ('Payments need an account', 'Open the review to assign these payments to the correct account and period.'),

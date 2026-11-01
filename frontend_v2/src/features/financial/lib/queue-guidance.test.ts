@@ -150,3 +150,8 @@ it("asks a person to save one copy of a statement whose copies were all set asid
   expect(guide.title).toBe(issue)
   expect(issueLabel("copies_none_saved")).toBe("No copy saved yet")
 })
+
+it("names a statement with printed pages missing on its filter chip", () => {
+  // The queue sorts pages_missing second (REASON_ORDER); it must not fall back to "Other checks".
+  expect(issueLabel("pages_missing")).toBe("Pages missing from the file")
+})

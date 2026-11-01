@@ -347,6 +347,7 @@ export function guidanceFor(entry: QueueEntry, user?: QueuePerson | null, bucket
 /** Short filter-chip labels, most important first; same words as the titles. */
 export const ISSUE_LABELS: Record<string, string> = {
   import_failed: "Import did not finish",
+  pages_missing: "Pages missing from the file",
   saved_review: "Saved corrections to compare",
   reprint: "Printed twice",
   assignment: "Payments need an account",
