@@ -1,0 +1,44 @@
+"""Host policy memory floors (deploy/hostpolicy).
+
+memory.low is best effort: on 1 Nov 00:16 the kernel swapped 1.4 GB of the live backend out while it used 3.6 GB,
+under its 6G memory.low, and request threads stalled 5-6 s on swap-in. Live services that must stay in RAM carry a
+hard floor (MemoryMin), and every parent slice carries at least the sum of its children's floors, because a child's
+effective memory.min is capped by its parents'.
+"""
+import unittest
+from pathlib import Path
+
+POLICY = Path(__file__).resolve().parents[2] / 'deploy' / 'hostpolicy'
+# The Neo4j container scope is transient; headless/hostpolicy-sweep.sh gives it memory.min 5G.
+NEO4J_MIN = 5 * 1024 ** 3
+UNITS = {'G': 1024 ** 3, 'M': 1024 ** 2, 'K': 1024}
+
+
+def _setting(path, key):
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line.startswith(key + '='):
+            value = line.split('=', 1)[1].strip()
+            return int(value[:-1]) * UNITS[value[-1]] if value[-1] in UNITS else int(value)
+    return 0
+
+
+class HostPolicyMemoryFloors(unittest.TestCase):
+    def test_backend_has_a_hard_floor_at_its_protection(self):
+        conf = POLICY / 'owl-backend-v2.service.d' / '50-lx-hostpolicy.conf'
+        low = _setting(conf, 'MemoryLow')
+        self.assertGreater(low, 0)
+        self.assertGreaterEqual(_setting(conf, 'MemoryMin'), low)
+
+    def test_live_slices_carry_the_sum_of_child_floors(self):
+        children = NEO4J_MIN + _setting(POLICY / 'owl-backend-v2.service.d' / '50-lx-hostpolicy.conf', 'MemoryMin')
+        for unit in ('loupe-live.slice', 'loupe.slice'):
+            self.assertGreaterEqual(_setting(POLICY / unit, 'MemoryMin'), children, unit)
+
+    def test_floors_leave_the_slice_protection_above_them(self):
+        for unit in ('loupe-live.slice', 'loupe.slice'):
+            self.assertGreaterEqual(_setting(POLICY / unit, 'MemoryLow'), _setting(POLICY / unit, 'MemoryMin'), unit)
+
+
+if __name__ == '__main__':
+    unittest.main()
