@@ -366,3 +366,37 @@ def test_an_unfinished_selection_can_be_discarded_and_a_registered_one_cannot(gr
     assert (refused.status_code, refused.json()['detail']) == (409, api.ALREADY_REGISTERED)
     with Session(f.engine) as db:
         assert len(db.scalars(select(EvidenceFile)).all()) == 1
+
+
+def test_the_polled_list_asks_the_database_only_about_files_being_sent(groups):
+    """Saved members keep their chunk folders, so on a phone folder the chunk folders grow to every member. The
+    2 s poll must not list every unsaved member to find the one being sent (profiled live on a 43,123-file folder:
+    40 % of the upload routes' time)."""
+    from sqlalchemy import event
+    f = groups
+    content = {'Bundle/f%03d.txt' % i: b'v%03d ' % i * 8 for i in range(200)}
+    content['Bundle/partial.txt'] = b'partial ' * 12
+    state, _ = start(f, content)
+    by_path = {m['path']: m for m in state['members']}
+    stage(f, dict(state, members=[m for p, m in by_path.items() if p != 'Bundle/partial.txt']), content)
+    assert send(f, by_path['Bundle/partial.txt'], content['Bundle/partial.txt'], 0).status_code == 200
+    statements = []
+
+    def seen(conn, cursor, statement, parameters, context, executemany):
+        statements.append((statement, parameters))
+
+    event.listen(f.engine, 'before_cursor_execute', seen)
+    try:
+        with Session(f.engine) as db:
+            group = api.get_group(db, UUID(state['id']), f.user)
+            statements.clear()
+            listed = api.summary(db, group)
+            asked = [s.replace('\n', ' ') for s, _ in statements
+                     if 'evidence_upload_sessions' in s and 'count(' not in s]
+            full = api.snapshot(db, group, include_members=False)
+    finally:
+        event.remove(f.engine, 'before_cursor_execute', seen)
+    assert listed == full and listed['staged_count'] == 200
+    assert listed['received_bytes'] == sum(len(v) for p, v in content.items() if p != 'Bundle/partial.txt') + 32
+    # beyond the one aggregate count, only the members being sent are asked about, by id
+    assert asked and all('evidence_upload_sessions.id IN (' in s for s in asked), asked

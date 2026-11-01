@@ -107,6 +107,21 @@ def snapshot(db, group, *, include_members=True):
 STAGED = ('staged', 'completed')
 
 
+def _dir_names(path):
+    try:
+        return {entry.name for entry in os.scandir(path) if entry.is_dir()}
+    except FileNotFoundError:
+        return set()
+
+
+def _is_uuid(name):
+    try:
+        UUID(name)
+        return True
+    except ValueError:
+        return False
+
+
 def summary(db, group):
     """The group's counts as ``snapshot(..., include_members=False)`` gives them, without loading its members: the
     uploads list is polled every 2 s and a phone folder has tens of thousands of members. Totals come from one
@@ -118,16 +133,16 @@ def summary(db, group):
         func.count(), func.coalesce(func.sum(S.size), 0), func.coalesce(func.sum(case((saved, 1), else_=0)), 0),
         func.coalesce(func.sum(case((saved, S.size), else_=0)), 0)).where(S.group_id == group.id)).one()
     received = int(staged_bytes)
-    try:
-        started = {entry.name for entry in os.scandir(uploads.ROOT / str(group.case_id)) if entry.is_dir()}
-    except FileNotFoundError:
-        started = set()
-    if started:
-        open_ids = [i for i in db.scalars(select(S.id).where(S.group_id == group.id, ~saved)) if str(i) in started]
-        for at in range(0, len(open_ids), 1000):
-            for row in db.scalars(select(S).where(S.id.in_(open_ids[at:at + 1000]))):
-                received += sum(min(row.chunk_size, row.size - index * row.chunk_size)
-                                for index in uploads.snapshot(row)['received'])
+    # A member with a chunk folder whose file is not yet assembled is the one being sent. Saved members keep their
+    # chunk folders, so on a phone folder the chunk folders grow to every member; asking the database about all of
+    # them on every poll was 40 % of the upload routes' time while a 43,123-file folder was sent (profiled live).
+    sending = _dir_names(uploads.ROOT / str(group.case_id)) - _dir_names(
+        Path(uploads.EVIDENCE_DATA_ROOT) / str(group.case_id) / '_uploads')
+    open_ids = [UUID(name) for name in sending if _is_uuid(name)]
+    for at in range(0, len(open_ids), 1000):
+        for row in db.scalars(select(S).where(S.group_id == group.id, ~saved, S.id.in_(open_ids[at:at + 1000]))):
+            received += sum(min(row.chunk_size, row.size - index * row.chunk_size)
+                            for index in uploads.snapshot(row)['received'])
     return dict(id=str(group.id), case_id=str(group.case_id), name=group.name,
         folder_id=str(group.folder_id) if group.folder_id else None,
         kind=group.kind, status=group.status, replace_existing=group.replace_existing,
