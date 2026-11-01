@@ -99,6 +99,8 @@ const item = z
 const report = z.object({
   case_id: z.string(),
   account_id: z.string().nullable().optional(),
+  // A merged account's checks include its members' periods; this lists the accounts the merge joins.
+  scope_account_ids: z.array(z.string()).nullable().optional(),
   offset: count,
   has_more: z.boolean(),
   applied: z.literal(false),
@@ -163,10 +165,12 @@ export function StatementChecksPanel({
         )
       )
       assertCandidateScope(data, caseId!)
+      const scope = data.scope_account_ids ?? [accountId]
       if (
         accountId &&
         (data.account_id !== accountId ||
-          data.items.some((period) => period.account_id !== accountId))
+          !scope.includes(accountId) ||
+          data.items.some((period) => !scope.includes(period.account_id)))
       )
         throw new Error(
           "Statements returned for a different account. Reload the check."

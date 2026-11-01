@@ -26,11 +26,14 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25, include_nativ
     if type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 25:
         raise StatementCheckError('Invalid statement check page limits.')
     period_query = select(FinancialStatementPeriod).where(FinancialStatementPeriod.case_id == case_id)
+    scope = None
     if account_id is not None:
         account = session.get(FinancialAccount, account_id)
         if account is None or account.case_id != case_id:
             raise StatementCheckError('Account not found in this case.')
-        period_query = period_query.where(FinancialStatementPeriod.account_id.in_(expand_account_ids(session, case_id, [account_id])))
+        # A merged account's statements include its members' periods; each period keeps its own account id.
+        scope = expand_account_ids(session, case_id, [account_id])
+        period_query = period_query.where(FinancialStatementPeriod.account_id.in_(scope))
     periods = list(session.scalars(period_query
         .order_by(FinancialStatementPeriod.period_start.asc().nullslast(), FinancialStatementPeriod.id)
         .offset(offset).limit(limit + 1)))
@@ -112,7 +115,8 @@ def list_statement_checks(session, *, case_id, offset=0, limit=25, include_nativ
                 native_by_document[document.id] = native
             item['native_controls'] = native_by_document[document.id]
         items.append(item)
-    return dict(case_id=str(case_id), account_id=str(account_id) if account_id else None, offset=offset, has_more=len(periods) > limit, items=items,
+    return dict(case_id=str(case_id), account_id=str(account_id) if account_id else None,
+        scope_account_ids=[str(id) for id in scope] if scope is not None else None, offset=offset, has_more=len(periods) > limit, items=items,
         applied=False, native_controls_requested=include_native, limitation='Current opening + admitted row credits − admitted row debits compared with the recorded closing balance. This does not check every printed control, prove complete extraction, or change proof class or admission. Source exclusions still apply.')
 
 

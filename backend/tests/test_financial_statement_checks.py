@@ -112,6 +112,21 @@ class StatementCheckTests(fixture.DuplicateTestCase):
         with self.assertRaises(StatementCheckError): self.read(account_id=self.other_account.id)
         self.assertFalse(self.db.dirty or self.db.new)
 
+    def test_merged_account_returns_its_members_periods_and_the_group_scope(self):
+        # Live 1 Nov (fdaf956c, 3726c790 merged into 1f67ed48): the response listed the member's periods but gave the
+        # page no way to tell they belong to the merged account, so the panel refused the whole check.
+        from postgres.models.financial import FinancialAccount
+        import uuid
+        member = FinancialAccount(id=uuid.uuid4(), case_id=self.case.id, identity_key='member', identifier_as_printed='Member',
+                                  currency='GBP', metadata_={'canonical_account_id': str(self.account.id)})
+        self.db.add(member); self.db.commit()
+        self.make_copy(); self.make_copy(account=member)
+        for selected in (self.account, member):
+            result = self.read(account_id=selected.id)
+            self.assertEqual(sorted(result['scope_account_ids']), sorted([str(self.account.id), str(member.id)]))
+            self.assertEqual({p['account_id'] for p in result['items']}, {str(self.account.id), str(member.id)})
+        self.assertIsNone(self.read()['scope_account_ids'])
+
     def test_balance_convention_requires_retained_controls(self):
         self.make_copy()
         self.assertIsNone(self.read()['items'][0]['balance_convention'])

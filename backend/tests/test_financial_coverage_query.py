@@ -47,6 +47,22 @@ class CoverageQueryTests(fixture.DuplicateTestCase):
         file.case_id = self.other_case.id
         self.db.commit()
         self.assertIsNone(self.read(account_id=self.account.id)['items'][0]['periods'][0]['filename'])
+    def test_merged_account_coverage_counts_its_members_periods(self):
+        # Live 1 Nov: a merged account's coverage counted only the retained account's own statement periods.
+        from postgres.models.financial import FinancialAccount
+        member=FinancialAccount(id=uuid4(),case_id=self.case.id,identity_key='member',identifier_as_printed='Member',
+                                currency=self.account.currency,metadata_={'canonical_account_id':str(self.account.id)})
+        self.db.add(member);self.db.commit()
+        self.make_copy();self.make_copy(account=member,bounds=PeriodBounds.printed(date(2026,3,1),date(2026,3,31)))
+        result=self.read(account_id=self.account.id);item=result["items"][0]
+        self.assertEqual(item["account_id"],str(self.account.id))
+        self.assertEqual({p["account_id"] for p in item["periods"]},{str(self.account.id),str(member.id)})
+        self.assertEqual(item["currencies"][0]["period_count"],2)
+        self.assertEqual(sorted(result["scope_account_ids"]),sorted([str(self.account.id),str(member.id)]))
+        whole=self.read()
+        self.assertIsNone(whole["scope_account_ids"])
+        self.assertEqual({i["account_id"]:len(i["periods"]) for i in whole["items"] if i["periods"]},
+                         {str(self.account.id):1,str(member.id):1})
     def test_scoped_read_retains_exclusions_and_no_writes(self):
         first=self.make_copy()
         other=self.make_copy(bounds=PeriodBounds.printed(date(2026,3,1),date(2026,3,31)))

@@ -213,6 +213,39 @@ it("filters statement pages by account and rejects a mixed account response", as
   expect(String(fetch.mock.calls[0][0])).toContain("account_id=chosen")
   expect(screen.queryByText("Balance difference")).not.toBeInTheDocument()
 })
+it("checks a merged account's statements, including its members' periods", async () => {
+  // Live 1 Nov: a merged account's member period made the whole check refuse ("different account").
+  mount(
+    {
+      ...answer,
+      account_id: "chosen",
+      scope_account_ids: ["chosen", "member"],
+      items: [
+        { ...period, account_id: "chosen" },
+        { ...period, period_id: "member-period", account_id: "member" },
+      ],
+    },
+    "chosen"
+  )
+  open()
+  expect(await screen.findAllByText("Balance difference")).toHaveLength(2)
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+})
+it("still refuses a period outside the merged account's scope", async () => {
+  mount(
+    {
+      ...answer,
+      account_id: "chosen",
+      scope_account_ids: ["chosen", "member"],
+      items: [{ ...period, account_id: "other" }],
+    },
+    "chosen"
+  )
+  open()
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "different account"
+  )
+})
 it("requires the response to confirm the requested account", async () => {
   mount(answer, "account")
   open()
