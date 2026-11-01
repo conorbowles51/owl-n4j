@@ -1,3 +1,31 @@
+## 1 November: phone material collected into dossiers, Workspace and the Timeline (lx-collect)
+
+Live at `21e9f546`. Phone material joins Loupe's existing case-building system; there is no separate collection
+store. Every phone link type is refused with a stated message until the phone intake registers a resolver for it,
+so nothing phone-shaped is stored before phone records exist.
+
+- **One link-type registry:** `backend/postgres/link_types.py` lists the target types each container takes
+  (Workspace entry, dossier, notebook, task, interview evidence), the nine phone types, the resolver hook
+  (`register_phone_resolver`), the `phone_analysis` snapshot shape and the mapping-version set stored on every
+  phone link. `backend/scripts/generate_link_types.py` writes `frontend_v2/src/generated/link-types.ts`.
+- **Dossiers:** `POST /api/dossiers/{id}/links:add` (idempotent, counts, at most 5,000 per request, refused with
+  413 above that) and `DELETE /api/dossiers/{id}/links/{link_id}`, each writing an activity event; replacing links
+  keeps who added each one. Contacts record their source; contacts copied from phones are left out of
+  `contacts_for_suggestions`. Interview evidence takes a phone record, analysis or statement check by type and id.
+- **Workspace:** `POST /api/workspace/{case}/entries/{id}/links:batch` with the person's rationale (required);
+  `GET /api/workspace/{case}/collections` answers where each target is used, including inside phone selections
+  (index table `collection_memberships`), 200 ids per request. Attach selection carries the whole selection, with
+  phone record ids from the phone kit's selection store.
+- **Phone files:** become one evidence row (`source_type` `phone_file`) only when added as dossier media or interview
+  evidence; never processed, embedded or sent to AI until a case external-processing check is registered and allows.
+- **Timeline:** source kind `phone_record` with instant and zone; saved-view events gained `sort_instant` and
+  `sort_zone` (older events `wall_clock`); order unchanged.
+- **Migrations (live counts before and after):** interview evidence links 18 and 18; saved-view events 85 and 85
+  in 4 views (58 with an instant, 85 `wall_clock`).
+- **Waiting on others:** resolvers and the external-processing check (cb-capture), `phone_analysis` resolver and
+  identity suggestions through `contacts_for_suggestions` (cb-interpret), routes for saved phone links and the
+  whole-result selection (cb-screens). Decisions UXD-42 to UXD-50 in `docs/cellebrite/07-user-experience.md`.
+
 ## 1 November: phone interface kit, preview, instrumentation, guide and journey tests (cb-ux)
 
 The shared pieces every phone screen uses, built before the first phone screen (07 section 12.1). Nothing reads
