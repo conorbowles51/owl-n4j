@@ -122,3 +122,35 @@ def test_unsafe_destinations_are_rejected(uploads,filename):
     f=uploads
     body=dict(id=str(uuid4()),case_id=str(f.case),filename=filename,size=0,sha256=hashlib.sha256(b'').hexdigest(),chunks=[])
     assert f.client.post('/api/evidence-upload-sessions',json=body).status_code==400
+
+
+def test_completed_upload_removes_its_saved_parts_and_still_reports_every_chunk(uploads):
+    f=uploads;body,state,content=start(f)
+    for i in range(len(body['chunks'])):assert send(f,state,content,i).status_code==200
+    parts=f.root/'pending'/str(f.case)/state['id']
+    assert parts.is_dir() and len(list(parts.iterdir()))==len(body['chunks'])
+    receipt=action(f,state,'complete').json()
+    assert receipt['status']=='completed' and not parts.exists()
+    assert receipt['received']==list(range(len(body['chunks'])))
+    assert action(f,state,'complete').json()==receipt
+    assert f.client.get(f"/api/evidence-upload-sessions/{state['id']}").json()==receipt
+
+
+def test_sweep_removes_only_parts_of_completed_uploads(uploads, monkeypatch):
+    f=uploads
+    done,done_state,content=start(f)
+    for i in range(len(done['chunks'])):send(f,done_state,content,i)
+    open_body,open_state,_=start(f)
+    send(f,open_state,content,0)
+    action(f,done_state,'complete')
+    # Parts left by the code before this change (it never removed them).
+    left=f.root/'pending'/str(f.case)/done_state['id']; left.mkdir(parents=True)
+    (left/'0.part').write_bytes(content[:32])
+    stray=f.root/'pending'/str(f.case)/str(uuid4()); stray.mkdir(); (stray/'0.part').write_bytes(b'x')
+    with Session(f.engine) as db:
+        preview=api.sweep_completed_parts(db)
+        assert (preview['folders'],preview['files'],preview['bytes'],preview['removed'])==(1,1,32,0)
+        assert preview['left_other_status']==1 and preview['left_no_record']==1 and left.exists()
+        assert api.sweep_completed_parts(db,apply=True)['removed']==1
+    assert not left.exists() and stray.exists()
+    assert (f.root/'pending'/str(f.case)/open_state['id']/'0.part').exists()

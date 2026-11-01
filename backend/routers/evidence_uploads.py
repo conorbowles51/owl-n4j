@@ -4,6 +4,7 @@ import math
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import tempfile
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -56,10 +57,60 @@ def directory(item):
     return ROOT / str(item.case_id) / str(item.id)
 
 
+def remove_parts(item):
+    """A completed upload's file is evidence (verified against its hash when assembled); its saved parts are
+    no longer needed. Failures are logged and left for the sweep."""
+    try:
+        shutil.rmtree(directory(item))
+    except FileNotFoundError:
+        pass
+    except OSError:
+        import logging
+        logging.getLogger(__name__).warning('Could not remove the saved parts of upload %s', item.id, exc_info=True)
+
+
+def sweep_completed_parts(db, *, apply=False):
+    """Part folders of uploads whose status is 'completed' (their evidence is registered). Folders of any
+    other status, or with no upload record, are left. Returns counts; removes them only with ``apply``."""
+    out = dict(folders=0, files=0, bytes=0, removed=0, left_other_status=0, left_no_record=0)
+    if not ROOT.is_dir():
+        return out
+    for case_dir in sorted(p for p in ROOT.iterdir() if p.is_dir()):
+        names = {p.name: p for p in case_dir.iterdir() if p.is_dir()}
+        ids = []
+        for name in names:
+            try:
+                ids.append(UUID(name))
+            except ValueError:
+                pass
+        status = {}
+        for at in range(0, len(ids), 1000):
+            status.update({str(i): s for i, s in db.execute(select(EvidenceUploadSession.id,
+                EvidenceUploadSession.status).where(EvidenceUploadSession.id.in_(ids[at:at + 1000])))})
+        for name, path in names.items():
+            if name not in status:
+                out['left_no_record'] += 1
+                continue
+            if status[name] != 'completed':
+                out['left_other_status'] += 1
+                continue
+            files = [entry for entry in os.scandir(path) if entry.is_file()]
+            out['folders'] += 1
+            out['files'] += len(files)
+            out['bytes'] += sum(entry.stat().st_size for entry in files)
+            if apply:
+                shutil.rmtree(path, ignore_errors=True)
+                out['removed'] += not path.exists()
+    return out
+
+
 def snapshot(item):
     root = directory(item)
     received = []
-    for index in range(len(item.chunks)):
+    if item.status == 'completed':
+        # Every chunk was received and verified; the parts are removed once the file is evidence.
+        received = list(range(len(item.chunks)))
+    for index in range(len(item.chunks) if item.status != 'completed' else 0):
         try:
             if (root / f'{index}.part').stat().st_size == min(item.chunk_size, item.size - index * item.chunk_size):
                 received.append(index)
@@ -192,7 +243,9 @@ def assemble(item):
 def upload_action(identity: UUID, action: str, user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
     item = get_session(db, identity, user, lock=True)
     if action not in {'pause', 'resume', 'complete'}: raise HTTPException(404, 'Unknown upload action')
-    if item.status == 'completed': return snapshot(item)
+    if item.status == 'completed':
+        remove_parts(item)  # a repeat after a lost response, or parts left by an earlier failure
+        return snapshot(item)
     if item.group_id:
         from routers.evidence_upload_groups import get_group
         group = get_group(db, item.group_id, user)
@@ -220,4 +273,6 @@ def upload_action(identity: UUID, action: str, user: User = Depends(get_current_
     # Receipt and evidence registration are committed together. A repeated
     # completion after a lost response returns exactly the same evidence id.
     db.commit()
+    if item.status == 'completed':
+        remove_parts(item)
     return snapshot(item)

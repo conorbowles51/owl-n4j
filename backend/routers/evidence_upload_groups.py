@@ -539,6 +539,8 @@ async def group_action(identity: UUID, action: str, user: User = Depends(get_cur
                 for row in rows: row.status = 'completed'
             # The receipt and evidence rows commit together before any external job call.
             db.commit()
+            if group.status == 'completed':
+                for row in rows: uploads.remove_parts(row)
         await run_in_threadpool(register)
     # What the engine calls read, loaded here: after a commit the objects reload on first use.
     dispatch = await run_in_threadpool(lambda: None if group.status != 'dispatching' else (
@@ -554,8 +556,10 @@ async def group_action(identity: UUID, action: str, user: User = Depends(get_cur
             group = get_group(db, identity, user, lock=True)
             group.receipt = {**group.receipt, 'job_ids': jobs}
             group.status = 'completed'
-            for row in members(db, group): row.status = 'completed'
+            done = members(db, group)
+            for row in done: row.status = 'completed'
             db.commit()
+            for row in done: uploads.remove_parts(row)
             return snapshot(db, group)
         return await run_in_threadpool(finish)
     return await run_in_threadpool(snapshot, db, group)
