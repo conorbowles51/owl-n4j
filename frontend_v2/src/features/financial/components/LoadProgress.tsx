@@ -54,6 +54,15 @@ const barShown = new Map<number, number>()
 // Openings whose panel has closed (their time recorded): a panel mounted again for one (the graph switched from 3D
 // back to 2D minutes later) counts afresh from its own mount, without the "last time" estimate and without saving.
 const openingsDone = new Set<number>()
+// When a mount sharing an opening went away while it was still open. The graph hands its panel from the loading
+// view to the canvas in the same moment; a mount for the opening much later (3D chosen mid-layout, 2D again minutes
+// on) is a new wait, not the old one.
+const openingsLeft = new Map<number, number>()
+const HANDOFF_MS = 1000
+const openingOver = (opened: number) => {
+  const left = openingsLeft.get(opened)
+  return openingsDone.has(opened) || (left !== undefined && performance.now() - left > HANDOFF_MS)
+}
 function keepBar(since: number, fraction: number) {
   barShown.set(since, fraction)
   if (barShown.size > 20) barShown.delete(barShown.keys().next().value as number)
@@ -86,7 +95,7 @@ function ViewLoadProgress({ caseId, page, opened, work }: { caseId: string; page
   const client = useQueryClient()
   // Taken at first render, before the view's own requests start in their effects.
   // A panel that closed and opens again for new work of the page's own (a graph arranged afresh) counts from then.
-  const [fresh] = useState(() => opened !== undefined && openingsDone.has(opened))
+  const [fresh] = useState(() => opened !== undefined && openingOver(opened))
   const [since, setSince] = useState(() => (opened !== undefined && !fresh ? opened : performance.now()))
   const [settledAt, setSettledAt] = useState<number | null>(null)
   const settled = settledAt !== null
@@ -133,6 +142,20 @@ function ViewLoadProgress({ caseId, page, opened, work }: { caseId: string; page
     setRestarted(true)
     setClock({ now: at, fraction: 0, movedAt: at, done: 0, unpacked: 0 })
   }, [open])
+  // A mount that shared the opening and goes away before it closed notes when (openingsLeft).
+  const sharedOpen = useRef(false)
+  useLayoutEffect(() => {
+    sharedOpen.current = open && opened !== undefined && since === opened
+  }, [open, opened, since])
+  useEffect(
+    () => () => {
+      if (sharedOpen.current && opened !== undefined) {
+        openingsLeft.set(opened, performance.now())
+        if (openingsLeft.size > 50) openingsLeft.delete(openingsLeft.keys().next().value as number)
+      }
+    },
+    [opened]
+  )
   // Recorded once per opening: the page's load, not later work (that is not what "last time" estimates).
   const saved = useRef(false)
   useEffect(() => {

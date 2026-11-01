@@ -269,3 +269,29 @@ it("a panel mounted again for an opening that has closed counts afresh: no save,
   })
   expect(localStorage.getItem("loupe:view-load-ms:case-1:case/graph")).toBe(saved)
 })
+
+it("a shared opening left before it closed (3D chosen mid-layout) counts afresh when shown again later", async () => {
+  const client = new QueryClient()
+  const since = performance.now()
+  localStorage.setItem("loupe:view-load-ms:case-1:case/graph", "9000")
+  const panel = (done: number) => (
+    <QueryClientProvider client={client}>
+      <LoadProgress caseId="case-1" page="case/graph" since={since} work={{ step: "Arranging 600 nodes", done, total: 50 }} />
+    </QueryClientProvider>
+  )
+  const first = render(panel(10))
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2000)
+  })
+  first.unmount()
+  act(() => vi.advanceTimersByTime(300000))
+  const second = render(panel(0))
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1100)
+  })
+  const text = screen.getByRole("status").textContent ?? ""
+  expect(text).not.toMatch(/last time/)
+  expect(text).toMatch(/· 1 s/)
+  second.unmount()
+  expect(localStorage.getItem("loupe:view-load-ms:case-1:case/graph")).toBe("9000")
+})

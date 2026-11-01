@@ -166,12 +166,13 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
   // 2026-11-01), as Follow money's grouping was before it moved out (378d70a9). Until the profiles for this row
   // list and directory are worked out the list says so.
   const directoryAccounts = directory.data?.accounts
-  const [grouped, setGrouped] = useState<{
+  type Grouped = {
     rows: typeof scopedRows
     accounts: typeof directoryAccounts
     profiles: ReturnType<typeof paymentProfiles>
     error?: unknown
-  } | null>(null)
+  }
+  const [grouped, setGrouped] = useState<Grouped | null>(null)
   // Only the first grouping waits for its own task (that is the render that first shows the payments). Later
   // changes (a currency filter, a refetch) group in the render as before, so the filters stay on screen.
   // With no payments there is nothing slow to wait for: the directory's accounts are grouped in the render.
@@ -197,7 +198,7 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
     const timer = setTimeout(() => {
       // A failure is raised in the render, as it was when grouping ran there (the page's error boundary shows it),
       // never left as "Grouping…" for ever.
-      let next: NonNullable<typeof grouped>
+      let next: Grouped
       try {
         next = {
           rows: scopedRows,
