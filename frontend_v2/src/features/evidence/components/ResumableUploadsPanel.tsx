@@ -61,7 +61,7 @@ function GroupRow({ group }: { group: UploadGroup }) {
         {completing
           ? "Files received. Finishing registration"
           : group.status === "dispatching"
-            ? "Files saved. Reading needs to be started: choose Finish registration"
+            ? "Files saved. Starting the reading. If this message stays, choose Finish registration"
             : group.status === "paused"
               ? "Upload paused"
               : attached

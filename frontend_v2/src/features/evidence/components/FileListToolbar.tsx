@@ -1,4 +1,4 @@
-import { useRef, type ChangeEvent, type InputHTMLAttributes } from "react"
+import { useRef, useState, type ChangeEvent, type InputHTMLAttributes } from "react"
 import {
   Search,
   X,
@@ -70,6 +70,14 @@ export function FileListToolbar({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
   const archiveInputRef = useRef<HTMLInputElement>(null)
+  // The pickers open from inside the menu's select (the browser needs the click in the person's gesture), so the menus
+  // are closed here: left open, a modal menu keeps the rest of the page hidden from assistive technology.
+  const [uploadMenuOpen, setUploadMenuOpen] = useState(false)
+  const [phoneMenuOpen, setPhoneMenuOpen] = useState(false)
+  const pick = (input: HTMLInputElement | null, close: (open: boolean) => void) => {
+    input?.click()
+    close(false)
+  }
   const uploadMutation = useUploadToFolder(caseId)
   // Kept whole as well as destructured, because the dialog takes the gate
   // rather than its pieces. See `ProcessGate`.
@@ -237,7 +245,7 @@ export function FileListToolbar({
         <TooltipContent>Create a new folder</TooltipContent>
       </Tooltip>
 
-      <DropdownMenu>
+      <DropdownMenu open={uploadMenuOpen} onOpenChange={setUploadMenuOpen}>
         <Tooltip>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
@@ -259,7 +267,7 @@ export function FileListToolbar({
           <DropdownMenuItem
             onSelect={(event) => {
               event.preventDefault()
-              fileInputRef.current?.click()
+              pick(fileInputRef.current, setUploadMenuOpen)
             }}
           >
             <Upload className="size-3.5" />
@@ -268,7 +276,7 @@ export function FileListToolbar({
           <DropdownMenuItem
             onSelect={(event) => {
               event.preventDefault()
-              folderInputRef.current?.click()
+              pick(folderInputRef.current, setUploadMenuOpen)
             }}
           >
             <FolderUp className="size-3.5" />
@@ -277,7 +285,7 @@ export function FileListToolbar({
           <DropdownMenuItem
             onSelect={(event) => {
               event.preventDefault()
-              archiveInputRef.current?.click()
+              pick(archiveInputRef.current, setUploadMenuOpen)
             }}
           >
             <FileArchive className="size-3.5" />
@@ -286,7 +294,7 @@ export function FileListToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
       {/* 07 J-1a: the phone start, named without the vendor. Same inputs as Upload; the server detects the report. */}
-      <DropdownMenu>
+      <DropdownMenu open={phoneMenuOpen} onOpenChange={setPhoneMenuOpen}>
         <DropdownMenuTrigger asChild>
           <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" disabled={uploadMutation.isPending}>
             <Smartphone className="size-3.5" />
@@ -298,7 +306,7 @@ export function FileListToolbar({
           <DropdownMenuItem
             onSelect={(event) => {
               event.preventDefault()
-              folderInputRef.current?.click()
+              pick(folderInputRef.current, setPhoneMenuOpen)
             }}
           >
             <FolderUp className="size-3.5" />
@@ -307,7 +315,7 @@ export function FileListToolbar({
           <DropdownMenuItem
             onSelect={(event) => {
               event.preventDefault()
-              archiveInputRef.current?.click()
+              pick(archiveInputRef.current, setPhoneMenuOpen)
             }}
           >
             <FileArchive className="size-3.5" />

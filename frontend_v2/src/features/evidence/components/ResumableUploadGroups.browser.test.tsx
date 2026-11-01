@@ -451,3 +451,38 @@ it("reselects remaining folder files after reopening, refuses changed bytes and 
     client.clear()
   }
 })
+
+it("a selection whose reading jobs are starting says so, and asks for Finish registration only if it stays", async () => {
+  vi.mocked(fetchAPI).mockImplementation(async (url) => {
+    if (url.startsWith("/api/evidence-upload-sessions?")) return []
+    if (url.startsWith("/api/evidence-upload-groups?"))
+      return [
+        {
+          id: "starting",
+          case_id: "case",
+          name: "Phone folder",
+          kind: "folder",
+          status: "dispatching",
+          file_count: 3,
+          staged_count: 3,
+          size: 30,
+          received_bytes: 30,
+          replace_existing: false,
+          folder_id: null,
+          receipt: { file_ids: ["f"], job_ids: [], message: "Uploaded 3 files." },
+        },
+      ] satisfies UploadGroup[]
+    throw new Error(`unexpected ${url}`)
+  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(
+    <QueryClientProvider client={client}>
+      <ResumableUploadsPanel caseId="case" />
+    </QueryClientProvider>
+  )
+  expect(
+    await screen.findByText("Files saved. Starting the reading. If this message stays, choose Finish registration")
+  ).toBeTruthy()
+  expect(screen.queryByText(/Reading needs to be started/)).toBeNull()
+  client.clear()
+})
