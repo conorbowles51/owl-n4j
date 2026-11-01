@@ -35,13 +35,13 @@ export function ViewHeader({ view, className }: { view: CaseView; className?: st
       >
         <Icon className={cn("size-3.5", a.text)} />
       </span>
-      <span className={cn("hidden font-mono text-[11px] font-medium uppercase tracking-[0.12em] sm:inline", a.fg)}>
+      <span className={cn("type-eyebrow hidden sm:inline", a.fg)}>
         {AREAS[view.area].label}
       </span>
       <span aria-hidden="true" className={cn("hidden sm:inline", a.fg)}>
         /
       </span>
-      <span className="truncate font-display text-[15px] font-semibold tracking-[-0.02em] text-foreground">
+      <span className="type-section truncate text-foreground">
         {view.title}
       </span>
     </header>

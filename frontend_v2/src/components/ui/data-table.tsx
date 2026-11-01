@@ -25,6 +25,8 @@ interface DataTableProps<T> {
   onRowClick?: (row: T) => void
   emptyMessage?: string
   getRowKey: (row: T) => string
+  /** Row density (lx-style F): "dense" for tables to compare. */
+  density?: "comfortable" | "dense"
 }
 
 function DataTable<T>({
@@ -34,10 +36,11 @@ function DataTable<T>({
   onRowClick,
   emptyMessage = "No data",
   getRowKey,
+  density = "comfortable",
 }: DataTableProps<T>) {
   return (
     <div className={cn("overflow-auto rounded-lg border border-border bg-card", className)}>
-      <Table>
+      <Table density={density}>
         <TableHeader>
           <TableRow className="bg-muted/35 hover:bg-muted/35">
             {columns.map((col) => (
