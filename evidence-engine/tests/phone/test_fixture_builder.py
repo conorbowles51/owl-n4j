@@ -176,6 +176,18 @@ class BuilderShapes(unittest.TestCase):
                 self.assertEqual(phone["nested"].get("InstantMessage", 0), len(msgs))
 
 
+class FrontendFixtures(unittest.TestCase):
+    """The kit stories and the prototype read the builder's ui-fixture.json, committed under frontend_v2.
+    Regenerating gives the same bytes, so the screens never drift from the builder."""
+
+    def test_committed_ui_fixtures_equal_the_builder(self):
+        target = fb.REPO / "frontend_v2" / "src" / "features" / "phones" / "fixtures"
+        for name, case in (("training.json", fb.training_case()), ("phones-only.json", fb.phones_only_case(0.02))):
+            with tempfile.TemporaryDirectory(prefix="cbux-fx4-") as out:
+                fb.build_case(case, Path(out))
+                self.assertEqual((Path(out) / "ui-fixture.json").read_text(), (target / name).read_text(), name)
+
+
 class RealScale(unittest.TestCase):
     def test_scale_one_follows_catalogue_counts(self):
         """At scale 1.0 every top-level type the builder writes matches the catalogue phone's count."""

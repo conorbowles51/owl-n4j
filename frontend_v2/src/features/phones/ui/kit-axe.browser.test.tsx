@@ -1,6 +1,7 @@
 import { composeStories, setProjectAnnotations } from "@storybook/react-vite"
 import { cleanup, render } from "@testing-library/react"
 import axe from "axe-core"
+import type React from "react"
 import { afterEach, describe, expect, it } from "vitest"
 import * as preview from "../../../../.storybook/preview"
 import { resetKeymapForTest } from "@/lib/keymap"
@@ -13,6 +14,8 @@ import "@/styles/globals.css"
  */
 setProjectAnnotations([preview])
 
+type ComposedStory = (() => React.JSX.Element) & { parameters: Record<string, unknown>; run?: () => Promise<void> }
+
 const modules = import.meta.glob("./stories/*.stories.tsx", { eager: true }) as Record<string, Record<string, unknown>>
 
 afterEach(() => {
@@ -22,7 +25,7 @@ afterEach(() => {
 
 describe("phone kit stories pass axe", () => {
   for (const [file, mod] of Object.entries(modules)) {
-    const stories = composeStories(mod as Parameters<typeof composeStories>[0])
+    const stories = composeStories(mod as Parameters<typeof composeStories>[0]) as unknown as Record<string, ComposedStory>
     for (const [name, Story] of Object.entries(stories)) {
       it(`${file.replace("./stories/", "")} ${name}`, async () => {
         const theme = (Story.parameters as { theme?: string }).theme

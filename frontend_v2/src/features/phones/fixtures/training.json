@@ -1,0 +1,6042 @@
+{
+ "case": "Phone training (synthetic)",
+ "synthetic": true,
+ "people": [
+  {
+   "key": "p0",
+   "name": "Emrys Juniper",
+   "numbers": [
+    "+12015550100"
+   ],
+   "email": "emrys.juniper@example.com"
+  },
+  {
+   "key": "p1",
+   "name": "Corin Ashdown",
+   "numbers": [
+    "+12015550102"
+   ],
+   "email": "corin.ashdown@example.org"
+  },
+  {
+   "key": "p2",
+   "name": "Nell Merriweather",
+   "numbers": [
+    "+12015550104"
+   ],
+   "email": "nell.merriweather@example.net"
+  },
+  {
+   "key": "p3",
+   "name": "Ellis Greywell",
+   "numbers": [
+    "+12015550106"
+   ],
+   "email": "ellis.greywell@example.com"
+  },
+  {
+   "key": "p4",
+   "name": "Avery Harrowgate",
+   "numbers": [
+    "+12015550108"
+   ],
+   "email": "avery.harrowgate@example.org"
+  },
+  {
+   "key": "p5",
+   "name": "Dorian Ashdown",
+   "numbers": [
+    "+12015550110",
+    "+12015550111"
+   ],
+   "email": "dorian.ashdown@example.net"
+  },
+  {
+   "key": "p6",
+   "name": "Wren Pennywhistle",
+   "numbers": [
+    "+12015550112"
+   ],
+   "email": "wren.pennywhistle@example.com"
+  },
+  {
+   "key": "p7",
+   "name": "Quill Northcott",
+   "numbers": [
+    "+12015550114"
+   ],
+   "email": "quill.northcott@example.org"
+  },
+  {
+   "key": "p8",
+   "name": "Blair Greywell",
+   "numbers": [
+    "+12015550116"
+   ],
+   "email": "blair.greywell@example.net"
+  },
+  {
+   "key": "p9",
+   "name": "Sable Larkspur",
+   "numbers": [
+    "+12015550118"
+   ],
+   "email": "sable.larkspur@example.com"
+  },
+  {
+   "key": "p10",
+   "name": "Tamsin Greywell",
+   "numbers": [
+    "+12015550120"
+   ],
+   "email": "tamsin.greywell@example.org"
+  },
+  {
+   "key": "p11",
+   "name": "Linden Stillwater",
+   "numbers": [
+    "+12015550122"
+   ],
+   "email": "linden.stillwater@example.net"
+  },
+  {
+   "key": "p12",
+   "name": "Jory Kettering",
+   "numbers": [
+    "+12015550124"
+   ],
+   "email": "jory.kettering@example.com"
+  },
+  {
+   "key": "p13",
+   "name": "Bryony Pennywhistle",
+   "numbers": [
+    "+12015550126",
+    "+12015550127"
+   ],
+   "email": "bryony.pennywhistle@example.org"
+  }
+ ],
+ "phones": [
+  {
+   "label": "C5",
+   "owner": "p0",
+   "zone": "America/New_York",
+   "extraction_date": "2024-05-03",
+   "period_start": "2023-11-05T09:30:00.000+00:00",
+   "period_end": "2024-05-03T09:30:00.000+00:00",
+   "no_data_days": [
+    70,
+    84
+   ],
+   "messages": 173,
+   "calls": 33,
+   "contacts": 117,
+   "files": 10,
+   "records": 582
+  },
+  {
+   "label": "C6",
+   "owner": "p1",
+   "zone": "America/New_York",
+   "extraction_date": "2024-05-10",
+   "period_start": "2023-11-12T09:30:00.000+00:00",
+   "period_end": "2024-05-10T09:30:00.000+00:00",
+   "no_data_days": [
+    70,
+    84
+   ],
+   "messages": 172,
+   "calls": 70,
+   "contacts": 12,
+   "files": 11,
+   "records": 153
+  }
+ ],
+ "threads": [
+  {
+   "id": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "group": false,
+   "participants": [
+    "p1"
+   ],
+   "count": 67
+  },
+  {
+   "id": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "group": false,
+   "participants": [
+    "p2"
+   ],
+   "count": 27
+  },
+  {
+   "id": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "group": false,
+   "participants": [
+    "p3"
+   ],
+   "count": 17
+  },
+  {
+   "id": "C5-t3",
+   "phone": "C5",
+   "app": "Native Messages",
+   "group": false,
+   "participants": [
+    "p4"
+   ],
+   "count": 12
+  },
+  {
+   "id": "C5-t4",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "group": true,
+   "participants": [
+    "p2",
+    "p8",
+    "p6"
+   ],
+   "count": 9
+  },
+  {
+   "id": "C5-t5",
+   "phone": "C5",
+   "app": "Telegram",
+   "group": false,
+   "participants": [
+    "p6"
+   ],
+   "count": 8
+  },
+  {
+   "id": "C5-t6",
+   "phone": "C5",
+   "app": "Signal",
+   "group": false,
+   "participants": [
+    "p7"
+   ],
+   "count": 6
+  },
+  {
+   "id": "C5-t7",
+   "phone": "C5",
+   "app": "Native Messages",
+   "group": false,
+   "participants": [
+    "p8"
+   ],
+   "count": 5
+  },
+  {
+   "id": "C5-t8",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "group": false,
+   "participants": [
+    "p9"
+   ],
+   "count": 5
+  },
+  {
+   "id": "C5-t9",
+   "phone": "C5",
+   "app": "Telegram",
+   "group": false,
+   "participants": [
+    "p1"
+   ],
+   "count": 4
+  },
+  {
+   "id": "C5-t10",
+   "phone": "C5",
+   "app": "Signal",
+   "group": false,
+   "participants": [
+    "p2"
+   ],
+   "count": 4
+  },
+  {
+   "id": "C5-t11",
+   "phone": "C5",
+   "app": "Native Messages",
+   "group": false,
+   "participants": [
+    "p3"
+   ],
+   "count": 3
+  },
+  {
+   "id": "C5-t12",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "group": false,
+   "participants": [
+    "p4"
+   ],
+   "count": 3
+  },
+  {
+   "id": "C5-t13",
+   "phone": "C5",
+   "app": "Telegram",
+   "group": true,
+   "participants": [
+    "p7",
+    "p9",
+    "p2"
+   ],
+   "count": 3
+  },
+  {
+   "id": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "group": false,
+   "participants": [
+    "p0"
+   ],
+   "count": 78
+  },
+  {
+   "id": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "group": false,
+   "participants": [
+    "p5"
+   ],
+   "count": 34
+  },
+  {
+   "id": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "group": false,
+   "participants": [
+    "p6"
+   ],
+   "count": 22
+  },
+  {
+   "id": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "group": false,
+   "participants": [
+    "p7"
+   ],
+   "count": 16
+  },
+  {
+   "id": "C6-t4",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "group": true,
+   "participants": [
+    "p6",
+    "p11",
+    "p12"
+   ],
+   "count": 12
+  },
+  {
+   "id": "C6-t5",
+   "phone": "C6",
+   "app": "Telegram",
+   "group": false,
+   "participants": [
+    "p9"
+   ],
+   "count": 10
+  }
+ ],
+ "messages": [
+  {
+   "id": "C5-t0-m0",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-06T05:57:45.020+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m1",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-07T06:10:54.817+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m2",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-09T02:24:21.598+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "can you send the address again",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m3",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-13T00:15:02.428+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "need the number for the landlord",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m4",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-13T22:01:49.472+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m5",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-20T01:45:25.040+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "lol",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m6",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-21T00:30:04.109+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "path a/b/c and +15550100 with 50% off",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m7",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-23T02:56:00.798+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m8",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-25T04:16:26.512+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "thanks, got it",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m9",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-27T18:12:30.755+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m10",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-12-01T01:21:06.230+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "thanks, got it",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m11",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-12-23T03:18:55.710+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m12",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-12-23T17:36:15.571+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m13",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-12-24T06:06:54.739+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m14",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-12-24T22:32:49.184+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m15",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-12-28T06:28:15.930+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m16",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-01-01T05:32:00.520+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m17",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-01-05T22:08:02.521+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m18",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-01-08T00:46:42.605+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "that price is too high",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m19",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-01-09T18:44:35.923+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m20",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-01-13T07:11:48.493+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m21",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-01-13T17:56:08.863+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m22",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-01-14T01:25:35.624+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "picked up the keys",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m23",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-01-31T22:02:43.050+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "on my way",
+   "deleted": "Unknown"
+  },
+  {
+   "id": "C5-t0-m24",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-02T06:26:24.192+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "need the number for the landlord",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m25",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-03T00:58:20.658+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m26",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-06T05:15:23.627+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "keep this between us",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m27",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-07T21:53:37.629+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "let me check and come back to you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m28",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-12T00:50:36.537+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m29",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-13T03:49:22.804+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m30",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-15T22:37:03.608+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "picked up the keys",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m31",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-16T07:16:10.138+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m32",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-17T03:45:27.143+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "can you send the address again",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m33",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-18T23:36:44.148+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "on my way",
+   "deleted": "Unknown"
+  },
+  {
+   "id": "C5-t0-m34",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-19T05:40:03.165+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "meet at the usual place",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m35",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-22T01:39:52.191+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "lol",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m36",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-22T18:26:00.723+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "lol",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m37",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-29T02:53:07.457+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m38",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-29T04:09:56.239+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m39",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-02T04:37:13.343+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m40",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-05T21:06:30.063+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "that price is too high",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m41",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-08T20:07:19.547+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "that price is too high",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m42",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-10T00:48:36.851+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "on my way",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m43",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-13T01:57:03.154+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m44",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-14T21:34:13.038+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "meet at the usual place",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m45",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-19T04:34:23.521+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m46",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-20T19:39:34.624+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "are we still on for later",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m47",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-20T23:13:33.562+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "need the number for the landlord",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m48",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-21T22:27:44.945+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "that price is too high",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m49",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-22T03:01:28.002+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m50",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-22T05:19:35.699+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "meet at the usual place",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m51",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-31T01:39:15.004+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m52",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-02T20:45:54.589+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "on my way",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m53",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-03T04:52:22.806+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m54",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-13T23:14:17.350+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "need the number for the landlord",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m55",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-17T00:38:50.044+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "picked up the keys",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m56",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-17T22:45:18.693+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m57",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-21T02:29:25.469+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m58",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-23T03:00:10.953+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "picked up the keys",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m59",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-23T22:21:05.276+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "keep this between us",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m60",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-24T03:27:36.913+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m61",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-25T04:26:41.254+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "let me check and come back to you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m62",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-30T19:46:19.018+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "keep this between us",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m63",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-05-01T01:06:05.199+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m64",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-05-01T23:11:45.836+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "keep this between us",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m65",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-05-03T03:00:39.771+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "keep this between us",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t0-m66",
+   "thread": "C5-t0",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": null,
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m0",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-11-12T02:41:17.762+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "let me check and come back to you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m1",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-11-19T00:06:30.039+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m2",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-11-23T01:12:42.564+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m3",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-12-01T19:47:41.120+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m4",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-12-07T07:58:29.023+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "thanks, got it",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m5",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-12-09T03:07:30.378+00:00",
+   "from": "p0",
+   "to": [
+    "p2"
+   ],
+   "direction": "outgoing",
+   "body": "on my way",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m6",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-12-21T00:45:00.622+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m7",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-12-29T01:40:16.438+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "keep this between us",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m8",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-12-30T23:37:10.586+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m9",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-12-31T03:49:13.704+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "did you get the package",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m10",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-01-14T01:24:57.728+00:00",
+   "from": "p0",
+   "to": [
+    "p2"
+   ],
+   "direction": "outgoing",
+   "body": "need the number for the landlord",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m11",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-01-29T22:48:00.350+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m12",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-02-08T01:55:09.102+00:00",
+   "from": "p0",
+   "to": [
+    "p2"
+   ],
+   "direction": "outgoing",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m13",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-02-11T03:07:15.939+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m14",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-02-17T23:43:14.936+00:00",
+   "from": "p0",
+   "to": [
+    "p2"
+   ],
+   "direction": "outgoing",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m15",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-02-19T23:29:41.280+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m16",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-02-24T20:19:12.570+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "meet at the usual place",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m17",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-03-02T03:01:49.419+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "thanks, got it",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m18",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-03-04T03:08:30.677+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "on my way",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m19",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-03-11T00:22:13.259+00:00",
+   "from": "p0",
+   "to": [
+    "p2"
+   ],
+   "direction": "outgoing",
+   "body": "that price is too high",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m20",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-03-12T00:41:14.459+00:00",
+   "from": "p0",
+   "to": [
+    "p2"
+   ],
+   "direction": "outgoing",
+   "body": "half now, half on Friday",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m21",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-03-24T00:29:40.075+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m22",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-03-27T06:03:27.158+00:00",
+   "from": "p0",
+   "to": [
+    "p2"
+   ],
+   "direction": "outgoing",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m23",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-04-01T03:30:41.103+00:00",
+   "from": "p0",
+   "to": [
+    "p2"
+   ],
+   "direction": "outgoing",
+   "body": "did you get the package",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m24",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-04-07T02:13:52.398+00:00",
+   "from": "p0",
+   "to": [
+    "p2"
+   ],
+   "direction": "outgoing",
+   "body": "half now, half on Friday",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m25",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-04-07T23:01:18.473+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t1-m26",
+   "thread": "C5-t1",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-04-09T01:11:57.649+00:00",
+   "from": "p0",
+   "to": [
+    "p2"
+   ],
+   "direction": "outgoing",
+   "body": "keep this between us",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m0",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2023-11-09T01:37:07.329+00:00",
+   "from": "p0",
+   "to": [
+    "p3"
+   ],
+   "direction": "outgoing",
+   "body": "that price is too high",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m1",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2023-11-10T05:39:24.297+00:00",
+   "from": "p3",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "that price is too high",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m2",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2023-11-13T00:22:22.433+00:00",
+   "from": "p0",
+   "to": [
+    "p3"
+   ],
+   "direction": "outgoing",
+   "body": "lol",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m3",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2023-11-13T08:02:06.369+00:00",
+   "from": "p3",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m4",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2023-11-21T20:56:47.398+00:00",
+   "from": "p0",
+   "to": [
+    "p3"
+   ],
+   "direction": "outgoing",
+   "body": "",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m5",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2023-12-04T01:59:33.863+00:00",
+   "from": "p0",
+   "to": [
+    "p3"
+   ],
+   "direction": "outgoing",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m6",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2023-12-18T03:18:25.246+00:00",
+   "from": "p3",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m7",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2023-12-25T04:35:07.286+00:00",
+   "from": "p0",
+   "to": [
+    "p3"
+   ],
+   "direction": "outgoing",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m8",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-01-29T04:59:03.737+00:00",
+   "from": "p3",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m9",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-01-30T03:38:00.288+00:00",
+   "from": "p3",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "half now, half on Friday",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m10",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-03-06T22:42:20.156+00:00",
+   "from": "p0",
+   "to": [
+    "p3"
+   ],
+   "direction": "outgoing",
+   "body": "let me check and come back to you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m11",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-03-12T06:43:07.625+00:00",
+   "from": "p3",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m12",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-03-17T22:14:53.072+00:00",
+   "from": "p3",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "on my way",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m13",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-03-31T20:42:40.686+00:00",
+   "from": "p3",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "did you get the package",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m14",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-04-19T04:21:10.989+00:00",
+   "from": "p3",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "ok",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m15",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-04-23T20:38:59.697+00:00",
+   "from": "p0",
+   "to": [
+    "p3"
+   ],
+   "direction": "outgoing",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t2-m16",
+   "thread": "C5-t2",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-04-30T09:00:47.547+00:00",
+   "from": "p0",
+   "to": [
+    "p3"
+   ],
+   "direction": "outgoing",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t3-m0",
+   "thread": "C5-t3",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2023-11-07T21:49:14.021+00:00",
+   "from": "p4",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t3-m1",
+   "thread": "C5-t3",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2023-11-09T23:41:56.084+00:00",
+   "from": "p0",
+   "to": [
+    "p4"
+   ],
+   "direction": "outgoing",
+   "body": "lol",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t3-m2",
+   "thread": "C5-t3",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2023-12-01T19:43:33.209+00:00",
+   "from": "p0",
+   "to": [
+    "p4"
+   ],
+   "direction": "outgoing",
+   "body": "",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t3-m3",
+   "thread": "C5-t3",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2023-12-04T01:05:29.542+00:00",
+   "from": "p4",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "keep this between us",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t3-m4",
+   "thread": "C5-t3",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2023-12-09T23:54:30.659+00:00",
+   "from": "p4",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "are we still on for later",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t3-m5",
+   "thread": "C5-t3",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2023-12-30T02:42:15.858+00:00",
+   "from": "p0",
+   "to": [
+    "p4"
+   ],
+   "direction": "outgoing",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t3-m6",
+   "thread": "C5-t3",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2024-01-05T01:13:36.007+00:00",
+   "from": "p4",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "the car is outside",
+   "deleted": "Unknown"
+  },
+  {
+   "id": "C5-t3-m7",
+   "thread": "C5-t3",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2024-02-14T00:50:48.679+00:00",
+   "from": "p4",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "need the number for the landlord",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t3-m8",
+   "thread": "C5-t3",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2024-02-26T18:23:31.409+00:00",
+   "from": "p4",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t3-m9",
+   "thread": "C5-t3",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2024-03-06T01:46:57.838+00:00",
+   "from": "p0",
+   "to": [
+    "p4"
+   ],
+   "direction": "outgoing",
+   "body": "meet at the usual place",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t3-m10",
+   "thread": "C5-t3",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2024-03-27T21:54:37.227+00:00",
+   "from": "p4",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "are we still on for later",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t3-m11",
+   "thread": "C5-t3",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2024-04-19T05:10:14.807+00:00",
+   "from": "p4",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "keep this between us",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t4-m0",
+   "thread": "C5-t4",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-06T02:11:03.375+00:00",
+   "from": "p0",
+   "to": [
+    "p2",
+    "p8",
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t4-m1",
+   "thread": "C5-t4",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-19T23:52:00.593+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "half now, half on Friday",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t4-m2",
+   "thread": "C5-t4",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-12-09T23:38:08.398+00:00",
+   "from": "p0",
+   "to": [
+    "p2",
+    "p8",
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "on my way",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t4-m3",
+   "thread": "C5-t4",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-01-12T01:53:13.032+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "thanks, got it",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t4-m4",
+   "thread": "C5-t4",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-09T01:36:53.639+00:00",
+   "from": "p0",
+   "to": [
+    "p2",
+    "p8",
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t4-m5",
+   "thread": "C5-t4",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-09T00:22:28.277+00:00",
+   "from": "p6",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t4-m6",
+   "thread": "C5-t4",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-13T06:25:14.816+00:00",
+   "from": "p0",
+   "to": [
+    "p2",
+    "p8",
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "keep this between us",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t4-m7",
+   "thread": "C5-t4",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-25T05:37:49.816+00:00",
+   "from": "p8",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t4-m8",
+   "thread": "C5-t4",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-05-01T01:41:04.137+00:00",
+   "from": "p0",
+   "to": [
+    "p2",
+    "p8",
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t5-m0",
+   "thread": "C5-t5",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-11-09T19:56:24.745+00:00",
+   "from": "p6",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "lol",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t5-m1",
+   "thread": "C5-t5",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-11-10T20:54:54.962+00:00",
+   "from": "p0",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "ok",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t5-m2",
+   "thread": "C5-t5",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-11-14T21:49:11.862+00:00",
+   "from": "p6",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "need the number for the landlord",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t5-m3",
+   "thread": "C5-t5",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-11-27T19:33:43.565+00:00",
+   "from": "p6",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t5-m4",
+   "thread": "C5-t5",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-12-25T19:54:33.227+00:00",
+   "from": "p6",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t5-m5",
+   "thread": "C5-t5",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-02-06T22:27:55.148+00:00",
+   "from": "p0",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t5-m6",
+   "thread": "C5-t5",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-03-21T18:02:14.185+00:00",
+   "from": "p0",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t5-m7",
+   "thread": "C5-t5",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-04-18T23:08:33.931+00:00",
+   "from": "p6",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "lol",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t6-m0",
+   "thread": "C5-t6",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2023-11-07T00:01:13.645+00:00",
+   "from": "p7",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "keep this between us",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t6-m1",
+   "thread": "C5-t6",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-01-31T19:53:19.615+00:00",
+   "from": "p7",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "picked up the keys",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t6-m2",
+   "thread": "C5-t6",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-03-04T08:28:04.933+00:00",
+   "from": "p0",
+   "to": [
+    "p7"
+   ],
+   "direction": "outgoing",
+   "body": "thanks, got it",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t6-m3",
+   "thread": "C5-t6",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-03-08T00:23:59.483+00:00",
+   "from": "p0",
+   "to": [
+    "p7"
+   ],
+   "direction": "outgoing",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t6-m4",
+   "thread": "C5-t6",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-03-22T00:13:33.152+00:00",
+   "from": "p0",
+   "to": [
+    "p7"
+   ],
+   "direction": "outgoing",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t6-m5",
+   "thread": "C5-t6",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-04-22T07:20:29.242+00:00",
+   "from": "p7",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t7-m0",
+   "thread": "C5-t7",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2023-11-16T22:57:49.379+00:00",
+   "from": "p8",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t7-m1",
+   "thread": "C5-t7",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2023-12-01T20:35:50.426+00:00",
+   "from": "p8",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t7-m2",
+   "thread": "C5-t7",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2024-02-10T02:55:33.998+00:00",
+   "from": "p0",
+   "to": [
+    "p8"
+   ],
+   "direction": "outgoing",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t7-m3",
+   "thread": "C5-t7",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2024-03-14T23:52:56.443+00:00",
+   "from": "p8",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "are we still on for later",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t7-m4",
+   "thread": "C5-t7",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2024-03-27T19:40:08.792+00:00",
+   "from": "p8",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "half now, half on Friday",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t8-m0",
+   "thread": "C5-t8",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-11T04:29:27.753+00:00",
+   "from": "p9",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t8-m1",
+   "thread": "C5-t8",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-02-12T18:23:32.962+00:00",
+   "from": "p0",
+   "to": [
+    "p9"
+   ],
+   "direction": "outgoing",
+   "body": "lol",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t8-m2",
+   "thread": "C5-t8",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-01T23:29:49.888+00:00",
+   "from": "p9",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "thanks, got it",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t8-m3",
+   "thread": "C5-t8",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-10T01:25:22.782+00:00",
+   "from": "p0",
+   "to": [
+    "p9"
+   ],
+   "direction": "outgoing",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t8-m4",
+   "thread": "C5-t8",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-04-20T07:17:16.371+00:00",
+   "from": "p9",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t9-m0",
+   "thread": "C5-t9",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-11-30T02:10:56.879+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "outgoing",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t9-m1",
+   "thread": "C5-t9",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-12-21T08:35:41.419+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t9-m2",
+   "thread": "C5-t9",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-04-01T00:04:22.130+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "meet at the usual place",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t9-m3",
+   "thread": "C5-t9",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-05-02T07:05:23.336+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t10-m0",
+   "thread": "C5-t10",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2023-11-18T00:09:15.666+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t10-m1",
+   "thread": "C5-t10",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2023-11-19T01:19:01.573+00:00",
+   "from": "p0",
+   "to": [
+    "p2"
+   ],
+   "direction": "outgoing",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t10-m2",
+   "thread": "C5-t10",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-01-31T21:09:40.644+00:00",
+   "from": "p2",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "let me check and come back to you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t10-m3",
+   "thread": "C5-t10",
+   "phone": "C5",
+   "app": "Signal",
+   "time": "2024-04-20T07:45:53.744+00:00",
+   "from": "p0",
+   "to": [
+    "p2"
+   ],
+   "direction": "outgoing",
+   "body": "can you send the address again",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t11-m0",
+   "thread": "C5-t11",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2024-03-09T22:28:18.521+00:00",
+   "from": "p0",
+   "to": [
+    "p3"
+   ],
+   "direction": "outgoing",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t11-m1",
+   "thread": "C5-t11",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2024-04-05T23:14:01.821+00:00",
+   "from": "p3",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "let me check and come back to you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t11-m2",
+   "thread": "C5-t11",
+   "phone": "C5",
+   "app": "Native Messages",
+   "time": "2024-04-16T07:35:46.452+00:00",
+   "from": "p0",
+   "to": [
+    "p3"
+   ],
+   "direction": "outgoing",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t12-m0",
+   "thread": "C5-t12",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2023-11-18T20:59:46.510+00:00",
+   "from": "p4",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t12-m1",
+   "thread": "C5-t12",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-02T03:54:04.747+00:00",
+   "from": "p0",
+   "to": [
+    "p4"
+   ],
+   "direction": "outgoing",
+   "body": "ok",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t12-m2",
+   "thread": "C5-t12",
+   "phone": "C5",
+   "app": "WhatsApp",
+   "time": "2024-03-16T00:01:56.706+00:00",
+   "from": "p4",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "can you send the address again",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t13-m0",
+   "thread": "C5-t13",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-11-10T02:35:35.772+00:00",
+   "from": "p7",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "running about ten minutes behind",
+   "deleted": "Unknown"
+  },
+  {
+   "id": "C5-t13-m1",
+   "thread": "C5-t13",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2023-12-12T06:22:45.953+00:00",
+   "from": "p0",
+   "to": [
+    "p7",
+    "p9",
+    "p2"
+   ],
+   "direction": "outgoing",
+   "body": "that price is too high",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C5-t13-m2",
+   "thread": "C5-t13",
+   "phone": "C5",
+   "app": "Telegram",
+   "time": "2024-04-26T20:48:03.829+00:00",
+   "from": "p7",
+   "to": [
+    "p0"
+   ],
+   "direction": "incoming",
+   "body": "let me check and come back to you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m0",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-14T00:03:43.691+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "can you send the address again",
+   "deleted": "Unknown"
+  },
+  {
+   "id": "C6-t0-m1",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-15T20:12:32.399+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m2",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-17T00:17:13.948+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m3",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-17T18:33:41.320+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m4",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-18T03:27:57.730+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m5",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-19T00:42:36.824+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "did you get the package",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m6",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-24T05:41:55.641+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "that price is too high",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m7",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-26T04:14:20.386+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "are we still on for later",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m8",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-26T04:41:22.743+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "need the number for the landlord",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m9",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-29T01:15:57.619+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "thanks, got it",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m10",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-30T07:35:31.077+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m11",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-12-04T21:59:02.951+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m12",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-12-05T00:15:51.976+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m13",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-12-07T18:46:00.181+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m14",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-12-12T22:45:40.940+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m15",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-12-20T19:07:48.565+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m16",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-12-23T02:26:03.824+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m17",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-12-25T04:07:49.795+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m18",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-12-25T23:08:43.511+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "thanks, got it",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m19",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-12-27T03:17:15.429+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "need the number for the landlord",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m20",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-12-30T02:59:08.450+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m21",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-12-30T20:05:34.752+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m22",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-01T22:40:58.954+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m23",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-02T00:26:41.475+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "let me check and come back to you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m24",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-02T02:33:27.453+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m25",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-03T03:51:21.243+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "lol",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m26",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-03T05:10:33.884+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "did you get the package",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m27",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-06T05:37:22.130+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m28",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-07T23:56:39.476+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m29",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-08T03:11:12.446+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "invoice sent",
+   "deleted": "Unknown"
+  },
+  {
+   "id": "C6-t0-m30",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-08T07:24:42.712+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "half now, half on Friday",
+   "deleted": "Unknown"
+  },
+  {
+   "id": "C6-t0-m31",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-11T19:51:34.447+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "half now, half on Friday",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m32",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-11T23:11:22.196+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "picked up the keys",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m33",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-11T23:42:23.637+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "on my way",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m34",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-12T01:09:48.876+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m35",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-21T01:42:04.766+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "meet at the usual place",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m36",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-06T22:29:09.747+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m37",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-07T05:19:15.998+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m38",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-08T00:43:57.268+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m39",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-09T01:10:47.242+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m40",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-09T23:45:35.899+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "can you send the address again",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m41",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-10T04:09:12.811+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m42",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-10T05:37:12.601+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "let me check and come back to you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m43",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-16T03:10:57.198+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "need the number for the landlord",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m44",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-18T00:23:24.604+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "lol",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m45",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-18T19:06:28.375+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "picked up the keys",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m46",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-19T00:18:36.354+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m47",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-19T02:56:55.202+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m48",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-21T17:32:19.884+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "half now, half on Friday",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m49",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-01T00:14:12.266+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "picked up the keys",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m50",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-04T17:32:44.351+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m51",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-06T01:25:31.277+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m52",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-06T19:03:20.206+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m53",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-07T03:28:13.556+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "that price is too high",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m54",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-12T20:59:47.732+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m55",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-16T06:49:09.255+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "keep this between us",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m56",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-21T02:14:38.521+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "half now, half on Friday",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m57",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-24T21:51:53.158+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "meet at the usual place",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m58",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-29T22:57:31.249+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m59",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-04T00:54:34.568+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m60",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-06T07:36:18.940+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "meet at the usual place",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m61",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-09T22:45:00.956+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m62",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-14T21:44:29.481+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m63",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-18T03:26:17.826+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "are we still on for later",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m64",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-19T03:35:35.212+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "thanks, got it",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m65",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-20T01:44:05.956+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m66",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-25T00:25:25.577+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m67",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-25T01:25:25.334+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m68",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-26T22:12:30.963+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m69",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-27T01:17:38.139+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "that price is too high",
+   "deleted": "Unknown"
+  },
+  {
+   "id": "C6-t0-m70",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-27T04:35:31.392+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "ok",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m71",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-28T03:26:08.573+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m72",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-28T18:45:48.260+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "need the number for the landlord",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m73",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-30T01:23:07.973+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m74",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-05-02T02:56:42.721+00:00",
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m75",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-05-04T05:48:16.566+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "ok",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m76",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-05-07T23:38:37.079+00:00",
+   "from": "p1",
+   "to": [
+    "p0"
+   ],
+   "direction": "outgoing",
+   "body": "need the number for the landlord",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t0-m77",
+   "thread": "C6-t0",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": null,
+   "from": "p0",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "that price is too high",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m0",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-11-12T23:53:21.862+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m1",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-11-13T05:34:14.951+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m2",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-11-14T00:33:00.803+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m3",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-11-14T01:57:16.035+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m4",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-11-16T01:33:16.987+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "let me check and come back to you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m5",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-11-30T01:41:30.497+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m6",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-12-10T01:07:06.269+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "can you send the address again",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m7",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-12-14T23:53:27.451+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "ok",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m8",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-12-18T05:25:33.083+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m9",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-12-20T07:34:58.493+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m10",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-12-30T04:58:04.365+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m11",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-01-02T20:28:05.493+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m12",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-01-03T00:19:01.597+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "lol",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m13",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-01-05T02:25:55.881+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m14",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-01-13T01:26:38.808+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "lol",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m15",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-01-18T21:20:44.190+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m16",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-02-07T04:31:01.109+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m17",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-02-07T21:47:08.931+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "ok",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m18",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-02-12T03:07:57.070+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m19",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-02-13T20:30:28.409+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "are we still on for later",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m20",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-02-15T00:54:11.706+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m21",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-02-21T06:52:50.800+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m22",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-02-24T05:49:35.655+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m23",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-03-02T04:27:59.239+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m24",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-03-02T16:44:52.225+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "let me check and come back to you",
+   "deleted": "Unknown"
+  },
+  {
+   "id": "C6-t1-m25",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-03-25T01:25:26.799+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "half now, half on Friday",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m26",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-03-28T03:21:40.951+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "half now, half on Friday",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m27",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-03-30T02:58:05.525+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "lol",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m28",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-04-17T02:20:42.033+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m29",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-04-17T21:50:40.776+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "on my way",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m30",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-04-25T00:28:03.162+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "half now, half on Friday",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m31",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-04-25T21:26:18.332+00:00",
+   "from": "p5",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m32",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-04-28T02:21:02.470+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t1-m33",
+   "thread": "C6-t1",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-05-01T17:11:52.368+00:00",
+   "from": "p1",
+   "to": [
+    "p5"
+   ],
+   "direction": "outgoing",
+   "body": "are we still on for later",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m0",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2023-11-19T03:13:37.618+00:00",
+   "from": "p1",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m1",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2023-11-25T18:56:15.206+00:00",
+   "from": "p1",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "let me check and come back to you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m2",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2023-12-08T07:23:35.898+00:00",
+   "from": "p1",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m3",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2023-12-12T04:23:28.706+00:00",
+   "from": "p1",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m4",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2023-12-28T22:26:10.326+00:00",
+   "from": "p1",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m5",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2023-12-31T23:54:12.123+00:00",
+   "from": "p1",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "picked up the keys",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m6",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-01-01T05:53:42.147+00:00",
+   "from": "p6",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m7",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-01-11T00:35:04.826+00:00",
+   "from": "p6",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "the car is outside",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m8",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-02-08T00:50:10.710+00:00",
+   "from": "p1",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m9",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-02-12T06:24:55.135+00:00",
+   "from": "p6",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "picked up the keys",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m10",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-02-13T19:16:55.199+00:00",
+   "from": "p6",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m11",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-02-16T03:12:55.787+00:00",
+   "from": "p6",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "on my way",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m12",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-02-18T00:08:29.285+00:00",
+   "from": "p6",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m13",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-03-02T00:05:53.749+00:00",
+   "from": "p6",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m14",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-03-09T22:12:24.967+00:00",
+   "from": "p1",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "on my way",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m15",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-03-30T05:50:52.867+00:00",
+   "from": "p1",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m16",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-04-02T05:53:26.037+00:00",
+   "from": "p1",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m17",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-04-14T06:06:28.126+00:00",
+   "from": "p6",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m18",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-04-15T19:46:01.755+00:00",
+   "from": "p1",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "on my way",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m19",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-04-22T23:54:18.959+00:00",
+   "from": "p6",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "let me check and come back to you",
+   "deleted": "Deleted"
+  },
+  {
+   "id": "C6-t2-m20",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-04-28T04:44:11.230+00:00",
+   "from": "p1",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t2-m21",
+   "thread": "C6-t2",
+   "phone": "C6",
+   "app": "Signal",
+   "time": "2024-05-06T20:22:01.683+00:00",
+   "from": "p1",
+   "to": [
+    "p6"
+   ],
+   "direction": "outgoing",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m0",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2023-11-26T01:33:42.761+00:00",
+   "from": "p1",
+   "to": [
+    "p7"
+   ],
+   "direction": "outgoing",
+   "body": "who else is coming",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m1",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2023-12-07T04:29:36.183+00:00",
+   "from": "p1",
+   "to": [
+    "p7"
+   ],
+   "direction": "outgoing",
+   "body": "on my way",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m2",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2023-12-21T06:59:10.457+00:00",
+   "from": "p7",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "ok",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m3",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2023-12-28T06:21:34.019+00:00",
+   "from": "p1",
+   "to": [
+    "p7"
+   ],
+   "direction": "outgoing",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m4",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2024-01-01T03:29:42.408+00:00",
+   "from": "p7",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "phone was off, sorry",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m5",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2024-01-10T02:13:11.373+00:00",
+   "from": "p7",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m6",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2024-02-07T00:42:19.960+00:00",
+   "from": "p7",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "ok",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m7",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2024-02-16T01:33:56.284+00:00",
+   "from": "p7",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "can you send the address again",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m8",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2024-03-11T02:00:27.192+00:00",
+   "from": "p1",
+   "to": [
+    "p7"
+   ],
+   "direction": "outgoing",
+   "body": "thanks, got it",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m9",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2024-03-14T06:52:42.613+00:00",
+   "from": "p1",
+   "to": [
+    "p7"
+   ],
+   "direction": "outgoing",
+   "body": "need the number for the landlord",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m10",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2024-03-14T23:23:48.593+00:00",
+   "from": "p1",
+   "to": [
+    "p7"
+   ],
+   "direction": "outgoing",
+   "body": "running about ten minutes behind",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m11",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2024-03-29T00:35:58.676+00:00",
+   "from": "p7",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m12",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2024-03-29T02:21:05.643+00:00",
+   "from": "p1",
+   "to": [
+    "p7"
+   ],
+   "direction": "outgoing",
+   "body": "keep this between us",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m13",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2024-04-04T22:57:48.992+00:00",
+   "from": "p7",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m14",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2024-04-11T01:31:45.001+00:00",
+   "from": "p1",
+   "to": [
+    "p7"
+   ],
+   "direction": "outgoing",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t3-m15",
+   "thread": "C6-t3",
+   "phone": "C6",
+   "app": "Native Messages",
+   "time": "2024-05-03T00:36:10.026+00:00",
+   "from": "p7",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "that price is too high",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t4-m0",
+   "thread": "C6-t4",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-15T01:53:58.577+00:00",
+   "from": "p12",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "can you send the address again",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t4-m1",
+   "thread": "C6-t4",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-18T07:13:15.417+00:00",
+   "from": "p6",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "meet at the usual place",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t4-m2",
+   "thread": "C6-t4",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-11-19T04:28:27.717+00:00",
+   "from": "p12",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "that price is too high",
+   "deleted": "Deleted"
+  },
+  {
+   "id": "C6-t4-m3",
+   "thread": "C6-t4",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2023-12-07T00:08:48.106+00:00",
+   "from": "p6",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "ok",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t4-m4",
+   "thread": "C6-t4",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-01-12T04:28:26.492+00:00",
+   "from": "p11",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t4-m5",
+   "thread": "C6-t4",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-06T01:12:19.375+00:00",
+   "from": "p1",
+   "to": [
+    "p6",
+    "p11",
+    "p12"
+   ],
+   "direction": "outgoing",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t4-m6",
+   "thread": "C6-t4",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-02-19T21:24:47.054+00:00",
+   "from": "p1",
+   "to": [
+    "p6",
+    "p11",
+    "p12"
+   ],
+   "direction": "outgoing",
+   "body": "can you send the address again",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t4-m7",
+   "thread": "C6-t4",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-04T23:47:11.156+00:00",
+   "from": "p12",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t4-m8",
+   "thread": "C6-t4",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-05T22:41:29.464+00:00",
+   "from": "p12",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t4-m9",
+   "thread": "C6-t4",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-13T06:20:36.107+00:00",
+   "from": "p1",
+   "to": [
+    "p6",
+    "p11",
+    "p12"
+   ],
+   "direction": "outgoing",
+   "body": "left it by the side door",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t4-m10",
+   "thread": "C6-t4",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-03-28T18:31:42.554+00:00",
+   "from": "p1",
+   "to": [
+    "p6",
+    "p11",
+    "p12"
+   ],
+   "direction": "outgoing",
+   "body": "half now, half on Friday",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t4-m11",
+   "thread": "C6-t4",
+   "phone": "C6",
+   "app": "WhatsApp",
+   "time": "2024-04-04T03:53:44.603+00:00",
+   "from": "p12",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "call me when you can",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t5-m0",
+   "thread": "C6-t5",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-11-23T06:11:44.020+00:00",
+   "from": "p1",
+   "to": [
+    "p9"
+   ],
+   "direction": "outgoing",
+   "body": "where are you",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t5-m1",
+   "thread": "C6-t5",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-12-04T20:22:59.958+00:00",
+   "from": "p9",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "that price is too high",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t5-m2",
+   "thread": "C6-t5",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2023-12-28T03:00:32.672+00:00",
+   "from": "p9",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t5-m3",
+   "thread": "C6-t5",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-03-15T22:43:00.739+00:00",
+   "from": "p9",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "can you send the address again",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t5-m4",
+   "thread": "C6-t5",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-03-22T02:27:16.330+00:00",
+   "from": "p9",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "can you send the address again",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t5-m5",
+   "thread": "C6-t5",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-03-24T18:15:35.687+00:00",
+   "from": "p9",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "picked up the keys",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t5-m6",
+   "thread": "C6-t5",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-03-24T20:08:31.559+00:00",
+   "from": "p9",
+   "to": [
+    "p1"
+   ],
+   "direction": "incoming",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t5-m7",
+   "thread": "C6-t5",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-04-01T04:30:29.027+00:00",
+   "from": "p1",
+   "to": [
+    "p9"
+   ],
+   "direction": "outgoing",
+   "body": "not tonight, tomorrow works",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t5-m8",
+   "thread": "C6-t5",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-04-13T06:54:44.041+00:00",
+   "from": "p1",
+   "to": [
+    "p9"
+   ],
+   "direction": "outgoing",
+   "body": "invoice sent",
+   "deleted": "Intact"
+  },
+  {
+   "id": "C6-t5-m9",
+   "thread": "C6-t5",
+   "phone": "C6",
+   "app": "Telegram",
+   "time": "2024-05-07T02:15:26.439+00:00",
+   "from": "p1",
+   "to": [
+    "p9"
+   ],
+   "direction": "outgoing",
+   "body": "see you at 7",
+   "deleted": "Intact"
+  }
+ ],
+ "calls": [
+  {
+   "phone": "C5",
+   "time": "2024-02-25T16:46:29.795+00:00",
+   "other": "p4",
+   "direction": "incoming",
+   "status": "Unknown",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-02-27T01:19:05.442+00:00",
+   "other": "p1",
+   "direction": "incoming",
+   "status": "Established",
+   "seconds": 1443
+  },
+  {
+   "phone": "C5",
+   "time": "2023-11-26T23:59:19.672+00:00",
+   "other": "p3",
+   "direction": "outgoing",
+   "status": "Unknown",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-03-01T01:08:46.811+00:00",
+   "other": "p7",
+   "direction": "outgoing",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2023-12-24T01:34:31.612+00:00",
+   "other": "p9",
+   "direction": "outgoing",
+   "status": "Unknown",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-03-10T21:36:41.643+00:00",
+   "other": "p3",
+   "direction": "outgoing",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-03-26T01:44:47.490+00:00",
+   "other": "p8",
+   "direction": "outgoing",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-03-13T04:35:35.501+00:00",
+   "other": "p9",
+   "direction": "incoming",
+   "status": "Established",
+   "seconds": 1162
+  },
+  {
+   "phone": "C5",
+   "time": "2024-01-08T02:09:44.907+00:00",
+   "other": "p2",
+   "direction": "outgoing",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-01-05T02:13:52.640+00:00",
+   "other": "p5",
+   "direction": "incoming",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2023-11-13T03:00:11.911+00:00",
+   "other": "p6",
+   "direction": "outgoing",
+   "status": "Unknown",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2023-11-14T19:15:32.577+00:00",
+   "other": "p2",
+   "direction": "outgoing",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-04-02T03:17:47.619+00:00",
+   "other": "p6",
+   "direction": "incoming",
+   "status": "Established",
+   "seconds": 474
+  },
+  {
+   "phone": "C5",
+   "time": "2024-03-25T04:22:04.993+00:00",
+   "other": "p7",
+   "direction": "outgoing",
+   "status": "Established",
+   "seconds": 1591
+  },
+  {
+   "phone": "C5",
+   "time": "2023-12-11T21:35:39.237+00:00",
+   "other": "p1",
+   "direction": "incoming",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-02-21T08:25:27.308+00:00",
+   "other": "p6",
+   "direction": "outgoing",
+   "status": "Established",
+   "seconds": 1595
+  },
+  {
+   "phone": "C5",
+   "time": "2024-03-03T20:03:29.802+00:00",
+   "other": "p3",
+   "direction": "outgoing",
+   "status": "Established",
+   "seconds": 1025
+  },
+  {
+   "phone": "C5",
+   "time": "2024-04-20T00:21:13.385+00:00",
+   "other": "p7",
+   "direction": "incoming",
+   "status": "Unknown",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-04-24T07:54:45.502+00:00",
+   "other": "p3",
+   "direction": "incoming",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-04-19T02:43:45.735+00:00",
+   "other": "p3",
+   "direction": "outgoing",
+   "status": "Unknown",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-01-30T22:35:28.426+00:00",
+   "other": "p4",
+   "direction": "incoming",
+   "status": "Established",
+   "seconds": 1288
+  },
+  {
+   "phone": "C5",
+   "time": "2024-04-26T20:39:23.203+00:00",
+   "other": "p5",
+   "direction": "outgoing",
+   "status": "Unknown",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2023-12-21T21:13:18.485+00:00",
+   "other": "p9",
+   "direction": "incoming",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2023-12-05T02:04:02.597+00:00",
+   "other": "p6",
+   "direction": "incoming",
+   "status": "Unknown",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-03-29T01:56:33.260+00:00",
+   "other": "p9",
+   "direction": "incoming",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2023-12-22T07:52:55.882+00:00",
+   "other": "p7",
+   "direction": "incoming",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-03-14T01:13:53.006+00:00",
+   "other": "p4",
+   "direction": "incoming",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-03-21T19:16:02.340+00:00",
+   "other": "p2",
+   "direction": "outgoing",
+   "status": "Unknown",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2023-12-11T01:56:32.670+00:00",
+   "other": "p7",
+   "direction": "outgoing",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-04-27T02:10:07.122+00:00",
+   "other": "p7",
+   "direction": "outgoing",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2024-04-26T01:33:14.739+00:00",
+   "other": "p2",
+   "direction": "incoming",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2023-11-22T23:33:34.932+00:00",
+   "other": "p8",
+   "direction": "incoming",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C5",
+   "time": "2023-11-26T08:50:23.894+00:00",
+   "other": "p3",
+   "direction": "outgoing",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-01-01T19:07:59.880+00:00",
+   "other": "p5",
+   "direction": "outgoing",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-02-19T23:56:29.043+00:00",
+   "other": "p5",
+   "direction": "incoming",
+   "status": "Established",
+   "seconds": 173
+  },
+  {
+   "phone": "C6",
+   "time": "2024-01-01T01:38:41.814+00:00",
+   "other": "p11",
+   "direction": "incoming",
+   "status": "Canceled",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-12-02T01:05:00.446+00:00",
+   "other": "p7",
+   "direction": "outgoing",
+   "status": "BusyLine",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-11-18T17:44:42.126+00:00",
+   "other": "p11",
+   "direction": "incoming",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-11-25T05:37:52.290+00:00",
+   "other": "p7",
+   "direction": "incoming",
+   "status": "Canceled",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-05-02T23:40:56.683+00:00",
+   "other": "p11",
+   "direction": "incoming",
+   "status": "Established",
+   "seconds": 891
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-01T23:01:30.259+00:00",
+   "other": "p10",
+   "direction": "outgoing",
+   "status": "BusyLine",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-01T20:02:06.988+00:00",
+   "other": "p9",
+   "direction": "outgoing",
+   "status": "BusyLine",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-11-15T17:58:38.049+00:00",
+   "other": "p12",
+   "direction": "incoming",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-01-20T22:25:58.146+00:00",
+   "other": "p0",
+   "direction": "incoming",
+   "status": "Established",
+   "seconds": 1630
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-09T00:12:29.565+00:00",
+   "other": "p10",
+   "direction": "outgoing",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-02-06T23:25:43.152+00:00",
+   "other": "p0",
+   "direction": "outgoing",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-03-05T04:19:30.559+00:00",
+   "other": "p12",
+   "direction": "incoming",
+   "status": "Established",
+   "seconds": 1783
+  },
+  {
+   "phone": "C6",
+   "time": "2024-05-06T22:51:02.022+00:00",
+   "other": "p0",
+   "direction": "incoming",
+   "status": "Canceled",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-01-11T21:10:30.234+00:00",
+   "other": "p5",
+   "direction": "outgoing",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-01-12T01:21:39.859+00:00",
+   "other": "p6",
+   "direction": "incoming",
+   "status": "Canceled",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-17T00:07:01.897+00:00",
+   "other": "p0",
+   "direction": "outgoing",
+   "status": "Established",
+   "seconds": 535
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-10T22:41:45.200+00:00",
+   "other": "p7",
+   "direction": "incoming",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-24T03:58:53.354+00:00",
+   "other": "p8",
+   "direction": "outgoing",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-03-09T03:25:18.418+00:00",
+   "other": "p9",
+   "direction": "incoming",
+   "status": "BusyLine",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-03-02T23:22:48.184+00:00",
+   "other": "p10",
+   "direction": "outgoing",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-02-21T23:13:56.661+00:00",
+   "other": "p5",
+   "direction": "incoming",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-12-14T02:24:02.385+00:00",
+   "other": "p10",
+   "direction": "incoming",
+   "status": "Canceled",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-24T00:37:23.861+00:00",
+   "other": "p12",
+   "direction": "outgoing",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-03-30T02:27:37.831+00:00",
+   "other": "p11",
+   "direction": "incoming",
+   "status": "Canceled",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-01-09T22:45:20.500+00:00",
+   "other": "p10",
+   "direction": "outgoing",
+   "status": "BusyLine",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-27T03:45:11.615+00:00",
+   "other": "p7",
+   "direction": "outgoing",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-12-23T02:54:39.457+00:00",
+   "other": "p7",
+   "direction": "outgoing",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-02-27T05:45:13.926+00:00",
+   "other": "p10",
+   "direction": "outgoing",
+   "status": "BusyLine",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-02-13T00:12:17.264+00:00",
+   "other": "p0",
+   "direction": "incoming",
+   "status": "BusyLine",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-03-24T06:44:44.824+00:00",
+   "other": "p0",
+   "direction": "incoming",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-12-21T03:44:01.787+00:00",
+   "other": "p7",
+   "direction": "incoming",
+   "status": "Established",
+   "seconds": 92
+  },
+  {
+   "phone": "C6",
+   "time": "2024-03-06T02:14:53.272+00:00",
+   "other": "p9",
+   "direction": "outgoing",
+   "status": "Established",
+   "seconds": 1400
+  },
+  {
+   "phone": "C6",
+   "time": "2024-03-07T03:42:36.585+00:00",
+   "other": "p0",
+   "direction": "outgoing",
+   "status": "Canceled",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-11-12T20:41:08.672+00:00",
+   "other": "p7",
+   "direction": "outgoing",
+   "status": "Established",
+   "seconds": 110
+  },
+  {
+   "phone": "C6",
+   "time": "2023-12-04T04:39:14.873+00:00",
+   "other": "p9",
+   "direction": "outgoing",
+   "status": "Canceled",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-11-27T18:08:43.304+00:00",
+   "other": "p9",
+   "direction": "outgoing",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-12-28T00:55:20.002+00:00",
+   "other": "p0",
+   "direction": "outgoing",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-02-06T23:11:37.538+00:00",
+   "other": "p11",
+   "direction": "incoming",
+   "status": "Established",
+   "seconds": 1494
+  },
+  {
+   "phone": "C6",
+   "time": "2024-02-23T02:29:20.669+00:00",
+   "other": "p10",
+   "direction": "incoming",
+   "status": "Established",
+   "seconds": 4
+  },
+  {
+   "phone": "C6",
+   "time": "2023-12-14T05:01:50.757+00:00",
+   "other": "p8",
+   "direction": "incoming",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-03-25T21:03:13.247+00:00",
+   "other": "p12",
+   "direction": "incoming",
+   "status": "BusyLine",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-03-26T01:33:20.545+00:00",
+   "other": "p5",
+   "direction": "outgoing",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-12-18T08:06:24.754+00:00",
+   "other": "p6",
+   "direction": "outgoing",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-03-05T00:23:33.141+00:00",
+   "other": "p6",
+   "direction": "outgoing",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-30T00:00:09.892+00:00",
+   "other": "p12",
+   "direction": "incoming",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-02T01:49:02.954+00:00",
+   "other": "p6",
+   "direction": "outgoing",
+   "status": "BusyLine",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-05-02T19:27:11.484+00:00",
+   "other": "p12",
+   "direction": "outgoing",
+   "status": "BusyLine",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-05-01T20:18:19.672+00:00",
+   "other": "p0",
+   "direction": "incoming",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-03-29T18:01:39.081+00:00",
+   "other": "p11",
+   "direction": "incoming",
+   "status": "Canceled",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-12-07T03:34:05.815+00:00",
+   "other": "p9",
+   "direction": "outgoing",
+   "status": "BusyLine",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-11-25T20:15:03.425+00:00",
+   "other": "p10",
+   "direction": "outgoing",
+   "status": "Canceled",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-02-16T02:20:20.140+00:00",
+   "other": "p9",
+   "direction": "incoming",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-16T01:52:10.397+00:00",
+   "other": "p9",
+   "direction": "outgoing",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-19T17:25:22.576+00:00",
+   "other": "p10",
+   "direction": "incoming",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-01-03T21:40:20.058+00:00",
+   "other": "p12",
+   "direction": "outgoing",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-02-08T22:12:38.707+00:00",
+   "other": "p5",
+   "direction": "outgoing",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-12-31T00:48:19.616+00:00",
+   "other": "p12",
+   "direction": "outgoing",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-05-07T07:02:24.265+00:00",
+   "other": "p0",
+   "direction": "outgoing",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-12-21T17:56:49.762+00:00",
+   "other": "p0",
+   "direction": "outgoing",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-16T01:55:39.709+00:00",
+   "other": "p11",
+   "direction": "incoming",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-12-09T05:22:49.571+00:00",
+   "other": "p5",
+   "direction": "incoming",
+   "status": "BusyLine",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2023-12-25T05:31:18.353+00:00",
+   "other": "p9",
+   "direction": "outgoing",
+   "status": "NotEstablishedUnknownReason",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-22T01:58:07.773+00:00",
+   "other": "p0",
+   "direction": "incoming",
+   "status": "Canceled",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-08T23:47:21.430+00:00",
+   "other": "p7",
+   "direction": "incoming",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-08T01:53:21.544+00:00",
+   "other": "p0",
+   "direction": "outgoing",
+   "status": "Rejected",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-03-30T22:20:02.832+00:00",
+   "other": "p9",
+   "direction": "incoming",
+   "status": "Canceled",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-04-06T05:13:49.621+00:00",
+   "other": "p0",
+   "direction": "incoming",
+   "status": "Missed",
+   "seconds": 0
+  },
+  {
+   "phone": "C6",
+   "time": "2024-03-02T00:59:54.348+00:00",
+   "other": "p6",
+   "direction": "incoming",
+   "status": "Established",
+   "seconds": 1444
+  }
+ ]
+}
