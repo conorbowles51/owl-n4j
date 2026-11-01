@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/ui/page-header"
 import { EmptyState } from "@/components/ui/empty-state"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { CaseCard } from "@/components/ui/case-card"
 import { useCases } from "../hooks/use-cases"
 import { CreateCaseDialog } from "./CreateCaseDialog"
@@ -67,8 +67,8 @@ export function CaseListPage() {
 
       <div className="flex-1 overflow-auto p-6">
         {isLoading ? (
-          <div className="flex justify-center py-12">
-            <LoadingSpinner />
+          <div className="mx-auto max-w-2xl py-6">
+            <LoadProgress caseId={null} page="cases" />
           </div>
         ) : !filtered?.length ? (
           <EmptyState

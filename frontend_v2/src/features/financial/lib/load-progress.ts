@@ -102,3 +102,29 @@ export function unpackWords(unpack: { done: number; total: number; unit: "charac
   if (unpack.unit === "rows") return `${unpack.done.toLocaleString("en-US")} of ${unpack.total.toLocaleString("en-US")} rows unpacked`
   return `finding the rows: ${Math.floor((unpack.done / Math.max(1, unpack.total)) * 100)}% looked through`
 }
+
+/** Work the page does itself after its reads, counted in its own true steps (e.g. arranging a large graph). */
+export interface PageWork {
+  /** Words for the work, e.g. "Arranging 35,692 nodes". */
+  step: string
+  done: number
+  total: number
+}
+
+export const workPending = (work: PageWork | null | undefined): work is PageWork =>
+  !!work && work.total > 0 && work.done < work.total
+
+/**
+ * The reads' picture with the page's own work as one more part: it counts as a fraction of its steps, and when
+ * no read is running it is what the panel says is happening ("Arranging 35,692 nodes: step 12 of 50").
+ */
+export function withWork(view: LoadPicture, work: PageWork | null | undefined): LoadPicture {
+  if (!work || work.total <= 0) return view
+  const part = Math.min(Math.max(work.done, 0) / work.total, workPending(work) ? 0.99 : 1)
+  return {
+    ...view,
+    done: view.done + part,
+    total: view.total + 1,
+    step: view.current || !workPending(work) ? view.step : `${work.step}: step ${work.done} of ${work.total}`,
+  }
+}

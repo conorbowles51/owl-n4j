@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import {
   Upload,
   Play,
@@ -308,8 +308,8 @@ export function FileListPanel({
       {/* Content */}
       <div className="flex-1 overflow-auto">
         {isLoading ? (
-          <div className="flex justify-center py-12">
-            <LoadingSpinner />
+          <div className="py-6">
+            <LoadProgress caseId={caseId} page="case/evidence" />
           </div>
         ) : isError ? (
           <div role="alert" className="p-8 text-center text-sm">

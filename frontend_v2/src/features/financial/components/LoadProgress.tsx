@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { requestsSince, subscribeRequests } from "@/lib/request-progress"
@@ -14,6 +14,9 @@ import {
   STALL_MS,
   TICK_MS,
   unpackWords,
+  withWork,
+  workPending,
+  type PageWork,
 } from "../lib/load-progress"
 
 /**
@@ -24,31 +27,84 @@ import {
  * case last time in this browser. It redraws every half second; when nothing has moved for 3 s it says so; past
  * 10 s, or when a part fails, it names that part and offers to try again. The bar never goes backwards and never
  * reaches 100% before the data is shown (the last part is drawing the page). Nothing here runs on a timer alone:
- * every number comes from the reads the page made (lib/request-progress.ts).
+ * every number comes from the reads the page made (lib/request-progress.ts) and from the steps of the page's own
+ * work (`work`, e.g. a large graph being arranged: its true step count), which keeps the panel open until done.
+ *
+ * `caseId` null: a page that is not one case's (the case list). `since`: when the page opened, for a page that
+ * shows the panel in more than one place while it loads (the graph: while its reads run, then over the canvas
+ * while it is arranged); the bar keeps its position across them.
  */
 
-export function LoadProgress({ caseId, page }: { caseId: string | undefined; page: string }) {
-  if (!caseId) return null
-  // A new view or case starts its own count from zero.
-  return <ViewLoadProgress key={`${caseId}:${page}`} caseId={caseId} page={page} />
+interface LoadProgressProps {
+  caseId: string | null | undefined
+  page: string
+  since?: number
+  work?: PageWork | null
 }
 
-function ViewLoadProgress({ caseId, page }: { caseId: string; page: string }) {
+export function LoadProgress({ caseId, page, since, work }: LoadProgressProps) {
+  if (caseId === undefined || caseId === "") return null
+  const scope = caseId ?? "all"
+  // A new view or case starts its own count from zero.
+  return <ViewLoadProgress key={`${scope}:${page}:${since ?? ""}`} caseId={scope} page={page} opened={since} work={work ?? null} />
+}
+
+// The bar's position per opening (`since`), so a panel shown again for the same opening never starts lower.
+const barShown = new Map<number, number>()
+function keepBar(since: number, fraction: number) {
+  barShown.set(since, fraction)
+  if (barShown.size > 20) barShown.delete(barShown.keys().next().value as number)
+}
+
+interface Clock {
+  now: number
+  fraction: number
+  movedAt: number
+  done: number
+  unpacked: number
+}
+
+function nextClock(previous: Clock, since: number, work: PageWork | null, shared: boolean): Clock {
+  const view = withWork(picture(requestsSince(since)), work)
+  const at = performance.now()
+  const unpacked = view.unpack?.done ?? 0
+  const fraction = Math.min(0.99, Math.max(previous.fraction, view.done / view.total))
+  if (shared) keepBar(since, fraction)
+  return {
+    now: at,
+    fraction,
+    done: view.done,
+    unpacked,
+    movedAt: view.done !== previous.done || unpacked !== previous.unpacked ? at : previous.movedAt,
+  }
+}
+
+function ViewLoadProgress({ caseId, page, opened, work }: { caseId: string; page: string; opened?: number; work: PageWork | null }) {
   const client = useQueryClient()
   // Taken at first render, before the view's own requests start in their effects.
-  const [since] = useState(() => performance.now())
-  const [settled, setSettled] = useState(false)
+  // A panel that closed and opens again for new work of the page's own (a graph arranged afresh) counts from then.
+  const [since, setSince] = useState(() => opened ?? performance.now())
+  const [settledAt, setSettledAt] = useState<number | null>(null)
+  const settled = settledAt !== null
   // Moved only by the tick and by each read's change: the bar's position never goes backwards, and the time the
   // count last moved says when nothing has changed for a while.
-  const [clock, setClock] = useState({ now: since, fraction: 0, movedAt: since, done: 0, unpacked: 0 })
+  const [clock, setClock] = useState<Clock>(() => {
+    const at = performance.now()
+    return { now: at, fraction: (opened !== undefined && barShown.get(opened)) || 0, movedAt: at, done: 0, unpacked: 0 }
+  })
+  const workRef = useRef(work)
+  const workSeen = useRef(false)
+  useLayoutEffect(() => {
+    workRef.current = work
+    if (work) workSeen.current = true
+  }, [work])
 
   useEffect(() => {
     const signal = { cancelled: false }
     const frame = requestAnimationFrame(() => {
       void whenSettled(client, signal).then((end) => {
         if (end === null || signal.cancelled) return
-        if (!requestsSince(since).some((read) => read.failed)) saveMs(caseId, page, end - since)
-        setSettled(true)
+        setSettledAt(end)
       })
     })
     return () => {
@@ -57,7 +113,31 @@ function ViewLoadProgress({ caseId, page }: { caseId: string; page: string }) {
     }
   }, [caseId, page, since, client])
 
-  const open = !settled
+  // Open until the reads have settled and the page's own work is done.
+  const open = !settled || workPending(work)
+  const closed = useRef(false)
+  const [restarted, setRestarted] = useState(false)
+  useEffect(() => {
+    if (!open) {
+      closed.current = true
+      return
+    }
+    if (!closed.current) return
+    closed.current = false
+    const at = performance.now()
+    setSince(at)
+    setRestarted(true)
+    setClock({ now: at, fraction: 0, movedAt: at, done: 0, unpacked: 0 })
+  }, [open])
+  // Recorded once per opening: the page's load, not later work (that is not what "last time" estimates).
+  const saved = useRef(false)
+  useEffect(() => {
+    if (open || settledAt === null || saved.current) return
+    saved.current = true
+    // The time recorded is until the data is on screen: the paint after the reads, or the end of the page's work.
+    const end = workSeen.current ? Math.max(settledAt, performance.now()) : settledAt
+    if (!requestsSince(since).some((read) => read.failed)) saveMs(caseId, page, end - since)
+  }, [open, settledAt, caseId, page, since])
   // After the data is shown only the reads matter (a failed part being asked again); while loading, the tick too.
   const [, setReadsSeen] = useState(0)
   useEffect(() => {
@@ -66,31 +146,26 @@ function ViewLoadProgress({ caseId, page }: { caseId: string; page: string }) {
   }, [open])
   useEffect(() => {
     if (!open) return
-    const tick = () =>
-      setClock((previous) => {
-        const view = picture(requestsSince(since))
-        const at = performance.now()
-        const unpacked = view.unpack?.done ?? 0
-        return {
-          now: at,
-          fraction: Math.min(0.99, Math.max(previous.fraction, view.done / view.total)),
-          done: view.done,
-          unpacked,
-          movedAt: view.done !== previous.done || unpacked !== previous.unpacked ? at : previous.movedAt,
-        }
-      })
+    const tick = () => setClock((previous) => nextClock(previous, since, workRef.current, opened !== undefined && since === opened))
+    tick()
     const timer = setInterval(tick, TICK_MS)
     const unsubscribe = subscribeRequests(tick)
     return () => {
       clearInterval(timer)
       unsubscribe()
     }
-  }, [open, since])
+  }, [open, since, opened])
+  // A step of the page's own work counts at once, as a read's change does.
+  const workDone = work?.done
+  useEffect(() => {
+    if (!open || workDone === undefined) return
+    setClock((previous) => nextClock(previous, since, workRef.current, opened !== undefined && since === opened))
+  }, [open, since, workDone, opened])
 
   const { now, fraction, movedAt } = clock
   const reads = requestsSince(since)
   const elapsed = now - since
-  const view = picture(reads)
+  const view = withWork(picture(reads), work)
   const failures = view.failed
   const retry = () => {
     void client.refetchQueries({ type: "active", predicate: (query) => query.state.status === "error" })
@@ -110,7 +185,7 @@ function ViewLoadProgress({ caseId, page }: { caseId: string; page: string }) {
   }
 
   const percent = Math.floor(fraction * 100)
-  const usual = recordedMs(caseId, page)
+  const usual = restarted ? null : recordedMs(caseId, page)
   const stalled = now - movedAt >= STALL_MS
   const longerThanUsual = usual !== null && elapsed > usual * 1.25 + 1000
 
@@ -147,7 +222,8 @@ function ViewLoadProgress({ caseId, page }: { caseId: string; page: string }) {
         )}
         {view.unpack && <span>{unpackWords(view.unpack)}</span>}
         <span className="text-muted-foreground">
-          {view.partsDone} of {view.partsAsked} {view.partsAsked === 1 ? "part" : "parts"} loaded · {percent}% · {seconds(elapsed)} s
+          {view.partsAsked > 0 && `${view.partsDone} of ${view.partsAsked} ${view.partsAsked === 1 ? "part" : "parts"} loaded · `}
+          {percent}% · {seconds(elapsed)} s
           {left && ` · ${left}`}
         </span>
       </p>

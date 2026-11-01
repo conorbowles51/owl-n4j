@@ -6,7 +6,7 @@ import { LedgerSourceDialog } from "@/features/financial/components/LedgerSource
 import { CaseworkDetailSheet } from "@/features/workspace/components/CaseworkDetailSheet"
 import { useFinancialAccess } from "@/features/financial/hooks/use-financial-access"
 import { Clock } from "lucide-react"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { EmptyState } from "@/components/ui/empty-state"
 import {
   ResizablePanelGroup,
@@ -289,8 +289,10 @@ export function TimelinePage() {
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <LoadingSpinner size="lg" />
+      <div className="flex h-full items-start justify-center pt-6">
+        <div className="w-full max-w-2xl">
+          <LoadProgress caseId={caseId} page="case/timeline" />
+        </div>
       </div>
     )
   }

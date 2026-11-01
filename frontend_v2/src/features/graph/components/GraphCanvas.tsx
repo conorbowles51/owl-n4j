@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useMemo, useState } from "react"
+import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from "react"
 import ForceGraph2D, {
   type ForceGraphMethods,
   type NodeObject,
@@ -56,13 +56,18 @@ interface GraphCanvasProps {
   data: GraphData
   caseId: string
   graphRef?: React.MutableRefObject<ForceGraphMethods | undefined>
+  /**
+   * Told the true steps of a large graph's layout while it is arranged (null once done), for the page's loading
+   * panel. Without it the canvas says it on its own ("Arranging N nodes… step k of 50").
+   */
+  onLayoutProgress?: (progress: { step: string; done: number; total: number } | null) => void
 }
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
+export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const internalRef = useRef<ForceGraphMethods<FGNode, FGLink> | undefined>(undefined)
   const fgRef = externalRef ?? internalRef
@@ -229,6 +234,18 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   const shownWarmupTicks = isLargeGraph && currentLayout?.phase !== "onPage" ? 0 : simWarmupTicks
   const layingOut = isLargeGraph && (!currentLayout || currentLayout.phase === "arranging")
   const arranging = currentLayout?.phase === "arranging"
+  const arrangedSteps = arranging ? currentLayout.step : 0
+  const arrangedNodes = fgData.nodes.length
+  // Before paint, so the panel never closes between the graph arriving and its layout starting.
+  useLayoutEffect(() => {
+    if (!onLayoutProgress) return
+    onLayoutProgress(
+      layingOut
+        ? { step: `Arranging ${arrangedNodes.toLocaleString("en-US")} nodes`, done: arrangedSteps, total: simWarmupTicks }
+        : null
+    )
+  }, [onLayoutProgress, layingOut, arrangedSteps, arrangedNodes, simWarmupTicks])
+  useEffect(() => (onLayoutProgress ? () => onLayoutProgress(null) : undefined), [onLayoutProgress])
 
   // Draw positions the worker sends without stepping the layout on the page (cooldownTicks 0 stops the
   // engine after one frame); when it has finished, run the canvas's own settling from the worker's final
@@ -674,7 +691,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         cooldownTicks={arranging ? 0 : Infinity}
       />
 
-      {layingOut && (
+      {layingOut && !onLayoutProgress && (
         <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-md bg-slate-100/90 dark:bg-slate-900/80 px-2 py-1 text-xs text-slate-500 dark:text-slate-400">
           Arranging {fgData.nodes.length} nodes…
           {arranging && ` step ${currentLayout.step} of ${simWarmupTicks}`}

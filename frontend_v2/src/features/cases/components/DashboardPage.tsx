@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { CaseCard } from "@/components/ui/case-card"
 import { EmptyState } from "@/components/ui/empty-state"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useCases } from "../hooks/use-cases"
 
 export function DashboardPage() {
@@ -38,8 +38,8 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? (
-              <div className="flex justify-center py-8">
-                <LoadingSpinner />
+              <div className="py-4">
+                <LoadProgress caseId={null} page="dashboard" />
               </div>
             ) : !recentCases?.length ? (
               <EmptyState

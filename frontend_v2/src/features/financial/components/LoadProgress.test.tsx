@@ -147,3 +147,85 @@ it("estimates time left while unpacking only from the measured rate of rows, nev
   expect(screen.getByRole("status").textContent).toMatch(/20,000 of 20,000 rows unpacked/)
   expect(screen.getByRole("status").textContent).not.toMatch(/left/)
 })
+
+it("counts the page's own work as a part with its true steps and stays open until it is done", async () => {
+  const client = new QueryClient()
+  const work = (done: number) => ({ step: "Arranging 35,692 nodes", done, total: 50 })
+  const view = render(
+    <QueryClientProvider client={client}>
+      <LoadProgress caseId="case-1" page="case/graph" work={work(0)} />
+    </QueryClientProvider>
+  )
+  const id = startRequest("/api/graph?case_id=case-1")
+  act(() => endRequest(id, null))
+  // Nothing is fetching: the reads have settled, but the graph is still being arranged.
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600)
+  })
+  expect(screen.getByRole("status").textContent).toMatch(/Arranging 35,692 nodes: step 0 of 50…1 of 1 part loaded · 33%/)
+  const before = Number(screen.getByRole("progressbar").getAttribute("aria-valuenow"))
+  view.rerender(
+    <QueryClientProvider client={client}>
+      <LoadProgress caseId="case-1" page="case/graph" work={work(25)} />
+    </QueryClientProvider>
+  )
+  act(() => vi.advanceTimersByTime(500))
+  expect(screen.getByRole("status").textContent).toMatch(/step 25 of 50/)
+  expect(Number(screen.getByRole("progressbar").getAttribute("aria-valuenow"))).toBeGreaterThan(before)
+  // No step for 3 s: it says so.
+  act(() => vi.advanceTimersByTime(3500))
+  expect(screen.getByRole("status").textContent).toMatch(/Still arranging 35,692 nodes: step 25 of 50 — no change for \d+ s/)
+  view.rerender(
+    <QueryClientProvider client={client}>
+      <LoadProgress caseId="case-1" page="case/graph" work={null} />
+    </QueryClientProvider>
+  )
+  act(() => vi.advanceTimersByTime(500))
+  expect(screen.queryByTestId("load-progress")).toBeNull()
+  // The recorded time runs to the end of the work, not to the reads.
+  expect(Number(localStorage.getItem("loupe:view-load-ms:case-1:case/graph"))).toBeGreaterThanOrEqual(4000)
+})
+
+it("shows for a page that is not one case's (the case list), and not before the case is known", () => {
+  const client = new QueryClient()
+  void client.prefetchQuery({ queryKey: ["slow"], queryFn: () => new Promise(() => undefined) })
+  const view = render(
+    <QueryClientProvider client={client}>
+      <LoadProgress caseId={null} page="cases" />
+      <LoadProgress caseId={undefined} page="case/timeline" />
+    </QueryClientProvider>
+  )
+  startRequest("/api/cases")
+  act(() => vi.advanceTimersByTime(600))
+  expect(screen.getAllByRole("status")).toHaveLength(1)
+  expect(screen.getByRole("status").textContent).toMatch(/Working out cases on the server/)
+  view.unmount()
+})
+
+it("keeps the bar's position when the same opening is shown again in another place", () => {
+  const client = new QueryClient()
+  void client.prefetchQuery({ queryKey: ["slow"], queryFn: () => new Promise(() => undefined) })
+  const since = performance.now()
+  const first = render(
+    <QueryClientProvider client={client}>
+      <LoadProgress caseId="case-1" page="case/graph" since={since} />
+    </QueryClientProvider>
+  )
+  const id = startRequest("/api/graph?case_id=case-1")
+  act(() => {
+    answerRequest(id, 1024 * 1024)
+    receiveBytes(id, 1000 * 1024)
+  })
+  act(() => vi.advanceTimersByTime(600))
+  const shown = Number(screen.getByRole("progressbar").getAttribute("aria-valuenow"))
+  expect(shown).toBeGreaterThan(40)
+  first.unmount()
+  act(() => endRequest(id, null))
+  render(
+    <QueryClientProvider client={client}>
+      <LoadProgress caseId="case-1" page="case/graph" since={since} work={{ step: "Arranging 600 nodes", done: 0, total: 50 }} />
+    </QueryClientProvider>
+  )
+  act(() => vi.advanceTimersByTime(100))
+  expect(Number(screen.getByRole("progressbar").getAttribute("aria-valuenow"))).toBeGreaterThanOrEqual(shown)
+})

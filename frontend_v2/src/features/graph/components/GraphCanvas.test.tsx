@@ -194,6 +194,28 @@ describe("GraphCanvas layout", () => {
     })
   })
 
+  it("tells the page each true layout step for its loading panel instead of its own note, and null when done", async () => {
+    vi.stubGlobal("Worker", ManualLayoutWorker)
+    vi.spyOn(performance, "now").mockReturnValue(1000)
+    const reports: ({ step: string; done: number; total: number } | null)[] = []
+    const onLayoutProgress = (progress: { step: string; done: number; total: number } | null) => {
+      reports.push(progress)
+    }
+    const view = render(<GraphCanvas data={makeGraph(600)} caseId="case-1" onLayoutProgress={onLayoutProgress} />)
+    const worker = ManualLayoutWorker.last!
+    const { nodes, links, params } = worker.request!
+    const steps: Float64Array[] = []
+    const final = warmupLayout(nodes, links, params, (step, read) => {
+      if (step === 0 || step === 20) steps.push(read())
+    })
+    expect(reports.at(-1)).toEqual({ step: "Arranging 600 nodes", done: 0, total: 50 })
+    worker.send({ positions: steps[1], step: 20, done: false })
+    expect(reports.at(-1)).toEqual({ step: "Arranging 600 nodes", done: 20, total: 50 })
+    expect(view.container.textContent).not.toMatch(/Arranging/)
+    worker.send({ positions: final.slice(), step: 50, done: true })
+    expect(reports.at(-1)).toBeNull()
+  })
+
   it("starts the canvas afresh, warming up on the page, when the worker fails after drawing", async () => {
     vi.stubGlobal("Worker", ManualLayoutWorker)
     render(<GraphCanvas data={makeGraph(600)} caseId="case-1" />)

@@ -23,7 +23,8 @@ import { MergeEntitiesDialog } from "./MergeEntitiesDialog"
 import { useMergeTracker } from "../hooks/use-merge-tracker"
 import { ExpandGraphDialog } from "./ExpandGraphDialog"
 import { EntityComparisonDialog } from "./EntityComparisonDialog"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
+import type { PageWork } from "@/features/financial/lib/load-progress"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Network } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
@@ -51,6 +52,11 @@ export function GraphPage() {
   const caseLayer = useCaseLayer(caseId)
 
   /* ---- Data fetching ---- */
+  // When this case's graph was opened (before its read starts): one loading panel from the read to the end of
+  // arranging a large graph, though it is shown in two places.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const openedAt = useMemo(() => performance.now(), [caseId])
+  const [layoutWork, setLayoutWork] = useState<PageWork | null>(null)
   const { data: graphData, isLoading } = useGraphData(caseId)
   const { filteredData, filteredNodes, totalNodes } = useGraphSearch(graphData)
 
@@ -229,8 +235,10 @@ export function GraphPage() {
   /* ---- Render ---- */
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <LoadingSpinner size="lg" />
+      <div className="flex h-full items-start justify-center pt-6">
+        <div className="w-full max-w-2xl">
+          <LoadProgress caseId={caseId} page="case/graph" since={openedAt} />
+        </div>
       </div>
     )
   }
@@ -309,8 +317,15 @@ export function GraphPage() {
               {graphDimension === "3d" ? (
                 <Suspense
                   fallback={
-                    <div className="flex h-full items-center justify-center bg-canvas">
-                      <LoadingSpinner size="lg" />
+                    <div className="flex h-full items-start justify-center bg-canvas pt-6">
+                      <div className="w-full max-w-2xl">
+                        <LoadProgress
+                          caseId={caseId}
+                          page="case/graph"
+                          since={openedAt}
+                          work={{ step: "Loading the 3D view", done: 0, total: 1 }}
+                        />
+                      </div>
                     </div>
                   }
                 >
@@ -321,7 +336,15 @@ export function GraphPage() {
                   data={displayData}
                   caseId={caseId!}
                   graphRef={graphRef}
+                  onLayoutProgress={setLayoutWork}
                 />
+              )}
+              {graphDimension !== "3d" && (
+                <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex justify-center">
+                  <div className="pointer-events-auto w-full max-w-2xl bg-background/90">
+                    <LoadProgress caseId={caseId} page="case/graph" since={openedAt} work={layoutWork} />
+                  </div>
+                </div>
               )}
               <GraphLegend nodes={displayData.nodes} />
             </div>

@@ -91,6 +91,14 @@ const WORDS: [string, string][] = [
   ["/api/financial/summary", "the summary"],
   ["/api/financial/entities", "names"],
   ["/api/evidence", "evidence files"],
+  ["/api/evidence-folders", "evidence folders"],
+  ["/api/evidence-folders/search", "evidence search results"],
+  ["/api/graph", "the graph"],
+  ["/api/graph/node", "node details"],
+  ["/api/timeline", "timeline events"],
+  ["/api/timeline/entries", "timeline additions"],
+  ["/api/timeline/views", "timeline views"],
+  ["/api/cases", "cases"],
 ]
 
 export function requestWords(endpoint: string): string {
