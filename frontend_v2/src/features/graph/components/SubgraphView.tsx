@@ -1,4 +1,4 @@
-import { LoadProgress } from "@/features/financial/components/LoadProgress"
+import { LoadingWords } from "@/components/ui/loading-spinner"
 import { lazy, Suspense, useRef, useMemo, useState, useEffect, useCallback } from "react"
 import ForceGraph2D, {
   type ForceGraphMethods,
@@ -207,7 +207,7 @@ export function SubgraphView({ caseId, graphData }: SubgraphViewProps) {
           <Suspense
             fallback={
               <div className="flex h-full items-center justify-center bg-canvas">
-                <LoadProgress caseId={caseId} page="case/subgraph" />
+                <LoadingWords>Loading the 3D view…</LoadingWords>
               </div>
             }
           >

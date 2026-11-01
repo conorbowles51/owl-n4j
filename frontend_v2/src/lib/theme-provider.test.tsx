@@ -22,3 +22,14 @@ it("shows the page in the default theme when the browser refuses site storage", 
   expect(screen.getByText("Loupe")).toBeTruthy()
   expect(document.documentElement.classList.contains("dark")).toBe(true)
 })
+
+it("remembers the theme in a browser that keeps site storage", () => {
+  vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }))
+  const saved = vi.spyOn(Storage.prototype, "setItem")
+  render(
+    <ThemeProvider>
+      <p>Loupe</p>
+    </ThemeProvider>
+  )
+  expect(saved).toHaveBeenCalledWith("owl-theme", "dark")
+})

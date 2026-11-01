@@ -1,4 +1,4 @@
-import { LoadProgress } from "@/features/financial/components/LoadProgress"
+import { LoadingWords } from "@/components/ui/loading-spinner"
 import { useEffect, useState } from "react"
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 import { useAuthStore } from "../hooks/use-auth"
@@ -84,7 +84,7 @@ export function ProtectedRoute() {
     }
     return (
       <div className="flex h-screen items-center justify-center">
-        <LoadProgress caseId={null} page="sign-in" />
+        <LoadingWords>Checking your sign-in…</LoadingWords>
       </div>
     )
   }

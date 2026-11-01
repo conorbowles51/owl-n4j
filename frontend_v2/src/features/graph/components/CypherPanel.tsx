@@ -1,4 +1,3 @@
-import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useState } from "react"
 import { Play, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -8,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { EmptyState } from "@/components/ui/empty-state"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { LoadingSpinner, LoadingWords } from "@/components/ui/loading-spinner"
 import { graphAPI } from "../api"
 
 interface CypherPanelProps {
@@ -158,7 +157,7 @@ export function CypherPanel({ caseId, className }: CypherPanelProps) {
 
       {loading && (
         <div className="flex justify-center py-8">
-          <LoadProgress caseId={caseId} page="case/graph-query" />
+          <LoadingWords>Running the query…</LoadingWords>
         </div>
       )}
 

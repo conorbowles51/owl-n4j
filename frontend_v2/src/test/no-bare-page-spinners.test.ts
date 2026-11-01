@@ -27,3 +27,14 @@ it("names in words what the admin, workspace and triage pages wait for", () => {
   expect(requestWords("/api/workspace/c1/context")).toBe("the workspace")
   expect(requestWords("/api/triage/cases")).toBe("triage cases")
 })
+
+it("a wait that is not a data read says its step in words", () => {
+  // LoadProgress follows data reads only: drawn for the sign-in check, a query run or a code chunk it shows nothing.
+  for (const [path, words] of [
+    ["../features/auth/components/ProtectedRoute.tsx", "Checking your sign-in"],
+    ["../features/graph/components/CypherPanel.tsx", "Running the query"],
+    ["../features/graph/components/SubgraphView.tsx", "Loading the 3D view"],
+  ]) {
+    expect(sources[path], path).toContain(`<LoadingWords>${words}`)
+  }
+})

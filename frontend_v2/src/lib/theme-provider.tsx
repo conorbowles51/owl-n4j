@@ -16,7 +16,7 @@ function getStoredTheme(): Theme {
 
 function storeTheme(theme: Theme) {
   try {
-    storeTheme(theme)
+    localStorage.setItem("owl-theme", theme)
   } catch {
     // storage refused or full: the theme still applies for this visit
   }

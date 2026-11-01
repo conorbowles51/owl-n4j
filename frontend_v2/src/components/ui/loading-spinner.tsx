@@ -1,3 +1,4 @@
+import type React from "react"
 import { cn } from "@/lib/cn"
 import { Loader2 } from "lucide-react"
 
@@ -24,5 +25,18 @@ export function LoadingSpinner({
         className
       )}
     />
+  )
+}
+
+/**
+ * A wait that is not a data read (the sign-in check, a query the person ran, a screen's code arriving): the spinner
+ * with the step in words, announced to screen readers. Data reads use the shared loading panel (LoadProgress).
+ */
+export function LoadingWords({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <div aria-live="polite" className={cn("flex items-center gap-2 text-sm text-muted-foreground", className)}>
+      <LoadingSpinner size="sm" />
+      <span>{children}</span>
+    </div>
   )
 }

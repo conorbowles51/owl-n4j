@@ -1,4 +1,4 @@
-import { LoadProgress } from "@/features/financial/components/LoadProgress"
+import { LoadingWords } from "@/components/ui/loading-spinner"
 import { useParams } from "react-router-dom"
 import { WorkspaceRedesignPage } from "./WorkspaceRedesignPage"
 
@@ -8,7 +8,7 @@ export function WorkspacePage() {
   if (!caseId) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoadProgress caseId={null} page="case/workspace" />
+        <LoadingWords>Opening the case…</LoadingWords>
       </div>
     )
   }
