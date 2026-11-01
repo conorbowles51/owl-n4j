@@ -42,7 +42,7 @@ Screenshots and examples use invented phones and invented people only.
 | Adding a real phone report to a case | Not yet |
 | Phone summary, Conversations, Search, People, Map, Patterns and Export on real phones | Not yet |
 
-**Turning the preview on.** Add `?phone-prototype=on` to the end of any case address and press Enter. A **Phones (preview)** item appears in the left sidebar of that case. Add `?phone-prototype=off` to turn it off again. The switch is kept in this browser only and changes nothing in the case. The preview shows invented phones, never the case's own evidence, and anything you add from it stays in the preview.
+**Turning the preview on.** Add `?phone-prototype=on` to the end of any case address and press Enter. A **Phones (prototype)** item appears in the left sidebar of that case. Add `?phone-prototype=off` to turn it off again. The switch is kept in this browser only and changes nothing in the case. The preview shows invented phones, never the case's own evidence, and anything you add from it stays in the preview.
 
 ## How phone screens fit into a case
 

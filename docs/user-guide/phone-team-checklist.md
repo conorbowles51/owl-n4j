@@ -22,9 +22,9 @@ For each check, write one result: **Pass**, **Fail**, **Blocked** (something sto
 ## 1. Open the preview
 
 1. Open the training case. Add `?phone-prototype=on` to the end of the address and press Enter.
-2. Select **Phones (preview)** in the left sidebar.
+2. Select **Phones (prototype)** in the left sidebar.
 
-**Pass if** the Phone summary opens and its heading names a phone. **Then** add `?phone-prototype=off` to the address: the sidebar item must disappear.
+**Pass if** the Phone summary opens and names the phone it is showing. **Then** add `?phone-prototype=off` to the address: the sidebar item must disappear.
 
 ## 2. Read the Phone summary
 
