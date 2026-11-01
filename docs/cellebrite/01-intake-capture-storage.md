@@ -105,8 +105,8 @@ Additional Fields, Extraction Data), `images`, `HashSetsInfo`, `MalwareScanner@S
 `taggedFiles`, `decodedData`, `carvedFiles`, `infectedFiles`, `extraInfos`,
 `projectConfigurations/timeZoneConfigurations`. In C8 the last five are absent because the file is
 cut off before them. `images`, `HashSetsInfo`, `carvedFiles`, `infectedFiles` and `extraInfos`
-have **no children in any of the three samples**; whether they are populated on any server phone
-is not established. Everything outside records and tagged files (the "skeleton", section 5.3)
+have **no children in any of the three samples**; on the server reports `extraInfos` and
+`HashSetsInfo` are populated (section 1.8). Everything outside records and tagged files (the "skeleton", section 5.3)
 serialises to 14.0 KB (C3), 7.1 KB (C9), 8.8 KB (C8).
 
 ### 1.3 Record shape
@@ -146,9 +146,7 @@ nested) and values:
 | C1, 3-phone case | 967,543 | 4,697,578 |
 
 The largest phone is C1 of the 3-phone case: 338,715 top-level records (plan section 9), 967,543
-models, 4.70 M values. Elements per value in the local samples are 2.8 (C3) and 2.3 (C8) inside
-`decodedData`, so the largest phone's record section is in the order of 11 to 14 million
-elements before tagged files. Its tagged file count is not established.
+models, 4.70 M values, 17,283,869 elements and 158,114 tagged files in its report (section 1.8).
 
 ### 1.4 Prototype capture (the design in section 5, run on the samples)
 
@@ -227,6 +225,56 @@ EXIF `YYYY:MM:DD HH:MM:SS` with no offset, and `M/DD/YYYY H:MM:SS PM` with no of
 | C1, 3-phone | 338,715 | 173.0 |
 
 v1 kept a subset of the data (plan 3.1), so these are not like-for-like.
+
+### 1.8 Element-level counter on the 14 server reports (unit 0.2)
+
+The counter of section 8 (`evidence-engine/app/phone/counter.py`, lxml) and its independent expat
+cross-check (`counter_expat.py`) ran on every server report, read-only, at `nice 19` and idle IO
+priority under a 2 GB memory limit (3 GB for P13 and P14). Labels are those of the reference corpus
+manifest (unit 0.1): P01 the 1-phone case; in the 10-report case P02 C8, P03 C1 (2023 report), P04 C2,
+P05 C5, P06 C3, P07 C7, P08 C6, P09 C9, P10 C1 (2022 extraction), P11 C4; in the 3-phone case P12 C3,
+P13 C2, P14 C1. Totals are in `measurements/counter-server-corpus.json`.
+
+| Report | Elements | Attributes | Non-whitespace texts | Top-level records | `project@ModelCount` | Nested records | Tagged files | Max depth | lxml / expat time | Peak memory |
+|---|---|---|---|---|---|---|---|---|---|---|
+| P01 | 1,273,251 | 2,743,759 | 561,169 | 2,151 | 2,151 | 30,181 | 19,234 | 12 | 17 s / 13 s | 42 / 22 MiB |
+| P02 | 2,845,121 | 6,235,814 | 952,873 | 36,979 | 36,980 | 36,627 | 72,508 | 12 | 43 s / 29 s | 44 / 22 MiB |
+| P03 | 5,282,244 | 13,062,032 | 2,824,053 | 9,910 | 9,910 | 35,039 | 208,836 | 12 | 148 s / 79 s | 43 / 22 MiB |
+| P04 | 9,162,218 | 22,382,290 | 4,997,641 | 121,076 | 121,076 | 130,390 | 309,779 | 12 | 203 s / 117 s | 44 / 22 MiB |
+| P05 | 2,525,312 | 5,966,015 | 1,045,924 | 25,596 | 25,595 | 44,891 | 92,761 | 12 | 46 s / 32 s | 46 / 23 MiB |
+| P06 | 1,451,062 | 3,448,982 | 653,473 | 16,663 | 16,661 | 54,382 | 43,043 | 12 | 25 s / 15 s | 43 / 22 MiB |
+| P07 | 2,123,222 | 4,581,121 | 702,791 | 20,863 | 20,868 | 34,493 | 49,165 | 12 | 36 s / 20 s | 43 / 23 MiB |
+| P08 | 15,038,832 | 29,952,585 | 4,817,189 | 59,835 | 59,839 | 634,565 | 102,719 | 12 | 334 s / 206 s | 45 / 23 MiB |
+| P09 | 689,601 | 1,674,326 | 284,541 | 2,941 | 2,941 | 11,064 | 29,536 | 12 | 12 s / 8 s | 42 / 21 MiB |
+| P10 | 2,144,198 | 4,546,816 | 919,129 | 15,206 | 15,206 | 125,402 | 18,953 | 12 | 53 s / 31 s | 42 / 23 MiB |
+| P11 | 9,850,796 | 21,882,794 | 4,360,400 | 117,803 | 117,803 | 172,706 | 234,377 | 10 | 221 s / 116 s | 43 / 23 MiB |
+| P12 | 726,339 | 1,625,149 | 241,531 | 6,915 | 7,281 | 10,215 | 15,645 | 12 | 12 s / 7 s | 43 / 23 MiB |
+| P13 | 13,718,697 | 30,292,605 | 5,776,819 | 116,967 | 118,990 | 403,807 | 201,489 | 12 | 240 s / 217 s | 45 / 23 MiB |
+| P14 | 17,283,869 | 37,862,964 | 7,334,414 | 338,715 | 338,715 | 628,828 | 158,114 | 14 | 374 s / 192 s | 44 / 23 MiB |
+
+- Every report parses to the end (`complete`); none has a non-whitespace tail, a comment or a processing
+  instruction.
+- lxml and expat agree on all 14: equal totals, equal per-path counts and equal attribute and text hash
+  sums (0 differences).
+- A second lxml run gives an identical result on P06 (C3), P09 (C9) and P02 (C8).
+- Memory is flat: 42 to 46 MiB peak for lxml and 22 to 23 MiB for expat, independent of report size
+  (17.3 M elements in P14).
+- On P06 and P09 the server reports are the Mac samples C3 and C9: elements, attributes and texts equal
+  section 1.2 exactly. Distinct qualified paths are 881 and 707 under section 8.1 (the Mac prototype
+  qualified a different set of element names and counted 879 and 706).
+- P02 is the server's own C8 export, not the Mac's split C8 (section 1.1): one complete `project`
+  document of 2,845,121 elements with 72,508 tagged files, against 1,269,819 elements in the Mac's two
+  sections. The Mac values in sections 1.1 to 1.5 stay the reference for C8's split form.
+- `images`, `carvedFiles`, `infectedFiles` and `MalwareScanner` have no children on any of the 14.
+  `HashSetsInfo` holds one `HashSet` with `HashSetRun` children on P01 and P14. **`extraInfos` is
+  populated on 9 of the 14** (P01, P02, P03, P07, P08, P11, P12, P13, P14): one `extraInfo` (`id`,
+  `type`) per described item, each with a `sourceInfo` holding `nodeInfo` elements (`id`, `name`,
+  `path`, `tableName`, `offset`, `size`), that is PA's record-to-source information. It is 132,655 to
+  2,833,087 elements per report (P08: 2,833,087 of 15,038,832 elements), so it is not part of a small
+  skeleton (section 5.3).
+- `project@ModelCount` differs from the top-level record count on 7 of 14 reports (P02 by 1, P05 by 1,
+  P06 by 2, P07 by 5, P08 by 4, P12 by 366, P13 by 2,023), in both directions. It is not a completeness
+  check (section 1.2).
 
 ---
 
@@ -1406,19 +1454,15 @@ uninterrupted run. Durations of uninterrupted runs recorded against 10.8.
 
 ## 14. Not yet established
 
-- Whether any server phone has populated `images`, `HashSetsInfo`, `carvedFiles`, `infectedFiles`
-  or `extraInfos` (empty in all three local samples).
 - What `metadata` item `UFDIntegrity` states and whether it can be checked against a digest.
 - Real UFDR structure, including whether its `report.xml` uses the same root and namespace as the
   folder reports, and how media inside it is laid out. No `.ufdr` sample exists.
 - Whether a split export can hold more than one non-empty records section, and what the six other
   section kinds contain when non-empty (all zero bytes in C8).
-- Tagged file count and total size of the largest phone, hence its exact capture time.
-- Whether libxml2 and expat agree on value and attribute hash sums (counts measured equal; sums
-  are tested in unit 0.2).
+- Total file bytes of the largest phone, hence its exact capture time.
 - Whether `enableAutomaticallyConvertToUTC` ever changes the stored XML values (one sample with it
   off still stores `+00:00`).
 - Whether the deployed Loupe database holds rows written by the old Cellebrite ingester.
 - The backend's request body limit for a 200,000-member manifest.
 - Whether `project@ModelCount` excludes a definable set of records (it differs from the counted
-  top-level models by 2 in C3 and C8).
+  top-level models on 7 of the 14 server reports, by 1 to 2,023, in both directions; section 1.8).

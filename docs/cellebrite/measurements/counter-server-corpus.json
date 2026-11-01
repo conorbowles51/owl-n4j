@@ -1,0 +1,609 @@
+{
+ "counter_version": "phone-counter-1",
+ "reports": {
+  "P01": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P01",
+   "models_top_minus_root_ModelCount": 0,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "2151",
+   "root_node_count": "10882",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 21.9,
+     "seconds": 12.9
+    },
+    "lxml": {
+     "peak_rss_mib": 42.2,
+     "seconds": 17.3
+    }
+   },
+   "totals": {
+    "attributes": 2743759,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 1570,
+    "distinct_paths": 706,
+    "elements": 1273251,
+    "longest_text_chars": 3665,
+    "max_depth": 12,
+    "models_nested": 30181,
+    "models_top": 2151,
+    "nonws_texts": 561169,
+    "processing_instructions": 0,
+    "tagged_files": 19234,
+    "text_bytes": 11015905,
+    "text_chars": 11003325,
+    "texts": 561170,
+    "values": 262355,
+    "ws_only_texts": 520443
+   }
+  },
+  "P02": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P02",
+   "lxml_rerun_identical": true,
+   "models_top_minus_root_ModelCount": -1,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "36980",
+   "root_node_count": "72849",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 22.1,
+     "seconds": 29.0
+    },
+    "lxml": {
+     "peak_rss_mib": 43.1,
+     "seconds": 43.2
+    },
+    "lxml2": {
+     "peak_rss_mib": 44.1,
+     "seconds": 48.2
+    }
+   },
+   "totals": {
+    "attributes": 6235814,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 2227,
+    "distinct_paths": 1097,
+    "elements": 2845121,
+    "longest_text_chars": 108918,
+    "max_depth": 12,
+    "models_nested": 36627,
+    "models_top": 36979,
+    "nonws_texts": 952873,
+    "processing_instructions": 0,
+    "tagged_files": 72508,
+    "text_bytes": 24117053,
+    "text_chars": 24092034,
+    "texts": 952877,
+    "values": 401963,
+    "ws_only_texts": 1181241
+   }
+  },
+  "P03": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P03",
+   "models_top_minus_root_ModelCount": 0,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "9910",
+   "root_node_count": "208602",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 22.3,
+     "seconds": 78.6
+    },
+    "lxml": {
+     "peak_rss_mib": 43.2,
+     "seconds": 147.9
+    }
+   },
+   "totals": {
+    "attributes": 13062032,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 2232,
+    "distinct_paths": 1164,
+    "elements": 5282244,
+    "longest_text_chars": 188135,
+    "max_depth": 12,
+    "models_nested": 35039,
+    "models_top": 9910,
+    "nonws_texts": 2824053,
+    "processing_instructions": 0,
+    "tagged_files": 208836,
+    "text_bytes": 75801791,
+    "text_chars": 75747776,
+    "texts": 2824055,
+    "values": 153000,
+    "ws_only_texts": 1564093
+   }
+  },
+  "P04": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P04",
+   "models_top_minus_root_ModelCount": 0,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "121076",
+   "root_node_count": "309779",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 22.5,
+     "seconds": 117.4
+    },
+    "lxml": {
+     "peak_rss_mib": 43.5,
+     "seconds": 202.9
+    }
+   },
+   "totals": {
+    "attributes": 22382290,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 2964,
+    "distinct_paths": 1430,
+    "elements": 9162218,
+    "longest_text_chars": 188067,
+    "max_depth": 12,
+    "models_nested": 130390,
+    "models_top": 121076,
+    "nonws_texts": 4997641,
+    "processing_instructions": 0,
+    "tagged_files": 309779,
+    "text_bytes": 323447017,
+    "text_chars": 322872426,
+    "texts": 4997646,
+    "values": 1061373,
+    "ws_only_texts": 2889094
+   }
+  },
+  "P05": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P05",
+   "models_top_minus_root_ModelCount": 1,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "25595",
+   "root_node_count": "92761",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 23.1,
+     "seconds": 32.4
+    },
+    "lxml": {
+     "peak_rss_mib": 45.5,
+     "seconds": 46.4
+    }
+   },
+   "totals": {
+    "attributes": 5966015,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 1882,
+    "distinct_paths": 898,
+    "elements": 2525312,
+    "longest_text_chars": 159642,
+    "max_depth": 12,
+    "models_nested": 44891,
+    "models_top": 25596,
+    "nonws_texts": 1045924,
+    "processing_instructions": 0,
+    "tagged_files": 92761,
+    "text_bytes": 46406978,
+    "text_chars": 46296813,
+    "texts": 1045927,
+    "values": 306679,
+    "ws_only_texts": 841483
+   }
+  },
+  "P06": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P06",
+   "lxml_rerun_identical": true,
+   "models_top_minus_root_ModelCount": 2,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "16661",
+   "root_node_count": "43043",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 22.3,
+     "seconds": 15.4
+    },
+    "lxml": {
+     "peak_rss_mib": 42.0,
+     "seconds": 25.4
+    },
+    "lxml2": {
+     "peak_rss_mib": 43.2,
+     "seconds": 21.5
+    }
+   },
+   "totals": {
+    "attributes": 3448982,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 1832,
+    "distinct_paths": 881,
+    "elements": 1451062,
+    "longest_text_chars": 155838,
+    "max_depth": 12,
+    "models_nested": 54382,
+    "models_top": 16663,
+    "nonws_texts": 653473,
+    "processing_instructions": 0,
+    "tagged_files": 43043,
+    "text_bytes": 31647825,
+    "text_chars": 31553128,
+    "texts": 653474,
+    "values": 243124,
+    "ws_only_texts": 522070
+   }
+  },
+  "P07": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P07",
+   "models_top_minus_root_ModelCount": -5,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "20868",
+   "root_node_count": "52495",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 23.1,
+     "seconds": 19.7
+    },
+    "lxml": {
+     "peak_rss_mib": 43.2,
+     "seconds": 35.8
+    }
+   },
+   "totals": {
+    "attributes": 4581121,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 2357,
+    "distinct_paths": 1142,
+    "elements": 2123222,
+    "longest_text_chars": 140880,
+    "max_depth": 12,
+    "models_nested": 34493,
+    "models_top": 20863,
+    "nonws_texts": 702791,
+    "processing_instructions": 0,
+    "tagged_files": 49165,
+    "text_bytes": 24931765,
+    "text_chars": 24854667,
+    "texts": 705824,
+    "values": 297253,
+    "ws_only_texts": 873335
+   }
+  },
+  "P08": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P08",
+   "models_top_minus_root_ModelCount": -4,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "59839",
+   "root_node_count": "142388",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 23.1,
+     "seconds": 206.5
+    },
+    "lxml": {
+     "peak_rss_mib": 45.3,
+     "seconds": 334.4
+    }
+   },
+   "totals": {
+    "attributes": 29952585,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 2402,
+    "distinct_paths": 1162,
+    "elements": 15038832,
+    "longest_text_chars": 106167,
+    "max_depth": 12,
+    "models_nested": 634565,
+    "models_top": 59835,
+    "nonws_texts": 4817189,
+    "processing_instructions": 0,
+    "tagged_files": 102719,
+    "text_bytes": 87182261,
+    "text_chars": 87095474,
+    "texts": 4817464,
+    "values": 3187007,
+    "ws_only_texts": 7275933
+   }
+  },
+  "P09": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P09",
+   "lxml_rerun_identical": true,
+   "models_top_minus_root_ModelCount": 0,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "2941",
+   "root_node_count": "29536",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 21.4,
+     "seconds": 7.5
+    },
+    "lxml": {
+     "peak_rss_mib": 41.5,
+     "seconds": 12.4
+    },
+    "lxml2": {
+     "peak_rss_mib": 40.7,
+     "seconds": 9.8
+    }
+   },
+   "totals": {
+    "attributes": 1674326,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 1461,
+    "distinct_paths": 707,
+    "elements": 689601,
+    "longest_text_chars": 37075,
+    "max_depth": 12,
+    "models_nested": 11064,
+    "models_top": 2941,
+    "nonws_texts": 284541,
+    "processing_instructions": 0,
+    "tagged_files": 29536,
+    "text_bytes": 5792938,
+    "text_chars": 5775154,
+    "texts": 284541,
+    "values": 72429,
+    "ws_only_texts": 205408
+   }
+  },
+  "P10": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P10",
+   "models_top_minus_root_ModelCount": 0,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "15206",
+   "root_node_count": "17463",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 23.1,
+     "seconds": 31.0
+    },
+    "lxml": {
+     "peak_rss_mib": 42.3,
+     "seconds": 52.7
+    }
+   },
+   "totals": {
+    "attributes": 4546816,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 1381,
+    "distinct_paths": 667,
+    "elements": 2144198,
+    "longest_text_chars": 224883,
+    "max_depth": 12,
+    "models_nested": 125402,
+    "models_top": 15206,
+    "nonws_texts": 919129,
+    "processing_instructions": 0,
+    "tagged_files": 18953,
+    "text_bytes": 329631102,
+    "text_chars": 327595307,
+    "texts": 919133,
+    "values": 639775,
+    "ws_only_texts": 1029744
+   }
+  },
+  "P11": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P11",
+   "models_top_minus_root_ModelCount": 0,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "117803",
+   "root_node_count": "234714",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 23.1,
+     "seconds": 115.8
+    },
+    "lxml": {
+     "peak_rss_mib": 42.8,
+     "seconds": 221.2
+    }
+   },
+   "totals": {
+    "attributes": 21882794,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 2550,
+    "distinct_paths": 1212,
+    "elements": 9850796,
+    "longest_text_chars": 224883,
+    "max_depth": 10,
+    "models_nested": 172706,
+    "models_top": 117803,
+    "nonws_texts": 4360400,
+    "processing_instructions": 0,
+    "tagged_files": 234377,
+    "text_bytes": 369955990,
+    "text_chars": 369090981,
+    "texts": 4360406,
+    "values": 1344612,
+    "ws_only_texts": 3859580
+   }
+  },
+  "P12": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P12",
+   "models_top_minus_root_ModelCount": -366,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "7281",
+   "root_node_count": "19978",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 23.1,
+     "seconds": 6.6
+    },
+    "lxml": {
+     "peak_rss_mib": 42.6,
+     "seconds": 12.0
+    }
+   },
+   "totals": {
+    "attributes": 1625149,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 2080,
+    "distinct_paths": 982,
+    "elements": 726339,
+    "longest_text_chars": 2889,
+    "max_depth": 12,
+    "models_nested": 10215,
+    "models_top": 6915,
+    "nonws_texts": 241531,
+    "processing_instructions": 0,
+    "tagged_files": 15645,
+    "text_bytes": 5122353,
+    "text_chars": 5115236,
+    "texts": 241535,
+    "values": 85092,
+    "ws_only_texts": 287908
+   }
+  },
+  "P13": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P13",
+   "models_top_minus_root_ModelCount": -2023,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "118990",
+   "root_node_count": "253695",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 23.2,
+     "seconds": 216.6
+    },
+    "lxml": {
+     "peak_rss_mib": 44.6,
+     "seconds": 239.9
+    }
+   },
+   "totals": {
+    "attributes": 30292605,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 4050,
+    "distinct_paths": 1983,
+    "elements": 13718697,
+    "longest_text_chars": 147220,
+    "max_depth": 12,
+    "models_nested": 403807,
+    "models_top": 116967,
+    "nonws_texts": 5776819,
+    "processing_instructions": 0,
+    "tagged_files": 201489,
+    "text_bytes": 137369623,
+    "text_chars": 136626993,
+    "texts": 5776832,
+    "values": 2455992,
+    "ws_only_texts": 5926875
+   }
+  },
+  "P14": {
+   "expat_difference_count": 0,
+   "expat_digest_equal": true,
+   "expat_paths_equal": true,
+   "expat_totals_equal": true,
+   "label": "P14",
+   "models_top_minus_root_ModelCount": 0,
+   "open_path_at_error": null,
+   "parse_state": "complete",
+   "root_model_count": "338715",
+   "root_node_count": "159461",
+   "runs": {
+    "expat": {
+     "peak_rss_mib": 22.6,
+     "seconds": 192.5
+    },
+    "lxml": {
+     "peak_rss_mib": 44.4,
+     "seconds": 373.7
+    }
+   },
+   "totals": {
+    "attributes": 37862964,
+    "bad_tails": 0,
+    "comments": 0,
+    "distinct_path_attributes": 3951,
+    "distinct_paths": 1891,
+    "elements": 17283869,
+    "longest_text_chars": 193404,
+    "max_depth": 14,
+    "models_nested": 628828,
+    "models_top": 338715,
+    "nonws_texts": 7334414,
+    "processing_instructions": 0,
+    "tagged_files": 158114,
+    "text_bytes": 158456007,
+    "text_chars": 157826128,
+    "texts": 7334447,
+    "values": 4697578,
+    "ws_only_texts": 8553803
+   }
+  }
+ },
+ "what": "Element-level counter (01 unit 0.2) on the 14 server reports: totals, parse state, expat agreement, rerun stability, timings and peak memory. Per-path counts and hash sums stay on the server. Labels P01-P14 as in 01 section 1; P02 is the server's C8 export, not the Mac copy."
+}
