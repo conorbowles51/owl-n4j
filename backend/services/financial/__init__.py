@@ -2356,3 +2356,6 @@ __all__ += ["summarise_overview_panels"]
 # Read-only comparison sessions: the reading checks run outside a write transaction; a write there is refused.
 from services.financial.read_only_session import WriteInReadOnlyComparison, reads_outside_transaction
 __all__ += ["WriteInReadOnlyComparison", "reads_outside_transaction"]
+# The Transactions tab's first page, built from the saved ledger copy; aliased so the submodule stays reachable.
+from services.financial.transactions_first_view import first_view as transactions_first_page
+__all__ += ["transactions_first_page"]
