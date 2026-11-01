@@ -1,4 +1,4 @@
-import { parseJSONSliced } from "./sliced-json"
+import { parseJSONSliced, yieldToBrowser } from "./sliced-json"
 
 /**
  * What the page's API reads are doing right now, from true counts only: each GET started through fetchAPI is
@@ -190,6 +190,9 @@ export function bodyLength(response: Response): number | null {
 // Answers at least this large are read as a stream so their bytes can be counted as they arrive.
 export const COUNTED_MINIMUM = 64 * 1024
 
+const READ_BUDGET_MS = 25
+const clock = () => (typeof performance !== "undefined" ? performance.now() : Date.now())
+
 /** Reads a JSON answer, counting its bytes against `id` as they arrive when it is large enough to be worth it. */
 export async function readJSON<T>(response: Response, id: number): Promise<T> {
   const total = bodyLength(response)
@@ -203,12 +206,20 @@ export async function readJSON<T>(response: Response, id: number): Promise<T> {
   // so the page can redraw its loading panel while a large answer is parsed (lib/sliced-json.ts).
   const decoder = new TextDecoder()
   const parts: string[] = []
+  // A read of bytes that have already arrived resolves without giving the browser a turn, so after a busy spell
+  // the whole buffered answer was decoded in one step (d5b330d1 People, 61 MB, 1 Nov: up to 1,001 ms after a
+  // release). The decoding gives the browser a turn every READ_BUDGET_MS, as the unpacking does.
+  let since = clock()
   for (;;) {
     const { done, value } = await reader.read()
     if (done) break
     if (value) {
       parts.push(decoder.decode(value, { stream: true }))
       receiveBytes(id, value.byteLength)
+    }
+    if (clock() - since >= READ_BUDGET_MS) {
+      await yieldToBrowser()
+      since = clock()
     }
   }
   parts.push(decoder.decode())

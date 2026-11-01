@@ -107,3 +107,26 @@ it("words the graph, timeline, case list and evidence folder reads", () => {
   expect(requestWords("/api/evidence-folders/root/contents?case_id=c")).toBe("evidence folders")
   expect(requestWords("/api/evidence/abc")).toBe("evidence files")
 })
+
+it("gives the browser a turn while it decodes an answer whose bytes have all arrived", async () => {
+  // d5b330d1 People, 1 Nov: 61 MB already buffered after a busy spell was decoded in one 1,001 ms step.
+  const value = { rows: Array.from({ length: 4000 }, (_, id) => ({ id, description: "PAYMENT TO SUPPLIER" })) }
+  const bytes = new TextEncoder().encode(JSON.stringify(value))
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let offset = 0; offset < bytes.length; offset += 20000) controller.enqueue(bytes.slice(offset, offset + 20000))
+      controller.close()
+    },
+  })
+  let clock = 0
+  vi.spyOn(performance, "now").mockImplementation(() => (clock += 10)) // every chunk "takes" 10 ms or more
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { headers: { "x-body-length": String(bytes.length) } })))
+  const answer = fetchAPI<typeof value>("/api/financial/ledger?case_id=c")
+  // A task queued now runs at the browser's first turn: by then only part of the answer may have been decoded.
+  let receivedAtFirstTurn = -1
+  setTimeout(() => (receivedAtFirstTurn = requestsSince(0)[0]?.received ?? 0), 0)
+  expect(await answer).toEqual(value)
+  vi.restoreAllMocks()
+  expect(receivedAtFirstTurn).toBeGreaterThanOrEqual(0)
+  expect(receivedAtFirstTurn).toBeLessThan(bytes.length)
+})
