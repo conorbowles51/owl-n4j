@@ -325,3 +325,37 @@ class EvidenceDeleteKeepsFinancialWholeTests(TestCase):
         # A file chosen by name must still exist.
         with self.assertRaisesRegex(PdfMappingError, 'unavailable'):
             self.preview(file_ids=[UUID(ghost['file_id'])])
+
+    def test_a_pdf_only_listed_in_a_batch_or_a_non_pdf_is_not_held(self):
+        from services.financial.import_removal import financial_hold
+        listed = self.f.evidence('d' * 64)
+        listed.original_filename = 'Never imported.pdf'
+        listed.status = 'processed'
+        batch = self.f.db.get(Batch, self.batch)
+        batch.files = [*batch.files, dict(source_id=str(listed.id), file_id=str(listed.id),
+            filename=listed.original_filename, status='checked', expected_revision='initial')]
+        self.f.db.commit()
+        self.assertIsNone(financial_hold(self.f.db, case_id=self.f.case.id, file_ids=[listed.id]))
+        held = financial_hold(self.f.db, case_id=self.f.case.id, file_ids=[listed.id, self.f.file.id])
+        self.assertEqual((held['file_ids'], held['payment_count'], held['batch_count']), ([str(self.f.file.id)], 12, 1))
+        # A non-PDF source has no Remove imports path: it is not held.
+        self.f.db.get(EvidenceFile, self.f.file.id).original_filename = 'statement.csv'
+        self.f.db.flush()
+        self.assertIsNone(financial_hold(self.f.db, case_id=self.f.case.id, file_ids=[self.f.file.id]))
+        self.f.db.rollback()
+
+    def test_deleting_a_phone_report_holding_an_imported_pdf_is_refused_before_the_graph_is_touched(self):
+        from unittest.mock import MagicMock, patch
+        from fastapi import HTTPException
+        from routers import cellebrite
+        file = self.f.db.get(EvidenceFile, self.f.file.id)
+        file.source_type, file.cellebrite_report_key = 'cellebrite', 'report-1'
+        self.f.db.commit()
+        graph = MagicMock()
+        with patch.object(cellebrite, '_require_case_evidence_access'), patch.object(cellebrite, 'neo4j_service', graph):
+            with self.assertRaises(HTTPException) as refused:
+                cellebrite.delete_phone_report('report-1', case_id=str(self.f.case.id), db=self.f.db,
+                                               current_user=None)
+        self.assertEqual(refused.exception.status_code, 409)
+        graph.delete_phone_report.assert_not_called()
+        self.assertIsNotNone(self.f.db.get(EvidenceFile, self.f.file.id))

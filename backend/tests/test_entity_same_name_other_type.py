@@ -59,11 +59,11 @@ def test_rejected_pairs_stay_rejected():
 
 def test_the_scan_and_the_streaming_scan_suggest_them():
     with _graph(ENTITIES):
-        plain = EntityService().find_similar_entities('case', name_similarity_threshold=0.88, max_results=100)
+        plain = EntityService().find_similar_entities('case', name_similarity_threshold=0.7, max_results=100)
 
         async def stream():
             events = [e async for e in EntityService().find_similar_entities_streaming(
-                'case', name_similarity_threshold=0.88, rejected_pairs={('k7', 'k8')})]
+                'case', name_similarity_threshold=0.7, rejected_pairs={('k7', 'k8')})]
             return events[-1]['data']['limited_results']
         streamed = asyncio.run(stream())
     for pairs in (plain, streamed):
@@ -72,3 +72,10 @@ def test_the_scan_and_the_streaming_scan_suggest_them():
         cross = [p for p in pairs if p['entity1']['type'] != p['entity2']['type']]
         assert {p['entity1']['name'].lower().replace('-', ' ') for p in cross} >= {'wells fargo', 'hezbollah'}
     assert ('k7', 'k8') in _keys(plain) and ('k7', 'k8') not in _keys(streamed)
+
+
+def test_the_scan_threshold_applies_and_names_without_letters_are_not_matched():
+    entities = [_entity('a', 'Société Générale', 'Organization'), _entity('b', 'SOCIETE GENERALE', 'Bank'),
+                _entity('c', 'Улица 5', 'Location'), _entity('d', 'Офис 5', 'Organization')]
+    assert same_name_other_type_pairs(entities, threshold=0.8) == []
+    assert [(a['key'], b['key']) for a, b, _ in same_name_other_type_pairs(entities, threshold=0.7)] == [('a', 'b')]

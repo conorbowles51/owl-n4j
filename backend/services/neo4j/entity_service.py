@@ -23,17 +23,21 @@ def _name_key(name: Optional[str]) -> str:
     import unicodedata
     folded = unicodedata.normalize("NFKD", name or "")
     folded = "".join(ch for ch in folded if not unicodedata.combining(ch)).lower()
-    return " ".join(re.sub(r"[^0-9a-z]+", " ", folded).split())
+    key = " ".join(re.sub(r"[^0-9a-z]+", " ", folded).split())
+    # A name in another script folds to its digits alone ('Улица 5' and 'Офис 5' to '5'): no key.
+    return key if len(re.sub(r"[^a-z]", "", key)) >= 2 else ""
 
 
-def same_name_other_type_pairs(entities: List[Dict], rejected_pairs: Optional[Set[Tuple[str, str]]] = None):
+def same_name_other_type_pairs(entities: List[Dict], rejected_pairs: Optional[Set[Tuple[str, str]]] = None,
+                                threshold: float = 0.0):
     """[(entity1, entity2, similarity)] for entities of DIFFERENT types whose names are the same (``_name_key``).
 
     The name comparison only pairs entities of one type, so the same name extracted as two types (a Bank and an
     Organization 'Wells Fargo', a Group and an Organization 'Hezbollah') was never suggested, though people merged
     22 groups mixing types by hand in the live cases (merge jobs to 1 Nov 2026). Measured on the 13 cases with merges, this
     adds 4 to 418 suggestions per case and makes the suggestions cover 476 of the 542 groups people merged
-    instead of 462. ``similarity`` is the same name ratio the type pass reports. Rejected pairs are skipped.
+    instead of 462. ``similarity`` is the same name ratio the type pass reports, and a pair below the scan's
+    threshold is left out as there. Rejected pairs are skipped.
     """
     from difflib import SequenceMatcher
     rejected_pairs = rejected_pairs or set()
@@ -55,7 +59,8 @@ def same_name_other_type_pairs(entities: List[Dict], rejected_pairs: Optional[Se
                     continue
                 similarity = SequenceMatcher(None, (e1["name"] or "").lower().strip(),
                                              (e2["name"] or "").lower().strip()).ratio()
-                pairs.append((e1, e2, similarity))
+                if similarity >= threshold:
+                    pairs.append((e1, e2, similarity))
     return pairs
 
 
@@ -580,7 +585,8 @@ class EntityService:
                         })
 
             similar_pairs.extend(_similar_pair(e1, e2, similarity)
-                                 for e1, e2, similarity in same_name_other_type_pairs(entities))
+                                 for e1, e2, similarity in same_name_other_type_pairs(
+                                     entities, threshold=name_similarity_threshold))
 
             # Sort by similarity (highest first) and limit results
             similar_pairs.sort(key=lambda x: x["similarity"], reverse=True)
@@ -791,7 +797,8 @@ class EntityService:
             await asyncio.sleep(0)
 
         # The same name extracted as different types: one pass over all entities by name, no pairwise scan.
-        for e1, e2, similarity in same_name_other_type_pairs(all_entities, rejected_pairs):
+        for e1, e2, similarity in same_name_other_type_pairs(all_entities, rejected_pairs,
+                                                             threshold=name_similarity_threshold):
             similar_pairs.append(_similar_pair(e1, e2, similarity))
             pairs_found += 1
         await asyncio.sleep(0)

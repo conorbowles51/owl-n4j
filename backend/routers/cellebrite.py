@@ -106,6 +106,17 @@ def delete_phone_report(
     """
     _require_case_evidence_access(case_id, current_user, db)
 
+    # Financial is asked before anything is deleted (graph first would leave it half done on a refusal).
+    from sqlalchemy import select
+    from postgres.models.evidence import EvidenceFile
+    from services.financial.import_removal import financial_hold, financial_hold_message
+    report_files = list(db.scalars(select(EvidenceFile.id).where(
+        EvidenceFile.case_id == _case_uuid(case_id), EvidenceFile.source_type == "cellebrite",
+        EvidenceFile.cellebrite_report_key == report_key)))
+    hold = financial_hold(db, case_id=_case_uuid(case_id), file_ids=report_files)
+    if hold:
+        raise HTTPException(status_code=409, detail=financial_hold_message(hold))
+
     # Neo4j-side deletion (PhoneReport + tagged entities + relationships).
     neo_result = neo4j_service.delete_phone_report(case_id, report_key)
 

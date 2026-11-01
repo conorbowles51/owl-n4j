@@ -45,9 +45,12 @@ def _selection(session, case_id, batch_ids, file_ids, lock=False):
     # could silently adopt the same old import through its content hash.
     hashes = {f.sha256 for f in selected}
     affected = [f for f in files if f.sha256 in hashes]
-    affected_ids = {str(f.id) for f in affected} | gone
-    related = [b for b in batches if b.status != 'removed' and
-               any(f['file_id'] in affected_ids or f['source_id'] in affected_ids for f in b.files)]
+    affected_ids = {str(f.id) for f in affected}
+    chosen_ids = {b.id for b in chosen}
+    # PDFs already deleted are taken out only of the batches chosen; another batch listing them is not
+    # pulled into this removal.
+    related = [b for b in batches if b.status != 'removed' and (b.id in chosen_ids or
+               any(f['file_id'] in affected_ids or f['source_id'] in affected_ids for f in b.files))]
     source_query = select(Source).where(Source.case_id == case_id,
         Source.evidence_file_id.in_([f.id for f in affected])).order_by(Source.id).execution_options(populate_existing=True)
     sources = list(session.scalars(source_query.with_for_update().execution_options(populate_existing=True) if lock else source_query))
@@ -145,41 +148,51 @@ def remove_imports(session, *, case_id, batch_ids=(), file_ids=(), expected_revi
 def financial_hold(session, *, case_id, file_ids):
     """What Financial still holds from these evidence files, or None when it holds nothing.
 
-    A file is held while an open import batch lists it (as the original PDF or
-    as a prepared reading) or while an admitted statement was read from it.
-    Deleting a held file would leave a batch that can no longer be removed and,
-    for an original whose prepared reading is a separate file, payments in the
-    totals with no original to open. Remove imports releases the hold.
+    A PDF is held while an admitted statement was read from it, or from a
+    prepared reading an open import batch lists with it (either way round).
+    Deleting it would take those payments out with no withdrawal recorded, or,
+    for an original whose prepared reading is a separate file, leave them in the
+    totals with no original to open. Remove imports releases the hold. A file
+    only listed in a batch, with nothing imported, is not held (a batch whose
+    PDFs were deleted stays removable). Non-PDF sources have no Remove imports
+    path, so they are not held and their own statements go with them as before.
     """
     ids = {str(value) for value in file_ids}
     if not ids:
         return None
-    batches, readings, held = set(), set(ids), set()
+    pdfs = {str(i) for i, name in session.execute(select(EvidenceFile.id, EvidenceFile.original_filename).where(
+        EvidenceFile.case_id == case_id, EvidenceFile.id.in_([UUID(value) for value in ids])))
+        if (name or '').lower().endswith('.pdf')}
+    if not pdfs:
+        return None
+    linked = {value: {value} for value in pdfs}
+    batches_of = {value: set() for value in pdfs}
     for batch in session.scalars(select(Batch).where(Batch.case_id == case_id, Batch.status != 'removed')):
         for entry in batch.files or []:
             keys = {entry.get('file_id'), entry.get('source_id')} - {None}
-            if keys & ids:
-                batches.add(batch.id)
-                held |= keys & ids
-                readings |= keys
-    reading_ids = []
-    for value in readings:
+            for value in keys & pdfs:
+                linked[value] |= keys
+                batches_of[value].add(batch.id)
+    readings = []
+    for value in set().union(*linked.values()):
         try:
-            reading_ids.append(UUID(value))
+            readings.append(UUID(value))
         except ValueError:
             continue
     sources = list(session.scalars(select(Source).where(Source.case_id == case_id,
-        Source.evidence_file_id.in_(reading_ids), Source.status == 'admitted')))
-    held |= {str(s.evidence_file_id) for s in sources} & ids
+        Source.evidence_file_id.in_(readings), Source.status == 'admitted')))
+    admitted = {str(s.evidence_file_id) for s in sources}
+    held = sorted(value for value in pdfs if linked[value] & admitted)
     if not held:
         return None
+    holding = [s for s in sources if any(str(s.evidence_file_id) in linked[value] for value in held)]
     payments = len(list(session.scalars(select(Transaction.id).where(Transaction.case_id == case_id,
-        Transaction.source_document_id.in_([s.id for s in sources]), Transaction.ledger_status == 'admitted',
-        Transaction.superseded_by_id.is_(None))))) if sources else 0
+        Transaction.source_document_id.in_([s.id for s in holding]), Transaction.ledger_status == 'admitted',
+        Transaction.superseded_by_id.is_(None)))))
     names = sorted(session.scalars(select(EvidenceFile.original_filename).where(EvidenceFile.case_id == case_id,
         EvidenceFile.id.in_([UUID(value) for value in held]))))
-    return dict(file_ids=sorted(held), filenames=names, batch_count=len(batches),
-        statement_count=len(sources), payment_count=payments)
+    return dict(file_ids=held, filenames=names, batch_count=len(set().union(*(batches_of[v] for v in held))),
+        statement_count=len(holding), payment_count=payments)
 
 
 def financial_hold_message(hold):
