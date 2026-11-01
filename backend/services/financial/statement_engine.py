@@ -2115,16 +2115,16 @@ def _receipt_holder(section_pages, pages, heading):
     movements prints that same name, alone or followed by a company legal form (A8): two printed
     facts agree. The heading line's text is the holder (it carries the legal form). Otherwise ''.
     """
-    recipients = set()
+    recipients = {}
     for page in section_pages:
         for row in pages[page]:
             if row['tokens']:
                 m = _RECEIPT_RECIPIENT.match(' '.join(fold(row['text']).split()))
                 if m:
-                    recipients.add(m[1])
+                    recipients.setdefault(m[1], _printed_span(row['text'], m[1]))
     if len(recipients) != 1:
         return ''
-    recipient = next(iter(recipients))
+    recipient, printed_recipient = next(iter(recipients.items()))
     if not _name_like(recipient):
         return ''
     found = []
@@ -2140,7 +2140,7 @@ def _receipt_holder(section_pages, pages, heading):
             if folded == recipient or (folded.startswith(recipient + ' ') or folded.startswith(recipient + ','))  \
                     and _COMPANY_FORM.match(folded[len(recipient):].strip()):
                 found.append(' '.join(text.split()))
-            elif RECEIPT_SPACING and (spaced := _respaced_recipient(text, recipient)):
+            elif RECEIPT_SPACING and (spaced := _respaced_recipient(text, recipient, printed_recipient)):
                 found.append(spaced)
     return found[0] if len({fold(name) for name in found}) == 1 else ''
 
@@ -2153,7 +2153,20 @@ def _receipt_holder(section_pages, pages, heading):
 RECEIPT_SPACING = _switch('LOUPE_FINANCIAL_RECEIPT_SPACING')
 
 
-def _respaced_recipient(text, recipient):
+def _printed_span(text, folded):
+    """The words of ``text`` as printed (accents and marks kept) whose folded form is ``folded``; ``folded`` itself
+    when no run of whole words folds to it."""
+    words = text.split()
+    for i in range(len(words)):
+        for j in range(len(words), i, -1):
+            if fold(' '.join(words[i:j])) == folded:
+                return ' '.join(words[i:j]).strip(' ,:')
+    return folded
+
+
+def _respaced_recipient(text, recipient, printed_recipient=None):
+    """``recipient`` is the receipt's name folded for comparison; ``printed_recipient`` is the same name as the
+    receipt prints it (accents kept: 'GESTIÓN', not 'GESTION'), used when the receipt's printing is the name."""
     printed = text.split()
     target = _letters(recipient)
     for cut in range(2, len(printed)):
@@ -2162,7 +2175,8 @@ def _respaced_recipient(text, recipient):
             rest = ' '.join(printed[cut:])
             if re.fullmatch(r'[A-Za-z.,]+(?: [A-Za-z.,]+)*', rest) and _COMPANY_FORM.match(' '.join(fold(rest).split())):
                 # The printing with a space inside a word is the damaged one: the other printing's words name it.
-                name = recipient if len(head.split()) > len(recipient.split()) else ' '.join(printed[:cut]).rstrip(',')
+                name = ((printed_recipient or recipient) if len(head.split()) > len(recipient.split())
+                        else ' '.join(printed[:cut]).rstrip(','))
                 return name + ' ' + rest
     return ''
 

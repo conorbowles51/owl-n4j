@@ -1677,6 +1677,24 @@ class AddresseeConfirmationTests(unittest.TestCase):
                 E._LIVE_READINGS.clear()
                 self.assertEqual(self.holder(sources), '')
 
+    def test_a_respaced_heading_keeps_the_receipts_accents(self):
+        # The receipt prints 'GESTIÓN ÑANDÚ' and the heading line 'GESTION ÑAN DU SA DE CV' (a space inside a word):
+        # the receipt's printing is the name, so the holder keeps its accents. It was read 'GESTION NANDU SA DE CV'
+        # from the folded receipt text (fin-holders, 31 Oct).
+        with mock.patch.object(E, 'LEGAL_FORM_UNANCHORED', False):
+            sources = addressee_statement(receipt='GESTIÓN ÑANDÚ')
+            for row in sources[0]['rows']:
+                for c in row['cells']:
+                    if c['expected_text'] == 'EMPRESA DE PRUEBA SA DE CV':
+                        c['expected_text'] = 'GESTION ÑAN DU SA DE CV'
+            E._READINGS.clear()
+            E._LIVE_READINGS.clear()
+            self.assertEqual(self.holder(sources), 'GESTIÓN ÑANDÚ SA DE CV')
+        self.assertEqual(E._printed_span('Nombre del Receptor : GESTIÓN ÑANDÚ', 'GESTION NANDU'), 'GESTIÓN ÑANDÚ')
+        self.assertEqual(E._printed_span('Nombre del Receptor:GESTIÓN', 'GESTION'), 'GESTION')
+        self.assertEqual(E._respaced_recipient('GESTION ÑAN DU SA DE CV', 'GESTION NANDU', 'GESTIÓN ÑANDÚ'),
+                         'GESTIÓN ÑANDÚ SA DE CV')
+
     def test_a_name_line_split_onto_a_lower_row_by_the_scan_is_joined(self):
         # ECO Mar 2023 MN: one printed line 'ECOTERRA SERVICIOS AMBIENTALES SA DE CV' stored as two rows, its end
         # 8000 lower; the holder read 'ECOTERRA SERVICIOS'.
