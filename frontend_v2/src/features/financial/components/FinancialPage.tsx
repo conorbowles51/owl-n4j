@@ -133,7 +133,7 @@ function FinancialPageContent() {
   const { id: caseId } = useParams()
   const { canEdit } = useFinancialAccess()
   const store = useFinancialStore()
-  useFinancialViewNavigation(caseId)
+  const viewApplied = useFinancialViewNavigation(caseId)
   useOtherRecordsView(caseId)
   const currentCase = useCase(caseId)
   const {
@@ -721,6 +721,8 @@ function FinancialPageContent() {
       </div>
       {/* "Reset view" sits at the right end of the tab bar, not in a band of its own. */}
       <FinancialResetSlotProvider>
+      {/* Drawn once this visit's view is applied, so no other tab opens first. */}
+      {viewApplied && (
       <Tabs
         key={`financial-tabs:${caseId}`}
         value={store.mainView}
@@ -1455,6 +1457,7 @@ function FinancialPageContent() {
           )}
         </RetainedFinancialTab>
       </Tabs>
+      )}
       </FinancialResetSlotProvider>
 
       <CategoryManagementDialog

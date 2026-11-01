@@ -225,3 +225,35 @@ it("honours an explicit page over the remembered page", () => {
   setup("/cases/first/financial?view=statements")
   expect(screen.getByLabelText("Financial tab")).toHaveTextContent("statements")
 })
+
+it("says the view is applied only once the requested tab is in the store, so no other tab is drawn first", async () => {
+  const drawn: string[] = []
+  function Tabs() {
+    const { id } = useParams()
+    const applied = useFinancialViewNavigation(id)
+    const view = useFinancialStore((state) => state.mainView)
+    if (applied) drawn.push(`${id}:${view}`)
+    return <output aria-label="Financial tab">{applied ? view : "waiting"}</output>
+  }
+  render(
+    <MemoryRouter initialEntries={["/cases/first/financial?view=trends"]}>
+      <Location />
+      <Routes>
+        <Route path="/cases/:id/financial" element={<Tabs />} />
+      </Routes>
+    </MemoryRouter>
+  )
+  await waitFor(() =>
+    expect(screen.getByLabelText("Financial tab")).toHaveTextContent("trends")
+  )
+  expect(new Set(drawn)).toEqual(new Set(["first:trends"]))
+
+  // Another case opens on its own view; the previous case's tab is not drawn for it.
+  drawn.length = 0
+  fireEvent.click(screen.getByRole("link", { name: "Another case" }))
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location")).toHaveTextContent("/cases/second/financial?view=overview")
+  )
+  expect(drawn.every((entry) => entry === "second:overview")).toBe(true)
+  expect(drawn.length).toBeGreaterThan(0)
+})

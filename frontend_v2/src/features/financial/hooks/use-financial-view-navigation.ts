@@ -2,7 +2,7 @@ import {
   financialDraftKey,
   useFinancialDraftStore,
 } from "../stores/financial-drafts"
-import { useEffect, useLayoutEffect } from "react"
+import { useEffect, useLayoutEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { showAllImportedPayments } from "../lib/payment-table-draft"
 import {
@@ -13,8 +13,15 @@ import {
 
 // Keep navigation in the URL so refresh and browser Back restore the actual
 // tab. Subscribe while this page is mounted so file-list actions use it too.
+//
+// Returns whether the view this visit asks for (URL, else last view, else
+// overview) is applied for this case. Until it is, the store still holds the
+// default or the previous case's view; drawing the tabs then would open that
+// view as well (a cold open of Trends also read the whole Overview, which a
+// retained tab then keeps mounted: 1 Nov replay, 11-18 parallel reads per tab).
 export function useFinancialViewNavigation(caseId: string | undefined) {
   const [params, setParams] = useSearchParams()
+  const [appliedFor, setAppliedFor] = useState<string | undefined>()
   useLayoutEffect(() => {
     if (!caseId) return
     const requested =
@@ -36,6 +43,8 @@ export function useFinancialViewNavigation(caseId: string | undefined) {
         : "transactions"
     if (useFinancialStore.getState().mode !== mode)
       useFinancialStore.getState().setMode(mode)
+    // A layout effect: the re-render with the tabs happens before paint.
+    setAppliedFor(caseId)
     return useFinancialStore.subscribe((state, previous) => {
       if (state.mainView === previous.mainView && state.mode === previous.mode)
         return
@@ -68,4 +77,5 @@ export function useFinancialViewNavigation(caseId: string | undefined) {
       { replace: true }
     )
   }, [caseId, params, setParams])
+  return appliedFor === caseId
 }
