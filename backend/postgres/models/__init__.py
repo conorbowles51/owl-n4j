@@ -155,3 +155,9 @@ __all__ += ["FinancialPaymentCategory", "FinancialCategoryModelCache", "Financia
 from postgres.models.ui_problem_report import UiProblemReport
 __all__ += ["UiProblemReport"]
 __all__ += ["CollectionMembership"]
+from postgres.models.phone_extraction import (PhoneExtractionContainer, PhoneExtraction, PhoneExtractionContainerLink,
+    PhoneExtractionDocument, PhoneRecord, PhoneFile, PhoneContainerEntry, PhoneFileReference, PhoneTimestamp,
+    PhoneReconciliation, PhoneExtraInfo, PhoneExtraInfoNode)
+__all__ += ["PhoneExtractionContainer", "PhoneExtraction", "PhoneExtractionContainerLink", "PhoneExtractionDocument",
+            "PhoneRecord", "PhoneFile", "PhoneContainerEntry", "PhoneFileReference", "PhoneTimestamp",
+            "PhoneReconciliation", "PhoneExtraInfo", "PhoneExtraInfoNode"]

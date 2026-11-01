@@ -1558,6 +1558,10 @@ uninterrupted run. Durations of uninterrupted runs recorded against 10.8.
 | D20 | Upload messages say what is needed "from whoever produced it", never how to re-export | the reader receives productions | Neil rules otherwise |
 | D21 | Old Cellebrite columns on `evidence_files` kept; read side kept until replaced | migrations are history; the deployed database may hold old rows | counts show no rows use them |
 | D22 | An extraction is unique per `(case_id, report_set_sha256)`; `root_path` belongs to each container link | the zip and the folder of one export have different root paths but byte-identical report XML, and unit 1.3 requires one extraction with two containers | never; the report-set key is a function of the report bytes |
+| D23 | A `file` under another tagged file's `RelatedNodes` is a `phone_files` row of its own, `parent_ordinal` naming its owner; the owner's body holds `["@f", ordinal]` | the server reports carry 39,669 (P08) and 52,206 (P13) such children (1.9) and the file index needs them as files | never |
+| D24 | Each `extraInfos/extraInfo` is a row of `phone_extra_infos` with its full element as the body, streamed like records and reconciled by the same counter; each `nodeInfo` inside it is also indexed as a `phone_extra_info_nodes` row resolved to a tagged file (by id, then by path) | `extraInfos` is up to 2,833,087 elements on one report (1.8), far too large for the skeleton | never |
+| D25 | Every `model` is a record row unless it lies inside a tagged-file or extraInfo row, where it stays inline; in the skeleton, consecutive row children are one span marker `["@r"|"@f"|"@x", first, last]` | keeps the skeleton small (338,715 top-level records would otherwise be 338,715 skeleton markers) while every element is still rejoined exactly by the recount | never |
+| D26 | A resumed document first deletes its rows above the cursor, then re-parses and writes from the cursor | the cursor is the highest ordinal below every row still open at the flush, so nested rows of an open record may already be stored above it; deleting them makes the resume exactly-once | never |
 
 ---
 
