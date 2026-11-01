@@ -179,6 +179,7 @@ def change_password(
     # Every other sign-in of this user ends; this one continues with a new token.
     password_sessions.stamp(db_user)
     db.commit()
+    password_sessions.forget(db_user.email)
     token = auth_service["create_access_token"]({"sub": db_user.email})
     _set_access_cookie(response, token)
 

@@ -272,6 +272,9 @@ def update_user(
         password_sessions.stamp(target_user)
 
     db.commit()
+    if user_data.password is not None:
+        from services import password_sessions
+        password_sessions.forget(target_user.email)
     db.refresh(target_user)
 
     return target_user

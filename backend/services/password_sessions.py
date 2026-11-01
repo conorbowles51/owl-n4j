@@ -4,16 +4,18 @@ Changing a password (the person's own change, or an administrator setting one) s
 users.password_changed_at; every token carries when it was issued (``iat``; a token from before
 ``iat`` was added is dated from its expiry minus the token lifetime, which is exact because only
 sign-in issues tokens). The check reads the stamp at most once every CACHE_SECONDS per user and
-worker: the worker where the change happened forgets it at once, another worker within
+worker: the worker where the change happened forgets it as soon as the change is committed, another worker within
 CACHE_SECONDS.
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from datetime import datetime, timezone
 
 CACHE_SECONDS = 30.0
+logger = logging.getLogger(__name__)
 
 _cache: dict[str, tuple[float, float | None]] = {}
 _lock = threading.Lock()
@@ -62,9 +64,9 @@ def issued_before_change(issued_at: int | None, changed: float | None) -> bool:
 
 
 def stamp(user) -> None:
-    """Record that ``user``'s password changed now (the caller commits)."""
+    """Record that ``user``'s password changed now. The caller commits, then calls forget(user.email): forgetting
+    before the commit would let a request in between cache the old value for CACHE_SECONDS."""
     user.password_changed_at = datetime.now(timezone.utc)
-    forget(user.email)
 
 
 async def refused(data: dict) -> bool:
@@ -75,5 +77,11 @@ async def refused(data: dict) -> bool:
     fresh, changed = cached_changed_at(email)
     if not fresh:
         from starlette.concurrency import run_in_threadpool
-        changed = await run_in_threadpool(changed_at, email)
+        try:
+            changed = await run_in_threadpool(changed_at, email)
+        except Exception:
+            # The database could not answer (pool timeout, restart): the token is judged as before this check
+            # existed rather than failing the request; the next request asks again.
+            logger.warning("Could not read when %s last changed their password", email, exc_info=True)
+            return False
     return issued_before_change(issued, changed)

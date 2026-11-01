@@ -1468,6 +1468,12 @@ class BatchImportTests(TestCase):
                 service.prepare_reviews(db,owner,owner.files[0],lock_slice=0)
         self.assertEqual(self._item_keys(batch),['a','b','c'])
 
+    def test_a_stop_check_that_fails_never_fails_the_file(self):
+        def broken():
+            raise RuntimeError('QueuePool limit reached')
+        self.assertFalse(service._stop_check(broken)())
+        self.assertTrue(service._stop_check(lambda: True)())
+
     def test_a_batch_paused_mid_file_ends_its_turn_and_resumes_the_file_later(self):
         from unittest.mock import patch
         f=self.f;batch=self.create()

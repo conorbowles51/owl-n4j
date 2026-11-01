@@ -90,3 +90,24 @@ def test_an_administrator_setting_a_password_ends_that_users_sign_ins(monkeypatc
     from routers import users
     source = inspect.getsource(users)
     assert "password_sessions.stamp(target_user)" in source
+
+
+def test_a_database_that_cannot_answer_does_not_fail_the_request(monkeypatch):
+    def down(email):
+        raise RuntimeError("QueuePool limit reached")
+    monkeypatch.setattr(password_sessions, "_read_changed_at", down)
+    assert _user(_token(datetime.now(timezone.utc))) == {"username": "a@example.org"}
+
+
+def test_the_cache_is_forgotten_only_after_the_change_is_committed(stamps, monkeypatch):
+    from routers import users
+    monkeypatch.setattr(users, "verify_password", lambda plain, hashed: True)
+    monkeypatch.setattr(users, "hash_password", lambda plain: "h")
+    person = SimpleNamespace(email="a@example.org", password_hash="x", password_changed_at=None)
+    db = MagicMock()
+    db.query.return_value.filter.return_value.first.return_value = person
+    # A request between the stamp and the commit cached the old (empty) value.
+    db.commit.side_effect = lambda: password_sessions._cache.__setitem__("a@example.org", (1e18, None))
+    auth.change_password(auth.ChangePasswordRequest(current_password="a", new_password="new-secret"),
+                         Response(), user={"username": "a@example.org"}, db=db)
+    assert "a@example.org" not in password_sessions._cache

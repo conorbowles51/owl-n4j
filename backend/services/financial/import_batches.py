@@ -347,6 +347,20 @@ REVIEW_STOP_CHECK_SECONDS = 5.0
 
 class ReviewStopped(Exception):
     """A file review stopped at a statement boundary because its batch was told to stop."""
+
+
+def _stop_check(stopped):
+    """The review's stop check: a check that fails (no free connection, the batch removed) never fails the file;
+    the review carries on and the turn's own checks decide as before."""
+    def check():
+        if shutdown_requested():
+            return True
+        try:
+            return stopped()
+        except Exception:
+            log.warning('Financial preparation could not check whether its batch was told to stop', exc_info=True)
+            return False
+    return check
 _READING_KEYS = ('printed_header', 'geometry_pages')
 _READING_DERIVED_KEYS = ('catalog', 'currencies', 'checks')
 
@@ -2527,7 +2541,7 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                         _reading_progress(file, 'complete', SHARED_PREPARATION_DONE, review_file_id=file['file_id'], prepared_in_batch=shared[1])
                     else:
                         reviewed = await _finish_atomic(_review_file,factory,batch_id,case_id,deepcopy(file),
-                                                        lambda: shutdown_requested() or stopped())
+                                                        _stop_check(stopped))
                         if isinstance(reviewed, dict) and reviewed.get('carry_refused'):
                             # Nothing was prepared (held_reprepare: her work could not be carried now). The file
                             # keeps the stamps of the reader that did prepare it; only the mark records why.
