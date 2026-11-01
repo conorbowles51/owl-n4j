@@ -343,6 +343,12 @@ class QueueReadTests(TestCase):
         self.assertEqual(counts(self.queue(file_ids=[file_id], batch_sources=sources[older_id])), (0, 1))
         # A file-id read (Statement files > Review selected) still finds every record naming the file.
         self.assertEqual(counts(self.queue(file_ids=[file_id])), (1, 1))
+        # The same file also named beside a batch (file_id with batch_id, or a saved selection) matches every record
+        # naming it, as the file-id read does, including the removed record kept under another source (the MONETA
+        # shape); as an extra source it matched only records whose source is the file itself.
+        self.assertEqual(counts(self.queue(file_ids=[file_id], batch_sources=sources[newer],
+                                           chosen_file_ids=[file_id])), (1, 1))
+        self.assertEqual(counts(self.queue(file_ids=[file_id], batch_sources=[*sources[newer], file_id])), (1, 0))
         # A batch that prepared the same source is not where it failed (batch 35443127: 0 failures, would count 12).
         with self.f.SessionLocal() as db:
             prepared = Batch(id=uuid4(), case_id=self.f.case.id, created_by=self.f.actor.user_id, status='review',

@@ -77,7 +77,9 @@ class StatementImportAuthorizationTests(unittest.TestCase):
             self.assertEqual(queue.call_args.kwargs['batch_sources'], ['s1'])
             self.assertEqual(self.client.get(f'{url}&file_id={extra}').status_code, 200)
             self.assertEqual(queue.call_args.kwargs['file_ids'], [extra, *in_batch])
-            self.assertEqual(queue.call_args.kwargs['batch_sources'], ['s1', extra])
+            # A file named beside the batch matches its records by file id too, not only as an extra source.
+            self.assertEqual(queue.call_args.kwargs['batch_sources'], ['s1'])
+            self.assertEqual(queue.call_args.kwargs['chosen_file_ids'], [extra])
             self.assertEqual(self.client.get(f'{url.replace("&batch_id=" + str(batch_id), "")}&file_id={extra}').status_code, 200)
             self.assertIsNone(queue.call_args.kwargs['batch_sources'])
             # A batch with no files shows nothing, never the whole case.

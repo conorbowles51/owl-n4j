@@ -990,14 +990,15 @@ def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Que
         from services.financial.import_batches import batch_file_ids, batch_failed_source_ids
         try:
             in_batch = batch_file_ids(db, case_id, batch_id)
-            # File ids sent beside the batch keep matching their own records.
-            batch_sources = [*batch_failed_source_ids(db, case_id, batch_id), *file_id]
+            batch_sources = list(batch_failed_source_ids(db, case_id, batch_id))
+            # File ids sent beside the batch keep matching their own records, by file id as well as by source.
+            chosen_files = list(file_id)
         except PdfMappingError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
         # A batch without files shows nothing, never the whole case (an empty filter means every file).
         file_id = [*file_id, *in_batch] or [UUID(int=0)]
     else:
-        batch_sources = None
+        batch_sources, chosen_files = None, []
     if selection_id is not None:
         from services.financial import queue_selection
         try:
@@ -1005,13 +1006,13 @@ def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Que
         except PdfMappingError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
         file_id = [*file_id, *selected]
-        if batch_sources is not None:
-            batch_sources = [*batch_sources, *selected]
+        chosen_files = [*chosen_files, *selected]
     token = previous_as_of.set(0.0)
     try:
         with stage('review_queue'):
             result = case_review_queue(db, case_id=case_id, file_ids=file_id, limit=limit, offset=offset,
                                        page_list=page_list, issue=issue, batch_sources=batch_sources,
+                                       chosen_file_ids=chosen_files,
                                        stale_ok=fresh is False or (fresh is None and (limit is not None or accepts)),
                                        updating=accepts)
         if result.get('refreshing') and response is not None:

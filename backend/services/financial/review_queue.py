@@ -1421,7 +1421,8 @@ def _public(entry):
 
 
 def case_review_queue(session, *, case_id, file_ids=None, use_cache=True, limit=None, offset=0,
-                      page_list='waiting', issue=None, stale_ok=False, updating=False, batch_sources=None):
+                      page_list='waiting', issue=None, stale_ok=False, updating=False, batch_sources=None,
+                      chosen_file_ids=()):
     """The case's queue and status line, optionally limited to some files (evidence ids).
 
     ``batch_sources`` (a batch read: import_batches.batch_failed_source_ids) matches the per-file records (couldn't
@@ -1429,7 +1430,8 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True, limit=
     and names the file its latest failing batch used, which another batch can also hold under its own source
     (d5b330d1, 1 Nov: batch 3ff00b64's record for MONETA KAPITAL SEP 25.pdf, source 20c1169d removed from
     Financial, named file 56b39f59, which batch 30231f0a lists under source 56b39f59; 30231f0a counted 208
-    removed files for 207). A record with no source falls back to its file id.
+    removed files for 207). A record with no source falls back to its file id. ``chosen_file_ids``, files named
+    beside the batch (file ids or a saved selection), match their records by file id or source, as without a batch.
 
     ``limit`` caps every entry list (0: counts only) and ``offset``/``issue``
     page the list named ``page_list``; ``totals``, ``page`` and
@@ -1458,8 +1460,10 @@ def case_review_queue(session, *, case_id, file_ids=None, use_cache=True, limit=
         entries = [e for e in entries if file_filter & set(e['file_ids'])]
         within = lambda f: bool({f.get('file_id'), f.get('source_id')} & file_filter)
         if batch_sources is not None:
-            sources = {str(i) for i in batch_sources}
-            within = lambda f, by_file=within: (f.get('source_id') in sources) if f.get('source_id') else by_file(f)
+            sources, chosen = {str(i) for i in batch_sources}, {str(i) for i in chosen_file_ids or ()}
+            within = lambda f, by_file=within: (
+                ((f.get('source_id') in sources) if f.get('source_id') else by_file(f))
+                or bool({f.get('file_id'), f.get('source_id')} & chosen))
         failed, copy_files = [f for f in failed if within(f)], [f for f in copy_files if within(f)]
         set_aside = [f for f in set_aside if within(f)]
     counts = _counts(entries)
