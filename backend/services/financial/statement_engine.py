@@ -2160,7 +2160,12 @@ def _printed_span(text, folded):
     for i in range(len(words)):
         for j in range(len(words), i, -1):
             if fold(' '.join(words[i:j])) == folded:
-                return ' '.join(words[i:j]).strip(' ,:')
+                span = words[i:j]
+                while span and not fold(span[0]).strip(' .,'):
+                    span = span[1:]
+                while span and not fold(span[-1]).strip(' .,'):
+                    span = span[:-1]
+                return ' '.join(span).strip(' ,:') or folded
     return folded
 
 

@@ -1692,6 +1692,9 @@ class AddresseeConfirmationTests(unittest.TestCase):
             self.assertEqual(self.holder(sources), 'GESTIÓN ÑANDÚ SA DE CV')
         self.assertEqual(E._printed_span('Nombre del Receptor : GESTIÓN ÑANDÚ', 'GESTION NANDU'), 'GESTIÓN ÑANDÚ')
         self.assertEqual(E._printed_span('Nombre del Receptor:GESTIÓN', 'GESTION'), 'GESTION')
+        # A mark standing alone next to the name is not part of it.
+        self.assertEqual(E._printed_span('NOMBRE DEL RECEPTOR - GESTIÓN ÑANDÚ |', 'GESTION NANDU'), 'GESTIÓN ÑANDÚ')
+        self.assertEqual(E._printed_span('NOMBRE DEL RECEPTOR : ACME S.A.', 'ACME S.A.'), 'ACME S.A.')
         self.assertEqual(E._respaced_recipient('GESTION ÑAN DU SA DE CV', 'GESTION NANDU', 'GESTIÓN ÑANDÚ'),
                          'GESTIÓN ÑANDÚ SA DE CV')
 
