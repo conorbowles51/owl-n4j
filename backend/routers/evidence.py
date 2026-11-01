@@ -472,6 +472,49 @@ def _get_or_create_folder_chain(
     return current_folder.id if current_folder else parent_id
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _holds_other_bytes(target: Path, sha256: Optional[str]) -> bool:
+    """True when target is an existing file whose bytes differ from the upload's."""
+    if not target.exists():
+        return False
+    if not sha256:
+        return True
+    return _file_sha256(target) != sha256
+
+
+def _free_target(target: Path, sha256: Optional[str]) -> Path:
+    """
+    The path a staged upload goes to without replacing a different file.
+
+    A file already at target with the same bytes is the same evidence and is
+    kept; a different file keeps its path, and the upload takes the first free
+    "name (n).ext" beside it, so an evidence row never points at bytes other
+    than the ones it was registered with.
+    """
+    candidate, n = target, 1
+    while _holds_other_bytes(candidate, sha256):
+        n += 1
+        candidate = target.with_name(f"{target.stem} ({n}){target.suffix}")
+    return candidate
+
+
+def _place_staged(staged_path: Path, target: Path) -> None:
+    """Move a staged file to target; a file already there holds the same bytes."""
+    if staged_path.resolve() == target:
+        return
+    if target.exists():
+        staged_path.unlink(missing_ok=True)
+        return
+    shutil.move(str(staged_path), str(target))
+
+
 def _persist_staged_uploads(
     *,
     db: Session,
@@ -506,9 +549,8 @@ def _persist_staged_uploads(
         target.parent.mkdir(parents=True, exist_ok=True)
         staged_path = Path(upload["staged_path"])
         if staged_path.resolve() != target:
-            if target.exists():
-                target.unlink()
-            shutil.move(str(staged_path), str(target))
+            target = _free_target(target, upload.get("sha256"))
+        _place_staged(staged_path, target)
 
         if not register_files:
             continue
