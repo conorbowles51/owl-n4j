@@ -9,7 +9,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / 'deploy' / 'hostpolicy'
-LIVE_CONTAINERS = {'neo4j': 'owl-v2-n4j', 'postgres': 'owl-v2-pg', 'redis': 'owl-v2-redis'}
+# The evidence engine API answers the Evidence page's polls: a live service (followups batch 10).
+LIVE_CONTAINERS = {'neo4j': 'owl-v2-n4j', 'postgres': 'owl-v2-pg', 'redis': 'owl-v2-redis',
+                   'evidence-engine-api': 'owl-v2-evidence-api'}
 # nginx serves :5174 when deploy/frontend-server.conf says nginx; vite preview (owl-frontend-v2) otherwise.
 LIVE_UNITS = ('owl-backend-v2.service', 'owl-frontend-v2.service', 'nginx.service')
 UNITS = {'K': 1024, 'M': 1024 ** 2, 'G': 1024 ** 3}

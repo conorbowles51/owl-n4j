@@ -148,6 +148,13 @@ services:
       dockerfile: evidence-engine/Dockerfile
     container_name: owl-v2-evidence-api
     restart: unless-stopped
+    # Live slice and protected memory like the other live services: the Evidence page polls this API, and in the
+    # rest of system.slice its memory was reclaimed while idle. Measured 31 Oct 12:00 - 1 Nov 08:30: the first jobs
+    # poll after 128-259 min idle took 2.6-10.7 s in the engine (8 of 8 such polls); after 21-22 min idle, fast (3
+    # of 3); warm 0.16-0.40 s. Resident 187 MB (1 Nov 09:00). 64m keeps the slice's total claim at its 15G
+    # MemoryLow; with memory_recursiveprot the slice's unclaimed protection (about 2.7 GB on 1 Nov) covers the rest.
+    cgroup_parent: loupe-live.slice
+    mem_reservation: 64m
     ports:
       - "8003:8000"
     environment:
