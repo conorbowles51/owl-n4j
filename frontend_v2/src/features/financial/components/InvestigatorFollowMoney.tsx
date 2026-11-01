@@ -53,19 +53,51 @@ export function MoneyConnections({
   // which step it is on, from the true count of steps.
   const [grouped, setGrouped] = useState<{ rows: LedgerTransaction[]; groups: PanelGroup[] } | null>(null)
   const [step, setStep] = useState<{ rows: LedgerTransaction[]; done: number; total: number } | null>(null)
+  // A grouping that fails says so for this row list and offers to run it again; it never sits on "Grouping…".
+  const [failure, setFailure] = useState<{ rows: LedgerTransaction[]; message: string } | null>(null)
+  const [attempt, setAttempt] = useState(0)
+  const failed = failure?.rows === rows ? failure.message : null
   useEffect(() => {
-    if (grouped?.rows === rows) return
+    if (grouped?.rows === rows || failed !== null) return
     const signal = { cancelled: false }
     const timer = setTimeout(() => {
-      void connectionGroupsInSteps(rows, (done, total) => setStep({ rows, done, total }), signal).then((groups) => {
-        if (groups && !signal.cancelled) setGrouped({ rows, groups })
-      })
+      connectionGroupsInSteps(rows, (done, total) => setStep({ rows, done, total }), signal).then(
+        (groups) => {
+          if (groups && !signal.cancelled) setGrouped({ rows, groups })
+        },
+        (error: unknown) => {
+          if (!signal.cancelled) setFailure({ rows, message: error instanceof Error ? error.message : String(error) })
+        }
+      )
     }, 0)
     return () => {
       signal.cancelled = true
       clearTimeout(timer)
     }
-  }, [rows, grouped])
+  }, [rows, grouped, failed, attempt])
+  if (grouped?.rows !== rows && failed !== null)
+    return (
+      <section className="rounded-xl border bg-card p-5 space-y-2" aria-label="Recorded payment connections">
+        <h3 className="font-semibold text-lg">Who paid in, and where payments went</h3>
+        <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-destructive">
+          <span>
+            Grouping {rows.length.toLocaleString("en-US")} {rows.length === 1 ? "payment" : "payments"} by name and
+            account failed: {failed}. No figures are shown for this panel.
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setFailure(null)
+              setStep(null)
+              setAttempt((n) => n + 1)
+            }}
+          >
+            Try again
+          </Button>
+        </div>
+      </section>
+    )
   if (grouped?.rows !== rows)
     return (
       <section

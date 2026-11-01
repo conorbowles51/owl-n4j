@@ -116,3 +116,20 @@ it("keeps the chosen currency group and page of names when the row list changes"
   expect(await screen.findByText(/7 to 8 of 8 names/)).toBeInTheDocument()
   expect(screen.getByLabelText("Connection currency and account type")).toHaveValue("USD:bank")
 })
+
+it("says the grouping failed, shows no figures, and offers to try again, never sitting on 'Grouping…'", async () => {
+  const panels = await import("../lib/overview-panels")
+  const spy = vi.spyOn(panels, "connectionGroupsInSteps").mockRejectedValueOnce(new Error("out of memory"))
+  const rows: LedgerTransaction[] = [
+    { ...paymentFixture, key: "a", direction: "debit", from_name: "Owner", to_name: "Shop", currency: "USD", amount_minor: "100" },
+  ]
+  render(<MoneyConnections rows={rows} onOpen={vi.fn()} />)
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Grouping 1 payment by name and account failed: out of memory. No figures are shown for this panel."
+  )
+  expect(screen.queryByRole("button", { name: /Shop/ })).not.toBeInTheDocument()
+  spy.mockRestore()
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+  expect(await screen.findAllByRole("button", { name: /Shop/ })).not.toHaveLength(0)
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+})
