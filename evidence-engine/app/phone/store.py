@@ -12,6 +12,7 @@ import json
 import psycopg
 
 from app.models import phone as tables
+from app.phone.ids import file_uid
 
 FLUSH_ROWS = 2000
 FLUSH_BYTES = 16 * 1024 * 1024
@@ -20,7 +21,7 @@ KIND_TABLE = {"r": tables.phone_records, "f": tables.phone_files, "x": tables.ph
 KIND_COLUMNS = {
     "r": ["ordinal", "parent_ordinal", "top_ordinal", "depth", "model_type", "source_model_id", "deleted_state",
           "is_partial", "body"],
-    "f": ["ordinal", "parent_ordinal", "source_file_id", "local_path", "declared_size", "declared_md5",
+    "f": ["ordinal", "file_uid", "parent_ordinal", "source_file_id", "local_path", "declared_size", "declared_md5",
           "declared_sha256", "tags", "is_partial", "body"],
     "x": ["ordinal", "source_id", "info_type", "is_partial", "body"],
 }
@@ -61,7 +62,10 @@ class CopySink:
         body = dumps(row["body"])
         values = [self.extraction_id, self.document_index]
         for c in KIND_COLUMNS[kind]:
-            values.append(body if c == "body" else row.get(c))
+            if c == "file_uid":  # 02 section 1.2: the id a phone file is linked by
+                values.append(str(file_uid(self.extraction_id, self.document_index, row["ordinal"])))
+            else:
+                values.append(body if c == "body" else row.get(c))
         self.buf[kind].append(values)
         self.nrows += 1
         self.nbytes += len(body)

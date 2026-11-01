@@ -177,10 +177,27 @@ def verify_files(conn, ctx, reporter=None) -> dict:
         outcomes = dict(cur.fetchall())
     if case_only:
         _merge_flags(conn, ext, {"local_path_case_only_matches": case_only})
-    absent = outcomes.get("missing", 0)
-    if total and absent == total:
+    if total and absent_count(outcomes) == total:
         _merge_flags(conn, ext, {"all_files_absent": total})
     return {"outcomes": outcomes, "files": total}
+
+
+# Outcomes of a file that is not in the production at all: listed but not there, or given no location to look in.
+ABSENT_OUTCOMES = ("missing", "no_local_path")
+
+
+def absent_count(outcomes) -> int:
+    return sum(outcomes.get(k, 0) for k in ABSENT_OUTCOMES)
+
+
+def absent_text(outcomes, total) -> str:
+    """The job result's sentence when no listed file is in the production (P10's shape: the report and nothing else)."""
+    missing, unplaced = outcomes.get("missing", 0), outcomes.get("no_local_path", 0)
+    if not unplaced:
+        return " None of the %s files the report lists is in the production; each is marked absent." % format(total, ",")
+    return (" None of the %s files the report lists is in the production: %s %s missing and %s %s no location in the "
+            "production. Each is marked absent." % (format(total, ","), format(missing, ","), "is" if missing == 1 else "are",
+                                                    format(unplaced, ","), "has" if unplaced == 1 else "have"))
 
 
 def _merge_flags(conn, ext, flags):

@@ -55,7 +55,7 @@ phone_records = Table(
 
 phone_files = Table(
     "phone_files", metadata, *_doc_cols(), Column("ordinal", Integer, primary_key=True),
-    Column("parent_ordinal", Integer), Column("source_file_id", String(128)), Column("local_path", Text),
+    Column("file_uid", Uuid), Column("parent_ordinal", Integer), Column("source_file_id", String(128)), Column("local_path", Text),
     Column("declared_size", BigInteger), Column("declared_md5", String(64)), Column("declared_sha256", String(128)),
     Column("tags", String(64)), Column("is_partial", Boolean), Column("body", JSONB), Column("disk_relpath", Text),
     Column("disk_size", BigInteger), Column("disk_md5", String(32)), Column("disk_sha256", String(64)),

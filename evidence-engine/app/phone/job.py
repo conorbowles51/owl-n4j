@@ -14,6 +14,7 @@ import logging
 import threading
 import time
 from contextlib import suppress
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 
@@ -88,8 +89,17 @@ async def _publish(job, db, status, progress, message, stage=None, counts=None, 
             job.error_message = error_message
         state = dict(job.pipeline_state or {})
         phone = dict(state.get("phone") or {})
+        now = datetime.now(timezone.utc).isoformat()
         if stage:
+            if phone.get("stage") != stage:
+                phone["stage_started_at"] = now
             phone["stage"] = stage
+        if counts is not None and counts != phone.get("counts"):
+            phone["counts"] = counts
+            phone["changed_at"] = now  # the stall rule's "last change" (07 4.7)
+        elif stage and phone.get("stage_started_at") == now:
+            phone["changed_at"] = now
+        phone["message"] = message
         state["phone"] = phone
         job.pipeline_state = state
         await db.commit()

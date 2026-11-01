@@ -24,6 +24,8 @@ class JobStatus(str, enum.Enum):
     VERIFYING_SOURCE = "verifying_source"  # phone capture: container, detection, counting (01 section 10.3)
     CAPTURING = "capturing"
     RECONCILING = "reconciling"
+    INTERPRETING = "interpreting"  # phone stages after capture (07 section 5 Intake); written by stage C onwards
+    BUILDING_VIEWS = "building_views"
     COMPLETED = "completed"
     FAILED = "failed"
 

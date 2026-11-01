@@ -278,9 +278,8 @@ def _embedded_text_origin(page: fitz.Page) -> str:
 def _load_table_reader() -> Any:
     """``services.financial.pdf_tables``, or ``None`` if it cannot be reached.
 
-    Imported here rather than at module scope for the reason
-    ``cellebrite_ingestion`` does the same: the backend is a sibling package on
-    disk, not an installed dependency, so its location is only known once the
+    Imported here rather than at module scope because the backend is a
+    sibling package on disk, not an installed dependency, so its location is only known once the
     process is running.  Cached because the answer cannot change within a
     process and a failed import per page would be a per-page cost.
 

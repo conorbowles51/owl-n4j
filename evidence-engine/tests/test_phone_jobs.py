@@ -229,3 +229,32 @@ async def test_progress_carries_stage_and_counts_every_second(monkeypatch):
     assert all("counts" in p for p in published if p.get("stage") == "capturing")
     assert published[-1]["status"] == "completed" and job.status == JobStatus.COMPLETED
     assert {p["status"] for p in published} >= {"verifying_source", "capturing", "reconciling"}
+
+
+@pytest.mark.asyncio
+async def test_stored_progress_records_when_the_stage_and_the_counts_last_changed(monkeypatch):
+    """The card's stall rule (07 4.7) reads changed_at: it moves when the stage or the counts change, not on a repeat,
+    and a cancel request written by another session is never overwritten."""
+    from app.phone import job as phone_job
+    monkeypatch.setattr(phone_job, "publish_progress", AsyncMock())
+    clock = iter(["2026-11-01T10:00:0%d+00:00" % i for i in range(10)])
+
+    class Clock:
+        @staticmethod
+        def now(tz=None):
+            return SimpleNamespace(isoformat=lambda: next(clock))
+    monkeypatch.setattr(phone_job, "datetime", Clock)
+    job = SimpleNamespace(id=uuid4(), pipeline_state={"phone": {"cancel_requested": True}}, status=None, progress=0,
+                          error_message=None)
+    db = SimpleNamespace(refresh=AsyncMock(), commit=AsyncMock())
+    phone = lambda: job.pipeline_state["phone"]
+    await phone_job._publish(job, db, JobStatus.CAPTURING, 0.3, "m", stage="capturing", counts={"records": 1})
+    assert (phone()["stage_started_at"], phone()["changed_at"], phone()["cancel_requested"]) == (
+        "2026-11-01T10:00:00+00:00", "2026-11-01T10:00:00+00:00", True)
+    await phone_job._publish(job, db, JobStatus.CAPTURING, 0.3, "m", stage="capturing", counts={"records": 1})
+    assert phone()["changed_at"] == "2026-11-01T10:00:00+00:00"  # a repeat is not a change
+    await phone_job._publish(job, db, JobStatus.CAPTURING, 0.4, "m", stage="capturing", counts={"records": 9})
+    assert phone()["changed_at"] == "2026-11-01T10:00:02+00:00"
+    assert phone()["stage_started_at"] == "2026-11-01T10:00:00+00:00"
+    await phone_job._publish(job, db, JobStatus.RECONCILING, 0.7, "m", stage="reconciling", counts={"records": 9})
+    assert phone()["stage_started_at"] == phone()["changed_at"] == "2026-11-01T10:00:03+00:00"

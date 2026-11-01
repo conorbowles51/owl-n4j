@@ -18,6 +18,7 @@ import uuid
 from app.phone import detect
 from app.phone.capture import CAPTURE_CODE_VERSION, Capture, CaptureMemoryBudgetExceeded
 from app.phone.counter import count_stream
+from app.phone.files import absent_count, absent_text
 from app.phone.reconcile import failure_message, reconcile, store_reconciliation
 from app.phone.recount import recount_document
 from app.phone.store import CopySink, prepare_resume
@@ -177,7 +178,7 @@ def run_capture(conn, *, data_root, case_id, container_path, root_path, original
 
     rep.stage("verifying_container", 0.0, "Checking the report", {"bytes_read": 0, "bytes_total": total_bytes})
     sha, md5, size, members = hash_container(full, on_bytes, rep.should_stop)
-    if upload_sha256 and members is None and upload_sha256 != sha:
+    if upload_sha256 and upload_sha256 != sha:  # a folder's upload digest is its manifest digest, as here
         raise CaptureFailed("container_changed_since_upload", "The stored upload no longer matches what was "
                             "received. It has not been read. Upload it again.")
 
@@ -370,16 +371,69 @@ def _run_root(conn, rep, source, members, case_id, container_id, root, job_id, c
         _exec(conn, "UPDATE phone_extractions SET capture_state = %s, standing = CASE WHEN standing = 'pending' "
                     "THEN 'active'::phone_extraction_standing ELSE standing END, record_count = %s, file_count = %s, "
                     "captured_at = now() WHERE id = %s", (final, rc, fc, extraction_id))
+    same = flag_same_device(conn, case_id, extraction_id)
     rep.stage("finishing", 1.0, "Ready", {"records": rc, "files": fc})
     outcomes = (ctx["summary"].get("verify_files") or {}).get("outcomes", {})
     message = "Every record was read and checked against the report: %s records and %s files." % (
         format(rc, ","), format(fc, ","))
-    if fc and outcomes.get("missing", 0) == fc:
-        message += (" None of the %s files the report lists is in the production; each is marked absent."
-                    % format(fc, ","))
+    if fc and absent_count(outcomes) == fc:
+        message += absent_text(outcomes, fc)
+    for other in same:
+        message += (" This case already has a report that appears to be from the same phone (%s). Both are kept. "
+                    "Use Replace on the newer one to retire the older one." % other["name"])
     return {"state": final, "extraction_id": str(extraction_id), "container_id": str(container_id),
             "records": rc, "files": fc, "peak_rss": ctx.get("peak_rss"), "summary": ctx["summary"],
             "message": message}
+
+
+def device_keys(skeletons) -> dict:
+    """01 section 10.7 step 2, until the device identity rule exists: the report's ``project@id`` and the set of
+    ``extractionInfo@id`` values, read from the stored skeletons (no XML re-read)."""
+    project_id, infos = None, set()
+
+    def walk(node):
+        nonlocal project_id
+        if not isinstance(node, list) or not node or not isinstance(node[0], str) or node[0].startswith("@"):
+            return
+        attrs = node[1] if len(node) > 1 and isinstance(node[1], dict) else {}
+        if node[0] == "project" and project_id is None and attrs.get("id"):
+            project_id = attrs["id"]
+        if node[0] == "extractionInfo" and attrs.get("id"):
+            infos.add(attrs["id"])
+        for child in (node[3] if len(node) > 3 and isinstance(node[3], list) else []):
+            walk(child)
+    for sk in skeletons:
+        walk(sk)
+    return {"project_id": project_id, "extraction_info_ids": sorted(infos)}
+
+
+def same_device(a: dict, b: dict) -> bool:
+    """Same ``project@id`` only (decision D36). 10.7's second test, the same set of ``extractionInfo@id`` values, is
+    not used: measured on the server corpus those ids are per-report ordinals (``0``, ``1``, ``2``), so C3 and C8,
+    two different phones, have the same set. The key set is still recorded for the later device identity rule."""
+    return bool(a.get("project_id")) and a.get("project_id") == b.get("project_id")
+
+
+def _keys_for(conn, extraction_id):
+    with conn.cursor() as cur:
+        cur.execute("SELECT skeleton FROM phone_extraction_documents WHERE extraction_id = %s AND skeleton IS NOT "
+                    "NULL ORDER BY document_index", (extraction_id,))
+        return device_keys([r[0] for r in cur.fetchall()])
+
+
+def flag_same_device(conn, case_id, extraction_id) -> list:
+    """Both stay active; the newer one records which active extractions look like the same phone (10.7 step 2)."""
+    mine = _keys_for(conn, extraction_id)
+    with conn.cursor() as cur:
+        cur.execute("SELECT e.id, c.original_name FROM phone_extractions e JOIN phone_extraction_containers c ON "
+                    "c.id = e.first_container_id WHERE e.case_id = %s AND e.id <> %s AND e.standing = 'active' "
+                    "ORDER BY e.created_at", (case_id, extraction_id))
+        others = cur.fetchall()
+    same = [{"extraction_id": str(oid), "name": name} for oid, name in others if same_device(mine, _keys_for(conn, oid))]
+    with conn.transaction():
+        _exec(conn, "UPDATE phone_extractions SET flags = (flags - 'possible_same_device') || %s::jsonb WHERE id = %s",
+              (json.dumps({"device_keys": mine, **({"possible_same_device": same} if same else {})}), extraction_id))
+    return same
 
 
 def _default_hooks():
