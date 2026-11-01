@@ -1,0 +1,8 @@
+{
+  "_about": "Counts only, measured on the server copies (01 section 12). mac_reference values are the Mac copies (01 sections 1.4 and 1.5); the server C8 (P02) is a different export from the Mac's split-section C8, so its counts differ and neither is adjusted.",
+  "c3": {"records": 71045, "files": 43043, "state": "captured"},
+  "c9": {"records": 14005, "files": 29536, "state": "captured"},
+  "c8": {"records": 73608, "files": 72849, "state": "captured",
+         "mac_reference": {"records": 73637, "files": 11664, "state": "captured_incomplete"}},
+  "peak_rss_bytes_below": 536870912
+}
