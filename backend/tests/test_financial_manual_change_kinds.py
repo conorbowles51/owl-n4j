@@ -41,10 +41,14 @@ class RecordReviewEditTests(unittest.TestCase):
 
     def test_a_changed_save_is_recorded_with_its_fields_reader_and_layout(self):
         out, call = self.record(INITIAL, {**INITIAL, 'holder': 'JUAN PERES'})
-        self.assertEqual(out, 'id')
+        self.assertEqual(out, ['id'])
         kw = call.call_args.kwargs
         self.assertEqual((kw['field'], kw['producer'], kw['layout']),
                          ('holder', 'santander-mexico-movements', 'Santander'))
+
+    def test_each_changed_field_is_its_own_record(self):
+        out, call = self.record(INITIAL, {**INITIAL, 'holder': 'X', 'account_number': '9'})
+        self.assertEqual(sorted(c.kwargs['field'] for c in call.call_args_list), ['account_number', 'holder'])
 
     def test_an_unchanged_save_or_a_save_by_no_person_records_nothing(self):
         self.assertEqual(self.record(INITIAL, dict(INITIAL))[1].call_count, 0)

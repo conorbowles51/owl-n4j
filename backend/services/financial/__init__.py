@@ -2359,3 +2359,6 @@ __all__ += ["WriteInReadOnlyComparison", "reads_outside_transaction"]
 # The Transactions tab's first page, built from the saved ledger copy; aliased so the submodule stays reachable.
 from services.financial.transactions_first_view import first_view as transactions_first_page
 __all__ += ["transactions_first_page"]
+# Manual changes recorded inside a financial save (a review-queue save names only the fields it changed).
+from services.financial.manual_change_kinds import record_review_edit, request_diff
+__all__ += ["record_review_edit", "request_diff"]

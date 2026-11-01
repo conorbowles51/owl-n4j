@@ -458,6 +458,7 @@ def record_candidate_finalization(evidence_file_id: UUID, body: CandidateFinaliz
 from services.financial.statement_review_drafts import StatementDraftRequest, save_statement_draft
 
 @router.put("/candidate-sources/{evidence_file_id}/statement-draft")
+@records('statement_draft_edit', 'change')
 def save_statement_review_draft(evidence_file_id: UUID, body: StatementDraftRequest,
         case_id: UUID = Query(...), current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:

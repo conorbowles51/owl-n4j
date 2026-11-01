@@ -105,7 +105,7 @@ def payment_labels(session, users):
             kind, change_type = 'payment_label_change', 'change'
             fields = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
         yield dict(kind=kind, change_type=change_type, case_id=r['case_id'], subject=('transaction', str(r['id'])),
-                   before=e.get('before'), after=e.get('after') or e.get('values'),
+                   before=e.get('before'), after=e.get('after') or e.get('values'), diff=change_type == 'change',
                    actor=_actor(users, e.get('actor_id'), e.get('actor_name'), e.get('actor_email')), reason=e.get('reason') or '',
                    field=','.join(map(str, fields)), at=_when(e.get('at')), source_ref=f"label:{r['id']}:{r['n']}")
 
@@ -126,7 +126,7 @@ def account_histories(session, users):
         before, after = e.get('before') or {}, e.get('after') or {}
         undo = e.get('kind') == 'undo'
         yield dict(kind='account_details_undo' if undo else 'account_details', change_type='set_aside' if undo else 'change',
-                   case_id=r['case_id'], subject=('account', str(r['id'])), before=before, after=after,
+                   case_id=r['case_id'], subject=('account', str(r['id'])), before=before, after=after, diff=not undo,
                    actor=_actor(users, e.get('actor_id'), e.get('actor_name'), e.get('actor_email')), reason=e.get('reason') or '',
                    field=','.join(sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))),
                    at=_when(e.get('at')), source_ref=f"account-details:{r['id']}:{r['n']}")
@@ -151,7 +151,7 @@ def statement_details(session, users):
         fields = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k)) if isinstance(before, dict) \
             and isinstance(after, dict) else []
         yield dict(kind='statement_details', change_type='change', case_id=r['case_id'],
-                   subject=('source_document', str(r['id'])), before=before, after=after,
+                   subject=('source_document', str(r['id'])), before=before, after=after, diff=True,
                    actor=_actor(users, e.get('actor_id'), e.get('actor_name'), e.get('actor_email')), reason=e.get('reason') or '',
                    field=','.join(fields), at=_when(e.get('at') or e.get('saved_at')),
                    source_ref=f"statement-details:{r['id']}:{r['n']}")
@@ -186,7 +186,7 @@ def evidence_reviews(session, users):
             continue
         before, after = e.get('before') or {}, e.get('after') or {}
         yield dict(kind='statement_account_details', change_type='change', case_id=r['case_id'],
-                   subject=('evidence_file', f"{r['id']}#{e.get('statement_id') or ''}"), before=before, after=after,
+                   subject=('evidence_file', f"{r['id']}#{e.get('statement_id') or ''}"), before=before, after=after, diff=True,
                    actor=_actor(users, actor.get('user_id'), actor.get('name'), actor.get('email')), reason=e.get('reason') or '',
                    field=','.join(sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k)))
                    if isinstance(before, dict) and isinstance(after, dict) else '',
@@ -287,6 +287,7 @@ def review_saves(session, users):
                     if fields:
                         yield dict(kind='statement_review_edit', change_type='change', case_id=r['case_id'],
                                    subject=('evidence_file', f"{r['id']}#{statement}"), before=old, after=new,
+                                   per_field=(fields, old or {}, new or {}),
                                    actor=_actor(users, actor.get('user_id'), actor.get('name'), actor.get('email')),
                                    reason='', field=','.join(fields), producer=producer, layout=layout,
                                    at=_when(entry.get('saved_at')),
@@ -295,16 +296,19 @@ def review_saves(session, users):
                 previous = request
 
 
-def graph_and_workspace(session, users):
-    for r in _rows(session, "select id, case_id, item_type, original_key, deleted_by, deleted_at, reason "
-                            "from graph_recycle_bin_items where item_type = 'entity_delete'"):
+def graph_deletes(session, users):
+    for r in _rows(session, "select id, case_id, item_type, original_key, original_type, deleted_by, deleted_at, "
+                            "reason from graph_recycle_bin_items where item_type = 'entity_delete'"):
         email = r['deleted_by'] or ''
         name = next((n for n, e in users.values() if e == email), '')
         if not is_person(name, email):
             continue
         yield dict(kind='entity_delete', change_type='set_aside', case_id=r['case_id'], subject=('entity', r['original_key']),
                    before=None, after=None, actor=dict(name=name, email=email), reason=r['reason'] or '', field='entity',
-                   at=r['deleted_at'], source_ref=f"recycle:{r['id']}")
+                   producer=r['original_type'] or '', layout='', at=r['deleted_at'], source_ref=f"recycle:{r['id']}")
+
+
+def workspace_ai(session, users):
     for r in _rows(session, "select id, case_id, review_status, reviewed_by_user_id, reviewed_at "
                             "from workspace_ai_outputs where review_status in ('accepted', 'rejected')"):
         name, email = users.get(str(r['reviewed_by_user_id']), ('', ''))
@@ -316,7 +320,10 @@ def graph_and_workspace(session, users):
                    subject=('workspace_ai_output', str(r['id'])), before=None, after=None,
                    actor=dict(name=name, email=email, user_id=str(r['reviewed_by_user_id'])), reason='', field='ai_output',
                    at=r['reviewed_at'], source_ref=f"workspace-ai:{r['id']}")
-    for r in _rows(session, "select id, case_id, entity_key_1, entity_key_2, rejected_by_user_id, rejected_at "
+
+
+def merge_rejections(session, users):
+    for r in _rows(session, "select id, case_id, entity_key_1, entity_key_2, rejected_by_user_id, created_at as rejected_at "
                             "from rejected_merge_pairs"):
         name, email = users.get(str(r['rejected_by_user_id']), ('', ''))
         if not is_person(name, email):
@@ -327,13 +334,45 @@ def graph_and_workspace(session, users):
                    source_ref=f"rejected-merge:{r['id']}")
 
 
+def _parts(item):
+    """One item per changed field, so each field's pattern counts the change."""
+    import hashlib
+    from services.manual_changes import changed_paths
+
+    def part(name, old, new):
+        ref = f"{item['source_ref']}:{name}"
+        if len(ref) > 200:
+            ref = item['source_ref'][:150] + ':' + hashlib.sha1(name.encode()).hexdigest()[:16]
+        return {**item, 'field': name, 'before': old, 'after': new, 'source_ref': ref}
+    if item.get('per_field'):
+        fields, old, new = item['per_field']
+        for name in fields:
+            yield part(name, old.get(name), new.get(name))
+        return
+    if item.get('diff') and isinstance(item.get('after'), dict):
+        paths = changed_paths(item.get('before'), item['after'])
+        if paths:
+            for name, (old, new) in sorted(paths.items()):
+                yield part(name, old, new)
+            return
+        # Saved with nothing changed: the person confirmed what was there.
+        yield {**item, 'change_type': 'confirm', 'field': '(saved unchanged)'}
+        return
+    yield item
+
+
 SOURCES = (adjudications, judgements, payment_labels, account_histories, statement_details, evidence_reviews,
-           review_saves, graph_and_workspace)
+           review_saves, graph_deletes, workspace_ai, merge_rejections)
+
+
+def tests_here(item, actor):
+    from services.manual_changes import is_test
+    return is_test(item['case_id'], actor.get('email'), item.get('reason'))
 
 
 def backfill(session, apply=False, sources=SOURCES):
     from postgres.models.manual_change import ManualChange
-    from services.manual_changes import is_test, make_pattern_key, producer_for, record_change
+    from services.manual_changes import make_pattern_key, producer_for, record_change
     users = _users(session)
     from services.manual_changes import _ready
     done = ({ref for ref in session.scalars(select(ManualChange.source_ref).where(ManualChange.source_ref.is_not(None)))}
@@ -344,35 +383,36 @@ def backfill(session, apply=False, sources=SOURCES):
     pending = 0
     for source in sources:
         try:
-            for item in source(session, users):
-                if item['source_ref'] in done:
-                    skipped += 1
-                    continue
-                done.add(item['source_ref'])
-                producer, layout = item.get('producer'), item.get('layout')
-                if producer is None and layout is None:
-                    producer, layout = producer_for(session, *item['subject'])
-                key = make_pattern_key(item['kind'], item.get('field', ''), producer or '', layout or '')
-                actor = item['actor'] or {}
-                if is_test(item['case_id'], actor.get('email'), item.get('reason')) or \
-                        (actor.get('email') or '').lower() in AUTOMATION_EMAILS:
-                    tests[item['kind']] += 1
-                kinds[item['kind']] += 1
-                if item['change_type'] != 'confirm':
-                    patterns[key] += 1
-                if apply:
-                    record_change(session, item['kind'], item['case_id'], item['subject'], item.get('before'),
-                                  item.get('after'), actor, item.get('reason', ''), item.get('link', '') or '',
-                                  change_type=item['change_type'], field=item.get('field', ''), producer=producer or '',
-                                  layout=layout or '', source='backfill', historic=True, source_ref=item['source_ref'],
-                                  at=item.get('at') or datetime.now(timezone.utc))
-                    pending += 1
-                    if pending >= 200:
-                        session.commit()
-                        pending = 0
+            for whole in source(session, users):
+                for item in _parts(whole):
+                    if item['source_ref'] in done:
+                        skipped += 1
+                        continue
+                    done.add(item['source_ref'])
+                    producer, layout = item.get('producer'), item.get('layout')
+                    if producer is None and layout is None:
+                        producer, layout = producer_for(session, *item['subject'])
+                    key = make_pattern_key(item['kind'], item.get('field', ''), producer or '', layout or '')
+                    actor = item['actor'] or {}
+                    if tests_here(item, actor):
+                        tests[item['kind']] += 1
+                    kinds[item['kind']] += 1
+                    if item['change_type'] != 'confirm' and not tests_here(item, actor):
+                        patterns[key] += 1
+                    if apply:
+                        record_change(session, item['kind'], item['case_id'], item['subject'], item.get('before'),
+                                      item.get('after'), actor, item.get('reason', ''), item.get('link', '') or '',
+                                      change_type=item['change_type'], field=item.get('field', ''), producer=producer or '',
+                                      layout=layout or '', source='backfill', historic=True, source_ref=item['source_ref'],
+                                      at=item.get('at') or datetime.now(timezone.utc))
+                        pending += 1
+                        if pending >= 200:
+                            session.commit()
+                            pending = 0
         except Exception as exc:  # noqa: BLE001 - one source failing is reported, the rest still run
             log.exception('Backfill source %s failed', source.__name__)
             session.rollback()
+            pending = 0  # the records of this source not yet committed are added by the next run (source_ref)
             errors.append(f'{source.__name__}: {type(exc).__name__}: {exc}'[:300])
     if apply:
         session.commit()

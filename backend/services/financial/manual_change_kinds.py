@@ -74,11 +74,12 @@ def record_review_edit(session, *, kind, case_id, evidence_file_id, before, afte
         from services.manual_changes import record_change
         producer, layout = reading_producer(proposal)
         statement = (after or {}).get('statement_id') or ''
-        return record_change(
-            session, kind, case_id, ('evidence_file', f'{evidence_file_id}#{statement}' if statement else
-                                     str(evidence_file_id)), old, new, actor, '',
-            f'/cases/{case_id}/financial?file={evidence_file_id}' + (f'&statement={statement}' if statement else ''),
-            field=','.join(fields), producer=producer, layout=layout)
+        subject = ('evidence_file', f'{evidence_file_id}#{statement}' if statement else str(evidence_file_id))
+        link = f'/cases/{case_id}/financial?file={evidence_file_id}' + (f'&statement={statement}' if statement else '')
+        # One record per changed field: a save fixing the holder and the account number counts once in each
+        # field's pattern.
+        return [record_change(session, kind, case_id, subject, old[name], new[name], actor, '', link, field=name,
+                              producer=producer, layout=layout) for name in fields]
     except Exception:  # noqa: BLE001 - the person's save stands
         log.exception('Recording the review edit on %s failed', evidence_file_id)
         return None

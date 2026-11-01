@@ -146,15 +146,15 @@ def record_change(session, kind, case_id, subject, before, after, actor, reason=
 
     if committed:
         if row is not None:
+            # A session of its own on the same database: committing the caller's session would expire the objects
+            # its route is about to return, and roll back nothing of the caller's on a failure.
+            from sqlalchemy.orm import Session
             try:
-                session.add(row)
-                session.commit()
+                with Session(bind=session.get_bind(), expire_on_commit=False) as own:
+                    own.add(row)
+                    own.commit()
             except Exception:  # noqa: BLE001
                 log.exception('Recording manual change %s on %s failed', kind, row.subject_id)
-                try:
-                    session.rollback()
-                except Exception:  # noqa: BLE001
-                    pass
                 row = None
         deliver()
         return row.id if row is not None else None
@@ -183,6 +183,27 @@ def record_change(session, kind, case_id, subject, before, after, actor, reason=
     event.listen(session, 'after_commit', on_commit, once=True)
     event.listen(session, 'after_soft_rollback', on_rollback)
     return row.id if row is not None else None
+
+
+_CONSEQUENCE_KEYS = ('revision', 'case_id', 'pages', 'page_numbers')
+
+
+def changed_paths(before, after, prefix=''):
+    """{dotted path: (before, after)} for every leaf the after side sets that differs from before. Ids and revisions
+    that change as a consequence of a save (``*_id``, ``revision``) are not fields a person changed."""
+    out = {}
+    if not isinstance(after, dict):
+        return {prefix or 'value': (before, after)} if before != after else {}
+    before = before if isinstance(before, dict) else {}
+    for key, value in after.items():
+        if key in _CONSEQUENCE_KEYS or str(key).endswith('_id') or str(key).endswith('_sha256'):
+            continue
+        path = f'{prefix}.{key}' if prefix else str(key)
+        if isinstance(value, dict):
+            out.update(changed_paths(before.get(key), value, path))
+        elif before.get(key) != value:
+            out[path] = (before.get(key), value)
+    return out
 
 
 def record_confirmation(session, kind, case_id, subject, value, actor, reason='', link='', pattern_key=None, **kw):
@@ -328,10 +349,12 @@ def _actor_from(kwargs):
 
 
 def _session_from(kwargs):
+    """A session of the decorator's own (closed by it): on the route's database when the route has one, so the
+    route's session and the objects it returns are never touched."""
     from sqlalchemy.orm import Session
     for value in kwargs.values():
         if isinstance(value, Session):
-            return value, False
+            return Session(bind=value.get_bind(), expire_on_commit=False), True
     return _own_session(), True
 
 
@@ -393,6 +416,8 @@ def records(kind, change_type='change', *, subject_type='', subject=None, field=
         def note(kwargs, result):
             try:
                 ctx = dict(kw=kwargs, body=_body(kwargs) or {}, result=result)
+                if (getattr(result, 'status_code', 200) or 200) >= 400:
+                    return  # a refusal returned as a response rather than raised: nothing was saved
                 if when is not None and not when(ctx):
                     return
                 db, own = _session_from(kwargs)
@@ -413,6 +438,19 @@ def records(kind, change_type='change', *, subject_type='', subject=None, field=
                     prod, lay = (_call(producer, ctx) if producer is not None
                                  else producer_for(db, stype, sid))
                     why = _call(reason, ctx) if reason is not None else (body.get('reason') or kwargs.get('reason'))
+                    if field is None and before is None and after is None and isinstance(res.get('before'), dict) \
+                            and isinstance(res.get('after'), dict):
+                        # The service says what it changed: one record per changed field, so each field's pattern
+                        # counts it.
+                        paths = changed_paths(res['before'], res['after'])
+                        if paths:
+                            for path, (old, new) in sorted(paths.items()):
+                                record_change(db, name, case_id, (stype, sid), old, new, _actor_from(kwargs),
+                                              why if isinstance(why, str) else '',
+                                              _call(link, ctx) if link is not None else _default_link(case_id, stype, sid),
+                                              change_type=_call(change_type, ctx), field=path, producer=prod,
+                                              layout=lay, committed=True)
+                            return
                     record_change(
                         db, name, case_id, (stype, sid),
                         _call(before, ctx) if before is not None else res.get('before'),
@@ -455,6 +493,18 @@ def _default_link(case_id, subject_type, subject_id):
     return f'/cases/{case_id}'
 
 
+def _choice_producer(choices, statement_id):
+    if not isinstance(choices, list):
+        return '', ''
+    choice = next((c for c in choices if isinstance(c, dict) and c.get('id') == statement_id), None)
+    if choice is None and len(choices) == 1 and isinstance(choices[0], dict):
+        choice = choices[0]
+    if not choice:
+        return '', ''
+    return (str(choice.get('layout_id') or choice.get('document_kind') or ''),
+            str(choice.get('layout_fingerprint') or choice.get('institution') or ''))
+
+
 def producer_for(session, subject_type, subject_id):
     """(reader or rule that produced the value, layout fingerprint or bank) for a subject, or ('', '')."""
     try:
@@ -462,34 +512,53 @@ def producer_for(session, subject_type, subject_id):
         ident = _uuid(str(subject_id or '').split('#', 1)[0].split(' ', 1)[0])
         if ident is None or session is None:
             return '', ''
-        doc = None
+        D = FinancialSourceDocument
+        where = None
         if subject_type == 'batch_item':
-            from postgres.models.financial_import_batches import FinancialImportBatchItem
-            item = session.get(FinancialImportBatchItem, ident)
-            if item is None:
+            from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+            file_id = session.scalar(select(Item.file_id).where(Item.id == ident))
+            if file_id is None:
                 return '', ''
-            subject_type, ident = 'evidence_file', item.file_id
+            subject_type, ident = 'evidence_file', file_id
         if subject_type == 'transaction':
-            row = session.get(FinancialTransaction, ident)
-            doc = session.get(FinancialSourceDocument, row.source_document_id) if row is not None else None
+            document = session.scalar(select(FinancialTransaction.source_document_id)
+                                      .where(FinancialTransaction.id == ident))
+            where = D.id == document if document is not None else None
         elif subject_type == 'source_document':
-            doc = session.get(FinancialSourceDocument, ident)
+            where = D.id == ident
         elif subject_type == 'evidence_file':
-            doc = session.scalars(select(FinancialSourceDocument)
-                                  .where(FinancialSourceDocument.evidence_file_id == ident)
-                                  .order_by(FinancialSourceDocument.created_at.desc()).limit(1)).first()
+            where = D.evidence_file_id == ident
         elif subject_type == 'account':
-            account = session.get(FinancialAccount, ident)
-            return '', (account.institution_name or '') if account is not None else ''
+            return '', session.scalar(select(FinancialAccount.institution_name)
+                                      .where(FinancialAccount.id == ident)) or ''
         elif subject_type == 'judgement':
-            from postgres.models.financial_judgements import FinancialJudgement
-            judgement = session.get(FinancialJudgement, ident)
-            return (judgement.rule_id or '') if judgement is not None else '', ''
-        if doc is None:
+            from postgres.models.financial_judgements import FinancialJudgement as J
+            return session.scalar(select(J.rule_id).where(J.id == ident)) or '', ''
+        if where is None:
             return '', ''
-        meta = doc.metadata_ or {}
-        layout = meta.get('layout_fingerprint') or meta.get('layout_key') or doc.institution_name or ''
-        return f'{doc.parser_name}@{doc.parser_version}', str(layout)
+        # Only the columns needed: a statement's metadata holds its whole reading (up to megabytes).
+        original = D.metadata_['statement_import_original']
+        row = session.execute(select(D.parser_name, D.parser_version, D.institution_name,
+                                     original['statement_choices'], original['statement_id'])
+                              .where(where).order_by(D.created_at.desc()).limit(1)).first()
+        if row is None:
+            if subject_type == 'evidence_file':
+                # Not saved yet: the batch that prepared the file names the bank it read.
+                from postgres.models.financial_import_batches import FinancialImportBatchItem as Item
+                statement = str(subject_id or '').partition('#')[2]
+                query = select(Item.summary['institution']).where(Item.file_id == ident)
+                if statement:
+                    query = query.where(Item.statement_key == statement)
+                bank = session.scalar(query.limit(1))
+                return '', str(bank or '')
+            return '', ''
+        parser_name, parser_version, institution, choices, statement_id = row
+        # A statement saved from a review was read by a layout reader: that reader is the producer, not the
+        # review's own format version.
+        layout_reader, layout = _choice_producer(choices, statement_id)
+        if layout_reader:
+            return layout_reader, layout or institution or ''
+        return f'{parser_name}@{parser_version}', institution or ''
     except Exception:  # noqa: BLE001
         log.exception('Finding the producer of %s %s failed', subject_type, subject_id)
         try:

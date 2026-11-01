@@ -80,6 +80,16 @@ class RecordAfterCommitTests(FeedTestBase):
             ident = self.change(session, committed=True)
         self.assertEqual([line['id'] for line in self.lines()], [str(ident)])
 
+    def test_committed_mode_never_commits_or_expires_the_callers_session(self):
+        with Session(self.engine) as session:
+            pending = ManualChange(kind='other', change_type='change', pattern_key='other|||')
+            session.add(pending)
+            self.change(session, committed=True)
+            self.assertIn(pending, session.new)
+            session.rollback()
+        with Session(self.engine) as session:
+            self.assertEqual([row.kind for row in session.scalars(select(ManualChange))], ['transaction_correction'])
+
     def test_a_failed_append_is_added_once_by_the_sync(self):
         with Session(self.engine) as session:
             with mock.patch.object(mc, 'append', side_effect=OSError('disk full')):
@@ -123,6 +133,13 @@ class RecordAfterCommitTests(FeedTestBase):
             mc.record_confirmation(session, 'payment_label_confirm', CASE, ('transaction', 't1'), {'name': 'X'},
                                    PERSON, committed=True)
         self.assertEqual(self.lines()[0]['type'], 'confirm')
+
+
+class ChangedPathsTests(unittest.TestCase):
+    def test_leaves_the_save_sets_that_differ_and_no_consequence_ids(self):
+        before = dict(details=dict(holder='', account_number=''), account_id='a1', revision='r1', currency='MXN')
+        after = dict(details=dict(holder='Novac', account_number=''), account_id='a2', currency='MXN')
+        self.assertEqual(mc.changed_paths(before, after), {'details.holder': ('', 'Novac')})
 
 
 class JudgementLineTests(FeedTestBase):

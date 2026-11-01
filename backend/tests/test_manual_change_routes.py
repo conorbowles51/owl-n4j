@@ -38,7 +38,7 @@ ROUTE_KINDS = {
     'fact_pin', 'entity_merge', 'merge_suggestion_reject', 'merge_suggestion_unreject', 'entity_delete',
     'entity_restore', 'transcript_speaker_correct', 'evidence_relevance_set', 'device_name_override',
     'significant_entity_add', 'significant_entity_remove', 'significant_entity_clear', 'workspace_ai_accept',
-    'workspace_ai_reject', 'attention_dismiss', 'attention_clear', 'timeline_event_add',
+    'workspace_ai_reject', 'attention_dismiss', 'attention_clear', 'timeline_event_add', 'statement_draft_edit',
 }
 
 
