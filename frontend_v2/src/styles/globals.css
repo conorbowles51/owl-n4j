@@ -60,6 +60,36 @@
     --status-error: 3 70% 40%;
     --status-error-soft: 3 85% 96%;
 
+    /* Area identity (lx-style B): one hue per area family, drawn from the brand and node palettes. The base token
+       marks icons, rules and the active mark (3:1 or more on every surface); -soft is the area's tinted surface;
+       -foreground is text in the area's colour (4.5:1 or more on every surface and on -soft). Every base hue is
+       at least dE2000 15 from each status token and from Loupe red, and from every other area (tokens.test.ts).
+       Brand red stays the action and active colour. */
+    --area-investigate: 172 60% 27%;
+    --area-investigate-soft: 172 70% 95%;
+    --area-investigate-foreground: 172 60% 27%;
+    --area-money: 34 59% 43%;
+    --area-money-soft: 34 70% 95%;
+    --area-money-foreground: 34 59% 35%;
+    --area-phones: 196 60% 38%;
+    --area-phones-soft: 196 70% 95%;
+    --area-phones-foreground: 196 60% 35%;
+    --area-people: 225 51% 56%;
+    --area-people-soft: 225 70% 95%;
+    --area-people-foreground: 225 51% 52%;
+    --area-evidence: 84 34% 30%;
+    --area-evidence-soft: 84 54% 95%;
+    --area-evidence-foreground: 84 34% 30%;
+    --area-assistant: 266 30% 61%;
+    --area-assistant-soft: 266 50% 95%;
+    --area-assistant-foreground: 266 30% 50%;
+    --area-work: 341 47% 49%;
+    --area-work-soft: 341 67% 95%;
+    --area-work-foreground: 341 47% 48%;
+    --area-settings: 228 9% 15%;
+    --area-settings-soft: 240 7% 93%;
+    --area-settings-foreground: 228 9% 15%;
+
     /* Radius */
     --radius: 0.5rem;
   }
@@ -109,6 +139,31 @@
     --status-deleted-soft: 215 15% 15%;
     --status-error: 3 90% 72%;
     --status-error-soft: 3 45% 14%;
+
+    --area-investigate: 172 60% 46%;
+    --area-investigate-soft: 172 40% 14%;
+    --area-investigate-foreground: 172 60% 50%;
+    --area-money: 34 59% 46%;
+    --area-money-soft: 34 40% 14%;
+    --area-money-foreground: 34 59% 50%;
+    --area-phones: 196 60% 56%;
+    --area-phones-soft: 196 40% 14%;
+    --area-phones-foreground: 196 60% 56%;
+    --area-people: 225 51% 63%;
+    --area-people-soft: 225 40% 14%;
+    --area-people-foreground: 225 51% 63%;
+    --area-evidence: 84 34% 53%;
+    --area-evidence-soft: 84 34% 14%;
+    --area-evidence-foreground: 84 34% 53%;
+    --area-assistant: 266 45% 57%;
+    --area-assistant-soft: 266 40% 14%;
+    --area-assistant-foreground: 266 45% 63%;
+    --area-work: 341 47% 58%;
+    --area-work-soft: 341 40% 14%;
+    --area-work-foreground: 341 47% 60%;
+    --area-settings: 228 9% 95%;
+    --area-settings-soft: 230 11% 14%;
+    --area-settings-foreground: 240 5% 92%;
   }
 }
 
@@ -258,6 +313,30 @@
   --color-status-deleted-soft: hsl(var(--status-deleted-soft));
   --color-status-error: hsl(var(--status-error));
   --color-status-error-soft: hsl(var(--status-error-soft));
+  --color-area-investigate: hsl(var(--area-investigate));
+  --color-area-investigate-soft: hsl(var(--area-investigate-soft));
+  --color-area-investigate-foreground: hsl(var(--area-investigate-foreground));
+  --color-area-money: hsl(var(--area-money));
+  --color-area-money-soft: hsl(var(--area-money-soft));
+  --color-area-money-foreground: hsl(var(--area-money-foreground));
+  --color-area-phones: hsl(var(--area-phones));
+  --color-area-phones-soft: hsl(var(--area-phones-soft));
+  --color-area-phones-foreground: hsl(var(--area-phones-foreground));
+  --color-area-people: hsl(var(--area-people));
+  --color-area-people-soft: hsl(var(--area-people-soft));
+  --color-area-people-foreground: hsl(var(--area-people-foreground));
+  --color-area-evidence: hsl(var(--area-evidence));
+  --color-area-evidence-soft: hsl(var(--area-evidence-soft));
+  --color-area-evidence-foreground: hsl(var(--area-evidence-foreground));
+  --color-area-assistant: hsl(var(--area-assistant));
+  --color-area-assistant-soft: hsl(var(--area-assistant-soft));
+  --color-area-assistant-foreground: hsl(var(--area-assistant-foreground));
+  --color-area-work: hsl(var(--area-work));
+  --color-area-work-soft: hsl(var(--area-work-soft));
+  --color-area-work-foreground: hsl(var(--area-work-foreground));
+  --color-area-settings: hsl(var(--area-settings));
+  --color-area-settings-soft: hsl(var(--area-settings-soft));
+  --color-area-settings-foreground: hsl(var(--area-settings-foreground));
 
   /* Typography */
   --font-display: "Space Grotesk", "Segoe UI", sans-serif;

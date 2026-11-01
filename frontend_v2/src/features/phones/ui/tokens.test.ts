@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs"
 import path from "node:path"
 import { describe, expect, it } from "vitest"
-import { contrast, hexToRgb, tripletToRgb } from "../lib/contrast"
+import { contrast, deltaE2000, hexToRgb, tripletToRgb } from "../lib/contrast"
+import { AREA_IDS } from "@/lib/areas"
 import { PHONE_PALETTE, PHONE_SHAPES } from "../lib/phone-palette"
 
 const css = readFileSync(path.resolve(__dirname, "../../../styles/globals.css"), "utf8")
@@ -54,4 +55,41 @@ describe("phone palette (07 4.11)", () => {
       }
     })
   }
+})
+
+describe("area identity tokens (lx-style B)", () => {
+  const AREA_SURFACES = ["background", "card", "muted", "popover", "panel"]
+  for (const [theme, vars] of Object.entries(THEMES)) {
+    for (const area of AREA_IDS) {
+      const base = `area-${area}`
+      it(`${base} marks are 3:1 or more and its text 4.5:1 or more on every surface and its soft fill, ${theme}`, () => {
+        for (const t of [base, `${base}-soft`, `${base}-foreground`]) expect(vars[t], `${t} defined in ${theme}`).toBeTruthy()
+        for (const surface of [...AREA_SURFACES, `${base}-soft`]) {
+          const mark = contrast(tripletToRgb(vars[base]), tripletToRgb(vars[surface]))
+          expect(mark, `${base} on ${surface} (${theme}) = ${mark.toFixed(2)}`).toBeGreaterThanOrEqual(3)
+          const text = contrast(tripletToRgb(vars[`${base}-foreground`]), tripletToRgb(vars[surface]))
+          expect(text, `${base}-foreground on ${surface} (${theme}) = ${text.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
+        }
+      })
+      it(`${base} is dE2000 15 or more from every status token and Loupe red, ${theme}`, () => {
+        for (const other of [...STATUSES, "primary", "destructive"]) {
+          const d = deltaE2000(tripletToRgb(vars[base]), tripletToRgb(vars[other]))
+          expect(d, `${base} vs ${other} (${theme}) = ${d.toFixed(1)}`).toBeGreaterThanOrEqual(15)
+        }
+      })
+    }
+    it(`every area hue is dE2000 15 or more from every other area, ${theme}`, () => {
+      for (const a of AREA_IDS)
+        for (const b of AREA_IDS) {
+          if (a >= b) continue
+          const d = deltaE2000(tripletToRgb(vars[`area-${a}`]), tripletToRgb(vars[`area-${b}`]))
+          expect(d, `area-${a} vs area-${b} (${theme}) = ${d.toFixed(1)}`).toBeGreaterThanOrEqual(15)
+        }
+    })
+  }
+  it("each area token is mapped for Tailwind", () => {
+    for (const area of AREA_IDS)
+      for (const suffix of ["", "-soft", "-foreground"])
+        expect(css).toContain(`--color-area-${area}${suffix}: hsl(var(--area-${area}${suffix}));`)
+  })
 })
