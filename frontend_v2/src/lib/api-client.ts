@@ -83,8 +83,9 @@ export async function fetchAPI<T>(
   const timeoutMs = timeout ?? (endpoint.includes("/auth/") ? 10000 : 300000)
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
   inFlight += 1
-  // Reads (GET) are recorded for the loading panel; writes and the page-speed posts are not page loads.
-  const counted = (init.method ?? "GET").toUpperCase() === "GET" && !headersOnly
+  // Reads (GET, or any method flagged as a read) are recorded for the loading panel; writes and the page-speed
+  // posts are not page loads.
+  const counted = (read || (init.method ?? "GET").toUpperCase() === "GET") && !headersOnly
   const progressId = counted ? startRequest(endpoint) : 0
   let failure: string | null = "Stopped before an answer"
 

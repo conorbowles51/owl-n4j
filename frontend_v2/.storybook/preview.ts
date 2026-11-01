@@ -14,9 +14,18 @@ const preview: Preview = {
       test: "todo",
     },
   },
+  // Theme per story or from the toolbar; dark stays the default. Phone kit stories run in both (07 section 5).
+  globalTypes: {
+    theme: {
+      description: "Colour theme",
+      toolbar: { title: "Theme", items: ["light", "dark"], dynamicTitle: true },
+    },
+  },
+  initialGlobals: { theme: "dark" },
   decorators: [
-    (Story) => {
-      document.documentElement.classList.add("dark")
+    (Story, context) => {
+      const theme = context.parameters.theme ?? context.globals.theme ?? "dark"
+      document.documentElement.classList.toggle("dark", theme === "dark")
       return Story()
     },
   ],

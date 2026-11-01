@@ -49,6 +49,17 @@
     --panel-raised: 0 0% 100%;
     --canvas: 240 5% 96%;
 
+    /* Phone status tokens (07 4.2 item 3, 4.6): text and icons at 4.5:1 or more on background, card, muted
+       and their own soft fill, in light and dark (checked in features/phones/ui/tokens.test.ts). */
+    --status-review: 30 90% 30%;
+    --status-review-soft: 38 95% 94%;
+    --status-model: 262 52% 42%;
+    --status-model-soft: 262 80% 96%;
+    --status-deleted: 215 20% 36%;
+    --status-deleted-soft: 215 25% 94%;
+    --status-error: 3 70% 40%;
+    --status-error-soft: 3 85% 96%;
+
     /* Radius */
     --radius: 0.5rem;
   }
@@ -89,6 +100,15 @@
     --panel: 228 12% 9%;
     --panel-raised: 228 11% 12%;
     --canvas: 225 18% 4%;
+
+    --status-review: 34 90% 68%;
+    --status-review-soft: 32 60% 13%;
+    --status-model: 262 85% 78%;
+    --status-model-soft: 262 35% 15%;
+    --status-deleted: 215 20% 72%;
+    --status-deleted-soft: 215 15% 15%;
+    --status-error: 3 90% 72%;
+    --status-error-soft: 3 45% 14%;
   }
 }
 
@@ -230,6 +250,14 @@
   --color-panel: hsl(var(--panel));
   --color-panel-raised: hsl(var(--panel-raised));
   --color-canvas: hsl(var(--canvas));
+  --color-status-review: hsl(var(--status-review));
+  --color-status-review-soft: hsl(var(--status-review-soft));
+  --color-status-model: hsl(var(--status-model));
+  --color-status-model-soft: hsl(var(--status-model-soft));
+  --color-status-deleted: hsl(var(--status-deleted));
+  --color-status-deleted-soft: hsl(var(--status-deleted-soft));
+  --color-status-error: hsl(var(--status-error));
+  --color-status-error-soft: hsl(var(--status-error-soft));
 
   /* Typography */
   --font-display: "Space Grotesk", "Segoe UI", sans-serif;
