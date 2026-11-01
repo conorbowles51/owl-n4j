@@ -949,7 +949,7 @@ def preview_financial_batch(body: FinancialBatchPreview, case_id: UUID = Query(.
 
 @router.get('/review/queue')
 def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Query([]),
-        limit: int | None = Query(None, ge=0, le=5000), offset: int = Query(0, ge=0),
+        batch_id: UUID | None = Query(None), limit: int | None = Query(None, ge=0, le=5000), offset: int = Query(0, ge=0),
         page_list: Literal['waiting', 'ready', 'filled', 'reader_fix', 'rechecking', 'copies', 'unreadable'] = Query('waiting'),
         issue: str | None = Query(None, max_length=64), fresh: bool | None = Query(None),
         db: Session = Depends(get_db), response: Response = None):
@@ -960,6 +960,9 @@ def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Que
     may be answered from a queue built moments ago while the current one is
     built (``refreshing``); ``fresh=1``, and an unpaged read (the views that
     predate paging), wait for the current one.
+
+    ``batch_id`` filters to that batch's files (with any ``file_id`` given): a large batch's file ids do not fit
+    in an address (a 1,452-file batch was a 65,455-character address, refused 414).
     """
     from services.financial.review_queue import case_review_queue, previous_as_of
     from services.financial.request_timing import stage
@@ -967,6 +970,14 @@ def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Que
     # A Financial page that can show an updating answer (view_cache) is answered from the previous queue at once
     # while the current one is built in the background, and told so in the headers as for every other view.
     accepts = view_cache._accepts_updating.get()
+    if batch_id is not None:
+        from services.financial.import_batches import batch_file_ids
+        try:
+            in_batch = batch_file_ids(db, case_id, batch_id)
+        except PdfMappingError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+        # A batch without files shows nothing, never the whole case (an empty filter means every file).
+        file_id = [*file_id, *in_batch] or [UUID(int=0)]
     token = previous_as_of.set(0.0)
     try:
         with stage('review_queue'):

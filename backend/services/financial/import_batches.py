@@ -1760,6 +1760,12 @@ def project_batch_files(files, available):
     return files
 
 
+def batch_file_ids(session, case_id, batch_id):
+    """The evidence ids of a batch's files, as its detail lists them (``files[].file_id``): the review queue's
+    filter for "this batch", sent as one batch id instead of hundreds of file ids in an address."""
+    return [UUID(file['file_id']) for file in batch_for(session, case_id, batch_id).files or [] if file.get('file_id')]
+
+
 def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_problems=False, review_group=None):
     """Batch list read: stored projections only, no PDF reading and no writes."""
     from services.financial.batch_review_summary import validate_group

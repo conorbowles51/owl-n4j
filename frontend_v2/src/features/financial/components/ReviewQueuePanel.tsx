@@ -70,7 +70,7 @@ const PAGE_LISTS: Record<ListName, QueuePageList> = {
   unreadable: "unreadable",
   not_payment: "not_payment",
 }
-const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles", "queueIssue"]
+const QUEUE_KEYS = ["queueItem", "queueList", "queueFiles", "queueBatch", "queueIssue"]
 export { ISSUE_LABELS }
 // Issues one shared answer can fix for many statements at once.
 const BULK_ISSUES = new Set(["currency", "institution", "holder", "account", "dates", "no_activity"])
@@ -234,13 +234,16 @@ export function ReviewQueuePanel({
     () => (params.get("queueFiles") || "").split(",").filter(Boolean),
     [params]
   )
+  // One batch's files, named by the batch's id (the server finds them; their ids would not fit in an address).
+  const batchId = params.get("queueBatch") || undefined
+  const filterKey = `${fileIds.join(",")}${batchId ? `|batch:${batchId}` : ""}`
   const itemId = params.get("queueItem")
   const list = (params.get("queueList") as ListName | null) || "waiting"
   const issue = params.get("queueIssue") || ""
   // One page of the list on screen (counts stay whole-case). The page is not
   // in the URL: it starts again at the first page whenever the list, issue
   // or file filter changes.
-  const pageScope = `${list}:${issue}:${fileIds.join(",")}`
+  const pageScope = `${list}:${issue}:${filterKey}`
   const [paging, setPaging] = useState({ scope: pageScope, offset: 0 })
   const offset = paging.scope === pageScope ? paging.offset : 0
   const setOffset = (value: number) => setPaging({ scope: pageScope, offset: Math.max(0, value) })
@@ -248,6 +251,7 @@ export function ReviewQueuePanel({
     list: PAGE_LISTS[list],
     issue: list === "waiting" ? issue : "",
     offset,
+    batchId,
   })
   const client = useQueryClient()
   const { canEdit, canUpload } = useFinancialAccess()
@@ -260,7 +264,7 @@ export function ReviewQueuePanel({
     setReadingAfresh(true)
     setAfreshResult("")
     try {
-      setAfreshResult(await readRetainedAfresh(caseId, await fetchReviewQueue(caseId, fileIds)))
+      setAfreshResult(await readRetainedAfresh(caseId, await fetchReviewQueue(caseId, fileIds, undefined, batchId)))
     } catch (error) {
       setAfreshResult(error instanceof Error ? error.message : "Reading afresh could not start.")
     } finally {
@@ -277,7 +281,7 @@ export function ReviewQueuePanel({
     setCheckAgainResult("")
     try {
       // Every unreadable statement, not only the page on screen.
-      setCheckAgainResult(await checkUnreadableAgain(caseId, await fetchReviewQueue(caseId, fileIds)))
+      setCheckAgainResult(await checkUnreadableAgain(caseId, await fetchReviewQueue(caseId, fileIds, undefined, batchId)))
     } catch (error) {
       setCheckAgainResult(error instanceof Error ? error.message : "Checking again could not start.")
     } finally {
@@ -300,7 +304,7 @@ export function ReviewQueuePanel({
     try {
       // The save covers every ready statement, not the page on screen: it
       // reads the whole current queue first, as it always has.
-      const data = await fetchReviewQueue(caseId, fileIds)
+      const data = await fetchReviewQueue(caseId, fileIds, undefined, batchId)
       setSaveResult(await fillAndSaveReady(caseId, data, { onProgress: setSaving }))
     } catch (error) {
       setSaveError(
@@ -362,7 +366,7 @@ export function ReviewQueuePanel({
   const bulkQuery = useReviewQueuePage(
     caseId,
     fileIds,
-    { list: "waiting", issue: bulkIssue, limit: QUEUE_BULK_LIMIT },
+    { list: "waiting", issue: bulkIssue, limit: QUEUE_BULK_LIMIT, batchId },
     !!bulkIssue && canEdit
   )
   const bulkEntries = useMemo(
@@ -380,7 +384,7 @@ export function ReviewQueuePanel({
       next.delete("queueItem")
       return next
     })
-  const orderKey = `${list}:${fileIds.join(",")}:${issue}:${offset}`
+  const orderKey = `${list}:${filterKey}:${issue}:${offset}`
   // The items on screen, statements of a shared answer listed with it, and the
   // one shown in the quick preview (J/K move through them in this order).
   const shown = useMemo(
@@ -517,7 +521,8 @@ export function ReviewQueuePanel({
   const lookup = useReviewQueue(
     caseId,
     fileIds,
-    !!itemId && !onPage && !!query.data && !query.isPlaceholderData
+    !!itemId && !onPage && !!query.data && !query.isPlaceholderData,
+    batchId
   )
   const active =
     onPage ??
@@ -634,11 +639,21 @@ export function ReviewQueuePanel({
           />
         </p>
       </header>
-      {fileIds.length > 0 && (
+      {(fileIds.length > 0 || batchId) && (
         <div role="status" className="flex flex-wrap items-center gap-2 rounded border p-2 text-sm">
           <span>
-            Showing the {fileIds.length} selected{" "}
-            {fileIds.length === 1 ? "file" : "files"}, from their saved readings. Nothing is read again.
+            {batchId ? (
+              <>
+                Showing{fileIds.length > 0 ? ` the ${fileIds.length} selected ${fileIds.length === 1 ? "file" : "files"} and` : ""}{" "}
+                the files of one batch
+              </>
+            ) : (
+              <>
+                Showing the {fileIds.length} selected{" "}
+                {fileIds.length === 1 ? "file" : "files"}
+              </>
+            )}
+            , from their saved readings. Nothing is read again.
           </span>
           <Button size="sm" variant="outline" onClick={clearFilter}>
             Show the whole case
@@ -771,7 +786,7 @@ export function ReviewQueuePanel({
                 // files are read, and a refresh must not close the dialog or
                 // drop the statements already selected in it.
                 key={bulkIssue}
-                scopeName={`queue:${bulkIssue}:${fileIds.join(",")}`}
+                scopeName={`queue:${bulkIssue}:${filterKey}`}
                 expected={bulkTotal}
                 caseId={caseId}
                 fileIds={[...new Set(bulkEntries.flatMap((entry) => [entry.file_id, ...entry.file_ids]))]}

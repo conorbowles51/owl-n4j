@@ -236,6 +236,20 @@ it("filters to selected files from their saved readings and never starts a batch
   expect(vi.mocked(fetchAPI).mock.calls.some(([, options]) => (options as { method?: string } | undefined)?.method === "POST")).toBe(false)
 })
 
+it("filters to one batch by its id, never its file ids, so a large batch's address fits", async () => {
+  // 1 Nov: a 1,452-file batch put every file id in the queue address (65,455 characters), refused 414.
+  mount("/cases/case/financial?view=statements&queue=1&queueBatch=b9")
+  expect(await screen.findByText(/Showing the files of one batch, from their saved readings/)).toBeVisible()
+  const urls = vi.mocked(fetchAPI).mock.calls.map(([url]) => String(url)).filter((url) => url.includes("/review/queue"))
+  expect(urls.length).toBeGreaterThan(0)
+  for (const url of urls) {
+    expect(url).toContain("batch_id=b9")
+    expect(url).not.toContain("file_id=")
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Show the whole case" }))
+  await waitFor(() => expect(where()).not.toContain("queueBatch"))
+})
+
 it("saves ready statements across batches from the queue and says the result in one line", async () => {
   const posts: unknown[] = []
   vi.mocked(fetchAPI).mockImplementation(async (url: string, options?: unknown) => {

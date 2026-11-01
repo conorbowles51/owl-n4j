@@ -372,15 +372,17 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       return next
     })
   }
-  const openQueue = (fileIds: string[]) =>
+  // The queue for one batch's files: the batch's id in the address, never its file ids (a 1,452-file batch's ids
+  // made a 65,455-character address, refused 414).
+  const openQueue = (queueBatch: string) =>
     setParams((current) => {
       const next = new URLSearchParams(current)
       for (const key of ["batch", "batchItem", "batchRow", "batchCheck", "files", "reviewFile", "returnBatch",
-        "returnBatchCheck", "queueItem", "queueList"])
+        "returnBatchCheck", "queueItem", "queueList", "queueFiles"])
         next.delete(key)
       next.set("view", "statements")
       next.set("queue", "1")
-      next.set("queueFiles", [...new Set(fileIds)].join(","))
+      next.set("queueBatch", queueBatch)
       return next
     })
   const openStatementFiles = (fileId?: string) => {
@@ -806,7 +808,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         batchId={batchId}
         itemId={itemId}
         rowId={params.get("batchRow") ?? undefined}
-        queueFileIds={query.data?.files.map((file) => file.file_id)}
+        continueInBatchQueue={!!query.data?.files.length}
         onBack={() => {
           refresh()
           change(batchId)
@@ -944,8 +946,9 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
       )}
       <BatchQueueBanner
         caseId={caseId}
-        fileIds={batch.files.map((file) => file.file_id)}
-        onOpenQueue={() => openQueue(batch.files.map((file) => file.file_id))}
+        batchId={batch.id}
+        files={batch.files.length}
+        onOpenQueue={() => openQueue(batch.id)}
       />
       <div ref={readingJobs}>
         <BatchReadingJobs
@@ -1720,7 +1723,7 @@ export function BatchStatementReview({
   rowId,
   onBack,
   queue,
-  queueFileIds,
+  continueInBatchQueue,
 }: {
   caseId: string
   batchId: string
@@ -1728,8 +1731,8 @@ export function BatchStatementReview({
   rowId?: string
   onBack: () => void
   queue?: QueueNavigation
-  /** Opened from a batch: "next to fix" continues in the review queue over these files. */
-  queueFileIds?: string[]
+  /** Opened from a batch with files: "next to fix" continues in the review queue over this batch's files. */
+  continueInBatchQueue?: boolean
 }) {
   const [params, setParams] = useSearchParams()
   const reviewGroup = queue ? "" : (params.get("batchCheck") ?? "unfinished")
@@ -1821,14 +1824,15 @@ export function BatchStatementReview({
     setNavigationError("")
     try {
       await beforeNavigate.current?.()
-      const files = queueFileIds?.length ? queueFileIds : item ? [item.file_id] : []
       setParams((current) => {
         const next = new URLSearchParams(current)
-        for (const key of ["batch", "batchItem", "batchRow", "batchCheck", "queueItem", "queueList"])
+        for (const key of ["batch", "batchItem", "batchRow", "batchCheck", "queueItem", "queueList", "queueFiles",
+          "queueBatch"])
           next.delete(key)
         next.set("view", "statements")
         next.set("queue", "1")
-        next.set("queueFiles", [...new Set(files)].join(","))
+        if (continueInBatchQueue) next.set("queueBatch", batchId)
+        else if (item) next.set("queueFiles", item.file_id)
         return next
       })
     } catch (error) {
@@ -2175,15 +2179,18 @@ export function BatchStatementReview({
 /** What the review queue holds for this batch's files: the batch's work is counted there, once. */
 function BatchQueueBanner({
   caseId,
-  fileIds,
+  batchId,
+  files,
   onOpenQueue,
 }: {
   caseId: string
-  fileIds: string[]
+  batchId: string
+  files: number
   onOpenQueue: () => void
 }) {
-  const queue = useReviewQueue(caseId, fileIds, fileIds.length > 0)
-  if (!fileIds.length) return null
+  // The server finds the batch's files from its id: their ids would not fit in the address.
+  const queue = useReviewQueue(caseId, [], files > 0, batchId)
+  if (!files) return null
   if (!queue.data)
     return (
       <p role="status" className="text-sm text-muted-foreground">

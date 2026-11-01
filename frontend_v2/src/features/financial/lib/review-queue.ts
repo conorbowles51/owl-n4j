@@ -239,12 +239,22 @@ export const QUEUE_PAGE_SIZE = 50
 export const QUEUE_BULK_LIMIT = 5000
 
 /**
+ * The queue's file filter in the address: some files' ids, or one batch's id (the server finds its files). A
+ * large batch's file ids do not fit in an address (a 1,452-file batch was 65,455 characters, refused 414).
+ */
+function scopeSearch(caseId: string, fileIds: string[], batchId?: string) {
+  const search = new URLSearchParams({ case_id: caseId })
+  for (const id of new Set(fileIds)) search.append("file_id", id)
+  if (batchId) search.set("batch_id", batchId)
+  return search
+}
+
+/**
  * Reads the whole queue (every list complete), waiting for a current build: actions read it just before they act,
  * so it never accepts the previous queue a page may show while the current one is built (fresh=1).
  */
-export async function fetchReviewQueue(caseId: string, fileIds: string[] = [], signal?: AbortSignal) {
-  const search = new URLSearchParams({ case_id: caseId })
-  for (const id of fileIds) search.append("file_id", id)
+export async function fetchReviewQueue(caseId: string, fileIds: string[] = [], signal?: AbortSignal, batchId?: string) {
+  const search = scopeSearch(caseId, fileIds, batchId)
   search.set("fresh", "1")
   const result = reviewQueue.parse(
     await fetchAPI(`/api/financial/statement-import/review/queue?${search}`, { signal, timeout: 60000 })
@@ -263,14 +273,14 @@ export async function fetchReviewQueue(caseId: string, fileIds: string[] = [], s
 export function useReviewQueuePage(
   caseId: string,
   fileIds: string[],
-  page: { list: QueuePageList; issue?: string; offset?: number; limit?: number },
+  page: { list: QueuePageList; issue?: string; offset?: number; limit?: number; batchId?: string },
   enabled = true
 ) {
   const wantFresh = useRef(false)
   const limit = page.limit ?? QUEUE_PAGE_SIZE
   const offset = page.offset ?? 0
   const query = useQuery<ReviewQueue>({
-    queryKey: [...reviewQueueKey(caseId, fileIds), "page", page.list, page.issue || "", offset, limit],
+    queryKey: [...reviewQueueKey(caseId, fileIds, page.batchId), "page", page.list, page.issue || "", offset, limit],
     enabled,
     placeholderData: keepPreviousData,
     refetchInterval: (current): number | false =>
@@ -278,8 +288,7 @@ export function useReviewQueuePage(
         ? READING_POLL_MS
         : false,
     queryFn: async ({ signal }) => {
-      const search = new URLSearchParams({ case_id: caseId })
-      for (const id of fileIds) search.append("file_id", id)
+      const search = scopeSearch(caseId, fileIds, page.batchId)
       search.set("limit", String(limit))
       search.set("offset", String(offset))
       search.set("page_list", page.list)
@@ -306,19 +315,20 @@ export function useReviewQueuePage(
   })
 }
 
-export const reviewQueueKey = (caseId: string, fileIds: string[] = []) => [
+export const reviewQueueKey = (caseId: string, fileIds: string[] = [], batchId?: string) => [
   "financial-review-queue",
   caseId,
-  [...fileIds].sort().join(","),
+  [...fileIds].sort().join(",") + (batchId ? `|batch:${batchId}` : ""),
 ]
 
 export function useReviewQueue(
   caseId: string,
   fileIds: string[] = [],
-  enabled = true
+  enabled = true,
+  batchId?: string
 ) {
   return useQuery<ReviewQueue>({
-    queryKey: reviewQueueKey(caseId, fileIds),
+    queryKey: reviewQueueKey(caseId, fileIds, batchId),
     enabled,
     // The queue is a read of stored preparations; keep the last answer on
     // screen while a refresh runs, so Next never waits for it.
@@ -331,8 +341,7 @@ export function useReviewQueue(
         ? READING_POLL_MS
         : false,
     queryFn: async ({ signal }) => {
-      const search = new URLSearchParams({ case_id: caseId })
-      for (const id of fileIds) search.append("file_id", id)
+      const search = scopeSearch(caseId, fileIds, batchId)
       const result = reviewQueue.parse(
         await fetchAPI(
           `/api/financial/statement-import/review/queue?${search}`,
@@ -450,7 +459,7 @@ export function queueFileWork(data: ReviewQueue | undefined) {
   return byFile
 }
 
-/** The queue route for some files (all of a batch's files, or one file), optionally at one entry. */
+/** The queue route for some files (one file, a few), optionally at one entry. A whole batch: `queueBatch`. */
 export function queueHref(caseId: string, fileIds: string[] = [], itemId?: string) {
   const search = new URLSearchParams({ view: "statements", queue: "1" })
   const ids = [...new Set(fileIds)].filter(Boolean)

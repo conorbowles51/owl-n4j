@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 from unittest.mock import patch, AsyncMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -60,6 +60,25 @@ class StatementImportAuthorizationTests(unittest.TestCase):
         with patch('services.financial.review_queue.case_status', return_value={'counts': {}}) as status:
             self.assertEqual(self.client.get(f'/api/financial/statement-import/review/status?case_id={self.db.case.id}').status_code, 200)
             self.assertEqual(status.call_args.kwargs['case_id'], self.db.case.id)
+
+    def test_review_queue_filters_to_a_batch_by_its_id_not_its_file_ids(self):
+        # 1 Nov: a 1,452-file batch put every file id in the address (65,455 characters) and nginx refused it (414).
+        in_batch, extra, batch_id = [uuid4(), uuid4()], uuid4(), uuid4()
+        url = f'/api/financial/statement-import/review/queue?case_id={self.db.case.id}&batch_id={batch_id}'
+        self.user({'case': {'view': True, 'edit': False}})
+        with patch('services.financial.review_queue.case_review_queue', return_value={'items': []}) as queue, \
+                patch('services.financial.import_batches.batch_file_ids', return_value=in_batch) as files:
+            self.assertEqual(self.client.get(url).status_code, 200)
+            self.assertEqual(files.call_args.args[1:], (self.db.case.id, batch_id))
+            self.assertEqual(queue.call_args.kwargs['file_ids'], in_batch)
+            self.assertEqual(self.client.get(f'{url}&file_id={extra}').status_code, 200)
+            self.assertEqual(queue.call_args.kwargs['file_ids'], [extra, *in_batch])
+            # A batch with no files shows nothing, never the whole case.
+            files.return_value = []
+            self.assertEqual(self.client.get(url).status_code, 200)
+            self.assertEqual(queue.call_args.kwargs['file_ids'], [UUID(int=0)])
+            files.side_effect = module.PdfMappingError('Financial processing batch not found in this case.', 404)
+            self.assertEqual(self.client.get(url).status_code, 404)
 
     def setUp(self):
         self.app=FastAPI()

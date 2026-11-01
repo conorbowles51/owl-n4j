@@ -206,6 +206,35 @@ it("keeps a blocked statement reviewable when no admission calculation is availa
   expect(screen.getByRole("button", { name: "Open file review" })).toBeEnabled()
 })
 
+it("counts a large batch in the review queue by the batch's id and opens the queue by it", async () => {
+  // 1 Nov: a 1,452-file batch put every file id in the queue address (65,455 characters), refused 414.
+  const files = Array.from({ length: 60 }, (_, n) => ({
+    ...batch.files[0],
+    source_id: `file-${n}`,
+    file_id: `0000000${n}`.slice(-8) + "-0000-4000-8000-000000000000",
+  }))
+  const queued = {
+    case_id: "case",
+    counts: { imported: 900, saving: 0, waiting: 4, ready: 0, copies: 0, unreadable: 0, unreadable_files: 0,
+      rechecking: 0, left_unimported: 0, assigned: 0, unexplained: 0 },
+    status_line: "", items: [], copies: [], unreadable: [], unreadable_files: [], rechecking: [], ready: [],
+  }
+  vi.mocked(fetchAPI).mockImplementation(async (url) =>
+    (String(url).includes("/review/queue") ? queued : { ...batch, files }) as never)
+  mount()
+  fireEvent.click(await screen.findByRole("button", { name: "Review 4 in the queue" }))
+  const reads = vi.mocked(fetchAPI).mock.calls.map(([url]) => String(url)).filter((url) => url.includes("/review/queue"))
+  expect(reads.length).toBeGreaterThan(0)
+  for (const url of reads) {
+    expect(url).toContain("batch_id=batch")
+    expect(url).not.toContain("file_id=")
+    expect(url.length).toBeLessThan(300)
+  }
+  const destination = new URLSearchParams(screen.getByLabelText("Location").textContent || "")
+  expect(destination.get("queueBatch")).toBe("batch")
+  expect(destination.has("queueFiles")).toBe(false)
+})
+
 it("opens the recovered file in Statement files and preserves the originating batch filter", async () => {
   vi.mocked(fetchAPI).mockResolvedValue({
     ...batch,

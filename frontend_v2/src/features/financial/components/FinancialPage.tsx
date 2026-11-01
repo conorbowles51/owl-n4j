@@ -229,7 +229,8 @@ function FinancialPageContent() {
       const updated = new URLSearchParams(current)
       for (const key of [
         "batch", "batchItem", "batchRow", "batchCheck", "files", "accounts", "savedBatch", "savedOperation",
-        "reviewFile", "returnBatch", "returnBatchCheck", "queue", "queueItem", "queueList", "queueFiles", "judgements",
+        "reviewFile", "returnBatch", "returnBatchCheck", "queue", "queueItem", "queueList", "queueFiles", "queueBatch",
+        "judgements",
         ...JUDGEMENT_KEYS,
       ])
         updated.delete(key)
@@ -243,7 +244,7 @@ function FinancialPageContent() {
     setStatementSection({ caseId, section: "batches" })
     setParams((current) => {
       const updated = new URLSearchParams(current)
-      for (const key of ["queue", "queueItem", "queueList", "queueFiles", "files", "batchItem", "batchRow"])
+      for (const key of ["queue", "queueItem", "queueList", "queueFiles", "queueBatch", "files", "batchItem", "batchRow"])
         updated.delete(key)
       updated.set("view", "statements")
       updated.set("batch", batchId)
