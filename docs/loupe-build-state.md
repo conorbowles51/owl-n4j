@@ -1,3 +1,31 @@
+## 1 November: phone interface kit, preview, instrumentation, guide and journey tests (cb-ux)
+
+The shared pieces every phone screen uses, built before the first phone screen (07 section 12.1). Nothing reads
+real phone data yet: the phone intake and screens belong to cb-capture and cb-screens.
+
+- **Fixtures:** `evidence-engine/tests/phone/fixture_builder.py` writes invented phones at the structure and scale
+  of the 14 catalogued phones (P08 at full scale: 187,427 messages in 95 s), a phones-only case (C1 to C3; C2 has no
+  owner and no zone) and a training case (C5, C6 and a ledger as 7 monthly PDF statements).
+- **Kit** (`frontend_v2/src/features/phones/ui`, `components/ui`): scope bar, phone table, record panel and docked
+  slot, Add to…, origin mark, count sentence, progress panel, job tray, time strip, phone chip, keys registry with
+  the `?` overlay, Guide dialog, copy helper, selection store, Report a problem; four status colours at 4.5:1 in
+  light and dark and a 10-hue phone palette. Every component has light and dark stories checked by axe in the
+  browser suite.
+- **Preview:** Phone summary, Conversations, Needs a decision and Add to… on invented phones at
+  `/cases/:id/phones-prototype`, shown only with `?phone-prototype=on` in that browser.
+- **Instrumentation:** phone pages below `/cases/:id` are timed as themselves; phone screen events carry ids,
+  kinds, counts and milliseconds only (one allowed-field list, refused otherwise) and show as Phone journeys on
+  the admin Speed page.
+- **Guide:** `docs/user-guide/phone-user-guide.md` (by task, each with an Available line),
+  `phone-team-checklist.md` (10 checks) and `phone-glossary.md`, served from `public/docs/phone-guide`.
+  **Report a problem** stores rows in `ui_problem_reports` under case access; the coordinator gets ids, kinds,
+  counts and the build only.
+- **Journey tests:** `frontend_v2/journeys/` runs each journey live, signed in, on the synthetic cases only;
+  one spec file per owning job, written red.
+- **Synthetic cases** (jobs login owner): phones-only `4aa79795`, training `d9945277`. The verification case
+  `cded78d0` holds a ledger of 38 dated payments, so phones-only checks run in `4aa79795`.
+- **Session packs:** `docs/cellebrite/sessions/` (R0 to R3).
+
 ## 31 October: UFDRs examined; build on XML folders (phone work resumes here)
 
 Documents only; no code changed.
