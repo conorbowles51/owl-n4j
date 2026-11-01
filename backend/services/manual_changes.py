@@ -562,7 +562,8 @@ def producer_for(session, subject_type, subject_id):
         # Only the columns needed: a statement's metadata holds its whole reading (up to megabytes).
         original = D.metadata_['statement_import_original']
         row = session.execute(select(D.parser_name, D.parser_version, D.institution_name,
-                                     original['statement_choices'], original['statement_id'])
+                                     original['statement_choices'], original['statement_id'],
+                                     D.metadata_['statement_account_id'])
                               .where(where).order_by(D.created_at.desc()).limit(1)).first()
         if row is None:
             if subject_type == 'evidence_file':
@@ -575,12 +576,17 @@ def producer_for(session, subject_type, subject_id):
                 bank = session.scalar(query.limit(1))
                 return '', str(bank or '')
             return '', ''
-        parser_name, parser_version, institution, choices, statement_id = row
+        parser_name, parser_version, institution, choices, statement_id, account_id = row
         # A statement saved from a review was read by a layout reader: that reader is the producer, not the
         # review's own format version.
         layout_reader, layout = _choice_producer(choices, statement_id)
         if layout_reader:
             return layout_reader, layout or institution or ''
+        if not institution and _uuid(str(account_id or '')) is not None:
+            # A statement saved from rows a person picked (no layout reader, no bank on the reading): the bank of
+            # the account it was saved to groups its changes.
+            institution = session.scalar(select(FinancialAccount.institution_name)
+                                         .where(FinancialAccount.id == _uuid(str(account_id))))
         return f'{parser_name}@{parser_version}', institution or ''
     except Exception:  # noqa: BLE001
         log.exception('Finding the producer of %s %s failed', subject_type, subject_id)
