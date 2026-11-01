@@ -98,6 +98,12 @@ class TimelineViewEvent(Base, TimestampMixin):
     )
     sort_date: Mapped[str | None] = mapped_column(String(10), nullable=True)
     sort_time: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    # The event's instant and the zone it was recorded in (07 section 6.4 item 8). Phone records give both. Events
+    # with only a written date and time have sort_zone "wall_clock" (no zone recorded) and that time as the
+    # instant; date-only events have no instant. Saved views still order by sort_date, sort_time and position,
+    # so every view renders as it did before these columns existed.
+    sort_instant: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sort_zone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     position: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     added_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

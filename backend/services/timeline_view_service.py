@@ -124,6 +124,49 @@ def _event_sort_date(event: dict[str, Any]) -> str | None:
     return value[:10] if value else None
 
 
+WALL_CLOCK = "wall_clock"
+
+
+def _event_sort_instant(event: dict[str, Any], sort_date: str | None, sort_time: str | None) -> tuple[datetime | None, str | None]:
+    """The event's instant and zone (07 section 6.4 item 8).
+
+    An event that carries an `instant` with its offset (a phone record) keeps it, with its `zone`. Otherwise the
+    written date and time are the instant with zone "wall_clock" (no zone recorded); a date-only event has none.
+    """
+    instant = str(event.get("instant") or "").strip()
+    if instant:
+        try:
+            parsed = datetime.fromisoformat(instant.replace("Z", "+00:00"))
+        except ValueError:
+            parsed = None
+        if parsed is not None and parsed.tzinfo is not None:
+            return parsed.astimezone(timezone.utc), (str(event.get("zone") or "").strip() or parsed.strftime("%z"))
+    if not sort_date or not sort_time or not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", sort_time):
+        return None, WALL_CLOCK if sort_date else None
+    try:
+        return datetime.fromisoformat(f"{sort_date}T{sort_time}:00+00:00"), WALL_CLOCK
+    except ValueError:
+        return None, WALL_CLOCK
+
+
+def _view_event(view_id, case_id, event: dict[str, Any], position: int, user_id) -> TimelineViewEvent:
+    sort_date = _event_sort_date(event)
+    sort_time = _event_sort_time(event) or "99:99"
+    sort_instant, sort_zone = _event_sort_instant(event, sort_date, sort_time)
+    return TimelineViewEvent(
+        view_id=view_id,
+        case_id=case_id,
+        event_key=str(event.get("key")),
+        event_snapshot=_event_snapshot(event),
+        sort_date=sort_date,
+        sort_time=sort_time,
+        sort_instant=sort_instant,
+        sort_zone=sort_zone,
+        position=position,
+        added_by_user_id=user_id,
+    )
+
+
 def _event_sort_time(event: dict[str, Any]) -> str | None:
     value = str(event.get("time") or "").strip()
     match = re.match(r"^(\d{2}:\d{2})", value)
@@ -254,18 +297,7 @@ def _replace_view_events(
     view.events.clear()
     db.flush()
     for position, event in enumerate(events):
-        view.events.append(
-            TimelineViewEvent(
-                view_id=view.id,
-                case_id=view.case_id,
-                event_key=str(event.get("key")),
-                event_snapshot=_event_snapshot(event),
-                sort_date=_event_sort_date(event),
-                sort_time=_event_sort_time(event) or "99:99",
-                position=position,
-                added_by_user_id=current_user.id,
-            )
-        )
+        view.events.append(_view_event(view.id, view.case_id, event, position, current_user.id))
 
 
 def create_timeline_view(
@@ -401,18 +433,7 @@ def batch_update_view_events(
                 key = str(event.get("key"))
                 if key in existing:
                     continue
-                view.events.append(
-                    TimelineViewEvent(
-                        view_id=view.id,
-                        case_id=case_id,
-                        event_key=key,
-                        event_snapshot=_event_snapshot(event),
-                        sort_date=_event_sort_date(event),
-                        sort_time=_event_sort_time(event) or "99:99",
-                        position=position,
-                        added_by_user_id=current_user.id,
-                    )
-                )
+                view.events.append(_view_event(view.id, case_id, {**event, "key": key}, position, current_user.id))
                 position += 1
                 changed_count += 1
 

@@ -5,11 +5,11 @@ read; corrections keep the same event key and removed sources remain labelled.
 """
 import hashlib
 import json
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 from uuid import UUID, NAMESPACE_URL, uuid5
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -25,10 +25,52 @@ PREFIX = "timeline-entry:"
 
 
 class TimelineAddition(BaseModel):
-    source_kind: Literal["transaction", "workspace_entry", "money_trail"]
-    source_ids: list[UUID] = Field(min_length=1, max_length=5000)
+    source_kind: Literal["transaction", "workspace_entry", "money_trail", "phone_record"]
+    # Up to 5,000 per request, stated in the refusal. Phone record ids are the phone build's ids; every other
+    # kind takes UUIDs.
+    source_ids: list[UUID | str] = Field(min_length=1, max_length=5000)
     event_date: date | None = None
     expected_revision: str | None = None
+
+    @model_validator(mode="after")
+    def _ids(self):
+        if self.source_kind != "phone_record":
+            try:
+                self.source_ids = [UUID(str(value)) for value in self.source_ids]
+            except ValueError as exc:
+                raise ValueError("Each source id must be a valid identifier") from exc
+        else:
+            self.source_ids = [str(value).strip() for value in self.source_ids if str(value).strip()]
+            if not self.source_ids:
+                raise ValueError("At least one phone record is required")
+        return self
+
+
+def phone_source_uuid(record_id: str) -> UUID:
+    """The stable UUID a phone record takes in the Timeline table; the record id itself is kept in the snapshot."""
+    return uuid5(NAMESPACE_URL, f"loupe:phone_record:{record_id}")
+
+
+def _phone_event(db, case_id, record_id, key):
+    """A phone record as a Timeline event: its instant and zone, and the date and time as recorded in that zone.
+    A record without an instant is undated. The record is checked against the case by the phone build's resolver."""
+    from postgres import link_types
+
+    target = link_types.resolve_phone_target(db, case_id, "phone_record", record_id)
+    facts = dict(target.metadata or {})
+    instant = str(facts.get("instant") or "").strip()
+    if not instant:
+        return None, target
+    moment = datetime.fromisoformat(instant.replace("Z", "+00:00"))
+    if moment.tzinfo is None:
+        raise ValueError(f"The phone record {record_id} has a time without its offset; it cannot be placed on the Timeline")
+    zone = str(facts.get("zone") or "").strip() or moment.strftime("%z")
+    label = target.label or facts.get("type") or "Phone record"
+    return dict(key=key, name=label, type=str(facts.get("type") or "Phone record"),
+        date=moment.date().isoformat(), time=moment.strftime("%H:%M"), instant=moment.isoformat(), zone=zone,
+        amount=None, summary=facts.get("summary"), notes=None, connections=[], source_references=[label],
+        source=dict(kind="phone_record", id=record_id, date_basis=f"Recorded time on the phone ({zone})", label=label,
+                    state="current", mapping_versions=dict(target.mapping_versions))), target
 
 
 def _key(case_id, kind, source_id):
@@ -36,7 +78,7 @@ def _key(case_id, kind, source_id):
 
 
 def _load_sources(db, case_id, kind, ids):
-    if not ids: return {}
+    if not ids or kind == "phone_record": return {}
     if kind == "transaction":
         query = select(FinancialTransaction).where(FinancialTransaction.case_id == case_id, FinancialTransaction.id.in_(ids)).options(
             joinedload(FinancialTransaction.account), joinedload(FinancialTransaction.source_document).joinedload(FinancialSourceDocument.evidence_file))
@@ -167,6 +209,11 @@ def preview_addition(db: Session, *, case_id: UUID, request: TimelineAddition):
             key = _key(case_id, request.source_kind, source_id)
             event = _transfer_event(db,record,key)
             title = 'Reviewed account transfer (both statement entries)'
+        elif request.source_kind == "phone_record":
+            source_id = phone_source_uuid(id)
+            key = _key(case_id, request.source_kind, source_id)
+            event, target = _phone_event(db, case_id, id, key)
+            title = target.label or "Phone record"
         else:
             entry = sources.get(id)
             if not entry or entry.case_id != case_id or entry.deleted_at or "financial" not in entry.tags or "financial-report" in entry.tags:
@@ -182,7 +229,10 @@ def preview_addition(db: Session, *, case_id: UUID, request: TimelineAddition):
         # Adding an existing finding does not silently change its chosen date.
         if existing:
             event = resolve_entry(db, existing)
-        rows.append(dict(source_id=str(source_id), name=title, status=status, event=event))
+        row = dict(source_id=str(source_id), name=title, status=status, event=event)
+        if request.source_kind == "phone_record":
+            row["record_id"] = id
+        rows.append(row)
     revision = hashlib.sha256(json.dumps(rows, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
     return dict(case_id=str(case_id), rows=rows, revision=revision,
         ready=sum(row["status"] == "ready" for row in rows),
@@ -200,7 +250,7 @@ def save_addition(db: Session, *, case_id: UUID, request: TimelineAddition, acto
         elif request.source_kind == 'money_trail':
             db.execute(select(FinancialMoneyTrail).where(FinancialMoneyTrail.case_id == case_id,
                 FinancialMoneyTrail.id.in_(request.source_ids)).with_for_update().execution_options(populate_existing=True)).scalars().all()
-        else:
+        elif request.source_kind == "workspace_entry":
             db.execute(select(WorkspaceEntry).where(WorkspaceEntry.case_id == case_id,
                 WorkspaceEntry.id.in_(request.source_ids)).with_for_update().execution_options(populate_existing=True)).scalars().all()
         preview = preview_addition(db, case_id=case_id, request=request)
@@ -235,6 +285,12 @@ def resolve_entry(db, entry):
             except ValueError: pass
         if event and event.get('trail_revision') != snapshot.get('trail_revision'):
             # A saved chronology captures the interpretation the investigator added.
+            event = None
+    elif entry.source_kind == "phone_record":
+        from postgres import link_types
+        try:
+            event, _ = _phone_event(db, entry.case_id, snapshot["source"]["id"], snapshot["key"])
+        except link_types.LinkTargetError:
             event = None
     else:
         current = db.get(WorkspaceEntry, entry.source_id)
