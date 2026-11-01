@@ -265,3 +265,20 @@ def test_a_queue_that_built_fast_is_built_for_the_reader_not_shown_as_updating(s
     store['fingerprint'] = (('batches', '1', 6), ('items', '2', 7))
     view, refreshing = review_queue._view(_Session(), case, stale_ok=True, updating=True)
     assert not refreshing and view['built'] == 2
+
+
+def test_a_reader_that_can_show_updating_but_waits_for_a_build_is_told_why_in_the_log(store, monkeypatch, caplog):
+    """Live 2026-11-01 03:36: a person waited 12.6 s for the 49494305 queue although the page shows updating
+    answers, and the logs could not say why the previous copy was not served. Each such build now logs its reason."""
+    import logging
+    case = uuid4()
+    review_queue._view(_Session(), case)
+    _new_process()
+    monkeypatch.setattr(view_cache, 'UPDATING_MIN_SECONDS', 3600.0)  # the saved copy counts as one that built fast
+    store['fingerprint'] = (('batches', '1', 6), ('items', '2', 7))
+    with caplog.at_level(logging.INFO, logger='services.financial.review_queue'):
+        view, refreshing = review_queue._view(_Session(), case, stale_ok=True, updating=True)
+    assert not refreshing and store['builds'] == 2
+    messages = [record.getMessage() for record in caplog.records]
+    assert any('not shown as updating: it built in' in message for message in messages), messages
+    assert any('built for an updating reader: no earlier copy' in message for message in messages), messages

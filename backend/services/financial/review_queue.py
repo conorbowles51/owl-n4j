@@ -916,6 +916,11 @@ def _load_saved_any(session, key):
         # A queue that built in under UPDATING_MIN_SECONDS is built for the reader, not shown as updating (the rule
         # cached views follow): the release warm-up saves every queue it builds, however fast.
         if entry is None or not entry.computed_at or entry.seconds < view_cache.UPDATING_MIN_SECONDS:
+            import logging
+            logging.getLogger(__name__).info(
+                'Saved review queue of case %s not shown as updating: %s', key,
+                'none saved for this code and snapshot' if entry is None else 'saved without its time'
+                if not entry.computed_at else 'it built in %.2f s' % entry.seconds)
             return None, 0.0
         return json.loads(entry.body), entry.computed_at
     except Exception:  # noqa: BLE001 - built instead
@@ -1063,7 +1068,20 @@ def _view(session, case_id, use_cache=True, note=True, stale_ok=False, updating=
         if previous is not None and _ask_refresh(session, key, case_id):
             previous_as_of.set(previous_at)
             return previous, True
+        if updating:
+            # A reader that can show an updating answer waits for this build: say why (live 1 Nov 03:36, a 12.6 s
+            # wait on 49494305 whose cause the logs could not show).
+            import logging
+            logging.getLogger(__name__).info(
+                'Review queue of case %s built for an updating reader: %s', key,
+                'no earlier copy in this process or saved' if previous is None else
+                'its background refresh was asked for over %d s ago' % view_cache_limit())
     return _build_once(session, key, case_id, fingerprint), False
+
+
+def view_cache_limit():
+    from services.financial import view_cache
+    return view_cache.UPDATING_MAX_SECONDS
 
 
 def _ask_refresh(session, key, case_id):
