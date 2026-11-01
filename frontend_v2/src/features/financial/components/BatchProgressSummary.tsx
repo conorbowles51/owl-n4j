@@ -76,6 +76,7 @@ export function BatchProgressSummary({
             {summary.imported} saved to Financial ·{" "}
             {stillToFinish} prepared reviews still to finish
             {named.filter(([count]) => count > 0).map(([count, label]) => ` · ${count} ${label}`).join("")}
+            {queue?.updating && " (from the review queue's last view; it is being updated)"}
             {unread > 0 && ` · ${unread} files still need reading`}
             {readElsewhere > 0 &&
               ` · ${readElsewhere} ${readElsewhere === 1 ? "file" : "files"} read in another batch or upload`}

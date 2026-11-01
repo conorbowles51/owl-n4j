@@ -11,13 +11,13 @@ def item(status, file_id, key=''):
 
 
 class BatchQueueListTests(TestCase):
-    def run_with(self, view, items, files, rechecked=None):
+    def run_with(self, view, items, files, rechecked=None, updating=False):
         def recheck(session, case_id, entries):
             for entry in entries:
                 if rechecked and entry['id'] in rechecked:
                     entry['bucket'] = 'rechecking'
             return entries
-        with mock.patch('services.financial.review_queue.current_view', return_value=view), \
+        with mock.patch('services.financial.review_queue.current_view', return_value=(view, updating)), \
                 mock.patch('services.financial.review_queue._rechecked_by_recovery', side_effect=recheck):
             return import_batches._as_the_queue_lists(SimpleNamespace(rollback=lambda: None), uuid4(), items, files)
 
@@ -58,3 +58,32 @@ class BatchQueueListTests(TestCase):
         files = [dict(file_id='f', source_id='f', status='error')]
         self.assertIsNone(self.run_with(None, [item('attention', 'f')], files))
         self.assertIsNone(files[0].get('set_aside'))
+
+    def test_an_earlier_queue_view_is_used_and_says_it_is_updating(self):
+        copy = str(uuid4())
+        view = dict(entries=[dict(id='a', bucket='copies', file_ids=[copy], statement_id='s')], copy_files=[])
+        result = self.run_with(view, [item('attention', copy, 's')], [], updating=True)
+        self.assertEqual((result['copies'], result['updating']), (1, True))
+
+
+class CurrentViewTests(TestCase):
+    def test_an_earlier_view_is_returned_as_updating_and_a_refresh_is_asked_never_built(self):
+        from services.financial import review_queue
+        case = uuid4()
+        asked = []
+        with mock.patch.object(review_queue, 'queue_fingerprint', return_value=('now',)), \
+                mock.patch.dict(review_queue._cache, {str(case): (('before',), {'entries': []})}), \
+                mock.patch.object(review_queue, '_load_saved_entry', return_value=(None, 0.0)), \
+                mock.patch.object(review_queue, '_ask_refresh', side_effect=lambda *a: asked.append(a) or True), \
+                mock.patch.object(review_queue, '_build_once', side_effect=AssertionError('built')), \
+                mock.patch.object(review_queue, '_compute', side_effect=AssertionError('built')):
+            self.assertEqual(review_queue.current_view(None, case), (None, False))
+            self.assertEqual(review_queue.current_view(None, case, latest=True), ({'entries': []}, True))
+        self.assertEqual(len(asked), 1)
+
+    def test_the_current_view_is_not_updating(self):
+        from services.financial import review_queue
+        case = uuid4()
+        with mock.patch.object(review_queue, 'queue_fingerprint', return_value=('now',)), \
+                mock.patch.dict(review_queue._cache, {str(case): (('now',), {'entries': [1]})}):
+            self.assertEqual(review_queue.current_view(None, case, latest=True), ({'entries': [1]}, False))

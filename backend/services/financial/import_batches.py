@@ -1837,7 +1837,8 @@ def _as_the_queue_lists(session, case_id, items, files):
     statements (7), waiting for a reader fix (2) and unreadable (1); 6 of the 7 files had been read in other batches
     and the 7th was a copy of a file already read. Read from the queue's current view only (never built here: the
     page keeps its own words until the queue exists); each statement is matched by file and statement key, and a
-    statement the queue does not list stays "still to finish".
+    statement the queue does not list stays "still to finish". When the case changed since the queue's last view,
+    that view is used and ``updating`` says so (current_view(latest=True)).
 
     Files: an unread (failed) file is marked on ``files`` with set_aside 'read_elsewhere' when the queue lists a
     statement from it, or 'copy' when the queue links it to identical bytes read from another upload."""
@@ -1847,7 +1848,7 @@ def _as_the_queue_lists(session, case_id, items, files):
         return None
     from services.financial.review_queue import current_view, _rechecked_by_recovery, REREAD_BUCKETS
     try:
-        view = current_view(session, case_id)
+        view, updating = current_view(session, case_id, latest=True)
     except Exception:
         session.rollback()
         return None
@@ -1868,7 +1869,7 @@ def _as_the_queue_lists(session, case_id, items, files):
     moved = _rechecked_by_recovery(session, case_id, [entry for entry in wanted.values()
                                                       if entry['bucket'] in REREAD_BUCKETS]) if wanted else []
     moved = {entry['id']: entry['bucket'] for entry in moved or ()}
-    result = dict(still_to_finish=0, **{name: 0 for name in SETTLED_QUEUE_LISTS})
+    result = dict(still_to_finish=0, updating=updating, **{name: 0 for name in SETTLED_QUEUE_LISTS})
     for item in open_items:
         entry = wanted.get(str(item.id))
         bucket = moved.get(entry['id'], entry['bucket']) if entry else None

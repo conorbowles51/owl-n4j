@@ -20,6 +20,8 @@ export const batchStatementSummary = z.object({
   queue: z
     .object({
       still_to_finish: z.number().int().nonnegative(),
+      /** Named from the queue's last view while the queue is being brought up to date. */
+      updating: z.boolean().default(false),
       ready: z.number().int().nonnegative().default(0),
       filled: z.number().int().nonnegative().default(0),
       saving: z.number().int().nonnegative().default(0),

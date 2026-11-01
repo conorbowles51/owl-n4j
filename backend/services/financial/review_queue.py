@@ -1033,23 +1033,34 @@ def _refresh_in_background(bind, key, case_id):
     threading.Thread(target=run, name=f'review-queue-{key[:8]}', daemon=True).start()
 
 
-def current_view(session, case_id):
-    """The whole-case view if one built at the case's current fingerprint is in memory or saved, else None.
+def current_view(session, case_id, latest=False):
+    """(view, updating): the whole-case view built at the case's current fingerprint, in memory or saved, else
+    (None, False). Never builds it.
 
-    Never builds: for pages that only name statements the way the queue does and fall back to their own words
-    when the queue has not been built yet (the batch page's progress line)."""
+    ``latest``: when the case changed since, the newest earlier view of this process or saved for every worker
+    instead, with updating=True, and the current one is asked for in the background, as the queue page shows its
+    last view while it refreshes. For pages that only name statements the way the queue does and fall back to their
+    own words when no view exists (the batch page's progress line: on live 50c0fa34 its words changed between
+    opens a few seconds apart while background work kept changing the case)."""
     fingerprint = queue_fingerprint(session, case_id)
     if fingerprint is None:
-        return None
+        return None, False
     key = str(case_id)
     with _lock:
         hit = _cache.get(key)
     if hit and hit[0] == fingerprint:
-        return hit[1]
+        return hit[1], False
     saved, computed_at = _load_saved_entry(session, key, fingerprint)
     if saved is not None:
         _store_saved(key, fingerprint, saved, computed_at)
-    return saved
+        return saved, False
+    if not latest:
+        return None, False
+    previous = hit[1] if hit else _load_saved_any(session, key)[0]
+    if previous is None:
+        return None, False
+    _ask_refresh(session, key, case_id)
+    return previous, True
 
 
 def _view(session, case_id, use_cache=True, note=True, stale_ok=False, updating=False):

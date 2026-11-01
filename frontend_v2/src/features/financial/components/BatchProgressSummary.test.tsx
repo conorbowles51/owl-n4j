@@ -199,7 +199,7 @@ it("names unsaved statements and unread files by the review queue's lists, not a
         blocked: 11,
         possible_duplicates: 14,
         queue: {
-          still_to_finish: 0, ready: 0, filled: 0, saving: 0, rechecking: 0, reader_fix: 2, unreadable: 1,
+          still_to_finish: 0, updating: false, ready: 0, filled: 0, saving: 0, rechecking: 0, reader_fix: 2, unreadable: 1,
           copies: 15, not_payment: 7, left_unimported: 0, imported: 0, assigned: 0,
         },
       }}
@@ -234,5 +234,29 @@ it("keeps its own count of statements still to finish until the queue has been b
   )
   expect(within(screen.getByLabelText("Your batch progress")).getAllByRole("status")[0]).toHaveTextContent(
     "1 saved to Financial · 13 prepared reviews still to finish"
+  )
+})
+
+it("says when the queue's lists come from its last view while it is being updated", () => {
+  render(
+    <BatchProgressSummary
+      files={[{ status: "checked" }]}
+      summary={{
+        ...summary,
+        queue: {
+          still_to_finish: 1, updating: true, ready: 0, filled: 0, saving: 0, rechecking: 0, reader_fix: 0,
+          unreadable: 0, copies: 2, not_payment: 0, left_unimported: 0, imported: 0, assigned: 0,
+        },
+      }}
+      available={0}
+      imported={0}
+      pending={0}
+      skipped={0}
+      duplicates={0}
+      assigned={0}
+    />
+  )
+  expect(within(screen.getByLabelText("Your batch progress")).getAllByRole("status")[0]).toHaveTextContent(
+    "1 saved to Financial · 1 prepared reviews still to finish · 2 copies set aside (from the review queue's last view; it is being updated)"
   )
 })
