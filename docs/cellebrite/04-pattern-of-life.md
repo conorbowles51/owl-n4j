@@ -1129,13 +1129,11 @@ segment (`source_anchor` = `{"evidence_file_id", "start_seconds", "end_seconds"}
    counterpart (date pickers seeded by a deterministic parser of `window_text` against the interview
    date), then confirms. Accepting creates `pol_claim` rows with `origin = 'ai_draft'`, `status =
    'draft'`; each becomes `confirmed` only by an explicit confirm with the confirming user recorded.
-4. **Model location**: the drafting runs under a new workload `statement_claim_drafting`, and only
-   where the external-processing decision (`allow_phone_external_processing`, 02 section 8.8) allows
-   phone material from every extraction in the request to be sent out. Loupe has no local provider
-   (`ai_model_policy.py:17-58`, `:64-97`), so without that decision AI drafting is unavailable and the
-   panel says "AI drafting is off for phone material in this case. Enter claims by hand, or ask the case
-   owner." (07 J-9). Claims are then typed. A drafted claim is marked "Drafted by <model>, not confirmed"
-   until each field is confirmed.
+4. **Model location**: the drafting runs under a new workload `statement_claim_drafting` through the
+   existing model policy (`ai_model_policy.py:17-58`, `:64-97`), reading the case's phone material in full
+   with no separate case setting (plan standing decision 8; 07 section 7.1 and J-9). Only extractions of
+   the case the request is made in are read. Claims can also be typed. A drafted claim is marked "Drafted
+   by <model>, not confirmed" until each field is confirmed.
 
 ### 9.3 Evaluation inputs
 
@@ -1287,7 +1285,7 @@ confirmable (field list).
 | POST `/{case_id}/claims/{id}/evaluate` | | evaluation (9.5) |
 | GET `/{case_id}/claims/{id}/evaluations` | | list with outcome and stale flag |
 | POST `/{case_id}/claims/{id}/evaluations/{eid}/attach` | `{entry_id, expected_version, item_ordinals: [...], include_check_link: true}` | added link ids |
-| POST `/{case_id}/claim-drafts` | `{dossier_id, interview_ids}` or `{conversation_locator}`, `subject` | Workspace AI output id (`statement_claims`); 409 when the external-processing decision does not allow it |
+| POST `/{case_id}/claim-drafts` | `{dossier_id, interview_ids}` or `{conversation_locator}`, `subject` | Workspace AI output id (`statement_claims`); 404 when an extraction in the request is not in the case |
 | POST `/{case_id}/reference/cell` (admin) | `{file_path_on_server, name, licence, attribution, retrieved_on}` | dataset id, row count, sha256 |
 
 Frontend: `frontend_v2/src/features/pattern/` (`api.ts`, `types.ts`, `components/DayView.tsx`,
@@ -1342,7 +1340,7 @@ evidence; corpus checks are separate and gated.
 | U9 | Together and apart | Two phones 120 m apart with radii 50 and 100 → compatible; 5 km apart, dt 0, radii 100 → separated; 25,000 pairs → all returned with totals (no cap); SSID-only match → no item; v1 contrast cases encoded as tests |
 | U10 | Money lane and manual places | Superseded row absent, corrected row present; posted-only row labelled; transaction never placed at a time of day; manual place recorded as a decision with Actor |
 | U11 | Claims and evaluation | Each kind's outcome rules in 9.4 on synthetic data; evaluation reproducible from fingerprint; mapping change marks evaluation stale; confirm requires a user |
-| U12 | AI claim drafting | Uncited claim rejected; model output never sets instants; without the external-processing decision the endpoint returns 409 with the stated message and makes no network call |
+| U12 | AI claim drafting | Uncited claim rejected; model output never sets instants; a request naming an extraction from another case returns 404 and makes no network call |
 | U13 | Workspace attachment. Depends on lx-collect's link-type registry and interview targets (07 section 6.4 items 1 and 5) | The registry accepts `phone_record` and `statement_check`; attach adds links with the right relationships through `add_entry_links`; version conflict returns 409; stale evaluation shown on the link; a statement check links to the dossier interview; Dispute keeps the item with its mark and Check again keeps the earlier evaluation visible |
 | U14 | Patterns screen, shared Lanes and key dates (8.6) | POL-1; J-5a; a key date entered once is offered by Day view and by an analysis in 05 |
 | Gate | Phase 7 done-when (plan 7): a statement window shows supporting, contradicting and missing data with sources | End-to-end test on synthetic two-phone case through the HTTP API, plus a corpus run on P14 recorded in the build state |
@@ -1444,10 +1442,10 @@ Each is a decision with its reasoning and what would reverse it.
     the financial subsystem first).
 11. **Claim outcome is computed from fixed rules**, like proof class; a person can withdraw a claim or
     add links but never set an outcome. Follows standing decision 5.
-12. **AI claim drafting only under the external-processing decision; otherwise unavailable.** Standing
-    decision 8 keeps evidence in house unless a case decision allows otherwise; 02 section 8.8 records that
-    decision with a typed reason. Reverse if a local model provider exists (then drafting runs on it with
-    no external-processing decision).
+12. **AI claim drafting reads the case's phone material in full through the existing model policy.**
+    Standing decision 8 gives the case's own agent and AI tools full phone visibility, scoped to the case;
+    the external-processing decision of 02 section 8.8 governs only the other outbound services. Reverse
+    if Neil restricts the agent's visibility.
 13. **New Workspace link target types `phone_record` and `statement_check`** rather than overloading
     `evidence` or `timeline_event`, registered in lx-collect's link-type registry rather than migrated
     here. A phone record is not an evidence file and must open to its locator.

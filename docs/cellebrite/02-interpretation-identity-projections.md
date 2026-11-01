@@ -1409,14 +1409,18 @@ Until then, chat reaches phone text by lexical retrieval: `rag_service._retrieve
 documents and `phone_texts` for the question's terms. *Reverse if* Neil records the per-case decision or a
 local model is installed.
 
-**What reaches an external model.** Chat retrieval and the agent's phone tools send no phone text and no
-identifier (names, numbers, account ids, addresses) to an external model without the case's
-`allow_phone_external_processing` decision.
+**What reaches an external model.** Chat retrieval, the agent's phone tools, Workspace AI, theory analysis
+and statement drafting read phone records in full (text, names, numbers, account ids, addresses) through
+the existing model policy, with no opaque labels and no separate case setting (Neil, 2026-11-01: "the agent
+should have full visibility of the phones"; 07 section 7.1). Embeddings, transcription, translation, image
+search and geocoding stay on the per-case `allow_phone_external_processing` decision (plan standing
+decision 8). *Reverse* if Neil restricts the agent's visibility.
 
-- With the decision, lexical retrieval adds up to 8 message windows as chunks with the metadata above.
-- Without it, retrieval and phone tools return only record ids, counts, times and opaque labels such as
-  "Identity 3 on C2" or "Phone C2". The chat interface expands the labels on screen, so the person reads the
-  names and the model never receives them. A tool that cannot answer this way refuses with a stated reason.
+- Lexical retrieval adds up to 8 message windows as chunks with the metadata above.
+- Every answer keeps its `rec://` links, its scope sentence and any clip, and names unconfirmed readings.
+- Case scope: phone tools take the case id and every query is scoped to it, as the existing agent's queries
+  are (`backend/services/agent/cypher_safety.py` refuses a graph query without the case id). The agent asked
+  in one case about a phone that exists only in another case answers "not in this case".
 
 ### 9.9 Citation anchors
 
@@ -1630,7 +1634,7 @@ file.
 | U11 | Financial identifier kinds (8.9) | `phone_number` and `email` identifiers validate and match by normalised value (`(202) 555-0143` matches `+1 202 555 0143` under US); existing kinds behave as before (existing account identity tests pass unchanged); R4 suggestion appears only when the account holder party is linked to a dossier |
 | U12 | Graph projection (9.3 to 9.5) | No projected node has a property named in 9.2 (test over the plan); after projecting C3 and C9 into one case, deleting C9 leaves every identity also seen on C3 with its C3 edges and removes C9-only identities (plan phase 4 done-when, spec 03 R-2); `--drop-first` rebuild yields the same revision; existing Timeline, Map and Graph endpoint results for the case are unchanged except for the added identity nodes in Graph; `COMMUNICATED` counts equal the Postgres counts per pair |
 | U13 | Thread documents and search hits (9.7) | Every C3 chat yields thread text whose line count equals its message count; every location's `record_uid` exists; text search for a word in a message returns a hit carrying that `record_uid`; thread files do not appear in evidence listings; a thread over the part limit splits only at message boundaries; deleting the extraction removes the files and texts |
-| U14 | Embedding gate, chat and workspace anchors (9.8, 9.9) | With no decision and the OpenAI provider, no phone chunk is sent to `embed_texts` (test patches it and asserts not called); with no decision, lexical retrieval and phone tools return record ids, counts, times and opaque labels only, and with the decision they return message windows; no outbound payload to an external model carries any fixture identifier or display name (test patches every outbound client and scans each payload for the fixture's names, numbers, account ids and addresses); an anchor stores the `mapping_set_id` current when it is collected; `ChatSource` round-trips `record_uid`; two messages from one thread are two sources; a workspace theory citing a message stores a `phone_record` anchor whose URL opens the record |
+| U14 | Embedding gate, chat and workspace anchors (9.8, 9.9) | With no decision and the OpenAI provider, no phone chunk is sent to `embed_texts` (test patches it and asserts not called); lexical retrieval and phone tools return message windows in full with no opaque labels, each with its `rec://` link; with no decision, no payload to the embedding, transcription, translation, image search or geocoding clients carries any fixture identifier or display name (test patches those clients and scans each payload for the fixture's names, numbers, account ids and addresses); the agent asked in case A about a phone whose extraction exists only in case B answers "not in this case" and its tool calls read nothing from case B; an anchor stores the `mapping_set_id` current when it is collected; `ChatSource` round-trips `record_uid`; two messages from one thread are two sources; a workspace theory citing a message stores a `phone_record` anchor whose URL opens the record |
 | U15 | Corrections (10) | A corrected timestamp moves the event in streams and thread text and both values are shown; search finds the corrected body text and not the machine text in default mode; undo restores ordering and keeps the chain; a clock offset applies only within its period |
 | U16 | Combined edges (11) | Edge communication counts equal Conversations `between` totals (spec 03 R-1) and time-sliced counts equal windowed totals (R-3); money sums use only admitted, current transactions, per currency (2 USD and 1 MXN payments give two totals, 05 17.8); p3 stated separately and p4 never in a total; undoing a link removes its contribution on recompute; a superseded correction's original amount is never counted; `edge-records` totals equal edge counts |
 | U17 | Sweep and runtime (1.3, 5.7) | Killing the backend mid-pass leaves the previous generation readable and the next start completes it; the C6-scale timing measurement is recorded before the reverse-if in 1.3 is judged |

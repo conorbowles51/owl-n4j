@@ -69,9 +69,14 @@ Each decision carries what would reverse it.
    cannot be rebuilt. *Reverse if* measured write or query volume makes the projection unworkable.
 7. **Flag, don't refuse**, as everywhere in Loupe: hash mismatches, truncated exports, deleted or carved
    records, missing timestamps, unknown types are all kept and flagged.
-8. **Evidence stays in house.** AI runs on local models by default, and cell tower and WiFi positions
-   come from offline reference data. No evidence or identifier goes to a third-party service unless Neil
-   decides so for a case. *Reverse* per case, by decision.
+8. **Evidence stays in house, except the case's own agent.** Chat retrieval, the agent's phone tools,
+   Workspace AI, theory analysis and statement drafting read phone records in full (text, names, numbers,
+   account ids, addresses) through the existing model policy, scoped to the case they are asked in, with
+   no opaque labels (Neil, 2026-11-01: "the agent should have full visibility of the phones"). Every other
+   outbound service stays in house: embeddings, transcription, translation, image search and geocoding
+   send no evidence or identifier to a third party unless Neil decides so for a case, and cell tower and
+   WiFi positions come from offline reference data. *Reverse* the agent part if Neil restricts it; the
+   other services per case, by decision.
 9. **Machine output never replaces the original.** Transcripts, OCR, translations and AI summaries are
    labelled machine-generated with model and version, and sit beside the source.
 10. **Pattern of life is a priority alongside conversations** (section 11), and all thirteen approaches

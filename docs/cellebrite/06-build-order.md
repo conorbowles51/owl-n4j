@@ -79,7 +79,7 @@ If two specs name different roots for the same thing, the owning spec in this ta
 | D Identity and projections | 4 | 02-U8, U9, U10, U12, U13, U15 | Deleting one of two phones sharing a contact leaves the other intact |
 | E Screens | 5 | 07-12.1C, 07-6.4, 03-1 to 03-11 | Every testing-hub item (03 section 17.0) has a passing test |
 | F Pattern of life | 7 | 04-U2 to 04-U14 | A statement window shows supporting, contradicting and missing data with sources |
-| G Cross-evidence | 6 | 02-U11, 02-U14, 02-U16, 05-S0 to 05-S4, 03-12, 07-7.1 | Phone money readings corroborate ledger rows as p4; RSMF export; agent phone tools under both external-processing settings |
+| G Cross-evidence | 6 | 02-U11, 02-U14, 02-U16, 05-S0 to 05-S4, 03-12, 07-7.1 | Phone money readings corroborate ledger rows as p4; RSMF export; agent phone tools with full phone visibility, scoped to the case |
 | H Investigative approaches | 8 | 05-S5 to 05-S11, 05-S15, 05-S16, 05-S16a to 05-S16c | Each approach built only after its gate passes |
 | I Media | 9 | 05-S12 to 05-S14 | Local OCR, transcription and translation; video path honours the provider setting |
 | J Conditional | | 05-S17 | Runs when a production includes source databases |
@@ -177,7 +177,7 @@ then F's views (04-U6, U7), then E8 to E11, then the rest of F.
 | 48 | 04-U10 | Money lane and manual places | 33; financial admitted rows | Superseded rows absent; no time of day given to a transaction |
 | 49 | 04-U11 | Claims and evaluation | 35, 46, 47 | Every claim kind's outcome rules pass; evaluation reproducible |
 | 50 | 04-U13 | Workspace attachment of records and statement checks through the registry; statement check linked to the dossier interview | 49, 30b | Registry accepts the link targets; stale evaluation shown on the link |
-| 51 | 04-U12 | AI claim drafting (only under the external-processing decision) | 49; 02 section 8.8 decision `allow_phone_external_processing` | Without the decision: 409 and no network call |
+| 51 | 04-U12 | AI claim drafting (full phone visibility, scoped to the case) | 49 | A request naming another case's extraction: 404 and no network call |
 | 51a | 04-U14 | Patterns screen at `/cases/:id/phone-patterns`, shared Lanes component, key dates and case terms (04 section 8.6) | 39, 40, 49, 30a | POL-1 and J-5a pass |
 | 52 | Gate F | End-to-end statement check on a synthetic two-phone case, plus a corpus run on the largest phone | 49, 50 | Recorded in the build state |
 
@@ -194,7 +194,7 @@ then F's views (04-U6, U7), then E8 to E11, then the rest of F.
 | 59 | 05-S3 | Approach 1a: money signals, institution directory, readings, binding, corroboration, account leads | 56, 53; first run waits for CB-INDEX question 3 (none of the three phone cases exists in Loupe) | 05 section 4.7 gate and tests |
 | 60 | 05-S4 | Approach 1b: coverage join and contradictions | 59 | 05 section 4.7 gate plus a bound account with a continuous reconciled run |
 | 61 | 03-12 | RSMF export | 38; RSMF specification read and cited (03 20.8) | E-6 |
-| 61a | 07-7.1 | Agent phone tools (schema `loupe.agent.phone_*/1`) to the ledger-tool standard; without the external-processing decision they return record ids, counts, times and opaque labels only | 27, 55 | SA-7 and XF-3 pass; the agent evaluation set of 07 section 7.1 measured under both settings |
+| 61a | 07-7.1 | Agent phone tools (schema `loupe.agent.phone_*/1`) to the ledger-tool standard, reading phone records in full within the case (no opaque labels) | 27, 55 | SA-7 and XF-3 pass; the agent evaluation set of 07 section 7.1 measured; asked in case A about a phone only in case B, the agent answers "not in this case" |
 
 ### Stage H: investigative approaches
 
@@ -292,7 +292,7 @@ The last column lists the tests that 07 section 11 adds to each gate; 07 section
 | D | E, F | Membership deletion test (02-U12) | (with C to D) |
 | E | G | Every testing-hub item in 03 section 17.0 has a passing test | Row 30a: the 07 section 12.1 finish list. Row 30b: CO-2 (API), CO-3, CO-5, CO-16 (API), CO-17 (API), CO-21, registry tests. Stage E: J-1b, J-2, J-3a, J-4, J-6, J-7, J-8b, J-10a, J-11, J-12, J-13, J-13b, J-14a, J-15, J-16, J-17, UX-1 to UX-5, C-10 to C-13, MD-1, P-6 to P-8, U-5 to U-8, S-8 to S-10, G-5, G-6, T-7, E-8 to E-10, XF-5, XF-6, XF-9, XF-11, SA-1, SA-2, SA-3 (existing parts), SA-6, SA-8 (first part), CO cells for its surfaces, CO-2, CO-4, CO-6 to CO-8, CO-9a, CO-12, CO-14 to CO-17, CO-19, CO-20 |
 | F | H | Gate F (row 52) | J-5a, J-9, J-10b, POL-1, CO cells for Patterns and Lanes; J-10c in the gate of whichever of stages E and F finishes second |
-| G | H | Approach 1 gate (05 section 4.7) recorded either way | J-3b, J-5b, XF-1 to XF-4, XF-7, XF-8, XF-10, XF-12, SA-3 (rest), SA-4, SA-7, SA-8 (second part), CO-10, CO-11, CO-13, CO-18 (agent), CO cells for Graph, the agent evaluation set measured under both settings |
+| G | H | Approach 1 gate (05 section 4.7) recorded either way | J-3b, J-5b, XF-1 to XF-4, XF-7, XF-8, XF-10, XF-12, SA-3 (rest), SA-4, SA-7, SA-8 (second part), CO-10, CO-11, CO-13, CO-18 (agent), CO cells for Graph, the agent evaluation set measured |
 | H | done | Each approach's gate in 05 | J-5c, J-14b, the J-16 equality with approach 12, AP-1, CO-9b, CO cells for analyses |
 | I | done | 05 sections 17.4 to 17.6 | M-5, M-6, M-7, CO-18 (transcript) |
 

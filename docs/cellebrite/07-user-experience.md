@@ -258,7 +258,7 @@ Each journey states **Testable from**: the unit that completes its last dependen
 ### J-9 Test a statement against the phones
 
 - **Steps:**
-  1. Enter claims, each beside the statement's own words. Claims are typed, or drafted by the model and marked "Drafted by <model>, not confirmed" until each field is confirmed. Drafting is available only where the case's external-processing decision allows it.
+  1. Enter claims, each beside the statement's own words. Claims are typed, or drafted by the model and marked "Drafted by <model>, not confirmed" until each field is confirmed. Drafting uses the existing model policy with full phone visibility (7.1).
   2. A place given as text is resolved with a map or address-dossier picker.
   3. Evaluate. Each claim gets a result in the fixed wording, and gaps are listed.
   4. Items are grouped as supports, undercuts and context, with exact counts. All stay reachable.
@@ -268,7 +268,7 @@ Each journey states **Testable from**: the unit that completes its last dependen
 - **Targets:** a 3-claim statement checked and attached in 10 min or less [M]; the check takes 2 s or less and is identical on re-run with unchanged inputs [S].
 - **Failure states:**
   - "This check needs C3's owner linked to this person. Link now."
-  - "AI drafting is off for phone material in this case. Enter claims by hand, or ask the case owner."
+  - "AI drafting could not run. Enter claims by hand, or try again." (the model call failed or timed out)
 - **Testable from:** Gate F (cb-pol). Attaching to an interview needs lx-collect item E.
 
 ### J-10 Where was the phone, and were two people together
@@ -709,7 +709,7 @@ Every phone item can be collected as the investigator works: message, call, emai
 1. **One link-type registry**, imported by models, routers, services and a generated TypeScript type. It replaces the 11 hard-coded lists: the workspace model and its database check, the workspace router, the dossier service and its validator, the notebook service and router, the task-link check, and the frontend workspace, notebook and attachment-picker lists. Phone types are validated against the case through a resolver that cb-capture and cb-interpret register. Until they register, phone types are refused with a stated message.
 2. **Dossier links:** `POST /api/dossiers/{id}/links:add` (append, idempotent, returns added and skipped counts) and `DELETE .../links/{link_id}`, both with event rows. Replacing all links no longer rewrites who added each one.
 3. **Workspace links:** `POST .../entries/{id}/links:batch` with the caller's rationale ("Added from Conversations") and counts. The AI-acceptance function, which stamps "Accepted Workspace AI proposal", is never used for links people add.
-4. **Phone files as evidence rows, only on demand.** A phone file becomes an evidence row only when it is added as dossier media or interview evidence. This happens one file at a time, idempotent per file id, and never in bulk. The row has `source_type = phone_file`. It is excluded from processing jobs, embedding and AI source collection unless the case's external-processing decision allows it, and shows in Evidence as "Phone file used in a dossier", linked to its record.
+4. **Phone files as evidence rows, only on demand.** A phone file becomes an evidence row only when it is added as dossier media or interview evidence. This happens one file at a time, idempotent per file id, and never in bulk. The row has `source_type = phone_file`. It is excluded from processing jobs and embedding unless the case's external-processing decision allows it (the agent and AI source collection read it in full, 7.1), and shows in Evidence as "Phone file used in a dossier", linked to its record.
 5. **Interview evidence takes registry targets.** `dossier_interview_evidence_links` gains `target_type`, `target_id` and `source_anchor`. `evidence_file_id` becomes nullable, with a check that exactly one of the two is set. Existing rows are unchanged, and the row count is measured before and after the migration.
 6. **Contacts** carry a record source. Contacts copied from phones are excluded from the contact-match suggestion.
 7. **Reverse lookup:** `GET /api/workspace/{case}/collections?target_type&target_ids[]`, in bounded batches. It resolves `phone_selection` membership through a per-record membership index written when the link is added.
@@ -720,7 +720,7 @@ Every phone item can be collected as the investigator works: message, call, emai
 12. **Graph:** "Add to Dossiers" on a PhoneIdentity routes to `link_phone_identity`. Significant is offered only on phone nodes.
 13. **`phone_analysis` snapshots** freeze kind, subject, window, parameters, mapping versions, the record ids behind the result and summary counts.
 14. **Exports** gain sources `collection`, `finding` and `dossier`, with the stated total equal to the collected count (with cb-screens).
-15. **Agent and Workspace AI** read collections through `get_casework` and `get_dossier`, and theory analysis reads phone links. Both are built by cb-crossev under the external-processing rules in 7.1, not by lx-collect.
+15. **Agent and Workspace AI** read collections through `get_casework` and `get_dossier`, and theory analysis reads phone links. Both are built by cb-crossev with full phone visibility (7.1), not by lx-collect.
 
 ### 6.5 Acceptance tests (CO-)
 
@@ -736,7 +736,7 @@ Every phone item can be collected as the investigator works: message, call, emai
 | CO-8 | A corrected record shows both values on the finding and in the export | cb-screens |
 | CO-9a | After Replace, a link shows "from a replaced copy" | cb-screens |
 | CO-9b | ...and offers the matching record | cb-approaches |
-| CO-10 | Theory analysis cites phone-linked messages, within the external-processing rules | cb-crossev |
+| CO-10 | Theory analysis cites phone-linked messages, with full phone visibility | cb-crossev |
 | CO-11 | `get_casework` and `get_dossier` return phone links with citations | cb-crossev |
 | CO-12 | The collection export total equals the collected count | cb-screens |
 | CO-13 | "Add to Dossiers" on a phone identity goes through the identity decision | cb-crossev |
@@ -757,7 +757,7 @@ Every phone item can be collected as the investigator works: message, call, emai
 
 | Loupe part | Phones provide | Phones consume |
 |---|---|---|
-| Agent | Read-only phone tools (schema `loupe.agent.phone_*/1`) to the ledger-tool standard: total matching, has more, limitation sentence, coverage sentence, unconfirmed readings named, a `rec://` link per record. The tools: messages and calls between people in a window, contact summary, first and last contact, activity around an instant or date, coverage gaps and deletions, places in a window, co-location results, statement-check results, record search. | Case scope, Significant, the external-processing decision |
+| Agent | Read-only phone tools (schema `loupe.agent.phone_*/1`) to the ledger-tool standard: total matching, has more, limitation sentence, coverage sentence, unconfirmed readings named, a `rec://` link per record. The tools: messages and calls between people in a window, contact summary, first and last contact, activity around an instant or date, coverage gaps and deletions, places in a window, co-location results, statement-check results, record search. | Case scope, Significant |
 | Timeline | Lens, Lanes, curated phone records | Case events and dated money for the case lane; the shared formatter |
 | Graph | PhoneExtraction, PhoneIdentity and PhoneGroup nodes; aggregated communication edges | Dossier and entity links; Significant |
 | Financial ledger | Same-day phone activity around a payment; "Also recorded on phone" on corroborated rows | Date-only ledger rows; counterparties through the reviewed identity path |
@@ -768,10 +768,10 @@ Every phone item can be collected as the investigator works: message, call, emai
 
 **Agent rules:**
 - Answers are stored as agent artifacts marked as model readings. Only a person can accept them into a dossier assessment or a finding (CO-18). The agent may propose links and never adds them itself.
-- **Without the case's external-processing decision,** phone tools return record ids, counts, times and opaque labels such as "Identity 3 on C2" or "Phone C2". They never return text, names, numbers, account ids or addresses. The chat interface expands the labels locally on screen, so the person reads names and the model never receives them. Tools that cannot answer this way refuse with a stated reason.
+- **Agent visibility (Neil, 2026-11-01): "the agent should have full visibility of the phones".** The agent, chat, Workspace AI and theory analysis read phone records in full (text, names, numbers, account ids, addresses, attachments' text) through the existing model policy (no separate case setting is needed to send phone material to the AI provider). Every claim still carries its `rec://` link, its scope sentence and any clip; unconfirmed readings are still named. The per-case external-processing decision remains only for the other outbound services (embeddings, transcription, translation, image search, geocoding: plan standing decision 8). Reverse if Neil restricts it. The agent reads only the case it is asked in: phone tools take the case id and every query is scoped to it, as the existing agent's queries are (`services/agent/cypher_safety.py` refuses any graph query without the case id). A test asks the agent in one case about a phone that exists only in another case and gets "not in this case". Working across all of a person's cases is not built here and is never the default; it is recorded for the agent build phase as an option the person switches on, limited to cases they can open.
 - **With the decision,** tools return text and identifiers, and the answer says that phone material was sent to the named provider.
 - Today's overview, timeline and map tools say "Phone messages and calls are not in this result; 186,787 are on the phones. Use the phone tools", and agent map and table artifacts say whether phone points are included.
-- An evaluation set of 30 or more questions with known answers on synthetic phones is measured under both settings before release: correct records cited and correct totals stated.
+- An evaluation set of 30 or more questions with known answers on synthetic phones is measured before release: correct records cited and correct totals stated.
 - The agent run limit of 28 tool calls is stated in the answer when it is reached.
 - 02 9.8 chat retrieval follows the same rule.
 
@@ -781,11 +781,11 @@ Every phone item can be collected as the investigator works: message, call, emai
 |---|---|---|
 | XF-1 | Ledger row → "Phone activity around this payment" → Lanes and Conversations for the counterparty's linked people, the payment date ±1 day | Counts equal Conversations under the same scope. The wording is "same day" or "1 day before", never a time of day. An unlinked payee shows "This payee is not linked to a person, so the phones cannot be matched. Link it in People." Payees that exist only on payments can get a dossier. |
 | XF-2 | Graph person node → "Conversations on the phones" | The node count equals the dossier panel and the Conversations total. Back restores graph selection and viewport. |
-| XF-3 | Agent: "Who did A talk to the day before payment X?" | **With the decision:** every claim has a `rec://` link that opens the record panel; a scope sentence is present ("read 214 of 214 messages and calls on 3 phones that day"); a clipped result is stated. **Without it:** the answer lists opaque labels that the interface expands on screen, with the same counts, scope sentence and links. No outbound payload contains any fixture text, identifier or display name. |
+| XF-3 | Agent: "Who did A talk to the day before payment X?" | Every claim has a `rec://` link that opens the record panel; a scope sentence is present ("read N of N messages and calls on M phones that day"); a clipped result is stated; unconfirmed readings are named. |
 | XF-4 | Timeline period → "What the phones did" | Lane counts equal the lens and Conversations. "No data" bands are drawn. |
 | XF-5 | Dossier "On the phones" → everything about this person | Counts equal the screens they open. Collected items open their records with origin marks. (cb-screens gate) |
 | XF-6 | Map area and window → phones present → their conversations | Every listed phone has a point inside the area and window. The opened count equals the Conversations total. (cb-screens gate) |
-| XF-7 | Search hit → Add to finding → collection export, plus theory analysis | The export total equals the collected count. Badges carry through. Workspace AI cites the phone records within the external-processing rule. |
+| XF-7 | Search hit → Add to finding → collection export, plus theory analysis | The export total equals the collected count. Badges carry through. Workspace AI cites the phone records with full phone visibility. |
 | XF-8 | Phone contact → counterparty suggestion (phone number and email kinds) → "Open these payments" | Shown as "Suggested, not reviewed" until confirmed. No ledger row changes. |
 | XF-9 | Browse Conversations → open Financial | Financial's updating answers stay on. (`followups` fixes; test in the cb-screens gate) |
 | XF-10 | "Ask about these messages" from Conversations | The chat request carries the thread, scope and selected record ids, never their text without the decision |
@@ -824,7 +824,7 @@ The first real phone case holds only phones.
 | SA-4 | Graph shows communication edges with no money text | cb-crossev |
 | SA-5 | Every journey whose gate has been reached completes | each gate |
 | SA-6 | Collect works with no evidence row except media registered one at a time | cb-screens |
-| SA-7 | Agent phone tools answer under both external-processing settings (XF-3 conditions). Financial tools say "No financial evidence in this case". | cb-crossev |
+| SA-7 | Agent phone tools answer in a phones-only case with full phone visibility (XF-3 conditions). Financial tools say "No financial evidence in this case". | cb-crossev |
 | SA-8 | A user with no financial access in a phones-only case sees the Timeline lens, the Map layer and Graph edges fully, with no financial refusal or blocking panel. Adding a synthetic ledger makes XF-1 and XF-8 work with no re-ingest. | cb-screens (first part), cb-crossev (second part) |
 
 ---
@@ -941,7 +941,7 @@ Only [S] and [I] tests gate a job. A gate that fails on measured numbers is reco
 | cb-interpret DONE (C→D, D→E/F) | RQ-1 to RQ-8, U-backend, J-8a, one feed test per review action |
 | cb-screens DONE (E→G) | J-1b, J-2, J-3a, J-4, J-6, J-7, J-8b, J-10a, J-11, J-12, J-13, J-13b, J-14a, J-15, J-16, J-17, UX-1 to UX-5, C-10 to C-13, MD-1, P-6 to P-8, U-5 to U-8, S-8 to S-10, G-5, G-6, T-7, E-8 to E-10, XF-5, XF-6, XF-9, XF-11, SA-1, SA-2, SA-3 (existing parts), SA-6, SA-8 (first part), CO cells for its surfaces, CO-2, CO-4, CO-6 to CO-8, CO-9a, CO-12, CO-14 to CO-17, CO-19, CO-20 |
 | Gate F (cb-pol DONE) | J-5a, J-9, J-10b, POL-1, CO cells for Patterns and Lanes |
-| cb-crossev DONE (G→H) | J-3b, J-5b, XF-1 to XF-4, XF-7, XF-8, XF-10, XF-12, SA-3 (rest), SA-4, SA-7, SA-8 (second part), CO-10, CO-11, CO-13, CO-18 (agent), CO cells for Graph, the agent evaluation set measured under both settings |
+| cb-crossev DONE (G→H) | J-3b, J-5b, XF-1 to XF-4, XF-7, XF-8, XF-10, XF-12, SA-3 (rest), SA-4, SA-7, SA-8 (second part), CO-10, CO-11, CO-13, CO-18 (agent), CO cells for Graph, the agent evaluation set measured |
 | cb-approaches DONE | J-5c, J-14b, the J-16 equality with approach 12, AP-1, CO-9b, CO cells for analyses |
 | cb-media DONE | M-5, M-6, M-7, CO-18 (transcript) |
 | J-10c | In the gate of whichever of cb-screens and cb-pol finishes second |
@@ -1163,8 +1163,8 @@ cb-ground applies these through its inbox. Each test id is checked as free befor
 | UXD-14 | A selection over 500 records is one `phone_selection` link with a membership index. 500 matches the existing dossier link limit. | The limit changes, or per-record links are measured as fast enough |
 | UXD-15 | Links store the mapping version set. Link state is worked out on display and never rewritten. | Never: rule 1 |
 | UXD-16 | Interview evidence accepts registry targets beside evidence files | The interview model is replaced |
-| UXD-17 | A phone file becomes an evidence row only on demand, with `source_type = phone_file`, excluded from processing and AI | The external-processing decision allows it for that case |
-| UXD-18 | Without the external-processing decision, agent phone tools return opaque labels expanded on screen | A local model serves phone tools |
+| UXD-17 | A phone file becomes an evidence row only on demand, with `source_type = phone_file`, excluded from processing jobs and embedding; the agent reads it | The external-processing decision allows it for that case |
+| UXD-18 | The agent, chat, Workspace AI and theory analysis see phone records in full (no separate case setting is needed to send phone material to the AI provider) (Neil, 2026-11-01) | Neil restricts it |
 | UXD-19 | Lens and layer defaults are stored per person and case at first use | R2 shows people expect them to follow case contents |
 | UXD-20 | Day navigation is Alt+J/K plus buttons. Shift+J/K stays extend selection. | A browser test on http shows Alt+J/K is not received |
 | UXD-21 | The first Ctrl/Cmd+F finds in results on the server; the second press goes to the browser | R1 shows people are confused by it |
@@ -1183,9 +1183,20 @@ cb-ground applies these through its inbox. Each test id is checked as free befor
 | UXD-34 | The Conversations rail collapses below 1440 px | R1 shows the list is needed open |
 | UXD-35 | The intake stall threshold starts at 30 s and is set from measured step rates | Step rates are measured |
 | UXD-36 | Reading positions are server-side for assigned reviews and in browser storage (record ids only) for casual reading | R2 shows people resume casual reading across devices |
+| UXD-37 | The prototype switch is per browser (`?phone-prototype=on`, kept in local storage); Loupe has no server-side feature switch | Neil wants the preview switched per case or for everyone from the server |
+| UXD-38 | The fixture builder lives at `evidence-engine/tests/phone/fixture_builder.py` (stdlib only); cb-capture extends it rather than writing a second generator | A second job needs fixtures the builder cannot express |
+| UXD-39 | The training ledger is 7 single-page monthly PDF statements loaded through Evidence and Financial's own reading; the CSV copy is for tests only | Financial gains a CSV intake |
+| UXD-40 | UX events are stored as `ux_event` activity rows with one allowed-field list shared by browser and server; the activity list hides them unless asked | Event volume makes the activity table slow (measure rows per day first) |
+| UXD-41 | Report a problem is delivered to the coordinator by `scripts/deliver_ui_problem_reports.py` from the database queue (`delivered_at`), because the app user cannot write the coordinator's inbox | The fleet gains an app-writable channel |
 
 ---
 
-## 17. Questions for Neil
+## 17. Neil's answers (2026-11-01)
 
-Open questions are kept in the build coordinator's questions list. Each item has a recommendation, and nothing in this spec waits on an answer except what each question names.
+| Question | Answer |
+|---|---|
+| New jobs cb-ux and lx-collect, starting now | Yes to both |
+| Synthetic phones-only case and training case, writable by the jobs login | Yes |
+| Phone material kept from the external AI provider by default | No: "the agent should have full visibility of the phones" (section 7.1, UXD-18) |
+| Moderated sessions with Alex's team, run by Neil, up to four rounds of up to five 60-minute sessions | Yes: "I love this idea" |
+| cb-crossev builds the agent's read-only phone tools | Yes |
