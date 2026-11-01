@@ -492,10 +492,12 @@ def sniff(data: bytes) -> tuple[NativeFormat, ...]:
     Returns all claimants rather than the first, so that ambiguity is a visible
     result rather than something resolved by the order of a dictionary.
     """
-    data = bytes(data)
-    if data.lstrip()[:8].startswith(_BINARY_DOCUMENT_SIGNATURES):
+    # Only the first SNIFF_BYTES are ever looked at; stripping or copying the whole input cost a full copy of a
+    # large file for nothing.
+    head = bytes(data[:SNIFF_BYTES])
+    if head.lstrip()[:8].startswith(_BINARY_DOCUMENT_SIGNATURES):
         return ()
-    text = _sniff_text(data)
+    text = _sniff_text(head)
     first = _first_content_line(text)
     return tuple(fmt for fmt in NativeFormat if _CLAIMS[fmt](text, first))
 

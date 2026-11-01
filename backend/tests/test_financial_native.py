@@ -435,6 +435,20 @@ class ParserIdentityTests(NativeTestCase):
 class SniffTests(NativeTestCase):
     """Which of the four a file is, decided by exclusive claim."""
 
+    def test_sniffing_a_large_input_does_not_copy_it(self) -> None:
+        """Only the head is looked at: a 20 MB input with leading whitespace is not stripped or copied whole."""
+        import tracemalloc
+
+        data = b"\n" + mt940_bytes() + b" " * (20 * 1024 * 1024)
+        tracemalloc.start()
+        try:
+            claims = sniff(data)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        self.assertEqual(claims, (NativeFormat.mt940,))
+        self.assertLess(peak, 1024 * 1024)
+
     def test_each_format_is_claimed_by_itself_alone(self) -> None:
         for expected, data in (
             (NativeFormat.camt053, camt_bytes()),
