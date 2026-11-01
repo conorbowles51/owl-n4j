@@ -446,6 +446,91 @@ CARRIED_REVIEW_MESSAGE = ('This file was read again and its statement period is 
                           'were carried to that statement, which is listed now.')
 
 
+# A person's "leave unimported" (skip) of a file's statement applies to that statement in every batch of the case:
+# a statement waiting in another batch with no review and no decision of its own starts skipped, carrying the
+# person's decision, reason and name unchanged plus where it came from (``carried_from``). Restore works as for any
+# skip. Learnt from people's corrections (fin-lessons, manual-change pattern batch_item_skip): Alexandra skipped
+# "03 FACTUAL INGENIEROS PAGO COT COLOCACION DE PISO OFICINA 701.pdf" (a transfer receipt: "not a bank statement")
+# and "001274-001276 Application.Payments.pdf" (a card application export: "Not a fin statement"), and each came
+# back for review in a later batch. A model's skip (with its origin) and a carried skip are never carried.
+# Switch: LOUPE_FINANCIAL_CARRY_PERSON_SKIP (default on). Off: a skip stays on its own batch item, as before.
+CARRY_PERSON_SKIP = os.environ.get('LOUPE_FINANCIAL_CARRY_PERSON_SKIP', '1') != '0'
+
+
+def _own_person_skip(item):
+    decision = (item.summary or {}).get('import_decision') or {}
+    if item.status != 'skipped' or decision.get('action') != 'skip' or decision.get('carried_from'):
+        return None
+    if origin_of(decision.get('actor') or {}) or origin_of(decision):
+        return None
+    return decision
+
+
+def _takes_carried_skip(item):
+    return item.status in ('ready', 'attention') and not item.review_request and \
+        not (item.summary or {}).get('import_decision')
+
+
+def _carry_skip(item, source, decision):
+    carried = {**decision, 'carried_from': dict(batch_id=str(source.batch_id), item_id=str(source.id))}
+    history = list((item.summary or {}).get('import_decision_history') or []) + [carried]
+    item.summary = {**(item.summary or {}), 'import_decision': carried, 'import_decision_history': history}
+    item.status = 'skipped'
+
+
+def person_skip_elsewhere(session, case_id, item):
+    """(source item, decision) of the latest person's own skip of this file's statement in another batch, or None."""
+    if not CARRY_PERSON_SKIP:
+        return None
+    found = None
+    for other in session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id).where(
+            Batch.case_id == case_id, Batch.status != 'removed', Item.file_id == item.file_id,
+            Item.statement_key == item.statement_key, Item.batch_id != item.batch_id, Item.status == 'skipped')):
+        decision = _own_person_skip(other)
+        if decision and (found is None or str(decision.get('at') or '') > str(found[1].get('at') or '')):
+            found = (other, decision)
+    return found
+
+
+def carry_skip_to_other_batches(session, case_id, source):
+    """A person's own skip on ``source`` applied to the same statement waiting in the case's other batches."""
+    decision = _own_person_skip(source) if CARRY_PERSON_SKIP else None
+    if not decision:
+        return []
+    carried = []
+    for item in session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id).where(
+            Batch.case_id == case_id, Batch.status != 'removed', Item.file_id == source.file_id,
+            Item.statement_key == source.statement_key, Item.batch_id != source.batch_id).with_for_update(of=Item)):
+        if _takes_carried_skip(item):
+            _carry_skip(item, source, decision)
+            carried.append(item.id)
+    return carried
+
+
+def carry_person_skips(session, case_id, *, apply=False):
+    """Every person's own skip in the case carried to the same statement waiting in its other batches (the live
+    path's rule, for skips saved before it existed). Dry run unless ``apply``; returns what would change."""
+    changes = []
+    for source in session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id).where(
+            Batch.case_id == case_id, Batch.status != 'removed', Item.status == 'skipped').order_by(Item.id)):
+        if not _own_person_skip(source):
+            continue
+        for item in session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id).where(
+                Batch.case_id == case_id, Batch.status != 'removed', Item.file_id == source.file_id,
+                Item.statement_key == source.statement_key, Item.batch_id != source.batch_id)):
+            if _takes_carried_skip(item):
+                best = person_skip_elsewhere(session, case_id, item)
+                if best and best[0].id == source.id:
+                    changes.append(dict(item_id=str(item.id), batch_id=str(item.batch_id), file_id=str(item.file_id),
+                                        filename=(item.summary or {}).get('filename'), was=item.status,
+                                        from_batch=str(source.batch_id), reason=best[1].get('reason')))
+                    if apply:
+                        _carry_skip(item, *best)
+    if apply:
+        session.commit()
+    return changes
+
+
 def prepare_reviews(session, batch, file, *, lock_slice=None):
     cache = {}
     fid = UUID(file['file_id'])
@@ -508,8 +593,14 @@ def prepare_reviews(session, batch, file, *, lock_slice=None):
                 summary.setdefault('review_upgrade_history', []).append(dict(request=existing.review_request,
                     at=datetime.now(timezone.utc).isoformat(), reason='shared_saved_review'))
             existing.status=status; existing.summary=summary; existing.review_request=draft
+            target = existing
         else:
-            session.add(Item(id=identifier,batch_id=batch.id,file_id=fid,statement_key=key,status=status,summary=summary,review_request=draft))
+            target = Item(id=identifier,batch_id=batch.id,file_id=fid,statement_key=key,status=status,summary=summary,review_request=draft)
+            session.add(target)
+        if _takes_carried_skip(target):
+            skipped_elsewhere = person_skip_elsewhere(session, case_id, target)
+            if skipped_elsewhere:
+                _carry_skip(target, *skipped_elsewhere)
     # A former file-level currency question is replaced by its actual periods.
     if choices:
         stale = session.get(Item,uuid5(batch.id,str(fid)+':'))
@@ -1939,6 +2030,7 @@ def leave_unimported(session, *, case_id, batch_id, item_id, action, reason, exp
     item.summary = {**item.summary, 'import_decision': decision, 'import_decision_history': history}
     if action == 'skip':
         item.status = 'skipped'
+        carry_skip_to_other_batches(session, case_id, item)
     else:
         proposal = read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
             currency=item.summary.get('currency'), statement_id=item.statement_key or None)
@@ -2967,3 +3059,29 @@ def refresh_statement_list(session, *, case_id, batch_id):
         batch.status = 'preparing'
         session.commit()
     return dict(queued=bool(count), files=count, already_processing=False)
+
+
+def main(argv=None):
+    """``python -m services.financial.import_batches --carry-skips [--apply] [case_id ...]``: a person's own skip
+    carried to the same statement waiting in the case's other batches (carry_person_skips). Dry run by default."""
+    import argparse
+    from sqlalchemy import text as sql_text
+    from postgres.session import _get_session_local
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--carry-skips', action='store_true', required=True)
+    parser.add_argument('--apply', action='store_true')
+    parser.add_argument('case_ids', nargs='*')
+    args = parser.parse_args(argv)
+    with _get_session_local()() as session:
+        cases = [UUID(c) for c in args.case_ids] or [row[0] for row in session.execute(sql_text(
+            "select distinct case_id from financial_import_batches where status <> 'removed'"))]
+        total = 0
+        for case_id in cases:
+            for change in carry_person_skips(session, case_id, apply=args.apply):
+                total += 1
+                print(json.dumps(dict(case_id=str(case_id), **change)))
+        print(json.dumps(dict(applied=args.apply, items=total)))
+
+
+if __name__ == '__main__':
+    main()
