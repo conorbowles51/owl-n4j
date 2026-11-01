@@ -22,7 +22,7 @@ SUMMARY_VIEWS = (('get_ledger_summary', 'summary'), ('get_working_ledger_summary
 FULL_RANGE_VIEWS = (('get_working_ledger_analysis', 'working'), ('get_ledger_posting_graph', 'graph'), ('get_counterparty_party_analysis', 'cpa'),
                     ('get_ledger_timeline', 'timeline'), ('get_ledger_transfer_candidates', 'transfers'),
                     ('get_pattern_review', 'patterns'))
-PER_CASE = 24  # views warmed for each case
+PER_CASE = 25  # views warmed for each case
 GRAPH = {}  # the graph database's last commit as the tests set it (never a real graph database)
 
 
@@ -57,6 +57,8 @@ def periods(tmp_path, monkeypatch):
                         lambda **kw: calls.append(dict(kw, view='batches')))
     from services.financial import review_queue
     monkeypatch.setattr(review_queue, 'warm', lambda **kw: calls.append(dict(kw, view='queue')))
+    from services.financial import batch_import_history
+    monkeypatch.setattr(batch_import_history, 'warm', lambda **kw: calls.append(dict(kw, view='receipts')))
     for route, view in SUMMARY_VIEWS + FULL_RANGE_VIEWS:
         monkeypatch.setattr(routers.financial_ledger, route, lambda view=view, **kw: calls.append(dict(kw, view=view)))
     # The graph records read (its own saved copies, graph_read_cache); never a real graph database here.
@@ -92,12 +94,12 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
     view_warmup.warm_account_history()
     assert [(str(call['case_id']), call.get('view')) for call in calls] == [
         (str(large), None), (str(large), 'transactions'), (str(large), 'overview'), (str(large), 'panels'), (str(large), 'first-view'), (str(large), 'files'), (str(large), 'evidence'),
-        (str(large), 'parties'), (str(large), 'types'), (str(large), 'consolidations'), (str(large), 'queue'),
+        (str(large), 'parties'), (str(large), 'types'), (str(large), 'consolidations'), (str(large), 'queue'), (str(large), 'receipts'),
         (str(large), 'batches'), (str(large), 'summary'), (str(large), 'working-summary'),
         (str(large), 'graph-transactions'), (str(large), 'graph-intelligence'),
         (str(large), 'graph-page'), (str(large), 'timeline-page'),
         (str(small), None), (str(small), 'transactions'), (str(small), 'overview'), (str(small), 'panels'), (str(small), 'first-view'), (str(small), 'files'), (str(small), 'evidence'),
-        (str(small), 'parties'), (str(small), 'types'), (str(small), 'consolidations'), (str(small), 'queue'),
+        (str(small), 'parties'), (str(small), 'types'), (str(small), 'consolidations'), (str(small), 'queue'), (str(small), 'receipts'),
         (str(small), 'batches'), (str(small), 'summary'), (str(small), 'working-summary'),
         (str(small), 'graph-transactions'), (str(small), 'graph-intelligence'),
         (str(small), 'graph-page'), (str(small), 'timeline-page'),
@@ -107,16 +109,16 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
         (str(small), 'working'), (str(small), 'graph'), (str(small), 'cpa'), (str(small), 'timeline'),
         (str(small), 'transfers'), (str(small), 'patterns')]
     # The batch list takes only the case, as a UUID (FastAPI's type for it): the same cached-view key.
-    assert {key: value for key, value in calls[11].items() if key != 'db'} == dict(case_id=large, view='batches')
+    assert {key: value for key, value in calls[12].items() if key != 'db'} == dict(case_id=large, view='batches')
     # The three account views take only the case: the same cached-view key as a first visit.
     assert {key for key in calls[7] if key != 'db'} == {'case_id', 'view'}
     assert calls[6]['case_id'] == str(large)  # as text, as FastAPI gives the evidence listing
     # The graph records as a first visit asks for them (case as text, every filter unset): the same cached-view key.
-    assert {key: value for key, value in calls[14].items() if key != 'db'} == dict(
+    assert {key: value for key, value in calls[15].items() if key != 'db'} == dict(
         case_id=str(large), mode='transactions', types=None, start_date=None, end_date=None, categories=None,
         view='graph-transactions')
     # The Graph and Timeline pages' reads take only the case; each builds the route's own key (routers.graph/timeline).
-    assert [{key: value for key, value in calls[index].items() if key != 'db'} for index in (16, 17)] == [
+    assert [{key: value for key, value in calls[index].items() if key != 'db'} for index in (17, 18)] == [
         dict(case_id=large, view='graph-page'), dict(case_id=large, view='timeline-page')]
     assert {key: value for key, value in calls[0].items() if key != 'db'} == dict(
         case_id=large, account_id=None, account_ids=None, account_holders=None, start_date=None, end_date=None)

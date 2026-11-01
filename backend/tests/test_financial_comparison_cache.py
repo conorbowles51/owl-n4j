@@ -255,3 +255,67 @@ class CachedReceiptHistoryTests(history_tests.CurrentBatchImportHistoryTests):
             first = batch_import_history.current_imports(db, self.f.case.id, [self.source_id])
         self.assertTrue(first)
         self.assertEqual(len(batch_import_history._RECEIPTS), 0)
+
+
+class SavedReceiptTests(CachedReceiptHistoryTests):
+    """Receipts saved to disk serve a freshly started worker (after a release) without assessing again.
+
+    d5b330d1's 1,452-file batch: the first open on each new worker rebuilt 1,066 receipts from 595 MB of saved
+    readings, 85-110 s against the page's one-minute limit (2026-11-01)."""
+
+    def setUp(self):
+        import tempfile
+        from services.financial import view_cache
+        super().setUp()
+        self._directory = tempfile.TemporaryDirectory()
+        self._env = patch.dict('os.environ', {'FINANCIAL_VIEW_MEMO_DIR': self._directory.name})
+        self._env.start()
+        # SQLite has no system identifier or snapshot mark: stand in for PostgreSQL's.
+        self._scope = patch.object(view_cache.VersionMemo, '_bind_scope', lambda memo, session: (
+            dict(format=1, memo=memo.name, database='test', code=view_cache.code_identity()), 1))
+        self._scope.start()
+        batch_import_history._SAVED = None
+
+    def tearDown(self):
+        self._scope.stop()
+        self._env.stop()
+        self._directory.cleanup()
+        batch_import_history._SAVED = None
+        super().tearDown()
+
+    def restart(self):
+        """A new worker process: nothing in memory, the saved file on disk."""
+        batch_import_history._RECEIPTS.clear()
+        batch_import_history._SAVED = None
+
+    def test_a_new_worker_reads_the_saved_receipt_and_a_changed_statement_is_assessed_again(self):
+        with self.f.SessionLocal() as db:
+            batch_import_history.warm(case_id=self.f.case.id, db=db)
+        with self.f.SessionLocal() as db:
+            first = batch_import_history.current_imports(db, self.f.case.id, [self.source_id])
+        self.restart()
+        with patch.object(batch_import_history, '_current_imports', side_effect=AssertionError('assessed again')), \
+                self.f.SessionLocal() as db:
+            self.assertEqual(batch_import_history.current_imports(db, self.f.case.id, [self.source_id]), first)
+        self.assertEqual(batch_import_history._saved_receipts().stats['saved_hits'], 1)
+        with self.f.SessionLocal() as db:
+            row = db.scalar(select(history_tests.FinancialTransaction).where(
+                history_tests.FinancialTransaction.source_document_id == self.source_id))
+            row.amount_minor += 10000
+            db.commit()
+        self.restart()
+        with self.f.SessionLocal() as db:
+            changed = batch_import_history.current_imports(db, self.f.case.id, [self.source_id])
+        with patch.object(batch_import_history, '_row_version', lambda session, model: None), self.f.SessionLocal() as db:
+            self.assertEqual(changed, batch_import_history.current_imports(db, self.f.case.id, [self.source_id]))
+        self.assertNotEqual(changed, first)
+
+    def test_a_receipt_from_rows_this_transaction_wrote_is_not_saved(self):
+        from services.financial import row_versions
+        with patch.object(row_versions, 'memoisable', lambda version, floor: False), self.f.SessionLocal() as db:
+            batch_import_history.current_imports(db, self.f.case.id, [self.source_id])
+        self.restart()
+        with patch.object(batch_import_history, '_current_imports', wraps=batch_import_history._current_imports) as built, \
+                self.f.SessionLocal() as db:
+            batch_import_history.current_imports(db, self.f.case.id, [self.source_id])
+        self.assertEqual(built.call_count, 1)

@@ -66,6 +66,23 @@ _RECEIPTS_LOCK = Lock()
 RECEIPTS_KEPT = 20_000
 
 
+def _saved_receipts():
+    """Receipts saved to disk under the same keys, for every worker and the next start of the same code.
+
+    A worker started by a release had none in memory: d5b330d1's first batch open rebuilt 1,066 receipts from
+    595 MB of saved readings (69 s of 85-110 s per worker, 2026-11-01), past the page's one-minute limit. The
+    release warm-up (view_warmup) saves them before the restart; each worker reads them back. Same rules as every
+    saved Financial value (view_cache.VersionMemo): this database, this code identity, committed row versions."""
+    global _SAVED
+    if _SAVED is None:
+        from services.financial.view_cache import VersionMemo
+        _SAVED = VersionMemo('batch-receipts', RECEIPTS_KEPT, decode=lambda saved: saved)
+    return _SAVED
+
+
+_SAVED = None
+
+
 def _row_version(session, model):
     """SQL for a row's version, or None where the database has none (SQLite)."""
     if session.get_bind().dialect.name != 'postgresql':
@@ -131,6 +148,21 @@ def current_imports(session, case_id, source_ids):
             else:
                 missing.append(document_id)
     if missing:
+        saved_store = _saved_receipts()
+        saved_store.bind(session, outside_view=True)
+        from services.financial.view_cache import _MISSING
+        unsaved = []
+        for document_id in missing:
+            saved = saved_store.saved((str(document_id), keys[document_id]))
+            if saved is _MISSING:
+                unsaved.append(document_id)
+                continue
+            receipts[document_id] = saved
+            with _RECEIPTS_LOCK:
+                _RECEIPTS[document_id] = (keys[document_id], deepcopy(saved))
+                _RECEIPTS.move_to_end(document_id)
+        missing = unsaved
+    if missing:
         # A row changed between these reads gets a new version, so a receipt
         # computed from newer rows is stored under an older key at worst; the
         # next read sees the newer version and computes it again.
@@ -147,9 +179,23 @@ def current_imports(session, case_id, source_ids):
                 # A private copy: the receipt can share lists with this session's objects.
                 _RECEIPTS[document_id] = (keys[document_id], deepcopy(receipt))
                 _RECEIPTS.move_to_end(document_id)
+                saved_store.keep((str(document_id), keys[document_id]), receipt)
             while len(_RECEIPTS) > RECEIPTS_KEPT:
                 _RECEIPTS.popitem(last=False)
+        saved_store.flush()
     return {identifier: deepcopy(receipts[row.id]) for identifier, row in current.items() if row.id in receipts}
+
+
+def warm(*, case_id, db):
+    """Compute and save the receipt of every admitted statement of the case (release warm-up, view_warmup).
+
+    Every batch item imported in this case resolves to one of these: its source, or the current statement of its
+    replacement chain. Nothing is written to the database."""
+    try:
+        current_imports(db, case_id, list(db.scalars(select(Source.id).where(
+            Source.case_id == case_id, Source.status == 'admitted').order_by(Source.id))))
+    finally:
+        db.rollback()
 
 
 def _current_imports(session, case_id, source_ids):

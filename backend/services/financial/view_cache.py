@@ -471,25 +471,58 @@ class VersionMemo:
                     self._pending[_memo_key(key)] = encoded
         return value
 
+    def _bind_scope(self, session):
+        """(scope, transaction mark) of this database and code, or (None, None): off for other databases."""
+        if _dialect(session) != 'postgresql':
+            return None, None
+        try:
+            database, xmax = session.execute(text('SELECT (SELECT system_identifier::text FROM pg_control_system()), '
+                'pg_snapshot_xmax(pg_current_snapshot())::text')).one()
+            if int(xmax) < MEMO_XID_LIMIT and code_identity() is not None:
+                return dict(format=1, memo=self.name, database=database, code=code_identity()), int(xmax)
+        except Exception:
+            logger.warning('Saved %s values unavailable; computing in memory only', self.name, exc_info=True)
+        return None, None
+
+    def saved(self, key):
+        """The value saved under ``key`` since ``bind`` (a private copy), or _MISSING. Counts a saved hit."""
+        from copy import deepcopy
+        with self._lock:
+            if self._scope is None or key is None:
+                return _MISSING
+            found = self._saved.get(_memo_key(key), _MISSING)
+            if found is _MISSING:
+                return _MISSING
+            self.stats['saved_hits'] += 1
+            return self._decode(deepcopy(found))
+
+    def keep(self, key, value):
+        """Save ``value`` under ``key`` at the next ``flush``, if it reads back exactly; the caller has proved every
+        row version in ``key`` committed. Nothing is kept in this memo's memory: the caller has its own."""
+        with self._lock:
+            if self._scope is None or key is None:
+                return
+            encoded = _exact_json(value, self._decode)
+            if encoded is not _MISSING:
+                self._pending[_memo_key(key)] = encoded
+
     def _remember(self, key, value):
         self._values[key] = value
         self._values.move_to_end(key)
         while len(self._values) > self.max_entries:
             self._values.popitem(last=False)
 
-    def bind(self, session):
-        """Inside a computing view's snapshot: use the values saved for this database and this code, if any."""
-        scope = None
+    def bind(self, session, outside_view=False):
+        """Inside a computing view's snapshot: use the values saved for this database and this code, if any.
+
+        ``outside_view``: for a caller that is not a cached view and keys its values on committed row versions
+        itself; it adds values only through ``keep``, after proving every version in the key committed
+        (row_versions.memoisable), and reads them through ``saved``. Loading needs no snapshot: a key names fixed
+        row versions."""
+        scope = xmax = None
         directory = _memo_dir()
-        if self._decode is not None and directory is not None and in_snapshot():
-            try:
-                database, xmax = session.execute(text('SELECT (SELECT system_identifier::text FROM pg_control_system()), '
-                    'pg_snapshot_xmax(pg_current_snapshot())::text')).one()
-                if int(xmax) < MEMO_XID_LIMIT and code_identity() is not None:
-                    scope = dict(format=1, memo=self.name, database=database, code=code_identity())
-                    xmax = int(xmax)
-            except Exception:
-                logger.warning('Saved %s values unavailable; computing in memory only', self.name, exc_info=True)
+        if self._decode is not None and directory is not None and (in_snapshot() or outside_view):
+            scope, xmax = self._bind_scope(session)
         with self._lock:
             self._scope = scope
             # The highest transaction mark any bind has seen: an older snapshot binding later must not lower it.
@@ -600,6 +633,14 @@ class VersionMemo:
 
 # Below this many transactions a row version's xmin is unique in the database's life (no wraparound yet).
 MEMO_XID_LIMIT = 2 ** 32
+
+
+def _dialect(session):
+    """The session's database dialect name, or None."""
+    try:
+        return session.get_bind().dialect.name
+    except Exception:
+        return None
 
 
 def _memo_dir():

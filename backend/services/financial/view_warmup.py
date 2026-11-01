@@ -442,6 +442,7 @@ def _warm_cases_now(share, stop_if_preparing):
     from routers.financial_statement_import import account_types as get_account_types
     from routers.financial_statement_import import list_financial_batches
     from services.financial.review_queue import warm as warm_review_queue
+    from services.financial.batch_import_history import warm as warm_batch_receipts
     from services.financial import view_cache
     from routers.financial_ledger import (get_counterparty_party_analysis, get_ledger_posting_graph,
                                           get_ledger_timeline, get_ledger_transfer_candidates, get_pattern_review,
@@ -487,6 +488,10 @@ def _warm_cases_now(share, stop_if_preparing):
         # Its own cache (review_queue), saved to disk for the workers; first read after a start was 54.1 s on
         # d5b330d1 and 15.7 s on 49494305 (live 2026-10-30 18:29).
         ('review queue', warm_review_queue, {}),
+        # Per-statement receipts of imported batch items, saved to disk for the workers: a worker started by a
+        # release rebuilt them on a large batch's first open (d5b330d1 batch 30231f0a: 85-110 s per worker,
+        # 69 s of it receipts, 2026-11-01), past the page's one-minute limit.
+        ('batch receipts', warm_batch_receipts, {}),
         # Every call recomputed it: d5b330d1 10-39 s live (request_speed, 6 h to 19:00 2026-10-30), 49494305 ~5 s.
         ('batch list', list_financial_batches, {}),
         # The summary panel of the Ledger, Trends and People tabs (LedgerSummaryPanel, include_contributions); the
