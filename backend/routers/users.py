@@ -267,6 +267,9 @@ def update_user(
         target_user.global_role = user_data.role
     if user_data.password is not None:
         target_user.password_hash = hash_password(user_data.password)
+        # The user's existing sign-ins end (password_sessions).
+        from services import password_sessions
+        password_sessions.stamp(target_user)
 
     db.commit()
     db.refresh(target_user)

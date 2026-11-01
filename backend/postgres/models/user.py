@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import Boolean, Enum, String
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, Enum, String
 from sqlalchemy.dialects.postgresql import UUID, CITEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -24,3 +26,5 @@ class User(Base, TimestampMixin):
     )
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # When the password last changed: a sign-in issued before it is refused (routers.auth.get_current_user).
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

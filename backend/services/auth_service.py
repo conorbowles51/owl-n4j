@@ -40,8 +40,10 @@ def authenticate_from_db(db: Session, email: str, password: str):
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Create a JWT access token."""
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
+    now = datetime.utcnow()
+    expire = now + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    # When it was issued: a token from before its user's last password change is refused (password_sessions).
+    to_encode.update({"exp": expire, "iat": now})
     return jwt.encode(to_encode, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
 
 
@@ -52,7 +54,11 @@ def verify_access_token(token: str) -> dict:
         username = payload.get("sub")
         if username is None:
             raise JWTError("Missing subject in token")
-        return {"username": username}
+        issued = payload.get("iat")
+        if issued is None and payload.get("exp") is not None:
+            # Issued before tokens carried iat: only sign-in issues tokens, with the default lifetime.
+            issued = int(payload["exp"]) - ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        return {"username": username, "issued_at": int(issued) if issued is not None else None}
     except JWTError as exc:
         raise exc
 

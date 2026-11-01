@@ -16,6 +16,7 @@ from postgres.session import get_db
 from services.auth_service import auth_service
 from services import activity_trail
 from services import request_speed
+from services import password_sessions
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
@@ -78,10 +79,15 @@ async def get_current_user(
 
     try:
         data = auth_service["verify_access_token"](token)
-        request_speed.note_person(data.get("username") if isinstance(data, dict) else None)
-        return data
     except Exception as err:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(err)) from err
+    if isinstance(data, dict):
+        if await password_sessions.refused(data):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="This sign-in ended when the password was changed. Sign in again.")
+        data = {key: value for key, value in data.items() if key != "issued_at"}
+    request_speed.note_person(data.get("username") if isinstance(data, dict) else None)
+    return data
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -150,6 +156,7 @@ def me(
 @router.put("/change-password")
 def change_password(
     request: ChangePasswordRequest,
+    response: Response,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -169,6 +176,10 @@ def change_password(
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
     db_user.password_hash = hash_password(request.new_password)
+    # Every other sign-in of this user ends; this one continues with a new token.
+    password_sessions.stamp(db_user)
     db.commit()
+    token = auth_service["create_access_token"]({"sub": db_user.email})
+    _set_access_cookie(response, token)
 
-    return {"success": True, "message": "Password updated successfully"}
+    return {"success": True, "message": "Password updated successfully", "access_token": token}

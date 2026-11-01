@@ -74,6 +74,9 @@ async def _authorize_job_subscription(websocket: WebSocket, job_id: str) -> bool
     try:
         token_data = auth_service["verify_access_token"](token)
         email = token_data["username"]
+        from services import password_sessions
+        if await password_sessions.refused(token_data):
+            raise PermissionError("This sign-in ended when the password was changed")
 
         from services import evidence_engine_client
 
