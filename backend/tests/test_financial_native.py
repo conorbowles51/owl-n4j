@@ -543,6 +543,20 @@ class SniffTests(NativeTestCase):
         self.assertNotIn(b"{4:", bare)
         self.assertIs(detect_format(bare), NativeFormat.mt940)
 
+    def test_a_pdf_whose_stream_holds_a_swift_block_marker_is_not_mt940(self) -> None:
+        """A scanned email PDF was claimed as MT940 from a ``{4:`` inside a compressed stream.
+
+        The shape is the one a person corrected (case 49494305, "002566-002576 Hopper Email 5.31.2023.pdf",
+        admitted with "This is an email not a bank record"): ``%PDF-`` at the head, stream bytes holding ``{4:``
+        and a line beginning ``:20:``. No native format claims a PDF, zip/Office container or image.
+        """
+        pdf = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n1 0 obj\n<< /Length 40 /Filter /FlateDecode >>\nstream\nx\x9c\x8b{4:\x01\n:20:REF\nendstream\n"
+        self.assertEqual(sniff(pdf), ())
+        for head in (b"PK\x03\x04", b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff\xe0", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+            with self.subTest(head=head):
+                self.assertEqual(sniff(head + b"\n{4:\n:20:REF\n"), ())
+        self.assertIs(detect_format(mt940_bytes()), NativeFormat.mt940)
+
     def test_leading_blank_lines_do_not_hide_a_signature(self) -> None:
         self.assertIs(detect_format(b"\n\n   \n" + bai2_bytes()), NativeFormat.bai2)
 

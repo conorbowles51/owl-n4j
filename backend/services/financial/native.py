@@ -492,9 +492,19 @@ def sniff(data: bytes) -> tuple[NativeFormat, ...]:
     Returns all claimants rather than the first, so that ambiguity is a visible
     result rather than something resolved by the order of a dictionary.
     """
-    text = _sniff_text(bytes(data))
+    data = bytes(data)
+    if data.lstrip()[:8].startswith(_BINARY_DOCUMENT_SIGNATURES):
+        return ()
+    text = _sniff_text(data)
     first = _first_content_line(text)
     return tuple(fmt for fmt in NativeFormat if _CLAIMS[fmt](text, first))
+
+
+# A PDF, an Office or zip container or an image is a document, never one of the four text formats. Its compressed
+# streams are arbitrary bytes, so "{4:" or a line starting ":20:" turns up in them by chance: a person had to admit
+# a scanned email PDF ("Hopper Email 5.31.2023") that the MT940 check had claimed from a "{4:" inside a stream.
+_BINARY_DOCUMENT_SIGNATURES = (b"%PDF-", b"PK\x03\x04", b"\xd0\xcf\x11\xe0", b"\x89PNG", b"\xff\xd8\xff",
+                               b"GIF8", b"II*\x00", b"MM\x00*")
 
 
 def detect_format(data: bytes) -> NativeFormat:
