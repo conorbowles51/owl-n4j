@@ -287,11 +287,11 @@ def _saved_scopes(session, case_id):
     scopes = set(current)
     parents, seen = {parent for _, _, _, parent, removed, _ in rows if parent and not removed}, set()
     while parents - seen:
-        current = parents - seen
-        seen |= current
+        wave = parents - seen  # not ``current``: that is the saved scopes' files, returned below
+        seen |= wave
         parents = set()
         ids = []
-        for value in current:
+        for value in wave:
             try:
                 ids.append(UUID(value))
             except ValueError:

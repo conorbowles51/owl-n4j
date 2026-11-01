@@ -10,6 +10,7 @@ read as "every file".
 import hashlib
 import json
 import os
+import threading
 import time
 from uuid import UUID
 
@@ -52,7 +53,9 @@ def save(session, *, case_id, file_ids):
     selection_id = hashlib.sha256(json.dumps([str(case_id), ids]).encode()).hexdigest()[:32]
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     path = _path(directory, selection_id)
-    temporary = path.with_name(path.name + '.%d.tmp' % os.getpid())
+    # One temporary name per process and thread: two saves of the same selection at once (a double click) must not
+    # write into each other's file.
+    temporary = path.with_name(path.name + '.%d.%d.tmp' % (os.getpid(), threading.get_ident()))
     temporary.write_text(json.dumps(dict(case_id=str(case_id), file_ids=ids)), encoding='utf-8')
     os.replace(temporary, path)  # also renews its time: a selection in use is kept
     _trim(directory)

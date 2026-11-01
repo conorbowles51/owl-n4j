@@ -577,6 +577,13 @@ class BatchImportTests(TestCase):
         self.assertEqual(shown['items'][0]['source_document_id'], receipt['source_document_id'])
         self.assertEqual(shown['items'][0]['saved_from_file_id'], str(copy.id))
         with self.f.SessionLocal() as db:
+            # A saved statement recovered from another (statement_recovery_parent_id) left the saved scopes' files
+            # replaced by a set of ids: the batch detail then failed (review 1 Nov).
+            source = db.get(Source, UUID(receipt['source_document_id']))
+            source.metadata_ = {**source.metadata_, 'statement_recovery_parent_id': str(uuid4())}
+            db.commit()
+        self.assertEqual(self.status(batch)['items'][0]['saved_from_file_id'], str(copy.id))
+        with self.f.SessionLocal() as db:
             # The batch's own record is not changed: the projection only shows it.
             self.assertIn(db.get(Item, UUID(shown['items'][0]['id'])).status, ('ready', 'attention'))
             # Removed from Financial: the copy no longer counts as saved, and the statement is offered again.
