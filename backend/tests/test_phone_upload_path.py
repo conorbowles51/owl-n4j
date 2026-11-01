@@ -69,3 +69,67 @@ def test_auto_read_never_marks_a_phone_report_row(monkeypatch):
     ordinary = SimpleNamespace(original_filename="statement.pdf", source_type=None, metadata_={})
     auto_read.mark_registered(ordinary)
     assert ordinary.metadata_[auto_read.MARK]["state"] == "pending"
+
+
+def test_a_copy_interrupted_by_a_kill_leaves_nothing_that_changes_a_report_folder(tmp_path, monkeypatch):
+    """copy_verified writes through a named temporary file; one left by a killed server is removed before the next
+    finish copies or detects anything, so the folder's digest is over the report's own files only."""
+    from routers import evidence_upload_groups as groups
+    folder = tmp_path / "payload" / "Phone" / "files"
+    folder.mkdir(parents=True)
+    (folder / "a.jpg").write_bytes(b"one")
+    leftover = folder / (groups.PARTIAL_PREFIX + "abc123")
+    leftover.write_bytes(b"half")
+    groups.remove_partials(tmp_path / "payload")
+    assert sorted(p.name for p in folder.iterdir()) == ["a.jpg"]
+    source = tmp_path / "src.bin"
+    source.write_bytes(b"two!")
+    import hashlib
+    groups.copy_verified(source, folder / "b.bin", hashlib.sha256(b"two!").hexdigest(), 4)
+    with pytest.raises(HTTPException):
+        groups.copy_verified(source, folder / "c.bin", "0" * 64, 4)
+    assert sorted(p.name for p in folder.iterdir()) == ["a.jpg", "b.bin"]  # no partial left on a refused copy
+    groups.remove_partials(tmp_path / "missing")  # nothing there: no error
+
+
+def test_with_the_engine_off_a_sync_still_finds_report_folders_locally(tmp_path, monkeypatch):
+    from routers import evidence
+    monkeypatch.setattr(evidence, "USE_EVIDENCE_ENGINE", False)
+    report = tmp_path / "Report A"
+    (report / "files" / "Image").mkdir(parents=True)
+    (report / "report.xml").write_bytes(b'<?xml version="1.0"?><project xmlns="http://pa.cellebrite.com/report/2.0">')
+    (report / "files" / "Image" / "inner.xml").write_bytes(b"<x/>")
+    plain = tmp_path / "Statements"
+    plain.mkdir()
+    (plain / "notes.xml").write_bytes(b"<notes/>")
+    staged = tmp_path / evidence._UPLOAD_STAGING_NAME / "Report B"
+    staged.mkdir(parents=True)
+    (staged / "report.xml").write_bytes((report / "report.xml").read_bytes())
+    (tmp_path / "top.xml").write_bytes((report / "report.xml").read_bytes())
+    assert evidence._phone_report_dirs("case", tmp_path) == {report}
+
+
+def test_files_beside_a_report_folder_in_a_phone_zip_are_ordinary_evidence(tmp_path):
+    import zipfile
+    from routers import evidence_upload_groups as groups
+    source = tmp_path / "phone.zip"
+    with zipfile.ZipFile(source, "w") as z:
+        z.writestr("Report/report.xml", b"<project/>")
+        z.writestr("Report/files/a.jpg", b"img")
+        z.writestr("Cover letter.txt", b"letter")
+        z.writestr("Notes/list.csv", b"a,b")
+        z.writestr("__MACOSX/._x", b"junk")
+        z.writestr("phone.zip", b"same name as the container")
+    root = tmp_path / "payload"
+    readable = dict(outcome="readable", roots=[dict(root_path="Report")])
+    out = groups.outside_report(source, root, readable, "phone.zip")
+    assert sorted(m["path"] for m in out) == ["Cover letter.txt", "Notes/list.csv"]
+    assert (root / "Notes" / "list.csv").read_bytes() == b"a,b" and not (root / "Report").exists()
+    assert groups.outside_report(source, tmp_path / "p2", dict(outcome="readable", roots=[dict(root_path="")]),
+                                 "phone.zip") == []
+    assert groups.outside_report(source, tmp_path / "p3", dict(outcome="protected_or_invalid", roots=[]),
+                                 "phone.zip") == []
+    only_report = tmp_path / "only.zip"
+    with zipfile.ZipFile(only_report, "w") as z:
+        z.writestr("Report/report.xml", b"<project/>")
+    assert groups.outside_report(only_report, tmp_path / "p4", readable, "only.zip") == []

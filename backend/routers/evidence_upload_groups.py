@@ -163,9 +163,21 @@ def payload_root(group):
     return Path(uploads.EVIDENCE_DATA_ROOT) / str(group.case_id) / '_upload_groups' / str(group.id) / 'payload'
 
 
+# A copy interrupted by a server kill can leave its temporary file behind; inside a phone report folder it would
+# change the folder's digest, so a later finish removes these before anything is copied or detected.
+PARTIAL_PREFIX = '.owl-partial-'
+
+
+def remove_partials(root):
+    if root.is_dir():
+        for leftover in root.rglob(PARTIAL_PREFIX + '*'):
+            if leftover.is_file() and not leftover.is_symlink():
+                leftover.unlink()
+
+
 def copy_verified(source, target, expected_hash, expected_size):
     target.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(dir=target.parent)
+    fd, temporary = tempfile.mkstemp(dir=target.parent, prefix=PARTIAL_PREFIX)
     digest = hashlib.sha256()
     size = 0
     try:
@@ -183,7 +195,9 @@ def copy_verified(source, target, expected_hash, expected_size):
         if os.path.exists(temporary): os.unlink(temporary)
 
 
-def extract_archive(source, root):
+def extract_archive(source, root, keep=None):
+    """Unpack a verified zip into the payload root. ``keep(path)``, when given, limits which members are written;
+    every member is still checked, and an empty result is then not an error."""
     result, seen, total = [], set(), 0
     try:
         with zipfile.ZipFile(source) as archive:
@@ -200,6 +214,8 @@ def extract_archive(source, root):
                 if str(path).casefold() in seen:
                     raise HTTPException(400, 'Archive contains repeated file paths. No evidence was registered.')
                 seen.add(str(path).casefold())
+                if keep is not None and not keep(path.as_posix()):
+                    continue
                 total += info.file_size
                 if total > MAX_EXPANDED_BYTES:
                     raise HTTPException(413, 'Expanded archive exceeds 64 GB. Split it into smaller archives.')
@@ -218,7 +234,7 @@ def extract_archive(source, root):
                 result.append(dict(path=str(path), size=size, sha256=digest.hexdigest(), stored_path=str(target)))
     except (zipfile.BadZipFile, RuntimeError, OSError) as exc:
         raise HTTPException(400, 'The ZIP archive could not be read. Original uploaded bytes are retained; no evidence was registered.') from exc
-    if not result:
+    if not result and keep is None:
         raise HTTPException(400, 'The archive contains no files to register')
     return result
 
@@ -245,12 +261,28 @@ def case_relative(group, path):
     return Path(path).relative_to(Path(uploads.EVIDENCE_DATA_ROOT) / str(group.case_id)).as_posix()
 
 
+def outside_report(source, root, found, container_path):
+    """Members of a readable phone zip that lie outside every report folder in it, unpacked as ordinary evidence:
+    documents arriving together need not be related (decision D34). The zip itself stays whole as the container.
+    Nothing is unpacked when a report sits at the zip's top level or the zip cannot be read."""
+    roots = [r.get('root_path') or '' for r in found.get('roots') or []]
+    if found.get('outcome') != 'readable' or not roots or '' in roots:
+        return []
+    clash = container_path.casefold()
+
+    def keep(path):
+        return (not skipped_name(path) and path.casefold() != clash
+                and not any(path.startswith(rp + '/') for rp in roots))
+    return extract_archive(source, root, keep)
+
+
 def prepare_payload(group, rows, detect):
     """Verified copy into the payload root. ``detect(case_relative_path)`` is the engine's phone classification
     (01 section 2.5). A phone container is never unpacked here: a zip or UFDR holding a phone report, readable or
     protected, is copied whole (01 section 4.2 step 3); an ordinary zip is unpacked as before. Returns the ordinary
     members and the phone containers."""
     root = payload_root(group)
+    remove_partials(root)
     prepared = []
     by_id = {row.id: row for row in rows}
     for member in group.manifest:
@@ -263,7 +295,7 @@ def prepare_payload(group, rows, detect):
                 return dict(members=extract_archive(source, root), phones=[])
             target = root / safe_path(member['path'])
             copy_verified(source, target, member['sha256'], member['size'])
-            return dict(members=[], phones=[dict(
+            return dict(members=outside_report(source, root, found, member['path']), phones=[dict(
                 path=member['path'], stored_path=str(target), sha256=member['sha256'], size=member['size'],
                 name=PurePosixPath(member['path']).name, kind=found.get('container_kind'), outcome=found['outcome'],
                 roots=[r['root_path'] for r in found.get('roots') or []] or [''],

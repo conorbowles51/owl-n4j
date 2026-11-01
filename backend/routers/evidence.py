@@ -898,11 +898,41 @@ def update_transcript_speakers(
 
 
 
+_REPORT_NAMESPACE = b"http://pa.cellebrite.com/report/2.0"
+
+
+def _local_phone_report_dirs(case_dir: Path) -> set:
+    """Folders below the case directory holding an XML file whose first 4 KB name the phone report namespace. A
+    found folder is not searched further. Loupe's own working areas and hidden folders are skipped, as in a sync."""
+    found = set()
+    for dirpath, dirnames, filenames in os.walk(case_dir):
+        current = Path(dirpath)
+        if current == case_dir:
+            dirnames[:] = [n for n in dirnames if n not in _SYNC_SKIP_DIRS]
+        dirnames[:] = [n for n in dirnames if not n.startswith(".")]
+        if current == case_dir:
+            continue
+        for name in filenames:
+            if not name.lower().endswith(".xml"):
+                continue
+            try:
+                with (current / name).open("rb") as handle:
+                    head = handle.read(4096)
+            except OSError:
+                continue
+            if _REPORT_NAMESPACE in head:
+                found.add(current)
+                dirnames[:] = []
+                break
+    return found
+
+
 def _phone_report_dirs(case_id: str, case_dir: Path) -> set:
     """Report folders under the case directory, from the engine's detector, so a sync never registers a phone
-    report's files one by one. Refuses when the detector cannot be reached rather than guessing."""
+    report's files one by one. Refuses when the detector cannot be reached rather than guessing. With the engine
+    switched off, folders are found locally by the report namespace in an XML file's head."""
     if not USE_EVIDENCE_ENGINE:
-        return set()
+        return _local_phone_report_dirs(case_dir)
     import anyio.from_thread
     try:
         found = anyio.from_thread.run(evidence_engine_client.detect_phone_container, case_id, "")
