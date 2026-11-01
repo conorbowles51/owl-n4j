@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -127,7 +127,10 @@ def _validate_parent(
 
 
 def _validate_link(db: Session, case_id: UUID, link: dict[str, Any]) -> dict[str, Any] | None:
-    """Check a task link target is in the case; a phone target returns its stored anchor."""
+    """Check a task link target is in the case; a phone target returns its stored anchor.
+
+    For a phone_selection the frozen record list is returned under the private key "_members" (not stored).
+    """
     target_type = str(link.get("target_type") or "").strip().lower()
     target_id = str(link.get("target_id") or "").strip()
     if target_type not in TASK_LINK_TYPES or not target_id:
@@ -137,7 +140,10 @@ def _validate_link(db: Session, case_id: UUID, link: dict[str, Any]) -> dict[str
             phone = link_types.resolve_phone_target(db, case_id, target_type, target_id)
         except link_types.LinkTargetError as exc:
             raise WorkValidationError(str(exc)) from exc
-        return link_types.phone_anchor(phone, link.get("source_anchor"))
+        anchor = link_types.phone_anchor(phone, link.get("source_anchor"))
+        if target_type == "phone_selection":
+            anchor["_members"] = tuple(phone.members)
+        return anchor
     try:
         target_uuid = UUID(target_id)
     except (TypeError, ValueError) as exc:
@@ -289,17 +295,25 @@ def _replace_links(
     anchors = [_validate_link(db, task.case_id, link) for link in links]
     db.query(CaseTaskLink).filter(CaseTaskLink.task_id == task.id).delete(synchronize_session=False)
     for link, phone_anchor in zip(links, anchors):
-        db.add(
-            CaseTaskLink(
-                task_id=task.id,
-                case_id=task.case_id,
-                target_type=str(link["target_type"]).lower(),
-                target_id=str(link["target_id"]),
-                label=link.get("label"),
-                source_anchor=phone_anchor if phone_anchor is not None else (link.get("source_anchor") or {}),
-                created_by_user_id=user.id,
+        members = phone_anchor.pop("_members", None) if phone_anchor is not None else None
+        row = CaseTaskLink(
+            id=uuid4(),
+            task_id=task.id,
+            case_id=task.case_id,
+            target_type=str(link["target_type"]).lower(),
+            target_id=str(link["target_id"]),
+            label=link.get("label"),
+            source_anchor=phone_anchor if phone_anchor is not None else (link.get("source_anchor") or {}),
+            created_by_user_id=user.id,
             )
-        )
+        db.add(row)
+        if members is not None:
+            from services import collection_index
+
+            collection_index.write_members(
+                db, case_id=task.case_id, container_type="task", container_id=str(task.id),
+                link_id=row.id, members=members,
+            )
 
 
 def create_task(

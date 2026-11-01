@@ -240,6 +240,26 @@ def _raise_entry_error(db: Session, exc: Exception) -> None:
 
 
 @router.get(
+    "/{case_id}/collections",
+    dependencies=[Depends(require_case_view)],
+)
+def case_collections(
+    case_id: UUID,
+    target_type: str = Query(..., min_length=1, max_length=64),
+    target_ids: list[str] = Query(..., alias="target_ids[]"),
+    db: Session = Depends(get_db),
+):
+    """Where each target is used in this case: findings, theories, notes, dossiers, interviews, tasks, and the
+    selections that hold it. At most 200 ids per request; more is refused with a stated message."""
+    from services import collection_lookup
+
+    try:
+        return collection_lookup.lookup(db, case_id=case_id, target_type=target_type, target_ids=target_ids)
+    except collection_lookup.LookupRefused as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get(
     "/{case_id}/entries",
     response_model=EntryListResponse,
     dependencies=[Depends(require_case_view)],
