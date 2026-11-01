@@ -120,7 +120,12 @@ export function PaymentNamingPanel({
     while (area && !/(auto|scroll)/.test(getComputedStyle(area).overflowY)) area = area.parentElement
     if (!area) return
     const scroller = area
-    const update = () => setRoom(scroller.clientHeight || null)
+    // A sticky element's top offset counts from inside the area's top padding (live 1 Nov: 16 px, which left the
+    // panel 8 px under the window's edge), so the room is the area's height less that padding.
+    const update = () => {
+      const padding = parseFloat(getComputedStyle(scroller).paddingTop) || 0
+      setRoom(scroller.clientHeight ? Math.max(0, scroller.clientHeight - padding) : null)
+    }
     update()
     if (typeof ResizeObserver === "undefined") return
     const observer = new ResizeObserver(update)

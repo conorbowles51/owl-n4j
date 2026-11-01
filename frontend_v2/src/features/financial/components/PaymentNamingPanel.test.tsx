@@ -271,6 +271,32 @@ it("takes its height from the scrolling area it sticks in, not the whole window"
   }
 })
 
+it("leaves out the scrolling area's top padding, which the sticky offset counts from", async () => {
+  // Live 1 Nov (1440x900, d5b330d1 Transactions): the area has 16 px of top padding; sized from its full height
+  // the stuck panel ended 8 px under the window's bottom edge.
+  const height = Object.getOwnPropertyDescriptor(Element.prototype, "clientHeight")!
+  Object.defineProperty(Element.prototype, "clientHeight", {
+    configurable: true,
+    get(this: Element) { const room = this.getAttribute("data-test-room"); return room ? Number(room) : 0 },
+  })
+  try {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <div style={{ overflowY: "auto", paddingTop: "16px" }} data-test-room="663">
+          <div>
+            <Harness rows={[payment("a")]} start="a" />
+          </div>
+        </div>
+      </QueryClientProvider>
+    )
+    const panel = await screen.findByRole("complementary", { name: "Name payments from the statement" })
+    expect(panel.style.getPropertyValue("--naming-room")).toBe("647px")
+  } finally {
+    Object.defineProperty(Element.prototype, "clientHeight", height)
+  }
+})
+
 it("shows a viewer the statement line and the queue with no name field, and never saves", async () => {
   mount([payment("a"), payment("b"), payment("c")], "a", true)
   const panel = await screen.findByRole("complementary", { name: "Statement lines of payments without a name" })
