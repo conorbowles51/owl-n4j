@@ -3,7 +3,7 @@
 Runs the real capture (``app.phone.runner.run_capture``) in a child process and SIGKILLs it ``--kills`` times. Kill k
 uses seed ``--seed + k``. Targets run in stage order, an equal share of the kills each: verifying_container,
 counting, capturing, reconciling, indexing_files (a resumed capture skips stages already finished, so an earlier
-target could not be reached after a later one). The seed draws how long after the child reports that stage the kill lands. A child that
+target could not be reached after a later one). The seed draws, within a share of that stage's duration in the uninterrupted run, how long after the child reports that stage the kill lands. A child that
 has already passed its target is killed in the stage it is in, and the stage actually killed is recorded. After the
 kills the capture runs to the end, and its row digest (``app.phone.digest``) is compared with an uninterrupted
 capture of the same report in a second case.
@@ -30,9 +30,10 @@ sys.path.insert(0, ENGINE)  # run with -I, which leaves the script's own directo
 
 STAGES = ("verifying_container", "counting", "capturing", "reconciling", "indexing_files")
 ORDER = ("verifying_container", "detecting", "counting", "capturing", "reconciling", "indexing_files", "finishing")
-# Upper bound of the delay drawn inside each stage, in seconds; a kill drawn past the stage's end lands in a later one.
-MAX_DELAY = {"verifying_container": 60.0, "counting": 20.0, "capturing": 40.0, "reconciling": 20.0,
-             "indexing_files": 60.0}
+# The delay after a stage starts is drawn from [0, SHARE x that stage's duration in the uninterrupted run]: a resumed
+# stage continues from its cursor and is shorter, so the draw stays well inside it.
+SHARE = 0.4
+DURATION = {}
 
 
 def child(args):
@@ -86,7 +87,10 @@ def _run_to_end(case):
     result = next((json.loads(line[7:]) for line in out if line.startswith("RESULT ")), None)
     if p.returncode or result is None:
         raise SystemExit("capture did not finish (exit %s)" % p.returncode)
-    return result, round(time.time() - t0, 1)
+    marks = [(line.split()[1], float(line.split()[2])) for line in out if line.startswith("STAGE ")]
+    marks.append(("end", time.time()))
+    stages = {name: round(marks[i + 1][1] - at, 1) for i, (name, at) in enumerate(marks[:-1])}
+    return result, round(time.time() - t0, 1), stages
 
 
 def _kill_once(case, k):
@@ -94,7 +98,7 @@ def _kill_once(case, k):
     seed = ARGS.seed + k
     rng = random.Random(seed)
     target = STAGES[k * len(STAGES) // ARGS.kills]
-    delay = rng.uniform(0.0, MAX_DELAY[target] * ARGS.delay_scale)
+    delay = rng.uniform(0.0, max(0.05, SHARE * DURATION.get(target, 1.0)) * ARGS.delay_scale)
     p, lines = _spawn(case)
     current, due, t0 = None, None, time.time()
     while True:
@@ -124,7 +128,8 @@ def main():
     from app.phone.digest import extraction_digest, reconciliation_runs
     conn = store.connect(ARGS.url)
     reference_case, killed_case = _case(conn, "kill-resume reference"), _case(conn, "kill-resume killed")
-    reference, reference_s = _run_to_end(reference_case)
+    reference, reference_s, stages = _run_to_end(reference_case)
+    DURATION.update(stages)
     kills = []
     for k in range(ARGS.kills):
         record = _kill_once(killed_case, k)
@@ -132,12 +137,12 @@ def main():
         print(json.dumps(record), flush=True)
         if record.get("finished"):
             break
-    final, final_s = _run_to_end(killed_case)
+    final, final_s, _ = _run_to_end(killed_case)
     a, b = extraction_digest(conn, reference["extraction_id"]), extraction_digest(conn, final["extraction_id"])
     out = {"label": ARGS.label, "seed": ARGS.seed, "delay_scale": ARGS.delay_scale, "kills_requested": ARGS.kills,
            "kills_landed": sum(1 for r in kills if r.get("killed_in")),
            "killed_in": {s: sum(1 for r in kills if r.get("killed_in") == s) for s in ORDER},
-           "reference": {"seconds": reference_s, **reference}, "final": {"seconds_last_run": final_s, **final},
+           "reference": {"seconds": reference_s, "stage_seconds": stages, **reference}, "final": {"seconds_last_run": final_s, **final},
            "digest_equal": a == b, "tables_differing": [t for t in a if a[t] != b[t]],
            "rows": {t: a[t]["rows"] for t in a}, "reconciliation_runs_after_kills": reconciliation_runs(conn, final["extraction_id"]),
            "kills": kills, "cases": [str(reference_case), str(killed_case)]}
