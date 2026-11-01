@@ -233,7 +233,7 @@ CREATE TABLE phone_extra_info_nodes (
   node_size        text,
   file_document_index smallint,
   file_ordinal     integer,
-  resolution       varchar(24) NOT NULL CHECK (resolution IN ('tagged_file_id','tagged_file_path','unresolved')),
+  resolution       varchar(24) NOT NULL CHECK (resolution IN ('tagged_file_id','tagged_file_path','tagged_file_subpath','unresolved')),
   PRIMARY KEY (extraction_id, document_index, extra_ordinal, body_path),
   FOREIGN KEY (extraction_id, document_index) REFERENCES phone_extraction_documents ON DELETE CASCADE
 );

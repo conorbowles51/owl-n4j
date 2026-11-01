@@ -374,3 +374,48 @@ def test_pause_during_capturing_then_resume_equals_an_uninterrupted_run_and_canc
     finally:
         for c in cases[1:]:
             _drop_case(conn, c)
+
+
+SUBPATH_REPORT = """<?xml version="1.0" encoding="utf-8"?>
+<project id="p-sub" extractionType="Logical" xmlns="http://pa.cellebrite.com/report/2.0">
+  <sourceExtractions><extractionInfo id="0" name="E" /></sourceExtractions>
+  <taggedFiles>
+    <file id="t1" path="/Root/data/app/a.db" size="1" />
+    <file id="t2" path="/Root/data/app/b.db" size="1" />
+    <file id="t3" path="/dup/x.db" size="1" />
+    <file id="t4" path="/DUP/x.db" size="1" />
+  </taggedFiles>
+  <decodedData />
+  <extraInfos>
+    <extraInfo id="r1" type="Model"><sourceInfo><nodeInfos>
+      <nodeInfo id="t1" name="a" path="elsewhere" />
+      <nodeInfo id="q1" name="b" path="\\Root\\data\\app\\b.db" />
+      <nodeInfo id="q2" name="a" path="Image1.bin/Root/data/app/a.db" />
+      <nodeInfo id="q3" name="x" path="Image1.bin/dup/x.db" />
+      <nodeInfo id="q4" name="n" path="Image1.bin/none.db" />
+      <nodeInfo id="q5" name="n" path="data/app/a.db" />
+    </nodeInfos></sourceInfo></extraInfo>
+  </extraInfos>
+</project>
+"""
+
+
+@pytest.mark.skipif(not PG, reason="Requires LOUPE_TEST_PHONE_PG_URL (a scratch PostgreSQL at the alembic head)")
+def test_extra_info_nodes_resolve_by_id_then_path_then_path_without_its_source_name(pg_case, tmp_path):
+    """D24 and D38: by id; else by path in one form; else by the path without its first segment (P01's source
+    names); only when exactly one tagged file has that form. Two files with one form are not chosen between."""
+    from app.phone.runner import run_capture
+    conn, case_id = pg_case
+    folder = tmp_path / str(case_id) / "S8"
+    folder.mkdir(parents=True)
+    (folder / "report.xml").write_text(SUBPATH_REPORT)
+    res = run_capture(conn, data_root=str(tmp_path), case_id=case_id, container_path="S8", root_path="")
+    assert res["state"] == "captured", res
+    rows = conn.execute("SELECT n.node_id, n.resolution, f.source_file_id FROM phone_extra_info_nodes n LEFT JOIN "
+                        "phone_files f ON f.extraction_id = n.extraction_id AND f.document_index = "
+                        "n.file_document_index AND f.ordinal = n.file_ordinal WHERE n.extraction_id = %s "
+                        "ORDER BY n.body_path", (res["extraction_id"],)).fetchall()
+    assert sorted(rows) == sorted([("t1", "tagged_file_id", "t1"), ("q1", "tagged_file_path", "t2"),
+                                   ("q2", "tagged_file_subpath", "t1"), ("q3", "unresolved", None),
+                                   ("q4", "unresolved", None), ("q5", "unresolved", None)])
+    assert res["summary"]["store_extra_nodes"]["tagged_file_subpath"] == 1

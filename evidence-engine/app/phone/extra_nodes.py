@@ -6,7 +6,10 @@ file entry was read from. It becomes one ``phone_extra_info_nodes`` row, resolve
 1. ``tagged_file_id``: its ``id`` equals a tagged file's ``id``;
 2. ``tagged_file_path``: otherwise, its ``path`` equals a tagged file's ``path`` attribute once both are put in one
    form (``path_key``: '\\' to '/', no leading '/', case-folded), when exactly one file has that form;
-3. ``unresolved`` otherwise. Several files with one form are not chosen between.
+3. ``tagged_file_subpath``: otherwise, its path without its first segment has the form of exactly one tagged file's
+   path. Measured on the server P01 (decision D38): every ``nodeInfo`` path there starts with one of 3 source
+   names that no file path carries, and 19,940 of its 46,686 nodes match exactly one file once it is dropped;
+4. ``unresolved`` otherwise. Several files with one form are not chosen between.
 
 The body stays the capture; these rows are an index over it, rebuilt from the bodies on every run.
 """
@@ -40,7 +43,8 @@ def store_extra_nodes(conn, ctx, reporter=None) -> dict:
             k = path_key(path)
             if k:
                 by_path.setdefault(k, []).append((doc, o))
-    stats = {"rows": 0, "tagged_file_id": 0, "tagged_file_path": 0, "unresolved": 0, "id_ambiguous": 0}
+    stats = {"rows": 0, "tagged_file_id": 0, "tagged_file_path": 0, "tagged_file_subpath": 0, "unresolved": 0,
+             "id_ambiguous": 0}
     with conn.transaction():
         with conn.cursor() as c:
             c.execute("DELETE FROM phone_extra_info_nodes WHERE extraction_id = %s", (ext,))
@@ -66,10 +70,15 @@ def store_extra_nodes(conn, ctx, reporter=None) -> dict:
                         else:
                             stats["id_ambiguous"] += 1
                     else:
-                        ph = by_path.get(path_key(a.get("path")))
+                        key = path_key(a.get("path"))
+                        ph = by_path.get(key)
+                        sub = by_path.get(key.split("/", 1)[1]) if key and "/" in key and not ph else None
                         if ph and len(ph) == 1:
                             resolution = "tagged_file_path"
                             fdoc, fo = ph[0]
+                        elif sub and len(sub) == 1:
+                            resolution = "tagged_file_subpath"
+                            fdoc, fo = sub[0]
                         else:
                             resolution = "unresolved"
                     stats[resolution] += 1
