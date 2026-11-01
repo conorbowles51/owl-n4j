@@ -87,3 +87,19 @@ class CurrentViewTests(TestCase):
         with mock.patch.object(review_queue, 'queue_fingerprint', return_value=('now',)), \
                 mock.patch.dict(review_queue._cache, {str(case): (('now',), {'entries': [1]})}):
             self.assertEqual(review_queue.current_view(None, case, latest=True), ({'entries': [1]}, False))
+
+
+class CurrentViewCacheTests(TestCase):
+    def test_a_case_read_by_the_batch_page_is_kept_while_other_cases_are_cached(self):
+        # Live 1 Nov: 9 cases have batches and the memory cache holds 8; a case read only by the batch page was
+        # never moved to the recent end, so the next case cached let it go first.
+        from collections import OrderedDict
+        from services.financial import review_queue
+        cases = [str(uuid4()) for _ in range(review_queue._CACHE_SIZE)]
+        cache = OrderedDict((case, (('now',), {'entries': []})) for case in cases)
+        with mock.patch.object(review_queue, '_cache', cache), mock.patch.dict(review_queue._built_at, {}), \
+                mock.patch.object(review_queue, 'queue_fingerprint', return_value=('now',)):
+            self.assertEqual(review_queue.current_view(None, cases[0]), ({'entries': []}, False))
+            review_queue._store(str(uuid4()), ('now',), {'entries': []})
+            self.assertIn(cases[0], cache)
+            self.assertNotIn(cases[1], cache)

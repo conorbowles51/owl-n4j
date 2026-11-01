@@ -60,7 +60,8 @@ export function BatchProgressSummary({
         [queue.copies, "copies set aside"],
         [queue.not_payment, "fund statements set aside"],
         [queue.left_unimported, "left unimported"],
-        [queue.imported, "already imported from another file"],
+        // Not "from another file": on live 1 Nov, 394 of the 450 were the same file imported through another batch.
+        [queue.imported, "already imported"],
         [queue.assigned, "assigned to another statement"],
       ]
     : []

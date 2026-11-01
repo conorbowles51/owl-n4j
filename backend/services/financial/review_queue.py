@@ -1048,6 +1048,9 @@ def current_view(session, case_id, latest=False):
     key = str(case_id)
     with _lock:
         hit = _cache.get(key)
+        if hit:
+            # A case read here (the batch page) is in use: as in _view, it is the last the cache lets go.
+            _cache.move_to_end(key)
     if hit and hit[0] == fingerprint:
         return hit[1], False
     saved, computed_at = _load_saved_entry(session, key, fingerprint)

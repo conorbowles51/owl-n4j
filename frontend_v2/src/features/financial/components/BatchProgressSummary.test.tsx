@@ -260,3 +260,29 @@ it("says when the queue's lists come from its last view while it is being update
     "1 saved to Financial · 1 prepared reviews still to finish · 2 copies set aside (from the review queue's last view; it is being updated)"
   )
 })
+
+it("names statements already imported without saying they came from another file", () => {
+  // Live 1 Nov: 394 of the 450 statements in the queue's imported list were the same file imported through another
+  // batch; 34 were another upload of the same bytes. "From another file" was wrong for most of them.
+  render(
+    <BatchProgressSummary
+      files={[]}
+      summary={{
+        ...summary,
+        queue: {
+          still_to_finish: 0, updating: false, ready: 0, filled: 0, saving: 0, rechecking: 0, reader_fix: 0, unreadable: 0,
+          copies: 0, not_payment: 0, left_unimported: 0, imported: 3, assigned: 0,
+        },
+      }}
+      available={0}
+      imported={1}
+      pending={0}
+      skipped={0}
+      duplicates={0}
+      assigned={0}
+    />
+  )
+  const line = within(screen.getByLabelText("Your batch progress")).getAllByRole("status")[0]
+  expect(line).toHaveTextContent("· 3 already imported")
+  expect(line).not.toHaveTextContent("from another file")
+})
