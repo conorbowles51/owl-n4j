@@ -297,3 +297,32 @@ it("shows a relayed confirmation as the person's, entered by someone else, besid
   expect(screen.getAllByText(/Corrected by Claude · not confirmed/)).toHaveLength(1)
   expect(screen.getAllByRole("button", { name: /Confirm this correction/ })).toHaveLength(1)
 })
+
+it("names only what a correction changed, and never doubles a note's full stop", async () => {
+  // Live 1 Nov (fdaf956c 3726c790): a number-only correction read "Arrendo Serv SA de CV → Arrendo Serv SA de CV,
+  // account …", and a relay note ending in a full stop was followed by another.
+  const number = {
+    id: "n2",
+    kind: "correction",
+    at: "2026-11-01T15:35:00Z",
+    reason: "Page 1 prints the number",
+    actor_name: "Claude (for Neil Byrne)",
+    origin: { kind: "model", model: "Claude", for: { name: "Neil Byrne" } },
+    before: { holder: "Arrendo Serv SA de CV", institution: "BBVA", account_number: "011280038" },
+    after: { holder: "Arrendo Serv SA de CV", institution: "BBVA", account_number: "0110280038" },
+    confirmed: {
+      by: "Neil Byrne",
+      at: "2026-11-01T15:35:28Z",
+      basis: "Page 1 prints No. de Cuenta 0110280038.",
+      relayed: { by: "Claude", at: "2026-11-01T15:35:28Z", via: "m1", note: "Entered by Claude on his instruction." },
+    },
+  }
+  vi.mocked(fetchAPI).mockResolvedValue(state({ holder: "Arrendo Serv SA de CV", history: [number] }))
+  mount()
+  const line = await screen.findByText((_, node) => node?.tagName === "P" && /^Last corrected by/.test(node.textContent ?? ""))
+  expect(line.textContent).toBe(
+    "Last corrected by Claude for Neil Byrne: account 011280038 → 0110280038. Reason: Page 1 prints the number"
+  )
+  expect(screen.getByText("Entered by Claude on 1 Nov 2026: Entered by Claude on his instruction. Instruction came by m1")).toBeTruthy()
+  expect(document.body.textContent).not.toContain("..")
+})

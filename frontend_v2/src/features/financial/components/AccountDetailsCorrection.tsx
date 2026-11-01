@@ -85,6 +85,9 @@ const dayOf = (value: string) => {
   return match ? `${Number(match[3])} ${MONTHS[Number(match[2]) - 1]} ${match[1]}` : value
 }
 
+/** The full stop that ends the text before the next sentence, unless that text already ends with one. */
+const stop = (before: string | null | undefined) => (before && /[.!?]["')\u201d]?$/.test(before.trim()) ? "" : ".")
+
 /** What changed in one correction, in words. */
 const changeOf = (item: HistoryEntry) =>
   [
@@ -128,9 +131,9 @@ function RelayDetails({ confirmed }: { confirmed: Confirmation }) {
             Entered by {item.by}
             {item.at ? ` on ${dayOf(item.at)}` : ` on ${dayOf(confirmed.at)}`}
             {item.note ? `: ${item.note}` : ""}
-            {item.via ? `. Instruction came by ${item.via}` : ""}
+            {item.via ? `${stop(item.note)} Instruction came by ${item.via}` : ""}
             {item.at_given ? `, given ${dayOf(item.at_given)}` : ""}
-            {item.basis ? `. ${item.basis}` : ""}
+            {item.basis ? `${stop(item.at_given ? "given" : item.via || item.note)} ${item.basis}` : ""}
           </li>
         ))}
       </ul>
@@ -417,12 +420,7 @@ export function AccountDetailsCorrection({
         <div className="space-y-1">
           <p>
             Last corrected by {latest.origin ? `${latest.origin.model} for ${latest.origin.for?.name || "a person"}` : latest.actor_name}:{" "}
-            {latest.before.holder} → {latest.after.holder}
-            {latest.after.account_number !== undefined &&
-            latest.before.account_number !== latest.after.account_number
-              ? `, account ${latest.before.account_number} → ${latest.after.account_number}`
-              : ""}
-            . Reason: {latest.reason}
+            {changeOf(latest)}. Reason: {latest.reason}
           </p>
           {canEdit && (
             <Button
