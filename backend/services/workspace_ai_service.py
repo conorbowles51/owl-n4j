@@ -995,6 +995,7 @@ def accept_output(
             current_user=reviewer,
             expected_version=entry.version,
             links=links,
+            rationale="Accepted Workspace AI proposal",
             ignore_existing=True,
             commit=False,
         )

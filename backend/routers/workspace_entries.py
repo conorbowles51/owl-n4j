@@ -21,6 +21,7 @@ from services.workspace_entry_service import (
     WorkspaceEntryNotFound,
     WorkspaceEntryValidationError,
     add_entry_link,
+    batch_add_entry_links,
     change_confidence,
     change_lifecycle,
     change_significance,
@@ -203,6 +204,13 @@ class TheoryConversionRequest(EntryVersionRequest):
 class TheoryConversionResponse(BaseModel):
     theory: EntryResponse
     finding: EntryResponse
+
+
+class EntryLinkBatchRequest(BaseModel):
+    # The service refuses more than ENTRY_LINKS_BATCH_LIMIT with a stated message; nothing is cut.
+    links: list[EntryLinkInput] = Field(default_factory=list)
+    rationale: str = Field(min_length=1, max_length=500)
+    expected_version: int | None = Field(default=None, ge=1)
 
 
 class EntryLinkCreateRequest(BaseModel):
@@ -558,6 +566,32 @@ def create_case_entry_link(
             current_user=current_user,
             expected_version=request.expected_version,
             link=request.link.model_dump(),
+        )
+    except Exception as exc:
+        _raise_entry_error(db, exc)
+
+
+@router.post(
+    "/{case_id}/entries/{entry_id}/links:batch",
+    dependencies=[Depends(require_case_edit)],
+)
+def batch_case_entry_links(
+    case_id: UUID,
+    entry_id: UUID,
+    request: EntryLinkBatchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Add links a person chose, with their rationale. Returns the added and skipped counts."""
+    try:
+        return batch_add_entry_links(
+            db,
+            case_id=case_id,
+            entry_id=entry_id,
+            current_user=current_user,
+            links=[link.model_dump() for link in request.links],
+            rationale=request.rationale,
+            expected_version=request.expected_version,
         )
     except Exception as exc:
         _raise_entry_error(db, exc)

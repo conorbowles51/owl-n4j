@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import String, asc, cast, desc, or_, select, func, exists
 from sqlalchemy.orm import Session, selectinload
@@ -521,6 +521,7 @@ def _sanitize_link(
         raise WorkspaceEntryValidationError("source_anchor must be an object")
     if metadata is not None and not isinstance(metadata, dict):
         raise WorkspaceEntryValidationError("metadata must be an object")
+    phone = None
     if link_types.is_phone_type(target_type):
         # A phone link is always checked against the case, and carries the mapping version set at collect time.
         try:
@@ -541,6 +542,7 @@ def _sanitize_link(
         "relationship": relationship,
         "source_anchor": source_anchor or {},
         "metadata": metadata or {},
+        "phone_members": phone.members if phone is not None else (),
     }
 
 
@@ -551,11 +553,14 @@ def _append_link(
     link: dict[str, Any],
     *,
     validate_target: bool = True,
+    prepared: bool = False,
 ) -> WorkspaceEntryLink:
-    data = _sanitize_link(
+    """Add one link row. `prepared` means `link` already came from `_sanitize_link` and is not checked again."""
+    data = link if prepared else _sanitize_link(
         db, case_id=entry.case_id, link=link, validate_target=validate_target
     )
     record = WorkspaceEntryLink(
+        id=uuid4(),
         entry_id=entry.id,
         case_id=entry.case_id,
         target_type=data["target_type"],
@@ -567,6 +572,13 @@ def _append_link(
         created_by_user_id=user.id if user else None,
     )
     db.add(record)
+    if record.target_type == "phone_selection":
+        from services import collection_index
+
+        collection_index.write_members(
+            db, case_id=entry.case_id, container_type="entry", container_id=str(entry.id),
+            link_id=record.id, members=data.get("phone_members") or (),
+        )
     return record
 
 
@@ -588,7 +600,7 @@ def _replace_links(
     entry.links.clear()
     db.flush()
     for data in sanitized:
-        _append_link(db, entry, user, data)
+        _append_link(db, entry, user, data, prepared=True)
 
 
 def _load_entry(
@@ -1338,7 +1350,7 @@ def add_entry_link(
         for item in entry.links
     ):
         raise WorkspaceEntryConflict("That item is already linked to this entry")
-    record = _append_link(db, entry, current_user, sanitized)
+    record = _append_link(db, entry, current_user, sanitized, prepared=True)
     entry.version += 1
     entry.updated_by_user_id = current_user.id
     entry.updated_by_email = current_user.email
@@ -1364,10 +1376,15 @@ def add_entry_links(
     current_user: User,
     expected_version: int,
     links: list[dict[str, Any]],
+    rationale: str,
     ignore_existing: bool = False,
     commit: bool = True,
 ) -> dict[str, Any]:
-    """Atomically add a reviewed set of links through the canonical service."""
+    """Atomically add a reviewed set of links through the canonical service.
+
+    `rationale` is the caller's own: Workspace AI acceptance passes its own wording, and links people add go
+    through `batch_add_entry_links` with theirs. Nothing here stamps a rationale the caller did not give.
+    """
 
     entry = _load_entry(db, case_id=case_id, entry_id=entry_id)
     if entry.version != expected_version:
@@ -1386,7 +1403,7 @@ def add_entry_links(
             raise WorkspaceEntryConflict("That item is already linked to this entry")
         seen.add(identity)
         prepared.append(sanitized)
-    added = [_append_link(db, entry, current_user, item) for item in prepared]
+    added = [_append_link(db, entry, current_user, item, prepared=True) for item in prepared]
     if added:
         entry.version += 1
         entry.updated_by_user_id = current_user.id
@@ -1401,7 +1418,7 @@ def add_entry_links(
                 "link_added",
                 current_user,
                 after_state=_link_to_dict(record),
-                rationale="Accepted Workspace AI proposal",
+                rationale=rationale,
             )
     if commit:
         db.commit()
@@ -1410,6 +1427,81 @@ def add_entry_links(
     return {
         "entry_id": str(entry.id),
         "version": entry.version,
+        "added_link_ids": [str(item.id) for item in added],
+    }
+
+
+ENTRY_LINKS_BATCH_LIMIT = 5000
+
+
+def batch_add_entry_links(
+    db: Session,
+    *,
+    case_id: UUID,
+    entry_id: UUID,
+    current_user: User,
+    links: list[dict[str, Any]],
+    rationale: str,
+    expected_version: int | None = None,
+) -> dict[str, Any]:
+    """Add links a person chose, with their own rationale ("Added from Conversations"). Idempotent.
+
+    A target already linked is skipped and counted. One request takes at most ENTRY_LINKS_BATCH_LIMIT links; more
+    is refused with a stated message and nothing is added. One event records the counts and the rationale.
+    """
+
+    rationale = _clean_optional_text(rationale, max_length=500)
+    if not rationale:
+        raise WorkspaceEntryValidationError("Say where these links were added from")
+    if not links:
+        raise WorkspaceEntryValidationError("At least one link is required")
+    if len(links) > ENTRY_LINKS_BATCH_LIMIT:
+        raise WorkspaceEntryValidationError(
+            f"{len(links):,} links were sent; one request takes at most {ENTRY_LINKS_BATCH_LIMIT:,}. "
+            "Send them in parts; nothing was added."
+        )
+    entry = _load_entry(db, case_id=case_id, entry_id=entry_id)
+    if expected_version is not None and entry.version != expected_version:
+        raise WorkspaceEntryConflict(
+            f"Entry changed from version {expected_version} to {entry.version}"
+        )
+    seen = {(item.target_type, item.target_id) for item in entry.links}
+    added: list[WorkspaceEntryLink] = []
+    for raw in links:
+        target_type = link_types.NOTEBOOK_ALIASES.get(raw.get("target_type"), raw.get("target_type"))
+        identity = (target_type, _clean_optional_text(raw.get("target_id"), max_length=512))
+        if identity in seen:
+            continue
+        data = _sanitize_link(db, case_id=case_id, link=raw)
+        seen.add((data["target_type"], data["target_id"]))
+        added.append(_append_link(db, entry, current_user, data, prepared=True))
+    skipped = len(links) - len(added)
+    if added:
+        entry.version += 1
+        entry.updated_by_user_id = current_user.id
+        entry.updated_by_email = current_user.email
+        entry.updated_by_name = current_user.name
+        db.flush()
+        _record_revision(db, entry, current_user)
+        _record_event(
+            db,
+            entry,
+            "link_added",
+            current_user,
+            after_state={
+                "added": len(added),
+                "skipped": skipped,
+                "link_ids": [str(item.id) for item in added],
+                "types": sorted({item.target_type for item in added}),
+            },
+            rationale=rationale,
+        )
+    db.commit()
+    return {
+        "entry_id": str(entry.id),
+        "version": entry.version,
+        "added": len(added),
+        "skipped": skipped,
         "added_link_ids": [str(item.id) for item in added],
     }
 
