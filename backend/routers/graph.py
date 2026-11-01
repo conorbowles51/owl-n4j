@@ -7,6 +7,7 @@ from uuid import UUID
 import hashlib
 import json
 import asyncio
+from services.manual_changes import records
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
@@ -1225,6 +1226,7 @@ def analyze_node_relationships(
 
 
 @router.put("/node/{node_key}", response_model=UpdateNodeResponse)
+@records('entity_property_edit', 'change', subject_type='entity')
 def update_node(node_key: str, request: UpdateNodeRequest, user: dict = Depends(get_current_user)):
     """
     Update investigator-facing fields on an existing node.
@@ -1286,7 +1288,8 @@ def update_node(node_key: str, request: UpdateNodeRequest, user: dict = Depends(
 
 
 @router.put("/node/{node_key}/pin-fact")
-def pin_fact(node_key: str, request: PinFactRequest):
+@records('fact_pin', 'confirm', subject_type='entity', field='verified_fact')
+def pin_fact(node_key: str, request: PinFactRequest, user: dict = Depends(get_current_user)):
     """
     Toggle the pinned status of a verified fact.
 
@@ -1315,7 +1318,8 @@ def pin_fact(node_key: str, request: PinFactRequest):
 
 
 @router.post("/node/{node_key}/verify-insight")
-def verify_insight(node_key: str, request: VerifyInsightRequest):
+@records('insight_confirm', 'confirm', subject_type='entity', field='ai_insight')
+def verify_insight(node_key: str, request: VerifyInsightRequest, user: dict = Depends(get_current_user)):
     """
     Convert an AI insight to a verified fact with user attribution.
 
@@ -1482,6 +1486,7 @@ async def find_similar_entities_stream(
 
 
 @router.post("/merge-entities")
+@records('entity_merge', 'change', subject_type='entity', subject=lambda c: ','.join(map(str, c['body'].get('source_entity_keys') or c['body'].get('entity_keys') or []))[:200], field='merge')
 async def merge_entities(
     request: MergeEntitiesRequest,
     user: dict = Depends(get_current_user),
@@ -1692,6 +1697,7 @@ class RejectedPairResponse(BaseModel):
 
 
 @router.post("/reject-merge")
+@records('merge_suggestion_reject', 'set_aside', subject_type='entity_pair', subject=lambda c: f"{c['body'].get('entity_key_1')},{c['body'].get('entity_key_2')}", field='merge_suggestion')
 def reject_merge_pair(
     request: RejectMergeRequest,
     user: dict = Depends(get_current_user),
@@ -1805,6 +1811,7 @@ def get_rejected_merges(
 
 
 @router.delete("/rejected-merges/{rejection_id}")
+@records('merge_suggestion_unreject', 'change', subject_type='merge_rejection', field='merge_suggestion')
 def undo_rejection(
     rejection_id: str,
     user: dict = Depends(get_current_user),
@@ -1873,6 +1880,7 @@ def undo_rejection(
 
 
 @router.delete("/node/{node_key}")
+@records('entity_delete', 'set_aside', subject_type='entity', field='entity')
 def delete_node(
     node_key: str,
     case_id: str = Query(..., description="REQUIRED: Verify node belongs to this case"),
@@ -1995,6 +2003,7 @@ class UpdateLocationRequest(BaseModel):
 
 
 @router.put("/node/{node_key}/location")
+@records('entity_location_correct', 'change', subject_type='entity', field='location')
 def update_entity_location(
     node_key: str,
     request: UpdateLocationRequest,
@@ -2033,6 +2042,7 @@ def update_entity_location(
 
 
 @router.delete("/node/{node_key}/location")
+@records('entity_location_remove', 'set_aside', subject_type='entity', field='location')
 def remove_entity_location(
     node_key: str,
     case_id: str = Query(..., description="REQUIRED: Verify node belongs to this case"),
@@ -2078,6 +2088,7 @@ class BatchUpdateRequest(BaseModel):
 
 
 @router.put("/batch-update")
+@records('entity_property_edit', 'change', subject_type='entity', field=lambda c: ','.join(sorted({k for u in c['body'].get('updates') or [] for k in (u if isinstance(u, dict) else {}) if k not in ('node_key', 'key', 'case_id')})))
 def batch_update_entities(
     request: BatchUpdateRequest,
     user: dict = Depends(get_current_user),
@@ -2144,6 +2155,7 @@ def generate_insights(
 
 
 @router.delete("/node/{node_key}/insights/{insight_index}")
+@records('insight_reject', 'set_aside', subject_type='entity', field='ai_insight')
 def reject_insight(
     node_key: str,
     insight_index: int,
@@ -2225,6 +2237,7 @@ def list_recycled_entities(
 
 
 @router.post("/recycle-bin/{recycle_key}/restore")
+@records('entity_restore', 'change', subject_type='entity', subject=lambda c: c['kw'].get('recycle_key'), field='entity')
 def restore_recycled_entity(
     recycle_key: str,
     case_id: str = Query(..., description="Case ID"),

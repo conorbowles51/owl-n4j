@@ -1767,6 +1767,10 @@ def save_review(session, *, case_id, batch_id, item_id, request, expected_review
                 updated.pop(key, None)
         metadata.setdefault('financial_review_progress', {})[item.statement_key or ''] = updated
         file.metadata_ = metadata
+        from services.financial.manual_change_kinds import record_review_edit
+        record_review_edit(session, kind='statement_review_edit', case_id=case_id, evidence_file_id=item.file_id,
+                           before=saved['request'] if saved else initial_request(proposal), after=payload,
+                           actor=actor, proposal=proposal)
         saved = updated
     session.commit()
     result = dict(status=item.status, review_revision=batch_review_revision(item.review_request, saved))

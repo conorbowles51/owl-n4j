@@ -20,6 +20,7 @@ from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from typing import Dict, List, Optional
 from uuid import UUID
+from services.manual_changes import records
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -926,6 +927,7 @@ def document_text_matches(
 
 
 @router.put("/{evidence_id}/transcript-speakers")
+@records('transcript_speaker_correct', 'change', subject_type='evidence', subject=lambda c: c['kw'].get('evidence_id'), field='speakers', case=lambda c: c['body'].get('case_id') or (c['result'] or {}).get('case_id') if isinstance(c['result'], dict) else c['body'].get('case_id'))
 def update_transcript_speakers(
     evidence_id: str,
     update: TranscriptSpeakersUpdate,
@@ -2664,6 +2666,7 @@ def _verify_evidence_case_access(
 
 
 @router.put("/relevance")
+@records('evidence_relevance_set', lambda c: 'change' if c['body'].get('is_relevant', True) else 'set_aside', subject_type='evidence', subject=lambda c: ','.join(map(str, c['body'].get('evidence_ids') or []))[:200], field='relevance')
 def set_evidence_relevance(
     body: SetRelevanceRequest,
     user: dict = Depends(get_current_user),

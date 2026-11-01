@@ -26,7 +26,7 @@ from sqlalchemy import event, inspect as sa_inspect, select
 log = logging.getLogger(__name__)
 INBOX = Path(os.environ.get('LOUPE_MANUAL_CHANGE_INBOX', '/mnt/owl-data/fin-wt/headless/MANUAL-CHANGES.jsonl'))
 # The automated-checks login and its own case: their changes are recorded, marked test, and never delivered.
-JOBS_EMAILS = {e.strip().lower() for e in os.environ.get('LOUPE_JOBS_EMAILS', 'jobs-verify@loupe.invalid').split(',')
+JOBS_EMAILS = {e.strip().lower() for e in os.environ.get('LOUPE_JOBS_EMAILS', 'jobs-verify@loupe.invalid,ui-walkthrough@loupe.invalid').split(',')
                if e.strip()}
 VERIFICATION_CASE = os.environ.get('LOUPE_VERIFICATION_CASE', 'cded78d0-e659-44cc-940d-d8f8c8012760')
 CHANGE_TYPES = ('change', 'confirm', 'set_aside')
@@ -332,8 +332,45 @@ def _session_from(kwargs):
     for value in kwargs.values():
         if isinstance(value, Session):
             return value, False
+    return _own_session(), True
+
+
+def _own_session():
+    """A session of its own, for a route that has none (its store is the graph)."""
     from postgres.session import _get_session_local
-    return _get_session_local()(), True
+    return _get_session_local()()
+
+
+# The subject of a route's change, from its path arguments or its body: the first id it names.
+_SUBJECT_KEYS = (('transaction_id', 'transaction'), ('child_key', 'node'), ('parent_key', 'node'),
+                 ('node_key', 'node'), ('judgement_id', 'judgement'), ('source_document_id', 'source_document'),
+                 ('document_id', 'source_document'), ('source_id', 'source_document'), ('account_id', 'account'),
+                 ('evidence_file_id', 'evidence_file'), ('file_id', 'evidence_file'), ('candidate_id', 'candidate'),
+                 ('nomination_id', 'model_nomination'), ('rule_id', 'category_rule'), ('item_id', 'batch_item'),
+                 ('confirmation_id', 'layout_memory'), ('trail_id', 'money_trail'))
+
+
+def _infer_subject(kwargs, body):
+    for source in (kwargs, body or {}):
+        for key, kind in _SUBJECT_KEYS:
+            if source.get(key) is not None:
+                return kind, str(source[key])
+    for key, kind in _SUBJECT_KEYS:
+        many = (body or {}).get(key + 's') or (body or {}).get(key.replace('_id', '_ids'))
+        if isinstance(many, list) and many:
+            return kind, str(many[0]) + (f' (+{len(many) - 1})' if len(many) > 1 else '')
+    return '', ''
+
+
+def _plain(kwargs):
+    """The route's simple arguments (a reason sent as a lone body field, an action, an id)."""
+    out = {}
+    for key, value in kwargs.items():
+        if key == 'case_id' or value is None:
+            continue
+        if isinstance(value, (str, int, float, bool, uuid.UUID)):
+            out[key] = str(value) if isinstance(value, uuid.UUID) else value
+    return out
 
 
 def _call(spec, ctx, default=None):
@@ -355,31 +392,32 @@ def records(kind, change_type='change', *, subject_type='', subject=None, field=
     def decorate(fn):
         def note(kwargs, result):
             try:
-                ctx = dict(kw=kwargs, body=_body(kwargs), result=result)
+                ctx = dict(kw=kwargs, body=_body(kwargs) or {}, result=result)
                 if when is not None and not when(ctx):
                     return
                 db, own = _session_from(kwargs)
                 ctx['db'] = db
                 try:
                     name = _call(kind, ctx)
-                    sid = _call(subject, ctx) if subject is not None else next(
-                        (str(v) for k, v in kwargs.items() if k.endswith(('_id', '_key')) and k != 'case_id'
-                         and v is not None), '')
-                    stype = _call(subject_type, ctx) or ''
-                    res = result if isinstance(result, dict) else {}
                     body = ctx['body']
+                    if subject is not None:
+                        stype, sid = _call(subject_type, ctx) or '', str(_call(subject, ctx) or '')
+                    else:
+                        stype, sid = _infer_subject(kwargs, body)
+                        stype = _call(subject_type, ctx) or stype
+                    res = result if isinstance(result, dict) else {}
                     case_id = _call(case, ctx) if case is not None else (
                         kwargs.get('case_id') or body.get('case_id') or res.get('case_id'))
                     fld = _call(field, ctx) if field is not None else ','.join(
-                        sorted(k for k in body if k not in _NOT_FIELDS))
+                        sorted(k for k in (body or _plain(kwargs)) if k not in _NOT_FIELDS))
                     prod, lay = (_call(producer, ctx) if producer is not None
                                  else producer_for(db, stype, sid))
+                    why = _call(reason, ctx) if reason is not None else (body.get('reason') or kwargs.get('reason'))
                     record_change(
                         db, name, case_id, (stype, sid),
                         _call(before, ctx) if before is not None else res.get('before'),
-                        _call(after, ctx) if after is not None else body,
-                        _actor_from(kwargs),
-                        _call(reason, ctx) if reason is not None else (body.get('reason') or ''),
+                        _call(after, ctx) if after is not None else (body or _plain(kwargs)),
+                        _actor_from(kwargs), why if isinstance(why, str) else '',
                         _call(link, ctx) if link is not None else _default_link(case_id, stype, sid),
                         change_type=_call(change_type, ctx), field=fld, producer=prod, layout=lay,
                         committed=True)
@@ -389,6 +427,8 @@ def records(kind, change_type='change', *, subject_type='', subject=None, field=
             except Exception:  # noqa: BLE001 - the person's save stands
                 log.exception('Recording the manual change for %s failed', getattr(fn, '__name__', fn))
 
+        config = dict(kind=kind, change_type=change_type, subject_type=subject_type, subject=subject, field=field,
+                      before=before, after=after, reason=reason, link=link, producer=producer, case=case, when=when)
         if inspect.iscoroutinefunction(fn):
             @functools.wraps(fn)
             async def wrapped(*args, **kwargs):
@@ -402,6 +442,7 @@ def records(kind, change_type='change', *, subject_type='', subject=None, field=
                 result = fn(*args, **kwargs)
                 note(kwargs, result)
                 return result
+        wrapped.manual_change = config  # read by the per-kind tests and the inventory
         return wrapped
     return decorate
 
@@ -418,10 +459,16 @@ def producer_for(session, subject_type, subject_id):
     """(reader or rule that produced the value, layout fingerprint or bank) for a subject, or ('', '')."""
     try:
         from postgres.models.financial import FinancialAccount, FinancialSourceDocument, FinancialTransaction
-        ident = _uuid(subject_id)
+        ident = _uuid(str(subject_id or '').split('#', 1)[0].split(' ', 1)[0])
         if ident is None or session is None:
             return '', ''
         doc = None
+        if subject_type == 'batch_item':
+            from postgres.models.financial_import_batches import FinancialImportBatchItem
+            item = session.get(FinancialImportBatchItem, ident)
+            if item is None:
+                return '', ''
+            subject_type, ident = 'evidence_file', item.file_id
         if subject_type == 'transaction':
             row = session.get(FinancialTransaction, ident)
             doc = session.get(FinancialSourceDocument, row.source_document_id) if row is not None else None

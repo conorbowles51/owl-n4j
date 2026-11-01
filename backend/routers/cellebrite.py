@@ -10,6 +10,7 @@ Analytics endpoints for the Cellebrite Multi-Phone View:
 
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID
+from services.manual_changes import records
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -133,6 +134,7 @@ class PhoneReportUpdateRequest(BaseModel):
 
 
 @router.patch("/reports/{report_key}")
+@records('device_name_override', 'change', subject_type='phone_report', subject=lambda c: c['kw'].get('report_key'))
 def patch_phone_report(
     report_key: str,
     body: PhoneReportUpdateRequest,

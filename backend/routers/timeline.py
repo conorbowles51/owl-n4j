@@ -4,6 +4,7 @@ from typing import Any, Literal, Optional
 from urllib.parse import quote
 from uuid import UUID
 
+from services.manual_changes import records
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -391,6 +392,7 @@ def preview_timeline_addition(request: TimelineAddition, case_id: UUID = Query(.
 
 
 @router.post("/entries")
+@records('timeline_event_add', 'confirm', subject_type='timeline_event', subject=lambda c: c['body'].get('source_id') or '', field=lambda c: c['body'].get('source_kind') or 'event')
 def add_timeline_entries(request: TimelineAddition, case_id: UUID = Query(...),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_db_user)):
     try:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import UUID
 
+from services.manual_changes import records
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -90,6 +91,7 @@ def get_significant_manifest(
 
 
 @router.post("/{case_id}/entities:batch", response_model=SignificantManifestResponse)
+@records('significant_entity_add', 'confirm', subject_type='entity', subject=lambda c: ','.join(map(str, [e.get('entity_key') if isinstance(e, dict) else e for e in (c['body'].get('entities') or c['body'].get('entity_keys') or [])]))[:200], field='significant')
 def add_entities_to_significant(
     case_id: UUID,
     request: SignificantBatchAddRequest,
@@ -129,6 +131,7 @@ def add_entities_to_significant(
 
 
 @router.post("/{case_id}/entities:remove", response_model=SignificantManifestResponse)
+@records('significant_entity_remove', 'set_aside', subject_type='entity', subject=lambda c: ','.join(map(str, c['body'].get('entity_keys') or []))[:200], field='significant')
 def remove_entities_from_significant(
     case_id: UUID,
     request: SignificantBatchRemoveRequest,
@@ -154,6 +157,7 @@ def remove_entities_from_significant(
 
 
 @router.delete("/{case_id}", response_model=SignificantManifestResponse)
+@records('significant_entity_clear', 'set_aside', subject_type='significant_manifest', subject=lambda c: str(c['kw'].get('case_id')), field='significant')
 def clear_significant_manifest(
     case_id: UUID,
     db: Session = Depends(get_db),

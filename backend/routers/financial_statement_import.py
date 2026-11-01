@@ -4,6 +4,7 @@ import logging
 from datetime import date
 from typing import Literal
 from uuid import UUID
+from services.manual_changes import records
 from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
@@ -74,6 +75,7 @@ def account_detail_selection(body: bulk_statement_details.Selection, case_id: UU
 
 
 @router.post('/account-details/{action}', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('statement_account_details', 'change', when=lambda c: c['kw'].get('action') == 'save')
 def bulk_account_details(action: Literal['preview', 'save'], body: bulk_statement_details.BulkEdit,
         case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -100,6 +102,7 @@ def saved_statement_recovery(source_id: UUID, case_id: UUID = Query(...), db: Se
 
 
 @router.post('/sources/{source_id}/recovery/{action}', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('statement_section_split', 'change', when=lambda c: c['kw'].get('action') == 'save')
 def review_saved_statement_recovery(source_id: UUID, action: Literal['preview', 'save'], body: StatementRecoveryRequest,
         case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -137,6 +140,7 @@ def statement_details(source_id: UUID, case_id: UUID = Query(...), db: Session =
 
 
 @router.put('/sources/{source_id}/details', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('statement_details', 'change')
 def save_statement_details(source_id: UUID, body: StatementDetailsRequest, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -183,6 +187,7 @@ def preview_account_type(account_id: UUID, body: _AccountTypePreview, case_id: U
 
 
 @router.post('/accounts/{account_id}/type', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('account_type', 'change')
 def save_account_type(account_id: UUID, body: account_type_change.AccountTypeRequest, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -195,6 +200,7 @@ def save_account_type(account_id: UUID, body: account_type_change.AccountTypeReq
 
 
 @router.post('/accounts/{account_id}/type/flip-rows', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('row_direction_flip', 'change', field='direction')
 def flip_account_rows(account_id: UUID, body: account_type_change.FlipRowsRequest, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -227,6 +233,7 @@ def preview_account_details(account_id: UUID, body: account_details_correction.A
 
 
 @router.post('/accounts/{account_id}/details', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('account_details', 'change')
 def save_account_details(account_id: UUID, body: account_details_correction.AccountDetailsRequest, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -239,6 +246,7 @@ def save_account_details(account_id: UUID, body: account_details_correction.Acco
 
 
 @router.post('/accounts/{account_id}/details/confirm', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('account_details_confirm', 'confirm')
 def confirm_account_details(account_id: UUID, body: account_details_correction.ConfirmAccountDetailsRequest,
         case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -249,6 +257,7 @@ def confirm_account_details(account_id: UUID, body: account_details_correction.C
 
 
 @router.post('/accounts/{account_id}/details/undo', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('account_details_undo', 'set_aside')
 def undo_account_details(account_id: UUID, body: account_details_correction.UndoAccountDetailsRequest, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -344,6 +353,7 @@ class DuplicateDispositionRequest(_Contract):
 
 
 @router.post('/{evidence_file_id}/duplicate-disposition', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('duplicate_disposition', lambda c: 'set_aside' if c['body'].get('action') == 'ignore' else 'change', field=lambda c: c['body'].get('action', ''), when=lambda c: c['body'].get('action', 'check') != 'check')
 def duplicate_disposition(evidence_file_id: UUID, body: DuplicateDispositionRequest,
         case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     from services.financial.pending_statement_duplicates import decide_duplicate_disposition
@@ -366,6 +376,7 @@ class NotPaymentStatementRequest(_Contract):
 
 
 @router.post('/{evidence_file_id}/not-payment-statement', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('not_payment_statement', lambda c: 'set_aside' if c['body'].get('action') == 'set_aside' else 'change', field=lambda c: c['body'].get('action', ''))
 def not_payment_statement(evidence_file_id: UUID, body: NotPaymentStatementRequest,
         case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     """Put a fund statement set aside as not a payment statement back for review, or set it aside again."""
@@ -444,6 +455,7 @@ def payment_matches(evidence_file_id: UUID, body: PaymentMatchRequest, case_id: 
 
 
 @router.post('/{evidence_file_id}/payment-document/save', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('payment_document_review', 'confirm')
 def save_payment_review(evidence_file_id: UUID, body: PaymentDocumentReviewRequest, case_id: UUID = Query(...),
                         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     from services.workspace_entry_service import WorkspaceEntryValidationError
@@ -498,6 +510,7 @@ def confirm(evidence_file_id: UUID, body: StatementImportRequest, case_id: UUID 
 
 
 @router.post('/sources/{source_id}/manual-payment', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('manual_payment', 'change', field='rows.added')
 def add_manual_statement_payment(source_id: UUID, body: ManualStatementPayment, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     from services.financial.manual_statement_payment import append_payment
@@ -535,6 +548,7 @@ def _change_record(source_id, body, case_id, user, db, restore):
 
 
 @router.post('/sources/{source_id}/withdraw-record', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('record_withdrawal', 'set_aside', field='record')
 def withdraw_statement_record(source_id: UUID, body: RecordWithdrawal, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     """Withdraw a row the investigator added or corrected (kept, reversible)."""
@@ -542,6 +556,7 @@ def withdraw_statement_record(source_id: UUID, body: RecordWithdrawal, case_id: 
 
 
 @router.post('/sources/{source_id}/restore-record', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('record_restore', 'change', field='record')
 def restore_statement_record(source_id: UUID, body: RecordWithdrawal, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     """Restore a withdrawn row."""
@@ -549,6 +564,7 @@ def restore_statement_record(source_id: UUID, body: RecordWithdrawal, case_id: U
 
 
 @router.post('/sources/{source_id}/complete-record', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('record_completion', 'change')
 def complete_imported_record(source_id: UUID, body: CompleteImportedRecord, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     from services.financial.imported_records import complete_record
@@ -581,6 +597,7 @@ def preview_row_assignment(evidence_file_id: UUID, body: RowAssignmentRequest, c
 
 
 @router.post('/{evidence_file_id}/row-assignment/apply', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('row_assignment', 'change', field='rows.statement')
 def apply_row_assignment(evidence_file_id: UUID, body: RowAssignmentRequest, case_id: UUID = Query(...),
                          user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -612,6 +629,7 @@ class ReviewComparisonRequest(BaseModel):
 
 
 @router.post('/{evidence_file_id}/previous-reviews/compare', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('review_recovery_ack', 'confirm')
 def compare_previous_reviews(evidence_file_id: UUID, body: ReviewComparisonRequest, case_id: UUID = Query(...),
                              user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -811,6 +829,7 @@ class SelectedStatementCurrency(BaseModel):
 
 
 @router.post('/batches/{batch_id}/currency', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+@records('statement_currency', 'change', field='currency')
 def set_batch_statement_currency(batch_id: UUID, body: SelectedStatementCurrency, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -853,6 +872,7 @@ def case_layout_memory(case_id: UUID = Query(...), db: Session = Depends(get_db)
 
 
 @router.post('/layout-memory/confirm', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+@records('layout_memory_confirm', 'confirm', subject_type='evidence_file', subject=lambda c: c['body'].get('file_id'), field=lambda c: c['body'].get('field', ''), producer=lambda c: ('layout_memory', c['body'].get('key', '')))
 def confirm_layout_memory(body: LayoutMemoryConfirmation, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -863,6 +883,7 @@ def confirm_layout_memory(body: LayoutMemoryConfirmation, case_id: UUID = Query(
 
 
 @router.post('/layout-memory/{confirmation_id}/withdraw', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+@records('layout_memory_withdraw', 'set_aside')
 def withdraw_layout_memory(confirmation_id: UUID, body: LayoutMemoryWithdrawal, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -991,6 +1012,7 @@ class QueueSave(BaseModel):
 
 
 @router.post('/review/save', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('statement_save', 'confirm', field='statement')
 def save_from_review_queue(body: QueueSave, case_id: UUID = Query(...), user=Depends(get_current_db_user),
         db: Session = Depends(get_db)):
     """Save ready statements from the queue, across batches, with the batch save's admission checks."""
@@ -1026,6 +1048,7 @@ class ProposalGroupConfirm(BaseModel):
 
 
 @router.post('/review/proposal-groups/confirm', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('field_proposal_group', 'confirm', subject_type='proposal_group', subject=lambda c: c['body'].get('group_id'))
 def confirm_review_proposal_group(body: ProposalGroupConfirm, case_id: UUID = Query(...),
         user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     """Confirm one account's proposed value for all its waiting statements at once (fills empty fields only)."""
@@ -1171,6 +1194,7 @@ class SaveFinancialBatchReview(BaseModel):
 
 
 @router.post('/batches/{batch_id}/items/{item_id}/confirm', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+@records('statement_review_confirm', 'confirm', field='statement')
 def confirm_financial_batch_review(batch_id: UUID, item_id: UUID, body: SaveFinancialBatchReview,
         case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -1190,6 +1214,7 @@ def save_financial_batch_review(batch_id: UUID,item_id: UUID,body: SaveFinancial
 
 
 @router.post('/batches/{batch_id}/items/{item_id}/page-image-offer/accept', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+@records('page_image_offer_accept', 'confirm', field='page_image_reading')
 def accept_financial_page_image_offer(batch_id: UUID, item_id: UUID, case_id: UUID = Query(...), offer_id: str = Query(...),
         db: Session = Depends(get_db),
         user=Depends(get_current_db_user)):
@@ -1202,6 +1227,7 @@ def accept_financial_page_image_offer(batch_id: UUID, item_id: UUID, case_id: UU
 
 
 @router.post('/batches/{batch_id}/items/{item_id}/page-image-offer/decline', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+@records('page_image_offer_decline', 'set_aside', field='page_image_reading')
 def decline_financial_page_image_offer(batch_id: UUID, item_id: UUID, case_id: UUID = Query(...), offer_id: str = Query(...),
         db: Session = Depends(get_db),
         user=Depends(get_current_db_user)):
@@ -1231,6 +1257,7 @@ def financial_batch_page_proposals(batch_id: UUID, item_id: UUID, case_id: UUID 
 
 
 @router.post('/batches/{batch_id}/items/{item_id}/pages/{page_number}/confirm', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+@records('page_rows_confirm', 'confirm', field=lambda c: 'page ' + str(c['kw'].get('page_number')))
 def confirm_financial_batch_page(batch_id: UUID, item_id: UUID, page_number: int, body: ConfirmFinancialBatchPage,
         case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     from services.financial import page_row_proposals
@@ -1243,6 +1270,7 @@ def confirm_financial_batch_page(batch_id: UUID, item_id: UUID, page_number: int
 
 
 @router.post('/batches/{batch_id}/files/{source_id}/currency', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+@records('file_currency', 'change', subject_type='evidence_file', field='currency')
 def financial_batch_currency(batch_id: UUID,source_id: UUID,body: FinancialBatchCurrency,case_id: UUID=Query(...),db: Session=Depends(get_db)):
     from services.financial.money import MoneyError
     try:
@@ -1276,6 +1304,7 @@ class BatchImportChoice(BaseModel):
 
 
 @router.post('/batches/{batch_id}/items/{item_id}/import-choice', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])
+@records('batch_item_skip', lambda c: 'set_aside' if c['body'].get('action') == 'skip' else 'change', field=lambda c: c['body'].get('action', ''))
 def choose_batch_import(batch_id: UUID, item_id: UUID, body: BatchImportChoice,
                         case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:

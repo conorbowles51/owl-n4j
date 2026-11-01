@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import UUID
 
+from services.manual_changes import records
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -209,6 +210,7 @@ def retry_workspace_ai_output(
     response_model=WorkspaceAIOutputResponse,
     dependencies=[Depends(require_case_edit)],
 )
+@records('workspace_ai_accept', 'confirm', subject_type='workspace_ai_output', subject=lambda c: c['kw'].get('output_id'), field='ai_output')
 def accept_workspace_ai_output(
     case_id: UUID,
     output_id: UUID,
@@ -231,6 +233,7 @@ def accept_workspace_ai_output(
     response_model=WorkspaceAIOutputResponse,
     dependencies=[Depends(require_case_edit)],
 )
+@records('workspace_ai_reject', 'set_aside', subject_type='workspace_ai_output', subject=lambda c: c['kw'].get('output_id'), field='ai_output')
 def reject_workspace_ai_output(
     case_id: UUID,
     output_id: UUID,

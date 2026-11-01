@@ -7,6 +7,7 @@ correction path, which writes its own adjudication; this router links it and kee
 import logging
 from uuid import UUID
 
+from services.manual_changes import records
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -129,6 +130,7 @@ def model_work_statements(case_id: UUID = Query(...), db: Session = Depends(get_
 
 
 @router.post("/statements/{source_document_id}/confirm")
+@records('model_statement_confirm', 'confirm', field='model_statement')
 def confirm_statement(source_document_id: UUID, body: Confirm | None = None, case_id: UUID = Query(...),
                             current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     """A person confirms, in one action, a statement Claude saved or entered for a person."""
@@ -141,6 +143,7 @@ def confirm_statement(source_document_id: UUID, body: Confirm | None = None, cas
 
 
 @router.post("/{judgement_id}/confirm")
+@records('judgement_confirm', 'confirm', field=lambda c: str((c['result'] or {}).get('target_key') or '') if isinstance(c['result'], dict) else '')
 def confirm_judgement(judgement_id: UUID, body: Confirm | None = None, case_id: UUID = Query(...),
                             current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:
@@ -169,6 +172,7 @@ def correct_judgement(judgement_id: UUID, body: Correct, case_id: UUID = Query(.
 
 
 @router.post("/{judgement_id}/reopen")
+@records('judgement_reopen', 'change', field='status')
 def reopen_judgement(judgement_id: UUID, case_id: UUID = Query(...),
                            current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     try:

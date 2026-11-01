@@ -71,6 +71,10 @@ def save_progress(session, *, case_id, evidence_file_id, request, expected_revie
         metadata.setdefault('financial_review_history', []).append(previous)
     metadata.setdefault('financial_review_progress', {})[request.statement_id or ''] = saved
     file.metadata_ = metadata
+    from services.financial.manual_change_kinds import record_review_edit
+    record_review_edit(session, kind='statement_review_edit', case_id=case_id, evidence_file_id=evidence_file_id,
+                       before=previous['request'] if previous else initial_request(proposal), after=payload,
+                       actor=actor, proposal=proposal)
     session.commit()
     # Batch lists reuse stored readiness; bring this period's batch items current.
     from services.financial.import_batches import refresh_file_readiness

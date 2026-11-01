@@ -38,6 +38,7 @@ authorises one send and a send cannot be un-sent.
 import logging
 from uuid import UUID
 
+from services.manual_changes import records
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, sessionmaker
 from pydantic import BaseModel, Field
@@ -93,6 +94,7 @@ router = APIRouter(
 
 
 @router.post("/candidates/{candidate_id}/review")
+@records('candidate_review', lambda c: {'resolved': 'confirm', 'rejected': 'set_aside'}.get(c['body'].get('status'), 'change'), field=lambda c: 'reading' if c['body'].get('reading') else c['body'].get('status', ''))
 def record_candidate_review(candidate_id: UUID, body: CandidateReviewRequest,
                                   case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
                                   db: Session = Depends(get_db)):
@@ -166,6 +168,7 @@ def _respond_admission(result) -> dict:
 
 
 @router.post("/transactions/{transaction_id}/quarantine")
+@records('quarantine', 'set_aside', field='ledger_status')
 def quarantine_transaction_row(
     transaction_id: UUID,
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
@@ -204,6 +207,7 @@ def quarantine_transaction_row(
 
 
 @router.post("/transactions/{transaction_id}/release")
+@records('release', 'change', field='ledger_status')
 def release_transaction_row(
     transaction_id: UUID,
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
@@ -237,6 +241,7 @@ def release_transaction_row(
 
 
 @router.post("/files/{file_id}/admit")
+@records('file_admit', 'change', field='document_pipeline')
 def admit_file_to_document_pipeline(
     file_id: UUID,
     case_id: UUID = Query(..., description="REQUIRED: Case ID"),
@@ -306,6 +311,7 @@ class AmountCorrectionRequest(AmountCorrectionPreviewRequest):
 
 
 @router.post("/transactions/{transaction_id}/correction")
+@records('transaction_correction', 'change')
 def record_amount_correction(
     transaction_id: UUID, payload: AmountCorrectionRequest,
     case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
@@ -343,6 +349,7 @@ def amount_correction_preview(
 
 
 @router.post("/documents/{document_id}/duplicate-decision")
+@records('duplicate_decision', lambda c: 'set_aside' if c['body'].get('action') == 'exclude' else 'change', field=lambda c: c['body'].get('action', ''))
 def record_duplicate_decision(
     document_id: UUID,
     payload: DuplicateDecisionRequest,
@@ -368,6 +375,7 @@ class KeepDuplicateCopyRequest(BaseModel):
 
 
 @router.post("/documents/{document_id}/keep-duplicate-copy")
+@records('duplicate_keep_copy', 'change', field='kept_copy')
 def keep_duplicate_copy(
     document_id: UUID,
     payload: KeepDuplicateCopyRequest,
@@ -392,6 +400,7 @@ class RestoreReplacedStatementRequest(BaseModel):
 
 
 @router.post("/documents/{document_id}/restore-replaced-statement")
+@records('reader_replacement_restore', 'set_aside', field='reading')
 def restore_replaced_statement(
     document_id: UUID,
     payload: RestoreReplacedStatementRequest,
@@ -429,6 +438,7 @@ def record_candidate_account(candidate_id: UUID, body: CandidateAccountRequest,
 
 
 @router.post("/candidate-sources/{evidence_file_id}/finalize")
+@records('candidate_finalize', 'confirm', field='candidates')
 def record_candidate_finalization(evidence_file_id: UUID, body: CandidateFinalizationRequest,
                                         case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
                                         db: Session = Depends(get_db)):
@@ -491,6 +501,7 @@ def remove_money_trail(trail_id: UUID, body: RemoveMoneyTrail, case_id: UUID = Q
         raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
 
 @router.post("/account-parties")
+@records('account_party', 'change')
 def record_account_party(body: AccountPartyRequest, case_id: UUID = Query(...),
                          db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     try:
@@ -501,6 +512,7 @@ def record_account_party(body: AccountPartyRequest, case_id: UUID = Query(...),
 from services.financial.counterparty_parties import CounterpartyPartyRequest, set_counterparty_party
 
 @router.post('/counterparty-parties')
+@records('counterparty_party', 'change')
 def record_counterparty_party(body: CounterpartyPartyRequest, case_id: UUID = Query(...),
         db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     try:
@@ -533,6 +545,7 @@ def request_pdf_model_nomination(evidence_file_id: UUID, body: PdfModelNominatio
 
 
 @router.post("/model-nominations/{nomination_id}/abandon")
+@records('model_attempt_abandon', 'set_aside', field='model_attempt')
 def abandon_pdf_nomination(nomination_id: UUID, case_id: UUID = Query(...), current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     from services.financial.model_pdf_nomination import abandon_pdf_model_nomination
     from services.financial.pdf_candidates import PdfMappingError
@@ -591,6 +604,7 @@ def create_payment_category(body: CreatePaymentCategoryRequest, case_id: UUID = 
 
 
 @router.put("/ledger/payment-labels")
+@records('payment_label_change', 'change')
 def put_payment_labels(body: PaymentLabelsRequest, case_id: UUID = Query(...),
                        db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     try:
@@ -603,6 +617,7 @@ def put_payment_labels(body: PaymentLabelsRequest, case_id: UUID = Query(...),
 
 
 @router.post("/ledger/payment-labels/confirm")
+@records('payment_label_confirm', 'confirm')
 def confirm_payment_label(body: ConfirmPaymentLabelsRequest, case_id: UUID = Query(...),
                           db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     """A person confirms a name a model read: the name stays, the person becomes its actor, the reading stays in
@@ -617,6 +632,7 @@ def confirm_payment_label(body: ConfirmPaymentLabelsRequest, case_id: UUID = Que
 
 
 @router.post("/ledger/payment-labels/remove")
+@records('payment_label_remove', 'set_aside')
 def remove_payment_label(body: RemovePaymentLabelsRequest, case_id: UUID = Query(...),
                          db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     """Undo a saved name: the statement's own reading shows again; the removal is kept in the label history."""
@@ -637,6 +653,7 @@ class ApplyLikeRequest(BaseModel):
 
 
 @router.post('/ledger/payment-categories/apply-like')
+@records('category_apply_like', 'change', field='category')
 def apply_category_to_like(body: ApplyLikeRequest, case_id: UUID = Query(...), db: Session = Depends(get_db),
                            current_user=Depends(get_current_db_user)):
     """Give the payments like this one the person's category, recorded as learned from it."""
@@ -664,6 +681,7 @@ class CategoryRuleRequest(BaseModel):
 
 
 @router.post('/ledger/payment-categories/rules')
+@records('category_rule_save', 'change', field='category')
 def make_category_rule(body: CategoryRuleRequest, case_id: UUID = Query(...), db: Session = Depends(get_db),
                        current_user=Depends(get_current_db_user)):
     """"Make this a rule for future statements": payments like this one saved from now on get this category."""
@@ -685,6 +703,7 @@ def make_category_rule(body: CategoryRuleRequest, case_id: UUID = Query(...), db
 
 
 @router.post('/ledger/payment-categories/rules/{rule_id}/retire')
+@records('category_rule_retire', 'set_aside', field='category_rule')
 def retire_category_rule(rule_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
                          current_user=Depends(get_current_db_user)):
     """Stop a rule placing future payments; the rule and the payments it placed are kept."""
@@ -721,6 +740,7 @@ def preview_selected_payment_edits(body: PaymentEditRequest, case_id: UUID = Que
 
 
 @router.post('/ledger/payment-edits/confirm')
+@records('payment_edit', 'change')
 def confirm_selected_payment_edits(body: PaymentEditRequest, case_id: UUID = Query(...),
         db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     try:
@@ -738,6 +758,7 @@ from services.financial.account_identity import IdentityRequest, save_identity
 
 
 @router.post('/account-identities')
+@records('account_identity', 'change')
 def record_account_identity(body: IdentityRequest, case_id: UUID = Query(...),
         db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     from services.neo4j_service import neo4j_service
@@ -771,6 +792,7 @@ def preview_account_consolidation(body: ConsolidationRequest, case_id: UUID = Qu
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 @router.post('/account-consolidations')
+@records('account_consolidation', 'change', field='consolidation')
 def save_account_consolidation(body: ConsolidationRequest, case_id: UUID = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     try:
         return save_consolidation(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
@@ -778,6 +800,7 @@ def save_account_consolidation(body: ConsolidationRequest, case_id: UUID = Query
         raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
 
 @router.post('/account-consolidations/undo')
+@records('account_consolidation_undo', 'change', field='consolidation')
 def undo_account_consolidation(body: UndoConsolidationRequest, case_id: UUID = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     try:
         return undo_consolidation(db, case_id=case_id, request=body, actor=actor_from_user(current_user))

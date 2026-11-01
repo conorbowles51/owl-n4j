@@ -17,6 +17,7 @@ from postgres.session import get_db
 from routers.case_access import case_access_dependency
 from routers.users import get_current_db_user
 from services.financial import attach_transaction_locators
+from services.manual_changes import records
 from services.financial.view_cache import cached_view, etagged, in_view, json_response, not_kept
 from services.neo4j_service import neo4j_service
 from services.neo4j.driver import is_transaction_timeout
@@ -356,7 +357,8 @@ def get_financial_volume(
 
 
 @router.put("/categorize/{node_key}")
-def categorize_transaction(node_key: str, body: CategorizeRequest):
+@records('transaction_category', 'change', subject_type='transaction_node', field='category')
+def categorize_transaction(node_key: str, body: CategorizeRequest, current_user: User = Depends(get_current_db_user)):
     """
     Set the financial category on a transaction node.
     """
@@ -376,7 +378,8 @@ def categorize_transaction(node_key: str, body: CategorizeRequest):
 
 
 @router.put("/batch-categorize")
-def batch_categorize_transactions(body: BatchCategorizeRequest):
+@records('transaction_category', 'change', subject_type='transaction_node', field='category')
+def batch_categorize_transactions(body: BatchCategorizeRequest, current_user: User = Depends(get_current_db_user)):
     """
     Set the financial category on multiple transaction nodes at once.
     """
@@ -396,7 +399,8 @@ def batch_categorize_transactions(body: BatchCategorizeRequest):
 
 
 @router.put("/from-to/{node_key}")
-def update_from_to(node_key: str, body: FromToRequest):
+@records('transaction_from_to', 'change', subject_type='transaction_node')
+def update_from_to(node_key: str, body: FromToRequest, current_user: User = Depends(get_current_db_user)):
     """
     Set manual from/to entity override on a transaction node.
     """
@@ -419,7 +423,8 @@ def update_from_to(node_key: str, body: FromToRequest):
 
 
 @router.put("/details/{node_key}")
-def update_transaction_details(node_key: str, body: DetailsRequest):
+@records('transaction_details', 'change', subject_type='transaction_node')
+def update_transaction_details(node_key: str, body: DetailsRequest, current_user: User = Depends(get_current_db_user)):
     """
     Set purpose, counterparty_details, and/or notes on a transaction node.
     """
@@ -441,7 +446,8 @@ def update_transaction_details(node_key: str, body: DetailsRequest):
 
 
 @router.put("/batch-from-to")
-def batch_update_from_to(body: BatchFromToRequest):
+@records('transaction_from_to', 'change', subject_type='transaction_node')
+def batch_update_from_to(body: BatchFromToRequest, current_user: User = Depends(get_current_db_user)):
     """
     Set from/to entity on multiple transaction nodes at once.
     """
@@ -600,7 +606,8 @@ class UpdateAmountRequest(BaseModel):
 
 
 @router.put("/transactions/{node_key}/amount")
-def update_transaction_amount(node_key: str, body: UpdateAmountRequest):
+@records('transaction_amount', 'change', subject_type='transaction_node', field='amount')
+def update_transaction_amount(node_key: str, body: UpdateAmountRequest, current_user: User = Depends(get_current_db_user)):
     """Update a transaction amount with audit trail."""
     if body.new_amount == 0:
         raise HTTPException(status_code=400, detail="Amount cannot be zero")
@@ -621,7 +628,8 @@ def update_transaction_amount(node_key: str, body: UpdateAmountRequest):
 
 
 @router.post("/transactions/bulk-correct")
-def bulk_correct_transactions(body: BulkCorrectRequest):
+@records('transaction_bulk_correct', 'change', subject_type='transaction_node')
+def bulk_correct_transactions(body: BulkCorrectRequest, current_user: User = Depends(get_current_db_user)):
     """Correct exact record keys; older name-based requests must identify one record."""
     try:
         by_key = {}
@@ -686,7 +694,8 @@ class LinkSubTransactionRequest(BaseModel):
 
 
 @router.post("/transactions/{parent_key}/sub-transactions")
-def link_sub_transaction(parent_key: str, body: LinkSubTransactionRequest):
+@records('sub_transaction_link', 'change', subject_type='transaction_node', field='parent')
+def link_sub_transaction(parent_key: str, body: LinkSubTransactionRequest, current_user: User = Depends(get_current_db_user)):
     """Link a child transaction to a parent."""
     if parent_key == body.child_key:
         raise HTTPException(status_code=400, detail="Cannot link a transaction to itself")
@@ -700,9 +709,11 @@ def link_sub_transaction(parent_key: str, body: LinkSubTransactionRequest):
 
 
 @router.delete("/transactions/{child_key}/parent")
+@records('sub_transaction_unlink', 'set_aside', subject_type='transaction_node', field='parent')
 def unlink_sub_transaction(
     child_key: str,
     case_id: str = Query(..., description="REQUIRED: Case ID"),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Remove a child transaction from its parent group."""
     try:

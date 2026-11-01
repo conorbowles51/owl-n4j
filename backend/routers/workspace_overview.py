@@ -5,6 +5,7 @@ from typing import Literal
 from urllib.parse import unquote
 from uuid import UUID
 
+from services.manual_changes import records
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -49,6 +50,7 @@ def read_workspace_overview(
 
 
 @router.put("/{case_id}/attention/{attention_key:path}")
+@records('attention_dismiss', 'set_aside', subject_type='attention_item', subject=lambda c: c['kw'].get('attention_key'), field=lambda c: 'snooze' if c['body'].get('snoozed_until') else 'dismiss')
 def update_personal_attention(
     case_id: UUID,
     attention_key: str,
@@ -74,6 +76,7 @@ def update_personal_attention(
     "/{case_id}/attention/{attention_key:path}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
+@records('attention_clear', 'change', subject_type='attention_item', subject=lambda c: c['kw'].get('attention_key'), field='attention')
 def clear_personal_attention(
     case_id: UUID,
     attention_key: str,
