@@ -38,7 +38,15 @@ export const itemSchema = z.object({
   disposition_revision: z.string().optional(),
   coverage_review: coverageReview.optional(),
   import_decision: z
-    .object({ action: z.string(), reason: z.string() })
+    .object({
+      action: z.string(),
+      reason: z.string(),
+      actor: z.object({ name: z.string().nullish() }).passthrough().nullish(),
+      // A person's skip made in another batch of the case and carried to this one.
+      carried_from: z
+        .object({ batch_id: z.string(), item_id: z.string() })
+        .nullish(),
+    })
     .optional(),
   review_request: z.record(z.string(), z.unknown()).nullish(),
   problems: z.array(

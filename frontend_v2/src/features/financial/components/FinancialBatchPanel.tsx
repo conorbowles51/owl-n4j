@@ -1544,10 +1544,34 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
             )}
             {item.import_decision && (
               <p className="text-sm">
-                {item.import_decision.action === "skip"
-                  ? "Left unimported"
-                  : "Restored to review"}
+                {item.import_decision.action !== "skip"
+                  ? "Restored to review"
+                  : item.import_decision.carried_from
+                    ? `Left unimported in another batch${
+                        item.import_decision.actor?.name
+                          ? ` by ${item.import_decision.actor.name}`
+                          : ""
+                      }`
+                    : "Left unimported"}
                 : {item.import_decision.reason}
+                {item.import_decision.action === "skip" &&
+                  item.import_decision.carried_from && (
+                    <>
+                      {" "}
+                      <button
+                        type="button"
+                        className="underline"
+                        onClick={() =>
+                          change(
+                            item.import_decision!.carried_from!.batch_id,
+                            item.import_decision!.carried_from!.item_id
+                          )
+                        }
+                      >
+                        Open the batch where this was decided
+                      </button>
+                    </>
+                  )}
               </p>
             )}
             {canEdit &&
