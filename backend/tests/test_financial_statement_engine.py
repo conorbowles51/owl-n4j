@@ -4523,3 +4523,56 @@ class EntryBlockTests(unittest.TestCase):
         self.assertEqual([p['name'] for p in PROFILES if p.get('entry_blocks')], ['monex-mexico'])
         with self.assertRaises(ValueError):
             validate(dict(BLOCK_PROFILE, entry_blocks='yes'))
+
+
+class HeadingsInOrderTests(unittest.TestCase):
+    """Amounts printed well right of their headings (the phone training statements and the Financial guide's
+    checking.pdf): each amount column is nearest the NEXT heading, so the nearness hints named the credit column
+    'debit' and the debit column 'balance' and no reading reconciled. Geometry from 'statement-2023-12.pdf'."""
+
+    LINES = [
+        [('BANK STATEMENT', 25000, 152000)],
+        [('Account Name: EMRYS JUNIPER', 25000, 177000)],
+        [('Statement Period: 2023-12-01 - 2023-12-31', 25000, 219000)],
+        [('Date', 31000, 50000), ('Description', 113000, 158000), ('Credit', 391000, 415000),
+         ('Debit', 464000, 485000), ('Balance', 537000, 570000)],
+        [('2023-12-01', 31000, 77000), ('Opening Balance', 113000, 182000), ('1074.13', 565000, 598000)],
+        [('2023-12-02', 31000, 77000), ('Transfer To Dorian Ashdown', 113000, 228000), ('517.69', 497000, 525000), ('556.44', 570000, 598000)],
+        [('2023-12-04', 31000, 77000), ('Transfer To Wren Pennywhistle', 113000, 239000), ('111.51', 497000, 525000), ('444.93', 570000, 598000)],
+        [('2023-12-09', 31000, 77000), ('Transfer From Ellis Greywell', 113000, 227000), ('563.39', 424000, 452000), ('1008.32', 565000, 598000)],
+        [('2023-12-10', 31000, 77000), ('Transfer From Synthetic Grocers', 113000, 244000), ('225.65', 424000, 452000), ('1233.97', 565000, 598000)],
+        [('2023-12-15', 31000, 77000), ('Transfer To Nell Merriweather', 113000, 233000), ('573.30', 497000, 525000), ('660.67', 570000, 598000)],
+        [('2023-12-17', 31000, 77000), ('Transfer From Ellis Greywell', 113000, 227000), ('876.76', 424000, 452000), ('1537.43', 565000, 598000)],
+        [('2023-12-23', 31000, 77000), ('Transfer From Synthetic Grocers', 113000, 244000), ('449.18', 424000, 452000), ('1986.61', 565000, 598000)],
+        [('2023-12-24', 31000, 77000), ('Transfer From Avery Harrowgate', 113000, 245000), ('500.22', 424000, 452000), ('2486.83', 565000, 598000)],
+        [('2023-12-27', 31000, 77000), ('Transfer To Nell Merriweather', 113000, 233000), ('507.36', 497000, 525000), ('1979.47', 565000, 598000)],
+        [('2023-12-31', 31000, 77000), ('Transfer From Nell Merriweather', 113000, 243000), ('160.96', 424000, 452000), ('2140.43', 565000, 598000)],
+        [('2023-12-31', 31000, 77000), ('Closing Balance', 113000, 178000), ('2140.43', 565000, 598000)],
+    ]
+
+    def read(self, revision='on'):
+        # Readings are kept per source revision: each switch setting reads its own revision.
+        return read_statements([dict(page(1, deepcopy(self.LINES)), source_revision=revision)])
+
+    def test_columns_take_the_headings_in_order_and_the_period_reconciles(self):
+        [statement] = self.read()
+        self.assertTrue(statement['engine']['proved'], statement['engine'])
+        moves = [(r['fields']['direction'], str(r['fields']['amount_minor'])) for r in statement['_rows']
+                 if r['kind'] == 'transaction' and not r['excluded']]
+        self.assertEqual(moves, [('debit', '51769'), ('debit', '11151'), ('credit', '56339'), ('credit', '22565'),
+                                 ('debit', '57330'), ('credit', '87676'), ('credit', '44918'), ('credit', '50022'),
+                                 ('debit', '50736'), ('credit', '16096')])
+
+    def test_hints_that_agree_with_nearness_are_unchanged(self):
+        headers = [dict(tokens=[dict(t='Credit', x0=391000, x1=415000), dict(t='Debit', x0=464000, x1=485000),
+                                dict(t='Balance', x0=537000, x1=570000)], width=WIDTH)]
+        aligned = [415000 / WIDTH, 485000 / WIDTH, 570000 / WIDTH]
+        self.assertEqual(E._hints(headers, aligned, WIDTH), {0: 'credit', 1: 'debit', 2: 'balance'})
+        # Two columns under three headings: the order rule does not apply.
+        shifted = [452000 / WIDTH, 598000 / WIDTH]
+        self.assertEqual(E._hints_in_heading_order(headers, shifted, WIDTH), None)
+
+    def test_the_switch_off_keeps_the_nearness_hints(self):
+        with mock.patch.object(E, 'HEADINGS_IN_ORDER', False):
+            [statement] = self.read('off')
+        self.assertEqual((statement['engine']['proved'], statement['engine']['reason']), (False, 'not_reconciled'))

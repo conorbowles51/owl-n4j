@@ -4411,7 +4411,51 @@ def _hints(header_rows, columns, width):
                 hints.setdefault(i, set()).update({scored[0][2], scored[1][2]})
                 continue
             hints.setdefault(i, set()).add(scored[0][2])
-    return {i: next(iter(roles)) for i, roles in hints.items() if len(roles) == 1}
+    found = {i: next(iter(roles)) for i, roles in hints.items() if len(roles) == 1}
+    if HEADINGS_IN_ORDER:
+        ordered = _hints_in_heading_order(header_rows, columns, width)
+        if ordered is not None and len(found) != len(set(found.values())):
+            return ordered
+    return found
+
+
+# Amounts printed well right of their headings (right-aligned at a column edge past the heading, as the
+# phone training statements and the Financial guide's own checking.pdf print them: 'Credit' at 391-415 pt,
+# its amounts end at 452 pt, nearer 'Debit' at 464 pt) are each nearest the NEXT heading, so the nearness
+# hints name one role for two columns ({credit col: 'debit', debit col: 'balance', balance col: 'balance'})
+# and no reading reconciles. When the hints name a role twice and one heading row prints exactly as many
+# money headings as there are amount columns, each heading starting left of its column's edge, the columns
+# take the headings' roles left to right. Off: the nearness hints as before.
+HEADINGS_IN_ORDER = _switch('LOUPE_FINANCIAL_HEADINGS_IN_ORDER')
+
+
+def _hints_in_heading_order(header_rows, columns, width):
+    """{column index: role} from the money headings' left-to-right order, or None (see HEADINGS_IN_ORDER)."""
+    readings = set()
+    for row in header_rows:
+        tokens = sorted(row['tokens'], key=lambda t: t['x0'])
+        headings, index = [], 0
+        while index < len(tokens):
+            for size in (3, 2, 1):
+                group = tokens[index:index + size]
+                if len(group) < size:
+                    continue
+                role = column_role(label(' '.join(t['t'] for t in group)))
+                if role:
+                    if role in ('credit', 'debit', 'balance', 'amount'):
+                        shift = group[0].get('_shift', 0.0) * (row['width'] or width)
+                        headings.append((role, (group[0]['x0'] - shift) / (row['width'] or width)))
+                    index += size
+                    break
+            else:
+                index += 1
+        if (len(headings) != len(columns) or len({role for role, _ in headings}) != len(headings)
+                or any(left >= column for (_, left), column in zip(headings, columns))):
+            return None
+        readings.add(tuple(role for role, _ in headings))
+    if len(readings) != 1:
+        return None
+    return dict(enumerate(next(iter(readings))))
 
 
 def _money_roles(header):
