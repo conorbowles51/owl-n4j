@@ -31,7 +31,14 @@ JOBS_EMAILS = {e.strip().lower() for e in os.environ.get('LOUPE_JOBS_EMAILS', 'j
 VERIFICATION_CASE = os.environ.get('LOUPE_VERIFICATION_CASE', 'cded78d0-e659-44cc-940d-d8f8c8012760')
 CHANGE_TYPES = ('change', 'confirm', 'set_aside')
 # Kinds another feed already delivers (the judgement inbox): recorded and counted, not delivered twice.
-DELIVERED_ELSEWHERE = {'judgement_correct': 'judgement-lessons'}
+DELIVERED_ELSEWHERE = {'judgement_correct': 'judgement-lessons',
+                       # A person undoing a person's decision, or a person's own view setting: no system output was
+                       # changed, so there is no lesson to build. Recorded and counted.
+                       'judgement_reopen': 'not a lesson: undoes a person\'s decision',
+                       'merge_suggestion_unreject': 'not a lesson: undoes a person\'s decision',
+                       'account_consolidation_undo': 'not a lesson: undoes a person\'s decision',
+                       'attention_dismiss': 'not a lesson: a personal view setting',
+                       'attention_clear': 'not a lesson: a personal view setting'}
 # Phone lines carry ids, kinds, counts and links only (CB-INDEX rule 3): no values, names or message text.
 PHONE_SOURCES = {'phone'}
 _CLIP = 600
@@ -56,8 +63,9 @@ def _actor_fields(actor):
     else:
         def get(name, default=None):
             return getattr(actor, name, default)
-    return (str(get('name') or get('username') or ''), str(get('email') or ''),
-            str(get('user_id') or get('id') or ''))
+    username = str(get('username') or '')
+    email = str(get('email') or (username if '@' in username else ''))
+    return (str(get('name') or username or ''), email, str(get('user_id') or get('id') or ''))
 
 
 def _subject(subject):
@@ -170,17 +178,23 @@ def record_change(session, kind, case_id, subject, before, after, actor, reason=
     settled = []
 
     def on_commit(_session):
-        if settled:
+        # SQLAlchemy also fires after_commit when a savepoint is released (each later record opens one): only the
+        # outermost commit is the save committing.
+        if settled or session.in_nested_transaction():
             return
         settled.append('committed')
-        event.remove(session, 'after_soft_rollback', on_rollback)
+        # A listener cannot be removed while its own event runs: each removes the other and stays as a no-op.
+        if event.contains(session, 'after_soft_rollback', on_rollback):
+            event.remove(session, 'after_soft_rollback', on_rollback)
         deliver()
 
     def on_rollback(_session, previous):
-        if not previous.nested:  # a savepoint rolled back inside the save leaves the change standing
+        if not previous.nested and not settled:  # a savepoint rolled back inside the save leaves the change standing
             settled.append('rolled back')
+            if event.contains(session, 'after_commit', on_commit):
+                event.remove(session, 'after_commit', on_commit)
 
-    event.listen(session, 'after_commit', on_commit, once=True)
+    event.listen(session, 'after_commit', on_commit)
     event.listen(session, 'after_soft_rollback', on_rollback)
     return row.id if row is not None else None
 
@@ -230,7 +244,7 @@ def record_judgement_correction(session, item, statement=None, *, committed, act
         f"/cases/{item.get('case_id')}/financial?document={item.get('source_document_id') or ''}"
         f"&judgement={item.get('id')}",
         field=item.get('target_key') or '', producer=item.get('rule_id') or '', committed=committed,
-        source_ref=f"judgement:{item.get('id')}", after_commit=judgement_line)
+        source_ref=f"judgement:{item.get('id')}:{item.get('resolved_at') or ''}"[:200], after_commit=judgement_line)
 
 
 def _clip(value):
@@ -242,7 +256,9 @@ def _clip(value):
 
 def as_line(row):
     phone = row.source in PHONE_SOURCES
-    out = dict(id=str(row.id), at=(row.created_at or datetime.now(timezone.utc)).isoformat(timespec='seconds'),
+    at = row.created_at or datetime.now(timezone.utc)
+    at = (at if at.tzinfo else at.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+    out = dict(id=str(row.id), at=at.isoformat(timespec='seconds'),
                kind=row.kind, type=row.change_type, case=str(row.case_id or ''), subject_type=row.subject_type,
                subject_id=row.subject_id, field=row.field, producer=row.producer, layout=row.layout,
                pattern_key=row.pattern_key, link=row.link, test=bool(row.is_test), historic=bool(row.historic),
@@ -271,14 +287,16 @@ def _known():
         return ''
 
 
-def append(text):
-    """Append one inbox line once (the id decides), under an exclusive lock. Returns True when written."""
+def append(text, check=False):
+    """Append one inbox line under an exclusive lock. Returns True when written. A save's own append writes at once
+    (its record is new); the sync (``check=True``) first makes sure the id is not already there, under the lock.
+    The delivery reads each id once, so the rare line both write is counted once."""
     ident = json.loads(text)['id']
     INBOX.parent.mkdir(parents=True, exist_ok=True)
     with INBOX.open('a') as out:
         fcntl.flock(out.fileno(), fcntl.LOCK_EX)
         try:
-            if f'"id": "{ident}"' in _known():
+            if check and ident in _ids(_known()):
                 return False
             out.write(text)
             out.flush()
@@ -300,7 +318,7 @@ def sync(session):
     added = 0
     for row in session.scalars(select(M).order_by(M.created_at).execution_options(yield_per=500)):
         if str(row.id) not in known:
-            added += append(as_line(row))
+            added += append(as_line(row), check=True)
     return added
 
 
@@ -332,9 +350,9 @@ def _body(kwargs):
     for value in kwargs.values():
         if isinstance(value, BaseModel):
             return value.model_dump(mode='json', exclude_unset=True)
-    for value in kwargs.values():
-        if isinstance(value, dict):
-            return value
+    for name in ('body', 'payload', 'request', 'update'):
+        if isinstance(kwargs.get(name), dict):
+            return kwargs[name]
     return {}
 
 

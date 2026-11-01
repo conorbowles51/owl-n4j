@@ -80,6 +80,34 @@ class RecordAfterCommitTests(FeedTestBase):
             ident = self.change(session, committed=True)
         self.assertEqual([line['id'] for line in self.lines()], [str(ident)])
 
+    def test_several_records_in_one_save_wait_for_its_own_commit(self):
+        # Each record opens a savepoint; SQLAlchemy fires after_commit when one is released. Nothing may be written
+        # before the save itself commits, and a save rolled back after several records writes nothing.
+        with Session(self.engine) as session:
+            self.change(session, field='holder')
+            self.change(session, field='account_number')
+            self.change(session, field='institution')
+            self.assertEqual(self.lines(), [])
+            session.rollback()
+        self.assertEqual(self.lines(), [])
+        with Session(self.engine) as session:
+            self.change(session, field='holder')
+            self.change(session, field='account_number')
+            self.assertEqual(self.lines(), [])
+            session.commit()
+        self.assertEqual(sorted(line['field'] for line in self.lines()), ['account_number', 'holder'])
+
+    def test_a_login_known_only_by_its_username_is_marked_test(self):
+        with Session(self.engine) as session:
+            self.change(session, actor={'username': 'jobs-verify@loupe.invalid'}, committed=True)
+        line = self.lines()[0]
+        self.assertEqual((line['test'], line['actor']), (True, 'jobs'))
+
+    def test_undoing_a_persons_decision_is_counted_not_a_lesson(self):
+        with Session(self.engine) as session:
+            self.change(session, kind='judgement_reopen', committed=True)
+        self.assertIn('not a lesson', self.lines()[0]['delivered_by'])
+
     def test_committed_mode_never_commits_or_expires_the_callers_session(self):
         with Session(self.engine) as session:
             pending = ManualChange(kind='other', change_type='change', pattern_key='other|||')

@@ -168,6 +168,15 @@ class EveryRouteKindTests(FeedTestBase):
         asyncio.run(wrapped(case_id=CASE, current_user=PERSON))
         self.assertEqual([line['kind'] for line in self.lines()], ['entity_merge'])
 
+    def test_a_route_without_a_body_never_records_the_callers_identity_as_the_value(self):
+        def route(node_key='', case_id=None, user=None):
+            return {'ok': True}
+        mc.records('entity_delete', 'set_aside', subject_type='entity')(route)(
+            node_key='n1', case_id=CASE, user={'username': 'alex@example.com'})
+        line = self.lines()[0]
+        self.assertNotIn('alex@example.com', str(line['after']))
+        self.assertEqual(line['subject_id'], 'n1')
+
     def test_the_route_signature_fastapi_reads_is_unchanged(self):
         for key, (endpoint, _config) in self.routes.items():
             with self.subTest(route=key):
