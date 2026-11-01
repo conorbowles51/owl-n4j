@@ -1370,6 +1370,12 @@ parsing, plus COPY of about 1 M rows and file hashing at 100 MB/s or more); it i
 because that report is on the server only. A miss by more than double is a defect to investigate,
 not a reason to cap anything.
 
+Measured inputs for the largest phone (unit 0.1, 1.8): 43,824,116,660 bytes in 237,826 files, and a
+counter parse of 374 s at `nice 19`. At the 37.3 MB/s hashing rate measured at idle IO priority, hashing
+its files takes about 20 min; at 100 MB/s, about 7 min (**estimate, not measured**). Parsing plus hashing
+is therefore about 13 to 26 min before the COPY of about 1 M rows (**estimate, not measured**). The
+capture time itself is measured in unit 2.4.
+
 ---
 
 ## 11. Removal of Loupe's existing Cellebrite ingestion
@@ -1430,6 +1436,15 @@ derived from content); they live in a local file next to the corpus.
 C9 689,601 / 1,674,326 / 284,541); C8's 1.2 figures (1,269,819 / 2,743,889 / 574,716) are the Mac
 split-section reference values, and the server C8's totals are recorded beside them; a rerun gives an
 identical manifest.
+*Result* (`measurements/corpus-manifest-summary.json`, script `measurements/scripts/corpus_manifest.py`):
+the 14 folders hold 1,868,706 files and 211,443,292,785 bytes (reports included; AppleDouble files,
+`.DS_Store` and Loupe v1's own ingest report skipped). The largest folder is P14, C1 of the 3-phone case:
+43,824,116,660 bytes in 237,826 files, report 1,773,269,245 bytes. P10 (C1, 2022 extraction) holds 2
+files, its report among them, while its report lists 15,206 tagged files: every one of its files is
+absent. A second run, reusing the hash cache, gives byte-identical per-report files and an identical
+manifest; P09, P10 and P12 rehashed without the cache give identical files. Element totals against 1.2
+are in 1.8. Hashing measured at idle IO priority beside the live system: the full corpus took 14,895 s
+(14.2 MB/s); P09, P10 and P12 without the cache took 342 s for 12,764,053,764 bytes (37.3 MB/s).
 
 **Unit 0.2: element-level counter.** `app/phone/counter.py` (lxml) per 8.1 to 8.2, with document
 SHA-256 and MD5. Unit tests on synthetic XML for each measure, including a truncated document, a
@@ -1553,7 +1568,7 @@ uninterrupted run. Durations of uninterrupted runs recorded against 10.8.
   folder reports, and how media inside it is laid out. No `.ufdr` sample exists.
 - Whether a split export can hold more than one non-empty records section, and what the six other
   section kinds contain when non-empty (all zero bytes in C8).
-- Total file bytes of the largest phone, hence its exact capture time.
+- The largest phone's capture time on the production host (unit 2.4). Its file bytes are measured (unit 0.1).
 - Whether `enableAutomaticallyConvertToUTC` ever changes the stored XML values (one sample with it
   off still stores `+00:00`).
 - Whether the deployed Loupe database holds rows written by the old Cellebrite ingester.

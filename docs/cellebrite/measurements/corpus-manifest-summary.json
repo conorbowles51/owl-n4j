@@ -1,0 +1,271 @@
+{
+ "reports": [
+  {
+   "case": "1-phone case",
+   "extraction_info_count": 4,
+   "extraction_type": "FileSystem",
+   "file_bytes": 32040497262,
+   "file_count": 37468,
+   "label": "P01",
+   "model_count": 2151,
+   "node_count": 10882,
+   "producer": [
+    "10.7.1.5013"
+   ],
+   "report_bytes": 129326277,
+   "report_version": "8.5",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "1P"
+  },
+  {
+   "case": "10-report case",
+   "extraction_info_count": 3,
+   "extraction_type": "FileSystem",
+   "file_bytes": 15826081697,
+   "file_count": 119482,
+   "label": "P02",
+   "model_count": 36980,
+   "node_count": 72849,
+   "producer": [
+    "7.69.0.10"
+   ],
+   "report_bytes": 298138865,
+   "report_version": "7.48",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "A-C8"
+  },
+  {
+   "case": "10-report case",
+   "extraction_info_count": 1,
+   "extraction_type": "Legacy",
+   "file_bytes": 10116053883,
+   "file_count": 209270,
+   "label": "P03",
+   "model_count": 9910,
+   "node_count": 208602,
+   "producer": [
+    "7.59.1.16"
+   ],
+   "report_bytes": 666071546,
+   "report_version": "7.48",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "A-C1a"
+  },
+  {
+   "case": "10-report case",
+   "extraction_info_count": 2,
+   "extraction_type": "Legacy",
+   "file_bytes": 15272604045,
+   "file_count": 310881,
+   "label": "P04",
+   "model_count": 121076,
+   "node_count": 309779,
+   "producer": [
+    "7.59.1.16"
+   ],
+   "report_bytes": 1308036343,
+   "report_version": "7.48",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "A-C2"
+  },
+  {
+   "case": "10-report case",
+   "extraction_info_count": 3,
+   "extraction_type": "FileSystem",
+   "file_bytes": 10421867295,
+   "file_count": 93150,
+   "label": "P05",
+   "model_count": 25595,
+   "node_count": 92761,
+   "producer": [
+    "7.59.1.16"
+   ],
+   "report_bytes": 308495003,
+   "report_version": "7.48",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "A-C5"
+  },
+  {
+   "case": "10-report case",
+   "extraction_info_count": 3,
+   "extraction_type": "Legacy",
+   "file_bytes": 801324147,
+   "file_count": 43122,
+   "label": "P06",
+   "model_count": 16661,
+   "node_count": 43043,
+   "producer": [
+    "7.59.1.16"
+   ],
+   "report_bytes": 177729844,
+   "report_version": "7.48",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "A-C3"
+  },
+  {
+   "case": "10-report case",
+   "extraction_info_count": 4,
+   "extraction_type": "FileSystem",
+   "file_bytes": 17979013791,
+   "file_count": 81819,
+   "label": "P07",
+   "model_count": 20868,
+   "node_count": 52495,
+   "producer": [
+    "7.69.0.10"
+   ],
+   "report_bytes": 226905350,
+   "report_version": "7.48",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "A-C7"
+  },
+  {
+   "case": "10-report case",
+   "extraction_info_count": 2,
+   "extraction_type": "Logical",
+   "file_bytes": 15730523962,
+   "file_count": 204425,
+   "label": "P08",
+   "model_count": 59839,
+   "node_count": 142388,
+   "producer": [
+    "7.69.0.10"
+   ],
+   "report_bytes": 1367934803,
+   "report_version": "7.48",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "A-C6"
+  },
+  {
+   "case": "10-report case",
+   "extraction_info_count": 2,
+   "extraction_type": "FileSystem",
+   "file_bytes": 1760529805,
+   "file_count": 29107,
+   "label": "P09",
+   "model_count": 2941,
+   "node_count": 29536,
+   "producer": [
+    "7.60.1.9"
+   ],
+   "report_bytes": 80268936,
+   "report_version": "7.48",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "A-C9"
+  },
+  {
+   "case": "10-report case",
+   "extraction_info_count": 2,
+   "extraction_type": "Legacy",
+   "file_bytes": 519294847,
+   "file_count": 2,
+   "label": "P10",
+   "model_count": 15206,
+   "node_count": 17463,
+   "producer": [
+    "7.57.1.9"
+   ],
+   "report_bytes": 519204806,
+   "report_version": "7.48",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "A-C1b"
+  },
+  {
+   "case": "10-report case",
+   "extraction_info_count": 2,
+   "extraction_type": "Legacy",
+   "file_bytes": 13379545498,
+   "file_count": 279700,
+   "label": "P11",
+   "model_count": 117803,
+   "node_count": 234714,
+   "producer": [
+    "7.69.0.10"
+   ],
+   "report_bytes": 1347531828,
+   "report_version": "7.48",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "A-C4"
+  },
+  {
+   "case": "3-phone case",
+   "extraction_info_count": 3,
+   "extraction_type": "FileSystem",
+   "file_bytes": 10484229112,
+   "file_count": 15833,
+   "label": "P12",
+   "model_count": 7281,
+   "node_count": 19978,
+   "producer": [
+    "7.69.0.10"
+   ],
+   "report_bytes": 76929551,
+   "report_version": "7.48",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "B-C3"
+  },
+  {
+   "case": "3-phone case",
+   "extraction_info_count": 2,
+   "extraction_type": "Legacy",
+   "file_bytes": 23287610781,
+   "file_count": 206621,
+   "label": "P13",
+   "model_count": 118990,
+   "node_count": 253695,
+   "producer": [
+    "7.69.0.10"
+   ],
+   "report_bytes": 1503404341,
+   "report_version": "7.48",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "B-C2"
+  },
+  {
+   "case": "3-phone case",
+   "extraction_info_count": 1,
+   "extraction_type": "FileSystem",
+   "file_bytes": 43824116660,
+   "file_count": 237826,
+   "label": "P14",
+   "model_count": 338715,
+   "node_count": 159461,
+   "producer": [
+    "10.9.0.3029"
+   ],
+   "report_bytes": 1773269245,
+   "report_version": "8.5",
+   "skipped": {
+    "v1_owl_ingest_report": 1
+   },
+   "spec05_label": "B-C1"
+  }
+ ],
+ "what": "Structure-only summary of the reference corpus manifest (01 unit 0.1): the 14 server report folders. Counts and versions only; the manifest itself stays on the server."
+}

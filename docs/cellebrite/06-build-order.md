@@ -240,7 +240,7 @@ Results are in `docs/cellebrite/measurements/a3/README.md` and in each owning se
 
 | Measurement | For | Settles | Result |
 |---|---|---|---|
-| 01: largest phone element count, file count and capture timing estimate | 01 section 14 | the 30-minute target and memory budget | P14: 17,283,869 elements, 158,114 tagged files; counter parse 374 s at `nice 19`, flat 44 MiB (01 1.8, 1.9). Folder bytes and hashing time from the manifest (01 unit 0.1) |
+| 01: largest phone element count, file count and capture timing estimate | 01 section 14 | the 30-minute target and memory budget | P14: 17,283,869 elements, 158,114 tagged files; counter parse 374 s at `nice 19`, flat 44 MiB (01 1.8, 1.9); folder 43,824,116,660 bytes in 237,826 files; hashing 37.3 MB/s measured at idle IO priority, so parse plus hashing about 13 to 26 min (**estimate, not measured**; 01 unit 0.1, 10.8). The 30-minute target stands until unit 2.4 measures it |
 | 02: seed counts recomputed directly from the 14 reports | 02-U2 | the seed matches the server, not only the catalogue | **pass**: equal per type on all 14 once `RelatedModels` copies are counted; seed nesting **changed** to the union with the 95 server relations (02 3.5, decision 39) |
 | 02 / 01: examiner zone versus device setting wherever both exist | 01 section 9.3 reverse-if | device zone rule | **pass**: agree on 8 of 9, differ on P12; the rule stands |
 | 03 20.1: whether duplicate copies share the same second | 03-1 | duplicate rule D-9 | **pass**: exact equality finds most copies (03 20.1) |
@@ -295,6 +295,8 @@ The last column lists the tests that 07 section 11 adds to each gate; 07 section
 | G | H | Approach 1 gate (05 section 4.7) recorded either way | J-3b, J-5b, XF-1 to XF-4, XF-7, XF-8, XF-10, XF-12, SA-3 (rest), SA-4, SA-7, SA-8 (second part), CO-10, CO-11, CO-13, CO-18 (agent), CO cells for Graph, the agent evaluation set measured |
 | H | done | Each approach's gate in 05 | J-5c, J-14b, the J-16 equality with approach 12, AP-1, CO-9b, CO cells for analyses |
 | I | done | 05 sections 17.4 to 17.6 | M-5, M-6, M-7, CO-18 (transcript) |
+
+Gate A to B, recorded 2026-11-01: **pass**. Counter stable: lxml and expat agree on all 14 reports with 0 differences, and a second lxml run is identical on C3, C9 and C8 (01 1.8). Server batch recorded: every row of section 5 has a result or a named owner. Reference manifest: a rerun is byte-identical on all 14 reports (01 unit 0.1). 07 merged with change rows U1 to U27 applied, and research note 09 written.
 
 ## 9. Risks and what to do if they occur
 
