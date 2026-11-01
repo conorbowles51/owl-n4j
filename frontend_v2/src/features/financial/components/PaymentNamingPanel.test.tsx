@@ -240,7 +240,7 @@ it("leaves room for the sticky tools bar above it when it sits beside the table"
   mount([payment("a")])
   const panel = await screen.findByRole("complementary", { name: "Name payments from the statement" })
   expect(panel.style.getPropertyValue("--naming-top")).toBe("248px")
-  expect(panel.className).toContain("xl:max-h-[calc(100vh-var(--naming-top)-8px)]")
+  expect(panel.className).toContain("xl:max-h-[calc(100vh-var(--naming-top)-var(--view-header-h,0px)-8px)]")
 })
 
 it("shows a viewer the statement line and the queue with no name field, and never saves", async () => {
