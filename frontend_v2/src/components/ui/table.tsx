@@ -24,7 +24,14 @@ function Table({
       ref={container}
       data-slot="table-container"
       className="relative w-full overflow-x-auto focus-visible:outline-2 focus-visible:outline-ring"
-      {...(overflowing ? { tabIndex: 0, role: "region", "aria-label": name } : {})}
+      {...(overflowing
+        ? {
+            tabIndex: 0,
+            role: "region",
+            // Named by what names the table: its labelling elements when it has them, else its label or caption.
+            ...(props["aria-labelledby"] ? { "aria-labelledby": props["aria-labelledby"] } : { "aria-label": name }),
+          }
+        : {})}
     >
       <table
         data-slot="table"

@@ -60,3 +60,15 @@ it("adds no tab stop or region to a table that fits", () => {
   expect(area.hasAttribute("tabindex")).toBe(false)
   expect(screen.queryByRole("region")).toBeNull()
 })
+
+it("names an overflowing table's region by the elements that label the table", () => {
+  render(
+    <div data-test-wide>
+      <h2 id="payments-heading">Payments</h2>
+      <Table aria-labelledby="payments-heading">{rows}</Table>
+    </div>
+  )
+  const region = screen.getByRole("region", { name: "Payments" })
+  expect(region.getAttribute("aria-labelledby")).toBe("payments-heading")
+  expect(region.hasAttribute("aria-label")).toBe(false)
+})
