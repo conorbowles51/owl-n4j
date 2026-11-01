@@ -106,3 +106,24 @@ class CarryPersonSkipTests(TestCase):
         self.assertEqual(self.item(second).status, 'skipped')
         with self.f.SessionLocal() as db:
             self.assertEqual(service.carry_person_skips(db, self.f.case.id), [])
+
+    def test_a_system_rule_skip_is_not_carried(self):
+        from services.financial.decisions import Actor
+        second = self.second_batch()
+        self.skip(self.first, Actor(name='System', email='system@loupe.local'), reason='Receipt settled')
+        self.assertIn(self.item(second).status, ('ready', 'attention'))
+
+    def test_restoring_the_original_skip_restores_its_carried_copies(self):
+        second = self.second_batch()
+        self.skip(self.first, self.f.actor)
+        self.assertEqual(self.item(second).status, 'skipped')
+        item = self.item(self.first)
+        with self.f.SessionLocal() as db:
+            revision = service._digest(dict(status=item.status, request=item.review_request,
+                                            decision=item.summary.get('import_decision')))
+            service.leave_unimported(db, case_id=self.f.case.id, batch_id=self.first, item_id=item.id, action='restore',
+                                     reason='Skipped by mistake', expected_revision=revision, actor=self.f.actor)
+        restored = self.item(second)
+        self.assertIn(restored.status, ('ready', 'attention'))
+        self.assertEqual(restored.summary['import_decision']['action'], 'restore')
+        self.assertEqual([d['action'] for d in restored.summary['import_decision_history']], ['skip', 'restore'])

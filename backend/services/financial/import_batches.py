@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
@@ -18,7 +19,7 @@ from services.process_shutdown import shutdown_requested
 from services.financial.evidence_intake import resolve_financial_selection, prepare_existing_financial_file
 from services.financial.statement_import import read_statement_import, StatementImportRequest, check_import_request, confirm_statement_import, _date_roles, _primary_date_role
 from services.financial.review_arithmetic import check_proposed_rows, arithmetic_problems, accepted_difference
-from services.financial.model_work import origin_field, origin_of
+from services.financial.model_work import actor_record, origin_field, origin_of
 
 log = logging.getLogger(__name__)
 TERMINAL_FILES = {'checked', 'error'}
@@ -461,9 +462,38 @@ def _own_person_skip(item):
     decision = (item.summary or {}).get('import_decision') or {}
     if item.status != 'skipped' or decision.get('action') != 'skip' or decision.get('carried_from'):
         return None
-    if origin_of(decision.get('actor') or {}) or origin_of(decision):
+    actor = decision.get('actor') or {}
+    if origin_of(actor) or origin_of(decision):
+        return None
+    # A rule acting as "System" (receipt settlement) has no account: only a signed-in person's skip is carried.
+    if str(actor.get('user_id') or '') in ('', 'None') or _NOT_A_PERSON.search(str(actor.get('name') or '')):
         return None
     return decision
+
+
+_NOT_A_PERSON = re.compile(r'\b(system|batch review)\b', re.I)
+
+
+def withdraw_carried_skips(session, case_id, source, actor, reason):
+    """The source's skip was restored: copies carried from it are restored too (each re-assessed), with the history."""
+    restored = []
+    for item in session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id).where(
+            Batch.case_id == case_id, Batch.status != 'removed', Item.file_id == source.file_id,
+            Item.statement_key == source.statement_key, Item.batch_id != source.batch_id, Item.status == 'skipped')
+            .order_by(Item.id).with_for_update(of=Item)):
+        decision = (item.summary or {}).get('import_decision') or {}
+        if (decision.get('carried_from') or {}).get('item_id') != str(source.id):
+            continue
+        entry = dict(action='restore', reason=reason, actor=actor_record(actor),
+                     at=datetime.now(timezone.utc).isoformat(), carried_from=decision['carried_from'])
+        history = list(item.summary.get('import_decision_history') or []) + [entry]
+        proposal = read_statement_import(session, case_id=case_id, evidence_file_id=item.file_id,
+            currency=item.summary.get('currency'), statement_id=item.statement_key or None)
+        state, summary = assess(proposal, item.review_request)
+        item.status = state
+        item.summary = {**item.summary, **summary, 'import_decision': entry, 'import_decision_history': history}
+        restored.append(item.id)
+    return restored
 
 
 def _takes_carried_skip(item):
@@ -500,7 +530,8 @@ def carry_skip_to_other_batches(session, case_id, source):
     carried = []
     for item in session.scalars(select(Item).join(Batch, Batch.id == Item.batch_id).where(
             Batch.case_id == case_id, Batch.status != 'removed', Item.file_id == source.file_id,
-            Item.statement_key == source.statement_key, Item.batch_id != source.batch_id).with_for_update(of=Item)):
+            Item.statement_key == source.statement_key, Item.batch_id != source.batch_id,
+            Item.status.in_(('ready', 'attention'))).order_by(Item.id).with_for_update(of=Item)):
         if _takes_carried_skip(item):
             _carry_skip(item, source, decision)
             carried.append(item.id)
@@ -2037,6 +2068,8 @@ def leave_unimported(session, *, case_id, batch_id, item_id, action, reason, exp
         state, summary = assess(proposal, item.review_request)
         item.status = state
         item.summary = {**item.summary, **summary}
+        if CARRY_PERSON_SKIP:
+            withdraw_carried_skips(session, case_id, item, actor, reason.strip())
     session.commit()
     return dict(applied=True, status=item.status)
 
