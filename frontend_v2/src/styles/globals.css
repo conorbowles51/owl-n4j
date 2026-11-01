@@ -61,6 +61,18 @@
     --status-error: 3 70% 40%;
     --status-error-soft: 3 85% 96%;
 
+    /* Semantic status set (lx-style D), one family with the phone kit's tokens above. --status-<x> is the
+       text and icon colour (4.5:1 or more on every surface and its soft fill); -soft is the fill.
+         info, success: below.   error: --status-error (shared with the kit).
+         neutral: --status-deleted (same values, one source).   warning: followups' amber B token.
+       Each is at least dE2000 15 from every area hue (tokens.test.ts). */
+    --status-info: 227 65% 22%;
+    --status-info-soft: 227 80% 95%;
+    --status-success: 125 60% 26%;
+    --status-success-soft: 125 60% 94%;
+    --status-neutral: var(--status-deleted);
+    --status-neutral-soft: var(--status-deleted-soft);
+
     /* Area identity (lx-style B): one hue per area family, drawn from the brand and node palettes. The base token
        marks icons, rules and the active mark (3:1 or more on every surface); -soft is the area's tinted surface;
        -foreground is text in the area's colour (4.5:1 or more on every surface and on -soft). Every base hue is
@@ -78,7 +90,7 @@
     --area-people: 225 51% 56%;
     --area-people-soft: 225 70% 95%;
     --area-people-foreground: 225 51% 52%;
-    --area-evidence: 84 34% 30%;
+    --area-evidence: 84 34% 40%;
     --area-evidence-soft: 84 54% 95%;
     --area-evidence-foreground: 84 34% 30%;
     --area-assistant: 266 30% 61%;
@@ -141,6 +153,10 @@
     --status-deleted-soft: 215 15% 15%;
     --status-error: 3 90% 72%;
     --status-error-soft: 3 45% 14%;
+    --status-info: 186 95% 82%;
+    --status-info-soft: 186 35% 14%;
+    --status-success: 150 70% 58%;
+    --status-success-soft: 150 35% 14%;
 
     --area-investigate: 172 60% 46%;
     --area-investigate-soft: 172 40% 14%;
@@ -330,6 +346,12 @@
   --color-status-deleted-soft: hsl(var(--status-deleted-soft));
   --color-status-error: hsl(var(--status-error));
   --color-status-error-soft: hsl(var(--status-error-soft));
+  --color-status-info: hsl(var(--status-info));
+  --color-status-info-soft: hsl(var(--status-info-soft));
+  --color-status-success: hsl(var(--status-success));
+  --color-status-success-soft: hsl(var(--status-success-soft));
+  --color-status-neutral: hsl(var(--status-neutral));
+  --color-status-neutral-soft: hsl(var(--status-neutral-soft));
   --color-area-investigate: hsl(var(--area-investigate));
   --color-area-investigate-soft: hsl(var(--area-investigate-soft));
   --color-area-investigate-foreground: hsl(var(--area-investigate-foreground));

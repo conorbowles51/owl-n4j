@@ -15,9 +15,22 @@ function block(selector: ":root" | ".dark"): Record<string, string> {
   return out
 }
 
-const THEMES = { light: block(":root"), dark: { ...block(":root"), ...block(".dark") } }
+/** Resolves var(--x) aliases (one source: --status-neutral is --status-deleted). */
+function resolved(vars: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(vars)) {
+    let value = v
+    for (let i = 0; i < 5 && value.startsWith("var(--"); i++) value = vars[value.slice(6, -1)]
+    out[k] = value
+  }
+  return out
+}
+
+const THEMES = { light: resolved(block(":root")), dark: resolved({ ...block(":root"), ...block(".dark") }) }
 const SURFACES = ["background", "card", "muted", "popover", "panel"]
 const STATUSES = ["status-review", "status-model", "status-deleted", "status-error"]
+/** lx-style D: the semantic status set. error is the kit's; neutral is the kit's deleted (one source). */
+const SEMANTIC = ["status-info", "status-success", "status-error", "status-neutral"]
 
 describe("phone status tokens (07 4.2 item 3)", () => {
   for (const [theme, vars] of Object.entries(THEMES)) {
@@ -33,6 +46,30 @@ describe("phone status tokens (07 4.2 item 3)", () => {
   }
   it("each token is mapped for Tailwind", () => {
     for (const status of STATUSES) {
+      expect(css).toContain(`--color-${status}: hsl(var(--${status}));`)
+      expect(css).toContain(`--color-${status}-soft: hsl(var(--${status}-soft));`)
+    }
+  })
+})
+
+describe("semantic status set (lx-style D)", () => {
+  for (const [theme, vars] of Object.entries(THEMES)) {
+    for (const status of SEMANTIC) {
+      it(`${status} is 4.5:1 or more on every surface and its soft fill, ${theme}`, () => {
+        expect(vars[status], `${status} defined in ${theme}`).toMatch(/^\d+ \d+% \d+%$/)
+        for (const surface of [...SURFACES, "sidebar", `${status}-soft`]) {
+          const ratio = contrast(tripletToRgb(vars[status]), tripletToRgb(vars[surface]))
+          expect(ratio, `${status} on ${surface} (${theme}) = ${ratio.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
+        }
+      })
+    }
+  }
+  it("neutral is the kit's deleted token, not a copy", () => {
+    expect(css).toContain("--status-neutral: var(--status-deleted);")
+    expect(css).toContain("--status-neutral-soft: var(--status-deleted-soft);")
+  })
+  it("each token is mapped for Tailwind", () => {
+    for (const status of SEMANTIC) {
       expect(css).toContain(`--color-${status}: hsl(var(--${status}));`)
       expect(css).toContain(`--color-${status}-soft: hsl(var(--${status}-soft));`)
     }
@@ -72,7 +109,7 @@ describe("area identity tokens (lx-style B)", () => {
         }
       })
       it(`${base} is dE2000 15 or more from every status token and Loupe red, ${theme}`, () => {
-        for (const other of [...STATUSES, "primary", "destructive"]) {
+        for (const other of [...STATUSES, ...SEMANTIC, "primary", "destructive"]) {
           const d = deltaE2000(tripletToRgb(vars[base]), tripletToRgb(vars[other]))
           expect(d, `${base} vs ${other} (${theme}) = ${d.toFixed(1)}`).toBeGreaterThanOrEqual(15)
         }

@@ -17,18 +17,16 @@ const badgeVariants = cva(
           "bg-destructive text-white [a&]:hover:bg-destructive/90",
         outline:
           "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
-        // Status variants
-        success:
-          "bg-emerald-500/15 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400",
-        danger:
-          "bg-red-500/15 text-red-600 dark:bg-red-500/15 dark:text-red-400",
+        // Status variants: the semantic status set (lx-style D, globals.css), 4.5:1 or more in light and dark.
+        // warning stays on its old colours until followups' warning token (amber B) is live.
+        success: "bg-status-success-soft text-status-success",
+        danger: "bg-status-error-soft text-status-error",
         warning:
           "bg-yellow-500/15 text-yellow-600 dark:bg-yellow-500/15 dark:text-yellow-400",
-        info: "bg-blue-500/15 text-blue-600 dark:bg-blue-500/15 dark:text-blue-400",
+        info: "bg-status-info-soft text-status-info",
         amber:
           "bg-primary/15 text-brand-700 dark:bg-primary/15 dark:text-brand-300",
-        slate:
-          "bg-slate-500/15 text-slate-600 dark:bg-slate-500/15 dark:text-slate-400",
+        slate: "bg-status-neutral-soft text-status-neutral",
       },
     },
     defaultVariants: {
