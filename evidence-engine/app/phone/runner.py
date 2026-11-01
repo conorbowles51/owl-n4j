@@ -17,7 +17,7 @@ import uuid
 
 from app.phone import detect
 from app.phone.capture import CAPTURE_CODE_VERSION, Capture, CaptureMemoryBudgetExceeded
-from app.phone.counter import count_stream
+from app.phone.counter import ParserDefect, check_parser, count_stream
 from app.phone.files import absent_count, absent_text
 from app.phone.reconcile import failure_message, reconcile, store_reconciliation
 from app.phone.recount import recount_document
@@ -158,6 +158,12 @@ def run_capture(conn, *, data_root, case_id, container_path, root_path, original
     ``hook(conn, ctx, reporter)``.
     """
     rep = reporter or Reporter()
+    try:  # before any work: a counter that would misread the report must not get as far as calling it different
+        check_parser()
+    except ParserDefect as e:
+        raise CaptureFailed("checker_unavailable", "This server cannot check reports yet, so this one has not been "
+                            "read. Nothing is lost. The server needs an update; once it is updated, choose Resume. "
+                            "(%s)" % e) from e
     case_root = os.path.join(data_root, str(case_id))
     full = os.path.join(case_root, container_path) if container_path else case_root
     name = original_name or os.path.basename(full.rstrip("/"))

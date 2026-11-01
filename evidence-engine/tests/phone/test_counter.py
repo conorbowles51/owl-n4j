@@ -165,6 +165,38 @@ class OneValueChange(unittest.TestCase):
             self.assertEqual(d["attribute"], "id")
             self.assertEqual(a["totals"], b["totals"])
 
+    def test_crlf_line_ends_inside_cdata_read_as_one_line_feed_by_both(self):
+        # a report written with CRLF line ends, with a CDATA value ending in a line break (structure of a real case)
+        xml = BASE.replace("\n", "\r\n").replace("hello there", "<![CDATA[line one\r\n\r\nline two\r\n]]>")
+        r = BothCountersAgree.check(self, xml.encode("utf-8"))
+        p = ("project/decodedData/modelType[Chat]/model[Chat]/multiModelField[Messages]/"
+             "model[InstantMessage]/field[Body]/value")
+        self.assertEqual(r["paths"][p]["text_chars"], len("line one\n\nline two\n"))
+        self.assertEqual(r["paths"][p]["text_hash"], "%016x" % h64("line one\n\nline two\n"))
+
+    def test_the_counter_refuses_a_library_that_keeps_carriage_returns_in_cdata(self):
+        counter.check_parser()  # the installed library is correct
+        probe = counter._LINE_END_PROBE
+        counter._LINE_END_PROBE = b"<a>&#13;</a>"  # a library that hands back a carriage return
+        try:
+            with self.assertRaises(counter.ParserDefect):
+                counter.count_stream(io.BytesIO(BASE.encode()))
+        finally:
+            counter._LINE_END_PROBE = probe
+
+    def test_a_capture_on_such_a_library_stops_before_reading_and_says_why(self):
+        from app.phone import runner
+        probe = counter._LINE_END_PROBE
+        counter._LINE_END_PROBE = b"<a>&#13;</a>"
+        try:
+            with self.assertRaises(runner.CaptureFailed) as e:
+                runner.run_capture(None, data_root="/nonexistent", case_id="c", container_path="x", root_path="")
+        finally:
+            counter._LINE_END_PROBE = probe
+        self.assertEqual(e.exception.code, "checker_unavailable")
+        self.assertNotIn("differ", e.exception.message)
+        self.assertNotIn("\u2014", e.exception.message)
+
     def test_injected_text_change_is_found_by_both(self):
         changed = BASE.replace("hello there", "hello thers")
         for mod in (counter, counter_expat):

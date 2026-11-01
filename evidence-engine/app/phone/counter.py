@@ -26,6 +26,34 @@ from app.phone.counts import CountSink, local_name
 
 CHUNK = 1 << 20
 
+# XML ends every line with a single line feed, CDATA included (XML 1.0 section 2.11). libxml2 2.13 (bundled with
+# lxml 5.x) leaves the carriage return of CRLF inside CDATA, so on a report written with CRLF line ends the counter
+# reads two characters more than the capture for every such value and the report is wrongly called different
+# (seen on a real report: 2 differences). libxml2 2.14 (lxml 6.0.2) is correct. The counter refuses to run on a
+# library that gets this wrong rather than report a difference that is not in the report.
+_LINE_END_PROBE = b"<a><![CDATA[x\r\ny\r]]></a>"
+
+
+class ParserDefect(RuntimeError):
+    """The installed XML library cannot be used for the reconciliation count."""
+
+
+def _parser():
+    return etree.XMLPullParser(events=("start", "end", "comment", "pi"), huge_tree=True,
+                               resolve_entities=False, no_network=True)
+
+
+def check_parser() -> None:
+    """Probe the same push parser the count uses (the whole-document parser is not affected by the defect)."""
+    parser = _parser()
+    parser.feed(_LINE_END_PROBE)
+    parser.close()
+    got = next(el.text for ev, el in parser.read_events() if ev == "end")
+    if got != "x\ny\n":
+        raise ParserDefect(
+            "lxml %s with libxml2 %s keeps carriage returns inside CDATA; the counter needs lxml 6.0.2 or later"
+            % (".".join(map(str, etree.LXML_VERSION)), ".".join(map(str, etree.LIBXML_VERSION))))
+
 
 def _attrs(el) -> dict:
     out = {}
@@ -80,13 +108,13 @@ class _Walker:
 
 
 def count_stream(fh) -> dict:
+    check_parser()
     sink = CountSink()
     walker = _Walker(sink)
     sha = hashlib.sha256()
     md5 = hashlib.md5()
     nbytes = 0
-    parser = etree.XMLPullParser(events=("start", "end", "comment", "pi"), huge_tree=True,
-                                 resolve_entities=False, no_network=True)
+    parser = _parser()
 
     def drain():
         for ev, el in parser.read_events():

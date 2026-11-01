@@ -46,7 +46,8 @@ def test_capture_reconciles_exactly_with_the_measured_counts(pg_case, label):
     want = corpus.expected()[label]
     (data_root / str(case_id) / label).symlink_to(corpus.root(label))
     res = capture(conn, case_id, data_root, label, label)
-    assert (res["state"], res["records"], res["files"]) == (want["state"], want["records"], want["files"])
+    assert res["state"] == want["state"], {k: res.get(k) for k in ("state", "message", "outcome")}
+    assert (res["records"], res["files"]) == (want["records"], want["files"])
     assert res["peak_rss"] < corpus.expected()["peak_rss_bytes_below"]
     ext = res["extraction_id"]
     q = lambda sql: conn.execute(sql, (ext,)).fetchall()
