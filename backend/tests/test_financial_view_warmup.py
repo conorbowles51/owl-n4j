@@ -37,6 +37,9 @@ def periods(tmp_path, monkeypatch):
         connection.execute(text('CREATE TABLE financial_statement_periods (id serial PRIMARY KEY, case_id uuid NOT NULL)'))
     import postgres.session
     monkeypatch.setattr(postgres.session, '_get_session_local', lambda: sessionmaker(bind=engine))
+    # The pass takes its write counts through _get_engine (view_warmup._counts_now): the same disposable schema, never
+    # whatever DATABASE_URL the environment holds (unset: no counts, so no pass was recorded).
+    monkeypatch.setattr(postgres.session, '_get_engine', lambda: engine)
     monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
     calls = []
     import routers.financial_ledger
