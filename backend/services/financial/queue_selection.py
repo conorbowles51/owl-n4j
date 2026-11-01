@@ -35,7 +35,7 @@ def _path(directory, selection_id):
     return directory / (selection_id + '.json')
 
 
-def save(session, *, case_id, file_ids):
+def save_selection(session, *, case_id, file_ids):
     """The id of these files' selection in this case (the same files give the same id). Every id must be a file of
     this case: one that is not is refused with the count, never dropped."""
     ids = sorted({str(UUID(str(identifier))) for identifier in file_ids})
@@ -68,7 +68,7 @@ def _case_file_ids(session, case_id, ids):
         EvidenceFile.case_id == case_id, EvidenceFile.id.in_([UUID(identifier) for identifier in ids])))}
 
 
-def file_ids(case_id, selection_id):
+def selection_file_ids(case_id, selection_id):
     """The selection's file ids; refused (404) when it is not found or belongs to another case."""
     directory = _directory()
     if directory is None:

@@ -957,7 +957,7 @@ def save_queue_selection(body: QueueSelection, case_id: UUID = Query(...), db: S
     fit in an address. Read access is enough; nothing in the case is changed."""
     from services.financial import queue_selection
     try:
-        return dict(selection_id=queue_selection.save(db, case_id=case_id, file_ids=body.file_ids))
+        return dict(selection_id=queue_selection.save_selection(db, case_id=case_id, file_ids=body.file_ids))
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
@@ -997,7 +997,7 @@ def financial_review_queue(case_id: UUID = Query(...), file_id: list[UUID] = Que
     if selection_id is not None:
         from services.financial import queue_selection
         try:
-            file_id = [*file_id, *queue_selection.file_ids(case_id, selection_id)]
+            file_id = [*file_id, *queue_selection.selection_file_ids(case_id, selection_id)]
         except PdfMappingError as exc:
             raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     token = previous_as_of.set(0.0)
