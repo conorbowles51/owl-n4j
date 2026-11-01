@@ -44,6 +44,8 @@ export interface LoadPicture {
   partsDone: number
   partsAsked: number
   bytes: { received: number; total: number } | null
+  /** The current answer is all in and being unpacked: rows done of rows, or characters looked through of all. */
+  unpack: { done: number; total: number; unit: "characters" | "rows" } | null
   current: RequestState | null
   failed: RequestState[]
 }
@@ -79,6 +81,7 @@ export function picture(reads: RequestState[]): LoadPicture {
   if (!reads.length) step = "Opening this page"
   else if (!current) step = "Drawing the page"
   else if (current.answered === null) step = `Working out ${current.what} on the server`
+  else if (current.unpack && current.total && current.received >= current.total) step = `Unpacking ${current.what}`
   else step = `Receiving ${current.what}`
   return {
     step,
@@ -87,8 +90,15 @@ export function picture(reads: RequestState[]): LoadPicture {
     partsDone: reads.filter((read) => read.ended !== null).length,
     partsAsked: reads.length,
     bytes: current?.answered !== null && current?.total ? { received: current.received, total: current.total } : null,
+    unpack: current?.unpack && current.total && current.received >= current.total ? current.unpack : null,
     current,
     failed,
   }
 }
 
+
+/** Words for an answer being unpacked, from its true counts. */
+export function unpackWords(unpack: { done: number; total: number; unit: "characters" | "rows" }): string {
+  if (unpack.unit === "rows") return `${unpack.done.toLocaleString("en-US")} of ${unpack.total.toLocaleString("en-US")} rows unpacked`
+  return `finding the rows: ${Math.floor((unpack.done / Math.max(1, unpack.total)) * 100)}% looked through`
+}

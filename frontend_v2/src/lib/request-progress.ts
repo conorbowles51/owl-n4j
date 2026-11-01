@@ -1,3 +1,5 @@
+import { parseJSONSliced } from "./sliced-json"
+
 /**
  * What the page's API reads are doing right now, from true counts only: each GET started through fetchAPI is
  * recorded with when it started, when its answer began, the bytes read so far and the answer's own length
@@ -18,6 +20,8 @@ export interface RequestState {
   total: number | null
   ended: number | null
   failed: string | null
+  /** After the bytes are in: the answer being unpacked (rows of rows, or characters looked through of all). */
+  unpack?: { done: number; total: number; unit: "characters" | "rows" } | null
 }
 
 const requests = new Map<number, RequestState>()
@@ -115,6 +119,7 @@ export function startRequest(endpoint: string): number {
     total: null,
     ended: null,
     failed: null,
+    unpack: null,
   })
   if (requests.size > KEEP_ENDED) {
     for (const [key, request] of requests) {
@@ -138,6 +143,13 @@ export function receiveBytes(id: number, bytes: number) {
   const request = requests.get(id)
   if (!request) return
   request.received += bytes
+  changed()
+}
+
+export function unpackProgress(id: number, done: number, total: number, unit: "characters" | "rows") {
+  const request = requests.get(id)
+  if (!request) return
+  request.unpack = { done, total, unit }
   changed()
 }
 
@@ -168,25 +180,22 @@ export async function readJSON<T>(response: Response, id: number): Promise<T> {
     return value
   }
   const reader = response.body.getReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
+  // Decoded as it arrives (a character cut between chunks is held until its last byte), then unpacked in pieces
+  // so the page can redraw its loading panel while a large answer is parsed (lib/sliced-json.ts).
+  const decoder = new TextDecoder()
+  const parts: string[] = []
   for (;;) {
     const { done, value } = await reader.read()
     if (done) break
     if (value) {
-      chunks.push(value)
-      size += value.byteLength
+      parts.push(decoder.decode(value, { stream: true }))
       receiveBytes(id, value.byteLength)
     }
   }
-  const whole = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    whole.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  chunks.length = 0
-  return JSON.parse(new TextDecoder().decode(whole)) as T
+  parts.push(decoder.decode())
+  const text = parts.join("")
+  parts.length = 0
+  return parseJSONSliced<T>(text, (done, of, unit) => unpackProgress(id, done, of, unit))
 }
 
 /** Test hook: forget every recorded read. */

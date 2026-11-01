@@ -13,6 +13,7 @@ import {
   SLOW_MS,
   STALL_MS,
   TICK_MS,
+  unpackWords,
 } from "../lib/load-progress"
 
 /**
@@ -39,7 +40,7 @@ function ViewLoadProgress({ caseId, page }: { caseId: string; page: string }) {
   const [settled, setSettled] = useState(false)
   // Moved only by the tick and by each read's change: the bar's position never goes backwards, and the time the
   // count last moved says when nothing has changed for a while.
-  const [clock, setClock] = useState({ now: since, fraction: 0, movedAt: since, done: 0 })
+  const [clock, setClock] = useState({ now: since, fraction: 0, movedAt: since, done: 0, unpacked: 0 })
 
   useEffect(() => {
     const signal = { cancelled: false }
@@ -69,11 +70,13 @@ function ViewLoadProgress({ caseId, page }: { caseId: string; page: string }) {
       setClock((previous) => {
         const view = picture(requestsSince(since))
         const at = performance.now()
+        const unpacked = view.unpack?.done ?? 0
         return {
           now: at,
           fraction: Math.min(0.99, Math.max(previous.fraction, view.done / view.total)),
           done: view.done,
-          movedAt: view.done !== previous.done ? at : previous.movedAt,
+          unpacked,
+          movedAt: view.done !== previous.done || unpacked !== previous.unpacked ? at : previous.movedAt,
         }
       })
     const timer = setInterval(tick, TICK_MS)
@@ -134,6 +137,7 @@ function ViewLoadProgress({ caseId, page }: { caseId: string; page: string }) {
             {sizeWords(view.bytes.received)} of {sizeWords(view.bytes.total)}
           </span>
         )}
+        {view.unpack && <span>{unpackWords(view.unpack)}</span>}
         <span className="text-muted-foreground">
           {view.partsDone} of {view.partsAsked} {view.partsAsked === 1 ? "part" : "parts"} loaded · {percent}% · {seconds(elapsed)} s
           {left && ` · ${left}`}

@@ -1,7 +1,7 @@
 import { act, render, screen } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
-import { answerRequest, endRequest, receiveBytes, resetRequestsForTest, startRequest } from "@/lib/request-progress"
+import { answerRequest, endRequest, receiveBytes, resetRequestsForTest, startRequest, unpackProgress } from "@/lib/request-progress"
 import { LoadProgress } from "./LoadProgress"
 import { picture } from "../lib/load-progress"
 
@@ -102,4 +102,23 @@ it("after the data is shown, names a part that failed until it is asked again an
   act(() => endRequest(again, null))
   expect(screen.queryByTestId("load-progress-failed")).toBeNull()
   expect(screen.queryByTestId("load-progress")).toBeNull()
+})
+
+it("says the answer is being unpacked, with rows of rows, once its bytes are in, and counts that as movement", () => {
+  mount()
+  const id = startRequest("/api/financial/ledger?case_id=case-1")
+  act(() => {
+    answerRequest(id, 2 * 1024 * 1024)
+    receiveBytes(id, 2 * 1024 * 1024)
+    unpackProgress(id, 4000, 27926, "rows")
+  })
+  act(() => vi.advanceTimersByTime(600))
+  expect(screen.getByRole("status").textContent).toMatch(/Unpacking payments…2\.0 MB of 2\.0 MB4,000 of 27,926 rows unpacked/)
+  // Rows moving every second keep it from saying "Still …".
+  for (let step = 1; step <= 5; step += 1) {
+    act(() => unpackProgress(id, 4000 + step * 4000, 27926, "rows"))
+    act(() => vi.advanceTimersByTime(1000))
+  }
+  expect(screen.getByRole("status").textContent).not.toMatch(/Still/)
+  expect(screen.getByRole("status").textContent).toMatch(/24,000 of 27,926 rows unpacked/)
 })

@@ -62,3 +62,20 @@ it("words paths by whole segments", () => {
   expect(requestWords("/api/financial/ledger-first-view")).toBe("the payments overview")
   expect(requestWords("/api/financial/something-new")).toBe("something new")
 })
+
+it("unpacks a large answer in pieces after its bytes are in, counting rows, with the same value", async () => {
+  const value = {
+    transactions: Array.from({ length: 30000 }, (_, id) => ({ id, description: `PAYMENT "${id}" TO SUPPLIER \\ [x]`, amount: id / 3 })),
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify(value))
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (let offset = 0; offset < bytes.length; offset += 65536) controller.enqueue(bytes.slice(offset, offset + 65536))
+      controller.close()
+    },
+  })
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { headers: { "x-body-length": String(bytes.length) } })))
+  const result = await fetchAPI<typeof value>("/api/financial/ledger?case_id=c")
+  expect(JSON.stringify(result)).toBe(JSON.stringify(value))
+  expect(requestsSince(0)[0]).toMatchObject({ received: bytes.length, unpack: { done: 30000, total: 30000, unit: "rows" } })
+})
