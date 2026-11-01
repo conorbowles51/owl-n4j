@@ -311,6 +311,46 @@ class QueueReadTests(TestCase):
         self.assertNotIn("Couldn't read 1", queue['status_line'])
         self.assertIn('Files removed from Financial 1', queue['status_line'])
 
+    def test_a_batch_read_matches_failed_file_records_by_their_own_source(self):
+        """d5b330d1 batch 30231f0a, 1 Nov: 208 removed files for 207. Batch 3ff00b64's record for MONETA KAPITAL
+        SEP 25.pdf (source 20c1169d, removed from Financial) named file 56b39f59, which 30231f0a lists under its own
+        source 56b39f59; the file-id filter counted it in both batches."""
+        if type(self) is not QueueReadTests:
+            self.skipTest('queue rule, read once on the plain fixture')
+        from postgres.models.evidence import EvidenceFile
+        with self.f.SessionLocal() as db:
+            original = db.get(EvidenceFile, self.f.file.id)
+            removed = EvidenceFile(id=uuid4(), case_id=self.f.case.id, original_filename='statement.pdf',
+                stored_path=original.stored_path, sha256='0' * 64, size=original.size, status='processed',
+                metadata_=dict(financial_file_visibility=dict(removed=True, revision='r1')))
+            db.add(removed); db.commit()
+            source = removed.id
+        file_id = str(self.f.file.id)
+        with self.f.SessionLocal() as db:
+            older = Batch(id=uuid4(), case_id=self.f.case.id, created_by=self.f.actor.user_id, status='review',
+                actor={}, files=[dict(file_id=file_id, source_id=str(source), filename='statement.pdf',
+                                      status='error', error='Statement not found in this case.')])
+            db.add(older); db.commit()
+            older_id = older.id
+        newer = self.failed_batch('This file could not be prepared.')
+        counts = lambda q: (q['counts']['unreadable_files'], q['counts']['removed_files'])
+        self.assertEqual(counts(self.queue()), (1, 1))
+        with self.f.SessionLocal() as db:
+            sources = {batch: service.batch_failed_source_ids(db, self.f.case.id, batch) for batch in (older_id, newer)}
+        self.assertEqual(sources, {older_id: [str(source)], newer: [file_id]})
+        # Each batch counts only its own source's record, though both hold the same file.
+        self.assertEqual(counts(self.queue(file_ids=[file_id], batch_sources=sources[newer])), (1, 0))
+        self.assertEqual(counts(self.queue(file_ids=[file_id], batch_sources=sources[older_id])), (0, 1))
+        # A file-id read (Statement files > Review selected) still finds every record naming the file.
+        self.assertEqual(counts(self.queue(file_ids=[file_id])), (1, 1))
+        # A batch that prepared the same source is not where it failed (batch 35443127: 0 failures, would count 12).
+        with self.f.SessionLocal() as db:
+            prepared = Batch(id=uuid4(), case_id=self.f.case.id, created_by=self.f.actor.user_id, status='review',
+                actor={}, files=[dict(file_id=file_id, source_id=str(source), filename='statement.pdf', status='ready')])
+            db.add(prepared); db.commit()
+            self.assertEqual(service.batch_failed_source_ids(db, self.f.case.id, prepared.id), [])
+        self.assertEqual(counts(self.queue(file_ids=[file_id], batch_sources=[])), (0, 0))
+
     def test_a_file_no_longer_in_the_case_or_read_from_a_copy_is_not_unreadable(self):
         self.failed_batch('This file could not be prepared.', file_id=uuid4())
         queue = self.queue()

@@ -1809,6 +1809,15 @@ def batch_file_ids(session, case_id, batch_id):
     return [UUID(file['file_id']) for file in batch_for(session, case_id, batch_id).files or [] if file.get('file_id')]
 
 
+def batch_failed_source_ids(session, case_id, batch_id):
+    """The sources this batch failed to prepare (``files[].source_id``, else the file id, of its 'error' files):
+    which of the review queue's per-file records (couldn't read, copies, removed) are this batch's
+    (review_queue.case_review_queue). Only failures: a source this batch prepared that failed in another batch
+    is that batch's record (d5b330d1 batch 35443127, no failures, would have counted 12 removed)."""
+    return [file.get('source_id') or file['file_id'] for file in batch_for(session, case_id, batch_id).files or []
+            if file.get('status') == 'error' and (file.get('source_id') or file.get('file_id'))]
+
+
 def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_problems=False, review_group=None):
     """Batch list read: stored projections only, no PDF reading and no writes."""
     from services.financial.batch_review_summary import validate_group

@@ -67,12 +67,19 @@ class StatementImportAuthorizationTests(unittest.TestCase):
         url = f'/api/financial/statement-import/review/queue?case_id={self.db.case.id}&batch_id={batch_id}'
         self.user({'case': {'view': True, 'edit': False}})
         with patch('services.financial.review_queue.case_review_queue', return_value={'items': []}) as queue, \
-                patch('services.financial.import_batches.batch_file_ids', return_value=in_batch) as files:
+                patch('services.financial.import_batches.batch_file_ids', return_value=in_batch) as files, \
+                patch('services.financial.import_batches.batch_failed_source_ids', return_value=['s1']) as sources:
             self.assertEqual(self.client.get(url).status_code, 200)
             self.assertEqual(files.call_args.args[1:], (self.db.case.id, batch_id))
+            self.assertEqual(sources.call_args.args[1:], (self.db.case.id, batch_id))
             self.assertEqual(queue.call_args.kwargs['file_ids'], in_batch)
+            # The batch's per-file records are matched by its own sources (208 vs 207 removed files, 1 Nov).
+            self.assertEqual(queue.call_args.kwargs['batch_sources'], ['s1'])
             self.assertEqual(self.client.get(f'{url}&file_id={extra}').status_code, 200)
             self.assertEqual(queue.call_args.kwargs['file_ids'], [extra, *in_batch])
+            self.assertEqual(queue.call_args.kwargs['batch_sources'], ['s1', extra])
+            self.assertEqual(self.client.get(f'{url.replace("&batch_id=" + str(batch_id), "")}&file_id={extra}').status_code, 200)
+            self.assertIsNone(queue.call_args.kwargs['batch_sources'])
             # A batch with no files shows nothing, never the whole case.
             files.return_value = []
             self.assertEqual(self.client.get(url).status_code, 200)
