@@ -12,6 +12,7 @@ import { afterEach, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
 import { uploadFingerprint } from "../resumable-upload"
 import {
+  listUploadGroups,
   uploadFolderOrArchive,
   type UploadGroup,
 } from "../resumable-upload-groups"
@@ -564,4 +565,63 @@ it("a phone-sized selection shows its counts with thousands separators", async (
   )
   expect(await screen.findByText("1,300 of 43,123 files verified · 1.2 of 44,000.0 MB saved.")).toBeVisible()
   client.clear()
+})
+
+it("a selection the server pauses and resumes (a release) carries on sending in this tab", async () => {
+  const files = [file("Phone/a.txt", 10, 1), file("Phone/b.txt", 10, 2), file("Phone/c.txt", 10, 3)]
+  let status: "uploading" | "paused" = "uploading"
+  let group: (Omit<UploadGroup, "members"> & { members: { id: string; path: string; status: string }[] }) | undefined
+  const staged = new Set<string>()
+  let pausedOnce = false
+  const session = (id: string) => ({
+    id,
+    case_id: "case",
+    filename: id,
+    size: 10,
+    chunk_size: CHUNK,
+    received: staged.has(id) ? [0] : [],
+    status: staged.has(id) ? "staged" : status,
+  })
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    const method = options?.method ?? "GET"
+    if (url.startsWith("/api/evidence-upload-groups?")) return group ? [{ ...group, status }] : []
+    if (url === "/api/evidence-upload-groups" && method === "POST") {
+      const body = options!.body as { id: string; members: { path: string }[] }
+      group = {
+        id: body.id, case_id: "case", name: "Phone", kind: "folder", status: "uploading", file_count: 3,
+        staged_count: 0, size: 30, received_bytes: 0, replace_existing: false, folder_id: null, receipt: null,
+        members: body.members.map((m) => ({ id: `m-${m.path.replace("/", "-")}`, path: m.path, status: "uploading" })),
+      }
+      return group
+    }
+    const id = url.split("/")[3]
+    if (url.startsWith("/api/evidence-upload-sessions/") && url.includes("/chunks/")) {
+      if (id === "m-Phone-b.txt" && !pausedOnce) {
+        pausedOnce = true
+        status = "paused" // the release pauses open uploads
+      }
+      if (status === "paused") throw new Error("This upload is paused")
+      return { ...session(id), received: [0] }
+    }
+    if (url.startsWith("/api/evidence-upload-sessions/") && url.endsWith("/complete")) {
+      staged.add(id)
+      return session(id)
+    }
+    if (url.startsWith("/api/evidence-upload-sessions/")) return session(id)
+    if (url === `/api/evidence-upload-groups/${group?.id}/complete`)
+      return { ...group!, status: "completed", receipt: { file_ids: ["f"], job_ids: [], message: "Saved." } }
+    throw Error(`Unexpected request: ${method} ${url}`)
+  })
+  const upload = uploadFolderOrArchive("case", files, { isFolder: true })
+  await waitFor(() => expect(status).toBe("paused"))
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  expect(staged.size).toBe(1)
+  status = "uploading" // the release resumes what it paused
+  await listUploadGroups("case") // the panel's 2 s poll
+  const outcome = await Promise.race([
+    upload.then((r) => r.message),
+    new Promise((resolve) => setTimeout(() => resolve("still asleep"), 3000)),
+  ])
+  expect(outcome).toBe("Saved.")
+  expect([...staged].sort()).toEqual(["m-Phone-a.txt", "m-Phone-b.txt", "m-Phone-c.txt"])
 })

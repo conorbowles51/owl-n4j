@@ -32,13 +32,36 @@ type Active = {
   completing: boolean
   memberId?: string
   wake?: () => void
+  /** Paused by this tab's own Pause, so only this tab's Resume carries on. */
+  pausedHere?: boolean
   promise: Promise<UploadGroup>
 }
 const active = new Map<string, Active>()
 const relativePath = (file: File, kind: UploadGroup["kind"]) =>
   kind === "folder" ? file.webkitRelativePath || file.name : file.name
 export const listUploadGroups = (caseId: string) =>
-  fetchAPI<UploadGroup[]>(`${endpoint}?case_id=${caseId}`)
+  fetchAPI<UploadGroup[]>(`${endpoint}?case_id=${caseId}`).then((groups) => {
+    followServer(groups)
+    return groups
+  })
+
+/** A release pauses open uploads and resumes them when it is done. A selection this tab is sending follows that:
+ * paused on the server, it stops; uploading again, it carries on (seen live: the tab otherwise stayed asleep after
+ * the resume, with the upload saying it was sending). A pause made with this tab's Pause waits for its Resume. */
+export function followServer(groups: UploadGroup[]) {
+  for (const group of groups) {
+    const transfer = active.get(group.id)
+    if (!transfer || transfer.completing || transfer.pausedHere) continue
+    if (group.status === "paused") {
+      transfer.paused = true
+      if (transfer.memberId) setLocalUploadPaused(transfer.memberId, true)
+    } else if (group.status === "uploading") {
+      transfer.paused = false
+      transfer.wake?.()
+      if (transfer.memberId) setLocalUploadPaused(transfer.memberId, false)
+    }
+  }
+}
 export const hasLocalUploadGroup = (id: string) => active.has(id)
 export const isCompletingUploadGroup = (id: string) =>
   active.get(id)?.completing ?? false
@@ -69,6 +92,7 @@ export async function pauseUploadGroup(id: string) {
     )
   if (transfer) {
     transfer.paused = true
+    transfer.pausedHere = true
     if (transfer.memberId) setLocalUploadPaused(transfer.memberId, true)
   }
   try {
@@ -78,6 +102,7 @@ export async function pauseUploadGroup(id: string) {
   } catch (error) {
     if (transfer) {
       transfer.paused = false
+      transfer.pausedHere = false
       transfer.wake?.()
       if (transfer.memberId) setLocalUploadPaused(transfer.memberId, false)
     }
@@ -98,6 +123,7 @@ export async function resumeUploadGroup(
     if (state.status === "paused")
       await fetchAPI(`${endpoint}/${id}/resume`, { method: "POST" })
     attached.paused = false
+    attached.pausedHere = false
     attached.wake?.()
     if (attached.memberId) setLocalUploadPaused(attached.memberId, false)
     return attached.promise
