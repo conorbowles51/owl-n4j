@@ -22,6 +22,7 @@ vi.mock("@/stores/ui.store", () => ({
 vi.mock("react-router-dom", () => ({
   useParams: () => ({ id: "case" }),
   useMatch: () => null,
+  useLocation: () => ({ pathname: "/cases/case/timeline" }),
   Outlet: () => {
     const [value, setValue] = useState("")
     return (

@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/tooltip"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { applySwitchesFromSearch, useSwitch } from "@/lib/ui-switches"
+import { AREA_CLASSES, CASE_VIEWS, type AreaId } from "@/lib/areas"
 
 interface NavItem {
   label: string
@@ -45,6 +46,16 @@ interface NavItem {
   to: string
   end?: boolean
   shortcut?: string
+  /** Case views carry their area (lib/areas.ts): the icon and the active mark take its colour. */
+  area?: AreaId
+}
+
+/** The area of a case route, from the one map in lib/areas.ts. */
+function withArea(items: NavItem[]): NavItem[] {
+  return items.map((item) => {
+    const segment = item.to.split("/")[3]
+    return { ...item, area: CASE_VIEWS.find((v) => v.segment === segment)?.area }
+  })
 }
 
 const mainNav: NavItem[] = [
@@ -53,35 +64,35 @@ const mainNav: NavItem[] = [
 ]
 
 function getLayerAwareCaseNav(caseId: string): NavItem[] {
-  return [
+  return withArea([
     { label: "Graph", icon: Network, to: `/cases/${caseId}/graph`, shortcut: "1" },
     { label: "Timeline", icon: Clock, to: `/cases/${caseId}/timeline`, shortcut: "2" },
     { label: "Map", icon: Map, to: `/cases/${caseId}/map`, shortcut: "3" },
     { label: "Table", icon: TableProperties, to: `/cases/${caseId}/table`, shortcut: "4" },
-  ]
+  ])
 }
 
 function getFullDataCaseNav(caseId: string): NavItem[] {
-  return [
+  return withArea([
     { label: "Financial", icon: DollarSign, to: `/cases/${caseId}/financial`, shortcut: "5" },
     { label: "Phones", icon: Smartphone, to: `/cases/${caseId}/cellebrite`, shortcut: "6" },
     { label: "Evidence", icon: FileText, to: `/cases/${caseId}/evidence`, shortcut: "8" },
-  ]
+  ])
 }
 
 function getCaseAiNav(caseId: string): NavItem[] {
-  return [
+  return withArea([
     { label: "Chat", icon: MessageSquare, to: `/cases/${caseId}/chat` },
     { label: "Agent", icon: Bot, to: `/cases/${caseId}/agent` },
-  ]
+  ])
 }
 
 function getCaseWorkspaceNav(caseId: string): NavItem[] {
-  return [
+  return withArea([
     { label: "Workspace", icon: Briefcase, to: `/cases/${caseId}/workspace` },
     { label: "Dossiers", icon: ContactRound, to: `/cases/${caseId}/dossiers` },
     { label: "Reports", icon: ClipboardList, to: `/cases/${caseId}/reports` },
-  ]
+  ])
 }
 
 const adminNav: NavItem[] = [
@@ -99,13 +110,15 @@ const settingsItem: NavItem = {
   to: "/settings",
 }
 
-function ShortcutHint({ value, active = false }: { value: string; active?: boolean }) {
+function ShortcutHint({ value, active = false, area }: { value: string; active?: boolean; area?: AreaId }) {
   return (
     <kbd
       className={cn(
         "ml-auto rounded px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums",
         active
-          ? "bg-brand-100 text-brand-700 dark:bg-brand-400/15 dark:text-brand-200"
+          ? area
+            ? cn("bg-card", AREA_CLASSES[area].fg)
+            : "bg-brand-100 text-brand-700 dark:bg-brand-400/15 dark:text-brand-200"
           : "text-sidebar-muted"
       )}
     >
@@ -123,9 +136,11 @@ function SidebarLink({
   expanded: boolean
   active: boolean
 }) {
+  const a = item.area ? AREA_CLASSES[item.area] : null
   const link = (
     <Link
       to={item.to}
+      data-area={item.area}
       aria-current={active ? "page" : undefined}
       aria-label={!expanded ? item.label : undefined}
       className={cn(
@@ -134,7 +149,11 @@ function SidebarLink({
         "focus-visible:ring-2 focus-visible:ring-ring/35 focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar active:scale-[0.97]",
         expanded ? "h-9 w-full gap-3 px-3" : "mx-auto h-9 w-9 justify-center px-0",
         "text-sidebar-muted hover:bg-slate-50 hover:text-sidebar-foreground dark:hover:bg-white/[0.055]",
-        active &&
+        active && a &&
+          (expanded
+            ? cn("text-sidebar-foreground before:absolute before:left-1.5 before:top-1/2 before:h-5 before:w-[3px] before:-translate-y-1/2 before:rounded-full", a.soft, a.ring, a.before)
+            : cn("text-sidebar-foreground", a.soft, a.ring)),
+        active && !a &&
           (expanded
             ? "bg-brand-50 text-slate-950 shadow-[inset_0_0_0_1px_rgba(180,22,36,0.18)] before:absolute before:left-1.5 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-brand-700 dark:bg-brand-400/10 dark:text-slate-50 dark:shadow-[inset_0_0_0_1px_rgba(243,93,109,0.18)] dark:before:bg-brand-400"
             : "bg-slate-900 text-white shadow-[0_10px_20px_-12px_rgba(23,24,28,0.72)] dark:bg-brand-400/15 dark:text-brand-100 dark:shadow-[0_10px_22px_-14px_rgba(0,0,0,0.8)]")
@@ -144,7 +163,7 @@ function SidebarLink({
         className={cn(
           "size-4 shrink-0 transition-[color,transform] duration-150",
           !expanded && "size-[17px]",
-          active && expanded && "text-brand-600 dark:text-brand-300",
+          a ? a.text : active && expanded && "text-brand-600 dark:text-brand-300",
           !active && "group-hover:scale-105"
         )}
       />
@@ -152,7 +171,7 @@ function SidebarLink({
         <span className="min-w-0 flex-1 truncate">{item.label}</span>
       )}
       {expanded && item.shortcut && (
-        <ShortcutHint value={item.shortcut} active={active} />
+        <ShortcutHint value={item.shortcut} active={active} area={item.area} />
       )}
     </Link>
   )
@@ -360,7 +379,7 @@ export function AppSidebar() {
             ))}
             {phonePrototype && (
               <SidebarLink
-                item={{ label: "Phones (prototype)", icon: Smartphone, to: `/cases/${caseId}/phones-prototype/summary` }}
+                item={{ label: "Phones (prototype)", icon: Smartphone, to: `/cases/${caseId}/phones-prototype/summary`, area: "phones" }}
                 expanded={sidebarExpanded}
                 active={pathname.startsWith(`/cases/${caseId}/phones-prototype`)}
               />
