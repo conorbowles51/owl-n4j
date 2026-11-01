@@ -292,33 +292,55 @@ def _replace_links(
     links: list[dict[str, Any]],
     user: User,
 ) -> None:
+    """Make the task's links exactly `links`.
+
+    A link that stays keeps its id, who added it and when; only its label and anchor follow the request (the stored
+    phone mapping version set is never rewritten). Links that go are removed; new links are added by `user`.
+    """
     anchors = [_validate_link(db, task.case_id, link) for link in links]
     from services import collection_index
 
-    for old_id in db.scalars(select(CaseTaskLink.id).where(
-            CaseTaskLink.task_id == task.id, CaseTaskLink.target_type == "phone_selection")).all():
-        collection_index.remove_members(db, link_id=old_id)
-    db.query(CaseTaskLink).filter(CaseTaskLink.task_id == task.id).delete(synchronize_session=False)
+    wanted: dict[tuple[str, str], tuple[dict[str, Any], dict[str, Any] | None]] = {}
     for link, phone_anchor in zip(links, anchors):
+        key = (str(link["target_type"]).strip().lower(), str(link["target_id"]).strip())
+        wanted.setdefault(key, (link, phone_anchor))
+    existing = {
+        (row.target_type, row.target_id): row
+        for row in db.scalars(select(CaseTaskLink).where(CaseTaskLink.task_id == task.id)).all()
+    }
+    for key, row in existing.items():
+        if key in wanted:
+            continue
+        if row.target_type == "phone_selection":
+            collection_index.remove_members(db, link_id=row.id)
+        db.delete(row)
+    for (target_type, target_id), (link, phone_anchor) in wanted.items():
         members = phone_anchor.pop("_members", None) if phone_anchor is not None else None
+        anchor = phone_anchor if phone_anchor is not None else dict(link.get("source_anchor") or {})
+        current = existing.get((target_type, target_id))
+        if current is not None:
+            current.label = link.get("label")
+            if "mapping_versions" in (current.source_anchor or {}):
+                anchor = {**anchor, "mapping_versions": current.source_anchor["mapping_versions"]}
+            current.source_anchor = anchor
+            continue
         row = CaseTaskLink(
             id=uuid4(),
             task_id=task.id,
             case_id=task.case_id,
-            target_type=str(link["target_type"]).lower(),
-            target_id=str(link["target_id"]),
+            target_type=target_type,
+            target_id=target_id,
             label=link.get("label"),
-            source_anchor=phone_anchor if phone_anchor is not None else (link.get("source_anchor") or {}),
+            source_anchor=anchor,
             created_by_user_id=user.id,
-            )
+        )
         db.add(row)
         if members is not None:
-            from services import collection_index
-
             collection_index.write_members(
                 db, case_id=task.case_id, container_type="task", container_id=str(task.id),
                 link_id=row.id, members=members,
             )
+    db.flush()
 
 
 def create_task(

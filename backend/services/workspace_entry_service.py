@@ -599,13 +599,30 @@ def _replace_links(
         sanitized.append(data)
     from services import collection_index
 
-    for old in entry.links:
+    # A link that stays keeps its id, who added it and when; only its label, relationship, anchor and metadata
+    # follow the request (the stored phone mapping version set is never rewritten). Links that go are removed;
+    # new ones are added by `user`.
+    existing = {(old.target_type, old.target_id): old for old in entry.links}
+    wanted = {(data["target_type"], data["target_id"]) for data in sanitized}
+    for key, old in list(existing.items()):
+        if key in wanted:
+            continue
         if old.target_type == "phone_selection":
             collection_index.remove_members(db, link_id=old.id)
-    entry.links.clear()
+        entry.links.remove(old)
     db.flush()
     for data in sanitized:
-        _append_link(db, entry, user, data, prepared=True)
+        current = existing.get((data["target_type"], data["target_id"]))
+        if current is None:
+            _append_link(db, entry, user, data, prepared=True)
+            continue
+        current.target_label = data["target_label"]
+        current.relationship_type = data["relationship"]
+        anchor = dict(data["source_anchor"] or {})
+        if "mapping_versions" in (current.source_anchor or {}):
+            anchor["mapping_versions"] = current.source_anchor["mapping_versions"]
+        current.source_anchor = anchor
+        current.link_metadata = data["metadata"]
 
 
 def _load_entry(

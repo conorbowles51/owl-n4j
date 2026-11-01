@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 import pytest
@@ -326,3 +326,43 @@ def test_combined_work_paginates_tasks_and_deadlines_including_undated(db):
     assert len(second["tasks"]) == len(second["deadlines"]) == 1
     assert set(row["id"] for row in first["tasks"]).isdisjoint(row["id"] for row in second["tasks"])
     assert all(row["due_at"] is None for row in first["tasks"] + second["tasks"])
+
+
+def test_editing_task_links_keeps_who_added_each_link_and_when(db):
+    """Another person's edit keeps each staying link's id, adder and time; only new links are theirs."""
+    case, owner, editor, _viewer, _outsider = make_case(db)
+    first = make_evidence(db, case, owner, "first.pdf")
+    second = make_evidence(db, case, owner, "second.pdf")
+    created = create_task(
+        db, case_id=case.id, user=owner,
+        data=task_payload(links=[{"target_type": "evidence", "target_id": str(first.id), "label": "first"}]),
+    )
+    original = db.scalar(select(CaseTaskLink).where(CaseTaskLink.task_id == UUID(created["id"])))
+    original.created_at = original.created_at - timedelta(days=3)
+    db.commit()
+    original_id, original_time = original.id, original.created_at
+
+    update_task(
+        db, case_id=case.id, task_id=UUID(created["id"]), user=editor,
+        updates={"links": [
+            {"target_type": "evidence", "target_id": str(first.id), "label": "first, page 2"},
+            {"target_type": "evidence", "target_id": str(second.id)},
+        ]},
+    )
+    db.expire_all()
+    rows = {row.target_id: row for row in db.scalars(
+        select(CaseTaskLink).where(CaseTaskLink.task_id == UUID(created["id"]))).all()}
+    kept = rows[str(first.id)]
+    assert kept.id == original_id
+    assert kept.created_by_user_id == owner.id
+    assert kept.created_at.replace(tzinfo=None) == original_time.replace(tzinfo=None)
+    assert kept.label == "first, page 2"
+    assert rows[str(second.id)].created_by_user_id == editor.id
+
+    update_task(
+        db, case_id=case.id, task_id=UUID(created["id"]), user=editor,
+        updates={"links": [{"target_type": "evidence", "target_id": str(second.id)}]},
+    )
+    db.expire_all()
+    remaining = db.scalars(select(CaseTaskLink.target_id).where(CaseTaskLink.task_id == UUID(created["id"]))).all()
+    assert remaining == [str(second.id)]

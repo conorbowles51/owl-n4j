@@ -1,5 +1,5 @@
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import create_engine
@@ -330,6 +330,55 @@ class WorkspaceEntryServiceTests(unittest.TestCase):
 
         self.assertEqual(relabelled["links"][0]["relationship"], "contradicts")
         self.assertEqual(relabelled["links"][0]["source_anchor"], {"page": 5})
+
+    def test_editing_links_keeps_who_added_each_link_and_when(self):
+        """An edit by another person keeps each staying link's id, adder and time; only new links are theirs."""
+        second_user_id = uuid4()
+        second_evidence_id = uuid4()
+        with self.SessionLocal() as db:
+            db.add(User(id=second_user_id, email="second@example.test", name="Second", password_hash="hash"))
+            db.add(EvidenceFile(
+                id=second_evidence_id, case_id=self.case_id, original_filename="second.pdf",
+                stored_path="C:/evidence/second.pdf", size=100, sha256="c" * 64, status="processed",
+            ))
+            db.commit()
+            entry = create_entry(
+                db, case_id=self.case_id, current_user=self._user(db), entry_type="note", body="Original",
+                links=[{"target_type": "evidence", "target_id": str(self.evidence_id), "relationship": "supports"}],
+            )
+            original = entry["links"][0]
+            row = db.get(WorkspaceEntryLink, UUID(original["id"]))
+            row.created_at = row.created_at - timedelta(days=3)
+            db.commit()
+            original_time = row.created_at
+            second = db.get(User, second_user_id)
+            edited = update_entry(
+                db, case_id=self.case_id, entry_id=UUID(entry["id"]), current_user=second,
+                expected_version=entry["version"],
+                links=[
+                    {"target_type": "evidence", "target_id": str(self.evidence_id), "relationship": "contradicts",
+                     "target_label": "ledger p4"},
+                    {"target_type": "evidence", "target_id": str(second_evidence_id)},
+                ],
+            )
+            db.expire_all()
+            kept = db.get(WorkspaceEntryLink, UUID(original["id"]))
+            added = [link for link in edited["links"] if link["target_id"] == str(second_evidence_id)][0]
+            added_row = db.get(WorkspaceEntryLink, UUID(added["id"]))
+
+            self.assertIsNotNone(kept)
+            self.assertEqual(kept.created_by_user_id, self.user_id)
+            self.assertEqual(kept.created_at.replace(tzinfo=None), original_time.replace(tzinfo=None))
+            self.assertEqual(kept.relationship_type, "contradicts")
+            self.assertEqual(kept.target_label, "ledger p4")
+            self.assertEqual(added_row.created_by_user_id, second_user_id)
+
+            dropped = update_entry(
+                db, case_id=self.case_id, entry_id=UUID(entry["id"]), current_user=second,
+                expected_version=edited["version"],
+                links=[{"target_type": "evidence", "target_id": str(second_evidence_id)}],
+            )
+            self.assertEqual([link["id"] for link in dropped["links"]], [added["id"]])
 
     def test_theory_conversion_is_atomic_and_preserves_provenance_and_links(self):
         with self.SessionLocal() as db:
