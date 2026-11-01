@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { fetchAPI } from "./api-client"
-import { requestWords, requestsSince, resetRequestsForTest } from "./request-progress"
+import { requestWords, requestsSince, resetRequestsForTest, subscribeRequests } from "./request-progress"
+import { unpackWords } from "@/features/financial/lib/load-progress"
 
 beforeEach(() => resetRequestsForTest())
 afterEach(() => vi.unstubAllGlobals())
@@ -78,4 +79,31 @@ it("unpacks a large answer in pieces after its bytes are in, counting rows, with
   const result = await fetchAPI<typeof value>("/api/financial/ledger?case_id=c")
   expect(JSON.stringify(result)).toBe(JSON.stringify(value))
   expect(requestsSince(0)[0]).toMatchObject({ received: bytes.length, unpack: { done: 30000, total: 30000, unit: "rows" } })
+})
+
+it("reports 0 of N rows the moment rows start, then never backwards, to N of N, end to end through fetchAPI", async () => {
+  const value = { transactions: Array.from({ length: 30000 }, (_, id) => ({ id, description: `PAYMENT ${id} [x] TO SUPPLIER WITH A LONGER RECORDED DESCRIPTION` })), total: 30000 }
+  const bytes = new TextEncoder().encode(JSON.stringify(value))
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(bytes, { headers: { "x-body-length": String(bytes.length) } })))
+  const seen: { done: number; total: number }[] = []
+  const stop = subscribeRequests(() => {
+    const unpack = requestsSince(0)[0]?.unpack
+    if (unpack?.unit === "rows") seen.push({ done: unpack.done, total: unpack.total })
+  })
+  await fetchAPI("/api/financial/ledger?case_id=c")
+  stop()
+  expect(seen[0]).toEqual({ done: 0, total: 30000 })
+  expect(unpackWords({ ...seen[0], unit: "rows" })).toBe("0 of 30,000 rows unpacked")
+  expect(seen.at(-1)).toEqual({ done: 30000, total: 30000 })
+  for (let index = 1; index < seen.length; index += 1) expect(seen[index].done).toBeGreaterThanOrEqual(seen[index - 1].done)
+})
+
+it("words the graph, timeline, case list and evidence folder reads", () => {
+  expect(requestWords("/api/graph?case_id=c&lightweight=true")).toBe("the graph")
+  expect(requestWords("/api/graph/node/abc?case_id=c")).toBe("node details")
+  expect(requestWords("/api/timeline?case_id=c")).toBe("timeline events")
+  expect(requestWords("/api/timeline/entries?case_id=c")).toBe("timeline additions")
+  expect(requestWords("/api/cases")).toBe("cases")
+  expect(requestWords("/api/evidence-folders/root/contents?case_id=c")).toBe("evidence folders")
+  expect(requestWords("/api/evidence/abc")).toBe("evidence files")
 })

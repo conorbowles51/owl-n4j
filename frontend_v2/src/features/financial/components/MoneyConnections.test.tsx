@@ -125,11 +125,39 @@ it("says the grouping failed, shows no figures, and offers to try again, never s
   ]
   render(<MoneyConnections rows={rows} onOpen={vi.fn()} />)
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Grouping 1 payment by name and account failed: out of memory. No figures are shown for this panel."
+    "Grouping 1 payment by name and account failed: the browser ran out of working space for this many payments (it said: out of memory). No figures are shown for this panel."
   )
   expect(screen.queryByRole("button", { name: /Shop/ })).not.toBeInTheDocument()
   spy.mockRestore()
   fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+  expect(await screen.findAllByRole("button", { name: /Shop/ })).not.toHaveLength(0)
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+})
+
+it("words the browser running out of room plainly, keeping its own text in brackets", async () => {
+  const panels = await import("../lib/overview-panels")
+  const spy = vi.spyOn(panels, "connectionGroupsInSteps").mockRejectedValueOnce(new RangeError("Maximum call stack size exceeded"))
+  const rows: LedgerTransaction[] = [
+    { ...paymentFixture, key: "a", direction: "debit", from_name: "Owner", to_name: "Shop", currency: "USD", amount_minor: "100" },
+  ]
+  render(<MoneyConnections rows={rows} onOpen={vi.fn()} />)
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Grouping 1 payment by name and account failed: the browser ran out of working space for this many payments (it said: Maximum call stack size exceeded). No figures are shown for this panel."
+  )
+  spy.mockRestore()
+})
+
+it("groups a new row list after a failure without waiting for Try again, and never shows the old failure for it", async () => {
+  const panels = await import("../lib/overview-panels")
+  const spy = vi.spyOn(panels, "connectionGroupsInSteps").mockRejectedValueOnce(new Error("out of memory"))
+  const rows: LedgerTransaction[] = [
+    { ...paymentFixture, key: "a", direction: "debit", from_name: "Owner", to_name: "Shop", currency: "USD", amount_minor: "100" },
+  ]
+  const view = render(<MoneyConnections rows={rows} onOpen={vi.fn()} />)
+  expect(await screen.findByRole("alert")).toHaveTextContent(/failed/)
+  spy.mockRestore()
+  // A refetch (e.g. after a correction) gives a new row list: it is grouped at once.
+  view.rerender(<MoneyConnections rows={[...rows]} onOpen={vi.fn()} />)
   expect(await screen.findAllByRole("button", { name: /Shop/ })).not.toHaveLength(0)
   expect(screen.queryByRole("alert")).not.toBeInTheDocument()
 })

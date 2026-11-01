@@ -193,3 +193,14 @@ function* connectionSteps(rows: LedgerTransaction[]): Generator<{ done: number; 
   }
   return result
 }
+
+/**
+ * Why grouping failed, in plain words. The browser's own text for running out of room ("Maximum call stack size
+ * exceeded", "out of memory", "Allocation failed") is technical; it stays in brackets so the cause is not hidden.
+ */
+export function groupingFailureWords(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error)
+  if (error instanceof RangeError || /call stack|out of memory|allocation failed/i.test(raw))
+    return `the browser ran out of working space for this many payments (it said: ${raw})`
+  return raw
+}

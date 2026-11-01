@@ -20,7 +20,7 @@ import {
   type FinancialMainView,
 } from "../stores/financial.store"
 import { nearbyPayments } from "../lib/investigator-workspace"
-import { connectionGroupsInSteps, type PanelGroup, type PanelTotal } from "../lib/overview-panels"
+import { connectionGroupsInSteps, groupingFailureWords, type PanelGroup, type PanelTotal } from "../lib/overview-panels"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import {
@@ -66,7 +66,7 @@ export function MoneyConnections({
           if (groups && !signal.cancelled) setGrouped({ rows, groups })
         },
         (error: unknown) => {
-          if (!signal.cancelled) setFailure({ rows, message: error instanceof Error ? error.message : String(error) })
+          if (!signal.cancelled) setFailure({ rows, message: groupingFailureWords(error) })
         }
       )
     }, 0)

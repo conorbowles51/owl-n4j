@@ -243,7 +243,7 @@ it("includes quiet currencies in the chooser and retains all five confirmed acco
     screen.getByRole("combobox", { name: "Profile currency and account type" }),
     { target: { value: "USD:card" } }
   )
-  const holder = screen.getByRole("button", {
+  const holder = await screen.findByRole("button", {
     name: /Reviewed account holder Example Holder/,
   })
   expect(holder).toHaveTextContent("5 accounts · 1 bank · 5 source documents")
@@ -308,4 +308,16 @@ it("keeps an unknown-type quiet account under All and does not offer a filter un
   expect(
     screen.queryByRole("option", { name: /account type not recorded/ })
   ).not.toBeInTheDocument()
+})
+
+it("groups the profiles in their own task after the payments are drawn, saying so, never showing an old list's profiles", async () => {
+  setup.rows = [
+    { ...paymentFixture, key: "own", account_id: accounts[0].id, account_holder_parties: [party] },
+  ]
+  renderPeople()
+  // The directory has loaded and the payments are on screen; the grouping has not run inside that render.
+  expect(await screen.findByText("Grouping 1 payment by name and account…")).toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: /Reviewed account holder Example Holder/ })).not.toBeInTheDocument()
+  expect(await screen.findByRole("button", { name: /Reviewed account holder Example Holder/ })).toBeInTheDocument()
+  expect(screen.queryByText(/Grouping .* by name and account/)).not.toBeInTheDocument()
 })

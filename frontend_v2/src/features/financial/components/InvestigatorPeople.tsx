@@ -9,7 +9,7 @@ import { accountParties } from "../lib/account-parties"
 import { AccountHistory } from "./AccountHistory"
 import { AccountConsolidation } from "./AccountConsolidation"
 import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { downloadProtectedFile } from "@/lib/protected-file"
 import { useFinancialDraft } from "../stores/financial-drafts"
@@ -104,6 +104,8 @@ function UnidentifiedBreakdown({
   )
 }
 
+const NO_PROFILES: ReturnType<typeof paymentProfiles> = []
+
 export function InvestigatorPeople({ caseId }: { caseId: string }) {
   const data = useInvestigatorPayments(caseId)
   const directory = useQuery({
@@ -159,10 +161,34 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
       ),
     [data.rows, view.currencyGroup]
   )
-  const profiles = useMemo(
-    () => paymentProfiles(scopedRows, directory.data?.accounts),
-    [scopedRows, directory.data]
-  )
+  // Grouped in its own task after the page has drawn, not inside the render that first shows the payments: on
+  // d5b330d1 that render was one 0.45-0.8 s step (paymentProfiles 193 ms of it; fin-speed sourcemapped profile,
+  // 2026-11-01), as Follow money's grouping was before it moved out (378d70a9). Until the profiles for this row
+  // list and directory are worked out the list says so; profiles of an older row list are never shown for a new one.
+  const directoryAccounts = directory.data?.accounts
+  const [grouped, setGrouped] = useState<{
+    rows: typeof scopedRows
+    accounts: typeof directoryAccounts
+    profiles: ReturnType<typeof paymentProfiles>
+  } | null>(null)
+  const ready =
+    grouped !== null &&
+    grouped.rows === scopedRows &&
+    grouped.accounts === directoryAccounts
+  useEffect(() => {
+    if (ready) return
+    const timer = setTimeout(
+      () =>
+        setGrouped({
+          rows: scopedRows,
+          accounts: directoryAccounts,
+          profiles: paymentProfiles(scopedRows, directoryAccounts),
+        }),
+      0
+    )
+    return () => clearTimeout(timer)
+  }, [ready, scopedRows, directoryAccounts])
+  const profiles = ready ? grouped.profiles : NO_PROFILES
   const total = (rows: typeof data.rows) =>
     rows.reduce((sum, row) => sum + (minorAmount(row.amount_minor) ?? 0n), 0n)
   const selectedAccount = view.selected.startsWith("account:")
@@ -248,7 +274,13 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
       )}
       {directory.isSuccess && (
         <InvestigationReadState data={data}>
-          {selected ? (
+          {!ready ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              Grouping {scopedRows.length.toLocaleString("en-US")}{" "}
+              {scopedRows.length === 1 ? "payment" : "payments"} by name and
+              account…
+            </p>
+          ) : selected ? (
             <>
               {returnPath && (
                 <Button
