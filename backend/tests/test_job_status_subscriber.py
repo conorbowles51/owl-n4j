@@ -137,10 +137,17 @@ class RecoverInFlightTests(unittest.IsolatedAsyncioTestCase):
             MagicMock(all=MagicMock(return_value=files)),
             MagicMock(all=MagicMock(return_value=merges)),
         ]
+        rows = {row.id: row for row in files + merges}
+        self.db.get.side_effect = lambda model, row_id: rows.get(row_id)
+        self.open_sessions = 0
 
         @contextmanager
         def session():
-            yield self.db
+            self.open_sessions += 1
+            try:
+                yield self.db
+            finally:
+                self.open_sessions -= 1
 
         with patch("postgres.session.get_background_session", session), \
                 patch("services.evidence_engine_client.get_job", engine):
@@ -198,7 +205,8 @@ class RecoverInFlightTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("job-5", self.subscriber._tracked)
 
     async def test_evidence_file_the_engine_no_longer_has_is_failed_not_tracked(self):
-        ef = SimpleNamespace(id="ef-1", case_id="case-1", engine_job_id="gone-2", original_filename="a.pdf")
+        ef = SimpleNamespace(id="ef-1", case_id="case-1", engine_job_id="gone-2", original_filename="a.pdf",
+                             status="processing")
         with patch("services.evidence_db_storage.EvidenceDBStorage.mark_processed") as mark, \
                 patch("services.evidence_db_storage.EvidenceDBStorage.add_log") as add_log:
             await self._recover([ef], [], AsyncMock(side_effect=_engine_404("gone-2")))
@@ -207,6 +215,64 @@ class RecoverInFlightTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(add_log.call_args.kwargs["level"], "error")
         self.assertNotIn("gone-2", self.subscriber._tracked)
         self.subscriber._pubsub.subscribe.assert_not_awaited()
+
+
+    async def test_no_session_is_open_while_the_engine_is_asked(self):
+        # 1 Nov: the session held across these awaits sat idle in transaction while the loop was blocked.
+        ef = SimpleNamespace(id="ef-2", case_id="case-1", engine_job_id="job-6", original_filename="b.pdf",
+                             status="processing", summary=None, transcription=None, transcription_segments=None,
+                             entity_count=None, relationship_count=None)
+        open_while_asked = []
+
+        async def engine(job_id):
+            open_while_asked.append(self.open_sessions)
+            return {"id": job_id, "status": "completed", "entity_count": 4, "relationship_count": 2}
+
+        with patch("services.evidence_db_storage.EvidenceDBStorage.mark_processed") as mark:
+            await self._recover([ef], [_merge("job-7")], AsyncMock(side_effect=engine))
+
+        self.assertEqual(open_while_asked, [0, 0])
+        mark.assert_called_once_with(self.db, ["ef-2"], error=None)
+        self.assertEqual((ef.entity_count, ef.relationship_count), (4, 2))
+
+    async def test_a_row_settled_while_the_engine_was_asked_is_left_alone(self):
+        ef = SimpleNamespace(id="ef-3", case_id="case-1", engine_job_id="job-8", original_filename="c.pdf",
+                             status="processing")
+
+        async def engine(job_id):
+            ef.status = "processed"  # its own message settled it meanwhile
+            return {"id": job_id, "status": "failed", "error_message": "late"}
+
+        with patch("services.evidence_db_storage.EvidenceDBStorage.mark_processed") as mark:
+            await self._recover([ef], [], AsyncMock(side_effect=engine))
+
+        mark.assert_not_called()
+        self.assertNotIn("job-8", self.subscriber._tracked)
+
+
+class TerminalWriteThreadTests(unittest.IsolatedAsyncioTestCase):
+    async def test_the_database_write_runs_off_the_event_loop_thread(self):
+        # 1 Nov: an UPDATE evidence_files run on the loop thread waited on a row lock held by a
+        # coroutine of the same loop: neither could move for 2 h 28 min.
+        import threading
+        subscriber = JobStatusSubscriber()
+        threads = []
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = None
+
+        @contextmanager
+        def session():
+            threads.append(threading.get_ident())
+            yield db
+
+        with patch("postgres.session.get_background_session", session), \
+                patch("services.evidence_db_storage.EvidenceDBStorage.find_by_engine_job_id", return_value=None):
+            handled = await subscriber._dispatch_terminal("job-9", {"job_id": "job-9", "status": "failed"},
+                                                          "failed", "case-1")
+
+        self.assertTrue(handled)
+        self.assertEqual(len(threads), 1)
+        self.assertNotEqual(threads[0], threading.get_ident())
 
 
 class QuietSweepMissingJobTests(unittest.IsolatedAsyncioTestCase):

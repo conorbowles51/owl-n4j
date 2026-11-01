@@ -116,6 +116,31 @@ def pool_options(environ=None, prefix='POSTGRES', defaults=(5, 10, 30)):
 # The web worker's background pool: 2 kept + 6 more when busy (POSTGRES_BACKGROUND_*).
 BACKGROUND_POOL_DEFAULTS = (2, 6, 30)
 
+# A background session left idle inside a transaction this long is ended by Postgres (its work rolls back and
+# the next use of the connection fails and is replaced). 1 Nov: one sat idle in transaction 2 h 28 min holding
+# row locks and stalled document processing and two releases; the longest lock wait in the 43 h of Postgres logs
+# before it was 99 s. POSTGRES_BACKGROUND_IDLE_IN_TRANSACTION_SECONDS changes it; 0 turns it off.
+BACKGROUND_IDLE_IN_TRANSACTION_SECONDS = 600
+
+
+def idle_in_transaction_option(environ=None, prefix='POSTGRES_BACKGROUND',
+                               default=BACKGROUND_IDLE_IN_TRANSACTION_SECONDS):
+    """The libpq ``options`` value that sets idle_in_transaction_session_timeout, or None when it is off."""
+    environ = os.environ if environ is None else environ
+    raw = environ.get(prefix + '_IDLE_IN_TRANSACTION_SECONDS')
+    seconds = default
+    if raw is not None and str(raw).strip():
+        try:
+            seconds = float(str(raw).strip())
+        except ValueError:
+            seconds = -1
+        if seconds < 0:
+            logger.warning('%s_IDLE_IN_TRANSACTION_SECONDS=%r is not a usable number; using the default %s',
+                           prefix, raw, default)
+            seconds = default
+    milliseconds = int(seconds * 1000)
+    return '-c idle_in_transaction_session_timeout=%d' % milliseconds if milliseconds > 0 else None
+
 
 def _database_url():
     if DATABASE_URL is None:
@@ -142,6 +167,10 @@ def _new_engine(db_url, role_suffix='', prefix='POSTGRES', defaults=(5, 10, 30))
             role, _, pid = name.rpartition('-')
             name = ('%s%s-%s' % (role, role_suffix, pid))[:63]
         connect_args["application_name"] = name
+        if role_suffix == '-bg':
+            option = idle_in_transaction_option()
+            if option:
+                connect_args["options"] = option
         pool_args = dict(poolclass=TimedQueuePool, **pool_options(prefix=prefix, defaults=defaults))
     return create_engine(
         db_url,

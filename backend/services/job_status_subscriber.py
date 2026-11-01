@@ -140,107 +140,118 @@ class JobStatusSubscriber:
 
     async def _recover_in_flight(self):
         """On startup, find EvidenceFiles and MergeJobs stuck in 'processing'
-        and re-subscribe (or drain immediately if already terminal)."""
+        and re-subscribe (or drain immediately if already terminal).
+
+        No session is open while the engine is asked (the questions are
+        awaited on the event loop), and the database work runs in a thread:
+        a session held across those awaits kept its transaction open, and
+        blocking database calls on the loop thread waited on row locks whose
+        owners needed the loop to finish (1 Nov: 2 h 28 min deadlock)."""
         try:
-            from postgres.session import get_background_session
-            from services.evidence_db_storage import EvidenceDBStorage
+            stuck_files, stuck_merges = await asyncio.to_thread(self._load_in_flight)
+            if stuck_files:
+                logger.info("Recovering %d in-flight evidence-file jobs", len(stuck_files))
+            if stuck_merges:
+                logger.info("Recovering %d in-flight merge jobs", len(stuck_merges))
+
             from services import evidence_engine_client
 
-            with get_background_session() as db:
-                from sqlalchemy import select
-                from postgres.models.evidence import EvidenceFile
-                from postgres.models.merge_job import MergeJob
+            answers = []
+            for kind, row_id, jid, case_id in stuck_files + stuck_merges:
+                try:
+                    answers.append((kind, row_id, jid, case_id, await evidence_engine_client.get_job(jid), None))
+                except Exception as e:
+                    answers.append((kind, row_id, jid, case_id, None, e))
 
-                stuck = list(db.scalars(
-                    select(EvidenceFile).where(
-                        EvidenceFile.status == "processing",
-                        EvidenceFile.engine_job_id.isnot(None),
-                    )
-                ).all())
-
-                if stuck:
-                    logger.info("Recovering %d in-flight evidence-file jobs", len(stuck))
-
-                for ef in stuck:
-                    jid = ef.engine_job_id
-                    case_id = str(ef.case_id)
-
-                    # Check current status from engine
-                    try:
-                        job = await evidence_engine_client.get_job(jid)
-                        engine_status = job.get("status", "")
-
-                        if engine_status in ("completed", "failed"):
-                            # Already terminal — sync immediately
-                            err = _extract_failure_message(job) if engine_status == "failed" else None
-                            EvidenceDBStorage.mark_processed(db, [ef.id], error=err)
-                            if engine_status == "completed":
-                                doc_summary = job.get("document_summary")
-                                if doc_summary:
-                                    ef.summary = doc_summary
-                                transcription = job.get("transcription")
-                                if transcription is not None:
-                                    ef.transcription = transcription
-                                transcription_segments = job.get("transcription_segments")
-                                if transcription_segments is not None:
-                                    ef.transcription_segments = transcription_segments
-                                ec = job.get("entity_count")
-                                rc = job.get("relationship_count")
-                                if ec is not None:
-                                    ef.entity_count = ec
-                                if rc is not None:
-                                    ef.relationship_count = rc
-                            logger.info("Recovered job %s: %s", jid, engine_status)
-                        else:
-                            # Still running — subscribe for updates
-                            self._tracked[jid] = case_id
-                            await self._pubsub.subscribe(f"job:{jid}:progress")
-                    except Exception as e:
-                        if _engine_job_missing(e):
-                            self._fail_missing_file(db, ef)
-                            logger.info("Engine no longer has job %s; file marked failed", jid)
-                            continue
-                        # Engine unreachable — subscribe anyway, will catch up later
-                        self._tracked[jid] = case_id
-                        await self._pubsub.subscribe(f"job:{jid}:progress")
-                        self._warn_unreachable(jid, e)
-
-                # Recover MergeJobs the same way. Without this, a backend
-                # restart mid-merge leaves source entities un-recycled.
-                stuck_merges = list(db.scalars(
-                    select(MergeJob).where(
-                        MergeJob.status == "processing",
-                        MergeJob.engine_job_id.isnot(None),
-                    )
-                ).all())
-
-                if stuck_merges:
-                    logger.info("Recovering %d in-flight merge jobs", len(stuck_merges))
-
-                for mj in stuck_merges:
-                    jid = mj.engine_job_id
-                    case_id = str(mj.case_id)
-                    try:
-                        job = await evidence_engine_client.get_job(jid)
-                        engine_status = job.get("status", "")
-                        if engine_status in ("completed", "failed"):
-                            self._handle_merge_completion(db, mj, job, engine_status, case_id)
-                            logger.info("Recovered merge job %s: %s", jid, engine_status)
-                        else:
-                            self._tracked[jid] = case_id
-                            await self._pubsub.subscribe(f"job:{jid}:progress")
-                    except Exception as e:
-                        if _engine_job_missing(e):
-                            self._handle_merge_completion(db, mj, _missing_job(jid), "failed", case_id)
-                            logger.info("Engine no longer has merge job %s; merge marked failed", jid)
-                            continue
-                        self._tracked[jid] = case_id
-                        await self._pubsub.subscribe(f"job:{jid}:progress")
-                        self._warn_unreachable(jid, e)
-
-                db.commit()
+            to_subscribe = await asyncio.to_thread(self._apply_in_flight, answers)
+            for jid, case_id, error in to_subscribe:
+                # Still running, or the engine is unreachable: subscribe, catch up later.
+                self._tracked[jid] = case_id
+                await self._pubsub.subscribe(f"job:{jid}:progress")
+                if error is not None:
+                    self._warn_unreachable(jid, error)
         except Exception as e:
             logger.warning("Failed to recover in-flight jobs: %s", e)
+
+    @staticmethod
+    def _load_in_flight():
+        """(kind, row id, engine job id, case id) for every row left processing, read in one short session."""
+        from postgres.session import get_background_session
+        from sqlalchemy import select
+        from postgres.models.evidence import EvidenceFile
+        from postgres.models.merge_job import MergeJob
+
+        with get_background_session() as db:
+            files = [("file", ef.id, ef.engine_job_id, str(ef.case_id)) for ef in db.scalars(
+                select(EvidenceFile).where(
+                    EvidenceFile.status == "processing",
+                    EvidenceFile.engine_job_id.isnot(None),
+                )
+            ).all()]
+            # Recover MergeJobs the same way. Without this, a backend
+            # restart mid-merge leaves source entities un-recycled.
+            merges = [("merge", mj.id, mj.engine_job_id, str(mj.case_id)) for mj in db.scalars(
+                select(MergeJob).where(
+                    MergeJob.status == "processing",
+                    MergeJob.engine_job_id.isnot(None),
+                )
+            ).all()]
+        return files, merges
+
+    def _apply_in_flight(self, answers):
+        """Write the engine's answers (in a thread). Returns (job id, case id, error) to subscribe to."""
+        from postgres.session import get_background_session
+        from postgres.models.evidence import EvidenceFile
+        from postgres.models.merge_job import MergeJob
+        from services.evidence_db_storage import EvidenceDBStorage
+
+        to_subscribe = []
+        with get_background_session() as db:
+            for kind, row_id, jid, case_id, job, error in answers:
+                row = db.get(EvidenceFile if kind == "file" else MergeJob, row_id)
+                if row is None or row.status != "processing" or row.engine_job_id != jid:
+                    continue  # changed while the engine was asked; its own path settles it
+                if error is not None:
+                    if not _engine_job_missing(error):
+                        to_subscribe.append((jid, case_id, error))
+                    elif kind == "file":
+                        self._fail_missing_file(db, row)
+                        logger.info("Engine no longer has job %s; file marked failed", jid)
+                    else:
+                        self._handle_merge_completion(db, row, _missing_job(jid), "failed", case_id)
+                        logger.info("Engine no longer has merge job %s; merge marked failed", jid)
+                    continue
+                engine_status = job.get("status", "")
+                if engine_status not in ("completed", "failed"):
+                    to_subscribe.append((jid, case_id, None))
+                    continue
+                if kind == "merge":
+                    self._handle_merge_completion(db, row, job, engine_status, case_id)
+                    logger.info("Recovered merge job %s: %s", jid, engine_status)
+                    continue
+                # Already terminal — sync immediately
+                ef = row
+                err = _extract_failure_message(job) if engine_status == "failed" else None
+                EvidenceDBStorage.mark_processed(db, [ef.id], error=err)
+                if engine_status == "completed":
+                    doc_summary = job.get("document_summary")
+                    if doc_summary:
+                        ef.summary = doc_summary
+                    transcription = job.get("transcription")
+                    if transcription is not None:
+                        ef.transcription = transcription
+                    transcription_segments = job.get("transcription_segments")
+                    if transcription_segments is not None:
+                        ef.transcription_segments = transcription_segments
+                    ec = job.get("entity_count")
+                    rc = job.get("relationship_count")
+                    if ec is not None:
+                        ef.entity_count = ec
+                    if rc is not None:
+                        ef.relationship_count = rc
+                logger.info("Recovered job %s: %s", jid, engine_status)
+            db.commit()
+        return to_subscribe
 
     async def _run(self):
         """Main subscriber loop."""
@@ -382,9 +393,6 @@ class JobStatusSubscriber:
     async def _dispatch_terminal(self, job_id: str, data: dict, status: str, case_id: str | None) -> bool:
         """Route a terminal message to the right DB writer. Returns True only
         when the work succeeded; False/raise leaves the subscription in place."""
-        from postgres.session import get_background_session
-        from postgres.models.merge_job import MergeJob
-        from services.evidence_db_storage import EvidenceDBStorage
         from services import evidence_engine_client
 
         job_detail = data
@@ -394,6 +402,16 @@ class JobStatusSubscriber:
                 job_detail = {**data, **fetched_detail}
             except Exception:
                 logger.exception("Failed to fetch completed engine job %s detail", job_id)
+
+        # Blocking database work runs in a thread, never on the event loop: an UPDATE
+        # waiting on a row lock froze the loop, and with it the coroutine that held
+        # the lock and needed the loop to commit (1 Nov, 2 h 28 min).
+        return await asyncio.to_thread(self._write_terminal, job_id, data, job_detail, status, case_id)
+
+    def _write_terminal(self, job_id: str, data: dict, job_detail: dict, status: str, case_id: str | None) -> bool:
+        from postgres.session import get_background_session
+        from postgres.models.merge_job import MergeJob
+        from services.evidence_db_storage import EvidenceDBStorage
 
         with get_background_session() as db:
             merge_job = db.query(MergeJob).filter(

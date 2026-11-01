@@ -176,6 +176,31 @@ class BackgroundPoolTest(unittest.TestCase):
         self.assertEqual(names, ['loupe-web-bg-%d' % os.getpid(), 'loupe-web-%d' % os.getpid()])
         self.assertIs(session._get_background_session_local(), background)
 
+    def test_background_connections_end_a_transaction_left_idle_for_ten_minutes(self):
+        # 1 Nov: a background session sat idle in transaction 2 h 28 min holding row locks.
+        os.environ['LOUPE_DB_ROLE'] = 'web'
+        options = {}
+        real = session.create_engine
+
+        def recording(url, **kwargs):
+            options[kwargs['connect_args']['application_name']] = kwargs['connect_args'].get('options')
+            return real(url, **kwargs)
+
+        with unittest.mock.patch.object(session, 'create_engine', recording):
+            session._get_background_session_local()
+            session._get_session_local()
+        self.assertEqual(options['loupe-web-bg-%d' % os.getpid()], '-c idle_in_transaction_session_timeout=600000')
+        self.assertIsNone(options['loupe-web-%d' % os.getpid()])
+
+    def test_idle_in_transaction_limit_can_be_changed_or_turned_off(self):
+        self.assertEqual(session.idle_in_transaction_option({'POSTGRES_BACKGROUND_IDLE_IN_TRANSACTION_SECONDS': '90'}),
+                         '-c idle_in_transaction_session_timeout=90000')
+        self.assertIsNone(session.idle_in_transaction_option({'POSTGRES_BACKGROUND_IDLE_IN_TRANSACTION_SECONDS': '0'}))
+        with self.assertLogs(session.logger, level='WARNING'):
+            self.assertEqual(session.idle_in_transaction_option(
+                {'POSTGRES_BACKGROUND_IDLE_IN_TRANSACTION_SECONDS': 'soon'}),
+                '-c idle_in_transaction_session_timeout=600000')
+
     def test_threads_arriving_together_build_each_pool_once(self):
         os.environ['LOUPE_DB_ROLE'] = 'web'
         built = []
