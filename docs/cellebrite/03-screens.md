@@ -1980,12 +1980,12 @@ Each is a decision the plan did not already settle, with its reason and what rev
 
 | Id | Question | How it will be settled |
 |---|---|---|
-| 20.1 | Whether duplicate copies share the instant exactly or differ by a second or more, and how often | read-only corpus count of groups under D-9 at exact, 1 s and 2 s tolerance on C3, C9 and the server phones; recorded here before unit 1 |
+| 20.1 | Measured on the 14 server reports (`measurements/a3/README.md` section 4): most duplicate copies share the instant exactly (P14 messages 13,620 records in 5,443 groups); a 1 s chain adds records on every report with duplicates (P12 11 to 85, P06 50 to 175, P14 13,620 to 14,108) and 2 s a further 0 to 28 percent. D-9's exact match leaves those near copies as separate rows; PA's own other-source copies sit under `RelatedModels` (3,737 models on 5 reports) and are not D-9 duplicates | |
 | 20.2 | The most events in one day on one phone (bounds the in-day offset in 4.7) | corpus count after 02 lands |
-| 20.3 | Average and 99th-percentile JSON size of a `StreamRow` | measured on the C3 and C9 captures; sets D-2 |
-| 20.4 | Whether `NodeCount` on the report root equals the number of file entries (C8: 72,849 stated, 11,663 read) | 01 compares on C3 and C9, where the file index is complete (C3 `NodeCount` 43,043 equals 43,043 files; C9 29,536 equals 29,536), and documents the C8 reading |
-| 20.5 | Which audio and video containers and codecs the corpus holds and which browsers cannot play | file-type count over tagged files |
-| 20.6 | Which scripts and styled-letter ranges occur in the corpus text (fonts to bundle; supplementary fold table) | code-point histogram over captured strings, counts only, no content |
+| 20.3 | Average and 99th-percentile JSON size of a `StreamRow` | measured by `cb-interpret` on its first captures, which produce the `StreamRow`; sets D-2 |
+| 20.4 | Measured on the 14 server reports (01 section 1.9): `NodeCount` equals the tagged files plus the files nested under their `RelatedNodes` on 10 reports (P02: 72,508 plus 341 equals 72,849) and differs on P01, P03, P10 and P14. It is not a completeness check | |
+| 20.5 | Containers and codecs measured on the 14 server reports (`measurements/a3/README.md` section 7: 69,212 files, Ogg Opus 16,980, AAC-only MP4 11,404, H.264 in MP4 11,796, HEVC 4,701, AV1 3,280, CAF 5,023, AMR 1,520, 5,030 unrecognised by ffprobe). Which browsers cannot play which of them | `cb-media` plays one file of each group in each supported browser (stage I) |
+| 20.6 | Measured on the 14 server reports (`measurements/a3/README.md` section 6): 2,889,954 non-ASCII characters; mathematical alphanumerics 93,666, Cyrillic 70,168, regional indicators 11,225, negative circled or squared Latin 3,866, enclosed alphanumerics 2,666, letterlike 2,509, small capitals 902, Greek 823, fullwidth 563; 481,828 characters change under NFKC. Fonts and the fold table cover these classes | |
 | 20.7 | Whether WeasyPrint 68.1 renders color emoji fonts | spike before unit 7 |
 | 20.8 | Relativity's RSMF field names and container layout | read Relativity's published RSMF specification and cite it in this file before unit 12 |
 | 20.9 | Communicating identities and pair edges per case | count after 02 lands; sets D-21 |

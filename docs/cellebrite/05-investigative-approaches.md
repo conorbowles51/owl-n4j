@@ -657,6 +657,11 @@ Loupe case has a matching name), so approach 1's first run waits for the answer 
 loaded (CB-INDEX question 3); the 3-phone case (notifications) is the first candidate once it is in a case
 with financial records.
 
+**Server result (stage A3, `measurements/a3/README.md` section 9):** M-1b, readings with an amount and currency: S1 notifications 9 (P13) and 3 (P14); S2 short-code SMS 1 to 42
+per phone on 11 phones; S3 email up to 4,899 (P10); S9 app messages up to 502 (P13). M-1a: Notification only on
+P13 (3,951, 21 distinct `ServiceIdentifier`) and P14 (3,089, 19). M-1a against the reviewed directory and M-1c
+to M-1e need the ledger and the Loupe case: `cb-crossev` measures them before this gate is marked.
+
 ### 4.8 Dependencies
 
 01 (records, locators, file ids of the production), 02 (message view; owner identity; identifier registry
@@ -819,6 +824,11 @@ measured on the server) yields at
 least 100 `matched_strong` pairs in total or at least 10 `deleted_one_side`/`recovered_from_other_side`
 results; the local three-phone figure (18) alone is **inconclusive**.
 
+**Server result (stage A3, `measurements/a3/README.md` section 9):** in the 10-report case, 494 message pairs with an equal distinct body (at least 10 characters) within 300 s
+across 8 phone pairs (P04 and P08 259, P04 and P06 74, P05 and P08 73), 82 of them with `deleted_state` differing
+between the copies; 3-phone case 571 (P13 and P14 564). Gate **changed**: the volume exists; the tiered count
+(`matched_strong`, M-2b to M-2d) needs 02's identities and is measured by `cb-crossev`.
+
 ### 5.7 Dependencies
 
 01, 02 (owner identity, identifier registry, message view, platform family normalisation), 04 (availability
@@ -932,6 +942,12 @@ records, so `d_c` is a lower bound on deletion; differences in what each source 
 Local: A-C8 has 802 deleted messages and no disappearing setting (M10, M11). Gate: **build** if at least
 three phones in the corpus each have at least 50 deleted messages or M-3d is non-zero on any phone.
 A-C8 alone meets the first half on one phone; server measurement decides.
+
+**Server result (stage A3, `measurements/a3/README.md` section 9):** deleted messages on 7 phones exceed 50 (P14 11,579, P10 7,974, P08 3,894, P03 968, P02 802, P07 195, P05
+51); replies and quotes whose referenced message is absent (M-3d) on 6 phones (P14 1,648, P13 239, P10 38, P01
+4, P04 2, P07 2). `Label` values: only `Default` (P01 and P14); no SelfDestruct, Recalled or Scrambled. Wipe
+events: 1 each on P02, P07, P13. Conversations with at least 20 messages and a deletion (M-3e): 0 to 68 per
+phone (P10 68, P14 48). Gate **pass**: build.
 
 ### 6.7 Dependencies
 
@@ -1089,6 +1105,11 @@ co-placed bins; **build** complementary use if some pair has at least 14 days of
 data. Locally only A-C2 and B-C1 have location volume, and they are in different cases, so the local gate is
 not met; server measurement on the 10-report case decides.
 
+**Server result (stage A3, `measurements/a3/README.md` section 9):** M-5a: the most co-placed 15-minute bins for any pair is 43 (P03 and P04), and no pair shares a BSSID in a
+bin; M-5b: one pair has a strong marker (P04 and P06: 2 owner E.164 numbers in common); M-5c: 43 pairs have at
+least 14 days of overlapping interaction data (most: P08 and P10, 729). Gate: co-location **fail** (43 < 200);
+complementary use **pass**.
+
 ### 8.7 Dependencies
 
 02 (identifier registry), 04 (uncertainty radii, attribution, activity strength, availability bands, places).
@@ -1150,6 +1171,10 @@ M-6a: per phone, distinct keys by kind; M-6b: keys shared by at least two phones
 strength. Gate: **build** the cross-phone list if any case has at least 5 strong shared keys; the per-phone
 inventory is generic interpretation plus a view and is built with 03 regardless.
 
+**Server result (stage A3, `measurements/a3/README.md` section 9):** keys on two or more phones: 10-report case 2 strong (owner E.164), 346 medium (account usernames 21,
+saved-login accounts 325), 376 weak; 3-phone case 0 strong, 464 medium, 144 weak. Header ICCID, IMSI and
+MSISDN are shared by no pair. Gate: cross-phone list **fail** (2 < 5).
+
 ### 9.7 Dependencies
 
 02, 04 (places from BSSID), 03 (views).
@@ -1204,6 +1229,8 @@ rather than deletion (coverage).
 M-7a: per phone, dictionary and autofill entries matching the case vocabulary, and how many have no occurrence
 elsewhere. Gate: **build** if any case with these types has at least 10 vocabulary hits, or any
 `typed_not_in_extraction` hit on a financial identifier ending or amount.
+
+**Server result (stage A3, `measurements/a3/README.md` section 9):** M-7a needs the case vocabulary (02 identities and Loupe entities) and is measured by `cb-approaches`.
 
 ### 10.7 Dependencies
 
@@ -1273,6 +1300,10 @@ that population; M-8c (engine): perceptual groups. Local result: 4 attachment-li
 population; **build** perceptual tier only if a sample of 20 attachment pairs known to be the same message
 (from approach 2's `both_sides` media messages) shows exact MD5 failing on at least a quarter of them.
 
+**Server result (stage A3, `measurements/a3/README.md` section 9):** M-8a per phone: attachment-linked files with MD5 40 to 12,011, camera-path or EXIF-camera files with MD5 0
+to 1,115; M-8b: 112 exact groups spanning phones in the 10-report case, 46 in the 3-phone case. Gate: exact tier
+**pass** (112 >= 25); the perceptual tier needs approach 2's `both_sides` sample and is measured by `cb-crossev`.
+
 ### 11.7 Dependencies
 
 01 (file resolution and hash verification), 03 Media, 04 (places), approach 2 (offsets, media message pairs),
@@ -1324,6 +1355,9 @@ create records without typing (`Origin` where present); synced browser history f
 M-9a: per phone, searches with and without time; pages with title, with visit count; M-9b: hits on the case
 vocabulary. Gate: generic interpretation already lists these; the term-matching view is **built** if any case
 has at least 10 vocabulary hits.
+
+**Server result (stage A3, `measurements/a3/README.md` section 9):** M-9a: pages 0 to 55,590 per phone (P11), with title up to 2,621 (P02); searches with time up to 897,
+without time up to 7,884 (P11). M-9b needs the case vocabulary and is measured by `cb-approaches`.
 
 ### 12.7 Dependencies
 
@@ -1378,6 +1412,9 @@ M-10a: per phone, calendar entries with location, check-ins (by type), notes; M-
 Gate: **build** the comparison if any case has at least 20 placed items on phones that also carry location;
 otherwise these types remain generic interpretation only. Calendar location (3 values) alone will not meet it.
 
+**Server result (stage A3, `measurements/a3/README.md` section 9):** calendar entries with a location: 3 (P06); check-ins: 9 on P02, P13 and P14, none with a nested place
+record; notes 0 to 13. Gate **fail** (3 placed items < 20).
+
 ### 13.7 Dependencies
 
 04 (places, day view), approach 1 parser, approach 7 vocabulary.
@@ -1430,6 +1467,10 @@ contacts; contact through apps not extracted; numbers shared by more than one pe
 M-11a: per phone, contacts with created and modified times; M-11b: identities with at least 20 communications on
 some phone; M-11c: identities named differently on two phones. Gate: **build** if at least 3 phones have created
 times and at least 10 identities meet M-11b in a case.
+
+**Server result (stage A3, `measurements/a3/README.md` section 9):** M-11a: contacts with a created time on 6 phones of the 10-report case (P11 2,357, P10 1,530, P04 529, P03
+182, P02 10, P07 7) and 2 of the 3-phone case (P13 280, P14 101). The first half of the gate is met; M-11b and M-11c need 02's
+identities and are measured by `cb-approaches`.
 
 ### 14.7 Dependencies
 
@@ -1514,6 +1555,13 @@ M-12c record-id overlap between the two reports (count of equal ids); M-12d the 
 exports. Gate: **build** only if M-12a or M-12b classifies A-C1a and A-C1b as the same device, or another case
 supplies two extractions of one device. M-12c decides whether natural keys are needed (they are, unless ids
 overlap above 95 percent on the A-C8 control).
+
+**Server result (stage A3, `measurements/a3/README.md` section 9):** M-12a: IMEI, IMSI and MSISDN are present in one of the two C1 reports and absent in the other; ICCID,
+Android ID, Bluetooth and WiFi MAC and factory number are absent in both, so identifiers cannot classify the
+pair. M-12b: 4 equal content markers over 23 record types, overall Jaccard 0.0002. M-12c: 0 equal record ids
+(9,910 and 15,206). M-12d cannot be measured: the second C8 export exists only on the Mac. Gate **fail**: the
+two C1 reports are not shown to be one device, and no other case supplies two extractions of one device.
+Natural keys are needed (record ids do not overlap).
 
 ### 15.7 Dependencies
 
@@ -1794,6 +1842,15 @@ Specification (conditional on data that the corpus does not yet contain):
 Measurement gate: **build** when a production arrives whose records resolve to present, verified database files
 for at least 1,000 records. Until then the panel states the reason per record.
 
+**Server result (stage A3, `measurements/a3/README.md` section 10):** `extraInfos` is populated on 9 of the 14
+server reports. Each `extraInfo` (`id`, `type`) holds `sourceInfo` with `nodeInfo` entries (`id`, `name`,
+`path`, `tableName`, `offset`, `size`); a `nodeInfo` `id`, where present, is mostly a tagged file id (P08:
+952,331 of 992,010), and `tableName` and `offset` name the source table and position. Top-level records reaching a tagged file tagged `Database`, present on disk and
+MD5-verified, through their `extraInfo`: P11 77,446; P13 42,604; P08 37,052; P02 8,028; P03 6,733; P07 3,785;
+P12 1,306 (15 to 55 verified database files per report). Gate **pass** on 7 reports; the start of stage J is
+the coordinator's decision. These counts resolve by `nodeInfo` id only (no `path` matches a tagged file's
+`path` on any report) and are a lower bound.
+
 ### 17.3 Independent re-parse (ALEAPP, iLEAPP)
 
 Facts (project pages, read 2026-10-29): ALEAPP (Android) and iLEAPP (iOS) are MIT-licensed; command line
@@ -1982,23 +2039,23 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 
 ## 20. Not yet established
 
-- Notification amount and institution counts (M-1a, M-1b): no local sample carries Notification; server run needed.
+- M-1a against the reviewed directory and M-1c to M-1e (need the ledger and the Loupe case): `cb-crossev`.
 - Which Loupe case the phones are loaded into (CB-INDEX question 3). None of the three phone cases exists in
   Loupe: their ids are v1 case ids and no Loupe case has a matching name. Approach 1's first run waits for
   that answer.
 - Whether per-section card endings are persisted on admitted transaction rows (row-level binding in 4.3.4).
 - Meaning of `ScrambledMessageData`, `MobileCard`, `ApplicationUsage.LastScreenshot`, and of the Party on
   `ChatActivity` (actor or subject).
-- Count of `DeviceEvent` Wipe events and of `Label` values SelfDestruct, Recalled, Scrambled on the server phones.
-- Whether `SocialMediaActivity` check-ins carry a nested place record.
-- Whether report record ids are stable across exports or extractions (M-12c on the A-C8 pair).
-- Whether A-C1a and A-C1b are one device (M-12a, M-12b).
+- Whether report record ids are stable across two exports of one extraction: the corpus holds one C8 export on the
+  server (the second is only on the Mac), so M-12d cannot be measured here.
 - Common contacts per owner pair, matrix population size and number-switching base rates (M-14a to M-16c).
-- PA's element and attribute names for record-to-source information in `extraInfos` and the `.xmlModelSource` /
-  `.xmlNodeSource` sections: empty in every local sample.
+- What the `.xmlModelSource` / `.xmlNodeSource` split sections hold when non-empty (zero bytes in the local C8);
+  `extraInfos` is measured (17.2).
 - Pinned versions of ALEAPP or iLEAPP, the exact LAVA output schema of that version, and how to disable all network
   features in it.
 - Choice and licences of the local transcription, translation, language-identification and image-embedding models.
 - Whether SMS receive times on recipient phones are device-stamped or service-centre-stamped (affects clock offset
   from SMS pairs, M-2c).
-- Every gate above that depends on server measurements (10-report and 3-phone cases).
+- Gates that need 02's identities, the ledger or the case vocabulary: M-2b to M-2d and the perceptual tier of
+  M-8 (`cb-crossev`); M-7a, M-9b, M-11b, M-11c, M-14a to M-16c (`cb-approaches`); M-13a (`cb-pol`, with 04's
+  day view). Every other gate is marked with its server result in its section.

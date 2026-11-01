@@ -236,16 +236,18 @@ only, scratch output in `/mnt/owl-data/cellebrite-corpus/`, and the structure-on
 `docs/cellebrite/measurements/`. No content leaves
 the server in any form a person could read.
 
-| Measurement | For | Settles |
-|---|---|---|
-| 01: largest phone element count, file count and capture timing estimate | 01 section 14 | the 30-minute target and memory budget |
-| 02: seed counts recomputed directly from the 14 reports | 02-U2 | the seed matches the server, not only the catalogue |
-| 02 / 01: examiner zone versus device setting wherever both exist | 01 section 9.3 reverse-if | device zone rule |
-| 03 20.1: whether duplicate copies share the same second | 03-1 | duplicate rule D-9 |
-| 03 20.3: real row sizes | 03-1 | the 5,000-row full-load figure D-2 |
-| 04 M1 to M12: DeviceEvent `Value` sets per type, UserMapping values, location affiliation and precision distributions, availability, and the rest of 04 section 13 | 04-U1 | activity-strength and attribution rows |
-| 05 M-1 to M-16, X1 to X11 not runnable locally: cross-phone message pairs in the 10-report case and 3-phone case, notifications and short-code SMS with amounts, deletion distributions, co-travel statistics | 05 gates | which approaches proceed |
-| Two C1 reports in the 10-report case: device identity from header identifiers | 05-S15 | whether approach 12 has a real pair |
+Results are in `docs/cellebrite/measurements/a3/README.md` and in each owning section.
+
+| Measurement | For | Settles | Result |
+|---|---|---|---|
+| 01: largest phone element count, file count and capture timing estimate | 01 section 14 | the 30-minute target and memory budget | P14: 17,283,869 elements, 158,114 tagged files; counter parse 374 s at `nice 19`, flat 44 MiB (01 1.8, 1.9). Folder bytes and hashing time from the manifest (01 unit 0.1) |
+| 02: seed counts recomputed directly from the 14 reports | 02-U2 | the seed matches the server, not only the catalogue | **pass**: equal per type on all 14 once `RelatedModels` copies are counted; seed nesting **changed** to the union with the 95 server relations (02 3.5, decision 39) |
+| 02 / 01: examiner zone versus device setting wherever both exist | 01 section 9.3 reverse-if | device zone rule | **pass**: agree on 8 of 9, differ on P12; the rule stands |
+| 03 20.1: whether duplicate copies share the same second | 03-1 | duplicate rule D-9 | **pass**: exact equality finds most copies (03 20.1) |
+| 03 20.3: real row sizes | 03-1 | the 5,000-row full-load figure D-2 | measured by `cb-interpret` on its first captures |
+| 04 M1 to M12: DeviceEvent `Value` sets per type, UserMapping values, location affiliation and precision distributions, availability, and the rest of 04 section 13 | 04-U1 | activity-strength and attribution rows | recorded (04 13.1); M10 Bluetooth skipped (needs 02 identities); 8.2 threshold stands |
+| 05 M-1 to M-16, X1 to X11 not runnable locally: cross-phone message pairs in the 10-report case and 3-phone case, notifications and short-code SMS with amounts, deletion distributions, co-travel statistics | 05 gates | which approaches proceed | approach 3 **pass**; 4 group roles **pass**, read-and-latency **fail**; 5 complementary use **pass**, co-location **fail**; 6 cross-phone list **fail**; 8 exact tier **pass**; 10 **fail**; 12 **fail**; S17 source database **pass** (stage J condition met); 2 **changed** (494 candidate pairs; tiering by `cb-crossev`); 1, 7, 9, 11, 13 to 16 need identities, ledger or vocabulary (`cb-crossev`, `cb-approaches`, `cb-pol`) |
+| Two C1 reports in the 10-report case: device identity from header identifiers | 05-S15 | whether approach 12 has a real pair | **fail**: identifiers present in one report only; content Jaccard 0.0002; 0 equal record ids |
 
 ## 6. Cross-cutting fixes to existing Loupe that units depend on
 

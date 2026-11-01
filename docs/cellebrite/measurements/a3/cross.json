@@ -1,0 +1,5163 @@
+{
+ "assumed_radius_m": 1000.0,
+ "bin_seconds": 900,
+ "cases": {
+  "1-phone case": {
+   "m6b_keys_on_two_or_more_phones": {
+    "cookie_domain": [
+     0,
+     "weak"
+    ],
+    "owner_e164": [
+     0,
+     "strong"
+    ]
+   },
+   "m8b_groups_spanning_phones": 0,
+   "pairs": [],
+   "phones": [
+    "P01"
+   ]
+  },
+  "10-report case": {
+   "m6b_keys_on_two_or_more_phones": {
+    "account_username": [
+     21,
+     "medium"
+    ],
+    "bluetooth_name": [
+     6,
+     "weak"
+    ],
+    "bssid": [
+     2,
+     "weak"
+    ],
+    "cookie_domain": [
+     367,
+     "weak"
+    ],
+    "header_ICCID": [
+     0,
+     "strong"
+    ],
+    "header_IMSI": [
+     0,
+     "strong"
+    ],
+    "header_MSISDN": [
+     0,
+     "strong"
+    ],
+    "owner_e164": [
+     2,
+     "strong"
+    ],
+    "saved_login_account": [
+     325,
+     "medium"
+    ],
+    "ssid": [
+     1,
+     "weak"
+    ]
+   },
+   "m8b_groups_spanning_phones": 112,
+   "pairs": [
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       1,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       64,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       1,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 33,
+     "m5c_overlapping_interaction_days": 23,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P02",
+      "P03"
+     ],
+     "placed_observations": [
+      0,
+      476
+     ],
+     "x10_by_category": {
+      "Archives": 6,
+      "Text": 104,
+      "Video": 15
+     },
+     "x10_shared_md5_all_files": 125,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      10
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      8
+     ],
+     "x2_party_identifiers_in_common": 13,
+     "x3_distinct_common_bodies": 13,
+     "x3_frequent_common_bodies": 5,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 1
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       1,
+       "weak"
+      ],
+      "cookie_domain": [
+       21,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 147,
+     "m5c_overlapping_interaction_days": 45,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P02",
+      "P04"
+     ],
+     "placed_observations": [
+      0,
+      39915
+     ],
+     "x10_by_category": {
+      "<other>": 3,
+      "Archives": 3,
+      "Image": 373,
+      "Text": 38
+     },
+     "x10_shared_md5_all_files": 417,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      1,
+      10
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      1,
+      6
+     ],
+     "x2_party_identifiers_in_common": 26,
+     "x3_distinct_common_bodies": 22,
+     "x3_frequent_common_bodies": 14,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 20,
+     "x5_direction_complementary": 14,
+     "x6_deleted_state_differs": 15,
+     "x7_by_message_type": {
+      "Sms": 20
+     },
+     "x7_seconds_median_mad_zero": [
+      2.818,
+      0.579,
+      0
+     ],
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 1
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       6,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 134,
+     "m5c_overlapping_interaction_days": 56,
+     "m8b_shared_md5_attachment_or_camera": 9,
+     "pair": [
+      "P02",
+      "P05"
+     ],
+     "placed_observations": [
+      0,
+      0
+     ],
+     "x10_by_category": {
+      "Audio": 81,
+      "Image": 9238,
+      "Text": 518,
+      "Video": 10
+     },
+     "x10_shared_md5_all_files": 9847,
+     "x11_shared_md5_attachment_linked": 9,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      10
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      4
+     ],
+     "x2_party_identifiers_in_common": 10,
+     "x3_distinct_common_bodies": 8,
+     "x3_frequent_common_bodies": 2,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 1
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       4,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 236,
+     "m5c_overlapping_interaction_days": 35,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P02",
+      "P06"
+     ],
+     "placed_observations": [
+      0,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Archives": 14,
+      "Audio": 143,
+      "Image": 10264,
+      "Text": 394
+     },
+     "x10_shared_md5_all_files": 10816,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      10
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      6
+     ],
+     "x2_party_identifiers_in_common": 26,
+     "x3_distinct_common_bodies": 11,
+     "x3_frequent_common_bodies": 1,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 40
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       5,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       164,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 369,
+     "m5c_overlapping_interaction_days": 56,
+     "m8b_shared_md5_attachment_or_camera": 6,
+     "pair": [
+      "P02",
+      "P07"
+     ],
+     "placed_observations": [
+      0,
+      461
+     ],
+     "x10_by_category": {
+      "Application": 4925,
+      "Archives": 81,
+      "Audio": 204,
+      "Configuration": 66,
+      "Database": 47,
+      "Image": 19976,
+      "Text": 1821,
+      "Video": 16
+     },
+     "x10_shared_md5_all_files": 27136,
+     "x11_shared_md5_attachment_linked": 6,
+     "x1_owner_of_first_as_party_on_second": [
+      1,
+      10
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      7
+     ],
+     "x2_party_identifiers_in_common": 22,
+     "x3_distinct_common_bodies": 16,
+     "x3_frequent_common_bodies": 4,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {
+      "<other>": 1
+     },
+     "x9_chat_id_equal": 32
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       3,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       289,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 705,
+     "m5c_overlapping_interaction_days": 56,
+     "m8b_shared_md5_attachment_or_camera": 6,
+     "pair": [
+      "P02",
+      "P08"
+     ],
+     "placed_observations": [
+      0,
+      7
+     ],
+     "x10_by_category": {
+      "<other>": 3,
+      "Application": 46,
+      "Archives": 18,
+      "Audio": 53,
+      "Configuration": 14,
+      "Image": 4556,
+      "Text": 277
+     },
+     "x10_shared_md5_all_files": 4967,
+     "x11_shared_md5_attachment_linked": 6,
+     "x1_owner_of_first_as_party_on_second": [
+      1,
+      10
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      1,
+      5
+     ],
+     "x2_party_identifiers_in_common": 15,
+     "x3_distinct_common_bodies": 15,
+     "x3_frequent_common_bodies": 20,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       3,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 46,
+     "m5c_overlapping_interaction_days": 36,
+     "m8b_shared_md5_attachment_or_camera": 14,
+     "pair": [
+      "P02",
+      "P09"
+     ],
+     "placed_observations": [
+      0,
+      0
+     ],
+     "x10_by_category": {
+      "Archives": 52,
+      "Audio": 186,
+      "Image": 14862,
+      "Text": 1565,
+      "Video": 14
+     },
+     "x10_shared_md5_all_files": 16679,
+     "x11_shared_md5_attachment_linked": 14,
+     "x1_owner_of_first_as_party_on_second": [
+      1,
+      10
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      2,
+      5
+     ],
+     "x2_party_identifiers_in_common": 21,
+     "x3_distinct_common_bodies": 56,
+     "x3_frequent_common_bodies": 9,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 18,
+     "x5_direction_complementary": 18,
+     "x6_deleted_state_differs": 0,
+     "x7_by_message_type": {
+      "AppMessage": 18
+     },
+     "x7_seconds_median_mad_zero": [
+      0.0,
+      0.0,
+      18
+     ],
+     "x8_message_identifier_equal_by_source": {
+      "<other>": 1
+     },
+     "x9_chat_id_equal": 15
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 21,
+     "m5c_overlapping_interaction_days": 24,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P02",
+      "P10"
+     ],
+     "placed_observations": [
+      0,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Text": 5
+     },
+     "x10_shared_md5_all_files": 6,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      10
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      16
+     ],
+     "x2_party_identifiers_in_common": 6,
+     "x3_distinct_common_bodies": 16,
+     "x3_frequent_common_bodies": 7,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 1
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       42,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 183,
+     "m5c_overlapping_interaction_days": 35,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P02",
+      "P11"
+     ],
+     "placed_observations": [
+      0,
+      136
+     ],
+     "x10_by_category": {
+      "<other>": 3,
+      "Image": 21
+     },
+     "x10_shared_md5_all_files": 24,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      10
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      5
+     ],
+     "x2_party_identifiers_in_common": 5,
+     "x3_distinct_common_bodies": 0,
+     "x3_frequent_common_bodies": 0,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {
+      "<=1 km": 8,
+      "<=10 km": 15,
+      "<=150 m": 1,
+      "<=50 m": 5,
+      ">10 km": 24
+     },
+     "m10_pairs_within_5min_by_radius_sum": {
+      ">1 km": 3,
+      "unknown": 50
+     },
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 43,
+     "m5a_verdicts": {
+      "apart (assumed radius)": 14,
+      "indeterminate": 11,
+      "together": 1,
+      "together (assumed radius)": 17
+     },
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       2,
+       "medium"
+      ],
+      "bluetooth_name": [
+       3,
+       "weak"
+      ],
+      "bssid": [
+       1,
+       "weak"
+      ],
+      "cookie_domain": [
+       16,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       280,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 118,
+     "m5c_overlapping_interaction_days": 41,
+     "m8b_shared_md5_attachment_or_camera": 4,
+     "pair": [
+      "P03",
+      "P04"
+     ],
+     "placed_observations": [
+      476,
+      39915
+     ],
+     "x10_by_category": {
+      "Archives": 232,
+      "Configuration": 146064,
+      "Database": 164,
+      "Document": 132,
+      "Exchange": 21,
+      "Image": 5,
+      "Text": 10799,
+      "Video": 225
+     },
+     "x10_shared_md5_all_files": 157642,
+     "x11_shared_md5_attachment_linked": 4,
+     "x1_owner_of_first_as_party_on_second": [
+      1,
+      8
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      6
+     ],
+     "x2_party_identifiers_in_common": 31,
+     "x3_distinct_common_bodies": 14,
+     "x3_frequent_common_bodies": 15,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 10
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 93,
+     "m5c_overlapping_interaction_days": 42,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P03",
+      "P05"
+     ],
+     "placed_observations": [
+      476,
+      0
+     ],
+     "x10_by_category": {
+      "Text": 5,
+      "Video": 3
+     },
+     "x10_shared_md5_all_files": 8,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      8
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      4
+     ],
+     "x2_party_identifiers_in_common": 9,
+     "x3_distinct_common_bodies": 4,
+     "x3_frequent_common_bodies": 5,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 2
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 69,
+     "m5c_overlapping_interaction_days": 30,
+     "m8b_shared_md5_attachment_or_camera": 1,
+     "pair": [
+      "P03",
+      "P06"
+     ],
+     "placed_observations": [
+      476,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 4,
+      "Text": 34
+     },
+     "x10_shared_md5_all_files": 38,
+     "x11_shared_md5_attachment_linked": 1,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      8
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      6
+     ],
+     "x2_party_identifiers_in_common": 20,
+     "x3_distinct_common_bodies": 11,
+     "x3_frequent_common_bodies": 2,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 6
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       35,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 28,
+     "m5c_overlapping_interaction_days": 39,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P03",
+      "P07"
+     ],
+     "placed_observations": [
+      476,
+      461
+     ],
+     "x10_by_category": {
+      "<other>": 2,
+      "Archives": 4,
+      "Text": 63
+     },
+     "x10_shared_md5_all_files": 69,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      8
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      7
+     ],
+     "x2_party_identifiers_in_common": 8,
+     "x3_distinct_common_bodies": 11,
+     "x3_frequent_common_bodies": 6,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 4
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       56,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 407,
+     "m5c_overlapping_interaction_days": 42,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P03",
+      "P08"
+     ],
+     "placed_observations": [
+      476,
+      7
+     ],
+     "x10_by_category": {
+      "<other>": 3,
+      "Text": 27
+     },
+     "x10_shared_md5_all_files": 30,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      1,
+      8
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      1,
+      5
+     ],
+     "x2_party_identifiers_in_common": 7,
+     "x3_distinct_common_bodies": 25,
+     "x3_frequent_common_bodies": 15,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 6,
+     "x5_direction_complementary": 6,
+     "x6_deleted_state_differs": 6,
+     "x7_by_message_type": {
+      "AppMessage": 6
+     },
+     "x7_seconds_median_mad_zero": [
+      0.786,
+      0.132,
+      0
+     ],
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 4
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 0,
+     "m5c_overlapping_interaction_days": 0,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P03",
+      "P09"
+     ],
+     "placed_observations": [
+      476,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 2
+     },
+     "x10_shared_md5_all_files": 2,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      8
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      5
+     ],
+     "x2_party_identifiers_in_common": 2,
+     "x3_distinct_common_bodies": 8,
+     "x3_frequent_common_bodies": 1,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 1
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       2,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 38,
+     "m5c_overlapping_interaction_days": 34,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P03",
+      "P10"
+     ],
+     "placed_observations": [
+      476,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Text": 15249
+     },
+     "x10_shared_md5_all_files": 15250,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      8
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      16
+     ],
+     "x2_party_identifiers_in_common": 11,
+     "x3_distinct_common_bodies": 21,
+     "x3_frequent_common_bodies": 13,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 3
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {
+      ">10 km": 25
+     },
+     "m10_pairs_within_5min_by_radius_sum": {
+      "unknown": 25
+     },
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 1,
+     "m5a_verdicts": {
+      "apart (assumed radius)": 1
+     },
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       2,
+       "medium"
+      ],
+      "bluetooth_name": [
+       2,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       26,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       280,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 129,
+     "m5c_overlapping_interaction_days": 28,
+     "m8b_shared_md5_attachment_or_camera": 1,
+     "pair": [
+      "P03",
+      "P11"
+     ],
+     "placed_observations": [
+      476,
+      136
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Archives": 378,
+      "Configuration": 137906,
+      "Database": 138,
+      "Document": 131,
+      "Text": 2115,
+      "Video": 191
+     },
+     "x10_shared_md5_all_files": 140860,
+     "x11_shared_md5_attachment_linked": 1,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      8
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      5
+     ],
+     "x2_party_identifiers_in_common": 5,
+     "x3_distinct_common_bodies": 0,
+     "x3_frequent_common_bodies": 0,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 283,
+     "m5c_overlapping_interaction_days": 165,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P04",
+      "P05"
+     ],
+     "placed_observations": [
+      39915,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 4,
+      "Image": 381
+     },
+     "x10_shared_md5_all_files": 385,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      6
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      4
+     ],
+     "x2_party_identifiers_in_common": 21,
+     "x3_distinct_common_bodies": 10,
+     "x3_frequent_common_bodies": 12,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 2
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": true,
+     "m5b_shared_markers": {
+      "account_username": [
+       3,
+       "medium"
+      ],
+      "bluetooth_name": [
+       1,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       2,
+       "strong"
+      ],
+      "saved_login_account": [
+       3,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 277,
+     "m5c_overlapping_interaction_days": 88,
+     "m8b_shared_md5_attachment_or_camera": 23,
+     "pair": [
+      "P04",
+      "P06"
+     ],
+     "placed_observations": [
+      39915,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 2,
+      "Image": 797,
+      "Video": 6
+     },
+     "x10_shared_md5_all_files": 805,
+     "x11_shared_md5_attachment_linked": 23,
+     "x1_owner_of_first_as_party_on_second": [
+      4,
+      6
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      4,
+      6
+     ],
+     "x2_party_identifiers_in_common": 118,
+     "x3_distinct_common_bodies": 85,
+     "x3_frequent_common_bodies": 9,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 74,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x7_by_message_type": {
+      "AppMessage": 74
+     },
+     "x7_seconds_median_mad_zero": [
+      0.0,
+      0.0,
+      74
+     ],
+     "x8_message_identifier_equal_by_source": {
+      "Instagram": 52
+     },
+     "x9_chat_id_equal": 53
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {
+      "<=10 km": 14,
+      ">10 km": 4
+     },
+     "m10_pairs_within_5min_by_radius_sum": {
+      "unknown": 18
+     },
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 3,
+     "m5a_verdicts": {
+      "apart (assumed radius)": 1,
+      "indeterminate": 2
+     },
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       9,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 237,
+     "m5c_overlapping_interaction_days": 84,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P04",
+      "P07"
+     ],
+     "placed_observations": [
+      39915,
+      461
+     ],
+     "x10_by_category": {
+      "<other>": 2,
+      "Archives": 5,
+      "Image": 566,
+      "Text": 36
+     },
+     "x10_shared_md5_all_files": 609,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      6
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      7
+     ],
+     "x2_party_identifiers_in_common": 23,
+     "x3_distinct_common_bodies": 20,
+     "x3_frequent_common_bodies": 10,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 1,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x7_by_message_type": {
+      "AppMessage": 1
+     },
+     "x7_seconds_median_mad_zero": [
+      111.428,
+      0.0,
+      0
+     ],
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       16,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 1043,
+     "m5c_overlapping_interaction_days": 196,
+     "m8b_shared_md5_attachment_or_camera": 5,
+     "pair": [
+      "P04",
+      "P08"
+     ],
+     "placed_observations": [
+      39915,
+      7
+     ],
+     "x10_by_category": {
+      "<other>": 3,
+      "Audio": 3,
+      "Image": 93
+     },
+     "x10_shared_md5_all_files": 99,
+     "x11_shared_md5_attachment_linked": 5,
+     "x1_owner_of_first_as_party_on_second": [
+      1,
+      6
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      1,
+      5
+     ],
+     "x2_party_identifiers_in_common": 28,
+     "x3_distinct_common_bodies": 301,
+     "x3_frequent_common_bodies": 51,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 259,
+     "x5_direction_complementary": 259,
+     "x6_deleted_state_differs": 0,
+     "x7_by_message_type": {
+      "AppMessage": 259
+     },
+     "x7_seconds_median_mad_zero": [
+      0.594,
+      0.46,
+      0
+     ],
+     "x8_message_identifier_equal_by_source": {
+      "WhatsApp": 520
+     },
+     "x9_chat_id_equal": 7
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 19,
+     "m5c_overlapping_interaction_days": 10,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P04",
+      "P09"
+     ],
+     "placed_observations": [
+      39915,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Image": 225
+     },
+     "x10_shared_md5_all_files": 226,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      6
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      5
+     ],
+     "x2_party_identifiers_in_common": 5,
+     "x3_distinct_common_bodies": 8,
+     "x3_frequent_common_bodies": 6,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 3
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       2,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 66,
+     "m5c_overlapping_interaction_days": 119,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P04",
+      "P10"
+     ],
+     "placed_observations": [
+      39915,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Text": 10798
+     },
+     "x10_shared_md5_all_files": 10799,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      6
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      16
+     ],
+     "x2_party_identifiers_in_common": 38,
+     "x3_distinct_common_bodies": 23,
+     "x3_frequent_common_bodies": 23,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {
+      "<other>": 1
+     },
+     "x9_chat_id_equal": 3
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 1,
+     "m5a_verdicts": {
+      "together (assumed radius)": 1
+     },
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       2,
+       "medium"
+      ],
+      "bluetooth_name": [
+       1,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       18,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       268,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 269,
+     "m5c_overlapping_interaction_days": 84,
+     "m8b_shared_md5_attachment_or_camera": 6,
+     "pair": [
+      "P04",
+      "P11"
+     ],
+     "placed_observations": [
+      39915,
+      136
+     ],
+     "x10_by_category": {
+      "Archives": 242,
+      "Audio": 1281,
+      "Configuration": 145192,
+      "Database": 145,
+      "Document": 131,
+      "Image": 8148,
+      "Text": 2112,
+      "Video": 179
+     },
+     "x10_shared_md5_all_files": 157430,
+     "x11_shared_md5_attachment_linked": 1,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      6
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      5
+     ],
+     "x2_party_identifiers_in_common": 31,
+     "x3_distinct_common_bodies": 1,
+     "x3_frequent_common_bodies": 0,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       4,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 217,
+     "m5c_overlapping_interaction_days": 101,
+     "m8b_shared_md5_attachment_or_camera": 3,
+     "pair": [
+      "P05",
+      "P06"
+     ],
+     "placed_observations": [
+      0,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Audio": 70,
+      "Image": 4639,
+      "Text": 425
+     },
+     "x10_shared_md5_all_files": 5135,
+     "x11_shared_md5_attachment_linked": 3,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      4
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      6
+     ],
+     "x2_party_identifiers_in_common": 19,
+     "x3_distinct_common_bodies": 9,
+     "x3_frequent_common_bodies": 6,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 4
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       5,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 226,
+     "m5c_overlapping_interaction_days": 119,
+     "m8b_shared_md5_attachment_or_camera": 10,
+     "pair": [
+      "P05",
+      "P07"
+     ],
+     "placed_observations": [
+      0,
+      461
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Audio": 81,
+      "Image": 9306,
+      "Text": 475,
+      "Video": 6
+     },
+     "x10_shared_md5_all_files": 9869,
+     "x11_shared_md5_attachment_linked": 10,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      4
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      7
+     ],
+     "x2_party_identifiers_in_common": 11,
+     "x3_distinct_common_bodies": 10,
+     "x3_frequent_common_bodies": 5,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       3,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 2016,
+     "m5c_overlapping_interaction_days": 539,
+     "m8b_shared_md5_attachment_or_camera": 46,
+     "pair": [
+      "P05",
+      "P08"
+     ],
+     "placed_observations": [
+      0,
+      7
+     ],
+     "x10_by_category": {
+      "<other>": 2,
+      "Audio": 41,
+      "Image": 2097,
+      "Text": 350,
+      "Video": 6
+     },
+     "x10_shared_md5_all_files": 2496,
+     "x11_shared_md5_attachment_linked": 46,
+     "x1_owner_of_first_as_party_on_second": [
+      1,
+      4
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      1,
+      5
+     ],
+     "x2_party_identifiers_in_common": 50,
+     "x3_distinct_common_bodies": 170,
+     "x3_frequent_common_bodies": 92,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 73,
+     "x5_direction_complementary": 71,
+     "x6_deleted_state_differs": 61,
+     "x7_by_message_type": {
+      "AppMessage": 71,
+      "Sms": 2
+     },
+     "x7_seconds_median_mad_zero": [
+      0.518,
+      0.387,
+      1
+     ],
+     "x8_message_identifier_equal_by_source": {
+      "Native Messages": 148,
+      "WhatsApp": 238
+     },
+     "x9_chat_id_equal": 424
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       3,
+       "medium"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 12,
+     "m5c_overlapping_interaction_days": 14,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P05",
+      "P09"
+     ],
+     "placed_observations": [
+      0,
+      0
+     ],
+     "x10_by_category": {
+      "Audio": 54,
+      "Image": 5959,
+      "Text": 439,
+      "Video": 6
+     },
+     "x10_shared_md5_all_files": 6458,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      4
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      5
+     ],
+     "x2_party_identifiers_in_common": 2,
+     "x3_distinct_common_bodies": 4,
+     "x3_frequent_common_bodies": 4,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 1
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ]
+     },
+     "m5c_bins_both_interacting": 187,
+     "m5c_overlapping_interaction_days": 415,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P05",
+      "P10"
+     ],
+     "placed_observations": [
+      0,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Text": 3
+     },
+     "x10_shared_md5_all_files": 4,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      4
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      16
+     ],
+     "x2_party_identifiers_in_common": 14,
+     "x3_distinct_common_bodies": 22,
+     "x3_frequent_common_bodies": 12,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 319,
+     "m5c_overlapping_interaction_days": 341,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P05",
+      "P11"
+     ],
+     "placed_observations": [
+      0,
+      136
+     ],
+     "x10_by_category": {
+      "<other>": 3,
+      "Image": 901,
+      "Text": 24
+     },
+     "x10_shared_md5_all_files": 928,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      4
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      5
+     ],
+     "x2_party_identifiers_in_common": 8,
+     "x3_distinct_common_bodies": 0,
+     "x3_frequent_common_bodies": 0,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 1
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       4,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       1,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 217,
+     "m5c_overlapping_interaction_days": 63,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P06",
+      "P07"
+     ],
+     "placed_observations": [
+      0,
+      461
+     ],
+     "x10_by_category": {
+      "Archives": 13,
+      "Audio": 132,
+      "Image": 10211,
+      "Text": 366,
+      "Video": 6
+     },
+     "x10_shared_md5_all_files": 10728,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      6
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      7
+     ],
+     "x2_party_identifiers_in_common": 19,
+     "x3_distinct_common_bodies": 10,
+     "x3_frequent_common_bodies": 2,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {
+      "Android CallLog database": 144,
+      "Native Messages": 10
+     },
+     "x9_chat_id_equal": 43
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       3,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 678,
+     "m5c_overlapping_interaction_days": 102,
+     "m8b_shared_md5_attachment_or_camera": 7,
+     "pair": [
+      "P06",
+      "P08"
+     ],
+     "placed_observations": [
+      0,
+      7
+     ],
+     "x10_by_category": {
+      "Archives": 23,
+      "Audio": 50,
+      "Image": 6380,
+      "Text": 381,
+      "Video": 40
+     },
+     "x10_shared_md5_all_files": 6874,
+     "x11_shared_md5_attachment_linked": 7,
+     "x1_owner_of_first_as_party_on_second": [
+      2,
+      6
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      1,
+      5
+     ],
+     "x2_party_identifiers_in_common": 22,
+     "x3_distinct_common_bodies": 62,
+     "x3_frequent_common_bodies": 29,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 43,
+     "x5_direction_complementary": 43,
+     "x6_deleted_state_differs": 0,
+     "x7_by_message_type": {
+      "AppMessage": 43
+     },
+     "x7_seconds_median_mad_zero": [
+      0.39,
+      0.328,
+      0
+     ],
+     "x8_message_identifier_equal_by_source": {
+      "Native Messages": 3,
+      "WhatsApp": 86
+     },
+     "x9_chat_id_equal": 2
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       2,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 9,
+     "m5c_overlapping_interaction_days": 10,
+     "m8b_shared_md5_attachment_or_camera": 1,
+     "pair": [
+      "P06",
+      "P09"
+     ],
+     "placed_observations": [
+      0,
+      0
+     ],
+     "x10_by_category": {
+      "Archives": 3,
+      "Audio": 119,
+      "Image": 6612,
+      "Text": 296
+     },
+     "x10_shared_md5_all_files": 7030,
+     "x11_shared_md5_attachment_linked": 1,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      6
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      3,
+      5
+     ],
+     "x2_party_identifiers_in_common": 12,
+     "x3_distinct_common_bodies": 4,
+     "x3_frequent_common_bodies": 2,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {
+      "Android CallLog database": 17
+     },
+     "x9_chat_id_equal": 19
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 17,
+     "m5c_overlapping_interaction_days": 59,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P06",
+      "P10"
+     ],
+     "placed_observations": [
+      0,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 2
+     },
+     "x10_shared_md5_all_files": 2,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      6
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      16
+     ],
+     "x2_party_identifiers_in_common": 20,
+     "x3_distinct_common_bodies": 11,
+     "x3_frequent_common_bodies": 9,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 239,
+     "m5c_overlapping_interaction_days": 52,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P06",
+      "P11"
+     ],
+     "placed_observations": [
+      0,
+      136
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Image": 9
+     },
+     "x10_shared_md5_all_files": 10,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      6
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      5
+     ],
+     "x2_party_identifiers_in_common": 16,
+     "x3_distinct_common_bodies": 0,
+     "x3_frequent_common_bodies": 0,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       3,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       158,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 892,
+     "m5c_overlapping_interaction_days": 125,
+     "m8b_shared_md5_attachment_or_camera": 8,
+     "pair": [
+      "P07",
+      "P08"
+     ],
+     "placed_observations": [
+      461,
+      7
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Application": 15,
+      "Archives": 10,
+      "Audio": 41,
+      "Configuration": 20,
+      "Database": 3,
+      "Image": 4555,
+      "Text": 332,
+      "Video": 27
+     },
+     "x10_shared_md5_all_files": 5004,
+     "x11_shared_md5_attachment_linked": 8,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      7
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      5
+     ],
+     "x2_party_identifiers_in_common": 18,
+     "x3_distinct_common_bodies": 42,
+     "x3_frequent_common_bodies": 31,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {
+      "Native Messages": 3
+     },
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       3,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       1,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 24,
+     "m5c_overlapping_interaction_days": 16,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P07",
+      "P09"
+     ],
+     "placed_observations": [
+      461,
+      0
+     ],
+     "x10_by_category": {
+      "Archives": 38,
+      "Audio": 172,
+      "Image": 14828,
+      "Text": 1582,
+      "Video": 6
+     },
+     "x10_shared_md5_all_files": 16626,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      7
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      2,
+      5
+     ],
+     "x2_party_identifiers_in_common": 7,
+     "x3_distinct_common_bodies": 9,
+     "x3_frequent_common_bodies": 4,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {
+      "Android CallLog database": 14
+     },
+     "x9_chat_id_equal": 13
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 22,
+     "m5c_overlapping_interaction_days": 75,
+     "m8b_shared_md5_attachment_or_camera": 1,
+     "pair": [
+      "P07",
+      "P10"
+     ],
+     "placed_observations": [
+      461,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 3,
+      "Text": 3
+     },
+     "x10_shared_md5_all_files": 6,
+     "x11_shared_md5_attachment_linked": 1,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      7
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      16
+     ],
+     "x2_party_identifiers_in_common": 21,
+     "x3_distinct_common_bodies": 29,
+     "x3_frequent_common_bodies": 8,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       25,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 217,
+     "m5c_overlapping_interaction_days": 64,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P07",
+      "P11"
+     ],
+     "placed_observations": [
+      461,
+      136
+     ],
+     "x10_by_category": {
+      "<other>": 4,
+      "Image": 155
+     },
+     "x10_shared_md5_all_files": 159,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      1,
+      7
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      1,
+      5
+     ],
+     "x2_party_identifiers_in_common": 20,
+     "x3_distinct_common_bodies": 0,
+     "x3_frequent_common_bodies": 0,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       2,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 36,
+     "m5c_overlapping_interaction_days": 14,
+     "m8b_shared_md5_attachment_or_camera": 1,
+     "pair": [
+      "P08",
+      "P09"
+     ],
+     "placed_observations": [
+      7,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 3,
+      "Audio": 41,
+      "Image": 4079,
+      "Text": 194
+     },
+     "x10_shared_md5_all_files": 4317,
+     "x11_shared_md5_attachment_linked": 1,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      5
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      1,
+      5
+     ],
+     "x2_party_identifiers_in_common": 8,
+     "x3_distinct_common_bodies": 16,
+     "x3_frequent_common_bodies": 11,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 6
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 987,
+     "m5c_overlapping_interaction_days": 729,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P08",
+      "P10"
+     ],
+     "placed_observations": [
+      7,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 3
+     },
+     "x10_shared_md5_all_files": 3,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      5
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      16
+     ],
+     "x2_party_identifiers_in_common": 17,
+     "x3_distinct_common_bodies": 85,
+     "x3_frequent_common_bodies": 66,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {
+      "<other>": 1
+     },
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       43,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 1125,
+     "m5c_overlapping_interaction_days": 435,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P08",
+      "P11"
+     ],
+     "placed_observations": [
+      7,
+      136
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Image": 25
+     },
+     "x10_shared_md5_all_files": 26,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      5
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      5
+     ],
+     "x2_party_identifiers_in_common": 8,
+     "x3_distinct_common_bodies": 0,
+     "x3_frequent_common_bodies": 0,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 2
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 0,
+     "m5c_overlapping_interaction_days": 0,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P09",
+      "P10"
+     ],
+     "placed_observations": [
+      0,
+      0
+     ],
+     "x10_by_category": {
+      "<other>": 1
+     },
+     "x10_shared_md5_all_files": 1,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      0,
+      5
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      16
+     ],
+     "x2_party_identifiers_in_common": 5,
+     "x3_distinct_common_bodies": 8,
+     "x3_frequent_common_bodies": 6,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 5,
+     "m5c_overlapping_interaction_days": 11,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P09",
+      "P11"
+     ],
+     "placed_observations": [
+      0,
+      136
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Image": 30
+     },
+     "x10_shared_md5_all_files": 31,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      1,
+      5
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      0,
+      5
+     ],
+     "x2_party_identifiers_in_common": 2,
+     "x3_distinct_common_bodies": 0,
+     "x3_frequent_common_bodies": 0,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       12,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       0,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       0,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 125,
+     "m5c_overlapping_interaction_days": 353,
+     "m8b_shared_md5_attachment_or_camera": 0,
+     "pair": [
+      "P10",
+      "P11"
+     ],
+     "placed_observations": [
+      0,
+      136
+     ],
+     "x10_by_category": {
+      "<other>": 2,
+      "Text": 2136
+     },
+     "x10_shared_md5_all_files": 2138,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      2,
+      16
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      2,
+      5
+     ],
+     "x2_party_identifiers_in_common": 2270,
+     "x3_distinct_common_bodies": 0,
+     "x3_frequent_common_bodies": 2,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    }
+   ],
+   "phones": [
+    "P02",
+    "P03",
+    "P04",
+    "P05",
+    "P06",
+    "P07",
+    "P08",
+    "P09",
+    "P10",
+    "P11"
+   ]
+  },
+  "3-phone case": {
+   "m6b_keys_on_two_or_more_phones": {
+    "account_username": [
+     2,
+     "medium"
+    ],
+    "bluetooth_name": [
+     3,
+     "weak"
+    ],
+    "bssid": [
+     7,
+     "weak"
+    ],
+    "cookie_domain": [
+     130,
+     "weak"
+    ],
+    "header_ICCID": [
+     0,
+     "strong"
+    ],
+    "header_IMSI": [
+     0,
+     "strong"
+    ],
+    "header_MSISDN": [
+     0,
+     "strong"
+    ],
+    "owner_e164": [
+     0,
+     "strong"
+    ],
+    "remote_session_user_agent": [
+     0,
+     "weak"
+    ],
+    "saved_login_account": [
+     462,
+     "medium"
+    ],
+    "ssid": [
+     4,
+     "weak"
+    ]
+   },
+   "m8b_groups_spanning_phones": 46,
+   "pairs": [
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       51,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       3,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 279,
+     "m5c_overlapping_interaction_days": 32,
+     "m8b_shared_md5_attachment_or_camera": 6,
+     "pair": [
+      "P12",
+      "P13"
+     ],
+     "placed_observations": [
+      12,
+      2802
+     ],
+     "x10_by_category": {
+      "<other>": 2,
+      "Archives": 12,
+      "Configuration": 77,
+      "Image": 631,
+      "Text": 4,
+      "Video": 10
+     },
+     "x10_shared_md5_all_files": 736,
+     "x11_shared_md5_attachment_linked": 6,
+     "x1_owner_of_first_as_party_on_second": [
+      1,
+      2
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      1,
+      6
+     ],
+     "x2_party_identifiers_in_common": 19,
+     "x3_distinct_common_bodies": 9,
+     "x3_frequent_common_bodies": 5,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 7,
+     "x5_direction_complementary": 5,
+     "x6_deleted_state_differs": 3,
+     "x7_by_message_type": {
+      "AppMessage": 1,
+      "Sms": 6
+     },
+     "x7_seconds_median_mad_zero": [
+      2.34,
+      0.194,
+      0
+     ],
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {},
+     "m10_pairs_within_5min_by_radius_sum": {},
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 0,
+     "m5a_verdicts": {},
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       0,
+       "medium"
+      ],
+      "bluetooth_name": [
+       0,
+       "weak"
+      ],
+      "bssid": [
+       0,
+       "weak"
+      ],
+      "cookie_domain": [
+       77,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "remote_session_user_agent": [
+       0,
+       "weak"
+      ],
+      "saved_login_account": [
+       0,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       1,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 195,
+     "m5c_overlapping_interaction_days": 20,
+     "m8b_shared_md5_attachment_or_camera": 1,
+     "pair": [
+      "P12",
+      "P14"
+     ],
+     "placed_observations": [
+      12,
+      12884
+     ],
+     "x10_by_category": {
+      "<other>": 1,
+      "Archives": 12,
+      "Configuration": 59,
+      "Image": 687,
+      "Text": 16,
+      "Video": 7
+     },
+     "x10_shared_md5_all_files": 782,
+     "x11_shared_md5_attachment_linked": 0,
+     "x1_owner_of_first_as_party_on_second": [
+      1,
+      2
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      1,
+      9
+     ],
+     "x2_party_identifiers_in_common": 29,
+     "x3_distinct_common_bodies": 13,
+     "x3_frequent_common_bodies": 12,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 0,
+     "x5_direction_complementary": 0,
+     "x6_deleted_state_differs": 0,
+     "x8_message_identifier_equal_by_source": {},
+     "x9_chat_id_equal": 0
+    },
+    {
+     "m10_bluetooth": "skipped: needs the identity spec output naming each phone's own device (04 M10)",
+     "m10_pairs_within_5min_by_distance": {
+      "<=1 km": 74,
+      "<=150 m": 1,
+      ">10 km": 74
+     },
+     "m10_pairs_within_5min_by_radius_sum": {
+      "unknown": 149
+     },
+     "m10_shared_bssid_within_5min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m10_shared_cell_within_15min": {
+      "distinct_keys": 0,
+      "observations": 0
+     },
+     "m5a_bins_both_placed": 2,
+     "m5a_verdicts": {
+      "together (assumed radius)": 2
+     },
+     "m5a_wifi_together_bins": 0,
+     "m5a_wifi_together_bins_not_placed_by_location": 0,
+     "m5b_any_strong": false,
+     "m5b_shared_markers": {
+      "account_username": [
+       2,
+       "medium"
+      ],
+      "bluetooth_name": [
+       3,
+       "weak"
+      ],
+      "bssid": [
+       7,
+       "weak"
+      ],
+      "cookie_domain": [
+       64,
+       "weak"
+      ],
+      "header_ICCID": [
+       0,
+       "strong"
+      ],
+      "header_IMSI": [
+       0,
+       "strong"
+      ],
+      "header_MSISDN": [
+       0,
+       "strong"
+      ],
+      "owner_e164": [
+       0,
+       "strong"
+      ],
+      "remote_session_user_agent": [
+       0,
+       "weak"
+      ],
+      "saved_login_account": [
+       462,
+       "medium"
+      ],
+      "sim": [
+       0,
+       "strong"
+      ],
+      "ssid": [
+       2,
+       "weak"
+      ]
+     },
+     "m5c_bins_both_interacting": 791,
+     "m5c_overlapping_interaction_days": 332,
+     "m8b_shared_md5_attachment_or_camera": 39,
+     "pair": [
+      "P13",
+      "P14"
+     ],
+     "placed_observations": [
+      2802,
+      12884
+     ],
+     "x10_by_category": {
+      "Application": 22,
+      "Archives": 149,
+      "Audio": 1142,
+      "Configuration": 20062,
+      "Database": 130,
+      "Document": 38,
+      "Image": 12249,
+      "Shortcut": 5,
+      "Text": 1472,
+      "Uncategorized": 3,
+      "Video": 336
+     },
+     "x10_shared_md5_all_files": 35608,
+     "x11_shared_md5_attachment_linked": 35,
+     "x1_owner_of_first_as_party_on_second": [
+      1,
+      6
+     ],
+     "x1_owner_of_second_as_party_on_first": [
+      2,
+      9
+     ],
+     "x2_party_identifiers_in_common": 38,
+     "x3_distinct_common_bodies": 633,
+     "x3_frequent_common_bodies": 44,
+     "x3_short_bodies": "not cross-matched (under 10 characters); per-phone counts in s05_x3_short_bodies",
+     "x4_pairs_within_300s": 564,
+     "x5_direction_complementary": 2,
+     "x6_deleted_state_differs": 0,
+     "x7_by_message_type": {
+      "AppMessage": 564
+     },
+     "x7_seconds_median_mad_zero": [
+      0.0,
+      0.0,
+      555
+     ],
+     "x8_message_identifier_equal_by_source": {
+      "WhatsApp": 4
+     },
+     "x9_chat_id_equal": 33
+    }
+   ],
+   "phones": [
+    "P12",
+    "P13",
+    "P14"
+   ]
+  }
+ },
+ "m12_P03_P10": {
+  "m12a_identifiers": {
+   "Bluetooth MAC Address": "absent in both",
+   "DeviceInfoAndroidID": "absent in both",
+   "Factory number": "absent in both",
+   "ICCID": "absent in both",
+   "IMEI": "absent in one",
+   "IMSI": "absent in one",
+   "MSISDN": "absent in one",
+   "Mac Address": "absent in both"
+  },
+  "m12b_content_markers_by_type": {
+   "CalendarEntry": {
+    "equal": 0,
+    "first": 129,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "Call": {
+    "equal": 0,
+    "first": 146,
+    "jaccard": 0.0,
+    "second": 602
+   },
+   "CellTower": {
+    "equal": 0,
+    "first": 8,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "Chat": {
+    "equal": 0,
+    "first": 296,
+    "jaccard": 0.0,
+    "second": 649
+   },
+   "Contact": {
+    "equal": 3,
+    "first": 3935,
+    "jaccard": 0.0005,
+    "second": 2193
+   },
+   "Cookie": {
+    "equal": 0,
+    "first": 720,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "DeviceConnectivity": {
+    "equal": 0,
+    "first": 24,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "DeviceEvent": {
+    "equal": 0,
+    "first": 208,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "Email": {
+    "equal": 0,
+    "first": 74,
+    "jaccard": 0.0,
+    "second": 10890
+   },
+   "FileUpload": {
+    "equal": 0,
+    "first": 9,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "InstantMessage": {
+    "equal": 1,
+    "first": 15,
+    "jaccard": 0.01,
+    "second": 86
+   },
+   "Journey": {
+    "equal": 0,
+    "first": 22,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "Location": {
+    "equal": 0,
+    "first": 406,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "MobileCard": {
+    "equal": 0,
+    "first": 1,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "Note": {
+    "equal": 0,
+    "first": 1,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "Password": {
+    "equal": 0,
+    "first": 915,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "RecognizedDevice": {
+    "equal": 0,
+    "first": 1,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "SIMData": {
+    "equal": 0,
+    "first": 0,
+    "jaccard": 0.0,
+    "second": 9
+   },
+   "SearchedItem": {
+    "equal": 0,
+    "first": 777,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "UserAccount": {
+    "equal": 0,
+    "first": 25,
+    "jaccard": 0.0,
+    "second": 23
+   },
+   "VisitedPage": {
+    "equal": 0,
+    "first": 838,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "WebBookmark": {
+    "equal": 0,
+    "first": 15,
+    "jaccard": 0.0,
+    "second": 0
+   },
+   "WirelessNetwork": {
+    "equal": 0,
+    "first": 4,
+    "jaccard": 0.0,
+    "second": 0
+   }
+  },
+  "m12b_overall_jaccard": 0.0002,
+  "m12c_record_ids": {
+   "equal": 0,
+   "first": 9910,
+   "second": 15206
+  },
+  "sim_identifiers_shared": 0
+ },
+ "what": "Stage A3 cross-phone measures (counts only; salted joins; positions never written)"
+}

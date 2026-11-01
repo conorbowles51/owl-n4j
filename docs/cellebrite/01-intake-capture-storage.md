@@ -276,6 +276,32 @@ P13 C2, P14 C1. Totals are in `measurements/counter-server-corpus.json`.
   P06 by 2, P07 by 5, P08 by 4, P12 by 366, P13 by 2,023), in both directions. It is not a completeness
   check (section 1.2).
 
+
+### 1.9 Server measurement batch (stage A3)
+
+Measured read-only on the 14 server reports (`measurements/a3/README.md`; 06 section 5):
+
+- **Records under `RelatedModels`.** A record can hold a `RelatedModels` element whose `model` children are
+  PA's other-source copies of the same item: the owner's type, an id found on no top-level record, a
+  different `source_index`, `isrelated="True"`. 3,737 such models on 5 reports (P02 2, P07 5, P08 6, P12
+  370, P13 3,354, including models nested inside them). They are records: capture stores them with their
+  owner, and the catalogue's per-type counts equal the reports only when they are counted. `ModelCount`
+  exceeds the top-level count where they exist (P12: 366 directly under records, gap 366; P13: 2,250, gap
+  2,023), and is below it on P05 and P06 (by 1 and 2), which have none.
+- **Tagged files under `RelatedNodes`.** A tagged `file` can hold `RelatedNodes/file` children (P13 52,206,
+  P08 39,669, P12 4,333, P07 3,330; 7 reports). `NodeCount` equals the tagged files plus these on 10 reports
+  and differs on P01, P03, P10 and P14.
+- **`extraInfos`** (section 1.8) holds one `extraInfo` per record or file entry, with `nodeInfo` entries naming
+  the source file (by tagged-file id where present), table and offset. Through them, 77,446 top-level records
+  on P11 (and over 1,000 on 7 reports) reach a present, MD5-verified database file (05 section 17.2).
+- **Headers.** P03 and P14 carry no `DeviceInfoExtractionStartDateTime` or `EndDateTime`; elsewhere the
+  values read `M/D/YYYY H:MM:SS AM(UTC-5)` or `... AM -05:00`, and every value parses. A report holds one
+start value per `extractionInfo` on 7 reports and fewer on 5 (for example 1 of 2 on P04, P10, P11, P13).
+- **Size and memory.** P14 is the largest report (17,283,869 elements, 338,715 top-level records, 158,114
+  tagged files, 1.77 GB). A measurement pass that keeps per-report tables peaked at 515 MiB on P14; the
+  counter stays at 42 to 46 MiB (section 1.8). Folder sizes are in the reference manifest
+  (`measurements/corpus-manifest-summary.json`).
+
 ---
 
 ## 2. Intake: input forms, detection, what is recorded and said
@@ -1113,7 +1139,9 @@ Physical Analyzer, a fact about the examiner and not the phone. It is captured (
 validated as an IANA name) into `phone_extractions.flags.examiner_selected_zone`, together with
 `enableAutomaticallyConvertToUTC` and `enableDaylightSavings`, and shown on the Extraction profile as
 "Examiner's display zone". It is never used to place the phone's events. *Reverse if* the 14 server
-phones show the examiner zone and the device setting agree wherever both exist.
+phones show the examiner zone and the device setting agree wherever both exist. Measured on the 14
+(`measurements/a3/README.md` section 3): both exist on 9 and agree on 8; on P12 they differ (UTC offsets 5 h
+apart in January, 4 h in July); 5 reports carry no device setting. The rule stands.
 
 ### 9.4 Offset-less values
 
@@ -1530,5 +1558,6 @@ uninterrupted run. Durations of uninterrupted runs recorded against 10.8.
   off still stores `+00:00`).
 - Whether the deployed Loupe database holds rows written by the old Cellebrite ingester.
 - The backend's request body limit for a 200,000-member manifest.
-- Whether `project@ModelCount` excludes a definable set of records (it differs from the counted
-  top-level models on 7 of the 14 server reports, by 1 to 2,023, in both directions; section 1.8).
+- Whether `project@ModelCount` counts a definable set of records: it differs from the counted top-level
+  models on 7 of the 14 server reports, in both directions, and tracks the `RelatedModels` copies without
+  equalling them on every report (section 1.9).

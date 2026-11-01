@@ -1,0 +1,2481 @@
+{
+ "counts": {
+  "d7_media": {
+   "Audio | not on disk": 424,
+   "Video | not on disk": 207
+  },
+  "m11_header_values": {
+   "start values": 1,
+   "start values distinct instants": 1,
+   "start values parsed": 1
+  },
+  "m12_candidate_interaction_rows": {
+   "Call Incoming Established": 153,
+   "Call Incoming Rejected": 6,
+   "Call Outgoing any": 318,
+   "InstantMessage outgoing": 6380,
+   "Party DateRead owner": 77
+  },
+  "m3_shape": {
+   "Call | TimeStamp | frac3/+00:00": 601,
+   "Chat | LastActivity | frac3/+00:00": 537,
+   "Chat | StartTime | frac3/+00:00": 518,
+   "Contact | TimeCreated | frac3/+00:00": 1530,
+   "Contact | TimeModified | frac3/+00:00": 309,
+   "Email | TimeStamp | frac3/+00:00": 10890,
+   "InstantMessage | TimeStamp | frac3/+00:00": 33073,
+   "Party | DateDelivered | frac3/+00:00": 2873,
+   "Party | DateRead | frac3/+00:00": 412,
+   "UserAccount | TimeCreated | frac3/+00:00": 12
+  },
+  "m3_text_differs_from_formatted": {
+   "Call | TimeStamp": 601,
+   "Chat | LastActivity": 537,
+   "Chat | StartTime": 518,
+   "Contact | TimeCreated": 1530,
+   "Contact | TimeModified": 309,
+   "Email | TimeStamp": 10890,
+   "InstantMessage | TimeStamp": 33073,
+   "Party | DateDelivered": 2873,
+   "Party | DateRead": 412,
+   "UserAccount | TimeCreated": 12
+  },
+  "m4_direction_basis": {
+   "folder_inbox": 82,
+   "from_not_owner": 19297,
+   "from_owner": 6384,
+   "none": 7321
+  },
+  "s05_m11a": {
+   "contacts": 2940,
+   "with TimeCreated": 1530,
+   "with TimeModified": 309
+  },
+  "s05_m1b_amount_with_currency": {
+   "S3 email": 4899,
+   "S9 app message": 10
+  },
+  "s05_m3e": {
+   "chats": 655,
+   "chats with >= 20 messages": 90,
+   "chats with >= 20 messages and >= 1 deleted": 68
+  },
+  "s05_m4a": {
+   "incoming": 19379,
+   "incoming with owner DateRead": 77
+  },
+  "s05_m4c": {
+   "chat activity records": 579
+  },
+  "s05_messages": {
+   "total": 33084,
+   "type AppMessage": 32407,
+   "type IMessage": 248,
+   "type Mms": 4,
+   "type Sms": 425
+  },
+  "s05_shortcode": {
+   "short-code sender messages": 37
+  },
+  "s05_x3_short_bodies": {
+   "short or untimed": 4889
+  }
+ },
+ "d1_root_attributes": {
+  "ModelCount": "15206",
+  "NodeCount": "17463",
+  "extractionType": "Legacy",
+  "reportVersion": "7.48"
+ },
+ "d3_zone": {
+  "comparison": "equal",
+  "convert_to_utc": "False",
+  "daylight_savings": "True",
+  "device_setting_present": true,
+  "device_settings_all_equal": true,
+  "device_settings_count": 2,
+  "examiner_zone_present": true
+ },
+ "d4_duplicates": {
+  "call | 1s | groups": 1,
+  "call | 1s | records": 2,
+  "call | 2s | groups": 3,
+  "call | 2s | records": 8,
+  "call | equal key, 2-60 s apart | adjacent pairs": 27,
+  "call | exact | groups": 0,
+  "call | exact | records": 0,
+  "call | same second | groups": 1,
+  "email | 1s | groups": 1,
+  "email | 1s | records": 2,
+  "email | 2s | groups": 2,
+  "email | 2s | records": 4,
+  "email | equal key, 2-60 s apart | adjacent pairs": 8,
+  "email | exact | groups": 0,
+  "email | exact | records": 0,
+  "email | same second | groups": 0,
+  "message | 1s | groups": 1474,
+  "message | 1s | records": 5318,
+  "message | 2s | groups": 1482,
+  "message | 2s | records": 5345,
+  "message | equal key, 2-60 s apart | adjacent pairs": 403,
+  "message | exact | groups": 1508,
+  "message | exact | records": 5056,
+  "message | same second | groups": 1528
+ },
+ "d4_events_with_instant": {
+  "call": 601,
+  "email": 10890,
+  "message": 33073
+ },
+ "d6_codepoints": {
+  "by_128_range": {
+   "U+0080": 170356,
+   "U+0100": 326,
+   "U+0180": 6,
+   "U+0200": 70,
+   "U+0280": 58,
+   "U+0300": 534,
+   "U+0380": 100,
+   "U+0400": 7559,
+   "U+0480": 10,
+   "U+0500": 5,
+   "U+0580": 201,
+   "U+0600": 620,
+   "U+0680": 7,
+   "U+0700": 4,
+   "U+0780": 3,
+   "U+0880": 3,
+   "U+0900": 1,
+   "U+0980": 2,
+   "U+0E00": 3,
+   "U+0F80": 1,
+   "U+1200": 208234,
+   "U+1280": 147484,
+   "U+1300": 51909,
+   "U+1400": 13,
+   "U+1480": 4,
+   "U+1500": 6,
+   "U+1580": 29,
+   "U+1600": 24,
+   "U+1680": 1,
+   "U+1A00": 3,
+   "U+1B00": 1,
+   "U+1B80": 1,
+   "U+1C00": 2,
+   "U+1D00": 79,
+   "U+1D400": 531,
+   "U+1D480": 231,
+   "U+1D500": 16,
+   "U+1D580": 576,
+   "U+1D600": 1482,
+   "U+1D680": 572,
+   "U+1D780": 70,
+   "U+1D80": 11,
+   "U+1E80": 2,
+   "U+1F100": 3507,
+   "U+1F180": 1173,
+   "U+1F300": 2994,
+   "U+1F380": 4727,
+   "U+1F400": 8128,
+   "U+1F480": 27111,
+   "U+1F500": 11479,
+   "U+1F580": 380,
+   "U+1F600": 10055,
+   "U+1F680": 4968,
+   "U+1F780": 112,
+   "U+1F80": 1,
+   "U+1F900": 4615,
+   "U+1F980": 301,
+   "U+1FA00": 7,
+   "U+1FA80": 396,
+   "U+2000": 303684,
+   "U+2080": 445,
+   "U+2100": 993,
+   "U+2180": 346,
+   "U+2200": 21,
+   "U+2280": 2519,
+   "U+2300": 253,
+   "U+2380": 1508,
+   "U+2400": 32,
+   "U+2480": 1168,
+   "U+2500": 7477,
+   "U+2580": 17106,
+   "U+2600": 4846,
+   "U+2680": 5704,
+   "U+2700": 16624,
+   "U+2780": 14620,
+   "U+2800": 9,
+   "U+2B00": 910,
+   "U+2C80": 1,
+   "U+2D80": 1,
+   "U+2E00": 1,
+   "U+3000": 378,
+   "U+3080": 1140,
+   "U+3200": 1,
+   "U+3680": 2,
+   "U+3700": 1,
+   "U+3780": 1,
+   "U+3A00": 1,
+   "U+3C80": 2,
+   "U+4580": 1,
+   "U+4D80": 1,
+   "U+4E00": 39,
+   "U+4F00": 19,
+   "U+5000": 1,
+   "U+5100": 3,
+   "U+5180": 4,
+   "U+5300": 27,
+   "U+5380": 3,
+   "U+5480": 1,
+   "U+5680": 2,
+   "U+5780": 1,
+   "U+5900": 19,
+   "U+5A00": 2,
+   "U+5A80": 1,
+   "U+5B00": 3,
+   "U+5C00": 6,
+   "U+5C80": 1,
+   "U+5D00": 1,
+   "U+5E80": 1,
+   "U+5F00": 1,
+   "U+6000": 27,
+   "U+6080": 3,
+   "U+6200": 1,
+   "U+6300": 22,
+   "U+6580": 19,
+   "U+6680": 1,
+   "U+6800": 3,
+   "U+6900": 2,
+   "U+6980": 13,
+   "U+6A00": 2,
+   "U+6B80": 1,
+   "U+6C00": 2,
+   "U+6C80": 1,
+   "U+6D00": 6,
+   "U+6D80": 2,
+   "U+6E00": 7,
+   "U+6E80": 1,
+   "U+6F80": 3,
+   "U+7180": 5,
+   "U+7200": 4,
+   "U+7280": 1,
+   "U+7480": 1,
+   "U+7500": 21,
+   "U+7580": 5,
+   "U+7680": 3,
+   "U+7800": 1,
+   "U+7980": 21,
+   "U+7A00": 2,
+   "U+7A80": 2,
+   "U+7B00": 1,
+   "U+7B80": 1,
+   "U+7C00": 1,
+   "U+7D80": 4,
+   "U+8180": 1,
+   "U+8200": 1,
+   "U+8280": 1,
+   "U+8600": 3,
+   "U+8680": 1,
+   "U+8800": 2,
+   "U+8880": 2,
+   "U+8980": 61,
+   "U+8A00": 2,
+   "U+8B80": 1,
+   "U+8C80": 1,
+   "U+8D80": 2,
+   "U+8E80": 2,
+   "U+8F00": 1,
+   "U+9000": 1,
+   "U+9180": 2,
+   "U+9500": 2,
+   "U+9600": 3,
+   "U+9700": 12,
+   "U+9A80": 1,
+   "U+9B00": 3,
+   "U+9C00": 5,
+   "U+9D00": 1,
+   "U+9D80": 2,
+   "U+9E80": 4,
+   "U+9F00": 1,
+   "U+A180": 1,
+   "U+A280": 1,
+   "U+A300": 1,
+   "U+A480": 3,
+   "U+A580": 1,
+   "U+A600": 2,
+   "U+A680": 5,
+   "U+A700": 5,
+   "U+A780": 1,
+   "U+A800": 1,
+   "U+A900": 2,
+   "U+A980": 2,
+   "U+AA80": 1,
+   "U+AB00": 1,
+   "U+AB80": 3,
+   "U+AC00": 3,
+   "U+AC80": 64,
+   "U+AD00": 6,
+   "U+AD80": 3,
+   "U+AE00": 2,
+   "U+B080": 71,
+   "U+B180": 1,
+   "U+B200": 61,
+   "U+B280": 3,
+   "U+B380": 1,
+   "U+B480": 2,
+   "U+B500": 61,
+   "U+B580": 1,
+   "U+B680": 7,
+   "U+B700": 1,
+   "U+B780": 2,
+   "U+B800": 4,
+   "U+B880": 6,
+   "U+B900": 61,
+   "U+B980": 6,
+   "U+BB00": 3,
+   "U+BB80": 3,
+   "U+BC00": 70,
+   "U+BC80": 3,
+   "U+BD80": 1,
+   "U+BE00": 4,
+   "U+BF80": 2,
+   "U+C080": 5,
+   "U+C100": 13,
+   "U+C200": 7,
+   "U+C280": 13,
+   "U+C500": 3,
+   "U+C580": 11,
+   "U+C600": 3,
+   "U+C680": 12,
+   "U+C700": 10,
+   "U+C780": 4,
+   "U+C800": 4,
+   "U+C880": 2,
+   "U+C980": 2,
+   "U+CA00": 2,
+   "U+CA80": 1,
+   "U+CC00": 1,
+   "U+CE00": 5,
+   "U+CE80": 2,
+   "U+CF80": 1,
+   "U+D000": 2,
+   "U+D080": 2,
+   "U+D200": 3,
+   "U+D280": 5,
+   "U+D300": 7,
+   "U+D380": 8,
+   "U+D480": 2,
+   "U+D500": 4,
+   "U+D580": 2,
+   "U+D680": 2,
+   "U+D700": 2,
+   "U+D780": 3,
+   "U+E080": 2,
+   "U+E200": 1,
+   "U+E380": 1,
+   "U+E700": 1,
+   "U+E780": 1,
+   "U+E800": 2,
+   "U+E980": 1,
+   "U+EB00": 1,
+   "U+ED00": 1,
+   "U+EE80": 1,
+   "U+EF00": 2,
+   "U+F000": 673,
+   "U+F080": 2190,
+   "U+F180": 2,
+   "U+F300": 1,
+   "U+F380": 1,
+   "U+F400": 1,
+   "U+F480": 1,
+   "U+F580": 1,
+   "U+F600": 1,
+   "U+F680": 4,
+   "U+F700": 1,
+   "U+F780": 2,
+   "U+F800": 1,
+   "U+F980": 1,
+   "U+FA00": 1,
+   "U+FA80": 2,
+   "U+FB00": 76,
+   "U+FB80": 2,
+   "U+FE00": 9192,
+   "U+FF00": 195,
+   "U+FF80": 1782
+  },
+  "by_name_first_word": {
+   "<no name>": 2904,
+   "ACTIVATE": 2,
+   "ADMISSION": 5,
+   "ADULT": 3,
+   "AIRPLANE": 11,
+   "ALARM": 213,
+   "AMERICAN": 13,
+   "ANCHOR": 1,
+   "ANGER": 49,
+   "ANGRY": 4,
+   "ANGUISHED": 1,
+   "ARABIC": 632,
+   "ARMENIAN": 5,
+   "ARTICULATED": 55,
+   "ARTIST": 106,
+   "ASTONISHED": 24,
+   "ATHLETIC": 213,
+   "AUBERGINE": 4,
+   "AUTOMOBILE": 37,
+   "AVOCADO": 5,
+   "BABY": 13,
+   "BALINESE": 1,
+   "BALLOON": 22,
+   "BALLOT": 416,
+   "BAMUM": 2,
+   "BANANA": 2,
+   "BANK": 55,
+   "BANKNOTE": 119,
+   "BAR": 28,
+   "BARBER": 1,
+   "BASEBALL": 4,
+   "BASKETBALL": 6,
+   "BATH": 16,
+   "BATTERY": 659,
+   "BEACH": 3,
+   "BEAR": 3,
+   "BEARDED": 4,
+   "BEATING": 7,
+   "BED": 46,
+   "BEER": 7,
+   "BELL": 86,
+   "BELLHOP": 187,
+   "BENGALI": 2,
+   "BENTO": 3,
+   "BICYCLE": 18,
+   "BIKINI": 4,
+   "BIRTHDAY": 15,
+   "BLACK": 19689,
+   "BLOSSOM": 217,
+   "BLUE": 74,
+   "BOMB": 7,
+   "BOOKS": 4,
+   "BOTTLE": 3,
+   "BOUQUET": 36,
+   "BOW": 8,
+   "BOX": 7477,
+   "BOXING": 62,
+   "BOY": 8,
+   "BRAILLE": 9,
+   "BRAIN": 3,
+   "BREAD": 18,
+   "BRICK": 20,
+   "BRIDE": 1,
+   "BRIDGE": 17,
+   "BRIEFCASE": 39,
+   "BROKEN": 506,
+   "BROWN": 1,
+   "BUILDING": 16,
+   "BULLET": 2491,
+   "BULLSEYE": 418,
+   "BUS": 54,
+   "BUST": 208,
+   "BUTTERFLY": 1,
+   "CALENDAR": 29,
+   "CALL": 91,
+   "CAMERA": 1686,
+   "CANADIAN": 76,
+   "CANDLE": 2,
+   "CANDY": 3,
+   "CAT": 33,
+   "CEDI": 3,
+   "CENT": 69,
+   "CHAIR": 20,
+   "CHART": 88,
+   "CHECK": 35,
+   "CHEERING": 1031,
+   "CHERRIES": 4,
+   "CHILD": 14,
+   "CHOCOLATE": 2,
+   "CHRISTMAS": 78,
+   "CIRCLE": 553,
+   "CIRCLED": 1240,
+   "CIRCUS": 2,
+   "CITYSCAPE": 54,
+   "CJK": 455,
+   "CLAPPER": 2,
+   "CLAPPING": 244,
+   "CLINKING": 6,
+   "CLOCK": 135,
+   "CLOUD": 35,
+   "CLOWN": 1,
+   "COAT": 3,
+   "COFFIN": 1,
+   "COLLISION": 236,
+   "COMBINING": 535,
+   "COMPRESSION": 20,
+   "CONFETTI": 22,
+   "CONSTRUCTION": 22,
+   "CONVENIENCE": 54,
+   "COOKIE": 6,
+   "COOKING": 34,
+   "COPTIC": 1,
+   "COPYRIGHT": 3267,
+   "COUCH": 34,
+   "COUPLE": 4,
+   "COW": 1,
+   "CREDIT": 21,
+   "CRESCENT": 3,
+   "CROSS": 57,
+   "CROSSED": 1,
+   "CROWN": 10,
+   "CRYING": 5,
+   "CRYSTAL": 140,
+   "CUCUMBER": 1,
+   "CUP": 2,
+   "CUPCAKE": 1,
+   "CUSTOMS": 78,
+   "CYCLONE": 44,
+   "CYRILLIC": 7572,
+   "DAGGER": 117,
+   "DANCER": 1612,
+   "DANGO": 3,
+   "DARK": 82,
+   "DASH": 94,
+   "DEAF": 11,
+   "DECIDUOUS": 9,
+   "DEGREE": 101,
+   "DELIVERY": 605,
+   "DERELICT": 1,
+   "DESERT": 3,
+   "DESKTOP": 17,
+   "DEVANAGARI": 1,
+   "DIAERESIS": 7,
+   "DIAMOND": 38,
+   "DINGBAT": 4,
+   "DIRECT": 103,
+   "DISAPPOINTED": 3,
+   "DISGUISED": 4,
+   "DIZZY": 210,
+   "DOG": 23,
+   "DOOR": 30,
+   "DOTTED": 364,
+   "DOUBLE": 112,
+   "DOUBLE-STRUCK": 27,
+   "DOUGHNUT": 1,
+   "DOVE": 1,
+   "DOWN-POINTING": 88,
+   "DRAGON": 1,
+   "DRESS": 3,
+   "DROOLING": 1,
+   "DROP": 7,
+   "DROPLET": 1,
+   "DRUM": 1,
+   "E-MAIL": 3,
+   "EAGLE": 1,
+   "EAR": 3,
+   "EARTH": 190,
+   "EIGHT": 932,
+   "ELECTRIC": 368,
+   "ELEPHANT": 1,
+   "EM": 3570,
+   "EMOJI": 877,
+   "EN": 5716,
+   "ENVELOPE": 60,
+   "ETHIOPIC": 407629,
+   "EURO": 442,
+   "EVERGREEN": 2,
+   "EXCLAMATION": 2,
+   "EXTRATERRESTRIAL": 1,
+   "EYE": 14,
+   "EYES": 195,
+   "FACE": 5013,
+   "FACTORY": 3,
+   "FALLEN": 40,
+   "FAMILY": 17,
+   "FATHER": 18,
+   "FEMALE": 213,
+   "FEMININE": 5,
+   "FILE": 40,
+   "FIRE": 3174,
+   "FIRECRACKER": 3,
+   "FIREWORK": 1,
+   "FIREWORKS": 5,
+   "FIRST": 81,
+   "FISH": 3,
+   "FISHEYE": 2,
+   "FISHING": 2,
+   "FISTED": 3,
+   "FLEUR-DE-LIS": 1,
+   "FLEXED": 1011,
+   "FLOPPY": 379,
+   "FLOWER": 2,
+   "FLUSHED": 2536,
+   "FLYING": 1,
+   "FOG": 9,
+   "FORK": 13,
+   "FOUR": 3,
+   "FOUR-PER-EM": 6,
+   "FREEZING": 13,
+   "FRENCH": 19,
+   "FRIED": 1,
+   "FUEL": 4,
+   "FULL": 5,
+   "FULLWIDTH": 194,
+   "FUNERAL": 804,
+   "GAME": 17,
+   "GEM": 1,
+   "GHOST": 99,
+   "GIRAFFE": 1,
+   "GIRL": 13,
+   "GLOBE": 17,
+   "GLOWING": 1383,
+   "GOAT": 1,
+   "GRADUATION": 2,
+   "GRAPES": 2,
+   "GREEK": 101,
+   "GREEN": 51,
+   "GRIMACING": 10,
+   "GRINNING": 153,
+   "GROWING": 6,
+   "GUITAR": 15,
+   "HAIR": 1,
+   "HAIRCUT": 13,
+   "HALFWIDTH": 2,
+   "HAMBURGER": 3,
+   "HAMMER": 37,
+   "HAMSTER": 1,
+   "HAND": 685,
+   "HANDBAG": 17,
+   "HANGUL": 594,
+   "HAPPY": 7,
+   "HEADPHONE": 118,
+   "HEART": 7,
+   "HEAVY": 15441,
+   "HEBREW": 197,
+   "HELMET": 20,
+   "HERB": 1,
+   "HIBISCUS": 174,
+   "HIGH": 1415,
+   "HIKING": 41,
+   "HIRAGANA": 137,
+   "HOCHO": 37,
+   "HONEY": 1,
+   "HORIZONTAL": 10522,
+   "HORSE": 4,
+   "HOT": 24,
+   "HOURGLASS": 289,
+   "HOUSE": 206,
+   "HUGGING": 1528,
+   "HUNDRED": 1092,
+   "HYPHEN": 23,
+   "I": 3,
+   "ICE": 1,
+   "IDEOGRAPHIC": 9,
+   "IMP": 5,
+   "INFINITY": 1,
+   "INFORMATION": 43,
+   "INPUT": 8,
+   "INVERTED": 1680,
+   "IZAKAYA": 20,
+   "JACK-O-LANTERN": 89,
+   "JAPANESE": 516,
+   "JAVANESE": 2,
+   "JEANS": 284,
+   "KATAKANA": 1095,
+   "KATAKANA-HIRAGANA": 39,
+   "KAYAH": 1,
+   "KEY": 3,
+   "KISS": 35,
+   "KISSING": 4,
+   "KIWIFRUIT": 2,
+   "LABEL": 465,
+   "LARGE": 791,
+   "LATIN": 93904,
+   "LEAFY": 6,
+   "LEFT": 3744,
+   "LEFT-POINTING": 84,
+   "LEFT-TO-RIGHT": 1362,
+   "LEG": 1,
+   "LEMON": 1,
+   "LEVEL": 364,
+   "LINE": 5,
+   "LINK": 146,
+   "LIPSTICK": 21,
+   "LISU": 2,
+   "LOCK": 129,
+   "LOLLIPOP": 4,
+   "LONG": 1,
+   "LOTION": 8,
+   "LOUDLY": 16,
+   "LOVE": 206,
+   "LOW": 327,
+   "LOWER": 59,
+   "LOZENGE": 5,
+   "MAGE": 1,
+   "MAGNET": 5,
+   "MALE": 100,
+   "MAN": 2826,
+   "MANS": 133,
+   "MANTELPIECE": 8,
+   "MANUAL": 1,
+   "MAPLE": 388,
+   "MASCULINE": 3,
+   "MATHEMATICAL": 3478,
+   "MEAT": 21,
+   "MEDIUM": 19,
+   "MEETEI": 3,
+   "MEMO": 1,
+   "MICRO": 326,
+   "MICROBE": 148,
+   "MICROPHONE": 9,
+   "MIDDLE": 204,
+   "MIDLINE": 9,
+   "MILITARY": 16,
+   "MINIBUS": 12,
+   "MOBILE": 1991,
+   "MODIFIER": 26,
+   "MONEY": 1021,
+   "MONEY-MOUTH": 13,
+   "MOTOR": 50,
+   "MOTORWAY": 73,
+   "MOUNTAIN": 2,
+   "MOUTH": 6,
+   "MOVIE": 9,
+   "MULTIPLE": 23,
+   "MULTIPLICATION": 12,
+   "MUSICAL": 20,
+   "NAME": 63,
+   "NARROW": 89,
+   "NAUSEATED": 6,
+   "NECKTIE": 10,
+   "NEGATIVE": 3509,
+   "NERD": 6,
+   "NEW": 2,
+   "NINJA": 386,
+   "NO": 174,
+   "NO-BREAK": 34232,
+   "NON-BREAKING": 180,
+   "NOT": 18,
+   "NOTCHED": 54,
+   "OBJECT": 12,
+   "OCTAGONAL": 1,
+   "OFFICE": 130,
+   "OIL": 379,
+   "OK": 1714,
+   "OL": 2,
+   "OLDER": 3,
+   "ONCOMING": 134,
+   "OPEN": 10,
+   "OVERHEATED": 6,
+   "OWL": 2,
+   "PACKAGE": 39,
+   "PAGE": 1,
+   "PALM": 2,
+   "PAPERCLIP": 3,
+   "PARENTHESIZED": 1,
+   "PARTY": 580,
+   "PEACH": 7,
+   "PEDESTRIAN": 4,
+   "PENCIL": 2,
+   "PENSIVE": 8,
+   "PER": 2,
+   "PERFORMING": 3,
+   "PERMANENT": 1,
+   "PERSON": 245,
+   "PERSONAL": 806,
+   "PHAGS-PA": 1,
+   "PIE": 3,
+   "PILE": 5,
+   "PILL": 4,
+   "PINATA": 1,
+   "PINCHED": 13,
+   "PINEAPPLE": 2,
+   "PLUS-MINUS": 2,
+   "POLICE": 257,
+   "POP": 380,
+   "POSTBOX": 1,
+   "POTABLE": 2,
+   "POTTED": 1,
+   "POULTRY": 36,
+   "POUND": 15,
+   "POUTING": 16,
+   "PRAYER": 21,
+   "PRECEDES": 1869,
+   "PRINCESS": 3,
+   "PUBLIC": 7,
+   "PUNCTUATION": 2,
+   "PURPLE": 63,
+   "PURSE": 4,
+   "PUSHPIN": 10300,
+   "RABBIT": 2,
+   "RACING": 327,
+   "RADIO": 635,
+   "RAINBOW": 122,
+   "RAISED": 2,
+   "RAT": 1,
+   "RECEIPT": 1,
+   "RECREATIONAL": 12,
+   "RED": 4,
+   "REGIONAL": 1128,
+   "REGISTERED": 2088,
+   "RELIEVED": 7,
+   "REMINDER": 9,
+   "REPLACEMENT": 1768,
+   "RIBBON": 6,
+   "RIGHT": 23329,
+   "RIGHT-POINTING": 5171,
+   "RIGHT-TO-LEFT": 289,
+   "RIGHTWARDS": 114,
+   "RING": 25,
+   "ROBOT": 8,
+   "ROCKET": 17,
+   "ROLLING": 134,
+   "ROMAN": 2,
+   "ROSE": 17,
+   "ROUND": 79,
+   "RUNIC": 1,
+   "RUNNER": 79,
+   "SALT": 2,
+   "SALUTING": 1,
+   "SATELLITE": 2,
+   "SCHOOL": 185,
+   "SCORPION": 1,
+   "SEAT": 4,
+   "SECTION": 20,
+   "SEE-NO-EVIL": 16,
+   "SEEDLING": 5,
+   "SELFIE": 185,
+   "SERIOUS": 3,
+   "SERVICE": 15,
+   "SHADOWED": 23,
+   "SHALLOW": 4,
+   "SHARK": 2,
+   "SHEEP": 5,
+   "SHIP": 3,
+   "SHOCKED": 8,
+   "SHOPPING": 1680,
+   "SHORTCAKE": 4,
+   "SHOULDERED": 1,
+   "SHOWER": 35,
+   "SHRUG": 15,
+   "SIGN": 25,
+   "SINGLE": 35,
+   "SIX": 1,
+   "SKATEBOARD": 2,
+   "SKI": 3,
+   "SKIER": 1,
+   "SKULL": 8,
+   "SLED": 1,
+   "SLEEPING": 30,
+   "SLEEPY": 4,
+   "SLEUTH": 1,
+   "SLICE": 2,
+   "SLIGHTLY": 1,
+   "SLOT": 1,
+   "SMALL": 1436,
+   "SMILING": 3121,
+   "SMIRKING": 7,
+   "SMOKING": 1,
+   "SNOWBOARDER": 5,
+   "SNOWFLAKE": 152,
+   "SNOWMAN": 8,
+   "SOCCER": 37,
+   "SOCKS": 6,
+   "SOFT": 3,
+   "SOON": 12,
+   "SOUTH": 230,
+   "SPAGHETTI": 8,
+   "SPARKLE": 3247,
+   "SPARKLES": 435,
+   "SPARKLING": 3,
+   "SPEAKER": 14,
+   "SPEECH": 12,
+   "SPIDER": 28,
+   "SPIRAL": 73,
+   "SPLASHING": 22,
+   "SPOON": 4,
+   "SPOUTING": 5,
+   "SQUARE": 20,
+   "SQUARED": 43,
+   "STADIUM": 58,
+   "STAFF": 1,
+   "STANDING": 2,
+   "STAR": 6,
+   "STATUE": 2,
+   "STOPWATCH": 8,
+   "STRAWBERRY": 7,
+   "STUDIO": 4,
+   "SUCCEEDS": 623,
+   "SUN": 22,
+   "SUNDANESE": 1,
+   "SUPERSCRIPT": 29422,
+   "SYRIAC": 4,
+   "SYRINGE": 1,
+   "T-SHIRT": 61,
+   "TACO": 2,
+   "TAI": 3,
+   "TAMALE": 1,
+   "TANGERINE": 2,
+   "TEAR-OFF": 3,
+   "TEDDY": 2,
+   "TELEPHONE": 697,
+   "TELESCOPE": 22,
+   "TELEVISION": 95,
+   "TENT": 16,
+   "THAANA": 2,
+   "THAI": 3,
+   "THIN": 16,
+   "THINKING": 56,
+   "THIRD": 1,
+   "THREE": 2,
+   "THREE-D": 1,
+   "THREE-PER-EM": 10,
+   "THUMBS": 1660,
+   "TIGER": 4,
+   "TIMER": 2,
+   "TIRED": 1,
+   "TOILET": 68,
+   "TOOTH": 1,
+   "TRADE": 946,
+   "TRIANGULAR": 1012,
+   "TRIGRAM": 1,
+   "TROPHY": 28,
+   "TROPICAL": 7,
+   "TRUMPET": 1,
+   "TULIP": 1,
+   "TUMBLER": 3,
+   "TURKEY": 9,
+   "TWO": 2863,
+   "UMBRELLA": 23,
+   "UNAMUSED": 17,
+   "UP-POINTING": 22,
+   "UPSIDE-DOWN": 1,
+   "UPWARDS": 48,
+   "VAI": 2,
+   "VARIATION": 9192,
+   "VERTICAL": 12,
+   "VICTORY": 8,
+   "VIDEO": 64,
+   "VIDEOCASSETTE": 381,
+   "VIOLIN": 3,
+   "VULGAR": 3,
+   "WARNING": 3281,
+   "WATCH": 230,
+   "WATER": 2,
+   "WATERMELON": 5,
+   "WAVING": 252,
+   "WAVY": 223,
+   "WEARY": 6,
+   "WEIGHT": 25,
+   "WHITE": 15926,
+   "WILTED": 2,
+   "WINKING": 62,
+   "WOMAN": 30,
+   "WOMANS": 35,
+   "WORD": 5,
+   "WORLD": 1,
+   "WORRIED": 1,
+   "WRAPPED": 395,
+   "WRENCH": 27,
+   "WRITING": 3,
+   "YAWNING": 1,
+   "YELLOW": 23,
+   "YEN": 2,
+   "YI": 4,
+   "ZERO": 251697,
+   "ZIPPER-MOUTH": 13,
+   "ZOMBIE": 3
+  },
+  "styled": {
+   "changed_by_nfkc": 81892,
+   "cyrillic": 7569,
+   "enclosed_alphanumeric_supplement_other": 43,
+   "enclosed_alphanumerics": 1200,
+   "format_or_control": 253737,
+   "fullwidth_ascii": 194,
+   "greek": 100,
+   "latin_small_capital": 105,
+   "letterlike": 989,
+   "mathematical_alphanumeric": 3478,
+   "negative_circled_or_squared_latin": 3509,
+   "regional_indicator": 1128
+  },
+  "totals": {
+   "ascii": 317761735,
+   "non_ascii": 1066111
+  }
+ },
+ "extraction_info": [
+  {
+   "IsPartialData": "False",
+   "IsSelectiveExtraction": "False",
+   "IsStoppedByUser": "False",
+   "type": "Legacy"
+  },
+  {
+   "IsPartialData": "False",
+   "IsSelectiveExtraction": "False",
+   "IsStoppedByUser": "False",
+   "type": "Logical"
+  }
+ ],
+ "extrainfo": {
+  "counts": {},
+  "extraInfo_types": {},
+  "files_referenced_by_extraInfo": 0,
+  "files_referenced_by_jump_target": 1490,
+  "label": "P10",
+  "records_with_an_extraInfo_resolving_to_any_tagged_file": 0,
+  "referenced_files_by_kind_and_state": {
+   "Database | absent": 1,
+   "not Database | absent": 1489
+  },
+  "s17_records_to_present_verified_database_either": 0,
+  "s17_records_to_present_verified_database_via_extraInfo": 0,
+  "s17_records_to_present_verified_database_via_jump_target": 0,
+  "top_level_records": 15206
+ },
+ "file_metadata_item_names": {
+  "CoreFileSystemFileSystemNodeChangeTime": 18953,
+  "CoreFileSystemFileSystemNodeCreationTime": 18953,
+  "CoreFileSystemFileSystemNodeDeletedTime": 18953,
+  "CoreFileSystemFileSystemNodeFileChunks": 18935,
+  "CoreFileSystemFileSystemNodeModifyTime": 18953,
+  "EXIFCaptureTime": 2,
+  "EXIFOrientation": 110,
+  "ExifEnumColorSpace": 113,
+  "ExifEnumComponentsConfiguration": 1,
+  "ExifEnumDateTime": 2,
+  "ExifEnumDateTimeDigitized": 2,
+  "ExifEnumDateTimeOriginal": 2,
+  "ExifEnumExifVersion": 4,
+  "ExifEnumFlashpixVersion": 3,
+  "ExifEnumOrientation": 110,
+  "ExifEnumPixelXDimension": 114,
+  "ExifEnumPixelYDimension": 114,
+  "ExifEnumResolutionUnit": 3,
+  "ExifEnumSceneCaptureType": 2,
+  "ExifEnumSoftware": 1,
+  "ExifEnumSubsecTime": 2,
+  "ExifEnumSubsecTimeDigitized": 2,
+  "ExifEnumSubsecTimeOriginal": 2,
+  "ExifEnumXResolution": 3,
+  "ExifEnumYCbCrPositioning": 1,
+  "ExifEnumYCbCrSubSampling": 1,
+  "ExifEnumYResolution": 3,
+  "Gid": 16319,
+  "Local Path": 18953,
+  "MD5": 18953,
+  "MetaDataPixelResolution": 114,
+  "MetaDataResolution": 3,
+  "ReportTemplateFileSize": 18935,
+  "SHA256": 18953,
+  "Tags": 18953,
+  "Uid": 16306
+ },
+ "guarded": {
+  "d7_category_extension": {
+   "<other> | <other>": 3,
+   "Audio | <other>": 14,
+   "Audio | opus": 410,
+   "Image | <other>": 98,
+   "Image | jpg": 561,
+   "Image | thumb": 194,
+   "Image | webp": 3,
+   "Text | csv": 1609,
+   "Text | html": 13607,
+   "Text | log": 150,
+   "Text | txt": 868,
+   "Text | xml": 1229,
+   "Video | <other>": 81,
+   "Video | mp4": 126
+  },
+  "m2_email_folder_status": {
+   "<other> | Read": 194,
+   "<other> | Sent": 19,
+   "<other> | Unread": 994,
+   "INBOX | Read": 466,
+   "INBOX | Unread": 9212,
+   "Recents | <absent>": 5
+  },
+  "m2_instantmessage_folder_status_platform_fromowner_type": {
+   "<absent> | <absent> | <absent> | <absent> | AppMessage": 6827,
+   "<absent> | <absent> | <absent> | <absent> | IMessage": 248,
+   "<absent> | <absent> | <absent> | <absent> | Sms": 161,
+   "<absent> | <absent> | <absent> | False | AppMessage": 14575,
+   "<absent> | <absent> | <absent> | True | AppMessage": 3527,
+   "<absent> | <absent> | <absent> | True | Sms": 66,
+   "<absent> | <absent> | Mobile | False | AppMessage": 837,
+   "<absent> | <absent> | Mobile | True | AppMessage": 78,
+   "<absent> | Delivered | <absent> | True | AppMessage": 3,
+   "<absent> | Delivered | Mobile | False | AppMessage": 3,
+   "<absent> | Delivered | Mobile | True | AppMessage": 2547,
+   "<absent> | Read | <absent> | False | AppMessage": 2,
+   "<absent> | Read | <other> | False | AppMessage": 1,
+   "<absent> | Read | Mobile | False | AppMessage": 3851,
+   "<absent> | Read | Mobile | True | AppMessage": 126,
+   "<absent> | Sent | Mobile | True | AppMessage": 1,
+   "<absent> | Unread | Mobile | False | AppMessage": 28,
+   "<other> | <other> | <absent> | True | AppMessage": 1,
+   "Inbox | Read | <absent> | <absent> | Mms": 3,
+   "Inbox | Read | <absent> | <absent> | Sms": 74,
+   "Inbox | Unread | <absent> | <absent> | Sms": 5,
+   "Recents | <absent> | <absent> | <absent> | Sms": 85,
+   "Sent | Sent | <absent> | True | Mms": 1,
+   "Sent | Sent | <absent> | True | Sms": 34
+  },
+  "m3a_deleted_state": {
+   "Attachment | Deleted": 686,
+   "Attachment | Intact": 15924,
+   "Attachment | Unknown": 12,
+   "Call | Deleted": 38,
+   "Call | Intact": 564,
+   "Chat | Deleted": 88,
+   "Chat | Intact": 551,
+   "Chat | Unknown": 16,
+   "ChatActivity | Unknown": 579,
+   "Contact | Deleted": 9,
+   "Contact | Intact": 2921,
+   "Contact | Trash": 14,
+   "ContactPhoto | Deleted": 140,
+   "ContactPhoto | Intact": 361,
+   "Email | Intact": 10890,
+   "EmailAddress | Intact": 17,
+   "ForwardedMessageData | Intact": 11,
+   "InstantMessage | Deleted": 7974,
+   "InstantMessage | Intact": 24883,
+   "InstantMessage | Unknown": 227,
+   "KeyValueModel | Intact": 202,
+   "MessageLabel | Unknown": 579,
+   "Organization | Intact": 2,
+   "Party | Intact": 101,
+   "Party | Unknown": 61132,
+   "PhoneNumber | Intact": 1238,
+   "ProfilePicture | Intact": 56,
+   "ReplyMessageData | Unknown": 411,
+   "SIMData | Intact": 9,
+   "ScrambledMessageData | Unknown": 7514,
+   "StreetAddress | Intact": 9,
+   "UserAccount | Intact": 24,
+   "UserID | Deleted": 7,
+   "UserID | Intact": 3412,
+   "UserID | Trash": 1,
+   "WebAddress | Intact": 6
+  },
+  "m6_party_dates": {
+   "InstantMessage | Native Messages | To | True | DateRead | incoming": 77,
+   "InstantMessage | WhatsApp Business | To | False | DateDelivered | incoming": 3,
+   "InstantMessage | WhatsApp Business | To | False | DateDelivered | outgoing": 128,
+   "InstantMessage | WhatsApp | To | False | DateDelivered | outgoing": 2407,
+   "InstantMessage | WhatsApp | To | False | DateRead+DateDelivered | outgoing": 335
+  },
+  "s05_chatactivity_action": {
+   "<other>": 4,
+   "Unknown": 575
+  },
+  "s05_simdata_category": {
+   "<other>": 4,
+   "Location Area Information": 5
+  }
+ },
+ "header_items_present": {
+  "DeviceInfoConnectionType": 1,
+  "DeviceInfoCreationTime": 1,
+  "DeviceInfoExtractionEndDateTime": 1,
+  "DeviceInfoExtractionStartDateTime": 1,
+  "DeviceInfoInternalVersion": 1,
+  "DeviceInfoReportType": 1,
+  "DeviceInfoSelectedDeviceName": 2,
+  "DeviceInfoSelectedManufacturer": 2,
+  "DeviceInfoUnitIdentifier": 1,
+  "DeviceInfoUnitVersion": 1,
+  "ExtractionType": 1,
+  "GlobalMachineName": 1,
+  "ProjectStateExtractionId": 1,
+  "Time zone settings (ID)": 2,
+  "UFDIntegrity": 1,
+  "UFED_PA_Version": 1
+ },
+ "label": "P10",
+ "m11": {
+  "events_after_extraction_start": {
+   "calls": 0,
+   "email": 0,
+   "messages": 0
+  },
+  "extraction_duration_hours": 0.01,
+  "extraction_end_parsed": true,
+  "extraction_start_parsed": true,
+  "family_first_last_days_from_start": {
+   "calls": [
+    -852.6,
+    -4.9
+   ],
+   "email": [
+    -3030.5,
+    -4.8
+   ],
+   "messages": [
+    -6434.4,
+    -4.8
+   ]
+  },
+  "selection_attributes": {
+   "IsPartialData=False": 2,
+   "IsSelectiveExtraction=False": 2,
+   "IsStoppedByUser=False": 2
+  }
+ },
+ "m12": {
+  "days_with_12_or_more_observed_hours": 0,
+  "days_with_candidate_interaction": 739,
+  "observed_hours_total": 0,
+  "quiet_run_at_0.05": null,
+  "quiet_run_at_0.10": null,
+  "quiet_run_at_0.20": null
+ },
+ "m4_paired_to_next_connected": {},
+ "m4_streams": {
+  "Call": {
+   "events": 96,
+   "gap_p50_p95_by_utc_hour": {
+    "h01": [
+     4298.0,
+     4298.0
+    ],
+    "h02": [
+     10530.0,
+     10530.0
+    ],
+    "h03": [
+     66240.6,
+     66240.6
+    ],
+    "h05": [
+     35163.0,
+     35163.0
+    ],
+    "h06": [
+     691.1,
+     691.1
+    ],
+    "h07": [
+     4394.3,
+     4394.3
+    ],
+    "h08": [
+     24364.9,
+     24364.9
+    ],
+    "h14": [
+     828.1,
+     21263.0
+    ],
+    "h15": [
+     1115.6,
+     13606.0
+    ],
+    "h16": [
+     777.4,
+     93853.0
+    ],
+    "h17": [
+     985.0,
+     80963.0
+    ],
+    "h18": [
+     1533.4,
+     90717.0
+    ],
+    "h19": [
+     1273.3,
+     12391.9
+    ],
+    "h20": [
+     398.0,
+     70045.0
+    ],
+    "h21": [
+     4013.9,
+     7259.0
+    ],
+    "h22": [
+     1432.0,
+     64161.0
+    ],
+    "h23": [
+     13095.0,
+     56365.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 93852.998,
+    "n": 95,
+    "p50": 1391.171,
+    "p90": 56365.0,
+    "p95": 68473.004,
+    "p99": 93852.998
+   }
+  },
+  "Call | FaceTime": {
+   "events": 203,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     15808.1,
+     5265053.6
+    ],
+    "h01": [
+     209696.3,
+     942208.4
+    ],
+    "h02": [
+     34081.4,
+     1951849.4
+    ],
+    "h03": [
+     2.1,
+     33253.0
+    ],
+    "h04": [
+     138.3,
+     721.4
+    ],
+    "h05": [
+     219710.3,
+     219710.3
+    ],
+    "h06": [
+     217912.0,
+     6680580.3
+    ],
+    "h07": [
+     3374052.1,
+     3374052.1
+    ],
+    "h08": [
+     817470.4,
+     817470.4
+    ],
+    "h10": [
+     211.2,
+     93658.8
+    ],
+    "h11": [
+     3924.8,
+     296455.5
+    ],
+    "h12": [
+     81573.2,
+     4336094.4
+    ],
+    "h13": [
+     2493.7,
+     179130.5
+    ],
+    "h14": [
+     21889.3,
+     2377801.4
+    ],
+    "h15": [
+     297306.1,
+     1061633.1
+    ],
+    "h16": [
+     33.8,
+     122403.1
+    ],
+    "h18": [
+     2688.9,
+     421031.1
+    ],
+    "h19": [
+     1015.7,
+     13689650.8
+    ],
+    "h20": [
+     1138.0,
+     518056.1
+    ],
+    "h21": [
+     76045.6,
+     7639164.4
+    ],
+    "h22": [
+     43657.0,
+     2340600.5
+    ],
+    "h23": [
+     7942.7,
+     2083262.5
+    ]
+   },
+   "gap_seconds": {
+    "max": 13689650.846,
+    "n": 202,
+    "p50": 3924.773,
+    "p90": 518056.15,
+    "p95": 1951849.444,
+    "p99": 6680580.305
+   }
+  },
+  "Call | Telegram": {
+   "events": 81,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     64331.0,
+     149243.7
+    ],
+    "h01": [
+     3497.9,
+     3497.9
+    ],
+    "h02": [
+     30.2,
+     5134.8
+    ],
+    "h03": [
+     45420.3,
+     45420.3
+    ],
+    "h04": [
+     138570.9,
+     138570.9
+    ],
+    "h14": [
+     3752.0,
+     3752.0
+    ],
+    "h15": [
+     2722.8,
+     2977.1
+    ],
+    "h16": [
+     337.2,
+     177851.8
+    ],
+    "h17": [
+     1504.8,
+     1724.6
+    ],
+    "h18": [
+     3072.9,
+     76680.7
+    ],
+    "h19": [
+     304.0,
+     1570360.0
+    ],
+    "h20": [
+     2413.8,
+     39654440.0
+    ],
+    "h21": [
+     211.4,
+     3372.1
+    ],
+    "h22": [
+     638.0,
+     70166.1
+    ],
+    "h23": [
+     842.6,
+     102252.4
+    ]
+   },
+   "gap_seconds": {
+    "max": 39654440.0,
+    "n": 80,
+    "p50": 773.017,
+    "p90": 76680.723,
+    "p95": 149243.7,
+    "p99": 39654440.0
+   }
+  },
+  "Call | WhatsApp": {
+   "events": 219,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     39668.1,
+     72208.7
+    ],
+    "h01": [
+     61443.0,
+     308556.6
+    ],
+    "h02": [
+     69759.6,
+     14846350.1
+    ],
+    "h04": [
+     5278.6,
+     5278.6
+    ],
+    "h06": [
+     1475.8,
+     69733.7
+    ],
+    "h07": [
+     118814.1,
+     137044.5
+    ],
+    "h08": [
+     49642.8,
+     49642.8
+    ],
+    "h09": [
+     11244.4,
+     11244.4
+    ],
+    "h10": [
+     1661.4,
+     1661.4
+    ],
+    "h11": [
+     4804.4,
+     193611.6
+    ],
+    "h12": [
+     2539.9,
+     17700.7
+    ],
+    "h13": [
+     15240.4,
+     188988.4
+    ],
+    "h14": [
+     82878.6,
+     450321.4
+    ],
+    "h15": [
+     13346.1,
+     105619.7
+    ],
+    "h16": [
+     10865.9,
+     111386.4
+    ],
+    "h17": [
+     12959.3,
+     63244.2
+    ],
+    "h18": [
+     11679.6,
+     167023.5
+    ],
+    "h19": [
+     5894.1,
+     246139.5
+    ],
+    "h20": [
+     64369.1,
+     188143.3
+    ],
+    "h21": [
+     4134.9,
+     121155.6
+    ],
+    "h22": [
+     4632.8,
+     91058.5
+    ],
+    "h23": [
+     24636.9,
+     144024.6
+    ]
+   },
+   "gap_seconds": {
+    "max": 14846350.148,
+    "n": 218,
+    "p50": 10741.947,
+    "p90": 107161.486,
+    "p95": 167023.454,
+    "p99": 308556.553
+   }
+  },
+  "Call | WhatsApp Business": {
+   "events": 2,
+   "gap_p50_p95_by_utc_hour": {
+    "h21": [
+     2335793.9,
+     2335793.9
+    ]
+   },
+   "gap_seconds": {
+    "max": 2335793.927,
+    "n": 1,
+    "p50": 2335793.927,
+    "p90": 2335793.927,
+    "p95": 2335793.927,
+    "p99": 2335793.927
+   }
+  },
+  "Email | Emails": {
+   "events": 10885,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     11398.0,
+     74998.0
+    ],
+    "h01": [
+     25869.0,
+     70645.0
+    ],
+    "h02": [
+     36572.0,
+     72867.0
+    ],
+    "h03": [
+     37763.0,
+     68555.0
+    ],
+    "h04": [
+     36988.0,
+     66379.0
+    ],
+    "h05": [
+     11500.0,
+     115459.0
+    ],
+    "h06": [
+     30131.0,
+     62281.0
+    ],
+    "h07": [
+     22405.0,
+     69788.0
+    ],
+    "h08": [
+     21307.0,
+     35485.0
+    ],
+    "h09": [
+     20034.0,
+     56977.0
+    ],
+    "h10": [
+     17344.0,
+     61723.0
+    ],
+    "h11": [
+     13152.0,
+     53457.0
+    ],
+    "h12": [
+     10356.0,
+     42976.0
+    ],
+    "h13": [
+     7937.0,
+     36758.0
+    ],
+    "h14": [
+     4957.0,
+     36292.0
+    ],
+    "h15": [
+     4527.0,
+     27937.0
+    ],
+    "h16": [
+     4708.0,
+     31455.0
+    ],
+    "h17": [
+     7488.0,
+     50097.0
+    ],
+    "h18": [
+     10106.0,
+     74597.0
+    ],
+    "h19": [
+     3966.0,
+     61653.0
+    ],
+    "h20": [
+     8171.0,
+     65051.0
+    ],
+    "h21": [
+     6661.0,
+     70594.0
+    ],
+    "h22": [
+     6755.0,
+     65300.0
+    ],
+    "h23": [
+     7426.0,
+     63351.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 11931247.0,
+    "n": 10884,
+    "p50": 7626.0,
+    "p90": 52117.0,
+    "p95": 64531.0,
+    "p99": 141109.0
+   }
+  },
+  "Email | Recents": {
+   "events": 5,
+   "gap_p50_p95_by_utc_hour": {
+    "h16": [
+     94800.7,
+     94800.7
+    ],
+    "h18": [
+     2412385.4,
+     2412385.4
+    ],
+    "h20": [
+     5953999.3,
+     5953999.3
+    ]
+   },
+   "gap_seconds": {
+    "max": 5953999.32,
+    "n": 4,
+    "p50": 2412385.379,
+    "p90": 5953999.32,
+    "p95": 5953999.32,
+    "p99": 5953999.32
+   }
+  },
+  "InstantMessage": {
+   "events": 248,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     40612.7,
+     334785.7
+    ],
+    "h01": [
+     228.2,
+     1207427.5
+    ],
+    "h02": [
+     159866.1,
+     1263824.1
+    ],
+    "h03": [
+     215914.7,
+     1341096.4
+    ],
+    "h05": [
+     2898.1,
+     875195.2
+    ],
+    "h06": [
+     7.0,
+     62781.4
+    ],
+    "h08": [
+     456589.1,
+     5740957.6
+    ],
+    "h10": [
+     87979.7,
+     645667.2
+    ],
+    "h11": [
+     2544.0,
+     101996.8
+    ],
+    "h12": [
+     4982.8,
+     2251907.9
+    ],
+    "h13": [
+     195930.8,
+     1406346.4
+    ],
+    "h14": [
+     84.3,
+     189092.8
+    ],
+    "h15": [
+     172784.6,
+     778226.6
+    ],
+    "h16": [
+     7355.4,
+     2015207.2
+    ],
+    "h17": [
+     9086.7,
+     2433651.7
+    ],
+    "h18": [
+     2607.2,
+     5026832.8
+    ],
+    "h19": [
+     25601.1,
+     419532.7
+    ],
+    "h20": [
+     4577.2,
+     3598775.7
+    ],
+    "h21": [
+     62580.9,
+     1488774.1
+    ],
+    "h22": [
+     7537.7,
+     826648.4
+    ],
+    "h23": [
+     1336.3,
+     961113.4
+    ]
+   },
+   "gap_seconds": {
+    "max": 5740957.583,
+    "n": 247,
+    "p50": 9086.695,
+    "p90": 943378.448,
+    "p95": 1427396.289,
+    "p99": 3598775.684
+   }
+  },
+  "InstantMessage | Instagram": {
+   "events": 406,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     0.0,
+     86461.4
+    ],
+    "h01": [
+     0.0,
+     146325.1
+    ],
+    "h02": [
+     0.0,
+     70751635.3
+    ],
+    "h05": [
+     0.0,
+     985543.6
+    ],
+    "h06": [
+     0.0,
+     38763.3
+    ],
+    "h14": [
+     0.0,
+     11147076.7
+    ],
+    "h15": [
+     0.0,
+     3593.0
+    ],
+    "h16": [
+     0.0,
+     647.1
+    ],
+    "h17": [
+     0.0,
+     420.7
+    ],
+    "h18": [
+     0.0,
+     15868.9
+    ],
+    "h19": [
+     0.0,
+     25906.5
+    ],
+    "h21": [
+     0.0,
+     59.0
+    ],
+    "h22": [
+     0.0,
+     5642.4
+    ],
+    "h23": [
+     0.0,
+     45.2
+    ]
+   },
+   "gap_seconds": {
+    "max": 70751635.309,
+    "n": 405,
+    "p50": 0.0,
+    "p90": 17.401,
+    "p95": 3593.001,
+    "p99": 11147076.714
+   }
+  },
+  "InstantMessage | Native Messages": {
+   "events": 344,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     0.0,
+     90096.0
+    ],
+    "h01": [
+     0.0,
+     9622.2
+    ],
+    "h02": [
+     0.0,
+     2943.7
+    ],
+    "h03": [
+     0.0,
+     46256.4
+    ],
+    "h04": [
+     0.0,
+     34965.1
+    ],
+    "h05": [
+     0.0,
+     37980.4
+    ],
+    "h10": [
+     0.0,
+     87979.7
+    ],
+    "h11": [
+     0.0,
+     26497.4
+    ],
+    "h12": [
+     0.0,
+     38694.1
+    ],
+    "h13": [
+     0.0,
+     78417.7
+    ],
+    "h14": [
+     0.0,
+     34958.8
+    ],
+    "h15": [
+     0.0,
+     41161.9
+    ],
+    "h16": [
+     0.0,
+     17040.9
+    ],
+    "h17": [
+     0.0,
+     91290.9
+    ],
+    "h18": [
+     0.0,
+     11377.7
+    ],
+    "h19": [
+     0.0,
+     158280.6
+    ],
+    "h20": [
+     0.0,
+     6279.3
+    ],
+    "h21": [
+     0.0,
+     59379.6
+    ],
+    "h22": [
+     0.0,
+     56711.7
+    ],
+    "h23": [
+     0.0,
+     65296.8
+    ]
+   },
+   "gap_seconds": {
+    "max": 158280.613,
+    "n": 343,
+    "p50": 0.0,
+    "p90": 16967.052,
+    "p95": 54764.948,
+    "p99": 90095.992
+   }
+  },
+  "InstantMessage | Recents": {
+   "events": 85,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     145814.8,
+     334780.8
+    ],
+    "h01": [
+     88585.1,
+     88585.1
+    ],
+    "h02": [
+     1474963.3,
+     2125019.0
+    ],
+    "h03": [
+     756770.6,
+     1194843.3
+    ],
+    "h07": [
+     126318.4,
+     126318.4
+    ],
+    "h09": [
+     748746.9,
+     748746.9
+    ],
+    "h11": [
+     877318.3,
+     877318.3
+    ],
+    "h12": [
+     1327402.1,
+     1327402.1
+    ],
+    "h13": [
+     1406501.4,
+     1406501.4
+    ],
+    "h14": [
+     970961.2,
+     2256498.6
+    ],
+    "h15": [
+     345164.8,
+     1469971.5
+    ],
+    "h16": [
+     938119.9,
+     2439712.2
+    ],
+    "h17": [
+     93602.5,
+     2904778.2
+    ],
+    "h18": [
+     374181.2,
+     2591423.9
+    ],
+    "h19": [
+     980869.6,
+     3165966.8
+    ],
+    "h20": [
+     353740.8,
+     3279017.5
+    ],
+    "h21": [
+     601514.2,
+     5346738.3
+    ],
+    "h22": [
+     579350.0,
+     4586042.0
+    ],
+    "h23": [
+     943455.8,
+     2241808.1
+    ]
+   },
+   "gap_seconds": {
+    "max": 5346738.303,
+    "n": 84,
+    "p50": 374181.193,
+    "p90": 2256498.62,
+    "p95": 3165966.773,
+    "p99": 5346738.303
+   }
+  },
+  "InstantMessage | Telegram": {
+   "events": 17001,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     0.0,
+     45962.0
+    ],
+    "h01": [
+     0.0,
+     45416.0
+    ],
+    "h02": [
+     29091.0,
+     4636769.0
+    ],
+    "h03": [
+     0.0,
+     13107.0
+    ],
+    "h04": [
+     0.0,
+     10283.0
+    ],
+    "h05": [
+     0.0,
+     9461.0
+    ],
+    "h06": [
+     0.0,
+     7902.0
+    ],
+    "h07": [
+     0.0,
+     10036.0
+    ],
+    "h08": [
+     0.0,
+     11404.0
+    ],
+    "h09": [
+     0.0,
+     17881.0
+    ],
+    "h10": [
+     0.0,
+     17845.0
+    ],
+    "h11": [
+     0.0,
+     10875.0
+    ],
+    "h12": [
+     0.0,
+     8566.0
+    ],
+    "h13": [
+     0.0,
+     6497.0
+    ],
+    "h14": [
+     0.0,
+     6048.0
+    ],
+    "h15": [
+     0.0,
+     14625.0
+    ],
+    "h16": [
+     0.0,
+     40818.0
+    ],
+    "h17": [
+     0.0,
+     10040.0
+    ],
+    "h18": [
+     0.0,
+     40009.0
+    ],
+    "h19": [
+     0.0,
+     11804.0
+    ],
+    "h20": [
+     0.0,
+     31323.0
+    ],
+    "h21": [
+     0.0,
+     28156.0
+    ],
+    "h22": [
+     0.0,
+     40041.0
+    ],
+    "h23": [
+     0.0,
+     51371.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 16861270.0,
+    "n": 17000,
+    "p50": 0.0,
+    "p90": 3889.0,
+    "p95": 12711.0,
+    "p99": 70056.0
+   }
+  },
+  "InstantMessage | WhatsApp": {
+   "events": 14214,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     58.6,
+     21914.4
+    ],
+    "h01": [
+     56.0,
+     46640.0
+    ],
+    "h02": [
+     53.0,
+     36279.9
+    ],
+    "h03": [
+     79.5,
+     45705.1
+    ],
+    "h04": [
+     86.0,
+     40324.9
+    ],
+    "h05": [
+     96.7,
+     47781.8
+    ],
+    "h06": [
+     121.8,
+     51420.4
+    ],
+    "h07": [
+     88.0,
+     39538.4
+    ],
+    "h08": [
+     229.0,
+     41340.0
+    ],
+    "h09": [
+     150.9,
+     41852.9
+    ],
+    "h10": [
+     734.4,
+     45542.5
+    ],
+    "h11": [
+     330.0,
+     33689.6
+    ],
+    "h12": [
+     118.8,
+     28434.0
+    ],
+    "h13": [
+     188.9,
+     32328.2
+    ],
+    "h14": [
+     90.8,
+     24463.6
+    ],
+    "h15": [
+     111.2,
+     17056.1
+    ],
+    "h16": [
+     77.9,
+     15710.1
+    ],
+    "h17": [
+     110.0,
+     16141.5
+    ],
+    "h18": [
+     84.0,
+     15293.0
+    ],
+    "h19": [
+     164.0,
+     17704.3
+    ],
+    "h20": [
+     96.9,
+     18395.2
+    ],
+    "h21": [
+     87.4,
+     25202.5
+    ],
+    "h22": [
+     68.1,
+     18907.0
+    ],
+    "h23": [
+     70.0,
+     40539.3
+    ]
+   },
+   "gap_seconds": {
+    "max": 482085305.027,
+    "n": 14213,
+    "p50": 89.177,
+    "p90": 10955.518,
+    "p95": 30825.866,
+    "p99": 83499.0
+   }
+  },
+  "InstantMessage | WhatsApp Business": {
+   "events": 775,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     140.0,
+     238226.6
+    ],
+    "h01": [
+     2025.8,
+     176173.6
+    ],
+    "h02": [
+     100.3,
+     157256.0
+    ],
+    "h03": [
+     24.0,
+     255854.0
+    ],
+    "h04": [
+     7360.0,
+     806860.5
+    ],
+    "h05": [
+     126132.4,
+     154704.4
+    ],
+    "h06": [
+     31562.0,
+     297958.1
+    ],
+    "h07": [
+     74025.8,
+     74025.8
+    ],
+    "h08": [
+     22148.5,
+     22148.5
+    ],
+    "h09": [
+     88.5,
+     26394.6
+    ],
+    "h10": [
+     2082.0,
+     4307.0
+    ],
+    "h11": [
+     4763.5,
+     112382.6
+    ],
+    "h12": [
+     8933.3,
+     34772.8
+    ],
+    "h13": [
+     3522.0,
+     546123.0
+    ],
+    "h14": [
+     614.0,
+     114185.0
+    ],
+    "h15": [
+     5116.6,
+     279057.1
+    ],
+    "h16": [
+     1526.0,
+     123366.4
+    ],
+    "h17": [
+     138.0,
+     91365.6
+    ],
+    "h18": [
+     503.0,
+     195352.0
+    ],
+    "h19": [
+     407.8,
+     77989.7
+    ],
+    "h20": [
+     456.5,
+     426173.3
+    ],
+    "h21": [
+     117.2,
+     240945.3
+    ],
+    "h22": [
+     857.9,
+     397934.0
+    ],
+    "h23": [
+     372.0,
+     178836.1
+    ]
+   },
+   "gap_seconds": {
+    "max": 1303270.763,
+    "n": 774,
+    "p50": 306.976,
+    "p90": 95778.0,
+    "p95": 195352.0,
+    "p99": 546123.0
+   }
+  }
+ },
+ "m5_accuracy_m_quantiles": null,
+ "m5_bssid_gps_days": {
+  "accuracy_le_100m": 0,
+  "distinct_bssids_with_time": 0,
+  "radius_2x_le_100m": 0
+ },
+ "m8_power": {
+  "events": {},
+  "gap_before_on_seconds": {},
+  "sequences": {}
+ },
+ "s05_m1a_distinct_service_identifiers": 0,
+ "s05_m3d": {
+  "reply records": 411,
+  "reply referencing an Identifier on the phone": 256,
+  "reply referencing no Identifier on the phone": 38,
+  "reply with OriginalMessageID": 294
+ },
+ "s05_m8a": {
+  "attachment-linked files": 1490,
+  "attachment-linked with MD5": 1489,
+  "camera-path or camera-EXIF files with MD5": 0,
+  "tagged files": 18953
+ },
+ "s05_x3_body_occurrence": {
+  "distinct bodies >= 10 chars": 10807,
+  "occurring <= 3 times": 10149
+ },
+ "seed": {
+  "catalogue": {
+   "field_rows": 98,
+   "named_set_values": 36,
+   "named_sets": 10,
+   "records": 140608,
+   "types": 23
+  },
+  "field_rows": 98,
+  "field_rows_only_in_catalogue": 0,
+  "field_rows_only_in_report": 0,
+  "largest_type_differences": [],
+  "named_set_values": 36,
+  "named_set_values_only_in_catalogue": 0,
+  "named_set_values_only_in_report": 0,
+  "named_sets": 10,
+  "nesting_relations": 33,
+  "record_difference": 0,
+  "records": 140608,
+  "related_models": 0,
+  "types": 23,
+  "types_only_in_catalogue": 0,
+  "types_only_in_report": 0,
+  "types_with_different_count": 0
+ },
+ "top_level_types": {
+  "Call": 602,
+  "Chat": 655,
+  "Contact": 2940,
+  "Email": 10890,
+  "InstantMessage": 86,
+  "SIMData": 9,
+  "UserAccount": 24
+ }
+}

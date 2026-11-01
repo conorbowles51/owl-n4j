@@ -302,7 +302,11 @@ The seed is a derived, structure-only file committed to the repo:
    separate reports, not deduplicated against their server copies, because they are different exports
    (local C8 is report version 8.5 with 250 combinations; its server counterpart has 221).
 2. Types: for each `model_types` entry add `seed_record_count` and 1 to `seed_report_count`.
-   Expected: 62 types, 3,405,526 records.
+   Expected: 62 types, 3,405,526 records. Recomputed directly from the 14 server reports (stage A3,
+   `measurements/a3/README.md` section 2), the catalogue's 14 lines are exact: per report and per type the
+   counts equal the reports once the `RelatedModels` copies are counted (3,246,839 records over the 14), and
+   the field rows (466 over 465), named sets (54 with 208 values) and the one drift field match with nothing on
+   one side only.
 3. Fields: for each `catalog` entry `[type, field, kind, {valueType: count}]` and each value type in it, add
    `count` to `seed_value_count` and 1 to `seed_report_count`. Expected: 471 rows over 470 (type, field,
    kind).
@@ -312,7 +316,10 @@ The seed is a derived, structure-only file committed to the repo:
    (`catalog.py` line 18); no named set reached that cap (largest 23).
 5. `DecodingSourceOptions`: add the value `Decoding` with `origin = seed` and a note that it comes from the
    C3, C9, C8 stream measurement, since `catalog.py` excluded the type.
-6. Nesting: the 47 relations measured on C3, C9, C8 (3.6), because the catalogue does not record them.
+6. Nesting: the union of the 47 relations measured on C3, C9, C8 (3.6) and the 95 measured on the 14 server
+   reports (`measurements/a3/summary.json`, `seed_02_U2.total.nesting_relations_list`), because the catalogue
+   does not record them. The server list includes 18 `RelatedModels` relations (a record holding other-source
+   copies of itself, 01 section 1.9), seeded with kind `RelatedModels`.
 7. Attributes: the `attrnames` of `c3.json`, `c9.json`, `c8.json` for `model`, `extractionInfo`,
    `project`, `file`, `value`.
 8. Pre-acknowledged flag: `ChatActivity.SystemMessageId` drift is written as a `new_value_type` flag in state
@@ -1611,7 +1618,7 @@ file.
 | # | Unit | Acceptance tests |
 |---|---|---|
 | U1 | Body walker, ids and value parsers (1.2, 4) | `body.py` yields every field of every C3, C9, C8 record and its value count equals 01's reconciled value count per document; `record_uid` is identical across two captures of the same bytes; `phone_time_values` rows equal `phone_timestamps` rows with `owner_kind = 'record'` (C3 22,881; C9 5,218; C8 59,672) and carry `producer_format` (C3: TimeStampKnown 22,859, DateTimeOnly 21, DateOnly 1; C8: 59,666 and 6); no offset-less value gets an instant without the 8.8 decision, even though its `formatted_text` has an offset; `HH:MM:SS.fffffff` parses; out-of-range and (0,0) coordinates flagged; Double kept as Decimal; the device zone is C9's metadata zone and null for C3 and C8, with C3's examiner zone shown |
-| U2 | Registry tables and seed | After seed: 62 types, 471 field rows over 470 (type, field, kind), 55 named sets with 210 values plus `DecodingSourceOptions` = `Decoding`, 47 nesting rows, `ChatActivity.SystemMessageId` drift flag `acknowledged`; re-running the seed changes nothing; the seed file contains no path and no String/Guid value (test scans it) |
+| U2 | Registry tables and seed | After seed: 62 types, 471 field rows over 470 (type, field, kind), 55 named sets with 210 values plus `DecodingSourceOptions` = `Decoding`, nesting rows equal to the union in 3.5 step 6 (the test computes it from the two lists), `ChatActivity.SystemMessageId` drift flag `acknowledged`; re-running the seed changes nothing; the seed file contains no path and no String/Guid value (test scans it) |
 | U3 | Observation pass and review queue | Observing C3, C9, C8 after the seed raises no flag for anything in the seed; a synthetic extraction with one new type, field, set value, nesting, attribute and a drifted value type raises exactly six flags; two concurrent observations of the same new field raise one flag; flag transitions write events before state; `QuotedMessageData.Label` on C8 gives `max_values_in_one_field` 2 or more |
 | U4 | Generic interpretation (5) | C3: 22,881 time rows, 31 location points; C9: 5,218 and 9 (7 Location, 2 WirelessNetwork); C8: 59,672 and 38, and 171 Locations counted `not_positionable` with reason `no_coordinate`; a type absent from all code (synthetic `ZzzUnknown` with a TimeStamp, a nested Coordinate and a Party) gets a timeline entry, a point and a participant (plan 7 phase 3 done-when); every C3 Party yields a participation (count equals Party records under parents, 7,504 in `c3.json` `mt_all`); roles follow 5.3 on the measured combinations; no derived row lacks `record_uid` |
 | U5 | Mapping loader, versions, applier, suspension (6) | A `draft` file is ignored; an `applied_unconfirmed` file is applied and its rows carry level `applied_unconfirmed`; RQ-1 to RQ-8 (6.8); a `reviewed` file with empty `reviewed_by` fails start-up; changing a file changes the set id and the sweep re-derives without re-capture (asserted: no capture table written); a registry requirement under an open drift flag suspends the mapping on that extraction only and coverage shows `suspended`; the applier never reads `phone_mapping_proposals` |
@@ -1712,6 +1719,12 @@ Each with its reason and what would reverse it.
     395,831 values on 13 phones have unknown contents per key, and a credential among them would otherwise
     be searchable and exportable. *Reverse if* a reviewed mapping shows a key's values hold no credential
     (then that key is excluded by the mapping, not the field).
+39. **Models under `RelatedModels` are records, nested under their owner with nesting kind `RelatedModels`.**
+    On the server reports they are PA's other-source copies of a record (same type, own id found on no
+    top-level record, different `source_index`, `isrelated="True"`; 3,737 on 5 reports, 01 section 1.9), and
+    the catalogue counts them. They are interpreted like any record and shown under their owner, marked as a copy
+    from another source; D-9 does not merge them. *Reverse if* a report shows a `RelatedModels` model whose id
+    is also a top-level record (then it is a reference, not a copy).
 
 ## 15. Not yet established
 

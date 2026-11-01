@@ -1386,6 +1386,33 @@ in this file when each unit starts, per plan 12.1 rule 1.
 
 ---
 
+### 13.1 Results on the 14 server reports (stage A3)
+
+M1 to M9, M11 and M12 are measured in one streaming pass per report (`scripts/a3_extract.py`) and M10 across
+phone pairs (`scripts/a3_cross.py`), under the guards above; results per report are in
+`measurements/a3/P*.json` and summarised in `measurements/a3/README.md` section 8. What they settle here:
+
+- M3: no TimeStamp text equals its `formattedTimestamp` (the text carries milliseconds). Values without an
+  offset: P13 4,005, P11 3,479, P04 2,245, P03 2,089, P14 368, P05 81, P12 33, P06 22, P02 6, P01 2, none on
+  P07 to P10.
+- M5: location volume sits on P04 (42,607 Location records, accuracy median 40 m, P90 1,414 m over 13,255
+  values), P14 (13,355; 39 m, 60 m over 12,728) and P13 (3,533; 57 m, 2,000 m over 2,608); 7 other reports
+  have under 1,500. BSSIDs with a GPS observation within 5 minutes on 2 or more days: 3,068 on P04, none
+  elsewhere (6.3).
+- M10: no phone pair shares a BSSID within 5 minutes or a full cell key within 15 minutes. Presence
+  observation pairs within 5 minutes exist on 4 pairs (P13 and P14: 149, all with an unknown radius on at
+  least one side; P03 and P04: 53). Bluetooth detections naming the other phone are skipped: they need each
+  phone's own device name from 02's identity work.
+- M11: P03 and P14 have no `DeviceInfoExtractionStartDateTime` or `EndDateTime` in their headers. Events
+  after the extraction start: P13 79, P11 13, P04 12, P02 2, P05 2, none elsewhere.
+- M12 (UTC days): days with 12 or more observed hours exist only on P04 (24), P11 (668), P13 (638) and P14
+  (546), the phones with device-event, connectivity, sensor or network-usage streams. Longest run of hours
+  with `f(h) <= 0.10`: P11 24 h, P13 11 h, P14 4 h, P04 1 h (at 0.05: 15, 4, 2, 0 h; at 0.20: 24, 24, 10,
+  3 h), computed on UTC days (local days move the day boundary and can shift these figures). 8.2's reverse-if
+  (rich phones have no run at 0.10) is not met: the 0.10 threshold stands. On P11 every hour stays under
+  10 percent (51 messages over 668 observed days), so a 24-hour run means a phone that is observed but
+  rarely used, not a routine.
+
 ## 14. Decisions made here that the plan did not settle
 
 Each is a decision with its reasoning and what would reverse it.

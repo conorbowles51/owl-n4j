@@ -1,0 +1,5373 @@
+{
+ "counts": {
+  "d7_media": {
+   "Audio | aac | audio:aac": 77,
+   "Audio | aiff | audio:pcm_s16be": 314,
+   "Audio | aiff | audio:pcm_s16le": 2,
+   "Audio | aiff | audio:pcm_s24be": 79,
+   "Audio | amr | audio:amr_nb": 4,
+   "Audio | caf | audio:aac": 1855,
+   "Audio | caf | audio:adpcm_ima_qt": 6,
+   "Audio | caf | audio:alac": 366,
+   "Audio | caf | audio:opus": 137,
+   "Audio | caf | audio:pcm_f32le": 4,
+   "Audio | caf | audio:pcm_f64le": 1,
+   "Audio | caf | audio:pcm_s16be": 10,
+   "Audio | caf | audio:pcm_s16le": 258,
+   "Audio | caf | audio:pcm_s24be": 1,
+   "Audio | caf | audio:pcm_s24le": 22,
+   "Audio | mov,mp4,m4a,3gp,3g2,mj2 | audio:aac": 1917,
+   "Audio | mov,mp4,m4a,3gp,3g2,mj2 | audio:aac,data:None": 52,
+   "Audio | mov,mp4,m4a,3gp,3g2,mj2 | audio:aac,data:None,data:None": 2,
+   "Audio | mov,mp4,m4a,3gp,3g2,mj2 | audio:alac": 11,
+   "Audio | mp3 | audio:mp3": 36,
+   "Audio | ogg | audio:opus": 6,
+   "Audio | probe failed": 3,
+   "Audio | unrecognised | no streams": 161,
+   "Audio | wav | audio:pcm_f32le": 13,
+   "Audio | wav | audio:pcm_s16le": 66,
+   "Audio | wav | audio:pcm_s24le": 30,
+   "Video | matroska,webm | video:vp9": 5,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | audio:aac": 1145,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | audio:aac,audio:aac,video:h264": 1,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | audio:aac,data:None,data:None,data:None,video:h264": 2,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | audio:aac,data:None,data:None,data:None,video:hevc": 11,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | audio:aac,data:None,data:None,video:hevc": 1,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | audio:aac,video:h264": 125,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | audio:aac,video:hevc": 549,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | audio:ac3,video:hevc": 2,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | audio:pcm_s16le,data:None,data:None,data:None,video:hevc": 169,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | audio:pcm_s16le,data:None,data:None,video:hevc": 1,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | data:None,data:None,data:None,video:hevc": 8,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | data:None,data:None,video:hevc": 1,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | data:None,video:h264": 11,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | data:None,video:hevc": 15,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | video:av1": 457,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | video:h264": 985,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | video:hevc": 114,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | video:mjpeg": 1,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | video:prores": 1,
+   "Video | mov,mp4,m4a,3gp,3g2,mj2 | video:vp9": 173,
+   "Video | not on disk": 1,
+   "Video | unrecognised | no streams": 15
+  },
+  "m11_header_values": {
+   "start values": 1,
+   "start values distinct instants": 1,
+   "start values parsed": 1
+  },
+  "m12_candidate_interaction_rows": {
+   "Call Incoming Established": 108,
+   "Call Incoming Rejected": 4,
+   "Call Outgoing any": 287,
+   "InstantMessage outgoing": 3544,
+   "Location Type Searched": 29,
+   "Party DateRead owner": 2471,
+   "SearchedItem TimeStamp": 420,
+   "VisitedPage LastVisited": 1352
+  },
+  "m3_shape": {
+   "CalendarEntry | EndDate | frac3/+00:00": 9,
+   "CalendarEntry | EndDate | frac3/absent": 240,
+   "CalendarEntry | StartDate | frac3/+00:00": 9,
+   "CalendarEntry | StartDate | frac3/absent": 240,
+   "Call | TimeStamp | frac3/+00:00": 527,
+   "CellTower | TimeStamp | frac3/+00:00": 851,
+   "Chat | LastActivity | frac3/+00:00": 611,
+   "Chat | StartTime | frac3/+00:00": 821,
+   "ChatActivity | SystemMessageTimeStamp | frac3/+00:00": 25,
+   "Contact | TimeCreated | frac3/+00:00": 529,
+   "Contact | TimeModified | frac3/+00:00": 96,
+   "Cookie | CreationTime | frac3/+00:00": 27,
+   "Cookie | Expiry | frac3/+00:00": 308,
+   "Cookie | LastAccessTime | frac3/+00:00": 282,
+   "DeviceConnectivity | StartTime | frac3/+00:00": 401,
+   "DeviceConnectivity | StartTime | frac3/absent": 5,
+   "DeviceEvent | EndTime | frac3/+00:00": 21136,
+   "DeviceEvent | StartTime | frac3/+00:00": 21718,
+   "Email | TimeStamp | frac3/+00:00": 7253,
+   "FileUpload | DateLastModified | frac3/+00:00": 3259,
+   "FileUpload | DateUploaded | frac3/+00:00": 3259,
+   "InstantMessage | TimeStamp | frac3/+00:00": 9723,
+   "Journey | StartTime | frac3/+00:00": 14,
+   "Location | EndTime | frac3/+00:00": 13537,
+   "Location | TimeStamp | frac3/+00:00": 39916,
+   "Location | TimeStamp | frac3/absent": 197,
+   "LogEntry | EndTime | frac3/+00:00": 8070,
+   "LogEntry | TimeStamp | frac3/+00:00": 11808,
+   "MobileCard | ModifyTime | frac3/+00:00": 1,
+   "MobileCard | PurchaseTime | frac3/+00:00": 1,
+   "Note | Creation | frac3/+00:00": 6,
+   "Note | Modification | frac3/+00:00": 6,
+   "Party | DateDelivered | frac3/+00:00": 1100,
+   "Party | DateRead | frac3/+00:00": 4366,
+   "Password | DateCreated | frac3/absent": 765,
+   "Password | DateModified | frac3/absent": 765,
+   "SearchedItem | TimeStamp | frac3/+00:00": 420,
+   "SocialMediaActivity | TimeStamp | frac3/+00:00": 85,
+   "UserAccount | TimeCreated | frac3/+00:00": 11,
+   "VisitedPage | LastVisited | frac3/+00:00": 1352,
+   "WirelessNetwork | LastAutoConnection | frac3/+00:00": 6,
+   "WirelessNetwork | LastAutoConnection | frac3/absent": 33,
+   "WirelessNetwork | LastConnection | frac3/+00:00": 14,
+   "WirelessNetwork | TimeStamp | frac3/+00:00": 24357
+  },
+  "m3_text_differs_from_formatted": {
+   "CalendarEntry | EndDate": 249,
+   "CalendarEntry | StartDate": 249,
+   "Call | TimeStamp": 527,
+   "CellTower | TimeStamp": 851,
+   "Chat | LastActivity": 611,
+   "Chat | StartTime": 821,
+   "ChatActivity | SystemMessageTimeStamp": 25,
+   "Contact | TimeCreated": 529,
+   "Contact | TimeModified": 96,
+   "Cookie | CreationTime": 27,
+   "Cookie | Expiry": 308,
+   "Cookie | LastAccessTime": 282,
+   "DeviceConnectivity | StartTime": 406,
+   "DeviceEvent | EndTime": 21136,
+   "DeviceEvent | StartTime": 21718,
+   "Email | TimeStamp": 7253,
+   "FileUpload | DateLastModified": 3259,
+   "FileUpload | DateUploaded": 3259,
+   "InstantMessage | TimeStamp": 9723,
+   "Journey | StartTime": 14,
+   "Location | EndTime": 13537,
+   "Location | TimeStamp": 40113,
+   "LogEntry | EndTime": 8070,
+   "LogEntry | TimeStamp": 11808,
+   "MobileCard | ModifyTime": 1,
+   "MobileCard | PurchaseTime": 1,
+   "Note | Creation": 6,
+   "Note | Modification": 6,
+   "Party | DateDelivered": 1100,
+   "Party | DateRead": 4366,
+   "Password | DateCreated": 765,
+   "Password | DateModified": 765,
+   "SearchedItem | TimeStamp": 420,
+   "SocialMediaActivity | TimeStamp": 85,
+   "UserAccount | TimeCreated": 11,
+   "VisitedPage | LastVisited": 1352,
+   "WirelessNetwork | LastAutoConnection": 39,
+   "WirelessNetwork | LastConnection": 14,
+   "WirelessNetwork | TimeStamp": 24357
+  },
+  "m4_direction_basis": {
+   "folder_inbox": 1374,
+   "from_not_owner": 3423,
+   "from_owner": 3473,
+   "none": 1387,
+   "status_sent": 76
+  },
+  "m5_cell_digits": {
+   "CID 2": 5,
+   "CID 3": 4,
+   "CID 8": 600,
+   "CID 9": 251,
+   "LAC 3": 8,
+   "LAC 4": 136,
+   "LAC 5": 716,
+   "MNC 1": 1,
+   "MNC 3": 859
+  },
+  "m5_cell_mcc": {
+   "no MCC": 9,
+   "with MCC": 851
+  },
+  "m5_confidence_bucket": {
+   "-10": 147,
+   "-100": 1,
+   "-60": 1,
+   "0": 1,
+   "50": 22948,
+   "70": 890,
+   "none": 18619
+  },
+  "m5_journey_nesting": {
+   "FromPoint (modelField) -> Location": 16,
+   "ToPoint (modelField) -> Location": 16,
+   "WayPoints (multiModelField) -> Location": 30
+  },
+  "m5_time_fields": {
+   "EndTime absent": 29070,
+   "EndTime present": 13537,
+   "TimeStamp absent": 197,
+   "TimeStamp empty": 2494,
+   "TimeStamp explicit": 39916
+  },
+  "m7_lastvisited": {
+   "absent": 351,
+   "present": 1352
+  },
+  "m7_visitcount": {
+   "1": 1165,
+   "none": 538
+  },
+  "s05_m10": {
+   "calendar entries": 249,
+   "notes": 6
+  },
+  "s05_m11a": {
+   "contacts": 2303,
+   "with TimeCreated": 529,
+   "with TimeModified": 96
+  },
+  "s05_m1b_amount_with_currency": {
+   "S2 short-code SMS": 12,
+   "S3 email": 2975,
+   "S9 app message": 8
+  },
+  "s05_m3e": {
+   "chats": 869,
+   "chats with >= 20 messages": 51,
+   "chats with >= 20 messages and >= 1 deleted": 4
+  },
+  "s05_m4a": {
+   "incoming": 4797,
+   "incoming with owner DateRead": 2471
+  },
+  "s05_m4c": {
+   "chat activity records": 142,
+   "timed chat activity": 25
+  },
+  "s05_m9a": {
+   "pages": 1703,
+   "pages with title": 902,
+   "pages with visit count": 1165,
+   "searches with time": 420,
+   "searches without time": 140
+  },
+  "s05_messages": {
+   "total": 9733,
+   "type AppMessage": 5419,
+   "type IMessage": 2787,
+   "type Mms": 93,
+   "type Sms": 1434
+  },
+  "s05_shortcode": {
+   "short-code sender messages": 85
+  },
+  "s05_x3_short_bodies": {
+   "short or untimed": 2336
+  }
+ },
+ "d1_root_attributes": {
+  "ModelCount": "121076",
+  "NodeCount": "309779",
+  "extractionType": "Legacy",
+  "reportVersion": "7.48"
+ },
+ "d3_zone": {
+  "comparison": "device setting absent",
+  "convert_to_utc": "True",
+  "daylight_savings": "True",
+  "device_setting_present": false,
+  "device_settings_all_equal": true,
+  "device_settings_count": 0,
+  "examiner_zone_present": true
+ },
+ "d4_duplicates": {
+  "call | 1s | groups": 1,
+  "call | 1s | records": 2,
+  "call | 2s | groups": 1,
+  "call | 2s | records": 2,
+  "call | equal key, 2-60 s apart | adjacent pairs": 14,
+  "call | exact | groups": 0,
+  "call | exact | records": 0,
+  "call | same second | groups": 1,
+  "email | 1s | groups": 0,
+  "email | 1s | records": 0,
+  "email | 2s | groups": 2,
+  "email | 2s | records": 4,
+  "email | equal key, 2-60 s apart | adjacent pairs": 1,
+  "email | exact | groups": 0,
+  "email | exact | records": 0,
+  "email | same second | groups": 0,
+  "message | 1s | groups": 742,
+  "message | 1s | records": 1623,
+  "message | 2s | groups": 749,
+  "message | 2s | records": 1638,
+  "message | equal key, 2-60 s apart | adjacent pairs": 222,
+  "message | exact | groups": 353,
+  "message | exact | records": 729,
+  "message | same second | groups": 681
+ },
+ "d4_events_with_instant": {
+  "call": 527,
+  "email": 7253,
+  "message": 9723
+ },
+ "d6_codepoints": {
+  "by_128_range": {
+   "U+0080": 70431,
+   "U+0100": 499,
+   "U+0180": 3,
+   "U+0200": 10,
+   "U+0280": 1914,
+   "U+0300": 808,
+   "U+0380": 125,
+   "U+0400": 649,
+   "U+0580": 1,
+   "U+0600": 136,
+   "U+0680": 1,
+   "U+0780": 39,
+   "U+0D00": 5,
+   "U+0E00": 3,
+   "U+0E80": 5,
+   "U+0F00": 18,
+   "U+1200": 5,
+   "U+1500": 2,
+   "U+1900": 2,
+   "U+1B00": 38,
+   "U+1D00": 33,
+   "U+1D400": 66,
+   "U+1D480": 112,
+   "U+1D500": 167,
+   "U+1D580": 736,
+   "U+1D600": 14,
+   "U+1D680": 14,
+   "U+1D700": 11,
+   "U+1D780": 23,
+   "U+1D80": 3,
+   "U+1E80": 1,
+   "U+1F080": 6,
+   "U+1F180": 117,
+   "U+1F300": 340,
+   "U+1F380": 748,
+   "U+1F400": 902,
+   "U+1F480": 1024,
+   "U+1F500": 518,
+   "U+1F580": 145,
+   "U+1F600": 1448,
+   "U+1F680": 401,
+   "U+1F900": 847,
+   "U+1F980": 130,
+   "U+1FA00": 5,
+   "U+1FA80": 110,
+   "U+2000": 229904,
+   "U+2080": 385,
+   "U+2100": 312,
+   "U+2180": 1569,
+   "U+2280": 5,
+   "U+2300": 4,
+   "U+2380": 180,
+   "U+2480": 16,
+   "U+2500": 15,
+   "U+2580": 52,
+   "U+2600": 309,
+   "U+2680": 104,
+   "U+2700": 996,
+   "U+2780": 36,
+   "U+2A80": 2,
+   "U+2B00": 25,
+   "U+3000": 25,
+   "U+3080": 384,
+   "U+4900": 1,
+   "U+4E00": 1,
+   "U+5800": 1,
+   "U+6200": 1,
+   "U+6D00": 1,
+   "U+7200": 2,
+   "U+7500": 2,
+   "U+7680": 1,
+   "U+7E80": 1,
+   "U+8280": 1,
+   "U+8980": 29,
+   "U+9500": 1,
+   "U+9600": 1,
+   "U+AA00": 1,
+   "U+AC00": 2,
+   "U+AC80": 31,
+   "U+AD00": 1,
+   "U+AD80": 1,
+   "U+AE00": 6,
+   "U+B080": 32,
+   "U+B100": 4,
+   "U+B200": 29,
+   "U+B280": 3,
+   "U+B380": 4,
+   "U+B500": 30,
+   "U+B700": 2,
+   "U+B780": 2,
+   "U+B800": 3,
+   "U+B900": 29,
+   "U+B980": 4,
+   "U+BA00": 1,
+   "U+BA80": 1,
+   "U+BC00": 32,
+   "U+BC80": 1,
+   "U+BD80": 1,
+   "U+BE00": 1,
+   "U+C080": 2,
+   "U+C100": 2,
+   "U+C180": 1,
+   "U+C280": 4,
+   "U+C300": 1,
+   "U+C500": 1,
+   "U+C580": 7,
+   "U+C600": 1,
+   "U+C680": 6,
+   "U+C700": 8,
+   "U+C780": 6,
+   "U+C800": 2,
+   "U+C980": 1,
+   "U+CC00": 2,
+   "U+CD80": 1,
+   "U+CF00": 1,
+   "U+D080": 3,
+   "U+D280": 3,
+   "U+D300": 1,
+   "U+D480": 1,
+   "U+D500": 1,
+   "U+D600": 4,
+   "U+D680": 1,
+   "U+D700": 1,
+   "U+F080": 2,
+   "U+F880": 5,
+   "U+FB00": 9,
+   "U+FE00": 589,
+   "U+FF00": 96,
+   "U+FF80": 561
+  },
+  "by_name_first_word": {
+   "<no name>": 8,
+   "ADHESIVE": 3,
+   "ADMISSION": 5,
+   "ADULT": 4,
+   "AIRPLANE": 4,
+   "ALARM": 68,
+   "ALIEN": 1,
+   "AMERICAN": 2,
+   "ANATOMICAL": 11,
+   "ANGRY": 2,
+   "ANGUISHED": 3,
+   "ARABIC": 137,
+   "ARTIST": 22,
+   "ASTONISHED": 4,
+   "ATHLETIC": 87,
+   "AUTOMOBILE": 3,
+   "AVOCADO": 6,
+   "BALINESE": 38,
+   "BALLOON": 10,
+   "BANANA": 1,
+   "BANKNOTE": 24,
+   "BARBER": 2,
+   "BAT": 1,
+   "BATH": 4,
+   "BATTERY": 5,
+   "BEACH": 6,
+   "BEAR": 4,
+   "BEATING": 3,
+   "BELL": 8,
+   "BELLHOP": 1,
+   "BENTO": 2,
+   "BEVERAGE": 1,
+   "BICYCLE": 5,
+   "BICYCLIST": 4,
+   "BIKINI": 3,
+   "BILLIARDS": 24,
+   "BIRTHDAY": 7,
+   "BLACK": 225,
+   "BLACK-LETTER": 1,
+   "BLOSSOM": 2,
+   "BLUE": 11,
+   "BOMB": 5,
+   "BOOKS": 2,
+   "BOUQUET": 3,
+   "BOW": 13,
+   "BOX": 15,
+   "BOXING": 24,
+   "BOY": 49,
+   "BRIEFCASE": 13,
+   "BROCCOLI": 1,
+   "BROKEN": 10,
+   "BROWN": 2,
+   "BUILDING": 2,
+   "BULLET": 1400,
+   "BURRITO": 11,
+   "BUST": 16,
+   "BUSTS": 1,
+   "BUTTERFLY": 18,
+   "CALL": 4,
+   "CAMERA": 12,
+   "CANADIAN": 2,
+   "CANDY": 1,
+   "CARON": 1895,
+   "CARROT": 1,
+   "CAT": 3,
+   "CENT": 6,
+   "CHAINS": 4,
+   "CHAM": 1,
+   "CHART": 6,
+   "CHEERING": 65,
+   "CHEESE": 1,
+   "CHEQUERED": 7,
+   "CHERRIES": 12,
+   "CHERRY": 5,
+   "CHIPMUNK": 3,
+   "CHOCOLATE": 13,
+   "CHRISTMAS": 9,
+   "CIRCLED": 9,
+   "CJK": 43,
+   "CLAPPER": 1,
+   "CLAPPING": 98,
+   "CLINKING": 8,
+   "CLOCK": 11,
+   "CLOCKWISE": 3,
+   "CLOSED": 30,
+   "CLOWN": 3,
+   "COAT": 1,
+   "COCONUT": 3,
+   "COLLISION": 12,
+   "COMBINING": 891,
+   "CONFETTI": 7,
+   "CONFUSED": 7,
+   "COOKIE": 11,
+   "COPTIC": 1,
+   "COPYRIGHT": 703,
+   "COUCH": 1,
+   "CRESCENT": 8,
+   "CROSS": 8,
+   "CROWN": 19,
+   "CRYING": 9,
+   "CRYSTAL": 5,
+   "CUP": 3,
+   "CUT": 3,
+   "CYRILLIC": 649,
+   "DAGGER": 96,
+   "DANCER": 3,
+   "DARK": 38,
+   "DASH": 96,
+   "DEAF": 2,
+   "DEER": 6,
+   "DEGREE": 7,
+   "DELIVERY": 2,
+   "DESERT": 2,
+   "DESKTOP": 11,
+   "DINGBAT": 16,
+   "DISAPPOINTED": 9,
+   "DISGUISED": 3,
+   "DIZZY": 7,
+   "DOG": 3,
+   "DOLPHIN": 2,
+   "DOT": 4,
+   "DOTTED": 1,
+   "DOUBLE": 40,
+   "DOUBLE-STRUCK": 4,
+   "DOUGHNUT": 3,
+   "DOVE": 6,
+   "DOWNWARDS": 4,
+   "DRAGON": 4,
+   "DROOLING": 14,
+   "DUCK": 1,
+   "DUMPLING": 2,
+   "EAGLE": 2,
+   "EAR": 6,
+   "EARTH": 45,
+   "EIGHT": 4,
+   "ELECTRIC": 227,
+   "EM": 849,
+   "EMOJI": 191,
+   "EN": 274,
+   "END": 1,
+   "ENVELOPE": 1,
+   "ETHIOPIC": 5,
+   "EURO": 302,
+   "EXCLAMATION": 4,
+   "EXPRESSIONLESS": 5,
+   "EXTRATERRESTRIAL": 30,
+   "EYE": 5,
+   "EYES": 132,
+   "FACE": 994,
+   "FALLEN": 19,
+   "FAMILY": 2,
+   "FATHER": 23,
+   "FEARFUL": 1,
+   "FEMALE": 30,
+   "FIRE": 138,
+   "FIRECRACKER": 1,
+   "FIREWORK": 1,
+   "FIREWORKS": 4,
+   "FIRST": 3,
+   "FISH": 2,
+   "FISHING": 2,
+   "FISTED": 1,
+   "FLAMINGO": 2,
+   "FLEXED": 45,
+   "FLOPPY": 2,
+   "FLOWER": 6,
+   "FLUSHED": 1,
+   "FLYING": 1,
+   "FOOTPRINTS": 1,
+   "FORK": 5,
+   "FORTUNE": 2,
+   "FREEZING": 34,
+   "FROWNING": 2,
+   "FUEL": 3,
+   "FULL": 1,
+   "FULLWIDTH": 96,
+   "GEM": 2,
+   "GHOST": 78,
+   "GIRL": 53,
+   "GLOWING": 3,
+   "GOLFER": 1,
+   "GRADUATION": 1,
+   "GRAPES": 3,
+   "GREEK": 124,
+   "GREEN": 9,
+   "GRIMACING": 3,
+   "GRINNING": 63,
+   "GROWING": 5,
+   "HAIR": 43,
+   "HAMBURGER": 12,
+   "HAMSA": 2,
+   "HAND": 1,
+   "HANDSHAKE": 7,
+   "HANGUL": 281,
+   "HAPPY": 6,
+   "HATCHING": 3,
+   "HEAR-NO-EVIL": 1,
+   "HEART": 24,
+   "HEAVY": 657,
+   "HELMET": 8,
+   "HERB": 5,
+   "HIBISCUS": 1,
+   "HIGH": 31,
+   "HOCHO": 2,
+   "HORIZONTAL": 871,
+   "HORSE": 4,
+   "HOT": 8,
+   "HOURGLASS": 97,
+   "HOUSE": 23,
+   "HUGGING": 9,
+   "HUSHED": 9,
+   "HYPHEN": 4,
+   "ICE": 3,
+   "IMP": 1,
+   "INFORMATION": 10,
+   "INVERTED": 4807,
+   "JACK-O-LANTERN": 12,
+   "JAPANESE": 17,
+   "JEANS": 16,
+   "KATAKANA": 384,
+   "KEY": 1,
+   "KISS": 30,
+   "KISSING": 3,
+   "LAO": 5,
+   "LATIN": 41447,
+   "LEAF": 2,
+   "LEAFY": 2,
+   "LEFT": 561,
+   "LEFT-FACING": 2,
+   "LEFT-POINTING": 12,
+   "LEFT-TO-RIGHT": 127,
+   "LEMON": 6,
+   "LINE": 5,
+   "LION": 1,
+   "LOCK": 62,
+   "LOLLIPOP": 1,
+   "LOUDLY": 23,
+   "LOVE": 107,
+   "LOWER": 21,
+   "LOZENGE": 3,
+   "MACRON": 2,
+   "MAGE": 2,
+   "MAGIC": 1,
+   "MALAYALAM": 5,
+   "MALE": 72,
+   "MAN": 17,
+   "MANGO": 2,
+   "MANS": 24,
+   "MANTELPIECE": 6,
+   "MAPLE": 23,
+   "MASCULINE": 1,
+   "MATHEMATICAL": 1143,
+   "MEDIUM": 8,
+   "MELTING": 1,
+   "MEMO": 2,
+   "MENORAH": 1,
+   "MIDDLE": 1099,
+   "MILITARY": 2,
+   "MOBILE": 49,
+   "MODIFIER": 32,
+   "MONEY": 52,
+   "MONEY-MOUTH": 32,
+   "MONKEY": 1,
+   "MOTOR": 9,
+   "MOUTH": 2,
+   "MOVIE": 1,
+   "MULTIPLE": 2,
+   "MULTIPLICATION": 802,
+   "MUSICAL": 6,
+   "NARROW": 10,
+   "NAZAR": 29,
+   "NECKTIE": 2,
+   "NEGATIVE": 8,
+   "NERD": 3,
+   "NEUTRAL": 5,
+   "NIGHT": 2,
+   "NINJA": 9,
+   "NO": 159,
+   "NO-BREAK": 20436,
+   "NON-BREAKING": 136,
+   "NORTH": 9,
+   "OBJECT": 3,
+   "OCTAGONAL": 3,
+   "OHM": 2,
+   "OLDER": 2,
+   "ONCOMING": 3,
+   "OPEN": 3,
+   "ORANGUTAN": 1,
+   "OVERHEATED": 9,
+   "OWL": 1,
+   "PACKAGE": 3,
+   "PALM": 3,
+   "PANCAKES": 2,
+   "PANDA": 2,
+   "PARACHUTE": 1,
+   "PARTY": 190,
+   "PEACE": 1,
+   "PEANUTS": 6,
+   "PENCIL": 2,
+   "PENSIVE": 8,
+   "PERFORMING": 14,
+   "PERSON": 40,
+   "PERSONAL": 73,
+   "PIE": 1,
+   "PILE": 1,
+   "PINEAPPLE": 2,
+   "PISTOL": 2,
+   "PLANCK": 4,
+   "PLAYING": 6,
+   "POLICE": 45,
+   "POP": 12,
+   "POTABLE": 1,
+   "POULTRY": 2,
+   "POUTING": 2,
+   "PRAYER": 2,
+   "PREGNANT": 2,
+   "PRETZEL": 3,
+   "PRINCESS": 6,
+   "PROBING": 5,
+   "PUBLIC": 7,
+   "PURPLE": 5,
+   "PUSHPIN": 1,
+   "RABBIT": 6,
+   "RACING": 15,
+   "RADIO": 30,
+   "RAINBOW": 58,
+   "RAISED": 2,
+   "RECREATIONAL": 19,
+   "RED": 5,
+   "REGIONAL": 80,
+   "REGISTERED": 1484,
+   "RELIEVED": 69,
+   "REPLACEMENT": 558,
+   "REVERSED": 19,
+   "REVOLVING": 3,
+   "RIGHT": 4461,
+   "RIGHT-FACING": 2,
+   "RIGHT-POINTING": 96,
+   "RIGHTWARDS": 1555,
+   "RING": 30,
+   "ROBOT": 8,
+   "ROCKET": 4,
+   "ROLLING": 236,
+   "ROSE": 3,
+   "ROUND": 4,
+   "RUNNER": 25,
+   "SAGITTARIUS": 3,
+   "SALUTING": 62,
+   "SAXOPHONE": 1,
+   "SCHOOL": 3,
+   "SCRIPT": 6,
+   "SECTION": 4,
+   "SEE-NO-EVIL": 6,
+   "SEEDLING": 6,
+   "SHADOWED": 1,
+   "SHAMROCK": 2,
+   "SHARK": 1,
+   "SHEEP": 12,
+   "SHOCKED": 10,
+   "SHOPPING": 128,
+   "SHORTCAKE": 2,
+   "SHORTS": 1,
+   "SHOWER": 1,
+   "SHRUG": 17,
+   "SINGLE": 780,
+   "SKI": 1,
+   "SKIER": 2,
+   "SKULL": 42,
+   "SLEEPING": 7,
+   "SLEEPY": 6,
+   "SLEUTH": 2,
+   "SLICE": 11,
+   "SLIGHTLY": 36,
+   "SLOT": 4,
+   "SMALL": 4,
+   "SMILING": 348,
+   "SMIRKING": 23,
+   "SNAKE": 1,
+   "SNEEZING": 5,
+   "SNOWBOARDER": 1,
+   "SNOWFLAKE": 7,
+   "SNOWMAN": 6,
+   "SOCCER": 9,
+   "SOFT": 2,
+   "SOON": 2,
+   "SOUTH": 3,
+   "SPARKLE": 6,
+   "SPARKLES": 256,
+   "SPARKLING": 5,
+   "SPEAK-NO-EVIL": 1,
+   "SPEAKER": 31,
+   "SPEAKING": 5,
+   "SPIDER": 1,
+   "SPIRAL": 59,
+   "SPLASHING": 2,
+   "SPORTS": 1,
+   "SPOUTING": 1,
+   "SQUARED": 37,
+   "STATUE": 2,
+   "STETHOSCOPE": 1,
+   "STOPWATCH": 12,
+   "STRAWBERRY": 5,
+   "SUN": 8,
+   "SUNFLOWER": 2,
+   "SUPERHERO": 2,
+   "SUPERSCRIPT": 91,
+   "SUPERVILLAIN": 2,
+   "SURFER": 6,
+   "SYRINGE": 2,
+   "T-SHIRT": 19,
+   "TACO": 3,
+   "TAI": 2,
+   "TAKEOUT": 2,
+   "TEDDY": 2,
+   "TELEPHONE": 2,
+   "TELESCOPE": 9,
+   "TELEVISION": 9,
+   "TENT": 12,
+   "THAANA": 39,
+   "THAI": 3,
+   "THERMOMETER": 1,
+   "THINKING": 34,
+   "THOUGHT": 1,
+   "THUMBS": 38,
+   "TIBETAN": 18,
+   "TIMER": 1,
+   "TIRED": 5,
+   "TOILET": 4,
+   "TOMATO": 2,
+   "TOP": 13,
+   "TRADE": 294,
+   "TRIPLE": 2,
+   "TROPHY": 3,
+   "TROPICAL": 1,
+   "TRUMPET": 1,
+   "TULIP": 2,
+   "TURKEY": 2,
+   "TURTLE": 1,
+   "TWO": 87,
+   "UMBRELLA": 4,
+   "UNAMUSED": 38,
+   "UNICORN": 29,
+   "UPSIDE-DOWN": 18,
+   "UPWARDS": 1,
+   "VARIATION": 589,
+   "VICTORY": 4,
+   "VIDEO": 1,
+   "VULGAR": 1,
+   "WARNING": 13,
+   "WATCH": 4,
+   "WATER": 2,
+   "WATERMELON": 8,
+   "WAVING": 93,
+   "WEARY": 10,
+   "WEIGHT": 19,
+   "WHITE": 187,
+   "WILTED": 3,
+   "WINKING": 15,
+   "WOMAN": 13,
+   "WOMANS": 1,
+   "WOMENS": 3,
+   "WORRIED": 1,
+   "WRAPPED": 58,
+   "WRITING": 1,
+   "YAWNING": 2,
+   "YELLOW": 8,
+   "ZERO": 220255,
+   "ZIPPER-MOUTH": 6
+  },
+  "styled": {
+   "changed_by_nfkc": 23356,
+   "cyrillic": 649,
+   "enclosed_alphanumeric_supplement_other": 37,
+   "enclosed_alphanumerics": 16,
+   "format_or_control": 220394,
+   "fullwidth_ascii": 96,
+   "greek": 125,
+   "latin_small_capital": 23,
+   "letterlike": 312,
+   "mathematical_alphanumeric": 1143,
+   "regional_indicator": 80,
+   "superscript_subscript": 5
+  },
+  "totals": {
+   "ascii": 226316969,
+   "non_ascii": 318525
+  }
+ },
+ "extraction_info": [
+  {
+   "IsPartialData": "False",
+   "IsSelectiveExtraction": "False",
+   "IsStoppedByUser": "False",
+   "type": "Legacy"
+  },
+  {
+   "IsPartialData": "False",
+   "IsSelectiveExtraction": "False",
+   "IsStoppedByUser": "False",
+   "type": "Logical"
+  }
+ ],
+ "extrainfo": {
+  "counts": {},
+  "extraInfo_types": {},
+  "files_referenced_by_extraInfo": 0,
+  "files_referenced_by_jump_target": 1184,
+  "label": "P04",
+  "records_with_an_extraInfo_resolving_to_any_tagged_file": 0,
+  "referenced_files_by_kind_and_state": {
+   "not Database | absent": 8,
+   "not Database | verified": 1176
+  },
+  "s17_records_to_present_verified_database_either": 0,
+  "s17_records_to_present_verified_database_via_extraInfo": 0,
+  "s17_records_to_present_verified_database_via_jump_target": 0,
+  "top_level_records": 121076
+ },
+ "file_metadata_item_names": {
+  "Author": 2,
+  "Camera Make": 147,
+  "CoreFileSystemFileSystemNodeChangeTime": 309779,
+  "CoreFileSystemFileSystemNodeCreationTime": 309779,
+  "CoreFileSystemFileSystemNodeDeletedTime": 309779,
+  "CoreFileSystemFileSystemNodeFileChunks": 309760,
+  "CoreFileSystemFileSystemNodeModifyTime": 309779,
+  "Creation Date": 147,
+  "Device": 147,
+  "EXIFCameraMaker": 264,
+  "EXIFCameraModel": 264,
+  "EXIFCaptureTime": 661,
+  "EXIFOrientation": 3875,
+  "ExifEnumApertureValue": 262,
+  "ExifEnumArtist": 5,
+  "ExifEnumBitsPerSample": 24,
+  "ExifEnumBrightnessValue": 259,
+  "ExifEnumCFAPattern": 1,
+  "ExifEnumColorSpace": 4971,
+  "ExifEnumComponentsConfiguration": 1024,
+  "ExifEnumCompressedBitsPerPixel": 2,
+  "ExifEnumContrast": 3,
+  "ExifEnumCopyright": 2,
+  "ExifEnumCustomRendered": 27,
+  "ExifEnumDateTime": 689,
+  "ExifEnumDateTimeDigitized": 613,
+  "ExifEnumDateTimeOriginal": 275,
+  "ExifEnumDigitalZoomRatio": 80,
+  "ExifEnumExifVersion": 837,
+  "ExifEnumExposureBiasValue": 264,
+  "ExifEnumExposureMode": 254,
+  "ExifEnumExposureProgram": 254,
+  "ExifEnumExposureTime": 256,
+  "ExifEnumFNumber": 264,
+  "ExifEnumFileSource": 3,
+  "ExifEnumFlash": 264,
+  "ExifEnumFlashpixVersion": 563,
+  "ExifEnumFocalLength": 264,
+  "ExifEnumFocalLengthIn35mmFilm": 256,
+  "ExifEnumFocalPlaneResolutionUnit": 3,
+  "ExifEnumFocalPlaneXResolution": 3,
+  "ExifEnumFocalPlaneYResolution": 3,
+  "ExifEnumGPSAltitude": 210,
+  "ExifEnumGPSAltitudeRef": 210,
+  "ExifEnumGPSDateStamp": 195,
+  "ExifEnumGPSDestBearing": 197,
+  "ExifEnumGPSDestBearingRef": 197,
+  "ExifEnumGPSImgDirection": 197,
+  "ExifEnumGPSImgDirectionRef": 197,
+  "ExifEnumGPSLatitude": 211,
+  "ExifEnumGPSLatitudeRef": 211,
+  "ExifEnumGPSLongitude": 211,
+  "ExifEnumGPSLongitudeRef": 211,
+  "ExifEnumGPSSpeed": 211,
+  "ExifEnumGPSSpeedRef": 211,
+  "ExifEnumGainControl": 2,
+  "ExifEnumISOSpeedRatings": 263,
+  "ExifEnumImageDescription": 4,
+  "ExifEnumImageLength": 24,
+  "ExifEnumImageUniqueID": 1,
+  "ExifEnumImageWidth": 24,
+  "ExifEnumLightSource": 3,
+  "ExifEnumMake": 264,
+  "ExifEnumMaxApertureValue": 6,
+  "ExifEnumMeteringMode": 264,
+  "ExifEnumModel": 264,
+  "ExifEnumOrientation": 3910,
+  "ExifEnumPhotometricInterpretation": 285,
+  "ExifEnumPixelXDimension": 7465,
+  "ExifEnumPixelYDimension": 7465,
+  "ExifEnumResolutionUnit": 1835,
+  "ExifEnumSamplesPerPixel": 24,
+  "ExifEnumSaturation": 3,
+  "ExifEnumSceneCaptureType": 584,
+  "ExifEnumSceneType": 261,
+  "ExifEnumSensingMethod": 260,
+  "ExifEnumSharpness": 3,
+  "ExifEnumShutterSpeedValue": 262,
+  "ExifEnumSoftware": 744,
+  "ExifEnumSubjectArea": 244,
+  "ExifEnumSubjectDistance": 1,
+  "ExifEnumSubjectDistanceRange": 2,
+  "ExifEnumSubsecTime": 8,
+  "ExifEnumSubsecTimeDigitized": 265,
+  "ExifEnumSubsecTimeOriginal": 266,
+  "ExifEnumWhiteBalance": 264,
+  "ExifEnumXResolution": 1838,
+  "ExifEnumYCbCrPositioning": 1050,
+  "ExifEnumYCbCrSubSampling": 2,
+  "ExifEnumYResolution": 1838,
+  "Gid": 138813,
+  "Local Path": 309779,
+  "Location": 123,
+  "MD5": 309779,
+  "MetaDataLatitudeAndLongitude": 211,
+  "MetaDataPixelResolution": 7465,
+  "MetaDataResolution": 1803,
+  "ReportTemplateFileSize": 309760,
+  "Row count": 698,
+  "SHA256": 309779,
+  "Software Used to Create": 147,
+  "Tags": 309779,
+  "Uid": 137062,
+  "com.apple.quicktime.content.identifier": 133,
+  "com.apple.quicktime.live-photo.auto": 133,
+  "iOS Classifications": 354,
+  "uk.co.thefoundry.Application": 12,
+  "uk.co.thefoundry.ApplicationVersion": 12,
+  "uk.co.thefoundry.Colorspace": 12,
+  "uk.co.thefoundry.Writer": 12,
+  "uk.co.thefoundry.YCbCrMatrix": 12
+ },
+ "guarded": {
+  "d7_category_extension": {
+   "<other> | <other>": 1,
+   "Archives | <other>": 491,
+   "Archives | gz": 83,
+   "Archives | kth": 104,
+   "Archives | ptl": 3,
+   "Archives | tmp": 130,
+   "Archives | zip": 229,
+   "Audio | <other>": 5,
+   "Audio | aac": 77,
+   "Audio | aif": 229,
+   "Audio | aiff": 169,
+   "Audio | amr": 4,
+   "Audio | caf": 2658,
+   "Audio | m4a": 1879,
+   "Audio | m4r": 99,
+   "Audio | mid": 161,
+   "Audio | mp3": 36,
+   "Audio | opus": 6,
+   "Audio | wav": 110,
+   "Configuration | <other>": 163439,
+   "Configuration | bin": 21,
+   "Configuration | caar": 489,
+   "Configuration | cdm": 24,
+   "Configuration | coded": 10,
+   "Configuration | conf": 7,
+   "Configuration | config": 27,
+   "Configuration | dat": 13,
+   "Configuration | data": 95,
+   "Configuration | db": 1,
+   "Configuration | iwork": 3,
+   "Configuration | json": 21,
+   "Configuration | mom": 856,
+   "Configuration | mp4": 13,
+   "Configuration | nib": 39,
+   "Configuration | obj": 4,
+   "Configuration | plist": 18534,
+   "Configuration | record": 33,
+   "Configuration | scn": 61,
+   "Configuration | sks": 25,
+   "Configuration | state": 3,
+   "Configuration | token": 8,
+   "Configuration | xml": 18,
+   "Database | <other>": 131,
+   "Database | dat": 1,
+   "Database | data": 2,
+   "Database | db": 422,
+   "Database | plsql": 6,
+   "Database | sql": 13,
+   "Database | sqlite": 184,
+   "Document | <other>": 6,
+   "Document | ai": 4,
+   "Document | pdf": 198,
+   "Exchange | emlx": 5462,
+   "Exchange | pst": 21,
+   "Image | <other>": 26722,
+   "Image | astc": 238,
+   "Image | atx": 54,
+   "Image | gif": 7,
+   "Image | heic": 2195,
+   "Image | img": 4,
+   "Image | jpeg": 416,
+   "Image | jpg": 47101,
+   "Image | ktx": 528,
+   "Image | png": 15040,
+   "Image | thm": 78,
+   "Image | thumb": 359,
+   "Image | tiff": 7,
+   "Image | tmp": 61,
+   "Image | webp": 162,
+   "Text | csv": 341,
+   "Text | html": 13152,
+   "Text | log": 169,
+   "Text | txt": 679,
+   "Text | xml": 2005,
+   "Video | <other>": 3302,
+   "Video | mov": 381,
+   "Video | mp4": 110
+  },
+  "m1_duration_bucket": {
+   "AirplaneMode | 0": 3,
+   "AirplaneMode | 1": 3,
+   "AirplaneMode | 10-99": 2,
+   "AirplaneMode | 100-999": 36,
+   "AirplaneMode | 1000-9999": 19,
+   "AirplaneMode | 10000-99999": 15,
+   "AirplaneMode | 100000-999999": 5,
+   "AirplaneMode | 2-9": 2,
+   "AudioOutputRoute | 0": 76,
+   "AudioOutputRoute | 1": 167,
+   "AudioOutputRoute | 10-99": 607,
+   "AudioOutputRoute | 100-999": 517,
+   "AudioOutputRoute | 1000-9999": 302,
+   "AudioOutputRoute | 10000-99999": 17,
+   "AudioOutputRoute | 2-9": 348,
+   "DeviceLockStatus | 0": 131,
+   "DeviceLockStatus | 1": 438,
+   "DeviceLockStatus | 10-99": 3413,
+   "DeviceLockStatus | 100-999": 2743,
+   "DeviceLockStatus | 1000-9999": 319,
+   "DeviceLockStatus | 10000-99999": 26,
+   "DeviceLockStatus | 100000-999999": 1,
+   "DeviceLockStatus | 2-9": 1301,
+   "DevicePluginStatus | 0": 132,
+   "DevicePluginStatus | 1": 208,
+   "DevicePluginStatus | 10-99": 25,
+   "DevicePluginStatus | 100-999": 75,
+   "DevicePluginStatus | 1000-9999": 64,
+   "DevicePluginStatus | 10000-99999": 45,
+   "DevicePluginStatus | 100000-999999": 1,
+   "DevicePluginStatus | 2-9": 19,
+   "DisplayOnOff | 0": 1149,
+   "DisplayOnOff | 10-99": 4007,
+   "DisplayOnOff | 100-999": 2151,
+   "DisplayOnOff | 1000-9999": 222,
+   "DisplayOnOff | 10000-99999": 14,
+   "DisplayOnOff | 100000-999999": 1,
+   "DisplayOnOff | 2-9": 2455,
+   "OrientationChange | 0": 21,
+   "OrientationChange | 10-99": 27,
+   "OrientationChange | 100-999": 9,
+   "OrientationChange | 2-9": 20
+  },
+  "m1_endtime_present": {
+   "AirplaneMode | yes": 85,
+   "AudioOutputRoute | yes": 2034,
+   "CameraState | no": 470,
+   "DeviceLockStatus | yes": 8372,
+   "DevicePluginStatus | yes": 569,
+   "DisplayOnOff | yes": 9999,
+   "FlashlightState | no": 55,
+   "OrientationChange | yes": 77,
+   "WifiState | no": 57
+  },
+  "m1_source_eventtype_utc_hour": {
+   "KnowledgeC | AirplaneMode | h02": 1,
+   "KnowledgeC | AirplaneMode | h11": 1,
+   "KnowledgeC | AirplaneMode | h15": 11,
+   "KnowledgeC | AirplaneMode | h16": 8,
+   "KnowledgeC | AirplaneMode | h17": 12,
+   "KnowledgeC | AirplaneMode | h18": 6,
+   "KnowledgeC | AirplaneMode | h19": 24,
+   "KnowledgeC | AirplaneMode | h21": 13,
+   "KnowledgeC | AirplaneMode | h22": 4,
+   "KnowledgeC | AirplaneMode | h23": 5,
+   "KnowledgeC | AudioOutputRoute | h00": 134,
+   "KnowledgeC | AudioOutputRoute | h01": 90,
+   "KnowledgeC | AudioOutputRoute | h02": 100,
+   "KnowledgeC | AudioOutputRoute | h03": 82,
+   "KnowledgeC | AudioOutputRoute | h04": 127,
+   "KnowledgeC | AudioOutputRoute | h05": 50,
+   "KnowledgeC | AudioOutputRoute | h06": 38,
+   "KnowledgeC | AudioOutputRoute | h07": 15,
+   "KnowledgeC | AudioOutputRoute | h08": 41,
+   "KnowledgeC | AudioOutputRoute | h09": 16,
+   "KnowledgeC | AudioOutputRoute | h10": 53,
+   "KnowledgeC | AudioOutputRoute | h11": 47,
+   "KnowledgeC | AudioOutputRoute | h12": 70,
+   "KnowledgeC | AudioOutputRoute | h13": 46,
+   "KnowledgeC | AudioOutputRoute | h14": 112,
+   "KnowledgeC | AudioOutputRoute | h15": 98,
+   "KnowledgeC | AudioOutputRoute | h16": 88,
+   "KnowledgeC | AudioOutputRoute | h17": 93,
+   "KnowledgeC | AudioOutputRoute | h18": 132,
+   "KnowledgeC | AudioOutputRoute | h19": 166,
+   "KnowledgeC | AudioOutputRoute | h20": 107,
+   "KnowledgeC | AudioOutputRoute | h21": 99,
+   "KnowledgeC | AudioOutputRoute | h22": 110,
+   "KnowledgeC | AudioOutputRoute | h23": 120,
+   "KnowledgeC | DeviceLockStatus | h00": 645,
+   "KnowledgeC | DeviceLockStatus | h01": 618,
+   "KnowledgeC | DeviceLockStatus | h02": 533,
+   "KnowledgeC | DeviceLockStatus | h03": 428,
+   "KnowledgeC | DeviceLockStatus | h04": 402,
+   "KnowledgeC | DeviceLockStatus | h05": 249,
+   "KnowledgeC | DeviceLockStatus | h06": 140,
+   "KnowledgeC | DeviceLockStatus | h07": 108,
+   "KnowledgeC | DeviceLockStatus | h08": 114,
+   "KnowledgeC | DeviceLockStatus | h09": 56,
+   "KnowledgeC | DeviceLockStatus | h10": 179,
+   "KnowledgeC | DeviceLockStatus | h11": 152,
+   "KnowledgeC | DeviceLockStatus | h12": 234,
+   "KnowledgeC | DeviceLockStatus | h13": 274,
+   "KnowledgeC | DeviceLockStatus | h14": 335,
+   "KnowledgeC | DeviceLockStatus | h15": 368,
+   "KnowledgeC | DeviceLockStatus | h16": 404,
+   "KnowledgeC | DeviceLockStatus | h17": 420,
+   "KnowledgeC | DeviceLockStatus | h18": 458,
+   "KnowledgeC | DeviceLockStatus | h19": 457,
+   "KnowledgeC | DeviceLockStatus | h20": 367,
+   "KnowledgeC | DeviceLockStatus | h21": 420,
+   "KnowledgeC | DeviceLockStatus | h22": 487,
+   "KnowledgeC | DeviceLockStatus | h23": 524,
+   "KnowledgeC | DevicePluginStatus | h01": 10,
+   "KnowledgeC | DevicePluginStatus | h02": 24,
+   "KnowledgeC | DevicePluginStatus | h03": 28,
+   "KnowledgeC | DevicePluginStatus | h04": 2,
+   "KnowledgeC | DevicePluginStatus | h05": 6,
+   "KnowledgeC | DevicePluginStatus | h06": 41,
+   "KnowledgeC | DevicePluginStatus | h07": 2,
+   "KnowledgeC | DevicePluginStatus | h08": 11,
+   "KnowledgeC | DevicePluginStatus | h10": 29,
+   "KnowledgeC | DevicePluginStatus | h13": 16,
+   "KnowledgeC | DevicePluginStatus | h14": 10,
+   "KnowledgeC | DevicePluginStatus | h15": 41,
+   "KnowledgeC | DevicePluginStatus | h16": 33,
+   "KnowledgeC | DevicePluginStatus | h17": 46,
+   "KnowledgeC | DevicePluginStatus | h18": 36,
+   "KnowledgeC | DevicePluginStatus | h19": 98,
+   "KnowledgeC | DevicePluginStatus | h20": 6,
+   "KnowledgeC | DevicePluginStatus | h21": 81,
+   "KnowledgeC | DevicePluginStatus | h22": 38,
+   "KnowledgeC | DevicePluginStatus | h23": 11,
+   "KnowledgeC | DisplayOnOff | h00": 656,
+   "KnowledgeC | DisplayOnOff | h01": 693,
+   "KnowledgeC | DisplayOnOff | h02": 628,
+   "KnowledgeC | DisplayOnOff | h03": 477,
+   "KnowledgeC | DisplayOnOff | h04": 507,
+   "KnowledgeC | DisplayOnOff | h05": 409,
+   "KnowledgeC | DisplayOnOff | h06": 304,
+   "KnowledgeC | DisplayOnOff | h07": 216,
+   "KnowledgeC | DisplayOnOff | h08": 159,
+   "KnowledgeC | DisplayOnOff | h09": 341,
+   "KnowledgeC | DisplayOnOff | h10": 634,
+   "KnowledgeC | DisplayOnOff | h11": 267,
+   "KnowledgeC | DisplayOnOff | h12": 248,
+   "KnowledgeC | DisplayOnOff | h13": 271,
+   "KnowledgeC | DisplayOnOff | h14": 341,
+   "KnowledgeC | DisplayOnOff | h15": 443,
+   "KnowledgeC | DisplayOnOff | h16": 361,
+   "KnowledgeC | DisplayOnOff | h17": 403,
+   "KnowledgeC | DisplayOnOff | h18": 427,
+   "KnowledgeC | DisplayOnOff | h19": 483,
+   "KnowledgeC | DisplayOnOff | h20": 306,
+   "KnowledgeC | DisplayOnOff | h21": 432,
+   "KnowledgeC | DisplayOnOff | h22": 472,
+   "KnowledgeC | DisplayOnOff | h23": 521,
+   "KnowledgeC | OrientationChange | h00": 2,
+   "KnowledgeC | OrientationChange | h01": 4,
+   "KnowledgeC | OrientationChange | h02": 1,
+   "KnowledgeC | OrientationChange | h03": 2,
+   "KnowledgeC | OrientationChange | h05": 2,
+   "KnowledgeC | OrientationChange | h10": 2,
+   "KnowledgeC | OrientationChange | h13": 4,
+   "KnowledgeC | OrientationChange | h15": 22,
+   "KnowledgeC | OrientationChange | h16": 7,
+   "KnowledgeC | OrientationChange | h18": 12,
+   "KnowledgeC | OrientationChange | h19": 6,
+   "KnowledgeC | OrientationChange | h20": 5,
+   "KnowledgeC | OrientationChange | h21": 6,
+   "KnowledgeC | OrientationChange | h23": 2,
+   "Powerlog | CameraState | h00": 38,
+   "Powerlog | CameraState | h01": 30,
+   "Powerlog | CameraState | h02": 46,
+   "Powerlog | CameraState | h03": 10,
+   "Powerlog | CameraState | h04": 29,
+   "Powerlog | CameraState | h05": 4,
+   "Powerlog | CameraState | h09": 12,
+   "Powerlog | CameraState | h11": 4,
+   "Powerlog | CameraState | h12": 12,
+   "Powerlog | CameraState | h13": 18,
+   "Powerlog | CameraState | h15": 34,
+   "Powerlog | CameraState | h16": 8,
+   "Powerlog | CameraState | h18": 157,
+   "Powerlog | CameraState | h19": 16,
+   "Powerlog | CameraState | h20": 10,
+   "Powerlog | CameraState | h21": 26,
+   "Powerlog | CameraState | h22": 8,
+   "Powerlog | CameraState | h23": 8,
+   "Powerlog | FlashlightState | h03": 1,
+   "Powerlog | FlashlightState | h04": 2,
+   "Powerlog | FlashlightState | h06": 4,
+   "Powerlog | FlashlightState | h10": 6,
+   "Powerlog | FlashlightState | h12": 10,
+   "Powerlog | FlashlightState | h15": 7,
+   "Powerlog | FlashlightState | h16": 15,
+   "Powerlog | FlashlightState | h17": 6,
+   "Powerlog | FlashlightState | h18": 4,
+   "Powerlog | WifiState | h04": 5,
+   "Powerlog | WifiState | h07": 1,
+   "Powerlog | WifiState | h08": 1,
+   "Powerlog | WifiState | h09": 4,
+   "Powerlog | WifiState | h10": 4,
+   "Powerlog | WifiState | h11": 12,
+   "Powerlog | WifiState | h13": 4,
+   "Powerlog | WifiState | h14": 2,
+   "Powerlog | WifiState | h16": 10,
+   "Powerlog | WifiState | h21": 2,
+   "Powerlog | WifiState | h22": 2,
+   "Powerlog | WifiState | h23": 10
+  },
+  "m1_source_eventtype_value": {
+   "KnowledgeC | AirplaneMode | AirplaneModeOff": 44,
+   "KnowledgeC | AirplaneMode | AirplaneModeOn": 41,
+   "KnowledgeC | AudioOutputRoute | BluetoothA2DPOutput": 412,
+   "KnowledgeC | AudioOutputRoute | BluetoothHFP": 134,
+   "KnowledgeC | AudioOutputRoute | Headphones": 81,
+   "KnowledgeC | AudioOutputRoute | Receiver": 526,
+   "KnowledgeC | AudioOutputRoute | Speaker": 881,
+   "KnowledgeC | DeviceLockStatus | Locked": 4186,
+   "KnowledgeC | DeviceLockStatus | Unlocked": 4186,
+   "KnowledgeC | DevicePluginStatus | Plugged in": 471,
+   "KnowledgeC | DevicePluginStatus | Unplugged": 98,
+   "KnowledgeC | DisplayOnOff | Display off": 4999,
+   "KnowledgeC | DisplayOnOff | Display on": 5000,
+   "KnowledgeC | OrientationChange | Orientation landscape": 43,
+   "KnowledgeC | OrientationChange | Orientation portrait": 34,
+   "Powerlog | CameraState | Off": 239,
+   "Powerlog | CameraState | On": 231,
+   "Powerlog | FlashlightState | Off": 29,
+   "Powerlog | FlashlightState | On": 26,
+   "Powerlog | WifiState | Connect": 28,
+   "Powerlog | WifiState | Disconnect": 29
+  },
+  "m2_deviceconnectivity_nature_method_type": {
+   "Connected | Bluetooth | <absent>": 194,
+   "Detected | Bluetooth | <absent>": 1219,
+   "Detected | Bluetooth | Headset": 3,
+   "Disconnected | Bluetooth | <absent>": 207,
+   "Paired | Bluetooth | <absent>": 4,
+   "Paired | Bluetooth | Headset": 3
+  },
+  "m2_email_folder_status": {
+   "<other> | Sent": 5,
+   "INBOX | Read": 89,
+   "INBOX | Unread": 7159
+  },
+  "m2_instantmessage_folder_status_platform_fromowner_type": {
+   "<absent> | <absent> | <absent> | <absent> | AppMessage": 86,
+   "<absent> | <absent> | <absent> | <absent> | IMessage": 972,
+   "<absent> | <absent> | <absent> | <absent> | Sms": 272,
+   "<absent> | <absent> | <absent> | False | AppMessage": 1227,
+   "<absent> | <absent> | <absent> | True | AppMessage": 1289,
+   "<absent> | <absent> | <absent> | True | IMessage": 485,
+   "<absent> | <absent> | <absent> | True | Sms": 158,
+   "<absent> | <absent> | Mobile | False | AppMessage": 145,
+   "<absent> | <absent> | Mobile | True | AppMessage": 2,
+   "<absent> | <other> | Mobile | True | AppMessage": 2,
+   "<absent> | Read | <absent> | False | AppMessage": 1,
+   "<absent> | Read | Mobile | False | AppMessage": 1756,
+   "<absent> | Read | Mobile | True | AppMessage": 536,
+   "<absent> | Read | Web | False | AppMessage": 39,
+   "<absent> | Sent | <absent> | <absent> | AppMessage": 17,
+   "<absent> | Sent | Mobile | <absent> | AppMessage": 59,
+   "<absent> | Unread | Mobile | False | AppMessage": 251,
+   "<absent> | Unread | Web | False | AppMessage": 4,
+   "Drafts | Unsent | <absent> | True | AppMessage": 5,
+   "Inbox | Read | <absent> | <absent> | IMessage": 756,
+   "Inbox | Read | <absent> | <absent> | Mms": 44,
+   "Inbox | Read | <absent> | <absent> | Sms": 524,
+   "Inbox | Unread | <absent> | <absent> | IMessage": 15,
+   "Inbox | Unread | <absent> | <absent> | Mms": 6,
+   "Inbox | Unread | <absent> | <absent> | Sms": 29,
+   "Recents | <absent> | <absent> | <absent> | Sms": 57,
+   "Sent | Sent | <absent> | True | IMessage": 559,
+   "Sent | Sent | <absent> | True | Mms": 43,
+   "Sent | Sent | <absent> | True | Sms": 394
+  },
+  "m2_location_type_category_precision_source": {
+   "<absent> | <absent> | <absent> | <absent>": 1858,
+   "<absent> | <absent> | <absent> | Apple Maps": 56,
+   "<absent> | <absent> | <absent> | Apple Photos": 33,
+   "<absent> | <absent> | <absent> | Calendar": 4,
+   "<absent> | <absent> | <absent> | Facebook": 22,
+   "<absent> | <absent> | <absent> | KnowledgeC": 5,
+   "<absent> | <absent> | <absent> | Recents": 13,
+   "<absent> | <absent> | <absent> | Safari": 18,
+   "<absent> | <absent> | <absent> | Uber": 15,
+   "<absent> | Media Locations | <absent> | <absent>": 312,
+   "<absent> | Significant Location | <absent> | Native Locations": 56,
+   "<other> | <absent> | <absent> | <other>": 2,
+   "Harvested | Cell Towers | <other> | <absent>": 1040,
+   "Harvested | Wireless Networks | <other> | <absent>": 22948,
+   "Saved | <absent> | <absent> | Find My": 3,
+   "Searched | <absent> | <absent> | Apple Maps": 29,
+   "Visited | <absent> | <absent> | Native Locations": 284,
+   "Visited | <absent> | <other> | Find My": 2,
+   "Visited | <absent> | <other> | Native Locations": 5351,
+   "Visited | <absent> | Horizontal: 1-9  | Native Locations": 15,
+   "Visited | <absent> | Horizontal: 10-99  | Native Locations": 6449,
+   "Visited | <absent> | Horizontal: 100-999  | Native Locations": 207,
+   "Visited | <absent> | Horizontal: 1000-9999  | Native Locations": 1231,
+   "Visited | Snapchat Gallery Upload | <absent> | Snapchat": 2654
+  },
+  "m2_searcheditem_source_origin_hastime": {
+   "<other> | Unknown | time": 1,
+   "Apple Maps | <absent> | time": 7,
+   "Facebook | <absent> | no time": 103,
+   "Instagram | <absent> | no time": 11,
+   "KnowledgeC | Unknown | time": 114,
+   "Safari | <absent> | time": 20,
+   "Safari | Unknown | no time": 26,
+   "Safari | Unknown | time": 278
+  },
+  "m2_usermapping": {
+   "DeviceEvent | <absent>": 582,
+   "DeviceEvent | Decoding": 21136,
+   "Location | <absent>": 26231,
+   "Location | Decoding": 16376,
+   "WirelessNetwork | <absent>": 24343,
+   "WirelessNetwork | Decoding": 47
+  },
+  "m3a_deleted_state": {
+   "Attachment | Deleted": 12,
+   "Attachment | Intact": 879,
+   "Attachment | Unknown": 1164,
+   "CalendarEntry | Intact": 249,
+   "Call | Deleted": 2,
+   "Call | Intact": 525,
+   "CellTower | Deleted": 9,
+   "CellTower | Intact": 851,
+   "Chat | Deleted": 2,
+   "Chat | Intact": 767,
+   "Chat | Unknown": 100,
+   "ChatActivity | Unknown": 142,
+   "Contact | Deleted": 1,
+   "Contact | Intact": 2305,
+   "ContactPhoto | Intact": 1404,
+   "Cookie | Intact": 309,
+   "Coordinate | Deleted": 2521,
+   "Coordinate | Intact": 61838,
+   "Coordinate | Unknown": 3123,
+   "DeviceConnectivity | Deleted": 215,
+   "DeviceConnectivity | Intact": 1415,
+   "DeviceEvent | Intact": 21718,
+   "Email | Intact": 7253,
+   "EmailAddress | Intact": 7,
+   "FileUpload | Intact": 3259,
+   "ForwardedMessageData | Intact": 76,
+   "InstantMessage | Deleted": 42,
+   "InstantMessage | Intact": 8026,
+   "InstantMessage | Unknown": 1665,
+   "Journey | Intact": 16,
+   "KeyValueModel | Deleted": 215,
+   "KeyValueModel | Intact": 1949,
+   "Location | Deleted": 2180,
+   "Location | Intact": 40388,
+   "Location | Trash": 39,
+   "LogEntry | Deleted": 1,
+   "LogEntry | Intact": 11808,
+   "MessageLabel | Unknown": 142,
+   "MobileCard | Intact": 1,
+   "Note | Intact": 4,
+   "Note | Trash": 2,
+   "Organization | Intact": 1,
+   "Party | Intact": 69,
+   "Party | Unknown": 38331,
+   "Password | Intact": 773,
+   "PhoneNumber | Intact": 404,
+   "ProfilePicture | Deleted": 16,
+   "ProfilePicture | Intact": 2366,
+   "RecognizedDevice | Intact": 8,
+   "ReplyMessageData | Unknown": 2573,
+   "SIMData | Intact": 9,
+   "ScrambledMessageData | Unknown": 17,
+   "SearchedItem | Deleted": 18,
+   "SearchedItem | Intact": 542,
+   "SocialMediaActivity | Deleted": 1,
+   "SocialMediaActivity | Intact": 187,
+   "StreetAddress | Deleted": 2,
+   "StreetAddress | Intact": 75,
+   "UserAccount | Intact": 24,
+   "UserID | Deleted": 1,
+   "UserID | Intact": 3321,
+   "VisitedPage | Deleted": 205,
+   "VisitedPage | Intact": 1498,
+   "WebAddress | Intact": 3,
+   "WebBookmark | Intact": 8,
+   "WirelessNetwork | Deleted": 400,
+   "WirelessNetwork | Intact": 23990
+  },
+  "m5_affiliation_device_account_origin": {
+   "<absent> | <absent> | <absent>": 26414,
+   "<other> | Extracted | <absent>": 1,
+   "Extracted | Extracted | <absent>": 1,
+   "Extracted | Unknown | <absent>": 13537,
+   "Unknown | Extracted | <absent>": 2654
+  },
+  "m5_cell_type": {
+   "<absent>": 860
+  },
+  "m5_location_precision": {
+   "<absent>": 5364,
+   "<other>": 29341,
+   "Horizontal: 1-9": 15,
+   "Horizontal: 10-99": 6449,
+   "Horizontal: 100-999": 207,
+   "Horizontal: 1000-9999": 1231
+  },
+  "m5_location_source_type_category": {
+   "<absent> | <absent> | <absent>": 1858,
+   "<absent> | <absent> | Media Locations": 312,
+   "<absent> | Harvested | Cell Towers": 1040,
+   "<absent> | Harvested | Wireless Networks": 22948,
+   "<other> | <other> | <absent>": 2,
+   "Apple Maps | <absent> | <absent>": 56,
+   "Apple Maps | Searched | <absent>": 29,
+   "Apple Photos | <absent> | <absent>": 33,
+   "Calendar | <absent> | <absent>": 4,
+   "Facebook | <absent> | <absent>": 22,
+   "Find My | Saved | <absent>": 3,
+   "Find My | Visited | <absent>": 2,
+   "KnowledgeC | <absent> | <absent>": 5,
+   "Native Locations | <absent> | Significant Location": 56,
+   "Native Locations | Visited | <absent>": 13537,
+   "Recents | <absent> | <absent>": 13,
+   "Safari | <absent> | <absent>": 18,
+   "Snapchat | Visited | Snapchat Gallery Upload": 2654,
+   "Uber | <absent> | <absent>": 15
+  },
+  "m5_location_with_coordinate": {
+   "<absent> | <absent> | <absent>": 1858,
+   "<absent> | <absent> | Media Locations": 312,
+   "<absent> | Harvested | Cell Towers": 1040,
+   "<absent> | Harvested | Wireless Networks": 22948,
+   "<other> | <other> | <absent>": 2,
+   "Apple Maps | <absent> | <absent>": 56,
+   "Apple Maps | Searched | <absent>": 29,
+   "Apple Photos | <absent> | <absent>": 33,
+   "Find My | Saved | <absent>": 3,
+   "Find My | Visited | <absent>": 2,
+   "KnowledgeC | <absent> | <absent>": 5,
+   "Native Locations | <absent> | Significant Location": 56,
+   "Native Locations | Visited | <absent>": 13537,
+   "Safari | <absent> | <absent>": 12,
+   "Snapchat | Visited | Snapchat Gallery Upload": 2654,
+   "Uber | <absent> | <absent>": 15
+  },
+  "m5_wifi_source": {
+   "<absent>": 24343,
+   "Known Networks": 47
+  },
+  "m5_wifi_with": {
+   "<absent> | BSSId": 24343,
+   "<absent> | Position": 24047,
+   "<absent> | TimeStamp": 24343,
+   "Known Networks | BSSId": 47,
+   "Known Networks | LastConnection": 14,
+   "Known Networks | TimeStamp": 14
+  },
+  "m6_party_dates": {
+   "InstantMessage | Native Messages | To | <absent> | DateDelivered | outgoing": 280,
+   "InstantMessage | Native Messages | To | <absent> | DateRead+DateDelivered | outgoing": 279,
+   "InstantMessage | Native Messages | To | True | DateRead | incoming": 1321,
+   "InstantMessage | Snapchat | To | False | DateRead | outgoing": 1076,
+   "InstantMessage | Snapchat | To | False | DateRead | unknown": 1,
+   "InstantMessage | Snapchat | To | True | DateRead | incoming": 1150,
+   "InstantMessage | WhatsApp | To | False | DateDelivered | outgoing": 2,
+   "InstantMessage | WhatsApp | To | False | DateRead+DateDelivered | incoming": 1,
+   "InstantMessage | WhatsApp | To | False | DateRead+DateDelivered | outgoing": 538
+  },
+  "m7_searcheditem_source_hastime": {
+   "<other> | time": 1,
+   "Apple Maps | time": 7,
+   "Facebook | no time": 103,
+   "Instagram | no time": 11,
+   "KnowledgeC | time": 114,
+   "Safari | no time": 26,
+   "Safari | time": 298
+  },
+  "m7_visitedpage_source": {
+   "KnowledgeC": 521,
+   "Safari": 1165,
+   "ScreenTime": 17
+  },
+  "s05_chatactivity_action": {
+   "ParticipantAdded": 11,
+   "ParticipantJoined": 3,
+   "Unknown": 128
+  },
+  "s05_m10_social_activity_type": {
+   "<other>": 2,
+   "Post": 182,
+   "Update": 4
+  },
+  "s05_simdata_category": {
+   "<other>": 4,
+   "Location Area Information": 5
+  }
+ },
+ "header_items_present": {
+  "ACC": 1,
+  "Advertising Id (IDFA) #1": 1,
+  "DeviceInfoAirDropID": 1,
+  "DeviceInfoAppleID": 1,
+  "DeviceInfoBluetoothDeviceAddress": 2,
+  "DeviceInfoConnectionType": 1,
+  "DeviceInfoCreationTime": 1,
+  "DeviceInfoDetectedModel": 1,
+  "DeviceInfoDeviceName": 1,
+  "DeviceInfoExtractionEndDateTime": 1,
+  "DeviceInfoExtractionStartDateTime": 1,
+  "DeviceInfoFindMyiPhoneEnabled": 1,
+  "DeviceInfoInternalVersion": 1,
+  "DeviceInfoLastHotspotActivity": 1,
+  "DeviceInfoLocationServicesEnabled": 1,
+  "DeviceInfoMACAddress": 2,
+  "DeviceInfoModelNumber": 1,
+  "DeviceInfoOSType": 1,
+  "DeviceInfoOSVersion": 1,
+  "DeviceInfoReportType": 1,
+  "DeviceInfoSelectedDeviceName": 2,
+  "DeviceInfoSelectedManufacturer": 2,
+  "DeviceInfoSerial": 1,
+  "DeviceInfoUniqueID": 1,
+  "DeviceInfoUnitIdentifier": 1,
+  "DeviceInfoUnitVersion": 1,
+  "DeviceInfoWiFiMACAddress": 1,
+  "DeviceInfoiCloudAccountPresent": 1,
+  "ExtractionType": 1,
+  "GlobalMachineName": 1,
+  "ICCID": 2,
+  "IMEI": 1,
+  "IMEI2": 1,
+  "IMSI": 3,
+  "LastUsedICCID": 2,
+  "LastUsedMSISDN": 1,
+  "MSISDN": 2,
+  "Message Retention Duration": 1,
+  "Model": 1,
+  "ProjectStateExtractionId": 1,
+  "UFDIntegrity": 1,
+  "UFED_PA_Version": 1,
+  "Vendor": 1
+ },
+ "label": "P04",
+ "m11": {
+  "events_after_extraction_start": {
+   "calls": 0,
+   "cell": 0,
+   "connectivity": 0,
+   "device_events": 10,
+   "email": 0,
+   "locations": 0,
+   "logs": 2,
+   "messages": 0,
+   "search": 0,
+   "social": 0,
+   "web": 0,
+   "wifi": 0
+  },
+  "extraction_duration_hours": 0.01,
+  "extraction_end_parsed": true,
+  "extraction_start_parsed": true,
+  "family_first_last_days_from_start": {
+   "calls": [
+    -1079.7,
+    -3.4
+   ],
+   "cell": [
+    -5.7,
+    -3.5
+   ],
+   "connectivity": [
+    -26.5,
+    -4.8
+   ],
+   "device_events": [
+    -28.2,
+    0.0
+   ],
+   "email": [
+    -1679.6,
+    -3.6
+   ],
+   "locations": [
+    -1849.7,
+    -0.0
+   ],
+   "logs": [
+    -166.9,
+    0.0
+   ],
+   "messages": [
+    -1634.0,
+    -3.4
+   ],
+   "search": [
+    -607.9,
+    -4.9
+   ],
+   "social": [
+    -19315.5,
+    -53.7
+   ],
+   "web": [
+    -61.8,
+    -7.5
+   ],
+   "wifi": [
+    -169.6,
+    -3.2
+   ]
+  },
+  "selection_attributes": {
+   "IsPartialData=False": 2,
+   "IsSelectiveExtraction=False": 2,
+   "IsStoppedByUser=False": 2
+  }
+ },
+ "m12": {
+  "days_with_12_or_more_observed_hours": 24,
+  "days_with_candidate_interaction": 300,
+  "observed_hours_total": 474,
+  "quiet_run_at_0.05": {
+   "hours": 0,
+   "start_utc_hour": null
+  },
+  "quiet_run_at_0.10": {
+   "hours": 1,
+   "start_utc_hour": null
+  },
+  "quiet_run_at_0.20": {
+   "hours": 3,
+   "start_utc_hour": 7
+  }
+ },
+ "m4_paired_to_next_connected": {},
+ "m4_streams": {
+  "Call": {
+   "events": 183,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     246.0,
+     9079.6
+    ],
+    "h01": [
+     819.1,
+     34214.7
+    ],
+    "h02": [
+     543.0,
+     61172.5
+    ],
+    "h03": [
+     100.0,
+     7760.0
+    ],
+    "h04": [
+     637.0,
+     4864.0
+    ],
+    "h05": [
+     27747.3,
+     27747.3
+    ],
+    "h06": [
+     38.3,
+     32099.0
+    ],
+    "h10": [
+     901.0,
+     4030.0
+    ],
+    "h11": [
+     907.0,
+     3871.0
+    ],
+    "h12": [
+     1018.5,
+     1143.5
+    ],
+    "h13": [
+     1317.5,
+     12780.9
+    ],
+    "h14": [
+     2840.0,
+     25831.0
+    ],
+    "h15": [
+     2238.0,
+     15648.6
+    ],
+    "h16": [
+     494.0,
+     6267.2
+    ],
+    "h17": [
+     808.3,
+     13815.5
+    ],
+    "h18": [
+     222.0,
+     507.0
+    ],
+    "h19": [
+     407.0,
+     63890.0
+    ],
+    "h20": [
+     677.1,
+     2535.4
+    ],
+    "h21": [
+     680.0,
+     11396.9
+    ],
+    "h22": [
+     455.3,
+     21436.0
+    ],
+    "h23": [
+     824.0,
+     7740.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 63889.99,
+    "n": 182,
+    "p50": 455.335,
+    "p90": 6431.003,
+    "p95": 13815.548,
+    "p99": 61172.519
+   }
+  },
+  "Call | FaceTime": {
+   "events": 23,
+   "gap_p50_p95_by_utc_hour": {
+    "h04": [
+     55923.0,
+     55923.0
+    ],
+    "h11": [
+     134.1,
+     105306.4
+    ],
+    "h12": [
+     32921.2,
+     32921.2
+    ],
+    "h13": [
+     632452.0,
+     632452.0
+    ],
+    "h15": [
+     6481.3,
+     9359.7
+    ],
+    "h17": [
+     1651874.6,
+     1651874.6
+    ],
+    "h18": [
+     66279.9,
+     66279.9
+    ],
+    "h19": [
+     73664.7,
+     73664.7
+    ],
+    "h20": [
+     1032946.6,
+     1032946.6
+    ],
+    "h21": [
+     1632.9,
+     66400.1
+    ],
+    "h22": [
+     108732.0,
+     108732.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 1651874.593,
+    "n": 22,
+    "p50": 55922.98,
+    "p90": 632452.012,
+    "p95": 1032946.559,
+    "p99": 1651874.593
+   }
+  },
+  "Call | Facebook Messenger": {
+   "events": 33,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     27223479.8,
+     27223479.8
+    ],
+    "h01": [
+     314918.1,
+     1438040.6
+    ],
+    "h02": [
+     692787.7,
+     6276557.5
+    ],
+    "h03": [
+     427634.7,
+     427634.7
+    ],
+    "h13": [
+     0.1,
+     0.1
+    ],
+    "h17": [
+     196917.0,
+     374184.8
+    ],
+    "h18": [
+     9873456.6,
+     9873456.6
+    ],
+    "h21": [
+     786.8,
+     1110.6
+    ],
+    "h22": [
+     488.8,
+     260989.4
+    ],
+    "h23": [
+     340538.9,
+     43212519.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 43212518.962,
+    "n": 32,
+    "p50": 98455.239,
+    "p90": 6276557.531,
+    "p95": 27223479.812,
+    "p99": 43212518.962
+   }
+  },
+  "Call | Instagram": {
+   "events": 9,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     442631.5,
+     442631.5
+    ],
+    "h02": [
+     516174.0,
+     516174.0
+    ],
+    "h03": [
+     3337.6,
+     3337.6
+    ],
+    "h04": [
+     1300840.1,
+     1300840.1
+    ],
+    "h05": [
+     2580999.9,
+     2580999.9
+    ],
+    "h16": [
+     468779.7,
+     468779.7
+    ]
+   },
+   "gap_seconds": {
+    "max": 2580999.886,
+    "n": 8,
+    "p50": 468779.697,
+    "p90": 2580999.886,
+    "p95": 2580999.886,
+    "p99": 2580999.886
+   }
+  },
+  "Call | Snapchat": {
+   "events": 11,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     257431.4,
+     257431.4
+    ],
+    "h01": [
+     903.1,
+     903.1
+    ],
+    "h02": [
+     712.2,
+     411662.8
+    ],
+    "h17": [
+     300.5,
+     2535167.6
+    ],
+    "h20": [
+     445556.5,
+     445556.5
+    ],
+    "h23": [
+     150744.7,
+     150744.7
+    ]
+   },
+   "gap_seconds": {
+    "max": 2535167.632,
+    "n": 10,
+    "p50": 150744.727,
+    "p90": 2535167.632,
+    "p95": 2535167.632,
+    "p99": 2535167.632
+   }
+  },
+  "Call | WhatsApp": {
+   "events": 268,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     801.1,
+     134798.8
+    ],
+    "h01": [
+     812.4,
+     76970.3
+    ],
+    "h02": [
+     1722.2,
+     68775.8
+    ],
+    "h03": [
+     8527.5,
+     77861.2
+    ],
+    "h04": [
+     1584.1,
+     47571.4
+    ],
+    "h05": [
+     39441.9,
+     39441.9
+    ],
+    "h06": [
+     63.9,
+     4868.8
+    ],
+    "h08": [
+     155.7,
+     46526.5
+    ],
+    "h10": [
+     22938.0,
+     22938.0
+    ],
+    "h12": [
+     32898.7,
+     32898.7
+    ],
+    "h13": [
+     842.1,
+     91185.2
+    ],
+    "h14": [
+     4300.0,
+     82580.2
+    ],
+    "h15": [
+     26959.4,
+     31823.3
+    ],
+    "h16": [
+     163.1,
+     19867.4
+    ],
+    "h17": [
+     438.7,
+     37346.1
+    ],
+    "h18": [
+     23056.1,
+     194724.7
+    ],
+    "h19": [
+     249.2,
+     13297.0
+    ],
+    "h20": [
+     4778.1,
+     95564.4
+    ],
+    "h21": [
+     3174.9,
+     87008.1
+    ],
+    "h22": [
+     1816.4,
+     98958.0
+    ],
+    "h23": [
+     1594.6,
+     163304.8
+    ]
+   },
+   "gap_seconds": {
+    "max": 240938.014,
+    "n": 267,
+    "p50": 1273.073,
+    "p90": 71981.89,
+    "p95": 91185.192,
+    "p99": 163360.8
+   }
+  },
+  "CellTower": {
+   "events": 851,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     2186.8,
+     15788.3
+    ],
+    "h01": [
+     110.4,
+     55833.0
+    ],
+    "h02": [
+     581.2,
+     886.5
+    ],
+    "h03": [
+     0.0,
+     0.0
+    ],
+    "h04": [
+     0.0,
+     73.3
+    ],
+    "h05": [
+     0.0,
+     0.0
+    ],
+    "h06": [
+     0.0,
+     0.0
+    ],
+    "h15": [
+     0.0,
+     0.0
+    ],
+    "h17": [
+     0.0,
+     0.0
+    ],
+    "h23": [
+     3123.7,
+     3123.7
+    ]
+   },
+   "gap_seconds": {
+    "max": 55832.952,
+    "n": 850,
+    "p50": 0.0,
+    "p90": 0.0,
+    "p95": 57.232,
+    "p99": 2877.411
+   }
+  },
+  "DeviceConnectivity | KnowledgeC": {
+   "events": 401,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     13.0,
+     8450.0
+    ],
+    "h01": [
+     14.0,
+     24487.0
+    ],
+    "h02": [
+     647.0,
+     28219.0
+    ],
+    "h03": [
+     737.0,
+     45534.0
+    ],
+    "h04": [
+     1276.0,
+     48263.0
+    ],
+    "h05": [
+     651.0,
+     31694.0
+    ],
+    "h06": [
+     1002.0,
+     15254.0
+    ],
+    "h07": [
+     8.0,
+     3055.0
+    ],
+    "h08": [
+     458.0,
+     29352.0
+    ],
+    "h09": [
+     97.0,
+     3216.0
+    ],
+    "h10": [
+     20.0,
+     15625.0
+    ],
+    "h11": [
+     67.0,
+     16602.0
+    ],
+    "h12": [
+     839.0,
+     1655.0
+    ],
+    "h13": [
+     6746.0,
+     6746.0
+    ],
+    "h14": [
+     1094.0,
+     14535.0
+    ],
+    "h15": [
+     2065.0,
+     20353.0
+    ],
+    "h16": [
+     628.0,
+     9214.0
+    ],
+    "h17": [
+     4159.0,
+     284076.0
+    ],
+    "h18": [
+     514.0,
+     2086.0
+    ],
+    "h19": [
+     784.0,
+     10619.0
+    ],
+    "h20": [
+     31.0,
+     16421.0
+    ],
+    "h21": [
+     78.0,
+     18975.0
+    ],
+    "h22": [
+     5116.0,
+     17689.0
+    ],
+    "h23": [
+     244.0,
+     2442.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 293504.0,
+    "n": 400,
+    "p50": 232.0,
+    "p90": 7702.0,
+    "p95": 17689.0,
+    "p99": 87640.0
+   }
+  },
+  "DeviceEvent | KnowledgeC | AirplaneMode": {
+   "events": 85,
+   "gap_p50_p95_by_utc_hour": {
+    "h11": [
+     12972.0,
+     12972.0
+    ],
+    "h15": [
+     444.0,
+     13272.0
+    ],
+    "h16": [
+     753.0,
+     10131.0
+    ],
+    "h17": [
+     1265.0,
+     256140.0
+    ],
+    "h18": [
+     1190.0,
+     186644.0
+    ],
+    "h19": [
+     657.0,
+     251434.0
+    ],
+    "h21": [
+     334.0,
+     74343.0
+    ],
+    "h22": [
+     64898.0,
+     89593.0
+    ],
+    "h23": [
+     58134.0,
+     97422.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 345229.0,
+    "n": 84,
+    "p50": 786.0,
+    "p90": 83412.0,
+    "p95": 186644.0,
+    "p99": 345229.0
+   }
+  },
+  "DeviceEvent | KnowledgeC | AudioOutputRoute": {
+   "events": 2034,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     62.0,
+     3212.0
+    ],
+    "h01": [
+     131.0,
+     6656.0
+    ],
+    "h02": [
+     136.0,
+     9838.0
+    ],
+    "h03": [
+     44.0,
+     3256.0
+    ],
+    "h04": [
+     26.0,
+     5534.0
+    ],
+    "h05": [
+     234.0,
+     14572.0
+    ],
+    "h06": [
+     51.0,
+     15257.0
+    ],
+    "h07": [
+     697.0,
+     33446.0
+    ],
+    "h08": [
+     31.0,
+     16004.0
+    ],
+    "h09": [
+     226.0,
+     7517.0
+    ],
+    "h10": [
+     92.0,
+     6404.0
+    ],
+    "h11": [
+     150.0,
+     4876.0
+    ],
+    "h12": [
+     64.0,
+     2585.0
+    ],
+    "h13": [
+     795.0,
+     6041.0
+    ],
+    "h14": [
+     65.0,
+     3997.0
+    ],
+    "h15": [
+     229.0,
+     4230.0
+    ],
+    "h16": [
+     298.0,
+     4697.0
+    ],
+    "h17": [
+     72.0,
+     3228.0
+    ],
+    "h18": [
+     134.0,
+     2187.0
+    ],
+    "h19": [
+     74.0,
+     4428.0
+    ],
+    "h20": [
+     73.0,
+     3288.0
+    ],
+    "h21": [
+     131.0,
+     4797.0
+    ],
+    "h22": [
+     56.0,
+     3361.0
+    ],
+    "h23": [
+     136.0,
+     3688.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 39885.0,
+    "n": 2033,
+    "p50": 83.0,
+    "p90": 2452.0,
+    "p95": 4713.0,
+    "p99": 15655.0
+   }
+  },
+  "DeviceEvent | KnowledgeC | DeviceLockStatus": {
+   "events": 8372,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     44.0,
+     635.0
+    ],
+    "h01": [
+     54.0,
+     589.0
+    ],
+    "h02": [
+     46.0,
+     830.0
+    ],
+    "h03": [
+     40.0,
+     744.0
+    ],
+    "h04": [
+     50.0,
+     939.0
+    ],
+    "h05": [
+     38.0,
+     998.0
+    ],
+    "h06": [
+     58.0,
+     2798.0
+    ],
+    "h07": [
+     31.0,
+     847.0
+    ],
+    "h08": [
+     34.0,
+     2331.0
+    ],
+    "h09": [
+     70.0,
+     4399.0
+    ],
+    "h10": [
+     67.0,
+     2059.0
+    ],
+    "h11": [
+     73.0,
+     1711.0
+    ],
+    "h12": [
+     47.0,
+     1306.0
+    ],
+    "h13": [
+     33.0,
+     842.0
+    ],
+    "h14": [
+     62.0,
+     713.0
+    ],
+    "h15": [
+     58.0,
+     1010.0
+    ],
+    "h16": [
+     53.0,
+     763.0
+    ],
+    "h17": [
+     53.0,
+     904.0
+    ],
+    "h18": [
+     60.0,
+     862.0
+    ],
+    "h19": [
+     56.0,
+     1030.0
+    ],
+    "h20": [
+     60.0,
+     1115.0
+    ],
+    "h21": [
+     68.0,
+     908.0
+    ],
+    "h22": [
+     64.0,
+     824.0
+    ],
+    "h23": [
+     62.0,
+     690.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 247063.0,
+    "n": 8371,
+    "p50": 52.0,
+    "p90": 496.0,
+    "p95": 892.0,
+    "p99": 2689.0
+   }
+  },
+  "DeviceEvent | KnowledgeC | DevicePluginStatus": {
+   "events": 569,
+   "gap_p50_p95_by_utc_hour": {
+    "h01": [
+     1.0,
+     1927.0
+    ],
+    "h02": [
+     1.0,
+     45539.0
+    ],
+    "h03": [
+     1.0,
+     49827.0
+    ],
+    "h04": [
+     31516.0,
+     31516.0
+    ],
+    "h05": [
+     359.0,
+     3511.0
+    ],
+    "h06": [
+     1.0,
+     13078.0
+    ],
+    "h07": [
+     51364.0,
+     51364.0
+    ],
+    "h08": [
+     6.0,
+     44482.0
+    ],
+    "h10": [
+     1.0,
+     28789.0
+    ],
+    "h13": [
+     35.0,
+     74188.0
+    ],
+    "h14": [
+     1.0,
+     9510.0
+    ],
+    "h15": [
+     1.0,
+     13256.0
+    ],
+    "h16": [
+     1.0,
+     9890.0
+    ],
+    "h17": [
+     1.0,
+     16846.0
+    ],
+    "h18": [
+     1.0,
+     8657.0
+    ],
+    "h19": [
+     1.0,
+     7404.0
+    ],
+    "h20": [
+     1.0,
+     1921.0
+    ],
+    "h21": [
+     1.0,
+     40049.0
+    ],
+    "h22": [
+     1.0,
+     64129.0
+    ],
+    "h23": [
+     1652.0,
+     83037.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 245098.0,
+    "n": 568,
+    "p50": 1.0,
+    "p90": 6889.0,
+    "p95": 32501.0,
+    "p99": 71479.0
+   }
+  },
+  "DeviceEvent | KnowledgeC | DisplayOnOff": {
+   "events": 9999,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     24.0,
+     400.0
+    ],
+    "h01": [
+     20.0,
+     340.0
+    ],
+    "h02": [
+     20.0,
+     452.0
+    ],
+    "h03": [
+     24.0,
+     440.0
+    ],
+    "h04": [
+     24.0,
+     484.0
+    ],
+    "h05": [
+     16.0,
+     536.0
+    ],
+    "h06": [
+     20.0,
+     592.0
+    ],
+    "h07": [
+     20.0,
+     588.0
+    ],
+    "h08": [
+     20.0,
+     1208.0
+    ],
+    "h09": [
+     16.0,
+     284.0
+    ],
+    "h10": [
+     16.0,
+     276.0
+    ],
+    "h11": [
+     24.0,
+     888.0
+    ],
+    "h12": [
+     32.0,
+     864.0
+    ],
+    "h13": [
+     24.0,
+     844.0
+    ],
+    "h14": [
+     28.0,
+     692.0
+    ],
+    "h15": [
+     20.0,
+     664.0
+    ],
+    "h16": [
+     28.0,
+     712.0
+    ],
+    "h17": [
+     28.0,
+     724.0
+    ],
+    "h18": [
+     28.0,
+     756.0
+    ],
+    "h19": [
+     24.0,
+     500.0
+    ],
+    "h20": [
+     36.0,
+     1004.0
+    ],
+    "h21": [
+     28.0,
+     568.0
+    ],
+    "h22": [
+     28.0,
+     640.0
+    ],
+    "h23": [
+     28.0,
+     460.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 173796.0,
+    "n": 9998,
+    "p50": 24.0,
+    "p90": 288.0,
+    "p95": 556.0,
+    "p99": 1796.0
+   }
+  },
+  "DeviceEvent | KnowledgeC | OrientationChange": {
+   "events": 77,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     3916.0,
+     3916.0
+    ],
+    "h01": [
+     33324.0,
+     695140.0
+    ],
+    "h02": [
+     306884.0,
+     306884.0
+    ],
+    "h03": [
+     7340.0,
+     7340.0
+    ],
+    "h05": [
+     139344.0,
+     139344.0
+    ],
+    "h10": [
+     11288.0,
+     11288.0
+    ],
+    "h13": [
+     532.0,
+     4040.0
+    ],
+    "h15": [
+     20.0,
+     8016.0
+    ],
+    "h16": [
+     4.0,
+     8064.0
+    ],
+    "h18": [
+     20.0,
+     8328.0
+    ],
+    "h19": [
+     24.0,
+     2800.0
+    ],
+    "h20": [
+     448.0,
+     448260.0
+    ],
+    "h21": [
+     9032.0,
+     109468.0
+    ],
+    "h23": [
+     1732.0,
+     1732.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 695140.0,
+    "n": 76,
+    "p50": 108.0,
+    "p90": 33324.0,
+    "p95": 306884.0,
+    "p99": 695140.0
+   }
+  },
+  "DeviceEvent | Powerlog | CameraState": {
+   "events": 470,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     1.7,
+     3685.3
+    ],
+    "h01": [
+     1.5,
+     2082.8
+    ],
+    "h02": [
+     1.5,
+     1729.3
+    ],
+    "h03": [
+     46.2,
+     2418.1
+    ],
+    "h04": [
+     1.8,
+     18009.3
+    ],
+    "h05": [
+     27312.7,
+     37020.5
+    ],
+    "h09": [
+     0.1,
+     11985.7
+    ],
+    "h11": [
+     747.8,
+     7148.1
+    ],
+    "h12": [
+     0.1,
+     8539.0
+    ],
+    "h13": [
+     0.3,
+     19380.1
+    ],
+    "h15": [
+     0.2,
+     3669.1
+    ],
+    "h16": [
+     0.3,
+     7939.2
+    ],
+    "h18": [
+     0.2,
+     175.7
+    ],
+    "h19": [
+     3.8,
+     2716.5
+    ],
+    "h20": [
+     133.6,
+     5222.0
+    ],
+    "h21": [
+     3.4,
+     3809.9
+    ],
+    "h22": [
+     245.5,
+     3031.8
+    ],
+    "h23": [
+     228.5,
+     2695.9
+    ]
+   },
+   "gap_seconds": {
+    "max": 247849.843,
+    "n": 469,
+    "p50": 1.328,
+    "p90": 1044.909,
+    "p95": 3685.339,
+    "p99": 19380.086
+   }
+  },
+  "DeviceEvent | Powerlog | FlashlightState": {
+   "events": 55,
+   "gap_p50_p95_by_utc_hour": {
+    "h03": [
+     23574.7,
+     23574.7
+    ],
+    "h04": [
+     298570.2,
+     298570.2
+    ],
+    "h06": [
+     23405.0,
+     34034.3
+    ],
+    "h10": [
+     311.0,
+     5720.4
+    ],
+    "h12": [
+     31.5,
+     64479.8
+    ],
+    "h15": [
+     29.0,
+     5586.3
+    ],
+    "h16": [
+     32.4,
+     43814.7
+    ],
+    "h17": [
+     94.4,
+     3159.2
+    ],
+    "h18": [
+     2063.8,
+     42811.4
+    ]
+   },
+   "gap_seconds": {
+    "max": 298570.228,
+    "n": 54,
+    "p50": 57.777,
+    "p90": 23574.749,
+    "p95": 43814.701,
+    "p99": 298570.228
+   }
+  },
+  "DeviceEvent | Powerlog | WifiState": {
+   "events": 57,
+   "gap_p50_p95_by_utc_hour": {
+    "h04": [
+     158.0,
+     17148.3
+    ],
+    "h07": [
+     2980.5,
+     2980.5
+    ],
+    "h08": [
+     7573.2,
+     7573.2
+    ],
+    "h09": [
+     836.4,
+     2855.7
+    ],
+    "h10": [
+     297.3,
+     2754.7
+    ],
+    "h11": [
+     3.9,
+     37535.4
+    ],
+    "h13": [
+     417.1,
+     1880.5
+    ],
+    "h14": [
+     33467.2,
+     33467.2
+    ],
+    "h16": [
+     108.3,
+     43628.8
+    ],
+    "h21": [
+     3330.7,
+     3330.7
+    ],
+    "h22": [
+     52258.0,
+     52258.0
+    ],
+    "h23": [
+     24.0,
+     58849.6
+    ]
+   },
+   "gap_seconds": {
+    "max": 58849.613,
+    "n": 56,
+    "p50": 108.334,
+    "p90": 17148.304,
+    "p95": 43628.828,
+    "p99": 58849.613
+   }
+  },
+  "Email | Emails": {
+   "events": 7253,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     11591.0,
+     43612.0
+    ],
+    "h01": [
+     13531.0,
+     41499.0
+    ],
+    "h02": [
+     9972.0,
+     37877.0
+    ],
+    "h03": [
+     20562.0,
+     35092.0
+    ],
+    "h04": [
+     24467.0,
+     29273.0
+    ],
+    "h05": [
+     21745.0,
+     29215.0
+    ],
+    "h06": [
+     18533.0,
+     32394.0
+    ],
+    "h07": [
+     13895.0,
+     30149.0
+    ],
+    "h08": [
+     11409.0,
+     16035.0
+    ],
+    "h09": [
+     8341.0,
+     17007.0
+    ],
+    "h10": [
+     5076.0,
+     16117.0
+    ],
+    "h11": [
+     6493.0,
+     13294.0
+    ],
+    "h12": [
+     5883.0,
+     14600.0
+    ],
+    "h13": [
+     3194.0,
+     11880.0
+    ],
+    "h14": [
+     2222.0,
+     8131.0
+    ],
+    "h15": [
+     2427.0,
+     8373.0
+    ],
+    "h16": [
+     3865.0,
+     16908.0
+    ],
+    "h17": [
+     4180.0,
+     14200.0
+    ],
+    "h18": [
+     3865.0,
+     13650.0
+    ],
+    "h19": [
+     2341.0,
+     10157.0
+    ],
+    "h20": [
+     4100.0,
+     29861.0
+    ],
+    "h21": [
+     5130.0,
+     30643.0
+    ],
+    "h22": [
+     4453.0,
+     23969.0
+    ],
+    "h23": [
+     3970.0,
+     44449.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 48447626.0,
+    "n": 7252,
+    "p50": 4086.0,
+    "p90": 17926.0,
+    "p95": 31599.0,
+    "p99": 45971.0
+   }
+  },
+  "InstantMessage": {
+   "events": 231,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     1261.8,
+     137999.4
+    ],
+    "h01": [
+     39271.6,
+     143034.2
+    ],
+    "h02": [
+     6129.8,
+     62252.2
+    ],
+    "h03": [
+     31508.2,
+     190021.2
+    ],
+    "h04": [
+     250.9,
+     53462.6
+    ],
+    "h05": [
+     24122.3,
+     28284.8
+    ],
+    "h07": [
+     22.8,
+     28302.4
+    ],
+    "h08": [
+     14595.2,
+     14595.2
+    ],
+    "h10": [
+     55.4,
+     48501.6
+    ],
+    "h11": [
+     42476.9,
+     42476.9
+    ],
+    "h12": [
+     43480.0,
+     186818.5
+    ],
+    "h13": [
+     130.9,
+     87975.2
+    ],
+    "h14": [
+     22180.7,
+     31507.0
+    ],
+    "h15": [
+     1678.1,
+     195977.5
+    ],
+    "h16": [
+     3078.0,
+     132864.7
+    ],
+    "h17": [
+     2691.4,
+     149803.9
+    ],
+    "h18": [
+     360.7,
+     199396.4
+    ],
+    "h19": [
+     25.7,
+     158656.1
+    ],
+    "h20": [
+     181.3,
+     278961.0
+    ],
+    "h21": [
+     35.3,
+     73687.3
+    ],
+    "h22": [
+     124.7,
+     71057.7
+    ],
+    "h23": [
+     846.0,
+     153394.7
+    ]
+   },
+   "gap_seconds": {
+    "max": 278961.05,
+    "n": 230,
+    "p50": 659.754,
+    "p90": 72668.153,
+    "p95": 132864.704,
+    "p99": 199396.404
+   }
+  },
+  "InstantMessage | <other>": {
+   "events": 2,
+   "gap_p50_p95_by_utc_hour": {
+    "h01": [
+     14.5,
+     14.5
+    ]
+   },
+   "gap_seconds": {
+    "max": 14.502,
+    "n": 1,
+    "p50": 14.502,
+    "p90": 14.502,
+    "p95": 14.502,
+    "p99": 14.502
+   }
+  },
+  "InstantMessage | Facebook Messenger": {
+   "events": 161,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     5746.0,
+     12273978.2
+    ],
+    "h01": [
+     5398.6,
+     6212872.2
+    ],
+    "h02": [
+     68473.1,
+     19262821.1
+    ],
+    "h03": [
+     36380.6,
+     263393.1
+    ],
+    "h04": [
+     336895.6,
+     757638.0
+    ],
+    "h05": [
+     94088.8,
+     94088.8
+    ],
+    "h07": [
+     232745.7,
+     232745.7
+    ],
+    "h09": [
+     15.8,
+     43292.1
+    ],
+    "h10": [
+     23712.5,
+     23712.5
+    ],
+    "h11": [
+     291789.2,
+     291789.2
+    ],
+    "h12": [
+     2699816.1,
+     2699816.1
+    ],
+    "h14": [
+     2440.1,
+     38961.6
+    ],
+    "h15": [
+     14.2,
+     26159.2
+    ],
+    "h16": [
+     579.9,
+     893859.2
+    ],
+    "h17": [
+     161.0,
+     152007.2
+    ],
+    "h18": [
+     7.1,
+     3880367.8
+    ],
+    "h19": [
+     107053.6,
+     197398.2
+    ],
+    "h20": [
+     176114.7,
+     176114.7
+    ],
+    "h21": [
+     786.8,
+     3114781.9
+    ],
+    "h22": [
+     1962.9,
+     19194563.0
+    ],
+    "h23": [
+     115.3,
+     39317009.6
+    ]
+   },
+   "gap_seconds": {
+    "max": 39317009.564,
+    "n": 160,
+    "p50": 1962.947,
+    "p90": 1908749.754,
+    "p95": 3880367.787,
+    "p99": 19262821.112
+   }
+  },
+  "InstantMessage | Instagram": {
+   "events": 192,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     3361.2,
+     440818.6
+    ],
+    "h01": [
+     1703.1,
+     150350.3
+    ],
+    "h02": [
+     44358.8,
+     394888.1
+    ],
+    "h03": [
+     1368.1,
+     140485.2
+    ],
+    "h04": [
+     65747.2,
+     255273.9
+    ],
+    "h05": [
+     200.3,
+     444180.1
+    ],
+    "h06": [
+     69388.9,
+     155040.1
+    ],
+    "h07": [
+     7.5,
+     3342422.7
+    ],
+    "h08": [
+     164.5,
+     5927.8
+    ],
+    "h09": [
+     210698.2,
+     210698.2
+    ],
+    "h10": [
+     126927.8,
+     126927.8
+    ],
+    "h12": [
+     28439.5,
+     386819.6
+    ],
+    "h13": [
+     744309.9,
+     744309.9
+    ],
+    "h14": [
+     302133.2,
+     302133.2
+    ],
+    "h15": [
+     2495.2,
+     517332.2
+    ],
+    "h16": [
+     382.5,
+     293607.1
+    ],
+    "h17": [
+     38288.5,
+     50697.3
+    ],
+    "h18": [
+     32558.7,
+     84775.1
+    ],
+    "h19": [
+     91346.3,
+     199056.4
+    ],
+    "h20": [
+     22967.6,
+     292876.4
+    ],
+    "h21": [
+     109025.4,
+     189374.2
+    ],
+    "h22": [
+     474.6,
+     474.6
+    ],
+    "h23": [
+     1510.0,
+     337827.5
+    ]
+   },
+   "gap_seconds": {
+    "max": 3342422.713,
+    "n": 191,
+    "p50": 5271.206,
+    "p90": 210698.199,
+    "p95": 337827.457,
+    "p99": 787848.91
+   }
+  },
+  "InstantMessage | Native Messages": {
+   "events": 4035,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     8.9,
+     4443.2
+    ],
+    "h01": [
+     5.7,
+     3093.7
+    ],
+    "h02": [
+     1.3,
+     3633.5
+    ],
+    "h03": [
+     6.9,
+     24606.7
+    ],
+    "h04": [
+     0.4,
+     5357.6
+    ],
+    "h05": [
+     48.2,
+     38418.7
+    ],
+    "h06": [
+     11.1,
+     979.2
+    ],
+    "h07": [
+     0.2,
+     238.6
+    ],
+    "h08": [
+     22.2,
+     28200.4
+    ],
+    "h09": [
+     79.2,
+     20002.2
+    ],
+    "h10": [
+     16.2,
+     9695.1
+    ],
+    "h11": [
+     2.7,
+     9107.4
+    ],
+    "h12": [
+     9.4,
+     5836.2
+    ],
+    "h13": [
+     12.8,
+     9535.5
+    ],
+    "h14": [
+     16.6,
+     7891.6
+    ],
+    "h15": [
+     2.7,
+     8650.1
+    ],
+    "h16": [
+     5.7,
+     12716.0
+    ],
+    "h17": [
+     6.4,
+     7237.4
+    ],
+    "h18": [
+     34.9,
+     6507.5
+    ],
+    "h19": [
+     10.8,
+     4917.5
+    ],
+    "h20": [
+     18.5,
+     4216.6
+    ],
+    "h21": [
+     5.1,
+     4703.2
+    ],
+    "h22": [
+     12.4,
+     3541.1
+    ],
+    "h23": [
+     10.4,
+     5885.1
+    ]
+   },
+   "gap_seconds": {
+    "max": 75816.663,
+    "n": 4034,
+    "p50": 8.249,
+    "p90": 1825.384,
+    "p95": 6799.486,
+    "p99": 29943.683
+   }
+  },
+  "InstantMessage | Recents": {
+   "events": 57,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     79571.4,
+     139625.0
+    ],
+    "h01": [
+     293612.4,
+     293612.4
+    ],
+    "h02": [
+     62411.3,
+     62411.3
+    ],
+    "h03": [
+     43693.1,
+     43693.1
+    ],
+    "h05": [
+     195709.9,
+     195709.9
+    ],
+    "h11": [
+     40553.8,
+     40553.8
+    ],
+    "h12": [
+     45202.8,
+     48141.6
+    ],
+    "h13": [
+     1278.6,
+     1278.6
+    ],
+    "h14": [
+     15142.9,
+     85273.6
+    ],
+    "h15": [
+     91736.3,
+     387531.3
+    ],
+    "h16": [
+     252241.7,
+     252241.7
+    ],
+    "h17": [
+     12213.7,
+     19452.7
+    ],
+    "h18": [
+     74287.0,
+     74287.0
+    ],
+    "h20": [
+     99676.8,
+     155846.3
+    ],
+    "h21": [
+     354250.9,
+     354250.9
+    ],
+    "h22": [
+     8915.5,
+     601168.4
+    ],
+    "h23": [
+     1255.5,
+     141967.3
+    ]
+   },
+   "gap_seconds": {
+    "max": 601168.447,
+    "n": 56,
+    "p50": 48141.554,
+    "p90": 293612.421,
+    "p95": 363456.623,
+    "p99": 601168.447
+   }
+  },
+  "InstantMessage | Snapchat": {
+   "events": 2293,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     223.6,
+     350020.2
+    ],
+    "h01": [
+     617.1,
+     481900.9
+    ],
+    "h02": [
+     60.4,
+     141217.2
+    ],
+    "h03": [
+     14.1,
+     31305.5
+    ],
+    "h04": [
+     29.6,
+     29400.3
+    ],
+    "h05": [
+     799.8,
+     370627.8
+    ],
+    "h06": [
+     10.8,
+     2766.3
+    ],
+    "h07": [
+     25.6,
+     235547.2
+    ],
+    "h08": [
+     4071.1,
+     49132.5
+    ],
+    "h09": [
+     38505.1,
+     2134516.6
+    ],
+    "h10": [
+     29791.1,
+     281376.8
+    ],
+    "h11": [
+     23.7,
+     589025.5
+    ],
+    "h12": [
+     503.1,
+     568516.3
+    ],
+    "h13": [
+     205.4,
+     380297.6
+    ],
+    "h14": [
+     27.7,
+     106057.7
+    ],
+    "h15": [
+     122.8,
+     341225.0
+    ],
+    "h16": [
+     66.0,
+     40054.4
+    ],
+    "h17": [
+     110.6,
+     112445.6
+    ],
+    "h18": [
+     50.6,
+     413225.8
+    ],
+    "h19": [
+     697.3,
+     887539.8
+    ],
+    "h20": [
+     58.1,
+     51562.1
+    ],
+    "h21": [
+     230.5,
+     369353.1
+    ],
+    "h22": [
+     63.6,
+     355183.2
+    ],
+    "h23": [
+     698.6,
+     526880.9
+    ]
+   },
+   "gap_seconds": {
+    "max": 13308243.167,
+    "n": 2292,
+    "p50": 57.917,
+    "p90": 51562.079,
+    "p95": 229763.251,
+    "p99": 1293983.933
+   }
+  },
+  "InstantMessage | WhatsApp": {
+   "events": 2752,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     20.0,
+     3498.0
+    ],
+    "h01": [
+     25.3,
+     33721.8
+    ],
+    "h02": [
+     21.2,
+     6012.1
+    ],
+    "h03": [
+     42.8,
+     46652.0
+    ],
+    "h04": [
+     19.4,
+     34936.0
+    ],
+    "h05": [
+     197.5,
+     30836.0
+    ],
+    "h06": [
+     300.0,
+     22398.7
+    ],
+    "h08": [
+     11.4,
+     35.8
+    ],
+    "h09": [
+     38710.6,
+     38710.6
+    ],
+    "h10": [
+     13739.5,
+     13739.5
+    ],
+    "h11": [
+     7680.7,
+     16727.8
+    ],
+    "h12": [
+     322.3,
+     5819.8
+    ],
+    "h13": [
+     45.5,
+     12504.0
+    ],
+    "h14": [
+     34.0,
+     15884.1
+    ],
+    "h15": [
+     65.0,
+     10091.0
+    ],
+    "h16": [
+     68.0,
+     13274.0
+    ],
+    "h17": [
+     72.4,
+     8691.0
+    ],
+    "h18": [
+     113.0,
+     13071.0
+    ],
+    "h19": [
+     70.0,
+     5571.0
+    ],
+    "h20": [
+     60.8,
+     4271.0
+    ],
+    "h21": [
+     43.0,
+     2850.0
+    ],
+    "h22": [
+     65.6,
+     5209.0
+    ],
+    "h23": [
+     42.7,
+     3854.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 56167034.0,
+    "n": 2751,
+    "p50": 38.595,
+    "p90": 2952.665,
+    "p95": 7031.0,
+    "p99": 48297.0
+   }
+  },
+  "Journey | Apple Maps": {
+   "events": 14,
+   "gap_p50_p95_by_utc_hour": {
+    "h01": [
+     160047.3,
+     357515.0
+    ],
+    "h04": [
+     230919.0,
+     230919.0
+    ],
+    "h10": [
+     233622.0,
+     233622.0
+    ],
+    "h11": [
+     138834.3,
+     138834.3
+    ],
+    "h20": [
+     200836.4,
+     200836.4
+    ],
+    "h22": [
+     98376.0,
+     98376.0
+    ],
+    "h23": [
+     127634.0,
+     127634.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 357515.017,
+    "n": 13,
+    "p50": 138834.256,
+    "p90": 233622.001,
+    "p95": 357515.017,
+    "p99": 357515.017
+   }
+  },
+  "Location": {
+   "events": 23953,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     0.0,
+     0.0
+    ],
+    "h01": [
+     0.0,
+     0.0
+    ],
+    "h02": [
+     0.0,
+     0.0
+    ],
+    "h03": [
+     0.0,
+     0.0
+    ],
+    "h04": [
+     0.0,
+     0.0
+    ],
+    "h05": [
+     0.0,
+     0.0
+    ],
+    "h06": [
+     0.0,
+     0.0
+    ],
+    "h11": [
+     0.0,
+     0.0
+    ],
+    "h12": [
+     80418.0,
+     109096.0
+    ],
+    "h13": [
+     16344.0,
+     16344.0
+    ],
+    "h14": [
+     0.0,
+     0.0
+    ],
+    "h15": [
+     0.0,
+     0.0
+    ],
+    "h16": [
+     0.0,
+     0.0
+    ],
+    "h17": [
+     0.0,
+     0.0
+    ],
+    "h18": [
+     0.0,
+     0.0
+    ],
+    "h19": [
+     0.0,
+     0.0
+    ],
+    "h20": [
+     0.0,
+     85.6
+    ],
+    "h21": [
+     0.0,
+     0.0
+    ],
+    "h22": [
+     0.0,
+     0.0
+    ],
+    "h23": [
+     0.0,
+     0.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 1061767.0,
+    "n": 23952,
+    "p50": 0.0,
+    "p90": 0.0,
+    "p95": 0.0,
+    "p99": 24.0
+   }
+  },
+  "Location | Apple Maps": {
+   "events": 85,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     90782.3,
+     90782.3
+    ],
+    "h01": [
+     1.9,
+     165098.1
+    ],
+    "h02": [
+     49924.6,
+     49924.6
+    ],
+    "h03": [
+     0.7,
+     525.0
+    ],
+    "h04": [
+     0.5,
+     85171.3
+    ],
+    "h10": [
+     20.1,
+     108938.1
+    ],
+    "h11": [
+     2.3,
+     55917.4
+    ],
+    "h14": [
+     49648.6,
+     49648.6
+    ],
+    "h16": [
+     32989.9,
+     32989.9
+    ],
+    "h17": [
+     14006.9,
+     14006.9
+    ],
+    "h20": [
+     0.5,
+     200835.3
+    ],
+    "h21": [
+     25396.0,
+     25396.0
+    ],
+    "h22": [
+     1130.4,
+     77679.8
+    ],
+    "h23": [
+     4.5,
+     86542.3
+    ]
+   },
+   "gap_seconds": {
+    "max": 307139.604,
+    "n": 84,
+    "p50": 2.42,
+    "p90": 82290.611,
+    "p95": 90782.271,
+    "p99": 307139.604
+   }
+  },
+  "Location | Apple Photos": {
+   "events": 33,
+   "gap_p50_p95_by_utc_hour": {
+    "h02": [
+     10.0,
+     10.1
+    ],
+    "h03": [
+     1.6,
+     666849.2
+    ],
+    "h04": [
+     78701.4,
+     78701.4
+    ],
+    "h21": [
+     6689.0,
+     6689.0
+    ],
+    "h22": [
+     13.3,
+     883334.7
+    ]
+   },
+   "gap_seconds": {
+    "max": 883334.743,
+    "n": 32,
+    "p50": 7.363,
+    "p90": 78701.362,
+    "p95": 666849.228,
+    "p99": 883334.743
+   }
+  },
+  "Location | Find My": {
+   "events": 5,
+   "gap_p50_p95_by_utc_hour": {
+    "h10": [
+     0.3,
+     137.6
+    ]
+   },
+   "gap_seconds": {
+    "max": 137.601,
+    "n": 4,
+    "p50": 0.326,
+    "p90": 137.601,
+    "p95": 137.601,
+    "p99": 137.601
+   }
+  },
+  "Location | KnowledgeC": {
+   "events": 5,
+   "gap_p50_p95_by_utc_hour": {
+    "h17": [
+     18105.0,
+     18105.0
+    ],
+    "h22": [
+     1341.0,
+     1341.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 18105.0,
+    "n": 4,
+    "p50": 1341.0,
+    "p90": 18105.0,
+    "p95": 18105.0,
+    "p99": 18105.0
+   }
+  },
+  "Location | Native Locations": {
+   "events": 13593,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     13.7,
+     110.1
+    ],
+    "h01": [
+     14.3,
+     140.1
+    ],
+    "h02": [
+     14.9,
+     89.6
+    ],
+    "h03": [
+     2.0,
+     30.8
+    ],
+    "h04": [
+     3.0,
+     99.7
+    ],
+    "h05": [
+     21.3,
+     544.4
+    ],
+    "h06": [
+     21.0,
+     529.0
+    ],
+    "h07": [
+     132.7,
+     818.1
+    ],
+    "h08": [
+     288.0,
+     573.1
+    ],
+    "h09": [
+     209.7,
+     430.5
+    ],
+    "h10": [
+     16.0,
+     478.0
+    ],
+    "h11": [
+     13.0,
+     330.4
+    ],
+    "h12": [
+     22.0,
+     290.1
+    ],
+    "h13": [
+     2.0,
+     122.3
+    ],
+    "h14": [
+     13.8,
+     157.1
+    ],
+    "h15": [
+     21.0,
+     316.5
+    ],
+    "h16": [
+     16.0,
+     129.2
+    ],
+    "h17": [
+     17.0,
+     133.6
+    ],
+    "h18": [
+     17.0,
+     123.1
+    ],
+    "h19": [
+     14.0,
+     100.0
+    ],
+    "h20": [
+     2.7,
+     144.1
+    ],
+    "h21": [
+     12.1,
+     313.5
+    ],
+    "h22": [
+     14.3,
+     1440.0
+    ],
+    "h23": [
+     15.5,
+     304.3
+    ]
+   },
+   "gap_seconds": {
+    "max": 451466.418,
+    "n": 13592,
+    "p50": 11.21,
+    "p90": 77.473,
+    "p95": 267.272,
+    "p99": 4849.843
+   }
+  },
+  "Location | Safari": {
+   "events": 11,
+   "gap_p50_p95_by_utc_hour": {
+    "h17": [
+     2.7,
+     20714.1
+    ],
+    "h23": [
+     1740322.3,
+     1740322.3
+    ]
+   },
+   "gap_seconds": {
+    "max": 1740322.267,
+    "n": 10,
+    "p50": 3.216,
+    "p90": 1740322.267,
+    "p95": 1740322.267,
+    "p99": 1740322.267
+   }
+  },
+  "Location | Snapchat": {
+   "events": 2214,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     41.0,
+     240522.8
+    ],
+    "h01": [
+     167.3,
+     261714.3
+    ],
+    "h02": [
+     4735.7,
+     279192.2
+    ],
+    "h03": [
+     476.6,
+     90660.9
+    ],
+    "h04": [
+     384.3,
+     210207.7
+    ],
+    "h05": [
+     160.8,
+     138948.5
+    ],
+    "h06": [
+     396.6,
+     149647.2
+    ],
+    "h07": [
+     65.6,
+     82100.8
+    ],
+    "h08": [
+     170.9,
+     78254.8
+    ],
+    "h09": [
+     12821.7,
+     210497.7
+    ],
+    "h10": [
+     66.5,
+     290137.8
+    ],
+    "h11": [
+     64.1,
+     450840.1
+    ],
+    "h12": [
+     7550.6,
+     215486.6
+    ],
+    "h13": [
+     3693.3,
+     119985.5
+    ],
+    "h14": [
+     13600.7,
+     287906.7
+    ],
+    "h15": [
+     1210.1,
+     107359.3
+    ],
+    "h16": [
+     3605.2,
+     214473.7
+    ],
+    "h17": [
+     5479.1,
+     203560.5
+    ],
+    "h18": [
+     765.7,
+     274166.3
+    ],
+    "h19": [
+     1372.0,
+     244712.6
+    ],
+    "h20": [
+     259.7,
+     160998.4
+    ],
+    "h21": [
+     1370.0,
+     145086.6
+    ],
+    "h22": [
+     1106.5,
+     173628.0
+    ],
+    "h23": [
+     2089.6,
+     270544.7
+    ]
+   },
+   "gap_seconds": {
+    "max": 31012741.493,
+    "n": 2213,
+    "p50": 434.582,
+    "p90": 101690.297,
+    "p95": 199729.026,
+    "p99": 724766.92
+   }
+  },
+  "Location | Uber": {
+   "events": 15,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     303143.0,
+     1423432.0
+    ],
+    "h01": [
+     71411.0,
+     71411.0
+    ],
+    "h05": [
+     331536.0,
+     331536.0
+    ],
+    "h12": [
+     163.0,
+     126761.0
+    ],
+    "h21": [
+     55.0,
+     269894.0
+    ],
+    "h22": [
+     266500.0,
+     266500.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 1423432.0,
+    "n": 14,
+    "p50": 106130.0,
+    "p90": 331536.0,
+    "p95": 1423432.0,
+    "p99": 1423432.0
+   }
+  },
+  "Location | WhatsApp": {
+   "events": 2,
+   "gap_p50_p95_by_utc_hour": {
+    "h19": [
+     969265.0,
+     969265.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 969265.0,
+    "n": 1,
+    "p50": 969265.0,
+    "p90": 969265.0,
+    "p95": 969265.0,
+    "p99": 969265.0
+   }
+  },
+  "LogEntry | InteractionC": {
+   "events": 8070,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     76.8,
+     5932.0
+    ],
+    "h01": [
+     74.0,
+     2199.3
+    ],
+    "h02": [
+     69.0,
+     4950.8
+    ],
+    "h03": [
+     84.3,
+     15420.0
+    ],
+    "h04": [
+     202.1,
+     23270.6
+    ],
+    "h05": [
+     31.1,
+     21391.1
+    ],
+    "h06": [
+     95.0,
+     22692.8
+    ],
+    "h07": [
+     36.2,
+     19671.0
+    ],
+    "h08": [
+     326.2,
+     14549.3
+    ],
+    "h09": [
+     136.2,
+     7216.1
+    ],
+    "h10": [
+     540.8,
+     13316.0
+    ],
+    "h11": [
+     411.6,
+     7544.0
+    ],
+    "h12": [
+     323.2,
+     3723.7
+    ],
+    "h13": [
+     202.2,
+     4839.1
+    ],
+    "h14": [
+     220.9,
+     4972.0
+    ],
+    "h15": [
+     214.2,
+     4196.8
+    ],
+    "h16": [
+     232.5,
+     6814.0
+    ],
+    "h17": [
+     178.1,
+     3397.7
+    ],
+    "h18": [
+     181.8,
+     8529.8
+    ],
+    "h19": [
+     95.3,
+     3312.9
+    ],
+    "h20": [
+     104.7,
+     2875.4
+    ],
+    "h21": [
+     94.7,
+     1887.2
+    ],
+    "h22": [
+     70.6,
+     1549.3
+    ],
+    "h23": [
+     136.6,
+     2517.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 1696141.0,
+    "n": 8069,
+    "p50": 118.87,
+    "p90": 2136.081,
+    "p95": 4740.0,
+    "p99": 22020.0
+   }
+  },
+  "LogEntry | iPhoneNetworkDataUsage": {
+   "events": 3738,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     196.5,
+     7534.6
+    ],
+    "h01": [
+     118.1,
+     3785.7
+    ],
+    "h02": [
+     104.0,
+     5275.5
+    ],
+    "h03": [
+     51.3,
+     3480.4
+    ],
+    "h04": [
+     219.7,
+     14452.5
+    ],
+    "h05": [
+     24.8,
+     9648.8
+    ],
+    "h06": [
+     83.9,
+     12951.1
+    ],
+    "h07": [
+     1487.7,
+     13216.4
+    ],
+    "h08": [
+     3337.0,
+     30089.5
+    ],
+    "h09": [
+     294.0,
+     5645.1
+    ],
+    "h10": [
+     270.5,
+     16075.6
+    ],
+    "h11": [
+     325.4,
+     10534.2
+    ],
+    "h12": [
+     385.1,
+     6140.0
+    ],
+    "h13": [
+     128.7,
+     3479.1
+    ],
+    "h14": [
+     132.1,
+     3701.5
+    ],
+    "h15": [
+     88.9,
+     4753.5
+    ],
+    "h16": [
+     73.4,
+     2249.3
+    ],
+    "h17": [
+     73.4,
+     4006.4
+    ],
+    "h18": [
+     130.9,
+     2499.8
+    ],
+    "h19": [
+     61.8,
+     2434.0
+    ],
+    "h20": [
+     52.3,
+     3099.2
+    ],
+    "h21": [
+     36.2,
+     3275.2
+    ],
+    "h22": [
+     63.2,
+     2906.1
+    ],
+    "h23": [
+     58.7,
+     3026.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 274341.442,
+    "n": 3737,
+    "p50": 89.698,
+    "p90": 2211.551,
+    "p95": 4482.778,
+    "p99": 30295.708
+   }
+  },
+  "SearchedItem | Apple Maps": {
+   "events": 7,
+   "gap_p50_p95_by_utc_hour": {
+    "h01": [
+     270448.1,
+     270448.1
+    ],
+    "h04": [
+     173151.3,
+     605524.7
+    ],
+    "h20": [
+     516230.0,
+     516230.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 605524.653,
+    "n": 6,
+    "p50": 270448.111,
+    "p90": 605524.653,
+    "p95": 605524.653,
+    "p99": 605524.653
+   }
+  },
+  "SearchedItem | Emails": {
+   "events": 1,
+   "gap_p50_p95_by_utc_hour": {},
+   "gap_seconds": null
+  },
+  "SearchedItem | KnowledgeC": {
+   "events": 114,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     84815.0,
+     84815.0
+    ],
+    "h01": [
+     6.0,
+     17862.0
+    ],
+    "h02": [
+     21.0,
+     55970.0
+    ],
+    "h03": [
+     1852.0,
+     2015.0
+    ],
+    "h04": [
+     131931.0,
+     131931.0
+    ],
+    "h06": [
+     219264.0,
+     219264.0
+    ],
+    "h15": [
+     21706.0,
+     21706.0
+    ],
+    "h17": [
+     4.0,
+     102943.0
+    ],
+    "h18": [
+     8.0,
+     4624.0
+    ],
+    "h19": [
+     7248.0,
+     88725.0
+    ],
+    "h20": [
+     97688.0,
+     97688.0
+    ],
+    "h21": [
+     105.0,
+     237226.0
+    ],
+    "h22": [
+     1341.0,
+     6437.0
+    ],
+    "h23": [
+     100.0,
+     183919.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 237226.0,
+    "n": 113,
+    "p50": 21.0,
+    "p90": 79091.0,
+    "p95": 97688.0,
+    "p99": 219264.0
+   }
+  },
+  "SearchedItem | Safari": {
+   "events": 298,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     84790.5,
+     84790.5
+    ],
+    "h01": [
+     5.4,
+     50460.1
+    ],
+    "h02": [
+     1.8,
+     37.6
+    ],
+    "h03": [
+     83.5,
+     63483.2
+    ],
+    "h04": [
+     131930.3,
+     131930.3
+    ],
+    "h06": [
+     219256.2,
+     219256.2
+    ],
+    "h13": [
+     29187.0,
+     29187.0
+    ],
+    "h14": [
+     178.9,
+     1512244.6
+    ],
+    "h15": [
+     14.5,
+     24172.9
+    ],
+    "h16": [
+     43.2,
+     278234.8
+    ],
+    "h17": [
+     1.9,
+     20714.1
+    ],
+    "h18": [
+     2.1,
+     4752.4
+    ],
+    "h19": [
+     61.1,
+     88696.9
+    ],
+    "h20": [
+     11.5,
+     97699.2
+    ],
+    "h21": [
+     51.7,
+     416090.5
+    ],
+    "h22": [
+     6437.9,
+     75972.6
+    ],
+    "h23": [
+     6.0,
+     183918.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 1512244.61,
+    "n": 297,
+    "p50": 3.216,
+    "p90": 14683.333,
+    "p95": 85173.687,
+    "p99": 361878.395
+   }
+  },
+  "SocialMediaActivity | Facebook": {
+   "events": 85,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     4377781.0,
+     4377781.0
+    ],
+    "h01": [
+     138567.0,
+     138567.0
+    ],
+    "h02": [
+     50188.0,
+     6700973.0
+    ],
+    "h03": [
+     67269.0,
+     67269.0
+    ],
+    "h04": [
+     716.3,
+     45590.0
+    ],
+    "h05": [
+     2295.5,
+     230806.0
+    ],
+    "h06": [
+     45.5,
+     1614456858.0
+    ],
+    "h07": [
+     35728.0,
+     35728.0
+    ],
+    "h11": [
+     20019.0,
+     20019.0
+    ],
+    "h12": [
+     22169.0,
+     22169.0
+    ],
+    "h13": [
+     451766.0,
+     451766.0
+    ],
+    "h14": [
+     200352.0,
+     200352.0
+    ],
+    "h15": [
+     76342.0,
+     1138560.0
+    ],
+    "h16": [
+     3.0,
+     19719210.0
+    ],
+    "h17": [
+     39230.0,
+     3655790.0
+    ],
+    "h18": [
+     707685.0,
+     707685.0
+    ],
+    "h19": [
+     26573.0,
+     149363.0
+    ],
+    "h20": [
+     87393.0,
+     87393.0
+    ],
+    "h21": [
+     101850.0,
+     308585.0
+    ],
+    "h22": [
+     1790041.0,
+     1790041.0
+    ],
+    "h23": [
+     901.0,
+     55120.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 1614456858.005,
+    "n": 84,
+    "p50": 1197.487,
+    "p90": 707685.0,
+    "p95": 4377781.0,
+    "p99": 1614456858.005
+   }
+  },
+  "VisitedPage | KnowledgeC": {
+   "events": 521,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     9.0,
+     58940.0
+    ],
+    "h01": [
+     13.0,
+     17862.0
+    ],
+    "h02": [
+     10.0,
+     1756.0
+    ],
+    "h03": [
+     19.0,
+     1852.0
+    ],
+    "h04": [
+     5.0,
+     369.0
+    ],
+    "h05": [
+     24.0,
+     37857.0
+    ],
+    "h06": [
+     6.0,
+     93.0
+    ],
+    "h08": [
+     7671.0,
+     7671.0
+    ],
+    "h10": [
+     66006.0,
+     66006.0
+    ],
+    "h12": [
+     28018.0,
+     28018.0
+    ],
+    "h13": [
+     369.0,
+     5835.0
+    ],
+    "h14": [
+     32564.0,
+     32564.0
+    ],
+    "h15": [
+     8.0,
+     21171.0
+    ],
+    "h16": [
+     56761.0,
+     56761.0
+    ],
+    "h17": [
+     3.0,
+     7309.0
+    ],
+    "h18": [
+     57.0,
+     5740.0
+    ],
+    "h19": [
+     7248.0,
+     88725.0
+    ],
+    "h20": [
+     29.0,
+     23224.0
+    ],
+    "h21": [
+     6.0,
+     520.0
+    ],
+    "h22": [
+     8.0,
+     5217.0
+    ],
+    "h23": [
+     42.0,
+     76537.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 218828.0,
+    "n": 520,
+    "p50": 8.0,
+    "p90": 1756.0,
+    "p95": 15285.0,
+    "p99": 88725.0
+   }
+  },
+  "VisitedPage | Safari": {
+   "events": 831,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     29.1,
+     73425.1
+    ],
+    "h01": [
+     23.0,
+     80103.0
+    ],
+    "h02": [
+     1.6,
+     641.2
+    ],
+    "h03": [
+     22.5,
+     24606.0
+    ],
+    "h04": [
+     10.1,
+     51016.7
+    ],
+    "h05": [
+     37866.0,
+     37866.0
+    ],
+    "h06": [
+     7.8,
+     218861.1
+    ],
+    "h09": [
+     64813.8,
+     64813.8
+    ],
+    "h10": [
+     3190.8,
+     83294.7
+    ],
+    "h11": [
+     11.4,
+     32228.7
+    ],
+    "h12": [
+     8629.2,
+     37668.7
+    ],
+    "h13": [
+     6634.8,
+     6634.8
+    ],
+    "h14": [
+     118.5,
+     103438.7
+    ],
+    "h15": [
+     17.0,
+     24176.5
+    ],
+    "h16": [
+     223.2,
+     13803.8
+    ],
+    "h17": [
+     2.7,
+     20714.1
+    ],
+    "h18": [
+     6.2,
+     5737.0
+    ],
+    "h19": [
+     19.7,
+     68118.5
+    ],
+    "h20": [
+     20.8,
+     64500.2
+    ],
+    "h21": [
+     24.4,
+     63825.6
+    ],
+    "h22": [
+     5.4,
+     13209.6
+    ],
+    "h23": [
+     10.3,
+     79077.1
+    ]
+   },
+   "gap_seconds": {
+    "max": 416090.493,
+    "n": 830,
+    "p50": 9.279,
+    "p90": 8094.293,
+    "p95": 38877.592,
+    "p99": 96618.885
+   }
+  },
+  "WirelessNetwork": {
+   "events": 24343,
+   "gap_p50_p95_by_utc_hour": {
+    "h00": [
+     0.0,
+     0.0
+    ],
+    "h01": [
+     0.0,
+     0.0
+    ],
+    "h02": [
+     0.0,
+     0.0
+    ],
+    "h03": [
+     0.0,
+     0.0
+    ],
+    "h04": [
+     0.0,
+     0.0
+    ],
+    "h05": [
+     0.0,
+     0.0
+    ],
+    "h06": [
+     0.0,
+     0.0
+    ],
+    "h10": [
+     2109.5,
+     2109.5
+    ],
+    "h11": [
+     0.0,
+     0.0
+    ],
+    "h14": [
+     0.0,
+     0.0
+    ],
+    "h15": [
+     0.0,
+     0.0
+    ],
+    "h16": [
+     0.0,
+     0.0
+    ],
+    "h17": [
+     0.0,
+     0.0
+    ],
+    "h18": [
+     0.0,
+     0.0
+    ],
+    "h19": [
+     0.0,
+     0.0
+    ],
+    "h20": [
+     0.0,
+     108.5
+    ],
+    "h21": [
+     0.0,
+     0.0
+    ],
+    "h22": [
+     0.0,
+     0.0
+    ],
+    "h23": [
+     0.0,
+     0.0
+    ]
+   },
+   "gap_seconds": {
+    "max": 32429.305,
+    "n": 24342,
+    "p50": 0.0,
+    "p90": 0.0,
+    "p95": 0.0,
+    "p99": 8.316
+   }
+  },
+  "WirelessNetwork | Known Networks": {
+   "events": 14,
+   "gap_p50_p95_by_utc_hour": {
+    "h02": [
+     9231122.1,
+     9231122.1
+    ],
+    "h10": [
+     98884.2,
+     98884.2
+    ],
+    "h13": [
+     6991.1,
+     6991.1
+    ],
+    "h14": [
+     175426.2,
+     175426.2
+    ],
+    "h15": [
+     537962.0,
+     1480558.6
+    ],
+    "h18": [
+     630856.4,
+     630856.4
+    ],
+    "h20": [
+     21033.5,
+     21033.5
+    ],
+    "h22": [
+     1773222.2,
+     1773222.2
+    ]
+   },
+   "gap_seconds": {
+    "max": 9231122.101,
+    "n": 13,
+    "p50": 98884.169,
+    "p90": 1773222.197,
+    "p95": 9231122.101,
+    "p99": 9231122.101
+   }
+  }
+ },
+ "m5_accuracy_m_quantiles": {
+  "max": 149000.0,
+  "n": 13255,
+  "p50": 40.0,
+  "p90": 1414.0,
+  "p95": 2000.0,
+  "p99": 2000.0
+ },
+ "m5_bssid_gps_days": {
+  "accuracy_le_100m": 3068,
+  "distinct_bssids_with_time": 15094,
+  "radius_2x_le_100m": 3068
+ },
+ "m8_power": {
+  "events": {},
+  "gap_before_on_seconds": {},
+  "sequences": {}
+ },
+ "s05_m1a_distinct_service_identifiers": 0,
+ "s05_m3d": {
+  "reply records": 2573,
+  "reply referencing an Identifier on the phone": 201,
+  "reply referencing no Identifier on the phone": 2,
+  "reply with OriginalMessageID": 203
+ },
+ "s05_m8a": {
+  "attachment-linked files": 1184,
+  "attachment-linked with MD5": 1178,
+  "camera-path or camera-EXIF files with MD5": 264,
+  "tagged files": 309779
+ },
+ "s05_x3_body_occurrence": {
+  "distinct bodies >= 10 chars": 4458,
+  "occurring <= 3 times": 4402
+ },
+ "seed": {
+  "catalogue": {
+   "field_rows": 253,
+   "named_set_values": 71,
+   "named_sets": 24,
+   "records": 251466,
+   "types": 42
+  },
+  "field_rows": 253,
+  "field_rows_only_in_catalogue": 0,
+  "field_rows_only_in_report": 0,
+  "largest_type_differences": [],
+  "named_set_values": 71,
+  "named_set_values_only_in_catalogue": 0,
+  "named_set_values_only_in_report": 0,
+  "named_sets": 24,
+  "nesting_relations": 51,
+  "record_difference": 0,
+  "records": 251466,
+  "related_models": 0,
+  "types": 42,
+  "types_only_in_catalogue": 0,
+  "types_only_in_report": 0,
+  "types_with_different_count": 0
+ },
+ "top_level_types": {
+  "CalendarEntry": 249,
+  "Call": 527,
+  "CellTower": 860,
+  "Chat": 869,
+  "Contact": 2303,
+  "Cookie": 309,
+  "DeviceConnectivity": 1630,
+  "DeviceEvent": 21718,
+  "Email": 7253,
+  "FileUpload": 3259,
+  "InstantMessage": 71,
+  "Journey": 16,
+  "Location": 42545,
+  "LogEntry": 11809,
+  "MobileCard": 1,
+  "Note": 6,
+  "Password": 773,
+  "RecognizedDevice": 8,
+  "SIMData": 9,
+  "SearchedItem": 560,
+  "SocialMediaActivity": 176,
+  "UserAccount": 24,
+  "VisitedPage": 1703,
+  "WebBookmark": 8,
+  "WirelessNetwork": 24390
+ }
+}
