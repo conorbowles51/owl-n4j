@@ -185,6 +185,13 @@ class EveryRouteKindTests(FeedTestBase):
         self.assertEqual(self.lines()[0]['field'], 'to_name')
         self.assertEqual((self.lines()[0]['subject_type'], self.lines()[0]['subject_id']), ('transaction', 't1'))
 
+    def test_a_put_back_of_a_statement_nobody_set_aside_records_nothing(self):
+        endpoint, config = self.routes['POST /api/financial/statement-import/{evidence_file_id}/not-payment-statement']
+        self.call(endpoint, config, lambda: {'changed': False, 'not_payment_statement': None})
+        self.assertEqual(self.lines(), [])
+        self.call(endpoint, config, lambda: {'changed': True, 'not_payment_statement': None})
+        self.assertEqual([line['kind'] for line in self.lines()], ['not_payment_statement'])
+
     def test_the_route_signature_fastapi_reads_is_unchanged(self):
         for key, (endpoint, _config) in self.routes.items():
             with self.subTest(route=key):

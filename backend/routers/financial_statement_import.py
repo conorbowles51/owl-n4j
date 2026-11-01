@@ -376,7 +376,8 @@ class NotPaymentStatementRequest(_Contract):
 
 
 @router.post('/{evidence_file_id}/not-payment-statement', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
-@records('not_payment_statement', lambda c: 'set_aside' if c['body'].get('action') == 'set_aside' else 'change', field=lambda c: c['body'].get('action', ''))
+@records('not_payment_statement', lambda c: 'set_aside' if c['body'].get('action') == 'set_aside' else 'change', field=lambda c: c['body'].get('action', ''),
+         when=lambda c: not isinstance(c['result'], dict) or c['result'].get('changed', True))
 def not_payment_statement(evidence_file_id: UUID, body: NotPaymentStatementRequest,
         case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     """Put a fund statement set aside as not a payment statement back for review, or set it aside again."""

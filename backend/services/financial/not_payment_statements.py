@@ -174,7 +174,9 @@ def _persist(file, statement_id, status, actor, reason):
 def decide(session, *, case_id, evidence_file_id, statement_id=None, action, actor=None, reason=''):
     """Put a set-aside fund statement back for review ('restore'), or set it aside again ('set_aside').
 
-    Recorded on the file (with history); the statement's batch items are assessed again at once. Commits.
+    Recorded on the file (with history); the statement's batch items are assessed again at once. Commits. A
+    statement already as asked (put back while nothing is set aside, or set aside while it already is) is left
+    untouched and returns ``changed=False``.
     """
     from sqlalchemy import select
     from postgres.models.case import Case
@@ -190,12 +192,21 @@ def decide(session, *, case_id, evidence_file_id, statement_id=None, action, act
         EvidenceFile.case_id == case_id).with_for_update().execution_options(populate_existing=True))
     if file is None:
         raise PdfMappingError('Statement not found in this case.', 404)
+    from services.financial.statement_import import read_statement_import
+    before = read_statement_import(session, case_id=case_id, evidence_file_id=file.id, statement_id=statement_id,
+                                   _include_duplicate_disposition=False)
+    if bool(before.get('not_payment_statement')) == (action == 'set_aside'):
+        # Already as asked (a put-back of a statement nobody set aside, or a second set-aside): nothing is written
+        # and nothing is recorded as a person's change.
+        session.rollback()
+        return dict(case_id=str(case_id), evidence_file_id=str(file.id), statement_id=statement_id,
+                    not_payment_statement=before.get('not_payment_statement'), changed=False,
+                    decision={key: value for key, value in (decision(file, statement_id) or {}).items() if key != 'history'})
     if action == 'restore':
         _persist(file, statement_id, 'restored', actor, reason.strip() or 'Put back for review by the investigator.')
     else:
         _persist(file, statement_id, 'set_aside', actor, reason.strip() or 'Set aside again by the investigator.')
     session.flush()
-    from services.financial.statement_import import read_statement_import
     proposal = read_statement_import(session, case_id=case_id, evidence_file_id=file.id, statement_id=statement_id,
                                      _include_duplicate_disposition=False)
     if action == 'set_aside' and not proposal.get('not_payment_statement'):
@@ -205,7 +216,7 @@ def decide(session, *, case_id, evidence_file_id, statement_id=None, action, act
     from services.financial.import_batches import refresh_file_readiness
     refresh_file_readiness(session, case_id=case_id, file_id=file.id, statement_key=statement_id or '')
     return dict(case_id=str(case_id), evidence_file_id=str(file.id), statement_id=statement_id,
-                not_payment_statement=proposal.get('not_payment_statement'),
+                not_payment_statement=proposal.get('not_payment_statement'), changed=True,
                 decision={key: value for key, value in (decision(file, statement_id) or {}).items() if key != 'history'})
 
 
