@@ -13,7 +13,7 @@ export function BatchProgressSummary({
   assigned,
   onSelect,
 }: {
-  files: { status: string }[]
+  files: { status: string; set_aside?: string | null }[]
   summary?: BatchStatementSummary
   available: number
   imported: number
@@ -36,8 +36,12 @@ export function BatchProgressSummary({
     ["Other reviews", summary?.other],
   ]
   const read = files.filter((file) => file.status === "checked").length
-  const failed = files.filter((file) => file.status === "error").length
-  const unread = files.length - read
+  const failed = files.filter((file) => file.status === "error" && !file.set_aside).length
+  // Files removed from Financial (or gone from the case) are not reading work, as in the review queue: named, not
+  // counted as "still need reading" (d5b330d1 batch 30231f0a: 208 of its 214 unread files, 1 Nov).
+  const removed = files.filter((file) => file.status !== "checked" && file.set_aside === "removed").length
+  const gone = files.filter((file) => file.status !== "checked" && file.set_aside === "gone").length
+  const unread = files.length - read - removed - gone
   return (
     <section
       aria-label="Batch progress"
@@ -51,6 +55,8 @@ export function BatchProgressSummary({
             {summary.available + summary.blocked} prepared reviews still to
             finish
             {unread > 0 && ` · ${unread} files still need reading`}
+            {removed > 0 && ` · ${removed} ${removed === 1 ? "file" : "files"} removed from Financial`}
+            {gone > 0 && ` · ${gone} ${gone === 1 ? "file" : "files"} no longer in the case`}
           </p>
           <ProgressBar
             parts={[
@@ -113,6 +119,7 @@ export function BatchProgressSummary({
         <p>
           {read} of {files.length} files read
           {failed ? ` · ${failed} need a reading check` : ""}
+          {removed + gone ? ` · ${removed + gone} set aside (removed from Financial or no longer in the case)` : ""}
         </p>
         <p className="text-sm text-muted-foreground">
           One PDF can contain several accounts or statement periods. Reading

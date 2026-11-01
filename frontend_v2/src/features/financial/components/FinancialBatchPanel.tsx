@@ -150,6 +150,8 @@ const batchSchema = z.object({
       last_checked_at: z.string().optional(),
       recovery: recoveryReceipt.nullish(),
       recheck: z.object({ reason: z.string() }).passthrough().nullish(),
+      /** A file that could not be read and is not reading work: removed from Financial, or no longer in the case. */
+      set_aside: z.enum(["removed", "gone"]).nullish(),
     })
   ),
   counts: z.record(z.string(), z.number()),

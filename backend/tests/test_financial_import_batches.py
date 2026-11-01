@@ -556,6 +556,50 @@ class BatchImportTests(TestCase):
         with self.assertRaisesRegex(PdfMappingError, 'different values'):
             service.confirm_review(**{**args, 'request': StatementReviewDraft.model_validate(changed)})
 
+    def test_a_statement_saved_from_an_identical_file_is_shown_saved_not_offered_again(self):
+        # d5b330d1 batch 30231f0a (1 Nov): '3 prepared reviews ready · 76 transactions to import' while the review
+        # queue held nothing to save: the 3 were byte-identical copies of statements other files had saved.
+        from postgres.models.financial import FinancialSourceDocument as Source
+        batch = self.create(); self.advance(batch)
+        self.assertEqual(self.status(batch)['available_statements'], 1)
+        receipt = self.f.confirm(service.initial_request(self.f.preview()))
+        copy = self.f.evidence(self.f.file.sha256)
+        self.f.db.commit()
+        with self.f.SessionLocal() as db:
+            # The saved statement belongs to the other file of the same bytes, as if saved from its own batch.
+            db.get(Source, UUID(receipt['source_document_id'])).evidence_file_id = copy.id
+            db.commit()
+        shown = self.status(batch)
+        self.assertEqual(shown['available_statements'], 0, shown)
+        self.assertEqual(shown['available_transactions'], 0)
+        self.assertEqual(shown['statement_summary']['imported'], 1, (shown['items'][0]['status'], shown['statement_summary'], shown['items'][0].get('problems')))
+        self.assertEqual(shown['items'][0]['status'], 'imported')
+        self.assertEqual(shown['items'][0]['source_document_id'], receipt['source_document_id'])
+        self.assertEqual(shown['items'][0]['saved_from_file_id'], str(copy.id))
+        with self.f.SessionLocal() as db:
+            # The batch's own record is not changed: the projection only shows it.
+            self.assertIn(db.get(Item, UUID(shown['items'][0]['id'])).status, ('ready', 'attention'))
+            # Removed from Financial: the copy no longer counts as saved, and the statement is offered again.
+            source = db.get(Source, UUID(receipt['source_document_id']))
+            source.metadata_ = {**source.metadata_, 'financial_import_removal': {'removed_at': '2026-11-01T00:00:00Z'}}
+            db.commit()
+        self.assertNotEqual(self.status(batch)['items'][0].get('saved_from_file_id'), str(copy.id))
+
+    def test_a_failed_file_removed_from_financial_is_marked_set_aside_not_left_to_read(self):
+        # d5b330d1 batch 30231f0a (1 Nov): '214 files still need reading' while the review queue counted 208 of them
+        # as removed from Financial.
+        batch = self.create()
+        with self.f.SessionLocal() as db:
+            saved = db.get(Batch, batch)
+            saved.files = [{**saved.files[0], 'status': 'error', 'error': 'Reading failed'}]
+            db.commit()
+        self.assertNotIn('set_aside', self.status(batch)['files'][0])
+        with self.f.SessionLocal() as db:
+            file = db.get(EvidenceFile, self.f.file.id)
+            file.metadata_ = {**(file.metadata_ or {}), 'financial_file_visibility': {'removed': True}}
+            db.commit()
+        self.assertEqual(self.status(batch)['files'][0]['set_aside'], 'removed')
+
     def test_individual_import_updates_an_older_batch_without_resaving_its_bad_draft(self):
         from services.financial.batch_transaction_scope import imported_batch_scope
         batch = self.create(); self.advance(batch)

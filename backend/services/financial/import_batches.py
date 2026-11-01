@@ -1253,7 +1253,50 @@ def _auto_save_hold(session, case_id, item, summary, file, ledger):
     return dict(reason=held[0], sentence=held[1]) if held else None
 
 
+def _saved_from_other_files(session, case_id, projected, files):
+    """The projection with every prepared statement (ready or attention) whose exact bytes and statement are already
+    saved in this case from another file shown as that saved statement: 'imported', not offered for saving again.
+
+    The review queue's rule (anything saved is never queue work: review_queue._saved_scopes, the same scopes,
+    removals and empty shells included). d5b330d1 batch 30231f0a showed '3 prepared reviews ready · 76 transactions
+    to import' while the queue held nothing to save: the 3 were byte-identical copies of statements two other files
+    had saved (19, 0 and 57 payments), 2026-11-01. A copy saved from the same file is left to its own receipt."""
+    open_items = [entry for entry in projected if entry[1] in ('ready', 'attention') and files.get(entry[0].file_id) is not None]
+    if not open_items:
+        return projected
+    from services.financial.review_queue import _saved_scopes
+    _, saved = _saved_scopes(session, case_id)
+    matches = {}
+    for item, _, _, _, _ in open_items:
+        scope = (files[item.file_id].sha256, item.statement_key or '')
+        saved_file = saved.get(scope)
+        if saved_file is not None and saved_file != item.file_id:
+            matches[item.id] = (saved_file, *scope)
+    if not matches:
+        return projected
+    from postgres.models.financial import FinancialSourceDocument as Source
+    sources = {}
+    for source_id, file_id, sha, key, removal in session.execute(select(Source.id, Source.evidence_file_id,
+            Source.sha256_at_ingestion, Source.metadata_['statement_import_statement_id'].as_string(),
+            Source.metadata_['financial_import_removal']).where(
+            Source.case_id == case_id, Source.status == 'admitted', Source.document_type == 'statement_review',
+            Source.evidence_file_id.in_({saved_file for saved_file, _, _ in matches.values()}))):
+        if not removal:
+            sources.setdefault((file_id, sha, key or ''), []).append(source_id)
+    result = []
+    for entry in projected:
+        item, state, summary, request, rest = entry
+        found = sources.get(matches.get(item.id), []) if item.id in matches else []
+        if len(found) != 1:
+            result.append(entry)
+            continue
+        result.append((item, 'imported', {**summary, 'can_import': False, 'source_document_id': str(found[0]),
+                       'saved_from_file_id': str(matches[item.id][0])}, request, rest))
+    return result
+
+
 def _finish_projection(session, case_id, projected, files):
+    projected = _saved_from_other_files(session, case_id, projected, files)
     # A ready item may have been imported through its individual review. Resolve
     # all such receipts together rather than querying its saved rows per item.
     from services.financial.batch_import_history import current_imports
@@ -1790,6 +1833,14 @@ def _batch_view(session, case_id, batch_id, batch, items, *, offset, limit, only
     file_ids = {UUID(f['file_id']) for f in batch.files if f.get('file_id')}
     job_ids = list(session.scalars(select(EvidenceFile.engine_job_id).where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(file_ids), EvidenceFile.engine_job_id.is_not(None)))) if file_ids else []
     files = project_batch_files(batch.files, available_batch_references(session, case_id, batch.files))
+    # A file that failed and was since removed from Financial (or left the case) is not reading work, as the review
+    # queue counts it ('removed files'); the page names it instead of counting it as still to read.
+    from services.financial.review_queue import _set_aside_reason
+    for file in files:
+        if file.get('status') == 'error':
+            reason = _set_aside_reason(session, case_id, file)
+            if reason:
+                file['set_aside'] = reason
     from services.financial.batch_file_overview import file_overview
     return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=files,counts=counts, reading_job_ids=job_ids,
         statement_summary=statement_summary(items), file_overview=file_overview(items),

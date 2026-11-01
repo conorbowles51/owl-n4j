@@ -157,3 +157,26 @@ it("draws one progress bar whose legend carries every non-zero count as text", (
     "Left unimported or ignored: 3",
   ])
 })
+
+it("names files removed from Financial instead of counting them as still to read, as the review queue does", () => {
+  // d5b330d1 batch 30231f0a (1 Nov): '214 files still need reading' while the queue counted 208 of them as removed.
+  render(
+    <BatchProgressSummary
+      files={[
+        ...Array.from({ length: 5 }, () => ({ status: "error", set_aside: "removed" })),
+        { status: "error", set_aside: "gone" },
+        { status: "error" },
+        { status: "checked" },
+      ]}
+      summary={{ ...summary, total: 1, available: 0, blocked: 0, imported: 1, available_no_activity: 0 }}
+      available={0}
+      imported={1}
+      pending={0}
+      skipped={0}
+      duplicates={0}
+      assigned={0}
+    />
+  )
+  expect(screen.getByText(/1 files still need reading · 5 files removed from Financial · 1 file no longer in the case/)).toBeVisible()
+  expect(screen.getByText(/1 of 8 files read · 1 need a reading check · 6 set aside/)).toBeVisible()
+})
