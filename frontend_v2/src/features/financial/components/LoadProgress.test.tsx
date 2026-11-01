@@ -229,3 +229,43 @@ it("keeps the bar's position when the same opening is shown again in another pla
   act(() => vi.advanceTimersByTime(100))
   expect(Number(screen.getByRole("progressbar").getAttribute("aria-valuenow"))).toBeGreaterThanOrEqual(shown)
 })
+
+it("a panel mounted again for an opening that has closed counts afresh: no save, no 'last time', no old elapsed", async () => {
+  const client = new QueryClient()
+  const since = performance.now()
+  const first = render(
+    <QueryClientProvider client={client}>
+      <LoadProgress caseId="case-1" page="case/graph" since={since} />
+    </QueryClientProvider>
+  )
+  const id = startRequest("/api/graph?case_id=case-1")
+  act(() => vi.advanceTimersByTime(1000))
+  act(() => endRequest(id, null))
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600)
+  })
+  const saved = localStorage.getItem("loupe:view-load-ms:case-1:case/graph")
+  expect(Number(saved)).toBeGreaterThan(0)
+  first.unmount()
+  // Minutes later the graph is switched from 3D back to 2D and a large graph is arranged again.
+  act(() => vi.advanceTimersByTime(300000))
+  const again = (done: number | null) => (
+    <QueryClientProvider client={client}>
+      <LoadProgress caseId="case-1" page="case/graph" since={since} work={done === null ? null : { step: "Arranging 600 nodes", done, total: 50 }} />
+    </QueryClientProvider>
+  )
+  const second = render(again(0))
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1100)
+  })
+  const text = screen.getByRole("status").textContent ?? ""
+  expect(text).toMatch(/Arranging 600 nodes: step 0 of 50/)
+  expect(text).not.toMatch(/last time/)
+  expect(text).toMatch(/· 1 s/)
+  expect(Number(screen.getByRole("progressbar").getAttribute("aria-valuenow"))).toBeLessThan(50)
+  second.rerender(again(null))
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600)
+  })
+  expect(localStorage.getItem("loupe:view-load-ms:case-1:case/graph")).toBe(saved)
+})

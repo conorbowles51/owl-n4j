@@ -310,14 +310,26 @@ it("keeps an unknown-type quiet account under All and does not offer a filter un
   ).not.toBeInTheDocument()
 })
 
-it("groups the profiles in their own task after the payments are drawn, saying so, never showing an old list's profiles", async () => {
+it("groups the profiles in their own task after the payments and directory are drawn, saying so meanwhile", async () => {
   setup.rows = [
     { ...paymentFixture, key: "own", account_id: accounts[0].id, account_holder_parties: [party] },
   ]
-  renderPeople()
-  // The directory has loaded and the payments are on screen; the grouping has not run inside that render.
-  expect(await screen.findByText("Grouping 1 payment by name and account…")).toBeInTheDocument()
-  expect(screen.queryByRole("button", { name: /Reviewed account holder Example Holder/ })).not.toBeInTheDocument()
+  const view = renderPeople()
+  // Every state the page is drawn in, as the person would see it.
+  const drawn: { grouping: boolean; profile: boolean }[] = []
+  const observer = new MutationObserver(() =>
+    drawn.push({
+      grouping: (view.container.textContent ?? "").includes("Grouping 1 payment by name and account…"),
+      profile: !!screen.queryByRole("button", { name: /Reviewed account holder Example Holder/ }),
+    })
+  )
+  observer.observe(view.container, { subtree: true, childList: true, characterData: true })
   expect(await screen.findByRole("button", { name: /Reviewed account holder Example Holder/ })).toBeInTheDocument()
+  observer.disconnect()
+  // The render that first shows the loaded directory and payments says it is grouping; the profiles come after.
+  const first = drawn.findIndex((state) => state.grouping)
+  expect(first).toBeGreaterThanOrEqual(0)
+  expect(drawn[first].profile).toBe(false)
+  expect(drawn.findIndex((state) => state.profile)).toBeGreaterThan(first)
   expect(screen.queryByText(/Grouping .* by name and account/)).not.toBeInTheDocument()
 })

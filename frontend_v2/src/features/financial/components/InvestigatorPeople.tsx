@@ -164,31 +164,55 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
   // Grouped in its own task after the page has drawn, not inside the render that first shows the payments: on
   // d5b330d1 that render was one 0.45-0.8 s step (paymentProfiles 193 ms of it; fin-speed sourcemapped profile,
   // 2026-11-01), as Follow money's grouping was before it moved out (378d70a9). Until the profiles for this row
-  // list and directory are worked out the list says so; profiles of an older row list are never shown for a new one.
+  // list and directory are worked out the list says so.
   const directoryAccounts = directory.data?.accounts
   const [grouped, setGrouped] = useState<{
     rows: typeof scopedRows
     accounts: typeof directoryAccounts
     profiles: ReturnType<typeof paymentProfiles>
+    error?: unknown
   } | null>(null)
-  const ready =
-    grouped !== null &&
-    grouped.rows === scopedRows &&
-    grouped.accounts === directoryAccounts
+  // Only the first grouping waits for its own task (that is the render that first shows the payments). Later
+  // changes (a currency filter, a refetch) group in the render as before, so the filters stay on screen.
+  // With no payments there is nothing slow to wait for: the directory's accounts are grouped in the render.
+  const inputsLoaded = data.complete && directory.isSuccess
+  const deferFirst = scopedRows.length > 0
+  const ready = grouped !== null || !deferFirst
+  const regrouped = useMemo(
+    () =>
+      grouped === null
+        ? deferFirst
+          ? null
+          : paymentProfiles(scopedRows, directoryAccounts)
+        : grouped.error !== undefined
+          ? null
+        : grouped.rows === scopedRows && grouped.accounts === directoryAccounts
+          ? grouped.profiles
+          : paymentProfiles(scopedRows, directoryAccounts),
+    [grouped, deferFirst, scopedRows, directoryAccounts]
+  )
+  // The first grouping waits for every payment and the account directory, so it is the one that matters.
   useEffect(() => {
-    if (ready) return
-    const timer = setTimeout(
-      () =>
-        setGrouped({
+    if (ready || !inputsLoaded) return
+    const timer = setTimeout(() => {
+      // A failure is raised in the render, as it was when grouping ran there (the page's error boundary shows it),
+      // never left as "Grouping…" for ever.
+      let next: NonNullable<typeof grouped>
+      try {
+        next = {
           rows: scopedRows,
           accounts: directoryAccounts,
           profiles: paymentProfiles(scopedRows, directoryAccounts),
-        }),
-      0
-    )
+        }
+      } catch (error) {
+        next = { rows: scopedRows, accounts: directoryAccounts, profiles: NO_PROFILES, error: error ?? Error("Grouping failed") }
+      }
+      setGrouped(next)
+    }, 0)
     return () => clearTimeout(timer)
-  }, [ready, scopedRows, directoryAccounts])
-  const profiles = ready ? grouped.profiles : NO_PROFILES
+  }, [ready, inputsLoaded, scopedRows, directoryAccounts])
+  if (grouped?.error !== undefined) throw grouped.error
+  const profiles = regrouped ?? NO_PROFILES
   const total = (rows: typeof data.rows) =>
     rows.reduce((sum, row) => sum + (minorAmount(row.amount_minor) ?? 0n), 0n)
   const selectedAccount = view.selected.startsWith("account:")
