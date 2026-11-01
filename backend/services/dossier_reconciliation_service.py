@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from postgres import link_types
 from postgres.models.case_profile import CaseProfile
 from postgres.models.dossier import (
     DossierInterview, DossierInterviewEvidenceLink, DossierLegacyMapping,
@@ -80,7 +81,8 @@ def build_dossier_reconciliation_report(
     interview_evidence_query = (
         select(DossierInterviewEvidenceLink, DossierInterview, EvidenceFile)
         .join(DossierInterview, DossierInterview.id == DossierInterviewEvidenceLink.interview_id)
-        .join(EvidenceFile, EvidenceFile.id == DossierInterviewEvidenceLink.evidence_file_id)
+        # Outer join: interview evidence can be a phone record, analysis or statement check with no evidence file.
+        .outerjoin(EvidenceFile, EvidenceFile.id == DossierInterviewEvidenceLink.evidence_file_id)
     )
     covers_query = select(DossierMedia.dossier_id, func.count()).where(
         DossierMedia.is_cover.is_(True)
@@ -103,9 +105,32 @@ def build_dossier_reconciliation_report(
             evidence = None
         if evidence is None or evidence.case_id != link.case_id:
             errors.append({"kind": "invalid_evidence_link", "id": str(link.id)})
+    interview_evidence_targets: list[dict[str, Any]] = []
     for link, interview, evidence in db.execute(interview_evidence_query):
-        if link.case_id != interview.case_id or link.case_id != evidence.case_id:
+        if link.evidence_file_id is not None:
+            if evidence is None or link.case_id != interview.case_id or link.case_id != evidence.case_id:
+                errors.append({"kind": "cross_case_interview_evidence", "id": str(link.id)})
+            continue
+        # A target row (phone record, phone analysis, statement check) is reported by type and id and checked
+        # against the case where its type can be checked here; one that cannot is reported as unchecked.
+        target = {"id": str(link.id), "target_type": link.target_type, "target_id": link.target_id,
+                  "checked": False}
+        interview_evidence_targets.append(target)
+        if link.case_id != interview.case_id:
             errors.append({"kind": "cross_case_interview_evidence", "id": str(link.id)})
+            continue
+        if not link.target_type or not link.target_id:
+            errors.append({"kind": "invalid_interview_evidence_target", "id": str(link.id)})
+            continue
+        if not link_types.has_phone_resolver(link.target_type):
+            continue
+        try:
+            link_types.resolve_phone_target(db, link.case_id, link.target_type, link.target_id)
+        except link_types.PhoneLinkUnavailable:
+            continue
+        except link_types.LinkTargetError:
+            errors.append({"kind": "invalid_interview_evidence_target", "id": str(link.id)})
+        target["checked"] = True
     multiple_covers = [
         {"dossier_id": str(dossier_id), "count": count}
         for dossier_id, count in db.execute(
@@ -125,6 +150,9 @@ def build_dossier_reconciliation_report(
         "duplicate_active_entity_claims": len(duplicate_active),
         "integrity_errors": len(errors),
         "multiple_cover_errors": len(multiple_covers),
+        "interview_evidence_targets": dict(sorted(Counter(
+            str(row["target_type"]) for row in interview_evidence_targets).items())),
+        "interview_evidence_targets_unchecked": sum(not row["checked"] for row in interview_evidence_targets),
     }
     return {
         "scope": {"case_id": str(case_id) if case_id else None},
@@ -134,6 +162,7 @@ def build_dossier_reconciliation_report(
         "missing_witness_mappings": missing_witness_mappings,
         "integrity_errors": errors,
         "multiple_cover_errors": multiple_covers,
+        "interview_evidence_targets": interview_evidence_targets,
         "passed": all(summary[key] == 0 for key in (
             "invalid_profile_mappings", "missing_witness_mappings", "unrepointed_witness_links",
             "duplicate_active_entity_claims", "integrity_errors", "multiple_cover_errors",

@@ -109,6 +109,38 @@ def test_the_database_requires_exactly_one_of_file_or_target(setup_db):
             db.rollback()
 
 
+def test_reconciliation_reports_phone_record_interview_evidence_beside_file_evidence(setup_db, phone):
+    """An interview with one evidence file and one phone record: both are reconciled; the record by type and id."""
+    from services.dossier_reconciliation_service import build_dossier_reconciliation_report
+
+    from postgres.models.workspace import WorkspaceWitness
+    from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
+
+    factory, user_id, case_id, image_id, *_ = setup_db
+    with factory() as db:
+        for table in (WorkspaceWitness.__table__, WorkspaceEntry.__table__, WorkspaceEntryLink.__table__):
+            table.create(db.get_bind(), checkfirst=True)
+        user = db.get(User, user_id)
+        _, interview = _interview(db, case_id, user, [
+            {"evidence_file_id": image_id},
+            {"target_type": "phone_record", "target_id": "msg-1"},
+        ])
+        record_link = interview["evidence_links"][1]
+        report = build_dossier_reconciliation_report(db, case_id=case_id)
+        assert report["summary"]["interview_evidence_targets"] == {"phone_record": 1}
+        assert report["summary"]["interview_evidence_targets_unchecked"] == 0
+        assert report["interview_evidence_targets"] == [
+            {"id": record_link["id"], "target_type": "phone_record", "target_id": "msg-1", "checked": True}]
+        assert report["integrity_errors"] == []
+
+        # A record that no longer resolves in the case is an integrity error, not left out.
+        link_types.unregister_phone_resolver("phone_record")
+        link_types.register_phone_resolver("phone_record", lambda db, case, target_id: None)
+        report = build_dossier_reconciliation_report(db, case_id=case_id)
+        assert report["integrity_errors"] == [{"kind": "invalid_interview_evidence_target", "id": record_link["id"]}]
+        assert report["passed"] is False
+
+
 @pytest.mark.skipif(not os.environ.get("DOSSIER_TEST_DATABASE_URL"), reason="Requires an explicit local PostgreSQL test connection")
 def test_migration_keeps_every_existing_row_and_counts_them(capsys):
     from alembic.migration import MigrationContext
