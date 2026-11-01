@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
 import type { CaseMember, CasePermissions } from "@/types/case.types"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { isSuperAdminUser } from "@/features/auth/auth.types"
 
 function useMyMembership(caseId: string | undefined) {
   return useQuery({
@@ -18,7 +19,7 @@ export function usePermissions(
 ): CasePermissions {
   const { data: membership } = useMyMembership(caseId)
   const user = useAuthStore((s) => s.user)
-  const isSuperAdmin = user?.role === "admin"
+  const isSuperAdmin = isSuperAdminUser(user)
 
   return useMemo(() => {
     const role = membership?.role ?? membership?.preset

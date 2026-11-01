@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import type { Case, CasePermissions } from "@/types/case.types"
+import { isSuperAdminUser } from "@/features/auth/auth.types"
 
 export function useCasePermissions(selectedCase: Case | undefined): CasePermissions {
   const user = useAuthStore((s) => s.user)
@@ -17,7 +18,7 @@ export function useCasePermissions(selectedCase: Case | undefined): CasePermissi
       }
     }
 
-    const isSuperAdmin = user.role === "super_admin" || user.global_role === "super_admin"
+    const isSuperAdmin = isSuperAdminUser(user)
     const isOwner = selectedCase.is_owner
     const role = selectedCase.user_role
     const canEdit = isOwner || role === "editor" || role === "admin_access" || isSuperAdmin

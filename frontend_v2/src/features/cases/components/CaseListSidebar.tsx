@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { useArchiveCase, useCases, useUnarchiveCase } from "../hooks/use-cases"
 import { useCaseManagementStore } from "../case-management.store"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { isSuperAdminUser } from "@/features/auth/auth.types"
 import { CaseListItem } from "./CaseListItem"
 import { CreateCaseDialog } from "./CreateCaseDialog"
 import type { Case } from "@/types/case.types"
@@ -30,8 +31,7 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
   const { selectedCaseId, setSelectedCaseId, viewMode, setViewMode, sortBy, setSortBy } =
     useCaseManagementStore()
   const user = useAuthStore((s) => s.user)
-  const isSuperAdmin =
-    user?.role === "super_admin" || user?.global_role === "super_admin"
+  const isSuperAdmin = isSuperAdminUser(user)
 
   const { data: cases, isLoading } = useCases(
     isSuperAdmin ? viewMode : undefined,

@@ -27,3 +27,11 @@ export interface AuthState {
   user: User | null
   token: string | null
 }
+
+/**
+ * A super admin as the server decides it (services/case_service.is_super_admin: global role super_admin). /auth/me
+ * sends the global role as ``role``; a stored session may carry ``global_role``. An "admin" is not a super admin.
+ */
+export function isSuperAdminUser(user: Pick<User, "role" | "global_role"> | null | undefined) {
+  return user?.role === "super_admin" || user?.global_role === "super_admin"
+}
