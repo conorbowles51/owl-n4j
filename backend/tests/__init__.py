@@ -35,3 +35,10 @@ _throwaway_dir('LOUPE_PAGE_CACHE_DIR', 'loupe-page-cache-tests-')
 # one: run as the service's user, that is the live service's directory. Set, not defaulted, like the page cache: a
 # shell exporting the live directory must not reach it. A test that sets the variable itself still wins.
 _throwaway_dir('FINANCIAL_VIEW_MEMO_DIR', 'loupe-test-view-memo-')
+
+# The lessons inboxes (services/manual_changes.py, services/financial/judgement_inbox.py) are read by live jobs: a
+# test that records a change must never write the real files. Set, not defaulted, like the directories above.
+_throwaway_dir('LOUPE_LESSON_INBOX_DIR', 'loupe-test-lesson-inbox-')
+os.environ['LOUPE_MANUAL_CHANGE_INBOX'] = os.path.join(os.environ['LOUPE_LESSON_INBOX_DIR'], 'MANUAL-CHANGES.jsonl')
+os.environ['LOUPE_FINANCIAL_JUDGEMENT_INBOX'] = os.path.join(os.environ['LOUPE_LESSON_INBOX_DIR'],
+                                                             'JUDGEMENT-CORRECTIONS.md')

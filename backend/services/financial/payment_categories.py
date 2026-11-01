@@ -204,7 +204,6 @@ def _append_to_inbox(session, judgement):
     # One failed append never stops the next call being marked corrected; the watchdog's sync adds the line later
     # and the status board shows any correction still missing from the inbox. The line is written only once the
     # correction is committed: a correction rolled back (the person's save refused) never reaches the lessons job.
-    from sqlalchemy import event
     try:
         from services.financial.judgement_inbox import _statement
         from services.financial.judgements import as_dict
@@ -214,25 +213,9 @@ def _append_to_inbox(session, judgement):
         log.exception('Reading judgement correction %s for the lessons inbox failed', judgement.id)
         return
 
-    settled = []
-
-    def committed(_session):
-        if settled:
-            return
-        settled.append('committed')
-        event.remove(session, 'after_soft_rollback', rolled_back)  # not left on the session once settled
-        try:
-            from services.financial.judgement_inbox import append_correction
-            append_correction(session, item, statement=statement)
-        except Exception:  # noqa: BLE001
-            log.exception('Appending judgement correction %s to the lessons inbox failed', item['id'])
-
-    def rolled_back(_session, previous):
-        if not previous.nested:  # a savepoint rolled back inside the save leaves the correction standing
-            settled.append('rolled back')
-
-    event.listen(session, 'after_commit', committed, once=True)
-    event.listen(session, 'after_soft_rollback', rolled_back)
+    from services.manual_changes import record_judgement_correction
+    record_judgement_correction(session, item, statement, committed=False,
+                                actor=dict(name=judgement.resolved_by, email=judgement.resolved_by_email))
 
 
 def like_payments(session, case_id, transaction_id):

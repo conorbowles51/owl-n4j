@@ -161,8 +161,8 @@ def correct_judgement(judgement_id: UUID, body: Correct, case_id: UUID = Query(.
         db.rollback()
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     try:
-        from services.financial.judgement_inbox import append_correction
-        append_correction(db, result)
+        from services.manual_changes import record_judgement_correction
+        record_judgement_correction(db, result, committed=True, actor=current_user)
     except Exception:  # noqa: BLE001 - the inbox is refreshed by its periodic script too
         logger.exception('Appending judgement correction %s to the lessons inbox failed', judgement_id)
     return result
