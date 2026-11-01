@@ -119,7 +119,7 @@ function ViewLoadProgress({ caseId, page }: { caseId: string; page: string }) {
     // All bytes are in: time left only from the measured rate of rows unpacked so far (none while the rows are
     // still being found, as there is no rate yet to go on).
     const spent = now - view.unpack.started
-    if (view.unpack.unit === "rows" && view.unpack.done > 0 && spent > 0) {
+    if (view.unpack.unit === "rows" && view.unpack.done > 0 && view.unpack.done < view.unpack.total && spent > 0) {
       const remaining = ((view.unpack.total - view.unpack.done) * spent) / view.unpack.done
       if (Number.isFinite(remaining)) left = `about ${seconds(remaining)} s left for this part`
     }

@@ -141,4 +141,9 @@ it("estimates time left while unpacking only from the measured rate of rows, nev
   // At the redraw 2.5 s after rows started, 5,000 done: 15,000 left at that rate is 7.5 s, shown as about 8 s.
   expect(screen.getByRole("status").textContent).toMatch(/5,000 of 20,000 rows unpacked/)
   expect(screen.getByRole("status").textContent).toMatch(/about 8 s left for this part/)
+  // Every row unpacked, page still drawing: nothing is left to estimate.
+  act(() => unpackProgress(id, 20000, 20000, "rows"))
+  act(() => vi.advanceTimersByTime(500))
+  expect(screen.getByRole("status").textContent).toMatch(/20,000 of 20,000 rows unpacked/)
+  expect(screen.getByRole("status").textContent).not.toMatch(/left/)
 })
