@@ -6,7 +6,6 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { CaseLayout } from "./CaseLayout"
 import { AREAS, CASE_VIEWS } from "@/lib/areas"
-import { Inbox } from "lucide-react"
 import { EmptyState } from "@/components/ui/empty-state"
 
 vi.mock("@/components/ui/resizable", () => ({
@@ -39,7 +38,7 @@ function renderAt(url: string) {
     <MemoryRouter initialEntries={[url]}>
       <Routes>
         <Route path="/cases/:id" element={<CaseLayout />}>
-          <Route path="*" element={<EmptyState title="Nothing here yet" icon={Inbox} />} />
+          <Route path="*" element={<EmptyState title="Nothing here yet" icon={() => <svg data-testid="icon" />} />} />
         </Route>
       </Routes>
     </MemoryRouter>
@@ -62,7 +61,7 @@ describe("case view area identity", () => {
       expect(header).toHaveTextContent(view.title)
       expect(header).toHaveTextContent(AREAS[view.area].label)
       expect(document.title).toBe(`${view.title} · Loupe`)
-      const tile = screen.getByText("Nothing here yet").closest("div.flex")!.querySelector("svg")!.parentElement!
+      const tile = screen.getByTestId("icon").parentElement!
       expect(tile).toHaveAttribute("data-area", view.area)
       expect(tile.className).toContain(`bg-area-${view.area}-soft`)
     })
