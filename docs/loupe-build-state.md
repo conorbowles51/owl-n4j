@@ -1,8 +1,10 @@
-## 2 November: phone interpretation, stage C in progress (cb-interpret)
+## 2 November: phone interpretation, stage D in progress (cb-interpret)
 
-Head `ceb741b1` (Needs a decision page), after `32c33ce4` (coverage, identities, phone decisions). Next: C6 timing
-with every worker hook and probe latency by phase (running, `/mnt/owl-data/tmp/cbi/ftime2.py`) into 02 decision 46;
-then P14, the C to D gate, and N to R (projection, thread text, corrections, 03 section 20 sizes, live check).
+Head `3bfc416a` (spec decisions 46 to 57), after `a69013c4` (identity links on the review page) and `984f6c2f`
+(graph layer, thread documents, corrections, resolvers, external processing). Next: P14 capture (running in
+container `cbi-cap-p14`, case `00000000-0000-0000-0000-0000000f1414` in scratch) then its timing with
+`/mnt/owl-data/tmp/cbi/ftime2.py` and its 20.2/20.3 numbers; then the C to D and D to E/F gate records, rebase onto
+`integration/evidence-main-reunion`, release, J-8a and the live check signed in.
 
 Branch `cb/cb-interpret`. Spec 02 units, in 06 order; each with its acceptance test.
 
@@ -76,6 +78,23 @@ Branch `cb/cb-interpret`. Spec 02 units, in 06 order; each with its acceptance t
   `tests/phone_pg.py` `make_case` writes the owner's membership as `create_case` does. `/root/venv` lacks
   `fitz` and `phonenumbers`: the financial suite there shows 10 + 2 import errors that are environment only (the
   cbi venv passes them).
+- **N, O, P and the rest of D (984f6c2f, a69013c4):** `graph_projection.py` (02 section 9: plan from PostgreSQL,
+  `apply` per case with every match labelled and case-scoped, marker node per case, stale managed rows removed,
+  a node with an investigator's note marked `phone_projection_orphaned` instead of deleted; `project_stale` after
+  each worker pass; `POST /api/phones/projection/rebuild`; `scripts/phone_projection_rebuild.py`). On a scratch case
+  holding C3 and C9 (C9 copied by `/mnt/owl-data/tmp/cbi/clone_ext.py`, check `n_corpus.py`), deleting C9 leaves all
+  703 C3 nodes and 1,756 relationships, no C9 key and no cross-case relationship. A party with the owner flag and no
+  identifier is the owner side (decision 57). `thread_text.py` writes one `phone_text` evidence file per thread part
+  (5,000 messages or 2M characters) with `phone_record` source locations; search hits carry `record_uid`; listings
+  (`visible_evidence_condition`) and evidence processing leave them out. 7 scratch phones: 6,772 documents, 105 s.
+  `corrections.py` and migration `20261102_phone_corrections` (value corrections and clock offsets as decisions;
+  generic reads the effective value; the chain stays). `resolvers.py` registers `phone_record`, `phone_thread`,
+  `phone_identity`. `external_processing.py` registers the check cb-capture asked for (system owner decides per
+  report, typed reason). Email threads by header (`comms.header_thread_root`). Interpreter version names the
+  installed stages (decision 56). Page: identity link group, `?decision=link_phone_identity&identity=<key>`.
+  C6 full pass with every stage: 2,068 s, WAL 9,493 MB, probe p95 by phase in decision 46. 03 section 20.2/20.3/20.9
+  measured (`scripts/phone_measure_section20.py`). Scratch Neo4j `cbi-n4j` on 127.0.0.1:57687 for the write tests
+  (`LOUPE_TEST_NEO4J_URI`, `LOUPE_TEST_NEO4J_PASSWORD`). Phone suite 190 passed, 2 skipped (14m48s).
 - **Tests:** `tests/test_phone_body_values.py`, `tests/test_phone_registry_seed.py`, `tests/test_phone_registry_observe.py`, `tests/test_phone_generic.py`, `tests/test_phone_mappings.py`, `tests/test_phone_sweep_runtime.py`, `tests/test_phone_fold.py`, `tests/test_phone_identifiers.py`; PostgreSQL ones opt-in through
   `LOUPE_TEST_PHONE_PG_TEMPLATE_URL` (a database at the head; each test gets a fresh copy) and
   `LOUPE_TEST_PHONE_PG_URL` (captured extractions, rolled back), helper `tests/phone_pg.py`.
