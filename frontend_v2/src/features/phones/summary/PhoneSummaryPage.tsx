@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
+import { ReviewCoverage } from "./ReviewCoverage"
 import { Link, useParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { CopyButton } from "@/components/ui/copy-button"
@@ -199,6 +200,9 @@ export function PhoneSummaryPage() {
         )}
       </Section>
 
+      <Section name="Review coverage">
+        <ReviewCoverage caseId={caseId} extraction={extraction} />
+      </Section>
       <Section name="Whose phone">
         <p>{p.owner.label && !p.owner.missing ? labelText(p.owner.label) : "No owner number was found."}</p>
         <p className="text-xs text-muted-foreground">{p.owner.missing ? "Person-level views stay off until an owner is set." : p.owner.words}</p>

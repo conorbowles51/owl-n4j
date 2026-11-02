@@ -6,7 +6,17 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import type { Profile } from "../schemas"
 
 /** Phone summary (03 section 7; 07 J-2, J-11, J-15) with the server stubbed. Synthetic data only. */
-const api = vi.hoisted(() => ({ getProfile: vi.fn(), setOwner: vi.fn(), setPhoneLabel: vi.fn() }))
+const api = vi.hoisted(() => ({
+  getProfile: vi.fn(), setOwner: vi.fn(), setPhoneLabel: vi.fn(),
+  getThreads: vi.fn().mockResolvedValue({
+    counts: { threads: 3, reviewed: 1, partly_reviewed: 1, not_reviewed: 2 },
+    items: [
+      { thread_key: "t1", title: "Synthetic thread", review: { by: "A Reviewer", at: "2023-03-14T00:00:00Z", record_count: 12, added_since: 3, words: "Reviewed by A Reviewer on Tuesday, March 14 (12 messages); 3 added since" } },
+      { thread_key: "t2", title: "Other", review: { by: "A Reviewer", at: "2023-03-14T00:00:00Z", record_count: 5, added_since: 0, words: "Reviewed by A Reviewer on Tuesday, March 14 (5 messages)" } },
+      { thread_key: "t3", title: "Third", review: null },
+    ],
+  }),
+}))
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
 
 import PhoneSummaryPage from "./PhoneSummaryPage"
@@ -88,6 +98,14 @@ describe("Phone summary", () => {
   beforeEach(() => {
     localStorage.clear()
     api.getProfile.mockResolvedValue(profile())
+  })
+
+  it("the review coverage counts partly reviewed threads and says what was added since (07 J-13b)", async () => {
+    page()
+    const box = await screen.findByRole("region", { name: "Review coverage" })
+    expect(await within(box).findByText("Not yet reviewed: 2 of 3 threads")).toBeInTheDocument()
+    expect(within(box).getByText("Reviewed: 1. Partly reviewed: 1.")).toBeInTheDocument()
+    expect(within(box).getByText(/\(12 messages\); 3 added since/)).toBeInTheDocument()
   })
 
   it("opens with the verdict, what needs a decision and the triage block (07 J-2)", async () => {

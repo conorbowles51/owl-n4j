@@ -257,3 +257,43 @@ export type Explanation = z.infer<typeof ExplanationSchema>
 export async function getFindingExplanation(caseId: string, entryId: string, signal?: AbortSignal) {
   return ExplanationSchema.parse(await fetchAPI(`/api/phones/findings/${encodeURIComponent(entryId)}/explain?${new URLSearchParams({ case_id: caseId })}`, { signal }))
 }
+
+export interface PhoneMapFilter {
+  phones?: string[]
+  source_kinds?: string[]
+  affiliations?: string[]
+  from_instant?: string | null
+  to_instant?: string | null
+  include_no_time?: boolean
+}
+export const PhoneMapSummarySchema = z.object({
+  case_id: z.string(),
+  positioned: z.number(),
+  total: z.number(),
+  not_positionable: z.array(z.object({ reason: z.string(), model_type: z.string(), count: z.number(), phones: z.number() })),
+  by_source: z.record(z.string(), z.number()),
+  bbox: z.array(z.number()).length(4).nullable(),
+})
+const PhoneMapPointSchema = z.object({
+  type: z.literal("point"), point_uid: z.string(), record_uid: z.string(), extraction_id: z.string(), phone_label: z.string(),
+  lat: z.number(), lon: z.number(), accuracy_m: z.number().nullable(), accuracy_words: z.string(), source_words: z.string(),
+  affiliation: z.string().nullable(), instant: z.string().nullable(), time: z.object({ full: z.string() }).passthrough().nullable(),
+  model_type: z.string(), flags: z.array(z.string()), deleted_state: z.string().nullable(),
+})
+const PhoneMapClusterSchema = z.object({ type: z.literal("cluster"), lat: z.number(), lon: z.number(), count: z.number(), bbox: z.array(z.number()) })
+export const PhoneMapPointsSchema = z.object({
+  case_id: z.string(), total: z.number(), clustered: z.boolean(),
+  items: z.array(z.union([PhoneMapPointSchema, PhoneMapClusterSchema])),
+  limits: z.array(z.object({ message: z.string() }).passthrough()),
+})
+export type PhoneMapSummary = z.infer<typeof PhoneMapSummarySchema>
+export type PhoneMapPoints = z.infer<typeof PhoneMapPointsSchema>
+export type PhoneMapItem = PhoneMapPoints["items"][number]
+
+/** The Map phone layer (03 section 13.2): never through /api/graph/locations. */
+export async function getPhoneMapSummary(caseId: string, filter: PhoneMapFilter = {}, signal?: AbortSignal) {
+  return PhoneMapSummarySchema.parse(await fetchAPI("/api/phones/map/summary", { method: "POST", body: { case_id: caseId, filter }, read: true, signal }))
+}
+export async function getPhoneMapPoints(caseId: string, bbox: number[], zoom: number, filter: PhoneMapFilter = {}, signal?: AbortSignal) {
+  return PhoneMapPointsSchema.parse(await fetchAPI("/api/phones/map/points", { method: "POST", body: { case_id: caseId, bbox, zoom, filter }, read: true, signal }))
+}

@@ -34,9 +34,16 @@ import { getVisibleLocations } from "../lib/visible-locations"
 import { boundsToClosedRing, type LngLatPoint } from "../lib/geometry"
 import { EntityPopup } from "./EntityPopup"
 import type { MapRef, MapLayerMouseEvent } from "react-map-gl/maplibre"
+import type { PhoneMapItem } from "@/features/phones/api"
 
 interface MapCanvasProps {
   locations: MapLocation[]
+  /** The phone layer's points and clusters (03 section 13), drawn apart from graph locations. */
+  phoneItems?: PhoneMapItem[]
+  /** Called with the viewport [w, s, e, n] and zoom after the map moves. */
+  onView?: (bbox: number[], zoom: number) => void
+  /** Fit to this [w, s, e, n] once when there are no graph locations to fit to. */
+  fitTo?: number[] | null
 }
 
 const LOCATION_INTERACTIVE_LAYER_IDS = [
@@ -76,7 +83,7 @@ function getPointDistance(a: ScreenPoint, b: ScreenPoint) {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
-export function MapCanvas({ locations }: MapCanvasProps) {
+export function MapCanvas({ locations, phoneItems, onView, fitTo }: MapCanvasProps) {
   const mapRef = useRef<MapRef>(null)
   const boxDragRef = useRef<BoxDragState | null>(null)
   const secondaryPanRef = useRef<SecondaryPanState | null>(null)
@@ -508,7 +515,20 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       onContextMenu={handleContextMenu}
-      onLoad={handleLoad}
+      onLoad={(e) => {
+        handleLoad()
+        const map = e.target
+        if (fitTo && locations.length === 0) {
+          const [w, s, ea, n] = fitTo
+          map.fitBounds([[w, s], [ea === w ? ea + 0.01 : ea, n === s ? n + 0.01 : n]], { padding: 60, maxZoom: 15, duration: 0 })
+        }
+        const b = map.getBounds()
+        onView?.([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], map.getZoom())
+      }}
+      onMoveEnd={(e) => {
+        const b = e.target.getBounds()
+        onView?.([Math.max(-180, b.getWest()), Math.max(-90, b.getSouth()), Math.min(180, b.getEast()), Math.min(90, b.getNorth())], e.target.getZoom())
+      }}
       attributionControl={false}
       interactiveLayerIds={drawMode ? [] : LOCATION_INTERACTIVE_LAYER_IDS}
     >
@@ -585,6 +605,27 @@ export function MapCanvas({ locations }: MapCanvasProps) {
         <Layer {...pointLayer} />
       </Source>
 
+      {/* Phone layer (03 section 13.3): a radius when accuracy is known, a dashed-looking hollow ring when not */}
+      {phoneItems && phoneItems.length > 0 && (
+        <Source id="phone-points" type="geojson" data={phoneGeoJSON(phoneItems)}>
+          <Layer id="phone-accuracy" type="circle" filter={["==", ["get", "has_accuracy"], true]} paint={{
+            "circle-radius": ["interpolate", ["exponential", 2], ["zoom"], 0, 0, 20, ["/", ["get", "accuracy_m"], 0.149]],
+            "circle-color": "#2563eb", "circle-opacity": 0.12, "circle-stroke-color": "#2563eb", "circle-stroke-width": 1,
+          }} />
+          <Layer id="phone-point" type="circle" filter={["==", ["get", "kind"], "point"]} paint={{
+            "circle-radius": 5,
+            "circle-color": ["case", ["get", "has_accuracy"], "#2563eb", "rgba(0,0,0,0)"],
+            "circle-stroke-color": "#2563eb", "circle-stroke-width": ["case", ["get", "has_accuracy"], 1, 2],
+            "circle-stroke-opacity": ["case", ["get", "has_accuracy"], 1, 0.7],
+          }} />
+          <Layer id="phone-cluster" type="circle" filter={["==", ["get", "kind"], "cluster"]} paint={{
+            "circle-radius": ["interpolate", ["linear"], ["get", "count"], 1, 10, 1000, 24],
+            "circle-color": "#2563eb", "circle-opacity": 0.6,
+          }} />
+          <Layer id="phone-cluster-count" type="symbol" filter={["==", ["get", "kind"], "cluster"]} layout={{ "text-field": ["get", "label"], "text-size": 11 }} paint={{ "text-color": "#fff" }} />
+        </Source>
+      )}
+
       {/* Proximity circle */}
       {proximityCircle && (
         <Source id="proximity-circle" type="geojson" data={proximityCircle}>
@@ -607,4 +648,17 @@ export function MapCanvas({ locations }: MapCanvasProps) {
       )}
     </Map>
   )
+}
+
+function phoneGeoJSON(items: PhoneMapItem[]): GeoJSON.FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: items.map((i) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [i.lon, i.lat] },
+      properties: i.type === "point"
+        ? { kind: "point", has_accuracy: i.accuracy_m !== null, accuracy_m: i.accuracy_m ?? 0, label: i.phone_label }
+        : { kind: "cluster", has_accuracy: false, count: i.count, label: i.count.toLocaleString("en-US") },
+    })),
+  }
 }

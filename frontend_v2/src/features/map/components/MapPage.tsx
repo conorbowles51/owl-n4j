@@ -1,4 +1,7 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
+import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { getPhoneMapPoints, getPhoneMapSummary } from "@/features/phones/api"
+import { PhoneLayerPanel } from "./PhoneLayer"
 import { useParams } from "react-router-dom"
 import { MapPin } from "lucide-react"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
@@ -37,6 +40,7 @@ export function MapPage() {
   const setProximityRadius = useMapStore((s) => s.setProximityRadius)
 
   const { anchor, results } = useProximityAnalysis(safeLocations)
+  const phones = usePhoneLayer(caseId, isLoading ? null : safeLocations.length)
 
   // Auto-expand CaseLayout's side panel to detail tab when a node is selected from the map
   const expandGraphPanelTo = useUIStore((s) => s.expandGraphPanelTo)
@@ -51,7 +55,7 @@ export function MapPage() {
     }
   }, [selectedNodeKeys, expandGraphPanelTo])
 
-  if (isLoading || (safeLocations.length === 0 && isReviewQueueLoading)) {
+  if (isLoading || phones.summary.isLoading || (safeLocations.length === 0 && isReviewQueueLoading)) {
     return (
       <div className="flex h-full items-center justify-center">
         <LoadingSpinner size="lg" />
@@ -59,7 +63,7 @@ export function MapPage() {
     )
   }
 
-  if (!safeLocations.length && reviewQueueCount === 0) {
+  if (!safeLocations.length && reviewQueueCount === 0 && !phones.summary.data?.positioned) {
     if (caseId && caseLayer === "significant") {
       return (
         <SignificantEmptyState
@@ -84,7 +88,25 @@ export function MapPage() {
       <MapToolbar caseId={caseId!} locations={safeLocations} />
 
       <div className="relative flex-1">
-        <MapCanvas locations={safeLocations} />
+        <MapCanvas
+          locations={safeLocations}
+          phoneItems={phones.on ? phones.points.data?.items : undefined}
+          onView={phones.setView}
+          fitTo={phones.on ? phones.summary.data?.bbox ?? null : null}
+        />
+        {phones.summary.data && phones.summary.data.total > 0 && (
+          <button
+            type="button"
+            aria-pressed={phones.on}
+            onClick={() => phones.setOn(!phones.on)}
+            className="absolute left-3 top-3 z-10 rounded-md border border-border bg-card px-2 py-1 text-xs shadow-sm"
+          >
+            Phones
+          </button>
+        )}
+        {phones.on && phones.summary.data && phones.summary.data.total > 0 && (
+          <PhoneLayerPanel caseId={caseId!} summary={phones.summary.data} points={phones.points.data} />
+        )}
         <MapLegend locations={safeLocations} />
         <MapControls
           onZoomIn={zoomIn}
@@ -110,4 +132,44 @@ export function MapPage() {
       </div>
     </div>
   )
+}
+
+/**
+ * The Map phone layer's state (03 section 13.3): on at first use when the case has no other located items, off
+ * otherwise; that choice is stored for this person and case at first use and never recomputed (07 4.12).
+ */
+function usePhoneLayer(caseId: string | undefined, graphLocations: number | null) {
+  const key = `loupe.map.phones.${caseId}`
+  const [stored, setStored] = useState<string | null>(() => (caseId ? localStorage.getItem(key) : null))
+  const [view, setView] = useState<{ bbox: number[]; zoom: number } | null>(null)
+  const summary = useQuery({
+    queryKey: ["phone-map-summary", caseId],
+    queryFn: ({ signal }) => getPhoneMapSummary(caseId!, {}, signal),
+    enabled: !!caseId,
+    staleTime: 30_000,
+  })
+  useEffect(() => {
+    if (!caseId || stored !== null || graphLocations === null || !summary.data) return
+    const first = graphLocations === 0 ? "on" : "off"
+    localStorage.setItem(key, first)
+    setStored(first)
+  }, [caseId, key, stored, graphLocations, summary.data])
+  const on = stored === "on"
+  const points = useQuery({
+    queryKey: ["phone-map-points", caseId, view?.bbox.map((v) => v.toFixed(4)).join(","), view ? Math.round(view.zoom) : null],
+    queryFn: ({ signal }) => getPhoneMapPoints(caseId!, view!.bbox, view!.zoom, {}, signal),
+    enabled: !!caseId && on && !!view && !!summary.data?.positioned,
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  })
+  return {
+    summary,
+    points,
+    on,
+    setOn: (v: boolean) => {
+      localStorage.setItem(key, v ? "on" : "off")
+      setStored(v ? "on" : "off")
+    },
+    setView: (bbox: number[], zoom: number) => setView({ bbox, zoom }),
+  }
 }
