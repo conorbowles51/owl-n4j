@@ -149,6 +149,14 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
     }
   }, [])
 
+  // An unmounted list asks for nothing more: its retry timers and late replies end with its generation.
+  useEffect(
+    () => () => {
+      generation.current++
+    },
+    [],
+  )
+
   useEffect(() => {
     if (!filterKey) return
     setNotice(null)

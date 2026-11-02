@@ -159,6 +159,17 @@ it("A5: a window that fails twice shows Retry in place, and Retry loads it", asy
   await screen.findByText("row 0", undefined, { timeout: 8_000 })
 })
 
+it("A5: a list closed while a failed window waits to retry asks for nothing more", async () => {
+  const calls = serve(index(300, 300, { full_load_rows: 100 }), { failWindow: 1 })
+  const view = mount()
+  await screen.findByText("300 messages")
+  await screen.findAllByText(/These messages could not be loaded/, undefined, { timeout: 8_000 })
+  const asked = calls.window
+  view.unmount()
+  await new Promise((r) => setTimeout(r, 2_500)) // past the 2-second automatic retry
+  expect(calls.window).toBe(asked)
+})
+
 it("A5 / C-9: a stale snapshot re-reads the index and says the list was refreshed", async () => {
   const calls = serve(index(50, 50), { staleOnce: true })
   mount()
