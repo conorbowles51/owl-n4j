@@ -56,7 +56,7 @@ FAMILY = {
 COMM_TYPES = ("InstantMessage", "Call", "Email", "Voicemail", "ChatActivity")
 
 ALWAYS_FACT_FIELDS = ("Source", "UserMapping")
-EXTRA_FACT_FIELDS = {"DeviceEvent": ("EventType",)}
+EXTRA_FACT_FIELDS = {"DeviceEvent": ("EventType", "Value"), "PoweringEvent": ("Event", "Element")}  # power (5.3 step 5)
 
 COLUMNS = ("case_id", "extraction_id", "record_uid", "root_record_uid", "record_type", "time_field", "field_path",
            "end_field", "instant_utc", "end_utc", "offset_status", "instant_basis", "original", "time_semantics",

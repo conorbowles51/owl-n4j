@@ -1508,6 +1508,23 @@ Each is a decision with its reasoning and what would reverse it.
     `affiliation_unknown` on a Location with no affiliation from a source known to sync waits for M5's list of such
     sources. Both are in the flag vocabulary and the strength view; no rule raises them yet.
 
+23. **Stream gaps measured (5.3 step 4, M4 on the 14 server reports, `measurements/a3/P*.json` `m4_streams`).**
+    `max_gap` per family is the smallest whole hour at or above the 95th-percentile gap of every stream of that
+    family with at least 2,000 events, and bucket width plus 10 percent for bucketed families: device events 1 h
+    (largest such 95th percentile 1,500 s, Biome NotificationAction on P14; DisplayOnOff 556 to 1,028 s on P04, P13,
+    P14), connectivity 1 h (P14 Native Locations, 186,021 events, 95th percentile 0 s), locations 1 h (Native
+    Locations 76 to 267 s), WiFi 1 h (P04 scans, 0 s), cell 1 h (P04, 57 s), sensors 3,960 s (EnergyBurned and the
+    hourly Health buckets, 3,600 s), network usage 7,920 s (Network Stats, 99th percentile 7,200 s). Step-count and
+    distance samples (95th percentile up to 7,241 s on P11) follow the person's movement, so they observe only while
+    the phone moves. Families that establish observation: device events, connectivity, sensors, network usage,
+    locations, WiFi and cell. App use is left out with messages and calls (decision 3: its rate follows the person),
+    and logs are left out (their class is content-dependent and mostly `unknown`). No production on the server states
+    a selection (M11), so `outside_selection` and `not_selected` are never written and every profile says "The
+    production does not state a selection." `pv_timeline_entry.activity_class` now reads the event's class
+    (migration `20261102_pol_timeline_class`; an interval's end takes its start's class). *Reverse if* a later M4
+    run on a new report shows a recording stream whose 95th-percentile gap exceeds its family's value, or a
+    production states a selection.
+
 ## 15. Not yet established
 
 - The values of `DeviceEvent.Value` for 14 of 16 EventTypes (only `Power on` and `Factory Reset` are in

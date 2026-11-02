@@ -44,6 +44,8 @@ def main() -> int:
     thread_text.install()  # conversations as searchable text (9.7)
     from services.pattern_of_life import activity
     activity.install()  # pattern of life: activity events after each pass (04 section 7.2)
+    from services.pattern_of_life import availability
+    availability.install()  # availability bands and the hourly rollup, after the activity events (5.3)
     generic.PACE["factor"] = float(os.environ.get("LOUPE_PHONE_SWEEP_PACE", DEFAULT_PACE))
     engine = _get_engine()
     holder = engine.connect()

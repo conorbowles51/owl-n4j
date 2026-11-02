@@ -313,6 +313,8 @@ from routers.phone_extractions import router as phone_extractions_router
 app.include_router(phone_extractions_router)
 from routers.phones import router as phones_router
 app.include_router(phones_router)
+from routers.pattern_of_life import router as pattern_of_life_router
+app.include_router(pattern_of_life_router)
 
 
 @app.get("/")
