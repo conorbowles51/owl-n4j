@@ -1,3 +1,27 @@
+## 2 November: pattern of life, stage F in progress (cb-pol)
+
+Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for readers:
+`/mnt/owl-data/fin-wt/headless/CB-POL-STATUS.md` (written at the end); progress `headless/cb-pol-progress.md`.
+
+- **04-U2/U3 (e20a10a8):** `backend/services/pattern_of_life/activity.py` builds `pol_activity_event` (migration
+  `20261102_pol_activity`) from the current interpretation generation's time values and each record's own fields:
+  one row per (record_uid, time_field); an interval's end is the start event's `end_utc`. Class, actor and physical
+  from the activity-strength rows; flags from the attribution rows and `attribution.context_flags`. Strength is the
+  view `pol_activity_event_v` (twin `attribution.strength`, checked against the view in the tests). `match_facts`
+  lets `reclassify` apply a new row version or a row decision without reading records. The phone worker runs
+  `activity.project_stale` after each pass (`sweep_worker.py`); one judgement call per row touched (`rule_part`
+  `activity` / `attribution`). Decisions 19 to 22 in 04.
+- **04-U4 (9fd2ce9a):** `availability.py`: observed segments per stream with M4-measured `MAX_GAP_S` (decision 23),
+  switched-off bands (stated and inferred), after-extraction band and flag, `pol_hourly_rollup`; `hour_states` and
+  `window_pieces` derive hour and window states on read. `pv_timeline_entry.activity_class` reads the event's class
+  (migration `20261102_pol_timeline_class`). Router `routers/pattern_of_life.py` (`/api/pattern`): `subjects`,
+  `availability`. `subjects.py` resolves a phone or a person (dossier, through `phone_identity_links`), 404 for
+  another case.
+- **Tests:** `tests/test_pattern_u2_activity.py` (7), `tests/test_pattern_u4_availability.py` (4); opt-in PostgreSQL
+  through `LOUPE_TEST_PHONE_PG_TEMPLATE_URL`. HTTP helper `tests/pattern_pg.py` (`api_client`). Scratch PostgreSQL
+  for this job: container `cbp-pgtest` on 127.0.0.1:55446 (template `loupe_tpl`, rebuilt from `loupe_cbp` after
+  `alembic upgrade head`).
+
 ## 2 November: phone interpretation, stages C and D done (cb-interpret)
 
 Live `5893ad9c` (pace 2.0, P14 measured, gates C to D and D to E/F recorded in 06 section 8). Released today in order:
