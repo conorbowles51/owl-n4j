@@ -132,14 +132,18 @@ const MODE: Record<Mode, StreamFilter["participant_mode"]> = {
  * The stream filter of a view. `withThread` false gives the filter of the thread list (6.3 ignores the thread).
  * Dates are days in the display zone: from the start of `from` to the end of `to` (4.3).
  */
+/** The participant key the server reads as "the owner of each phone in scope" (streams.PHONE_OWNER). */
+export const PHONE_OWNER = "owner:this-phone"
+
 export function viewToFilter(caseId: string, v: ConversationView, zoneName: string, withThread = true): StreamFilter {
   const f: StreamFilter = { case_id: caseId, zone: { mode: v.zone, phone: v.zone === "phone" && v.phones.length === 1 ? v.phones[0] : null } }
   if (v.phones.length) f.phones = v.phones
   if (withThread && v.thread && v.tab === "threads") f.threads = [v.thread]
-  const between = v.mode === "between" && v.people.length === 2
+  // Between A and B: B is the second person, or with one person the owner of each phone (07 J-3)
+  const between = v.mode === "between" && (v.people.length === 2 || v.people.length === 1)
   if (v.people.length) {
-    f.participants = v.people
-    // Between needs exactly two people; with one or three it reads as Involving, never as no people filter at all.
+    f.participants = between && v.people.length === 1 ? [...v.people, PHONE_OWNER] : v.people
+    // Between needs one or two people; with three it reads as Involving, never as no people filter at all.
     f.participant_mode = v.mode === "between" && !between ? "any" : MODE[v.mode]
     if (v.expand) f.expand_person_identities = true
     // "All channels" (07 J-3) takes in group chats with both people as well as their direct messages.

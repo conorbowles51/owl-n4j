@@ -23,6 +23,7 @@ import { PhoneRecordPanel } from "@/features/phones/components/RecordPanel"
 import { StreamList } from "@/features/phones/components/StreamList"
 import { useCollectTargets, useUsedIn } from "@/features/phones/hooks/use-collect"
 import { useStream } from "@/features/phones/hooks/use-stream"
+import { PersonScope } from "./PersonScope"
 import { useThreadMatches } from "./use-thread-matches"
 import { viewFromSearch, viewToFilter, viewToSearch, type ConversationView } from "@/features/phones/lib/filter-url"
 import { rememberSpot } from "@/features/phones/lib/continue-reading"
@@ -460,7 +461,19 @@ export function ConversationsPage() {
           )}
         </nav>
         <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col" ref={listRoot}>
-          <ScopeBar scope={scope} onChange={onScope} count={{ shown: stream.total, total: stream.total, noun: "messages" }} />
+          <ScopeBar scope={scope} onChange={onScope} count={{ shown: stream.total, total: stream.total, noun: "messages" }}>
+            {view.people.length > 0 && (
+              <PersonScope
+                caseId={caseId}
+                view={view}
+                filter={streamFilter}
+                names={scope.people.map((p) => p.label)}
+                phonesTotal={phones.length}
+                counts={stream.index?.counts}
+                setView={setView}
+              />
+            )}
+          </ScopeBar>
           <div className="flex flex-wrap items-center gap-2 border-b px-3 py-1.5 text-sm">
             {current ? (
               <span className="font-medium">

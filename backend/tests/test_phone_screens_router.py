@@ -447,3 +447,19 @@ def _other_ext(api):
     with api["engine"].connect() as conn:
         return str(conn.execute(text("SELECT id FROM phone_extractions WHERE case_id = CAST(:c AS uuid)"),
                                 {"c": api["other_case"]}).scalar_one())
+
+
+def test_between_a_person_and_each_phones_owner_and_the_counts_the_sentence_reads(api):
+    """07 J-3: with one person, Between A and B takes B as the owner of each phone; the index says how many of the
+    rows are messages and calls and on how many phones; the person's other linked identities are listed."""
+    from services.phone.streams import PHONE_OWNER
+    c, case = api["client"], api["case"]
+    f = {"case_id": case, "participants": [ANA, PHONE_OWNER], "participant_mode": "between"}
+    idx = c.post("/api/phones/streams/index", json=f)
+    assert idx.status_code == 200, idx.text
+    counts = idx.json()["counts"]
+    assert counts["events"] == 2 and counts["messages"] == 2 and counts["calls"] == 0 and counts["phones"] == 1
+    ben = c.post("/api/phones/streams/index", json={**f, "participants": [BEN, PHONE_OWNER]}).json()["counts"]
+    assert ben["events"] == 1  # BEN's one message to the owner (undated, so counted with no time)
+    linked = c.get("/api/phones/people/linked", params={"case_id": case, "key": ANA})
+    assert linked.status_code == 200 and linked.json()["others"] == [] and linked.json()["numbers"] == 0

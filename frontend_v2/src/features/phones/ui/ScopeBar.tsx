@@ -1,4 +1,5 @@
 import { RotateCcw } from "lucide-react"
+import type { ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { PhoneChip } from "./PhoneChip"
@@ -104,6 +105,7 @@ export function ScopeBar({
   presets = [],
   recent = [],
   restored,
+  children,
 }: {
   scope: Scope
   onChange: (scope: Scope) => void
@@ -112,6 +114,8 @@ export function ScopeBar({
   recent?: Scope[]
   /** Set when the scope was restored from this session: "Showing your last selection: 3 phones. Reset". */
   restored?: boolean
+  /** More of the scope in words and controls, inside the same region (07 J-3: the chosen person). */
+  children?: ReactNode
 }) {
   const remove = (patch: Partial<Scope>) => onChange({ ...scope, ...patch })
   const empty = scopeToSearch(scope) === ""
@@ -197,6 +201,7 @@ export function ScopeBar({
           </Button>
         )}
       </div>
+      {children}
       <ResultCount shown={count.shown} total={count.total} noun={count.noun} unconfirmed={count.unconfirmed} soFar={count.soFar} />
     </div>
   )

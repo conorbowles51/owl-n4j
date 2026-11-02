@@ -177,6 +177,11 @@ export async function comparePhones(caseId: string, a: string, b: string, person
   return CompareSchema.parse(await fetchAPI(`/api/phones/compare?${q}`, { signal }))
 }
 
+/** The other numbers and accounts linked to the same person (07 J-3 step 3). */
+export async function getLinkedIdentities(caseId: string, key: string) {
+  return fetchAPI<{ others: string[]; numbers: number; accounts: number }>(`/api/phones/people/linked?${new URLSearchParams({ case_id: caseId, key })}`)
+}
+
 export async function setPhoneLabel(caseId: string, extractionId: string, label: string, reason: string) {
   return fetchAPI<{ decision_id: string; label: string; before: string | null }>(`/api/phones/${encodeURIComponent(extractionId)}/label`, {
     method: "POST",

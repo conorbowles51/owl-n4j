@@ -38,6 +38,8 @@ WINDOW_MAX = 1000
 FULL_LOAD_ROWS = 5000  # D-2, settled from 03 section 20.3: see 03 section 19
 SENDER_SQL = "(p.role IN ('sender','caller','author','original_sender') OR p.implied_role IN ('sender','caller'))"
 RECIPIENT_SQL = "(p.role IN ('recipient','cc','bcc','callee') OR p.implied_role IN ('recipient','callee'))"
+# A participant key that stands for the owner of each phone in scope (07 J-3 "Between A and B" with one person).
+PHONE_OWNER = "owner:this-phone"
 PARTY_KEY_SQL = ("coalesce(p.identity_key, CASE WHEN p.role = 'owner_implicit' OR p.is_phone_owner IS TRUE "
                  "THEN ok.k END)")
 CALL_STATUS = {"established": "answered", "missed": "missed", "rejected": "declined", "canceled": "cancelled",
@@ -140,9 +142,12 @@ class Query:
 
     def party(self, keys, side=None):
         cond = {"s": SENDER_SQL, "r": RECIPIENT_SQL, None: "true"}[side]
+        keys = list(keys)
+        match = "%s = ANY(CAST(%s AS text[]))" % (PARTY_KEY_SQL, self._p([k for k in keys if k != PHONE_OWNER]))
+        if PHONE_OWNER in keys:  # each phone's own owner (07 J-3: Between A and B, B the owner of the phone)
+            match = "(%s OR %s = ok.k)" % (match, PARTY_KEY_SQL)
         return ("EXISTS (SELECT 1 FROM phone_participations p WHERE p.record_uid = ev.record_uid AND "
-                "p.generation = ev.generation AND %s AND %s = ANY(CAST(%s AS text[])))" % (cond, PARTY_KEY_SQL,
-                                                                                         self._p(list(keys))))
+                "p.generation = ev.generation AND %s AND %s)" % (cond, match))
 
     def is_group(self):
         return ("(EXISTS (SELECT 1 FROM phone_threads t WHERE t.thread_key = ev.thread_key AND t.generation = "
@@ -151,9 +156,11 @@ class Query:
                 % PARTY_KEY_SQL)
 
     def member(self, keys):
+        keys = list(keys)
+        own = " OR ok.k = ANY(t.party_identity_keys)" if PHONE_OWNER in keys else ""
         return "(%s OR EXISTS (SELECT 1 FROM phone_threads t WHERE t.thread_key = ev.thread_key AND t.generation = " \
-               "ev.generation AND t.party_identity_keys && CAST(%s AS text[])))" % (self.party(keys),
-                                                                                   self._p(list(keys)))
+               "ev.generation AND (t.party_identity_keys && CAST(%s AS text[])%s)))" % (
+                   self.party(keys), self._p([k for k in keys if k != PHONE_OWNER]), own)
 
     def _build(self):
         f, w = self.f, self.where
@@ -323,15 +330,21 @@ def index_comm_events(conn, f: StreamFilter) -> dict:
     q.params["zone"] = "UTC" if T.is_utc(zone["name"]) else zone["name"]
     rows = conn.execute(text(
         "WITH m AS (%s) SELECT CASE WHEN sort_instant IS NULL THEN NULL ELSE (sort_instant AT TIME ZONE :zone)::date "
-        "END AS day, count(*) FILTER (WHERE %s) AS n, count(*) AS records FROM m GROUP BY 1"
-        % (q.matched_sql(), _shown(f))), q.params).fetchall()
+        "END AS day, count(*) FILTER (WHERE %s) AS n, count(*) FILTER (WHERE %s AND kind = 'call') AS calls, "
+        "count(*) FILTER (WHERE %s AND kind = 'message') AS messages, count(*) AS records FROM m GROUP BY 1"
+        % (q.matched_sql(), _shown(f), _shown(f), _shown(f))), q.params).fetchall()
+    phones = conn.execute(text("WITH m AS (%s) SELECT count(DISTINCT extraction_id) FROM m WHERE %s"
+                               % (q.matched_sql(), _shown(f))), q.params).scalar()
     days = sorted(((r.day, int(r.n)) for r in rows if r.day is not None and r.n), key=lambda x: x[0],
                   reverse=f.sort == "newest_first")
     no_time = sum(int(r.n) for r in rows if r.day is None)
     events = sum(int(r.n) for r in rows)
     records = sum(int(r.records) for r in rows)
+    calls = sum(int(r.calls) for r in rows)
     out = envelope(conn, f, counts={"events": events, "records": records, "collapsed_copies": records - events,
-                                    "no_time": no_time},
+                                    "no_time": no_time, "calls": calls,
+                                    "messages": sum(int(r.messages) for r in rows),
+                                    "phones": int(phones or 0)},
                    items=[{"day": d.isoformat(), "count": n, "offsets": T.day_offsets(d, zone["name"]),
                            "header": T.format_day_header(d), "zone_label": T.zone_label(d, zone["name"])}
                           for d, n in days])

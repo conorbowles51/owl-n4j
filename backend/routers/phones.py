@@ -575,6 +575,19 @@ def conversation_participants(body: dict, db: Session = Depends(get_db), user: U
         raise _failure("The list of people could not be loaded.", exc)
 
 
+@router.get("/people/linked")
+def person_linked_identities(case_id: UUID = Query(...), key: str = Query(..., min_length=1, max_length=512),
+                             db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The other numbers and accounts linked to the same person as ``key`` (07 J-3 step 3), for the switch that
+    takes them in. A key with no person has none."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    keys = streams._person_keys(db.connection(), str(case_id), [key])[key]
+    others = [k for k in keys if k != key]
+    numbers = sum(1 for k in others if k.startswith("phone:"))
+    return {"case_id": str(case_id), "identity_key": key, "others": others, "numbers": numbers,
+            "accounts": len(others) - numbers}
+
+
 class SelectionBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     filter: dict

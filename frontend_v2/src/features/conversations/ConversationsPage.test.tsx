@@ -17,6 +17,8 @@ const api = vi.hoisted(() => ({
   markNotACopy: vi.fn(),
   freezeSelection: vi.fn(),
   streamLocate: vi.fn(),
+  getLinkedIdentities: vi.fn(),
+  streamIndex: vi.fn(),
 }))
 vi.mock("@/features/phones/api", async (orig) => ({ ...(await orig<object>()), ...api }))
 vi.mock("@/features/cases/hooks/use-cases", () => ({ useCase: () => ({ data: { title: "Synthetic case" } }) }))
@@ -118,6 +120,25 @@ describe("Conversations", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next match" }))
     expect(await screen.findByText("Match 1 of 3")).toBeInTheDocument()  // wraps round
     expect(screen.getByRole("button", { name: "Back to results" })).toBeInTheDocument()
+  })
+
+  it("a chosen person reads on N of M phones, with Between A and B, All channels and the other-numbers switch (07 J-3)", async () => {
+    api.getPhones.mockResolvedValue({ case_id: "case-1", phones: [{ extraction_id: "e1", label: "C1" }, { extraction_id: "e2", label: "C2" }, { extraction_id: "e3", label: "C3" }] })
+    api.getParticipants.mockResolvedValue({ case_id: "case-1", snapshot: "s", complete: true, limits: [], counts: {}, items: [{ label: label("Synthetic A"), events: 4, first_instant: null, last_instant: null, phones: ["C1", "C3"], apps: [] }] })
+    api.getLinkedIdentities.mockResolvedValue({ others: ["phone:+12025550199"], numbers: 1, accounts: 0 })
+    api.streamIndex.mockResolvedValue({ counts: { events: 9 } })
+    streamState.index = { snapshot: "s", zone: { label: "UTC" }, items: [], counts: { events: 5, messages: 4, calls: 1, phones: 2 } }
+    page("/cases/case-1/conversations?tab=people&people=phone:Synthetic%20A&mode=between")
+    const scope = await screen.findByRole("region", { name: "Scope" })
+    expect(await within(scope).findByText("Synthetic A (no identifier recorded) (2 numbers, 0 accounts) on 2 of 3 phones")).toBeInTheDocument()
+    expect(within(scope).getByRole("button", { name: "Between A and B" })).toHaveAttribute("aria-pressed", "true")
+    expect(within(scope).getByText("4 messages and 1 call between Synthetic A (no identifier recorded) and the owner of each phone on 2 phones")).toBeInTheDocument()
+    const sw = within(scope).getByRole("switch", { name: "Include this person's other numbers and accounts" })
+    expect(sw).toHaveAttribute("aria-checked", "false")
+    expect(await within(scope).findByText("Include 1 more number or account (+4 messages).")).toBeInTheDocument()
+    expect(streamFilters.some((f) => JSON.stringify((f as { participants?: string[] } | null)?.participants) === JSON.stringify(["phone:Synthetic A", "owner:this-phone"]))).toBe(true)
+    fireEvent.click(within(scope).getByRole("button", { name: "All channels" }))
+    await waitFor(() => expect(seen.search).toContain("channels=all"))
   })
 
   it("opens the first thread on arrival so the keys act at once (D-38), in the URL", async () => {

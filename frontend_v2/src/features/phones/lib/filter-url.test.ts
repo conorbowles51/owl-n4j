@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { DEFAULT_VIEW, viewFromSearch, viewToFilter, viewToSearch } from "./filter-url"
+import { DEFAULT_VIEW, PHONE_OWNER, viewFromSearch, viewToFilter, viewToSearch } from "./filter-url"
 
 describe("Conversations view in the URL (03 6.4)", () => {
   it("round-trips every filter and leaves defaults out", () => {
@@ -21,11 +21,16 @@ describe("Conversations view in the URL (03 6.4)", () => {
     expect(f.to_instant).toBe("2023-03-15T03:59:59.999Z")
     expect(f.deleted_states).toEqual([null, "Intact", "Unknown"])
     expect(f.collapse_copies).toBe(false)
-    // Between needs two people; with one it reads as Involving and still filters by that person (review of 03-3).
+    // Between with one person is between that person and the owner of each phone (07 J-3, Between A and B);
+    // with three people it reads as Involving and still filters by them (review of 03-3).
     const one = viewToFilter("c", { ...v, people: ["a"] }, "UTC")
-    expect(one.participants).toEqual(["a"])
-    expect(one.participant_mode).toBe("any")
-    expect(one.group_scope).toBeUndefined()
+    expect(one.participants).toEqual(["a", PHONE_OWNER])
+    expect(one.participant_mode).toBe("between")
+    expect(one.group_scope).toBe("include_groups")
+    const three = viewToFilter("c", { ...v, people: ["a", "b", "d"] }, "UTC")
+    expect(three.participants).toEqual(["a", "b", "d"])
+    expect(three.participant_mode).toBe("any")
+    expect(three.group_scope).toBeUndefined()
   })
 
   it("the thread list filter ignores the chosen thread; a fixed phone stays out of the URL", () => {

@@ -152,7 +152,8 @@ def test_three_copies_show_once_and_every_total_states_the_records(db):
     ])
     phone(db, case, label="C7", events=[msg(t, ANA, [OWNER], body="same", app="Native Messages", dup="g1")])
     idx, rows = _all_rows(db, F(case))
-    assert idx["counts"] == {"events": 3, "records": 5, "collapsed_copies": 2, "no_time": 0}
+    assert idx["counts"] == {"events": 3, "records": 5, "collapsed_copies": 2, "no_time": 0, "calls": 0, "messages": 3,
+                             "phones": 2}
     found = [r for r in rows if r["copies"]["count"] == 3]
     assert len(found) == 1 and sorted(found[0]["copies"]["apps"]) == ["Android CallLog database", "IMS Service",
                                                                       "Native Messages"]
