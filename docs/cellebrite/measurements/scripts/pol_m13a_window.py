@@ -131,8 +131,7 @@ def measure(scratch, out_path, anchors):
             if len(anchors) == 3:
                 break
     out = {"measure": "M-13a", "case": "10-report case", "anchor_basis": basis, "phones": len(labels),
-           "method": "a record counts when the range of its own time values (TimeStamp with an offset, first to "
-                     "last) overlaps the window; nested records count with their top-level record",
+           "method": "05 section 16.6",
            "per_phone": {L: {"records": d[0]["records"], "undated": d[0]["undated"]} for L, d in data.items()},
            "anchors": []}
     for n, c in enumerate(anchors, 1):
@@ -140,10 +139,13 @@ def measure(scratch, out_path, anchors):
         for hspan in SPANS_H:
             a, b = c - hspan * 3600, c + hspan * 3600
             per = {L: _count(d[1], d[2], a, b) for L, d in data.items()}
+            items = {L: bisect_left(d[3], b) - bisect_left(d[3], a) for L, d in data.items()}
             vals = sorted(per.values())
+            iv = sorted(items.values())
             row["spans"]["±%d h" % hspan] = {
-                "per_phone": per, "phones_with_records": sum(1 for v in vals if v), "total": sum(vals),
-                "max_phone": vals[-1] if vals else 0, "median_phone": vals[len(vals) // 2] if vals else 0}
+                "items_per_phone": items, "phones_with_items": sum(1 for v in iv if v), "items_total": sum(iv),
+                "items_max_phone": iv[-1] if iv else 0, "items_median_phone": iv[len(iv) // 2] if iv else 0,
+                "records_overlapping_per_phone": per, "records_overlapping_total": sum(vals)}
         out["anchors"].append(row)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(out, f, indent=1, sort_keys=True)

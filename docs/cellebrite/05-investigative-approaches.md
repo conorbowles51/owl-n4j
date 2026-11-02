@@ -1615,6 +1615,26 @@ Clock offsets; synced records; selective extractions; time zone of each phone (0
 M-13a: for three anchors chosen by the investigator in the 10-report case, records per phone in ±2 h. Gate: built
 as part of 04's day view work; the measurement only sets the default window.
 
+**Server result (cb-pol, `measurements/m13a-window.json`, script `scripts/pol_m13a_window.py`).** No investigator
+has chosen anchors yet, so the three were chosen by a stated rule and are labelled `rule` in the file: the UTC hours
+when the most phones of the case hold a record within 2 hours either side, ties to more records then the earlier
+hour, at least 7 days apart. Items are time values with an offset inside the window (one per record and time field,
+as the lanes draw them); records whose first-to-last range overlaps the window are kept beside them and are inflated
+by long-running records such as conversations. Across the 10 reports:
+
+| Window | Phones with items (of 10), per anchor | Items, median phone | Items, busiest phone |
+|---|---|---|---|
+| ±1 h | 8, 9, 7 | 132, 98, 16 | 563, 629, 358 |
+| ±2 h | 9, 9, 9 | 209, 174, 36 | 945, 1,057, 428 |
+| ±6 h | 9, 9, 9 | 441, 624, 153 | 2,346, 3,248, 999 |
+| ±24 h | 9, 9, 9 | 1,390, 1,875, 376 | 8,218, 8,205, 3,185 |
+
+**Default window: ±1 h.** It already shows items on 7 to 9 of the 10 phones and keeps the busiest lane under 650
+items; ±24 h passes the 5,000-item lane limit on the busiest phone, so that lane would show hourly counts instead
+of items. ±2 h, ±6 h and ±24 h stay one click away. *Reverse if* the same measure on three anchors an investigator
+chooses shows phones with nothing at ±1 h that ±2 h would show; the script takes the anchors as arguments
+(`measure <scratch> <out> <epoch seconds> ...`).
+
 ### 16.7 Dependencies
 
 04 (day view), approach 2 (offsets).

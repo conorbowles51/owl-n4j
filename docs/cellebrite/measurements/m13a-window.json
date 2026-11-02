@@ -1,0 +1,438 @@
+{
+ "anchor_basis": "rule",
+ "anchors": [
+  {
+   "anchor": "anchor 1",
+   "spans": {
+    "\u00b11 h": {
+     "items_max_phone": 563,
+     "items_median_phone": 132,
+     "items_per_phone": {
+      "P02": 189,
+      "P03": 8,
+      "P04": 563,
+      "P05": 13,
+      "P06": 138,
+      "P07": 0,
+      "P08": 293,
+      "P09": 7,
+      "P10": 0,
+      "P11": 132
+     },
+     "items_total": 1343,
+     "phones_with_items": 8,
+     "records_overlapping_per_phone": {
+      "P02": 584,
+      "P03": 546,
+      "P04": 628,
+      "P05": 40,
+      "P06": 148,
+      "P07": 10,
+      "P08": 509,
+      "P09": 2,
+      "P10": 0,
+      "P11": 645
+     },
+     "records_overlapping_total": 3112
+    },
+    "\u00b12 h": {
+     "items_max_phone": 945,
+     "items_median_phone": 209,
+     "items_per_phone": {
+      "P02": 268,
+      "P03": 8,
+      "P04": 945,
+      "P05": 19,
+      "P06": 209,
+      "P07": 12,
+      "P08": 518,
+      "P09": 13,
+      "P10": 0,
+      "P11": 293
+     },
+     "items_total": 2285,
+     "phones_with_items": 9,
+     "records_overlapping_per_phone": {
+      "P02": 633,
+      "P03": 546,
+      "P04": 821,
+      "P05": 43,
+      "P06": 197,
+      "P07": 10,
+      "P08": 545,
+      "P09": 3,
+      "P10": 0,
+      "P11": 805
+     },
+     "records_overlapping_total": 3603
+    },
+    "\u00b124 h": {
+     "items_max_phone": 8218,
+     "items_median_phone": 1390,
+     "items_per_phone": {
+      "P02": 2317,
+      "P03": 14,
+      "P04": 8218,
+      "P05": 191,
+      "P06": 1390,
+      "P07": 947,
+      "P08": 4033,
+      "P09": 16,
+      "P10": 0,
+      "P11": 2964
+     },
+     "items_total": 20090,
+     "phones_with_items": 9,
+     "records_overlapping_per_phone": {
+      "P02": 1591,
+      "P03": 550,
+      "P04": 4283,
+      "P05": 146,
+      "P06": 909,
+      "P07": 621,
+      "P08": 1218,
+      "P09": 4,
+      "P10": 0,
+      "P11": 3455
+     },
+     "records_overlapping_total": 12777
+    },
+    "\u00b16 h": {
+     "items_max_phone": 2346,
+     "items_median_phone": 441,
+     "items_per_phone": {
+      "P02": 737,
+      "P03": 9,
+      "P04": 2346,
+      "P05": 53,
+      "P06": 441,
+      "P07": 57,
+      "P08": 990,
+      "P09": 16,
+      "P10": 0,
+      "P11": 632
+     },
+     "items_total": 5281,
+     "phones_with_items": 9,
+     "records_overlapping_per_phone": {
+      "P02": 842,
+      "P03": 547,
+      "P04": 1461,
+      "P05": 57,
+      "P06": 317,
+      "P07": 53,
+      "P08": 637,
+      "P09": 4,
+      "P10": 0,
+      "P11": 1136
+     },
+     "records_overlapping_total": 5054
+    }
+   }
+  },
+  {
+   "anchor": "anchor 2",
+   "spans": {
+    "\u00b11 h": {
+     "items_max_phone": 629,
+     "items_median_phone": 98,
+     "items_per_phone": {
+      "P02": 70,
+      "P03": 1,
+      "P04": 629,
+      "P05": 2,
+      "P06": 100,
+      "P07": 98,
+      "P08": 155,
+      "P09": 7,
+      "P10": 0,
+      "P11": 268
+     },
+     "items_total": 1330,
+     "phones_with_items": 9,
+     "records_overlapping_per_phone": {
+      "P02": 625,
+      "P03": 431,
+      "P04": 736,
+      "P05": 24,
+      "P06": 105,
+      "P07": 216,
+      "P08": 434,
+      "P09": 6,
+      "P10": 0,
+      "P11": 679
+     },
+     "records_overlapping_total": 3256
+    },
+    "\u00b12 h": {
+     "items_max_phone": 1057,
+     "items_median_phone": 174,
+     "items_per_phone": {
+      "P02": 130,
+      "P03": 1,
+      "P04": 1057,
+      "P05": 6,
+      "P06": 174,
+      "P07": 217,
+      "P08": 380,
+      "P09": 12,
+      "P10": 0,
+      "P11": 325
+     },
+     "items_total": 2302,
+     "phones_with_items": 9,
+     "records_overlapping_per_phone": {
+      "P02": 651,
+      "P03": 431,
+      "P04": 950,
+      "P05": 26,
+      "P06": 152,
+      "P07": 269,
+      "P08": 480,
+      "P09": 8,
+      "P10": 0,
+      "P11": 697
+     },
+     "records_overlapping_total": 3664
+    },
+    "\u00b124 h": {
+     "items_max_phone": 8205,
+     "items_median_phone": 1875,
+     "items_per_phone": {
+      "P02": 1278,
+      "P03": 1,
+      "P04": 8205,
+      "P05": 163,
+      "P06": 1875,
+      "P07": 2528,
+      "P08": 2442,
+      "P09": 24,
+      "P10": 0,
+      "P11": 4947
+     },
+     "items_total": 21463,
+     "phones_with_items": 9,
+     "records_overlapping_per_phone": {
+      "P02": 1223,
+      "P03": 431,
+      "P04": 4423,
+      "P05": 112,
+      "P06": 1350,
+      "P07": 1240,
+      "P08": 922,
+      "P09": 11,
+      "P10": 0,
+      "P11": 3965
+     },
+     "records_overlapping_total": 13677
+    },
+    "\u00b16 h": {
+     "items_max_phone": 3248,
+     "items_median_phone": 624,
+     "items_per_phone": {
+      "P02": 362,
+      "P03": 1,
+      "P04": 3248,
+      "P05": 40,
+      "P06": 624,
+      "P07": 750,
+      "P08": 1028,
+      "P09": 23,
+      "P10": 0,
+      "P11": 706
+     },
+     "items_total": 6782,
+     "phones_with_items": 9,
+     "records_overlapping_per_phone": {
+      "P02": 762,
+      "P03": 431,
+      "P04": 1983,
+      "P05": 48,
+      "P06": 484,
+      "P07": 504,
+      "P08": 631,
+      "P09": 11,
+      "P10": 0,
+      "P11": 913
+     },
+     "records_overlapping_total": 5767
+    }
+   }
+  },
+  {
+   "anchor": "anchor 3",
+   "spans": {
+    "\u00b11 h": {
+     "items_max_phone": 358,
+     "items_median_phone": 16,
+     "items_per_phone": {
+      "P02": 38,
+      "P03": 2,
+      "P04": 100,
+      "P05": 0,
+      "P06": 2,
+      "P07": 0,
+      "P08": 193,
+      "P09": 0,
+      "P10": 16,
+      "P11": 358
+     },
+     "items_total": 709,
+     "phones_with_items": 7,
+     "records_overlapping_per_phone": {
+      "P02": 82,
+      "P03": 102,
+      "P04": 232,
+      "P05": 33,
+      "P06": 15,
+      "P07": 7,
+      "P08": 658,
+      "P09": 0,
+      "P10": 35,
+      "P11": 880
+     },
+     "records_overlapping_total": 2044
+    },
+    "\u00b12 h": {
+     "items_max_phone": 428,
+     "items_median_phone": 36,
+     "items_per_phone": {
+      "P02": 84,
+      "P03": 36,
+      "P04": 128,
+      "P05": 7,
+      "P06": 2,
+      "P07": 1,
+      "P08": 428,
+      "P09": 0,
+      "P10": 24,
+      "P11": 408
+     },
+     "items_total": 1118,
+     "phones_with_items": 9,
+     "records_overlapping_per_phone": {
+      "P02": 101,
+      "P03": 110,
+      "P04": 245,
+      "P05": 37,
+      "P06": 15,
+      "P07": 7,
+      "P08": 688,
+      "P09": 0,
+      "P10": 37,
+      "P11": 929
+     },
+     "records_overlapping_total": 2169
+    },
+    "\u00b124 h": {
+     "items_max_phone": 3185,
+     "items_median_phone": 376,
+     "items_per_phone": {
+      "P02": 779,
+      "P03": 376,
+      "P04": 809,
+      "P05": 132,
+      "P06": 5,
+      "P07": 250,
+      "P08": 3185,
+      "P09": 0,
+      "P10": 178,
+      "P11": 2317
+     },
+     "items_total": 8031,
+     "phones_with_items": 9,
+     "records_overlapping_per_phone": {
+      "P02": 451,
+      "P03": 229,
+      "P04": 549,
+      "P05": 107,
+      "P06": 17,
+      "P07": 222,
+      "P08": 1243,
+      "P09": 0,
+      "P10": 101,
+      "P11": 2816
+     },
+     "records_overlapping_total": 5735
+    },
+    "\u00b16 h": {
+     "items_max_phone": 999,
+     "items_median_phone": 153,
+     "items_per_phone": {
+      "P02": 212,
+      "P03": 153,
+      "P04": 188,
+      "P05": 72,
+      "P06": 2,
+      "P07": 54,
+      "P08": 999,
+      "P09": 0,
+      "P10": 35,
+      "P11": 676
+     },
+     "items_total": 2391,
+     "phones_with_items": 9,
+     "records_overlapping_per_phone": {
+      "P02": 171,
+      "P03": 159,
+      "P04": 277,
+      "P05": 74,
+      "P06": 15,
+      "P07": 59,
+      "P08": 799,
+      "P09": 0,
+      "P10": 43,
+      "P11": 1191
+     },
+     "records_overlapping_total": 2788
+    }
+   }
+  }
+ ],
+ "case": "10-report case",
+ "measure": "M-13a",
+ "method": "05 section 16.6",
+ "per_phone": {
+  "P02": {
+   "records": 36979,
+   "undated": 6578
+  },
+  "P03": {
+   "records": 9910,
+   "undated": 6804
+  },
+  "P04": {
+   "records": 121076,
+   "undated": 7415
+  },
+  "P05": {
+   "records": 25596,
+   "undated": 9403
+  },
+  "P06": {
+   "records": 16663,
+   "undated": 2018
+  },
+  "P07": {
+   "records": 20863,
+   "undated": 4102
+  },
+  "P08": {
+   "records": 59835,
+   "undated": 14879
+  },
+  "P09": {
+   "records": 2941,
+   "undated": 1274
+  },
+  "P10": {
+   "records": 15206,
+   "undated": 1550
+  },
+  "P11": {
+   "records": 117803,
+   "undated": 32936
+  }
+ },
+ "phones": 10
+}
