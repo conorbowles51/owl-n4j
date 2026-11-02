@@ -13,7 +13,7 @@ Downgrade drops them.
 from alembic import op
 
 revision = "20261102_phone_screens_read"
-down_revision = "20261102_pol_colocation"
+down_revision = "20261102_pol_claim_drafts"
 branch_labels = None
 depends_on = None
 

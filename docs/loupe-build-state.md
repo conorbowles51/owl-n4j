@@ -23,7 +23,7 @@ Branch `cb/cb-screens`, rebased on `1a6b3826` (cb-pol). Commits f6deb203 (A), 1b
   127.0.0.1:55444 (password `cbs`), template `loupe_tpl` at head, `LOUPE_TEST_PHONE_PG_TEMPLATE_URL=postgresql://
   postgres:cbs@127.0.0.1:55444/loupe_tpl`, venv `/mnt/owl-data/tmp/cbi/venv/bin/python -m pytest`. All 241 phone
   tests pass.
-- Migration chain: `20261102_phone_screens_read` follows `20261102_pol_colocation` (one head). The scratch template
+- Migration chain: `20261102_phone_screens_read` follows `20261102_pol_claim_drafts` (one head). The scratch template
   was rebuilt from empty to head; round trip down to `pol_colocation` and up again passes.
 - Item B (`frontend_v2/src`): `lib/evidence-time.ts` (same expectations file as the server, read through `node:fs`),
   `features/phones/{api,schemas}.ts`, `hooks/use-stream.ts` (index then windows; full load at or under 5,000; one
@@ -51,9 +51,9 @@ Branch `cb/cb-screens`, rebased on `1a6b3826` (cb-pol). Commits f6deb203 (A), 1b
   `decision-format.ts`); owned here, built in item C. Browser: the failures in document-viewer, KnownAccountPayments,
   ReviewQueueFold and FinancialBatchNavigation (an import error) fail the same way on an origin checkout;
   StatementImportPanel's 51-period height check failed under load and passes alone (8/8).
+- After the rebase on caf08445: phone, pattern and readiness tests 325 passed with 1 failure in a run alongside tsc (no
+  failure summary in that run, so not named), then 295 passed and 0 failed on the rerun with summaries; tsc -b 0.
 - Next: release A+B, live check signed in, tell cb-pol 03-2 is live; then item C.
-
-## 2 November: pattern of life, stage F in progress (cb-pol)
 
 ## 2 November: pattern of life, stage F in progress (cb-pol), A to H live 1a6b3826
 
