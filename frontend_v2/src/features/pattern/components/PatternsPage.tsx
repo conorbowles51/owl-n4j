@@ -133,7 +133,7 @@ function GridView({ caseId, subject, last }: { caseId: string; subject: Subject;
         <>
           <p>{quiet && quiet.start !== null ? `Usual quiet hours: ${quiet.start}:00 to ${quiet.end}:00 (${q.data.zone}).` : (quiet?.message || "No regular quiet period found")}</p>
           <KeepResult caseId={caseId} origin="Added from Phone patterns, Pattern grid"
-            request={{ kind: "grid", subject: JSON.stringify(subject), start: `${start}T00:00:00Z`, end: nextDay(last), zone: q.data.zone,
+            request={{ kind: "grid", subject: JSON.stringify(subject), start_date: start, end_date: last, zone: q.data.zone,
               parameters: { min_strength: "moderate", classes: ["interaction"], include_physical: false } }} />
           <p className="text-xs text-muted-foreground">{q.data.days.length.toLocaleString()} days, {start} to {last}. Use counted: the user's own, strength at least moderate.</p>
           <table className="border-collapse text-xs" aria-label="Hours by day">

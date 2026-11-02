@@ -215,6 +215,8 @@ export interface SnapshotRequest {
   kind: Snapshot["kind"]
   subject?: string
   date?: string
+  start_date?: string
+  end_date?: string
   start?: string
   end?: string
   zone?: string

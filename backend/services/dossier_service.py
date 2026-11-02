@@ -1057,9 +1057,16 @@ def add_interview_evidence(
                   or (target_type == "phone_file" and (row.source_anchor or {}).get("phone_file_id") == target_id)
                   for row in existing)
     if not already:
+        from sqlalchemy.exc import IntegrityError
         _add_interview_evidence(db, dossier, interview, [item], user)
         interview.updated_by_user_id = user.id
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            # the same evidence row reached by another route (a phone file already linked as its evidence file),
+            # or a second click racing the first: the item is there, so say so
+            db.rollback()
+            already = True
     db.refresh(interview)
     return {"added": 0 if already else 1, "already_there": 1 if already else 0,
             "interview": _serialize_interview(db, interview)}

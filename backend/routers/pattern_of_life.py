@@ -699,6 +699,8 @@ class SnapshotRequest(BaseModel):
     kind: str = Field(pattern="^(day|window|grid|places)$")
     subject: str | None = None
     date: str | None = None
+    start_date: str | None = None
+    end_date: str | None = None
     start: str | None = None
     end: str | None = None
     zone: str = Field(default="device", max_length=64)
@@ -727,6 +729,14 @@ def post_snapshot(body: SnapshotRequest, case_id: UUID = Depends(require_case_ed
         if not body.date:
             raise HTTPException(status_code=400, detail="A day result needs its date.")
         a, b = day_view.day_bounds(parse_date(body.date, "date"), z)
+    elif body.kind == "grid":
+        # the grid shows local days, so it is frozen from local midnight to local midnight in its zone
+        if not (body.start_date and body.end_date):
+            raise HTTPException(status_code=400, detail="A grid result needs its first and last date.")
+        d0, d1 = parse_date(body.start_date, "start_date"), parse_date(body.end_date, "end_date")
+        if d1 < d0:
+            raise HTTPException(status_code=400, detail="The end date must not be before the start date.")
+        a, b = day_view.day_bounds(d0, z)[0], day_view.day_bounds(d1, z)[1]
     else:
         if not (body.start and body.end):
             raise HTTPException(status_code=400, detail="This result needs a start and an end.")

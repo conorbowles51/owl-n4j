@@ -78,11 +78,21 @@ def test_a_frozen_day_is_recomputed_by_the_server_linkable_and_stale_after_the_r
                 assert kept["snapshot"] == one["snapshot"]  # never rewritten
                 fresh = client.post("/api/pattern/%s/snapshots" % case, json=body).json()
                 assert fresh["id"] != one["id"]
+                d = DAY.date().isoformat()
                 grid = client.post("/api/pattern/%s/snapshots" % case, json={
-                    "kind": "grid", "subject": subj, "start": DAY.isoformat(),
-                    "end": (DAY + timedelta(days=1)).isoformat(), "zone": "UTC"}).json()
+                    "kind": "grid", "subject": subj, "start_date": d, "end_date": d, "zone": "UTC"}).json()
                 assert grid["snapshot"]["summary_counts"]["days"] == 1
                 assert sum(v for k, v in grid["snapshot"]["summary_counts"].items() if k.startswith("hours_")) == 24
+                # a grid in a zone west of UTC covers the same local days the screen shows, local midnight to
+                # local midnight (the review found UTC-midnight bounds gave an extra day)
+                ny = client.post("/api/pattern/%s/snapshots" % case, json={
+                    "kind": "grid", "subject": subj, "start_date": d, "end_date": d,
+                    "zone": "America/New_York"}).json()
+                assert ny["snapshot"]["summary_counts"]["days"] == 1, ny["snapshot"]["summary_counts"]
+                shown = client.get("/api/pattern/%s/grid" % case, params={
+                    "subject": subj, "start_date": d, "end_date": d, "zone": "America/New_York"}).json()
+                assert len(shown["days"]) == 1
+                assert ny["snapshot"]["window"]["start"][11:16] in ("04:00", "05:00")
     finally:
         link_types._RESOLVERS.clear()
         link_types._RESOLVERS.update(saved)
