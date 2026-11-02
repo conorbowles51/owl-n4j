@@ -46,6 +46,8 @@ def main() -> int:
     activity.install()  # pattern of life: activity events after each pass (04 section 7.2)
     from services.pattern_of_life import availability
     availability.install()  # availability bands and the hourly rollup, after the activity events (5.3)
+    from services.pattern_of_life import places
+    places.install()  # place observations, towers and WiFi anchors, after the activity events (04 section 6)
     generic.PACE["factor"] = float(os.environ.get("LOUPE_PHONE_SWEEP_PACE", DEFAULT_PACE))
     engine = _get_engine()
     holder = engine.connect()

@@ -1537,6 +1537,26 @@ Each is a decision with its reasoning and what would reverse it.
     1,500 days is refused with a stated message (P14 spans 546 observed days). *Reverse if* M12 on a new phone finds a
     routine that 0.10 dissolves.
 
+25. **Places as built (04-U5; `services/pattern_of_life/places.py`, migration `20261102_pol_places`).** A point's
+    time is its record's activity event (an interval keeps its end), else the time value the point was read with.
+    Source kind from 02's: a Location from the device with GPS accuracy is `gps`, without it `device_location`, from
+    another origin `app_location`, and `account_location` when flagged synced; `wifi` is `wifi_position` (100 m
+    when no accuracy); SocialMediaActivity `checkin` (declared), CalendarEntry `calendar` (planned), Journey
+    `journey`, any other record with a coordinate `app_location`. A Location with `Precision` but no accuracy has no
+    radius (`precision_value`) until M5 rows exist. A `Media Locations` place is kind `media`, flagged
+    `media_device_not_established` and kept out of routine and together-and-apart until the camera match of 6.2 is
+    built. WiFi anchor observations are presence at each BSSID time of an anchored BSSID (basis `wifi_seen`); a
+    tentative anchor gives none. Towers: one dataset per case, chosen by a person (`pol_case_cell_dataset`, no route
+    until Neil rules on question 2, so none is chosen and every tower is listed "not placed"); a tower with a
+    complete key the dataset lacks is "Tower not in reference data"; one with no time is listed `no_time`. The
+    importer (`POST /api/pattern/{case}/reference/cell`, admins) reads only files under `LOUPE_REFERENCE_DATA_DIR`
+    (default `/mnt/owl-data/reference-data`), streams them, keeps duplicates and malformed rows as counts, and records
+    sha256 and row count; no dataset has been imported. Reverse geocoding is checked at backend start-up
+    (`check_reverse_geocoding_at_startup`): on only when every configured backend is GeoNames or Nominatim on
+    localhost, a private address or a single-label host name; otherwise off with the reason logged. *Reverse if* Neil
+    rules on the licence (then a per-case choice route) or a camera match exists (then media from this device is
+    presence).
+
 ## 15. Not yet established
 
 - The values of `DeviceEvent.Value` for 14 of 16 EventTypes (only `Power on` and `Factory Reset` are in

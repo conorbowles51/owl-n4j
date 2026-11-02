@@ -10,11 +10,15 @@ import json
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
+from datetime import date as date_type
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from postgres.session import get_db
 from routers.case_access import require_case_view
+from routers.users import require_admin
 from services.pattern_of_life import availability, grid, subjects
 
 router = APIRouter(prefix="/api/pattern", tags=["pattern-of-life"])
@@ -140,3 +144,51 @@ def get_grid(subject: str = Query(...), start_date: str = Query(...), end_date: 
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return _jsonable(dict(out, subject=r["subject"]))
+
+
+PLACE_PAGE = 1000
+
+
+@router.get("/{case_id}/places")
+def get_places(subject: str = Query(...), start: str = Query(...), end: str = Query(...), kinds: str = Query(""),
+               cursor: int = Query(0, ge=0), case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
+    from services.pattern_of_life import places
+    r = resolve(db, case_id, subject)
+    a, b = parse_range(start, end)
+    ks = [k for k in kinds.split(",") if k]
+    conn = db.connection()
+    total, rows = places.observations(conn, r["extraction_ids"], a, b, ks, cursor, PLACE_PAGE)
+    nxt = cursor + len(rows) if cursor + len(rows) < total else None
+    return _jsonable({"subject": r["subject"], "total": total, "returned": len(rows), "next_cursor": nxt,
+                      "page_size": PLACE_PAGE, "observations": rows,
+                      "towers_not_placed": [dict(t, words=places.TOWER_WORDS[t["reason"]])
+                                            for t in places.unplaced_towers(conn, r["extraction_ids"])],
+                      "reverse_geocoding": places._GEO["status"] or places.reverse_geocoding_status()})
+
+
+class CellImport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    file_path_on_server: str = Field(min_length=1, max_length=4000)
+    name: str = Field(min_length=1, max_length=400)
+    licence: str = Field(min_length=1, max_length=400)
+    attribution: str = Field(min_length=1, max_length=2000)
+    retrieved_on: date_type
+    source_note: str | None = Field(default=None, max_length=4000)
+
+
+@router.post("/{case_id}/reference/cell")
+def import_cell_reference(body: CellImport, case_id: UUID, db: Session = Depends(get_db),
+                          user=Depends(require_admin)):
+    """Admin: import an offline cell-tower file an operator placed on the server (04 section 6.4). The dataset is
+    global and kept as a dated version; no case uses it until a person chooses it for that case."""
+    from services.pattern_of_life import places
+    conn = db.connection()
+    try:
+        out = places.import_cell_file(conn, body.file_path_on_server, name=body.name, licence=body.licence,
+                                      attribution=body.attribution, retrieved_on=body.retrieved_on,
+                                      source_note=body.source_note, by_name=user.name or user.email,
+                                      by_email=user.email)
+    except places.ImportRefused as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+    return out

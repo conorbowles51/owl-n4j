@@ -315,6 +315,8 @@ from routers.phones import router as phones_router
 app.include_router(phones_router)
 from routers.pattern_of_life import router as pattern_of_life_router
 app.include_router(pattern_of_life_router)
+from services.pattern_of_life import places as _pol_places
+_pol_places.check_reverse_geocoding_at_startup()  # 04 section 6.5: only an in-house backend, else off and logged
 
 
 @app.get("/")
