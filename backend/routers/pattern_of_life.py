@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from postgres.session import get_db
-from routers.case_access import require_case_view
+from routers.case_access import require_case_edit, require_case_view
 from routers.users import get_current_db_user, require_admin
 from services.pattern_of_life import availability, grid, subjects
 
@@ -285,3 +285,86 @@ def get_together(run_id: UUID, cursor: int = Query(0, ge=0), case_id: UUID = Dep
     if out is None:
         raise HTTPException(status_code=404, detail="That run is not in this case.")
     return _jsonable(out)
+
+
+@router.get("/{case_id}/money")
+def get_money(start_date: str | None = Query(None), end_date: str | None = Query(None),
+              account_ids: list[UUID] = Query(default=[]), subject: str | None = Query(None),
+              zone: str = Query("device"), cursor: int = Query(0, ge=0),
+              case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
+    """The money lane (04 section 8.5): admitted payments as all-day items, never at a time of day. ``subject`` only
+    sets the zone an attached place's day is drawn in; the ledger does not link accounts to phones or people."""
+    from services.pattern_of_life import money
+    a = parse_date(start_date, "start_date") if start_date else None
+    b = parse_date(end_date, "end_date") if end_date else None
+    ext = resolve(db, case_id, subject)["extraction_ids"] if subject else []
+    z, zname = _zone_for(db.connection(), ext, zone)
+    try:
+        out = money.lane(db, case_id, start_date=a, end_date=b, account_ids=account_ids, zone=z, cursor=cursor)
+    except money.MoneyError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    out["zone"] = zname
+    return _jsonable(out)
+
+
+class ManualPlaceTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: str = Field(pattern="^transaction$")
+    transaction_id: UUID
+
+
+class ManualPlaceRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target: ManualPlaceTarget
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    radius_m: int = Field(ge=1, le=50000)
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+class ManualPlaceRemoval(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    target: ManualPlaceTarget
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+def _place_actor(user):
+    from services.financial.quarantine_row import ActorError, actor_from_user
+    try:
+        return actor_from_user(user)
+    except ActorError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+
+
+@router.post("/{case_id}/places/manual")
+def post_manual_place(body: ManualPlaceRequest, case_id: UUID = Depends(require_case_edit),
+                      db: Session = Depends(get_db), user=Depends(get_current_db_user)):
+    """A person attaches a place to a payment, recorded as a decision with them as Actor (04 section 8.5)."""
+    from services.pattern_of_life import money
+    try:
+        out = money.attach(db, case_id, body.target.transaction_id, lat=body.lat, lon=body.lon,
+                           radius_m=body.radius_m, reason=body.reason, actor=_place_actor(user))
+    except money.MoneyError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    db.commit()
+    return out
+
+
+@router.post("/{case_id}/places/manual/remove")
+def post_manual_place_removal(body: ManualPlaceRemoval, case_id: UUID = Depends(require_case_edit),
+                              db: Session = Depends(get_db), user=Depends(get_current_db_user)):
+    from services.pattern_of_life import money
+    try:
+        out = money.remove(db, case_id, body.target.transaction_id, reason=body.reason, actor=_place_actor(user))
+    except money.MoneyError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    db.commit()
+    return out
+
+
+@router.get("/{case_id}/places/manual/{transaction_id}")
+def get_manual_place_history(transaction_id: UUID, case_id: UUID = Depends(require_case_view),
+                             db: Session = Depends(get_db)):
+    from services.pattern_of_life import money
+    rows = money.history(db.connection(), case_id, transaction_id)
+    return _jsonable({"total": len(rows), "items": rows})

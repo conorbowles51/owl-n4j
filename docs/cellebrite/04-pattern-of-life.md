@@ -1582,6 +1582,23 @@ Each is a decision with its reasoning and what would reverse it.
     run estimated above 2,000,000 pairs answers 202 and runs in the background. *Reverse if* Neil asks for group
     runs (then every pair of subjects, each its own run), or 02 links Bluetooth addresses (then a seen-peer basis).
 
+28. **Money lane and manual places as built (04-U10; `services/pattern_of_life/money.py`, migration
+    `20261102_pol_money`, `GET .../money`, `POST .../places/manual`, `POST .../places/manual/remove`,
+    `GET .../places/manual/{transaction_id}`).** The lane reads admitted rows only (a superseded row is also excluded
+    by `superseded_by_id`, so an original can never show beside its correction), paged at 500 with the total. A
+    row's day is its transaction date, else its posted date, else the date the ledger orders it by, named from
+    `ordering_date_source` ("Value date; the purchase may be earlier."); `time_of_day` is always null. The ledger
+    links accounts to financial parties, not to phones or dossiers, so the lane is not narrowed by the phone
+    subject (the subject only sets the zone of an attached place's day); a caller narrows it by account, and the
+    response states the population. A place is attached only by a person, to an admitted row (409 otherwise), as
+    decision `attach_transaction_place` with the person as Actor; `remove_transaction_place` reverses it; attaching
+    over a place keeps the earlier row with the decision that ended it. The decision ledger refuses floats in a
+    snapshot, so coordinates are stored there as 7-place decimal strings and the radius in whole metres (1 to
+    50,000). Each change also writes one corrections-feed line (rule 11). The `claim_text` target lands with claims
+    (U11), where a claim's place is a claim field with the claim's own version history. A gazetteer suggestion over
+    `counterparty_raw` waits for an in-house gazetteer (decision 25). *Reverse if* the ledger gains an
+    account-to-dossier link (then a person's lane is that person's accounts), or a gazetteer is installed.
+
 ## 15. Not yet established
 
 - The values of `DeviceEvent.Value` for 14 of 16 EventTypes (only `Power on` and `Factory Reset` are in

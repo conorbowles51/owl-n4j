@@ -123,7 +123,8 @@ _ADJUDICATION_DECISIONS = (
     "'set_phone_default_region', 'set_phone_clock_offset', 'correct_phone_value', 'set_phone_identity_label', "
     "'apply_phone_zone_to_offsetless', 'allow_phone_external_processing', "
     "'accept_phone_reconciliation_difference', 'set_phone_label', 'confirm_phone_result', 'reject_phone_result', "
-    "'confirm_phone_reading', 'correct_phone_reading', 'mark_not_duplicate')"
+    "'confirm_phone_reading', 'correct_phone_reading', 'mark_not_duplicate', "
+    "'attach_transaction_place', 'remove_transaction_place')"
 )
 _ADJUDICATION_REASON_KINDS = "('typed', 'standard')"
 _QUARANTINE_REASONS = (
