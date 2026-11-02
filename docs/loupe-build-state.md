@@ -1,3 +1,22 @@
+## 2 November: phone screens, stage E (cb-screens), item C built (not yet released)
+
+Commits on `cb/cb-screens` after the A+B release: c51bb0fa (Conversations backend: thread list, People, review marks,
+copies rule v1 and Not a copy), 79639304 (D-37 and the copy backfill migration), 7382290f (Conversations screen,
+phone routes, sidebar Phones group, frozen `phone_selection`), 3d9382da (old phone screen and backend removed after a
+live re-measure: 0 evidence rows with old phone columns, 0 old graph nodes), then C4 (the 2 phone subjects and 23
+decisions in the frontend decision vocabulary with wording).
+
+- Screen: `frontend_v2/src/features/conversations/ConversationsPage.tsx` (URL state in `features/phones/lib/filter-url.ts`;
+  D-38 opens the first thread; keys a, m, c via `lib/keymap.ts`, j/k/Space/r in `StreamList`). Routes `conversations`,
+  `phones`, `phones/:extraction`, `phones/:extraction/records/conversations`, `phones/:extraction/records/:type`,
+  `cellebrite` (redirects to phones). `/phones?file|selection|view` still list the phones with a sentence (items D, E, I).
+- `phone_selections` table (migration `20261103_phone_selections`), `services/phone/selections.py`,
+  `POST /api/phones/selections`, resolver registered in `services/phone/resolvers.register()` (D-39).
+- The record panel lists open readings of the record's type with Looks right / Not right opening Needs a decision at
+  `?reading=<id>` (`&answer=not-right`).
+- Add to… Undo removes exactly the links the add created (`added_link_ids` from both container routes).
+- Still to do in C: the sidebar's Needs a decision count (item D), the live check of copy over http (UX-3).
+
 ## 2 November: phone screens, stage E (cb-screens), items A and B live 3dcf67f9
 
 Branch `cb/cb-screens`, rebased on `1a6b3826` (cb-pol). Commits f6deb203 (A), 1bd4305b (B), 8ce6c799 (review fixes). Spec 03 unit 03-1, tests first:

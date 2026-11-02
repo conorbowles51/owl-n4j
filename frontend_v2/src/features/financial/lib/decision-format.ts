@@ -127,6 +127,14 @@ const SUBJECT_COPY: Record<AdjudicationSubject, TermCopy> = {
     label: "Phone report",
     description: "One phone report as it was read into the case, with every record and file it lists. Not part of the financial ledger.",
   },
+  phone_identity: {
+    label: "Phone number or account",
+    description: "One number, email address or app account seen on the case's phones. Not part of the financial ledger.",
+  },
+  phone_record: {
+    label: "Phone record",
+    description: "One record of a phone report, such as a message, call or contact. Not part of the financial ledger.",
+  },
 }
 
 export function readDecisionSubject(
@@ -224,6 +232,121 @@ const DECISION_COPY: Record<AdjudicationDecision, TermCopy> = {
     description:
       "The original reading was retained and replaced by a corrected row with a new citation. Verification is recalculated separately.",
   },
+  link_phone_identity: {
+    label: "Phone identities linked as one person",
+    description:
+      "A person decided that two numbers or accounts belong to the same person, with a reason. Both stay as they were read; the link can be undone.",
+  },
+  unlink_phone_identity: {
+    label: "Phone identity link undone",
+    description:
+      "A link between two numbers or accounts was undone. The earlier link and its reason stay in the history.",
+  },
+  reject_phone_identity_link: {
+    label: "Suggested phone identity link rejected",
+    description:
+      "A person decided that two numbers or accounts the system suggested as one person are not linked, with a reason. The suggestion is not offered again; the rejection can be undone.",
+  },
+  restore_phone_identity_link: {
+    label: "Rejected phone identity link restored",
+    description:
+      "A rejected suggestion is offered again. The rejection and its reason stay in the history.",
+  },
+  set_phone_identity_label: {
+    label: "Name given to a phone identity",
+    description:
+      "A person named a number or account for this case. The names each phone held stay visible beside it.",
+  },
+  set_phone_owner: {
+    label: "Phone owner set",
+    description:
+      "A person said which number or account belongs to the phone's owner, with a reason, where the report did not show it or showed it wrongly.",
+  },
+  set_phone_device_zone: {
+    label: "Phone time zone set",
+    description:
+      "A person said which time zone the phone kept, with a reason. Times without their own zone are shown in it.",
+  },
+  set_phone_default_region: {
+    label: "Phone home country set",
+    description:
+      "A person said which country the phone's local numbers belong to, so numbers written without a country code are read correctly.",
+  },
+  set_phone_clock_offset: {
+    label: "Phone clock difference recorded",
+    description:
+      "A person recorded that the phone's clock ran fast or slow by a stated amount. The report's own times stay beside the adjusted ones.",
+  },
+  apply_phone_zone_to_offsetless: {
+    label: "Zone applied to times with none",
+    description:
+      "Times the report wrote without a time zone are read in the zone a person chose. Each such time says it comes from this decision.",
+  },
+  allow_phone_external_processing: {
+    label: "Outside processing allowed for a phone",
+    description:
+      "A person allowed this phone's material to go to an outside service, such as transcription or translation, with a reason. Without this decision nothing from the phone goes out.",
+  },
+  accept_phone_reconciliation_difference: {
+    label: "Phone report difference accepted",
+    description:
+      "Part of a phone report did not match the report's own counts and was held back. A person accepted the difference, with a reason, so that part is read.",
+  },
+  set_phone_label: {
+    label: "Phone renamed",
+    description:
+      "A person gave the phone the name the case uses for it. The name taken from the report file stays in the history.",
+  },
+  correct_phone_value: {
+    label: "Phone record value corrected",
+    description:
+      "A value on one phone record was corrected, with a reason. The value read from the report stays visible beside it, and only the corrected value is used.",
+  },
+  mark_not_duplicate: {
+    label: "Copy decision on a phone record",
+    description:
+      "A person decided whether this record is a copy of another message shown once. Separating it shows it as its own row; putting it back undoes that. Both stay in the history.",
+  },
+  confirm_phone_reading: {
+    label: "System reading of a phone confirmed",
+    description:
+      "A person checked how the system read one kind of record on one phone, after viewing examples, and confirmed it.",
+  },
+  correct_phone_reading: {
+    label: "System reading of a phone corrected",
+    description:
+      "A person said how one kind of record on one phone should be read instead, with a reason. The phone is read again; the records captured from the report are unchanged.",
+  },
+  confirm_phone_result: {
+    label: "Phone analysis result confirmed",
+    description:
+      "A person confirmed one result of a phone analysis. The result and the data it came from are unchanged.",
+  },
+  reject_phone_result: {
+    label: "Phone analysis result rejected",
+    description:
+      "A person rejected one result of a phone analysis, with a reason. It stays visible as rejected.",
+  },
+  attach_transaction_place: {
+    label: "Place attached to a payment",
+    description:
+      "A person attached a place, a point with a radius, to a payment, with a reason. The payment itself is unchanged.",
+  },
+  remove_transaction_place: {
+    label: "Place removed from a payment",
+    description:
+      "A place attached to a payment was removed. The earlier place stays in the history.",
+  },
+  dispute_check_item: {
+    label: "Statement check item marked wrong",
+    description:
+      "A person marked one item of a statement check as wrong, with a reason. The check's computed outcome is not changed by it.",
+  },
+  withdraw_check_item_dispute: {
+    label: "Statement check mark withdrawn",
+    description:
+      "A mark saying a statement check item is wrong was withdrawn. The mark and its reason stay in the history.",
+  },
   admit_financial_document: {
     label: "Sent out for text processing",
     description:
@@ -262,6 +385,29 @@ const DECISION_VARIANT: Record<AdjudicationDecision, BadgeVariant> = {
   set_account_identity: "info",
   keep_printed_holders: "info",
   supersede_phone_extraction: "slate",
+  link_phone_identity: "info",
+  unlink_phone_identity: "slate",
+  reject_phone_identity_link: "slate",
+  restore_phone_identity_link: "info",
+  set_phone_identity_label: "info",
+  set_phone_owner: "info",
+  set_phone_device_zone: "info",
+  set_phone_default_region: "info",
+  set_phone_clock_offset: "info",
+  apply_phone_zone_to_offsetless: "info",
+  allow_phone_external_processing: "info",
+  accept_phone_reconciliation_difference: "info",
+  set_phone_label: "info",
+  correct_phone_value: "info",
+  mark_not_duplicate: "info",
+  confirm_phone_reading: "info",
+  correct_phone_reading: "info",
+  confirm_phone_result: "info",
+  reject_phone_result: "slate",
+  attach_transaction_place: "info",
+  remove_transaction_place: "slate",
+  dispute_check_item: "amber",
+  withdraw_check_item_dispute: "slate",
   admit_financial_document: "danger",
 }
 
@@ -298,6 +444,29 @@ const CHANGED_STORED_STATE: Record<AdjudicationDecision, boolean> = {
   set_account_identity: true,
   keep_printed_holders: true,
   supersede_phone_extraction: true,
+  link_phone_identity: true,
+  unlink_phone_identity: true,
+  reject_phone_identity_link: true,
+  restore_phone_identity_link: true,
+  set_phone_identity_label: true,
+  set_phone_owner: true,
+  set_phone_device_zone: true,
+  set_phone_default_region: true,
+  set_phone_clock_offset: true,
+  apply_phone_zone_to_offsetless: true,
+  allow_phone_external_processing: true,
+  accept_phone_reconciliation_difference: true,
+  set_phone_label: true,
+  correct_phone_value: true,
+  mark_not_duplicate: true,
+  confirm_phone_reading: true,
+  correct_phone_reading: true,
+  confirm_phone_result: true,
+  reject_phone_result: true,
+  attach_transaction_place: true,
+  remove_transaction_place: true,
+  dispute_check_item: false,
+  withdraw_check_item_dispute: false,
   admit_financial_document: false,
 }
 

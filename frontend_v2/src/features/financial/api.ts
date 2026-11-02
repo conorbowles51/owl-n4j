@@ -855,6 +855,8 @@ export const ADJUDICATION_SUBJECTS = [
   "account",
   "evidence_file",
   "phone_extraction",
+  "phone_identity",
+  "phone_record",
 ] as const
 export type AdjudicationSubject = (typeof ADJUDICATION_SUBJECTS)[number]
 
@@ -882,6 +884,29 @@ export const ADJUDICATION_DECISIONS = [
   "set_account_identity",
   "keep_printed_holders",
   "supersede_phone_extraction",
+  "link_phone_identity",
+  "unlink_phone_identity",
+  "reject_phone_identity_link",
+  "restore_phone_identity_link",
+  "set_phone_identity_label",
+  "set_phone_owner",
+  "set_phone_device_zone",
+  "set_phone_default_region",
+  "set_phone_clock_offset",
+  "apply_phone_zone_to_offsetless",
+  "allow_phone_external_processing",
+  "accept_phone_reconciliation_difference",
+  "set_phone_label",
+  "correct_phone_value",
+  "mark_not_duplicate",
+  "confirm_phone_reading",
+  "correct_phone_reading",
+  "confirm_phone_result",
+  "reject_phone_result",
+  "attach_transaction_place",
+  "remove_transaction_place",
+  "dispute_check_item",
+  "withdraw_check_item_dispute",
 ] as const
 export type AdjudicationDecision = (typeof ADJUDICATION_DECISIONS)[number]
 

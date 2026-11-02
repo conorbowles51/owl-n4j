@@ -142,13 +142,17 @@ describe("readDecision", () => {
     // Taken from the vocabulary's own statement of it. These two change no
     // stored column: one explains why an identity does not close and leaves
     // the standing exactly as it was, and the other authorises a send, where
-    // held was never a stored state to begin with.
+    // held was never a stored state to begin with. A statement check item
+    // marked wrong, and the mark withdrawn, change no computed outcome
+    // (enums.py, 04 section 9.5 decision 11).
     const recordsAView = ADJUDICATION_DECISIONS.filter(
       (d) => readDecision(d).changedStoredState === false
     )
     expect([...recordsAView].sort()).toEqual([
       "admit_financial_document",
+      "dispute_check_item",
       "explain_balance_failure",
+      "withdraw_check_item_dispute",
     ])
   })
 
