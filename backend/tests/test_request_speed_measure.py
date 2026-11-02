@@ -230,7 +230,10 @@ class PageViews(Captured):
         routes = (BACKEND.parent / 'frontend_v2/src/app/routes.tsx').read_text()
         case_block = routes[routes.index('path="/cases/:id"'):routes.index('{/* Admin routes */}')]
         live = set(re.findall(r'path="([a-z-]+)" element=\{<LazyPage>|path="([a-z-]+)" element=\{<Evidence', case_block))
-        self.assertEqual({a or b for a, b in live}, set(rs.CASE_ROUTES))
+        live = {a or b for a, b in live}
+        # Every case page is timed as itself: the general case routes, or a phone page (07 4.13), never "other".
+        self.assertTrue(set(rs.CASE_ROUTES) <= live, set(rs.CASE_ROUTES) - live)
+        self.assertEqual(live - set(rs.CASE_ROUTES) - set(rs.PHONE_PAGES), set())
 
     def test_detail_is_checked_value_by_value(self):
         detail = dict(queue_max_ms=812.4, resources=31, resource_bytes=1234567, largest_route='/api/timeline',

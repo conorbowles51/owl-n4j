@@ -1,6 +1,6 @@
-## 2 November: phone screens, stage E (cb-screens), item A: shared backend
+## 2 November: phone screens, stage E (cb-screens), items A and B: shared backend and frontend
 
-Branch `cb/cb-screens` from `da89342c`. Spec 03 unit 03-1, tests first:
+Branch `cb/cb-screens`, rebased on `1a6b3826` (cb-pol). Commits f6deb203 (A), 1bd4305b (B), 8ce6c799 (review fixes). Spec 03 unit 03-1, tests first:
 
 - `backend/services/phone/time_display.py`: every phone time string (row `3:07 PM`, day header, zone label with the
   day's offset or its change, full `Tue, Mar 14, 2023, 3:07:12 PM EDT`, an offset-less value as written). Zone table
@@ -23,8 +23,35 @@ Branch `cb/cb-screens` from `da89342c`. Spec 03 unit 03-1, tests first:
   127.0.0.1:55444 (password `cbs`), template `loupe_tpl` at head, `LOUPE_TEST_PHONE_PG_TEMPLATE_URL=postgresql://
   postgres:cbs@127.0.0.1:55444/loupe_tpl`, venv `/mnt/owl-data/tmp/cbi/venv/bin/python -m pytest`. All 241 phone
   tests pass.
-- Next: item B (shared frontend: evidence-time.ts against the same fixture, use-stream, StreamList, labels, panel,
-  badges, copy-rows).
+- Migration chain: `20261102_phone_screens_read` follows `20261102_pol_colocation` (one head). The scratch template
+  was rebuilt from empty to head; round trip down to `pol_colocation` and up again passes.
+- Item B (`frontend_v2/src`): `lib/evidence-time.ts` (same expectations file as the server, read through `node:fs`),
+  `features/phones/{api,schemas}.ts`, `hooks/use-stream.ts` (index then windows; full load at or under 5,000; one
+  retry after 2 s then Retry in place; 409 re-reads the index and restores the focused row; no window while an index
+  loads), `components/{StreamList,ParticipantLabel,StateBadges,TimeCell,RecordPanel}.tsx`, helpers in
+  `features/phones/lib/{labels,badges,time-cell,stream-words,copy-rows}.ts` (component files export components only,
+  for the react-refresh lint rule). Copy goes through `copyInGesture` (works on plain http).
+- Frontend tests: `VITE_CACHE_DIR=/tmp/vite-cache-cbs npx vitest run --project unit src/features/phones
+  src/lib/evidence-time.test.ts` (163) and `--project browser src/features/phones/components/StreamList.browser.test.tsx`
+  (7: A4 at 200,000 and 4,000 rows, A5, C-9, A7, A13, the filter-change race). The A13 test uses `userEvent` from
+  `vitest/browser`: copy needs a real user activation, which `fireEvent` cannot give.
+- Review of A+B: 0 blocking. Fixed with tests: zone text that is not a zone name (UTC, stated), case zone in the
+  snapshot, attachments from the current reading only, ids validated (422), the filter-change race, the copy failure
+  wording. Open, owned here, built in item C before the first screen mounts: copy rank when a duplicate group spans
+  days and locate ignoring `shown`; record panel `root_record_uid` lookup (measure first); identity picker count
+  before OFFSET, LIKE backslash escape and folding; `zone.phone` not checked as an id (500 on a hand-made request);
+  `allRows` does not check the generation (a stale reload during Copy could cache old-snapshot rows).
+- Full suites on 8ce6c799 (16:24-17:50 UTC, load 5 to 12): financial unittest 8052 OK (skipped 32); backend pytest
+  2044 passed, 197 skipped, 4 failed: the 3 `test_agent_artifact_exports` failures listed in TEST-BASELINE (no
+  docx/weasyprint in the venv) and `test_request_speed_measure::test_app_page_names_match_the_frontend_routes`, red on
+  origin since f4f81ed9 added the `phone-review` route; that route is timed through `PHONE_PAGES`, so the test now
+  requires every live case route to be in `CASE_ROUTES` or `PHONE_PAGES` (31 pass). Frontend unit 2683 passed, 2 failed:
+  `financial/api.decisions.test.ts` vocabularies, red on origin since 2a351f8f (02-U10 added 2 phone subjects and 19 phone
+  decisions to the backend ledger, not to `financial/api.ts` or the wording, badge and changed-state maps in
+  `decision-format.ts`); owned here, built in item C. Browser: the failures in document-viewer, KnownAccountPayments,
+  ReviewQueueFold and FinancialBatchNavigation (an import error) fail the same way on an origin checkout;
+  StatementImportPanel's 51-period height check failed under load and passes alone (8/8).
+- Next: release A+B, live check signed in, tell cb-pol 03-2 is live; then item C.
 
 ## 2 November: pattern of life, stage F in progress (cb-pol)
 
