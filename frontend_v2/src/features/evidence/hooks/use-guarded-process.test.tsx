@@ -640,8 +640,9 @@ describe("no unannounced hold", () => {
     // the product and not to this test. But a floor is needed: if the hook were
     // renamed, `CALLS_GATE` would match nothing, `consumers` would be empty,
     // and the assertion below would pass by having nothing to say -- exactly
-    // the way the first version of the guard above failed.
-    expect(consumers.length).toBeGreaterThanOrEqual(7)
+    // the way the first version of the guard above failed. Five since the old phone report screens, two of
+    // which held processing requests, were removed with features/cellebrite (03 item C).
+    expect(consumers.length).toBeGreaterThanOrEqual(5)
   })
 
   it("the exemption is still load-bearing", () => {
