@@ -276,7 +276,7 @@ Per 01 section 11 and 03 D-25: the new code is built beside the old under new na
 | Old | Removed in |
 |---|---|
 | Engine `app/pipeline/cellebrite/*`, `cellebrite_ingestion.py`, engine cellebrite route, arq function | 01-1.7 once the new upload path dispatches to the phone worker |
-| Backend `routers/cellebrite.py`, `services/neo4j/cellebrite_service.py`, `cellebrite_intersection_service.py` | 03-3 (Conversations replaces the last screen that calls them) |
+| Backend `routers/cellebrite.py`, `services/neo4j/cellebrite_service.py`, `cellebrite_intersection_service.py`; `services/phone_normalise.py` and `tests/test_phone_normalise.py` (its only caller is `cellebrite_service.py`; 02's `services/phone/identifiers.py` and `numbers.py` replace it; `tests/test_phone_normalise_retirement.py` keeps it to that one caller and goes with it) | 03-3 (Conversations replaces the last screen that calls them) |
 | `frontend_v2/src/features/cellebrite/` and its route and sidebar entry | 03-3 |
 | Old Cellebrite columns and migrations | kept (01 D21); no destructive migration |
 
