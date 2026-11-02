@@ -26,11 +26,16 @@ export const GroupSchema = z.object({
   score: z.number().optional(),
 })
 export type SearchGroup = z.infer<typeof GroupSchema>
+/** A phone still being read or only partly read: totals that count from it are not whole (03 3.8). */
+const LimitSchema = z.object({ kind: z.string(), message: z.string() }).passthrough()
+const GroupPageSchema = GroupSchema.extend({ complete: z.boolean().default(true), limits: z.array(LimitSchema).default([]) })
+
 export const SearchSchema = z.object({
   query: z.string(),
   folded_query: z.string(),
   exact: z.boolean(),
   complete: z.boolean(),
+  limits: z.array(LimitSchema).default([]),
   short: z.string().nullable(),
   groups: z.array(GroupSchema),
   not_searched: z.array(z.object({ group: z.string(), reason: z.string() })),
@@ -45,5 +50,5 @@ export async function searchCase(caseId: string, q: string, exact = false, signa
 export async function searchGroup(caseId: string, q: string, group: string, cursor: string | null, exact = false, signal?: AbortSignal) {
   const p = new URLSearchParams({ case_id: caseId, q, group, exact: String(exact), limit: "200" })
   if (cursor) p.set("cursor", cursor)
-  return GroupSchema.parse(await fetchAPI(`/api/search/group?${p}`, { signal }))
+  return GroupPageSchema.parse(await fetchAPI(`/api/search/group?${p}`, { signal }))
 }

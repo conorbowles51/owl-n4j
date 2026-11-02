@@ -1,10 +1,11 @@
-"""03 section 11.5 and S-6: the chat is told to cite phone records with rec:// and never to invent page 1."""
+"""03 section 11.5 and S-6: the chat never invents page 1, and is not told to cite rec:// ids that no passage it is
+given carries (phone thread text is not in chat retrieval)."""
 from __future__ import annotations
 
 from services.llm_service import LLMExecutionContext
 
 
-def test_the_chat_prompt_cites_records_and_gives_no_page_when_none_is_known():
+def test_the_chat_prompt_gives_no_page_when_none_is_known_and_promises_no_record_ids():
     ctx = object.__new__(LLMExecutionContext)
     ctx.system_context, ctx.analysis_guidance = "synthetic system", "synthetic guidance"
     sent = {}
@@ -18,4 +19,4 @@ def test_the_chat_prompt_cites_records_and_gives_no_page_when_none_is_known():
     assert "use page 1" not in prompt
     assert "never write p.1 for an unknown page" in prompt
     assert "(doc://document_filename.pdf)" in prompt  # the no-page form
-    assert "(rec://<id>)" in prompt
+    assert "rec://" not in prompt  # the passage headers carry no record id, so the model would have to invent one

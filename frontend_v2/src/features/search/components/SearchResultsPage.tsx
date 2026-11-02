@@ -25,14 +25,16 @@ export function SearchResultsPage() {
       let cursor: string | null = null
       let total = 0
       let note: string | undefined
+      let limits: string[] = []
       do {
         const page = await searchGroup(caseId, q, group, cursor, exact, signal)
         items.push(...page.items)
         total = page.total
         note = page.note
+        limits = page.limits.map((l) => l.message)
         cursor = page.next_cursor
       } while (cursor)
-      return { items, total, note }
+      return { items, total, note, limits }
     },
   })
   const name = GROUP_NAMES[group] ?? group
@@ -49,6 +51,11 @@ export function SearchResultsPage() {
             {res.data.total.toLocaleString("en-US")} {res.data.total === 1 ? "match" : "matches"}
             {exact ? ", exact characters" : ""}
           </p>
+          {res.data.limits.map((m) => (
+            <p key={m} role="alert" className="text-xs">
+              {m}
+            </p>
+          ))}
           {res.data.note && <p className="text-xs">{res.data.note}</p>}
           <ul className="flex flex-col divide-y rounded border">
             {res.data.items.map((h, i) => (

@@ -304,8 +304,35 @@ def search(conn, case_id, q, *, exact=False, groups=GROUPS, phones=None, start=N
     out = [_group(conn, case_id, g, q, exact, phones, start, end, 0, FIRST, ctx, short) for g in groups]
     for g in out:  # the Enter rule's order (11.4): exact name first, then the group whose top hit is newest text
         g["score"] = _score(g, q, exact)
-    return {"query": q, "folded_query": F.fold(q, exact=exact), "exact": exact, "complete": True,
-            "short": SHORT if short else None, "groups": out, "not_searched": NOT_SEARCHED}
+    limits = coverage_limits(conn, case_id, phones)
+    return {"query": q, "folded_query": F.fold(q, exact=exact), "exact": exact, "complete": not limits,
+            "limits": limits, "short": SHORT if short else None, "groups": out,
+            "not_searched": NOT_SEARCHED + unread_files(conn, case_id)}
+
+
+def coverage_limits(conn, case_id, phones=None) -> list:
+    """The phones in scope still being read or only partly read: the same words Conversations shows (3.8, 4.2), so a
+    search total is never presented as whole while a phone it counts from is incomplete."""
+    from services.phone.filters import StreamFilter
+    return streams.limits_for(conn, StreamFilter(case_id=str(case_id), phones=[str(p) for p in phones or []]))
+
+
+def unread_files(conn, case_id) -> list:
+    """Evidence files of the case with no text read (still waiting, failed, or not documents): not searched, said
+    with their count. Internal copies and phone thread documents are not evidence listings and are left out."""
+    from sqlalchemy import func, select
+
+    from postgres.models.evidence import EvidenceDocumentText, EvidenceFile
+    from services.financial.source_lineage import visible_evidence_condition
+    n = conn.execute(select(func.count()).select_from(EvidenceFile).outerjoin(
+        EvidenceDocumentText, EvidenceDocumentText.evidence_file_id == EvidenceFile.id).where(
+        EvidenceFile.case_id == case_id, visible_evidence_condition(),
+        EvidenceDocumentText.content.is_(None))).scalar() or 0
+    if not n:
+        return []
+    return [{"group": "unread_files", "reason": "%s %s no text read yet (still waiting, failed, or not a document) "
+             "and %s not searched." % ("{:,}".format(n), "file has" if n == 1 else "files have",
+                                       "is" if n == 1 else "are")}]
 
 
 def group_page(conn, case_id, q, group, *, cursor=None, limit=MAX_PAGE, exact=False, phones=None, start=None,
@@ -317,8 +344,9 @@ def group_page(conn, case_id, q, group, *, cursor=None, limit=MAX_PAGE, exact=Fa
         raise SearchError("A page holds 1 to 200 hits.")
     offset = int(cursor or 0)
     short = len(F.fold(q, exact=exact).replace(" ", "")) < MIN_TEXT
+    limits = coverage_limits(conn, case_id, phones)
     return dict(_group(conn, case_id, group, q, exact, phones, start, end, offset, limit, _context(conn, case_id),
-                       short), query=q)
+                       short), query=q, complete=not limits, limits=limits)
 
 
 def _score(g, q, exact):

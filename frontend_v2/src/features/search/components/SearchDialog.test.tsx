@@ -14,7 +14,7 @@ const hit = (over: Record<string, unknown>) => ({ kind: "message", title: "C3 Wh
 
 function result(over: Partial<SearchResult> = {}): SearchResult {
   return {
-    query: "jose", folded_query: "jose", exact: false, complete: true, short: null,
+    query: "jose", folded_query: "jose", exact: false, complete: true, limits: [], short: null,
     groups: [
       { group: "messages", total: 41, items: [hit({})], next_cursor: "1", score: 2 },
       { group: "calls", total: 0, items: [], next_cursor: null, score: 0 },
@@ -122,5 +122,11 @@ describe("Search dialog", () => {
     await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/cases/case-1/graph"))
     expect(await screen.findByPlaceholderText("Search words, names, numbers or accounts")).toHaveValue("jose")
     expect(await screen.findByText("People and identifiers (1)")).toBeInTheDocument()
+  })
+  it("says when a phone is still being read, so no total reads as whole", async () => {
+    api.searchCase.mockResolvedValue(result({ complete: false, limits: [{ kind: "phone_incomplete", message: "C9 is still being read. Results will be incomplete until it finishes." }] }))
+    page()
+    await openAndType("jose")
+    expect(await screen.findByRole("alert")).toHaveTextContent("C9 is still being read. Results will be incomplete until it finishes.")
   })
 })

@@ -166,6 +166,11 @@ function SearchBody(props: {
           <p className="text-muted-foreground">Shorter text is matched against numbers and identifiers only.</p>
         </div>
       )}
+      {data.limits.map((l) => (
+        <p key={l.message} role="alert" className="px-4 pt-3 text-xs">
+          {l.message}
+        </p>
+      ))}
       {shown.length === 0 && <p className="p-4 text-sm">Nothing in this case matches {data.query}.</p>}
       {shown.map((g) => (
         <CommandGroup key={g.group} heading={`${GROUP_NAMES[g.group] ?? g.group} (${g.total.toLocaleString("en-US")})`}>

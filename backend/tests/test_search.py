@@ -170,3 +170,25 @@ def test_a8_each_decorative_style_is_found_by_plain_typing_in_messages_and_names
             assert [h["identity_key"] for h in g["people"]["items"] if h.get("identity_key")] == [ANA]
             exact = {x["group"]: x for x in S.search(c, case_id, case["fold"], exact=True)["groups"]}
             assert exact["messages"]["total"] == 0
+
+
+def test_search_is_not_presented_as_whole_while_a_phone_is_still_being_read(world):
+    """Review of item E: a phone still being read makes every search total incomplete, in the same words as
+    Conversations; files with no text read are said not to be searched, with their count."""
+    with world["engine"].begin() as c:
+        phone(c, world["case"], label="C9", interpreted=False, events=[msg(at(2023, 4, 1), ANA, [OWNER], body="see")])
+        c.execute(text(
+            "INSERT INTO evidence_files (id, case_id, original_filename, stored_path, size, sha256, status, created_at, "
+            "updated_at) VALUES (:i, :c, 'waiting.pdf', 'x/waiting.pdf', 1, '01', 'unprocessed', now(), now())"),
+            {"i": uuid.uuid4(), "c": world["case"]})
+    with world["engine"].connect() as c:
+        out = S.search(c, world["case"], "see")
+        page = S.group_page(c, world["case"], "see", "messages")
+        other = S.search(c, world["other"], "jose lopez")
+    assert out["complete"] is False and out["limits"][0]["kind"] == "phone_incomplete"
+    assert "still being read" in out["limits"][0]["message"]
+    assert page["complete"] is False and page["limits"] == out["limits"]
+    unread = [n for n in out["not_searched"] if n["group"] == "unread_files"]
+    assert unread == [{"group": "unread_files", "reason": "1 file has no text read yet (still waiting, failed, or not "
+                                                          "a document) and is not searched."}]
+    assert other["complete"] is True and other["limits"] == []  # another case's phone does not count
