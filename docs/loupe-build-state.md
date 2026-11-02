@@ -58,7 +58,7 @@ Branch `cb/cb-screens`, rebased on `1a6b3826` (cb-pol). Commits f6deb203 (A), 1b
   list's copy over http is checked live once item C mounts the list. cb-pol told.
 - Next: item C.
 
-## 2 November: pattern of life, stage F in progress (cb-pol), A to J, L, D and collecting live f9834e25
+## 2 November: pattern of life, stage F in progress (cb-pol), A to J, L, D, collecting and key dates live e74130da
 
 Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for readers:
 `/mnt/owl-data/fin-wt/headless/CB-POL-STATUS.md` (written at the end); progress `headless/cb-pol-progress.md`.
@@ -124,8 +124,15 @@ Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for read
   finding (cb-pol test)" exist in 4aa79795 for these checks.
 - **Open follow-up (mine):** a grid frozen with strong-only plus device state, or with physical events, lists fewer
   records than the grid counts (not reachable from the page today).
-- **Next:** key dates as Workspace entries, device and sensor counts per case, M-13a, Gate M (synthetic two-phone
-  HTTP end to end and the P14 corpus run with the 11 performance targets), J-10c with cb-screens.
+- **Key dates and hidden device lanes (f9008e04, review fix e74130da):** `key_dates.py` + `pol_key_date` (a
+  Workspace note tagged "key date"/"case term" with a marker row, one transaction, deferred FK); Patterns key
+  dates bar, "Save this moment as a key date" in the window, key dates as Timeline starts. Typed times are read
+  with the offset at that moment (skipped times refused, repeated times take the earlier). Lanes hide device and
+  passive lanes with "N device events and sensor readings hidden. Show". 04 decisions 34, 35. Live-checked in
+  4aa79795 (key date "Synthetic key date (cb-pol test)" exists there); journeys 4/4.
+- **Next:** M-13a (records per phone within 2 h of three anchors in the 10-report case; default window; record in
+  05 and 06 section 5), Gate M (synthetic two-phone HTTP end to end; P14 corpus run with the 11 performance
+  targets), Places/Together on the Case Map panels, J-10c with cb-screens, the grid record-list follow-up.
 - **Tests:** `tests/test_pattern_u2_activity.py` (7), `tests/test_pattern_u4_availability.py` (4), `u7_grid` (4), `u5_places` (5), `u8_routine` (2), `u9_together` (6), `u10_money` (3), `u11_claims` (6), `u12_drafting` (4), `u6_day` (2); frontend `src/features/pattern/lanes.test.tsx` (3), `views.test.tsx` (1), `collect.test.tsx` (2); backend `u13_snapshots` (2), u6 window zone (+1); opt-in PostgreSQL
   through `LOUPE_TEST_PHONE_PG_TEMPLATE_URL`. HTTP helper `tests/pattern_pg.py` (`api_client`). Scratch PostgreSQL
   for this job: container `cbp-pgtest` on 127.0.0.1:55446 (template `loupe_tpl`, rebuilt from `loupe_cbp` after
