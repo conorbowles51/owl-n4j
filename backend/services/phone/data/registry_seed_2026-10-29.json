@@ -1,0 +1,7391 @@
+{
+ "acknowledged_flags": [
+  {
+   "field_kind": "field",
+   "field_name": "SystemMessageId",
+   "flag_kind": "new_value_type",
+   "previous": [
+    "Guid"
+   ],
+   "reason": "Seen in the catalogue: String 25 values, Guid 277 values, across 6 reports",
+   "type_name": "ChatActivity",
+   "value_type": "String"
+  }
+ ],
+ "attributes": [
+  {
+   "attribute": "IsPartialData",
+   "element": "extractionInfo"
+  },
+  {
+   "attribute": "IsSelectiveExtraction",
+   "element": "extractionInfo"
+  },
+  {
+   "attribute": "IsStoppedByUser",
+   "element": "extractionInfo"
+  },
+  {
+   "attribute": "IsTriageExtraction",
+   "element": "extractionInfo"
+  },
+  {
+   "attribute": "deviceName",
+   "element": "extractionInfo"
+  },
+  {
+   "attribute": "fullName",
+   "element": "extractionInfo"
+  },
+  {
+   "attribute": "id",
+   "element": "extractionInfo"
+  },
+  {
+   "attribute": "index",
+   "element": "extractionInfo"
+  },
+  {
+   "attribute": "isCustomName",
+   "element": "extractionInfo"
+  },
+  {
+   "attribute": "name",
+   "element": "extractionInfo"
+  },
+  {
+   "attribute": "type",
+   "element": "extractionInfo"
+  },
+  {
+   "attribute": "decodedApplication",
+   "element": "file"
+  },
+  {
+   "attribute": "decodedBy",
+   "element": "file"
+  },
+  {
+   "attribute": "deleted",
+   "element": "file"
+  },
+  {
+   "attribute": "embedded",
+   "element": "file"
+  },
+  {
+   "attribute": "extractionId",
+   "element": "file"
+  },
+  {
+   "attribute": "fs",
+   "element": "file"
+  },
+  {
+   "attribute": "fsid",
+   "element": "file"
+  },
+  {
+   "attribute": "id",
+   "element": "file"
+  },
+  {
+   "attribute": "imageFormat",
+   "element": "file"
+  },
+  {
+   "attribute": "isNative",
+   "element": "file"
+  },
+  {
+   "attribute": "isrelated",
+   "element": "file"
+  },
+  {
+   "attribute": "labels",
+   "element": "file"
+  },
+  {
+   "attribute": "name",
+   "element": "file"
+  },
+  {
+   "attribute": "path",
+   "element": "file"
+  },
+  {
+   "attribute": "size",
+   "element": "file"
+  },
+  {
+   "attribute": "source_index",
+   "element": "file"
+  },
+  {
+   "attribute": "decoding_confidence",
+   "element": "model"
+  },
+  {
+   "attribute": "deleted_state",
+   "element": "model"
+  },
+  {
+   "attribute": "extractionId",
+   "element": "model"
+  },
+  {
+   "attribute": "file_id",
+   "element": "model"
+  },
+  {
+   "attribute": "id",
+   "element": "model"
+  },
+  {
+   "attribute": "isrelated",
+   "element": "model"
+  },
+  {
+   "attribute": "labels",
+   "element": "model"
+  },
+  {
+   "attribute": "originalId",
+   "element": "model"
+  },
+  {
+   "attribute": "pa_id",
+   "element": "model"
+  },
+  {
+   "attribute": "source_index",
+   "element": "model"
+  },
+  {
+   "attribute": "type",
+   "element": "model"
+  },
+  {
+   "attribute": "Cryptocurrency",
+   "element": "project"
+  },
+  {
+   "attribute": "MediaResults",
+   "element": "project"
+  },
+  {
+   "attribute": "ModelCount",
+   "element": "project"
+  },
+  {
+   "attribute": "NodeCount",
+   "element": "project"
+  },
+  {
+   "attribute": "containsGarbage",
+   "element": "project"
+  },
+  {
+   "attribute": "extractionType",
+   "element": "project"
+  },
+  {
+   "attribute": "id",
+   "element": "project"
+  },
+  {
+   "attribute": "licenseID",
+   "element": "project"
+  },
+  {
+   "attribute": "name",
+   "element": "project"
+  },
+  {
+   "attribute": "reportVersion",
+   "element": "project"
+  },
+  {
+   "attribute": "format",
+   "element": "value"
+  },
+  {
+   "attribute": "formattedTimestamp",
+   "element": "value"
+  },
+  {
+   "attribute": "type",
+   "element": "value"
+  }
+ ],
+ "counter_reports": 14,
+ "fields": [
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DeviceName",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 15310,
+   "type_name": "ActivitySensorData",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DistanceTraveled",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 39230,
+   "type_name": "ActivitySensorData",
+   "value_type": "Double"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "FlightsClimbed",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 19367,
+   "type_name": "ActivitySensorData",
+   "value_type": "Double"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "From",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 45518,
+   "type_name": "ActivitySensorData",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "MaxHeartrate",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 13126,
+   "type_name": "ActivitySensorData",
+   "value_type": "Double"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "MaxSpeed",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 22935,
+   "type_name": "ActivitySensorData",
+   "value_type": "Double"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 45518,
+   "type_name": "ActivitySensorData",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SourceDeviceType",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 13125,
+   "type_name": "ActivitySensorData",
+   "value_type": "SampleSourceType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "To",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 45518,
+   "type_name": "ActivitySensorData",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TotalSampleCount",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 45518,
+   "type_name": "ActivitySensorData",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 3,
+   "seed_value_count": 45518,
+   "type_name": "ActivitySensorData",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "AverageValue",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 33606,
+   "type_name": "ActivitySensorDataMeasurement",
+   "value_type": "Double"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DeviceName",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 41721,
+   "type_name": "ActivitySensorDataMeasurement",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "MaximumValue",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 33606,
+   "type_name": "ActivitySensorDataMeasurement",
+   "value_type": "Double"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "MeasuredVariableType",
+   "is_named_set": true,
+   "seed_report_count": 3,
+   "seed_value_count": 117182,
+   "type_name": "ActivitySensorDataMeasurement",
+   "value_type": "MeasuredVariableType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 83576,
+   "type_name": "ActivitySensorDataMeasurement",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TotalValue",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 33606,
+   "type_name": "ActivitySensorDataMeasurement",
+   "value_type": "Double"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Unit",
+   "is_named_set": true,
+   "seed_report_count": 3,
+   "seed_value_count": 117182,
+   "type_name": "ActivitySensorDataMeasurement",
+   "value_type": "MeasurementUnits"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 2,
+   "seed_value_count": 83576,
+   "type_name": "ActivitySensorDataMeasurement",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateEnded",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 287141,
+   "type_name": "ActivitySensorDataSample",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateSampled",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 424657,
+   "type_name": "ActivitySensorDataSample",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Quantity",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 424657,
+   "type_name": "ActivitySensorDataSample",
+   "value_type": "Double"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 287141,
+   "type_name": "ActivitySensorDataSample",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 2,
+   "seed_value_count": 287141,
+   "type_name": "ActivitySensorDataSample",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ActivationCount",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 2275,
+   "type_name": "ApplicationUsage",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ActiveTime",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 2565,
+   "type_name": "ApplicationUsage",
+   "value_type": "TimeSpan"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "BackgroundTime",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 2302,
+   "type_name": "ApplicationUsage",
+   "value_type": "TimeSpan"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EndTime",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 2537,
+   "type_name": "ApplicationUsage",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Identifier",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 2608,
+   "type_name": "ApplicationUsage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LastLaunch",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 71,
+   "type_name": "ApplicationUsage",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LastScreenshot",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 16,
+   "type_name": "ApplicationUsage",
+   "value_type": "Guid"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LastUsageDuration",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 2246,
+   "type_name": "ApplicationUsage",
+   "value_type": "TimeSpan"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LaunchCount",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 2270,
+   "type_name": "ApplicationUsage",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 30,
+   "type_name": "ApplicationUsage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 2537,
+   "type_name": "ApplicationUsage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "StartTime",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 2521,
+   "type_name": "ApplicationUsage",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 2246,
+   "type_name": "ApplicationUsage",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Action",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 41277,
+   "type_name": "AppsUsageLog",
+   "value_type": "AppAction"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "AdditionalInfo",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 12129,
+   "type_name": "AppsUsageLog",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EndTime",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 45283,
+   "type_name": "AppsUsageLog",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Identifier",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 67717,
+   "type_name": "AppsUsageLog",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ServiceIdentifier",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 16822,
+   "type_name": "AppsUsageLog",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 67723,
+   "type_name": "AppsUsageLog",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "StartTime",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 67723,
+   "type_name": "AppsUsageLog",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SubModule",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 3001,
+   "type_name": "AppsUsageLog",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 3,
+   "seed_value_count": 67723,
+   "type_name": "AppsUsageLog",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Charset",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 2675,
+   "type_name": "Attachment",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ContentType",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 95493,
+   "type_name": "Attachment",
+   "value_type": "String"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "dataField",
+   "field_name": "Data",
+   "is_named_set": false,
+   "seed_report_count": 14,
+   "seed_value_count": 0,
+   "type_name": "Attachment",
+   "value_type": "(none)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Filename",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 75007,
+   "type_name": "Attachment",
+   "value_type": "String"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 0,
+   "type_name": "Attachment",
+   "value_type": "(empty)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Title",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 20748,
+   "type_name": "Attachment",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "URL",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 55974,
+   "type_name": "Attachment",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "attachment_extracted_path",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 61374,
+   "type_name": "Attachment",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Key",
+   "is_named_set": false,
+   "seed_report_count": 8,
+   "seed_value_count": 104,
+   "type_name": "Autofill",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LastUsedDate",
+   "is_named_set": false,
+   "seed_report_count": 8,
+   "seed_value_count": 104,
+   "type_name": "Autofill",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 8,
+   "seed_value_count": 104,
+   "type_name": "Autofill",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 8,
+   "seed_value_count": 104,
+   "type_name": "Autofill",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 8,
+   "seed_value_count": 104,
+   "type_name": "Autofill",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Value",
+   "is_named_set": false,
+   "seed_report_count": 8,
+   "seed_value_count": 104,
+   "type_name": "Autofill",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Account",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "CalendarEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Availability",
+   "is_named_set": true,
+   "seed_report_count": 6,
+   "seed_value_count": 795,
+   "type_name": "CalendarEntry",
+   "value_type": "EventAvailability"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Category",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 1042,
+   "type_name": "CalendarEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Class",
+   "is_named_set": true,
+   "seed_report_count": 2,
+   "seed_value_count": 147,
+   "type_name": "CalendarEntry",
+   "value_type": "EventClass"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Details",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 496,
+   "type_name": "CalendarEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EndDate",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 1075,
+   "type_name": "CalendarEntry",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Location",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 6,
+   "type_name": "CalendarEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Priority",
+   "is_named_set": true,
+   "seed_report_count": 2,
+   "seed_value_count": 147,
+   "type_name": "CalendarEntry",
+   "value_type": "EventPriority"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "Reminders",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 7,
+   "type_name": "CalendarEntry",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "RepeatDay",
+   "is_named_set": true,
+   "seed_report_count": 6,
+   "seed_value_count": 184,
+   "type_name": "CalendarEntry",
+   "value_type": "RepeatDay"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "RepeatInterval",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 254,
+   "type_name": "CalendarEntry",
+   "value_type": "UInt32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "RepeatRule",
+   "is_named_set": true,
+   "seed_report_count": 8,
+   "seed_value_count": 256,
+   "type_name": "CalendarEntry",
+   "value_type": "RepeatRule"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "RepeatUntil",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 4,
+   "type_name": "CalendarEntry",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 1081,
+   "type_name": "CalendarEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "StartDate",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 1081,
+   "type_name": "CalendarEntry",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Status",
+   "is_named_set": true,
+   "seed_report_count": 2,
+   "seed_value_count": 147,
+   "type_name": "CalendarEntry",
+   "value_type": "EventStatus"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Subject",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 1072,
+   "type_name": "CalendarEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 13,
+   "seed_value_count": 1081,
+   "type_name": "CalendarEntry",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Account",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 24401,
+   "type_name": "Call",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "CountryCode",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 1980,
+   "type_name": "Call",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Direction",
+   "is_named_set": true,
+   "seed_report_count": 17,
+   "seed_value_count": 33522,
+   "type_name": "Call",
+   "value_type": "ModelDirections"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DisconnectionCause",
+   "is_named_set": true,
+   "seed_report_count": 4,
+   "seed_value_count": 4201,
+   "type_name": "Call",
+   "value_type": "CallDisconnectionCause"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Duration",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 28716,
+   "type_name": "Call",
+   "value_type": "TimeSpan"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "field",
+   "field_name": "NetworkCode",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 0,
+   "type_name": "Call",
+   "value_type": "(empty)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "NetworkName",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 1980,
+   "type_name": "Call",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ServiceIdentifier",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 2139,
+   "type_name": "Call",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 25691,
+   "type_name": "Call",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Status",
+   "is_named_set": true,
+   "seed_report_count": 17,
+   "seed_value_count": 32819,
+   "type_name": "Call",
+   "value_type": "TelephonyCallStatus"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 33520,
+   "type_name": "Call",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Type",
+   "is_named_set": true,
+   "seed_report_count": 4,
+   "seed_value_count": 162,
+   "type_name": "Call",
+   "value_type": "CallType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 17,
+   "seed_value_count": 33295,
+   "type_name": "Call",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "VideoCall",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 26293,
+   "type_name": "Call",
+   "value_type": "Boolean"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "field",
+   "field_name": "BID",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 0,
+   "type_name": "CellTower",
+   "value_type": "(empty)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "CID",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 902,
+   "type_name": "CellTower",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LAC",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 902,
+   "type_name": "CellTower",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "MCC",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 851,
+   "type_name": "CellTower",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "MNC",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 902,
+   "type_name": "CellTower",
+   "value_type": "String"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "field",
+   "field_name": "NID",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 0,
+   "type_name": "CellTower",
+   "value_type": "(empty)"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "field",
+   "field_name": "SID",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 0,
+   "type_name": "CellTower",
+   "value_type": "(empty)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 851,
+   "type_name": "CellTower",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Type",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 17,
+   "type_name": "CellTower",
+   "value_type": "CellTowerType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 17,
+   "type_name": "CellTower",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Account",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 3790,
+   "type_name": "Chat",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ChatType",
+   "is_named_set": true,
+   "seed_report_count": 5,
+   "seed_value_count": 1927,
+   "type_name": "Chat",
+   "value_type": "ChatType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Description",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 103,
+   "type_name": "Chat",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Id",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 9250,
+   "type_name": "Chat",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LastActivity",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 9664,
+   "type_name": "Chat",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 12,
+   "seed_value_count": 1509,
+   "type_name": "Chat",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ServiceIdentifier",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 108,
+   "type_name": "Chat",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 10286,
+   "type_name": "Chat",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "StartTime",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 9772,
+   "type_name": "Chat",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 17,
+   "seed_value_count": 4906,
+   "type_name": "Chat",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Action",
+   "is_named_set": true,
+   "seed_report_count": 6,
+   "seed_value_count": 1086,
+   "type_name": "ChatActivity",
+   "value_type": "ChatActivityAction"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SystemMessageBody",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 300,
+   "type_name": "ChatActivity",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SystemMessageId",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 277,
+   "type_name": "ChatActivity",
+   "value_type": "Guid"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SystemMessageId",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 25,
+   "type_name": "ChatActivity",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SystemMessageTimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 302,
+   "type_name": "ChatActivity",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Account",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 31513,
+   "type_name": "Contact",
+   "value_type": "String"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "field",
+   "field_name": "Group",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 0,
+   "type_name": "Contact",
+   "value_type": "(empty)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "InteractionStatuses",
+   "is_named_set": true,
+   "seed_report_count": 16,
+   "seed_value_count": 18484,
+   "type_name": "Contact",
+   "value_type": "ContactType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 39714,
+   "type_name": "Contact",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "Notes",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 4678,
+   "type_name": "Contact",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 36660,
+   "type_name": "Contact",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeCreated",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 5006,
+   "type_name": "Contact",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeModified",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 979,
+   "type_name": "Contact",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Type",
+   "is_named_set": true,
+   "seed_report_count": 16,
+   "seed_value_count": 19608,
+   "type_name": "Contact",
+   "value_type": "ContactType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 16,
+   "seed_value_count": 39469,
+   "type_name": "Contact",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Category",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 2,
+   "type_name": "ContactEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Value",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 2,
+   "type_name": "ContactEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 10,
+   "seed_value_count": 3739,
+   "type_name": "ContactPhoto",
+   "value_type": "String"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "nodeField",
+   "field_name": "PhotoNode",
+   "is_named_set": false,
+   "seed_report_count": 14,
+   "seed_value_count": 0,
+   "type_name": "ContactPhoto",
+   "value_type": "(none)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "Url",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 25481,
+   "type_name": "ContactPhoto",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "contactphoto_extracted_path",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 5780,
+   "type_name": "ContactPhoto",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "CreationTime",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 13464,
+   "type_name": "Cookie",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Domain",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 18269,
+   "type_name": "Cookie",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Expiry",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 11503,
+   "type_name": "Cookie",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LastAccessTime",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 16482,
+   "type_name": "Cookie",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 18267,
+   "type_name": "Cookie",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Path",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 18261,
+   "type_name": "Cookie",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "RelatedApplication",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 15341,
+   "type_name": "Cookie",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 15341,
+   "type_name": "Cookie",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 11,
+   "seed_value_count": 13606,
+   "type_name": "Cookie",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Value",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 16885,
+   "type_name": "Cookie",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Elevation",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 131,
+   "type_name": "Coordinate",
+   "value_type": "Double"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "GpsHorizontalAccuracy",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 28656,
+   "type_name": "Coordinate",
+   "value_type": "Double"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Latitude",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 87347,
+   "type_name": "Coordinate",
+   "value_type": "Double"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Longitude",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 87347,
+   "type_name": "Coordinate",
+   "value_type": "Double"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Company",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "CreditCard",
+   "value_type": "CreditCardCompany"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "CreditCardNumber",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "CreditCard",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateLastUsed",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "CreditCard",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ExpirationDate",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "CreditCard",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "NameOnCard",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "CreditCard",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "CreditCard",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "CreditCard",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ConnectivityMethod",
+   "is_named_set": true,
+   "seed_report_count": 9,
+   "seed_value_count": 193075,
+   "type_name": "DeviceConnectivity",
+   "value_type": "ConnectivityMethod"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ConnectivityNature",
+   "is_named_set": true,
+   "seed_report_count": 9,
+   "seed_value_count": 193075,
+   "type_name": "DeviceConnectivity",
+   "value_type": "ConnectivityNature"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DeviceName",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 186741,
+   "type_name": "DeviceConnectivity",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DeviceType",
+   "is_named_set": true,
+   "seed_report_count": 7,
+   "seed_value_count": 187731,
+   "type_name": "DeviceConnectivity",
+   "value_type": "DeviceType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 8,
+   "seed_value_count": 187114,
+   "type_name": "DeviceConnectivity",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "StartTime",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 187160,
+   "type_name": "DeviceConnectivity",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 8,
+   "seed_value_count": 188289,
+   "type_name": "DeviceConnectivity",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "AdditionalInfo",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "DeviceEvent",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EndTime",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 68441,
+   "type_name": "DeviceEvent",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EventType",
+   "is_named_set": true,
+   "seed_report_count": 12,
+   "seed_value_count": 135188,
+   "type_name": "DeviceEvent",
+   "value_type": "DeviceEventTypes"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ServiceIdentifier",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 8799,
+   "type_name": "DeviceEvent",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 8,
+   "seed_value_count": 135178,
+   "type_name": "DeviceEvent",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "StartTime",
+   "is_named_set": false,
+   "seed_report_count": 12,
+   "seed_value_count": 134347,
+   "type_name": "DeviceEvent",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 8,
+   "seed_value_count": 134073,
+   "type_name": "DeviceEvent",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Value",
+   "is_named_set": false,
+   "seed_report_count": 12,
+   "seed_value_count": 126300,
+   "type_name": "DeviceEvent",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EntryCategory",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 75,
+   "type_name": "DeviceInfoEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EntryName",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 75,
+   "type_name": "DeviceInfoEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EntryValue",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 74,
+   "type_name": "DeviceInfoEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 75,
+   "type_name": "DeviceInfoEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "DeviceInfoEntry",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 2,
+   "seed_value_count": 75,
+   "type_name": "DeviceInfoEntry",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Frequency",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 19548,
+   "type_name": "DictionaryWord",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 6,
+   "type_name": "DictionaryWord",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UsagePattern",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 4648,
+   "type_name": "DictionaryWord",
+   "value_type": "UsagePattern"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 4648,
+   "type_name": "DictionaryWord",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Word",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 19542,
+   "type_name": "DictionaryWord",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Account",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 25992,
+   "type_name": "Email",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Body",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 20608,
+   "type_name": "Email",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Folder",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 26038,
+   "type_name": "Email",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "Labels",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 29110,
+   "type_name": "Email",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Priority",
+   "is_named_set": true,
+   "seed_report_count": 7,
+   "seed_value_count": 17692,
+   "type_name": "Email",
+   "value_type": "MailPriority"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Snippet",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 18509,
+   "type_name": "Email",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 26131,
+   "type_name": "Email",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Status",
+   "is_named_set": true,
+   "seed_report_count": 13,
+   "seed_value_count": 25784,
+   "type_name": "Email",
+   "value_type": "MessageStatus"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Subject",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 26064,
+   "type_name": "Email",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 26131,
+   "type_name": "Email",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 15,
+   "seed_value_count": 26107,
+   "type_name": "Email",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Category",
+   "is_named_set": false,
+   "seed_report_count": 14,
+   "seed_value_count": 92,
+   "type_name": "EmailAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Domain",
+   "is_named_set": false,
+   "seed_report_count": 14,
+   "seed_value_count": 127,
+   "type_name": "EmailAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Value",
+   "is_named_set": false,
+   "seed_report_count": 14,
+   "seed_value_count": 127,
+   "type_name": "EmailAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "BytesReceived",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 17,
+   "type_name": "FileDownload",
+   "value_type": "Int64"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DownloadState",
+   "is_named_set": true,
+   "seed_report_count": 5,
+   "seed_value_count": 17,
+   "type_name": "FileDownload",
+   "value_type": "FileDownloadState"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "DownloadURLChains",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 31,
+   "type_name": "FileDownload",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EndTime",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 17,
+   "type_name": "FileDownload",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "nodeField",
+   "field_name": "File",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 0,
+   "type_name": "FileDownload",
+   "value_type": "(none)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "FileSize",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 17,
+   "type_name": "FileDownload",
+   "value_type": "Int64"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LastAccessed",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 9,
+   "type_name": "FileDownload",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 17,
+   "type_name": "FileDownload",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "StartTime",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 17,
+   "type_name": "FileDownload",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TargetPath",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 17,
+   "type_name": "FileDownload",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Url",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 17,
+   "type_name": "FileDownload",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 5,
+   "seed_value_count": 17,
+   "type_name": "FileDownload",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Account",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 3350,
+   "type_name": "FileUpload",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateLastModified",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 3350,
+   "type_name": "FileUpload",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateUploaded",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 3350,
+   "type_name": "FileUpload",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "nodeField",
+   "field_name": "File",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 0,
+   "type_name": "FileUpload",
+   "value_type": "(none)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "FileType",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 3350,
+   "type_name": "FileUpload",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ShareSettings",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 18,
+   "type_name": "FileUpload",
+   "value_type": "ShareSettings"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 3350,
+   "type_name": "FileUpload",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Title",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 24,
+   "type_name": "FileUpload",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Url",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 82,
+   "type_name": "FileUpload",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 5,
+   "seed_value_count": 3350,
+   "type_name": "FileUpload",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Label",
+   "is_named_set": true,
+   "seed_report_count": 13,
+   "seed_value_count": 2111,
+   "type_name": "ForwardedMessageData",
+   "value_type": "Label"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeCreated",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 1138,
+   "type_name": "ForwardedMessageData",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "AppGUID",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 604,
+   "type_name": "InstalledApplication",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "AssociatedDirectoryPaths",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 14253,
+   "type_name": "InstalledApplication",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "Categories",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 3266,
+   "type_name": "InstalledApplication",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DecodingStatus",
+   "is_named_set": true,
+   "seed_report_count": 9,
+   "seed_value_count": 1689,
+   "type_name": "InstalledApplication",
+   "value_type": "DecodingStatus"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DeletedDate",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 5,
+   "type_name": "InstalledApplication",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Identifier",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 3947,
+   "type_name": "InstalledApplication",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "InstallDate",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 6,
+   "type_name": "InstalledApplication",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "IsEmulatable",
+   "is_named_set": false,
+   "seed_report_count": 7,
+   "seed_value_count": 2654,
+   "type_name": "InstalledApplication",
+   "value_type": "Boolean"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 1542,
+   "type_name": "InstalledApplication",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "OperationMode",
+   "is_named_set": true,
+   "seed_report_count": 9,
+   "seed_value_count": 3599,
+   "type_name": "InstalledApplication",
+   "value_type": "ApplicationOperationMode"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "Permissions",
+   "is_named_set": true,
+   "seed_report_count": 4,
+   "seed_value_count": 1360,
+   "type_name": "InstalledApplication",
+   "value_type": "PermissionCategory"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "PurchaseDate",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 697,
+   "type_name": "InstalledApplication",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 479,
+   "type_name": "InstalledApplication",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 4,
+   "seed_value_count": 1190,
+   "type_name": "InstalledApplication",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Version",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 3044,
+   "type_name": "InstalledApplication",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Body",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 316352,
+   "type_name": "InstantMessage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateDeleted",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "InstantMessage",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateDelivered",
+   "is_named_set": false,
+   "seed_report_count": 7,
+   "seed_value_count": 20920,
+   "type_name": "InstantMessage",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "field",
+   "field_name": "DateRead",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 0,
+   "type_name": "InstantMessage",
+   "value_type": "(empty)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DeletionReason",
+   "is_named_set": true,
+   "seed_report_count": 3,
+   "seed_value_count": 153,
+   "type_name": "InstantMessage",
+   "value_type": "MessageDeletionReason"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Folder",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 92959,
+   "type_name": "InstantMessage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Identifier",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 253188,
+   "type_name": "InstantMessage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "IsLocationSharing",
+   "is_named_set": false,
+   "seed_report_count": 7,
+   "seed_value_count": 71111,
+   "type_name": "InstantMessage",
+   "value_type": "Boolean"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Label",
+   "is_named_set": true,
+   "seed_report_count": 3,
+   "seed_value_count": 71087,
+   "type_name": "InstantMessage",
+   "value_type": "Label"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Platform",
+   "is_named_set": true,
+   "seed_report_count": 16,
+   "seed_value_count": 207136,
+   "type_name": "InstantMessage",
+   "value_type": "Platform"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Priority",
+   "is_named_set": true,
+   "seed_report_count": 3,
+   "seed_value_count": 71087,
+   "type_name": "InstantMessage",
+   "value_type": "MailPriority"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SMSC",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 33854,
+   "type_name": "InstantMessage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SelfDestructDuration",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 71087,
+   "type_name": "InstantMessage",
+   "value_type": "TimeSpan"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ServiceIdentifier",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 4561,
+   "type_name": "InstantMessage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 383874,
+   "type_name": "InstantMessage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SourceApplication",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 383874,
+   "type_name": "InstantMessage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Status",
+   "is_named_set": true,
+   "seed_report_count": 17,
+   "seed_value_count": 205714,
+   "type_name": "InstantMessage",
+   "value_type": "MessageStatus"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Subject",
+   "is_named_set": false,
+   "seed_report_count": 7,
+   "seed_value_count": 522,
+   "type_name": "InstantMessage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 379877,
+   "type_name": "InstantMessage",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Type",
+   "is_named_set": true,
+   "seed_report_count": 17,
+   "seed_value_count": 386815,
+   "type_name": "InstantMessage",
+   "value_type": "InstantMessageType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 17,
+   "seed_value_count": 302143,
+   "type_name": "InstantMessage",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Account",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "Journey",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EndTime",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 8,
+   "type_name": "Journey",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 65,
+   "type_name": "Journey",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 122,
+   "type_name": "Journey",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "StartTime",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 109,
+   "type_name": "Journey",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Type",
+   "is_named_set": true,
+   "seed_report_count": 2,
+   "seed_value_count": 45,
+   "type_name": "Journey",
+   "value_type": "JourneyType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 5,
+   "seed_value_count": 104,
+   "type_name": "Journey",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Key",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 460118,
+   "type_name": "KeyValueModel",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Value",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 460096,
+   "type_name": "KeyValueModel",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Account",
+   "is_named_set": false,
+   "seed_report_count": 7,
+   "seed_value_count": 721,
+   "type_name": "Location",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "AccountLocationAffiliation",
+   "is_named_set": true,
+   "seed_report_count": 9,
+   "seed_value_count": 34083,
+   "type_name": "Location",
+   "value_type": "AccountLocationAffiliation"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "AggregatedLocationsCount",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 20377,
+   "type_name": "Location",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Category",
+   "is_named_set": false,
+   "seed_report_count": 14,
+   "seed_value_count": 28912,
+   "type_name": "Location",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Confidence",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 24054,
+   "type_name": "Location",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Description",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 2051,
+   "type_name": "Location",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DeviceLocationAffiliation",
+   "is_named_set": true,
+   "seed_report_count": 9,
+   "seed_value_count": 34083,
+   "type_name": "Location",
+   "value_type": "DeviceLocationAffiliation"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EndTime",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 16815,
+   "type_name": "Location",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "GpsHorizontalAccuracy",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 12728,
+   "type_name": "Location",
+   "value_type": "Double"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "field",
+   "field_name": "Map",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 0,
+   "type_name": "Location",
+   "value_type": "(empty)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 14,
+   "seed_value_count": 25101,
+   "type_name": "Location",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Origin",
+   "is_named_set": true,
+   "seed_report_count": 4,
+   "seed_value_count": 14782,
+   "type_name": "Location",
+   "value_type": "LocationOrigin"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "PositionAddress",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 59,
+   "type_name": "Location",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Precision",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 52653,
+   "type_name": "Location",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 37472,
+   "type_name": "Location",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 14,
+   "seed_value_count": 59686,
+   "type_name": "Location",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Type",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 58533,
+   "type_name": "Location",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 16,
+   "seed_value_count": 35437,
+   "type_name": "Location",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Application",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 25900,
+   "type_name": "LogEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Body",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 25878,
+   "type_name": "LogEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EffectiveUID",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 3469,
+   "type_name": "LogEntry",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EndTime",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 13881,
+   "type_name": "LogEntry",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Identifier",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 14597,
+   "type_name": "LogEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "PID",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 3469,
+   "type_name": "LogEntry",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Severity",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 3469,
+   "type_name": "LogEntry",
+   "value_type": "LogSeverity"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 25942,
+   "type_name": "LogEntry",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TID",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 3469,
+   "type_name": "LogEntry",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 24176,
+   "type_name": "LogEntry",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 3469,
+   "type_name": "LogEntry",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Label",
+   "is_named_set": true,
+   "seed_report_count": 16,
+   "seed_value_count": 39128,
+   "type_name": "MessageLabel",
+   "value_type": "Label"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Description",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 4,
+   "type_name": "MobileCard",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ModifyTime",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 4,
+   "type_name": "MobileCard",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "PurchaseTime",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 4,
+   "type_name": "MobileCard",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 4,
+   "type_name": "MobileCard",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Type",
+   "is_named_set": true,
+   "seed_report_count": 4,
+   "seed_value_count": 4,
+   "type_name": "MobileCard",
+   "value_type": "MobileCardType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "MobileCard",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "ApplicationId",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 63256,
+   "type_name": "NetworkUsage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateEnded",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 79173,
+   "type_name": "NetworkUsage",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateStarted",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 79173,
+   "type_name": "NetworkUsage",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "IsRoaming",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 79173,
+   "type_name": "NetworkUsage",
+   "value_type": "Boolean"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "NetworkConnectionType",
+   "is_named_set": true,
+   "seed_report_count": 6,
+   "seed_value_count": 79173,
+   "type_name": "NetworkUsage",
+   "value_type": "NWConnectionType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "NumberOfBytesReceived",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 79173,
+   "type_name": "NetworkUsage",
+   "value_type": "Int64"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "NumberOfBytesSent",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 79173,
+   "type_name": "NetworkUsage",
+   "value_type": "Int64"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SSId",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 79173,
+   "type_name": "NetworkUsage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 79173,
+   "type_name": "NetworkUsage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UsageMode",
+   "is_named_set": true,
+   "seed_report_count": 6,
+   "seed_value_count": 79173,
+   "type_name": "NetworkUsage",
+   "value_type": "NetworkUsageMode"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 6,
+   "seed_value_count": 79173,
+   "type_name": "NetworkUsage",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Account",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 12,
+   "type_name": "Note",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Body",
+   "is_named_set": false,
+   "seed_report_count": 7,
+   "seed_value_count": 29,
+   "type_name": "Note",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Creation",
+   "is_named_set": false,
+   "seed_report_count": 8,
+   "seed_value_count": 33,
+   "type_name": "Note",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Folder",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 12,
+   "type_name": "Note",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Modification",
+   "is_named_set": false,
+   "seed_report_count": 8,
+   "seed_value_count": 33,
+   "type_name": "Note",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 8,
+   "seed_value_count": 33,
+   "type_name": "Note",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Summary",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 10,
+   "type_name": "Note",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Title",
+   "is_named_set": false,
+   "seed_report_count": 7,
+   "seed_value_count": 21,
+   "type_name": "Note",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 5,
+   "seed_value_count": 27,
+   "type_name": "Note",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Body",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 7753,
+   "type_name": "Notification",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "Notes",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 7318,
+   "type_name": "Notification",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ServiceIdentifier",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 7833,
+   "type_name": "Notification",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 7881,
+   "type_name": "Notification",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Status",
+   "is_named_set": true,
+   "seed_report_count": 2,
+   "seed_value_count": 3112,
+   "type_name": "Notification",
+   "value_type": "MessageStatus"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Subject",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 7464,
+   "type_name": "Notification",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 7881,
+   "type_name": "Notification",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Type",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 3089,
+   "type_name": "Notification",
+   "value_type": "NotificationType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 2,
+   "seed_value_count": 7881,
+   "type_name": "Notification",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 67,
+   "type_name": "Organization",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateDelivered",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 20690,
+   "type_name": "Party",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DatePlayed",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 2347,
+   "type_name": "Party",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateRead",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 19774,
+   "type_name": "Party",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Distance",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 105699,
+   "type_name": "Party",
+   "value_type": "Double"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Identifier",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 561234,
+   "type_name": "Party",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "IsGroupAdmin",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 238563,
+   "type_name": "Party",
+   "value_type": "Boolean"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "IsPhoneOwner",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 475740,
+   "type_name": "Party",
+   "value_type": "Boolean"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 17,
+   "seed_value_count": 517417,
+   "type_name": "Party",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Role",
+   "is_named_set": true,
+   "seed_report_count": 17,
+   "seed_value_count": 551251,
+   "type_name": "Party",
+   "value_type": "PartyRole"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Status",
+   "is_named_set": true,
+   "seed_report_count": 10,
+   "seed_value_count": 116773,
+   "type_name": "Party",
+   "value_type": "PartyStatus"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "AccessGroup",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 9572,
+   "type_name": "Password",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Account",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 9011,
+   "type_name": "Password",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Data",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 8375,
+   "type_name": "Password",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateCreated",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 6334,
+   "type_name": "Password",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateModified",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 6327,
+   "type_name": "Password",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "GenericAttribute",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 1621,
+   "type_name": "Password",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Label",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 4513,
+   "type_name": "Password",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Server",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 802,
+   "type_name": "Password",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Service",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 8252,
+   "type_name": "Password",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ServiceIdentifier",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 586,
+   "type_name": "Password",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 4707,
+   "type_name": "Password",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Type",
+   "is_named_set": true,
+   "seed_report_count": 13,
+   "seed_value_count": 4730,
+   "type_name": "Password",
+   "value_type": "PasswordType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 13,
+   "seed_value_count": 4704,
+   "type_name": "Password",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Category",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 23792,
+   "type_name": "PhoneNumber",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Domain",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 30691,
+   "type_name": "PhoneNumber",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Value",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 30691,
+   "type_name": "PhoneNumber",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Description",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 9,
+   "type_name": "PoweringEvent",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Element",
+   "is_named_set": true,
+   "seed_report_count": 7,
+   "seed_value_count": 132,
+   "type_name": "PoweringEvent",
+   "value_type": "PowerElementType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Event",
+   "is_named_set": true,
+   "seed_report_count": 7,
+   "seed_value_count": 132,
+   "type_name": "PoweringEvent",
+   "value_type": "PowerEventType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 7,
+   "seed_value_count": 132,
+   "type_name": "PoweringEvent",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Category",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 13318,
+   "type_name": "ProfilePicture",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Domain",
+   "is_named_set": false,
+   "seed_report_count": 14,
+   "seed_value_count": 13319,
+   "type_name": "ProfilePicture",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Value",
+   "is_named_set": false,
+   "seed_report_count": 14,
+   "seed_value_count": 13319,
+   "type_name": "ProfilePicture",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Label",
+   "is_named_set": true,
+   "seed_report_count": 3,
+   "seed_value_count": 20670,
+   "type_name": "QuotedMessageData",
+   "value_type": "Label"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "OriginalMessageID",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 9771,
+   "type_name": "QuotedMessageData",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ReferenceId",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 10297,
+   "type_name": "QuotedMessageData",
+   "value_type": "Guid"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DeviceModel",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 6,
+   "type_name": "RecognizedDevice",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DeviceType",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 13,
+   "type_name": "RecognizedDevice",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 59,
+   "type_name": "RecognizedDevice",
+   "value_type": "String"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "field",
+   "field_name": "SerialNumber",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 0,
+   "type_name": "RecognizedDevice",
+   "value_type": "(empty)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 12,
+   "seed_value_count": 61,
+   "type_name": "RecognizedDevice",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 12,
+   "seed_value_count": 61,
+   "type_name": "RecognizedDevice",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Duration",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 5,
+   "type_name": "Recording",
+   "value_type": "TimeSpan"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "nodeField",
+   "field_name": "Node",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 0,
+   "type_name": "Recording",
+   "value_type": "(none)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 7,
+   "type_name": "Recording",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 5,
+   "type_name": "Recording",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Title",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 7,
+   "type_name": "Recording",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Type",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 7,
+   "type_name": "Recording",
+   "value_type": "RecordingType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 7,
+   "type_name": "Recording",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Account",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 6,
+   "type_name": "RemoteServiceSession",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DateStarted",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 6,
+   "type_name": "RemoteServiceSession",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "DeviceType",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 6,
+   "type_name": "RemoteServiceSession",
+   "value_type": "DeviceType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 6,
+   "type_name": "RemoteServiceSession",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserAgent",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 6,
+   "type_name": "RemoteServiceSession",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 6,
+   "type_name": "RemoteServiceSession",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Label",
+   "is_named_set": true,
+   "seed_report_count": 13,
+   "seed_value_count": 7208,
+   "type_name": "ReplyMessageData",
+   "value_type": "Label"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "OriginalMessageID",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 7208,
+   "type_name": "ReplyMessageData",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Category",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 105,
+   "type_name": "SIMData",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 105,
+   "type_name": "SIMData",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 9,
+   "type_name": "SIMData",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Value",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 105,
+   "type_name": "SIMData",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Label",
+   "is_named_set": true,
+   "seed_report_count": 3,
+   "seed_value_count": 7958,
+   "type_name": "ScrambledMessageData",
+   "value_type": "Label"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Account",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 106,
+   "type_name": "SearchedItem",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "OSUserId",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "SearchedItem",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Origin",
+   "is_named_set": true,
+   "seed_report_count": 13,
+   "seed_value_count": 12167,
+   "type_name": "SearchedItem",
+   "value_type": "SearchItemOrigin"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "SearchResults",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 1050,
+   "type_name": "SearchedItem",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 13851,
+   "type_name": "SearchedItem",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 3837,
+   "type_name": "SearchedItem",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 14,
+   "seed_value_count": 3243,
+   "type_name": "SearchedItem",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Value",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 13136,
+   "type_name": "SearchedItem",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Account",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 3036,
+   "type_name": "SocialMediaActivity",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Body",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 1755,
+   "type_name": "SocialMediaActivity",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ChannelType",
+   "is_named_set": true,
+   "seed_report_count": 3,
+   "seed_value_count": 1760,
+   "type_name": "SocialMediaActivity",
+   "value_type": "SocialMediaChannelType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "CommentCount",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 2698,
+   "type_name": "SocialMediaActivity",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "IdInOrigin",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 2044,
+   "type_name": "SocialMediaActivity",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "IsFromActivityLog",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 1927,
+   "type_name": "SocialMediaActivity",
+   "value_type": "Boolean"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "OriginalPostId",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 149,
+   "type_name": "SocialMediaActivity",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Platform",
+   "is_named_set": true,
+   "seed_report_count": 2,
+   "seed_value_count": 1756,
+   "type_name": "SocialMediaActivity",
+   "value_type": "Platform"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "PrivacySetting",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 2296,
+   "type_name": "SocialMediaActivity",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ReactionsCount",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 2882,
+   "type_name": "SocialMediaActivity",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SharesCount",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 2735,
+   "type_name": "SocialMediaActivity",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SocialActivityType",
+   "is_named_set": true,
+   "seed_report_count": 6,
+   "seed_value_count": 3045,
+   "type_name": "SocialMediaActivity",
+   "value_type": "SocialMediaActivityType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 3045,
+   "type_name": "SocialMediaActivity",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Status",
+   "is_named_set": true,
+   "seed_report_count": 3,
+   "seed_value_count": 1760,
+   "type_name": "SocialMediaActivity",
+   "value_type": "PostStatus"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 2672,
+   "type_name": "SocialMediaActivity",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Title",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 316,
+   "type_name": "SocialMediaActivity",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Url",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 2456,
+   "type_name": "SocialMediaActivity",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 5,
+   "seed_value_count": 1927,
+   "type_name": "SocialMediaActivity",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Category",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 75,
+   "type_name": "StreetAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "City",
+   "is_named_set": false,
+   "seed_report_count": 10,
+   "seed_value_count": 401,
+   "type_name": "StreetAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Country",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 352,
+   "type_name": "StreetAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "HouseNumber",
+   "is_named_set": false,
+   "seed_report_count": 6,
+   "seed_value_count": 330,
+   "type_name": "StreetAddress",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Neighborhood",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 117,
+   "type_name": "StreetAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "PostalCode",
+   "is_named_set": false,
+   "seed_report_count": 7,
+   "seed_value_count": 249,
+   "type_name": "StreetAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "State",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 368,
+   "type_name": "StreetAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Street1",
+   "is_named_set": false,
+   "seed_report_count": 14,
+   "seed_value_count": 457,
+   "type_name": "StreetAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Street2",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 55,
+   "type_name": "StreetAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Identifier",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 13,
+   "type_name": "User",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 11,
+   "type_name": "User",
+   "value_type": "String"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "nodeField",
+   "field_name": "Photo",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 0,
+   "type_name": "User",
+   "value_type": "(none)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SerialNumber",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 13,
+   "type_name": "User",
+   "value_type": "Int64"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeLastLoggedIn",
+   "is_named_set": false,
+   "seed_report_count": 4,
+   "seed_value_count": 13,
+   "type_name": "User",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": false,
+   "seed_report_count": 3,
+   "seed_value_count": 0,
+   "type_name": "User",
+   "value_type": "(empty)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserType",
+   "is_named_set": true,
+   "seed_report_count": 4,
+   "seed_value_count": 13,
+   "type_name": "User",
+   "value_type": "UserType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 175,
+   "type_name": "UserAccount",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "Notes",
+   "is_named_set": false,
+   "seed_report_count": 10,
+   "seed_value_count": 12,
+   "type_name": "UserAccount",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Password",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 32,
+   "type_name": "UserAccount",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ServerAddress",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 2,
+   "type_name": "UserAccount",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ServiceIdentifier",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 64,
+   "type_name": "UserAccount",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ServiceType",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 267,
+   "type_name": "UserAccount",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 401,
+   "type_name": "UserAccount",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeCreated",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 101,
+   "type_name": "UserAccount",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 16,
+   "seed_value_count": 419,
+   "type_name": "UserAccount",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Username",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 354,
+   "type_name": "UserAccount",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Category",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 43218,
+   "type_name": "UserID",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Domain",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 43323,
+   "type_name": "UserID",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Value",
+   "is_named_set": false,
+   "seed_report_count": 16,
+   "seed_value_count": 43323,
+   "type_name": "UserID",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "CanRebuildCacheFile",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 16484,
+   "type_name": "VisitedPage",
+   "value_type": "Boolean"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LastVisited",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 81062,
+   "type_name": "VisitedPage",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "ServiceIdentifier",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 8,
+   "type_name": "VisitedPage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 112079,
+   "type_name": "VisitedPage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Title",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 8556,
+   "type_name": "VisitedPage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Url",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 112079,
+   "type_name": "VisitedPage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UrlCacheFile",
+   "is_named_set": false,
+   "seed_report_count": 11,
+   "seed_value_count": 6863,
+   "type_name": "VisitedPage",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "multiField",
+   "field_name": "UsagePattern",
+   "is_named_set": true,
+   "seed_report_count": 5,
+   "seed_value_count": 25,
+   "type_name": "VisitedPage",
+   "value_type": "UsagePattern"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 15,
+   "seed_value_count": 46203,
+   "type_name": "VisitedPage",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "VisitCount",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 38266,
+   "type_name": "VisitedPage",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Duration",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 76,
+   "type_name": "Voicemail",
+   "value_type": "TimeSpan"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LastModified",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 38,
+   "type_name": "Voicemail",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Name",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 76,
+   "type_name": "Voicemail",
+   "value_type": "String"
+  },
+  {
+   "basis": "counter",
+   "field_kind": "nodeField",
+   "field_name": "Recording",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 0,
+   "type_name": "Voicemail",
+   "value_type": "(none)"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 38,
+   "type_name": "Voicemail",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Timestamp",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 76,
+   "type_name": "Voicemail",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Type",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 38,
+   "type_name": "Voicemail",
+   "value_type": "RecordingType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 1,
+   "seed_value_count": 38,
+   "type_name": "Voicemail",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "WasPlayed",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 38,
+   "type_name": "Voicemail",
+   "value_type": "Boolean"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "voicemail_extracted_path",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 76,
+   "type_name": "Voicemail",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Category",
+   "is_named_set": false,
+   "seed_report_count": 12,
+   "seed_value_count": 52,
+   "type_name": "WebAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Domain",
+   "is_named_set": false,
+   "seed_report_count": 12,
+   "seed_value_count": 53,
+   "type_name": "WebAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Value",
+   "is_named_set": false,
+   "seed_report_count": 12,
+   "seed_value_count": 53,
+   "type_name": "WebAddress",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LastVisited",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 12,
+   "type_name": "WebBookmark",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Path",
+   "is_named_set": false,
+   "seed_report_count": 7,
+   "seed_value_count": 62,
+   "type_name": "WebBookmark",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 114,
+   "type_name": "WebBookmark",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 18,
+   "type_name": "WebBookmark",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Title",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 112,
+   "type_name": "WebBookmark",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Url",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 98,
+   "type_name": "WebBookmark",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 15,
+   "seed_value_count": 114,
+   "type_name": "WebBookmark",
+   "value_type": "DecodingSourceOptions"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "VisitCount",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 11,
+   "type_name": "WebBookmark",
+   "value_type": "Int32"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "BSSId",
+   "is_named_set": false,
+   "seed_report_count": 8,
+   "seed_value_count": 25765,
+   "type_name": "WirelessNetwork",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "EndTime",
+   "is_named_set": false,
+   "seed_report_count": 1,
+   "seed_value_count": 1,
+   "type_name": "WirelessNetwork",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LastAutoConnection",
+   "is_named_set": false,
+   "seed_report_count": 5,
+   "seed_value_count": 207,
+   "type_name": "WirelessNetwork",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "LastConnection",
+   "is_named_set": false,
+   "seed_report_count": 8,
+   "seed_value_count": 78,
+   "type_name": "WirelessNetwork",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "NWConnectionType",
+   "is_named_set": true,
+   "seed_report_count": 2,
+   "seed_value_count": 395,
+   "type_name": "WirelessNetwork",
+   "value_type": "NWConnectionType"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Password",
+   "is_named_set": false,
+   "seed_report_count": 2,
+   "seed_value_count": 26,
+   "type_name": "WirelessNetwork",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SSId",
+   "is_named_set": false,
+   "seed_report_count": 14,
+   "seed_value_count": 186,
+   "type_name": "WirelessNetwork",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "SecurityMode",
+   "is_named_set": false,
+   "seed_report_count": 9,
+   "seed_value_count": 85,
+   "type_name": "WirelessNetwork",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "Source",
+   "is_named_set": false,
+   "seed_report_count": 15,
+   "seed_value_count": 1520,
+   "type_name": "WirelessNetwork",
+   "value_type": "String"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "TimeStamp",
+   "is_named_set": false,
+   "seed_report_count": 13,
+   "seed_value_count": 25645,
+   "type_name": "WirelessNetwork",
+   "value_type": "TimeStamp"
+  },
+  {
+   "basis": "catalogue",
+   "field_kind": "field",
+   "field_name": "UserMapping",
+   "is_named_set": true,
+   "seed_report_count": 7,
+   "seed_value_count": 534,
+   "type_name": "WirelessNetwork",
+   "value_type": "DecodingSourceOptions"
+  }
+ ],
+ "nesting": [
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "ActivitySensorDataMeasurement",
+   "field_kind": "multiModelField",
+   "field_name": "Measurements",
+   "parent_type": "ActivitySensorData"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "ActivitySensorDataSample",
+   "field_kind": "multiModelField",
+   "field_name": "Samples",
+   "parent_type": "ActivitySensorDataMeasurement"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "ApplicationUsage",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "ApplicationUsage"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "AdditionalInfo",
+   "parent_type": "AppsUsageLog"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "multiModelField",
+   "field_name": "Attendees",
+   "parent_type": "CalendarEntry"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "modelField",
+   "field_name": "Organizer",
+   "parent_type": "CalendarEntry"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "multiModelField",
+   "field_name": "Parties",
+   "parent_type": "Call"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Call",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "Call"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Coordinate",
+   "field_kind": "modelField",
+   "field_name": "Position",
+   "parent_type": "CellTower"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "CellTower",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "CellTower"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "ChatActivity",
+   "field_kind": "multiModelField",
+   "field_name": "ActivityLog",
+   "parent_type": "Chat"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "AdditionalInfo",
+   "parent_type": "Chat"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "InstantMessage",
+   "field_kind": "multiModelField",
+   "field_name": "Messages",
+   "parent_type": "Chat"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "multiModelField",
+   "field_name": "Participants",
+   "parent_type": "Chat"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "ContactPhoto",
+   "field_kind": "multiModelField",
+   "field_name": "Photos",
+   "parent_type": "Chat"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "modelField",
+   "field_name": "Participant",
+   "parent_type": "ChatActivity"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "AdditionalInfo",
+   "parent_type": "Contact"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "StreetAddress",
+   "field_kind": "multiModelField",
+   "field_name": "Addresses",
+   "parent_type": "Contact"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "ContactEntry",
+   "field_kind": "multiModelField",
+   "field_name": "Entries",
+   "parent_type": "Contact"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "EmailAddress",
+   "field_kind": "multiModelField",
+   "field_name": "Entries",
+   "parent_type": "Contact"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "PhoneNumber",
+   "field_kind": "multiModelField",
+   "field_name": "Entries",
+   "parent_type": "Contact"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "ProfilePicture",
+   "field_kind": "multiModelField",
+   "field_name": "Entries",
+   "parent_type": "Contact"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "UserID",
+   "field_kind": "multiModelField",
+   "field_name": "Entries",
+   "parent_type": "Contact"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "WebAddress",
+   "field_kind": "multiModelField",
+   "field_name": "Entries",
+   "parent_type": "Contact"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Organization",
+   "field_kind": "multiModelField",
+   "field_name": "Organizations",
+   "parent_type": "Contact"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "ContactPhoto",
+   "field_kind": "multiModelField",
+   "field_name": "Photos",
+   "parent_type": "Contact"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Contact",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "Contact"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Cookie",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "Cookie"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "AdditionalInfo",
+   "parent_type": "DeviceConnectivity"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "DeviceIdentifiers",
+   "parent_type": "DeviceConnectivity"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "AdditionalInfo",
+   "parent_type": "DeviceEvent"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "Additional_Info",
+   "parent_type": "DeviceEvent"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "DeviceEvent",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "DeviceEvent"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Attachment",
+   "field_kind": "multiModelField",
+   "field_name": "Attachments",
+   "parent_type": "Email"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "multiModelField",
+   "field_name": "Cc",
+   "parent_type": "Email"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "modelField",
+   "field_name": "From",
+   "parent_type": "Email"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "multiModelField",
+   "field_name": "To",
+   "parent_type": "Email"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "AdditionalInfo",
+   "parent_type": "FileDownload"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "AdditionalInfo",
+   "parent_type": "FileUpload"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "modelField",
+   "field_name": "Owner",
+   "parent_type": "FileUpload"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "modelField",
+   "field_name": "OriginalSender",
+   "parent_type": "ForwardedMessageData"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "InstalledApplication",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "InstalledApplication"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "User",
+   "field_kind": "multiModelField",
+   "field_name": "Users",
+   "parent_type": "InstalledApplication"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "ChatActivity",
+   "field_kind": "multiModelField",
+   "field_name": "ActivityLog",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "local_samples"
+   ],
+   "child_type": "Attachment",
+   "field_kind": "modelField",
+   "field_name": "Attachment",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Attachment",
+   "field_kind": "multiModelField",
+   "field_name": "Attachments",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "InstantMessage",
+   "field_kind": "multiModelField",
+   "field_name": "EmbeddedInstantMessage",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "modelField",
+   "field_name": "From",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "ForwardedMessageData",
+   "field_kind": "multiModelField",
+   "field_name": "MessageExtraData",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "MessageLabel",
+   "field_kind": "multiModelField",
+   "field_name": "MessageExtraData",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "QuotedMessageData",
+   "field_kind": "multiModelField",
+   "field_name": "MessageExtraData",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "ReplyMessageData",
+   "field_kind": "multiModelField",
+   "field_name": "MessageExtraData",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "ScrambledMessageData",
+   "field_kind": "multiModelField",
+   "field_name": "MessageExtraData",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Coordinate",
+   "field_kind": "modelField",
+   "field_name": "Position",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "InstantMessage",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Contact",
+   "field_kind": "multiModelField",
+   "field_name": "SharedContacts",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "multiModelField",
+   "field_name": "To",
+   "parent_type": "InstantMessage"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Location",
+   "field_kind": "modelField",
+   "field_name": "FromPoint",
+   "parent_type": "Journey"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Location",
+   "field_kind": "modelField",
+   "field_name": "ToPoint",
+   "parent_type": "Journey"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Location",
+   "field_kind": "multiModelField",
+   "field_name": "WayPoints",
+   "parent_type": "Journey"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "StreetAddress",
+   "field_kind": "modelField",
+   "field_name": "Address",
+   "parent_type": "Location"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Coordinate",
+   "field_kind": "modelField",
+   "field_name": "Position",
+   "parent_type": "Location"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Location",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "Location"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "LogEntry",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "LogEntry"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Organization",
+   "field_kind": "modelField",
+   "field_name": "Organization",
+   "parent_type": "MobileCard"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "AdditionalInfo",
+   "parent_type": "NetworkUsage"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Attachment",
+   "field_kind": "multiModelField",
+   "field_name": "Attachments",
+   "parent_type": "Note"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Attachment",
+   "field_kind": "multiModelField",
+   "field_name": "Attachments",
+   "parent_type": "Notification"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "multiModelField",
+   "field_name": "Participants",
+   "parent_type": "Notification"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Notification",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "Notification"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "WebAddress",
+   "field_kind": "multiModelField",
+   "field_name": "Urls",
+   "parent_type": "Notification"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Password",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "Password"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "AdditionalInfo",
+   "parent_type": "RecognizedDevice"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "DeviceIdentifiers",
+   "parent_type": "RecognizedDevice"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "SessionIdentifiers",
+   "parent_type": "RemoteServiceSession"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "SIMData",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "SIMData"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "Parameters",
+   "parent_type": "SearchedItem"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Coordinate",
+   "field_kind": "modelField",
+   "field_name": "Position",
+   "parent_type": "SearchedItem"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "SearchedItem",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "SearchedItem"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Attachment",
+   "field_kind": "multiModelField",
+   "field_name": "Attachments",
+   "parent_type": "SocialMediaActivity"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "modelField",
+   "field_name": "Author",
+   "parent_type": "SocialMediaActivity"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "SocialMediaActivity",
+   "field_kind": "modelField",
+   "field_name": "ParentPost",
+   "parent_type": "SocialMediaActivity"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "SocialMediaActivity",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "SocialMediaActivity"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "multiModelField",
+   "field_name": "TaggedParties",
+   "parent_type": "SocialMediaActivity"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "KeyValueModel",
+   "field_kind": "multiModelField",
+   "field_name": "AdditionalInfo",
+   "parent_type": "UserAccount"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "StreetAddress",
+   "field_kind": "multiModelField",
+   "field_name": "Addresses",
+   "parent_type": "UserAccount"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "EmailAddress",
+   "field_kind": "multiModelField",
+   "field_name": "Entries",
+   "parent_type": "UserAccount"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "PhoneNumber",
+   "field_kind": "multiModelField",
+   "field_name": "Entries",
+   "parent_type": "UserAccount"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "ProfilePicture",
+   "field_kind": "multiModelField",
+   "field_name": "Entries",
+   "parent_type": "UserAccount"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "UserID",
+   "field_kind": "multiModelField",
+   "field_name": "Entries",
+   "parent_type": "UserAccount"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "ContactPhoto",
+   "field_kind": "multiModelField",
+   "field_name": "Photos",
+   "parent_type": "UserAccount"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "UserAccount",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "UserAccount"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "VisitedPage",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "VisitedPage"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "Party",
+   "field_kind": "modelField",
+   "field_name": "From",
+   "parent_type": "Voicemail"
+  },
+  {
+   "basis": [
+    "server_reports"
+   ],
+   "child_type": "WebBookmark",
+   "field_kind": "RelatedModels",
+   "field_name": "RelatedModels",
+   "parent_type": "WebBookmark"
+  },
+  {
+   "basis": [
+    "local_samples",
+    "server_reports"
+   ],
+   "child_type": "Coordinate",
+   "field_kind": "modelField",
+   "field_name": "Position",
+   "parent_type": "WirelessNetwork"
+  }
+ ],
+ "set_values": [
+  {
+   "note": "Pseudo-set of the model attribute decoding_confidence (02 section 5.2); High only, measured",
+   "set_name": "@decoding_confidence",
+   "value": "High"
+  },
+  {
+   "note": null,
+   "set_name": "AccountLocationAffiliation",
+   "value": "Extracted"
+  },
+  {
+   "note": null,
+   "set_name": "AccountLocationAffiliation",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "AppAction",
+   "value": "Close"
+  },
+  {
+   "note": null,
+   "set_name": "AppAction",
+   "value": "Launch"
+  },
+  {
+   "note": null,
+   "set_name": "ApplicationOperationMode",
+   "value": "Background"
+  },
+  {
+   "note": null,
+   "set_name": "ApplicationOperationMode",
+   "value": "Foreground"
+  },
+  {
+   "note": null,
+   "set_name": "ApplicationOperationMode",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "CallDisconnectionCause",
+   "value": "CallDropped"
+  },
+  {
+   "note": null,
+   "set_name": "CallDisconnectionCause",
+   "value": "OtherPartyHungUp"
+  },
+  {
+   "note": null,
+   "set_name": "CallDisconnectionCause",
+   "value": "OwnerHungUp"
+  },
+  {
+   "note": null,
+   "set_name": "CallDisconnectionCause",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "CallType",
+   "value": "Cancelled"
+  },
+  {
+   "note": null,
+   "set_name": "CallType",
+   "value": "Incoming"
+  },
+  {
+   "note": null,
+   "set_name": "CallType",
+   "value": "Missed"
+  },
+  {
+   "note": null,
+   "set_name": "CallType",
+   "value": "Outgoing"
+  },
+  {
+   "note": null,
+   "set_name": "CellTowerType",
+   "value": "GSM"
+  },
+  {
+   "note": null,
+   "set_name": "ChatActivityAction",
+   "value": "ChatImageChanged"
+  },
+  {
+   "note": null,
+   "set_name": "ChatActivityAction",
+   "value": "ChatNameChanged"
+  },
+  {
+   "note": null,
+   "set_name": "ChatActivityAction",
+   "value": "ParticipantAdded"
+  },
+  {
+   "note": null,
+   "set_name": "ChatActivityAction",
+   "value": "ParticipantJoined"
+  },
+  {
+   "note": null,
+   "set_name": "ChatActivityAction",
+   "value": "ParticipantLeft"
+  },
+  {
+   "note": null,
+   "set_name": "ChatActivityAction",
+   "value": "ParticipantRemoved"
+  },
+  {
+   "note": null,
+   "set_name": "ChatActivityAction",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "ChatType",
+   "value": "Broadcast"
+  },
+  {
+   "note": null,
+   "set_name": "ChatType",
+   "value": "Group"
+  },
+  {
+   "note": null,
+   "set_name": "ChatType",
+   "value": "OneOnOne"
+  },
+  {
+   "note": null,
+   "set_name": "ChatType",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "ConnectivityMethod",
+   "value": "Bluetooth"
+  },
+  {
+   "note": null,
+   "set_name": "ConnectivityMethod",
+   "value": "WiFi"
+  },
+  {
+   "note": null,
+   "set_name": "ConnectivityNature",
+   "value": "Connected"
+  },
+  {
+   "note": null,
+   "set_name": "ConnectivityNature",
+   "value": "Detected"
+  },
+  {
+   "note": null,
+   "set_name": "ConnectivityNature",
+   "value": "Disconnected"
+  },
+  {
+   "note": null,
+   "set_name": "ConnectivityNature",
+   "value": "Paired"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "AppContact"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "Blocked"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "ChatParticipant"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "Follower"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "Following"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "FollowingAndFollower"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "Friend"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "Group"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "PendingRequest"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "PhoneBook"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "Searched"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "Shared"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "Spam"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "Suggested"
+  },
+  {
+   "note": null,
+   "set_name": "ContactType",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "CreditCardCompany",
+   "value": "Visa"
+  },
+  {
+   "note": "From the C3, C9, C8 stream measurement (02 section 2); catalog.py skips this type",
+   "set_name": "DecodingSourceOptions",
+   "value": "Decoding"
+  },
+  {
+   "note": null,
+   "set_name": "DecodingStatus",
+   "value": "Decoded"
+  },
+  {
+   "note": null,
+   "set_name": "DecodingStatus",
+   "value": "NotDecoded"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "AirplaneMode"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "AudioInputRoute"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "AudioOutputRoute"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "CameraState"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "DeviceLockStatus"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "DevicePluginStatus"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "DisplayOnOff"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "DoNotDisturbState"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "FlashlightState"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "MotionState"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "NotificationAction"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "OrientationChange"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "PowerEvent"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "TextInput"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "WifiState"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceEventTypes",
+   "value": "Wipe"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceLocationAffiliation",
+   "value": "Extracted"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceLocationAffiliation",
+   "value": "Synced"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceLocationAffiliation",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceType",
+   "value": "Headset"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceType",
+   "value": "Phone"
+  },
+  {
+   "note": null,
+   "set_name": "DeviceType",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "EventAvailability",
+   "value": "Busy"
+  },
+  {
+   "note": null,
+   "set_name": "EventAvailability",
+   "value": "Free"
+  },
+  {
+   "note": null,
+   "set_name": "EventAvailability",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "EventClass",
+   "value": "Normal"
+  },
+  {
+   "note": null,
+   "set_name": "EventPriority",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "EventStatus",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "FileDownloadState",
+   "value": "Completed"
+  },
+  {
+   "note": null,
+   "set_name": "InstantMessageType",
+   "value": "AppMessage"
+  },
+  {
+   "note": null,
+   "set_name": "InstantMessageType",
+   "value": "IMessage"
+  },
+  {
+   "note": null,
+   "set_name": "InstantMessageType",
+   "value": "Mms"
+  },
+  {
+   "note": null,
+   "set_name": "InstantMessageType",
+   "value": "Sms"
+  },
+  {
+   "note": null,
+   "set_name": "JourneyType",
+   "value": "Route"
+  },
+  {
+   "note": null,
+   "set_name": "Label",
+   "value": "Default"
+  },
+  {
+   "note": null,
+   "set_name": "Label",
+   "value": "Edited"
+  },
+  {
+   "note": null,
+   "set_name": "Label",
+   "value": "Forwarded"
+  },
+  {
+   "note": null,
+   "set_name": "Label",
+   "value": "Recalled"
+  },
+  {
+   "note": null,
+   "set_name": "Label",
+   "value": "Reply"
+  },
+  {
+   "note": null,
+   "set_name": "Label",
+   "value": "ReplyToStory"
+  },
+  {
+   "note": null,
+   "set_name": "Label",
+   "value": "Scrambled"
+  },
+  {
+   "note": null,
+   "set_name": "Label",
+   "value": "SelfDestruct"
+  },
+  {
+   "note": null,
+   "set_name": "Label",
+   "value": "Star"
+  },
+  {
+   "note": null,
+   "set_name": "Label",
+   "value": "System"
+  },
+  {
+   "note": null,
+   "set_name": "LocationOrigin",
+   "value": "Device"
+  },
+  {
+   "note": null,
+   "set_name": "LocationOrigin",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "LogSeverity",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "MailPriority",
+   "value": "Low"
+  },
+  {
+   "note": null,
+   "set_name": "MailPriority",
+   "value": "Normal"
+  },
+  {
+   "note": null,
+   "set_name": "MeasuredVariableType",
+   "value": "DistanceTraveled"
+  },
+  {
+   "note": null,
+   "set_name": "MeasuredVariableType",
+   "value": "EnergyBurned"
+  },
+  {
+   "note": null,
+   "set_name": "MeasuredVariableType",
+   "value": "FlightsClimbed"
+  },
+  {
+   "note": null,
+   "set_name": "MeasuredVariableType",
+   "value": "HeartRate"
+  },
+  {
+   "note": null,
+   "set_name": "MeasuredVariableType",
+   "value": "Height"
+  },
+  {
+   "note": null,
+   "set_name": "MeasuredVariableType",
+   "value": "Mass"
+  },
+  {
+   "note": null,
+   "set_name": "MeasuredVariableType",
+   "value": "Speed"
+  },
+  {
+   "note": null,
+   "set_name": "MeasuredVariableType",
+   "value": "Steps"
+  },
+  {
+   "note": null,
+   "set_name": "MeasurementUnits",
+   "value": "BPM"
+  },
+  {
+   "note": null,
+   "set_name": "MeasurementUnits",
+   "value": "Centimeters"
+  },
+  {
+   "note": null,
+   "set_name": "MeasurementUnits",
+   "value": "Floors"
+  },
+  {
+   "note": null,
+   "set_name": "MeasurementUnits",
+   "value": "KiloCalories"
+  },
+  {
+   "note": null,
+   "set_name": "MeasurementUnits",
+   "value": "Kilograms"
+  },
+  {
+   "note": null,
+   "set_name": "MeasurementUnits",
+   "value": "MeterPerSecond"
+  },
+  {
+   "note": null,
+   "set_name": "MeasurementUnits",
+   "value": "Meters"
+  },
+  {
+   "note": null,
+   "set_name": "MeasurementUnits",
+   "value": "Steps"
+  },
+  {
+   "note": null,
+   "set_name": "MessageDeletionReason",
+   "value": "UserDeleted"
+  },
+  {
+   "note": null,
+   "set_name": "MessageDeletionReason",
+   "value": "UserViewed"
+  },
+  {
+   "note": null,
+   "set_name": "MessageStatus",
+   "value": "Default"
+  },
+  {
+   "note": null,
+   "set_name": "MessageStatus",
+   "value": "Delivered"
+  },
+  {
+   "note": null,
+   "set_name": "MessageStatus",
+   "value": "Opened"
+  },
+  {
+   "note": null,
+   "set_name": "MessageStatus",
+   "value": "Read"
+  },
+  {
+   "note": null,
+   "set_name": "MessageStatus",
+   "value": "Sent"
+  },
+  {
+   "note": null,
+   "set_name": "MessageStatus",
+   "value": "Unread"
+  },
+  {
+   "note": null,
+   "set_name": "MessageStatus",
+   "value": "Unsent"
+  },
+  {
+   "note": null,
+   "set_name": "MobileCardType",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "ModelDirections",
+   "value": "Incoming"
+  },
+  {
+   "note": null,
+   "set_name": "ModelDirections",
+   "value": "Outgoing"
+  },
+  {
+   "note": null,
+   "set_name": "ModelDirections",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "NWConnectionType",
+   "value": "Cellular"
+  },
+  {
+   "note": null,
+   "set_name": "NWConnectionType",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "NWConnectionType",
+   "value": "Wireless"
+  },
+  {
+   "note": null,
+   "set_name": "NetworkUsageMode",
+   "value": "Background"
+  },
+  {
+   "note": null,
+   "set_name": "NetworkUsageMode",
+   "value": "Foreground"
+  },
+  {
+   "note": null,
+   "set_name": "NotificationType",
+   "value": "General"
+  },
+  {
+   "note": null,
+   "set_name": "PartyRole",
+   "value": "From"
+  },
+  {
+   "note": null,
+   "set_name": "PartyRole",
+   "value": "General"
+  },
+  {
+   "note": null,
+   "set_name": "PartyRole",
+   "value": "To"
+  },
+  {
+   "note": null,
+   "set_name": "PartyStatus",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "PasswordType",
+   "value": "Default"
+  },
+  {
+   "note": null,
+   "set_name": "PasswordType",
+   "value": "Key"
+  },
+  {
+   "note": null,
+   "set_name": "PasswordType",
+   "value": "Secret"
+  },
+  {
+   "note": null,
+   "set_name": "PasswordType",
+   "value": "Token"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Accounts"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "AppInfo"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Audio"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Bluetooth"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Bookmarks"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Camera"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Contacts"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "DeviceAlarms"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Display"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "FaceId"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Locations"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "MediaLibrary"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Messages"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Microphone"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Motion"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Network"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "PersonalInfo"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "PhoneCalls"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Photos"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Siri"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "Storage"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "UserDictionary"
+  },
+  {
+   "note": null,
+   "set_name": "PermissionCategory",
+   "value": "iCloud"
+  },
+  {
+   "note": null,
+   "set_name": "Platform",
+   "value": "Mobile"
+  },
+  {
+   "note": null,
+   "set_name": "Platform",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "Platform",
+   "value": "Web"
+  },
+  {
+   "note": null,
+   "set_name": "PostStatus",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "PowerElementType",
+   "value": "Device"
+  },
+  {
+   "note": null,
+   "set_name": "PowerEventType",
+   "value": "Off"
+  },
+  {
+   "note": null,
+   "set_name": "PowerEventType",
+   "value": "On"
+  },
+  {
+   "note": null,
+   "set_name": "RecordingType",
+   "value": "Audio"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatDay",
+   "value": "Monday"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatDay",
+   "value": "Monday, First"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatDay",
+   "value": "Monday, Second"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatDay",
+   "value": "Monday, Third"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatDay",
+   "value": "None"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatDay",
+   "value": "Sunday, First"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatDay",
+   "value": "Sunday, Second"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatDay",
+   "value": "Sunday, Third"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatDay",
+   "value": "Thursday, Fourth"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatRule",
+   "value": "Daily"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatRule",
+   "value": "Monthly"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatRule",
+   "value": "None"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatRule",
+   "value": "Weekly"
+  },
+  {
+   "note": null,
+   "set_name": "RepeatRule",
+   "value": "Yearly"
+  },
+  {
+   "note": null,
+   "set_name": "SampleSourceType",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "SearchItemOrigin",
+   "value": "Default"
+  },
+  {
+   "note": null,
+   "set_name": "SearchItemOrigin",
+   "value": "Device"
+  },
+  {
+   "note": null,
+   "set_name": "SearchItemOrigin",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "ShareSettings",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "SocialMediaActivityType",
+   "value": "CheckIn"
+  },
+  {
+   "note": null,
+   "set_name": "SocialMediaActivityType",
+   "value": "Comment"
+  },
+  {
+   "note": null,
+   "set_name": "SocialMediaActivityType",
+   "value": "Post"
+  },
+  {
+   "note": null,
+   "set_name": "SocialMediaActivityType",
+   "value": "Update"
+  },
+  {
+   "note": null,
+   "set_name": "SocialMediaChannelType",
+   "value": "Story"
+  },
+  {
+   "note": null,
+   "set_name": "SocialMediaChannelType",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "TelephonyCallStatus",
+   "value": "BusyLine"
+  },
+  {
+   "note": null,
+   "set_name": "TelephonyCallStatus",
+   "value": "Canceled"
+  },
+  {
+   "note": null,
+   "set_name": "TelephonyCallStatus",
+   "value": "Established"
+  },
+  {
+   "note": null,
+   "set_name": "TelephonyCallStatus",
+   "value": "Missed"
+  },
+  {
+   "note": null,
+   "set_name": "TelephonyCallStatus",
+   "value": "NotEstablishedUnknownReason"
+  },
+  {
+   "note": null,
+   "set_name": "TelephonyCallStatus",
+   "value": "Rejected"
+  },
+  {
+   "note": null,
+   "set_name": "TelephonyCallStatus",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "TelephonyCallStatus",
+   "value": "Voicemail"
+  },
+  {
+   "note": null,
+   "set_name": "UsagePattern",
+   "value": "Frequent"
+  },
+  {
+   "note": null,
+   "set_name": "UsagePattern",
+   "value": "Unknown"
+  },
+  {
+   "note": null,
+   "set_name": "UserType",
+   "value": "Owner"
+  }
+ ],
+ "source": "Structure only. Catalogues of 17 report documents (14 server reports and the 3 local samples) read 2026-10-29; nesting from 02 section 3.6 and the A3 server batch; attribute names and the fields with no typed value from the element counter on the 14 server reports (02 decision 40).",
+ "types": [
+  {
+   "seed_record_count": 104,
+   "seed_report_count": 8,
+   "type_name": "Autofill"
+  },
+  {
+   "seed_record_count": 1081,
+   "seed_report_count": 13,
+   "type_name": "CalendarEntry"
+  },
+  {
+   "seed_record_count": 33522,
+   "seed_report_count": 17,
+   "type_name": "Call"
+  },
+  {
+   "seed_record_count": 653889,
+   "seed_report_count": 17,
+   "type_name": "Party"
+  },
+  {
+   "seed_record_count": 10300,
+   "seed_report_count": 17,
+   "type_name": "Chat"
+  },
+  {
+   "seed_record_count": 386815,
+   "seed_report_count": 17,
+   "type_name": "InstantMessage"
+  },
+  {
+   "seed_record_count": 141445,
+   "seed_report_count": 17,
+   "type_name": "Attachment"
+  },
+  {
+   "seed_record_count": 39128,
+   "seed_report_count": 16,
+   "type_name": "MessageLabel"
+  },
+  {
+   "seed_record_count": 10335,
+   "seed_report_count": 3,
+   "type_name": "QuotedMessageData"
+  },
+  {
+   "seed_record_count": 24822,
+   "seed_report_count": 17,
+   "type_name": "ContactPhoto"
+  },
+  {
+   "seed_record_count": 18269,
+   "seed_report_count": 11,
+   "type_name": "Cookie"
+  },
+  {
+   "seed_record_count": 64028,
+   "seed_report_count": 16,
+   "type_name": "Location"
+  },
+  {
+   "seed_record_count": 87347,
+   "seed_report_count": 16,
+   "type_name": "Coordinate"
+  },
+  {
+   "seed_record_count": 564,
+   "seed_report_count": 14,
+   "type_name": "StreetAddress"
+  },
+  {
+   "seed_record_count": 33,
+   "seed_report_count": 8,
+   "type_name": "Note"
+  },
+  {
+   "seed_record_count": 13851,
+   "seed_report_count": 15,
+   "type_name": "SearchedItem"
+  },
+  {
+   "seed_record_count": 2111,
+   "seed_report_count": 13,
+   "type_name": "ForwardedMessageData"
+  },
+  {
+   "seed_record_count": 10708,
+   "seed_report_count": 14,
+   "type_name": "ReplyMessageData"
+  },
+  {
+   "seed_record_count": 45731,
+   "seed_report_count": 16,
+   "type_name": "Contact"
+  },
+  {
+   "seed_record_count": 43323,
+   "seed_report_count": 16,
+   "type_name": "UserID"
+  },
+  {
+   "seed_record_count": 13319,
+   "seed_report_count": 14,
+   "type_name": "ProfilePicture"
+  },
+  {
+   "seed_record_count": 30691,
+   "seed_report_count": 16,
+   "type_name": "PhoneNumber"
+  },
+  {
+   "seed_record_count": 460118,
+   "seed_report_count": 16,
+   "type_name": "KeyValueModel"
+  },
+  {
+   "seed_record_count": 193075,
+   "seed_report_count": 9,
+   "type_name": "DeviceConnectivity"
+  },
+  {
+   "seed_record_count": 135188,
+   "seed_report_count": 12,
+   "type_name": "DeviceEvent"
+  },
+  {
+   "seed_record_count": 61,
+   "seed_report_count": 12,
+   "type_name": "RecognizedDevice"
+  },
+  {
+   "seed_record_count": 17,
+   "seed_report_count": 5,
+   "type_name": "FileDownload"
+  },
+  {
+   "seed_record_count": 26131,
+   "seed_report_count": 15,
+   "type_name": "Email"
+  },
+  {
+   "seed_record_count": 3947,
+   "seed_report_count": 9,
+   "type_name": "InstalledApplication"
+  },
+  {
+   "seed_record_count": 79173,
+   "seed_report_count": 6,
+   "type_name": "NetworkUsage"
+  },
+  {
+   "seed_record_count": 9673,
+   "seed_report_count": 13,
+   "type_name": "Password"
+  },
+  {
+   "seed_record_count": 105,
+   "seed_report_count": 11,
+   "type_name": "SIMData"
+  },
+  {
+   "seed_record_count": 3045,
+   "seed_report_count": 6,
+   "type_name": "SocialMediaActivity"
+  },
+  {
+   "seed_record_count": 3350,
+   "seed_report_count": 5,
+   "type_name": "FileUpload"
+  },
+  {
+   "seed_record_count": 481,
+   "seed_report_count": 16,
+   "type_name": "UserAccount"
+  },
+  {
+   "seed_record_count": 127,
+   "seed_report_count": 14,
+   "type_name": "EmailAddress"
+  },
+  {
+   "seed_record_count": 19548,
+   "seed_report_count": 6,
+   "type_name": "DictionaryWord"
+  },
+  {
+   "seed_record_count": 114,
+   "seed_report_count": 15,
+   "type_name": "WebBookmark"
+  },
+  {
+   "seed_record_count": 112079,
+   "seed_report_count": 15,
+   "type_name": "VisitedPage"
+  },
+  {
+   "seed_record_count": 25863,
+   "seed_report_count": 15,
+   "type_name": "WirelessNetwork"
+  },
+  {
+   "seed_record_count": 132,
+   "seed_report_count": 7,
+   "type_name": "PoweringEvent"
+  },
+  {
+   "seed_record_count": 902,
+   "seed_report_count": 5,
+   "type_name": "CellTower"
+  },
+  {
+   "seed_record_count": 1086,
+   "seed_report_count": 6,
+   "type_name": "ChatActivity"
+  },
+  {
+   "seed_record_count": 7958,
+   "seed_report_count": 3,
+   "type_name": "ScrambledMessageData"
+  },
+  {
+   "seed_record_count": 53,
+   "seed_report_count": 12,
+   "type_name": "WebAddress"
+  },
+  {
+   "seed_record_count": 122,
+   "seed_report_count": 6,
+   "type_name": "Journey"
+  },
+  {
+   "seed_record_count": 4,
+   "seed_report_count": 4,
+   "type_name": "MobileCard"
+  },
+  {
+   "seed_record_count": 67,
+   "seed_report_count": 9,
+   "type_name": "Organization"
+  },
+  {
+   "seed_record_count": 25942,
+   "seed_report_count": 4,
+   "type_name": "LogEntry"
+  },
+  {
+   "seed_record_count": 13,
+   "seed_report_count": 4,
+   "type_name": "User"
+  },
+  {
+   "seed_record_count": 45518,
+   "seed_report_count": 3,
+   "type_name": "ActivitySensorData"
+  },
+  {
+   "seed_record_count": 117182,
+   "seed_report_count": 3,
+   "type_name": "ActivitySensorDataMeasurement"
+  },
+  {
+   "seed_record_count": 424657,
+   "seed_report_count": 3,
+   "type_name": "ActivitySensorDataSample"
+  },
+  {
+   "seed_record_count": 2608,
+   "seed_report_count": 3,
+   "type_name": "ApplicationUsage"
+  },
+  {
+   "seed_record_count": 67723,
+   "seed_report_count": 3,
+   "type_name": "AppsUsageLog"
+  },
+  {
+   "seed_record_count": 1,
+   "seed_report_count": 1,
+   "type_name": "CreditCard"
+  },
+  {
+   "seed_record_count": 2,
+   "seed_report_count": 1,
+   "type_name": "ContactEntry"
+  },
+  {
+   "seed_record_count": 7881,
+   "seed_report_count": 2,
+   "type_name": "Notification"
+  },
+  {
+   "seed_record_count": 7,
+   "seed_report_count": 1,
+   "type_name": "Recording"
+  },
+  {
+   "seed_record_count": 76,
+   "seed_report_count": 1,
+   "type_name": "Voicemail"
+  },
+  {
+   "seed_record_count": 75,
+   "seed_report_count": 2,
+   "type_name": "DeviceInfoEntry"
+  },
+  {
+   "seed_record_count": 6,
+   "seed_report_count": 1,
+   "type_name": "RemoteServiceSession"
+  }
+ ]
+}

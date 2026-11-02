@@ -1729,6 +1729,16 @@ Each with its reason and what would reverse it.
     the catalogue counts them. They are interpreted like any record and shown under their owner, marked as a copy
     from another source; D-9 does not merge them. *Reverse if* a report shows a `RelatedModels` model whose id
     is also a top-level record (then it is a reference, not a copy).
+40. **The seed's attribute names and its fields with no typed value come from the element counter on the 14
+    server reports.** The catalogue records a field only when a `<value>` sits directly inside it
+    (`catalog.py` lines 13-20), so it cannot hold a field that is only ever `<empty/>`, nor `nodeField` and
+    `dataField` children: measured on C3, 6 such combinations (on C9, 4), each of which would otherwise raise a
+    flag on a sample. The Mac `c*.json` files that step 7 names are not on the server (plan decision 2). The seed
+    therefore adds, from the counter's per-path outputs (structure only), the attribute names of `model`,
+    `extractionInfo`, `project`, `file` and `value` (51) and 17 field rows with value type `(empty)` or `(none)`
+    (basis `counter`); the 471 typed rows are the catalogue's, unchanged. The pseudo-set `@decoding_confidence`
+    is seeded with its one measured value `High` (5.2). *Reverse if* a recount of the 14 reports finds a field
+    with no typed value that the counter did not record.
 
 ## 15. Not yet established
 

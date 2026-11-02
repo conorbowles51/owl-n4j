@@ -1,3 +1,20 @@
+## 2 November: phone interpretation, stage C in progress (cb-interpret)
+
+Branch `cb/cb-interpret`. Spec 02 units, in 06 order; each with its acceptance test.
+
+- **02-U1 (09ad43b9):** `backend/services/phone/body.py` walks a record body field by field (all six kinds, values,
+  empties, nested ordinals, the capture's dotted `body_path`); `values.py` parses TimeSpans, coordinates, numbers
+  and booleans. Walker counts equal the counter per document: C3 296,677 fields / 243,124 values / 31,540 empties;
+  C9 93,365 / 72,429 / 7,414.
+- **02-U2:** registry tables (migration `20261102_phone_registry`, models `postgres/models/phone_interpretation.py`),
+  seed `backend/services/phone/data/registry_seed_2026-10-29.json` built by `scripts/phone_registry_seed_build.py`,
+  applied by `scripts/phone_registry_seed.py` (idempotent). 62 types, 471 typed field rows over 470, 55 sets with 210
+  values plus `DecodingSourceOptions` and `@decoding_confidence`, 96 nesting rows (union of 3.6's 47 and A3's 95),
+  51 attribute names and 17 placeholder field rows from the counter (02 decision 40).
+- **Tests:** `tests/test_phone_body_values.py`, `tests/test_phone_registry_seed.py`; PostgreSQL ones opt-in through
+  `LOUPE_TEST_PHONE_PG_TEMPLATE_URL` (a database at the head; each test gets a fresh copy) and
+  `LOUPE_TEST_PHONE_PG_URL` (captured extractions, rolled back), helper `tests/phone_pg.py`.
+
 ## 1 November: phone reports captured whole, checked against the report, and shown as one readiness card (cb-capture)
 
 Live at `c98e3782`. Stage B of the phone rebuild (docs/cellebrite/01-intake-capture-storage.md, 06 stage B). A phone

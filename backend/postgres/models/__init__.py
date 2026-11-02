@@ -161,3 +161,7 @@ from postgres.models.phone_extraction import (PhoneExtractionContainer, PhoneExt
 __all__ += ["PhoneExtractionContainer", "PhoneExtraction", "PhoneExtractionContainerLink", "PhoneExtractionDocument",
             "PhoneRecord", "PhoneFile", "PhoneContainerEntry", "PhoneFileReference", "PhoneTimestamp",
             "PhoneReconciliation", "PhoneExtraInfo", "PhoneExtraInfoNode"]
+from postgres.models.phone_interpretation import (PhoneSchemaType, PhoneSchemaField, PhoneSchemaNesting,
+    PhoneSchemaSetValue, PhoneSchemaAttribute, PhoneSchemaObservation, PhoneSchemaFlag, PhoneSchemaFlagEvent)
+__all__ += ["PhoneSchemaType", "PhoneSchemaField", "PhoneSchemaNesting", "PhoneSchemaSetValue", "PhoneSchemaAttribute",
+            "PhoneSchemaObservation", "PhoneSchemaFlag", "PhoneSchemaFlagEvent"]
