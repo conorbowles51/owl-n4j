@@ -12,7 +12,7 @@ export default [
       await ctx.open(ctx.cases.phonesOnly, "/phone-review")
       await ctx.step("readings listed as plain sentences, most records first", async () => {
         await ctx.see(page.getByRole("heading", { name: "Needs a decision" }))
-        const items = page.getByText(/^On C\d, .+: .+\. Affects [\d,]+ /)
+        const items = page.getByText(/^On (?:C\d+|Phone \d+)(?: \(report \d+ of \d+\))?, .+: .+\. Affects [\d,]+ /)  // labels per 02 12.3: C<n>, else Phone <n>
         await ctx.see(items)
         const counts = await items.evaluateAll((els) => els.map((e) => Number((e.textContent.match(/Affects ([\d,]+)/) ?? [0, "0"])[1].replace(/,/g, ""))))
         for (let i = 1; i < counts.length; i++) if (counts[i] > counts[i - 1]) throw new StepFailed("order", "not ordered by records affected")

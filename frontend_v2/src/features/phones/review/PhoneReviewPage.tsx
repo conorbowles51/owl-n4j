@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useParams } from "react-router-dom"
+import { useParams, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/ui/page-header"
@@ -9,6 +9,7 @@ import { trackUx } from "@/lib/ux-events"
 import { instantWords } from "../lib/time-words"
 import { fmt } from "../ui/ResultCount"
 import { KeymapOverlay } from "../ui/KeymapOverlay"
+import { IdentityLinkGroup } from "./IdentityLinkGroup"
 import { readingsAPI, type ExampleKind, type PhoneProgress, type Reading, type ReadingExamples } from "./readings.api"
 
 /**
@@ -315,6 +316,8 @@ function Examples({ ex, seen, open, onView, records }: { ex: ReadingExamples; se
 
 export default function PhoneReviewPage() {
   const { id: caseId } = useParams()
+  const [params] = useSearchParams()
+  const identity = params.get("decision") === "link_phone_identity" ? params.get("identity") : null
   const [keysOpen, setKeysOpen] = useState(false)
   useEffect(() => {
     installKeymap()
@@ -328,6 +331,7 @@ export default function PhoneReviewPage() {
         description="What the system read from this case's phones that a person has not yet checked."
         actions={<Button size="sm" variant="outline" onClick={() => setKeysOpen(true)}>Keys</Button>}
       />
+      {identity && <IdentityLinkGroup caseId={caseId} identityKey={identity} />}
       <ReadingsGroup caseId={caseId} />
       <KeymapOverlay open={keysOpen} onOpenChange={setKeysOpen} />
     </div>
