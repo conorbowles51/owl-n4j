@@ -166,7 +166,8 @@ export function ConversationsPage() {
     }
     return out
   }, [selection, stream.total, freeze.data])
-  const addNoun = selection.all && stream.total > SELECTION_AS_ONE ? "selection" : "messages"
+  // A message found more than once adds each copy as its own record, so the count then names records (review of D).
+  const addNoun = selection.all && stream.total > SELECTION_AS_ONE ? "selection" : links.length > selection.rows.length ? "records (messages and their copies)" : "messages"
   const addDisabled = selection.all && stream.total > SELECTION_AS_ONE && freeze.isError ? failureText(freeze.error, "The whole result could not be prepared for adding.") : undefined
   const onAdded = useCallback(() => void refreshUsedIn(), [refreshUsedIn])
   const [undoNote, setUndoNote] = useState<string | null>(null)

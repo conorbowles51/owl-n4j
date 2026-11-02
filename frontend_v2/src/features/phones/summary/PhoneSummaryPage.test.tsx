@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import type { Profile } from "../schemas"
 
 /** Phone summary (03 section 7; 07 J-2, J-11, J-15) with the server stubbed. Synthetic data only. */
-const api = vi.hoisted(() => ({ getProfile: vi.fn() }))
+const api = vi.hoisted(() => ({ getProfile: vi.fn(), setOwner: vi.fn() }))
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
 
 import PhoneSummaryPage from "./PhoneSummaryPage"
@@ -18,7 +18,7 @@ function profile(over: Partial<Profile> = {}): Profile {
   return {
     phone: { extraction_id: "e1", label: "C2", owner: label("Owner", true), device: { manufacturer: "Synthetic", model: "S1", os: null }, state: "ingested", standing: "active", ingest_progress: null, device_zone: null, device_zone_basis: null, report_version: "7", form: "ufdr", report_filename: "C2.ufdr", ingested_at: null, counts: { messages: 600, calls: 6, emails: 0, locations: 0, files: 4, timeline_entries: 0 } } as unknown as Profile["phone"],
     verdict: { word: "Read in full", sentence: "Read in full: 659 records, Monday, January 2, 2023 to Friday, July 7, 2023, 3 apps. 2 things need a decision.", records: 659, apps: 3, first_day: "x", last_day: "y", needs_decision: 2 },
-    owner: { label: null, basis: "unidentified", words: "No owner number was found.", missing: true, decided: false },
+    owner: { label: null, basis: "unidentified", words: "No owner number was found.", missing: true, decided: false, keys: [], candidates: [{ identity_key: "phone:+12025550100", text: "+1 202-555-0100", tier: 2, occurrences: 3, basis: "sent" }] },
     zone: { device_zone: null, basis: null, case_zone: "Eastern time" },
     report: { filename: "C2.ufdr", form: "ufdr", report_version: "7", producer: null, extraction_type: null, container_name: null, container_sha256: null, report_sha256: null, extraction_start: null, ingested_at: null },
     selection: [{ flag: "IsSelectiveExtraction", name: "Selective extraction", verbatim: "not stated", meaning: null }],
@@ -57,6 +57,20 @@ function page() {
 }
 
 describe("Phone summary", () => {
+  it("Set the owner saves the chosen number with the reason, and asks for both first (03 section 7.3)", async () => {
+    api.setOwner.mockResolvedValue({ decision_id: "d1", owner_identity_keys: ["phone:+12025550100"] })
+    page()
+    const form = await screen.findByRole("form", { name: "Set the owner" })
+    const save = within(form).getByRole("button", { name: "Save owner" })
+    expect(save).toBeDisabled()
+    fireEvent.change(within(form).getByRole("combobox"), { target: { value: "phone:+12025550100" } })
+    expect(save).toBeDisabled()
+    fireEvent.change(within(form).getByRole("textbox"), { target: { value: "synthetic reason" } })
+    fireEvent.click(save)
+    await waitFor(() => expect(api.setOwner).toHaveBeenCalledWith("case-1", "e1", "phone:+12025550100", "synthetic reason"))
+    expect(await within(form).findByText(/^Owner set to \+1 202-555-0100\./)).toBeInTheDocument()
+  })
+
   beforeEach(() => {
     localStorage.clear()
     api.getProfile.mockResolvedValue(profile())
@@ -67,7 +81,7 @@ describe("Phone summary", () => {
     expect(await screen.findByText(/^Read in full: 659 records, .+ to .+, 3 apps\./)).toBeInTheDocument()
     const box = screen.getByRole("region", { name: "Needs a decision" })
     expect(within(box).getByText(/No owner number was found\. Person-level views stay off until an owner is set\./)).toBeInTheDocument()
-    expect(within(box).getByRole("link", { name: "Set the owner." })).toBeInTheDocument()
+    expect(within(box).getByRole("button", { name: "Set the owner." })).toBeInTheDocument()
     expect(within(box).getByText(/This phone did not record its time zone\. Times show in the case zone/)).toBeInTheDocument()
     for (const name of ["Coverage by month", "Where to start"]) expect(screen.getByRole("heading", { name })).toBeInTheDocument()
     expect(screen.getByRole("heading", { name: /Top people/ })).toBeInTheDocument()

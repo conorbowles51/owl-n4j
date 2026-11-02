@@ -156,3 +156,11 @@ export async function freezeSelection(filter: StreamFilter, words: string) {
 export async function getProfile(caseId: string, extractionId: string) {
   return ProfileSchema.parse(await fetchAPI(`/api/phones/${encodeURIComponent(extractionId)}/profile?case_id=${encodeURIComponent(caseId)}`, { read: true }))
 }
+
+/** Set whose phone this is (03 section 7.3): a set_phone_owner decision with the person's reason. */
+export async function setOwner(caseId: string, extractionId: string, identityKey: string, reason: string) {
+  return fetchAPI<{ decision_id: string; owner_identity_keys: string[] }>(`/api/phones/${encodeURIComponent(extractionId)}/owner`, {
+    method: "POST",
+    body: { case_id: caseId, identity_key: identityKey, reason },
+  })
+}

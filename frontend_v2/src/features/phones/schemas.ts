@@ -284,7 +284,17 @@ const LinkWords = z.object({ words: z.string(), link: z.string().nullable() })
 export const ProfileSchema = z.object({
   phone: PhoneSummarySchema,
   verdict: z.object({ word: z.string(), sentence: z.string(), records: z.number(), apps: z.number(), first_day: z.string().nullable(), last_day: z.string().nullable(), needs_decision: z.number() }),
-  owner: z.object({ label: ParticipantLabelSchema.nullable(), basis: z.string().nullable(), words: z.string(), missing: z.boolean(), decided: z.boolean() }),
+  owner: z.object({
+    label: ParticipantLabelSchema.nullable(),
+    basis: z.string().nullable(),
+    words: z.string(),
+    missing: z.boolean(),
+    decided: z.boolean(),
+    keys: z.array(z.string()).default([]),
+    candidates: z
+      .array(z.object({ identity_key: z.string(), text: z.string(), tier: z.number().nullable(), occurrences: z.number(), basis: z.string().nullable() }))
+      .default([]),
+  }),
   zone: z.object({ device_zone: z.string().nullable(), basis: z.string().nullable(), case_zone: z.string() }),
   report: z.object({
     filename: z.string().nullable(), form: z.string().nullable(), report_version: z.string().nullable(), producer: z.string().nullable(),

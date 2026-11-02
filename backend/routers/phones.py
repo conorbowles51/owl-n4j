@@ -358,6 +358,27 @@ def set_clock_offset(extraction_id: UUID, body: ClockOffset, db: Session = Depen
     return out
 
 
+class OwnerDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    identity_key: str = Field(min_length=1, max_length=512)
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+@router.post("/{extraction_id}/owner")
+def set_owner(extraction_id: UUID, body: OwnerDecision, db: Session = Depends(get_db),
+              user: User = Depends(get_current_db_user)):
+    """Set whose phone this is (03 section 7.3); written as a ``set_phone_owner`` decision with its reason."""
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        out = corrections.set_owner(db, case_id=body.case_id, extraction_id=extraction_id,
+                                    identity_key=body.identity_key, reason=body.reason, actor=_actor(user))
+    except corrections.CorrectionError as exc:
+        _correction_error(db, exc)
+    db.commit()
+    return out
+
+
 # ---- screens: phone list, settings, streams, threads, record panel (03 sections 4 to 6) ----------------------------
 
 import logging as _logging  # noqa: E402

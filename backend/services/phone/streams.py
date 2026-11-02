@@ -305,6 +305,14 @@ def limits_for(conn, f: StreamFilter) -> list:
     return out
 
 
+def shown_count(conn, f: StreamFilter) -> int:
+    """How many rows the list under ``f`` shows (copies collapsed when the filter collapses them): the number a
+    count elsewhere must equal when it links to that list."""
+    q, _ = _query(conn, f)
+    return int(conn.execute(text("WITH m AS (%s) SELECT count(*) FROM m WHERE %s" % (q.matched_sql(), _shown(f))),
+                            q.params).scalar() or 0)
+
+
 # ---- index ---------------------------------------------------------------------------------------------------------
 
 def index_comm_events(conn, f: StreamFilter) -> dict:

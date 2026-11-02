@@ -11,6 +11,8 @@ differ; ``Still reading`` while capture or interpretation runs; ``Failed`` when 
 """
 from __future__ import annotations
 
+from urllib.parse import quote
+
 from sqlalchemy import text
 
 from services.phone import labels as L
@@ -48,6 +50,8 @@ def _verdict_word(x) -> str:
         return "Partly read"
     if x.state == "replaced":
         return "Replaced"
+    if x.reconciliation_state != "exact":  # no reconciliation on record: read, but not shown to be whole (P-7)
+        return "Read, counts not checked"
     return "Read in full"
 
 
@@ -86,9 +90,13 @@ def profile(conn, case_id, extraction_id) -> dict:
                         "last_words": T.format_full(r.l, zname) if r.l else None})
     span = conn.execute(text("SELECT min(first_instant), max(first_instant) FROM phone_record_summaries WHERE "
                              "extraction_id::text = :e AND generation = :g AND has_time"), {"e": ext, "g": gen}).one()
-    apps = [{"app": a, "events": int(n)} for a, n in conn.execute(text(
-        "SELECT app, count(*) FROM pv_comm_event WHERE extraction_id::text = :e AND app IS NOT NULL GROUP BY app "
-        "ORDER BY 2 DESC, 1"), {"e": ext})]
+    from services.phone.filters import StreamFilter
+
+    def listed(**kw):  # the count the linked Conversations list shows: same filter, copies collapsed
+        return streams.shown_count(conn, StreamFilter.model_validate({"case_id": str(case_id), "phones": [ext], **kw}))
+    app_names = [a for (a,) in conn.execute(text(
+        "SELECT DISTINCT app FROM pv_comm_event WHERE extraction_id::text = :e AND app IS NOT NULL"), {"e": ext})]
+    apps = sorted(({"app": a, "events": listed(apps=[a])} for a in app_names), key=lambda r: (-r["events"], r["app"]))
     word = _verdict_word(x)
     # 01's stored count; the captured records counted when it is not stored (live 2 November: stored on all 6
     # active phones and equal to the count of phone_records on each).
@@ -100,6 +108,12 @@ def profile(conn, case_id, extraction_id) -> dict:
 
     # ---- owner, zone and what needs a decision -----------------------------------------------------------------
     own = identities.owner(conn, extraction_id)
+    shown = {r[0]: r[1] for r in conn.execute(text(
+        "SELECT identity_key, value_display FROM phone_identities WHERE case_id = :c AND identity_key = ANY(:k)"),
+        {"c": case_id, "k": [c["identity_key"] for c in own["candidates"] if c["identity_key"]]})}
+    candidates = [{"identity_key": c["identity_key"], "text": shown.get(c["identity_key"]) or c["identity_key"],
+                   "tier": c["tier"], "occurrences": int(c["occurrences"] or 0), "basis": c["basis"]}
+                  for c in own["candidates"] if c["candidate_kind"] == "number" and c["identity_key"]]
     owner_label = phone["owner"]
     decided = own.get("decided")
     basis = own.get("owner_basis") or (own.get("computed") or {}).get("basis")
@@ -119,7 +133,7 @@ def profile(conn, case_id, extraction_id) -> dict:
     needs = []
     if owner_missing:
         needs.append({"kind": "owner", "words": "No owner number was found. Person-level views stay off until an owner "
-                      "is set. Set the owner.", "link": "%s/phone-review?decision=set_phone_owner&phone=%s" % (base, ext)})
+                      "is set. Set the owner.", "link": "%s/phones/%s#set-owner" % (base, ext)})
     if not x.device_zone:
         needs.append({"kind": "zone", "words": "This phone did not record its time zone. Times show in the case zone "
                       "(%s)." % zone["display_name"], "link": "%s/settings" % base})
@@ -171,9 +185,7 @@ def profile(conn, case_id, extraction_id) -> dict:
             {"e": ext, "g": gen}):
         deleted.append({"model_type": r.model_type, "intact": int(r.intact), "deleted": int(r.deleted),
                         "trash": int(r.trash), "unknown": int(r.unknown)})
-    comm_deleted = conn.execute(text(
-        "SELECT count(*) FROM pv_comm_event WHERE extraction_id::text = :e AND deleted_state IN ('Deleted', 'Trash')"),
-        {"e": ext}).scalar() or 0
+    comm_deleted = listed(deleted_states=["Deleted", "Trash"])
     cov = {}
     for r in conn.execute(text(
             "SELECT model_type, interpretation_level, count(*) AS n FROM phone_record_summaries WHERE "
@@ -202,11 +214,10 @@ def profile(conn, case_id, extraction_id) -> dict:
             k = "%04d-%02d" % (y, mo)
             month_rows.append(months.get(k, {"month": k, "messages": 0, "calls": 0, "other": 0}))
             y, mo = (y + 1, 1) if mo == 12 else (y, mo + 1)
-    from services.phone.filters import StreamFilter
     people = streams.participant_list(conn, StreamFilter.model_validate({"case_id": str(case_id), "phones": [ext]}))
     top = [p for p in people["items"] if not p["label"].get("is_owner")][:TOP_PEOPLE]
     top_rows = [{"label": p["label"], "text": L.label_text(p["label"]), "events": p["events"],
-                 "link": "%s?tab=people&people=%s" % (conv, p["label"]["identity_key"]) if p["label"].get("identity_key")
+                 "link": "%s?tab=people&people=%s" % (conv, quote(p["label"]["identity_key"], safe="")) if p["label"].get("identity_key")
                  else None} for p in top]
 
     suggestions = []
@@ -224,7 +235,8 @@ def profile(conn, case_id, extraction_id) -> dict:
         "verdict": {"word": word, "sentence": sentence, "records": records_total, "apps": len(apps),
                     "first_day": day(span[0]), "last_day": day(span[1]), "needs_decision": n_needs},
         "owner": {"label": owner_label, "basis": basis, "words": owner_words, "missing": owner_missing,
-                  "decided": bool(decided)},
+                  "decided": bool(decided), "keys": list(own.get("owner_identity_keys") or []),
+                  "candidates": candidates},
         "zone": {"device_zone": x.device_zone, "basis": x.device_zone_basis, "case_zone": zone["display_name"]},
         "report": {"filename": phone.get("report_filename"), "form": x.form, "report_version": x.report_version,
                    "producer": x.producer, "extraction_type": x.extraction_type, "container_name": x.container_name,

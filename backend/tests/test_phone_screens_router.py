@@ -3,6 +3,7 @@ index and windows, the thread list, the record panel and the identity picker. Sy
 from __future__ import annotations
 
 import uuid
+from urllib.parse import quote
 
 import pytest
 from sqlalchemy import text
@@ -303,15 +304,23 @@ def test_phone_summary_numbers_equal_their_count_queries_and_the_lists_they_open
                             {"e": ext}).scalar()
     assert {d["signal"]: d["records"] for d in p["data_periods"]}["messages"] == msgs
     assert p["verdict"]["records"] == recs
-    assert p["verdict"]["sentence"].startswith("Read in full: %s records, " % "{:,}".format(recs))
+    assert p["verdict"]["sentence"].startswith("Read, counts not checked: %s records, " % "{:,}".format(recs))
     assert p["verdict"]["sentence"].endswith("Nothing needs a decision.")
+    with api["engine"].begin() as conn:
+        conn.execute(text(
+            "INSERT INTO phone_reconciliations (id, extraction_id, document_index, ran_at, counter_version, result, "
+            "source_totals, captured_totals, differences, difference_count) VALUES (gen_random_uuid(), CAST(:e AS uuid), "
+            "0, now() - interval '1 hour', 'synthetic', 'exact', CAST('{}' AS jsonb), CAST('{}' AS jsonb), "
+            "CAST('[]' AS jsonb), 0)"), {"e": ext})
+    p = c.get(f"/api/phones/{ext}/profile", params={"case_id": case}).json()
+    assert p["verdict"]["sentence"].startswith("Read in full: %s records, " % "{:,}".format(recs))
     assert [s["verbatim"] for s in p["selection"]] == ["not stated"] * 4
     top = p["top_people"][0]
     key = top["label"]["identity_key"]
     idx = c.post("/api/phones/streams/index", json={"case_id": case, "phones": [ext], "participants": [key],
                                                     "participant_mode": "any"}).json()
     assert idx["counts"]["events"] == top["events"]
-    assert f"people={key}" in top["link"]
+    assert f"people={quote(key, safe='')}" in top["link"]
     assert sum(m["messages"] for m in p["months"]) == msgs - 1  # the undated message has no month
     with api["engine"].begin() as conn:
         conn.execute(text(
@@ -324,3 +333,63 @@ def test_phone_summary_numbers_equal_their_count_queries_and_the_lists_they_open
     assert p["completeness"]["documents"][0]["stated_vs_read"] == [{"what": "files", "stated": 9, "read": 7}]
     assert any(n["kind"] == "reconciliation" for n in p["needs"])
     assert c.get(f"/api/phones/{ext}/profile", params={"case_id": api["other_case"]}).status_code in (403, 404)
+
+
+def test_phone_summary_counts_match_the_collapsed_lists_and_people_links_survive_the_url(api):
+    """Review of item D: the deleted and app counts equal what the linked list shows with copies collapsed; a top
+    person's link keeps the plus sign of a phone number through URL decoding; a phone whose report counts were never
+    checked is not called read in full."""
+    from urllib.parse import parse_qs, urlsplit
+    c, case = api["client"], api["case"]
+    with api["engine"].begin() as conn:
+        ext, _ = phone(conn, uuid.UUID(case), label="C4", events=[
+            msg(at(2023, 4, 1), ANA, [OWNER], thread="d", deleted_state="Deleted", dup="g1"),
+            msg(at(2023, 4, 1), ANA, [OWNER], thread="d", deleted_state="Deleted", dup="g1"),
+            msg(at(2023, 4, 2), ANA, [OWNER], thread="d", app="Signal")])
+    p = c.get(f"/api/phones/{ext}/profile", params={"case_id": case}).json()
+
+    def listed(**kw):
+        return c.post("/api/phones/streams/index", json={"case_id": case, "phones": [str(ext)], **kw}).json()[
+            "counts"]["events"]
+    assert p["deleted"]["comm_events"] == listed(deleted_states=["Deleted", "Trash"]) == 1
+    assert {a["app"]: a["events"] for a in p["apps"]} == {"WhatsApp": listed(apps=["WhatsApp"]),
+                                                          "Signal": listed(apps=["Signal"])} == {"WhatsApp": 1,
+                                                                                                 "Signal": 1}
+    link = p["top_people"][0]["link"]
+    assert parse_qs(urlsplit(link).query)["people"] == [ANA]  # "+" would otherwise decode to a space
+    assert p["verdict"]["word"] == "Read, counts not checked"
+    assert not p["verdict"]["sentence"].startswith("Read in full")
+
+
+def test_setting_a_phones_owner_is_a_decision_with_its_reason_and_the_summary_shows_it(api):
+    """03 section 7.3: Set the owner writes a set_phone_owner decision and a manual change; a number the phone
+    does not show is refused; another case cannot set it; the summary's owner then reads as set by a person."""
+    from services.phone import identities, readings
+    saved = identities._hooks["owner_decision"]
+    identities.register_owner_decision(readings.owner_decision)  # main.py installs it at start-up
+    try:
+        _set_owner(api)
+    finally:
+        identities._hooks["owner_decision"] = saved
+
+
+def _set_owner(api):
+    c, case, ext = api["client"], api["case"], api["ext"]
+    url = f"/api/phones/{ext}/owner"
+    assert c.post(url, json={"case_id": case, "identity_key": "phone:+12025550999", "reason": "synthetic"}
+                  ).status_code == 422
+    assert c.post(url, json={"case_id": case, "identity_key": ANA, "reason": " "}).status_code == 422
+    assert c.post(url, json={"case_id": api["other_case"], "identity_key": ANA, "reason": "synthetic"}
+                  ).status_code in (403, 404, 422)
+    r = c.post(url, json={"case_id": case, "identity_key": ANA, "reason": "synthetic: owner's own statement"})
+    assert r.status_code == 200, r.text
+    with api["engine"].connect() as conn:
+        d = conn.execute(text("SELECT before, after, reason FROM adjudications WHERE subject_id::text = :e AND "
+                              "decision = 'set_phone_owner'"), {"e": ext}).one()
+        mc = conn.execute(text("SELECT count(*) FROM manual_changes WHERE kind = 'phone_owner' AND case_id::text = "
+                               ":c"), {"c": case}).scalar()
+    assert d.after == {"owner_identity_keys": [ANA]} and d.before == {"owner_identity_keys": [OWNER]}
+    assert mc == 1
+    p = c.get(f"/api/phones/{ext}/profile", params={"case_id": case}).json()
+    assert p["owner"]["decided"] and p["owner"]["keys"] == [ANA]
+    assert p["owner"]["words"].startswith("Set by a person")

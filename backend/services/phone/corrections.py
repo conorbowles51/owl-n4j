@@ -220,6 +220,37 @@ def set_clock_offset(db, *, case_id, extraction_id, offset_seconds, start=None, 
     return {"decision_id": str(row.id), "offset_seconds": offset_seconds}
 
 
+def set_owner(db, *, case_id, extraction_id, identity_key, reason, actor) -> dict:
+    """``set_phone_owner`` (8.8, 03 section 7.3): a person says whose phone this is. The number must be one this
+    phone shows (an owner candidate or a party to its messages and calls); the computed candidates stay visible."""
+    from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
+    from postgres.models.phone_extraction import PhoneExtraction
+    from services import manual_changes
+    from services.financial import decisions
+    from services.phone import identities
+    if not reason or not reason.strip():
+        raise CorrectionError("Setting the owner needs a reason in your own words.")
+    ext = db.get(PhoneExtraction, extraction_id)
+    if ext is None or str(ext.case_id) != str(case_id):
+        raise CorrectionError("That phone is not in this case.")
+    conn = db.connection()
+    seen = conn.execute(text(
+        "SELECT 1 FROM pv_owner_candidate WHERE extraction_id = :e AND identity_key = :k UNION ALL "
+        "SELECT 1 FROM pv_comm_party WHERE extraction_id = :e AND identity_key = :k LIMIT 1"),
+        {"e": extraction_id, "k": identity_key}).first()
+    if seen is None:
+        raise CorrectionError("That number does not appear on this phone.")
+    before = list(identities.owner(conn, extraction_id).get("owner_identity_keys") or [])
+    row = decisions.record(db, case_id=case_id, subject=ext, subject_type=AdjudicationSubject.phone_extraction,
+                           decision=AdjudicationDecision.set_phone_owner, reason=reason.strip(), actor=actor,
+                           before={"owner_identity_keys": before}, after={"owner_identity_keys": [identity_key]})
+    manual_changes.record_change(db, "phone_owner", case_id, {"type": "phone_extraction", "id": str(extraction_id)},
+                                 {"owner_identity_keys": before}, {"owner_identity_keys": [identity_key]}, actor,
+                                 reason.strip(), link="/cases/%s/phones/%s" % (case_id, extraction_id),
+                                 pattern_key=manual_changes.make_pattern_key("phone_owner"))
+    return {"decision_id": str(row.id), "owner_identity_keys": [identity_key]}
+
+
 def record_decision_ids(conn, extraction_id) -> list:
     """Value corrections on this phone's records, for the decision revision (a correction re-derives the phone)."""
     return [str(r[0]) for r in conn.execute(text(

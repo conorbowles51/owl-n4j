@@ -7,6 +7,7 @@ import { failureText, getProfile } from "../api"
 import { labelText } from "../lib/labels"
 import { readingSpots } from "../lib/continue-reading"
 import { fmt } from "../ui/ResultCount"
+import { SetOwner } from "./SetOwner"
 
 /**
  * Phone summary (03 section 7; 07 J-2, J-11, J-15): the verdict, what needs a decision, the triage block (coverage
@@ -74,9 +75,16 @@ export function PhoneSummaryPage() {
                 {n.kind === "owner" ? (
                   <>
                     No owner number was found. Person-level views stay off until an owner is set.{" "}
-                    <Link className="underline underline-offset-2" to={n.link ?? p.links.review}>
+                    <button
+                      type="button"
+                      className="underline underline-offset-2"
+                      onClick={() => {
+                        document.getElementById("set-owner")?.scrollIntoView({ block: "center" })
+                        document.getElementById("set-owner-number")?.focus()
+                      }}
+                    >
                       Set the owner.
-                    </Link>
+                    </button>
                   </>
                 ) : (
                   <>
@@ -193,6 +201,7 @@ export function PhoneSummaryPage() {
       <Section name="Whose phone">
         <p>{p.owner.label && !p.owner.missing ? labelText(p.owner.label) : "No owner number was found."}</p>
         <p className="text-xs text-muted-foreground">{p.owner.missing ? "Person-level views stay off until an owner is set." : p.owner.words}</p>
+        <SetOwner caseId={caseId} extraction={extraction} owner={p.owner} />
         {p.zone.device_zone ? (
           <p className="text-xs">Time zone recorded by the phone: {p.zone.device_zone}</p>
         ) : (
