@@ -93,6 +93,7 @@ class Recount:
         self.consumed = {"r": 0, "f": 0, "x": 0}
         self.unreached_nested = 0
         self.on_progress = on_progress
+        self.stored = {"r": 0, "f": 0, "x": 0}
 
     def walk(self, node, group):
         if is_marker(node):
@@ -140,6 +141,7 @@ class Recount:
     def run(self) -> dict:
         skeleton, parse_state = self.rows.skeleton()
         stored = self.rows.stored()
+        self.stored = stored
         if skeleton is not None:
             self.walk(skeleton, {"r": {}, "f": {}, "x": {}})
         res = self.sink.result({"source": "capture", "parse_state": parse_state})

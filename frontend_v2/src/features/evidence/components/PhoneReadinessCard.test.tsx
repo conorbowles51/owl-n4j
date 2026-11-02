@@ -2,7 +2,7 @@ import { render, screen, fireEvent } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import type { EvidenceJob } from "@/types/evidence.types"
 import { PhoneReadinessCard } from "./PhoneReadinessCard"
-import { CANCEL_KEEPS, outcomeLines, PHONE_STALL_SECONDS, stepIndex, stepText } from "../phone-readiness"
+import { CANCEL_KEEPS, measureOf, outcomeLines, PHONE_STALL_SECONDS, stepIndex, stepText } from "../phone-readiness"
 
 const job = (over: Partial<EvidenceJob> = {}): EvidenceJob => ({
   id: "j1", case_id: "c", batch_id: null, job_type: "phone_capture", file_name: "Handset", status: "capturing",
@@ -27,6 +27,16 @@ describe("phone readiness card (07 J-1a)", () => {
     expect(stepText("indexing_files", { files_checked: 1200, files_total: 21000 })).toBe("Checking the files: 1,200 of 21,000")
   })
 
+  it("counts the entries compared inside a document, so a long check shows progress", () => {
+    expect(stepText("reconciling", { documents_done: 0, documents_total: 1, entries_checked: 12000, entries_total: 71045 }))
+      .toBe("Comparing every element with the report: 12,000 of 71,045 entries")
+    expect(stepText("reconciling", { documents_done: 1, documents_total: 3, entries_checked: 500, entries_total: 9000 }))
+      .toBe("Comparing every element with the report: document 2 of 3, 500 of 9,000 entries")
+    expect(stepText("reconciling", { documents_done: 0, documents_total: 1 })).toBe("Comparing every element with the report: document 1 of 1")
+    expect(measureOf("reconciling", { documents_done: 0, documents_total: 1, entries_checked: 5, entries_total: 10 })).toEqual([5, 10, "entries"])
+    expect(measureOf("reconciling", { documents_done: 1, documents_total: 3, entries_checked: 5, entries_total: 10 })).toEqual([1, 3, "documents"])
+  })
+
   it("says what Cancel keeps before cancelling", () => {
     const onCancel = vi.fn()
     render(<PhoneReadinessCard job={job()} onCancel={onCancel} />)
@@ -35,6 +45,13 @@ describe("phone readiness card (07 J-1a)", () => {
     expect(onCancel).not.toHaveBeenCalled()
     fireEvent.click(screen.getByText("Cancel the reading"))
     expect(onCancel).toHaveBeenCalledOnce()
+  })
+
+  it("a report that finished while a release flagged it paused offers no Resume", () => {
+    const onResume = vi.fn()
+    render(<PhoneReadinessCard job={job({ status: "completed", paused: true, pipeline_state: { phone: { stage: "finishing" } } })} onResume={onResume} onClear={vi.fn()} />)
+    expect(screen.queryByText("Resume")).toBeNull()
+    expect(screen.getByText("Clear")).toBeTruthy()
   })
 
   it("applies the stall rule after 30 s without change", () => {

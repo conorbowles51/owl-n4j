@@ -42,6 +42,9 @@ export function measureOf(stage: string | undefined, counts: Record<string, numb
   const c = counts || {}
   if (stage === "indexing_files" && c.files_total !== undefined)
     return [c.files_checked ?? 0, c.files_total, "files"] as const
+  // within one document the entries compared so far; across several, the documents (entries restart per document)
+  if (stage === "reconciling" && c.entries_total !== undefined && c.documents_total === 1)
+    return [c.entries_checked ?? 0, c.entries_total, "entries"] as const
   if (stage === "reconciling" && c.documents_total !== undefined)
     return [c.documents_done ?? 0, c.documents_total, "documents"] as const
   if (c.bytes_total !== undefined) return [c.bytes_read ?? 0, c.bytes_total, "bytes"] as const
@@ -60,8 +63,13 @@ export function stepText(stage: string | undefined, counts: Record<string, numbe
       return m ? `Counting every element: ${formatBytesOf(m[0], m[1])}` : "Counting every element"
     case "capturing":
       return `${n(c.records)} records and ${n(c.files)} files read` + (m ? ` (${formatBytesOf(m[0], m[1])})` : "")
-    case "reconciling":
-      return m ? `Comparing every element with the report: document ${n(m[0] + (m[0] < m[1] ? 1 : 0))} of ${n(m[1])}` : "Comparing every element with the report"
+    case "reconciling": {
+      const docs = c.documents_total ?? 0
+      const doc = docs > 1 ? `document ${n((c.documents_done ?? 0) + ((c.documents_done ?? 0) < docs ? 1 : 0))} of ${n(docs)}` : ""
+      const entries = c.entries_total !== undefined ? `${n(c.entries_checked)} of ${n(c.entries_total)} entries` : ""
+      const where = [doc, entries].filter(Boolean).join(", ")
+      return where ? `Comparing every element with the report: ${where}` : docs ? "Comparing every element with the report: document 1 of 1" : "Comparing every element with the report"
+    }
     case "indexing_files":
       return m ? `Checking the files: ${n(m[0])} of ${n(m[1])}` : "Checking the files"
     default:

@@ -56,6 +56,26 @@ class Reporter:
         return False
 
 
+RECONCILE_REPORT_SECONDS = 0.5
+
+
+def _reconcile_progress(rep, n, total_docs):
+    """Entries read back and compared within one document, at most every RECONCILE_REPORT_SECONDS: one document can
+    take minutes (C9, one document, 64 s live), and with only a document count the card showed no change."""
+    last = [0.0]
+
+    def report(recount):
+        now = time.monotonic()
+        if now - last[0] < RECONCILE_REPORT_SECONDS:
+            return
+        last[0] = now
+        done, stored = sum(recount.consumed.values()), sum(recount.stored.values())
+        rep.stage("reconciling", _band(0.65, 0.75, n + (done / stored if stored else 0), total_docs),
+                  "Checking nothing is missing", {"documents_done": n, "documents_total": total_docs,
+                                                  "entries_checked": done, "entries_total": stored})
+    return report
+
+
 def _band(lo, hi, done, total):
     return lo + (hi - lo) * (min(done, total) / total if total else 1.0)
 
@@ -391,7 +411,7 @@ def _run_root(conn, rep, source, members, case_id, container_id, root, job_id, c
                   {"documents_done": n, "documents_total": len(data_docs)})
         source_counts = _one(conn, "SELECT source_counts FROM phone_extraction_documents WHERE extraction_id = %s "
                                    "AND document_index = %s", (extraction_id, i))[0]
-        captured = recount_document(conn, extraction_id, i)
+        captured = recount_document(conn, extraction_id, i, _reconcile_progress(rep, n, len(data_docs)))
         result, diffs = reconcile(source_counts, captured)
         with conn.transaction():
             store_reconciliation(conn, extraction_id, i, source_counts, captured, result, diffs)

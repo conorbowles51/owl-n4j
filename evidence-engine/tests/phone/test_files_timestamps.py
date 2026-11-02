@@ -501,3 +501,38 @@ def test_reference_links_take_memory_that_does_not_grow_with_the_records_and_bat
     files.list_entries(conn, ctx)
     files.resolve_references(conn, ctx)
     assert _refs_digest(conn, exts[1000]) == before and before[0] == 3000
+
+
+@pytest.mark.skipif(not PG, reason="Requires LOUPE_TEST_PHONE_PG_URL (a scratch PostgreSQL at the alembic head)")
+def test_the_check_reports_entries_compared_within_a_document(pg_case, tmp_path, monkeypatch):
+    """One document can take minutes to compare (C9 live: one document, 64 s). With only a document count the card
+    showed no change for that time and gave the stall notice on a step that was working. The check now reports the
+    entries read back and compared so far, rising to every stored entry."""
+    from app.phone import runner
+    monkeypatch.setattr(runner, "RECONCILE_REPORT_SECONDS", 0.0, raising=False)
+    conn, case_id = pg_case
+    people = fb.invent_people(5, seed=13)
+    spec = fb.PhoneSpec("S9", like="P09", scale=0.05, contacts=[p.key for p in people[1:]], seed=43)
+    fb.PhoneBuild(spec, {p.key: p for p in people}, fb.load_catalogue()).write(tmp_path / str(case_id) / "S9")
+
+    class Record(runner.Reporter):
+        def __init__(self):
+            self.events = []
+
+        def stage(self, name, progress, message="", counts=None):
+            self.events.append((name, progress, dict(counts or {})))
+
+    rep = Record()
+    res = runner.run_capture(conn, data_root=str(tmp_path), case_id=case_id, container_path="S9", root_path="",
+                             reporter=rep)
+    assert res["state"] == "captured", res
+    checks = [(p, c) for name, p, c in rep.events if name == "reconciling" and "entries_checked" in c]
+    stored = sum(conn.execute("SELECT (SELECT count(*) FROM phone_records WHERE extraction_id = %s) + "
+                              "(SELECT count(*) FROM phone_files WHERE extraction_id = %s) + "
+                              "(SELECT count(*) FROM phone_extra_infos WHERE extraction_id = %s)",
+                              (res["extraction_id"],) * 3).fetchone())
+    assert len(checks) > 2
+    done = [c["entries_checked"] for _, c in checks]
+    assert done == sorted(done) and done[-1] == checks[-1][1]["entries_total"] == stored
+    assert all(0.65 <= p <= 0.75 for p, _ in checks)
+    assert [p for p, _ in checks] == sorted(p for p, _ in checks)
