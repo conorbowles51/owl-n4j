@@ -596,3 +596,83 @@ def post_claim_drafts(body: ClaimDraftRequest, background_tasks: BackgroundTasks
         raise HTTPException(status_code=status, detail=str(exc))
     background_tasks.add_task(run_output_in_background, UUID(out["id"]))
     return out
+
+
+# ---- Day view, the lanes window and every event (04 sections 8.1, 8.6, 10) ---------------------------------------
+
+def _labels(conn, case_id):
+    return {e["extraction_id"]: e["label"] for e in subjects.extractions(conn, case_id)}
+
+
+def _money_days(db, case_id, first_day, last_day, zone):
+    from services.pattern_of_life import money
+    out = money.lane(db, case_id, start_date=first_day, end_date=last_day, zone=zone, limit=5000)
+    return out["items"], out["total"]
+
+
+@router.get("/{case_id}/day")
+def get_day(subject: str = Query(...), date: str = Query(...), zone: str = Query("device"),
+            include_passive: bool = Query(True), case_id: UUID = Depends(require_case_view),
+            db: Session = Depends(get_db)):
+    """One local day for a subject, as lanes (04 section 8.1). Every item is returned."""
+    from services.pattern_of_life import day as day_view
+    r = resolve(db, case_id, subject)
+    d = parse_date(date, "date")
+    conn = db.connection()
+    z, zname = _zone_for(conn, r["extraction_ids"], zone)
+    a, b = day_view.day_bounds(d, z)
+    money_rows, money_total = _money_days(db, case_id, d, d, z)
+    out = day_view.window(conn, r["extraction_ids"], _labels(conn, case_id), a, b, include_passive=include_passive,
+                          money_rows=money_rows)
+    out["totals"]["money"] = money_total
+    return _jsonable(dict(out, subject=r["subject"], date=d, zone=zname, start=a, end=b))
+
+
+WINDOW_SPANS = {"1h": timedelta(hours=1), "6h": timedelta(hours=6), "24h": timedelta(hours=24)}
+
+
+@router.get("/{case_id}/window")
+def get_window(at: str | None = Query(None), span: str = Query("1h"), start: str | None = Query(None),
+               end: str | None = Query(None), subject: str | None = Query(None), zone: str = Query("device"),
+               case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
+    """The window around a moment (07 J-5): one lane per phone (every active phone of the case, or the subject's),
+    each with its availability, plus the money lane for the days it touches. ``span`` is 1h, 6h or 24h either side of
+    ``at``, or ``custom`` with ``start`` and ``end``."""
+    from services.pattern_of_life import day as day_view
+    conn = db.connection()
+    labels = _labels(conn, case_id)
+    exts = resolve(db, case_id, subject)["extraction_ids"] if subject else list(labels)
+    if span == "custom":
+        if not (start and end):
+            raise HTTPException(status_code=400, detail="A custom window needs a start and an end.")
+        a, b = parse_range(start, end)
+    elif span in WINDOW_SPANS:
+        if not at:
+            raise HTTPException(status_code=400, detail="Say which moment the window is around.")
+        t = parse_instant(at, "at")
+        a, b = t - WINDOW_SPANS[span], t + WINDOW_SPANS[span]
+    else:
+        raise HTTPException(status_code=400, detail="The window is 1h, 6h, 24h or custom.")
+    if b - a > timedelta(days=31):
+        raise HTTPException(status_code=400, detail="A window is at most 31 days.")
+    z, zname = _zone_for(conn, exts, zone)
+    phones = []
+    for e in exts:
+        w = day_view.window(conn, [e], labels, a, b)
+        phones.append(dict(w, extraction_id=e, label=labels.get(e)))
+    money_rows, money_total = _money_days(db, case_id, a.astimezone(z).date(), b.astimezone(z).date(), z)
+    return _jsonable({"start": a, "end": b, "span": span, "zone": zname, "phones": phones,
+                      "phones_total": len(phones), "money": money_rows, "money_total": money_total})
+
+
+@router.get("/{case_id}/events")
+def get_events(subject: str = Query(...), start: str = Query(...), end: str = Query(...),
+               classes: str | None = Query(None), cursor: int = Query(0, ge=0),
+               case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
+    from services.pattern_of_life import day as day_view
+    r = resolve(db, case_id, subject)
+    a, b = parse_range(start, end)
+    conn = db.connection()
+    ks = [k for k in (classes or "").split(",") if k] or None
+    return _jsonable(day_view.events(conn, r["extraction_ids"], _labels(conn, case_id), a, b, cursor=cursor,
+                                     classes=ks))
