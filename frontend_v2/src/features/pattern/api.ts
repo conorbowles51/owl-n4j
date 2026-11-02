@@ -223,6 +223,17 @@ export interface SnapshotRequest {
   parameters?: Record<string, unknown>
 }
 
+export interface KeyDate {
+  entry_id: string
+  kind: "date" | "term"
+  label: string
+  instant_utc: string | null
+  zone: string | null
+  local: string | null
+  term: string | null
+  title: string
+}
+
 const base = (caseId: string) => `/api/pattern/${encodeURIComponent(caseId)}`
 const subj = (s: Subject) => encodeURIComponent(JSON.stringify(s))
 
@@ -257,6 +268,10 @@ export const patternAPI = {
   dispute: (caseId: string, id: string, eid: string, ordinal: number, reason: string) =>
     fetchAPI<{ dispute_id: string }>(`${base(caseId)}/claims/${id}/evaluations/${eid}/items/${ordinal}/dispute`,
       { method: "POST", body: { reason } as never }),
+  keyDates: (caseId: string, kind?: "date" | "term") =>
+    fetchAPI<{ total: number; items: KeyDate[] }>(`${base(caseId)}/key-dates${kind ? `?kind=${kind}` : ""}`),
+  createKeyDate: (caseId: string, body: { kind: "date" | "term"; label: string; instant?: string; zone?: string; term?: string }) =>
+    fetchAPI<KeyDate>(`${base(caseId)}/key-dates`, { method: "POST", body: body as never }),
   freeze: (caseId: string, body: SnapshotRequest) =>
     fetchAPI<Snapshot>(`${base(caseId)}/snapshots`, { method: "POST", body: body as never }),
   addToInterview: (dossierId: string, interviewId: string, item: { target_type: string; target_id: string }) =>

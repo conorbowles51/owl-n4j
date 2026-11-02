@@ -1667,6 +1667,22 @@ Each is a decision with its reasoning and what would reverse it.
     response states the basis. A single phone's Day view and grid keep that phone's zone by default. *Reverse if*
     the case zone should also be the default for one phone's views.
 
+34. **Key dates as built (`services/pattern_of_life/key_dates.py`, table `pol_key_date`, `GET/POST .../key-dates`).**
+    A key date is a Workspace note titled "Key date: <name>" and tagged `key date`; a case term is a note titled
+    "Case term: <name>" tagged `case term`. The marker row holds what the views read (the instant in UTC and the
+    zone it was given in, or the term) and is keyed by the note's id with a deferred foreign key, so the note and
+    marker are written in one transaction and deleting the note removes the key date. Key dates are offered on the
+    Patterns screen (each opens the window around it), as starts on the Case Timeline's window bar, and the window
+    saves its moment as one. Workspace entries carry no instant of their own, so the marker sits beside them
+    rather than widening the shared entry table. *Reverse if* Workspace entries gain an instant and zone of their
+    own; the marker then moves onto the entry.
+
+35. **Device events and sensor readings hidden and counted per case (07 section 5).** The Day view and the window
+    start with device-state and passive lanes hidden; the shared Lanes component states "N device events and
+    sensor readings hidden. Show" with N counted for the phones and window on screen, and one click shows them.
+    The corpus totals in section 2 are measurements of the research corpus, not what a case shows. *Reverse if*
+    an investigator setting should keep them shown.
+
 ## 15. Not yet established
 
 - The values of `DeviceEvent.Value` for 14 of 16 EventTypes (only `Power on` and `Factory Reset` are in

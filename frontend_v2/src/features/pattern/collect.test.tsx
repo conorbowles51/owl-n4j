@@ -30,3 +30,13 @@ describe("collecting from Patterns (07 section 6; CO-1 Patterns and Lanes cells)
     expect(screen.getByRole("button", { name: "Add to an interview" })).toBeTruthy()
   })
 })
+
+describe("key dates (04 section 8.6)", () => {
+  it("reads a typed time in the zone it was given in, and refuses an unknown zone", async () => {
+    const { zoned } = await import("./lanes-lib")
+    expect(zoned("2024-05-03T01:52", "America/New_York")).toBe("2024-05-03T05:52:00.000Z")
+    expect(zoned("2024-01-15T09:00", "America/New_York")).toBe("2024-01-15T14:00:00.000Z")
+    expect(zoned("2024-05-03T01:52", "UTC")).toBe("2024-05-03T01:52:00.000Z")
+    expect(zoned("2024-05-03T01:52", "Mars/Base")).toBeNull()
+  })
+})

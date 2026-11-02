@@ -8,6 +8,7 @@ import { Lanes } from "./Lanes"
 import { errorWords, laneRowsOf } from "../lanes-lib"
 import { StatementCheckPanel } from "./StatementCheckPanel"
 import { KeepResult } from "./CollectBar"
+import { KeyDatesBar } from "./KeyDates"
 
 /**
  * The Patterns screen (04 section 8.6): Day view, Pattern grid, Places over time, Together and Statement check, with
@@ -80,6 +81,7 @@ export function PatternsPage() {
           </span>
         )}
       </div>
+      <KeyDatesBar caseId={caseId} />
       <nav aria-label="Pattern views" className="flex flex-wrap gap-1">
         {VIEWS.map((v) => (
           <Button key={v.id} size="sm" variant={view === v.id ? "primary" : "outline"} aria-pressed={view === v.id}

@@ -758,3 +758,37 @@ def get_snapshot(snapshot_id: str, case_id: UUID = Depends(require_case_view), d
     if out is None:
         raise HTTPException(status_code=404, detail="That result is not in this case.")
     return _jsonable(out)
+
+
+# ---- Key dates and case terms (04 section 8.6) -------------------------------------------------------------------
+
+class KeyDateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: str = Field(pattern="^(date|term)$")
+    label: str = Field(min_length=1, max_length=240)
+    instant: str | None = None
+    zone: str | None = Field(default=None, max_length=64)
+    term: str | None = Field(default=None, max_length=240)
+    note: str | None = Field(default=None, max_length=4000)
+
+
+@router.get("/{case_id}/key-dates")
+def get_key_dates(kind: str | None = Query(None, pattern="^(date|term)$"), case_id: UUID = Depends(require_case_view),
+                  db: Session = Depends(get_db)):
+    from services.pattern_of_life import key_dates
+    return _jsonable(key_dates.list_for_case(db.connection(), case_id, kind))
+
+
+@router.post("/{case_id}/key-dates")
+def post_key_date(body: KeyDateRequest, case_id: UUID = Depends(require_case_edit), db: Session = Depends(get_db),
+                  user=Depends(get_current_db_user)):
+    """Enter a key date or case term once for the case: a Workspace note with the marker the analyses read."""
+    from services.pattern_of_life import key_dates
+    instant = parse_instant(body.instant, "instant") if body.instant else None
+    try:
+        out = key_dates.create(db, case_id, user, kind=body.kind, label=body.label, instant=instant, zone=body.zone,
+                               term=body.term, note=body.note)
+    except key_dates.KeyDateError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    return _jsonable(out)

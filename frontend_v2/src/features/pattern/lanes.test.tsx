@@ -28,6 +28,18 @@ describe("the shared Lanes component (04 section 8.6, 07 J-5)", () => {
     expect(onSpan).toHaveBeenCalledWith("6h")
   })
 
+  it("hides device events and sensor readings by default, counts them, and shows them on one click", () => {
+    render(<Lanes start="2023-03-14T00:00:00Z" end="2023-03-15T00:00:00Z" zone="UTC"
+      rows={[{ id: "comm", label: "Messages and calls", marks: [] },
+        { id: "device_state", label: "Device state", total: 12, collapsible: true, marks: [] },
+        { id: "passive", label: "Recorded without use", total: 3, collapsible: true, marks: [] }]} />)
+    expect(screen.getByText("15 device events and sensor readings hidden.")).toBeTruthy()
+    expect(screen.queryByRole("region", { name: "Lane: Device state" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Show" }))
+    expect(screen.getByRole("region", { name: "Lane: Device state" })).toBeTruthy()
+    expect(screen.getByText("Showing 15 device events and sensor readings.")).toBeTruthy()
+  })
+
   it("merges neighbouring hours of one state into one band", () => {
     const b = bandsFromHours([
       { hour_utc: "2023-03-14T01:00:00Z", state: "no_data", words: "No data" },

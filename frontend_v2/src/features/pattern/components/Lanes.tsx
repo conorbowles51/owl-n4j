@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { zoneWords } from "@/features/phones/lib/time-words"
 
@@ -33,6 +33,8 @@ export interface LaneRow {
   total?: number
   note?: string
   allDay?: { key: string; label: string; detail?: string }[]
+  /** Device events and sensor readings: hidden by default and counted (07 section 5), one click away. */
+  collapsible?: boolean
 }
 
 export const SPANS = [
@@ -70,6 +72,10 @@ export function Lanes({ start, end, zone, zoneBasis, rows, span, onSpan, header 
   onSpan?: (span: string) => void
   header?: ReactNode
 }) {
+  const [showAll, setShowAll] = useState(false)
+  const hiddenRows = rows.filter((r) => r.collapsible)
+  const hiddenCount = hiddenRows.reduce((n, r) => n + (r.total ?? r.marks.length), 0)
+  const shown = showAll ? rows : rows.filter((r) => !r.collapsible)
   const s = new Date(start).getTime()
   const width = Math.max(1, new Date(end).getTime() - s)
   const basisWords: Record<string, string> = { case_setting: "case zone", phones_device_zone: "case zone, the phones' own", device_zone: "the phone's zone", chosen: "chosen" }
@@ -86,7 +92,14 @@ export function Lanes({ start, end, zone, zoneBasis, rows, span, onSpan, header 
         <span className="text-muted-foreground">Times in {zoneLabel}. {fmt(start)} to {fmt(end)}.</span>
         {header}
       </div>
-      {rows.map((row) => (
+      {hiddenRows.length > 0 && (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          {showAll ? `Showing ${hiddenCount.toLocaleString("en-US")} device events and sensor readings.`
+            : `${hiddenCount.toLocaleString("en-US")} device events and sensor readings hidden.`}
+          <Button size="sm" variant="link" onClick={() => setShowAll(!showAll)}>{showAll ? "Hide" : "Show"}</Button>
+        </p>
+      )}
+      {shown.map((row) => (
         <div key={row.id} role="region" aria-label={`Lane: ${row.label}`} className="rounded border p-2">
           <div className="mb-1 flex items-baseline justify-between text-sm">
             <span className="font-medium">{row.label}</span>

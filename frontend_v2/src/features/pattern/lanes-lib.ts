@@ -1,6 +1,6 @@
 import { ApiError } from "@/lib/api-client"
 import { phoneLinkHref } from "@/features/phones/phone-links"
-import type { DayResponse, LaneItem } from "./api"
+import type { DayResponse, KeyDate, LaneItem } from "./api"
 import type { LaneBand, LaneRow } from "./components/Lanes"
 
 /** Helpers shared by the Patterns screen, the window panel and the statement check (kept apart from components). */
@@ -41,7 +41,7 @@ export function laneRowsOf(caseId: string, d: DayResponse | (DayResponse & { lab
   for (const k of ["interaction", "device_state", "communications", "places", "others", "passive"]) {
     const items = d.lanes[k] || []
     rows.push({
-      id: k, label: d.lane_words[k] || k, total: d.totals[k] ?? items.length,
+      id: k, label: d.lane_words[k] || k, total: d.totals[k] ?? items.length, collapsible: k === "device_state" || k === "passive",
       note: k === "passive" && d.passive_as_hourly_counts ? d.limit_words || undefined : undefined,
       marks: items.map((i) => ({ key: `${i.ref_kind}:${i.id}`, at: i.at, end: i.end, label: itemLabel(i),
         detail: [i.strength && `strength ${i.strength}`, i.actor && `actor ${i.actor}`, i.source_app, i.phone, ...(i.flags || [])].filter(Boolean).join(" · "),
@@ -52,4 +52,23 @@ export function laneRowsOf(caseId: string, d: DayResponse | (DayResponse & { lab
   rows.push({ id: "money", label: d.lane_words.money || "Payments", total: d.totals.money ?? money.length, marks: [],
     allDay: money.map((m) => ({ key: m.transaction_id, label: `${(m.amount_minor / 100).toFixed(2)} ${m.currency}${m.counterparty ? ` · ${m.counterparty}` : ""}`, detail: m.date_words })) })
   return rows
+}
+
+export function keyDateWords(k: KeyDate) {
+  return k.local ? `${k.label} · ${k.local.slice(0, 16).replace("T", " ")} (${k.zone})` : k.label
+}
+
+/** A wall-clock time typed for a zone, as an instant with that zone's offset at that moment. */
+export function zoned(local: string, zone: string): string | null {
+  if (!local) return null
+  try {
+    const guess = new Date(`${local}:00Z`)
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(guess)
+    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value)
+    const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"))
+    const offset = asUtc - guess.getTime()
+    return new Date(guess.getTime() - offset).toISOString()
+  } catch {
+    return null
+  }
 }
