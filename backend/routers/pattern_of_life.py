@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from postgres.session import get_db
 from routers.case_access import require_case_view
-from routers.users import require_admin
+from routers.users import get_current_db_user, require_admin
 from services.pattern_of_life import availability, grid, subjects
 
 router = APIRouter(prefix="/api/pattern", tags=["pattern-of-life"])
@@ -229,3 +229,59 @@ def get_deviations(subject: str = Query(...), start_date: str = Query(None), end
     res = routine.compute(conn, r["extraction_ids"], z)
     out = routine.deviations(res, z, a, b)
     return _jsonable(dict(out, subject=r["subject"], zone=zname, routine_places=res["routine_places"]))
+
+
+class TogetherParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    window_s: float = Field(default=300, gt=0, le=86400)
+    assumed_radius_m: float = Field(default=1000.0, gt=0, le=100000)
+    max_speed_mps: float = Field(default=40.0, gt=0, le=400)
+    include_synced: bool = False
+
+
+class TogetherRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    subjects: list[dict] = Field(min_length=2, max_length=2)
+    start: str
+    end: str
+    params: TogetherParams = TogetherParams()
+
+
+@router.post("/{case_id}/together")
+def post_together(body: TogetherRequest, case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db),
+                  user=Depends(get_current_db_user)):
+    """Together and apart for two subjects (04 section 8.4). Every pair is kept; a large run answers 202 with its id
+    and runs in the background. Reading a case's phones needs only case view; the run is the reader's own."""
+    from fastapi.responses import JSONResponse
+
+    from services.pattern_of_life import colocation
+    conn = db.connection()
+    try:
+        ra = subjects.resolve(conn, case_id, body.subjects[0])
+        rb = subjects.resolve(conn, case_id, body.subjects[1])
+    except subjects.SubjectError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    a, b = parse_range(body.start, body.end)
+    params = body.params.model_dump()
+    rid = colocation.create_run(conn, case_id, ra["subject"], rb["subject"], ra["extraction_ids"], rb["extraction_ids"],
+                                a, b, params, user.email)
+    est = colocation.estimate_pairs(conn, ra["extraction_ids"], rb["extraction_ids"], a, b)
+    if est > colocation.BACKGROUND_PAIRS:
+        db.commit()
+        from postgres.session import _get_background_engine
+        colocation.run_in_background(_get_background_engine, rid)
+        return JSONResponse(status_code=202, content={"run_id": str(rid), "estimated_pairs": est,
+                                                      "status": "queued"})
+    colocation.execute_run(conn, rid)
+    db.commit()
+    return _jsonable(colocation.read_run(db.connection(), rid, case_id))
+
+
+@router.get("/{case_id}/together/{run_id}")
+def get_together(run_id: UUID, cursor: int = Query(0, ge=0), case_id: UUID = Depends(require_case_view),
+                 db: Session = Depends(get_db)):
+    from services.pattern_of_life import colocation
+    out = colocation.read_run(db.connection(), run_id, case_id, cursor)
+    if out is None:
+        raise HTTPException(status_code=404, detail="That run is not in this case.")
+    return _jsonable(out)

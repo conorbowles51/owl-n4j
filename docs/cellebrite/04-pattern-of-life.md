@@ -1568,6 +1568,20 @@ Each is a decision with its reasoning and what would reverse it.
     never changes a confirmed claim. Places stay unnamed (no labelling route yet). *Reverse if* P14 routine misses
     30 s (11), then stays are stored per extraction and recomputed with the projection.
 
+27. **Together and apart as built (04-U9; `services/pattern_of_life/colocation.py`, migration
+    `20261102_pol_colocation`, `POST /api/pattern/{case}/together` and `GET .../together/{run_id}`).** A run
+    compares exactly two subjects (an extraction or a dossier each); any other number is refused (422) rather than
+    expanded into every pairing, because the item count grows with the square of the subjects. `colocation.verdict`
+    is the only pair rule and 05 approach 5 calls it (C10). Defaults, echoed with every run: window 5 minutes,
+    assumed radius 1,000 m for a fix with no radius (the pair is marked `assumed` and is never tight), 40 m/s,
+    tight at a radius sum of 150 m or less, episodes joined across gaps under 30 minutes. A shared BSSID within
+    the window is `compatible` with radius twice the anchor's (an unanchored BSSID counts as 150 m, so twice is
+    300 m and broad); a shared full cell key within 15 minutes is `compatible`, broad. The SSID is never read.
+    Bluetooth pairing between the two phones is not used until 02's identity work links a Bluetooth address to a
+    device. Nothing is capped: every pair is stored as an item and paged at 1,000 with the total on each page; a
+    run estimated above 2,000,000 pairs answers 202 and runs in the background. *Reverse if* Neil asks for group
+    runs (then every pair of subjects, each its own run), or 02 links Bluetooth addresses (then a seen-peer basis).
+
 ## 15. Not yet established
 
 - The values of `DeviceEvent.Value` for 14 of 16 EventTypes (only `Power on` and `Factory Reset` are in
