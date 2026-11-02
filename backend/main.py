@@ -94,6 +94,8 @@ async def lifespan(app: FastAPI):
     phone_resolvers.register()
     from services.pattern_of_life import evaluation as pol_evaluation
     pol_evaluation.register()  # statement_check links (04 section 9.6)
+    from services.pattern_of_life import snapshots as pol_snapshots
+    pol_snapshots.register()  # phone_analysis links: frozen pattern results (07 section 6.4 item 13)
     from services.phone import external_processing as phone_external_processing
     phone_external_processing.install()  # phone files as evidence: processed only when their report allows it
     # Phone mappings (02 section 6): the sweep re-derives when the loaded set changes.

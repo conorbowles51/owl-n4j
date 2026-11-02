@@ -1037,6 +1037,34 @@ def _add_interview_evidence(
             source_anchor=link_types.phone_anchor(phone, anchor)))
 
 
+def add_interview_evidence(
+    db: Session, *, dossier_id: uuid.UUID, interview_id: uuid.UUID, user: User, item: dict[str, Any],
+) -> dict[str, Any]:
+    """Add one evidence item to an interview, keeping the ones it has (a statement check or a frozen result linked
+    from the phone screens, 07 J-9). Updating an interview replaces its whole list; this does not. An item already
+    on the interview is reported as already there, not added twice."""
+    dossier = _write(db, dossier_id, user)
+    interview = db.scalar(select(DossierInterview).where(DossierInterview.id == interview_id,
+                                                         DossierInterview.dossier_id == dossier.id))
+    if interview is None:
+        raise DossierNotFound("Interview not found")
+    target_type = _text(item.get("target_type")) or "evidence"
+    target_id = _text(item.get("target_id")) or _text(item.get("evidence_file_id")) or ""
+    existing = db.scalars(select(DossierInterviewEvidenceLink).where(
+        DossierInterviewEvidenceLink.interview_id == interview.id)).all()
+    already = any((row.target_type == target_type and row.target_id == target_id)
+                  or (target_type == "evidence" and str(row.evidence_file_id) == target_id)
+                  or (target_type == "phone_file" and (row.source_anchor or {}).get("phone_file_id") == target_id)
+                  for row in existing)
+    if not already:
+        _add_interview_evidence(db, dossier, interview, [item], user)
+        interview.updated_by_user_id = user.id
+        db.commit()
+    db.refresh(interview)
+    return {"added": 0 if already else 1, "already_there": 1 if already else 0,
+            "interview": _serialize_interview(db, interview)}
+
+
 def _case_member_ids(db: Session, case_id: uuid.UUID) -> set[str]:
     from postgres.models.case_membership import CaseMembership
     return {str(value) for value in db.scalars(select(CaseMembership.user_id).where(CaseMembership.case_id == case_id)).all()}

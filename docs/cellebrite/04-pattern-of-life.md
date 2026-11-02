@@ -1641,6 +1641,32 @@ Each is a decision with its reasoning and what would reverse it.
     creator; the claim still reads "Drafted by <model>, not confirmed" until confirmed (decision 29). *Reverse
     if* a conversation draft should stand without a dossier (then a phone-thread Workspace AI target).
 
+31. **Frozen pattern results (07 section 6.4 item 13; `services/pattern_of_life/snapshots.py`, table
+    `pol_analysis_snapshot`, `POST .../snapshots`, `GET .../snapshots/{id}`).** A Day view, a window, a Pattern grid
+    or Places over time is frozen on request so it can be added to a finding, dossier, note or interview as a
+    `phone_analysis` link. The server recomputes the result from the stored projections; the request carries the
+    kind, subject, dates, zone and parameters only, so no count from the browser is stored. The record ids behind
+    the result are the distinct records of the activity events (and, for a day or window, the place observations)
+    in the window; for a grid, the events of the chosen classes at or above the chosen strength. Summary counts are
+    the view's own totals. Mapping versions are the set the statement check fingerprints (generation, projection
+    versions and signature per phone, the case's cell dataset). The id is the registry's snapshot hash, so the same
+    result frozen twice is one row, and a result frozen after the readings move is a new row; reading an old one
+    says it is stale and shows it as frozen. Together runs and statement checks are not frozen here: they are
+    stored rows with their own ids. *Reverse if* a frozen result should carry the items themselves rather than
+    their record ids (then a larger row, and the 92-day limit is revisited).
+
+32. **One item added to an interview (`dossier_service.add_interview_evidence`, `POST /api/dossiers/{id}/
+    interviews/{iid}/evidence:add`).** Updating an interview replaces its whole evidence list, which is unsafe from
+    a screen that only knows the one item it is adding. The statement check and frozen results add one item and
+    keep the rest; an item already on the interview (same registry target, same evidence file, or the same phone
+    file) is reported as already there. *Reverse if* lx-collect adds an append route of its own; this one then
+    calls it.
+
+33. **The window's zone is the case zone (03 section 4.6).** The window covers every phone of the case, so it is
+    drawn in the case zone (the case setting; else the phones' shared device zone; else UTC with the note), and the
+    response states the basis. A single phone's Day view and grid keep that phone's zone by default. *Reverse if*
+    the case zone should also be the default for one phone's views.
+
 ## 15. Not yet established
 
 - The values of `DeviceEvent.Value` for 14 of 16 EventTypes (only `Power on` and `Factory Reset` are in

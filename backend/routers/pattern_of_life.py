@@ -194,8 +194,19 @@ def import_cell_reference(body: CellImport, case_id: UUID, db: Session = Depends
     return out
 
 
-def _zone_for(conn, extraction_ids, zone):
+def _case_zone(conn, case_id):
+    """The case time zone of 03 section 4.6 (the setting, else the phones' shared device zone, else UTC with a
+    note), with its basis, for views that cover several phones."""
+    from services.phone import streams
+    return streams.case_zone(conn, case_id)
+
+
+def _zone_for(conn, extraction_ids, zone, case_id=None):
     from sqlalchemy import text as _t
+    if zone == "case":
+        if case_id is None:
+            raise HTTPException(status_code=400, detail="The case zone needs the case.")
+        zone = _case_zone(conn, case_id)["name"]
     dz = conn.execute(_t("SELECT device_zone FROM phone_extractions WHERE id = :e"),
                       {"e": extraction_ids[0]}).scalar() if extraction_ids else None
     try:
@@ -633,7 +644,7 @@ WINDOW_SPANS = {"1h": timedelta(hours=1), "6h": timedelta(hours=6), "24h": timed
 
 @router.get("/{case_id}/window")
 def get_window(at: str | None = Query(None), span: str = Query("1h"), start: str | None = Query(None),
-               end: str | None = Query(None), subject: str | None = Query(None), zone: str = Query("device"),
+               end: str | None = Query(None), subject: str | None = Query(None), zone: str = Query("case"),
                case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
     """The window around a moment (07 J-5): one lane per phone (every active phone of the case, or the subject's),
     each with its availability, plus the money lane for the days it touches. ``span`` is 1h, 6h or 24h either side of
@@ -655,13 +666,16 @@ def get_window(at: str | None = Query(None), span: str = Query("1h"), start: str
         raise HTTPException(status_code=400, detail="The window is 1h, 6h, 24h or custom.")
     if b - a > timedelta(days=31):
         raise HTTPException(status_code=400, detail="A window is at most 31 days.")
-    z, zname = _zone_for(conn, exts, zone)
+    z, zname = _zone_for(conn, exts, zone, case_id)
+    cz = _case_zone(conn, case_id) if zone == "case" else None
     phones = []
     for e in exts:
         w = day_view.window(conn, [e], labels, a, b)
         phones.append(dict(w, extraction_id=e, label=labels.get(e)))
     money_rows, money_total = _money_days(db, case_id, a.astimezone(z).date(), b.astimezone(z).date(), z)
-    return _jsonable({"start": a, "end": b, "span": span, "zone": zname, "phones": phones,
+    return _jsonable({"start": a, "end": b, "span": span, "zone": zname,
+                      "zone_basis": cz["basis"] if cz else ("device_zone" if zone == "device" else "chosen"),
+                      "zone_note": cz["note"] if cz else None, "phones": phones,
                       "phones_total": len(phones), "money": money_rows, "money_total": money_total})
 
 
@@ -676,3 +690,61 @@ def get_events(subject: str = Query(...), start: str = Query(...), end: str = Qu
     ks = [k for k in (classes or "").split(",") if k] or None
     return _jsonable(day_view.events(conn, r["extraction_ids"], _labels(conn, case_id), a, b, cursor=cursor,
                                      classes=ks))
+
+
+# ---- Frozen pattern results, collected as phone_analysis links (07 section 6.4 item 13) ---------------------------
+
+class SnapshotRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: str = Field(pattern="^(day|window|grid|places)$")
+    subject: str | None = None
+    date: str | None = None
+    start: str | None = None
+    end: str | None = None
+    zone: str = Field(default="device", max_length=64)
+    parameters: dict = Field(default_factory=dict)
+
+
+@router.post("/{case_id}/snapshots")
+def post_snapshot(body: SnapshotRequest, case_id: UUID = Depends(require_case_edit), db: Session = Depends(get_db),
+                  user=Depends(get_current_db_user)):
+    """Freeze what a pattern view shows so it can be added to a finding, dossier, note or interview. The server
+    recomputes the result; nothing the browser counted is stored. A day takes ``date``; a window, grid or places
+    take ``start`` and ``end``; a window without a subject covers every active phone of the case."""
+    from services.pattern_of_life import day as day_view
+    from services.pattern_of_life import snapshots
+    conn = db.connection()
+    labels = _labels(conn, case_id)
+    if body.subject:
+        r = resolve(db, case_id, body.subject)
+        exts, subj = r["extraction_ids"], r["subject"]
+    elif body.kind == "window":
+        exts, subj = list(labels), {"kind": "case"}
+    else:
+        raise HTTPException(status_code=400, detail="Say which phone or person the result is for.")
+    z, zname = _zone_for(conn, exts, body.zone, case_id)
+    if body.kind == "day":
+        if not body.date:
+            raise HTTPException(status_code=400, detail="A day result needs its date.")
+        a, b = day_view.day_bounds(parse_date(body.date, "date"), z)
+    else:
+        if not (body.start and body.end):
+            raise HTTPException(status_code=400, detail="This result needs a start and an end.")
+        a, b = parse_range(body.start, body.end)
+    try:
+        out = snapshots.freeze(db, case_id, kind=body.kind, subject=json.loads(json.dumps(subj, default=str)),
+                               extraction_ids=exts, labels=labels, start=a, end=b, zone=z, zname=zname,
+                               parameters=body.parameters, user=user)
+    except snapshots.SnapshotError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    db.commit()
+    return _jsonable(out)
+
+
+@router.get("/{case_id}/snapshots/{snapshot_id}")
+def get_snapshot(snapshot_id: str, case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
+    from services.pattern_of_life import snapshots
+    out = snapshots.read(db.connection(), case_id, snapshot_id)
+    if out is None:
+        raise HTTPException(status_code=404, detail="That result is not in this case.")
+    return _jsonable(out)

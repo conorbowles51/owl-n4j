@@ -76,3 +76,27 @@ def test_a_crowded_window_returns_passive_items_as_hourly_counts_and_says_so(hoo
         assert out["passive_as_hourly_counts"] is True and "Show all" in out["limit_words"]
         assert out["totals"]["passive"] == sum(h["count"] for h in out["passive_hours"])
         assert out["totals"]["interaction"] == 1  # other lanes keep every item
+
+
+@needs_template
+def test_the_window_over_every_phone_uses_the_case_zone_and_says_on_what_basis(hooks):
+    """The window covers several phones, so it is drawn in the case zone of 03 section 4.6, not the first phone's."""
+    from sqlalchemy import text
+    from tests.pattern_pg import api_client
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            _phone().make(c, case)
+        at = (DAY + timedelta(hours=9)).isoformat()
+        with api_client(engine, case) as client:
+            unset = client.get("/api/pattern/%s/window" % case, params={"at": at, "span": "1h"}).json()
+            assert unset["zone"] == "UTC" and unset["zone_basis"] == "utc_default"
+            with engine.begin() as c:
+                c.execute(text("INSERT INTO case_display_settings (case_id, time_zone, updated_by) SELECT id, "
+                               "'America/New_York', owner_user_id FROM cases WHERE id = :c"), {"c": case})
+            out = client.get("/api/pattern/%s/window" % case, params={"at": at, "span": "1h"}).json()
+            assert out["zone"] == "America/New_York" and out["zone_basis"] == "case_setting"
+            chosen = client.get("/api/pattern/%s/window" % case, params={"at": at, "span": "1h", "zone": "UTC"}).json()
+            assert chosen["zone"] == "UTC" and chosen["zone_basis"] == "chosen"

@@ -15,7 +15,7 @@ from services.case_service import CaseAccessDenied, CaseNotFound
 from services.dossier_service import (
     DossierConflict, DossierNotFound, add_media, archive_dossier, create_assessment,
     create_dossier, create_interview, delete_assessment, delete_interview, delete_media,
-    add_evidence_links, get_dossier, link_dossier, list_dossiers,
+    add_evidence_links, add_interview_evidence, get_dossier, link_dossier, list_dossiers,
     remove_evidence_link, reorder_media, replace_links, add_links, remove_link,
     update_dossier, update_interview, update_media, LINKS_ADD_LIMIT,
 )
@@ -316,6 +316,13 @@ def interview(dossier_id: UUID, request: InterviewCreate, db: Session = Depends(
 @router.patch("/{dossier_id}/interviews/{interview_id}")
 def patch_interview(dossier_id: UUID, interview_id: UUID, request: InterviewUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
     try: return update_interview(db, dossier_id=dossier_id, interview_id=interview_id, user=user, data=_payload(request, exclude_unset=True))
+    except Exception as exc: _error(exc)
+
+
+@router.post("/{dossier_id}/interviews/{interview_id}/evidence:add")
+def add_one_interview_evidence(dossier_id: UUID, interview_id: UUID, request: InterviewEvidenceIn, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Add one item to an interview's evidence and keep the rest (07 J-9: a statement check linked to the interview)."""
+    try: return add_interview_evidence(db, dossier_id=dossier_id, interview_id=interview_id, user=user, item=_payload(request))
     except Exception as exc: _error(exc)
 
 
