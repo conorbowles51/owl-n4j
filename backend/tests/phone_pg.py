@@ -79,3 +79,61 @@ def make_case(conn):
                       "updated_at) VALUES (:c, 'synthetic phone test', 'active', false, :u, :u, now(), now())"),
                  {"c": cid, "u": uid})
     return cid
+
+
+def make_extraction(conn, case_id, records, *, skeleton=None, label="C77", timestamps=(), capture_state="captured",
+                    report_version="7.70", producer_version="7.70.0.1", standing="active", metadata=None):
+    """A synthetic captured extraction. ``records``: [(ordinal, parent_ordinal, top_ordinal, body)]; the model
+    type is read from the body. ``timestamps``: rows for phone_timestamps (dicts with the 01 columns)."""
+    import hashlib
+    import json
+    from sqlalchemy import text
+    ext, cont = uuid.uuid4(), uuid.uuid4()
+    h = hashlib.sha256(ext.bytes).hexdigest()
+    conn.execute(text(
+        "INSERT INTO phone_extraction_containers (id, case_id, container_kind, stored_path, original_name, size_bytes, "
+        "sha256, md5, intake_outcome, classification) VALUES (:id, :c, 'folder', 'synthetic', :n, 1, :h, :m, "
+        "'phone_report', '{}'::jsonb)"), {"id": cont, "c": case_id, "n": label, "h": h, "m": h[:32]})
+    conn.execute(text(
+        "INSERT INTO phone_extractions (id, case_id, report_set_sha256, first_container_id, form, capture_state, "
+        "standing, capture_code_version, report_version, producer_version, captured_at) VALUES (:id, :c, :h, :ct, "
+        "'full', CAST(:cs AS phone_capture_state), CAST(:st AS phone_extraction_standing), 'synthetic', :rv, :pv, "
+        "now())"), {"id": ext, "c": case_id, "h": h, "ct": cont, "cs": capture_state, "st": standing,
+                    "rv": report_version, "pv": producer_version})
+    skel = skeleton if skeleton is not None else ["project", {"reportVersion": report_version}, None, [
+        ["metadata", {"section": "Additional Fields"}, None, [
+            ["item", {"name": k}, v, None] for k, v in (metadata or {}).items()]],
+        ["decodedData", None, None, [["@r", 0, max([r[0] for r in records if r[1] is None] or [0])]]]]]
+    conn.execute(text(
+        "INSERT INTO phone_extraction_documents (extraction_id, document_index, path, role, size_bytes, sha256, md5, "
+        "parse_state, skeleton) VALUES (:e, 0, :p, 'full', 1, :h, :m, 'complete', CAST(:s AS jsonb))"),
+        {"e": ext, "p": "%s_synthetic_Report.xml" % label, "h": h, "m": h[:32], "s": json.dumps(skel)})
+    for ordinal, parent, top, body in records:
+        a = body[1] or {}
+        conn.execute(text(
+            "INSERT INTO phone_records (extraction_id, document_index, ordinal, parent_ordinal, top_ordinal, depth, "
+            "model_type, source_model_id, deleted_state, is_partial, body) VALUES (:e, 0, :o, :p, :t, :d, :mt, :sid, "
+            ":ds, false, CAST(:b AS jsonb))"),
+            {"e": ext, "o": ordinal, "p": parent, "t": top, "d": 0 if parent is None else 1, "mt": a.get("type"),
+             "sid": a.get("id"), "ds": a.get("deleted_state"), "b": json.dumps(body)})
+    for ts in timestamps:
+        conn.execute(text(
+            "INSERT INTO phone_timestamps (extraction_id, document_index, owner_kind, owner_ordinal, body_path, "
+            "model_type, field_name, value_type, original_text, formatted_text, instant, local_wall_time, "
+            "original_offset_minutes, offset_state, parse_rule) VALUES (:e, 0, 'record', :o, :bp, :mt, :fn, "
+            "'TimeStamp', :ot, :ft, :i, :lw, :off, :os, :pr)"),
+            dict({"ft": None, "lw": None, "off": None, "pr": "synthetic"}, e=ext, **ts))
+    return ext
+
+
+def model(type_name, fields, **attrs):
+    return ["model", dict({"type": type_name, "id": str(uuid.uuid4()), "deleted_state": "Intact",
+                           "decoding_confidence": "High"}, **attrs), None, fields]
+
+
+def fld(name, *values, kind="field"):
+    return [kind, {"name": name}, None, [["value", {"type": t}, v, None] for t, v in values] or None]
+
+
+def refs(name, *ordinals, kind="multiModelField"):
+    return [kind, {"name": name}, None, [["@", o] for o in ordinals]]

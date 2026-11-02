@@ -11,7 +11,15 @@ Branch `cb/cb-interpret`. Spec 02 units, in 06 order; each with its acceptance t
   applied by `scripts/phone_registry_seed.py` (idempotent). 62 types, 471 typed field rows over 470, 55 sets with 210
   values plus `DecodingSourceOptions` and `@decoding_confidence`, 96 nesting rows (union of 3.6's 47 and A3's 95),
   51 attribute names and 17 placeholder field rows from the counter (02 decision 40).
-- **Tests:** `tests/test_phone_body_values.py`, `tests/test_phone_registry_seed.py`; PostgreSQL ones opt-in through
+- **02-U3:** `registry.observe_extraction` streams an extraction's records (batches of 5,000) and records every
+  type, field, nesting, named-set value and attribute name it holds, with first-seen columns and one flag per
+  novelty (`ON CONFLICT DO NOTHING`, so two concurrent passes raise one); observed totals are sums over
+  `phone_schema_observations`, so a rerun changes nothing. Fields and nesting of a new type are covered by the
+  type's flag. Review queue `GET /api/phones/registry/flags`, `POST .../{id}/transition` (admin; event before
+  state; `mapped` only automatic), router `routers/phones.py`. Measured after the seed: C3 0 flags (35 types, 178
+  field combinations, 8.0 s), C9 0 (26, 123, 3.0 s), server C8 0 (38, 221, 10.7 s); server C8 has no multi-valued
+  plain field (the 38 in 02 section 2 are the Mac export's). U1 counts on server C8: 466,897 / 401,963 / 33,301.
+- **Tests:** `tests/test_phone_body_values.py`, `tests/test_phone_registry_seed.py`, `tests/test_phone_registry_observe.py`; PostgreSQL ones opt-in through
   `LOUPE_TEST_PHONE_PG_TEMPLATE_URL` (a database at the head; each test gets a fresh copy) and
   `LOUPE_TEST_PHONE_PG_URL` (captured extractions, rolled back), helper `tests/phone_pg.py`.
 

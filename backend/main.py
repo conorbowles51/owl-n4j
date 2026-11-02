@@ -297,6 +297,8 @@ from routers.ui_problem_reports import router as ui_problem_reports_router
 app.include_router(ui_problem_reports_router)
 from routers.phone_extractions import router as phone_extractions_router
 app.include_router(phone_extractions_router)
+from routers.phones import router as phones_router
+app.include_router(phones_router)
 
 
 @app.get("/")
