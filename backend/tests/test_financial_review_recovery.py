@@ -89,6 +89,40 @@ class ReviewRecoveryTests(TestCase):
         self.assertEqual(late['request']['_saved_balance_corrections']['opening'], {'amount_minor': '6000', 'page': 1})
         self.assertEqual(late['saved_by']['user_id'], str(self.f.actor.user_id))
 
+    def test_saved_reviews_read_only_the_parts_they_show(self):
+        # A saved statement keeps its whole original reading (up to 2 MB) and a batch row its whole file list
+        # (86 MB across one file's items on 1 Nov). Decoding them stalled the web workers 1-5 s; neither is shown.
+        import re
+        from uuid import UUID
+        from sqlalchemy import event
+        from services.financial.statement_details import read_statement_details, update_statement_details, StatementDetailsRequest
+        receipt = self.f.confirm()
+        with self.f.SessionLocal() as db:
+            source_id = UUID(receipt['source_document_id'])
+            view = read_statement_details(db, case_id=self.f.case.id, source_id=source_id)
+            update_statement_details(db, case_id=self.f.case.id, source_id=source_id,
+                request=StatementDetailsRequest(expected_revision=view['revision'], holder=view['details']['holder'],
+                    account_number='00123456789', institution=view['details']['institution'],
+                    opening={'amount_minor': '6000', 'page': 1}), actor=self.f.actor)
+        self.batch_draft()
+        self.new_version()
+        statements = []
+        engine = self.f.db.get_bind()
+        listener = lambda conn, cursor, statement, *rest: statements.append(statement)
+        event.listen(engine, 'before_cursor_execute', listener)
+        try:
+            records = review_recovery.saved_ancestor_reviews(self.f.db, self.f.file)
+        finally:
+            event.remove(engine, 'before_cursor_execute', listener)
+        self.assertEqual({r['origin'] for r in records}, {'Account and balances corrected after import', 'Bulk review'})
+        sql = '\n'.join(statements)
+        self.assertIn('financial_source_documents', sql)
+        # Whole columns, not a key read inside them (SQLite renders a key read as JSON_EXTRACT(column, path)).
+        whole = lambda column: re.search(r'(?<!JSON_EXTRACT\()' + re.escape(column) + r'\b', sql)
+        self.assertIsNone(whole('financial_source_documents.metadata'), sql)
+        self.assertIsNone(whole('financial_import_batch_items.summary'), sql)
+        self.assertNotIn('financial_import_batches.files', sql)
+
     def test_new_reading_with_shifted_rows_retains_manual_additions_for_comparison(self):
         item = self.batch_draft()
         saved = deepcopy(item.review_request)

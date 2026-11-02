@@ -63,14 +63,27 @@ def saved_ancestor_reviews(session, file):
             add(previous, saved, 'Earlier statement review')
         # Late corrections are separate from the immutable import request.
         # Keep them available for explicit comparison with a fresh extraction.
-        sources = session.scalars(select(FinancialSourceDocument).where(
+        # Only the keys read below are loaded. A saved statement's metadata also keeps the original reading
+        # (on average 86% of it, up to 2 MB a statement); decoding it whole held the interpreter for seconds
+        # in the web workers and stalled every request (1 Nov: 1-5 s stalls). The import request, the next
+        # largest, is loaded only for a statement that has a correction to show.
+        md = FinancialSourceDocument.metadata_
+        sources = session.execute(select(FinancialSourceDocument.id,
+            md['statement_details_review'], md['statement_details_review_sha256'],
+            md['statement_incomplete_records']).where(
             FinancialSourceDocument.case_id == file.case_id,
             FinancialSourceDocument.evidence_file_id == previous.id)
             .order_by(FinancialSourceDocument.id))
-        for source in sources:
-            imported = source.metadata_ or {}
-            details = imported.get('statement_details_review')
-            if details and imported.get('statement_import_request') and _digest(details) == imported.get('statement_details_review_sha256'):
+        for source_id, details, details_sha256, incomplete in sources.all():
+            details_saved = bool(details) and _digest(details) == details_sha256
+            corrected = [r for r in incomplete or [] if r.get('correction')]
+            if not details_saved and not corrected:
+                continue
+            wanted = [md['statement_import_request']] + ([md['statement_details_history']] if details_saved else [])
+            loaded = session.execute(select(*wanted).where(FinancialSourceDocument.id == source_id)).one()
+            imported = dict(statement_import_request=loaded[0],
+                statement_details_history=loaded[1] if details_saved else None)
+            if details_saved and imported.get('statement_import_request'):
                 request = deepcopy(imported['statement_import_request'])
                 request.update(details['details'])
                 if details.get('currency'):
@@ -82,8 +95,6 @@ def saved_ancestor_reviews(session, file):
                 add(previous, dict(request=request, saved_at=latest['at'],
                     saved_by=dict(user_id=latest['actor_id'], name=latest['actor_name'])),
                     'Account and balances corrected after import')
-            corrected = [r for r in imported.get('statement_incomplete_records', [])
-                         if r.get('correction')]
             if not corrected or not imported.get('statement_import_request'):
                 continue
             request = deepcopy(imported['statement_import_request'])
@@ -94,17 +105,19 @@ def saved_ancestor_reviews(session, file):
             add(previous, dict(request=request, saved_at=latest.get('corrected_at'),
                 saved_by=dict(user_id=latest.get('corrected_by'))),
                 f"Corrected imported records ({', '.join(currencies)})")
-        items = session.execute(select(FinancialImportBatchItem, FinancialImportBatch)
+        # Only the columns read: the batch row carries the whole file list (86 MB decoded for one file's
+        # 1,440 items on 1 Nov) and the item its full summary; neither is needed here.
+        items = session.execute(select(FinancialImportBatchItem.review_request,
+                FinancialImportBatchItem.updated_at, FinancialImportBatchItem.summary['review_saved_by'],
+                FinancialImportBatchItem.statement_key)
             .join(FinancialImportBatch, FinancialImportBatch.id == FinancialImportBatchItem.batch_id)
             .where(FinancialImportBatchItem.file_id == previous.id,
                    FinancialImportBatch.case_id == file.case_id,
                    FinancialImportBatchItem.review_request.is_not(None))
             .order_by(FinancialImportBatchItem.updated_at.desc(), FinancialImportBatchItem.id))
-        for item, batch in items:
-            add(previous, dict(request=item.review_request,
-                saved_at=item.updated_at.isoformat(),
-                saved_by=(item.summary or {}).get('review_saved_by')),
-                'Bulk review', item.statement_key)
+        for review_request, updated_at, saved_by, statement_key in items.all():
+            add(previous, dict(request=review_request, saved_at=updated_at.isoformat(), saved_by=saved_by),
+                'Bulk review', statement_key)
     return records
 
 
