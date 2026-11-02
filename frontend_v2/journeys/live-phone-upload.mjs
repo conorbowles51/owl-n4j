@@ -108,7 +108,8 @@ try {
   const message = await card.getByText(/Every record was read and checked against the report[^.]*\./).first().textContent().catch(() => "")
   if (message) console.log(`message: ${message.replace(name, "[report]")}`)
   await page.goto(`${login.url}/cases/${caseId}`, { waitUntil: "domcontentloaded" })
-  await page.waitForTimeout(4000)
+  // the feed loads after the page; a fixed wait missed it on a busy server
+  await page.getByText(/^Phone report (ready|being read)$/).first().waitFor({ timeout: 30000 }).catch(() => {})
   const feedItem = page.locator("div, li, article").filter({ has: page.getByText(/^Phone report (ready|being read)$/) })
     .filter({ has: page.getByText(name.replace(/\.zip$/i, ""), { exact: false }) }).last()
   await snap("attention-feed-item", feedItem)

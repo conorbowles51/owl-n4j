@@ -211,9 +211,13 @@ def _save_chunk(db: Session, identity: UUID, user: User, index: int, content: by
     return snapshot(item)
 
 
+def assembled_path(item):
+    return Path(EVIDENCE_DATA_ROOT) / str(item.case_id) / '_uploads' / str(item.id) / item.filename
+
+
 def assemble(item):
     root = directory(item)
-    target = Path(EVIDENCE_DATA_ROOT) / str(item.case_id) / '_uploads' / str(item.id) / item.filename
+    target = assembled_path(item)
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=target.parent)
     digest = hashlib.sha256()
