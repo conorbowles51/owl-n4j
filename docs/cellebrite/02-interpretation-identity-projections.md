@@ -106,7 +106,8 @@ stop event, retry with backoff. **Decision** (14.1): interpretation is a pure fu
 registry and the mapping set, so it does not need the intake worker's pause and resume. *Reverse if* the
 first run on the largest phone (C6 of the 10-report case: 186,787 messages) takes more than 15 minutes or
 raises the backend's p95 API latency by more than half during the pass; then move the same functions to
-the dedicated phone worker of plan 6.1.
+the dedicated phone worker of plan 6.1. Both limits are exceeded (decision 46): the sweep runs as a process of its own
+(`services/phone/sweep_worker.py`), at nice 19 and idle I/O class, paced, started and supervised by the backend.
 
 ### 1.4 Vocabulary
 
@@ -1692,7 +1693,7 @@ Each with its reason and what would reverse it.
 
 1. **Interpretation runs as a backend sweep, not on the intake worker.** It is a pure function of Postgres
    state, so pause and resume are unnecessary; the financial identity sweep is the existing pattern.
-   *Reverse if* the timing in 1.3 is exceeded.
+   *Reverse if* the timing in 1.3 is exceeded. Reversed by decision 46.
 2. **The registry is global, structure only, and its review history lives in its own event table.**
    Types are learned across cases; `adjudications` requires a case. *Reverse if* Loupe becomes
    multi-tenant.
@@ -1819,6 +1820,74 @@ Each with its reason and what would reverse it.
     `unknown` when the sender carries no owner flag (C3: 284 of 2,917). Rule marks are decided before the rows
     are written (`apply.plan`) and stamped by the generic pass as it writes, not by UPDATE afterwards; both paths
     give equal rows (test). *Reverse if* 03's Conversations screen needs a thread kind or key form not listed.
+
+46. **The sweep runs as a process of its own, paced, not in the backend's API process** (1.3, 14 decision 1
+    reversed; `services/phone/sweep_worker.py`, `generic.PACE`). Both of 1.3's limits are exceeded on C6
+    (694,406 records, 186,787 messages). In the backend process one pass took 824 s and raised the p95 of a read
+    probe on the same database from 46.5 ms to 172.4 ms. As its own process at nice 19 and idle I/O class, one per
+    box (an advisory lock), pausing as long as each write took (pace 1.0), a pass with every stage installed takes
+    2,068 s and writes 9,493 MB of WAL; the probe's p95 is 286 ms over the whole pass (observe 1,033 ms over its
+    103 s; generic 289; mappings 310; identities 178; purge of the previous generation 286), and lock waits on
+    readers are 0, as each generation is swapped in one transaction. The baseline before that run was 379 ms with the
+    box under other load, so that run measures the phases against each other; the run on a quiet box, without the
+    identity stage, gave 104 ms before and 198 ms during. Observation alone, outside a pass, gives a p95 of 158 to
+    178 ms against a 100 to 161 ms baseline, and pacing its reads does not lower it (168 to 210 ms), so its reads
+    are not paced. The dedicated phone worker of plan 6.1 shares the same database, which is the resource the probe
+    measures, so the backend code is not moved into the engine's container. *Reverse if* a pass on P14 (967,543
+    records) raises a signed-in screen's p95 by more than half on the live box; then the pace rises, measured.
+
+47. **Coverage is a function, not a view** (7.1; `services/phone/coverage.py`). The levels depend on the loaded
+    mapping set, which lives in the process, and on case decisions, so `pv_coverage` cannot be plain SQL; the
+    function computes the same rows on read from `phone_schema_observations`, the mapping set and the case's
+    reading decisions, and nothing is stored. A field counts once per (type, field path, kind, value type) with a
+    typed value: C3 gives 35 types and 178 combinations. *Reverse if* a screen or 04 needs coverage inside SQL.
+48. **Phone labels follow 12.3; a shared label says which report it is** (`readings.phone_labels`). A person's
+    `set_phone_label`, else the `C<digits>` token in the report's file name, else `Phone <n>` in capture order.
+    Two phones with one label read "C1 (report 1 of 2)" and "C1 (report 2 of 2)" in capture order, so a sentence
+    such as "On C1, calls: ..." never names two phones. Measured on the scratch copies: 4 of 7 report names carry
+    a token. *Reverse if* 03 shows the extraction date beside a shared label instead.
+49. **Suggestions: R4 waits for 02-U11; R5 needs independent names; a rejection answers one suggestion** (8.7;
+    `identity_decisions.py`). R4 `financial_identifier` lands with the financial identifier kinds. R5 between two
+    identities counts only names seen away from the cards that gave R1: the card's own name on both numbers is
+    the card again, not support for it. Rejecting "A is not B" closes that suggestion only; A's suggestions with
+    other identities or persons stay open. Ties are ordered by identity key. Suggestions are recomputed when they
+    are read and after every identity decision; no background job holds them. *Reverse if* reading the
+    suggestions of the 10-report case takes over 2 s.
+50. **The `phone_analysis` link resolver and the `phone_analysis_result` subject belong to spec 05** (cb-approaches).
+    Stage C and D produce no analysis result to freeze. The `phone_record`, `phone_thread` and `phone_identity`
+    resolvers are registered by `services/phone/resolvers.py`: a record or thread resolves in the current
+    generation of its phone and carries that generation's mapping set and interpreter version; one on a replaced
+    report is refused with that reason; an identity resolves by its key within the case only.
+51. **Corrections on the review page cover the role of a party, which time is the event time, and a timestamp's
+    meaning** (6.8; `readings.choices`). Each is a closed list of plain choices. Other rule parts (thread, end
+    time, record kind) show "can be changed for every case from the admin list". A correction is a typed-reason
+    decision with scope this phone or the case's phones of the same report format, and opens a `case_correction`
+    proposal for the global mapping. *Reverse if* reviewing the first 100 readings shows another part corrected.
+52. **Decision snapshots carry the same fields on both sides** (`decisions.record` refuses otherwise). What a
+    decision adds (the examples opened, the scope, the suggestion reasons shown, a note) is recorded as `None` on
+    the before side. A decision that names a state (`expected_status`, `expected_revision`) that has changed is
+    refused with who changed it and when, and the screen reloads.
+53. **A new person and the link to it are one transaction** (`dossier_service.create_dossier(commit=False)`). A
+    Dossier on a graph entity still commits by itself, because its significant entities follow it; the phone
+    path never passes one.
+54. **External processing is decided per phone report by the system owner** (8.8, 9.8;
+    `services/phone/external_processing.py`). `phone_files.register_external_processing_check` gets a check that
+    reads the latest `allow_phone_external_processing` on the file's own report; with none, the answer is no.
+    `POST /api/phones/{extraction}/external-processing` takes a typed reason and needs a super admin.
+55. **Email threads by header where headers exist** (decision 45; `comms.header_thread_root`). The thread is the
+    first message id in References, else In-Reply-To, else the email's own Message-ID, ids compared without angle
+    brackets and case. An email without any of them threads by folder and subject as before. None of the 14
+    reports carries these fields, so no case's threads change today. *Reverse if* a report with headers shows
+    replies split from their thread (a reply naming only a non-root parent).
+56. **The stored interpreter version names the installed stages** (`sweep.interpreter_version`). It is the
+    generic version and a hash of the appliers and planner that ran, so a stage added later (identities, readings,
+    a new applier) makes every phone read without it due again. Without this a phone read before the identity
+    stage existed keeps no identities (seen on a scratch copy of C3: 0 sightings until re-read, then 703 graph
+    nodes and 1,756 relationships). *Reverse if* stages get versions of their own in the state row.
+57. **A party marked as the phone owner with no identifier is the phone's owner side** in the graph projection,
+    like the owner row of 5.3. C6 has 74,147 such parties among 341,053; without the rule its pair edges are 653,
+    with it 4,227 (C3 462 to 505, C8 115 to 145, C9 149 to 152). *Reverse if* a report marks the owner flag on a
+    party that is not the phone's own side.
 
 ## 15. Not yet established
 
