@@ -36,4 +36,27 @@ describe("warnings use the warning colour, not brand-red amber", () => {
     }
     expect(found).toEqual([])
   })
+
+  it("the hand-picked light warning amber (#fdf6dd) never pairs with a brand-red amber-* class in dark mode", () => {
+    // Model-reading notes ("Read by Claude · not confirmed") draw light amber from fixed hex values; their dark:
+    // classes must use status-warning, or dark mode shows them in Loupe red (lx-style, live 2 Nov).
+    const found: string[] = []
+    for (const file of files(SRC)) {
+      readFileSync(file, "utf8").split("\n").forEach((line, i) => {
+        if (/#fdf6dd/i.test(line) && /amber-\d/.test(line)) found.push(`${path.relative(SRC, file)}:${i + 1}`)
+      })
+    }
+    expect(found).toEqual([])
+  })
+
+  it("warning tones in tone helpers (attention band 1, reconciliation 'under') use status-warning", () => {
+    const tone = (rel: string, marker: RegExp) => {
+      const lines = readFileSync(path.join(SRC, rel), "utf8").split("\n")
+      const i = lines.findIndex((l) => marker.test(l))
+      expect(i, `${rel} ${marker}`).toBeGreaterThanOrEqual(0)
+      return lines.slice(i, i + 2).join("\n")
+    }
+    expect(tone("features/workspace/components/CanonicalWorkspaceOverview.tsx", /priorityBand === 1/)).not.toMatch(/amber-\d/)
+    expect(tone("features/cellebrite/components/overview/OverviewTab.tsx", /status === "under"/)).not.toMatch(/amber-\d/)
+  })
 })

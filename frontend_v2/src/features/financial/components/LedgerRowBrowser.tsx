@@ -1839,7 +1839,7 @@ export function LedgerRowBrowser({
       )}
       {investigation && exportContext && !waiting && (unconfirmedCount > 0 || view.unconfirmedOnly) && (
         <div
-          className="flex flex-wrap items-center gap-2 rounded border border-[#e7c66b] bg-[#fdf6dd] px-3 py-2 text-sm text-[#5c3d00] dark:bg-amber-950 dark:text-amber-100"
+          className="flex flex-wrap items-center gap-2 rounded border border-[#e7c66b] bg-[#fdf6dd] px-3 py-2 text-sm text-[#5c3d00] dark:bg-status-warning-soft dark:text-status-warning"
           role="group"
           aria-label="Names read by Claude, not confirmed"
         >

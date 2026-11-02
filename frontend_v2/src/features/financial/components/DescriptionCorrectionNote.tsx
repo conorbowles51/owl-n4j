@@ -20,7 +20,7 @@ export function DescriptionCorrectionNote({ correction }: { correction?: Descrip
     <div
       role="note"
       aria-label="Description corrected by a model"
-      className="space-y-1 rounded border border-[#e7c66b] bg-[#fdf6dd] p-2 text-[12px] text-[#5c3d00] dark:bg-amber-950 dark:text-amber-100"
+      className="space-y-1 rounded border border-[#e7c66b] bg-[#fdf6dd] p-2 text-[12px] text-[#5c3d00] dark:bg-status-warning-soft dark:text-status-warning"
     >
       <p>
         <strong>First line corrected by {who} · {correction.confirmed ? "confirmed" : "not confirmed"}.</strong>{" "}

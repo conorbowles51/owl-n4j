@@ -1307,7 +1307,7 @@ function overviewToneClass(tone: OverviewKind | "total"): string {
 function reconciliationStatusClass(status: string): string {
   if (status === "nested") return "bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-200"
   if (status === "skipped" || status === "not_supported") return "bg-muted text-muted-foreground"
-  if (status === "under") return "bg-amber-50 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200"
+  if (status === "under") return "bg-status-warning-soft text-status-warning"
   return "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200"
 }
 

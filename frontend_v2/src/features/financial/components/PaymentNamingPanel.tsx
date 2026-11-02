@@ -366,7 +366,7 @@ export function PaymentNamingPanel({
             <p className="text-xs text-muted-foreground">{row.account_label || row.account_holder || row.account_id}</p>
             <p className="break-words font-mono text-[13px]">{row.description || "No description recorded"}</p>
             {reading?.source === "model_reading" ? (
-              <p className="rounded border border-[#e7c66b] bg-[#fdf6dd] p-2 text-xs text-[#5c3d00] dark:bg-amber-950 dark:text-amber-100" data-testid="model-reading">
+              <p className="rounded border border-[#e7c66b] bg-[#fdf6dd] p-2 text-xs text-[#5c3d00] dark:bg-status-warning-soft dark:text-status-warning" data-testid="model-reading">
                 <span className="font-semibold">{reading.label || "Read by Claude · not confirmed"}: </span>
                 {row[readField as "from_name" | "to_name"]}
                 {reading.explanation ? <span className="mt-1 block">{reading.explanation}</span> : null}

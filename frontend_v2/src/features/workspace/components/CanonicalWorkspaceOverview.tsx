@@ -60,7 +60,7 @@ function attentionTone(priorityBand: number) {
     return "border-rose-200 bg-rose-50/55 text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/20 dark:text-rose-300"
   }
   if (priorityBand === 1) {
-    return "border-amber-200 bg-amber-50/55 text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/20 dark:text-amber-300"
+    return "border-status-warning/50 bg-status-warning-soft text-status-warning"
   }
   if (priorityBand === 2) {
     return "border-violet-200 bg-violet-50/55 text-violet-700 dark:border-violet-900/70 dark:bg-violet-950/20 dark:text-violet-300"

@@ -39,7 +39,7 @@ export function StatementModelWorkMark({
     )
   return (
     <div
-      className="space-y-2 rounded border border-[#e7c66b] bg-[#fdf6dd] p-3 text-sm text-[#5c3d00] dark:bg-amber-950 dark:text-amber-100"
+      className="space-y-2 rounded border border-[#e7c66b] bg-[#fdf6dd] p-3 text-sm text-[#5c3d00] dark:bg-status-warning-soft dark:text-status-warning"
       role="group"
       aria-label={`${did} by ${work.model}, not confirmed`}
       data-testid="statement-model-work"
