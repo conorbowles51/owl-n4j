@@ -1525,6 +1525,18 @@ Each is a decision with its reasoning and what would reverse it.
     run on a new report shows a recording stream whose 95th-percentile gap exceeds its family's value, or a
     production states a selection.
 
+24. **Pattern grid as built (04-U7; `services/pattern_of_life/grid.py`, `GET /api/pattern/{case}/grid`).** The
+    0.10 threshold stands (13.1, M12). A run of quiet hours covering all 24 hours is not a quiet period: it means a
+    phone observed but rarely used (M12 on P11: every hour under 10 percent over 668 observed days, 51 messages),
+    reported as `reason = rarely_used` with that sentence, with no breaks computed. Hour states and the filter: a cell
+    keeps 5.3's hour state (any owner interaction makes it `interaction`) and adds `match`, the count the grid's filter
+    selects (default interactions of at least `moderate`); quiet hours count a day's hour when `match > 0`. A person's
+    cell takes the best state across the phones in the order interaction, recording, switched off, inferred off, no
+    data, after the extraction, and lists every phone's own state. A night runs from the quiet start on one date into
+    the next; a night none of whose hours was observed is listed under `not_observed`, never as a break. A range over
+    1,500 days is refused with a stated message (P14 spans 546 observed days). *Reverse if* M12 on a new phone finds a
+    routine that 0.10 dissolves.
+
 ## 15. Not yet established
 
 - The values of `DeviceEvent.Value` for 14 of 16 EventTypes (only `Power on` and `Factory Reset` are in

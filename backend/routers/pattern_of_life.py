@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from postgres.session import get_db
 from routers.case_access import require_case_view
-from services.pattern_of_life import availability, subjects
+from services.pattern_of_life import availability, grid, subjects
 
 router = APIRouter(prefix="/api/pattern", tags=["pattern-of-life"])
 
@@ -102,3 +102,41 @@ def get_availability(subject: str = Query(...), start: str = Query(...), end: st
                     "selection": availability.NO_SELECTION_STATED})
     return _jsonable({"subject": r["subject"], "start": a, "end": b, "extractions": out,
                       "labels": availability.UI_COPY, "max_gap_s": availability.MAX_GAP_S})
+
+
+MAX_GRID_DAYS = 1500  # longer than the largest phone's span (P14: 546 observed days); a longer request is refused
+
+
+def parse_date(v: str, name: str):
+    from datetime import date
+    try:
+        return date.fromisoformat(v)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="%s must be a date (YYYY-MM-DD)." % name)
+
+
+@router.get("/{case_id}/grid")
+def get_grid(subject: str = Query(...), start_date: str = Query(...), end_date: str = Query(...),
+             zone: str = Query("device"), min_strength: str = Query("moderate"),
+             classes: str = Query("interaction"), include_physical: bool = Query(False),
+             case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
+    r = resolve(db, case_id, subject)
+    a, b = parse_date(start_date, "start_date"), parse_date(end_date, "end_date")
+    if b < a:
+        raise HTTPException(status_code=400, detail="The end date must not be before the start date.")
+    if (b - a).days + 1 > MAX_GRID_DAYS:
+        raise HTTPException(status_code=400, detail="The range is longer than %d days; choose a shorter one."
+                            % MAX_GRID_DAYS)
+    if min_strength not in grid.STRENGTH_ORDER:
+        raise HTTPException(status_code=400, detail="min_strength is weak, moderate or strong.")
+    cls = tuple(c for c in classes.split(",") if c)
+    if not set(cls) <= {"interaction", "device_state"}:
+        raise HTTPException(status_code=400, detail="classes are interaction and device_state.")
+    conn = db.connection()
+    from services.phone import readings
+    labels = {str(k): v for k, v in readings.phone_labels(conn, case_id).items()}
+    try:
+        out = grid.grid(conn, r["extraction_ids"], labels, a, b, zone, min_strength, cls, include_physical)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return _jsonable(dict(out, subject=r["subject"]))
