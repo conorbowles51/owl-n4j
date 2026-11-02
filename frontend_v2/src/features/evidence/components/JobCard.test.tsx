@@ -62,3 +62,10 @@ it("invokes supplied actions for the exact reading and blocks repeat requests wh
   fireEvent.click(screen.getByRole("button", { name: "Retry" }))
   expect(retry).toHaveBeenCalledTimes(1)
 })
+
+it("a job that finished while a release flagged it paused reads as finished, not paused", () => {
+  const done = { ...job, job_type: "ingestion", status: "completed", error_message: null, resumable: true, paused: true } as EvidenceJob
+  render(<JobCard job={done} onResume={vi.fn()} onPause={vi.fn()} />)
+  expect(screen.queryByText("Paused")).not.toBeInTheDocument()
+  expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument()
+})

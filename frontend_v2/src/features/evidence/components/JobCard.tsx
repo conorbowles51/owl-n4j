@@ -102,7 +102,9 @@ export function JobCard({
   const isFailed = job.status === "failed"
   const isCompleted = job.status === "completed"
   const isStatementReading = job.job_type === "pdf_review"
-  const canResume = !!job.resumable && (job.paused || isFailed)
+  // A release flags every unfinished job as paused while it runs; a job that finished meanwhile is finished.
+  const paused = isActive && !!job.paused
+  const canResume = !!job.resumable && (paused || isFailed)
   const canRetry = isFailed && !!job.evidence_file_id && !canResume && !!onRetry
   const canClear = (isFailed || isCompleted) && !!onClear
   const canControl = canResume ? !!onResume : !!onPause
@@ -112,7 +114,7 @@ export function JobCard({
     [job.created_at, job.updated_at, isActive]
   )
 
-  const stageLabel = job.paused
+  const stageLabel = paused
     ? "Paused"
     : job.pause_requested
       ? "Pausing"
@@ -141,7 +143,7 @@ export function JobCard({
           variant="secondary"
           className={cn("shrink-0 border text-[10px]", stageColor)}
         >
-          {isActive && !job.paused && (
+          {isActive && !paused && (
             <Loader2 className="mr-1 size-2.5 animate-spin" />
           )}
           {stageLabel}
@@ -228,7 +230,7 @@ export function JobCard({
 
       {job.pause_requested && (
         <p className="mt-2 text-xs text-muted-foreground">
-          {job.paused
+          {paused
             ? "Paused. Completed work is saved; this job is not using a processing slot."
             : "Pausing after the active work unit finishes. Completed work will be kept."}
         </p>

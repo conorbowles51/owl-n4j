@@ -136,7 +136,8 @@ export function PhoneReadinessCard({ job, onPause, onResume, onCancel, onClear, 
             {job.pause_requested ? "Pausing" : "Pause"}
           </Button>
         ) : null}
-        {(job.paused || (isFailed && !cancelled)) && job.resumable && onResume ? (
+        {/* a release flags unfinished jobs as paused while it runs; a report that finished meanwhile has nothing to resume */}
+        {((isActive && job.paused) || (isFailed && !cancelled)) && job.resumable && onResume ? (
           <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={controlling} onClick={() => onResume(job)}>
             {isFailed ? "Try again" : "Resume"}
           </Button>
