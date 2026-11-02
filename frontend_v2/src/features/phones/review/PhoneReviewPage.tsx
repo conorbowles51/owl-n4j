@@ -91,6 +91,15 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
   const queue = useQuery({ queryKey: ["phone-readings", caseId], queryFn: () => readingsAPI.list(caseId) })
   const items = useMemo(() => queue.data?.items ?? [], [queue.data])
   const [index, setIndex] = useState(0)
+  // The list keeps readings already decided (in order, so the count reads true); the page opens on the first one
+  // still needing a decision, once. After a decision it stays on that reading, which then shows who decided.
+  const placed = useRef(false)
+  useEffect(() => {
+    if (placed.current || items.length === 0) return
+    placed.current = true
+    const first = items.findIndex((x) => x.status === "open")
+    if (first > 0) setIndex(first)
+  }, [items])
   const r: Reading | undefined = items[Math.min(index, Math.max(0, items.length - 1))]
   const ex = useQuery({
     queryKey: ["phone-reading-examples", caseId, r?.id],

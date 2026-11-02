@@ -33,8 +33,15 @@ export default [
         // One feed line per review action is asserted by cb-interpret's backend feed test (07 section 11).
       })
       await ctx.step("Not right offers plain corrections and keeps the original visible", async () => {
-        await ctx.press("x")
-        await ctx.see(page.getByRole("button", { name: "The sender is the other party" }))
+        // A reading of whether a record is a message has no per-phone correction (02 6.8 step 8), so the journey
+        // moves to the next reading (j) until one offers its plain choices, then checks the wording.
+        const choice = page.getByRole("group", { name: "Corrections" }).getByRole("button", { name: /^The (sender|recipient|caller|callee) is the other party$/ })
+        for (let i = 0; i < 12; i++) {
+          await ctx.press("x")
+          if (await choice.first().isVisible()) break
+          await ctx.press("j")
+        }
+        await ctx.see(choice.first())
       })
     },
   },

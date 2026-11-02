@@ -83,6 +83,18 @@ describe("Needs a decision, readings group", () => {
     expect(screen.getAllByText(/Mapped by the system, not yet confirmed/).length).toBeGreaterThan(0)
   })
 
+  it("opens on the first reading still needing a decision when earlier ones are decided", async () => {
+    api.list.mockResolvedValue({ ...QUEUE, open: 1, checked: 1, items: [reading({ status: "confirmed", resolved_by: "Synthetic Reviewer",
+      resolved_at: "2026-11-02T09:00:00Z", reason_kind: "standard", origin: null, reason: "Confirmed on the review screen" }),
+      reading({ id: "r2", rule_id: "InstantMessage.role.To", records: 41233 })] })
+    page()
+    await waitFor(() => expect(api.examples).toHaveBeenCalledWith("case-1", "r2"))
+    const ex = await screen.findAllByRole("button", { name: /^Example \d+/ })
+    ex.forEach((b) => fireEvent.click(b))
+    await screen.findByText("2 of 2 kinds viewed")
+    expect(await screen.findByRole("button", { name: /Looks right/ })).toBeEnabled()
+  })
+
   it("holds Looks right until every kind is viewed, then confirms with the standard reason (RQ-2, RQ-3)", async () => {
     api.confirm.mockImplementation(async () => {
       api.list.mockResolvedValue({ ...QUEUE, open: 1, checked: 1, items: [reading({ status: "confirmed", resolved_by: "Synthetic Reviewer",
