@@ -63,7 +63,7 @@ try {
   if (await page.getByRole("menu").count()) await page.keyboard.press("Escape")
   t0 = Date.now() // the clock starts at the pick
   const watch = [
-    ["hashing", /Checking files before upload: [\d,]+ of [\d,]+/],
+    ["hashing", /Checking files before upload: [\d,]+ of [\d,]+|Checking the file before upload: [\d.]+ of [\d.]+ [KMG]?B/],
     ["sending", /Sending [\d.]+ (?:[KMG]B )?of [\d.]+ [KMG]B/],
     ["Checking the report", /Checking the report's fingerprints|Finding the report documents|Counting every element/],
     ["Reading records", /records and [\d,]+ files read/],

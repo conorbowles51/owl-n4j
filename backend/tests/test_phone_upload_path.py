@@ -133,3 +133,35 @@ def test_files_beside_a_report_folder_in_a_phone_zip_are_ordinary_evidence(tmp_p
     with zipfile.ZipFile(only_report, "w") as z:
         z.writestr("Report/report.xml", b"<project/>")
     assert groups.outside_report(only_report, tmp_path / "p4", readable, "only.zip") == []
+
+
+def test_the_entry_limit_counts_only_what_a_phone_zip_unpacks(tmp_path, monkeypatch):
+    """A phone zip's report files stay in the zip, so they do not count toward the limit on unpacked entries. Seen
+    live: a Mac zip of a 29,108-file report (58,215 entries with its __MACOSX copies) was refused registration with
+    'Archive has too many entries' while only the files beside its report were being looked for."""
+    import zipfile
+    from routers import evidence_upload_groups as groups
+    monkeypatch.setattr(groups, "MAX_ARCHIVE_ENTRIES", 4)
+    source = tmp_path / "phone.zip"
+    with zipfile.ZipFile(source, "w") as z:
+        z.writestr("Wrapper/Report/report.xml", b"<project/>")
+        for i in range(6):
+            z.writestr("Wrapper/Report/files/f%d.jpg" % i, b"img")
+            z.writestr("__MACOSX/Wrapper/Report/files/._f%d.jpg" % i, b"junk")
+        z.writestr("Wrapper/Cover letter.txt", b"letter")
+    readable = dict(outcome="readable", roots=[dict(root_path="Wrapper/Report")])
+    out = groups.outside_report(source, tmp_path / "p1", readable, "phone.zip")
+    assert [m["path"] for m in out] == ["Wrapper/Cover letter.txt"]
+    # more files beside the report than the limit: still refused, with the same words
+    crowded = tmp_path / "crowded.zip"
+    with zipfile.ZipFile(crowded, "w") as z:
+        z.writestr("Wrapper/Report/report.xml", b"<project/>")
+        for i in range(5):
+            z.writestr("Wrapper/beside%d.txt" % i, b"x")
+    with pytest.raises(HTTPException) as e:
+        groups.outside_report(crowded, tmp_path / "p2", readable, "crowded.zip")
+    assert (e.value.status_code, e.value.detail) == (413, "Archive has too many entries. Split it into smaller archives.")
+    # an ordinary zip is unpacked whole, so every entry counts
+    with pytest.raises(HTTPException) as e:
+        groups.extract_archive(source, tmp_path / "p3")
+    assert e.value.status_code == 413

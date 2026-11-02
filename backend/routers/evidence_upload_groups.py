@@ -248,13 +248,17 @@ def copy_verified(source, target, expected_hash, expected_size):
 
 def extract_archive(source, root, keep=None):
     """Unpack a verified zip into the payload root. ``keep(path)``, when given, limits which members are written;
-    every member is still checked, and an empty result is then not an error."""
+    every member is still checked, and an empty result is then not an error. The entry limit counts what is
+    unpacked: a phone zip's report files stay in the zip, so they do not count (a Mac zip of a 29,108-file report
+    holds 58,215 entries with its ``__MACOSX`` copies and was refused registration while only checking for files
+    beside the report)."""
     result, seen, total = [], set(), 0
+    too_many = HTTPException(413, 'Archive has too many entries. Split it into smaller archives.')
     try:
         with zipfile.ZipFile(source) as archive:
             infos = archive.infolist()
-            if len(infos) > MAX_ARCHIVE_ENTRIES:
-                raise HTTPException(413, 'Archive has too many entries. Split it into smaller archives.')
+            if keep is None and len(infos) > MAX_ARCHIVE_ENTRIES:
+                raise too_many
             for info in infos:
                 if info.is_dir(): continue
                 path = safe_path(info.filename.replace('\\', '/'))
@@ -267,6 +271,8 @@ def extract_archive(source, root, keep=None):
                 seen.add(str(path).casefold())
                 if keep is not None and not keep(path.as_posix()):
                     continue
+                if len(result) >= MAX_ARCHIVE_ENTRIES:
+                    raise too_many
                 total += info.file_size
                 if total > MAX_EXPANDED_BYTES:
                     raise HTTPException(413, 'Expanded archive exceeds 64 GB. Split it into smaller archives.')
