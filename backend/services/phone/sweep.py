@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 IDLE_SECONDS = 30
 BACKOFF_SECONDS = (30, 60, 120, 300, 600)
-_hooks = {"mapping_set": None, "apply": [], "decision_revision": None, "sensitive": None}
+_hooks = {"mapping_set": None, "apply": [], "decision_revision": None, "sensitive": None, "planner": None}
 
 
 def register_mapping_set(fn):
@@ -44,6 +44,12 @@ def register_applier(fn):
 def register_decision_revision(fn):
     """``fn(conn, extraction_id) -> str`` (8.8: sha256 over the extraction's phone decisions)."""
     _hooks["decision_revision"] = fn
+
+
+def register_planner(fn):
+    """``fn(conn, extraction_id) -> plan``: what the mappings decide before the rows are written; the plan's
+    ``marks`` are stamped by the generic pass and the plan is handed to every applier (02 section 6.7)."""
+    _hooks["planner"] = fn
 
 
 def register_sensitive_fields(fn):
@@ -148,10 +154,13 @@ def interpret_one(engine, extraction_id) -> dict:
             set_id, named = mapping_set(conn)
             obs = registry.observe_extraction(conn, extraction_id, named)
             new_gen = generation + 1
-            counts = generic.interpret(conn, extraction_id, new_gen, sensitive=sensitive_fields())
+            the_plan = _hooks["planner"](conn, extraction_id) if _hooks["planner"] else None
+            counts = generic.interpret(conn, extraction_id, new_gen, sensitive=sensitive_fields(),
+                                       marks=the_plan["marks"] if the_plan else None)
             applied = {}
             for fn in _hooks["apply"]:
-                applied.update(fn(conn, extraction_id, new_gen) or {})
+                applied.update((fn(conn, extraction_id, new_gen, the_plan) if the_plan is not None
+                                else fn(conn, extraction_id, new_gen)) or {})
             deleted = generic.delete_generations_before(conn, extraction_id, new_gen)
             counts = dict(counts, flags_raised=obs["flags_raised"], deleted_previous=sum(deleted.values()),
                           seconds=round(time.monotonic() - started, 1), **{"applied:%s" % k: v for k, v in applied.items()})

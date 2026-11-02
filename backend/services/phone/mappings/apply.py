@@ -99,6 +99,21 @@ def rules_of(m):
         out.append({"rule_id": "%s.text" % m.name, "part": "text", "choice": list(b.text_fields),
                     "summary": "The words of each %s are its %s." % (tw, " and ".join(words(x) for x in b.text_fields)),
                     "fields": list(b.text_fields)})
+    if b.comm_kind not in (None, "thread") and b.thread.strategy != "none":
+        how = {"parent_chat": "the chat it sits in" + (", or the set of other parties when it is not in a chat"
+                                                       if b.thread.fallback == "counterpart_set" else ""),
+               "counterpart_set": "the set of other parties and the app",
+               "field": "its %s and its subject without reply and forward prefixes" % words(b.thread.group_field),
+               "self": "one list per phone"}[b.thread.strategy]
+        out.append({"rule_id": "%s.thread" % m.name, "part": "thread", "choice": b.thread.model_dump(),
+                    "summary": "Each %s is grouped into a conversation by %s." % (tw, how),
+                    "fields": [f for f in (b.thread.group_field,) if f]})
+    if b.comm_kind in ("message", "call", "email"):
+        side = ("the caller of an outgoing call and the callee of an incoming one" if b.comm_kind == "call" else
+                "the sender of an outgoing %s and a recipient of an incoming one" % tw)
+        out.append({"rule_id": "%s.owner_implicit" % m.name, "part": "owner_implicit", "choice": "direction",
+                    "summary": "When a %s lists no party as the phone's owner, the owner is taken as %s." % (tw, side),
+                    "fields": [f for f in (b.participants.direction_field,) if f]})
     out.append({"rule_id": "%s.record" % m.name, "part": "record", "choice": b.comm_kind or "record",
                 "summary": "Each %s is read as %s." % (tw, ("a %s" % words(b.comm_kind)) if b.comm_kind else
                                                        "a record of its own kind"),
@@ -115,7 +130,8 @@ def _mark(conn, table, where, params, rule_id, version_id, level, extraction_id,
 
 
 TABLE_OF_PART = {"event_time": "phone_time_values", "end_time": "phone_time_values", "role": "phone_participations",
-                 "text": "phone_texts", "record": "phone_record_summaries"}
+                 "text": "phone_texts", "record": "phone_record_summaries", "thread": "phone_comm_events",
+                 "owner_implicit": "phone_participations"}
 
 
 def _apply_rule(conn, rule, t, b, version_id, level, extraction_id, generation):
@@ -148,19 +164,26 @@ def _apply_rule(conn, rule, t, b, version_id, level, extraction_id, generation):
     if part == "text":
         return _mark(conn, "phone_texts", "model_type = :t AND field_name = ANY(CAST(:fs AS text[]))",
                      {"t": t, "fs": list(choice)}, rule["rule_id"], version_id, level, extraction_id, generation)
+    if part in ("thread", "owner_implicit"):
+        return 0  # written by services.phone.comms with this rule's id and level
     if part == "record":
         return _mark(conn, "phone_record_summaries", "model_type = :t", {"t": t}, rule["rule_id"], version_id,
                      level, extraction_id, generation)
     raise ValueError(part)
 
 
-def _touched(conn, table, rule_id, extraction_id, generation, rule=None, type_name=None):
+def _touched(conn, table, rule_id, extraction_id, generation, rule=None, type_name=None, version_id=None):
+    special = None
     if rule is not None and rule["part"] == "end_time" and not rule["choice"].get("field"):
-        where = ("extraction_id = :e AND generation = :g AND model_type = :t AND duration_seconds IS NOT NULL")
-        p = {"e": extraction_id, "g": generation, "t": type_name}
-        n = conn.execute(text("SELECT count(*) FROM phone_record_summaries WHERE " + where), p).scalar()
-        samples = [r[0] for r in conn.execute(text("SELECT record_uid FROM phone_record_summaries WHERE " + where +
-                                                   " ORDER BY md5(record_uid::text) LIMIT 3"), p)]
+        special = ("phone_record_summaries", "model_type = :t AND duration_seconds IS NOT NULL")
+    elif rule is not None and rule["part"] == "thread":
+        special = ("phone_comm_events", "model_type = :t AND mapping_version_id = :mv AND thread_key IS NOT NULL")
+    if special:
+        where = "extraction_id = :e AND generation = :g AND " + special[1]
+        p = {"e": extraction_id, "g": generation, "t": type_name, "mv": version_id}
+        n = conn.execute(text("SELECT count(*) FROM %s WHERE %s" % (special[0], where)), p).scalar()
+        samples = [r[0] for r in conn.execute(text("SELECT record_uid FROM %s WHERE %s ORDER BY md5(record_uid::text) "
+                                                   "LIMIT 3" % (special[0], where)), p)]
         return n, samples
     n = conn.execute(text("SELECT count(DISTINCT record_uid) FROM %s WHERE extraction_id = :e AND generation = :g "
                           "AND mapping_row_id = :r" % table), {"e": extraction_id, "g": generation, "r": rule_id}).scalar()
@@ -188,15 +211,29 @@ def judgement_id(extraction_id, rule_id, version_id):
     return uuid.uuid5(JUDGEMENT_NS, "%s|%s|%s" % (extraction_id, rule_id, version_id))
 
 
-def apply_extraction(conn, extraction_id, generation, mappings=None) -> dict:
-    """The sweep's applier hook (6.7)."""
+def _level(m, d):
+    return "reviewed" if (m.status == "reviewed" or d) else "applied_unconfirmed"
+
+
+def _present_types(conn, extraction_id):
+    """Record counts per type from this extraction's registry observations (written by the observation pass
+    that runs before interpretation, 3.3). A type's registry id is derived from its name (``registry._type_rid``)."""
+    from services.phone import registry
+    by_rid = {registry._type_rid(conn, n): n for (n,) in conn.execute(text("SELECT type_name FROM phone_schema_types"))}
+    return {by_rid[rid]: n for rid, n in conn.execute(text(
+        "SELECT registry_id, record_count FROM phone_schema_observations WHERE extraction_id = :e AND "
+        "registry_table = 'types'"), {"e": extraction_id}) if rid in by_rid}
+
+
+def plan(conn, extraction_id, mappings=None) -> dict:
+    """What the loaded type mappings decide for one extraction, before its rows are written: suspensions, each
+    rule's (possibly corrected) choice and level, and the marks the generic pass stamps on rows as it writes."""
     ms = loader.loaded() if mappings is None else mappings
-    case_id = conn.execute(text("SELECT case_id FROM phone_extractions WHERE id = :e"), {"e": extraction_id}).scalar()
-    present = {r[0]: r[1] for r in conn.execute(text(
-        "SELECT model_type, count(*) FROM phone_record_summaries WHERE extraction_id = :e AND generation = :g "
-        "GROUP BY model_type"), {"e": extraction_id, "g": generation})}
+    present = _present_types(conn, extraction_id)
     decisions = reading_decisions(conn, extraction_id)
-    stats = {"mappings_applied": 0, "mappings_suspended": 0, "rules": 0, "rows_marked": 0, "judgements_open": 0}
+    out = {"present": present, "applied": [], "suspended": [], "levels": {},
+           "marks": {"time": {}, "text": {}, "party": {}, "record": {}}}
+    marks = out["marks"]
     for m in ms:
         if m.kind != "type":
             continue
@@ -205,22 +242,81 @@ def apply_extraction(conn, extraction_id, generation, mappings=None) -> dict:
             continue
         reasons = suspension_reasons(conn, m, extraction_id)
         if reasons:
-            conn.execute(text(
-                "INSERT INTO phone_mapping_applications (extraction_id, mapping_version_id, generation, records_matched, "
-                "records_suspended, suspension_reasons) VALUES (:e, :mv, :g, 0, :n, CAST(:r AS jsonb))"),
-                {"e": extraction_id, "mv": m.id, "g": generation, "n": present[t], "r": json.dumps(reasons)})
-            stats["mappings_suspended"] += 1
+            out["suspended"].append((m, t, reasons))
             continue
+        done = []
         for rule in rules:
             d = decisions.get((rule["rule_id"], str(m.id)))
             if d and d["decision"] == "correct":
                 rule = dict(rule, choice=d["choice"])
-            level = "reviewed" if (m.status == "reviewed" or d) else "applied_unconfirmed"
-            marked = _apply_rule(conn, rule, t, b, m.id, level, extraction_id, generation)
-            stats["rows_marked"] += marked
+            lvl = out["levels"][rule["rule_id"]] = _level(m, d)
+            mk = (m.id, rule["rule_id"], lvl)
+            part, choice = rule["part"], rule["choice"]
+            if part == "event_time":
+                marks["time"][(t, choice)] = mk + (True,)
+            elif part == "end_time" and choice.get("field"):
+                marks["time"].setdefault((t, choice["field"]), mk + (False,))
+            elif part == "role":
+                containers = list(b.participants.containers)
+                for cname in containers or [rule["key"]]:
+                    marks["party"][(t, cname, rule["key"] if containers else "*")] = mk + (choice,)
+            elif part == "text":
+                for f in choice:
+                    marks["text"][(t, f)] = mk
+            elif part == "record":
+                marks["record"][t] = mk
+            done.append((rule, d))
+        out["applied"].append((m, t, done))
+    return out
+
+
+def _marked_counts(conn, extraction_id, generation):
+    """{rule_id: (records touched, three sample record uids)} for every rule-marked table, one query each."""
+    out = {}
+    for table in ("phone_time_values", "phone_participations", "phone_texts", "phone_record_summaries"):
+        for rid, n, samples in conn.execute(text(
+                "SELECT mapping_row_id, count(*), (array_agg(record_uid ORDER BY h))[1:3] FROM (SELECT DISTINCT "
+                "mapping_row_id, record_uid, md5(record_uid::text) AS h FROM %s WHERE extraction_id = :e AND "
+                "generation = :g AND mapping_row_id IS NOT NULL) s GROUP BY mapping_row_id" % table),
+                {"e": extraction_id, "g": generation}):
+            out[rid] = (n, list(samples or []))
+    return out
+
+
+def apply_extraction(conn, extraction_id, generation, the_plan=None) -> dict:
+    """The sweep's applier hook (6.7). With ``the_plan`` the rule marks were stamped as the generic rows were
+    written; without it (a direct call) they are stamped here by UPDATE. Then comm events and threads, then one
+    judgement call per rule."""
+    from services.phone import comms
+    stamped = the_plan is not None
+    p = the_plan if stamped else plan(conn, extraction_id)
+    case_id = conn.execute(text("SELECT case_id FROM phone_extractions WHERE id = :e"), {"e": extraction_id}).scalar()
+    stats = {"mappings_applied": 0, "mappings_suspended": 0, "rules": 0, "rows_marked": 0, "judgements_open": 0}
+    for m, t, reasons in p["suspended"]:
+        conn.execute(text(
+            "INSERT INTO phone_mapping_applications (extraction_id, mapping_version_id, generation, records_matched, "
+            "records_suspended, suspension_reasons) VALUES (:e, :mv, :g, 0, :n, CAST(:r AS jsonb))"),
+            {"e": extraction_id, "mv": m.id, "g": generation, "n": p["present"][t], "r": json.dumps(reasons)})
+        stats["mappings_suspended"] += 1
+    for m, t, done in p["applied"]:
+        b = m.typed
+        for rule, d in done:
+            if not stamped:
+                stats["rows_marked"] += _apply_rule(conn, rule, t, b, m.id, p["levels"][rule["rule_id"]],
+                                                    extraction_id, generation)
             stats["rules"] += 1
-            n, samples = _touched(conn, TABLE_OF_PART[rule["part"]], rule["rule_id"], extraction_id, generation,
-                                  rule, t)
+    if p["applied"]:
+        for k, v in comms.build(conn, extraction_id, case_id, generation, [m for m, _, _ in p["applied"]],
+                                p["levels"]).items():
+            stats["comms:" + k] = v
+    counts = _marked_counts(conn, extraction_id, generation)
+    for m, t, done in p["applied"]:
+        for rule, d in done:
+            if rule["part"] == "thread" or (rule["part"] == "end_time" and not rule["choice"].get("field")):
+                n, samples = _touched(conn, TABLE_OF_PART[rule["part"]], rule["rule_id"], extraction_id, generation,
+                                      rule, t, m.id)
+            else:
+                n, samples = counts.get(rule["rule_id"], (0, []))
             status = "open"
             if m.status == "reviewed":
                 status = "confirmed"
@@ -252,6 +348,6 @@ def apply_extraction(conn, extraction_id, generation, mappings=None) -> dict:
         conn.execute(text(
             "INSERT INTO phone_mapping_applications (extraction_id, mapping_version_id, generation, records_matched, "
             "records_suspended, suspension_reasons) VALUES (:e, :mv, :g, :n, 0, '[]'::jsonb)"),
-            {"e": extraction_id, "mv": m.id, "g": generation, "n": present[t]})
+            {"e": extraction_id, "mv": m.id, "g": generation, "n": p["present"][t]})
         stats["mappings_applied"] += 1
     return stats

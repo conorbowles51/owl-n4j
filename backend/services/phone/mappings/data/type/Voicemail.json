@@ -1,0 +1,53 @@
+{
+  "kind": "type",
+  "name": "Voicemail",
+  "version": 1,
+  "status": "applied_unconfirmed",
+  "origin": "ai_draft",
+  "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "basis": "Fields named from spec 02 section 6.9 and checked against the registry seed (type, field and value type). Written by a build job: applied at once and shown as not yet confirmed until a person confirms each rule.",
+    "registry_requirements": [
+      [
+        "Voicemail",
+        "Timestamp",
+        "field",
+        "TimeStamp"
+      ],
+      [
+        "Voicemail",
+        "Duration",
+        "field",
+        "TimeSpan"
+      ]
+    ]
+  },
+  "body": {
+    "applies_to": "Voicemail",
+    "comm_kind": "voicemail",
+    "event_time": {
+      "field": "Timestamp"
+    },
+    "end_time": {
+      "field": null,
+      "duration_field": "Duration"
+    },
+    "participants": {
+      "containers": [],
+      "role_map": {},
+      "owner_flag": null,
+      "direction_field": null
+    },
+    "thread": {
+      "strategy": "self",
+      "fixed_key": "voicemail"
+    },
+    "text_fields": [
+      "Name"
+    ],
+    "status_fields": {},
+    "app_field": "Source",
+    "account_field": null
+  }
+}

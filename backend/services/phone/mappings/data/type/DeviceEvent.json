@@ -1,0 +1,53 @@
+{
+  "kind": "type",
+  "name": "DeviceEvent",
+  "version": 1,
+  "status": "applied_unconfirmed",
+  "origin": "ai_draft",
+  "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "basis": "Fields named from spec 02 section 6.9 and checked against the registry seed (type, field and value type). Written by a build job: applied at once and shown as not yet confirmed until a person confirms each rule.",
+    "registry_requirements": [
+      [
+        "DeviceEvent",
+        "StartTime",
+        "field",
+        "TimeStamp"
+      ],
+      [
+        "DeviceEvent",
+        "EndTime",
+        "field",
+        "TimeStamp"
+      ]
+    ]
+  },
+  "body": {
+    "applies_to": "DeviceEvent",
+    "comm_kind": null,
+    "event_time": {
+      "field": "StartTime"
+    },
+    "end_time": {
+      "field": "EndTime",
+      "duration_field": null
+    },
+    "participants": {
+      "containers": [],
+      "role_map": {},
+      "owner_flag": null,
+      "direction_field": null
+    },
+    "thread": {
+      "strategy": "none"
+    },
+    "text_fields": [
+      "Value",
+      "AdditionalInfo"
+    ],
+    "status_fields": {},
+    "app_field": null,
+    "account_field": null
+  }
+}

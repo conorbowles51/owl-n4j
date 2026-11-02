@@ -43,8 +43,8 @@ SPECIAL_CONTAINERS = {
 RECIPIENT_CONTAINERS = {"To": "recipient", "Cc": "cc", "Bcc": "bcc"}
 
 COMMON = ("case_id", "extraction_id", "document_index", "ordinal", "record_uid", "root_record_uid", "locator",
-          "model_type", "interpretation_level", "mapping_version_id", "deleted_state", "decoding_confidence", "flags",
-          "generation")
+          "model_type", "interpretation_level", "mapping_version_id", "mapping_row_id", "deleted_state",
+          "decoding_confidence", "flags", "generation")
 COLUMNS = {
     "phone_time_values": COMMON + (
         "time_uid", "body_path", "field_name", "field_path", "value_index", "instant", "local_wall_time",
@@ -68,6 +68,8 @@ COLUMNS = {
         "participant_count", "direction", "duration_seconds", "user_mapping", "source_index", "file_id"),
 }
 DERIVED_TABLES = tuple(COLUMNS)
+# Rows the mappings derive (02 section 6.9); swapped by generation with the generic rows (5.7).
+MAPPED_TABLES = ("phone_comm_events", "phone_threads")
 
 
 class Held(RuntimeError):
@@ -125,7 +127,8 @@ def _copy_text(v):
 
 
 class Writer:
-    def __init__(self, conn):
+    def __init__(self, conn, columns=None):
+        self.columns = dict(COLUMNS, **(columns or {}))
         self.raw = conn.connection.driver_connection
         self.buf = defaultdict(list)
         self.counts = defaultdict(int)
@@ -142,7 +145,7 @@ class Writer:
         for table, rows in self.buf.items():
             if not rows:
                 continue
-            cols = COLUMNS[table]
+            cols = self.columns[table]
             data = io.StringIO()
             for r in rows:
                 data.write("\t".join(_copy_text(r.get(c)) for c in cols))
@@ -172,7 +175,13 @@ def _first_text(fmap, name):
 
 
 class Interpreter:
-    def __init__(self, conn, extraction_id, case_id, generation, sensitive, positionable_types):
+    def __init__(self, conn, extraction_id, case_id, generation, sensitive, positionable_types, marks=None):
+        """``marks``: what the loaded mappings decide for this extraction (``mappings.apply.plan``), stamped on
+        each row as it is written: ``time`` and ``text`` keyed by (type, field), ``party`` by (parent type,
+        container, Role value or ``*``), ``record`` by type."""
+        marks = marks or {}
+        self.m_time, self.m_text = marks.get("time", {}), marks.get("text", {})
+        self.m_party, self.m_record = marks.get("party", {}), marks.get("record", {})
         self.conn = conn
         self.ext = extraction_id
         self.case = case_id
@@ -188,7 +197,8 @@ class Interpreter:
         return {"case_id": self.case, "extraction_id": self.ext, "document_index": doc, "ordinal": ordinal,
                 "record_uid": uid, "root_record_uid": root_uid,
                 "locator": "%s/%d/r%d%s" % (self.ext, doc, ordinal, suffix), "model_type": model_type,
-                "interpretation_level": "generic", "mapping_version_id": None, "deleted_state": deleted_state,
+                "interpretation_level": "generic", "mapping_version_id": None, "mapping_row_id": None,
+                "deleted_state": deleted_state,
                 "decoding_confidence": dc, "flags": list(flags), "generation": self.gen}
 
     def finish_subtree(self):
@@ -243,7 +253,7 @@ class Interpreter:
                     pfmt = V.producer_format(v.attrs)
                     mismatch = V.format_mismatch(pfmt, st["offset_state"])
                     eff = st["instant"]
-                    self.w.add("phone_time_values", dict(
+                    row = dict(
                         self._common(doc, ordinal, uid, root_uid, model_type, ds, dc,
                                      ["format_mismatch"] if mismatch else [], "/" + v.body_path),
                         time_uid=uuid.uuid5(uid, v.body_path), body_path=v.body_path, field_name=f.name,
@@ -253,7 +263,12 @@ class Interpreter:
                         offset_state=st["offset_state"], producer_format=pfmt, format_mismatch=mismatch,
                         offset_present=V.offset_present(st["offset_state"]), effective_instant=eff,
                         instant_basis="report" if eff is not None else None, field_meaning=None, semantics=None,
-                        is_event_time=False))
+                        is_event_time=False)
+                    mk = self.m_time.get((model_type, f.name))
+                    if mk:
+                        row.update(mapping_version_id=mk[0], mapping_row_id=mk[1], interpretation_level=mk[2],
+                                   is_event_time=mk[3])
+                    self.w.add("phone_time_values", row)
                     self.stats["time_values"] += 1
                     has_time = True
                     if c.first_time is None:
@@ -264,11 +279,15 @@ class Interpreter:
                     if v.text is None or v.text == "":
                         continue
                     sens = (model_type, f.name) in self.sensitive
-                    self.w.add("phone_texts", dict(
+                    row = dict(
                         self._common(doc, ordinal, uid, root_uid, model_type, ds, dc, (), "/" + v.body_path),
                         text_uid=uuid.uuid5(uid, "text/" + v.body_path), body_path=v.body_path, field_name=f.name,
                         field_path=prefix + (f.name or ""), value_index=v.index, value=v.text,
-                        value_folded=F.fold(v.text), effective_value=v.text, is_sensitive=sens))
+                        value_folded=F.fold(v.text), effective_value=v.text, is_sensitive=sens)
+                    mk = self.m_text.get((model_type, f.name))
+                    if mk:
+                        row.update(mapping_version_id=mk[0], mapping_row_id=mk[1], interpretation_level=mk[2])
+                    self.w.add("phone_texts", row)
                     self.stats["texts"] += 1
                     if title_text is None and not sens:
                         title_text = v.text
@@ -296,6 +315,9 @@ class Interpreter:
                          has_point=False, participant_count=0, direction=(c.direction or "").lower() or None,
                          duration_seconds=duration, user_mapping=user_mapping, source_index=attrs.get("source_index"),
                          file_id=attrs.get("file_id"))
+        mk = self.m_record.get(model_type)
+        if mk:
+            c.summary.update(mapping_version_id=mk[0], mapping_row_id=mk[1], interpretation_level=mk[2])
         self.ctx[ordinal] = c
         self.subtree.append(c)
         self.stats["records"] += 1
@@ -346,13 +368,19 @@ class Interpreter:
                         return st["instant"]
             return None
 
-        self.w.add("phone_participations", dict(
+        mk = self.m_party.get((pctx.type, cname, role_value)) or self.m_party.get((pctx.type, cname, "*"))
+        if mk:
+            role, basis = mk[3], "mapping"
+        row = dict(
             self._common(pctx.doc, pctx.ordinal, pctx.uid, pctx.root_uid, pctx.type, ds, dc, flags),
             participation_uid=uuid.uuid5(uid, "participation"), party_record_uid=uid, container_field=cname,
             role=role, role_basis=basis, role_in_record=role_value, is_phone_owner=is_owner,
             identifier_raw=_first_text(fmap, "Identifier"), name_in_record=_first_text(fmap, "Name"),
             identity_key=None, date_read=party_time("DateRead"), date_delivered=party_time("DateDelivered"),
-            date_played=party_time("DatePlayed")))
+            date_played=party_time("DatePlayed"))
+        if mk:
+            row.update(mapping_version_id=mk[0], mapping_row_id=mk[1], interpretation_level=mk[2])
+        self.w.add("phone_participations", row)
         self.stats["participations"] += 1
         pctx.summary["participant_count"] += 1
 
@@ -399,10 +427,11 @@ def held_documents(conn, ext):
     return [d for d, r in rows if r == "differs"]
 
 
-def interpret(conn, extraction_id, generation, sensitive=SENSITIVE_DEFAULT) -> dict:
-    """Write generation ``generation`` of the generic rows for one extraction (no delete, no commit)."""
+def interpret(conn, extraction_id, generation, sensitive=SENSITIVE_DEFAULT, marks=None) -> dict:
+    """Write generation ``generation`` of the generic rows for one extraction (no delete, no commit), stamped
+    with the mapping ``marks`` when given."""
     meta = conn.execute(text("SELECT case_id FROM phone_extractions WHERE id = :e"), {"e": extraction_id}).one()
-    it = Interpreter(conn, extraction_id, meta[0], generation, sensitive, positionable_types(conn))
+    it = Interpreter(conn, extraction_id, meta[0], generation, sensitive, positionable_types(conn), marks)
     rows = conn.execute(text(
         "SELECT document_index, ordinal, parent_ordinal, top_ordinal, model_type, body FROM phone_records "
         "WHERE extraction_id = :e ORDER BY document_index, ordinal").execution_options(
@@ -438,7 +467,7 @@ def interpret(conn, extraction_id, generation, sensitive=SENSITIVE_DEFAULT) -> d
 
 def delete_generations_before(conn, extraction_id, generation) -> dict:
     deleted = {}
-    for t in DERIVED_TABLES:
+    for t in DERIVED_TABLES + MAPPED_TABLES:
         r = conn.execute(text("DELETE FROM %s WHERE extraction_id = :e AND generation < :g" % t),
                          {"e": extraction_id, "g": generation})
         deleted[t] = r.rowcount

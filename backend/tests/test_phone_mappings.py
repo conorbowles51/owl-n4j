@@ -13,7 +13,8 @@ from sqlalchemy import event, text
 
 from services.phone import ids, registry, sweep
 from services.phone.mappings import apply, loader, rows
-from tests.phone_pg import fld, fresh_engine, make_case, make_extraction, model, needs_template, refs
+from tests.phone_pg import (corpus_connection, fld, fresh_engine, make_case, make_extraction, model, needs_corpus,
+                            needs_template, refs)
 
 T1 = datetime(2023, 3, 14, 19, 7, 12, tzinfo=timezone.utc)
 
@@ -45,6 +46,7 @@ def hooks(tmp_path):
     saved = copy.copy(sweep._hooks), list(sweep._hooks["apply"]), dict(apply._hooks)
     loader.use_data_dir(str(tmp_path))
     sweep.register_mapping_set(loader.current_set)
+    sweep.register_planner(apply.plan)
     sweep._hooks["apply"] = [apply.apply_extraction]
     yield tmp_path
     sweep._hooks.clear()
@@ -212,11 +214,12 @@ def test_a_mapping_is_applied_at_once_unconfirmed_with_one_judgement_call_per_ru
             j = c.execute(text("SELECT rule_id, status, records_touched, cardinality(sample_record_uids), resolved_by, "
                                "summary, evidence FROM phone_mapping_judgements WHERE extraction_id = :e ORDER BY rule_id"),
                           {"e": ext}).fetchall()
-            assert [r[0] for r in j] == ["Call.end_time", "Call.event_time", "Call.record", "Call.role.From",
-                                         "Call.role.To"]
+            assert [r[0] for r in j] == ["Call.end_time", "Call.event_time", "Call.owner_implicit", "Call.record",
+                                         "Call.role.From", "Call.role.To", "Call.thread"]
             assert {r[1] for r in j} == {"open"} and {r[4] for r in j} == {None}
-            assert {r[0]: r[2] for r in j}["Call.event_time"] == 3
-            assert {r[0]: r[3] for r in j} == {r[0]: 3 for r in j}, j
+            touched = {r[0]: (r[2], r[3]) for r in j}
+            assert touched.pop("Call.owner_implicit") == (0, 0)  # every synthetic call lists its owner
+            assert touched == {r: (3, 3) for r in touched}, j
             ev = {r[0]: r[6] for r in j}["Call.event_time"]
             assert ev["fields"][0]["value_type"] == "TimeStamp" and ev["fields"][0]["records_here"] == 3
             assert ev["mapping"]["status"] == "applied_unconfirmed" and ev["mapping"]["origin"] == "ai_draft"
@@ -332,3 +335,78 @@ def test_a_confirmation_raises_the_level_and_a_correction_replaces_the_choice(ho
             assert st["Call.event_time"] == "confirmed/Synthetic Person"
             assert st["Call.role.From"] == "corrected/Synthetic Person"
             assert st["Call.role.To"] == "open/"
+
+
+@needs_template
+def test_marks_stamped_at_write_equal_marks_applied_afterwards(hooks):
+    """The sweep stamps the plan's marks as rows are written; a direct call stamps them by UPDATE. Same rows."""
+    write(str(hooks), CALL)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            a, b = call_extraction(c, case), call_extraction(c, case)
+        sweep.interpret_one(engine, a)
+        sweep._hooks["planner"] = None
+        sweep.interpret_one(engine, b)
+
+        def shape(c, ext):
+            out = {}
+            for t, cols in (("phone_time_values", "field_name, is_event_time"),
+                            ("phone_participations", "role, role_basis, implied_role"),
+                            ("phone_texts", "field_name"), ("phone_record_summaries", "model_type"),
+                            ("phone_comm_events", "kind, direction, thread_key IS NOT NULL")):
+                out[t] = sorted((tuple(str(x) for x in r) for r in c.execute(text(
+                    "SELECT mapping_row_id, interpretation_level, %s FROM %s WHERE extraction_id = :e" % (cols, t)),
+                    {"e": ext})))
+            out["calls"] = sorted(tuple(r) for r in c.execute(text(
+                "SELECT rule_id, status, records_touched FROM phone_mapping_judgements WHERE extraction_id = :e"),
+                {"e": ext}))
+            return out
+        with engine.connect() as c:
+            sa, sb = shape(c, a), shape(c, b)
+        assert sa == sb and sa["phone_comm_events"]
+
+
+# ---- shipped type mappings on a real capture (02-U7 acceptance; counts only) ------------------------------------
+
+@needs_corpus
+def test_c3_calls_messages_and_emails_under_the_shipped_mappings():
+    from services.phone import generic
+    from tests.test_phone_generic import _by_records
+    with corpus_connection() as c:
+        registry.apply_seed(c)
+        ext = _by_records(c, 71045)
+        if ext is None:
+            pytest.skip("C3 is not captured in this database")
+        ms = loader.load_files()
+        loader.record_versions(c, ms)
+        p = apply.plan(c, ext, ms)
+        assert not p["suspended"]
+        generic.interpret(c, ext, 9999, marks=p["marks"])
+        out = apply.apply_extraction(c, ext, 9999, p)
+        q = lambda sql: c.execute(text(sql), {"e": ext}).fetchall()  # noqa: E731
+        both = q("SELECT count(*) FILTER (WHERE caller AND callee), count(*) FROM (SELECT ev.record_uid, "
+                 "bool_or(p.role = 'caller' OR p.implied_role = 'caller') caller, bool_or(p.role = 'callee' OR "
+                 "p.implied_role = 'callee') callee FROM phone_comm_events ev LEFT JOIN phone_participations p ON "
+                 "p.record_uid = ev.record_uid AND p.generation = ev.generation WHERE ev.extraction_id = :e AND "
+                 "ev.generation = 9999 AND ev.kind = 'call' GROUP BY 1) x")
+        assert tuple(both[0]) == (1657, 1657)
+        assert out["comms:owner_implicit:Call"] == 862  # 545 outgoing with only the callee, 317 incoming with only the caller
+        msgs = q("SELECT count(*) FILTER (WHERE thread_key LIKE 'chat:%'), count(*) FILTER (WHERE thread_key LIKE "
+                 "'set:%'), count(*) FILTER (WHERE thread_key IS NULL) FROM phone_comm_events WHERE extraction_id = :e "
+                 "AND generation = 9999 AND kind = 'message'")
+        assert tuple(msgs[0]) == (2716, 201, 0)
+        mail = q("SELECT count(*), count(body), count(*) FILTER (WHERE length(body) > 2000) FROM phone_comm_events "
+                 "WHERE extraction_id = :e AND generation = 9999 AND kind = 'email'")
+        assert tuple(mail[0]) == (294, 293, 291)
+        captured_bodies = q("SELECT count(*) FROM phone_texts WHERE extraction_id = :e AND generation = 9999 AND "
+                            "model_type = 'Email' AND field_name = 'Body'")
+        assert captured_bodies[0][0] == 293  # every captured Body reaches its email, whole
+        unequal = q("SELECT count(*) FROM phone_comm_events ev JOIN phone_texts t ON t.record_uid = ev.record_uid AND "
+                    "t.generation = ev.generation AND t.field_name = 'Body' WHERE ev.extraction_id = :e AND "
+                    "ev.generation = 9999 AND ev.kind = 'email' AND ev.body <> t.value")
+        assert unequal[0][0] == 0
+        levels = q("SELECT DISTINCT interpretation_level FROM phone_comm_events WHERE extraction_id = :e AND "
+                   "generation = 9999")
+        assert [r[0] for r in levels] == ["applied_unconfirmed"]

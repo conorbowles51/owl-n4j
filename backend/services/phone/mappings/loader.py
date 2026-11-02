@@ -154,6 +154,11 @@ class Mapping:
         return self.content["body"]
 
     @property
+    def typed(self):
+        """The validated ``type`` body (``TypeBody``)."""
+        return TypeBody.model_validate(self.content["body"])
+
+    @property
     def requirements(self):
         return [tuple(r) for r in self.content["review"].get("registry_requirements", [])]
 

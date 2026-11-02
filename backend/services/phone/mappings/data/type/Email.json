@@ -1,0 +1,56 @@
+{
+  "kind": "type",
+  "name": "Email",
+  "version": 1,
+  "status": "applied_unconfirmed",
+  "origin": "ai_draft",
+  "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "basis": "Fields named from spec 02 section 6.9 and checked against the registry seed (type, field and value type). Written by a build job: applied at once and shown as not yet confirmed until a person confirms each rule.",
+    "registry_requirements": [
+      [
+        "Email",
+        "TimeStamp",
+        "field",
+        "TimeStamp"
+      ]
+    ]
+  },
+  "body": {
+    "applies_to": "Email",
+    "comm_kind": "email",
+    "event_time": {
+      "field": "TimeStamp"
+    },
+    "end_time": {
+      "field": null,
+      "duration_field": null
+    },
+    "participants": {
+      "containers": [],
+      "role_map": {
+        "From": "sender",
+        "To": "recipient",
+        "Cc": "cc"
+      },
+      "owner_flag": null,
+      "direction_field": null
+    },
+    "thread": {
+      "strategy": "field",
+      "group_field": "Folder"
+    },
+    "text_fields": [
+      "Subject",
+      "Body",
+      "Snippet"
+    ],
+    "status_fields": {
+      "status": "Status",
+      "priority": "Priority"
+    },
+    "app_field": "Source",
+    "account_field": "Account"
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "kind": "type",
+  "name": "Location",
+  "version": 1,
+  "status": "applied_unconfirmed",
+  "origin": "ai_draft",
+  "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "basis": "Fields named from spec 02 section 6.9 and checked against the registry seed (type, field and value type). Written by a build job: applied at once and shown as not yet confirmed until a person confirms each rule.",
+    "registry_requirements": [
+      [
+        "Location",
+        "TimeStamp",
+        "field",
+        "TimeStamp"
+      ],
+      [
+        "Location",
+        "EndTime",
+        "field",
+        "TimeStamp"
+      ]
+    ]
+  },
+  "body": {
+    "applies_to": "Location",
+    "comm_kind": null,
+    "event_time": {
+      "field": "TimeStamp"
+    },
+    "end_time": {
+      "field": "EndTime",
+      "duration_field": null
+    },
+    "participants": {
+      "containers": [],
+      "role_map": {},
+      "owner_flag": null,
+      "direction_field": null
+    },
+    "thread": {
+      "strategy": "none"
+    },
+    "text_fields": [
+      "Name",
+      "Description"
+    ],
+    "status_fields": {},
+    "app_field": null,
+    "account_field": "Account"
+  }
+}

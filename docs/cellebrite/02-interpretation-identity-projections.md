@@ -1803,6 +1803,21 @@ Each with its reason and what would reverse it.
     that carry a duration. The interpreter's built-in sensitive list (5.5) is always kept beside the
     `sensitive_fields` mapping, so a mapping change can add a sensitive field but never remove one. *Reverse
     if* a confirmed-only mode is wanted for a case.
+45. **Comm events, threads and the owner side** (6.9, 12.2; `services/phone/comms.py`, migration
+    `20261102_phone_comms`). The 22 types of 6.9 ship as `applied_unconfirmed` mappings. The owner row of 5.3
+    records the side it fills in `phone_participations.implied_role` (caller of an outgoing call, callee of an
+    incoming one; sender or recipient of a message or email by its direction; none when the direction is
+    unknown), so `pv_comm_party` gives every call both sides: measured on C3, 545 outgoing calls list only the
+    callee and 317 incoming calls only the caller, and with the owner rows all 1,657 calls have a caller and a
+    callee. Thread keys hold the extraction id: `chat:<extraction>:<chat record>`, `set:<extraction>:<kind>:<hash
+    of app and the sorted other parties>`, `email:<extraction>:<hash of folder and subject without Re/Fwd
+    prefixes>`, `hdr:` when an email carries a message-id header field (none of the 14 reports' registry rows
+    holds one, so folder and subject is what applies today), `voicemail:<extraction>`. A message nested under
+    another message takes its top-level record's thread. A party key is the identity key when 8.2 has set one,
+    else the identifier as captured. Every Chat record is a thread even with no messages. Message direction is
+    `unknown` when the sender carries no owner flag (C3: 284 of 2,917). Rule marks are decided before the rows
+    are written (`apply.plan`) and stamped by the generic pass as it writes, not by UPDATE afterwards; both paths
+    give equal rows (test). *Reverse if* 03's Conversations screen needs a thread kind or key form not listed.
 
 ## 15. Not yet established
 

@@ -1,0 +1,54 @@
+{
+  "kind": "type",
+  "name": "InstantMessage",
+  "version": 1,
+  "status": "applied_unconfirmed",
+  "origin": "ai_draft",
+  "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "basis": "Fields named from spec 02 section 6.9 and checked against the registry seed (type, field and value type). Written by a build job: applied at once and shown as not yet confirmed until a person confirms each rule.",
+    "registry_requirements": [
+      [
+        "InstantMessage",
+        "TimeStamp",
+        "field",
+        "TimeStamp"
+      ]
+    ]
+  },
+  "body": {
+    "applies_to": "InstantMessage",
+    "comm_kind": "message",
+    "event_time": {
+      "field": "TimeStamp"
+    },
+    "end_time": {
+      "field": null,
+      "duration_field": null
+    },
+    "participants": {
+      "containers": [],
+      "role_map": {
+        "From": "sender",
+        "To": "recipient"
+      },
+      "owner_flag": "IsPhoneOwner",
+      "direction_field": null
+    },
+    "thread": {
+      "strategy": "parent_chat",
+      "fallback": "counterpart_set"
+    },
+    "text_fields": [
+      "Body",
+      "Subject"
+    ],
+    "status_fields": {
+      "status": "Status",
+      "message_type": "Type"
+    },
+    "app_field": "SourceApplication",
+    "account_field": null
+  }
+}
