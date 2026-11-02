@@ -1557,6 +1557,17 @@ Each is a decision with its reasoning and what would reverse it.
     rules on the licence (then a per-case choice route) or a camera match exists (then media from this device is
     presence).
 
+26. **Routine as built (04-U8; `services/pattern_of_life/routine.py`, `GET .../routine` and `.../routine/deviations`).**
+    Computed on read, never stored, with the parameters echoed (`PARAMS`); the 7.7 tables are not written. A stay also
+    ends where two consecutive fixes are more than 2 hours apart (the gap 8.3 draws for trajectories): without it a
+    weekend with no fixes between two nights at home became one 58-hour stay and its dwell minutes were counted as
+    observed. Only `presence` observations with a stated radius of 250 m or less are used (media waits for decision
+    25). A stay's day is the local date it starts. Deviation labels each local hour by the stay with the most minutes
+    in it; a stay outside the routine places is "elsewhere"; the 95th percentile is interpolated over the subject's
+    scored days. A claim naming a cluster stores the cluster's centre and radius when it is confirmed, so a recompute
+    never changes a confirmed claim. Places stay unnamed (no labelling route yet). *Reverse if* P14 routine misses
+    30 s (11), then stays are stored per extraction and recomputed with the projection.
+
 ## 15. Not yet established
 
 - The values of `DeviceEvent.Value` for 14 of 16 EventTypes (only `Power on` and `Factory Reset` are in

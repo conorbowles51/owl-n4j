@@ -192,3 +192,40 @@ def import_cell_reference(body: CellImport, case_id: UUID, db: Session = Depends
         raise HTTPException(status_code=400, detail=str(exc))
     db.commit()
     return out
+
+
+def _zone_for(conn, extraction_ids, zone):
+    from sqlalchemy import text as _t
+    dz = conn.execute(_t("SELECT device_zone FROM phone_extractions WHERE id = :e"),
+                      {"e": extraction_ids[0]}).scalar() if extraction_ids else None
+    try:
+        return grid.zone_of(zone, dz)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/{case_id}/routine")
+def get_routine(subject: str = Query(...), zone: str = Query("device"), case_id: UUID = Depends(require_case_view),
+                db: Session = Depends(get_db)):
+    from services.pattern_of_life import routine
+    r = resolve(db, case_id, subject)
+    conn = db.connection()
+    z, zname = _zone_for(conn, r["extraction_ids"], zone)
+    out = routine.compute(conn, r["extraction_ids"], z)
+    out["zone"] = zname
+    return _jsonable(dict(out, subject=r["subject"], stays_total=len(out["stays"])))
+
+
+@router.get("/{case_id}/routine/deviations")
+def get_deviations(subject: str = Query(...), start_date: str = Query(None), end_date: str = Query(None),
+                   zone: str = Query("device"), case_id: UUID = Depends(require_case_view),
+                   db: Session = Depends(get_db)):
+    from services.pattern_of_life import routine
+    r = resolve(db, case_id, subject)
+    a = parse_date(start_date, "start_date") if start_date else None
+    b = parse_date(end_date, "end_date") if end_date else None
+    conn = db.connection()
+    z, zname = _zone_for(conn, r["extraction_ids"], zone)
+    res = routine.compute(conn, r["extraction_ids"], z)
+    out = routine.deviations(res, z, a, b)
+    return _jsonable(dict(out, subject=r["subject"], zone=zname, routine_places=res["routine_places"]))
