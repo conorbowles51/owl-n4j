@@ -146,6 +146,26 @@ describe("CanonicalWorkspaceOverview", () => {
     expect(mocks.caseContext).not.toHaveBeenCalled()
   })
 
+  it("a ready phone's card says Conversations are ready and opens its summary (07 J-1 step 4)", () => {
+    mocks.overview.mockReturnValue({
+      data: {
+        ...overview,
+        shared_attention: [{
+          attention_key: "phone_reading:j1:phone_ready:v1", source_type: "phone_reading", source_id: "j1", reason_code: "phone_ready",
+          reason_label: "Phone report ready", rank: 1, priority_band: 4, title: "C3 is ready",
+          summary: "Conversations are ready. Nothing is still running.", href: "/cases/case-1/phones/e1",
+          metadata: { action: { label: "Open the phone summary", href: "/cases/case-1/phones/e1" } },
+        }, { ...overview.shared_attention[0], metadata: { action: { label: "Elsewhere", href: "https://example.invalid" } } }],
+      },
+      isLoading: false,
+      isError: false,
+    })
+    renderOverview()
+    expect(screen.getByText(/Conversations are ready\./)).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Open the phone summary" })).toHaveAttribute("href", "/cases/case-1/phones/e1")
+    expect(screen.queryByRole("link", { name: "Elsewhere" })).toBeNull() // only paths inside the app
+  })
+
   it("loads the full context editor only when an editor requests it", () => {
     renderOverview()
     fireEvent.click(screen.getByRole("button", { name: "Edit case setup" }))

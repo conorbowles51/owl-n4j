@@ -454,20 +454,37 @@ _PHONE_JOBS = text(
     "WHERE case_id = :case AND job_type = 'phone_capture' ORDER BY created_at DESC LIMIT 20")
 
 
-def phone_candidate(case_id: UUID, row: Any, *, now: datetime) -> AttentionCandidate | None:
+def phone_candidate(case_id: UUID, row: Any, *, now: datetime, readiness: dict | None = None,
+                    label: str | None = None) -> AttentionCandidate | None:
     """The readiness card's mirror in the attention feed (07 J-1 step 3): one item per phone reading, so the person
-    can leave the Evidence page. A finished reading stays for the material-change window."""
+    can leave the Evidence page. A finished reading stays for the material-change window.
+
+    Once the phone's messages and calls are read (``readiness["interpreted"]``) the card says Conversations are
+    ready, names what is still running (its conversation documents being made searchable, with counts) and opens
+    the Phone summary (07 J-1 step 4). A second copy of a report already in the case keeps its own message."""
     phone = dict((row.pipeline_state or {}).get("phone") or {})
-    name = row.file_name or "Phone report"
+    name = label or row.file_name or "Phone report"
     updated = _aware(row.updated_at)
     href = f"/cases/{case_id}/evidence?panel=processing"
     status = str(row.status)
     state = phone.get("state")
+    extra: dict[str, Any] = {}
     if status == "completed" and state == "captured":
         if updated is not None and updated < now - timedelta(days=MATERIAL_CHANGE_DAYS):
             return None
         reason, band, title = "phone_ready", 4, f"{name} is ready"
         summary = phone.get("message")
+        if readiness is not None and not phone.get("already_in_case"):
+            if readiness.get("interpreted"):
+                docs, folded = int(readiness.get("documents") or 0), int(readiness.get("folded") or 0)
+                still = (f"Still running: making its conversations searchable ({folded:,} of {docs:,} done)."
+                         if folded < docs else "Nothing is still running.")
+                summary = f"Conversations are ready. {still}"
+                href = f"/cases/{case_id}/phones/{phone.get('extraction_id')}"
+                extra["action"] = {"label": "Open the phone summary", "href": href}
+            else:
+                reason, band, title = "phone_reading", 2, f"Getting {name} ready"
+                summary = "Every record was read. Reading messages and calls."
     elif status == "failed" and phone.get("cancelled"):
         return None
     elif status in ("completed", "failed"):
@@ -482,14 +499,36 @@ def phone_candidate(case_id: UUID, row: Any, *, now: datetime) -> AttentionCandi
         source_type="phone_reading", source_id=str(row.id),
         version_token=_version_token(updated), reason_code=reason, priority_band=band,
         sort_value=_timestamp(updated, recent=True), title=title, summary=_short(summary), occurred_at=updated,
-        due_at=None, href=href, metadata={"stage": phone.get("stage"), "status": status, "state": state})
+        due_at=None, href=href, metadata={"stage": phone.get("stage"), "status": status, "state": state, **extra})
+
+
+_PHONE_READINESS = text(
+    "SELECT e.id::text AS id, coalesce(s.generation, 0) > 0 AS interpreted, "
+    "(SELECT count(*) FROM evidence_files f WHERE f.source_type = 'phone_text' AND "
+    " f.metadata ->> 'phone_extraction_id' = e.id::text) AS documents, "
+    "(SELECT count(*) FROM evidence_files f JOIN evidence_document_texts t ON t.evidence_file_id = f.id "
+    " JOIN evidence_text_folds x ON x.evidence_file_id = f.id AND x.content_sha256 IS NOT DISTINCT FROM "
+    " t.content_sha256 AND x.fold_version = :v WHERE f.source_type = 'phone_text' AND "
+    " f.metadata ->> 'phone_extraction_id' = e.id::text) AS folded "
+    "FROM phone_extractions e LEFT JOIN phone_interpretation_state s ON s.extraction_id = e.id "
+    "WHERE e.case_id = :case AND e.standing = 'active'")
 
 
 def _phone_candidates(db: Session, *, case_id: UUID, now: datetime) -> list[AttentionCandidate]:
     if db.get_bind().dialect.name != "postgresql":
         return []  # the engine's jobs table lives only in the PostgreSQL deployment
+    from services.phone import readings
+    from services.search.document_folds import FOLD_VERSION
     rows = db.execute(_PHONE_JOBS, {"case": str(case_id)}).all()
-    return [c for c in (phone_candidate(case_id, row, now=now) for row in rows) if c is not None]
+    ready = {r.id: dict(r._mapping) for r in db.execute(_PHONE_READINESS, {"case": str(case_id), "v": FOLD_VERSION})}
+    labels = readings.phone_labels(db.connection(), case_id) if ready else {}
+    out = []
+    for row in rows:
+        ext = str(((row.pipeline_state or {}).get("phone") or {}).get("extraction_id") or "")
+        c = phone_candidate(case_id, row, now=now, readiness=ready.get(ext), label=labels.get(ext))
+        if c is not None:
+            out.append(c)
+    return out
 
 
 def _personal_candidates(

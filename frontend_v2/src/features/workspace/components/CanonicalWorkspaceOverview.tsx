@@ -1,6 +1,6 @@
 import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useEffect, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import { toast } from "sonner"
 import {
   AlertCircle,
@@ -55,6 +55,12 @@ function formatDate(value: string | null | undefined, dateOnly = false) {
   return (dateOnly ? dateFormatter : dateTimeFormatter).format(date)
 }
 
+/** A next step the item names itself (a phone that is ready opens its summary, 07 J-1 step 4). */
+function attentionAction(item: WorkspaceAttentionItem): { label: string; href: string } | null {
+  const a = item.metadata?.action as { label?: unknown; href?: unknown } | undefined
+  return a && typeof a.label === "string" && typeof a.href === "string" && a.href.startsWith("/") ? { label: a.label, href: a.href } : null
+}
+
 function attentionTone(priorityBand: number) {
   if (priorityBand === 0) {
     return "border-rose-200 bg-rose-50/55 text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/20 dark:text-rose-300"
@@ -104,6 +110,7 @@ function AttentionList({
         const due = formatDate(item.due_at, item.source_type === "deadline")
         const occurred = formatDate(item.occurred_at)
         const pending = pendingKey === item.attention_key
+        const action = attentionAction(item)
         return (
           <article key={item.attention_key} className="px-4 py-3.5">
             <div className="flex items-start gap-3">
@@ -133,6 +140,11 @@ function AttentionList({
                   <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                     {item.summary}
                   </p>
+                ) : null}
+                {action ? (
+                  <Link to={action.href} className="mt-1 inline-block text-xs font-medium underline underline-offset-2">
+                    {action.label}
+                  </Link>
                 ) : null}
                 {due || occurred ? (
                   <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
