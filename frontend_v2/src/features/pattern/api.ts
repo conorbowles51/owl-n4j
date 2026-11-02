@@ -176,6 +176,29 @@ export interface Evaluation {
   disputed_items: number
 }
 
+export interface PlaceObservation {
+  id: number
+  extraction_id: string | null
+  record_uid: string | null
+  kind: string
+  source_kind: string
+  radius_m: number | null
+  radius_basis: string
+  start_utc: string
+  end_utc: string
+  source_app: string | null
+}
+
+export interface PlacesResponse {
+  total: number
+  returned: number
+  next_cursor: number | null
+  page_size: number
+  observations: PlaceObservation[]
+  towers_not_placed: { words: string; reason: string }[]
+  reverse_geocoding: { enabled: boolean; reason: string }
+}
+
 const base = (caseId: string) => `/api/pattern/${encodeURIComponent(caseId)}`
 const subj = (s: Subject) => encodeURIComponent(JSON.stringify(s))
 
@@ -188,7 +211,7 @@ export const patternAPI = {
   grid: (caseId: string, s: Subject, start: string, end: string, zone = "device") =>
     fetchAPI<GridResponse>(`${base(caseId)}/grid?subject=${subj(s)}&start_date=${start}&end_date=${end}&zone=${encodeURIComponent(zone)}`),
   places: (caseId: string, s: Subject, start: string, end: string, cursor = 0) =>
-    fetchAPI<{ total: number; returned: number; next_cursor: number | null; items: LaneItem[] & Record<string, unknown>[]; towers_not_placed: { words: string; reason: string }[] }>(
+    fetchAPI<PlacesResponse>(
       `${base(caseId)}/places?subject=${subj(s)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&cursor=${cursor}`),
   together: (caseId: string, a: Subject, b: Subject, start: string, end: string) =>
     fetchAPI<TogetherResponse>(`${base(caseId)}/together`, { method: "POST", body: { subjects: [a, b], start, end } as never }),

@@ -16,7 +16,9 @@ export default [
     }, { limitMs: 5000 })
     await ctx.step("window chips name the zone; No data apart from no use seen", async () => {
       await ctx.see(page.getByRole("button", { name: "±1 h" }))
-      await ctx.see(page.getByText(/Eastern time|case zone/))
+      // The zone is named: a phone's recorded zone ("(case zone)"), or UTC when no phone in the window records one
+      // (the phones-only case records none; showing Eastern there would claim a zone nobody recorded).
+      await ctx.see(page.getByText(/Eastern time|case zone|Times in UTC\./))
       const nodata = await page.getByText("No data").count()
       const quiet = await page.getByText("Phone recording, no use seen").count()
       if (nodata + quiet === 0) throw new StepFailed("bands", "neither No data nor no-use bands drawn")

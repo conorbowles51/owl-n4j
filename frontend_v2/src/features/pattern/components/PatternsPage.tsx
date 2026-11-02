@@ -147,7 +147,7 @@ function GridView({ caseId, subject, last }: { caseId: string; subject: Subject;
   )
 }
 
-function PlacesView({ caseId, subject, last }: { caseId: string; subject: Subject; last: string }) {
+export function PlacesView({ caseId, subject, last }: { caseId: string; subject: Subject; last: string }) {
   const end = `${last}T23:59:59Z`
   const startD = new Date(`${last}T00:00:00Z`); startD.setUTCDate(startD.getUTCDate() - 6)
   const q = useQuery({ queryKey: ["pattern-places", caseId, subjectKey(subject), last], queryFn: () => patternAPI.places(caseId, subject, startD.toISOString(), end) })
@@ -158,8 +158,9 @@ function PlacesView({ caseId, subject, last }: { caseId: string; subject: Subjec
         <>
           <p>Showing {q.data.returned.toLocaleString()} of {q.data.total.toLocaleString()} positioned records, {startD.toISOString().slice(0, 10)} to {last}.
             {q.data.towers_not_placed.length > 0 ? ` ${q.data.towers_not_placed.length.toLocaleString()} cell tower sightings cannot be placed: ${q.data.towers_not_placed[0].words}` : ""}</p>
+          {q.data.next_cursor !== null && <span> The list shows the first {q.data.returned.toLocaleString()}; the rest are on later pages.</span>}
           <table className="text-xs"><thead><tr><th className="text-left">Time</th><th className="text-left">Source</th><th className="text-left">Radius</th></tr></thead>
-            <tbody>{(q.data.items as unknown as { id: number; start_utc: string; source_kind: string; radius_m: number | null }[]).map((o) => (
+            <tbody>{q.data.observations.map((o) => (
               <tr key={o.id}><td>{o.start_utc}</td><td>{o.source_kind}</td><td>{o.radius_m ? `${Math.round(o.radius_m)} m` : "Accuracy not recorded"}</td></tr>))}</tbody>
           </table>
         </>
