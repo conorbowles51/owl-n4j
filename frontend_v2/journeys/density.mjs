@@ -31,11 +31,30 @@ const SCREENS = [
   ["d5/timeline", `/cases/${D5}/timeline`, null],
   ["d5/graph", `/cases/${D5}/graph`, null],
 ]
+// --set extra: the screens the first count left out (Neil 2 Nov: "what other busy screens need doing").
+const EXTRA = [
+  ["phones/conversations", `/cases/${P}/phones-prototype/conversations?phone-prototype=on`, null],
+  ["phones/needs-a-decision", `/cases/${P}/phones-prototype/needs-a-decision?phone-prototype=on`, null],
+  ["top/cases", "/cases", null],
+  ["top/triage", "/triage", null],
+  ["d5/financial-statements", `/cases/${D5}/financial`, "Statements & accounts"],
+  ["d5/financial-people", `/cases/${D5}/financial`, "People & businesses"],
+  ["d5/financial-follow-money", `/cases/${D5}/financial`, "Follow money"],
+  ["d5/financial-trends", `/cases/${D5}/financial`, "Trends"],
+  ["d5/financial-findings", `/cases/${D5}/financial`, "Findings & Observations"],
+  ["d5/evidence", `/cases/${D5}/evidence`, null],
+  ["d5/workspace", `/cases/${D5}/workspace`, null],
+  ["d5/chat", `/cases/${D5}/chat`, null],
+  ["d5/agent", `/cases/${D5}/agent`, null],
+  ["training/chat", `/cases/${T}/chat`, null],
+  ["training/agent", `/cases/${T}/agent`, null],
+]
+const LIST = arg("set") === "extra" ? EXTRA : SCREENS
 
 const browser = await chromium.launch()
 const out = { at: new Date().toISOString(), screens: [] }
 try {
-  for (const [name, path, tab] of SCREENS) {
+  for (const [name, path, tab] of LIST) {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, storageState: saved.state })
     const page = await ctx.newPage()
     const row = { name }
