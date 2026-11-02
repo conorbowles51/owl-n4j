@@ -6,7 +6,7 @@ whole table (measured on the live box 2 November: a sequential scan of 101,990 r
 from alembic import op
 
 revision = "20261103_phone_summary_root_idx"
-down_revision = "20261102_phone_screens_read"
+down_revision = "20261102_pol_key_dates"
 branch_labels = None
 depends_on = None
 
