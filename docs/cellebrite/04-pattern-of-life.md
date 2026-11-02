@@ -1685,6 +1685,14 @@ Each is a decision with its reasoning and what would reverse it.
     The corpus totals in section 2 are measurements of the research corpus, not what a case shows. *Reverse if*
     an investigator setting should keep them shown.
 
+36. **Places over time and Together on the Case Map (8.6; 07 J-10c).** The Case Map's phone layer is built by the
+    phone screens (03 section 13, J-10a), so Patterns draws no second map. The two hand over by address: the Case
+    Map reads `phone_subject`, `start` and `end` for a subject's positions and `together_run` for a Together run
+    (paged at 1,000 pairs with totals), and Patterns links "Show on the Case Map" once the layer reads them.
+    Whichever of the two jobs finishes second wires the link and carries J-10c. Until then Places over time and
+    Together list their results in full with totals. *Reverse if* the Case Map layer cannot take these
+    parameters; Patterns then embeds that layer's component instead.
+
 ## 15. Not yet established
 
 - The values of `DeviceEvent.Value` for 14 of 16 EventTypes (only `Power on` and `Factory Reset` are in
