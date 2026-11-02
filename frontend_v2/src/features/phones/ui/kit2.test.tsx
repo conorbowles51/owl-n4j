@@ -178,7 +178,7 @@ const rec: PhoneRecordView = {
 
 describe("record panel and docked slot (07 4.3, 5)", () => {
   it("words time, both sides and use, and copies the full form with the mark", () => {
-    expect(instantWords(rec.time!, rec.zone)).toBe("Tuesday 5 March 2024, 3:04 PM, Eastern time (UTC-5)")
+    expect(instantWords(rec.time!, rec.zone)).toBe("Tue, Mar 5, 2024, 3:04:05 PM EST")
     expect(timeOfDay(rec.time!, rec.zone, true)).toBe("3:04:05 PM")
     expect(participantsLine(rec)).toBe("Avery Ashdown (+12015550100) → Blair Corwood (+13025550101)")
     expect(partyWords({ name: null, identifier: null, isOwner: true })).toBe("This phone's owner (no number in the report)")
