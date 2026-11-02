@@ -3,6 +3,8 @@ evidence listings and evidence processing leave them out; a phone that leaves it
 Synthetic phones only."""
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -106,3 +108,64 @@ def test_evidence_processing_leaves_thread_documents_out_and_says_so(hooks):
                                      requested_by_user_id=None, ingestion_request_id="synthetic")
         assert out["file_count"] == 0 and out["skipped_count"] == len(ids)
         assert "phone conversation text" in out["message"]
+
+
+@needs_template
+def test_each_attachment_has_its_own_source_location_naming_its_record(hooks):
+    """Followup to item E: a search hit on an attachment's name opens that attachment's record (rec://<uid>), not
+    only the message it hangs from."""
+    from tests.phone_pg import fld, model
+    write(str(hooks), CALL)
+    identities.install()
+    readings.install()
+    recs, stamps = _call(0, [(OWNER, None, True), (OTHER, None, False)])
+    recs.append((3, 0, 0, model("Attachment", [fld("Filename", ("String", "synthetic-a.jpg"))])))
+    recs.append((4, 0, 0, model("Attachment", [fld("Filename", ("String", "synthetic-b.jpg"))])))
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = _phone(c, case, [(recs, stamps)], metadata={"MSISDN": OWNER})
+        assert sweep.interpret_one(engine, ext)["status"] == "done"
+        thread_text.build_stale(engine)
+        with engine.connect() as c:
+            docs = _docs(c, ext)
+            atts = [str(r[0]) for r in c.execute(text(
+                "SELECT record_uid FROM pv_record WHERE extraction_id = :e AND model_type = 'Attachment' "
+                "ORDER BY ordinal"), {"e": ext})]
+            call = str(c.execute(text("SELECT record_uid FROM pv_comm_event WHERE extraction_id = :e"),
+                                 {"e": ext}).scalar_one())
+        assert len(atts) == 2 and len(docs) == 1
+        content, locs = docs[0].content, docs[0].source_locations
+        by_uid = {loc["record_uid"]: loc for loc in locs}
+        assert set(by_uid) == {call, *atts}
+        for uid in atts:
+            loc = by_uid[uid]
+            assert loc["kind"] == "phone_record" and loc["field_path"] == "Attachment"
+            assert loc["source_ref"] == "rec://%s" % uid and loc["extraction_id"] == str(ext)
+            assert content[loc["start_char"]:loc["end_char"]].startswith("[attachment: ")
+        # the message's own location still covers its whole line, attachments included
+        line = by_uid[call]
+        assert content[line["start_char"]:line["end_char"]] == content.split("\n")[0]
+        a, b = (by_uid[u] for u in atts)
+        assert a["end_char"] <= b["start_char"]
+        with Session(engine) as db:  # a search hit on the attachment's name names the attachment's record
+            found = search.search_case_text(db, case_id=case, query="synthetic-b.jpg", document_limit=10,
+                                            document_offset=0)
+            hit = next(d for d in found["documents"] if d["source_type"] == "phone_text")["matches"][0]
+            assert hit["record_uid"] == atts[1]
+            found = search.search_case_text(db, case_id=case, query="Call", document_limit=10, document_offset=0)
+            hits = [m for d in found["documents"] if d["source_type"] == "phone_text" for m in d["matches"]]
+            assert hits and all(m["record_uid"] == call for m in hits if m["start_char"] < a["start_char"])
+
+        # a document written by the earlier generator, with the same text, is rewritten with the new locations
+        with engine.begin() as c:
+            c.execute(text(
+                "UPDATE evidence_document_texts SET source_locations = CAST(:l AS jsonb), processing_manifest = "
+                "jsonb_set(processing_manifest, '{generator_version}', '\"phone-thread-text/1\"') WHERE "
+                "evidence_file_id = :i"), {"l": json.dumps([by_uid[call]]), "i": docs[0].id})
+            c.execute(text("UPDATE phone_interpretation_state SET counts = counts - 'text_signature' "
+                           "WHERE extraction_id = :e"), {"e": ext})
+        assert thread_text.build_stale(engine)[str(ext)]["rewritten"] == 1
+        with engine.connect() as c:
+            assert {loc["record_uid"] for loc in _docs(c, ext)[0].source_locations} == {call, *atts}

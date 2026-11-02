@@ -20,7 +20,7 @@ from datetime import timezone
 
 from sqlalchemy import text
 
-GENERATOR_VERSION = "phone-thread-text/1"
+GENERATOR_VERSION = "phone-thread-text/2"  # 2: each attachment cites its own record
 SOURCE_TYPE = "phone_text"
 MAX_MESSAGES = 5000
 MAX_CHARS = 2_000_000
@@ -74,12 +74,17 @@ def _line(ev, parties, attachments, phone_label, phone_names, owner_display, zon
     if ev["subject"] and ev["kind"] == "email":
         body = "Subject: %s%s" % (ev["subject"], ("\n" + body) if body else "")
     body = body.replace("\r\n", "\n").replace("\n", "\n  ")
-    tail = "".join(" [attachment: %s]" % a for a in attachments)
+    head = "%s | %s | %s | %s | %s" % (when_words(ev["sort_instant"], zone), phone_label, ev["app"] or
+                                       KIND_WORDS.get(ev["kind"], ev["kind"] or "record").capitalize(), who, body)
+    line, spans = head, []
+    for uid, title in attachments:  # each attachment is its own record and gets its own citation span
+        piece = "[attachment: %s]" % title
+        start = len(line) + 1
+        line += " " + piece
+        spans.append((uid, title, start, start + len(piece)))
     if ev["deleted_state"] and ev["deleted_state"] not in ("Intact", "intact"):
-        tail += " [Deleted]"
-    return "%s | %s | %s | %s | %s%s" % (when_words(ev["sort_instant"], zone), phone_label, ev["app"] or
-                                         KIND_WORDS.get(ev["kind"], ev["kind"] or "record").capitalize(),
-                                         who, body, tail)
+        line += " [Deleted]"
+    return line, spans
 
 
 def build_extraction(conn, extraction_id) -> dict:
@@ -115,10 +120,10 @@ def build_extraction(conn, extraction_id) -> dict:
             "owner": bool(implicit or r.is_phone_owner), "name": r.name_in_record,
             "display": displays.get(r.identity_key) or r.identifier_raw})
     attachments = defaultdict(list)
-    for parent, title in conn.execute(text(
-            "SELECT parent_record_uid, coalesce(title, model_type) FROM pv_record WHERE extraction_id = :e AND "
+    for parent, uid, title in conn.execute(text(
+            "SELECT parent_record_uid, record_uid, coalesce(title, model_type) FROM pv_record WHERE extraction_id = :e AND "
             "model_type = 'Attachment' AND parent_record_uid IS NOT NULL ORDER BY ordinal"), {"e": extraction_id}):
-        attachments[parent].append(title)
+        attachments[parent].append((str(uid), title))
     events = defaultdict(list)
     for r in conn.execute(text(
             "SELECT event_uid, record_uid, thread_key, kind, app, sort_instant, body, subject, call_status, "
@@ -135,23 +140,30 @@ def build_extraction(conn, extraction_id) -> dict:
         app = (t.app if t is not None else None) or (evs[0]["app"] if evs else None) or "Messages"
         parts = [[]]
         for ev in evs:
-            line = _line(ev, parties.get(ev["event_uid"], []), attachments.get(ev["record_uid"], []), label,
-                         phone_names, owner_display, zone)
+            line, spans = _line(ev, parties.get(ev["event_uid"], []), attachments.get(ev["record_uid"], []),
+                                label, phone_names, owner_display, zone)
             if parts[-1] and (len(parts[-1]) >= MAX_MESSAGES or sum(len(x[1]) + 1 for x in parts[-1]) + len(line)
                               > MAX_CHARS):
                 parts.append([])
-            parts[-1].append((ev, line))
+            parts[-1].append((ev, line, spans))
         for i, part in enumerate(parts, 1):
             content, locs, pos = [], [], 0
-            for ev, line in part:
-                locs.append({"kind": "phone_record",
-                             "label": "%s %s %s, %s" % (label, app, KIND_WORDS.get(ev["kind"], "record"),
-                                                        when_words(ev["sort_instant"], zone, seconds=False)),
+            for ev, line, spans in part:
+                said = "%s %s %s, %s" % (label, app, KIND_WORDS.get(ev["kind"], "record"),
+                                         when_words(ev["sort_instant"], zone, seconds=False))
+                instant = (ev["sort_instant"].astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                           if ev["sort_instant"] else None)
+                locs.append({"kind": "phone_record", "label": said,
                              "start_char": pos, "end_char": pos + len(line), "record_uid": str(ev["record_uid"]),
+                             "source_ref": "rec://%s" % ev["record_uid"],
                              "event_uid": str(ev["event_uid"]), "extraction_id": str(extraction_id),
-                             "field_path": "Body",
-                             "instant": ev["sort_instant"].astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
-                             if ev["sort_instant"] else None})
+                             "field_path": "Body", "instant": instant})
+                for uid, title, a, b in spans:
+                    locs.append({"kind": "phone_record", "label": "%s, attachment %s" % (said, title),
+                                 "start_char": pos + a, "end_char": pos + b, "record_uid": uid,
+                                 "source_ref": "rec://%s" % uid, "parent_record_uid": str(ev["record_uid"]),
+                                 "event_uid": str(ev["event_uid"]), "extraction_id": str(extraction_id),
+                                 "field_path": "Attachment", "instant": instant})
                 content.append(line)
                 pos += len(line) + 1
             body = "\n".join(content)
@@ -176,9 +188,12 @@ def build_extraction(conn, extraction_id) -> dict:
 def _write(conn, fid, case_id, name, body, locs, meta, path):
     data = body.encode("utf-8")
     sha = hashlib.sha256(data).hexdigest()
-    cur = conn.execute(text("SELECT f.sha256, f.original_filename FROM evidence_files f WHERE f.id = :i"),
-                       {"i": fid}).one_or_none()
-    if cur is not None and cur[0] == sha and cur[1] == name:
+    cur = conn.execute(text(
+        "SELECT f.sha256, f.original_filename, t.processing_manifest ->> 'generator_version' FROM evidence_files f "
+        "LEFT JOIN evidence_document_texts t ON t.evidence_file_id = f.id WHERE f.id = :i"), {"i": fid}).one_or_none()
+    # same text, name and generator: nothing to do. A new generator rewrites even unchanged text, because what it
+    # changes may be the source locations (which part of the text cites which record), not the text itself.
+    if cur is not None and cur[0] == sha and cur[1] == name and cur[2] == GENERATOR_VERSION:
         return "unchanged"
     conn.execute(text(
         "INSERT INTO evidence_files (id, case_id, original_filename, stored_path, size, sha256, status, source_type, "

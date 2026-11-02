@@ -77,10 +77,14 @@ def _location_for_match(
     locations: list[dict[str, Any]] | None,
     match_start: int,
 ) -> dict[str, Any] | None:
+    """The narrowest location holding the match: a phone message line holds its attachments' spans, and a hit on an
+    attachment names the attachment's own record. Equal widths keep the first."""
+    best = None
     for location in locations or []:
-        if int(location.get("start_char", 0)) <= match_start < int(location.get("end_char", 0)):
-            return location
-    return None
+        start, end = int(location.get("start_char", 0)), int(location.get("end_char", 0))
+        if start <= match_start < end and (best is None or end - start < best[0]):
+            best = (end - start, location)
+    return best[1] if best else None
 
 
 def _hit(
