@@ -1,4 +1,4 @@
-import { Outlet, useLocation, useMatch, useParams } from "react-router-dom"
+import { Outlet, useMatch, useParams } from "react-router-dom"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
 import {
   ResizablePanelGroup,
@@ -9,8 +9,6 @@ import { useUIStore } from "@/stores/ui.store"
 import { CaseSidePanelRail, CaseSidePanelContent } from "./CaseSidePanel"
 import { EvidenceContextSidebar } from "@/features/evidence/components/EvidenceContextSidebar"
 import { useMediaQuery } from "@/hooks/use-media-query"
-import { AreaContext, ViewHeader } from "@/components/ui/view-header"
-import { caseViewFor } from "@/lib/areas"
 
 export function CaseLayout() {
   const { id: caseId } = useParams()
@@ -19,17 +17,13 @@ export function CaseLayout() {
   const isAgentRoute = !!useMatch("/cases/:id/agent")
   const isEvidenceRoute = !!useMatch("/cases/:id/evidence")
   const narrowViewport = useMediaQuery("(max-width: 767px)")
-  // The view's area identity (lx-style C): one band for every case view, from lib/areas.ts.
-  const view = caseViewFor(useLocation().pathname)
 
   // Graph and Agent routes manage their own full-width workspaces.
   const showCaseSidePanel = !isGraphRoute && !isAgentRoute
 
   return (
-    <AreaContext.Provider value={view?.area ?? null}>
-    <div className="flex h-full [--view-header-h:2.25rem] md:[--view-header-h:2.5rem]" data-area={view?.area}>
+    <div className="flex h-full">
       <div className="flex flex-1 flex-col overflow-hidden">
-        {view && <ViewHeader view={view} />}
         <div className="flex flex-1 overflow-hidden">
           {showCaseSidePanel ? (
             <div className="relative flex min-w-0 flex-1 overflow-hidden">
@@ -103,6 +97,5 @@ export function CaseLayout() {
         </div>
       </div>
     </div>
-    </AreaContext.Provider>
   )
 }

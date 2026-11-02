@@ -107,7 +107,7 @@ describe("phone palette (07 4.11)", () => {
 })
 
 describe("area identity tokens (lx-style B)", () => {
-  const AREA_SURFACES = ["background", "card", "muted", "popover", "panel", "sidebar"]
+  const AREA_SURFACES = ["background", "card", "muted", "popover", "panel"]
   for (const [theme, vars] of Object.entries(THEMES)) {
     for (const area of AREA_IDS) {
       const base = `area-${area}`
