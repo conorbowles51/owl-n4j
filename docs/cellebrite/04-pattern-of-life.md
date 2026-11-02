@@ -1479,6 +1479,35 @@ Each is a decision with its reasoning and what would reverse it.
     numbers only). Activity and attribution rows are evaluated by U2 and U3, which open their judgement calls.
     *Reverse if* M2 measures folder values or a second UserMapping value.
 
+19. **04-U2 and U3 as built** (`backend/services/pattern_of_life/activity.py`, `attribution.py`; migration
+    `20261102_pol_activity`). The projection reads the current interpretation generation's time values (their
+    meaning already stamped by 04-U1) and each record's own fields; it never re-reads the report. An interval's end
+    field (`EndTime`, `DateEnded`, `To`) is the `end_utc` of its start's event, not an event of its own; an end with
+    no start is its own event. Only the first value of a multi-valued time field becomes an event (the others are
+    counted in the projection state). Each event keeps `match_facts`, the few field values and computed facts the
+    loaded rows match on, so a new activity or attribution version, or a person's confirm or correction of one of
+    their rows, re-classifies the stored events without reading records (3.4 item 4); a row that matches on a field
+    the stored facts lack falls back to a rebuild. The phone worker runs the projection after each pass for every
+    extraction whose generation, row versions or row decisions changed, one extraction per transaction. Each row
+    that touched an extraction is one judgement call (`rule_part` `activity` or `attribution`). *Reverse if*
+    re-classification at P14 scale misses the 60 s target (11); then a column per predicate field.
+20. **Strength cases 3.1 does not name** (view `pol_activity_event_v`, twin `attribution.strength`): an interaction
+    whose actor is `other_device` or `unknown` with no flag is `weak` (it was not this phone's owner at this phone);
+    one with semantics `first_record` or `last_modified` is `moderate` (as `latest_of_many`); `service_observed` is
+    `weak` (as `aggregate_bucket`); semantics `unknown` gives `none` for every class (2.3: never used to support or
+    contradict). `strong` needs `deleted_state` `Intact`; a record whose state is `Unknown` or absent is `moderate`.
+    *Reverse if* M1/M2 show a source whose records carry no deleted state while being intact (then absent counts as
+    Intact for that source).
+21. **Families and times not in 5.2.** Records of types 5.2 does not list (Contact, Note, Recording, User,
+    RemoteServiceSession and the like) are family `other`; a Party's family is its record's (a read time on a message
+    is `messages`); DeviceEvent `PowerEvent` is family `power`. An offset-less time is placed in the phone's own zone
+    from the report (8.0) with `instant_basis` `device_zone`; with no zone it is not placed and is counted
+    (`skipped_no_instant:absent` in the projection state), never guessed. *Reverse if* the time spec resolves a zone
+    by decision for such a phone (then the decision's zone).
+22. **Flags not yet computed.** `wearable` waits for M9 (no sensor record is yet known to come from a wearable) and
+    `affiliation_unknown` on a Location with no affiliation from a source known to sync waits for M5's list of such
+    sources. Both are in the flag vocabulary and the strength view; no rule raises them yet.
+
 ## 15. Not yet established
 
 - The values of `DeviceEvent.Value` for 14 of 16 EventTypes (only `Power on` and `Factory Reset` are in
