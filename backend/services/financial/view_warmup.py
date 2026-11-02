@@ -406,23 +406,74 @@ def _visited_views(listed):
                 continue
             def call(case_id, db, _handler=handler, _arguments=arguments):
                 return _handler(**_arguments, db=db)
+            call.task_key = json.dumps(list(key))  # two visited views of one route and case differ in parameters
             found.append((UUID(str(case_id)), ('visited ' + name, call, {})))
         except Exception:  # noqa: BLE001 - a copy that cannot be read back is not warmed
             continue
     return found
 
 
-def _warm_cases(share=None, stop_if_preparing=False):
-    """``share`` (k, n): only every n-th case-and-view task from the k-th, for a prepare split over n processes."""
+def _warm_cases(share=None, stop_if_preparing=False, claims=None, deadline=None):
+    """``share`` (k, n): only every n-th case-and-view task from the k-th. ``claims``: a file shared by the processes
+    of one prepare; each takes the next task no other has taken (_claim), so none sits idle while another still has a
+    queue. ``deadline`` (epoch seconds): no task is started after it."""
     from services.financial import view_cache
     token = view_cache.not_a_visit.set(True)  # warming a view is not a person opening it
     try:
-        return _warm_cases_now(share, stop_if_preparing)
+        return _warm_cases_now(share, stop_if_preparing, claims, deadline)
     finally:
         view_cache.not_a_visit.reset(token)
 
 
-def _warm_cases_now(share, stop_if_preparing):
+def _task_key(case_id, name, route, defaults):
+    """One task's identity, the same in every process of a prepare whatever order each built its list in."""
+    return '%s %s %s' % (case_id, name, getattr(route, 'task_key', None) or sorted(defaults.items()))
+
+
+def _claim(claims, key, total):
+    """Take task ``key`` in the shared ``claims`` file; False if another process took it. The file holds one line per
+    event: 'total <n>' (the tasks a process listed), 'claim <key>', and 'warmed <key>' / 'failed <key>' when done
+    (_note), so the prepare can say what was reached when it is stopped (_claimed_counts)."""
+    import fcntl
+    with open(claims, 'a+') as shared:
+        fcntl.flock(shared, fcntl.LOCK_EX)
+        shared.seek(0)
+        lines = shared.read().splitlines()
+        if 'total %d' % total not in lines:
+            shared.write('total %d\n' % total)
+        if 'claim ' + key in lines:
+            return False
+        shared.write('claim %s\n' % key)
+        shared.flush()
+        return True
+
+
+def _note(claims, outcome, key):
+    import fcntl
+    with open(claims, 'a') as shared:
+        fcntl.flock(shared, fcntl.LOCK_EX)
+        shared.write('%s %s\n' % (outcome, key))
+
+
+def _claimed_counts(claims):
+    """(tasks listed, claimed, warmed, failed) from a prepare's claims file."""
+    total = claimed = warmed = failed = 0
+    try:
+        with open(claims) as shared:
+            for line in shared:
+                event, _, rest = line.rstrip('\n').partition(' ')
+                if event == 'total':
+                    total = max(total, int(rest))
+                elif event in ('claim', 'warmed', 'failed'):
+                    claimed += event == 'claim'
+                    warmed += event == 'warmed'
+                    failed += event == 'failed'
+    except OSError:
+        pass
+    return total, claimed, warmed, failed
+
+
+def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None):
     from sqlalchemy import func, select
     from postgres.models.financial import FinancialStatementPeriod as Period
     from postgres.session import _get_session_local
@@ -537,10 +588,16 @@ def _warm_cases_now(share, stop_if_preparing):
     # no fixed list named). Each is rebuilt from its key as the refresh process does (view_refresh._typed).
     order += _visited_views([(case_id, route, defaults) for case_id, (_, route, defaults) in order])
     for task, (case_id, (name, route, defaults)) in enumerate(order):
-        if share is not None and task % share[1] != share[0]:
+        if share is not None and claims is None and task % share[1] != share[0]:
             continue
         if process_shutdown.requested.is_set():
             return warmed, failed
+        if deadline is not None and time.time() >= deadline:
+            logger.info('Financial view warm-up stopped at its time limit')
+            return warmed, failed
+        key = _task_key(case_id, name, route, defaults)
+        if claims is not None and not _claim(claims, key, len(order)):
+            continue
         if stop_if_preparing and _preparing():
             logger.info('Financial view warm-up stopped: a release is preparing the next code')
             return warmed, failed
@@ -550,27 +607,34 @@ def _warm_cases_now(share, stop_if_preparing):
         # 15:12, 49494305: working summary, ledger summary, working analysis and accounts, none saved by the
         # release prepare). A saved copy is used only while every row it was computed from is unchanged.
         saving = view_cache.always_save.set(True)
+        outcome = None
         try:
             with SessionLocal() as db:
                 # Each route gets case_id as FastAPI gives it (the evidence listing and graph records declare it as text).
                 route(case_id=str(case_id) if route in (list_evidence, get_financial_records) else case_id, **defaults, db=db)
             logger.info('Financial %s warmed for case %s (%.1f s)', name, case_id, time.perf_counter() - started)
             warmed += 1
+            outcome = 'warmed'
         except HTTPException as refusal:
             if refusal.status_code != 422:
                 logger.warning('Financial %s warm-up failed for case %s (%s: %s)', name, case_id,
                                refusal.status_code, refusal.detail)
                 failed += 1
+                outcome = 'failed'
                 continue
             # The view's own answer for these rows (e.g. its row limit); kept like a result.
             logger.info('Financial %s warmed for case %s (%.1f s, refused: %s)', name, case_id,
                         time.perf_counter() - started, refusal.detail)
             warmed += 1
+            outcome = 'warmed'
         except Exception:
             logger.warning('Financial %s warm-up failed for case %s', name, case_id, exc_info=True)
             failed += 1
+            outcome = 'failed'
         finally:
             view_cache.always_save.reset(saving)
+            if claims is not None and outcome is not None:
+                _note(claims, outcome, key)
     return warmed, failed
 
 
@@ -601,10 +665,18 @@ def prepare(processes=None):
         lock = _take_lock(wait=True, name=PREPARE_LOCK)
         if lock is None:
             return 'prepare: skipped, no memo directory'
+        deadline = time.time() - (time.perf_counter() - started) + _prepare_cap() - PREPARE_MARGIN_SECONDS
         with lock:
-            warmed, failed = _warm_cases() if processes == 1 else _warm_in_processes(processes)
-        return 'prepare: %d views warmed in %d s (%d failed, %d processes, code %s)' % (
+            if processes == 1:
+                warmed, failed = _warm_cases(deadline=deadline)
+                stopped = None
+            else:
+                warmed, failed, stopped = _warm_in_processes(processes, deadline)
+        summary = 'prepare: %d views warmed in %d s (%d failed, %d processes, code %s)' % (
             warmed, round(time.perf_counter() - started), failed, processes, view_cache.code_identity()[:12])
+        if stopped is None and time.time() >= deadline:
+            stopped = 'stopped at the %d s limit; views not reached are computed on their first visit' % _prepare_cap()
+        return summary + ('; ' + stopped if stopped else '')
     except Exception:
         logger.warning('Financial view prepare failed', exc_info=True)
         return 'prepare: failed after %d s (see the unit journal)' % round(time.perf_counter() - started)
@@ -614,29 +686,66 @@ def prepare(processes=None):
 # 2026-10-30 21:47 (deploy.sh waited 393 s); the views are independent, so the tasks are split over processes.
 PREPARE_PROCESSES = 3
 SHARE_FLAG = '--prepare-share'
+CLAIMS_FLAG = '--claims'
+DEADLINE_FLAG = '--deadline'
+# The unit is killed at view_prepare.PREPARE_CAP_SECONDS from its start, and a killed prepare said nothing (live
+# 2026-11-02 05:16:57, release 33501a69: 'ended without a summary after 601 s', ~221 of 240 views warmed). No view is
+# started after the cap less this margin, and children still computing at the cap less half of it are stopped, so
+# the summary is written, with what was not reached.
+PREPARE_MARGIN_SECONDS = 20
 
 
-def _warm_in_processes(processes):
-    """Every case-and-view task once, split over ``processes`` children (each has this process's interpreter,
-    code and environment, so the same code identity); returns the summed (warmed, failed)."""
+def _prepare_cap():
+    from services.financial import view_prepare
+    return view_prepare.PREPARE_CAP_SECONDS
+
+
+def _warm_in_processes(processes, deadline=None, poll=1.0):
+    """Every case-and-view task once over ``processes`` children (each has this process's interpreter, code and
+    environment, so the same code identity). Each child takes the next task none has taken (a shared claims file):
+    with a fixed every-third-task split one child had 581 s of views and another 359 s (live 2026-11-02 05:06), and
+    the unit was stopped at its cap while the second sat idle. Children still computing at ``deadline`` plus half the
+    margin are stopped. Returns (warmed, failed, None or what the time limit left out)."""
+    import os
     import subprocess
     import sys
+    import tempfile
     from pathlib import Path
     backend = Path(__file__).resolve().parents[2]
-    children = [subprocess.Popen([sys.executable, '-m', 'services.financial.view_warmup', SHARE_FLAG,
-                                  '%d/%d' % (share, processes)], cwd=str(backend), stdout=subprocess.PIPE, text=True)
-                for share in range(processes)]
-    warmed = failed = 0
-    for child in children:
-        out, _ = child.communicate()
-        counts = [line.split() for line in out.splitlines() if line.startswith('share ')]
-        if child.returncode or not counts:
-            logger.warning('Financial view prepare share ended with status %s', child.returncode)
-            failed += 1
-            continue
-        warmed += int(counts[-1][1])
-        failed += int(counts[-1][2])
-    return warmed, failed
+    handle, claims = tempfile.mkstemp(prefix='loupe-prepare-claims-')
+    os.close(handle)
+    try:
+        timing = [DEADLINE_FLAG, '%.3f' % deadline] if deadline is not None else []
+        children = [subprocess.Popen([sys.executable, '-m', 'services.financial.view_warmup', SHARE_FLAG,
+                                      '%d/%d' % (share, processes), CLAIMS_FLAG, claims] + timing,
+                                     cwd=str(backend), stdout=subprocess.DEVNULL)
+                    for share in range(processes)]
+        stop_at = None if deadline is None else deadline + PREPARE_MARGIN_SECONDS / 2
+        while any(child.poll() is None for child in children):
+            if stop_at is not None and time.time() >= stop_at:
+                break
+            time.sleep(poll)
+        cut = [child for child in children if child.poll() is None]
+        for child in cut:
+            child.kill()
+            child.wait()
+        failed_children = sum(1 for child in children if child not in cut and child.returncode)
+        for child in children:
+            if child not in cut and child.returncode:
+                logger.warning('Financial view prepare share ended with status %s', child.returncode)
+        total, claimed, warmed, failed = _claimed_counts(claims)
+        stopped = None
+        if cut or (deadline is not None and claimed < total and time.time() >= deadline):
+            stopped = ('stopped at the %d s limit: %d of %d views not warmed (%d not reached, %d stopped while '
+                       'computing); they are computed on their first visit' % (
+                           _prepare_cap(), total - warmed - failed, total, total - claimed,
+                           claimed - warmed - failed))
+        return warmed, failed + failed_children, stopped
+    finally:
+        try:
+            os.unlink(claims)
+        except OSError:
+            pass
 
 
 def _migrations_pending():
@@ -659,7 +768,11 @@ if __name__ == '__main__':
     if PREPARE_FLAG in sys.argv[1:]:
         print(prepare(), flush=True)
     elif SHARE_FLAG in sys.argv[1:]:
-        share, processes = map(int, sys.argv[sys.argv.index(SHARE_FLAG) + 1].split('/'))
-        print('share %d %d' % _warm_cases(share=(share, processes)), flush=True)
+        def _value(flag):
+            return sys.argv[sys.argv.index(flag) + 1] if flag in sys.argv[1:] else None
+        share, processes = map(int, _value(SHARE_FLAG).split('/'))
+        deadline = _value(DEADLINE_FLAG)
+        print('share %d %d' % _warm_cases(share=(share, processes), claims=_value(CLAIMS_FLAG),
+                                          deadline=float(deadline) if deadline else None), flush=True)
     else:
         warm_account_history(lock_held=CHILD_FLAG in sys.argv[1:])

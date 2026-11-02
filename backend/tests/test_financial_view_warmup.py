@@ -391,23 +391,105 @@ def test_split_shares_warm_every_view_exactly_once(periods):
     assert len(seen) == 2 * PER_CASE and len(set(seen)) == 2 * PER_CASE
 
 
-def test_prepare_splits_over_child_processes_and_sums_them(monkeypatch, tmp_path):
-    import subprocess
-    monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
+@needs_pg
+def test_a_process_takes_every_task_no_other_process_took(periods, tmp_path):
+    # Live 2026-11-02 05:06: with every third task fixed per process, one process computed 581 s of views while
+    # another sat idle from 05:13:14 and the unit was stopped at its cap. A process now takes whatever is left.
+    add, calls, _ = periods
+    first, second = uuid.uuid4(), uuid.uuid4()
+    add(first, 2); add(second, 1)
+    claims = str(tmp_path / 'claims')
+    assert view_warmup._warm_cases(share=(0, 3), claims=claims) == (2 * PER_CASE, 0)
+    assert view_warmup._warm_cases(share=(1, 3), claims=claims) == (0, 0)  # nothing left for a second process
+    assert view_warmup._claimed_counts(claims) == (2 * PER_CASE, 2 * PER_CASE, 2 * PER_CASE, 0)
+    seen = [(str(call['case_id']), call.get('view') or 'history') for call in calls]
+    assert len(seen) == len(set(seen)) == 2 * PER_CASE
+
+
+@needs_pg
+def test_no_view_is_started_after_the_deadline(periods, monkeypatch):
+    add, calls, _ = periods
+    add(uuid.uuid4(), 1)
+    assert view_warmup._warm_cases(deadline=time.time() - 1) == (0, 0) and calls == []
     monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
-    started = []
+    monkeypatch.setattr(view_warmup, '_prepare_cap', lambda: 0)
+    summary = view_warmup.prepare(processes=1)
+    assert summary.startswith('prepare: 0 views warmed in ') and 'stopped at the 0 s limit' in summary
+
+
+def _fake_children(monkeypatch, events, running=False, statuses=(0, 0, 1)):
+    """subprocess.Popen replaced by children that write ``events`` to the prepare's claims file and either end with
+    ``statuses`` or (``running``) never end."""
+    import subprocess
+    started, killed = [], []
 
     class Child:
         def __init__(self, argv, **kw):
             started.append(argv)
-            self.returncode = 0 if len(started) < 3 else 1
+            self.index = len(started) - 1
+            claims = argv[argv.index(view_warmup.CLAIMS_FLAG) + 1]
+            with open(claims, 'a') as shared:
+                shared.write(''.join(line + '\n' for line in events[self.index]))
+            self.returncode = None if running else statuses[self.index]
 
-        def communicate(self):
-            return ('INFO x\nshare 4 1\n' if self.returncode == 0 else ''), None
+        def poll(self):
+            return self.returncode
+
+        def kill(self):
+            killed.append(self.index)
+            self.returncode = -9
+
+        def wait(self):
+            return self.returncode
     monkeypatch.setattr(subprocess, 'Popen', Child)
+    return started, killed
+
+
+def test_prepare_splits_over_child_processes_and_sums_them(monkeypatch, tmp_path):
+    monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
+    monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
+    events = [['total 9'] + ['claim a%d' % k, 'warmed a%d' % k] + (['claim f', 'failed f'] if k == 0 else [])
+              for k in range(3)]
+    started, _ = _fake_children(monkeypatch, events)
     summary = view_warmup.prepare(processes=3)
-    assert [argv[-2:] for argv in started] == [[view_warmup.SHARE_FLAG, '%d/3' % k] for k in range(3)]
-    assert summary.startswith('prepare: 8 views warmed in ') and '(3 failed, 3 processes, code ' in summary
+    assert [argv[3:5] for argv in started] == [[view_warmup.SHARE_FLAG, '%d/3' % k] for k in range(3)]
+    assert all(view_warmup.DEADLINE_FLAG in argv for argv in started)
+    # Counted from the shared claims file; the child that ended with an error counts as one failure.
+    assert summary.startswith('prepare: 3 views warmed in ') and '(2 failed, 3 processes, code ' in summary
+    assert 'limit' not in summary
+
+
+def test_a_prepare_at_its_time_limit_stops_its_children_and_says_what_was_not_warmed(monkeypatch, tmp_path):
+    # Live 2026-11-02 05:16:57 (release 33501a69): the unit was killed at its 600 s cap with ~221 of 240 views warmed
+    # and the release log said only 'ended without a summary'.
+    monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
+    events = [['total 10', 'claim a', 'warmed a', 'claim b'], ['total 10', 'claim c', 'warmed c'], ['total 10']]
+    _, killed = _fake_children(monkeypatch, events, running=True)
+    warmed, failed, stopped = view_warmup._warm_in_processes(3, deadline=time.time() - view_warmup.PREPARE_MARGIN_SECONDS)
+    assert killed == [0, 1, 2] and (warmed, failed) == (2, 0)
+    assert stopped.startswith('stopped at the %d s limit: 8 of 10 views not warmed (7 not reached, 1 stopped while '
+                              'computing)' % view_warmup._prepare_cap())
+    monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
+    monkeypatch.setattr(view_warmup, '_prepare_cap', lambda: 0)  # the deadline has passed when the children start
+    _fake_children(monkeypatch, events, running=True)
+    summary = view_warmup.prepare(processes=3)
+    assert summary.startswith('prepare: 2 views warmed in ') and '8 of 10 views not warmed' in summary
+
+
+def test_the_prepare_waits_inside_the_units_cap():
+    from services.financial import view_prepare
+    assert view_warmup._prepare_cap() == view_prepare.PREPARE_CAP_SECONDS
+    assert 0 < view_warmup.PREPARE_MARGIN_SECONDS < view_prepare.PREPARE_CAP_SECONDS / 10
+
+
+def test_claims_give_each_task_to_one_process_and_record_the_outcome(tmp_path):
+    claims = str(tmp_path / 'claims')
+    assert view_warmup._claim(claims, 'case-1 history []', 3)
+    assert not view_warmup._claim(claims, 'case-1 history []', 3)  # another process took it
+    assert view_warmup._claim(claims, 'case-1 files []', 3)
+    view_warmup._note(claims, 'warmed', 'case-1 history []')
+    assert view_warmup._claimed_counts(claims) == (3, 2, 1, 0)
+    assert open(claims).read().count('total 3') == 1
 
 
 def test_prepare_never_raises(monkeypatch, tmp_path):
