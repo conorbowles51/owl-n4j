@@ -490,6 +490,11 @@ class BatchImportTests(TestCase):
             db.get(Batch, middle).status = 'paused'
             db.commit()
         self.assertEqual(turn(older), ('prepare', None))  # a paused batch never holds others up
+        with self.f.SessionLocal() as db:
+            db.get(Batch, middle).status = 'preparing'
+            db.get(Batch, middle).files = [{**entry, 'status': 'waiting'}]
+            db.commit()
+        self.assertEqual(turn(older), ('prepare', None))  # only a batch working on this reading holds others up
         with patch.object(service, 'SHARED_RECOVERY_TURNS', False):
             with self.f.SessionLocal() as db:
                 db.get(Batch, middle).status = 'preparing'

@@ -2751,7 +2751,7 @@ def _shared_preparation(factory, case_id, batch_id, entry):
         if entry.get('recovery'):
             mine = next(((created, str(identity)) for identity, created, _, _ in batches if identity == batch_id), None)
             busy = [holder for holder in holders if mine is not None and holder[:2] > mine
-                    and holder[3] == 'preparing' and holder[4].get('status') in ('waiting', 'processing')]
+                    and holder[3] == 'preparing' and holder[4].get('status') == 'processing']
             return ('wait_turn', str(max(busy, key=lambda holder: holder[:2])[2])) if busy else ('prepare', None)
         if not holders:
             return 'prepare', None
