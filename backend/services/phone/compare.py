@@ -14,11 +14,14 @@ counts then read those results for the same pair and scope. Reverse when that re
 """
 from __future__ import annotations
 
+from datetime import timedelta
+
 from sqlalchemy import text
 
 KINDS = ("message", "call")
 KEY_WORDS = ("Matched when the app family and the text agree and the times are within 2 minutes (calls: the "
-             "duration within 2 seconds); short or common texts also need one side sent and the other received. "
+             "duration within 2 seconds, or neither recorded); a message with no text matches at the same second; "
+             "short or common texts also need one side sent and the other received. "
              "Copies on one phone count once.")
 TAU_SECONDS = 120
 CALL_SECONDS = 2
@@ -88,36 +91,42 @@ def family(kind, app) -> str:
 
 
 def match(evs, a, b) -> set:
-    """Indexes of ``evs`` paired one to one across phones ``a`` and ``b`` (05 section 5.3.4)."""
+    """Indexes of ``evs`` paired one to one across phones ``a`` and ``b`` (05 section 5.3.4). Each group is
+    sorted by time and only candidates inside the 120-second window are compared."""
+    import bisect
     from collections import Counter, defaultdict
 
     from services.phone import fold as F
     keyed = []
     for i, r in enumerate(evs):
         side = 0 if str(r.extraction_id) == a else 1
-        text = F.fold(r.body or "") if r.kind == "message" else ""
-        text = " ".join(text.split())
+        text = " ".join((F.fold(r.body or "") if r.kind == "message" else "").split())
         keyed.append((i, side, family(r.kind, r.app), text))
     seen = Counter((side, fam, t) for _, side, fam, t in keyed if t)
     groups = defaultdict(lambda: ([], []))
     for i, side, fam, t in keyed:
-        r = evs[i]
-        if r.kind == "message" and not t:
-            continue  # a message with no text is not matched by content
-        groups[(r.kind, fam, t)][side].append(i)
+        groups[(evs[i].kind, fam, t)][side].append(i)
     cands = []
     for (kind, fam, t), (xs, ys) in groups.items():
         if not xs or not ys:
             continue
-        weak = kind == "message" and (len(t) < 10 or seen[(0, fam, t)] > 3 or seen[(1, fam, t)] > 3)
+        # a message with no text (a picture or voice note) pairs only at the same second: app messages matched
+        # across phones carry identical server times (05 section 1, X7)
+        window = TAU_SECONDS if (kind == "call" or t) else 1
+        weak = kind == "message" and t and (len(t) < 10 or seen[(0, fam, t)] > 3 or seen[(1, fam, t)] > 3)
+        ys = sorted(ys, key=lambda y: evs[y].at)
+        times = [evs[y].at for y in ys]
         for x in xs:
             rx = evs[x]
-            for y in ys:
+            lo = bisect.bisect_left(times, rx.at - timedelta(seconds=window))
+            hi = bisect.bisect_right(times, rx.at + timedelta(seconds=window))
+            for y in ys[lo:hi]:
                 ry = evs[y]
                 gap = abs((ry.at - rx.at).total_seconds())
-                if gap > TAU_SECONDS:
+                if not t and kind == "message" and gap >= 1:
                     continue
-                if kind == "call" and (rx.d is None or ry.d is None or abs(rx.d - ry.d) > CALL_SECONDS):
+                if kind == "call" and not (rx.d is None and ry.d is None) and (
+                        rx.d is None or ry.d is None or abs(rx.d - ry.d) > CALL_SECONDS):
                     continue
                 if weak and {rx.direction, ry.direction} != {"incoming", "outgoing"}:
                     continue

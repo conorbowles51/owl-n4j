@@ -277,12 +277,14 @@ def draw(engine, export_id, claimed=None) -> dict:
               "unconfirmed": facts["unconfirmed"], "phones": facts["phones"],
               "missing_characters": sum(missing.values()), "snapshot": snap}
     with engine.begin() as c:
-        c.execute(text(
+        done = c.execute(text(
             "UPDATE phone_exports SET state = 'done', progress = 1, counts = CAST(:k AS jsonb), filename = :n, "
             "size = :s, sha256 = :h, storage_path = :p, finished_at = now(), snapshot = :snap WHERE export_id = :i AND state = 'rendering' AND "
             "(CAST(:t AS timestamptz) IS NULL OR started_at = :t)"),
             {"k": json.dumps(counts), "n": filename, "s": len(data), "h": sha, "p": str(final), "snap": snap,
-             "i": export_id, "t": claimed})
+             "i": export_id, "t": claimed}).rowcount
+    if not done:  # another worker holds the claim now; it records the result
+        return {"export_id": str(export_id), "state": "lost", "counts": counts}
     return {"export_id": str(export_id), "state": "done", "counts": counts}
 
 

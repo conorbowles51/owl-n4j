@@ -42,3 +42,19 @@ def test_app_family_and_call_duration():
     calls = [ev(A, 0, kind="call", app="Phone", d=61, body=None), ev(B, 4, kind="call", app=None, d=60, body=None),
              ev(A, 500, kind="call", app="Phone", d=61, body=None), ev(B, 500, kind="call", app=None, d=90, body=None)]
     assert match(calls, A, B) == {0, 1}
+
+
+def test_a_picture_with_no_text_pairs_at_the_same_second_and_calls_with_no_duration_pair():
+    evs = [ev(A, 0, body=None), ev(B, 0.4, body=None), ev(A, 50, body=None), ev(B, 53, body=None)]
+    assert match(evs, A, B) == {0, 1}
+    calls = [ev(A, 0, kind="call", app="Phone", d=None, body=None), ev(B, 5, kind="call", app=None, d=None, body=None)]
+    assert match(calls, A, B) == {0, 1}
+
+
+def test_large_groups_are_matched_in_a_window_not_every_pair():
+    import time
+    calls = [ev(A, k * 600, kind="call", app="Phone", d=30, body=None) for k in range(20000)] + \
+            [ev(B, k * 600 + 3, kind="call", app=None, d=30, body=None) for k in range(20000)]
+    t = time.time()
+    assert len(match(calls, A, B)) == 40000
+    assert time.time() - t < 10

@@ -43,6 +43,7 @@ WORDS = {
     "counts_reconciled": "Every record of {p} was read and the counts match the report.",
     "counts_not_reconciled": "The records of {p} were read, but the counts were not checked against the report.",
     "partly_read": "{p} was only partly read.",
+    "phone_not_in_case": "{p} is not a phone this case stands on now (it was replaced or removed).",
 }
 
 
@@ -101,16 +102,21 @@ def explain(conn, case_id, entry_id) -> dict:
         found = _searches(s.filter)
         searches += [x for x in found if x not in searches]
         record_uids.update(str(u) for u in (s.record_uids or []))
-        phones.update(p["extraction_id"] for p in (s.mapping_versions or {}).get("phones", []))
+        phones.update(p["extraction_id"] for p in (s.mapping_versions or {}).get("phones", []) if p.get("extraction_id"))
         scope.append({"kind": "selection", "words": s.words, "records": int(s.record_count or 0),
                       "events": int(s.event_count or 0), "searches": found})
     for l in by_type.get("phone_thread", []):
         t = conn.execute(text(
-            "SELECT extraction_id, event_count FROM phone_threads t JOIN phone_interpretation_state s ON "
+            "SELECT t.extraction_id, t.event_count FROM phone_threads t JOIN phone_interpretation_state s ON "
             "s.extraction_id = t.extraction_id AND s.generation = t.generation WHERE t.thread_key = :k AND "
             "t.case_id = :c"), {"k": l.target_id, "c": case}).first()
         if t is not None:
             phones.add(str(t.extraction_id))
+            # the conversation's messages are readings the finding relies on
+            record_uids.update(str(u) for (u,) in conn.execute(text(
+                "SELECT DISTINCT ev.record_uid FROM phone_comm_events ev JOIN phone_interpretation_state s ON "
+                "s.extraction_id = ev.extraction_id AND s.generation = ev.generation WHERE ev.case_id = :c AND "
+                "ev.thread_key = :k"), {"c": case, "k": l.target_id}))
         scope.append({"kind": "conversation", "words": l.target_label or "A conversation",
                       "events": int(t.event_count or 0) if t else None, "missing": t is None})
     for l in by_type.get("phone_extraction", []):
@@ -121,7 +127,12 @@ def explain(conn, case_id, entry_id) -> dict:
     for l in by_type.get("phone_analysis", []) + by_type.get("statement_check", []):
         scope.append({"kind": "analysis", "words": l.target_label or "An analysis result"})
     for l in by_type.get("phone_file", []):
-        scope.append({"kind": "file", "words": l.target_label or "A phone file"})
+        f = conn.execute(text("SELECT f.extraction_id FROM phone_files f JOIN phone_extractions e ON e.id = "
+                              "f.extraction_id WHERE f.file_uid = :i AND e.case_id = :c"),
+                         {"i": _uuid(l.target_id), "c": case}).first() if _uuid(l.target_id) else None
+        if f is not None:
+            phones.add(str(f.extraction_id))
+        scope.append({"kind": "file", "words": l.target_label or "A phone file", "missing": f is None})
     record_uids.update(l.target_id for l in by_type.get("phone_record", []))
 
     # readings: the current reading of each record the finding relies on
@@ -148,8 +159,8 @@ def explain(conn, case_id, entry_id) -> dict:
     idents = []
     for l in by_type.get("phone_identity", []):
         i = conn.execute(text(
-            "SELECT i.id, i.value_display, l.dossier_id IS NOT NULL AS linked FROM phone_identities i LEFT JOIN "
-            "phone_identity_links l ON l.identity_id = i.id WHERE i.case_id = :c AND i.identity_key = :k"),
+            "SELECT i.id, i.value_display, EXISTS (SELECT 1 FROM phone_identity_links l WHERE l.identity_id = i.id) "
+            "AS linked FROM phone_identities i WHERE i.case_id = :c AND i.identity_key = :k"),
             {"c": case, "k": l.target_id}).first()
         n = conn.execute(text(
             "SELECT count(*) FROM adjudications WHERE case_id = :c AND subject_type = 'phone_identity' AND "
@@ -165,7 +176,9 @@ def explain(conn, case_id, entry_id) -> dict:
         x = conn.execute(text(
             "SELECT state, device_zone, reconciliation_state FROM pv_extraction WHERE case_id = :c AND "
             "extraction_id = :e"), {"c": case, "e": _uuid(p)}).first()
-        if x is None:
+        if x is None:  # stated, never dropped: the case no longer stands on this phone
+            assumptions.append({"phone": labels.get(p) or "A phone", "code": "phone_not_in_case",
+                                "words": WORDS["phone_not_in_case"].format(p=labels.get(p) or "A phone", z="", n=0)})
             continue
         name = labels.get(p) or "this phone"
         o = identities.owner(conn, _uuid(p))
@@ -198,6 +211,10 @@ def explain(conn, case_id, entry_id) -> dict:
     unsettled = sum(1 for a in assumptions if a["code"] not in SETTLED)
     if unsettled:
         reasons.append("%d %s not settled." % (unsettled, "assumption is" if unsettled == 1 else "assumptions are"))
+    if any(s["kind"] == "view" for s in scope):
+        reasons.append("It rests on a saved view, whose readings are not counted here.")
+    if not record_uids and not any(s["kind"] == "file" for s in scope):
+        reasons.append("No record the finding relies on is linked, so no reading can be shown as confirmed.")
     if any(s.get("missing") for s in scope):
         reasons.append("A linked item is no longer in the case's current reading.")
     out.update(scope=scope, searches=searches, readings=readings, identities=idents, assumptions=assumptions,

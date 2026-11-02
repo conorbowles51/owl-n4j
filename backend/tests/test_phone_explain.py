@@ -124,3 +124,17 @@ def test_j17_settled_readings_on_one_phone_are_a_result_for_report(world):
         identities.owner = real_owner
     assert out["readings"]["confirmed"] == 1 and not out["label_reasons"]
     assert out["label"] == "Result for report"
+
+
+def test_j17_a_conversation_link_counts_its_messages_and_a_view_alone_is_a_lead(world):
+    thread = world["events"][0]["thread_key"]
+    with world["engine"].begin() as c:
+        conv = _entry(c, world["case"], [("phone_thread", thread, "synthetic conversation")])
+        view = _entry(c, world["case"], [("phone_view", "v1", "A saved view")])
+    out = _explain(world, conv)
+    assert out["readings"]["records"] == 3 and out["readings"]["unconfirmed"] == 1
+    assert out["label"] == "Lead for enquiry"
+    out = _explain(world, view)
+    assert out["label"] == "Lead for enquiry"
+    words = " ".join(out["label_reasons"])
+    assert "saved view" in words and "No record the finding relies on is linked" in words

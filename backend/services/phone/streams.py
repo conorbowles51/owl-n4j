@@ -146,7 +146,7 @@ class Query:
         match = "%s = ANY(CAST(%s AS text[]))" % (PARTY_KEY_SQL, self._p([k for k in keys if k != PHONE_OWNER]))
         if PHONE_OWNER in keys:  # each phone's own owner (07 J-3: Between A and B, B the owner of the phone)
             # on a phone with no known owner key, the report's own IsPhoneOwner mark still names the owner's part
-            match = "(%s OR %s = ok.k OR p.is_phone_owner)" % (match, PARTY_KEY_SQL)
+            match = "(%s OR %s = ok.k OR (ok.k IS NULL AND p.is_phone_owner))" % (match, PARTY_KEY_SQL)
         return ("EXISTS (SELECT 1 FROM phone_participations p WHERE p.record_uid = ev.record_uid AND "
                 "p.generation = ev.generation AND %s AND %s)" % (cond, match))
 

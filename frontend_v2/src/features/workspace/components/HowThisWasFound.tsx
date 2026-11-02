@@ -66,8 +66,8 @@ export function HowThisWasFound({ caseId, entryId }: { caseId: string; entryId: 
         <div>
           <span className="font-medium">Assumptions: </span>
           <ul className="list-disc pl-4">
-            {x.assumptions.map((a) => (
-              <li key={`${a.phone}:${a.code}`}>
+            {x.assumptions.map((a, i) => (
+              <li key={`${i}:${a.code}`}>
                 {a.words} <span className="text-muted-foreground">({a.code})</span>
               </li>
             ))}
