@@ -389,18 +389,29 @@ def _candidate_document_ids(
     searchable = (terms + mode_terms)[:15]
     conditions = [func.lower(EvidenceDocumentText.content).contains(term) for term in searchable]
     statement = (
-        select(EvidenceDocumentText.evidence_file_id)
-        .join(EvidenceFile, EvidenceFile.id == EvidenceDocumentText.evidence_file_id)
+        select(EvidenceFile)
+        .join(EvidenceDocumentText, EvidenceFile.id == EvidenceDocumentText.evidence_file_id)
         .where(EvidenceFile.case_id == case_id)
-        .order_by(EvidenceFile.created_at.desc())
-        .limit(12)
+        .order_by(EvidenceFile.created_at.desc(), EvidenceFile.id)
     )
     if not phone_files.external_processing_check_registered():
         # No case can allow phone files yet, so none may take one of the 12 places.
         statement = statement.where(or_(EvidenceFile.source_type.is_(None), EvidenceFile.source_type != phone_files.SOURCE_TYPE))
     if conditions:
         statement = statement.where(or_(*conditions))
-    return list(db.scalars(statement).all())
+    # A phone file without the case's external-processing decision is dropped later (_load_evidence_with_text), so
+    # it is passed over here, before the 12 places are filled, rather than leaving a place empty.
+    out: list[uuid.UUID] = []
+    result = db.scalars(statement.execution_options(yield_per=50))
+    try:
+        for item in result:
+            if phone_files.external_processing_allowed(db, item):
+                out.append(item.id)
+                if len(out) == 12:
+                    break
+    finally:
+        result.close()
+    return out
 
 
 def _theory_sources(

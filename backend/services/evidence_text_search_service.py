@@ -154,8 +154,8 @@ def search_case_text(
         select(func.count())
         .select_from(EvidenceDocumentText)
         .join(EvidenceFile, EvidenceFile.id == EvidenceDocumentText.evidence_file_id)
-        .where(EvidenceFile.case_id == case_id)
-    ) or 0
+        .where(EvidenceFile.case_id == case_id, EvidenceFile.source_type.is_distinct_from("phone_text"))
+    ) or 0  # counted like case_documents, so searchable never exceeds the case's documents
 
     rows = db.execute(
         select(

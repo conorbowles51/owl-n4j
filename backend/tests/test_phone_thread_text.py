@@ -59,6 +59,7 @@ def test_thread_documents_are_searchable_by_record_and_hidden_from_evidence_list
             needle = content.split("\n")[0][-12:]
             found = search.search_case_text(db, case_id=case, query=needle, document_limit=10, document_offset=0)
             assert found["case_documents"] == 1  # the synthetic PDF; thread documents are not case documents
+            assert found["searchable_documents"] <= found["case_documents"]
             hit_doc = next(d for d in found["documents"] if d["source_type"] == "phone_text")
             assert hit_doc["folder_path"] == "Phone conversations"
             hit = hit_doc["matches"][0]

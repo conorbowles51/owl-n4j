@@ -136,3 +136,16 @@ def test_candidate_documents_never_give_a_place_to_a_phone_file_without_the_deci
         db.commit()
         ids = workspace_ai_service._candidate_document_ids(db, case_id=case_id, terms=["payment"], mode="supporting")
         assert ids == [source_id]
+        # With the check registered (as at backend start) and no decision for this case, the phone file is still
+        # passed over before the places are filled, so no place is left empty later.
+        phone_files.register_external_processing_check(lambda db, case, file: False)
+        try:
+            ids = workspace_ai_service._candidate_document_ids(db, case_id=case_id, terms=["payment"],
+                                                               mode="supporting")
+            assert ids == [source_id]
+            phone_files.register_external_processing_check(lambda db, case, file: True)
+            ids = workspace_ai_service._candidate_document_ids(db, case_id=case_id, terms=["payment"],
+                                                               mode="supporting")
+            assert set(ids) == {source_id, row.id}
+        finally:
+            phone_files.register_external_processing_check(None)
