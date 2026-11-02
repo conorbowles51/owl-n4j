@@ -21,7 +21,7 @@ export type Relationship = "unclassified" | "supports" | "contradicts" | "contex
 export type DossierRole = "link" | "contact" | "photo" | "assessment_support" | "interview_evidence"
 
 export interface CollectLink {
-  target_type: "phone_record" | "phone_thread" | "phone_file" | "phone_identity" | "phone_extraction" | "phone_selection" | "phone_view"
+  target_type: "phone_record" | "phone_thread" | "phone_file" | "phone_identity" | "phone_extraction" | "phone_selection" | "phone_view" | "phone_analysis" | "statement_check"
   target_id: string
   label?: string
   source_anchor: Record<string, unknown>

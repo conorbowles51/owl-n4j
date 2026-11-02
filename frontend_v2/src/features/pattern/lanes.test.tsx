@@ -14,7 +14,7 @@ describe("the shared Lanes component (04 section 8.6, 07 J-5)", () => {
       { hour_utc: "2023-03-14T23:00:00Z", state: "data_no_interaction", words: "Phone recording, no use seen" },
       { hour_utc: "2023-03-15T00:00:00Z", state: "no_data", words: "No data" },
     ]
-    render(<Lanes start="2023-03-14T23:00:00Z" end="2023-03-15T01:00:00Z" zone="America/New_York" span="1h" onSpan={onSpan}
+    render(<Lanes start="2023-03-14T23:00:00Z" end="2023-03-15T01:00:00Z" zone="America/New_York" zoneBasis="case_setting" span="1h" onSpan={onSpan}
       rows={[{ id: "p", label: "C1", bands: bandsFromHours(hours), marks: [{ key: "m", at: "2023-03-14T23:30:00Z", label: "message", tone: "strong" }] },
         { id: "case", label: "Case events", marks: [] },
         { id: "money", label: "Payments", marks: [], allDay: [{ key: "t", label: "12.00 USD", detail: "Posted date; the purchase may be earlier." }] }]} />)

@@ -59,10 +59,12 @@ function pct(t: string, start: number, span: number) {
   return Math.min(100, Math.max(0, ((new Date(t).getTime() - start) / span) * 100))
 }
 
-export function Lanes({ start, end, zone, rows, span, onSpan, header }: {
+export function Lanes({ start, end, zone, zoneBasis, rows, span, onSpan, header }: {
   start: string
   end: string
   zone: string
+  /** Why this zone (03 section 4.6): case_setting, phones_device_zone, utc_default, device_zone or chosen. */
+  zoneBasis?: string
   rows: LaneRow[]
   span?: string
   onSpan?: (span: string) => void
@@ -70,7 +72,8 @@ export function Lanes({ start, end, zone, rows, span, onSpan, header }: {
 }) {
   const s = new Date(start).getTime()
   const width = Math.max(1, new Date(end).getTime() - s)
-  const zoneLabel = zone === "UTC" ? "UTC" : `${zoneWords(start, zone)} (case zone)`
+  const basisWords: Record<string, string> = { case_setting: "case zone", phones_device_zone: "case zone, the phones' own", device_zone: "the phone's zone", chosen: "chosen" }
+  const zoneLabel = zone === "UTC" ? "UTC" : `${zoneWords(start, zone)} (${basisWords[zoneBasis || "device_zone"] || "case zone"})`
   const fmt = (t: string) => new Intl.DateTimeFormat("en-US", { timeZone: zone, hour: "numeric", minute: "2-digit" }).format(new Date(t))
   return (
     <section aria-label="Lanes" data-lanes-component="shared" className="flex flex-col gap-2">

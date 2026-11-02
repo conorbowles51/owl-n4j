@@ -7,6 +7,7 @@ import { patternAPI, type Subject, type SubjectList, type TogetherResponse } fro
 import { Lanes } from "./Lanes"
 import { errorWords, laneRowsOf } from "../lanes-lib"
 import { StatementCheckPanel } from "./StatementCheckPanel"
+import { KeepResult } from "./CollectBar"
 
 /**
  * The Patterns screen (04 section 8.6): Day view, Pattern grid, Places over time, Together and Statement check, with
@@ -21,6 +22,10 @@ export const VIEWS = [
   { id: "check", label: "Check a statement" },
 ] as const
 type ViewId = (typeof VIEWS)[number]["id"]
+
+function nextDay(d: string) {
+  const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString()
+}
 
 function subjectKey(s: Subject) {
   return s.kind === "extraction" ? `e:${s.extraction_id}` : `d:${s.dossier_id}`
@@ -100,7 +105,9 @@ function DayView({ caseId, subject, initial }: { caseId: string; subject: Subjec
       <label className="flex items-center gap-2 text-sm">Day <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded border bg-background px-2 py-1" /></label>
       {q.isLoading && <p className="text-sm text-muted-foreground">Loading the day…</p>}
       {q.isError && <p role="alert" className="text-sm text-destructive">{errorWords(q.error)}</p>}
-      {q.data && <Lanes start={q.data.start} end={q.data.end} zone={q.data.zone} rows={laneRowsOf(caseId, q.data)} />}
+      {q.data && <Lanes start={q.data.start} end={q.data.end} zone={q.data.zone} rows={laneRowsOf(caseId, q.data)}
+        header={<KeepResult caseId={caseId} origin="Added from Phone patterns, Day view"
+          request={{ kind: "day", subject: JSON.stringify(subject), date, zone: q.data.zone }} />} />}
     </section>
   )
 }
@@ -125,6 +132,9 @@ function GridView({ caseId, subject, last }: { caseId: string; subject: Subject;
       {q.data && (
         <>
           <p>{quiet && quiet.start !== null ? `Usual quiet hours: ${quiet.start}:00 to ${quiet.end}:00 (${q.data.zone}).` : (quiet?.message || "No regular quiet period found")}</p>
+          <KeepResult caseId={caseId} origin="Added from Phone patterns, Pattern grid"
+            request={{ kind: "grid", subject: JSON.stringify(subject), start: `${start}T00:00:00Z`, end: nextDay(last), zone: q.data.zone,
+              parameters: { min_strength: "moderate", classes: ["interaction"], include_physical: false } }} />
           <p className="text-xs text-muted-foreground">{q.data.days.length.toLocaleString()} days, {start} to {last}. Use counted: the user's own, strength at least moderate.</p>
           <table className="border-collapse text-xs" aria-label="Hours by day">
             <thead><tr><th className="pr-2 text-left">Date</th>{Array.from({ length: 24 }, (_, h) => <th key={h} className="w-5 font-normal">{h}</th>)}</tr></thead>
@@ -158,6 +168,8 @@ export function PlacesView({ caseId, subject, last }: { caseId: string; subject:
         <>
           <p>Showing {q.data.returned.toLocaleString()} of {q.data.total.toLocaleString()} positioned records, {startD.toISOString().slice(0, 10)} to {last}.
             {q.data.towers_not_placed.length > 0 ? ` ${q.data.towers_not_placed.length.toLocaleString()} cell tower sightings cannot be placed: ${q.data.towers_not_placed[0].words}` : ""}</p>
+          <KeepResult caseId={caseId} origin="Added from Phone patterns, Places over time"
+            request={{ kind: "places", subject: JSON.stringify(subject), start: startD.toISOString(), end: nextDay(last), zone: "UTC" }} />
           {q.data.next_cursor !== null && <span> The list shows the first {q.data.returned.toLocaleString()}; the rest are on later pages.</span>}
           <table className="text-xs"><thead><tr><th className="text-left">Time</th><th className="text-left">Source</th><th className="text-left">Radius</th></tr></thead>
             <tbody>{q.data.observations.map((o) => (

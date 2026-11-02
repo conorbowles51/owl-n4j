@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button"
 import { phoneLinkHref } from "@/features/phones/phone-links"
 import { patternAPI, type Claim, type ClaimKind, type Evaluation, type EvaluationItem, type Subject } from "../api"
 import { errorWords } from "../lanes-lib"
+import { CollectBar } from "./CollectBar"
+import { DraftPanel } from "./DraftPanel"
 
 /**
  * Statement check (04 section 9; 07 J-9). Claims are typed here or drafted by the model ("Drafted by <model>, not
@@ -20,6 +22,10 @@ const GROUPS: { role: EvaluationItem["role"]; title: string }[] = [
   { role: "supporting", title: "Supports" }, { role: "contradicting", title: "Undercuts" },
   { role: "gap", title: "Gaps" }, { role: "context", title: "Context" },
 ]
+
+function utc(t: string) {
+  return `${new Date(t).toISOString().replace("T", " ").slice(0, 16)} UTC`
+}
 
 function same(a: Subject, b: Subject) {
   return JSON.stringify(a) === JSON.stringify(b)
@@ -56,6 +62,7 @@ export function StatementCheckPanel({ caseId, subject }: { caseId: string; subje
   return (
     <section aria-label="Statement check" className="flex flex-col gap-3 text-sm">
       <ClaimForm caseId={caseId} subject={subject} onMade={(c) => { setCurrent(c.id); void qc.invalidateQueries({ queryKey: ["pattern-claims", caseId] }) }} />
+      <DraftPanel caseId={caseId} subject={subject} onAccepted={() => void qc.invalidateQueries({ queryKey: ["pattern-claims", caseId] })} />
       <div>
         <h3 className="font-medium">Statements for this phone or person ({mine.length.toLocaleString()})</h3>
         <ul className="flex flex-col gap-1">
@@ -113,7 +120,7 @@ function EvaluationView({ caseId, claim, ev, onAgain, onDispute }: {
                 const href = i.record_uid ? phoneLinkHref(caseId, { target_type: "phone_record", target_id: i.record_uid }) : null
                 return (
                   <li key={i.ordinal} className="flex flex-wrap items-center gap-2">
-                    <span>{i.at_utc ? new Date(i.at_utc).toISOString().replace("T", " ").slice(0, 16) + " UTC" : ""}</span>
+                    <span>{i.at_utc ? utc(i.at_utc) : ""}</span>
                     <span>{i.explanation}</span>
                     {i.strength && <span className="text-xs text-muted-foreground">{i.strength}</span>}
                     {href && <a className="text-xs underline" href={href}>Open the record</a>}
@@ -129,7 +136,9 @@ function EvaluationView({ caseId, claim, ev, onAgain, onDispute }: {
       })}
       <h4 className="font-medium">What would contradict this?</h4>
       <ul>{(ev.summary.not_yet_checked || []).map((n) => <li key={n.code}>{n.words}</li>)}</ul>
-      <p className="text-xs text-muted-foreground">Statement {claim.window_text ? `"${claim.window_text}"` : ""}, {ev.window.start} to {ev.window.end} ({ev.window.zone}).</p>
+      <p className="text-xs text-muted-foreground">Statement {claim.window_text ? `"${claim.window_text}" ` : ""}checked from {utc(ev.window.start)} to {utc(ev.window.end)}{ev.window.zone !== "UTC" ? ` (the statement's zone: ${ev.window.zone})` : ""}.</p>
+      <CollectBar caseId={caseId} noun="statement check" origin="Added from the statement check"
+        links={[{ target_type: "statement_check", target_id: ev.evaluation_id, label: `Statement check: ${claim.window_text || claim.kind}`, source_anchor: {} }]} />
     </div>
   )
 }

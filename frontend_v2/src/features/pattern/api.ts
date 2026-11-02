@@ -94,6 +94,8 @@ export interface WindowResponse {
   end: string
   span: string
   zone: string
+  zone_basis?: string
+  zone_note?: string | null
   phones: (DayWindow & { extraction_id: string; label: string | null })[]
   phones_total: number
   money: MoneyItem[]
@@ -199,6 +201,26 @@ export interface PlacesResponse {
   reverse_geocoding: { enabled: boolean; reason: string }
 }
 
+export interface Snapshot {
+  id: string
+  kind: "day" | "window" | "grid" | "places"
+  label: string
+  record_count: number
+  stale: boolean
+  stale_words: string | null
+  snapshot: { summary_counts: Record<string, number>; window: { start: string; end: string; zone: string } }
+}
+
+export interface SnapshotRequest {
+  kind: Snapshot["kind"]
+  subject?: string
+  date?: string
+  start?: string
+  end?: string
+  zone?: string
+  parameters?: Record<string, unknown>
+}
+
 const base = (caseId: string) => `/api/pattern/${encodeURIComponent(caseId)}`
 const subj = (s: Subject) => encodeURIComponent(JSON.stringify(s))
 
@@ -233,6 +255,12 @@ export const patternAPI = {
   dispute: (caseId: string, id: string, eid: string, ordinal: number, reason: string) =>
     fetchAPI<{ dispute_id: string }>(`${base(caseId)}/claims/${id}/evaluations/${eid}/items/${ordinal}/dispute`,
       { method: "POST", body: { reason } as never }),
+  freeze: (caseId: string, body: SnapshotRequest) =>
+    fetchAPI<Snapshot>(`${base(caseId)}/snapshots`, { method: "POST", body: body as never }),
+  addToInterview: (dossierId: string, interviewId: string, item: { target_type: string; target_id: string }) =>
+    fetchAPI<{ added: number; already_there: number }>(
+      `/api/dossiers/${encodeURIComponent(dossierId)}/interviews/${encodeURIComponent(interviewId)}/evidence:add`,
+      { method: "POST", body: { ...item, source_anchor: {} } as never }),
   draft: (caseId: string, body: { dossier_id: string; subject: Subject; interview_ids?: string[]; conversation_locator?: string }) =>
     fetchAPI<{ id: string; job_status: string }>(`${base(caseId)}/claim-drafts`, { method: "POST", body: body as never }),
 }

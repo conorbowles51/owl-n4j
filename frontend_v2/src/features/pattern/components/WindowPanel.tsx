@@ -6,6 +6,7 @@ import { patternAPI, type LaneItem } from "../api"
 import { Lanes, type LaneRow } from "./Lanes"
 import { bandsFromHours } from "../lanes-lib"
 import { errorWords } from "../lanes-lib"
+import { KeepResult } from "./CollectBar"
 
 /**
  * The window around a moment (07 J-5; 04 section 8.6): one lane per phone with its availability, a Case events lane
@@ -18,7 +19,7 @@ export interface CaseEventLike {
   at: string | null
 }
 
-export function WindowPanel({ caseId, at, caseEvents, zone = "device", onClose }: {
+export function WindowPanel({ caseId, at, caseEvents, zone = "case", onClose }: {
   caseId: string
   at: string
   caseEvents: CaseEventLike[]
@@ -56,7 +57,10 @@ export function WindowPanel({ caseId, at, caseEvents, zone = "device", onClose }
       </div>
       {q.isLoading && <p className="text-sm text-muted-foreground">Opening the window…</p>}
       {q.isError && <p role="alert" className="text-sm text-destructive">{errorWords(q.error)}</p>}
-      {q.data && <Lanes start={q.data.start} end={q.data.end} zone={q.data.zone} rows={rows} span={span} onSpan={setSpan} />}
+      {q.data?.zone_note && <p className="text-xs text-muted-foreground">{q.data.zone_note}</p>}
+      {q.data && <Lanes start={q.data.start} end={q.data.end} zone={q.data.zone} zoneBasis={q.data.zone_basis} rows={rows} span={span} onSpan={setSpan}
+        header={<KeepResult caseId={caseId} origin="Added from the window around a moment"
+          request={{ kind: "window", start: q.data.start, end: q.data.end, zone: q.data.zone }} />} />}
     </section>
   )
 }
