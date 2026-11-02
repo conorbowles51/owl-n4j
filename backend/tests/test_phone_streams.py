@@ -452,3 +452,19 @@ def test_two_emails_with_different_header_threads_are_never_copies(db):
                          thread=th, parties=[(ANA, "sender", False, None, None), (OWNER, "recipient", True, None, None)])
     ext, _ = phone(db, case, events=[em("hdr-a"), em("hdr-z"), em("hdr-a")])
     assert copies.assign(db, ext, 1) == {"groups": 1, "records": 2}
+
+
+def test_two_messages_with_different_files_and_no_text_are_never_copies(db):
+    """D-37: the files a message refers to are part of its content."""
+    from services.phone import copies
+    case = make_case(db)
+    t0 = at(2023, 3, 14, 10)
+    ext, evs = phone(db, case, events=[msg(t0, ANA, [OWNER], body=None), msg(t0, ANA, [OWNER], body=None),
+                                       msg(t0, ANA, [OWNER], body=None)])
+    for i, ref in ((0, "a.jpg"), (1, "b.jpg"), (2, "a.jpg")):
+        ordinal = db.execute(text("SELECT ordinal FROM phone_comm_events WHERE event_uid = :u"),
+                             {"u": evs[i]["event_uid"]}).scalar()
+        db.execute(text("INSERT INTO phone_file_references (extraction_id, document_index, record_ordinal, body_path, "
+                        "mechanism, reference_text, resolution) VALUES (:e, 0, :o, 'f', 'file_id_attribute', :r, "
+                        "'unresolved')"), {"e": ext, "o": ordinal, "r": ref})
+    assert copies.assign(db, ext, 1) == {"groups": 1, "records": 2}

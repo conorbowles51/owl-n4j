@@ -4,7 +4,9 @@ Two events on one phone are copies when kind, direction, the sender's key, the s
 content and the instant are all equal. The content is ``sha256(NFC(body))``; for an email the subject and body; for
 a call the duration and status. Two emails are copies only when their header thread is the same too (D-34): copies
 of one email carry the same Message-ID and References, so a different header thread means a different email. An
-event with no instant never matches. Equal-to-the-instant is the settled
+event with no instant never matches. The files a message refers to are part of its content too (D-37): two
+photos sent in the same second with no text are two messages (live 2 November: 32 such groups of 100 records would
+have merged without it). Equal-to-the-instant is the settled
 precision (20.1 measured near copies a second apart and kept them apart).
 
 The group id is written to ``phone_comm_events.dup_group_uid`` with ``dup_rule_version = 1``; the lists show one
@@ -52,8 +54,11 @@ def assign(conn, ext, gen) -> dict:
         "CASE WHEN ev.kind = 'call' THEN coalesce(ev.call_duration_s::text, '') || '/' || coalesce(ev.call_status, '') "
         "WHEN ev.kind = 'email' THEN coalesce(ev.thread_key, '') || '/' || encode(sha256(convert_to(normalize("
         "coalesce(ev.subject, '') || chr(10) || coalesce(ev.body, ''), NFC), 'UTF8')), 'hex') "
-        "ELSE encode(sha256(convert_to(normalize(coalesce(ev.body, ''), NFC), 'UTF8')), 'hex') END), 'UTF8')), "
-        "'hex') AS grp FROM ev), "
+        "ELSE encode(sha256(convert_to(normalize(coalesce(ev.body, ''), NFC), 'UTF8')), 'hex') END, "
+        "(SELECT string_agg(r.reference_text, ',' ORDER BY r.reference_text) FROM phone_file_references r JOIN "
+        "phone_record_summaries s ON s.extraction_id = r.extraction_id AND s.document_index = r.document_index AND "
+        "s.ordinal = r.record_ordinal WHERE s.generation = :g AND (s.record_uid = ev.record_uid OR "
+        "s.parent_record_uid = ev.record_uid))), 'UTF8')), 'hex') AS grp FROM ev), "
         "groups AS (SELECT grp FROM keyed GROUP BY grp HAVING count(*) > 1) "
         "UPDATE phone_comm_events t SET dup_group_uid = k.grp FROM keyed k JOIN groups USING (grp) "
         "WHERE t.event_uid = k.event_uid AND t.extraction_id = :e AND t.generation = :g"),
