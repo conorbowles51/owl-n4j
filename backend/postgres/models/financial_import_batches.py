@@ -17,7 +17,7 @@ class FinancialImportBatch(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
     case_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('cases.id', ondelete='CASCADE'), index=True)
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey('users.id', ondelete='RESTRICT'))
-    status: Mapped[str] = mapped_column(String(24), default='preparing', nullable=False)
+    status: Mapped[str] = mapped_column(String(24), default='preparing', nullable=False, index=True)
     files: Mapped[list] = mapped_column(json_type(), default=list, nullable=False)
     actor: Mapped[dict] = mapped_column(json_type(), nullable=False)
     worker_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
