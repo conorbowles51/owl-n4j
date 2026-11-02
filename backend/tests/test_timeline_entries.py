@@ -48,6 +48,12 @@ class TimelineEntryTests(TestCase):
         self.assertEqual(again['already_added'], len(self.rows))
         self.assertEqual(set(result['event_keys']), set(again['event_keys']))
 
+    def test_payment_event_carries_the_payment_direction(self):
+        self.save(self.payment_request())
+        by_id = {str(row.id): row.direction for row in self.rows}
+        for event in list_entries(self.db, case_id=self.case):
+            self.assertEqual(event.get('direction'), by_id[event['source']['id']])
+
     def test_statement_ordering_placeholder_is_not_an_event_date(self):
         row = self.rows[0]
         row.provenance = {**row.provenance, 'date_basis': 'statement_end_ordering_only'}

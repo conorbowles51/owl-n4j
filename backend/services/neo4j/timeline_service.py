@@ -25,7 +25,7 @@ class TimelineService:
     _NODE_PREFILTER = "n.case_id = $case_id AND coalesce(n.system_node, false) <> true"
     # The columns the page query returns, in its RETURN order (rows arrive packed: see run_packed).
     _EVENT_COLUMNS = ("key", "name", "type", "date", "time", "amount", "summary", "notes",
-                      "ledger_transaction_id", "connections")
+                      "ledger_transaction_id", "direction", "connections")
     # A connection's name as the Timeline lists it. Accounts share their holder's name (BNB2: 14 accounts
     # named ARRENDO SERV SA DE CV), so an account is named by its identity label (holder, bank, number,
     # currency) when that label extends its current name and no person has set the name (graph_edit_service
@@ -210,6 +210,10 @@ class TimelineService:
         ):
             if field in record_keys:
                 event[field] = record[field]
+        # A payment's own direction as the ledger recorded it (projection.py writes credit/debit on the node), so
+        # the Timeline marks money in and out from the record, never from its title. Other values are not shown.
+        if "direction" in record_keys and record["direction"] in ("credit", "debit"):
+            event["direction"] = record["direction"]
         return event
 
     def get_timeline_events(
@@ -352,6 +356,7 @@ class TimelineService:
                 n.summary AS summary,
                 n.notes AS notes,
                 n.ledger_transaction_id AS ledger_transaction_id,
+                n.direction AS direction,
                 connections
             ORDER BY sort_date ASC, coalesce(sort_time, '99:99') ASC, n.key ASC
         """
@@ -484,6 +489,7 @@ class TimelineService:
                 n.summary AS summary,
                 n.notes AS notes,
                 n.ledger_transaction_id AS ledger_transaction_id,
+                n.direction AS direction,
                 connections,
                 {export_returns}
                 n.key AS key_echo

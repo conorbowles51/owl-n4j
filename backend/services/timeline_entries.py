@@ -139,6 +139,7 @@ def _payment_event(row, key):
 
     direction = "Card credit" if view.account_type == "credit_card" and row.direction == "credit" else "Card charge" if view.account_type == "credit_card" else "Money in" if row.direction == "credit" else "Money out"
     return dict(key=key, name=row.description or row.ref_id, type="Transaction", date=dated[0].isoformat(), time=None,
+        direction=row.direction if row.direction in ("credit", "debit") else None,
         amount=f"{Money(row.amount_minor, row.currency).format()} · {direction}",
         summary=f"From: {party('from_name')} → To: {party('to_name')}. {view.account_label or 'Account not named'}. {source}",
         notes=None, connections=[dict(key=f"financial-account:{row.account_id}", name=view.account_label or "Unnamed account", type="FinancialAccount", relationship="ACCOUNT", direction="incoming" if row.direction == "debit" else "outgoing")], source_references=[source],

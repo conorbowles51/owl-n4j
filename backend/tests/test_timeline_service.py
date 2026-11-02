@@ -114,6 +114,29 @@ class TimelineServiceTests(unittest.TestCase):
         self.assertEqual(page["events"][0]["date"], "2024-02-03")
         self.assertEqual(page["events"][0]["time"], "19:47")
 
+    def test_payment_direction_comes_from_the_node_not_the_title(self):
+        # lx-style (Neil 2 Nov): Timeline money in / out is the payment's own direction (projection.py writes
+        # credit/debit on the node), never read from its title; any other value is not passed on.
+        captured = []
+        base = {"type": "Transaction", "date": "2024-02-03", "time": None, "amount": "10.00", "summary": None,
+                "notes": None, "connections": [], "ledger_transaction_id": "t"}
+        rows = [
+            {**base, "key": "a", "name": "Transfer From X", "direction": "debit"},
+            {**base, "key": "b", "name": "Payment To Y", "direction": "credit"},
+            {**base, "key": "c", "name": "Note", "direction": "sideways"},
+        ]
+        with patch(
+            "services.neo4j.timeline_service.driver.session",
+            return_value=_FakeSession(captured, rows=rows, total=3),
+        ):
+            page = TimelineService().get_timeline_page(case_id="case-1")
+        events = {e["key"]: e for e in page["events"]}
+        self.assertEqual(events["a"]["direction"], "debit")
+        self.assertEqual(events["b"]["direction"], "credit")
+        self.assertNotIn("direction", events["c"])
+        self.assertIn("direction", TimelineService._EVENT_COLUMNS)
+        self.assertTrue(any("n.direction AS direction" in q for q in map(str, captured)))
+
     def test_space_datetime_records_are_returned_with_separate_date_and_time(self):
         captured = []
         row = {
