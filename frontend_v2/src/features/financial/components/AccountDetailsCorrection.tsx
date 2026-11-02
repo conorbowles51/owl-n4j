@@ -181,6 +181,7 @@ function MergedHistory({
         `/api/financial/statement-import/accounts/${encodeURIComponent(accountId)}/details/confirm?case_id=${encodeURIComponent(caseId)}`,
         { method: "POST", body: { expected_revision: revision, correction_id: id, basis: bases[id] ?? "" } }
       ),
+    onMutate: () => setNotice(""),
     onSuccess: () => {
       setNotice("Correction confirmed as yours. Claude's correction stays in that record's history.")
       onChanged()

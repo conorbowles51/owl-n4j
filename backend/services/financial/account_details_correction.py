@@ -163,9 +163,11 @@ def _merged_history(session, case_id, account):
     another record (including one that no longer holds a statement, so no panel ever opens on it) is out of reach
     from the merged account. Returns None, not an empty list, when the merge chain cannot be read."""
     from services.financial.account_consolidation import canonical_map
+    from services.financial.account_parties import AccountPartyError
     try:
         mapping = canonical_map(session, case_id)
-    except Exception:
+    except AccountPartyError:
+        # A broken merge chain only; a database error propagates (this runs inside save/undo/confirm too).
         logger.exception('Merged account history could not be read for account %s', account.id)
         return None
     root = mapping.get(account.id, account.id)
