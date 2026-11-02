@@ -2586,6 +2586,8 @@ async def advance_batch(factory,batch_id,resolve_path,process_files):
                     shared = await asyncio.to_thread(_shared_preparation, factory, case_id, batch_id, deepcopy(file))
                     if shared[0] == 'wait':
                         _reading_progress(file, 'checking_statements', SHARED_PREPARATION_WAIT, prepared_in_batch=shared[1])
+                    elif shared[0] == 'wait_turn':
+                        _reading_progress(file, 'checking_statements', SHARED_RECOVERY_WAIT, prepared_in_batch=shared[1])
                     elif shared[0] == 'adopt':
                         await _finish_atomic(_adopt_preparation, factory, case_id, batch_id, deepcopy(file), shared[1])
                         file['status']='checked'
@@ -2713,7 +2715,14 @@ def _record_page_identity(factory, case_id, file_id, resolve_path):
 # failed newest batch, saved review work in the older batch, a recovery
 # reading, a reading changed since), the older batch prepares the file itself
 # as before. Switch off to restore that everywhere.
+# A recovery reading is still prepared in every batch that lists it, but one batch at a time: while a newer batch
+# prepares the file, an older one waits its turn (SHARED_RECOVERY_TURNS). Prepared together, each batch handed the
+# case lock to the other at every statement (1 Nov: three batches on one 217-period file for four hours, 383
+# background waits on the case row totalling 95 minutes). Switch off to prepare them together again.
 SHARED_PREPARATION = True
+SHARED_RECOVERY_TURNS = True
+SHARED_RECOVERY_WAIT = ('This file is also listed in a newer batch, which is preparing it now. '
+    'This batch prepares it when that finishes; no action is needed.')
 SHARED_PREPARATION_WAIT = ('This file is also listed in a newer batch, which is preparing it now. '
     'Its statements are prepared once, there; no action is needed.')
 SHARED_PREPARATION_DONE = ('This file was prepared in a newer batch, which stands for its statements in the review queue. '
@@ -2731,7 +2740,7 @@ def _prepared_reading(factory, case_id, file_id):
 
 def _shared_preparation(factory, case_id, batch_id, entry):
     """('prepare', None), ('wait', newest batch id) or ('adopt', newest batch id) for this file entry."""
-    if not SHARED_PREPARATION or entry.get('recovery') or entry.get('standalone_import'):
+    if not SHARED_PREPARATION or entry.get('standalone_import') or (entry.get('recovery') and not SHARED_RECOVERY_TURNS):
         return 'prepare', None
     file_id = entry['file_id']
     with factory() as db:
@@ -2739,6 +2748,11 @@ def _shared_preparation(factory, case_id, batch_id, entry):
             Batch.case_id == case_id, Batch.status != 'removed')))
         holders = [(created, str(identity), identity, status, other) for identity, created, status, files in batches
             for other in (files or []) if other.get('file_id') == file_id and not other.get('standalone_import')]
+        if entry.get('recovery'):
+            mine = next(((created, str(identity)) for identity, created, _, _ in batches if identity == batch_id), None)
+            busy = [holder for holder in holders if mine is not None and holder[:2] > mine
+                    and holder[3] == 'preparing' and holder[4].get('status') in ('waiting', 'processing')]
+            return ('wait_turn', str(max(busy, key=lambda holder: holder[:2])[2])) if busy else ('prepare', None)
         if not holders:
             return 'prepare', None
         _, _, newest, status, other = max(holders, key=lambda holder: (holder[0], holder[1]))

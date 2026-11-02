@@ -452,6 +452,50 @@ class BatchImportTests(TestCase):
             self.advance(newer); self.advance(older)
         self.assertEqual(prepared, [newer, older])
 
+    def test_a_recovery_reading_held_by_several_batches_is_prepared_one_batch_at_a_time(self):
+        # 1 Nov: three batches prepared one re-read file together and handed the case lock to each other at every
+        # statement for four hours. Each still prepares it, but an older batch waits while a newer one does.
+        from datetime import timedelta
+        from unittest.mock import patch
+        older, newer = self.two_batches_holding_the_file()
+        with self.f.SessionLocal() as db:
+            first = db.get(Batch, older)
+            recovery = {'fresh_reading': True, 'read_from_file_id': str(uuid4())}
+            entry = {**first.files[0], 'status': 'processing', 'recovery': recovery}
+            first.files = [entry]
+            db.get(Batch, newer).files = [dict(entry)]
+            middle = uuid4()
+            db.add(Batch(id=middle, case_id=self.f.case.id, created_by=first.created_by, status='preparing',
+                actor=deepcopy(first.actor), files=[dict(entry)], created_at=first.created_at + timedelta(seconds=2)))
+            db.commit()
+        turn = lambda batch: service._shared_preparation(self.f.SessionLocal, self.f.case.id, batch, deepcopy(entry))
+        prepared = []
+        with patch.object(service, 'prepare_reviews', side_effect=lambda session, batch, file, **kw: prepared.append(batch.id)):
+            self.advance(older)  # a newer batch is preparing it: this turn waits
+        self.assertEqual(prepared, [])
+        with self.f.SessionLocal() as db:
+            waiting = db.get(Batch, older).files[0]
+        self.assertEqual(waiting['status'], 'processing')
+        self.assertIn(service.SHARED_RECOVERY_WAIT, str(waiting))
+        self.assertEqual(turn(newer), ('prepare', None))
+        self.assertEqual(turn(middle), ('wait_turn', str(newer)))
+        self.assertEqual(turn(older), ('wait_turn', str(newer)))
+        with self.f.SessionLocal() as db:
+            db.get(Batch, newer).files = [{**entry, 'status': 'checked'}]
+            db.commit()
+        # The newest finished: the next one prepares it itself (a recovery reading is never adopted).
+        self.assertEqual(turn(middle), ('prepare', None))
+        self.assertEqual(turn(older), ('wait_turn', str(middle)))
+        with self.f.SessionLocal() as db:
+            db.get(Batch, middle).status = 'paused'
+            db.commit()
+        self.assertEqual(turn(older), ('prepare', None))  # a paused batch never holds others up
+        with patch.object(service, 'SHARED_RECOVERY_TURNS', False):
+            with self.f.SessionLocal() as db:
+                db.get(Batch, middle).status = 'preparing'
+                db.commit()
+            self.assertEqual(turn(older), ('prepare', None))
+
     def test_an_import_leaves_the_readiness_of_its_files_unrelated_periods_current(self):
         from unittest.mock import patch
         choices = self.f.install_two_card_periods()
