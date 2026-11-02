@@ -10,7 +10,8 @@ export default [
     await ctx.open(ctx.cases.phonesOnly, "/timeline")
     await ctx.step("open the window around a record in 5 s, one lane per phone", async () => {
       await ctx.click(page.getByRole("button", { name: "Open the window around this" }).first())
-      await ctx.see(page.getByRole("region", { name: /Lane: C1/ }), 5000)
+      // The phones-only case labels its phones by the shared phone-label rule ("Phone 1" there; "C1" from a C1 file).
+      await ctx.see(page.getByRole("region", { name: /Lane: (C1|Phone 1)\b/ }).first(), 5000)
       await ctx.see(page.getByRole("region", { name: /Lane: Case events/ }))
     }, { limitMs: 5000 })
     await ctx.step("window chips name the zone; No data apart from no use seen", async () => {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -44,11 +44,21 @@ export function PatternsPage() {
   const { id: caseId = "" } = useParams()
   const [params, setParams] = useSearchParams()
   const subjects = useQuery({ queryKey: ["pattern-subjects", caseId], queryFn: () => patternAPI.subjects(caseId) })
-  const view = (VIEWS.find((v) => v.id === params.get("view"))?.id || "day") as ViewId
-  const chosen = parseSubject(params.get("subject"))
+  // The subject and view live in state first and are mirrored to the address, so a view chosen straight after a
+  // subject can never write the address from a copy that predates the subject (POL-1).
+  const [picked, setPicked] = useState(() => ({ view: params.get("view"), subject: params.get("subject") }))
+  const view = (VIEWS.find((v) => v.id === picked.view)?.id || "day") as ViewId
+  const chosen = parseSubject(picked.subject)
   const subject: Subject | null = chosen || (subjects.data?.extractions[0]
     ? { kind: "extraction", extraction_id: subjects.data.extractions[0].extraction_id } : null)
-  const set = (k: string, v: string) => { const p = new URLSearchParams(params); p.set(k, v); setParams(p, { replace: true }) }
+  const set = (k: "view" | "subject", v: string) => {
+    const next = { ...picked, [k]: v }
+    setPicked(next)
+    const p = new URLSearchParams(window.location.search)
+    if (next.view) p.set("view", next.view)
+    if (next.subject) p.set("subject", next.subject)
+    setParams(p, { replace: true })
+  }
   return (
     <div className="flex h-full flex-col gap-3 overflow-auto p-4">
       <PageHeader title="Phone patterns" description="Day view, pattern grid, places, together and statement checks for one phone or person." />
@@ -164,6 +174,14 @@ function TogetherView({ caseId, subject, list }: { caseId: string; subject: Subj
   const [res, setRes] = useState<TogetherResponse | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  // Opening Together starts the comparison with the first other phone; progress shows while it runs (J-10b).
+  const started = useRef("")
+  useEffect(() => {
+    const key = `${subjectKey(subject)}|${other}`
+    if (!other || started.current === key) return
+    started.current = key
+    void run()
+  })
   async function run() {
     setErr(null); setRes(null)
     const a = list.extractions.find((e) => subject.kind === "extraction" && e.extraction_id === subject.extraction_id)
