@@ -58,7 +58,7 @@ Branch `cb/cb-screens`, rebased on `1a6b3826` (cb-pol). Commits f6deb203 (A), 1b
   list's copy over http is checked live once item C mounts the list. cb-pol told.
 - Next: item C.
 
-## 2 November: pattern of life, stage F in progress (cb-pol), A to J, L, D, collecting and key dates live e74130da
+## 2 November: pattern of life, stage F in progress (cb-pol), A to L live c374c780; Gate F corpus run in progress
 
 Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for readers:
 `/mnt/owl-data/fin-wt/headless/CB-POL-STATUS.md` (written at the end); progress `headless/cb-pol-progress.md`.
@@ -130,10 +130,16 @@ Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for read
   with the offset at that moment (skipped times refused, repeated times take the earlier). Lanes hide device and
   passive lanes with "N device events and sensor readings hidden. Show". 04 decisions 34, 35. Live-checked in
   4aa79795 (key date "Synthetic key date (cb-pol test)" exists there); journeys 4/4.
-- **Next:** M-13a (records per phone within 2 h of three anchors in the 10-report case; default window; record in
-  05 and 06 section 5), Gate M (synthetic two-phone HTTP end to end; P14 corpus run with the 11 performance
-  targets), Places/Together on the Case Map panels, J-10c with cb-screens, the grid record-list follow-up.
-- **Tests:** `tests/test_pattern_u2_activity.py` (7), `tests/test_pattern_u4_availability.py` (4), `u7_grid` (4), `u5_places` (5), `u8_routine` (2), `u9_together` (6), `u10_money` (3), `u11_claims` (6), `u12_drafting` (4), `u6_day` (2); frontend `src/features/pattern/lanes.test.tsx` (3), `views.test.tsx` (1), `collect.test.tsx` (2); backend `u13_snapshots` (2), u6 window zone (+1); opt-in PostgreSQL
+- **c374c780 (live):** a frozen grid lists the records the grid counts under any filter (ccb92710); Gate F end
+  to end over HTTP on two synthetic phones (`tests/test_pattern_gate_f_e2e.py`, 271b3b74); M-13a measured
+  (6830d394): default window stays ±1 h, anchors rule-chosen until an investigator picks three (05 16.6, 06 s5,
+  `measurements/m13a-window.json`); 04 decision 36 (Places/Together hand over to cb-screens' Case Map phone layer;
+  whoever finishes second carries J-10c; params proposed to cb-screens, m110219504726403).
+- **In progress:** Gate F corpus run (`measurements/scripts/pol_gate_f_corpus.py`): P12 + P14 captured into scratch
+  database `loupe_gatef` (cbp-pgtest), then interpretation, projection build, reclassify and HTTP timings against
+  the 04 section 11 targets. Driver `/tmp/cbpol-root/gatef/run.sh`, log `run.log`, results `gatef.json`.
+- **Next:** record the corpus results (06 row 52, 04 section 11), write CB-POL-STATUS.md, DONE.
+- **Tests:** `tests/test_pattern_u2_activity.py` (7), `tests/test_pattern_u4_availability.py` (4), `u7_grid` (4), `u5_places` (5), `u8_routine` (2), `u9_together` (6), `u10_money` (3), `u11_claims` (6), `u12_drafting` (4), `u6_day` (3), `u14_key_dates` (1), `gate_f_e2e` (1); frontend `src/features/pattern/lanes.test.tsx` (3), `views.test.tsx` (1), `collect.test.tsx` (2); backend `u13_snapshots` (2), u6 window zone (+1); opt-in PostgreSQL
   through `LOUPE_TEST_PHONE_PG_TEMPLATE_URL`. HTTP helper `tests/pattern_pg.py` (`api_client`). Scratch PostgreSQL
   for this job: container `cbp-pgtest` on 127.0.0.1:55446 (template `loupe_tpl`, rebuilt from `loupe_cbp` after
   `alembic upgrade head`).
