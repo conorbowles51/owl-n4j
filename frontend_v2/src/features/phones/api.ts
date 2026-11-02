@@ -237,3 +237,23 @@ export async function setOwner(caseId: string, extractionId: string, identityKey
     body: { case_id: caseId, identity_key: identityKey, reason },
   })
 }
+
+export const ExplanationSchema = z.object({
+  entry_id: z.string(),
+  heading: z.string(),
+  has_phone_links: z.boolean(),
+  links: z.object({ total: z.number(), by_type: z.record(z.string(), z.number()) }),
+  scope: z.array(z.object({ kind: z.string(), words: z.string(), records: z.number().optional(), events: z.number().nullable().optional(), missing: z.boolean().optional() }).passthrough()).optional(),
+  searches: z.array(z.object({ query: z.string(), exact: z.boolean() })).optional(),
+  readings: z.object({ records: z.number(), confirmed: z.number(), unconfirmed: z.number(), as_recorded: z.number(), not_in_current_reading: z.number() }).optional(),
+  identities: z.array(z.object({ identity: z.string(), decisions: z.number(), linked_to_person: z.boolean(), missing: z.boolean() })).optional(),
+  assumptions: z.array(z.object({ phone: z.string().nullable(), code: z.string(), words: z.string() })).optional(),
+  label: z.string().optional(),
+  label_reasons: z.array(z.string()).optional(),
+})
+export type Explanation = z.infer<typeof ExplanationSchema>
+
+/** How this was found (07 J-17): generated from a finding's phone links. */
+export async function getFindingExplanation(caseId: string, entryId: string, signal?: AbortSignal) {
+  return ExplanationSchema.parse(await fetchAPI(`/api/phones/findings/${encodeURIComponent(entryId)}/explain?${new URLSearchParams({ case_id: caseId })}`, { signal }))
+}

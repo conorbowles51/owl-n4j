@@ -108,6 +108,9 @@ vi.mock("./CaseContextSection", () => ({
 }))
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock("./HowThisWasFound", () => ({
+  HowThisWasFound: ({ entryId }: { entryId: string }) => <div data-testid="how-this-was-found">{entryId}</div>,
+}))
 
 function renderOverview(canEdit = true) {
   return render(
@@ -164,6 +167,13 @@ describe("CanonicalWorkspaceOverview", () => {
     expect(screen.getByText(/Conversations are ready\./)).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Open the phone summary" })).toHaveAttribute("href", "/cases/case-1/phones/e1")
     expect(screen.queryByRole("link", { name: "Elsewhere" })).toBeNull() // only paths inside the app
+  })
+
+  it("a finding in Recent casework carries its How this was found block, outside its button (07 J-17)", () => {
+    renderOverview()
+    const block = screen.getByTestId("how-this-was-found")
+    expect(block).toHaveTextContent("entry-1")
+    expect(block.closest("button")).toBeNull()
   })
 
   it("loads the full context editor only when an editor requests it", () => {

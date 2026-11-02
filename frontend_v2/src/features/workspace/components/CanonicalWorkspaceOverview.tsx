@@ -21,6 +21,7 @@ import {
   UserRoundCheck,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { HowThisWasFound } from "./HowThisWasFound"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
 import { cn } from "@/lib/cn"
@@ -362,7 +363,8 @@ export function CanonicalWorkspaceOverview({
           {data.recent_casework.length ? (
             <div className="divide-y divide-border">
               {data.recent_casework.map((entry) => (
-                <button key={entry.id} type="button" onClick={() => navigate(entry.href)} className="grid w-full gap-2 px-4 py-3 text-left hover:bg-muted/25 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <div key={entry.id}>
+                <button type="button" onClick={() => navigate(entry.href)} className="grid w-full gap-2 px-4 py-3 text-left hover:bg-muted/25 sm:grid-cols-[minmax(0,1fr)_auto]">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <Badge variant="outline" className="capitalize">{entry.entry_type}</Badge>
@@ -373,6 +375,8 @@ export function CanonicalWorkspaceOverview({
                   </div>
                   {entry.updated_at ? <span className="flex items-center gap-1 self-center text-[10px] text-muted-foreground"><Clock3 className="size-3" />{formatDate(entry.updated_at)}</span> : null}
                 </button>
+                {entry.entry_type === "finding" ? <HowThisWasFound caseId={caseId} entryId={entry.id} /> : null}
+                </div>
               ))}
             </div>
           ) : (
