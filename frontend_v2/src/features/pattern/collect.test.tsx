@@ -38,5 +38,13 @@ describe("key dates (04 section 8.6)", () => {
     expect(zoned("2024-01-15T09:00", "America/New_York")).toBe("2024-01-15T14:00:00.000Z")
     expect(zoned("2024-05-03T01:52", "UTC")).toBe("2024-05-03T01:52:00.000Z")
     expect(zoned("2024-05-03T01:52", "Mars/Base")).toBeNull()
+    // near clock changes (the review found these an hour off)
+    expect(zoned("2024-03-10T03:30", "America/New_York")).toBe("2024-03-10T07:30:00.000Z")
+    expect(zoned("2024-11-03T03:00", "America/New_York")).toBe("2024-11-03T08:00:00.000Z")
+    expect(zoned("2024-03-31T01:30", "Europe/Berlin")).toBe("2024-03-31T00:30:00.000Z")
+    // skipped: refused; shown twice: the earlier
+    const { zonedResult } = await import("./lanes-lib")
+    expect(zonedResult("2024-03-10T02:30", "America/New_York")).toEqual({ instant: null, problem: "missing" })
+    expect(zoned("2024-11-03T01:30", "America/New_York")).toBe("2024-11-03T05:30:00.000Z")
   })
 })

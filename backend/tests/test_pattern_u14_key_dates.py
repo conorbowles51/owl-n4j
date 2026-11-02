@@ -27,6 +27,9 @@ def test_a_key_date_is_one_workspace_note_with_its_instant_and_zone_and_goes_wit
                 "kind": "date", "label": "No zone", "instant": "2024-05-03T01:52:00Z"}).status_code == 400
             assert client.post("/api/pattern/%s/key-dates" % case, json={
                 "kind": "date", "label": "Bad zone", "instant": "2024-05-03T01:52:00Z", "zone": "Mars/Base"}).status_code == 400
+            # the Workspace's own rule for a note's words answers 400, not 500, and writes nothing
+            assert client.post("/api/pattern/%s/key-dates" % case, json={
+                "kind": "term", "label": "Markup", "term": "<b>x</b>"}).status_code == 400
             with engine.connect() as c:
                 notes = c.execute(text("SELECT entry_type, title, tags FROM workspace_entries WHERE case_id = :c "
                                        "ORDER BY title"), {"c": case}).fetchall()

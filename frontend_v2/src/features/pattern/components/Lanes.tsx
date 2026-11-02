@@ -92,7 +92,7 @@ export function Lanes({ start, end, zone, zoneBasis, rows, span, onSpan, header 
         <span className="text-muted-foreground">Times in {zoneLabel}. {fmt(start)} to {fmt(end)}.</span>
         {header}
       </div>
-      {hiddenRows.length > 0 && (
+      {hiddenCount > 0 && (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           {showAll ? `Showing ${hiddenCount.toLocaleString("en-US")} device events and sensor readings.`
             : `${hiddenCount.toLocaleString("en-US")} device events and sensor readings hidden.`}

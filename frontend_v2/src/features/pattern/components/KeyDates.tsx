@@ -2,7 +2,7 @@ import { useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { patternAPI } from "../api"
-import { errorWords, keyDateWords, zoned } from "../lanes-lib"
+import { errorWords, keyDateWords, zonedResult } from "../lanes-lib"
 import { WindowPanel } from "./WindowPanel"
 
 /**
@@ -21,7 +21,8 @@ export function KeyDatesBar({ caseId }: { caseId: string }) {
   async function save() {
     setErr(null)
     try {
-      const instant = zoned(local, zone)
+      const { instant, problem } = zonedResult(local, zone)
+      if (problem === "missing") { setErr(`${local.replace("T", " ")} did not happen in ${zone}: the clocks went forward over it. Enter the time as the person meant it.`); return }
       if (!instant) { setErr(`${zone} is not a time zone Loupe knows (for example America/New_York or UTC).`); return }
       await patternAPI.createKeyDate(caseId, { kind: "date", label, instant, zone })
       setAdding(false); setLabel(""); setLocal("")

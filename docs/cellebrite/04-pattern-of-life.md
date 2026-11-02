@@ -1674,8 +1674,10 @@ Each is a decision with its reasoning and what would reverse it.
     marker are written in one transaction and deleting the note removes the key date. Key dates are offered on the
     Patterns screen (each opens the window around it), as starts on the Case Timeline's window bar, and the window
     saves its moment as one. Workspace entries carry no instant of their own, so the marker sits beside them
-    rather than widening the shared entry table. *Reverse if* Workspace entries gain an instant and zone of their
-    own; the marker then moves onto the entry.
+    rather than widening the shared entry table. A time typed for a zone is read with the offset in force at that
+    moment: a time the clock skipped (spring forward) is refused with the reason, and a time the clock shows twice
+    (fall back) is the earlier of the two. *Reverse if* Workspace entries gain an instant and zone of their own (the
+    marker then moves onto the entry), or the later occurrence should be the default.
 
 35. **Device events and sensor readings hidden and counted per case (07 section 5).** The Day view and the window
     start with device-state and passive lanes hidden; the shared Lanes component states "N device events and

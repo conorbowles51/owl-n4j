@@ -784,6 +784,7 @@ def post_key_date(body: KeyDateRequest, case_id: UUID = Depends(require_case_edi
                   user=Depends(get_current_db_user)):
     """Enter a key date or case term once for the case: a Workspace note with the marker the analyses read."""
     from services.pattern_of_life import key_dates
+    from services.workspace_entry_service import WorkspaceEntryValidationError
     instant = parse_instant(body.instant, "instant") if body.instant else None
     try:
         out = key_dates.create(db, case_id, user, kind=body.kind, label=body.label, instant=instant, zone=body.zone,
@@ -791,4 +792,7 @@ def post_key_date(body: KeyDateRequest, case_id: UUID = Depends(require_case_edi
     except key_dates.KeyDateError as exc:
         db.rollback()
         raise HTTPException(status_code=exc.status, detail=str(exc))
+    except WorkspaceEntryValidationError as exc:  # the Workspace's own rules for a note's words
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(exc))
     return _jsonable(out)

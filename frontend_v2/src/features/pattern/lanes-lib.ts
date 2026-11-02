@@ -58,17 +58,35 @@ export function keyDateWords(k: KeyDate) {
   return k.local ? `${k.label} · ${k.local.slice(0, 16).replace("T", " ")} (${k.zone})` : k.label
 }
 
-/** A wall-clock time typed for a zone, as an instant with that zone's offset at that moment. */
-export function zoned(local: string, zone: string): string | null {
-  if (!local) return null
+function wallOf(t: number, zone: string): number {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(new Date(t))
+  const get = (x: string) => Number(parts.find((p) => p.type === x)?.value)
+  return Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"))
+}
+
+/**
+ * A wall-clock time typed for a zone, as an instant. The offset is read at the candidate moment and read again at
+ * the result, so a time near a clock change lands on the right side of it. A time the clock skipped (spring
+ * forward) is refused ("missing"); a time the clock shows twice (fall back) is the earlier of the two (04 decision 34).
+ */
+export function zonedResult(local: string, zone: string): { instant: string | null; problem: "zone" | "missing" | null } {
+  if (!local) return { instant: null, problem: null }
+  const wall = new Date(`${local}:00Z`).getTime()
+  if (Number.isNaN(wall)) return { instant: null, problem: "zone" }
   try {
-    const guess = new Date(`${local}:00Z`)
-    const parts = new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(guess)
-    const get = (t: string) => Number(parts.find((p) => p.type === t)?.value)
-    const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"))
-    const offset = asUtc - guess.getTime()
-    return new Date(guess.getTime() - offset).toISOString()
+    const candidates = new Set<number>()
+    for (const probe of [wall - 86_400_000, wall, wall + 86_400_000]) {
+      const offset = wallOf(probe, zone) - probe
+      const t = wall - offset
+      if (wallOf(t, zone) === wall) candidates.add(t)
+    }
+    if (candidates.size === 0) return { instant: null, problem: "missing" }
+    return { instant: new Date(Math.min(...candidates)).toISOString(), problem: null }
   } catch {
-    return null
+    return { instant: null, problem: "zone" }
   }
+}
+
+export function zoned(local: string, zone: string): string | null {
+  return zonedResult(local, zone).instant
 }
