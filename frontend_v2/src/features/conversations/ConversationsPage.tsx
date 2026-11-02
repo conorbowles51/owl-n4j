@@ -23,6 +23,7 @@ import { PhoneRecordPanel } from "@/features/phones/components/RecordPanel"
 import { StreamList } from "@/features/phones/components/StreamList"
 import { useCollectTargets, useUsedIn } from "@/features/phones/hooks/use-collect"
 import { useStream } from "@/features/phones/hooks/use-stream"
+import { ExportDialog } from "./ExportDialog"
 import { PersonScope } from "./PersonScope"
 import { useThreadMatches } from "./use-thread-matches"
 import { viewFromSearch, viewToFilter, viewToSearch, type ConversationView } from "@/features/phones/lib/filter-url"
@@ -131,6 +132,7 @@ export function ConversationsPage() {
   const [focused, setFocused] = useState<StreamRow | null>(null)
   const [selection, setSelection] = useState<{ rows: StreamRow[]; all: boolean }>({ rows: [], all: false })
   const onSelectionChange = useCallback((rows: StreamRow[], all: boolean) => setSelection({ rows, all }), [])
+  const [exporting, setExporting] = useState(false)
   const [jump, setJump] = useState<{ day: string | null; seq: number; offset?: number } | null>(null)
   const listRoot = useRef<HTMLDivElement>(null)
 
@@ -493,6 +495,9 @@ export function ConversationsPage() {
                 <input type="checkbox" checked={view.everyCopy} onChange={(e) => setView({ everyCopy: e.target.checked })} />
                 Show every copy
               </label>
+              <Button size="sm" variant="outline" disabled={!streamFilter} onClick={() => setExporting(true)}>
+                Export…
+              </Button>
               {view.thread && (
                 <Button size="sm" variant="outline" disabled={review.isPending} onClick={() => review.mutate({ thread: view.thread!, undo: false })}>
                   Mark reviewed <kbd className="ml-1 text-xs text-muted-foreground">m</kbd>
@@ -637,6 +642,7 @@ export function ConversationsPage() {
         )}
         <PhoneRecordPanel caseId={caseId} recordUid={recordUid} zone={stream.index?.zone.name} onClose={() => setRecordUid(null)} />
       </div>
+      {streamFilter && exporting && <ExportDialog caseId={caseId} filter={streamFilter} words={filterWords} open={exporting} onOpenChange={setExporting} />}
       <Dialog open={!!copyRow} onOpenChange={(v) => !v && (setCopyRow(null), notCopy.reset())}>
         <DialogContent>
           <DialogHeader>

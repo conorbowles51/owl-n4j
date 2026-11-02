@@ -182,6 +182,48 @@ export async function getLinkedIdentities(caseId: string, key: string) {
   return fetchAPI<{ others: string[]; numbers: number; accounts: number }>(`/api/phones/people/linked?${new URLSearchParams({ case_id: caseId, key })}`)
 }
 
+export const ExportFactsSchema = z.object({
+  total: z.number(), messages: z.number(), calls: z.number(), other: z.number(), unconfirmed: z.number(), phones: z.number(),
+  collapsed_copies: z.number(), zone: z.string(), left_out: z.string(), limits: z.array(z.object({ message: z.string() }).passthrough()),
+})
+export const ExportStateSchema = z.object({
+  export_id: z.string(), format: z.string(), source: z.string(), state: z.enum(["queued", "rendering", "done", "failed"]), progress: z.number(),
+  counts: z.record(z.string(), z.unknown()), file: z.object({ filename: z.string().nullable(), size: z.number().nullable(), sha256: z.string().nullable() }).nullable(),
+  error: z.string().nullable(), created_at: z.string().nullable(), finished_at: z.string().nullable(), title: z.string().nullable().optional(),
+})
+export type ExportState = z.infer<typeof ExportStateSchema>
+
+/** What an export of this filter holds, before anything is drawn (03 section 12.2 steps 1 and 2). */
+export async function describeExport(caseId: string, filter: StreamFilter) {
+  return ExportFactsSchema.parse(await fetchAPI("/api/phones/exports/describe", { method: "POST", body: { case_id: caseId, filter }, read: true }))
+}
+export async function createExport(caseId: string, filter: StreamFilter, options: Record<string, unknown>) {
+  return fetchAPI<{ export_id: string }>("/api/phones/exports", { method: "POST", body: { case_id: caseId, format: "pdf", source: "stream", filter, options } })
+}
+export async function getExport(caseId: string, exportId: string) {
+  return ExportStateSchema.parse(await fetchAPI(`/api/phones/exports/${encodeURIComponent(exportId)}?case_id=${encodeURIComponent(caseId)}`))
+}
+export async function getExportHistory(caseId: string) {
+  return z.object({ items: z.array(ExportStateSchema) }).parse(await fetchAPI(`/api/phones/exports?case_id=${encodeURIComponent(caseId)}`))
+}
+/** Saves a finished export's file (the same signed-in fetch as the timeline export; a plain link carries no token). */
+export async function downloadExport(caseId: string, exportId: string, filename: string) {
+  const token = localStorage.getItem("authToken")
+  const response = await fetch(`/api/phones/exports/${encodeURIComponent(exportId)}/file?case_id=${encodeURIComponent(caseId)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: "include",
+  })
+  if (!response.ok) throw new Error("The export file could not be fetched.")
+  const url = URL.createObjectURL(await response.blob())
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 export async function setPhoneLabel(caseId: string, extractionId: string, label: string, reason: string) {
   return fetchAPI<{ decision_id: string; label: string; before: string | null }>(`/api/phones/${encodeURIComponent(extractionId)}/label`, {
     method: "POST",

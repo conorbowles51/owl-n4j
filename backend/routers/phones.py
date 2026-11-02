@@ -5,11 +5,12 @@ and the readings queue (02 sections 6.8, 6.10): anyone who can view the case; de
 """
 from __future__ import annotations
 
+import os
 from typing import Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy.orm import Session
 
 from postgres.models.user import User
@@ -28,6 +29,83 @@ class FlagTransition(BaseModel):
     model_config = ConfigDict(extra="forbid")
     to: Literal["open", "acknowledged", "mapping_needed", "dismissed"]
     reason: str = Field(min_length=1, max_length=4000)
+
+
+class ExportDescribeBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    filter: dict
+
+
+class ExportBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    format: Literal["pdf", "rsmf"] = "pdf"
+    source: Literal["stream", "timeline_lens", "collection", "finding", "dossier", "statement_check",
+                    "analysis_result", "incident_window"] = "stream"
+    filter: dict
+    options: dict = Field(default_factory=dict)
+
+
+@router.post("/exports/describe")
+def describe_export(body: ExportDescribeBody, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_db_user)):
+    """What an export of this filter holds (03 section 12.2 steps 1 and 2): totals, phones, zone, unconfirmed rows."""
+    from services.phone.exports import jobs
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    try:
+        return jobs.describe(db.connection(), body.case_id, body.filter)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc.errors()[0].get("msg")))
+
+
+@router.post("/exports", status_code=202)
+def create_export(body: ExportBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Queue an export (03 section 12.2); the phone worker draws it."""
+    from services.phone.exports import jobs
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    try:
+        out = jobs.create(db.connection(), case_id=body.case_id, user_id=user.id, fmt=body.format,
+                          source=body.source, filter_body=body.filter, options=body.options)
+    except jobs.ExportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc.errors()[0].get("msg")))
+    db.commit()
+    return out
+
+
+@router.get("/exports")
+def export_history(case_id: UUID = Query(...), db: Session = Depends(get_db),
+                   user: User = Depends(get_current_db_user)):
+    from services.phone.exports import jobs
+    authorize_case(db, case_id, user, ("case", "view"))
+    return {"case_id": str(case_id), "items": jobs.history(db.connection(), case_id)}
+
+
+@router.get("/exports/{export_id}")
+def export_state(export_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                 user: User = Depends(get_current_db_user)):
+    from services.phone.exports import jobs
+    authorize_case(db, case_id, user, ("case", "view"))
+    out = jobs.get(db.connection(), case_id, export_id)
+    if out is None:
+        raise HTTPException(status_code=404, detail="That export is not in this case.")
+    return out
+
+
+@router.get("/exports/{export_id}/file")
+def export_file(export_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                user: User = Depends(get_current_db_user)):
+    from fastapi.responses import FileResponse
+
+    from services.phone.exports import jobs
+    authorize_case(db, case_id, user, ("case", "view"))
+    r = jobs.file_of(db.connection(), case_id, export_id)
+    if r is None or not r.storage_path or not os.path.exists(r.storage_path):
+        raise HTTPException(status_code=404, detail="That export has no finished file.")
+    return FileResponse(r.storage_path, media_type="application/pdf", filename=r.filename,
+                        headers={"X-Content-SHA256": r.sha256 or ""})
 
 
 @router.get("/compare")

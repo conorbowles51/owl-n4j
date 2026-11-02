@@ -45,6 +45,8 @@ def main() -> int:
     thread_text.install()  # conversations as searchable text (9.7)
     from services.search import document_folds
     document_folds.install()  # documents folded for Loupe-wide search, 20 s per pass (03 section 11.3)
+    from services.phone.exports import jobs as exports
+    exports.install()  # queued phone exports are drawn after each pass, one at a time (03 section 12.2)
     from services.pattern_of_life import activity
     activity.install()  # pattern of life: activity events after each pass (04 section 7.2)
     from services.pattern_of_life import availability
