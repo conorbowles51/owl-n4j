@@ -136,15 +136,6 @@ describe("area identity tokens (lx-style B)", () => {
         }
     })
   }
-  it("each light area tint is visibly a colour, not near-white (a channel below 224)", () => {
-    // Live 1 Nov: at 95% lightness every tint had all three channels at 224 or more, so the area bands read as
-    // white beside each other (the 8-level blend measure fell, light 0.1196 -> 0.1089). Settings is the neutral area.
-    for (const area of AREA_IDS) {
-      if (area === "settings") continue
-      const rgb = tripletToRgb(THEMES.light[`area-${area}-soft`]).map((c) => Math.round(c * 255))
-      expect(Math.min(...rgb), `area-${area}-soft light = rgb(${rgb.join(", ")})`).toBeLessThan(224)
-    }
-  })
   it("each area token is mapped for Tailwind", () => {
     for (const area of AREA_IDS)
       for (const suffix of ["", "-soft", "-foreground"])

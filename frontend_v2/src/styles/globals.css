@@ -85,26 +85,26 @@
        at least dE2000 15 from each status token and from Loupe red, and from every other area (tokens.test.ts).
        Brand red stays the action and active colour. */
     --area-investigate: 172 60% 27%;
-    --area-investigate-soft: 172 70% 90%;
+    --area-investigate-soft: 172 70% 95%;
     --area-investigate-foreground: 172 60% 27%;
     --area-money: 34 59% 43%;
-    --area-money-soft: 34 70% 90%;
+    --area-money-soft: 34 70% 95%;
     --area-money-foreground: 34 59% 35%;
     --area-phones: 196 60% 38%;
-    --area-phones-soft: 196 70% 90%;
-    --area-phones-foreground: 196 60% 32%;
+    --area-phones-soft: 196 70% 95%;
+    --area-phones-foreground: 196 60% 35%;
     --area-people: 225 51% 56%;
-    --area-people-soft: 225 70% 90%;
-    --area-people-foreground: 225 51% 44%;
+    --area-people-soft: 225 70% 95%;
+    --area-people-foreground: 225 51% 52%;
     --area-evidence: 84 34% 40%;
-    --area-evidence-soft: 84 54% 90%;
+    --area-evidence-soft: 84 54% 95%;
     --area-evidence-foreground: 84 34% 30%;
-    --area-assistant: 266 30% 58%;
-    --area-assistant-soft: 266 50% 91%;
-    --area-assistant-foreground: 266 30% 43%;
+    --area-assistant: 266 30% 61%;
+    --area-assistant-soft: 266 50% 95%;
+    --area-assistant-foreground: 266 30% 50%;
     --area-work: 341 47% 49%;
-    --area-work-soft: 341 67% 90%;
-    --area-work-foreground: 341 47% 41%;
+    --area-work-soft: 341 67% 95%;
+    --area-work-foreground: 341 47% 48%;
     --area-settings: 228 9% 15%;
     --area-settings-soft: 240 7% 93%;
     --area-settings-foreground: 228 9% 15%;
