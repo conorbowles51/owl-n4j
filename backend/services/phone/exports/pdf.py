@@ -20,11 +20,17 @@ FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.
 FONTS = [
     ("Noto Sans", "NotoSans-Regular.ttf", 400),
     ("Noto Sans", "NotoSans-Bold.ttf", 700),
+    ("Noto Sans Arabic", "NotoSansArabic-Regular.ttf", 400),
+    ("Noto Sans Hebrew", "NotoSansHebrew-Regular.ttf", 400),
+    ("Noto Sans Thai", "NotoSansThai-Regular.ttf", 400),
+    ("Noto Sans Devanagari", "NotoSansDevanagari-Regular.ttf", 400),
     ("Noto Sans Math", "NotoSansMath-Regular.ttf", 400),
     ("Noto Sans Symbols", "NotoSansSymbols-Regular.ttf", 400),
     ("Noto Sans Symbols 2", "NotoSansSymbols2-Regular.ttf", 400),
     ("Noto Emoji", "NotoEmoji-Regular.ttf", 400),
     ("Noto Sans Fullwidth", "NotoSansFullwidth-Regular.ttf", 400),  # Noto Sans JP, the fullwidth forms only
+    ("Noto Sans SC", "NotoSansSC-Variable.ttf", 400),  # Han (unified and Extension A) and kana
+    ("Noto Sans Hangul", "NotoSansHangul-Regular.ttf", 400),  # Noto Sans KR, the Hangul blocks only
 ]
 FAMILY_CHAIN = ", ".join('"%s"' % f for f in dict.fromkeys(f for f, _, _ in FONTS))
 # characters that are never drawn as glyphs of their own (joiners, variation selectors, direction marks, controls
@@ -168,3 +174,44 @@ def local_only(url, *args, **kwargs):
 def render(doc: str) -> bytes:
     import weasyprint
     return weasyprint.HTML(string=doc, base_url=FONT_DIR, url_fetcher=local_only).write_pdf()
+
+
+RENDER_MEMORY_MB = int(os.environ.get("LOUPE_PHONE_EXPORT_MEMORY_MB", "4096"))
+RENDER_TIMEOUT_SECONDS = 3 * 3600
+
+
+class RenderStopped(RuntimeError):
+    pass
+
+
+def _render_child(doc_path, out_path, memory_mb):
+    import resource
+    limit = memory_mb * 1024 * 1024
+    resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+    with open(doc_path, encoding="utf-8") as fh:
+        data = render(fh.read())
+    with open(out_path, "wb") as fh:
+        fh.write(data)
+
+
+def render_isolated(doc: str) -> bytes:
+    """``render`` in a child process whose address space is capped at ``RENDER_MEMORY_MB``: a document too large to
+    lay out fails here with ``RenderStopped`` and the server that asked for it keeps running."""
+    import multiprocessing
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="phone-export-") as tmp:
+        doc_path, out_path = os.path.join(tmp, "doc.html"), os.path.join(tmp, "out.pdf")
+        with open(doc_path, "w", encoding="utf-8") as fh:
+            fh.write(doc)
+        p = multiprocessing.get_context("spawn").Process(target=_render_child,
+                                                         args=(doc_path, out_path, RENDER_MEMORY_MB), daemon=True)
+        p.start()
+        p.join(RENDER_TIMEOUT_SECONDS)
+        if p.is_alive():
+            p.kill()
+            p.join()
+            raise RenderStopped("the PDF took longer than %d hours to draw" % (RENDER_TIMEOUT_SECONDS // 3600))
+        if p.exitcode != 0 or not os.path.exists(out_path):
+            raise RenderStopped("the PDF could not be drawn within %d MB (exit %s)" % (RENDER_MEMORY_MB, p.exitcode))
+        with open(out_path, "rb") as fh:
+            return fh.read()

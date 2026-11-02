@@ -36,7 +36,7 @@ export function ExportDialog(props: { caseId: string; filter: StreamFilter; word
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Export for counsel</DialogTitle>
-          <DialogDescription>A PDF of exactly this list: every message complete, times as on screen, every character drawn.</DialogDescription>
+          <DialogDescription>A PDF of exactly this list: every message complete, times as on screen. A character no bundled font can draw prints as [U+...] and is listed at the end.</DialogDescription>
         </DialogHeader>
         {facts.isLoading && <p role="status" className="text-sm">Counting what the export holds</p>}
         {facts.isError && <p role="alert" className="text-sm">{failureText(facts.error, "What the export holds could not be counted.")}</p>}

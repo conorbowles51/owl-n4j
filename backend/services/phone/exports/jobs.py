@@ -30,6 +30,10 @@ log = logging.getLogger(__name__)
 BUILT_FORMATS = ("pdf",)
 BUILT_SOURCES = ("stream",)
 STALE_RENDER_SECONDS = 2 * 3600  # a render claimed this long ago by a worker that died is queued again
+MAX_ATTEMPTS = 2  # a render that stopped this many times is failed with a reason, never claimed forever
+STOPPED = ("The export stopped twice while it was being drawn; it may be too large to draw at once. Your choices "
+           "are kept: choose fewer rows, or try again.")
+IDLE_SECONDS = 5
 LEFT_OUT = "Saved passwords and card numbers left out."
 
 
@@ -118,16 +122,25 @@ def _out(r) -> dict:
 # ---- drawing (the worker) --------------------------------------------------------------------------------------
 
 def _claim(engine):
-    with engine.begin() as c:
-        r = c.execute(text(
-            "SELECT export_id FROM phone_exports WHERE state = 'queued' OR (state = 'rendering' AND started_at < "
-            "now() - make_interval(secs => :stale)) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1"),
-            {"stale": STALE_RENDER_SECONDS}).one_or_none()
-        if r is None:
-            return None
-        c.execute(text("UPDATE phone_exports SET state = 'rendering', started_at = now(), progress = 0, error = NULL "
-                       "WHERE export_id = :i"), {"i": r.export_id})
-        return r.export_id
+    """The next export to draw, as (export_id, claimed_at); a render whose worker stopped is taken again until
+    ``MAX_ATTEMPTS``, then failed with ``STOPPED``."""
+    while True:
+        with engine.begin() as c:
+            r = c.execute(text(
+                "SELECT export_id, state, attempts FROM phone_exports WHERE state = 'queued' OR (state = 'rendering' "
+                "AND started_at < now() - make_interval(secs => :stale)) ORDER BY created_at FOR UPDATE SKIP LOCKED "
+                "LIMIT 1"), {"stale": STALE_RENDER_SECONDS}).one_or_none()
+            if r is None:
+                return None
+            if r.state == "rendering" and r.attempts >= MAX_ATTEMPTS:
+                c.execute(text("UPDATE phone_exports SET state = 'failed', error = :e, finished_at = now() WHERE "
+                               "export_id = :i"), {"e": STOPPED, "i": r.export_id})
+                continue
+            claimed = c.execute(text(
+                "UPDATE phone_exports SET state = 'rendering', started_at = clock_timestamp(), progress = 0, "
+                "error = NULL, attempts = attempts + 1 WHERE export_id = :i RETURNING started_at"),
+                {"i": r.export_id}).scalar()
+            return r.export_id, claimed
 
 
 def _progress(engine, export_id, value):
@@ -137,24 +150,54 @@ def _progress(engine, export_id, value):
 
 
 def run_pending(engine, limit=1) -> list:
-    """The worker's after-pass step: draw up to ``limit`` queued exports."""
+    """Draw up to ``limit`` queued exports. A failure is recorded only by the worker that still holds the claim."""
     done = []
     for _ in range(limit):
-        export_id = _claim(engine)
-        if export_id is None:
+        got = _claim(engine)
+        if got is None:
             break
+        export_id, claimed = got
         try:
-            done.append(draw(engine, export_id))
+            done.append(draw(engine, export_id, claimed=claimed))
         except Exception:  # noqa: BLE001
             ref = uuid.uuid4().hex[:8]
             log.exception("phone export %s failed (reference %s)", export_id, ref)
             with engine.begin() as c:
                 c.execute(text(
-                    "UPDATE phone_exports SET state = 'failed', error = :e, finished_at = now() WHERE export_id = :i"),
+                    "UPDATE phone_exports SET state = 'failed', error = :e, finished_at = now() WHERE export_id = :i "
+                    "AND state = 'rendering' AND started_at = :t"),
                     {"e": "The export could not be drawn. Your choices are kept; try again. Reference: %s." % ref,
-                     "i": export_id})
+                     "i": export_id, "t": claimed})
             done.append({"export_id": str(export_id), "state": "failed"})
     return done
+
+
+_worker = {"thread": None}
+
+
+def _export_loop(engine_factory, stop):
+    while not stop.is_set():
+        try:
+            busy = run_pending(engine_factory())
+        except Exception:  # noqa: BLE001
+            log.exception("phone export step failed")
+            busy = []
+        stop.wait(0 if busy else IDLE_SECONDS)
+
+
+def start_worker(engine):
+    """The sweep's after-pass hook: starts, once per process, the thread that draws exports. Exports are drawn on
+    their own thread (so reading phones never waits for a PDF) and each PDF in a child process with a memory cap
+    (``pdf.render_isolated``), so a very large export fails with a reason instead of stopping the server."""
+    import threading
+    t = _worker["thread"]
+    if t is not None and t.is_alive():
+        return
+    from services.phone import sweep
+    stop = sweep._STOP.get("event") or threading.Event()
+    _worker["thread"] = threading.Thread(target=_export_loop, args=(lambda: engine, stop), name="phone-exports",
+                                         daemon=True)
+    _worker["thread"].start()
 
 
 def _rows(conn, f):
@@ -166,7 +209,7 @@ def _rows(conn, f):
     return idx, days
 
 
-def draw(engine, export_id) -> dict:
+def draw(engine, export_id, claimed=None) -> dict:
     from services.phone.exports import pdf
     from services.phone.readings import phone_labels
     with engine.connect() as conn:
@@ -220,7 +263,7 @@ def draw(engine, export_id) -> dict:
         title=options.get("title") or "Phone messages", case_name=e.case_title or "", generated=generated,
         export_id=str(export_id), contains=contains, days=out_days,
         participants=sorted((k, sorted(v)) for k, v in people.items()), page=options.get("page_size") or "letter")
-    data = pdf.render(doc)
+    data = pdf.render_isolated(doc)
     sha = hashlib.sha256(data).hexdigest()
     folder = export_dir() / str(e.case_id)
     folder.mkdir(parents=True, exist_ok=True)
@@ -228,17 +271,18 @@ def draw(engine, export_id) -> dict:
     tmp = folder / (".%s.part" % export_id)
     tmp.write_bytes(data)
     os.replace(tmp, final)
-    filename = "%s.pdf" % "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in
-                                  (options.get("title") or "phone-messages"))[:80].strip()
+    stem = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in (options.get("title") or ""))[:80]
+    filename = "%s.pdf" % (stem.strip(" _") and stem.strip() or "phone-messages")
     counts = {"total": total, "messages": facts["messages"], "calls": facts["calls"],
               "unconfirmed": facts["unconfirmed"], "phones": facts["phones"],
               "missing_characters": sum(missing.values()), "snapshot": snap}
     with engine.begin() as c:
         c.execute(text(
             "UPDATE phone_exports SET state = 'done', progress = 1, counts = CAST(:k AS jsonb), filename = :n, "
-            "size = :s, sha256 = :h, storage_path = :p, finished_at = now(), snapshot = :snap WHERE export_id = :i"),
+            "size = :s, sha256 = :h, storage_path = :p, finished_at = now(), snapshot = :snap WHERE export_id = :i AND state = 'rendering' AND "
+            "(CAST(:t AS timestamptz) IS NULL OR started_at = :t)"),
             {"k": json.dumps(counts), "n": filename, "s": len(data), "h": sha, "p": str(final), "snap": snap,
-             "i": export_id})
+             "i": export_id, "t": claimed})
     return {"export_id": str(export_id), "state": "done", "counts": counts}
 
 
@@ -255,4 +299,4 @@ def _kinds_words(facts) -> str:
 def install():
     """Called by the sweep worker: queued exports are drawn after each pass (one writer)."""
     from services.phone import sweep
-    sweep.register_after_pass(run_pending)
+    sweep.register_after_pass(start_worker)

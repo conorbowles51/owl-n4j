@@ -420,14 +420,16 @@ def test_naming_a_phone_is_a_decision_with_its_reason_and_every_screen_uses_the_
 
 
 def test_comparing_two_phones_counts_on_both_and_only_on_each_with_the_reason(api):
-    """07 J-16: messages matched across two phones by app, time to the second and text; copies on one phone count
+    """07 J-16: messages matched across two phones by 05 5.3's keys (family, text, within 2 minutes); copies count
     once; a message outside the other phone's period says so; undated messages are counted, not compared; a person
     narrows both sides; a phone of another case is refused."""
     c, case, ext = api["client"], api["case"], api["ext"]
     with api["engine"].begin() as conn:
         ext2, _ = phone(conn, uuid.UUID(case), label="C5", events=[
-            msg(at(2023, 3, 14, 19, 7, 12), ANA, [OWNER], thread="t"),  # the same message as on C3
-            msg(at(2023, 3, 14, 19, 7, 12), ANA, [OWNER], thread="t"),  # and its copy on C5
+            # C3's short "hello", received there, is sent on C5 28 s later (a short text pairs only when one side
+            # sent it and the other received it, 05 5.3.3); it is reported twice on C5 (one copy group)
+            msg(at(2023, 3, 14, 19, 7, 40), OWNER, [ANA], thread="t", dup="d1"),
+            msg(at(2023, 3, 14, 19, 7, 40), OWNER, [ANA], thread="t", dup="d1"),
             msg(at(2023, 3, 14, 20), ANA, [OWNER], body="only here", thread="t"),
             msg(at(2024, 1, 1), BEN, [OWNER], body="later", thread="u")])
     r = c.get("/api/phones/compare", params={"case_id": case, "a": ext, "b": str(ext2)})

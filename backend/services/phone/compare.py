@@ -1,21 +1,29 @@
 """Compare two phones (07 J-16): how many messages and calls are on both, only on one, only on the other.
 
-A message or call is matched across the two phones by a key read from its own record: kind, app, instant to the
-second, and the body's hash (calls: the duration instead of a body). Participants are left out of the key because
-each phone records its own owner implicitly, so the same message names its sender differently on the two sides.
-Copies of one message on the same phone count once. Records with no time are not compared and are counted.
+The same message on two phones is found by 05 section 5.3's keys, read from each record: the same platform family
+(K1: ``sms`` for the phone's own messages, ``phone`` for cellular calls, else the app), the same text after the
+search fold (K4: decorative letters, case and spacing folded; calls: durations within 2 seconds), and times within
+120 seconds (K5, tau before a clock offset is known). Pairs are assigned one to one, closest in time first (5.3.4).
+A text shorter than 10 characters or seen more than 3 times on either phone pairs only when the two sides'
+directions are complementary (sent on one, received on the other), so common short replies do not pair unrelated
+messages (5.3.3). Copies of one message on the same phone count once, as on screen. Records with no time are not
+compared and are counted.
 
-Decision: this key stands until approach 12 (05 section 15.3 step 3) ships its natural keys; J-16's counts then
-read approach 12's ``present_in_both`` / ``only_in_*`` for the same pair and scope (07 J-16 targets). Reverse
-when that result exists.
+Decision: these keys stand until approach 12 / approach 5 ship their results (05 sections 5 and 15.3); J-16's
+counts then read those results for the same pair and scope. Reverse when that result exists.
 """
 from __future__ import annotations
 
 from sqlalchemy import text
 
 KINDS = ("message", "call")
-KEY_WORDS = ("Matched by app, time to the second and the message text (calls: the duration). Copies on one phone "
-             "count once.")
+KEY_WORDS = ("Matched when the app family and the text agree and the times are within 2 minutes (calls: the "
+             "duration within 2 seconds); short or common texts also need one side sent and the other received. "
+             "Copies on one phone count once.")
+TAU_SECONDS = 120
+CALL_SECONDS = 2
+SMS_APPS = {"", "sms", "mms", "native messages", "ims service", "messages", "android calllog database"}
+PHONE_APPS = {"", "phone", "native phone", "cellular"}
 
 
 class NotFound(LookupError):
@@ -45,25 +53,24 @@ def compare(conn, case_id, a, b, person=None) -> dict:
         "'call') GROUP BY ev.extraction_id"), p)}
     p.update({"af": getattr(periods.get(a), "first", None), "al": getattr(periods.get(a), "last", None),
               "bf": getattr(periods.get(b), "first", None), "bl": getattr(periods.get(b), "last", None)})
-    rows = conn.execute(text(
-        "WITH k AS (SELECT DISTINCT ev.extraction_id, ev.kind, coalesce(ev.app, '') AS app, "
-        "date_trunc('second', ev.sort_instant) AS t, CASE WHEN ev.kind = 'call' THEN "
-        "coalesce(CAST(ev.call_duration_s AS text), '') ELSE md5(coalesce(ev.body, '')) END AS h "
-        "FROM pv_comm_event ev WHERE ev.case_id = :c AND ev.extraction_id IN (CAST(:a AS uuid), CAST(:b AS uuid)) "
-        "AND ev.kind IN ('message', 'call') AND ev.sort_instant IS NOT NULL " + scope + "), "
-        "s AS (SELECT kind, t, bool_or(extraction_id = CAST(:a AS uuid)) AS ina, "
-        "bool_or(extraction_id = CAST(:b AS uuid)) AS inb FROM k GROUP BY kind, app, t, h) "
-        "SELECT kind, count(*) FILTER (WHERE ina AND inb) AS both, "
-        "count(*) FILTER (WHERE ina AND NOT inb) AS only_a, "
-        "count(*) FILTER (WHERE ina AND NOT inb AND (CAST(:bf AS timestamptz) IS NULL OR t < date_trunc('second', "
-        "CAST(:bf AS timestamptz)) OR t > CAST(:bl AS timestamptz))) AS only_a_outside, "
-        "count(*) FILTER (WHERE inb AND NOT ina) AS only_b, "
-        "count(*) FILTER (WHERE inb AND NOT ina AND (CAST(:af AS timestamptz) IS NULL OR t < date_trunc('second', "
-        "CAST(:af AS timestamptz)) OR t > CAST(:al AS timestamptz))) AS only_b_outside FROM s GROUP BY kind"), p)
+    evs = conn.execute(text(
+        "SELECT DISTINCT ON (ev.extraction_id, coalesce(ev.dup_group_uid, ev.event_uid::text)) ev.extraction_id, "
+        "ev.kind, ev.app, ev.sort_instant AS at, ev.body, ev.call_duration_s AS d, ev.direction FROM pv_comm_event ev "
+        "WHERE ev.case_id = :c AND ev.extraction_id IN (CAST(:a AS uuid), CAST(:b AS uuid)) AND ev.kind IN "
+        "('message', 'call') AND ev.sort_instant IS NOT NULL " + scope + " ORDER BY ev.extraction_id, "
+        "coalesce(ev.dup_group_uid, ev.event_uid::text), ev.sort_instant, ev.event_uid"), p).fetchall()
     kinds = {k: {"both": 0, "only_a": 0, "only_a_outside": 0, "only_b": 0, "only_b_outside": 0} for k in KINDS}
-    for r in rows:
-        kinds[r.kind] = {"both": r.both, "only_a": r.only_a, "only_a_outside": r.only_a_outside,
-                         "only_b": r.only_b, "only_b_outside": r.only_b_outside}
+    matched = match(evs, a, b)
+    for i, r in enumerate(evs):
+        mine = str(r.extraction_id)
+        if mine == a and i in matched:
+            kinds[r.kind]["both"] += 1
+        elif i not in matched:
+            other = periods.get(b if mine == a else a)
+            k = "only_a" if mine == a else "only_b"
+            kinds[r.kind][k] += 1
+            if other is None or other.first is None or r.at < other.first or r.at > other.last:
+                kinds[r.kind][k + "_outside"] += 1
 
     def side(ext):
         r = periods.get(ext)
@@ -71,3 +78,53 @@ def compare(conn, case_id, a, b, person=None) -> dict:
         return {"extraction_id": ext, "label": labels.get(ext, "A phone"), "first": iso(getattr(r, "first", None)),
                 "last": iso(getattr(r, "last", None)), "no_time": int(getattr(r, "no_time", 0) or 0)}
     return {"case_id": case_id, "person": person, "a": side(a), "b": side(b), "kinds": kinds, "key": KEY_WORDS}
+
+
+def family(kind, app) -> str:
+    a = (app or "").strip().casefold()
+    if kind == "call":
+        return "phone" if a in PHONE_APPS else a
+    return "sms" if a in SMS_APPS else ("imessage" if a == "imessage" else a)
+
+
+def match(evs, a, b) -> set:
+    """Indexes of ``evs`` paired one to one across phones ``a`` and ``b`` (05 section 5.3.4)."""
+    from collections import Counter, defaultdict
+
+    from services.phone import fold as F
+    keyed = []
+    for i, r in enumerate(evs):
+        side = 0 if str(r.extraction_id) == a else 1
+        text = F.fold(r.body or "") if r.kind == "message" else ""
+        text = " ".join(text.split())
+        keyed.append((i, side, family(r.kind, r.app), text))
+    seen = Counter((side, fam, t) for _, side, fam, t in keyed if t)
+    groups = defaultdict(lambda: ([], []))
+    for i, side, fam, t in keyed:
+        r = evs[i]
+        if r.kind == "message" and not t:
+            continue  # a message with no text is not matched by content
+        groups[(r.kind, fam, t)][side].append(i)
+    cands = []
+    for (kind, fam, t), (xs, ys) in groups.items():
+        if not xs or not ys:
+            continue
+        weak = kind == "message" and (len(t) < 10 or seen[(0, fam, t)] > 3 or seen[(1, fam, t)] > 3)
+        for x in xs:
+            rx = evs[x]
+            for y in ys:
+                ry = evs[y]
+                gap = abs((ry.at - rx.at).total_seconds())
+                if gap > TAU_SECONDS:
+                    continue
+                if kind == "call" and (rx.d is None or ry.d is None or abs(rx.d - ry.d) > CALL_SECONDS):
+                    continue
+                if weak and {rx.direction, ry.direction} != {"incoming", "outgoing"}:
+                    continue
+                cands.append((gap, x, y))
+    cands.sort()
+    out = set()
+    for gap, x, y in cands:
+        if x not in out and y not in out:
+            out.update((x, y))
+    return out

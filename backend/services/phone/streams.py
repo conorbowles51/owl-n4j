@@ -145,7 +145,8 @@ class Query:
         keys = list(keys)
         match = "%s = ANY(CAST(%s AS text[]))" % (PARTY_KEY_SQL, self._p([k for k in keys if k != PHONE_OWNER]))
         if PHONE_OWNER in keys:  # each phone's own owner (07 J-3: Between A and B, B the owner of the phone)
-            match = "(%s OR %s = ok.k)" % (match, PARTY_KEY_SQL)
+            # on a phone with no known owner key, the report's own IsPhoneOwner mark still names the owner's part
+            match = "(%s OR %s = ok.k OR p.is_phone_owner)" % (match, PARTY_KEY_SQL)
         return ("EXISTS (SELECT 1 FROM phone_participations p WHERE p.record_uid = ev.record_uid AND "
                 "p.generation = ev.generation AND %s AND %s)" % (cond, match))
 
@@ -157,7 +158,8 @@ class Query:
 
     def member(self, keys):
         keys = list(keys)
-        own = " OR ok.k = ANY(t.party_identity_keys)" if PHONE_OWNER in keys else ""
+        # every conversation on a phone is its owner's; a phone with no known owner key is not left out
+        own = " OR ok.k IS NULL OR ok.k = ANY(t.party_identity_keys)" if PHONE_OWNER in keys else ""
         return "(%s OR EXISTS (SELECT 1 FROM phone_threads t WHERE t.thread_key = ev.thread_key AND t.generation = " \
                "ev.generation AND (t.party_identity_keys && CAST(%s AS text[])%s)))" % (
                    self.party(keys), self._p([k for k in keys if k != PHONE_OWNER]), own)
@@ -297,11 +299,11 @@ def limits_for(conn, f: StreamFilter) -> list:
         "SELECT extraction_id, state FROM pv_extraction WHERE case_id = :c AND standing = 'active' AND state <> "
         "'ingested'" + (" AND extraction_id = ANY(CAST(:p AS uuid[]))" if f.phones else "")),
         {"c": f.case_id, "p": f.phones}).fetchall()
+    out = _owner_unknown_limits(conn, f)
     if not rows:
-        return []
+        return out
     from services.phone import readings
     names = readings.phone_labels(conn, f.case_id)
-    out = []
     for ext, state in rows:
         label = names.get(str(ext), "A phone")
         msg = ("%s's report could only be partly read. Results from %s are incomplete. See Phone summary."
@@ -310,6 +312,25 @@ def limits_for(conn, f: StreamFilter) -> list:
         out.append({"kind": "phone_incomplete", "phone": str(ext), "state": state, "shown": None, "total": None,
                     "message": msg})
     return out
+
+
+def _owner_unknown_limits(conn, f: StreamFilter) -> list:
+    """When the filter names "the owner of each phone", a phone in scope with no known owner is named: there, only
+    the parts the report itself marks as the owner's (IsPhoneOwner) can count."""
+    if PHONE_OWNER not in (f.participants or []):
+        return []
+    ctx = L.LabelContext(conn, f.case_id, f.names.mode)
+    phones = [str(r[0]) for r in conn.execute(text(
+        "SELECT id FROM phone_extractions WHERE case_id = :c AND standing = 'active'" +
+        (" AND id = ANY(CAST(:p AS uuid[]))" if f.phones else "") + " ORDER BY created_at, id"),
+        {"c": f.case_id, "p": f.phones})]
+    known = {str(e) for e, o in ctx.owners.items() if o.get("keys")}
+    from services.phone import readings
+    names = readings.phone_labels(conn, f.case_id)
+    return [{"kind": "owner_unknown", "phone": p, "state": None, "shown": None, "total": None,
+             "message": "No owner is known for %s. There, only the parts its report marks as the owner's count as "
+                        "the owner's; set the owner on the phone summary to count the rest." % names.get(p, "a phone")}
+            for p in phones if p not in known]
 
 
 def shown_count(conn, f: StreamFilter) -> int:

@@ -37,6 +37,7 @@ def upgrade():
         sa.Column("storage_path", sa.Text(), nullable=True),
         sa.Column("error", sa.Text(), nullable=True),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("attempts", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint("format IN ('pdf', 'rsmf')", name="ck_phone_exports_format"),
         sa.CheckConstraint("state IN ('queued', 'rendering', 'done', 'failed')", name="ck_phone_exports_state"),

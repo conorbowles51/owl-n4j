@@ -154,8 +154,8 @@ def test_a_failed_drawing_keeps_the_choices_and_gives_a_reference(world, monkeyp
     from services.phone.exports import jobs, pdf
 
     def boom(doc):
-        raise RuntimeError("synthetic failure")
-    monkeypatch.setattr(pdf, "render", boom)
+        raise pdf.RenderStopped("synthetic failure")
+    monkeypatch.setattr(pdf, "render_isolated", boom)
     with world["engine"].begin() as c:
         made = jobs.create(c, case_id=world["case"], user_id=world["user"], fmt="pdf", source="stream",
                            filter_body={}, options={"title": "kept"})
@@ -191,3 +191,48 @@ def test_another_cases_filter_cannot_be_smuggled_in(world):
         d = jobs.describe(c, world["other"], {"case_id": str(world["case"])})  # the route's case wins
     assert d["total"] == 0
     assert uuid.UUID(d["case_id"]) == world["other"]
+
+
+SCRIPTS = {"Arabic": "مرحبا", "Hebrew": "שלום", "Thai": "สวัสดี",
+           "Devanagari": "नमस्ते", "Han": "中文㐀", "Kana": "ひらがなカタ",
+           "Hangul": "한글", "Cyrillic": "Привет", "Greek": "Γεια"}
+
+
+def test_e3_common_scripts_are_drawn_not_printed_as_tokens():
+    from services.phone.exports import pdf
+    for name, sample in SCRIPTS.items():
+        missing = Counter()
+        assert pdf.drawable(sample, missing) == sample and not missing, name
+    rows = [{"time": {"full": "t"}, "phone": {"label": "C1"}, "body": s, "record_uid": "r%d" % i}
+            for i, s in enumerate(SCRIPTS.values())]
+    doc, missing = pdf.build_html(title="t", case_name="c", generated="g", export_id="x", contains=[],
+                                  days=[("Day", rows)], participants=[])
+    assert not missing
+    txt = "".join(p.extract_text() for p in pypdf.PdfReader(io.BytesIO(pdf.render(doc))).pages)
+    for name in ("Han", "Kana", "Hangul", "Cyrillic", "Greek", "Hebrew"):  # right-to-left text may extract reversed
+        assert SCRIPTS[name] in txt or SCRIPTS[name][::-1] in txt, name
+
+
+def test_a_render_that_stopped_twice_is_failed_with_a_reason_not_claimed_forever(world):
+    from services.phone.exports import jobs
+    with world["engine"].begin() as c:
+        made = jobs.create(c, case_id=world["case"], user_id=world["user"], fmt="pdf", source="stream",
+                           filter_body={}, options={})
+        c.execute(text("UPDATE phone_exports SET state = 'rendering', attempts = 2, started_at = now() - interval "
+                       "'3 hours' WHERE export_id = :i"), {"i": made["export_id"]})
+    assert jobs.run_pending(world["engine"]) == []
+    with world["engine"].connect() as c:
+        state = jobs.get(c, world["case"], made["export_id"])
+    assert state["state"] == "failed" and state["error"] == jobs.STOPPED
+
+
+def test_a_pdf_too_large_for_its_memory_cap_fails_in_its_own_process(monkeypatch):
+    from services.phone.exports import pdf
+    monkeypatch.setattr(pdf, "RENDER_MEMORY_MB", 48)  # too little even to start: the child stops, this process lives
+    with pytest.raises(pdf.RenderStopped, match="could not be drawn within 48 MB"):
+        pdf.render_isolated("<p>x</p>")
+
+
+def test_a_title_of_punctuation_still_names_the_file(world):
+    state, _, _ = _export(world, title="?!.")
+    assert state["file"]["filename"] == "phone-messages.pdf"
