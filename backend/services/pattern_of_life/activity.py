@@ -232,8 +232,7 @@ def build(conn, extraction_id, mappings=None) -> dict:
         "SELECT t.record_uid, t.root_record_uid, t.document_index, t.ordinal, t.model_type, t.field_name, "
         "t.field_path, t.value_index, t.effective_instant, t.local_wall_time, t.offset_state, t.original_text, "
         "t.semantics, t.meaning_mapping_row_id, t.instant_basis, t.deleted_state, t.decoding_confidence, r.body, "
-        "r.top_ordinal, CASE WHEN r.parent_ordinal IS NULL THEN NULL ELSE root.model_type END AS root_type, "
-        "CASE WHEN r.parent_ordinal IS NULL THEN NULL ELSE root.body END AS root_body "
+        "r.top_ordinal, CASE WHEN r.parent_ordinal IS NULL THEN NULL ELSE root.model_type END AS root_type "
         "FROM phone_time_values t "
         "JOIN phone_records r ON r.extraction_id = t.extraction_id AND r.document_index = t.document_index "
         "  AND r.ordinal = t.ordinal "
@@ -256,10 +255,18 @@ def build(conn, extraction_id, mappings=None) -> dict:
         wanted = idx.fact_fields(t)
         fields_used[t].update(wanted)
         fvals = _field_values(first.body, wanted)
-        if first.root_body is not None:
+        if first.root_type is not None:
+            # a nested record takes its root's Source. The root body is read once per root, not shipped on every
+            # time value of every child (a chat's body repeated on each message's rows held gigabytes in the
+            # fetch buffers on a 967,543-record report); rows arrive in record order, so a root's children are
+            # contiguous and one lookup serves them all
             key = (doc, first.top_ordinal)
             if root_cache["key"] != key:
-                root_cache.update(key=key, source=_first(_field_values(first.root_body, {"Source"}).get("Source")))
+                root_body = conn.execute(text(
+                    "SELECT body FROM phone_records WHERE extraction_id = :e AND document_index = :d AND ordinal = :o"),
+                    {"e": extraction_id, "d": doc, "o": first.top_ordinal}).scalar()
+                root_cache.update(key=key, source=_first(_field_values(root_body, {"Source"}).get("Source"))
+                                  if root_body is not None else None)
             source = root_cache["source"]
         else:
             source = _first(fvals.get("Source"))
@@ -376,42 +383,68 @@ def reclassify(conn, extraction_id, mappings=None) -> dict:
     for t, have in held.items():
         if not idx.fact_fields(t) <= set(have):
             return dict(build(conn, extraction_id, mappings), fallback="new_fact_field")
-    n = 0
-    batch = []
+    # an event's class depends only on these inputs, and a phone's events share few distinct sets of them (231 on a
+    # 542,091-event report), so each set is classified once and one set-based UPDATE writes the rows whose result
+    # changed (a row-by-row UPDATE of every event took 177 s there; the target is 60 s, 04 section 11)
+    n = changed = 0
+    sets = []
     for row in conn.execute(text(
-            "SELECT id, record_type, time_field, time_semantics, offset_status, deleted_state, decoding_confidence, "
-            "match_facts FROM pol_activity_event WHERE extraction_id = :e").execution_options(
-            stream_results=True, yield_per=5000), {"e": extraction_id}):
+            "SELECT " + _inputs_key() + " AS k, count(*) AS n, min(record_type) AS record_type, "
+            "min(time_field) AS time_field, min(time_semantics) AS time_semantics, "
+            "min(offset_status) AS offset_status, "
+            "min(deleted_state) AS deleted_state, min(decoding_confidence) AS decoding_confidence, "
+            "(array_agg(match_facts))[1] AS match_facts FROM pol_activity_event WHERE extraction_id = :e GROUP BY 1"),
+            {"e": extraction_id}):
         ev = {"record_type": row.record_type, "base_field": row.time_field.split("[")[0],
               "time_semantics": row.time_semantics, "offset_status": row.offset_status,
               "deleted_state": row.deleted_state, "decoding_confidence": row.decoding_confidence,
               "match_facts": row.match_facts}
         classify_event(idx, ev)
-        batch.append({"id": row.id, "ac": ev["activity_class"], "cb": ev["class_basis"], "cl": ev["class_level"],
-                      "ar": ev["activity_mapping_row"], "av": ev["activity_mapping_version"], "ac2": ev["actor"],
-                      "ph": ev["physical"], "fl": ev["attribution_flags"], "fr": ev["attribution_mapping_rows"],
-                      "vk": ev["value_key"]})
-        if len(batch) >= 5000:
-            n += _apply_batch(conn, batch)
-            batch = []
-    if batch:
-        n += _apply_batch(conn, batch)
+        sets.append({"k": row.k, "ac": ev["activity_class"], "cb": ev["class_basis"], "cl": ev["class_level"],
+                     "ar": ev["activity_mapping_row"], "av": ev["activity_mapping_version"], "ac2": ev["actor"],
+                     "ph": ev["physical"], "fl": ev["attribution_flags"], "fr": ev["attribution_mapping_rows"],
+                     "vk": ev["value_key"]})
+        n += row.n
+    if sets:
+        changed = _apply_sets(conn, extraction_id, sets)
     _counterparts(conn, extraction_id, st.case_id, st.generation)
     calls = _judgement_calls(conn, idx, extraction_id, st.case_id, st.generation)
     _state(conn, extraction_id, st.case_id, "ready", gen=st.generation, idx=idx,
            sig=signature(conn, extraction_id, idx), facts_fields=held,
-           counts={"reclassified": n, "judgement_calls": calls, "seconds": round(time.monotonic() - started, 1)})
-    return {"status": "ready", "reclassified": n, "judgement_calls": calls}
+           counts={"reclassified": n, "changed": changed, "judgement_calls": calls,
+                   "seconds": round(time.monotonic() - started, 1)})
+    return {"status": "ready", "reclassified": n, "changed": changed, "judgement_calls": calls}
 
 
-def _apply_batch(conn, batch):
+# the inputs classify_event reads from a stored event, as one unambiguous key (nulls stay distinct from values)
+_INPUTS = ("record_type", "time_field", "time_semantics", "offset_status", "deleted_state", "decoding_confidence",
+           "match_facts")
+
+
+def _inputs_key(alias=""):
+    return "md5(jsonb_build_array(%s)::text)" % ", ".join(alias + c for c in _INPUTS)
+
+
+def _apply_sets(conn, extraction_id, sets) -> int:
+    """Write each input set's result to the events holding that set whose result differs; the number written."""
+    conn.execute(text("DROP TABLE IF EXISTS pg_temp.pol_reclass"))
     conn.execute(text(
-        "UPDATE pol_activity_event SET activity_class = :ac, class_basis = :cb, class_level = :cl, "
-        "activity_mapping_row = :ar, activity_mapping_version = :av, actor = CAST(:ac2 AS varchar), physical = :ph, "
-        "attribution_flags = :fl, attribution_mapping_rows = :fr, value_key = :vk, "
-        "counterpart_identity_id = CASE WHEN CAST(:ac2 AS varchar) = 'counterpart' OR record_type <> 'Party' "
-        "THEN counterpart_identity_id ELSE NULL END WHERE id = :id"), batch)
-    return len(batch)
+        "CREATE TEMP TABLE pol_reclass (k text PRIMARY KEY, ac varchar, cb varchar, cl varchar, ar varchar, av uuid, "
+        "ac2 varchar, ph boolean, fl text[], fr text[], vk varchar) ON COMMIT DROP"))
+    conn.execute(text("INSERT INTO pol_reclass VALUES (:k, :ac, :cb, :cl, :ar, CAST(:av AS uuid), :ac2, :ph, :fl, "
+                      ":fr, :vk)"), sets)
+    return conn.execute(text(
+        "UPDATE pol_activity_event e SET activity_class = x.ac, class_basis = x.cb, class_level = x.cl, "
+        "activity_mapping_row = x.ar, activity_mapping_version = x.av, actor = x.ac2, physical = x.ph, "
+        "attribution_flags = x.fl, attribution_mapping_rows = x.fr, value_key = x.vk, "
+        "counterpart_identity_id = CASE WHEN x.ac2 = 'counterpart' OR e.record_type <> 'Party' "
+        "THEN e.counterpart_identity_id ELSE NULL END "
+        "FROM pol_reclass x WHERE e.extraction_id = :e AND " + _inputs_key("e.") + " = x.k AND "
+        "(e.activity_class, e.class_basis, e.class_level, e.activity_mapping_row, "
+        "e.activity_mapping_version, e.actor, e.physical, e.attribution_flags, e.attribution_mapping_rows, "
+        "e.value_key) "
+        "IS DISTINCT FROM (x.ac, x.cb, x.cl, x.ar, x.av, x.ac2, x.ph, x.fl, x.fr, x.vk)"),
+        {"e": extraction_id}).rowcount
 
 
 # ---- judgement calls (02 section 6.10; 04 decision 18) ---------------------------------------------------------

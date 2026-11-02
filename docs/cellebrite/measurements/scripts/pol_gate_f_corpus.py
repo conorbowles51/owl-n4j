@@ -119,9 +119,8 @@ def http():
         if all(keys.values()):
             dossier = str(uuid.uuid4())
             uid = c.execute(text("SELECT owner_user_id FROM cases WHERE id = :c"), {"c": CASE}).scalar()
-            c.execute(text("INSERT INTO case_profiles (id, case_id, dossier_type, display_name, display_name_snapshot, "
-                           "linkage_state, status, created_by_user_id) VALUES (:d, :c, 'person', 'Timing fixture', "
-                           "'Timing fixture', 'unlinked', 'active', :u)"), {"d": dossier, "c": CASE, "u": uid})
+            c.execute(text("INSERT INTO case_profiles (id, case_id, profile_type, display_name, created_by_user_id) "
+                           "VALUES (:d, :c, 'person', 'Timing fixture', :u)"), {"d": dossier, "c": CASE, "u": uid})
             for e, k in keys.items():
                 c.execute(text("INSERT INTO phone_identity_links (case_id, identity_id, dossier_id, decision_id) "
                                "SELECT :c, id, :d, :x FROM phone_identities WHERE identity_key = :k AND case_id = :c "

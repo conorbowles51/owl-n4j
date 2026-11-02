@@ -31,12 +31,14 @@ def ts(ordinal, body_path, field, mt, text_value="2023-03-14T15:07:12-04:00", of
             "off": -240 if offset == "explicit" else None, "ft": None, "lw": wall}
 
 
-def message(top, *, platform=None, deleted="Intact", confidence="High", other_reads=False):
+def message(top, *, platform=None, deleted="Intact", confidence="High", other_reads=False, source=None):
     """An outgoing message: From party is the owner. Records top..top+2."""
     f = [fld("TimeStamp", ("TimeStamp", "2023-03-14T15:07:12-04:00")), refs("From", top + 1, kind="modelField"),
          refs("To", top + 2)]
     if platform:
         f.append(fld("Platform", ("Platform", platform)))
+    if source:
+        f.append(fld("Source", ("String", source)))
     msg = model("InstantMessage", f, deleted_state=deleted, decoding_confidence=confidence)
     sender = model("Party", [fld("Identifier", ("String", OWNER)), fld("Role", ("PartyRole", "From")),
                              fld("IsPhoneOwner", ("Boolean", "True"))])
@@ -199,6 +201,24 @@ def test_rebuilding_twice_gives_identical_rows(hooks):
 
 
 @needs_template
+def test_a_nested_record_takes_its_roots_source(hooks):
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = phone(c, case, [message(0, source="SyntheticApp", other_reads=True),
+                                  message(3, other_reads=True), message(6, source="OtherApp", other_reads=True)])
+        run(engine, ext)
+        with engine.connect() as c:
+            ev = events(c, ext)
+            for top, src in ((0, "SyntheticApp"), (3, None), (6, "OtherApp")):
+                read = ev[("Party", "DateRead", top + 2)]  # the recipient's read time, a record nested in the message
+                assert read.source_app == src and read.stream_key == "Party/%s" % (src or "-")
+                assert ev[("InstantMessage", "TimeStamp", top)].source_app == src
+
+
+@needs_template
 def test_a_new_mapping_version_reclassifies_without_reading_records_again(hooks):
     setup(hooks)
     with fresh_engine() as engine:
@@ -226,6 +246,10 @@ def test_a_new_mapping_version_reclassifies_without_reading_records_again(hooks)
         out = activity.project_stale(engine)
         assert out[str(ext)]["status"] == "ready" and "fallback" not in out[str(ext)]
         assert out[str(ext)]["reclassified"] == 1
+        assert out[str(ext)]["changed"] == 1  # one set-based write of the rows whose result moved
+        with engine.begin() as c:
+            again = activity.reclassify(c, ext)
+        assert again["reclassified"] == 1 and again["changed"] == 0  # nothing moved, nothing written
         with engine.connect() as c:
             after = events(c, ext)[("DeviceEvent", "StartTime", 0)]
             assert (after.activity_class, after.strength) == ("interaction", "strong")
