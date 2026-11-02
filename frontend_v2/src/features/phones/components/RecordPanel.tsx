@@ -101,6 +101,7 @@ export function RecordDetailView({
             return (
               <div key={r.id} className="mt-1 flex flex-col gap-1">
                 <p>{r.sentence}</p>
+                <p className="text-muted-foreground">Either choice opens this reading on Needs a decision with its examples, where it is decided.</p>
                 <div className="flex gap-2">
                   {/* Both open the reading on Needs a decision with its examples; nothing is decided from here. */}
                   <Button size="sm" variant="outline" onClick={() => navigate(href)}>

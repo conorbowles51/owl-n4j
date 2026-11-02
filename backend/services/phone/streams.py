@@ -544,8 +544,11 @@ def thread_list(conn, f: StreamFilter, *, sort: str = "recent") -> dict:
         "WITH m AS (%s) SELECT m.extraction_id, coalesce(m.thread_key, :none || m.extraction_id::text) AS tk, "
         "count(*) AS n, min(m.sort_instant) AS first_i, max(m.sort_instant) AS last_i, "
         "count(*) FILTER (WHERE lower(coalesce(m.deleted_state, '')) IN ('deleted','trash')) AS deleted, "
-        "count(*) FILTER (WHERE %s) AS unreadable, max(m.app) AS app FROM m WHERE %s "
-        "GROUP BY m.extraction_id, 2" % (q.matched_sql(), UNREADABLE_SQL, _shown(g))),
+        "count(*) FILTER (WHERE %s) AS unreadable, max(m.app) AS app FROM (SELECT m.*, row_number() OVER ("
+        "PARTITION BY coalesce(m.extraction_id::text || ':' || m.dup_group_uid, m.event_uid::text), m.thread_key "
+        "ORDER BY m.copy_rank) AS thread_rank FROM m) m WHERE %s "
+        "GROUP BY m.extraction_id, 2" % (q.matched_sql(), UNREADABLE_SQL,
+                                        "thread_rank = 1" if g.collapse_copies else "true")),
         dict(q.params, none=NO_THREAD_PREFIX)).fetchall()
     meta = {t.thread_key: t for t in conn.execute(text(
         "SELECT thread_key, extraction_id, app, thread_kind, chat_type, title_in_record, event_count, "
@@ -586,9 +589,14 @@ def thread_list(conn, f: StreamFilter, *, sort: str = "recent") -> dict:
                       "has_unreadable": int(r.unreadable) > 0,
                       "review": review_marks.review_words(mark, total) if mark else None})
     _sort_threads(items, sort)
-    reviewed = sum(1 for i in items if i["review"])
+    # Copies are shown once per thread, not once per case: a copy of a message in another thread (an SMS and its
+    # app copy) still counts in its own thread, so no thread drops out of the list (review of 03-3).
+    # A thread with messages added since its review is partly reviewed and counts as not yet reviewed (J-13b).
+    reviewed = sum(1 for i in items if i["review"] and not i["review"]["added_since"])
+    partly = sum(1 for i in items if i["review"] and i["review"]["added_since"])
     out = envelope(conn, g, items=items, counts={"threads": len(items), "threads_total": total_threads,
-                                                 "reviewed": reviewed, "not_reviewed": len(items) - reviewed})
+                                                 "reviewed": reviewed, "partly_reviewed": partly,
+                                                 "not_reviewed": len(items) - reviewed})
     out["sort"] = sort
     return out
 

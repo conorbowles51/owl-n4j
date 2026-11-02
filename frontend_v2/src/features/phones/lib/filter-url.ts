@@ -127,9 +127,10 @@ export function viewToFilter(caseId: string, v: ConversationView, zoneName: stri
   if (v.phones.length) f.phones = v.phones
   if (withThread && v.thread && v.tab === "threads") f.threads = [v.thread]
   const between = v.mode === "between" && v.people.length === 2
-  if (v.people.length && (v.mode !== "between" || between)) {
+  if (v.people.length) {
     f.participants = v.people
-    f.participant_mode = MODE[v.mode]
+    // Between needs exactly two people; with one or three it reads as Involving, never as no people filter at all.
+    f.participant_mode = v.mode === "between" && !between ? "any" : MODE[v.mode]
     if (v.expand) f.expand_person_identities = true
     // "All channels" (07 J-3) takes in group chats with both people as well as their direct messages.
     if (between) f.group_scope = v.allChannels ? "include_groups" : "direct"

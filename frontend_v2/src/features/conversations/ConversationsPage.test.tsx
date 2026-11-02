@@ -30,7 +30,18 @@ vi.mock("@/features/phones/hooks/use-stream", () => ({
     return { status: "idle", error: null, index: null, segments: [], count: 0, total: 0, notice: null, item: () => ({ type: "header", segment: 0 }), ensure: vi.fn(), retry: vi.fn(), reload: vi.fn(), positionOf: () => null, allRows: async () => [], setFocused: vi.fn() }
   },
 }))
-vi.mock("@/features/phones/components/StreamList", () => ({ StreamList: () => <div data-testid="stream" /> }))
+const mounts = vi.hoisted(() => ({ n: 0 }))
+vi.mock("@/features/phones/components/StreamList", async () => {
+  const { useEffect } = await import("react")
+  return {
+    StreamList: () => {
+      useEffect(() => {
+        mounts.n += 1
+      }, [])
+      return <div data-testid="stream" />
+    },
+  }
+})
 vi.mock("@/lib/ux-events", () => ({ trackUx: vi.fn() }))
 
 import ConversationsPage from "./ConversationsPage"
@@ -120,5 +131,14 @@ describe("Conversations", () => {
     api.getPhones.mockResolvedValue({ case_id: "case-1", phones: [] })
     page()
     await screen.findByText(/This case has no phone yet\./)
+  })
+
+  it("a new thread starts with nothing selected: the list is a new one (review of 03-3)", async () => {
+    page()
+    await waitFor(() => expect(seen.search).toContain("thread=t1"))
+    const before = mounts.n
+    fireEvent.click((await threadOptions())[1])
+    await waitFor(() => expect(seen.search).toContain("thread=t2"))
+    await waitFor(() => expect(mounts.n).toBeGreaterThan(before))
   })
 })

@@ -468,3 +468,17 @@ def test_two_messages_with_different_files_and_no_text_are_never_copies(db):
                         "mechanism, reference_text, resolution) VALUES (:e, 0, :o, 'f', 'file_id_attribute', :r, "
                         "'unresolved')"), {"e": ext, "o": ordinal, "r": ref})
     assert copies.assign(db, ext, 1) == {"groups": 1, "records": 2}
+
+
+def test_a_copy_in_another_thread_still_counts_in_its_own_thread(db):
+    """Review of 03-3: copies are ranked across the whole result, so a thread whose only message is the hidden copy
+    of a message in another thread dropped out of the thread list. Each thread shows its own copy once."""
+    from services.phone import copies
+    case = make_case(db)
+    t0 = at(2023, 3, 14, 10)
+    ext, _ = phone(db, case, events=[msg(t0, ANA, [OWNER], body="same", thread="sms"),
+                                     msg(t0, ANA, [OWNER], body="same", thread="app")])
+    assert copies.assign(db, ext, 1) == {"groups": 1, "records": 2}
+    got = S.thread_list(db, F(case))
+    assert sorted(i["event_count"] for i in got["items"]) == [1, 1] and got["counts"]["threads"] == 2
+    assert S.index_comm_events(db, F(case))["counts"]["events"] == 1  # the stream still shows the message once

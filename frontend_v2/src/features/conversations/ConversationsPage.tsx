@@ -149,21 +149,44 @@ export function ConversationsPage() {
     if (selection.all && stream.total > SELECTION_AS_ONE) {
       return freeze.data ? [{ target_type: "phone_selection", target_id: freeze.data.id, label: freeze.data.words, source_anchor: { origin: "conversations" } }] : []
     }
-    return selection.rows.map((r) => ({ target_type: "phone_record", target_id: r.record_uid, label: r.line, source_anchor: { event_uid: r.event_uid, thread_key: r.thread?.thread_key ?? null } }))
+    // Every copy of a row found more than once goes in, as the frozen selection does (review of 03-3).
+    const out: CollectLink[] = []
+    const seen = new Set<string>()
+    for (const r of selection.rows) {
+      for (const uid of [r.record_uid, ...r.copies.record_uids]) {
+        if (seen.has(uid)) continue
+        seen.add(uid)
+        out.push({ target_type: "phone_record", target_id: uid, label: r.line, source_anchor: { event_uid: r.event_uid, thread_key: r.thread?.thread_key ?? null } })
+      }
+    }
+    return out
   }, [selection, stream.total, freeze.data])
   const addNoun = selection.all && stream.total > SELECTION_AS_ONE ? "selection" : "messages"
   const addDisabled = selection.all && stream.total > SELECTION_AS_ONE && freeze.isError ? failureText(freeze.error, "The whole result could not be prepared for adding.") : undefined
   const onAdded = useCallback(() => void refreshUsedIn(), [refreshUsedIn])
+  const [undoNote, setUndoNote] = useState<string | null>(null)
   const onUndoAdd = useCallback(
     (target: CollectTarget, result: CollectResult) => {
-      void undoCollect(caseId, target, result).finally(() => void refreshUsedIn())
+      setUndoNote("Undoing the add")
+      undoCollect(caseId, target, result)
+        .then((n) => setUndoNote(`Undone: removed ${fmt(n)} ${n === 1 ? "link" : "links"} from ${target.label}.`))
+        .catch((e) => setUndoNote(e instanceof Error ? e.message : "The undo failed. Nothing more was removed."))
+        .finally(() => void refreshUsedIn())
     },
     [caseId, refreshUsedIn],
   )
 
   // ---- review marks ----------------------------------------------------------------------------------------------
   const [reviewNote, setReviewNote] = useState<{ thread: string; text: string } | null>(null)
+  // A second m before the first answer would store two marks; the key waits for the answer (review of 03-3).
+  const reviewBusy = useRef(false)
   const review = useMutation({
+    onMutate: () => {
+      reviewBusy.current = true
+    },
+    onSettled: () => {
+      reviewBusy.current = false
+    },
     mutationFn: async ({ thread, undo }: { thread: string; undo: boolean }): Promise<void> => {
       if (undo) await undoReviewed(caseId, thread)
       else await markReviewed(caseId, thread, { filter: viewToSearch(view, fixedPhone) })
@@ -194,13 +217,23 @@ export function ConversationsPage() {
   // ---- Not a copy ------------------------------------------------------------------------------------------------
   const [copyRow, setCopyRow] = useState<StreamRow | null>(null)
   const [copyReason, setCopyReason] = useState("")
+  const [copyNote, setCopyNote] = useState<{ recordUid: string; reason: string; text: string } | null>(null)
   const notCopy = useMutation({
     mutationFn: () => markNotACopy(caseId, copyRow!.record_uid, copyReason),
     onSuccess: () => {
+      setCopyNote({ recordUid: copyRow!.record_uid, reason: copyReason, text: "Shown as its own message." })
       setCopyRow(null)
       setCopyReason("")
       stream.reload()
     },
+  })
+  const restoreCopy = useMutation({
+    mutationFn: (n: { recordUid: string; reason: string }) => markNotACopy(caseId, n.recordUid, `Undo of: ${n.reason}`, true),
+    onSuccess: () => {
+      setCopyNote(null)
+      stream.reload()
+    },
+    onError: (e) => setCopyNote((n) => (n ? { ...n, text: failureText(e, "The undo could not be saved.") } : n)),
   })
 
   // ---- keys ------------------------------------------------------------------------------------------------------
@@ -225,7 +258,7 @@ export function ConversationsPage() {
         label: "Mark this thread reviewed",
         run: () => {
           const t = keyState.current.thread
-          if (t && !review.isPending) review.mutate({ thread: t, undo: false })
+          if (t && !reviewBusy.current) review.mutate({ thread: t, undo: false })
         },
       },
     ])
@@ -421,6 +454,19 @@ export function ConversationsPage() {
                 disabledReason={addDisabled}
               />
             </span>
+            {copyNote && (
+              <p role="status" className="w-full text-xs">
+                {copyNote.text}{" "}
+                <button type="button" className="underline underline-offset-2" disabled={restoreCopy.isPending} onClick={() => restoreCopy.mutate(copyNote)}>
+                  Undo
+                </button>
+              </p>
+            )}
+            {undoNote && (
+              <p role="status" className="w-full text-xs">
+                {undoNote}
+              </p>
+            )}
             {selection.all && stream.total > SELECTION_AS_ONE && (
               <p role="status" className="w-full text-xs">
                 {freeze.isLoading
@@ -433,6 +479,8 @@ export function ConversationsPage() {
           </div>
           {streamFilter ? (
             <StreamList
+              // A new thread, person or filter starts with nothing selected (review of 03-3: Select all carried over).
+              key={JSON.stringify(streamFilter)}
               stream={stream}
               caseId={caseId}
               caseName={caseQ.data?.title ?? "This case"}

@@ -20,7 +20,11 @@ describe("Conversations view in the URL (03 6.4)", () => {
     expect(f.to_instant).toBe("2023-03-15T03:59:59.999Z")
     expect(f.deleted_states).toEqual([null, "Intact", "Unknown"])
     expect(f.collapse_copies).toBe(false)
-    expect(viewToFilter("c", { ...v, people: ["a"] }, "UTC").participants).toBeUndefined() // between needs two
+    // Between needs two people; with one it reads as Involving and still filters by that person (review of 03-3).
+    const one = viewToFilter("c", { ...v, people: ["a"] }, "UTC")
+    expect(one.participants).toEqual(["a"])
+    expect(one.participant_mode).toBe("any")
+    expect(one.group_scope).toBeUndefined()
   })
 
   it("the thread list filter ignores the chosen thread; a fixed phone stays out of the URL", () => {
