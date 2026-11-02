@@ -46,6 +46,8 @@ def api():
             owner = c.execute(text("SELECT owner_user_id FROM cases WHERE id = :c"), {"c": case}).scalar()
             email = c.execute(text("SELECT email FROM users WHERE id = :u"), {"u": owner}).scalar()
         Session = sessionmaker(bind=engine)
+        from services.phone import resolvers
+        resolvers.register()  # as main.py does at start-up
         app = FastAPI()
         app.include_router(router)
 
@@ -157,3 +159,72 @@ def test_identity_picker_finds_by_digits_and_by_a_phone_name(api):
     assert by_name["total"] == 1
     everyone = c.get("/api/phones/identities", params={"case_id": api["case"], "limit": 2}).json()
     assert everyone["total"] == 3 and len(everyone["items"]) == 2 and everyone["next_cursor"] == 2
+    assert everyone["items"][0]["identity_key"] in (ANA, OWNER)  # busiest first
+    # review follow-up: folded like Search, and a backslash is text, not a pattern
+    assert c.get("/api/phones/identities", params={"case_id": api["case"], "q": "LÓPEZ"}).json()["total"] == 1
+    assert c.get("/api/phones/identities", params={"case_id": api["case"], "q": "\\"}).json()["total"] == 0
+    assert c.get("/api/phones/identities", params={"case_id": api["case"], "q": "%"}).json()["total"] == 0
+
+
+def test_marking_a_thread_reviewed_counts_it_keeps_earlier_marks_and_undo_restores(api):
+    """07 section 6.1 review marks, J-13, J-13b: who, when, the count then, added since; undo."""
+    c, case = api["client"], api["case"]
+    tl = c.post("/api/phones/conversations/threads", json={"case_id": case}).json()
+    assert tl["counts"]["not_reviewed"] == 2 and tl["counts"]["reviewed"] == 0
+    key = next(t["thread_key"] for t in tl["items"] if t["event_count"] == 2)
+    r = c.post("/api/phones/conversations/review", json={"case_id": case, "thread_key": key})
+    assert r.status_code == 200, r.text
+    assert r.json()["review"]["words"].startswith("Reviewed by synthetic on ") and "(2 messages)" in r.json()["review"]["words"]
+    tl = c.post("/api/phones/conversations/threads", json={"case_id": case}).json()
+    assert tl["counts"]["reviewed"] == 1
+    with api["engine"].begin() as conn:  # a Replace that adds a message: the mark stays, "1 added since"
+        conn.execute(text("UPDATE phone_threads SET event_count = event_count + 1 WHERE thread_key = :k"), {"k": key})
+    row = next(t for t in c.post("/api/phones/conversations/threads", json={"case_id": case}).json()["items"]
+               if t["thread_key"] == key)
+    assert row["review"]["added_since"] == 1 and row["review"]["words"].endswith("; 1 added since")
+    unrev = c.post("/api/phones/conversations/threads?sort=unreviewed", json={"case_id": case}).json()["items"]
+    assert all(t["review"] is None or t["review"]["added_since"] > 0 for t in unrev)
+    c.post("/api/phones/conversations/review", json={"case_id": case, "thread_key": key})
+    with api["engine"].connect() as conn:
+        anchor = conn.execute(text("SELECT source_anchor FROM case_task_links WHERE target_id = :k"), {"k": key}).scalar()
+        logged = conn.execute(text("SELECT count(*) FROM system_logs WHERE action LIKE '%conversation review%' OR "
+                                   "action = 'Marked a phone conversation reviewed'")).scalar()
+    assert len(anchor["earlier"]) == 1 and anchor["record_count"] == 3 and "mapping_versions" in anchor
+    assert logged == 2
+    assert c.post("/api/phones/conversations/review/undo", json={"case_id": case, "thread_key": key}).json()["restored"]
+    assert c.post("/api/phones/conversations/review/undo", json={"case_id": case, "thread_key": key}).json()["restored"] is False
+    tl = c.post("/api/phones/conversations/threads", json={"case_id": case}).json()
+    assert tl["counts"]["reviewed"] == 0
+    assert c.post("/api/phones/conversations/review", json={"case_id": api["other_case"], "thread_key": key}).status_code in (403, 404)
+
+
+def test_people_list_route(api):
+    r = api["client"].post("/api/phones/conversations/participants", json={"case_id": api["case"]})
+    assert r.status_code == 200 and r.json()["counts"]["participants"] == 3
+
+
+def test_a_person_s_not_a_copy_decision_shows_the_copy_as_its_own_row_and_can_be_undone(api):
+    """C-13: recorded with the person and reason (decision ledger and manual changes), then restorable."""
+    from services.phone import copies
+    from tests.phone_streams_fixture import phone as add_phone
+    c, case = api["client"], api["case"]
+    t0 = at(2023, 4, 1, 12)
+    with api["engine"].begin() as conn:
+        ext2, evs2 = add_phone(conn, case, label="C4", events=[msg(t0, ANA, [OWNER], body="same"),
+                                                               msg(t0, ANA, [OWNER], body="same")])
+        copies.assign(conn, ext2, 1)
+    f = {"case_id": case, "phones": [str(ext2)]}
+    assert c.post("/api/phones/streams/index", json=f).json()["counts"]["events"] == 1
+    uid = evs2[1]["record_uid"]
+    assert c.post(f"/api/phones/records/{uid}/not-a-copy", json={"case_id": case, "reason": ""}).status_code == 422
+    r = c.post(f"/api/phones/records/{uid}/not-a-copy", json={"case_id": case, "reason": "Different sends"})
+    assert r.status_code == 200, r.text
+    assert c.post("/api/phones/streams/index", json=f).json()["counts"]["events"] == 2
+    with api["engine"].connect() as conn:
+        d = conn.execute(text("SELECT actor_name, reason, decision FROM adjudications WHERE subject_id::text = :r"),
+                         {"r": str(uid)}).one()
+        mc = conn.execute(text("SELECT count(*) FROM manual_changes WHERE kind = 'phone_copy'")).scalar()
+    assert d.reason == "Different sends" and d.decision == "mark_not_duplicate" and d.actor_name and mc == 1
+    r = c.post(f"/api/phones/records/{uid}/not-a-copy", json={"case_id": case, "reason": "Was right", "restore": True})
+    assert r.status_code == 200, r.text
+    assert c.post("/api/phones/streams/index", json=f).json()["counts"]["events"] == 1

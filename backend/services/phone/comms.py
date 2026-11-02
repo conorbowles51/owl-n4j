@@ -156,6 +156,9 @@ def build(conn, ext, case_id, gen, mappings, levels):
             continue
         _events(conn, w, ext, case_id, gen, m, b, levels, chats, thread_of_record, stats)
     w.flush()
+    from services.phone import copies  # 03 section 3.4: copies of one event share a group
+    got = copies.assign(conn, ext, gen)
+    stats["copy_groups"], stats["copy_records"] = got["groups"], got["records"]
     _threads(conn, w, ext, case_id, gen, chat_mapping, levels, stats)
     w.flush()
     return dict(stats)

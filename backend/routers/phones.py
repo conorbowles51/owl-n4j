@@ -485,13 +485,82 @@ def stream_locate(body: LocateBody, db: Session = Depends(get_db), user: User = 
 
 
 @router.post("/conversations/threads")
-def conversation_threads(body: dict, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
-    """Every thread with events under the filter, in one response (6.3, C-5)."""
+def conversation_threads(body: dict, sort: str = Query("recent", pattern="^(recent|first|volume|unreviewed|name)$"),
+                         db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Every thread with events under the filter, in one response (6.3, C-5), with its review mark."""
     f = _filter(body, db, user)
     try:
-        return streams.thread_list(db.connection(), f)
+        return streams.thread_list(db.connection(), f, sort=sort)
     except Exception as exc:  # noqa: BLE001
         raise _failure("The conversation list could not be loaded.", exc)
+
+
+@router.post("/conversations/participants")
+def conversation_participants(body: dict, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """People mode (6.3): every participant under the filter with counts, phones and apps, in one response."""
+    f = _filter(body, db, user)
+    try:
+        return streams.participant_list(db.connection(), f)
+    except Exception as exc:  # noqa: BLE001
+        raise _failure("The list of people could not be loaded.", exc)
+
+
+class ReviewMarkBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    thread_key: str = Field(min_length=1, max_length=512)
+    scope: dict = Field(default_factory=dict)
+    position: Optional[dict] = None
+
+
+@router.post("/conversations/review")
+def mark_thread_reviewed(body: ReviewMarkBody, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_db_user)):
+    """Mark a thread reviewed (07 section 6.1, J-13). Needs edit access to the case."""
+    from services.phone import review_marks
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        return {"thread_key": body.thread_key,
+                "review": review_marks.mark(db, body.case_id, body.thread_key, user, scope=body.scope,
+                                            position=body.position)}
+    except review_marks.ReviewMarkError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/conversations/review/undo")
+def undo_thread_review(body: ReviewMarkBody, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_db_user)):
+    """Undo the latest review mark on a thread; an earlier mark, if any, is current again."""
+    from services.phone import review_marks
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        prev = review_marks.undo(db, body.case_id, body.thread_key, user)
+    except review_marks.ReviewMarkError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"thread_key": body.thread_key, "restored": bool(prev)}
+
+
+class CopyDecisionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    reason: str = Field(min_length=1, max_length=4000)
+    restore: bool = False
+
+
+@router.post("/records/{record_uid}/not-a-copy")
+def record_not_a_copy(record_uid: UUID, body: CopyDecisionBody, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_db_user)):
+    """A person's Not a copy decision (03 section 3.4, C-13); ``restore`` puts the record back in its group."""
+    from services.phone import copies
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        return copies.mark_not_a_copy(db, case_id=body.case_id, record_uid=record_uid, reason=body.reason,
+                                      actor=_actor(user), restore=body.restore)
+    except copies.CopyDecisionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("/records/{record_uid}")
@@ -518,31 +587,41 @@ def identity_picker(case_id: UUID = Query(...), q: str = Query("", max_length=20
     from sqlalchemy import text as sql
     from services.phone import fold as phone_fold
     conn = db.connection()
-    folded = phone_fold.fold(q) if q.strip() else ""
+    folded = phone_fold.fold(q.strip()) if q.strip() else ""
     digits = "".join(ch for ch in q if ch.isdigit())
-    where = "i.case_id = :c"
-    params = {"c": case_id, "lim": limit, "off": cursor}
-    if folded:
-        where += (" AND (lower(i.value_display) LIKE :like OR lower(i.identity_key) LIKE :like OR EXISTS (SELECT 1 FROM "
-                  "pv_identity_name n WHERE n.identity_id = i.identity_id AND lower(n.name) LIKE :like)"
-                  + (" OR regexp_replace(i.value_normalised, '\\D', '', 'g') LIKE :digits" if len(digits) >= 3 else "")
-                  + ")")
-        params["like"] = "%" + q.strip().lower().replace("%", "\\%").replace("_", "\\_") + "%"
-        params["digits"] = "%" + digits + "%"
-    total = conn.execute(sql("SELECT count(*) FROM pv_identity i WHERE " + where), params).scalar()
-    rows = conn.execute(sql(
-        "SELECT i.identity_id, i.identity_key, i.kind, i.value_display, i.person_id, p.display_name AS person_name, "
-        "(SELECT count(DISTINCT p2.event_uid) FROM pv_comm_party p2 WHERE p2.case_id = i.case_id AND p2.identity_key = "
-        "i.identity_key) AS events FROM pv_identity i LEFT JOIN case_profiles p ON p.id = i.person_id WHERE " + where +
-        " ORDER BY events DESC, i.value_display, i.identity_key OFFSET :off LIMIT :lim"), params).fetchall()
+    idents = conn.execute(sql(
+        "SELECT i.identity_id, i.identity_key, i.kind, i.value_display, i.value_normalised, i.person_id, "
+        "p.display_name AS person_name FROM pv_identity i LEFT JOIN case_profiles p ON p.id = i.person_id "
+        "WHERE i.case_id = :c"), {"c": case_id}).fetchall()
+    names = {}
+    for n in conn.execute(sql("SELECT identity_id, extraction_id, name, basis, is_phone_name FROM pv_identity_name "
+                              "WHERE case_id = :c ORDER BY extraction_id"), {"c": case_id}):
+        names.setdefault(n.identity_id, []).append(n)
+
+    def matches(r):
+        # Folded as Search folds (11.3): "jose" finds "José"; three or more digits match the number's digits.
+        if not q.strip():
+            return True
+        if not folded:
+            return False  # punctuation only: nothing to match
+        hay = [r.value_display, r.identity_key] + [n.name for n in names.get(r.identity_id, [])]
+        if any(folded in phone_fold.fold(h) for h in hay if h):
+            return True
+        return len(digits) >= 3 and digits in "".join(ch for ch in (r.value_normalised or "") if ch.isdigit())
+
+    hits = [r for r in idents if matches(r)]
+    counts = {k: int(n) for k, n in conn.execute(sql(
+        "SELECT identity_key, count(DISTINCT event_uid) FROM pv_comm_party WHERE case_id = :c AND identity_key = "
+        "ANY(CAST(:k AS text[])) GROUP BY identity_key"), {"c": case_id, "k": [r.identity_key for r in hits]})}
+    hits.sort(key=lambda r: (-counts.get(r.identity_key, 0), r.value_display or "", r.identity_key))
+    total = len(hits)
     labels = readings.phone_labels(conn, case_id)
     items = []
-    for r in rows:
-        names = [{"phone_label": labels.get(str(n.extraction_id)), "name": n.name, "basis": n.basis}
-                 for n in conn.execute(sql("SELECT extraction_id, name, basis FROM pv_identity_name WHERE identity_id = "
-                                           ":i AND is_phone_name ORDER BY extraction_id"), {"i": r.identity_id})]
-        items.append({"identity_key": r.identity_key, "kind": r.kind, "value_display": r.value_display, "names": names,
+    for r in hits[cursor:cursor + limit]:
+        items.append({"identity_key": r.identity_key, "kind": r.kind, "value_display": r.value_display,
+                      "names": [{"phone_label": labels.get(str(n.extraction_id)), "name": n.name, "basis": n.basis}
+                                for n in names.get(r.identity_id, []) if n.is_phone_name],
                       "person": {"id": str(r.person_id), "display_name": r.person_name} if r.person_id else None,
-                      "event_count": int(r.events)})
+                      "event_count": counts.get(r.identity_key, 0)})
     nxt = cursor + len(items)
     return {"case_id": str(case_id), "items": items, "total": int(total), "next_cursor": nxt if nxt < total else None}

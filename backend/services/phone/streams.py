@@ -44,6 +44,8 @@ CALL_STATUS = {"established": "answered", "missed": "missed", "rejected": "decli
                "cancelled": "cancelled", "busyline": "busy", "voicemail": "went to voicemail",
                "notestablishedunknownreason": "not connected", "unknown": "status not recorded"}
 GROUP_CHAT_TYPES = ("Group", "Broadcast")
+NO_THREAD_PREFIX = "none:"
+NO_THREAD_TITLE = "Not in a conversation"
 
 
 class StaleSnapshot(Exception):
@@ -158,7 +160,16 @@ class Query:
         if f.phones:
             w.append("ev.extraction_id = ANY(CAST(%s AS uuid[]))" % self._p(f.phones))
         if f.threads:
-            w.append("ev.thread_key = ANY(CAST(%s AS text[]))" % self._p(f.threads))
+            # "none:<phone>" is the pseudo-thread of a phone's events that sit in no conversation (thread_list).
+            keys = [t for t in f.threads if not t.startswith(NO_THREAD_PREFIX)]
+            loose = [t[len(NO_THREAD_PREFIX):] for t in f.threads if t.startswith(NO_THREAD_PREFIX)]
+            parts = []
+            if keys:
+                parts.append("ev.thread_key = ANY(CAST(%s AS text[]))" % self._p(keys))
+            if loose:
+                parts.append("(ev.thread_key IS NULL AND ev.extraction_id::text = ANY(CAST(%s AS text[])))"
+                             % self._p(loose))
+            w.append("(%s)" % " OR ".join(parts))
         if f.apps:
             w.append("ev.app = ANY(CAST(%s AS text[]))" % self._p(f.apps))
         if f.kinds:
@@ -359,6 +370,8 @@ def window_comm_events(conn, f: StreamFilter, *, snapshot_token, day, offset=0, 
     q, ctx = _query(conn, f)
     zone = resolve_zone(conn, f)
     day_d = date.fromisoformat(day) if day else None
+    # Copies are ranked inside the day: under rule v1 every copy of a group has the same instant, so a group never
+    # spans two days and the ranks equal those the index counted (3.4; tested by the window sums).
     rows = conn.execute(text(
         "WITH m AS (%s) SELECT * FROM m WHERE %s ORDER BY %s OFFSET %d LIMIT %d"
         % (q.matched_sql(_day_cond(q, f, zone["name"], day_d)), _shown(f), _order(f, day_d), max(0, int(offset)),
@@ -373,10 +386,17 @@ def locate_comm_event(conn, f: StreamFilter, *, snapshot_token, event_uid) -> di
     q, _ = _query(conn, f)
     zone = resolve_zone(conn, f)
     q.params["target"] = event_uid
-    row = conn.execute(text("WITH m AS (%s) SELECT sort_instant, event_uid, %s AS shown FROM m WHERE event_uid = "
-                            "CAST(:target AS uuid)" % (q.matched_sql(), _shown(f))), q.params).first()
+    row = conn.execute(text("WITH m AS (%s) SELECT sort_instant, event_uid, extraction_id, dup_group_uid, %s AS shown "
+                            "FROM m WHERE event_uid = CAST(:target AS uuid)" % (q.matched_sql(), _shown(f))),
+                       q.params).first()
     if row is None:
         raise NotInCase("event not in this result")
+    if not row.shown:
+        # A collapsed copy: the list shows its group's displayed copy, so that is where the reader lands (3.4).
+        q.params.update(ge=row.extraction_id, gd=row.dup_group_uid)
+        row = conn.execute(text("WITH m AS (%s) SELECT sort_instant, event_uid FROM m WHERE copy_rank = 1 AND "
+                                "extraction_id = :ge AND dup_group_uid = :gd" % q.matched_sql()), q.params).first()
+        q.params["target"] = row.event_uid
     day = T.day_of(row.sort_instant, zone["name"]) if row.sort_instant else None
     cmp = ">" if f.sort == "newest_first" else "<"
     before = ("(sort_instant, event_uid) %s (CAST(:ti AS timestamptz), CAST(:target AS uuid))" % cmp) if day else \
@@ -506,44 +526,110 @@ def row_flags(r) -> list:
 
 # ---- threads -------------------------------------------------------------------------------------------------------
 
-def thread_list(conn, f: StreamFilter) -> dict:
+UNREADABLE_SQL = ("EXISTS (SELECT 1 FROM phone_record_summaries s WHERE s.parent_record_uid = m.record_uid AND "
+                  "s.generation = m.generation AND s.model_type = 'ScrambledMessageData')")
+
+
+def thread_list(conn, f: StreamFilter, *, sort: str = "recent") -> dict:
     """Every thread with events under the filter, in one response (03 section 6.3; C-5). ``threads`` in the filter is
     ignored. Each row: phone, app, chat type, title, the first five participants and their count, first and last
-    instant and counts under the filter and in total, deleted count."""
+    instant, counts under the filter and in total, deleted count, whether any event is unreadable, and the review
+    mark (07 section 6.1). A phone's events that sit in no conversation are one more row, "Not in a conversation",
+    so the list always covers every matching event."""
+    from services.phone import review_marks
     g = f.model_copy(update={"threads": []})
     q, ctx = _query(conn, g)
     zone = resolve_zone(conn, g)
     rows = conn.execute(text(
-        "WITH m AS (%s) SELECT m.extraction_id, m.thread_key, count(*) AS n, min(m.sort_instant) AS first_i, "
-        "max(m.sort_instant) AS last_i, count(*) FILTER (WHERE lower(coalesce(m.deleted_state, '')) IN "
-        "('deleted','trash')) AS deleted, max(m.app) AS app FROM m WHERE %s AND m.thread_key IS NOT NULL "
-        "GROUP BY m.extraction_id, m.thread_key" % (q.matched_sql(), _shown(g))), q.params).fetchall()
+        "WITH m AS (%s) SELECT m.extraction_id, coalesce(m.thread_key, :none || m.extraction_id::text) AS tk, "
+        "count(*) AS n, min(m.sort_instant) AS first_i, max(m.sort_instant) AS last_i, "
+        "count(*) FILTER (WHERE lower(coalesce(m.deleted_state, '')) IN ('deleted','trash')) AS deleted, "
+        "count(*) FILTER (WHERE %s) AS unreadable, max(m.app) AS app FROM m WHERE %s "
+        "GROUP BY m.extraction_id, 2" % (q.matched_sql(), UNREADABLE_SQL, _shown(g))),
+        dict(q.params, none=NO_THREAD_PREFIX)).fetchall()
     meta = {t.thread_key: t for t in conn.execute(text(
-        "SELECT thread_key, app, thread_kind, chat_type, title_in_record, event_count, party_identity_keys "
-        "FROM pv_thread WHERE case_id = :c"), {"c": f.case_id})}
-    total_threads = len(meta) if not f.phones else sum(1 for t in conn.execute(text(
-        "SELECT 1 FROM pv_thread WHERE case_id = :c AND extraction_id = ANY(CAST(:p AS uuid[]))"),
-        {"c": f.case_id, "p": f.phones}))
+        "SELECT thread_key, extraction_id, app, thread_kind, chat_type, title_in_record, event_count, "
+        "party_identity_keys FROM pv_thread WHERE case_id = :c" + (" AND extraction_id = ANY(CAST(:p AS uuid[]))"
+                                                                  if f.phones else "")),
+        {"c": f.case_id, "p": f.phones})}
+    loose_totals = {str(r[0]): int(r[1]) for r in conn.execute(text(
+        "SELECT ev.extraction_id, count(*) FROM phone_comm_events ev JOIN phone_interpretation_state st ON "
+        "st.extraction_id = ev.extraction_id AND st.generation = ev.generation JOIN phone_extractions e ON "
+        "e.id = ev.extraction_id AND e.standing = 'active' WHERE e.case_id = :c AND ev.thread_key IS NULL "
+        "GROUP BY 1"), {"c": f.case_id})}
+    total_threads = len(meta) + sum(1 for e in loose_totals if not f.phones or e in f.phones)
     keys = {k for t in meta.values() for k in (t.party_identity_keys or [])[:5]}
     ctx.load(keys)
+    marks = review_marks.marks(conn, f.case_id)
     items = []
     for r in rows:
-        t = meta.get(r.thread_key)
         ext = str(r.extraction_id)
+        loose = r.tk.startswith(NO_THREAD_PREFIX)
+        t = None if loose else meta.get(r.tk)
         members = list(t.party_identity_keys or []) if t else []
         labels = [ctx.label(ext, identity_key=k) for k in members[:5]]
         names = [lab["name"] or L.identifier_text(lab["identifier"]) or L.NO_NAME for lab in labels
                  if not lab["is_owner"]]
-        title = (t.title_in_record if t and t.title_in_record else ", ".join(n for n in names if n)) or "(untitled)"
-        items.append({"thread_key": r.thread_key, "phone": {"extraction_id": ext, "label": ctx.phone_label(ext)},
+        if loose:
+            title = NO_THREAD_TITLE
+        else:
+            title = (t.title_in_record if t and t.title_in_record else ", ".join(n for n in names if n)) or "(untitled)"
+        total = loose_totals.get(ext, int(r.n)) if loose else (int(t.event_count) if t else int(r.n))
+        mark = marks.get(r.tk)
+        items.append({"thread_key": r.tk, "phone": {"extraction_id": ext, "label": ctx.phone_label(ext)},
                       "app": (t.app if t else None) or r.app, "chat_type": t.chat_type if t else None,
-                      "thread_kind": t.thread_kind if t else None, "title": title, "participants": labels,
-                      "participant_count": len(members), "first_instant": T.iso(r.first_i),
-                      "last_instant": T.iso(r.last_i),
+                      "thread_kind": t.thread_kind if t else ("none" if loose else None), "title": title,
+                      "participants": labels, "participant_count": len(members),
+                      "first_instant": T.iso(r.first_i), "last_instant": T.iso(r.last_i),
                       "last_full": T.format_full(r.last_i, zone["name"]) if r.last_i else T.NO_TIME,
-                      "event_count": int(r.n), "event_count_total": int(t.event_count) if t else int(r.n),
-                      "deleted_count": int(r.deleted)})
-    items.sort(key=lambda x: (x["last_instant"] is None, x["last_instant"] or ""), reverse=False)
-    items.sort(key=lambda x: x["last_instant"] or "", reverse=True)
-    out = envelope(conn, g, items=items, counts={"threads": len(items), "threads_total": total_threads})
+                      "event_count": int(r.n), "event_count_total": total, "deleted_count": int(r.deleted),
+                      "has_unreadable": int(r.unreadable) > 0,
+                      "review": review_marks.review_words(mark, total) if mark else None})
+    _sort_threads(items, sort)
+    reviewed = sum(1 for i in items if i["review"])
+    out = envelope(conn, g, items=items, counts={"threads": len(items), "threads_total": total_threads,
+                                                 "reviewed": reviewed, "not_reviewed": len(items) - reviewed})
+    out["sort"] = sort
     return out
+
+
+THREAD_SORTS = ("recent", "first", "volume", "unreviewed", "name")
+
+
+def _sort_threads(items, sort):
+    """6.5: last activity (default), first activity, message count, unreviewed first, name. Undated last."""
+    if sort == "first":
+        items.sort(key=lambda x: (x["first_instant"] is None, x["first_instant"] or ""))
+    elif sort == "volume":
+        items.sort(key=lambda x: (-x["event_count"], x["title"].lower()))
+    elif sort == "name":
+        items.sort(key=lambda x: (x["title"].lower(), x["thread_key"]))
+    else:
+        items.sort(key=lambda x: x["last_instant"] or "", reverse=True)
+        items.sort(key=lambda x: x["last_instant"] is None)
+        if sort == "unreviewed":
+            items.sort(key=lambda x: not (x["review"] is None or x["review"]["added_since"] > 0))
+
+
+def participant_list(conn, f: StreamFilter) -> dict:
+    """People mode (6.3): every identity taking part in an event under the filter, complete in one call, with its
+    event count, first and last instant, phones and apps. The owner side is the phone owner's key (D-31)."""
+    q, ctx = _query(conn, f)
+    rows = conn.execute(text(
+        "WITH m AS (%s) SELECT k, count(DISTINCT m.event_uid) AS n, min(m.sort_instant) AS first_i, "
+        "max(m.sort_instant) AS last_i, array_agg(DISTINCT m.extraction_id::text) AS phones, "
+        "array_remove(array_agg(DISTINCT m.app), NULL) AS apps FROM ("
+        "SELECT m.*, %s AS k FROM m JOIN phone_participations p ON "
+        "p.record_uid = m.record_uid AND p.generation = m.generation LEFT JOIN unnest(CAST(:oe AS uuid[]), "
+        "CAST(:ok AS text[])) AS ok(e, k) ON ok.e = m.extraction_id WHERE %s) m WHERE k IS NOT NULL GROUP BY k"
+        % (q.matched_sql(), PARTY_KEY_SQL, _shown(f))), q.params).fetchall()
+    ctx.load([r.k for r in rows])
+    items = []
+    for r in rows:
+        ext = sorted(r.phones)[0]
+        label = ctx.label(ext, identity_key=r.k)
+        items.append({"label": label, "events": int(r.n), "first_instant": T.iso(r.first_i),
+                      "last_instant": T.iso(r.last_i), "phones": sorted(ctx.phone_label(e) for e in r.phones),
+                      "apps": sorted(r.apps or [])})
+    items.sort(key=lambda x: (-x["events"], L.label_text(x["label"]).lower()))
+    return envelope(conn, f, items=items, counts={"participants": len(items)})

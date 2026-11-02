@@ -49,6 +49,17 @@ class Zone(BaseModel):
     mode: Literal["phone", "case", "utc"] = "case"
     phone: Optional[str] = None
 
+    @field_validator("phone")
+    @classmethod
+    def _phone_uuid(cls, v):
+        import uuid
+        if v is None:
+            return v
+        try:
+            return str(uuid.UUID(v))
+        except (ValueError, AttributeError, TypeError):
+            raise ValueError("zone.phone is not a phone id")
+
 
 class StreamFilter(BaseModel):
     model_config = ConfigDict(extra="forbid")

@@ -46,7 +46,8 @@ def test_a_conversation_threads_by_its_headers_and_a_same_subject_stranger_does_
         assert sweep.interpret_one(engine, ext)["status"] == "done"
         with engine.connect() as c:
             keys = [r[0] for r in c.execute(text(
-                "SELECT thread_key FROM pv_comm_event WHERE extraction_id = :e ORDER BY sort_instant"), {"e": ext})]
+                "SELECT thread_key FROM phone_comm_events WHERE extraction_id = :e ORDER BY sort_instant, document_index, "
+                "ordinal"), {"e": ext})]  # every email shares one instant here: report order breaks the tie
         assert len(keys) == 5
         assert keys[0] == keys[1] == keys[2] and keys[0].startswith("hdr:")
         assert keys[3] != keys[0] and keys[3].startswith("hdr:")

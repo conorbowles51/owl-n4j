@@ -365,3 +365,90 @@ def test_a_filter_with_a_case_or_phone_id_that_is_not_an_id_is_refused():
         StreamFilter(case_id="not-a-case")
     with pytest.raises(ValueError):
         StreamFilter(case_id="00000000-0000-0000-0000-000000000001", phones=["C3"])
+    with pytest.raises(ValueError):
+        StreamFilter(case_id="00000000-0000-0000-0000-000000000001", zone={"mode": "phone", "phone": "C3"})
+
+
+def test_events_in_no_conversation_are_one_more_thread_so_the_list_covers_every_event(db):
+    """6.3 completeness: a phone's events with no thread key are listed as "Not in a conversation" and open."""
+    case = make_case(db)
+    ext, _ = phone(db, case, events=[msg(at(2023, 3, 14), ANA, [OWNER], thread="t"),
+                                     msg(at(2023, 3, 15), BEN, [OWNER]), msg(at(2023, 3, 16), CAL, [OWNER])])
+    tl = S.thread_list(db, F(case))
+    assert sum(t["event_count"] for t in tl["items"]) == S.index_comm_events(db, F(case))["counts"]["events"] == 3
+    loose = [t for t in tl["items"] if t["title"] == S.NO_THREAD_TITLE]
+    assert len(loose) == 1 and loose[0]["event_count"] == 2 and loose[0]["event_count_total"] == 2
+    assert tl["counts"]["threads_total"] == 2
+    assert S.index_comm_events(db, F(case, threads=[loose[0]["thread_key"]]))["counts"]["events"] == 2
+
+
+def test_thread_sorts_and_the_unreadable_flag(db):
+    case = make_case(db)
+    ext, evs = phone(db, case, events=[msg(at(2023, 3, 1), ANA, [OWNER], thread="a"),
+                                       msg(at(2023, 3, 2), ANA, [OWNER], thread="a"),
+                                       msg(at(2023, 3, 9), BEN, [OWNER], thread="b")])
+    db.execute(text(
+        "INSERT INTO phone_record_summaries (case_id, extraction_id, document_index, ordinal, record_uid, "
+        "root_record_uid, parent_record_uid, locator, model_type, generation, is_top_level, title, has_time, "
+        "has_point) VALUES (:c, :e, 0, 901, '00000000-0000-0000-0000-0000000000b1', :p, :p, 'x/0/r901', "
+        "'ScrambledMessageData', 1, false, 'synthetic', false, false)"),
+        {"c": case, "e": ext, "p": evs[2]["record_uid"]})
+    order = lambda s: [t["thread_key"].rsplit(":", 1)[-1] for t in S.thread_list(db, F(case), sort=s)["items"]]  # noqa: E731
+    assert order("recent") == ["b", "a"] and order("first") == ["a", "b"] and order("volume") == ["a", "b"]
+    flags = {t["thread_key"].rsplit(":", 1)[-1]: t["has_unreadable"] for t in S.thread_list(db, F(case))["items"]}
+    assert flags == {"a": False, "b": True}
+
+
+def test_people_mode_lists_every_participant_with_counts_including_the_owner(db):
+    case = make_case(db)
+    phone(db, case, events=[msg(at(2023, 3, 1), ANA, [OWNER]), msg(at(2023, 3, 2), OWNER, [ANA]),
+                            msg(at(2023, 3, 3), BEN, [OWNER], app="SMS")])
+    pl = S.participant_list(db, F(case))
+    by = {p["label"]["identity_key"]: p for p in pl["items"]}
+    assert by[ANA]["events"] == 2 and by[BEN]["events"] == 1 and by[OWNER]["events"] == 3
+    assert by[BEN]["apps"] == ["SMS"] and by[ANA]["phones"] == ["C3"]
+    assert pl["counts"]["participants"] == 3 and pl["complete"] is True
+
+
+def test_copy_rule_v1_groups_exact_copies_only_and_the_counts_say_so(db):
+    """3.4 / D-9: same phone, kind, direction, sender, recipients, content and instant; nothing else."""
+    from services.phone import copies
+    case = make_case(db)
+    t0 = at(2023, 3, 14, 10)
+    ext, evs = phone(db, case, events=[
+        msg(t0, ANA, [OWNER], body="Café"), msg(t0, ANA, [OWNER], body="Café"),  # NFC-equal bodies
+        msg(t0, ANA, [OWNER], body="Café"),
+        msg(at(2023, 3, 14, 10, 0, 1), ANA, [OWNER], body="Café"),  # one second later: not a copy
+        msg(t0, ANA, [OWNER], body="other"), msg(t0, BEN, [OWNER], body="Café"),
+        msg(None, ANA, [OWNER], body="Café"), msg(None, ANA, [OWNER], body="Café"),  # no instant never matches
+        dict(kind="call", instant=t0, direction="incoming", app="Phone", call_duration_s=63, call_status="Established",
+             parties=[(ANA, "caller", False, None, None), (OWNER, "callee", True, None, None)]),
+        dict(kind="call", instant=t0, direction="incoming", app="Phone", call_duration_s=63, call_status="Established",
+             parties=[(ANA, "caller", False, None, None), (OWNER, "callee", True, None, None)]),
+    ])
+    other, _ = phone(db, case, label="C9", events=[msg(t0, ANA, [OWNER], body="Café")])
+    got = copies.assign(db, ext, 1)
+    copies.assign(db, other, 1)
+    assert got == {"groups": 2, "records": 5}
+    idx = S.index_comm_events(db, F(case))
+    assert idx["counts"]["records"] == 11 and idx["counts"]["events"] == 8 and idx["counts"]["collapsed_copies"] == 3
+    _, rows = _all_rows(db, F(case))
+    found = sorted(r["copies"]["count"] for r in rows if r["copies"]["count"] > 1)
+    assert found == [2, 3] and len(rows) == idx["counts"]["events"]
+    # locating a collapsed copy lands on its group's shown row (review follow-up)
+    hidden = next(e["event_uid"] for e in evs[:3] if e["event_uid"] not in {r["event_uid"] for r in rows})
+    loc = S.locate_comm_event(db, F(case), snapshot_token=idx["snapshot"], event_uid=hidden)
+    w = S.window_comm_events(db, F(case), snapshot_token=idx["snapshot"], day=loc["day"], offset=loc["offset"], limit=1)
+    assert w["items"][0]["copies"]["count"] == 3
+    assert S.index_comm_events(db, F(case, collapse_copies=False))["counts"]["events"] == 11
+
+
+def test_two_emails_with_different_header_threads_are_never_copies(db):
+    """D-34: copies of one email share its headers; same subject, body, parties and second is not enough."""
+    from services.phone import copies
+    case = make_case(db)
+    t0 = at(2023, 3, 14, 10)
+    em = lambda th: dict(kind="email", instant=t0, direction="incoming", app="Mail", subject="Plan", body="x",  # noqa: E731
+                         thread=th, parties=[(ANA, "sender", False, None, None), (OWNER, "recipient", True, None, None)])
+    ext, _ = phone(db, case, events=[em("hdr-a"), em("hdr-z"), em("hdr-a")])
+    assert copies.assign(db, ext, 1) == {"groups": 1, "records": 2}
