@@ -10,13 +10,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from config import EVIDENCE_DATA_ROOT
 from postgres.session import get_db
 from postgres.models.evidence_upload import EvidenceUploadSession
-from postgres.models.evidence import EvidenceFolder
+from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.user import User
 from routers.users import get_current_db_user
 from routers.case_access import authorize_case
@@ -71,8 +71,14 @@ def remove_parts(item):
 
 def sweep_completed_parts(db, *, apply=False):
     """Part folders of uploads whose status is 'completed' (their evidence is registered). Folders of any
-    other status, or with no upload record, are left. Returns counts; removes them only with ``apply``."""
-    out = dict(folders=0, files=0, bytes=0, removed=0, left_other_status=0, left_no_record=0)
+    other status, with no upload record, or whose evidence file is gone, are left. Returns counts; removes them only with ``apply``."""
+    out = dict(folders=0, files=0, bytes=0, removed=0, left_other_status=0, left_no_record=0, left_no_evidence=0)
+    # A completed upload whose evidence is gone (deleted from the case later) keeps its parts: they are the
+    # only copy left (2 Nov sweep: 34 such folders). Evidence counts by its link or the same file in the case.
+    has_evidence = or_(
+        exists().where(EvidenceFile.id == EvidenceUploadSession.evidence_id),
+        exists().where(EvidenceFile.case_id == EvidenceUploadSession.case_id,
+                       EvidenceFile.sha256 == EvidenceUploadSession.sha256))
     if not ROOT.is_dir():
         return out
     for case_dir in sorted(p for p in ROOT.iterdir() if p.is_dir()):
@@ -85,14 +91,17 @@ def sweep_completed_parts(db, *, apply=False):
                 pass
         status = {}
         for at in range(0, len(ids), 1000):
-            status.update({str(i): s for i, s in db.execute(select(EvidenceUploadSession.id,
-                EvidenceUploadSession.status).where(EvidenceUploadSession.id.in_(ids[at:at + 1000])))})
+            status.update({str(i): (s, e) for i, s, e in db.execute(select(EvidenceUploadSession.id,
+                EvidenceUploadSession.status, has_evidence).where(EvidenceUploadSession.id.in_(ids[at:at + 1000])))})
         for name, path in names.items():
             if name not in status:
                 out['left_no_record'] += 1
                 continue
-            if status[name] != 'completed':
+            if status[name][0] != 'completed':
                 out['left_other_status'] += 1
+                continue
+            if not status[name][1]:
+                out['left_no_evidence'] += 1
                 continue
             files = [entry for entry in os.scandir(path) if entry.is_file()]
             out['folders'] += 1

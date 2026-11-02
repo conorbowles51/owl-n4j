@@ -2,12 +2,12 @@
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -154,3 +154,19 @@ def test_sweep_removes_only_parts_of_completed_uploads(uploads, monkeypatch):
         assert api.sweep_completed_parts(db,apply=True)['removed']==1
     assert not left.exists() and stray.exists()
     assert (f.root/'pending'/str(f.case)/open_state['id']/'0.part').exists()
+
+
+def test_sweep_keeps_parts_of_a_completed_upload_whose_evidence_is_gone(uploads):
+    # The parts are then the only copy left (2 Nov: 34 such folders on live).
+    f=uploads
+    body,state,content=start(f)
+    for i in range(len(body['chunks'])):send(f,state,content,i)
+    receipt=action(f,state,'complete').json()
+    left=f.root/'pending'/str(f.case)/state['id']; left.mkdir(parents=True)
+    (left/'0.part').write_bytes(content[:32])
+    with Session(f.engine) as db:
+        db.execute(delete(EvidenceFile).where(EvidenceFile.id==UUID(receipt['evidence_id'])))
+        db.commit()
+        preview=api.sweep_completed_parts(db,apply=True)
+        assert (preview['folders'],preview['removed'],preview['left_no_evidence'])==(0,0,1)
+    assert (left/'0.part').exists()
