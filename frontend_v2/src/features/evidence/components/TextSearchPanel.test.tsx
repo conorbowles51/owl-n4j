@@ -6,8 +6,8 @@ import { useEvidenceStore } from "../evidence.store"
 import { TextSearchPanel } from "./TextSearchPanel"
 
 vi.mock("@/components/ui/document-viewer", () => ({
-  DocumentViewer: (props: { open: boolean; initialPage?: number }) =>
-    props.open ? <div data-testid="viewer">Page {props.initialPage}</div> : null,
+  DocumentViewer: (props: { open: boolean; initialPage?: number; documentName?: string }) =>
+    props.open ? <div data-testid="viewer" data-name={props.documentName}>Page {props.initialPage}</div> : null,
 }))
 
 const hit = (id: string, snippet: string, page = 7) => ({
@@ -72,5 +72,26 @@ describe("TextSearchPanel", () => {
 
     fireEvent.click(screen.getAllByText(/Before/)[0])
     await waitFor(() => expect(screen.getByTestId("viewer")).toHaveTextContent("Page 7"))
+  })
+
+  it("opens a phone conversation hit as text, since it has no file", async () => {
+    vi.spyOn(evidenceAPI, "searchText").mockResolvedValue({
+      query: "needle", total_matches: 1, total_documents: 1, case_documents: 1, searchable_documents: 1,
+      document_limit: 25, document_offset: 0, returned_documents: 1, has_more_documents: false,
+      documents: [{
+        evidence_id: "evidence-2", document_name: "C1 · SyntheticApp · Synthetic (part 1 of 1)", source_type: "phone_text",
+        folder_path: "Phone conversations", total_matches: 1, shown_matches: 1, matches_truncated: false,
+        matches: [{ ...hit("one", "Before needle after", 1), page_number: null, location_kind: "phone_record",
+          record_uid: "r-1", extraction_id: "e-1" }],
+      }],
+    })
+    useEvidenceStore.getState().setTextSearchTerm("needle")
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <TextSearchPanel caseId="case-1" />
+      </QueryClientProvider>
+    )
+    fireEvent.click(await screen.findByText(/Before/, {}, { timeout: 1500 }))
+    await waitFor(() => expect(screen.getByTestId("viewer").dataset.name).toBe("C1 · SyntheticApp · Synthetic (part 1 of 1).txt"))
   })
 })

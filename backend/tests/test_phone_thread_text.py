@@ -65,6 +65,15 @@ def test_thread_documents_are_searchable_by_record_and_hidden_from_evidence_list
             hit = hit_doc["matches"][0]
             assert hit["location_kind"] == "phone_record" and hit["record_uid"] in uids
             assert hit["extraction_id"] == str(ext)
+            # the API keeps what names the record (its response model would otherwise drop the keys)
+            from routers.evidence import CaseTextSearchResponse, get_evidence_file
+            api = CaseTextSearchResponse.model_validate(found).model_dump()
+            api_doc = next(d for d in api["documents"] if d["source_type"] == "phone_text")
+            assert api_doc["matches"][0]["record_uid"] == hit["record_uid"]
+            assert api_doc["matches"][0]["location_kind"] == "phone_record"
+            # the conversation opens as its text; there is no file on disk
+            served = get_evidence_file(hit_doc["evidence_id"], user={}, db=db)
+            assert served.media_type == "text/plain" and served.body.decode("utf-8") == content
             listed = db.execute(select(EvidenceFile.source_type).where(EvidenceFile.case_id == case,
                                                                        visible_evidence_condition())).scalars().all()
             assert listed and "phone_text" not in listed

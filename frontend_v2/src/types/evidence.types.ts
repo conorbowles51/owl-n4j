@@ -219,11 +219,17 @@ export interface EvidenceTextSearchHit {
   highlight_end: number
   page_number: number | null
   location_label: string | null
+  /** "phone_record" on a line of a phone conversation, which names its record (02 section 9.7) */
+  location_kind?: string | null
+  record_uid?: string | null
+  extraction_id?: string | null
 }
 
 export interface EvidenceTextSearchDocument {
   evidence_id: string
   document_name: string
+  /** "phone_text" for a conversation written from a phone's records */
+  source_type?: string | null
   folder_path: string
   total_matches: number
   shown_matches: number

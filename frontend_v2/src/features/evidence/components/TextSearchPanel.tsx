@@ -257,7 +257,11 @@ export function TextSearchPanel({ caseId }: { caseId: string }) {
   ) => {
     setViewerTarget({
       evidenceId: document.evidence_id,
-      documentName: document.document_name,
+      // a phone conversation is text written from the phone's records, so it opens as text
+      documentName:
+        document.source_type === "phone_text"
+          ? `${document.document_name}.txt`
+          : document.document_name,
       page: hit.page_number ?? 1,
       navigationKey: hit.id,
     })

@@ -49,7 +49,7 @@ from routers.case_access import (
 from routers.users import get_current_db_user
 from fastapi import Path as PathParam, Query, status
 from postgres.session import get_db
-from postgres.models.evidence import EvidenceFile, EvidenceFolder
+from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceFolder
 from postgres.models.user import User
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -748,11 +748,16 @@ class TextSearchHit(BaseModel):
     highlight_end: int
     page_number: Optional[int] = None
     location_label: Optional[str] = None
+    # a line of a phone conversation names its record (02 section 9.7)
+    location_kind: Optional[str] = None
+    record_uid: Optional[str] = None
+    extraction_id: Optional[str] = None
 
 
 class TextSearchDocument(BaseModel):
     evidence_id: str
     document_name: str
+    source_type: Optional[str] = None
     folder_path: str
     total_matches: int
     shown_matches: int
@@ -2273,6 +2278,14 @@ def get_evidence_file(
 
         if not record:
             raise HTTPException(status_code=404, detail="Evidence not found")
+
+        # A phone conversation text has no file: it is written from the phone's records (02 section 9.7)
+        if record.source_type == "phone_text":
+            from fastapi.responses import PlainTextResponse
+            text_row = db.get(EvidenceDocumentText, record.id)
+            if text_row is None:
+                raise HTTPException(status_code=404, detail="This conversation's text is not written yet")
+            return PlainTextResponse(text_row.content or "", headers={"Content-Disposition": "inline"})
 
         # Primary path: serve from backend disk
         filename = record.original_filename or "file"
