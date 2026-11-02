@@ -93,6 +93,18 @@ def test_a_frozen_day_is_recomputed_by_the_server_linkable_and_stale_after_the_r
                     "subject": subj, "start_date": d, "end_date": d, "zone": "America/New_York"}).json()
                 assert len(shown["days"]) == 1
                 assert ny["snapshot"]["window"]["start"][11:16] in ("04:00", "05:00")
+                # the record list follows the grid's own rule: device state chosen adds the device records
+                both = client.post("/api/pattern/%s/snapshots" % case, json={
+                    "kind": "grid", "subject": subj, "start_date": d, "end_date": d, "zone": "UTC",
+                    "parameters": {"min_strength": "strong", "classes": ["interaction", "device_state"],
+                                   "include_physical": False}}).json()
+                with engine.connect() as c:
+                    expect = c.execute(text(
+                        "SELECT count(DISTINCT record_uid) FROM pol_activity_event_v WHERE extraction_id = :e AND "
+                        "((activity_class = 'interaction' AND counts_for = 'owner' AND strength = 'strong') OR "
+                        "(activity_class = 'device_state' AND counts_for = 'owner')) AND record_uid IS NOT NULL"),
+                        {"e": ext}).scalar()
+                assert both["record_count"] == expect > grid["record_count"]
     finally:
         link_types._RESOLVERS.clear()
         link_types._RESOLVERS.update(saved)

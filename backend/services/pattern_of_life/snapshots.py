@@ -82,9 +82,17 @@ def _result(conn, case_id, kind, exts, labels, a, b, zone, zname, parameters):
         for d in g["days"]:
             for h in d["hours"]:
                 counts["hours_" + h["state"]] = counts.get("hours_" + h["state"], 0) + 1
+        # the same rule the grid counts by (grid._matches over the hourly rollup): owner interactions at or above
+        # the strength, owner device-state events when chosen, physical events when chosen
         allowed = list(grid_mod.STRENGTH_ORDER[grid_mod.STRENGTH_ORDER.index(ms):])
-        records = _event_records(conn, exts, a, b, " AND activity_class = ANY(:k) AND strength = ANY(:s)",
-                                 {"k": list(classes), "s": allowed})
+        parts = []
+        if "interaction" in classes:
+            parts.append("(activity_class = 'interaction' AND counts_for = 'owner' AND strength = ANY(:s))")
+        if "device_state" in classes:
+            parts.append("(activity_class = 'device_state' AND counts_for = 'owner')")
+        if include_physical:
+            parts.append("physical")
+        records = _event_records(conn, exts, a, b, " AND (%s)" % " OR ".join(parts), {"s": allowed}) if parts else []
         return records, counts
     rows = conn.execute(text(
         "SELECT source_kind, record_uid::text FROM pol_place_observation WHERE extraction_id = ANY(CAST(:e AS uuid[])) "
