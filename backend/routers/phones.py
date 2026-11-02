@@ -379,6 +379,27 @@ def set_owner(extraction_id: UUID, body: OwnerDecision, db: Session = Depends(ge
     return out
 
 
+class LabelDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    label: str = Field(min_length=1, max_length=200)
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+@router.post("/{extraction_id}/label")
+def set_label(extraction_id: UUID, body: LabelDecision, db: Session = Depends(get_db),
+              user: User = Depends(get_current_db_user)):
+    """Name a phone (02 section 12.3); written as a ``set_phone_label`` decision with its reason."""
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        out = corrections.set_label(db, case_id=body.case_id, extraction_id=extraction_id, label=body.label,
+                                    reason=body.reason, actor=_actor(user))
+    except corrections.CorrectionError as exc:
+        _correction_error(db, exc)
+    db.commit()
+    return out
+
+
 # ---- screens: phone list, settings, streams, threads, record panel (03 sections 4 to 6) ----------------------------
 
 import logging as _logging  # noqa: E402

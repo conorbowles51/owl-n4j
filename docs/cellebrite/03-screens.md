@@ -978,6 +978,8 @@ The sections below follow:
 1. **Whose phone**: owner label, how established (`Read from the device information in the report`,
    `Worked out from messages the phone sent` with the records listed, or `Set by <user> on <date>` for a
    `set_phone_owner` decision recorded after ingest, 02 section 8.6; there is no owner field at intake).
+   **Name this phone** sets the name every screen uses for the phone, with a reason, as a `set_phone_label`
+   decision (02 section 12.3); the name it replaces stays in the decision record.
 2. **Device and report**: device fields; report file, form, version, producer, extraction type and period;
    SHA-256 of what was received; the report's own MD5 and whether it matched.
 3. **What the production says it contains**: the selection flags verbatim with plain meaning ("The examiner

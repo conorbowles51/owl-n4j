@@ -6,7 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import type { Profile } from "../schemas"
 
 /** Phone summary (03 section 7; 07 J-2, J-11, J-15) with the server stubbed. Synthetic data only. */
-const api = vi.hoisted(() => ({ getProfile: vi.fn(), setOwner: vi.fn() }))
+const api = vi.hoisted(() => ({ getProfile: vi.fn(), setOwner: vi.fn(), setPhoneLabel: vi.fn() }))
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
 
 import PhoneSummaryPage from "./PhoneSummaryPage"
@@ -69,6 +69,20 @@ describe("Phone summary", () => {
     fireEvent.click(save)
     await waitFor(() => expect(api.setOwner).toHaveBeenCalledWith("case-1", "e1", "phone:+12025550100", "synthetic reason"))
     expect(await within(form).findByText(/^Owner set to \+1 202-555-0100\./)).toBeInTheDocument()
+  })
+
+  it("Name this phone saves the name with the reason, and asks for both first (02 section 12.3)", async () => {
+    api.setPhoneLabel.mockResolvedValue({ decision_id: "d2", label: "C1", before: "Phone 1" })
+    page()
+    const form = await screen.findByRole("form", { name: "Name this phone" })
+    const save = within(form).getByRole("button", { name: "Save name" })
+    const [name, reason] = within(form).getAllByRole("textbox")
+    fireEvent.change(name, { target: { value: " C1 " } })
+    expect(save).toBeDisabled()
+    fireEvent.change(reason, { target: { value: "synthetic reason" } })
+    fireEvent.click(save)
+    await waitFor(() => expect(api.setPhoneLabel).toHaveBeenCalledWith("case-1", "e1", "C1", "synthetic reason"))
+    expect(await within(form).findByText(/^This phone is now called C1\./)).toBeInTheDocument()
   })
 
   beforeEach(() => {

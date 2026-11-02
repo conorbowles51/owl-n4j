@@ -393,3 +393,27 @@ def _set_owner(api):
     p = c.get(f"/api/phones/{ext}/profile", params={"case_id": case}).json()
     assert p["owner"]["decided"] and p["owner"]["keys"] == [ANA]
     assert p["owner"]["words"].startswith("Set by a person")
+
+
+def test_naming_a_phone_is_a_decision_with_its_reason_and_every_screen_uses_the_name(api):
+    """02 section 12.3: Name this phone writes a set_phone_label decision (the computed name kept as before) and a
+    manual change; a blank name or reason and another case are refused; the phone list then shows the name."""
+    c, case, ext = api["client"], api["case"], api["ext"]
+    url = f"/api/phones/{ext}/label"
+    before = {p["extraction_id"]: p["label"] for p in c.get("/api/phones", params={"case_id": case}).json()["phones"]}
+    assert c.post(url, json={"case_id": case, "label": "   ", "reason": "synthetic"}).status_code == 422
+    assert c.post(url, json={"case_id": case, "label": "X" * 41, "reason": "synthetic"}).status_code == 422
+    assert c.post(url, json={"case_id": case, "label": "C9", "reason": " "}).status_code == 422
+    assert c.post(url, json={"case_id": api["other_case"], "label": "C9", "reason": "synthetic"}
+                  ).status_code in (403, 404, 422)
+    r = c.post(url, json={"case_id": case, "label": "  C9  exhibit ", "reason": "synthetic: the exhibit label"})
+    assert r.status_code == 200, r.text
+    assert r.json()["label"] == "C9 exhibit"
+    with api["engine"].connect() as conn:
+        d = conn.execute(text("SELECT before, after, reason FROM adjudications WHERE subject_id::text = :e AND "
+                              "decision = 'set_phone_label'"), {"e": ext}).one()
+        mc = conn.execute(text("SELECT count(*) FROM manual_changes WHERE kind = 'phone_label' AND case_id::text = "
+                               ":c"), {"c": case}).scalar()
+    assert d.before == {"label": before[ext]} and d.after == {"label": "C9 exhibit"} and mc == 1
+    after = {p["extraction_id"]: p["label"] for p in c.get("/api/phones", params={"case_id": case}).json()["phones"]}
+    assert after[ext] == "C9 exhibit"

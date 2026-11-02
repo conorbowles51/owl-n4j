@@ -251,6 +251,39 @@ def set_owner(db, *, case_id, extraction_id, identity_key, reason, actor) -> dic
     return {"decision_id": str(row.id), "owner_identity_keys": [identity_key]}
 
 
+LABEL_LIMIT = 40
+
+
+def set_label(db, *, case_id, extraction_id, label, reason, actor) -> dict:
+    """``set_phone_label`` (02 section 12.3): a person names a phone. The name replaces the computed one (the
+    ``C<digits>`` token in the report's file name, else ``Phone <n>``) everywhere the phone is named; the computed
+    name stays in the decision's ``before``."""
+    from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
+    from postgres.models.phone_extraction import PhoneExtraction
+    from services import manual_changes
+    from services.financial import decisions
+    from services.phone import readings
+    if not reason or not reason.strip():
+        raise CorrectionError("Naming a phone needs a reason in your own words.")
+    label = " ".join((label or "").split())
+    if not label:
+        raise CorrectionError("Type a name for this phone.")
+    if len(label) > LABEL_LIMIT:
+        raise CorrectionError("A phone's name can be at most %d characters." % LABEL_LIMIT)
+    ext = db.get(PhoneExtraction, extraction_id)
+    if ext is None or str(ext.case_id) != str(case_id):
+        raise CorrectionError("That phone is not in this case.")
+    before = readings.phone_labels(db.connection(), case_id).get(str(extraction_id))
+    row = decisions.record(db, case_id=case_id, subject=ext, subject_type=AdjudicationSubject.phone_extraction,
+                           decision=AdjudicationDecision.set_phone_label, reason=reason.strip(), actor=actor,
+                           before={"label": before}, after={"label": label})
+    manual_changes.record_change(db, "phone_label", case_id, {"type": "phone_extraction", "id": str(extraction_id)},
+                                 {"label": before}, {"label": label}, actor, reason.strip(),
+                                 link="/cases/%s/phones/%s" % (case_id, extraction_id),
+                                 pattern_key=manual_changes.make_pattern_key("phone_label"))
+    return {"decision_id": str(row.id), "label": label, "before": before}
+
+
 def record_decision_ids(conn, extraction_id) -> list:
     """Value corrections on this phone's records, for the decision revision (a correction re-derives the phone)."""
     return [str(r[0]) for r in conn.execute(text(

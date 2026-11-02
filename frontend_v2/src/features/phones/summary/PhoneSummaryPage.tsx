@@ -7,6 +7,7 @@ import { failureText, getProfile } from "../api"
 import { labelText } from "../lib/labels"
 import { readingSpots } from "../lib/continue-reading"
 import { fmt } from "../ui/ResultCount"
+import { NamePhone } from "./NamePhone"
 import { SetOwner } from "./SetOwner"
 
 /**
@@ -202,6 +203,7 @@ export function PhoneSummaryPage() {
         <p>{p.owner.label && !p.owner.missing ? labelText(p.owner.label) : "No owner number was found."}</p>
         <p className="text-xs text-muted-foreground">{p.owner.missing ? "Person-level views stay off until an owner is set." : p.owner.words}</p>
         <SetOwner caseId={caseId} extraction={extraction} owner={p.owner} />
+        <NamePhone caseId={caseId} extraction={extraction} label={p.phone.label} />
         {p.zone.device_zone ? (
           <p className="text-xs">Time zone recorded by the phone: {p.zone.device_zone}</p>
         ) : (

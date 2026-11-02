@@ -158,6 +158,13 @@ export async function getProfile(caseId: string, extractionId: string) {
 }
 
 /** Set whose phone this is (03 section 7.3): a set_phone_owner decision with the person's reason. */
+export async function setPhoneLabel(caseId: string, extractionId: string, label: string, reason: string) {
+  return fetchAPI<{ decision_id: string; label: string; before: string | null }>(`/api/phones/${encodeURIComponent(extractionId)}/label`, {
+    method: "POST",
+    body: { case_id: caseId, label, reason },
+  })
+}
+
 export async function setOwner(caseId: string, extractionId: string, identityKey: string, reason: string) {
   return fetchAPI<{ decision_id: string; owner_identity_keys: string[] }>(`/api/phones/${encodeURIComponent(extractionId)}/owner`, {
     method: "POST",
