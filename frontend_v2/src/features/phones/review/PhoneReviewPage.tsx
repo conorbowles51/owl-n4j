@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useParams, useSearchParams } from "react-router-dom"
+import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/ui/page-header"
@@ -10,6 +10,8 @@ import { instantWords } from "../lib/time-words"
 import { fmt } from "../ui/ResultCount"
 import { KeymapOverlay } from "../ui/KeymapOverlay"
 import { IdentityLinkGroup } from "./IdentityLinkGroup"
+import { PeopleSuggestions } from "./PeopleSuggestions"
+import { identitiesAPI } from "./identities.api"
 import { readingsAPI, type ExampleKind, type PhoneProgress, type Reading, type ReadingExamples } from "./readings.api"
 
 /**
@@ -335,6 +337,7 @@ export default function PhoneReviewPage() {
   const { id: caseId } = useParams()
   const [params] = useSearchParams()
   const identity = params.get("decision") === "link_phone_identity" ? params.get("identity") : null
+  const people = params.get("panel") === "people"
   const [keysOpen, setKeysOpen] = useState(false)
   useEffect(() => {
     installKeymap()
@@ -348,9 +351,27 @@ export default function PhoneReviewPage() {
         description="What the system read from this case's phones that a person has not yet checked."
         actions={<Button size="sm" variant="outline" onClick={() => setKeysOpen(true)}>Keys</Button>}
       />
+      <PeopleSuggestionsLink caseId={caseId} open={people} />
       {identity && <IdentityLinkGroup caseId={caseId} identityKey={identity} />}
-      <ReadingsGroup caseId={caseId} />
+      {people ? <PeopleSuggestions caseId={caseId} /> : <ReadingsGroup caseId={caseId} />}
       <KeymapOverlay open={keysOpen} onOpenChange={setKeysOpen} />
     </div>
+  )
+}
+
+/** The way into People suggestions (07 J-7) and back to the readings. */
+function PeopleSuggestionsLink({ caseId, open }: { caseId: string; open: boolean }) {
+  const sugg = useQuery({ queryKey: ["phone-identity-suggestions", caseId], queryFn: () => identitiesAPI.suggestions(caseId) })
+  const base = `/cases/${encodeURIComponent(caseId)}/phone-review`
+  return (
+    <nav aria-label="Decisions" className="flex gap-3 text-sm">
+      {open ? (
+        <Link className="underline" to={base}>Readings to check</Link>
+      ) : (
+        <Link className="underline" to={`${base}?panel=people`}>
+          People suggestions{sugg.data ? ` (${sugg.data.total.toLocaleString("en-US")} waiting)` : ""}
+        </Link>
+      )}
+    </nav>
   )
 }

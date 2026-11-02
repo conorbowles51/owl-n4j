@@ -275,8 +275,10 @@ def identity_suggestions(case_id: UUID = Query(...), db: Session = Depends(get_d
     conn = db.connection()
     identity_decisions.compute_suggestions(conn, case_id)
     out = identity_decisions.suggestions(conn, case_id)
+    decided = identity_decisions.decided_count(conn, case_id)
     db.commit()
-    return {"case_id": str(case_id), "total": len(out), "suggestions": out}
+    # "12 of 36 decided" (07 J-7): decided suggestions against decided plus open
+    return {"case_id": str(case_id), "total": len(out), "decided": decided, "suggestions": out}
 
 
 @router.get("/identities/{identity_key:path}")

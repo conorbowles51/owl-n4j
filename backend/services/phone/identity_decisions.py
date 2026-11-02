@@ -241,6 +241,12 @@ def suggestions(conn, case_id) -> list:
     return out
 
 
+def decided_count(conn, case_id) -> int:
+    """Suggestions a person decided (linked or marked not the same person) in this case."""
+    return int(conn.execute(text("SELECT count(*) FROM phone_identity_suggestions WHERE case_id = :c AND state IN "
+                                 "('accepted', 'rejected')"), {"c": case_id}).scalar() or 0)
+
+
 # ---- deciding --------------------------------------------------------------------------------------------------
 
 def decide(db, *, case_id, decision, identity_keys, actor, user, dossier_id=None, new_person_name=None, reason=None,

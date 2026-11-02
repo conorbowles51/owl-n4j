@@ -141,6 +141,7 @@ def test_a_rejected_pair_is_not_suggested_again(people):
             assert [[i["identity_key"] for i in s["identities"]] for s in idd.suggestions(c, case)] == [[A, C]]
             assert sorted(r[0] for r in c.execute(text(
                 "SELECT state FROM phone_identity_suggestions WHERE case_id = :c"), {"c": case})) == ["open", "rejected"]
+            assert idd.decided_count(c, case) == 1  # "1 of 2 decided" (07 J-7)
             assert c.execute(text("SELECT count(*) FROM manual_changes WHERE case_id = :c AND kind = 'phone_identity'"),
                              {"c": case}).scalar() == 1  # one feed line for the rejection
 

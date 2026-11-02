@@ -80,7 +80,8 @@ export default [
       const strip = page.getByRole("group", { name: /Message density/ })
       await ctx.see(strip)
       await ctx.click(strip.getByRole("button").first())
-      await ctx.see(page.getByRole("heading", { name: /^\w+day \d+ \w+, .+ time \(UTC[+-]\d+/ }))
+      // 03 3.2: "Tuesday, March 14, 2023, Eastern Time (UTC-4)" (or "..., UTC")
+      await ctx.see(page.getByRole("heading", { name: /^\w+day, \w+ \d+, \d{4}, (UTC$|.+ \(UTC[+-]\d+)/ }))
     })
     await ctx.step("Around this time opens in 1.5 s with counted groups", async () => {
       await ctx.press("a")

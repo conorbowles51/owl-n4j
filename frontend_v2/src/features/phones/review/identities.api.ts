@@ -65,7 +65,7 @@ export const identitiesAPI = {
   get: (caseId: string, key: string) =>
     fetchAPI<IdentityDetail>(`/api/phones/identities/${encodeURIComponent(key)}?${q(caseId)}`),
   suggestions: (caseId: string) =>
-    fetchAPI<{ case_id: string; total: number; suggestions: IdentitySuggestion[] }>(`/api/phones/identity-suggestions?${q(caseId)}`),
+    fetchAPI<{ case_id: string; total: number; decided?: number; suggestions: IdentitySuggestion[] }>(`/api/phones/identity-suggestions?${q(caseId)}`),
   decide: (caseId: string, body: IdentityDecisionBody) =>
     fetchAPI<{ decisions: string[]; dossier_id: string | null; revision: string }>("/api/phones/identity-decisions", {
       method: "POST",
