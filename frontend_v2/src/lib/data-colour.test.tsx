@@ -38,6 +38,10 @@ describe("Financial transactions: day totals", () => {
       { currency: "USD", in: "11.50", out: "2.50" },
     ])
   })
+  it("leaves out a row a correction replaced, so only the corrected value is summed", () => {
+    const old = { ...row("9999", "credit"), superseded_by_id: "new" } as LedgerTransaction
+    expect(dayTotals([old, row("100", "credit")])).toEqual([{ currency: "USD", in: "1.00", out: "0.00" }])
+  })
   it("gives no total for a currency with an amount that is not whole minor units (never a partial total)", () => {
     const totals = dayTotals([row("10.5", "credit"), row("100", "debit", "EUR")])
     expect(totals.map((t) => t.currency)).toEqual(["EUR"])
