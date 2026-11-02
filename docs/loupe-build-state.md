@@ -1,4 +1,4 @@
-## 2 November: pattern of life, stage F in progress (cb-pol)
+## 2 November: pattern of life, stage F in progress (cb-pol), A to H live 1a6b3826
 
 Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for readers:
 `/mnt/owl-data/fin-wt/headless/CB-POL-STATUS.md` (written at the end); progress `headless/cb-pol-progress.md`.
@@ -17,7 +17,25 @@ Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for read
   (migration `20261102_pol_timeline_class`). Router `routers/pattern_of_life.py` (`/api/pattern`): `subjects`,
   `availability`. `subjects.py` resolves a phone or a person (dossier, through `phone_identity_links`), 404 for
   another case.
-- **Tests:** `tests/test_pattern_u2_activity.py` (7), `tests/test_pattern_u4_availability.py` (4); opt-in PostgreSQL
+- **04-U7 (004c8c54):** `grid.py`: hour-by-weekday grid from the rollup, usual quiet hours (a run covering all 24
+  hours is `rarely_used`, M12 rule), the nights that break them; `GET .../grid` (dates, zone, min strength).
+- **04-U5 (50ef14d5):** `places.py`: `pol_place_observation` per coordinate with source kind and radius basis (GPS
+  accuracy doubled), WiFi anchors from the case's own fixes (BSSID only, two days), the offline cell importer
+  (`POST .../reference/cell`, admins, files under `LOUPE_REFERENCE_DATA_DIR` only). No dataset imported and none
+  chosen, so every tower is listed not placed. Reverse geocoding only on an in-house backend, checked at start-up.
+  Decision 25.
+- **04-U8 (4bda93f2):** `routine.py`: stays (2 h max gap, decision 26), DBSCAN places, routine profile, deviations;
+  computed on read with parameters echoed. `GET .../routine`, `.../routine/deviations`.
+- **04-U9 (1a6b3826):** `colocation.py`: `verdict` is the one pair rule (C10, 05 approach 5 calls it); exactly two
+  subjects; every pair stored in `pol_colocation_item` and paged at 1,000 with totals; over 2,000,000 estimated pairs
+  answers 202 and runs in the background. `POST .../together`, `GET .../together/{run_id}`. Decision 27.
+- **Live check (1a6b3826):** every route above answers 200 signed in over `http://104.196.62.215:5174` in case
+  4aa79795. No pattern screen yet.
+- **Next:** I (U10 money lane, manual places), J (U11 claims and evaluation), L (U12 drafting), D (Day view; needs
+  cb-screens 03-2), Patterns screen and shared Lanes, journey specs `frontend_v2/journeys/specs/cb-pol.mjs`, M-13a,
+  Gate F. Known red not from cb-pol: `test_app_page_names_match_the_frontend_routes` ('phone-review'), sent to
+  followups.
+- **Tests:** `tests/test_pattern_u2_activity.py` (7), `tests/test_pattern_u4_availability.py` (4), `u7_grid` (4), `u5_places` (5), `u8_routine` (2), `u9_together` (6); opt-in PostgreSQL
   through `LOUPE_TEST_PHONE_PG_TEMPLATE_URL`. HTTP helper `tests/pattern_pg.py` (`api_client`). Scratch PostgreSQL
   for this job: container `cbp-pgtest` on 127.0.0.1:55446 (template `loupe_tpl`, rebuilt from `loupe_cbp` after
   `alembic upgrade head`).
