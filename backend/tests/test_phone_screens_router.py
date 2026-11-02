@@ -285,3 +285,42 @@ def test_a_whole_result_is_frozen_as_one_selection_with_every_copy_and_resolves_
             link_types.resolve_phone_target(db, api["other_case"], "phone_selection", got["id"])
         with pytest.raises(link_types.LinkTargetError):
             link_types.resolve_phone_target(db, case, "phone_selection", "not-an-id")
+
+
+def test_phone_summary_numbers_equal_their_count_queries_and_the_lists_they_open(api):
+    """P-1, P-5, P-7 and 07 J-2: each number is a count over the read views; a top person's count equals the list
+    the link opens; the selection flags read "not stated" when the report does not state them; the verdict follows
+    the reconciliation result."""
+    c, case, ext = api["client"], api["case"], api["ext"]
+    r = c.get(f"/api/phones/{ext}/profile", params={"case_id": case})
+    assert r.status_code == 200, r.text
+    p = r.json()
+    with api["engine"].connect() as conn:
+        msgs = conn.execute(text("SELECT count(*) FROM pv_comm_event WHERE extraction_id::text = :e AND kind = "
+                                 "'message'"), {"e": ext}).scalar()
+        recs = conn.execute(text("SELECT coalesce(e.record_count, (SELECT count(*) FROM phone_records r WHERE "
+                                 "r.extraction_id = e.id)) FROM phone_extractions e WHERE e.id::text = :e"),
+                            {"e": ext}).scalar()
+    assert {d["signal"]: d["records"] for d in p["data_periods"]}["messages"] == msgs
+    assert p["verdict"]["records"] == recs
+    assert p["verdict"]["sentence"].startswith("Read in full: %s records, " % "{:,}".format(recs))
+    assert p["verdict"]["sentence"].endswith("Nothing needs a decision.")
+    assert [s["verbatim"] for s in p["selection"]] == ["not stated"] * 4
+    top = p["top_people"][0]
+    key = top["label"]["identity_key"]
+    idx = c.post("/api/phones/streams/index", json={"case_id": case, "phones": [ext], "participants": [key],
+                                                    "participant_mode": "any"}).json()
+    assert idx["counts"]["events"] == top["events"]
+    assert f"people={key}" in top["link"]
+    assert sum(m["messages"] for m in p["months"]) == msgs - 1  # the undated message has no month
+    with api["engine"].begin() as conn:
+        conn.execute(text(
+            "INSERT INTO phone_reconciliations (id, extraction_id, document_index, ran_at, counter_version, result, "
+            "source_totals, captured_totals, differences, difference_count) VALUES (gen_random_uuid(), CAST(:e AS uuid), "
+            "0, now(), 'synthetic', 'differs', CAST('{\"files\": 9}' AS jsonb), CAST('{\"files\": 7}' AS jsonb), "
+            "CAST('[]' AS jsonb), 1)"), {"e": ext})
+    p = c.get(f"/api/phones/{ext}/profile", params={"case_id": case}).json()
+    assert p["verdict"]["word"] == "Partly read" and p["verdict"]["sentence"].startswith("Partly read: ")
+    assert p["completeness"]["documents"][0]["stated_vs_read"] == [{"what": "files", "stated": 9, "read": 7}]
+    assert any(n["kind"] == "reconciliation" for n in p["needs"])
+    assert c.get(f"/api/phones/{ext}/profile", params={"case_id": api["other_case"]}).status_code in (403, 404)

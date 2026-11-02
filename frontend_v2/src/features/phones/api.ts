@@ -1,6 +1,7 @@
 import { ApiError, fetchAPI } from "@/lib/api-client"
 import {
   ParticipantListSchema,
+  ProfileSchema,
   PhonesSchema,
   RecordDetailSchema,
   ReviewSchema,
@@ -149,4 +150,9 @@ export async function freezeSelection(filter: StreamFilter, words: string) {
     method: "POST",
     body: { filter, words },
   })
+}
+
+/** Phone summary (03 section 7): every number a count over the read views, each with the list it opens. */
+export async function getProfile(caseId: string, extractionId: string) {
+  return ProfileSchema.parse(await fetchAPI(`/api/phones/${encodeURIComponent(extractionId)}/profile?case_id=${encodeURIComponent(caseId)}`, { read: true }))
 }

@@ -217,6 +217,19 @@ def identity_decision(body: IdentityDecision, db: Session = Depends(get_db), use
     return out
 
 
+@router.get("/{extraction_id}/profile")
+def phone_profile(extraction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                  user: User = Depends(get_current_db_user)):
+    """Phone summary (03 section 7): every number a count over the read views, each with the list it opens. A phone
+    of another case is 404."""
+    from services.phone import profile as phone_profile_service
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        return phone_profile_service.profile(db.connection(), case_id, extraction_id)
+    except phone_profile_service.NotFound:
+        raise HTTPException(status_code=404, detail="This phone is not in this case.")
+
+
 @router.get("/{extraction_id}/owner")
 def extraction_owner(extraction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
                      user: User = Depends(get_current_db_user)):

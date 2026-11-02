@@ -279,3 +279,34 @@ export const ParticipantRowSchema = z.object({
 })
 export type ParticipantRow = z.infer<typeof ParticipantRowSchema>
 export const ParticipantListSchema = envelope(ParticipantRowSchema)
+
+const LinkWords = z.object({ words: z.string(), link: z.string().nullable() })
+export const ProfileSchema = z.object({
+  phone: PhoneSummarySchema,
+  verdict: z.object({ word: z.string(), sentence: z.string(), records: z.number(), apps: z.number(), first_day: z.string().nullable(), last_day: z.string().nullable(), needs_decision: z.number() }),
+  owner: z.object({ label: ParticipantLabelSchema.nullable(), basis: z.string().nullable(), words: z.string(), missing: z.boolean(), decided: z.boolean() }),
+  zone: z.object({ device_zone: z.string().nullable(), basis: z.string().nullable(), case_zone: z.string() }),
+  report: z.object({
+    filename: z.string().nullable(), form: z.string().nullable(), report_version: z.string().nullable(), producer: z.string().nullable(),
+    extraction_type: z.string().nullable(), container_name: z.string().nullable(), container_sha256: z.string().nullable(),
+    report_sha256: z.string().nullable(), extraction_start: z.string().nullable(), ingested_at: z.string().nullable(),
+  }),
+  selection: z.array(z.object({ flag: z.string(), name: z.string(), verbatim: z.string(), meaning: z.string().nullable() })),
+  completeness: z.object({
+    reconciliation: z.string().nullable(),
+    state: z.string(),
+    documents: z.array(z.object({ document_index: z.number(), result: z.string(), differences: z.number(), stated_vs_read: z.array(z.object({ what: z.string(), stated: z.unknown(), read: z.unknown() })) })),
+  }),
+  files: z.object({ total: z.number(), by_category: z.record(z.string(), z.number()), verification: z.record(z.string(), z.number()), link: z.string() }),
+  deleted: z.object({ comm_events: z.number(), link: z.string(), by_type: z.array(z.object({ model_type: z.string(), intact: z.number(), deleted: z.number(), trash: z.number(), unknown: z.number() })) }),
+  coverage: z.array(z.object({ model_type: z.string(), records: z.number(), level: z.string(), level_words: z.string() })),
+  data_periods: z.array(z.object({ signal: z.string(), records: z.number(), dated: z.number(), first_words: z.string().nullable(), last_words: z.string().nullable() })),
+  months: z.array(z.object({ month: z.string(), messages: z.number(), calls: z.number(), other: z.number() })),
+  apps: z.array(z.object({ app: z.string(), events: z.number() })),
+  top_people: z.array(z.object({ label: ParticipantLabelSchema, text: z.string(), events: z.number(), link: z.string().nullable() })),
+  needs: z.array(LinkWords.extend({ kind: z.string() })),
+  where_to_start: z.array(LinkWords),
+  zone_name: z.string(),
+  links: z.object({ conversations: z.string(), review: z.string() }),
+})
+export type Profile = z.infer<typeof ProfileSchema>

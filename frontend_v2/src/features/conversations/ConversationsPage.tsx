@@ -23,6 +23,7 @@ import { StreamList } from "@/features/phones/components/StreamList"
 import { useCollectTargets, useUsedIn } from "@/features/phones/hooks/use-collect"
 import { useStream } from "@/features/phones/hooks/use-stream"
 import { viewFromSearch, viewToFilter, viewToSearch, type ConversationView } from "@/features/phones/lib/filter-url"
+import { rememberSpot } from "@/features/phones/lib/continue-reading"
 import { labelText } from "@/features/phones/lib/labels"
 import type { StreamRow, ThreadRow } from "@/features/phones/schemas"
 import { AddToMenu } from "@/features/phones/ui/AddToMenu"
@@ -117,6 +118,10 @@ export function ConversationsPage() {
   }, [threads, find])
   const multiPhone = new Set(threads.map((t) => t.phone.extraction_id)).size > 1
   const current: ThreadRow | undefined = threads.find((t) => t.thread_key === view.thread)
+  // Continue reading on the Phone summary (07 J-15): the threads opened here, on this browser.
+  useEffect(() => {
+    if (current) rememberSpot(caseId, { thread: current.thread_key, title: current.title, phone: current.phone.label, extraction: current.phone.extraction_id, at: new Date().toISOString() })
+  }, [caseId, current])
 
   // ---- record panel, focus, selection --------------------------------------------------------------------------
   const [recordUid, setRecordUid] = useState<string | null>(view.record)
@@ -426,7 +431,12 @@ export function ConversationsPage() {
                 {current.title} on {current.phone.label}
                 {current.app ? `, ${current.app}` : ""}
               </span>
-            ) : view.tab === "people" && !view.people.length ? (
+            ) : null}
+            {view.deleted === true && (
+              // 07 J-11: a deletion state never carries a time; say what it does and does not establish.
+              <span className="w-full text-xs">Deleted at some time between the message's own time and the extraction. The report does not record when.</span>
+            )}
+            {!current && view.tab === "people" && !view.people.length ? (
               <span>Pick a person to read every message with them.</span>
             ) : null}
             <span className="ml-auto flex flex-wrap items-center gap-1">

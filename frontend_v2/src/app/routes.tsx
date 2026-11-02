@@ -44,7 +44,7 @@ const PhoneReviewPage = lazy(() => import("@/features/phones/review/PhoneReviewP
 const ConversationsPage = lazy(() => import("@/features/conversations/ConversationsPage"))
 const PhonesIndexPage = lazy(() => import("@/features/conversations/PhoneRoutes").then((m) => ({ default: m.PhonesIndexPage })))
 const PhoneRecordsRoute = lazy(() => import("@/features/conversations/PhoneRoutes").then((m) => ({ default: m.PhoneRecordsRoute })))
-const PhoneRoute = lazy(() => import("@/features/conversations/PhoneRoutes").then((m) => ({ default: m.PhoneRoute })))
+const PhoneSummaryPage = lazy(() => import("@/features/phones/summary/PhoneSummaryPage"))
 const DossiersPage = lazy(() =>
   import("@/features/dossiers/components/DossiersPage").then((m) => ({
     default: m.DossiersPage,
@@ -180,7 +180,7 @@ export function AppRoutes() {
             <Route path="phone-review" element={<LazyPage><PhoneReviewPage /></LazyPage>} />
             <Route path="conversations" element={<LazyPage><ConversationsPage /></LazyPage>} />
             <Route path="phones" element={<LazyPage><PhonesIndexPage /></LazyPage>} />
-            <Route path="phones/:extraction" element={<LazyPage><PhoneRoute /></LazyPage>} />
+            <Route path="phones/:extraction" element={<LazyPage><PhoneSummaryPage /></LazyPage>} />
             <Route path="phones/:extraction/records/conversations" element={<LazyPage><ConversationsPage /></LazyPage>} />
             <Route path="phones/:extraction/records/:recordType" element={<LazyPage><PhoneRecordsRoute /></LazyPage>} />
             <Route path="phone-patterns" element={<LazyPage><PatternsPage /></LazyPage>} />

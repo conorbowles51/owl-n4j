@@ -31,9 +31,14 @@ export function PhonesIndexPage() {
       <ul className="flex flex-col gap-1">
         {(phones.data?.phones ?? []).map((p) => (
           <li key={p.extraction_id}>
-            <Link className="underline underline-offset-2" to={`/cases/${caseId}/phones/${p.extraction_id}/records/conversations`}>
+            <Link className="underline underline-offset-2" to={`/cases/${caseId}/phones/${p.extraction_id}`}>
               {p.label}
             </Link>
+            <span className="text-sm text-muted-foreground">
+              {" "}
+              {[p.device.manufacturer, p.device.model].filter(Boolean).join(" ") || "device not recorded"} · {p.counts.messages.toLocaleString("en-US")} messages,{" "}
+              {p.counts.calls.toLocaleString("en-US")} calls, {p.counts.locations.toLocaleString("en-US")} locations
+            </span>
           </li>
         ))}
       </ul>
@@ -51,8 +56,3 @@ export function PhoneRecordsRoute() {
   return <Navigate to={record ? `${base}?record=${encodeURIComponent(record)}` : base} replace />
 }
 
-/** /phones/:extraction : the phone's conversations until its summary screen is released. */
-export function PhoneRoute() {
-  const { id: caseId = "", extraction = "" } = useParams()
-  return <Navigate to={`/cases/${encodeURIComponent(caseId)}/phones/${encodeURIComponent(extraction)}/records/conversations`} replace />
-}
