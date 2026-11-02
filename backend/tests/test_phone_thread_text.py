@@ -110,6 +110,9 @@ def test_evidence_processing_leaves_thread_documents_out_and_says_so(hooks):
         assert "phone conversation text" in out["message"]
 
 
+FILE_UID = "00000000-0000-4000-8000-00000000f11e"
+
+
 @needs_template
 def test_each_attachment_has_its_own_source_location_naming_its_record(hooks):
     """Followup to item E: a search hit on an attachment's name opens that attachment's record (rec://<uid>), not
@@ -127,6 +130,16 @@ def test_each_attachment_has_its_own_source_location_naming_its_record(hooks):
             case = make_case(c)
             ext = _phone(c, case, [(recs, stamps)], metadata={"MSISDN": OWNER})
         assert sweep.interpret_one(engine, ext)["status"] == "done"
+        with engine.begin() as c:  # the first attachment's reference resolves to one file; the second's does not
+            c.execute(text(
+                "INSERT INTO phone_files (extraction_id, document_index, ordinal, file_uid, local_path, body) VALUES "
+                "(:e, 0, 9000, :f, 'files/synthetic-a.jpg', CAST('[]' AS jsonb))"), {"e": ext, "f": FILE_UID})
+            for ordinal, resolution, fo in ((3, "tagged_file", 9000), (4, "unresolved", None)):
+                c.execute(text(
+                    "INSERT INTO phone_file_references (extraction_id, document_index, record_ordinal, body_path, "
+                    "mechanism, reference_text, file_document_index, file_ordinal, resolution, ambiguous) VALUES "
+                    "(:e, 0, :o, 'f', 'file_id_attribute', 'x', 0, :fo, :r, false)"),
+                    {"e": ext, "o": ordinal, "fo": fo, "r": resolution})
         thread_text.build_stale(engine)
         with engine.connect() as c:
             docs = _docs(c, ext)
@@ -149,6 +162,7 @@ def test_each_attachment_has_its_own_source_location_naming_its_record(hooks):
         assert content[line["start_char"]:line["end_char"]] == content.split("\n")[0]
         a, b = (by_uid[u] for u in atts)
         assert a["end_char"] <= b["start_char"]
+        assert a["file_uid"] == FILE_UID and "file_uid" not in b  # an unresolved reference names no file
         with Session(engine) as db:  # a search hit on the attachment's name names the attachment's record
             found = search.search_case_text(db, case_id=case, query="synthetic-b.jpg", document_limit=10,
                                             document_offset=0)

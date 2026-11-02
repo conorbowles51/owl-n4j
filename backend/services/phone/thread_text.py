@@ -20,7 +20,7 @@ from datetime import timezone
 
 from sqlalchemy import text
 
-GENERATOR_VERSION = "phone-thread-text/2"  # 2: each attachment cites its own record
+GENERATOR_VERSION = "phone-thread-text/3"  # 2: each attachment cites its own record; 3: and its file when known
 SOURCE_TYPE = "phone_text"
 MAX_MESSAGES = 5000
 MAX_CHARS = 2_000_000
@@ -124,6 +124,13 @@ def build_extraction(conn, extraction_id) -> dict:
             "SELECT parent_record_uid, record_uid, coalesce(title, model_type) FROM pv_record WHERE extraction_id = :e AND "
             "model_type = 'Attachment' AND parent_record_uid IS NOT NULL ORDER BY ordinal"), {"e": extraction_id}):
         attachments[parent].append((str(uid), title))
+    # the file an attachment names, when its reference resolved to exactly one file (an ambiguous or unresolved
+    # reference names none; the record panel says why)
+    att_files = defaultdict(set)
+    for uid, file_uid in conn.execute(text(
+            "SELECT record_uid, file_uid FROM pv_attachment_link WHERE extraction_id = :e AND resolved AND NOT ambiguous "
+            "AND file_uid IS NOT NULL"), {"e": extraction_id}):
+        att_files[str(uid)].add(str(file_uid))
     events = defaultdict(list)
     for r in conn.execute(text(
             "SELECT event_uid, record_uid, thread_key, kind, app, sort_instant, body, subject, call_status, "
@@ -159,11 +166,14 @@ def build_extraction(conn, extraction_id) -> dict:
                              "event_uid": str(ev["event_uid"]), "extraction_id": str(extraction_id),
                              "field_path": "Body", "instant": instant})
                 for uid, title, a, b in spans:
-                    locs.append({"kind": "phone_record", "label": "%s, attachment %s" % (said, title),
-                                 "start_char": pos + a, "end_char": pos + b, "record_uid": uid,
-                                 "source_ref": "rec://%s" % uid, "parent_record_uid": str(ev["record_uid"]),
-                                 "event_uid": str(ev["event_uid"]), "extraction_id": str(extraction_id),
-                                 "field_path": "Attachment", "instant": instant})
+                    loc = {"kind": "phone_record", "label": "%s, attachment %s" % (said, title),
+                           "start_char": pos + a, "end_char": pos + b, "record_uid": uid,
+                           "source_ref": "rec://%s" % uid, "parent_record_uid": str(ev["record_uid"]),
+                           "event_uid": str(ev["event_uid"]), "extraction_id": str(extraction_id),
+                           "field_path": "Attachment", "instant": instant}
+                    if len(att_files.get(uid, ())) == 1:
+                        loc["file_uid"] = next(iter(att_files[uid]))
+                    locs.append(loc)
                 content.append(line)
                 pos += len(line) + 1
             body = "\n".join(content)
