@@ -1,10 +1,14 @@
 import { ApiError, fetchAPI } from "@/lib/api-client"
 import {
+  ParticipantListSchema,
   PhonesSchema,
   RecordDetailSchema,
+  ReviewSchema,
   StreamIndexSchema,
   StreamWindowSchema,
+  ThreadListSchema,
   type RecordDetail,
+  type ThreadList,
   type StreamIndex,
   type StreamWindow,
 } from "./schemas"
@@ -100,4 +104,49 @@ export async function getSettings(caseId: string) {
 
 export async function putSettings(caseId: string, timeZone: string) {
   return fetchAPI(`/api/phones/settings`, { method: "PUT", body: { case_id: caseId, time_zone: timeZone } })
+}
+
+export type ThreadSort = "recent" | "first" | "volume" | "unreviewed" | "name"
+
+/** Every thread under the filter, in one response (03 section 6.3). */
+export async function getThreads(filter: StreamFilter, sort: ThreadSort = "recent"): Promise<ThreadList> {
+  return ThreadListSchema.parse(
+    await fetchAPI(`/api/phones/conversations/threads?sort=${sort}`, { method: "POST", body: filter, read: true }),
+  )
+}
+
+/** People mode: every participant under the filter, in one response. */
+export async function getParticipants(filter: StreamFilter) {
+  return ParticipantListSchema.parse(await fetchAPI("/api/phones/conversations/participants", { method: "POST", body: filter, read: true }))
+}
+
+export async function markReviewed(caseId: string, threadKey: string, scope: Record<string, unknown> = {}) {
+  const out = await fetchAPI<{ thread_key: string; review: unknown }>("/api/phones/conversations/review", {
+    method: "POST",
+    body: { case_id: caseId, thread_key: threadKey, scope },
+  })
+  return { thread_key: out.thread_key, review: ReviewSchema.parse(out.review) }
+}
+
+export async function undoReviewed(caseId: string, threadKey: string) {
+  return fetchAPI<{ thread_key: string; restored: boolean }>("/api/phones/conversations/review/undo", {
+    method: "POST",
+    body: { case_id: caseId, thread_key: threadKey },
+  })
+}
+
+/** A person's Not a copy decision on one record (03 section 3.4, C-13); `restore` puts it back in its group. */
+export async function markNotACopy(caseId: string, recordUid: string, reason: string, restore = false) {
+  return fetchAPI<{ decision_id: string; restored: boolean; groups: number }>(`/api/phones/records/${recordUid}/not-a-copy`, {
+    method: "POST",
+    body: { case_id: caseId, reason, restore },
+  })
+}
+
+/** Freeze every record the filter matches now as one phone selection, for Add to… on a whole result (07 6.1). */
+export async function freezeSelection(filter: StreamFilter, words: string) {
+  return fetchAPI<{ id: string; record_count: number; event_count: number; words: string }>("/api/phones/selections", {
+    method: "POST",
+    body: { filter, words },
+  })
 }

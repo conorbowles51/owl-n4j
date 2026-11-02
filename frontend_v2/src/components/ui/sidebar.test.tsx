@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { describe, expect, it, vi } from "vitest"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -18,17 +19,29 @@ vi.mock("@/features/significant/components/CaseLayerSwitcher", () => ({
 
 vi.mock("@/hooks/use-media-query", () => ({ useMediaQuery: () => false }))
 
-describe("AppSidebar case navigation", () => {
-  it("places Workspace, Dossiers, and Reports above case views and removes case Profiles", () => {
-    render(
+const phones = vi.hoisted(() => ({ list: [] as { extraction_id: string; label: string }[] }))
+vi.mock("@/features/phones/api", () => ({
+  getPhones: async (caseId: string) => ({ case_id: caseId, phones: phones.list }),
+}))
+
+function sidebar() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={["/cases/case-1/workspace"]}>
         <TooltipProvider>
           <Routes>
             <Route path="/cases/:id/*" element={<AppSidebar />} />
           </Routes>
         </TooltipProvider>
-      </MemoryRouter>,
-    )
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
+describe("AppSidebar case navigation", () => {
+  it("places Workspace, Dossiers, and Reports above case views and removes case Profiles", () => {
+    sidebar()
 
     const workspace = screen.getByRole("region", { name: "Workspace" })
     expect(within(workspace).getAllByRole("link").map((link) => link.textContent)).toEqual([
@@ -42,5 +55,21 @@ describe("AppSidebar case navigation", () => {
 
     const fullData = screen.getByRole("region", { name: "Full case data" })
     expect(within(fullData).queryByText("Profiles")).not.toBeInTheDocument()
+  })
+
+  it("shows the Phones group only when the case has a phone (03 D-18)", async () => {
+    phones.list = []
+    const { unmount } = sidebar()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.queryByRole("region", { name: "Phones" })).not.toBeInTheDocument()
+    unmount()
+    phones.list = [{ extraction_id: "e1", label: "C1" }]
+    sidebar()
+    const group = await screen.findByRole("region", { name: "Phones" })
+    expect(within(group).getAllByRole("link").map((l) => l.textContent?.replace(/Ctrl\+\d/, ""))).toEqual([
+      "Phone summary", "Conversations", "Patterns", "Needs a decision",
+    ])
+    expect(within(group).getByRole("link", { name: /Conversations/ })).toHaveAttribute("href", "/cases/case-1/conversations")
+    expect(screen.queryByText("Phones (prototype)")).not.toBeInTheDocument()
   })
 })

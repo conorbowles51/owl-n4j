@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
+import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { CopyButton } from "@/components/ui/copy-button"
 import { htmlEscape } from "@/lib/copy-text"
@@ -61,8 +62,18 @@ function FieldList({ fields, depth = 0 }: { fields: RecordFieldData[]; depth?: n
   )
 }
 
-export function RecordDetailView({ detail, onShowInConversations }: { detail: RecordDetail; onShowInConversations?: () => void }) {
+export function RecordDetailView({
+  detail,
+  caseId,
+  onShowInConversations,
+}: {
+  detail: RecordDetail
+  caseId?: string
+  onShowInConversations?: () => void
+}) {
   const d = detail
+  const readings = d.readings ?? []
+  const navigate = useNavigate()
   return (
     <div className="flex flex-col gap-3 text-sm" data-record={d.record_uid}>
       <section aria-label="Record">
@@ -82,6 +93,28 @@ export function RecordDetailView({ detail, onShowInConversations }: { detail: Re
         {d.state.source_index && <span className="rounded bg-muted px-1.5 py-0.5">Source index {d.state.source_index}</span>}
         {d.interpretation_level && <span className="rounded bg-muted px-1.5 py-0.5">{LEVEL_WORDS[d.interpretation_level] ?? d.interpretation_level}</span>}
       </section>
+      {caseId && readings.length > 0 && (
+        <section aria-label="Readings to check" className="rounded border p-2 text-xs">
+          <p className="font-medium">{LEVEL_WORDS.applied_unconfirmed}</p>
+          {readings.map((r) => {
+            const href = `/cases/${caseId}/phone-review?reading=${encodeURIComponent(r.id)}`
+            return (
+              <div key={r.id} className="mt-1 flex flex-col gap-1">
+                <p>{r.sentence}</p>
+                <div className="flex gap-2">
+                  {/* Both open the reading on Needs a decision with its examples; nothing is decided from here. */}
+                  <Button size="sm" variant="outline" onClick={() => navigate(href)}>
+                    Looks right
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => navigate(`${href}&answer=not-right`)}>
+                    Not right
+                  </Button>
+                </div>
+              </div>
+            )
+          })}
+        </section>
+      )}
       {d.corrections.length > 0 && (
         <section aria-label="Corrections" className="rounded border p-2">
           <h3 className="text-xs font-semibold">Corrections</h3>
@@ -156,7 +189,7 @@ export function PhoneRecordPanel({
     enabled: !!recordUid,
   })
   return (
-    <DockedPanel title="The record behind this" open={!!recordUid} onClose={onClose}>
+    <DockedPanel title="Record behind this message" open={!!recordUid} onClose={onClose}>
       {q.isLoading && <p className="text-sm text-muted-foreground">Loading the record</p>}
       {q.isError && (
         <div role="alert" className="text-sm">
@@ -166,7 +199,7 @@ export function PhoneRecordPanel({
           </Button>
         </div>
       )}
-      {q.data && <RecordDetailView detail={q.data} onShowInConversations={onShowInConversations} />}
+      {q.data && <RecordDetailView detail={q.data} caseId={caseId} onShowInConversations={onShowInConversations} />}
     </DockedPanel>
   )
 }

@@ -232,5 +232,50 @@ export const RecordDetailSchema = z.object({
   interpretation_level: z.string().nullable(),
   zone: z.string(),
   as_text: z.string(),
+  // Open readings of this record's type on its phone (07 J-8b); answered on Needs a decision.
+  readings: z.array(z.object({ id: z.string(), sentence: z.string() })).optional(),
 })
 export type RecordDetail = z.infer<typeof RecordDetailSchema>
+
+export const ReviewSchema = z.object({
+  by: z.string().nullable(),
+  at: z.string().nullable(),
+  record_count: z.number(),
+  added_since: z.number(),
+  words: z.string(),
+})
+export type Review = z.infer<typeof ReviewSchema>
+
+export const ThreadRowSchema = z.object({
+  thread_key: z.string(),
+  phone: z.object({ extraction_id: z.string(), label: z.string() }),
+  app: z.string().nullable(),
+  chat_type: z.string().nullable(),
+  thread_kind: z.string().nullable(),
+  title: z.string(),
+  participants: z.array(ParticipantLabelSchema),
+  participant_count: z.number(),
+  first_instant: z.string().nullable(),
+  last_instant: z.string().nullable(),
+  last_full: z.string(),
+  event_count: z.number(),
+  event_count_total: z.number(),
+  deleted_count: z.number(),
+  has_unreadable: z.boolean(),
+  review: ReviewSchema.nullable(),
+})
+export type ThreadRow = z.infer<typeof ThreadRowSchema>
+
+export const ThreadListSchema = envelope(ThreadRowSchema).extend({ sort: z.string() })
+export type ThreadList = z.infer<typeof ThreadListSchema>
+
+export const ParticipantRowSchema = z.object({
+  label: ParticipantLabelSchema,
+  events: z.number(),
+  first_instant: z.string().nullable(),
+  last_instant: z.string().nullable(),
+  phones: z.array(z.string()),
+  apps: z.array(z.string()),
+})
+export type ParticipantRow = z.infer<typeof ParticipantRowSchema>
+export const ParticipantListSchema = envelope(ParticipantRowSchema)

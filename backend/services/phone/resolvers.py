@@ -198,3 +198,5 @@ def register() -> None:
     link_types.register_phone_resolver("phone_record", resolve_record)
     link_types.register_phone_resolver("phone_thread", resolve_thread)
     link_types.register_phone_resolver("phone_identity", resolve_identity)
+    from services.phone import selections
+    link_types.register_phone_resolver("phone_selection", selections.resolve)

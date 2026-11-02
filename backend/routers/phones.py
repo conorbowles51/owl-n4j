@@ -505,6 +505,25 @@ def conversation_participants(body: dict, db: Session = Depends(get_db), user: U
         raise _failure("The list of people could not be loaded.", exc)
 
 
+class SelectionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filter: dict
+    words: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/selections")
+def freeze_selection(body: SelectionBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Freeze every record the filter matches now as one ``phone_selection`` (07 section 6.1), for Add to… on a whole
+    result. Needs edit access, because it is made to be added somewhere."""
+    from services.phone import selections
+    f = _filter(body.filter, db, user, ("case", "edit"))
+    try:
+        return selections.freeze(db, f, user, body.words)
+    except selections.SelectionError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 class ReviewMarkBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID

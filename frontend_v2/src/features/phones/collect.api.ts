@@ -32,6 +32,10 @@ export interface CollectResult {
   skipped: number
   refused: number
   refusedReason?: string
+  /** The links this add created (not the ones already there), so Undo removes only those. */
+  linkIds?: string[]
+  /** A Workspace entry's version after the add; each removal names the version it expects. */
+  version?: number
 }
 
 export interface CollectClient {
@@ -61,6 +65,8 @@ export async function addInParts(
     out.skipped += r.skipped
     out.refused += r.refused
     if (r.refusedReason) out.refusedReason = r.refusedReason
+    if (r.linkIds) out.linkIds = [...(out.linkIds ?? []), ...r.linkIds]
+    if (r.version !== undefined) out.version = r.version
     onProgress?.(Math.min(links.length, i + part.length), links.length)
   }
   return out
@@ -76,23 +82,51 @@ export function resultSentence(r: CollectResult, noun: string, target: CollectTa
 export const liveCollectClient: CollectClient = {
   async add(caseId, target, links, opts) {
     if (target.kind === "dossier") {
-      const r = await fetchAPI<{ added: number; skipped: number }>(`/api/dossiers/${target.id}/links:add`, {
+      const r = await fetchAPI<{ added: number; skipped: number; added_link_ids?: string[] }>(`/api/dossiers/${target.id}/links:add`, {
         method: "POST",
         body: { links: links.map((l) => ({ target_type: l.target_type, target_id: l.target_id, label: l.label, relationship_type: opts.role, source_anchor: l.source_anchor })), origin: opts.origin },
       })
-      return { added: r.added, skipped: r.skipped, refused: 0 }
+      return { added: r.added, skipped: r.skipped, refused: 0, linkIds: r.added_link_ids }
     }
     if (target.kind === "timeline") {
       // Add to Timeline gains phone records in lx-collect item 8; until then it is refused with this sentence.
       return { added: 0, skipped: 0, refused: links.length, refusedReason: "the Timeline does not take phone records yet" }
     }
-    const r = await fetchAPI<{ added: number; skipped: number }>(`/api/workspace/${caseId}/entries/${target.id}/links:batch`, {
+    const r = await fetchAPI<{ added: number; skipped: number; added_link_ids?: string[]; version?: number }>(`/api/workspace/${caseId}/entries/${target.id}/links:batch`, {
       method: "POST",
       body: {
         links: links.map((l) => ({ target_type: l.target_type, target_id: l.target_id, target_label: l.label, relationship: opts.relationship, source_anchor: l.source_anchor })),
         rationale: opts.origin,
       },
     })
-    return { added: r.added, skipped: r.skipped, refused: 0 }
+    return { added: r.added, skipped: r.skipped, refused: 0, linkIds: r.added_link_ids, version: r.version }
   },
+}
+
+/**
+ * Undo an add: remove exactly the links that add created; links that were already there stay. Returns how many
+ * were removed. A failure part way states how many were removed before it.
+ */
+export async function undoCollect(caseId: string, target: CollectTarget, result: CollectResult): Promise<number> {
+  const ids = result.linkIds ?? []
+  let version = result.version
+  let removed = 0
+  for (const id of ids) {
+    try {
+      if (target.kind === "dossier") {
+        await fetchAPI(`/api/dossiers/${target.id}/links/${id}`, { method: "DELETE" })
+      } else {
+        const r = await fetchAPI<{ version: number }>(
+          `/api/workspace/${caseId}/entries/${target.id}/links/${id}?expected_version=${version ?? 1}`,
+          { method: "DELETE" },
+        )
+        version = r.version
+      }
+      removed += 1
+    } catch (e) {
+      const why = e instanceof Error ? e.message : "the request failed"
+      throw new Error(`Undo stopped after removing ${removed.toLocaleString("en-US")} of ${ids.length.toLocaleString("en-US")}: ${why}`)
+    }
+  }
+  return removed
 }

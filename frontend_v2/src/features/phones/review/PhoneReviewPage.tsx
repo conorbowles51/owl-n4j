@@ -93,13 +93,20 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
   const [index, setIndex] = useState(0)
   // The list keeps readings already decided (in order, so the count reads true); the page opens on the first one
   // still needing a decision, once. After a decision it stays on that reading, which then shows who decided.
+  // A link from the record panel (07 J-8b) names the reading: ?reading=<id>, and &answer=not-right opens the choices.
+  const [linkParams] = useSearchParams()
+  const [notRight, setNotRight] = useState(false)
+  const linked = linkParams.get("reading")
   const placed = useRef(false)
+  const openNotRightOn = useRef<string | null>(null)
   useEffect(() => {
     if (placed.current || items.length === 0) return
     placed.current = true
-    const first = items.findIndex((x) => x.status === "open")
+    const named = linked ? items.findIndex((x) => x.id === linked) : -1
+    const first = named >= 0 ? named : items.findIndex((x) => x.status === "open")
     if (first > 0) setIndex(first)
-  }, [items])
+    if (named >= 0 && linkParams.get("answer") === "not-right") openNotRightOn.current = items[named].id
+  }, [items, linked, linkParams])
   const r: Reading | undefined = items[Math.min(index, Math.max(0, items.length - 1))]
   const ex = useQuery({
     queryKey: ["phone-reading-examples", caseId, r?.id],
@@ -108,7 +115,6 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
   })
   const [viewed, setViewed] = useState<Record<string, string[]>>({})
   const [open, setOpen] = useState<string | null>(null)
-  const [notRight, setNotRight] = useState(false)
   const [choice, setChoice] = useState<string | null>(null)
   const [reason, setReason] = useState("")
   const [note, setNote] = useState("")
@@ -125,7 +131,9 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
   const shownAt = useRef(performance.now())
   useEffect(() => {
     shownAt.current = performance.now()
-    setNotRight(false)
+    // A Not right link opens the choices once, on the reading it names; any other reading starts closed.
+    setNotRight(!!r?.id && openNotRightOn.current === r.id)
+    openNotRightOn.current = null
     setChoice(null)
     setReason("")
     setNote("")

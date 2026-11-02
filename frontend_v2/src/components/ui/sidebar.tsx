@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query"
 import { useEffect, type ReactNode } from "react"
 import { Link, useLocation, useParams } from "react-router-dom"
 import {
@@ -38,6 +39,7 @@ import {
 } from "@/components/ui/tooltip"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { applySwitchesFromSearch, useSwitch } from "@/lib/ui-switches"
+import { getPhones } from "@/features/phones/api"
 
 interface NavItem {
   label: string
@@ -64,9 +66,17 @@ function getLayerAwareCaseNav(caseId: string): NavItem[] {
 function getFullDataCaseNav(caseId: string): NavItem[] {
   return [
     { label: "Financial", icon: DollarSign, to: `/cases/${caseId}/financial`, shortcut: "5" },
-    { label: "Phones", icon: Smartphone, to: `/cases/${caseId}/cellebrite`, shortcut: "6" },
-    { label: "Phone patterns", icon: Smartphone, to: `/cases/${caseId}/phone-patterns` },
     { label: "Evidence", icon: FileText, to: `/cases/${caseId}/evidence`, shortcut: "8" },
+  ]
+}
+
+/** The Phones group (03 D-18): shown only when the case has a phone. */
+function getPhonesNav(caseId: string): NavItem[] {
+  return [
+    { label: "Phone summary", icon: Smartphone, to: `/cases/${caseId}/phones`, end: true },
+    { label: "Conversations", icon: MessageSquare, to: `/cases/${caseId}/conversations`, shortcut: "6" },
+    { label: "Patterns", icon: Clock, to: `/cases/${caseId}/phone-patterns` },
+    { label: "Needs a decision", icon: ShieldCheck, to: `/cases/${caseId}/phone-review` },
   ]
 }
 
@@ -268,6 +278,8 @@ export function AppSidebar() {
   const user = useAuthStore((s) => s.user)
   const role = user?.global_role ?? user?.role
   const canSeeAdmin = role === "admin" || role === "super_admin"
+  const phones = useQuery({ queryKey: ["phones", caseId], queryFn: () => getPhones(caseId!), enabled: !!caseId, staleTime: 60_000 })
+  const hasPhones = (phones.data?.phones.length ?? 0) > 0
 
   const toggleButton = (
     <Button
@@ -366,6 +378,19 @@ export function AppSidebar() {
                 active={pathname.startsWith(`/cases/${caseId}/phones-prototype`)}
               />
             )}
+          </SidebarSection>
+        )}
+
+        {caseId && hasPhones && (
+          <SidebarSection label="Phones" expanded={sidebarExpanded} separated>
+            {getPhonesNav(caseId).map((item) => (
+              <SidebarLink
+                key={item.to}
+                item={item}
+                expanded={sidebarExpanded}
+                active={isItemActive(pathname, item) || (item.label === "Conversations" && /\/phones\/[^/]+\/records\/conversations/.test(pathname))}
+              />
+            ))}
           </SidebarSection>
         )}
 

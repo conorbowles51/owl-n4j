@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ProgressPanel } from "@/components/ui/progress-panel"
 import { register } from "@/lib/keymap"
 import { CONFIRM_OVER } from "@/stores/phone-selection.store"
+import { orderTargets } from "../lib/order-targets"
 import {
   addInParts,
   partsNeeded,
@@ -48,10 +49,6 @@ const ROLES: { id: DossierRole; words: string }[] = [
   { id: "interview_evidence", words: "Interview evidence" },
 ]
 
-export function orderTargets(targets: CollectTarget[], kind: TargetKind): CollectTarget[] {
-  const of = targets.filter((t) => (kind === "finding" ? t.kind === "finding" || t.kind === "theory" : t.kind === kind))
-  return [...of].sort((a, b) => Number(!!b.linkedPerson) - Number(!!a.linkedPerson) || Number(!!b.recent) - Number(!!a.recent) || a.label.localeCompare(b.label))
-}
 
 export function AddToMenu({
   caseId,
@@ -61,6 +58,7 @@ export function AddToMenu({
   client,
   origin,
   onUndo,
+  onAdded,
   disabledReason,
   keys = true,
 }: {
@@ -73,6 +71,8 @@ export function AddToMenu({
   /** Where it was added from, e.g. "Added from Conversations". */
   origin: string
   onUndo?: (target: CollectTarget, result: CollectResult) => void
+  /** Called after a successful add (e.g. to refresh "In 2 dossiers" on the rows). */
+  onAdded?: (target: CollectTarget, result: CollectResult) => void
   /** Set when the person may not add here: the control is disabled and states why (07 4.11). */
   disabledReason?: string
   keys?: boolean
@@ -117,6 +117,7 @@ export function AddToMenu({
       )
       setReply({ text: resultSentence(result, noun, target), target, result })
       setOpen(false)
+      onAdded?.(target, result)
       trackUx(caseId, { event: "collect", target_kind: target.kind, count, added: result.added, skipped: result.skipped,
         refused: result.refused, ms: performance.now() - t0 })
     } catch (e) {

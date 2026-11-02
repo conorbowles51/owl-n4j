@@ -228,3 +228,60 @@ def test_a_person_s_not_a_copy_decision_shows_the_copy_as_its_own_row_and_can_be
     r = c.post(f"/api/phones/records/{uid}/not-a-copy", json={"case_id": case, "reason": "Was right", "restore": True})
     assert r.status_code == 200, r.text
     assert c.post("/api/phones/streams/index", json=f).json()["counts"]["events"] == 1
+
+
+def test_the_record_panel_offers_the_open_readings_of_its_type_on_its_phone(api):
+    """07 J-8b: the panel lists each unchecked reading beside its mark; a checked one is not offered."""
+    c, case, ext = api["client"], api["case"], api["ext"]
+    with api["engine"].begin() as conn:
+        mv = conn.execute(text(
+            "INSERT INTO phone_mapping_versions (id, kind, name, version, content_sha256, content, status, origin) "
+            "VALUES (gen_random_uuid(), 'type', 'SyntheticPanelTest', 1, repeat('0', 64), '{}', 'applied_unconfirmed', "
+            "'human') RETURNING id")).scalar()
+        for status, summary in (("open", "each instant message is read as a message"), ("confirmed", "checked")):
+            conn.execute(text(
+                "INSERT INTO phone_mapping_judgements (id, case_id, extraction_id, mapping_version_id, mapping_kind, "
+                "mapping_name, rule_id, type_name, rule_part, summary, records_touched, status, generation) VALUES "
+                "(gen_random_uuid(), :c, :e, :mv, 'type', 'InstantMessage', :r, 'InstantMessage', "
+                "'record', :s, 3, :st, 1)"), {"c": case, "e": ext, "mv": mv, "r": "r-" + status, "s": summary,
+                                               "st": status})
+    uid = api["evs"][0]["record_uid"]
+    d = c.get(f"/api/phones/records/{uid}", params={"case_id": case}).json()
+    assert [r["sentence"].startswith("On C3") for r in d["readings"]] == [True]
+    assert "each instant message is read as a message" in d["readings"][0]["sentence"]
+
+
+def test_a_whole_result_is_frozen_as_one_selection_with_every_copy_and_resolves_only_in_its_case(api):
+    """07 section 6.1 and lx-collect: Add to… on a whole filtered result stores one frozen phone_selection. Every
+    record the filter matched is in it, copies included, so nothing is silently missing; it does not follow later
+    changes, and another case cannot resolve it."""
+    from postgres import link_types
+    from services.phone import copies
+    from tests.phone_streams_fixture import phone as add_phone
+    c, case = api["client"], api["case"]
+    t0 = at(2023, 4, 1, 12)
+    with api["engine"].begin() as conn:
+        ext2, evs2 = add_phone(conn, case, label="C4", events=[msg(t0, ANA, [OWNER], body="same"),
+                                                               msg(t0, ANA, [OWNER], body="same"),
+                                                               msg(at(2023, 4, 2), OWNER, [ANA], body="later")])
+        copies.assign(conn, ext2, 1)
+    f = {"case_id": case, "phones": [str(ext2)]}
+    assert c.post("/api/phones/selections", json={"filter": f, "words": ""}).status_code == 422
+    r = c.post("/api/phones/selections", json={"filter": f, "words": "Everything on C4"})
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["record_count"] == 3 and got["event_count"] == 2
+    empty = c.post("/api/phones/selections", json={"filter": {**f, "text": {"query": "nothing like this"}},
+                                                   "words": "None"})
+    assert empty.status_code == 422 and "Nothing matches" in empty.json()["detail"]
+    other = c.post("/api/phones/selections", json={"filter": {"case_id": api["other_case"]}, "words": "x"})
+    assert other.status_code in (403, 404)
+    from sqlalchemy.orm import Session
+    with Session(api["engine"]) as db:
+        target = link_types.resolve_phone_target(db, case, "phone_selection", got["id"])
+        assert sorted(target.members) == sorted(e["record_uid"] for e in evs2)
+        assert target.mapping_versions["phones"][0]["extraction_id"] == str(ext2)
+        with pytest.raises(link_types.LinkTargetError):
+            link_types.resolve_phone_target(db, api["other_case"], "phone_selection", got["id"])
+        with pytest.raises(link_types.LinkTargetError):
+            link_types.resolve_phone_target(db, case, "phone_selection", "not-an-id")

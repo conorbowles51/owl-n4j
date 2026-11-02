@@ -48,12 +48,12 @@ const EXAMPLES: ReadingExamples = {
   })),
 }
 
-function page() {
+function page(entry = "/cases/case-1/phone-review") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={client}>
       <TooltipProvider>
-        <MemoryRouter initialEntries={["/cases/case-1/phone-review"]}>
+        <MemoryRouter initialEntries={[entry]}>
           <Routes>
             <Route path="/cases/:id/phone-review" element={<PhoneReviewPage />} />
           </Routes>
@@ -81,6 +81,18 @@ describe("Needs a decision, readings group", () => {
     const body = document.body.textContent ?? ""
     expect(body).not.toMatch(/\b(TimeStamp|IsPhoneOwner|InstantMessage|role\.From|event_time)\b/)
     expect(screen.getAllByText(/Mapped by the system, not yet confirmed/).length).toBeGreaterThan(0)
+  })
+
+  it("opens on the reading a record panel link names (07 J-8b)", async () => {
+    page("/cases/case-1/phone-review?reading=r2")
+    await waitFor(() => expect(api.examples).toHaveBeenCalledWith("case-1", "r2"))
+    expect(await screen.findByText(/^On C1, calls: /)).toBeInTheDocument()
+    expect(screen.queryByRole("group", { name: /What is wrong/ })).not.toBeInTheDocument()
+  })
+
+  it("a Not right link opens the choices on that reading", async () => {
+    page("/cases/case-1/phone-review?reading=r1&answer=not-right")
+    await screen.findByRole("button", { name: "The sender is the other party" })
   })
 
   it("opens on the first reading still needing a decision when earlier ones are decided", async () => {

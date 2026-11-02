@@ -7,7 +7,7 @@ import { failureText, StaleSnapshotError } from "../api"
 import type { UseStream } from "../hooks/use-stream"
 import { WINDOW_FAILED } from "../hooks/use-stream"
 import { rowsHtml, rowsText } from "../lib/copy-rows"
-import { LONG_BODY, plural, STALE_COPY, totalWords } from "../lib/stream-words"
+import { LONG_BODY, plural, STALE_COPY, totalWords, undatedWords } from "../lib/stream-words"
 import type { StreamRow } from "../schemas"
 import { Arrow, ParticipantLabel } from "./ParticipantLabel"
 import { rowBadges } from "../lib/badges"
@@ -17,7 +17,7 @@ import { TimeCell } from "./TimeCell"
 /**
  * The one virtual list for phone rows (03 sections 3.1, 3.7, 3.9, 5.1), used by Conversations, the Timeline lens
  * and Search results. Sized to the exact total from the first paint; day headers name the day and the zone with
- * its offset; undated rows form the "No time recorded" group; a failed window shows a Retry row in place. There is
+ * its offset; undated rows form one counted group, "N messages have no time and are listed at the end"; a failed window shows a Retry row in place. There is
  * no "Load more" control.
  *
  * Selection: click a row's box or press Space; Shift+Click and Shift+J/K extend; Ctrl/Cmd+A selects the whole
@@ -40,7 +40,28 @@ export interface StreamListProps {
   noun?: { one: string; many: string }
   onOpenRecord?: (row: StreamRow) => void
   onFocusRow?: (row: StreamRow | null) => void
+  /** Keys the page handles (Around this time, Mark reviewed, Add to…); return true when handled. */
+  onKey?: (e: KeyLike, focused: StreamRow | null, selected: StreamRow[]) => boolean
+  /** Listen at the window too, so keys work before the list has focus (07 section 4.9). */
+  globalKeys?: boolean
+  /** Scroll to a day's header ("" for the undated group); `seq` changes for every request. */
+  jumpTo?: { day: string | null; seq: number } | null
+  onSelectionChange?: (rows: StreamRow[], all: boolean) => void
+  /** Extra line under a row (e.g. "In 2 dossiers"). */
+  rowExtra?: (row: StreamRow) => React.ReactNode
   className?: string
+}
+
+/** The fields of a key event the list reads; both React and DOM keyboard events have them. */
+export interface KeyLike {
+  key: string
+  code: string
+  ctrlKey: boolean
+  metaKey: boolean
+  shiftKey: boolean
+  altKey: boolean
+  target: EventTarget | null
+  preventDefault: () => void
 }
 
 export function StreamList({
@@ -54,6 +75,11 @@ export function StreamList({
   noun = { one: "message", many: "messages" },
   onOpenRecord,
   onFocusRow,
+  onKey,
+  globalKeys = false,
+  jumpTo,
+  onSelectionChange,
+  rowExtra,
   className,
 }: StreamListProps) {
   const parentRef = useRef<HTMLDivElement>(null)
@@ -165,10 +191,11 @@ export function StreamList({
     }
   }
 
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    const target = e.target as HTMLElement
-    if (target.closest("input:not([type=checkbox]), textarea, select, [contenteditable=true]")) return
+  const onKeyDown = (e: KeyLike) => {
+    const target = e.target as HTMLElement | null
+    if (target?.closest?.("input:not([type=checkbox]), textarea, select, [contenteditable=true], [role=dialog], [role=menu]")) return
     const mod = e.ctrlKey || e.metaKey
+    if (onKey && !mod && onKey(e, focusedRow, selectedRows())) return
     if (mod && e.key.toLowerCase() === "a") {
       e.preventDefault()
       setAllSelected(true)
@@ -213,6 +240,36 @@ export function StreamList({
     }
   }
 
+  const selectedRows = (): StreamRow[] => loadedSelection() ?? []
+
+  // Keys before the list has focus: the page's keys work wherever the reader is, except in fields and dialogs.
+  const keyRef = useRef(onKeyDown)
+  useEffect(() => {
+    keyRef.current = onKeyDown
+  })
+  useEffect(() => {
+    if (!globalKeys) return
+    const h = (e: KeyboardEvent) => {
+      if (parentRef.current?.closest("[data-stream-root]")?.contains(e.target as Node)) return // the list's own handler runs
+      keyRef.current(e)
+    }
+    window.addEventListener("keydown", h)
+    return () => window.removeEventListener("keydown", h)
+  }, [globalKeys])
+
+  useEffect(() => {
+    if (!jumpTo) return
+    const seg = stream.segments.find((sg) => sg.day === (jumpTo.day || null))
+    if (!seg) return
+    virtualizer.scrollToIndex(seg.start, { align: "start" })
+    setFocusIndex(seg.start + 1)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per request (seq)
+  }, [jumpTo?.seq, stream.segments])
+
+  useEffect(() => {
+    onSelectionChange?.(loadedSelection() ?? [], allSelected)
+  }, [selected, allSelected, loadedSelection, onSelectionChange])
+
   const jumpDay = (dir: 1 | -1) => {
     const pos = focusIndex ?? first
     const segs = stream.segments
@@ -235,7 +292,7 @@ export function StreamList({
   }
 
   return (
-    <div className={cn("flex min-h-0 flex-1 flex-col", className)} onKeyDown={onKeyDown}>
+    <div data-stream-root className={cn("flex min-h-0 flex-1 flex-col", className)} onKeyDown={onKeyDown}>
       <div className="flex flex-wrap items-center gap-3 border-b px-3 py-2 text-sm" data-testid="stream-toolbar">
         <span data-testid="stream-total" className="font-medium">
           {stream.index ? totalWords(stream, noun) : ""}
@@ -290,9 +347,20 @@ export function StreamList({
               const s = stream.segments[it.segment]
               return (
                 <div key={`h${it.segment}`} ref={virtualizer.measureElement} data-index={v.index} style={style} className="flex items-center gap-2 border-b bg-muted/60 px-3 py-2 text-sm" data-day={s.day ?? "none"}>
-                  <span className="font-semibold">{s.header}</span>
-                  {s.zoneLabel && <span className="text-muted-foreground">{s.zoneLabel}</span>}
-                  <span className="text-muted-foreground">({plural(s.count, noun)})</span>
+                  {s.day === null ? (
+                    // 07 J-4: the undated rows are counted and their place is stated, never silently dropped.
+                    <span role="heading" aria-level={3} className="font-semibold">
+                      {undatedWords(s.count, noun, stream.index?.no_time_position ?? "last")}
+                    </span>
+                  ) : (
+                    <>
+                      <span role="heading" aria-level={3} className="font-semibold">
+                        {s.header}
+                        {s.zoneLabel ? `, ${s.zoneLabel}` : ""}
+                      </span>
+                      <span className="text-muted-foreground">({plural(s.count, noun)})</span>
+                    </>
+                  )}
                   <span className="ml-auto flex gap-1">
                     <Button size="sm" variant="ghost" onClick={() => jumpDay(-1)} aria-label="Previous day">
                       Previous day
@@ -381,6 +449,7 @@ export function StreamList({
                       ))}
                     </p>
                   )}
+                  {rowExtra?.(row)}
                 </div>
                 {onOpenRecord && (
                   <Button size="sm" variant="ghost" onClick={() => onOpenRecord(row)} aria-label="Open the record behind this">

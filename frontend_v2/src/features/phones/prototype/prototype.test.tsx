@@ -1,4 +1,6 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { ReactElement } from "react"
 import { MemoryRouter, Navigate, Route, Routes } from "react-router-dom"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -14,6 +16,10 @@ vi.mock("@/stores/app.store", () => ({ useAppStore: () => ({ sidebarExpanded: tr
 vi.mock("@/features/auth/hooks/use-auth", () => ({ useAuthStore: () => ({ user: { global_role: "user" } }) }))
 vi.mock("@/features/significant/components/CaseLayerSwitcher", () => ({ CaseLayerSwitcher: () => <div>Layers</div> }))
 vi.mock("@/hooks/use-media-query", () => ({ useMediaQuery: () => false }))
+// The sidebar asks for the case's phones (its Phones group, 03 D-18); the app always provides a query client.
+vi.mock("@/features/phones/api", async (orig) => ({ ...(await orig<object>()), getPhones: async (caseId: string) => ({ case_id: caseId, phones: [] }) }))
+const render = (ui: ReactElement) =>
+  rtlRender(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>)
 
 function app(path: string) {
   return render(
