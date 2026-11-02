@@ -44,7 +44,7 @@ def _call(top, parties, direction="Outgoing"):
                           refs("Parties", *[top + 1 + i for i in range(len(parties))])])
     recs.append((top, None, top, call))
     for i, (ident, name, owner) in enumerate(parties):
-        f = [fld("Identifier", ("String", ident))]
+        f = [fld("Identifier", ("String", ident))] if ident is not None else []
         if name:
             f.append(fld("Name", ("String", name)))
         if owner is not None:

@@ -197,6 +197,7 @@ def _prepare_files(
     skipped_processing = 0
     skipped_external = 0
     skipped_phone_reports = 0
+    skipped_phone_texts = 0
     missing_on_disk = 0
 
     for file_id in file_ids:
@@ -209,6 +210,10 @@ def _prepare_files(
             # A phone report is read by its capture job when it is uploaded (01 section 4.4); a folder processed
             # as a whole, or a selection with ordinary files, leaves it out and says so.
             skipped_phone_reports += 1
+            continue
+        if ef.source_type == "phone_text":
+            # A thread document is written from the phone's records (02 section 9.7); there is no file to process.
+            skipped_phone_texts += 1
             continue
         if ef.status == "processing":
             skipped_processing += 1
@@ -232,10 +237,12 @@ def _prepare_files(
                         "allowing phone material to be processed outside Loupe")
         if skipped_phone_reports:
             message += f"; {skipped_phone_reports} phone report(s) are read automatically when uploaded"
+        if skipped_phone_texts:
+            message += f"; {skipped_phone_texts} phone conversation text(s) are written from the phone's records"
         return {
             "job_ids": [],
             "file_count": 0,
-            "skipped_count": skipped_processing + skipped_external + skipped_phone_reports,
+            "skipped_count": skipped_processing + skipped_external + skipped_phone_reports + skipped_phone_texts,
             "skipped_phone_files": skipped_external,
             "message": message,
         }
@@ -323,7 +330,7 @@ def _prepare_files(
         )
     valid_ids = [str(ef.id) for ef in valid_files]  # read before the commit expires the rows
     db.commit()
-    skipped = skipped_processing + skipped_external + skipped_phone_reports
+    skipped = skipped_processing + skipped_external + skipped_phone_reports + skipped_phone_texts
     return file_tuples, per_file_metadata, valid_files, valid_ids, skipped, missing_on_disk
 
 

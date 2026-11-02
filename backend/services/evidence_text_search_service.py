@@ -101,6 +101,10 @@ def _hit(
         "highlight_end": highlight_end,
         "page_number": location.get("page_number") if location else None,
         "location_label": location.get("label") if location else None,
+        # a phone thread document's line names its record, so the hit opens the record (02 section 9.7)
+        "location_kind": location.get("kind") if location else None,
+        "record_uid": location.get("record_uid") if location else None,
+        "extraction_id": location.get("extraction_id") if location else None,
     }
 
 
@@ -143,8 +147,9 @@ def search_case_text(
     like_pattern = f"%{_escaped_like_value(lowered_query)}%"
 
     case_documents = db.scalar(
-        select(func.count()).select_from(EvidenceFile).where(EvidenceFile.case_id == case_id)
-    ) or 0
+        select(func.count()).select_from(EvidenceFile).where(
+            EvidenceFile.case_id == case_id, EvidenceFile.source_type.is_distinct_from("phone_text"))
+    ) or 0  # thread documents are text written from phone records, not documents in the case (02 section 9.7)
     searchable_documents = db.scalar(
         select(func.count())
         .select_from(EvidenceDocumentText)
@@ -157,6 +162,7 @@ def search_case_text(
             EvidenceFile.id,
             EvidenceFile.original_filename,
             EvidenceFile.folder_id,
+            EvidenceFile.source_type,
             EvidenceDocumentText.content,
             EvidenceDocumentText.source_locations,
         )
@@ -181,7 +187,9 @@ def search_case_text(
             {
                 "evidence_id": str(row.id),
                 "document_name": row.original_filename,
-                "folder_path": folder_paths.get(row.folder_id, "Root"),
+                "source_type": row.source_type,
+                "folder_path": "Phone conversations" if row.source_type == "phone_text"
+                else folder_paths.get(row.folder_id, "Root"),
                 "total_matches": len(occurrences),
                 "shown_matches": len(preview),
                 "matches_truncated": len(occurrences) > len(preview),

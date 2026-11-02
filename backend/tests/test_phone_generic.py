@@ -117,6 +117,31 @@ def test_a_second_pass_writes_the_next_generation_and_removes_the_previous_one()
                {k: v for k, v in second.items() if k.startswith("rows:")}
 
 
+def _synthetic_stage(conn, extraction_id, generation, plan):
+    return {"synthetic_stage": 1}
+
+
+@needs_template
+def test_a_stage_added_after_a_phone_was_read_reads_that_phone_again(monkeypatch):
+    """A phone read before the identities (or any later stage) existed has no rows from it; nothing else about the
+    phone changed, so only the version naming the stages makes it due again."""
+    monkeypatch.setitem(sweep._hooks, "apply", list(sweep._hooks["apply"]))
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            ext = _unknown_type_extraction(c, make_case(c))
+        sweep.interpret_one(engine, ext)
+        with engine.connect() as c:
+            assert sweep.candidates(c) == []
+        sweep.register_applier(_synthetic_stage)
+        with engine.connect() as c:
+            assert [str(x) for x in sweep.candidates(c)] == [str(ext)]
+        again = sweep.interpret_one(engine, ext)
+        assert again["applied:synthetic_stage"] == 1
+        with engine.connect() as c:
+            assert sweep.candidates(c) == []
+
+
 @needs_template
 def test_a_superseded_extraction_keeps_its_rows_but_leaves_the_views():
     with fresh_engine() as engine:

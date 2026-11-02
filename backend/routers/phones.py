@@ -15,9 +15,9 @@ from sqlalchemy.orm import Session
 from postgres.models.user import User
 from postgres.session import get_db
 from routers.case_access import authorize_case
-from routers.users import get_current_db_user, require_admin
+from routers.users import get_current_db_user, require_admin, require_super_admin
 from services.financial.quarantine_row import ActorError, actor_from_user
-from services.phone import coverage, identities, identity_decisions, readings, registry
+from services.phone import corrections, coverage, external_processing, identities, identity_decisions, readings, registry
 
 router = APIRouter(prefix="/api/phones", tags=["phones"])
 
@@ -229,4 +229,117 @@ def extraction_owner(extraction_id: UUID, case_id: UUID = Query(...), db: Sessio
     out = identities.owner(db.connection(), extraction_id)
     for cnd in out["candidates"]:
         cnd["identity_id"] = str(cnd["identity_id"]) if cnd["identity_id"] else None
+    return out
+
+
+class ExternalProcessingDecision(BaseModel):
+    """02 sections 8.8, 9.8: embeddings, transcription, translation, image search and geocoding of one phone."""
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    allow: bool
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+@router.get("/{extraction_id}/external-processing")
+def get_external_processing(extraction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                            user: User = Depends(get_current_db_user)):
+    authorize_case(db, case_id, user, ("case", "view"))
+    return external_processing.state(db.connection(), case_id, extraction_id)
+
+
+@router.post("/{extraction_id}/external-processing")
+def set_external_processing(extraction_id: UUID, body: ExternalProcessingDecision, db: Session = Depends(get_db),
+                            user: User = Depends(require_super_admin)):
+    """Sending a phone's material to a third-party service is decided by the system owner for a case (9.8)."""
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    try:
+        out = external_processing.decide(db, case_id=body.case_id, extraction_id=extraction_id, allow=body.allow,
+                                         reason=body.reason, actor=_actor(user))
+    except external_processing.ExternalProcessingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+    db.commit()
+    return out
+
+
+class ProjectionRebuild(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+
+
+@router.post("/projection/rebuild")
+def rebuild_projection(body: ProjectionRebuild, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Rebuild the case graph's phone layer from Postgres now (02 section 9.5)."""
+    authorize_case(db, body.case_id, user, ("case", "edit"))  # derived data only; anyone who can edit the case
+    from postgres.session import _get_engine
+    from services.phone import graph_projection
+    out = graph_projection.project_case(_get_engine(), body.case_id)
+    return {"case_id": str(body.case_id), **{k: v for k, v in out.items()}}
+
+
+class ValueCorrection(BaseModel):
+    """02 section 10.4: one captured value, corrected with the person's own reason; the original stays visible."""
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    field_path: str = Field(min_length=1, max_length=400)
+    value_index: int = Field(default=0, ge=0)
+    corrected_text: str = Field(max_length=200000)
+    reason: str = Field(min_length=1, max_length=4000)
+    expected_revision: Optional[str] = Field(default=None, max_length=64)
+
+
+def _correction_error(db, exc):
+    db.rollback()
+    raise HTTPException(status_code=exc.status, detail=str(exc))
+
+
+@router.post("/records/{record_uid}/corrections")
+def correct_value(record_uid: UUID, body: ValueCorrection, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_db_user)):
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        out = corrections.correct_value(db, case_id=body.case_id, record_uid=record_uid, field_path=body.field_path,
+                                        value_index=body.value_index, corrected_text=body.corrected_text,
+                                        reason=body.reason, actor=_actor(user),
+                                        expected_revision=body.expected_revision)
+    except corrections.CorrectionError as exc:
+        _correction_error(db, exc)
+    db.commit()
+    return out
+
+
+@router.get("/records/{record_uid}/corrections")
+def value_corrections(record_uid: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                      user: User = Depends(get_current_db_user)):
+    """Every correction of a record's values, oldest first: the machine value, each correction, who and why."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    rows = [c for c in corrections.chain(db.connection(), record_uid)]
+    from sqlalchemy import text as sql
+    if rows and not db.connection().execute(sql("SELECT 1 FROM phone_value_corrections WHERE record_uid = :r AND "
+                                                "case_id = :c LIMIT 1"), {"r": record_uid, "c": case_id}).scalar():
+        raise HTTPException(status_code=404, detail="This record is not in this case")
+    return {"record_uid": str(record_uid), "corrections": rows}
+
+
+class ClockOffset(BaseModel):
+    """02 section 10.1: the device clock was off by ``offset_seconds`` (added to the recorded time) in a period."""
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    offset_seconds: int
+    start: Optional[str] = Field(default=None, max_length=64)
+    end: Optional[str] = Field(default=None, max_length=64)
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+@router.post("/{extraction_id}/clock-offset")
+def set_clock_offset(extraction_id: UUID, body: ClockOffset, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_db_user)):
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        out = corrections.set_clock_offset(db, case_id=body.case_id, extraction_id=extraction_id,
+                                           offset_seconds=body.offset_seconds, start=body.start, end=body.end,
+                                           reason=body.reason, actor=_actor(user))
+    except corrections.CorrectionError as exc:
+        _correction_error(db, exc)
+    db.commit()
     return out

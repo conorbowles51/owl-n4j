@@ -54,6 +54,24 @@ def normalised_subject(s):
     return " ".join(s.split()).casefold()
 
 
+def _message_ids(value):
+    """Message ids in a header value, normalised: angle brackets removed, case folded, in order."""
+    if not value or not str(value).strip():
+        return []
+    found = re.findall(r"<([^<>\s]+)>", str(value))
+    return [x.strip().lower() for x in (found or str(value).split()) if x.strip("<> ")]
+
+
+def header_thread_root(headers):
+    """The thread an email belongs to by its headers (02 decision 45): the first id of References (the thread's
+    first message), else In-Reply-To, else its own Message-ID. None when it carries none of them."""
+    for name in ("References", "InReplyTo", "MessageId", "MessageID"):
+        ids_ = _message_ids(headers.get(name))
+        if ids_:
+            return ids_[0]
+    return None
+
+
 def _h(*parts):
     return hashlib.sha256("\x1f".join(p or "" for p in parts).encode("utf-8")).hexdigest()[:32]
 
@@ -105,6 +123,16 @@ def _times(conn, ext, gen, t, where, params=None):
     return out
 
 
+def _effective_text(corr, uid, fmap, name):
+    """A top-level field's first text, as corrected when a correction is in effect (02 section 10.3)."""
+    for f in fmap.get(name, ()):
+        for v in f.real_values:
+            if v.text is not None:
+                fixed = corr.get((uid, name, v.index))
+                return fixed[0] if fixed else v.text
+    return None
+
+
 def _chat_ordinals(conn, ext):
     return {(r[0], r[1]) for r in conn.execute(text(
         "SELECT document_index, ordinal FROM phone_records WHERE extraction_id = :e AND model_type = 'Chat'"),
@@ -138,6 +166,8 @@ def _events(conn, w, ext, case_id, gen, m, b, levels, chats, thread_of_record, s
     event_times = _times(conn, ext, gen, t, "is_event_time")
     end_times = _times(conn, ext, gen, t, "field_name = :f", {"f": b.end_time.field}) if b.end_time.field else {}
     parties = _parties(conn, ext, gen, t)
+    from services.phone import corrections
+    corr = corrections.current(conn, ext)
     rec_level = levels["%s.record" % m.name]
     implicit_rule = "%s.owner_implicit" % m.name
     rows = conn.execute(text(
@@ -152,7 +182,7 @@ def _events(conn, w, ext, case_id, gen, m, b, levels, chats, thread_of_record, s
         fmap = defaultdict(list)
         for f in B.fields(body):
             fmap[f.name].append(f)
-        first = lambda name: generic._first_text(fmap, name) if name else None  # noqa: E731
+        first = lambda name: _effective_text(corr, uid, fmap, name) if name else None  # noqa: E731
         flags = []
         ps = parties.get(uid, [])
         owner_roles = {p[1] for p in ps if p[2] is True}
@@ -199,7 +229,7 @@ def _events(conn, w, ext, case_id, gen, m, b, levels, chats, thread_of_record, s
                 keys = sorted({k for k in (party_key(p[3], p[4]) for p in ps if p[2] is not True) if k})
                 key = "set:%s:%s:%s" % (ext, kind, _h(app, *keys))
             elif strat == "field":
-                hdr = next((first(h) for h in HEADER_FIELDS if first(h)), None)
+                hdr = header_thread_root({h: first(h) for h in HEADER_FIELDS})
                 if hdr:
                     key = "hdr:%s:%s" % (ext, _h(hdr))
                 else:

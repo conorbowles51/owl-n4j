@@ -178,9 +178,10 @@ def lineage_id(file):
 
 
 def visible_evidence_condition():
-    """Hide only proven internal copies, before pagination and counting."""
+    """Hide only proven internal copies and phone thread documents (02 section 9.7: text written from a phone's
+    records, reached through search and the phone screens), before pagination and counting."""
     original = aliased(EvidenceFile)
-    return ~exists(select(original.id).where(
+    return EvidenceFile.source_type.is_distinct_from('phone_text') & ~exists(select(original.id).where(
         original.case_id == EvidenceFile.case_id, original.sha256 == EvidenceFile.sha256,
         original.id != EvidenceFile.id,
         func.replace(cast(original.id, String), '-', '') == func.replace(

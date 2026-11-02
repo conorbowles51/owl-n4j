@@ -476,10 +476,12 @@ def reading_decisions(conn, extraction_id) -> dict:
 
 
 def decision_revision(conn, extraction_id):
+    from services.phone import corrections
     ids = [str(r[0]) for r in conn.execute(text(
         "SELECT id FROM adjudications WHERE subject_type = 'phone_extraction' AND subject_id = :e AND "
         "decision = ANY(CAST(:d AS text[])) ORDER BY subject_sequence"),
         {"e": extraction_id, "d": list(DERIVING_DECISIONS)})]
+    ids += corrections.record_decision_ids(conn, extraction_id)  # a value correction re-derives its phone (10.3)
     return hashlib.sha256("|".join(ids).encode()).hexdigest()[:32] if ids else None
 
 

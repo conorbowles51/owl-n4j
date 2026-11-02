@@ -237,6 +237,7 @@ def suggestions(conn, case_id) -> list:
         out.append({"id": str(r.id), "identities": idents, "dossier_id": str(r.dossier_id) if r.dossier_id else None,
                     "reasons": r.reasons, "score": float(r.score),
                     "expected_revision": links_revision(conn, r.identity_ids)})
+    out.sort(key=lambda x: (-x["score"], min((i["identity_key"] for i in x["identities"]), default="")))  # 8.7
     return out
 
 

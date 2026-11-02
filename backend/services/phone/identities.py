@@ -171,23 +171,26 @@ def build(conn, extraction_id, generation, the_plan=None) -> dict:
     return {"identities:" + k: v for k, v in stats.items()}
 
 
-def header_msisdns(conn, extraction_id):
-    """Values of metadata items named ``MSISDN`` in the report header (8.6 tier 1), in document order."""
-    out = []
+def header_items(conn, extraction_id) -> dict:
+    """``{name: [values]}`` of every metadata ``item`` in the report header, values in document order."""
+    out = {}
     for (skel,) in conn.execute(text("SELECT skeleton FROM phone_extraction_documents WHERE extraction_id = :e "
                                      "ORDER BY document_index"), {"e": extraction_id}):
         stack = [skel]
-        found = []
         while stack:
             el = stack.pop()
             if not isinstance(el, list) or not el or not isinstance(el[0], str) or el[0][:1] == "@":
                 continue
-            if el[0] == "item" and (el[1] or {}).get("name") == "MSISDN" and isinstance(el[2], str) and el[2].strip():
-                found.append(el[2])
+            if el[0] == "item" and (el[1] or {}).get("name") and isinstance(el[2], str) and el[2].strip():
+                out.setdefault(el[1]["name"], []).append(el[2])
             for c in reversed(el[3] or ()) if len(el) > 3 else ():
                 stack.append(c)
-        out.extend(found)
     return out
+
+
+def header_msisdns(conn, extraction_id):
+    """Values of metadata items named ``MSISDN`` in the report header (8.6 tier 1), in document order."""
+    return header_items(conn, extraction_id).get("MSISDN", [])
 
 
 def _root_instants(conn, extraction_id, generation, roots):
@@ -335,6 +338,23 @@ def _recount(conn, case_id, extraction_id, generation):
         "(i.sighting_count, i.phone_count, i.first_instant, i.last_instant) IS DISTINCT FROM "
         "(coalesce(agg.n, 0), coalesce(agg.phones, 0), agg.f, agg.l)"),
         {"c": case_id, "e": extraction_id, "g": generation})
+
+
+def recount_case(conn, case_id):
+    """Counts per identity over the current generation of the case's active phones (9.4): run when a phone is
+    deleted or superseded, so an identity seen only there drops to zero and one seen elsewhere keeps its count."""
+    conn.execute(text(
+        "WITH cur AS (SELECT x.identity_id, x.extraction_id, x.instant FROM phone_identity_sightings x "
+        "JOIN phone_extractions e ON e.id = x.extraction_id AND e.standing = 'active' "
+        "JOIN phone_interpretation_state s ON s.extraction_id = x.extraction_id AND x.generation = s.generation "
+        "WHERE x.case_id = :c), "
+        "agg AS (SELECT identity_id, count(*) n, count(DISTINCT extraction_id) phones, min(instant) f, max(instant) l "
+        "FROM cur GROUP BY 1) "
+        "UPDATE phone_identities i SET sighting_count = coalesce(agg.n, 0), phone_count = coalesce(agg.phones, 0), "
+        "first_instant = agg.f, last_instant = agg.l, updated_at = now() FROM phone_identities i2 "
+        "LEFT JOIN agg ON agg.identity_id = i2.id WHERE i.id = i2.id AND i2.case_id = :c AND "
+        "(i.sighting_count, i.phone_count, i.first_instant, i.last_instant) IS DISTINCT FROM "
+        "(coalesce(agg.n, 0), coalesce(agg.phones, 0), agg.f, agg.l)"), {"c": case_id})
 
 
 # ---- reading -------------------------------------------------------------------------------------------------------

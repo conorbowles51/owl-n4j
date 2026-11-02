@@ -210,6 +210,10 @@ class Interpreter:
         self.sensitive = sensitive
         self.positionable = positionable_types
         self.w = Writer(conn)
+        from services.phone import corrections as _corrections  # 02 section 10.3: effective values
+        self.corr = _corrections.current(conn, extraction_id)
+        self.offsets = _corrections.clock_offsets(conn, extraction_id)
+        self._effective = _corrections.effective_instant
         self.ctx = {}
         self.subtree = []
         self.stats = defaultdict(int)
@@ -295,7 +299,11 @@ class Interpreter:
                         continue
                     pfmt = V.producer_format(v.attrs)
                     mismatch = V.format_mismatch(pfmt, st["offset_state"])
-                    eff = st["instant"]
+                    fpath = prefix + (f.name or "")
+                    fixed = self.corr.get((uid, fpath, v.index))
+                    eff, basis = self._effective(st["instant"], fixed[0] if fixed else None, self.offsets)
+                    if fixed or basis == "clock_offset":
+                        self.stats["effective_" + basis] += 1
                     row = dict(
                         self._common(doc, ordinal, uid, root_uid, model_type, ds, dc,
                                      ["format_mismatch"] if mismatch else [], "/" + v.body_path),
@@ -305,7 +313,7 @@ class Interpreter:
                         formatted_text=st["formatted_text"], original_offset_minutes=st["original_offset_minutes"],
                         offset_state=st["offset_state"], producer_format=pfmt, format_mismatch=mismatch,
                         offset_present=V.offset_present(st["offset_state"]), effective_instant=eff,
-                        instant_basis="report" if eff is not None else None, field_meaning=None, semantics=None,
+                        instant_basis=basis, field_meaning=None, semantics=None,
                         is_event_time=False)
                     mk = self.m_time.get((model_type, f.name))
                     if mk:
@@ -325,11 +333,15 @@ class Interpreter:
                     if v.text is None or v.text == "":
                         continue
                     sens = (model_type, f.name) in self.sensitive
+                    fixed = self.corr.get((uid, prefix + (f.name or ""), v.index))
+                    eff_text = fixed[0] if fixed else v.text  # search matches the effective text (10.3)
+                    if fixed:
+                        self.stats["effective_corrected_text"] += 1
                     row = dict(
                         self._common(doc, ordinal, uid, root_uid, model_type, ds, dc, (), "/" + v.body_path),
                         text_uid=uuid.uuid5(uid, "text/" + v.body_path), body_path=v.body_path, field_name=f.name,
                         field_path=prefix + (f.name or ""), value_index=v.index, value=v.text,
-                        value_folded=F.fold(v.text), effective_value=v.text, is_sensitive=sens)
+                        value_folded=F.fold(eff_text), effective_value=eff_text, is_sensitive=sens)
                     mk = self.m_text.get((model_type, f.name))
                     if mk:
                         row.update(mapping_version_id=mk[0], mapping_row_id=mk[1], interpretation_level=mk[2])

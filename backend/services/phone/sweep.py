@@ -27,7 +27,20 @@ log = logging.getLogger(__name__)
 
 IDLE_SECONDS = 30
 BACKOFF_SECONDS = (30, 60, 120, 300, 600)
-_hooks = {"mapping_set": None, "apply": [], "decision_revision": None, "sensitive": None, "planner": None}
+_hooks = {"mapping_set": None, "apply": [], "decision_revision": None, "sensitive": None, "planner": None,
+          "after_pass": []}
+
+
+def interpreter_version() -> str:
+    """The generic version and the stages that ran with it (fits ``interpreter_version varchar(32)``). A stage added
+    later (the identities, readings, a new applier) changes it, so phones read without that stage are read again;
+    otherwise they would never gain its rows, as nothing else about them changed."""
+    stages = sorted("%s.%s" % (fn.__module__, fn.__qualname__) for fn in _hooks["apply"])
+    if _hooks["planner"] is not None:
+        stages.append("planner:%s.%s" % (_hooks["planner"].__module__, _hooks["planner"].__qualname__))
+    if not stages:
+        return generic.GENERIC_VERSION
+    return "%s+%s" % (generic.GENERIC_VERSION, hashlib.sha256("|".join(stages).encode()).hexdigest()[:12])
 
 
 def register_mapping_set(fn):
@@ -45,6 +58,13 @@ def register_applier(fn):
 def register_decision_revision(fn):
     """``fn(conn, extraction_id) -> str`` (8.8: sha256 over the extraction's phone decisions)."""
     _hooks["decision_revision"] = fn
+
+
+def register_after_pass(fn):
+    """``fn(engine)`` runs after each sweep pass, in the worker (the graph projection, 02 section 9.5). A failure is
+    logged and does not stop interpretation."""
+    if fn not in _hooks["after_pass"]:
+        _hooks["after_pass"].append(fn)
 
 
 def register_planner(fn):
@@ -107,7 +127,7 @@ def candidates(conn, limit=50, only=None):
         m = r._mapping
         if m["interpreter_version"] is None:
             out.append(m["id"])
-        elif (m["interpreter_version"] != generic.GENERIC_VERSION or str(m["mapping_set_id"] or "") != str(set_id or "")
+        elif (m["interpreter_version"] != interpreter_version() or str(m["mapping_set_id"] or "") != str(set_id or "")
               or m["capture_revision"] != capture_revision(m)
               or (m["decision_revision"] or None) != (decision_revision(conn, m["id"]) or None)):
             out.append(m["id"])
@@ -183,7 +203,7 @@ def interpret_one(engine, extraction_id) -> dict:
                 "capture_revision = :cr, decision_revision = :dr, registry_observed_at = now(), interpreted_at = now(), "
                 "device_zone = :dz, device_zone_basis = :dzb, examiner_zone = :ez, status = 'done', error = NULL, "
                 "counts = CAST(:counts AS jsonb), updated_at = now() WHERE extraction_id = :e"),
-                {"g": new_gen, "ms": set_id, "iv": generic.GENERIC_VERSION, "cr": capture_revision(ext),
+                {"g": new_gen, "ms": set_id, "iv": interpreter_version(), "cr": capture_revision(ext),
                  "dr": decision_revision(conn, extraction_id), "dz": ext["device_zone"],
                  "dzb": "device_setting_in_report" if ext["device_zone"] else "not_in_report",
                  "ez": examiner_zone(ext["flags"]), "counts": json.dumps(counts, default=str), "e": extraction_id})
@@ -312,6 +332,11 @@ def sweep_forever(stop: threading.Event, engine_factory):
                 purge_leftovers(engine)
                 seeded = True
             results = run_pass(engine)
+            for fn in _hooks["after_pass"]:
+                try:
+                    fn(engine)
+                except Exception:  # noqa: BLE001
+                    log.exception("phone sweep step %s failed", getattr(fn, "__name__", fn))
             failures = 0 if all(r.get("status") != "failed" for _, r in results) else failures + 1
             wait = IDLE_SECONDS if not results else (1 if failures == 0 else
                                                      BACKOFF_SECONDS[min(failures, len(BACKOFF_SECONDS)) - 1])

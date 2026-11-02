@@ -38,6 +38,10 @@ def main() -> int:
     identities.install()  # after the mappings: identities read the comm events
     from services.phone import readings
     readings.install()  # reading, region and owner decisions; the decision revision
+    from services.phone import graph_projection
+    graph_projection.install()  # the case graph's phone layer, after each pass (02 section 9.5)
+    from services.phone import thread_text
+    thread_text.install()  # conversations as searchable text (9.7)
     generic.PACE["factor"] = float(os.environ.get("LOUPE_PHONE_SWEEP_PACE", DEFAULT_PACE))
     engine = _get_engine()
     holder = engine.connect()
