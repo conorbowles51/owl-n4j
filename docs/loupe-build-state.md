@@ -58,7 +58,7 @@ Branch `cb/cb-screens`, rebased on `1a6b3826` (cb-pol). Commits f6deb203 (A), 1b
   list's copy over http is checked live once item C mounts the list. cb-pol told.
 - Next: item C.
 
-## 2 November: pattern of life, stage F in progress (cb-pol), A to H live 1a6b3826
+## 2 November: pattern of life, stage F in progress (cb-pol), A to J, L and D live 5096990f
 
 Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for readers:
 `/mnt/owl-data/fin-wt/headless/CB-POL-STATUS.md` (written at the end); progress `headless/cb-pol-progress.md`.
@@ -89,13 +89,32 @@ Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for read
 - **04-U9 (1a6b3826):** `colocation.py`: `verdict` is the one pair rule (C10, 05 approach 5 calls it); exactly two
   subjects; every pair stored in `pol_colocation_item` and paged at 1,000 with totals; over 2,000,000 estimated pairs
   answers 202 and runs in the background. `POST .../together`, `GET .../together/{run_id}`. Decision 27.
-- **Live check (1a6b3826):** every route above answers 200 signed in over `http://104.196.62.215:5174` in case
-  4aa79795. No pattern screen yet.
-- **Next:** I (U10 money lane, manual places), J (U11 claims and evaluation), L (U12 drafting), D (Day view; needs
-  cb-screens 03-2), Patterns screen and shared Lanes, journey specs `frontend_v2/journeys/specs/cb-pol.mjs`, M-13a,
-  Gate F. Known red not from cb-pol: `test_app_page_names_match_the_frontend_routes` ('phone-review'), sent to
-  followups.
-- **Tests:** `tests/test_pattern_u2_activity.py` (7), `tests/test_pattern_u4_availability.py` (4), `u7_grid` (4), `u5_places` (5), `u8_routine` (2), `u9_together` (6); opt-in PostgreSQL
+- **04-U10 (7049ce88):** `money.py`: the money lane reads admitted, non-superseded ledger rows only, on their day
+  (transaction date, else posted, else ordering date), never at a time of day. Places attached to a payment by a
+  person (`pol_manual_place`, ledger decisions `attach_transaction_place` / `remove_transaction_place`, coordinates
+  stored as strings because the ledger refuses floats). Decision 28.
+- **04-U11 (0eadf4f2):** `claims.py` and `evaluation.py`: claims (draft, confirmed only by a named person, withdrawn),
+  evaluation reproducible from a fingerprint (extraction generation, projection state, cell dataset, parameters,
+  claim version) and stale when any of it moves; items grouped supports / undercuts / gaps / context; "this item is
+  wrong" is a ledger decision (`dispute_check_item`) and never changes the computed outcome. Decision 29.
+- **04-U12 (825873e3):** `drafting.py`: model drafts of claims under workload `statement_claim_drafting` (DeepSeek
+  default, full phone visibility, conversation bounds stated); every draft cited, `origin='ai_draft'`, never sets an
+  instant. Decision 30, section 9.2 step 4 and decision 12 rewritten.
+- **04-U6 (77b601fa API, caf08445 screen):** `day.py`: Day view, the window around a moment (lanes per phone, case
+  events, payments; passive over 5,000 shown as hourly counts with the limit stated), every event paged.
+  Frontend `src/features/pattern/`: Patterns screen at `/cases/:id/phone-patterns` (Day view, Pattern grid, Places
+  over time, Together, Check a statement), one shared `Lanes` component (Day view, Timeline window, incident
+  window), `TimelineWindowBar` on the Case Timeline, `StatementCheckPanel`. Helpers in `lanes-lib.ts` (the
+  fast-refresh lint rule forbids non-component exports from component files).
+- **Live (5096990f):** journeys J-5a, J-9, J-10b, POL-1 all pass signed in over `http://104.196.62.215:5174` in
+  4aa79795; screenshots in `headless/cb-pol-shots/`. Fixed on the way: Places read `items` (API says
+  `observations`) and crashed the page; a view chosen straight after a subject reverted the subject. The phones-only
+  case labels its phones Phone 1 to 3 and records no zone (journeys widened; cb-ux and cb-screens told).
+- **Next:** key dates as Workspace entries, phone_analysis snapshots through the link registry, device and sensor
+  counts per case, Draft with AI and interview linking in the statement check, Places/Together on Case Map panels,
+  CO cells for Patterns and Lanes, M-13a, Gate M (synthetic two-phone HTTP end to end and the P14 corpus run with
+  the 11 performance targets), J-10c with cb-screens.
+- **Tests:** `tests/test_pattern_u2_activity.py` (7), `tests/test_pattern_u4_availability.py` (4), `u7_grid` (4), `u5_places` (5), `u8_routine` (2), `u9_together` (6), `u10_money` (3), `u11_claims` (6), `u12_drafting` (4), `u6_day` (2); frontend `src/features/pattern/lanes.test.tsx` (3), `views.test.tsx` (1); opt-in PostgreSQL
   through `LOUPE_TEST_PHONE_PG_TEMPLATE_URL`. HTTP helper `tests/pattern_pg.py` (`api_client`). Scratch PostgreSQL
   for this job: container `cbp-pgtest` on 127.0.0.1:55446 (template `loupe_tpl`, rebuilt from `loupe_cbp` after
   `alembic upgrade head`).
