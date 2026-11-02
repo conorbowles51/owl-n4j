@@ -1740,6 +1740,21 @@ Each with its reason and what would reverse it.
     is seeded with its one measured value `High` (5.2). *Reverse if* a recount of the 14 reports finds a field
     with no typed value that the counter did not record.
 
+41. **`interpretation_level` is `varchar(24)`** on every derived table, not 5.6's `varchar(16)`:
+    `applied_unconfirmed` is 19 characters. `deleted_state` and `decoding_confidence` are `varchar(32)` as in 01.
+42. **Placement of generic rows.** A participation is stored under the record that holds the Party (the
+    message, call or chat), with the Party in `party_record_uid`; a location point under the record that holds
+    the Coordinate (`coordinate_record_uid` keeps the Coordinate); written address text under the record that
+    holds the StreetAddress. Texts and time values stay on their own record, with a readable `field_path` from
+    the top-level record (`To[0].DateRead`). Only `Location` records without a Position are counted
+    `not_positionable` (`no_coordinate`): measured on the captures, messages and searches also carry a
+    `Position` sometimes (registry nesting), and one without it is not a missing place. *Reverse if* a reviewed
+    mapping names another type's place.
+43. **Read views land with their tables.** `pv_record`, `pv_time`, `pv_timeline_entry`, `pv_location_point`
+    and `pv_text` are created with the generic tables (`20261102_phone_read_views`); the communication,
+    identity and coverage views are added by the migrations of their tables, each replacing the earlier
+    definition, instead of one migration for all (12.1).
+
 ## 15. Not yet established
 
 - Whether `phonenumbers` 9.0.31 classifies the reserved fictional ranges used in tests as valid (tests use

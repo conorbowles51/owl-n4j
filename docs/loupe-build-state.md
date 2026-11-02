@@ -19,7 +19,17 @@ Branch `cb/cb-interpret`. Spec 02 units, in 06 order; each with its acceptance t
   state; `mapped` only automatic), router `routers/phones.py`. Measured after the seed: C3 0 flags (35 types, 178
   field combinations, 8.0 s), C9 0 (26, 123, 3.0 s), server C8 0 (38, 221, 10.7 s); server C8 has no multi-valued
   plain field (the 38 in 02 section 2 are the Mac export's). U1 counts on server C8: 466,897 / 401,963 / 33,301.
-- **Tests:** `tests/test_phone_body_values.py`, `tests/test_phone_registry_seed.py`, `tests/test_phone_registry_observe.py`; PostgreSQL ones opt-in through
+- **02-U4:** `services/phone/generic.py` reads every record by the role of its values (time values, location
+  points, unplaced records, participations with 5.3 roles, searchable texts with `fold()`, written addresses, one
+  summary per record), streamed in ordinal order with the current top-level subtree's context, written by COPY
+  (migration `20261102_phone_generic`). `services/phone/sweep.py` runs one extraction per transaction (advisory
+  lock per extraction; observe registry, write generation n+1, mappings hook, delete generation n, state row),
+  started from `main.py` as `phone-interpretation`. Views `pv_record`, `pv_time`, `pv_timeline_entry`,
+  `pv_location_point`, `pv_text` (`20261102_phone_read_views`; current generation, active extractions only).
+  Measured: C3 22,881 time values, 31 points, 7,504 participations (43 s); C9 5,218 and 9 (7 Location, 2
+  WirelessNetwork); server C8 59,673 (Mac export 59,672), 38 points, 171 Locations `not_positionable`.
+  Decisions 41 to 43 added to 02. `fold.py` is in place without its two data tables yet (02-U8 adds them).
+- **Tests:** `tests/test_phone_body_values.py`, `tests/test_phone_registry_seed.py`, `tests/test_phone_registry_observe.py`, `tests/test_phone_generic.py`; PostgreSQL ones opt-in through
   `LOUPE_TEST_PHONE_PG_TEMPLATE_URL` (a database at the head; each test gets a fresh copy) and
   `LOUPE_TEST_PHONE_PG_URL` (captured extractions, rolled back), helper `tests/phone_pg.py`.
 

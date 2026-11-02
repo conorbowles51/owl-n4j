@@ -125,6 +125,10 @@ async def lifespan(app: FastAPI):
     from services.financial.identity_graph import run_identity_graph_forever
     identity_graph_task = asyncio.create_task(run_identity_graph_forever(), name="financial-reviewed-identities")
 
+    # Phone interpretation (docs/cellebrite/02 sections 1.3 and 5.7): registry, generic rows, mappings.
+    from services.phone.sweep import run_phone_interpretation_forever
+    phone_interpretation_task = asyncio.create_task(run_phone_interpretation_forever(), name="phone-interpretation")
+
     from services.financial.deployment_recovery import run_recovery_forever
     recovery_task = asyncio.create_task(run_recovery_forever(), name="financial-deployment-recovery")
 
@@ -156,7 +160,7 @@ async def lifespan(app: FastAPI):
     # back when the process ends, and its durable record (leased batch,
     # pending recovery item, revisioned graph sweep) resumes on the next start.
     await process_shutdown.stop_background_tasks(
-        [recovery_task, identity_graph_task, financial_batches_task, view_warmup_task,
+        [recovery_task, identity_graph_task, phone_interpretation_task, financial_batches_task, view_warmup_task,
          view_refresh_task, case_files_task, cleanup_task, platform_update_task, loop_lag_task],
         timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
     )
