@@ -30,11 +30,31 @@ type Active = {
   files: File[]
   paused: boolean
   completing: boolean
-  memberId?: string
-  wake?: () => void
+  /** Files being sent now (up to SEND_AT_ONCE). */
+  memberIds: Set<string>
+  /** Senders waiting for a paused selection to carry on. */
+  waiting: Set<() => void>
   /** Paused by this tab's own Pause, so only this tab's Resume carries on. */
   pausedHere?: boolean
   promise: Promise<UploadGroup>
+}
+/** Files of one selection sent at once. Measured live over plain http (two A/B runs, slices interleaved): one at a
+ * time 7.3 and 6.7 files/s, six at a time 11.4 and 12.4, four at a time 11.7 against 7.6. Four leaves two of the
+ * browser's six connections to the host for the page itself. */
+export const SEND_AT_ONCE = 4
+
+function setPaused(transfer: Active, paused: boolean) {
+  transfer.paused = paused
+  for (const id of transfer.memberIds) setLocalUploadPaused(id, paused)
+  if (!paused) {
+    const waiting = [...transfer.waiting]
+    transfer.waiting.clear()
+    for (const wake of waiting) wake()
+  }
+}
+
+async function whilePaused(transfer: Active) {
+  while (transfer.paused) await new Promise<void>((resolve) => transfer.waiting.add(resolve))
 }
 const active = new Map<string, Active>()
 const relativePath = (file: File, kind: UploadGroup["kind"]) =>
@@ -52,14 +72,8 @@ export function followServer(groups: UploadGroup[]) {
   for (const group of groups) {
     const transfer = active.get(group.id)
     if (!transfer || transfer.completing || transfer.pausedHere) continue
-    if (group.status === "paused") {
-      transfer.paused = true
-      if (transfer.memberId) setLocalUploadPaused(transfer.memberId, true)
-    } else if (group.status === "uploading") {
-      transfer.paused = false
-      transfer.wake?.()
-      if (transfer.memberId) setLocalUploadPaused(transfer.memberId, false)
-    }
+    if (group.status === "paused") setPaused(transfer, true)
+    else if (group.status === "uploading") setPaused(transfer, false)
   }
 }
 export const hasLocalUploadGroup = (id: string) => active.has(id)
@@ -75,7 +89,7 @@ export async function discardUploadGroup(id: string) {
   const transfer = active.get(id)
   if (transfer?.completing)
     throw new Error("Files have arrived and are being registered, so this upload can no longer be discarded.")
-  if (transfer) transfer.paused = true
+  if (transfer) setPaused(transfer, true)
   const result = await fetchAPI<{ id: string; status: "discarded"; file_count: number; saved_count: number }>(
     `${endpoint}/${id}/discard`,
     { method: "POST" }
@@ -91,9 +105,8 @@ export async function pauseUploadGroup(id: string) {
       "Files have arrived. Registration is finishing and will be retained if you leave."
     )
   if (transfer) {
-    transfer.paused = true
     transfer.pausedHere = true
-    if (transfer.memberId) setLocalUploadPaused(transfer.memberId, true)
+    setPaused(transfer, true)
   }
   try {
     return await fetchAPI<UploadGroup>(`${endpoint}/${id}/pause`, {
@@ -101,10 +114,8 @@ export async function pauseUploadGroup(id: string) {
     })
   } catch (error) {
     if (transfer) {
-      transfer.paused = false
       transfer.pausedHere = false
-      transfer.wake?.()
-      if (transfer.memberId) setLocalUploadPaused(transfer.memberId, false)
+      setPaused(transfer, false)
     }
     throw error
   }
@@ -122,10 +133,8 @@ export async function resumeUploadGroup(
   if (attached) {
     if (state.status === "paused")
       await fetchAPI(`${endpoint}/${id}/resume`, { method: "POST" })
-    attached.paused = false
     attached.pausedHere = false
-    attached.wake?.()
-    if (attached.memberId) setLocalUploadPaused(attached.memberId, false)
+    setPaused(attached, false)
     return attached.promise
   }
   const needed = (state.members || []).filter(
@@ -171,6 +180,8 @@ function runGroup(
     files,
     paused: false,
     completing: false,
+    memberIds: new Set(),
+    waiting: new Set(),
     promise: null as unknown as Promise<UploadGroup>,
   }
   active.set(state.id, transfer)
@@ -189,34 +200,46 @@ function runGroup(
       kind: state.kind,
     }
     onProgress?.({ ...sent })
-    for (const member of state.members || []) {
-      if (member.status === "staged" || member.status === "completed") {
-        sent.filesDone++
-        continue
-      }
-      while (transfer.paused)
-        await new Promise<void>((resolve) => {
-          transfer.wake = resolve
-        })
-      const file = selected.get(member.path)
-      checkSession()
-      if (!file)
-        throw new Error(`Reselect ${member.path} to finish this selection.`)
-      transfer.memberId = member.id
-      const began = performance.now()
-      await transferFile(member, file, (bytes) => {
-        sent.bytesDone += bytes
-        onProgress?.({ ...sent })
-      })
-      transfer.memberId = undefined
-      sent.fit = addFileCost(sent.fit, file.size, (performance.now() - began) / 1000)
+    const queue = (state.members || []).filter((member) => {
+      if (member.status !== "staged" && member.status !== "completed") return true
       sent.filesDone++
-      onProgress?.({ ...sent })
+      return false
+    })
+    // Several files are sent at once, so a file's own time overstates its cost; the time left is fitted on the
+    // interval between one file finishing and the next.
+    let lastFinish = performance.now()
+    let failure: unknown = null
+    const sender = async () => {
+      for (;;) {
+        await whilePaused(transfer)
+        const member = failure === null ? queue.shift() : undefined
+        if (!member) return
+        const file = selected.get(member.path)
+        try {
+          checkSession()
+          if (!file)
+            throw new Error(`Reselect ${member.path} to finish this selection.`)
+          transfer.memberIds.add(member.id)
+          await transferFile(member, file, (bytes) => {
+            sent.bytesDone += bytes
+            onProgress?.({ ...sent })
+          })
+        } catch (error) {
+          failure ??= error
+          return
+        } finally {
+          transfer.memberIds.delete(member.id)
+        }
+        const now = performance.now()
+        sent.fit = addFileCost(sent.fit, file.size, (now - lastFinish) / 1000)
+        lastFinish = now
+        sent.filesDone++
+        onProgress?.({ ...sent })
+      }
     }
-    while (transfer.paused)
-      await new Promise<void>((resolve) => {
-        transfer.wake = resolve
-      })
+    await Promise.all(Array.from({ length: Math.min(SEND_AT_ONCE, queue.length) }, sender))
+    if (failure !== null) throw failure
+    await whilePaused(transfer)
     transfer.completing = true
     onProgress?.({ ...sent, phase: "registering", bytesDone: sent.bytesTotal })
     checkSession()

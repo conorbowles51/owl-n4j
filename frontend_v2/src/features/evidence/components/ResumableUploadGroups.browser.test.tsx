@@ -13,9 +13,13 @@ import { fetchAPI } from "@/lib/api-client"
 import { uploadFingerprint } from "../resumable-upload"
 import {
   listUploadGroups,
+  pauseUploadGroup,
+  resumeUploadGroup,
+  SEND_AT_ONCE,
   uploadFolderOrArchive,
   type UploadGroup,
 } from "../resumable-upload-groups"
+import type { UploadProgress } from "../upload-progress"
 import { MemoryRouter } from "react-router-dom"
 import { StatementFilesPanel } from "@/features/financial/components/StatementFilesPanel"
 import { useStatementUploads } from "@/features/financial/stores/statement-upload-queue"
@@ -624,4 +628,65 @@ it("a selection the server pauses and resumes (a release) carries on sending in 
   ])
   expect(outcome).toBe("Saved.")
   expect([...staged].sort()).toEqual(["m-Phone-a.txt", "m-Phone-b.txt", "m-Phone-c.txt"])
+})
+
+
+it("a selection sends four files at once, stops starting new ones on Pause and carries on with Resume", async () => {
+  const files = Array.from({ length: 12 }, (_, i) => file(`Phone/f${i}.txt`, 10, i))
+  let group: (Omit<UploadGroup, "members"> & { members: { id: string; path: string; status: string }[] }) | undefined
+  let status: "uploading" | "paused" = "uploading"
+  const staged = new Set<string>()
+  let inFlight = 0, most = 0, started = 0
+  const session = (id: string) => ({ id, case_id: "case", filename: id, size: 10, chunk_size: CHUNK,
+    received: staged.has(id) ? [0] : [], status: staged.has(id) ? "staged" : status })
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    const method = options?.method ?? "GET"
+    if (url.startsWith("/api/evidence-upload-groups?")) return group ? [{ ...group, status }] : []
+    if (url === "/api/evidence-upload-groups" && method === "POST") {
+      const body = options!.body as { id: string; members: { path: string }[] }
+      group = {
+        id: body.id, case_id: "case", name: "Phone", kind: "folder", status: "uploading", file_count: 12,
+        staged_count: 0, size: 120, received_bytes: 0, replace_existing: false, folder_id: null, receipt: null,
+        members: body.members.map((m) => ({ id: `m-${m.path.replace("/", "-")}`, path: m.path, status: "uploading" })),
+      }
+      return group
+    }
+    if (group && url === `/api/evidence-upload-groups/${group.id}`) return { ...group, status }
+    if (group && url === `/api/evidence-upload-groups/${group.id}/pause`) { status = "paused"; return { ...group, status } }
+    if (group && url === `/api/evidence-upload-groups/${group.id}/resume`) { status = "uploading"; return { ...group, status } }
+    const id = url.split("/")[3]
+    if (url.includes("/chunks/")) {
+      started++
+      inFlight++
+      most = Math.max(most, inFlight)
+      await new Promise((resolve) => setTimeout(resolve, 40))
+      inFlight--
+      return { ...session(id), received: [0] }
+    }
+    if (url.endsWith("/complete") && url.startsWith("/api/evidence-upload-sessions/")) { staged.add(id); return session(id) }
+    if (url.startsWith("/api/evidence-upload-sessions/")) return session(id)
+    if (group && url === `/api/evidence-upload-groups/${group.id}/complete`)
+      return { ...group, status: "completed", receipt: { file_ids: ["f"], job_ids: [], message: "Saved." } }
+    throw Error(`Unexpected request: ${method} ${url}`)
+  })
+  const seen: UploadProgress[] = []
+  const began = performance.now()
+  const upload = uploadFolderOrArchive("case", files, { isFolder: true, onProgress: (p) => seen.push(p) })
+  await waitFor(() => expect(staged.size).toBeGreaterThanOrEqual(4))
+  await pauseUploadGroup(group!.id)
+  await new Promise((resolve) => setTimeout(resolve, 150)) // files already being sent finish
+  const atPause = started
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  expect(started).toBe(atPause) // nothing new starts while paused
+  expect(staged.size).toBeLessThan(12)
+  await resumeUploadGroup(group!.id)
+  expect((await upload).message).toBe("Saved.")
+  expect(staged.size).toBe(12)
+  expect(most).toBe(SEND_AT_ONCE)
+  expect(SEND_AT_ONCE).toBe(4)
+  // the time-left fit is over the intervals between files finishing, so it adds up to the time spent, not to
+  // four times it
+  const fit = seen.filter((p) => p.phase === "sending").at(-1)!.fit!
+  expect(fit.n).toBe(12)
+  expect(fit.sy).toBeLessThanOrEqual((performance.now() - began) / 1000)
 })
