@@ -1,3 +1,66 @@
+## 1 November: phone reports captured whole, checked against the report, and shown as one readiness card (cb-capture)
+
+Live at `c98e3782`. Stage B of the phone rebuild (docs/cellebrite/01-intake-capture-storage.md, 06 stage B). A phone
+report uploaded as a folder, a ZIP or a UFDR is stored once, read once into Postgres, and checked element for element
+against the report before it is called ready. The old phone ingester and its Neo4j writes are gone (live re-measured
+before removal: 0 rows written by it).
+
+- **Storage:** twelve `phone_*` tables (migration `20261101_phone_capture` and two follow-ons; one alembic head,
+  `20261101_phone_supersede_decision`). One extraction per report set in a case; a second copy of the same report
+  (a folder and a ZIP of it) links as a second container (01 6.3, D22).
+- **Engine:** `evidence-engine/app/phone/` (detect, capture, recount, reconcile, files, timestamps, extra_nodes,
+  runner, job, digest). One phone at a time in its own worker container, `owl-v2-evidence-phone-worker`, 1 GB hard
+  limit. Stages: verifying_container, detecting, counting, capturing, reconciling, indexing_files, finishing; pause,
+  resume and cancel at committed flushes; a killed capture resumes from its cursor and gives the same rows (kill
+  harness `evidence-engine/scripts/phone_kill_resume.py`). Folder files are hashed 16 at a time (one reader is bound
+  by the disk's read latency: 47 files/s alone, about 780 with 16). Reference links are resolved in batches of 1,000
+  records with indexed lookups, so memory does not grow with the number of records.
+- **Parser requirement:** the engine needs lxml 6.0.2 or later (libxml2 2.14). libxml2 2.13's streaming parser keeps
+  the carriage return of CRLF inside CDATA, which made a real report with CRLF line ends fail its check with
+  differences that are not in the report. The counter probes its own parser and refuses to run on a library with
+  that fault; a capture then stops before any work with `checker_unavailable`.
+- **Upload path:** resumable upload groups accept folders up to 200,000 files, ZIPs and `.ufdr`. The group lock
+  leaves the manifest unread and the polled list is one aggregate count per group, so sending and polling do not
+  slow with the number of files. A tab sending a selection follows the server's pause and resume (a release pauses
+  open uploads and resumes them after); a pause made with the tab's own Pause waits for its own Resume. A
+  selection sends four files at once (`SEND_AT_ONCE`; live A/B 1.55 to 1.84 times one at a time), and the time
+  left is fitted on the interval between files finishing. An unfinished selection can be discarded (its saved parts and rows are removed; a
+  registered one cannot be). Time left for a many-file folder comes from per-file and per-byte cost fitted over at
+  least 20 finished files. Registration reads each file assembled on arrival back against its fingerprint and
+  hard-links it into the case (9.25 ms a file before, 0.49 ms after, measured on the real functions); a file
+  missing or failing the check is rebuilt from its parts, and a file that cannot be linked is copied and verified.
+  In a phone ZIP, the 20,000-entry limit counts only the files unpacked beside the report (a Mac ZIP of a
+  29,108-file report holds 58,215 entries and was refused). A protected or unreadable container is recorded with its hashes, explained, and opens a
+  Workspace task. A folder sync skips phone report folders, with or without the evidence engine; files beside a
+  report root in a phone ZIP are registered as ordinary evidence.
+- **Screens:** one readiness card per report in Evidence (mirrored in the attention feed) with stage words, true
+  counts and time left (the last step counts the entries compared inside a document, so a one-document check is
+  seen moving); a job that finished while a release had it flagged paused reads as finished; Replace and Retire with a typed reason, recorded in the decision ledger as
+  `supersede_phone_extraction`; no vendor name in the interface.
+- **Links:** resolvers `phone_extraction` and `phone_file` registered at backend start
+  (`backend/services/phone/resolvers.py`).
+- **Reference cases (CB-INDEX P3):** real phone reports for live checks load only into three restricted cases whose
+  only member is their owner: `88e01b57-d472-452a-b103-b694292ed012`, `7006c0ab-9c93-473a-900a-76d06d9d0603`,
+  `574a9752-7d19-4f42-8f98-2112615f4a48`. The live journey `frontend_v2/journeys/live-phone-upload.mjs` accepts only
+  these.
+- **Tests:** engine `tests/phone/` (PostgreSQL ones opt-in through `LOUPE_TEST_PHONE_PG_URL`; corpus acceptance
+  `test_phone_corpus.py` opt-in through `LOUPE_PHONE_CORPUS`); backend `tests/test_phone_*.py` and
+  `tests/test_resumable_upload_groups.py`; frontend `PhoneReportsPanel.test.tsx`, `ResumableUploadGroups.browser.test.tsx`,
+  `FileListToolbar.browser.test.tsx`, `upload-progress.test.ts`; journey `frontend_v2/journeys/specs/cb-capture.mjs`.
+- **Measured (engine image, production limits):** corpus acceptance exact on C3 (71,045 records, 43,043 files), the
+  ZIP of C3 (one extraction, two containers), C9 (14,005 / 29,536) and C8 (73,608 / 72,849): C3 with its ZIP 523 s,
+  C9 123 s, C8 614 s. 20 SIGKILLs each on C3 and C8, every resume giving the same row digest. Peak resident memory of the capture stage 355 MiB on the largest report (budget 512 MiB).
+- **Gate B to C:** P14, the largest server report (43.8 GB in 237,826 files; 967,543 records; 158,114 files), captured with exact reconciliation in 2,945.6 s (49.1 min) against the 30-minute target in 01 10.8: 1.64 times the target, under the factor of two that makes a miss a defect. Stages: verifying the container 770 s (11 s listing, 759 s hashing), detecting 10 s, counting 400 s, capturing 524 s, reconciling 514 s, indexing files 727 s, finishing under 1 s. Peak memory of the worker 476 MiB of its 1 GB limit (no out-of-memory events). Measured in the engine image with the production worker's limits; a release build overlapped the counting, capturing and reconciling stages.
+- **Live checks (signed in over http, restricted reference cases):** C3 as a folder (43,123 files) ready with
+  71,045 records and 43,043 files; C9 as a Mac-style ZIP and as a folder ready with 14,005 and 29,536; every figure
+  equal to the corpus test. Sending 7.3 files/s one at a time (C3) and 9.2 four at a time (C9 folder); registration
+  12.7 ms a file before the link change and 3.9 after; releases paused these uploads six times (four on C3, two on the C9 folder) and each tab carried on.
+  Results and screenshots: `/mnt/owl-data/fin-wt/headless/CB-CAPTURE-STATUS.md`.
+- **Decisions added:** 01 D34 to D38 (one container per report root; protected containers dispatched; same phone by
+  project id; Replace in the ledger; extra-info nodes matched by path without the source name).
+- **Handed on:** the external-processing check for phone files (02 8.8) to cb-interpret; phone_record, phone_thread
+  and phone_identity resolvers to cb-interpret.
+
 ## 1 November: phone material collected into dossiers, Workspace and the Timeline (lx-collect)
 
 Live at `21e9f546`. Phone material joins Loupe's existing case-building system; there is no separate collection
