@@ -41,6 +41,7 @@ HISTORY = 'account_details_history'
 SPLIT_PREFIX = 'statement-details:'
 FIELDS = (('holder', 'holder_name'), ('institution', 'institution_name'))
 NUMBER = 'account_number'
+logger = logging.getLogger(__name__)
 
 
 class AccountDetailsRequest(BaseModel):
@@ -154,6 +155,34 @@ def _revision(account, statements):
         history=(account.metadata_ or {}).get(HISTORY, []), statements=statements))
 
 
+def _merged_history(session, case_id, account):
+    """Corrections recorded on the other records of this account's merged account.
+
+    A merge shows several account records as one reviewed account, but each record keeps its own correction
+    history, and a panel opens on the record of the statement it was opened from. Without this, a correction on
+    another record (including one that no longer holds a statement, so no panel ever opens on it) is out of reach
+    from the merged account. Returns None, not an empty list, when the merge chain cannot be read."""
+    from services.financial.account_consolidation import canonical_map
+    try:
+        mapping = canonical_map(session, case_id)
+    except Exception:
+        logger.exception('Merged account history could not be read for account %s', account.id)
+        return None
+    root = mapping.get(account.id, account.id)
+    members = [key for key, value in mapping.items() if value == root and key != account.id]
+    result = []
+    for other in sorted((session.get(FinancialAccount, key) for key in members), key=lambda a: (a.created_at, str(a.id))):
+        history = (other.metadata_ or {}).get(HISTORY) or []
+        if not history:
+            continue
+        statements = _statement_rows(session, case_id, _statements(session, case_id, other))
+        # The record's own revision: a person confirms a model correction on it from here (a record that holds no
+        # statement has no panel of its own).
+        result.append(dict(account_id=str(other.id), **_values(other), account_number=other.identifier_as_printed or '',
+            statement_count=len(statements), history=history, revision=_revision(other, statements)))
+    return result
+
+
 def account_details_state(session, *, case_id, account_id):
     account = _account(session, case_id, account_id)
     statements = _statement_rows(session, case_id, _statements(session, case_id, account))
@@ -161,6 +190,7 @@ def account_details_state(session, *, case_id, account_id):
         account_number=account.identifier_as_printed or '', account_clabe=(account.metadata_ or {}).get('account_clabe') or '',
         currency=account.currency or '',
         statements=statements, history=(account.metadata_ or {}).get(HISTORY, []),
+        merged_history=_merged_history(session, case_id, account),
         revision=_revision(account, statements))
 
 

@@ -90,6 +90,37 @@ class AccountDetailsCorrectionTests(TestCase):
             ids = holder_account_ids(db, self.f.case.id, [name])
             return set(db.scalars(select(FinancialTransaction.source_document_id).where(FinancialTransaction.account_id.in_(ids))))
 
+    def test_merged_account_panel_shows_corrections_on_its_other_records(self):
+        # followups 2026-11-01 (fdaf956c): a correction on one record of a merged account was out of reach from a
+        # statement of the other record, because the panel reads only the record of the statement it opens from.
+        from uuid import uuid4
+        from services.financial import account_consolidation as consolidation
+        split = self.split_second()
+        with self.f.SessionLocal() as db:
+            service.save_account_details(db, case_id=self.f.case.id, account_id=split, actor=self.f.actor,
+                request=service.AccountDetailsRequest(expected_revision=self.state(split)['revision'],
+                    reason='Page 1 prints the holder', holder='Test Company'))
+        self.assertEqual(self.state()['merged_history'], [])
+        with self.f.SessionLocal() as db:
+            revision = consolidation.consolidation_state(db, self.f.case.id)['revision']
+            consolidation.save_consolidation(db, case_id=self.f.case.id, actor=self.f.actor,
+                request=consolidation.ConsolidationRequest(request_id=uuid4(), expected_revision=revision,
+                    account_ids=[self.account_id, split], retained_id=self.account_id, reason='Same account'))
+        main = self.state()
+        self.assertEqual(main['history'], [])
+        [other] = main['merged_history']
+        self.assertEqual((other['account_id'], other['holder'], other['statement_count']), (str(split), 'Test Company', 1))
+        self.assertEqual([(h['kind'], h['before']['holder'], h['after']['holder'], h['reason']) for h in other['history']],
+                         [('correction', CORRECTED, 'Test Company', 'Page 1 prints the holder')])
+        # A person confirms a model correction on another record against that record's revision.
+        self.assertEqual(other['revision'], self.state(split)['revision'])
+        # The record that holds the correction lists only the other records that have one (none here).
+        self.assertEqual(self.state(split)['merged_history'], [])
+        # The merged view is information only: it does not change the revision a correction of this record checks.
+        with self.f.SessionLocal() as db:
+            account = db.get(FinancialAccount, self.account_id)
+            self.assertEqual(main['revision'], service._revision(account, main['statements']))
+
     def test_per_statement_edit_still_splits_and_the_account_correction_rejoins_it(self):
         split = self.split_second()
         self.assertNotEqual(split, self.account_id)

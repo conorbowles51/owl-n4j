@@ -61,6 +61,20 @@ const state = z.object({
   currency: z.string(),
   statements: z.array(statement),
   history: z.array(historyEntry),
+  // Corrections recorded on the other records of this account's merged account (null: they could not be read).
+  merged_history: z
+    .array(
+      z.object({
+        account_id: z.string(),
+        holder: z.string(),
+        institution: z.string(),
+        account_number: z.string(),
+        statement_count: z.number(),
+        history: z.array(historyEntry),
+        revision: z.string(),
+      })
+    )
+    .nullish(),
   revision: z.string(),
 })
 const preview = z.object({
@@ -138,6 +152,119 @@ function RelayDetails({ confirmed }: { confirmed: Confirmation }) {
         ))}
       </ul>
     </details>
+  )
+}
+
+type MergedRecords = z.infer<typeof state>["merged_history"]
+
+/** Corrections on the other records of a merged account. The panel opens on the record of one statement; a
+ * correction on another record of the same merged account (even one holding no statement now, which has no panel
+ * of its own) is shown here. A correction Claude made can be confirmed here, against that record; undoing or
+ * changing one is done from a statement of that record. */
+function MergedHistory({
+  caseId,
+  records,
+  canEdit,
+  onChanged,
+}: {
+  caseId: string
+  records: MergedRecords
+  canEdit: boolean
+  onChanged: () => void
+}) {
+  const [bases, setBases] = useState<Record<string, string>>({})
+  const [notice, setNotice] = useState("")
+  const confirm = useMutation({
+    retry: false,
+    mutationFn: async ({ accountId, revision, id }: { accountId: string; revision: string; id: string }) =>
+      fetchAPI(
+        `/api/financial/statement-import/accounts/${encodeURIComponent(accountId)}/details/confirm?case_id=${encodeURIComponent(caseId)}`,
+        { method: "POST", body: { expected_revision: revision, correction_id: id, basis: bases[id] ?? "" } }
+      ),
+    onSuccess: () => {
+      setNotice("Correction confirmed as yours. Claude's correction stays in that record's history.")
+      onChanged()
+    },
+  })
+  if (records === null)
+    return (
+      <p role="alert">
+        The corrections on the other records of this merged account could not be loaded. Reopen this statement to try
+        again.
+      </p>
+    )
+  if (!records?.length) return null
+  return (
+    <div className="space-y-2 border-t pt-2">
+      <h4 className="font-medium">Corrections on other records of this merged account</h4>
+      <ul className="space-y-2" aria-label="Corrections on other records of this merged account">
+        {records.flatMap((record) =>
+          record.history
+            .filter((item) => item.kind === "correction")
+            .map((item) => (
+              <li key={`${record.account_id}-${item.id}`} className="space-y-1">
+                <p className="text-muted-foreground">
+                  {[record.holder || "Holder not recorded", record.institution, record.account_number]
+                    .filter(Boolean)
+                    .join(" · ")}{" "}
+                  · {count(record.statement_count, "statement", "statements")}
+                </p>
+                <p>
+                  {item.undone_at ? "Undone: " : ""}Corrected by{" "}
+                  {item.origin ? `${item.origin.model} for ${item.origin.for?.name || "a person"}` : item.actor_name} on{" "}
+                  {dayOf(item.at)}: {changeOf(item)}. Reason: {item.reason}
+                </p>
+                {item.confirmed ? (
+                  <>
+                    <p>{confirmationLine(item.confirmed)}</p>
+                    <RelayDetails confirmed={item.confirmed} />
+                  </>
+                ) : item.origin && !item.undone_at ? (
+                  <>
+                    <p>
+                      <strong>Corrected by {item.origin.model} · not confirmed.</strong> A person confirms it after
+                      checking the statement.
+                    </p>
+                    {canEdit && (
+                      <div className="flex flex-col gap-1">
+                        <label className="flex flex-col gap-1">
+                          What you checked for this correction ({changeOf(item)})
+                          <input
+                            className="rounded border bg-background p-1"
+                            value={bases[item.id] ?? ""}
+                            onChange={(event) => {
+                              const value = event.target.value
+                              setBases((current) => ({ ...current, [item.id]: value }))
+                            }}
+                          />
+                        </label>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="self-start"
+                          disabled={confirm.isPending || !(bases[item.id] ?? "").trim()}
+                          title={(bases[item.id] ?? "").trim() ? undefined : "Enter what you checked first"}
+                          onClick={() =>
+                            confirm.mutate({ accountId: record.account_id, revision: record.revision, id: item.id })
+                          }
+                        >
+                          Confirm this correction
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                ) : null}
+              </li>
+            ))
+        )}
+      </ul>
+      {notice && <p role="status">{notice}</p>}
+      {confirm.error && (
+        <p role="alert">
+          {confirm.error instanceof Error ? confirm.error.message : "The confirmation failed."} Nothing was changed.
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -483,6 +610,12 @@ export function AccountDetailsCorrection({
           ))}
         </ul>
       )}
+      <MergedHistory
+        caseId={caseId}
+        records={data.merged_history}
+        canEdit={canEdit}
+        onChanged={() => client.invalidateQueries({ queryKey: key })}
+      />
       {notice && <p role="status">{notice}</p>}
       {failure && (
         <p role="alert">

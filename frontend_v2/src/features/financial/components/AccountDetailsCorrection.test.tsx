@@ -326,3 +326,76 @@ it("names only what a correction changed, and never doubles a note's full stop",
   expect(screen.getByText("Entered by Claude on 1 Nov 2026: Entered by Claude on his instruction. Instruction came by m1")).toBeTruthy()
   expect(document.body.textContent).not.toContain("..")
 })
+
+it("shows corrections recorded on the other records of a merged account, Claude's marked until confirmed", async () => {
+  // followups 2026-11-01 (fdaf956c): the panel opened on the other record of a merged account showed no
+  // correction although one of its records had been corrected.
+  const correction = (id: string, extra = {}) => ({
+    id,
+    kind: "correction",
+    at: "2026-11-01T15:35:27Z",
+    reason: "Page 1 prints No. de Cuenta 0110280038",
+    actor_name: "Claude (for Neil Byrne)",
+    origin: { kind: "model", model: "Claude", for: { name: "Neil Byrne" } },
+    before: { holder: "Arrendo Serv SA de CV", institution: "BBVA", account_number: "011280038" },
+    after: { holder: "Arrendo Serv SA de CV", institution: "BBVA", account_number: "0110280038" },
+    ...extra,
+  })
+  vi.mocked(fetchAPI).mockResolvedValue(
+    state({
+      merged_history: [
+        {
+          account_id: "other",
+          holder: "Arrendo Serv SA de CV",
+          institution: "BBVA",
+          account_number: "0110280038",
+          statement_count: 1,
+          revision: "b".repeat(64),
+          history: [
+            correction("c1", { confirmed: { by: "Neil Byrne", at: "2026-11-01T15:35:28Z", basis: "Checked page 1" } }),
+          ],
+        },
+        {
+          account_id: "empty",
+          holder: "X SA",
+          institution: "BBVA",
+          account_number: "9",
+          statement_count: 0,
+          revision: "c".repeat(64),
+          history: [correction("c2")],
+        },
+      ],
+    })
+  )
+  mount()
+  const list = await screen.findByRole("list", { name: "Corrections on other records of this merged account" })
+  const items = Array.from(list.querySelectorAll("li")).map((item) => item.textContent)
+  expect(items[0]).toContain("Arrendo Serv SA de CV · BBVA · 0110280038 · 1 statement")
+  expect(items[0]).toContain("Corrected by Claude for Neil Byrne on 1 Nov 2026: account 011280038 → 0110280038.")
+  expect(items[0]).toContain("Confirmed by Neil Byrne on 2026-11-01: Checked page 1")
+  expect(items[1]).toContain("0 statements")
+  expect(items[1]).toContain("Corrected by Claude · not confirmed.")
+  // This record's own correction line and undo are not offered for another record's correction.
+  expect(screen.queryByText(/Last corrected/)).toBeNull()
+  expect(screen.queryByRole("button", { name: /Undo this correction/ })).toBeNull()
+  // The unconfirmed one (on a record with no statement, so no panel of its own) is confirmed here, on its record.
+  const [button] = screen.getAllByRole("button", { name: /Confirm this correction/ })
+  expect((button as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(screen.getByLabelText("What you checked for this correction (account 011280038 → 0110280038)"), {
+    target: { value: "Checked page 1" },
+  })
+  fireEvent.click(button)
+  await waitFor(() =>
+    expect(fetchAPI).toHaveBeenCalledWith(
+      "/api/financial/statement-import/accounts/empty/details/confirm?case_id=case",
+      { method: "POST", body: { expected_revision: "c".repeat(64), correction_id: "c2", basis: "Checked page 1" } }
+    )
+  )
+  expect(await screen.findByText(/Correction confirmed as yours/)).toBeTruthy()
+})
+
+it("says so when the other records of a merged account could not be read", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue(state({ merged_history: null }))
+  mount()
+  expect(await screen.findByText(/other records of this merged account could not be loaded/)).toBeTruthy()
+})
