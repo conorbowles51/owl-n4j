@@ -171,7 +171,7 @@ it("A7: the day header names the zone and offset, and the original value shows t
   const original = "2023-01-01T19:07:12.000+00:00"
   serve(index(5, 5), { recordTime: original })
   mount()
-  await screen.findByText("Eastern Time (UTC-5)")
+  await screen.findByRole("heading", { name: /^Day 2023-01-01, Eastern Time \(UTC-5\)$/ })
   const time = (await screen.findAllByText("2:07 PM"))[0]
   fireEvent.click(time)
   await waitFor(() => expect(document.querySelector('[data-line="In the report"]')?.textContent).toBe(original))
