@@ -41,7 +41,13 @@ Branch `cb/cb-interpret`. Spec 02 units, in 06 order; each with its acceptance t
   02 section 6.10 and decision 44, 04-U1 row updated. Shipped data: `sensitive_fields/generic.json` only; type
   mappings land with 02-U7. Measured on C3 with a test Call mapping: 1,657 calls, 2,500 parties mapped, 5 calls,
   52 s per pass; only 1,112 calls carry a From party, so 02-U7 must supply the owner side on the others.
-- **Tests:** `tests/test_phone_body_values.py`, `tests/test_phone_registry_seed.py`, `tests/test_phone_registry_observe.py`, `tests/test_phone_generic.py`, `tests/test_phone_mappings.py`; PostgreSQL ones opt-in through
+- **02-U7 (39e7abb2):** 22 type mappings in `services/phone/mappings/data/type/` (applied_unconfirmed, origin
+  ai_draft), comm events and threads in `services/phone/comms.py` (migration `20261102_phone_comms`; views
+  `pv_comm_event`, `pv_comm_party`, `pv_thread`), owner rows with `implied_role`. Marks are planned before the
+  write (`apply.plan`, sweep hook `register_planner`) and stamped by `generic.interpret(marks=...)`. C3: 1,657 of
+  1,657 calls with both sides, 2,716 + 201 messages threaded, 294 emails, 61 open calls (decision 45). Kill
+  test `tests/test_phone_sweep_runtime.py`.
+- **Tests:** `tests/test_phone_body_values.py`, `tests/test_phone_registry_seed.py`, `tests/test_phone_registry_observe.py`, `tests/test_phone_generic.py`, `tests/test_phone_mappings.py`, `tests/test_phone_sweep_runtime.py`; PostgreSQL ones opt-in through
   `LOUPE_TEST_PHONE_PG_TEMPLATE_URL` (a database at the head; each test gets a fresh copy) and
   `LOUPE_TEST_PHONE_PG_URL` (captured extractions, rolled back), helper `tests/phone_pg.py`.
 
