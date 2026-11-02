@@ -123,6 +123,22 @@ class ReviewRecoveryTests(TestCase):
         self.assertIsNone(whole('financial_import_batch_items.summary'), sql)
         self.assertNotIn('financial_import_batches.files', sql)
 
+    def test_saved_reviews_see_unflushed_changes_of_rows_already_loaded(self):
+        # Live sessions run without autoflush (a bulk currency change edits items in a loop, then commits).
+        # A whole-row query returned the in-memory value of a loaded row; reading columns must not regress that.
+        item = self.batch_draft()
+        self.new_version()
+        with self.f.SessionLocal() as db:
+            db.autoflush = False
+            loaded = db.get(Item, item.id)
+            changed = deepcopy(loaded.review_request)
+            changed['currency'] = 'USD'
+            loaded.review_request = changed
+            current = db.get(EvidenceFile, self.f.file.id)
+            records = review_recovery.saved_ancestor_reviews(db, current)
+            self.assertEqual([r['request']['currency'] for r in records if r['origin'] == 'Bulk review'], ['USD'])
+            db.rollback()
+
     def test_new_reading_with_shifted_rows_retains_manual_additions_for_comparison(self):
         item = self.batch_draft()
         saved = deepcopy(item.review_request)

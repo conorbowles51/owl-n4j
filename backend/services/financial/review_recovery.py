@@ -7,7 +7,8 @@ import os
 from copy import deepcopy
 from datetime import date, datetime, timezone
 from uuid import UUID
-from sqlalchemy import select
+from sqlalchemy import inspect, select
+from sqlalchemy.orm.util import identity_key
 from postgres.models.evidence import EvidenceFile
 from postgres.models.financial import FinancialSourceDocument
 from postgres.models.financial_import_batches import FinancialImportBatch, FinancialImportBatchItem
@@ -32,6 +33,15 @@ def _ancestors(session, file):
             break  # A deliberate fresh start must not recover withdrawn drafts.
         yield previous
         parent = (previous.metadata_ or {}).get('statement_parent_evidence_id')
+
+
+def _in_session(session, model, identity, attribute):
+    """The object already loaded in this session, when its attribute is loaded. Sessions run without autoflush,
+    so its in-memory value may be newer than the database; a whole-row query returned that value, and so do we."""
+    item = session.identity_map.get(identity_key(model, identity))
+    if item is None or attribute in inspect(item).unloaded:
+        return None
+    return item
 
 
 def saved_ancestor_reviews(session, file):
@@ -75,14 +85,22 @@ def saved_ancestor_reviews(session, file):
             FinancialSourceDocument.evidence_file_id == previous.id)
             .order_by(FinancialSourceDocument.id))
         for source_id, details, details_sha256, incomplete in sources.all():
+            loaded_source = _in_session(session, FinancialSourceDocument, source_id, 'metadata_')
+            if loaded_source is not None:
+                in_memory = loaded_source.metadata_ or {}
+                details, details_sha256, incomplete = (in_memory.get('statement_details_review'),
+                    in_memory.get('statement_details_review_sha256'), in_memory.get('statement_incomplete_records'))
             details_saved = bool(details) and _digest(details) == details_sha256
             corrected = [r for r in incomplete or [] if r.get('correction')]
             if not details_saved and not corrected:
                 continue
             wanted = [md['statement_import_request']] + ([md['statement_details_history']] if details_saved else [])
-            loaded = session.execute(select(*wanted).where(FinancialSourceDocument.id == source_id)).one()
-            imported = dict(statement_import_request=loaded[0],
-                statement_details_history=loaded[1] if details_saved else None)
+            if loaded_source is not None:
+                imported = loaded_source.metadata_ or {}
+            else:
+                loaded = session.execute(select(*wanted).where(FinancialSourceDocument.id == source_id)).one()
+                imported = dict(statement_import_request=loaded[0],
+                    statement_details_history=loaded[1] if details_saved else None)
             if details_saved and imported.get('statement_import_request'):
                 request = deepcopy(imported['statement_import_request'])
                 request.update(details['details'])
@@ -107,7 +125,7 @@ def saved_ancestor_reviews(session, file):
                 f"Corrected imported records ({', '.join(currencies)})")
         # Only the columns read: the batch row carries the whole file list (86 MB decoded for one file's
         # 1,440 items on 1 Nov) and the item its full summary; neither is needed here.
-        items = session.execute(select(FinancialImportBatchItem.review_request,
+        items = session.execute(select(FinancialImportBatchItem.id, FinancialImportBatchItem.review_request,
                 FinancialImportBatchItem.updated_at, FinancialImportBatchItem.summary['review_saved_by'],
                 FinancialImportBatchItem.statement_key)
             .join(FinancialImportBatch, FinancialImportBatch.id == FinancialImportBatchItem.batch_id)
@@ -115,7 +133,11 @@ def saved_ancestor_reviews(session, file):
                    FinancialImportBatch.case_id == file.case_id,
                    FinancialImportBatchItem.review_request.is_not(None))
             .order_by(FinancialImportBatchItem.updated_at.desc(), FinancialImportBatchItem.id))
-        for review_request, updated_at, saved_by, statement_key in items.all():
+        for item_id, review_request, updated_at, saved_by, statement_key in items.all():
+            item = _in_session(session, FinancialImportBatchItem, item_id, 'review_request')
+            if item is not None and not {'updated_at', 'summary', 'statement_key'} & inspect(item).unloaded:
+                review_request, updated_at, statement_key = item.review_request, item.updated_at, item.statement_key
+                saved_by = (item.summary or {}).get('review_saved_by')
             add(previous, dict(request=review_request, saved_at=updated_at.isoformat(), saved_by=saved_by),
                 'Bulk review', statement_key)
     return records
