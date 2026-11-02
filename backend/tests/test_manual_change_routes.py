@@ -36,7 +36,7 @@ ROUTE_KINDS = {
     'transaction_amount', 'transaction_bulk_correct', 'sub_transaction_link', 'sub_transaction_unlink',
     'entity_property_edit', 'entity_location_correct', 'entity_location_remove', 'insight_confirm', 'insight_reject',
     'fact_pin', 'entity_merge', 'merge_suggestion_reject', 'merge_suggestion_unreject', 'entity_delete',
-    'entity_restore', 'transcript_speaker_correct', 'evidence_relevance_set', 'device_name_override',
+    'entity_restore', 'transcript_speaker_correct', 'evidence_relevance_set',
     'significant_entity_add', 'significant_entity_remove', 'significant_entity_clear', 'workspace_ai_accept',
     'workspace_ai_reject', 'attention_dismiss', 'attention_clear', 'timeline_event_add', 'statement_draft_edit',
 }
