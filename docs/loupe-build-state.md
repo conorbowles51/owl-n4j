@@ -1,7 +1,8 @@
 ## 2 November: phone interpretation, stage C in progress (cb-interpret)
 
-Head `4e0ded40` (04-U1 rows, identifiers, sweep worker). Next: C6 paced timing into 02 decision 46, P14 capture and
-timing, then the coverage map (02-U10) and the C to D gate.
+Head `ceb741b1` (Needs a decision page), after `32c33ce4` (coverage, identities, phone decisions). Next: C6 timing
+with every worker hook and probe latency by phase (running, `/mnt/owl-data/tmp/cbi/ftime2.py`) into 02 decision 46;
+then P14, the C to D gate, and N to R (projection, thread text, corrections, 03 section 20 sizes, live check).
 
 Branch `cb/cb-interpret`. Spec 02 units, in 06 order; each with its acceptance test.
 
@@ -62,6 +63,19 @@ Branch `cb/cb-interpret`. Spec 02 units, in 06 order; each with its acceptance t
   state counts marks one a stopped process left, finished at the next worker start. PostgreSQL in a container
   with the default 64 MB /dev/shm fails a parallel VACUUM ("could not resize shared memory segment"); use
   `PARALLEL 0` there.
+- **02-U10, 02-U9 identities, 02-U5 review (32c33ce4, ceb741b1):** `coverage.py` (02 section 7, computed on
+  read; `GET /api/phones/{extraction}/coverage`). `identities.py` applier hook: sightings, identities (upserted
+  before their sightings), each phone's names, owner candidates tier 1 and 2 (migration
+  `20261102_phone_identities`). Ledger: migration `20261102_phone_decisions` (subjects `phone_identity`,
+  `phone_record`; 19 decisions; `adjudications.reason_kind` owned by `AdjudicationReasonKind`); `decisions.record`
+  needs both snapshots to carry the same keys, so a field a decision adds is `None` on the before side.
+  `readings.py` (queue, examples, confirm with a standard reason after every kind is opened, correct with a typed
+  reason and scope, progress) and `identity_decisions.py` (suggestions R1, R2, R3, R5; R4 waits for 02-U11; link,
+  unlink, split, reject, restore with a revision check). Phone labels follow 12.3 (report file name token, else
+  `Phone n`; shared labels carry "(report k of n)"). Page `/cases/:id/phone-review` (readings group).
+  `tests/phone_pg.py` `make_case` writes the owner's membership as `create_case` does. `/root/venv` lacks
+  `fitz` and `phonenumbers`: the financial suite there shows 10 + 2 import errors that are environment only (the
+  cbi venv passes them).
 - **Tests:** `tests/test_phone_body_values.py`, `tests/test_phone_registry_seed.py`, `tests/test_phone_registry_observe.py`, `tests/test_phone_generic.py`, `tests/test_phone_mappings.py`, `tests/test_phone_sweep_runtime.py`, `tests/test_phone_fold.py`, `tests/test_phone_identifiers.py`; PostgreSQL ones opt-in through
   `LOUPE_TEST_PHONE_PG_TEMPLATE_URL` (a database at the head; each test gets a fresh copy) and
   `LOUPE_TEST_PHONE_PG_URL` (captured extractions, rolled back), helper `tests/phone_pg.py`.
