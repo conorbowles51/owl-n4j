@@ -300,7 +300,7 @@ export function PaymentNamingPanel({
       className="finance-panel min-w-0 space-y-3 overflow-auto rounded-lg border p-4 outline-none xl:max-h-[calc(var(--naming-room)-var(--naming-top)-8px)]"
       style={{
         "--naming-top": `${stickyTop + 8}px`,
-        "--naming-room": room ? `${room}px` : "calc(100vh - var(--view-header-h, 0px))",
+        "--naming-room": room ? `${room}px` : "100vh",
       } as CSSProperties}
       data-finance-tone="info"
       onKeyDown={keys}

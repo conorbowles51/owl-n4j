@@ -241,8 +241,8 @@ it("leaves room for the sticky tools bar above it when it sits beside the table"
   const panel = await screen.findByRole("complementary", { name: "Name payments from the statement" })
   expect(panel.style.getPropertyValue("--naming-top")).toBe("248px")
   expect(panel.className).toContain("xl:max-h-[calc(var(--naming-room)-var(--naming-top)-8px)]")
-  // No scrolling area around it: the window, less the view band.
-  expect(panel.style.getPropertyValue("--naming-room")).toBe("calc(100vh - var(--view-header-h, 0px))")
+  // No scrolling area around it: the window.
+  expect(panel.style.getPropertyValue("--naming-room")).toBe("100vh")
 })
 
 it("takes its height from the scrolling area it sticks in, not the whole window", async () => {

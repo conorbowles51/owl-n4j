@@ -85,7 +85,7 @@
     color-scheme: dark;
     --background: 225 15% 5%;
     --foreground: 240 5% 96%;
-    --card: 228 14% 9%;
+    --card: 228 14% 8%;
     --card-foreground: 240 5% 96%;
     --popover: 230 12% 11%;
     --popover-foreground: 240 5% 96%;
@@ -137,17 +137,6 @@
 @layer base {
   * {
     border-color: hsl(var(--border));
-  }
-
-  /* Elevation (lx-style F): cards step off the page by surface and a restrained shadow, not by a border alone
-     (Card uses shadow-[var(--elev-raised)]); --elev-overlay is the step for popovers and sheets. */
-  :root {
-    --elev-raised: 0 1px 2px rgba(23, 24, 28, 0.06), 0 8px 24px -18px rgba(23, 24, 28, 0.45);
-    --elev-overlay: 0 16px 38px -12px rgba(23, 24, 28, 0.28), 0 4px 12px -6px rgba(23, 24, 28, 0.12);
-  }
-  .dark {
-    --elev-raised: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 10px 28px -16px rgba(0, 0, 0, 0.9);
-    --elev-overlay: 0 18px 44px -14px rgba(0, 0, 0, 0.92), 0 0 0 1px rgba(255, 255, 255, 0.04);
   }
 
   body {
@@ -354,7 +343,7 @@
   --ease-owl: var(--ease-loupe);
 }
 
-/* Type scale (lx-style E): one name per role, used by the shared primitives (PageHeader, ViewHeader, CardTitle,
+/* Type scale (lx-style E): one name per role, used by the shared primitives (PageHeader, CardTitle,
    Label, Table), so pages do not pick sizes one by one. Display font for page and section titles; Plex Sans 500
    for labels; Plex Mono only for eyebrows (metadata, never sentences); tabular figures for data. */
 @utility type-page {

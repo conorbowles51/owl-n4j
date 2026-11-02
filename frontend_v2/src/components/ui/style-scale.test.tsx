@@ -72,12 +72,6 @@ describe("density and elevation (lx-style F)", () => {
     expect(screen.getAllByText("1,204.50")[1].className).toContain("in-data-[density=dense]:py-cell-dense")
     expect(screen.getAllByText("Amount")[1].className).toContain("in-data-[density=dense]:h-row-dense")
   })
-  it("cards step off the page by elevation in light and dark, not by a border alone", () => {
-    render(<Card data-testid="card" />)
-    expect(screen.getByTestId("card").className).toContain("shadow-[var(--elev-raised)]")
-    expect(css).toMatch(/:root \{\s*--elev-raised:/)
-    expect(css).toMatch(/\.dark \{\s*--elev-raised:/)
-  })
 })
 
 describe("badge status variants use the semantic status set (lx-style D)", () => {
