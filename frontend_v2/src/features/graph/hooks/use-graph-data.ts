@@ -2,11 +2,11 @@ import { useQuery } from "@tanstack/react-query"
 import { graphAPI } from "../api"
 import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 
-export function useGraphData(caseId: string | undefined) {
+export function useGraphData(caseId: string | undefined, opts: { phoneCap?: boolean } = {}) {
   const scope = useCaseLayer(caseId)
   return useQuery({
-    queryKey: ["graph", caseId, scope],
-    queryFn: () => graphAPI.getGraph({ case_id: caseId!, scope }),
+    queryKey: ["graph", caseId, scope, ...(opts.phoneCap ? ["phone-cap"] : [])],
+    queryFn: () => graphAPI.getGraph({ case_id: caseId!, scope, phone_cap: opts.phoneCap }),
     enabled: !!caseId,
   })
 }

@@ -45,6 +45,8 @@ export interface GraphEdge {
 export interface GraphData {
   nodes: GraphNode[]
   edges: GraphEdge[]
+  /** Set when the read was capped (03 D-21): how many nodes the case has in all. */
+  total_node_count?: number
 }
 
 export interface NodeDetail {

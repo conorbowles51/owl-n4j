@@ -175,6 +175,19 @@ def phone_map_points(body: MapPointsBody, db: Session = Depends(get_db), user: U
     return phone_map.points(db.connection(), body.case_id, body.bbox, body.zoom, body.filter.model_dump())
 
 
+@router.get("/graph/pair")
+def phone_graph_pair(case_id: UUID = Query(...), a: str = Query(..., max_length=512), b: str = Query(..., max_length=512),
+                     from_instant: Optional[str] = Query(None, alias="from"), to_instant: Optional[str] = Query(None, alias="to"),
+                     db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """A pair edge's counts for a time slice (03 R-3): equal to Conversations' Between A and B in that window."""
+    from services.phone import graph_projection
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        return graph_projection.pair_counts(db.connection(), case_id, a, b, from_instant, to_instant)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.get("/registry/flags")
 def list_registry_flags(state: Optional[FlagState] = None, db: Session = Depends(get_db),
                         _: User = Depends(require_admin)):

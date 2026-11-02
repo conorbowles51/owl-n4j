@@ -73,7 +73,7 @@ export interface UpdateNodePayload {
 
 type RawNode = Record<string, unknown>
 type RawEdge = Record<string, unknown>
-type RawGraphData = { nodes: RawNode[]; links: RawEdge[] }
+type RawGraphData = { nodes: RawNode[]; links: RawEdge[]; total_node_count?: number }
 
 function asString(value: unknown, fallback = ""): string {
   if (typeof value === "string") return value
@@ -103,6 +103,7 @@ function toGraphData(raw: RawGraphData): GraphData {
       type: asString(e.type ?? e.relationship),
       weight: asNumber(e.weight),
     })),
+    ...(typeof raw.total_node_count === "number" ? { total_node_count: raw.total_node_count } : {}),
   }
 }
 
@@ -120,6 +121,8 @@ export const graphAPI = {
     limit?: number
     sort_by?: string
     scope?: CaseLayer
+    /** The Graph page on a case with phones: top 2,000 by degree, the total stated (03 D-21). */
+    phone_cap?: boolean
   }) => {
     const qs = new URLSearchParams({ case_id: params.case_id, lightweight: "true" })
     if (params.start_date) qs.set("start_date", params.start_date)
@@ -127,6 +130,7 @@ export const graphAPI = {
     if (params.limit != null) qs.set("limit", String(params.limit))
     if (params.sort_by) qs.set("sort_by", params.sort_by)
     if (params.scope) qs.set("scope", params.scope)
+    if (params.phone_cap) qs.set("phone_cap", "true")
     const raw = await fetchAPI<RawGraphData>(`/api/graph?${qs}`)
     return toGraphData(raw)
   },

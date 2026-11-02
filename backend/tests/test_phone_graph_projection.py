@@ -192,3 +192,53 @@ def test_a_case_whose_phones_are_all_deleted_loses_its_phone_layer(two_phones):
             G.drop(s, case)
     finally:
         driver.close()
+
+
+@needs_template
+def test_r1_each_pair_edge_count_equals_the_conversations_total_between_the_pair(two_phones):
+    """03 R-1 (A3): the graph's pair edge counts the same events Conversations shows for Between A and B."""
+    from services.phone import streams
+    from services.phone.filters import StreamFilter
+    engine, case, _, p1, p2 = two_phones
+    with engine.connect() as c:
+        p = G.plan(c, case)
+        assert p["rels"]["COMMUNICATED"]
+        for r in p["rels"]["COMMUNICATED"]:
+            a, b = r["source"].split(":", 1)[1], r["target"].split(":", 1)[1]
+            edge = r["undirected"] + sum(r[k + "_ab"] + r[k + "_ba"] for k in G.KIND_PREFIX.values())
+            f = StreamFilter.model_validate({"case_id": str(case), "participants": [a, b],
+                                             "participant_mode": "between", "kinds": list(G.KIND_PREFIX),
+                                             "collapse_copies": False})
+            assert streams.shown_count(c, f) == edge, (a, b)
+
+
+@needs_template
+def test_r3_a_time_sliced_edge_count_equals_conversations_in_that_window(two_phones):
+    from services.phone import streams
+    from services.phone.filters import StreamFilter
+    engine, case, _, p1, p2 = two_phones
+    with engine.connect() as c:
+        p = G.plan(c, case)
+        r = p["rels"]["COMMUNICATED"][0]
+        a, b = r["source"].split(":", 1)[1], r["target"].split(":", 1)[1]
+        whole = G.pair_counts(c, case, a, b)
+        assert whole["total"] == r["undirected"] + sum(r[k + "_ab"] + r[k + "_ba"] for k in G.KIND_PREFIX.values())
+        first = r["first_instant"]
+        sliced = G.pair_counts(c, case, a, b, from_instant=first, to_instant=first)
+        f = StreamFilter.model_validate({"case_id": str(case), "participants": [a, b], "participant_mode": "between",
+                                         "collapse_copies": False, "kinds": list(G.KIND_PREFIX),
+                                         "from_instant": first, "to_instant": first, "include_no_time": False})
+        assert sliced["total"] == streams.shown_count(c, f) >= 1
+
+
+@needs_template
+def test_d21_the_graph_page_caps_a_phone_case_at_2000_by_degree_and_a_case_without_phones_is_whole(two_phones):
+    from sqlalchemy.orm import Session
+    from routers.graph import phone_case_cap
+    engine, case, _, p1, p2 = two_phones
+    with Session(engine) as db:
+        empty = make_case(db.connection())
+        assert phone_case_cap(db, case, None, None) == (2000, "degree")
+        assert phone_case_cap(db, empty, None, None) == (None, None)
+        assert phone_case_cap(db, case, 50, "degree") == (50, "degree")
+        assert phone_case_cap(db, "not-a-case", None, None) == (None, None)

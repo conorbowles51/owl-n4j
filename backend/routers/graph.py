@@ -413,9 +413,30 @@ def _graph_read(case_id: str, scope: str, scoped_entity_keys, lightweight: bool,
     return key, compute
 
 
+PHONE_CASE_NODE_CAP = 2000
+
+
+def phone_case_cap(db, case_id, limit, sort_by):
+    """03 D-21: on a case with phones, the Graph shows the top 2,000 nodes by degree and states the limit
+    (``total_node_count`` beside the nodes); a case without phones keeps its whole graph. An explicit limit wins."""
+    if limit is not None or db is None:
+        return limit, sort_by
+    try:
+        has_phone = db.execute(text("SELECT 1 FROM phone_extractions WHERE case_id = CAST(:c AS uuid) AND standing = "
+                                    "'active' LIMIT 1"), {"c": str(case_id)}).first() is not None
+    except Exception:  # noqa: BLE001 - a case id that is not a uuid, or no phone tables: no cap
+        db.rollback()
+        return limit, sort_by
+    return (PHONE_CASE_NODE_CAP, "degree") if has_phone else (limit, sort_by)
+
+
 def warm_graph_page(case_id, db=None) -> int:
     """The Graph page's read as the page asks for it (lightweight=true&scope=all), into the saved responses."""
-    return warm_response(*_graph_read(str(case_id), "all", None, True, None, None))
+    n = warm_response(*_graph_read(str(case_id), "all", None, True, None, None))  # the Table page's read
+    limit, sort_by = phone_case_cap(db, case_id, None, None)
+    if limit is not None:  # the Graph page's capped read on a case with phones (03 D-21)
+        n += warm_response(*_graph_read(str(case_id), "all", None, True, limit, sort_by))
+    return n
 
 
 @router.get("")
@@ -426,6 +447,8 @@ def get_graph(
     lightweight: bool = Query(False, description="Return slim payload (key/name/type/confidence/mentioned only)"),
     limit: Optional[int] = Query(None, description="Cap nodes at top-N (requires sort_by)"),
     sort_by: Optional[str] = Query(None, description="Sort criterion when limit is set (e.g. 'degree')"),
+    phone_cap: bool = Query(False, description="The Graph page: on a case with phones, top 2,000 nodes by degree "
+                                               "with total_node_count stated (03 D-21)"),
     scope: Literal["all", "significant"] = Query(
         "all",
         description="Case layer to project",
@@ -447,6 +470,8 @@ def get_graph(
             if scope == "significant"
             else None
         )
+        if phone_cap and lightweight and not start_date and not end_date:
+            limit, sort_by = phone_case_cap(db, case_id, limit, sort_by)
         if not start_date and not end_date:
             key, compute = _graph_read(case_id, scope, scoped_entity_keys, lightweight, limit, sort_by)
             return cached_json(key, compute, request.headers.get("accept-encoding") if request is not None else None)

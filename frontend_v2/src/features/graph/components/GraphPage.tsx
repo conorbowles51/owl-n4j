@@ -57,7 +57,7 @@ export function GraphPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const openedAt = useMemo(() => performance.now(), [caseId])
   const [layoutWork, setLayoutWork] = useState<PageWork | null>(null)
-  const { data: graphData, isLoading } = useGraphData(caseId)
+  const { data: graphData, isLoading } = useGraphData(caseId, { phoneCap: true })
   const { filteredData, filteredNodes, totalNodes } = useGraphSearch(graphData)
 
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
@@ -286,6 +286,12 @@ export function GraphPage() {
             <span className="font-medium">{workspaceGraphSource.sourceLabel}</span>
           </div>
         </div>
+      )}
+      {graphData?.total_node_count != null && graphData.total_node_count > graphData.nodes.length && (
+        <p role="status" className="border-b border-border bg-status-review-soft px-4 py-1.5 text-xs">
+          Showing the {graphData.nodes.length.toLocaleString("en-US")} most connected of {graphData.total_node_count.toLocaleString("en-US")} items in this case.
+          Search or open a node's neighbours to reach the rest; the Table lists every item.
+        </p>
       )}
       <GraphToolbar
         caseId={caseId!}
