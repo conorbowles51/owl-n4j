@@ -123,6 +123,18 @@ def compare_phones(case_id: UUID = Query(...), a: UUID = Query(...), b: UUID = Q
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+@router.get("/findings/{entry_id}/explain")
+def explain_finding(entry_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                    user: User = Depends(get_current_db_user)):
+    """How this was found (07 J-17): generated from the finding's phone links; nothing in it is typed."""
+    from services.phone import explain as phone_explain
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        return phone_explain.explain(db.connection(), case_id, entry_id)
+    except phone_explain.NotFound:
+        raise HTTPException(status_code=404, detail="This finding is not in this case.")
+
+
 @router.get("/registry/flags")
 def list_registry_flags(state: Optional[FlagState] = None, db: Session = Depends(get_db),
                         _: User = Depends(require_admin)):
