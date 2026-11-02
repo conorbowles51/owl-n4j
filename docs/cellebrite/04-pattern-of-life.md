@@ -1599,6 +1599,28 @@ Each is a decision with its reasoning and what would reverse it.
     `counterparty_raw` waits for an in-house gazetteer (decision 25). *Reverse if* the ledger gains an
     account-to-dossier link (then a person's lane is that person's accounts), or a gazetteer is installed.
 
+29. **Statement check as built (04-U11; `services/pattern_of_life/claims.py`, `evaluation.py`, migration
+    `20261102_pol_claims`, routes under `/api/pattern/{case}/claims`).** A claim is confirmed only by a signed-in
+    person: an Actor with no user id, or one carrying a model origin, is refused (403); a draft missing its window,
+    zone, a resolved place (a place given as words is `{"text"}` until a point is set) or the other side is refused
+    with the field list (422). Editing a confirmed claim returns it to draft, because the confirmation was of the
+    earlier words; every version is copied to `pol_claim_revision`. A drafted claim refuses any window (the model
+    never sets an instant) and reads "Drafted by <model>, not confirmed". A window is at most 31 days.
+    `tolerance_minutes` on `inactive` turns owner use within that many minutes of either window edge into context
+    ("within the stated tolerance"), so "asleep by about eleven" is not undercut by a message at 23:05. Inputs are
+    the subject's (and the other side's) extractions with their interpretation generation and projection state
+    (mapping versions and signature), the case's cell dataset, the parameters and the claim version; an evaluation
+    is stale when the current inputs hash differently, or the claim changed or is no longer confirmed. Strength for
+    a place item uses the radii sum (150 m or less is tight) whether the pair overlaps or is separated. Payments
+    with an attached place are context only (decision 28). Item order is role, time, kind, id, so a re-run on
+    unchanged inputs is identical. "This item is wrong" records `dispute_check_item` on the record the item names
+    (or the payment), or the reason alone when the item names no record (a period or an episode); the computed
+    outcome never changes. Attaching links each chosen item's record (`phone_record`, relationship from its role)
+    and the check once (`statement_check`, relationship from the outcome); an item naming no record is skipped and
+    reported. The `statement_check` resolver is registered at start-up. "What would contradict this?" lists towers
+    not placed, app usage not read as use, and photo locations not used. *Reverse if* Neil wants tolerance as total
+    minutes of use allowed, or a confirmed claim to stay confirmed through edits of its words only.
+
 ## 15. Not yet established
 
 - The values of `DeviceEvent.Value` for 14 of 16 EventTypes (only `Power on` and `Factory Reset` are in

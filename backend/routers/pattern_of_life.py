@@ -368,3 +368,198 @@ def get_manual_place_history(transaction_id: UUID, case_id: UUID = Depends(requi
     from services.pattern_of_life import money
     rows = money.history(db.connection(), case_id, transaction_id)
     return _jsonable({"total": len(rows), "items": rows})
+
+
+# ---- statement check (04 section 9) ------------------------------------------------------------------------------
+
+class ClaimFields(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: str | None = None
+    subject: dict | None = None
+    window_start: str | None = None
+    window_end: str | None = None
+    window_zone: str | None = Field(default=None, max_length=64)
+    window_text: str | None = Field(default=None, max_length=4000)
+    place: dict | None = None
+    activity: dict | None = None
+    counterpart: dict | None = None
+    source_anchor: dict | None = None
+
+
+class ClaimEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    fields: ClaimFields
+    expected_version: int
+
+
+class ClaimVersion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_version: int
+
+
+class ClaimReason(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+class AttachRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    entry_id: UUID
+    expected_version: int
+    item_ordinals: list[int] = Field(default_factory=list, max_length=5000)
+    include_check_link: bool = True
+
+
+def _claim_error(exc):
+    detail = {"message": str(exc), "fields": exc.fields} if exc.fields else str(exc)
+    return HTTPException(status_code=exc.status, detail=detail)
+
+
+@router.get("/{case_id}/claims")
+def get_claims(status: str | None = Query(None), case_id: UUID = Depends(require_case_view),
+               db: Session = Depends(get_db)):
+    from services.pattern_of_life import claims
+    return _jsonable(claims.list_claims(db.connection(), case_id, status))
+
+
+@router.post("/{case_id}/claims")
+def post_claim(body: ClaimFields, case_id: UUID = Depends(require_case_edit), db: Session = Depends(get_db),
+               user=Depends(get_current_db_user)):
+    from services.pattern_of_life import claims
+    try:
+        out = claims.create(db.connection(), case_id, body.model_dump(exclude_unset=True), _place_actor(user))
+    except claims.ClaimError as exc:
+        raise _claim_error(exc)
+    db.commit()
+    return _jsonable(out)
+
+
+@router.get("/{case_id}/claims/{claim_id}")
+def get_claim(claim_id: UUID, case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
+    from services.pattern_of_life import claims
+    try:
+        out = claims.get(db.connection(), case_id, claim_id)
+        out["revisions"] = claims.revisions(db.connection(), case_id, claim_id)
+    except claims.ClaimError as exc:
+        raise _claim_error(exc)
+    return _jsonable(out)
+
+
+@router.patch("/{case_id}/claims/{claim_id}")
+def patch_claim(claim_id: UUID, body: ClaimEdit, case_id: UUID = Depends(require_case_edit),
+                db: Session = Depends(get_db), user=Depends(get_current_db_user)):
+    from services.pattern_of_life import claims
+    try:
+        out = claims.edit(db.connection(), case_id, claim_id, body.fields.model_dump(exclude_unset=True),
+                          body.expected_version, _place_actor(user))
+    except claims.ClaimError as exc:
+        raise _claim_error(exc)
+    db.commit()
+    return _jsonable(out)
+
+
+@router.post("/{case_id}/claims/{claim_id}/confirm")
+def post_claim_confirm(claim_id: UUID, body: ClaimVersion, case_id: UUID = Depends(require_case_edit),
+                       db: Session = Depends(get_db), user=Depends(get_current_db_user)):
+    from services.pattern_of_life import claims
+    try:
+        out = claims.confirm(db.connection(), case_id, claim_id, body.expected_version, _place_actor(user))
+    except claims.ClaimError as exc:
+        raise _claim_error(exc)
+    db.commit()
+    return _jsonable(out)
+
+
+@router.post("/{case_id}/claims/{claim_id}/withdraw")
+def post_claim_withdraw(claim_id: UUID, body: ClaimReason, case_id: UUID = Depends(require_case_edit),
+                        db: Session = Depends(get_db), user=Depends(get_current_db_user)):
+    from services.pattern_of_life import claims
+    try:
+        out = claims.withdraw(db.connection(), case_id, claim_id, body.reason, _place_actor(user))
+    except claims.ClaimError as exc:
+        raise _claim_error(exc)
+    db.commit()
+    return _jsonable(out)
+
+
+@router.post("/{case_id}/claims/{claim_id}/evaluate")
+def post_claim_evaluate(claim_id: UUID, case_id: UUID = Depends(require_case_edit), db: Session = Depends(get_db),
+                        user=Depends(get_current_db_user)):
+    from services.pattern_of_life import claims, evaluation
+    try:
+        out = evaluation.evaluate(db.connection(), case_id, claim_id, _place_actor(user).name)
+    except claims.ClaimError as exc:
+        raise _claim_error(exc)
+    db.commit()
+    return _jsonable(out)
+
+
+@router.get("/{case_id}/claims/{claim_id}/evaluations")
+def get_claim_evaluations(claim_id: UUID, case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
+    from services.pattern_of_life import claims, evaluation
+    try:
+        return _jsonable(evaluation.list_evaluations(db.connection(), case_id, claim_id))
+    except claims.ClaimError as exc:
+        raise _claim_error(exc)
+
+
+@router.get("/{case_id}/claims/{claim_id}/evaluations/{evaluation_id}")
+def get_claim_evaluation(claim_id: UUID, evaluation_id: UUID, case_id: UUID = Depends(require_case_view),
+                         db: Session = Depends(get_db)):
+    from services.pattern_of_life import claims, evaluation
+    try:
+        out = evaluation.read(db.connection(), case_id, evaluation_id)
+    except claims.ClaimError as exc:
+        raise _claim_error(exc)
+    if str(out["claim_id"]) != str(claim_id):
+        raise HTTPException(status_code=404, detail="That check is not of this statement.")
+    return _jsonable(out)
+
+
+@router.post("/{case_id}/claims/{claim_id}/evaluations/{evaluation_id}/items/{ordinal}/dispute")
+def post_item_dispute(claim_id: UUID, evaluation_id: UUID, ordinal: int, body: ClaimReason,
+                      case_id: UUID = Depends(require_case_edit), db: Session = Depends(get_db),
+                      user=Depends(get_current_db_user)):
+    from services.pattern_of_life import claims, evaluation
+    try:
+        out = evaluation.dispute(db, case_id, evaluation_id, ordinal, body.reason, _place_actor(user))
+    except claims.ClaimError as exc:
+        raise _claim_error(exc)
+    db.commit()
+    return out
+
+
+@router.post("/{case_id}/claims/{claim_id}/evaluations/{evaluation_id}/items/{ordinal}/dispute/withdraw")
+def post_item_dispute_withdraw(claim_id: UUID, evaluation_id: UUID, ordinal: int, body: ClaimReason,
+                               case_id: UUID = Depends(require_case_edit), db: Session = Depends(get_db),
+                               user=Depends(get_current_db_user)):
+    from services.pattern_of_life import claims, evaluation
+    try:
+        out = evaluation.withdraw_dispute(db, case_id, evaluation_id, ordinal, body.reason, _place_actor(user))
+    except claims.ClaimError as exc:
+        raise _claim_error(exc)
+    db.commit()
+    return out
+
+
+@router.post("/{case_id}/claims/{claim_id}/evaluations/{evaluation_id}/attach")
+def post_evaluation_attach(claim_id: UUID, evaluation_id: UUID, body: AttachRequest,
+                           case_id: UUID = Depends(require_case_edit), db: Session = Depends(get_db),
+                           user=Depends(get_current_db_user)):
+    from services.pattern_of_life import claims, evaluation
+    from services.workspace_entry_service import (WorkspaceEntryConflict, WorkspaceEntryNotFound,
+                                                  WorkspaceEntryValidationError)
+    try:
+        out = evaluation.attach(db, case_id, evaluation_id, entry_id=body.entry_id,
+                                expected_version=body.expected_version, item_ordinals=body.item_ordinals,
+                                include_check_link=body.include_check_link, user=user)
+    except claims.ClaimError as exc:
+        raise _claim_error(exc)
+    except WorkspaceEntryNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc) or "That entry is not in this case.")
+    except WorkspaceEntryConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except WorkspaceEntryValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    db.commit()
+    return _jsonable(out)

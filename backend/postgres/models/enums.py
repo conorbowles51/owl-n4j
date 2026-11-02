@@ -273,6 +273,10 @@ class AdjudicationDecision(str, Enum):
     # Reversed by ``remove_transaction_place``; attaching again over a place replaces it (before holds the old one).
     attach_transaction_place = "attach_transaction_place"
     remove_transaction_place = "remove_transaction_place"
+    # 04 section 9.5: "This item is wrong" on a statement check item, with a typed reason. It marks the item and
+    # changes no computed outcome (decision 11); withdrawing the mark is its reversal.
+    dispute_check_item = "dispute_check_item"
+    withdraw_check_item_dispute = "withdraw_check_item_dispute"
 
 
 class IngestionRunStatus(str, Enum):

@@ -92,6 +92,8 @@ async def lifespan(app: FastAPI):
     # Phone links (phone_extraction, phone_file) are checked against the capture tables (07 section 6).
     from services.phone import resolvers as phone_resolvers
     phone_resolvers.register()
+    from services.pattern_of_life import evaluation as pol_evaluation
+    pol_evaluation.register()  # statement_check links (04 section 9.6)
     from services.phone import external_processing as phone_external_processing
     phone_external_processing.install()  # phone files as evidence: processed only when their report allows it
     # Phone mappings (02 section 6): the sweep re-derives when the loaded set changes.
