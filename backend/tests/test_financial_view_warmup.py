@@ -476,10 +476,35 @@ def test_a_prepare_at_its_time_limit_stops_its_children_and_says_what_was_not_wa
     assert summary.startswith('prepare: 2 views warmed in ') and '8 of 10 views not warmed' in summary
 
 
-def test_the_prepare_waits_inside_the_units_cap():
+def test_the_prepare_stops_inside_the_units_cap_counted_from_the_releases_start(monkeypatch, tmp_path):
     from services.financial import view_prepare
     assert view_warmup._prepare_cap() == view_prepare.PREPARE_CAP_SECONDS
-    assert 0 < view_warmup.PREPARE_MARGIN_SECONDS < view_prepare.PREPARE_CAP_SECONDS / 10
+    monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
+    monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
+    deadlines = []
+    monkeypatch.setattr(view_warmup, '_warm_in_processes', lambda processes, deadline: deadlines.append(deadline) or (0, 0, None))
+    released = time.time() - 7  # the unit was started 7 s before this process entered prepare()
+    monkeypatch.setenv(view_warmup.STARTED_ENV, '%.3f' % released)
+    view_warmup.prepare(processes=3)
+    assert abs(deadlines[-1] - (released + view_prepare.PREPARE_CAP_SECONDS - view_warmup.PREPARE_MARGIN_SECONDS)) < 0.01
+    # Children are stopped half the margin after the deadline: still inside the cap.
+    assert deadlines[-1] + view_warmup.PREPARE_MARGIN_SECONDS / 2 < released + view_prepare.PREPARE_CAP_SECONDS
+    monkeypatch.delenv(view_warmup.STARTED_ENV)  # run by hand: start-up is assumed to have used the allowance
+    view_warmup.prepare(processes=3)
+    assert deadlines[-1] <= time.time() + view_prepare.PREPARE_CAP_SECONDS - view_warmup.PREPARE_MARGIN_SECONDS \
+        - view_warmup.STARTUP_ALLOWANCE_SECONDS + 1
+
+
+def test_a_prepare_that_finished_every_view_after_the_deadline_is_not_reported_stopped(monkeypatch, tmp_path):
+    events = [['total 3', 'claim a', 'warmed a'], ['total 3', 'claim b', 'warmed b'], ['total 3', 'claim c', 'warmed c']]
+    _fake_children(monkeypatch, events, statuses=(0, 0, 0))
+    assert view_warmup._warm_in_processes(3, deadline=time.time() - 1) == (3, 0, None)
+    monkeypatch.setenv('FINANCIAL_VIEW_MEMO_DIR', str(tmp_path))
+    monkeypatch.setattr(view_warmup, '_migrations_pending', lambda: '')
+    monkeypatch.setenv(view_warmup.STARTED_ENV, '%.3f' % (time.time() - 1000))  # the deadline has passed
+    _fake_children(monkeypatch, events, statuses=(0, 0, 0))
+    summary = view_warmup.prepare(processes=3)
+    assert summary.startswith('prepare: 3 views warmed in ') and 'limit' not in summary
 
 
 def test_claims_give_each_task_to_one_process_and_record_the_outcome(tmp_path):

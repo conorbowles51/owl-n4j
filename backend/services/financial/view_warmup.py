@@ -413,14 +413,15 @@ def _visited_views(listed):
     return found
 
 
-def _warm_cases(share=None, stop_if_preparing=False, claims=None, deadline=None):
+def _warm_cases(share=None, stop_if_preparing=False, claims=None, deadline=None, stopped=None):
     """``share`` (k, n): only every n-th case-and-view task from the k-th. ``claims``: a file shared by the processes
     of one prepare; each takes the next task no other has taken (_claim), so none sits idle while another still has a
-    queue. ``deadline`` (epoch seconds): no task is started after it."""
+    queue. ``deadline`` (epoch seconds): no task is started after it; ``stopped`` (a list) gets True when a task
+    was left for that reason."""
     from services.financial import view_cache
     token = view_cache.not_a_visit.set(True)  # warming a view is not a person opening it
     try:
-        return _warm_cases_now(share, stop_if_preparing, claims, deadline)
+        return _warm_cases_now(share, stop_if_preparing, claims, deadline, stopped)
     finally:
         view_cache.not_a_visit.reset(token)
 
@@ -473,7 +474,7 @@ def _claimed_counts(claims):
     return total, claimed, warmed, failed
 
 
-def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None):
+def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None, stopped=None):
     from sqlalchemy import func, select
     from postgres.models.financial import FinancialStatementPeriod as Period
     from postgres.session import _get_session_local
@@ -594,6 +595,8 @@ def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None):
             return warmed, failed
         if deadline is not None and time.time() >= deadline:
             logger.info('Financial view warm-up stopped at its time limit')
+            if stopped is not None:
+                stopped.append(True)
             return warmed, failed
         key = _task_key(case_id, name, route, defaults)
         if claims is not None and not _claim(claims, key, len(order)):
@@ -665,17 +668,17 @@ def prepare(processes=None):
         lock = _take_lock(wait=True, name=PREPARE_LOCK)
         if lock is None:
             return 'prepare: skipped, no memo directory'
-        deadline = time.time() - (time.perf_counter() - started) + _prepare_cap() - PREPARE_MARGIN_SECONDS
+        deadline = _unit_started(started) + _prepare_cap() - PREPARE_MARGIN_SECONDS
         with lock:
             if processes == 1:
-                warmed, failed = _warm_cases(deadline=deadline)
-                stopped = None
+                left = []
+                warmed, failed = _warm_cases(deadline=deadline, stopped=left)
+                stopped = ('stopped at the %d s limit; views not reached are computed on their first visit'
+                           % _prepare_cap()) if left else None
             else:
                 warmed, failed, stopped = _warm_in_processes(processes, deadline)
         summary = 'prepare: %d views warmed in %d s (%d failed, %d processes, code %s)' % (
             warmed, round(time.perf_counter() - started), failed, processes, view_cache.code_identity()[:12])
-        if stopped is None and time.time() >= deadline:
-            stopped = 'stopped at the %d s limit; views not reached are computed on their first visit' % _prepare_cap()
         return summary + ('; ' + stopped if stopped else '')
     except Exception:
         logger.warning('Financial view prepare failed', exc_info=True)
@@ -693,6 +696,20 @@ DEADLINE_FLAG = '--deadline'
 # started after the cap less this margin, and children still computing at the cap less half of it are stopped, so
 # the summary is written, with what was not reached.
 PREPARE_MARGIN_SECONDS = 20
+# The time the release started the unit (view_prepare.start passes it): the cap runs from there, and the login
+# shell plus importing services.financial took 6-7 s before prepare() was entered (measured 2026-11-02, nice 15).
+STARTED_ENV = 'LOUPE_PREPARE_STARTED'
+# Without it, the start-up this process had before prepare() is taken as at most this long.
+STARTUP_ALLOWANCE_SECONDS = 15
+
+
+def _unit_started(entered):
+    """Epoch time the cap counts from: the release's start of the unit, else this process's entry less an allowance."""
+    import os
+    try:
+        return float(os.environ[STARTED_ENV])
+    except (KeyError, ValueError):
+        return time.time() - (time.perf_counter() - entered) - STARTUP_ALLOWANCE_SECONDS
 
 
 def _prepare_cap():
@@ -735,11 +752,12 @@ def _warm_in_processes(processes, deadline=None, poll=1.0):
                 logger.warning('Financial view prepare share ended with status %s', child.returncode)
         total, claimed, warmed, failed = _claimed_counts(claims)
         stopped = None
+        total = max(total, claimed)  # each child lists the visited views itself; their lists can differ slightly
         if cut or (deadline is not None and claimed < total and time.time() >= deadline):
             stopped = ('stopped at the %d s limit: %d of %d views not warmed (%d not reached, %d stopped while '
                        'computing); they are computed on their first visit' % (
                            _prepare_cap(), total - warmed - failed, total, total - claimed,
-                           claimed - warmed - failed))
+                           max(0, claimed - warmed - failed)))
         return warmed, failed + failed_children, stopped
     finally:
         try:

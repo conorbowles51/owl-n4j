@@ -65,8 +65,10 @@ def service_settings(run=_run):
     return settings
 
 
-def prepare_command(settings):
-    """systemd-run for the prepare unit: the service's settings, at a lower CPU and I/O priority."""
+def prepare_command(settings, started=None):
+    """systemd-run for the prepare unit: the service's settings, at a lower CPU and I/O priority. ``started``: the
+    time ``wait`` counts the cap from, passed to the prepare (LOUPE_PREPARE_STARTED) so it finishes and reports
+    inside the cap."""
     argv = ['systemd-run', '--unit=' + UNIT, '--collect', '--quiet',
             '--property=User=' + settings['user'], '--property=Group=' + settings['group'],
             '--property=WorkingDirectory=' + settings['workingdirectory'],
@@ -77,6 +79,8 @@ def prepare_command(settings):
     argv += ['--property=EnvironmentFile=' + path for path in settings['environment_files']]
     # systemd splits an Environment= value on spaces: each assignment is passed quoted, as systemctl shows it.
     argv += ['--property=Environment=' + _quoted(assignment) for assignment in settings['environment']]
+    if started is not None:
+        argv += ['--property=Environment=LOUPE_PREPARE_STARTED=%.3f' % started]
     # The backend's ExecStart is a login shell (bash -lc), which can set more of the environment.
     argv += ['/bin/bash', '-lc', 'exec python -m services.financial.view_warmup --prepare']
     return argv
@@ -106,7 +110,7 @@ def start(log=None, run=_run, state=STATE):
             run(['systemctl', 'stop', UNIT])  # a prepare left from an earlier release computes old code
         run(['systemctl', 'reset-failed', UNIT])
         started = time.time()
-        result = run(prepare_command(service_settings(run)))
+        result = run(prepare_command(service_settings(run), started))
         if result.returncode != 0:
             raise RuntimeError((result.stderr or result.stdout).strip()[:300])
         commit = _checkout_commit(run)

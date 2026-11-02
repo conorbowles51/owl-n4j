@@ -139,6 +139,17 @@ def test_a_prepare_records_the_code_it_computes_and_follows_a_later_fetch(tmp_pa
     assert 'code changed to 9ff80b1f' in (tmp_path / 'log').read_text()
 
 
+def test_the_prepare_is_told_when_the_release_started_it(tmp_path):
+    # The cap runs from start(); the prepare entered its own code 6-7 s later (login shell, imports), so it must
+    # count from the release's time to finish and report inside the cap.
+    state = tmp_path / 'state.json'
+    system = FakeSystem()
+    view_prepare.start(run=system, state=str(state))
+    argv = next(call for call in system.calls if call[0] == 'systemd-run')
+    passed = [arg for arg in argv if 'LOUPE_PREPARE_STARTED=' in arg]
+    assert passed == ['--property=Environment=LOUPE_PREPARE_STARTED=%.3f' % json.loads(state.read_text())['started']]
+
+
 def test_follow_without_a_prepare_starts_nothing(tmp_path):
     system = FakeSystem()
     assert view_prepare.follow(run=system, state=str(tmp_path / 'absent.json')) == 0
