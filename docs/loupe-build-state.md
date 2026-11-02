@@ -1,4 +1,4 @@
-## 2 November: phone screens, stage E (cb-screens), items A and B: shared backend and frontend
+## 2 November: phone screens, stage E (cb-screens), items A and B live 3dcf67f9
 
 Branch `cb/cb-screens`, rebased on `1a6b3826` (cb-pol). Commits f6deb203 (A), 1bd4305b (B), 8ce6c799 (review fixes). Spec 03 unit 03-1, tests first:
 
@@ -53,7 +53,10 @@ Branch `cb/cb-screens`, rebased on `1a6b3826` (cb-pol). Commits f6deb203 (A), 1b
   StatementImportPanel's 51-period height check failed under load and passes alone (8/8).
 - After the rebase on caf08445: phone, pattern and readiness tests 325 passed with 1 failure in a run alongside tsc (no
   failure summary in that run, so not named), then 295 passed and 0 failed on the rerun with summaries; tsc -b 0.
-- Next: release A+B, live check signed in, tell cb-pol 03-2 is live; then item C.
+- Live 3dcf67f9 (18:15 UTC). Checked signed in over http: phones-only case index 659 events, every window adds up to
+  659 distinct rows, stale snapshot 409, record panel 200; Needs a decision times in the one-formatter wording. The
+  list's copy over http is checked live once item C mounts the list. cb-pol told.
+- Next: item C.
 
 ## 2 November: pattern of life, stage F in progress (cb-pol), A to H live 1a6b3826
 
