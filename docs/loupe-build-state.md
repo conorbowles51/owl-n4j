@@ -1,5 +1,7 @@
 ## 2 November: phone interpretation, stage C in progress (cb-interpret)
 
+Head `b160c67e` (02-U5/U6). Next: 02-U7 runtime kill test and scale timing, then the initial type mappings.
+
 Branch `cb/cb-interpret`. Spec 02 units, in 06 order; each with its acceptance test.
 
 - **02-U1 (09ad43b9):** `backend/services/phone/body.py` walks a record body field by field (all six kinds, values,
@@ -29,7 +31,17 @@ Branch `cb/cb-interpret`. Spec 02 units, in 06 order; each with its acceptance t
   Measured: C3 22,881 time values, 31 points, 7,504 participations (43 s); C9 5,218 and 9 (7 Location, 2
   WirelessNetwork); server C8 59,673 (Mac export 59,672), 38 points, 171 Locations `not_positionable`.
   Decisions 41 to 43 added to 02. `fold.py` is in place without its two data tables yet (02-U8 adds them).
-- **Tests:** `tests/test_phone_body_values.py`, `tests/test_phone_registry_seed.py`, `tests/test_phone_registry_observe.py`, `tests/test_phone_generic.py`; PostgreSQL ones opt-in through
+- **02-U5/U6 (b160c67e):** mappings as versioned data in `services/phone/mappings/` (`loader.py` validates and
+  records versions and rows, refuses a reviewed file without a person's name and an unconfirmed file with one;
+  `rows.py` match discipline and `evaluate`; `apply.py` marks rule rows at `applied_unconfirmed` with
+  `mapping_row_id`, writes one judgement call per extraction, rule and version into `phone_mapping_judgements`,
+  suspends per extraction on an absent requirement or an open drift flag). Migration `20261102_phone_mappings`.
+  `mappings.install()` is called from `main.py`. Decision readers plug in through
+  `apply.register_reading_decisions` (02-U13 registers `confirm_phone_reading` and `correct_phone_reading`).
+  02 section 6.10 and decision 44, 04-U1 row updated. Shipped data: `sensitive_fields/generic.json` only; type
+  mappings land with 02-U7. Measured on C3 with a test Call mapping: 1,657 calls, 2,500 parties mapped, 5 calls,
+  52 s per pass; only 1,112 calls carry a From party, so 02-U7 must supply the owner side on the others.
+- **Tests:** `tests/test_phone_body_values.py`, `tests/test_phone_registry_seed.py`, `tests/test_phone_registry_observe.py`, `tests/test_phone_generic.py`, `tests/test_phone_mappings.py`; PostgreSQL ones opt-in through
   `LOUPE_TEST_PHONE_PG_TEMPLATE_URL` (a database at the head; each test gets a fresh copy) and
   `LOUPE_TEST_PHONE_PG_URL` (captured extractions, rolled back), helper `tests/phone_pg.py`.
 
