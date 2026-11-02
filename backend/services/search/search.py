@@ -1,0 +1,331 @@
+"""Loupe-wide search (03 section 11): every group's exact total, its first hits, and pages of the rest.
+
+Groups: ``messages``, ``calls``, ``emails`` (phone communications; the same filter Conversations runs, so a group's
+total is the Conversations total for that text, S-4), ``people`` (phone identities and their names, and the case's
+people), ``records`` (other phone records with text), ``documents`` (document texts and transcripts). Text is
+matched after folding the query and the text with 02's ``fold`` (S-1, S-2); ``exact`` turns folding off. A query
+that is mostly digits also finds identities whose digits contain it (S-3). Queries under 3 characters search
+identifiers only (11.6). Snippets are cut from the original text, and the match inside a snippet is the original
+characters, found through the folded-to-original map (S-5).
+
+Media text arrives with the Media screen (item I); until then the response says it was not searched.
+"""
+from __future__ import annotations
+
+import re
+
+from sqlalchemy import text
+
+from services.phone import fold as F
+from services.phone import labels as L
+from services.phone import streams
+from services.phone import time_display as T
+from services.search import document_folds
+
+GROUPS = ("messages", "calls", "emails", "people", "records", "documents")
+COMM_KINDS = {"messages": ["message", "chat_activity"], "calls": ["call", "voicemail"], "emails": ["email"]}
+FIRST = 20
+MAX_PAGE = 200
+MIN_TEXT = 3
+SNIPPET = 60
+NOT_SEARCHED = [{"group": "media", "reason": "Text read from photos, audio and video is not searched yet."}]
+SHORT = "Type at least 3 letters to search text."
+
+
+class SearchError(ValueError):
+    pass
+
+
+def _like(q):
+    return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def _digits(q):
+    d = re.sub(r"\D", "", q)
+    return d if len(d) >= 4 and len(d) >= 0.6 * len(re.sub(r"\s", "", q)) else None
+
+
+def snippet(original, query, exact=False):
+    """``{before, match, after}`` from ``original`` around the first match of ``query`` (folded the same way), or
+    None. The match is the original characters (S-5)."""
+    if not original:
+        return None
+    fq = F.fold_with_map(query, exact=exact)[0]
+    if not fq:
+        return None
+    folded, starts = F.fold_with_map(original, exact=exact)
+    at = folded.find(fq)
+    if at < 0:
+        return None
+    s, e = starts[at], starts[at + len(fq) - 1] + 1
+    return _cut(original, s, e)
+
+
+def _cut(original, s, e):
+    b0 = max(0, s - SNIPPET)
+    a1 = min(len(original), e + SNIPPET)
+    sp = re.compile(r"\s+")
+    return {"before": ("…" if b0 > 0 else "") + sp.sub(" ", original[b0:s]), "match": original[s:e],
+            "after": sp.sub(" ", original[e:a1]) + ("…" if a1 < len(original) else "")}
+
+
+# ---- phone communications -------------------------------------------------------------------------------------------
+
+def _comm_filter(case_id, group, q, exact, phones, start, end):
+    from services.phone.filters import StreamFilter
+    body = {"case_id": str(case_id), "kinds": COMM_KINDS[group], "text": {"query": q, "exact_characters": exact}}
+    if phones:
+        body["phones"] = phones
+    if start:
+        body["from_instant"] = start
+    if end:
+        body["to_instant"] = end
+    return StreamFilter.model_validate(body)
+
+
+def _comm(conn, case_id, group, q, exact, phones, start, end, offset, limit, ctx):
+    f = _comm_filter(case_id, group, q, exact, phones, start, end)
+    total = streams.shown_count(conn, f)
+    if not total or not limit:
+        return total, []
+    qy, _ = streams._query(conn, f)
+    qy.params.update({"lim": limit, "off": offset})
+    rows = conn.execute(text(
+        "WITH m AS (%s) SELECT event_uid, record_uid, extraction_id, thread_key, kind, app, sort_instant, body, subject "
+        "FROM m WHERE copy_rank = 1 ORDER BY sort_instant NULLS LAST, event_uid LIMIT :lim OFFSET :off"
+        % qy.matched_sql()), qy.params).fetchall()
+    senders = _senders(conn, [r.event_uid for r in rows], ctx)
+    zone = ctx["zone"]
+    out = []
+    for r in rows:
+        snip = snippet(r.body, q, exact) or snippet(r.subject, q, exact)
+        if snip is None:  # the match is in an attachment's name or another field of the record
+            snip = snippet(_record_text(conn, r.record_uid, q, exact), q, exact) or {
+                "before": "", "match": "", "after": (r.body or r.subject or "")[:2 * SNIPPET]}
+        phone = ctx["phones"].get(str(r.extraction_id), "Phone")
+        out.append({
+            "kind": r.kind, "title": "%s %s %s" % (phone, r.app or "", r.kind or ""), "snippet": snip,
+            "phone_label": phone, "time": T.format_row(r.sort_instant, zone) if r.sort_instant else None,
+            "instant": T.iso(r.sort_instant), "participants": senders.get(r.event_uid, []),
+            "record_uid": str(r.record_uid), "evidence_file_id": None,
+            "open": {"screen": "conversations", "params": {"phone": str(r.extraction_id), "thread": r.thread_key,
+                                                           "event": str(r.event_uid), "q": q}}})
+    return total, out
+
+
+def _record_text(conn, record_uid, q, exact):
+    fq = F.fold(q, exact=exact)
+    for (v,) in conn.execute(text(
+            "SELECT t.value FROM pv_text t WHERE t.record_uid = :u OR t.record_uid IN (SELECT s.record_uid FROM "
+            "pv_record s WHERE s.parent_record_uid = :u)"), {"u": record_uid}):
+        if v and fq in F.fold(v, exact=exact):
+            return v
+    return None
+
+
+def _senders(conn, event_uids, ctx):
+    if not event_uids:
+        return {}
+    out = {}
+    for r in conn.execute(text(
+            "SELECT event_uid, extraction_id, identity_key, name_in_record, identifier_raw FROM pv_comm_party WHERE "
+            "event_uid = ANY(:u) AND role IN ('sender', 'caller', 'from') ORDER BY event_uid, participation_uid"),
+            {"u": event_uids}):
+        lab = ctx["labels"].label(str(r.extraction_id), identity_key=r.identity_key, name_in_record=r.name_in_record,
+                                  identifier_raw=r.identifier_raw)
+        out.setdefault(r.event_uid, []).append(lab)
+    return out
+
+
+# ---- people -----------------------------------------------------------------------------------------------------------
+
+def _people(conn, case_id, q, exact, short, offset, limit):
+    fq = F.fold(q, exact=exact)
+    digits = _digits(q)
+    names = {}
+    for key, name in conn.execute(text(
+            "SELECT DISTINCT identity_key, name FROM pv_identity_name WHERE case_id = :c"), {"c": case_id}):
+        names.setdefault(key, []).append(name)
+    found = []
+    for r in conn.execute(text(
+            "SELECT identity_key, kind, value_display, value_normalised, sighting_count, person_id FROM pv_identity "
+            "WHERE case_id = :c ORDER BY identity_key"), {"c": case_id}):
+        own = names.get(r.identity_key, [])
+        if short:
+            hit = q.strip().lower() in (r.value_normalised.lower(), r.value_display.lower())
+        else:
+            hit = any(fq in F.fold(v, exact=exact) for v in [r.value_display, *own] if v)
+        if not hit and digits:
+            hit = digits in re.sub(r"\D", "", r.value_normalised or "")
+        if hit:
+            shown = sorted(own, key=lambda n: (F.fold(n), n))
+            found.append({"kind": "identity", "title": shown[0] if shown else r.value_display,
+                          "snippet": {"before": "", "match": r.value_display, "after": ""},
+                          "identity_key": r.identity_key, "names": shown[:5], "sightings": int(r.sighting_count),
+                          "record_uid": None, "evidence_file_id": None,
+                          "open": {"screen": "people", "params": {"people": r.identity_key}}})
+    if not short:
+        for pid, name in conn.execute(text(
+                "SELECT id, display_name FROM case_profiles WHERE case_id = :c AND profile_type = 'person' "
+                "ORDER BY display_name, id"), {"c": case_id}):
+            if fq in F.fold(name, exact=exact):
+                found.append({"kind": "person", "title": name, "snippet": snippet(name, q, exact),
+                              "person_id": str(pid), "record_uid": None, "evidence_file_id": None,
+                              "open": {"screen": "dossier", "params": {"id": str(pid)}}})
+    found.sort(key=lambda h: (F.fold(h["title"]), h["title"], h.get("identity_key") or h.get("person_id") or ""))
+    return len(found), found[offset:offset + limit]
+
+
+# ---- other phone records ------------------------------------------------------------------------------------------------
+
+def _records_sql(exact):
+    cond = "position(:q in lower(t.value)) > 0" if exact else "t.value_folded LIKE :like"
+    return ("FROM pv_text t JOIN pv_record r ON r.record_uid = t.record_uid WHERE t.case_id = :c AND %s "
+            "AND (CAST(:p AS uuid[]) IS NULL OR t.extraction_id = ANY(CAST(:p AS uuid[]))) "
+            "AND NOT EXISTS (SELECT 1 FROM pv_comm_event e WHERE e.record_uid = t.record_uid OR "
+            "e.record_uid = r.parent_record_uid OR e.record_uid = r.root_record_uid)" % cond)
+
+
+def _records(conn, case_id, q, exact, phones, offset, limit, ctx):
+    p = {"c": case_id, "q": F.fold(q, exact=True), "like": _like(F.fold(q)), "p": phones or None}
+    total = int(conn.execute(text("SELECT count(DISTINCT t.record_uid) " + _records_sql(exact)), p).scalar() or 0)
+    if not total or not limit:
+        return total, []
+    p.update({"lim": limit, "off": offset})
+    rows = conn.execute(text(
+        "SELECT DISTINCT ON (r.first_instant, t.record_uid) t.record_uid, t.extraction_id, r.model_type, "
+        "r.first_instant, t.value " + _records_sql(exact) + " ORDER BY r.first_instant NULLS LAST, t.record_uid, "
+        "t.field_path LIMIT :lim OFFSET :off"), p).fetchall()
+    out = []
+    for r in rows:
+        phone = ctx["phones"].get(str(r.extraction_id), "Phone")
+        out.append({"kind": "record", "title": "%s %s" % (phone, r.model_type), "phone_label": phone,
+                    "snippet": snippet(r.value, q, exact) or {"before": "", "match": "", "after": r.value[:120]},
+                    "time": T.format_row(r.first_instant, ctx["zone"]) if r.first_instant else None,
+                    "instant": T.iso(r.first_instant), "record_uid": str(r.record_uid), "evidence_file_id": None,
+                    "open": {"screen": "record", "params": {"record_uid": str(r.record_uid)}}})
+    return total, out
+
+
+# ---- documents ------------------------------------------------------------------------------------------------------------
+
+DOC_FROM = ("FROM evidence_document_texts t JOIN evidence_files f ON f.id = t.evidence_file_id "
+            "LEFT JOIN evidence_text_folds x ON x.evidence_file_id = t.evidence_file_id AND x.content_sha256 = "
+            "t.content_sha256 AND x.fold_version = :v "
+            "WHERE f.case_id = :c AND f.source_type IS DISTINCT FROM 'phone_text' AND t.content IS NOT NULL ")
+
+
+def _documents(conn, case_id, q, exact, offset, limit):
+    """Folded documents match on their folded text; a document whose fold is not ready yet matches as typed
+    (case-insensitive), and the count of those is returned so the screen can say so."""
+    fq, fq_exact = F.fold_with_map(q)[0], F.fold(q, exact=True)
+    if exact:
+        cond = "position(:qe in lower(t.content)) > 0"
+    else:
+        cond = "((x.evidence_file_id IS NOT NULL AND x.content_folded LIKE :like) OR (x.evidence_file_id IS NULL AND " \
+               "position(:qe in lower(t.content)) > 0))"
+    p = {"c": case_id, "v": document_folds.FOLD_VERSION, "like": _like(fq), "qe": fq_exact}
+    counts = conn.execute(text(
+        "SELECT count(*) AS n, count(*) FILTER (WHERE x.evidence_file_id IS NULL) AS unfolded " + DOC_FROM +
+        "AND " + cond), p).one()
+    unprepared = int(conn.execute(text("SELECT count(*) " + DOC_FROM + "AND x.evidence_file_id IS NULL"), p).scalar()
+                     or 0)
+    total = int(counts.n)
+    if not total or not limit:
+        return total, [], unprepared
+    p.update({"lim": limit, "off": offset})
+    rows = conn.execute(text(
+        "SELECT f.id, f.original_filename, t.content, t.source_locations, x.content_folded, x.fold_map " + DOC_FROM +
+        "AND " + cond + " ORDER BY lower(f.original_filename), f.id LIMIT :lim OFFSET :off"), p).fetchall()
+    out = []
+    for r in rows:
+        snip, page = None, None
+        if not exact and r.content_folded is not None and fq:
+            at = r.content_folded.find(fq)
+            if at >= 0:
+                s, e = F.original_span(r.fold_map, at, at + len(fq))
+                snip, page = _cut(r.content, s, e), _page(r.source_locations, s)
+        if snip is None:
+            snip = snippet(r.content, q, exact) or {"before": "", "match": "", "after": r.content[:120]}
+            at = r.content.lower().find(fq_exact) if exact else -1
+            page = _page(r.source_locations, at) if at >= 0 else None
+        out.append({"kind": "document", "title": r.original_filename, "snippet": snip, "page": page,
+                    "record_uid": None, "evidence_file_id": str(r.id),
+                    "open": {"screen": "document", "params": {"evidence_file_id": str(r.id), "page": page}}})
+    return total, out, unprepared
+
+
+def _page(locations, at):
+    best = None
+    for loc in locations or []:
+        s, e = int(loc.get("start_char", 0)), int(loc.get("end_char", 0))
+        if s <= at < e and loc.get("page_number") is not None and (best is None or e - s < best[0]):
+            best = (e - s, loc.get("page_number"))
+    return best[1] if best else None
+
+
+# ---- entry points -----------------------------------------------------------------------------------------------------------
+
+def _context(conn, case_id):
+    from services.phone import readings
+    return {"phones": readings.phone_labels(conn, case_id), "zone": streams.case_zone(conn, case_id)["name"],
+            "labels": L.LabelContext(conn, case_id, "phone")}
+
+
+def _group(conn, case_id, group, q, exact, phones, start, end, offset, limit, ctx, short):
+    unprepared = None
+    if group in COMM_KINDS:
+        total, items = (0, []) if short else _comm(conn, case_id, group, q, exact, phones, start, end, offset, limit,
+                                                   ctx)
+    elif group == "people":
+        total, items = _people(conn, case_id, q, exact, short, offset, limit)
+    elif group == "records":
+        total, items = (0, []) if short else _records(conn, case_id, q, exact, phones, offset, limit, ctx)
+    elif group == "documents":
+        total, items, unprepared = (0, [], None) if short else _documents(conn, case_id, q, exact, offset, limit)
+    else:
+        raise SearchError("No search group called %s." % group)
+    out = {"group": group, "total": total, "items": items,
+           "next_cursor": str(offset + len(items)) if offset + len(items) < total else None}
+    if unprepared:
+        out["note"] = ("%s %s still being prepared for this search; %s matched as typed, without folding."
+                       % ("{:,}".format(unprepared), "document is" if unprepared == 1 else "documents are",
+                          "it is" if unprepared == 1 else "they are"))
+    return out
+
+
+def search(conn, case_id, q, *, exact=False, groups=GROUPS, phones=None, start=None, end=None) -> dict:
+    q = (q or "").strip()
+    if not q:
+        raise SearchError("Type something to search for.")
+    short = len(F.fold(q, exact=exact).replace(" ", "")) < MIN_TEXT
+    ctx = _context(conn, case_id)
+    out = [_group(conn, case_id, g, q, exact, phones, start, end, 0, FIRST, ctx, short) for g in groups]
+    for g in out:  # the Enter rule's order (11.4): exact name first, then the group whose top hit is newest text
+        g["score"] = _score(g, q, exact)
+    return {"query": q, "folded_query": F.fold(q, exact=exact), "exact": exact, "complete": True,
+            "short": SHORT if short else None, "groups": out, "not_searched": NOT_SEARCHED}
+
+
+def group_page(conn, case_id, q, group, *, cursor=None, limit=MAX_PAGE, exact=False, phones=None, start=None,
+               end=None) -> dict:
+    q = (q or "").strip()
+    if not q:
+        raise SearchError("Type something to search for.")
+    if not 1 <= limit <= MAX_PAGE:
+        raise SearchError("A page holds 1 to 200 hits.")
+    offset = int(cursor or 0)
+    short = len(F.fold(q, exact=exact).replace(" ", "")) < MIN_TEXT
+    return dict(_group(conn, case_id, group, q, exact, phones, start, end, offset, limit, _context(conn, case_id),
+                       short), query=q)
+
+
+def _score(g, q, exact):
+    if not g["items"]:
+        return 0.0
+    top = g["items"][0]
+    fq = F.fold(q, exact=exact)
+    if g["group"] == "people" and F.fold(top["title"], exact=exact) == fq:
+        return 3.0
+    base = {"messages": 2.0, "people": 1.5, "emails": 1.4, "calls": 1.2, "documents": 1.1, "records": 1.0}
+    return base.get(g["group"], 1.0)

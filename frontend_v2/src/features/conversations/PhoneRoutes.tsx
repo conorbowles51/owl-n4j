@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link, Navigate, useLocation, useParams } from "react-router-dom"
-import { failureText, getPhones } from "@/features/phones/api"
+import { failureText, getPhones, getRecord } from "@/features/phones/api"
 import { phoneQueryTarget } from "./phone-query"
 
 /**
@@ -56,3 +56,19 @@ export function PhoneRecordsRoute() {
   return <Navigate to={record ? `${base}?record=${encodeURIComponent(record)}` : base} replace />
 }
 
+
+/** /records/:recordUid : one phone record by id (rec:// citations, search hits). Finds the record's phone and opens
+ * Conversations with the record beside it; says so plainly when the record is not in this case. */
+export function RecordByIdRoute() {
+  const { id: caseId = "", recordUid = "" } = useParams()
+  const q = useQuery({ queryKey: ["phone-record", caseId, recordUid], queryFn: () => getRecord(caseId, recordUid), enabled: !!caseId && !!recordUid, retry: false })
+  if (q.isLoading) return <p className="p-6 text-sm">Opening the record</p>
+  if (q.isError || !q.data)
+    return (
+      <div role="alert" className="p-6 text-sm">
+        {failureText(q.error, "This record is not in this case, or it could not be read.")}
+      </div>
+    )
+  const base = `/cases/${encodeURIComponent(caseId)}/phones/${encodeURIComponent(q.data.extraction.id)}/records/conversations`
+  return <Navigate to={`${base}?record=${encodeURIComponent(recordUid)}`} replace />
+}

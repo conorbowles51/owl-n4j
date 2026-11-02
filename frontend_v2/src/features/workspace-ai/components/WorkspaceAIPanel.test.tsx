@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { MemoryRouter, useLocation } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -27,6 +27,10 @@ vi.mock("@/lib/protected-file", () => ({
 vi.mock("@/components/ui/evidence-pdf-document", () => ({
   EvidencePdfDocument: ({ evidenceId, page }: { evidenceId: string; page: number }) =>
     <div data-testid="citation-pdf-page">{evidenceId}:page={page}</div>,
+}))
+
+vi.mock("@/features/phones/components/RecordPanel", () => ({
+  PhoneRecordPanel: ({ recordUid }: { recordUid: string }) => <section aria-label="Record behind this message">Record {recordUid}</section>,
 }))
 
 function Location() {
@@ -184,6 +188,19 @@ describe("Workspace AI review panel", () => {
     render(<WorkspaceAIPanel caseId="case-1" targetType="dossier" targetId="dossier-1" canEdit={false} />)
     expect(screen.getByRole("combobox", { name: "Summary version" })).toHaveValue("output-2")
     expect(screen.getByRole("button", { name: /Latest summary/ })).toHaveAttribute("aria-expanded", "false")
+  })
+
+  it("a citation of a phone message opens its record panel, not the document viewer (03 section 11.5)", () => {
+    setup([{ ...baseOutput, citations: [{ ...baseOutput.citations[0], filename: "C3 conversation", source_anchor: { start_char: 0, end_char: 40, record_uid: "rec-1" } }] }])
+    render(
+      <MemoryRouter initialEntries={["/cases/case-1/workspace"]}>
+        <WorkspaceAIPanel caseId="case-1" targetType="theory" targetId="theory-1" canEdit={false} />
+      </MemoryRouter>,
+    )
+    fireEvent.click(screen.getByRole("button", { name: /Departure timing/ }))
+    fireEvent.click(screen.getByRole("button", { name: "C3 conversation" }))
+    expect(screen.getByRole("region", { name: "Record behind this message" })).toHaveTextContent("Record rec-1")
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
 
   it("makes pending, accepted, rejected, and running states distinct", () => {

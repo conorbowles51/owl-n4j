@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { describe, expect, it, vi } from "vitest"
@@ -55,6 +55,15 @@ describe("AppSidebar case navigation", () => {
 
     const fullData = screen.getByRole("region", { name: "Full case data" })
     expect(within(fullData).queryByText("Profiles")).not.toBeInTheDocument()
+  })
+
+  it("offers Search this case, which opens the same search as Ctrl+K (03 section 11.4)", () => {
+    sidebar()
+    const heard = vi.fn()
+    document.addEventListener("owl:toggle-command-palette", heard)
+    fireEvent.click(screen.getByRole("button", { name: /Search this case/ }))
+    document.removeEventListener("owl:toggle-command-palette", heard)
+    expect(heard).toHaveBeenCalledTimes(1)
   })
 
   it("shows the Phones group only when the case has a phone (03 D-18)", async () => {

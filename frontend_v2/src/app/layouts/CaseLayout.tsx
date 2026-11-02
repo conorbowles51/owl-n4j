@@ -9,6 +9,7 @@ import { useUIStore } from "@/stores/ui.store"
 import { CaseSidePanelRail, CaseSidePanelContent } from "./CaseSidePanel"
 import { EvidenceContextSidebar } from "@/features/evidence/components/EvidenceContextSidebar"
 import { useMediaQuery } from "@/hooks/use-media-query"
+import { SearchDialog } from "@/features/search/components/SearchDialog"
 
 export function CaseLayout() {
   const { id: caseId } = useParams()
@@ -23,6 +24,7 @@ export function CaseLayout() {
 
   return (
     <div className="flex h-full">
+      {caseId && <SearchDialog caseId={caseId} />}
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="flex flex-1 overflow-hidden">
           {showCaseSidePanel ? (

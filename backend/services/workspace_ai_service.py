@@ -157,6 +157,8 @@ def _document_chunks(
             anchor = {"start_char": start, "end_char": end}
             if page is not None:
                 anchor["page"] = page
+            if location.get("record_uid"):  # a phone thread line cites its record (03 section 11.5)
+                anchor["record_uid"] = str(location["record_uid"])
             text = content[start:end].strip()[:MAX_CHUNK_CHARACTERS]
             if text:
                 chunks.append(

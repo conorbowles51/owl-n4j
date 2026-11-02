@@ -1,6 +1,9 @@
+import type { ReactNode } from "react"
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import type { Components } from "react-markdown"
+import { Link, useParams } from "react-router-dom"
+import { parseRecordHref, recordPath } from "@/lib/record-links"
 
 function parseDocumentHref(href: string | undefined) {
   if (!href?.startsWith("doc://")) return null
@@ -28,15 +31,18 @@ interface MarkdownProps {
   content: string
   className?: string
   onOpenDocument?: (filename: string, page?: number) => void
+  /** rec:// citations open here (the agent's record panel); without it they open the record's page in the case. */
+  onOpenRecord?: (recordUid: string, fieldPath: string | null) => void
 }
 
 export function Markdown({
   content,
   className,
   onOpenDocument,
+  onOpenRecord,
 }: MarkdownProps) {
   const markdownUrlTransform = (url: string) => {
-    if (url.startsWith("doc://")) return url
+    if (url.startsWith("doc://") || url.startsWith("rec://")) return url
     return defaultUrlTransform(url)
   }
 
@@ -64,6 +70,14 @@ export function Markdown({
       <strong className="font-semibold">{children}</strong>
     ),
     a: ({ href, children }) => {
+      const record = parseRecordHref(href)
+      if (record && onOpenRecord)
+        return (
+          <button type="button" className="text-blue-500 underline hover:text-blue-600" onClick={() => onOpenRecord(record.recordUid, record.fieldPath)}>
+            {children}
+          </button>
+        )
+      if (record) return <RecordLink recordUid={record.recordUid} fieldPath={record.fieldPath}>{children}</RecordLink>
       const documentTarget = parseDocumentHref(href)
       if (documentTarget && onOpenDocument) {
         return (
@@ -134,5 +148,16 @@ export function Markdown({
         {content}
       </ReactMarkdown>
     </div>
+  )
+}
+
+/** A rec:// citation (03 section 11.5): opens the phone record's panel in this case. */
+function RecordLink({ recordUid, fieldPath, children }: { recordUid: string; fieldPath: string | null; children: ReactNode }) {
+  const { id: caseId } = useParams()
+  if (!caseId) return <span>{children}</span>
+  return (
+    <Link to={recordPath(caseId, recordUid, fieldPath)} className="text-blue-500 underline hover:text-blue-600">
+      {children}
+    </Link>
   )
 }

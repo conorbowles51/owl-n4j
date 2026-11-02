@@ -9,6 +9,14 @@ vi.mock("@/lib/protected-file", () => ({
   openProtectedFile: vi.fn(),
   useProtectedObjectUrl: () => ({ objectUrl: "blob:source", loading: false, error: null }),
 }))
+vi.mock("@/features/phones/components/RecordPanel", () => ({
+  PhoneRecordPanel: ({ recordUid, onClose }: { recordUid: string; onClose: () => void }) => (
+    <section aria-label="Record behind this message">
+      <p>Record {recordUid}</p>
+      <button type="button" onClick={onClose}>Close record</button>
+    </section>
+  ),
+}))
 vi.mock("@/components/ui/evidence-pdf-document", () => ({
   EvidencePdfDocument: ({ page }: { page: number }) => <p>Showing source page {page}</p>,
 }))
@@ -44,4 +52,13 @@ it("opens a citation with no page at the start of the file and says no page was 
   fireEvent.click(screen.getByRole("button", { name: "March statement.pdf" }))
   expect(await screen.findByText(NO_CITATION_PAGE)).toBeVisible()
   expect(await screen.findByText("Showing source page 1")).toBeVisible()
+})
+
+it("opens the phone record's panel beside the answer when a rec:// link is clicked (S-7)", () => {
+  const uid = "3af41de3-c6aa-4b1e-9d0e-2f4f0df3ffe5"
+  answer(`She wrote it in [C3 WhatsApp message, Tue, Mar 14, 2023](rec://${uid}).`)
+  fireEvent.click(screen.getByRole("button", { name: "C3 WhatsApp message, Tue, Mar 14, 2023" }))
+  expect(screen.getByRole("region", { name: "Record behind this message" })).toHaveTextContent(`Record ${uid}`)
+  fireEvent.click(screen.getByRole("button", { name: "Close record" }))
+  expect(screen.queryByRole("region", { name: "Record behind this message" })).toBeNull()
 })

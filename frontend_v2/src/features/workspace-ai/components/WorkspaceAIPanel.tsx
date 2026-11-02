@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import { DocumentViewer } from "@/components/ui/document-viewer"
+import { PhoneRecordPanel } from "@/features/phones/components/RecordPanel"
 import { evidenceAPI } from "@/features/evidence/api"
 import {
   AlertTriangle,
@@ -110,6 +111,12 @@ function CitationLinks({
   )
 }
 
+/** A citation of a phone thread line names its record (03 section 11.5): it opens the record panel, not the text. */
+function recordOf(source: WorkspaceAICitation | null): string | null {
+  const v = source?.source_anchor.record_uid
+  return typeof v === "string" && v ? v : null
+}
+
 function OutputContent({ output }: { output: WorkspaceAIOutput }) {
   const [source, setSource] = useState<WorkspaceAICitation | null>(null)
   return (
@@ -147,10 +154,13 @@ function OutputContent({ output }: { output: WorkspaceAIOutput }) {
           </section>
         )
       })}
+      {recordOf(source) && (
+        <PhoneRecordPanel caseId={output.case_id} recordUid={recordOf(source)!} onClose={() => setSource(null)} />
+      )}
       <DocumentViewer
         caseId={output.case_id}
         evidenceId={source?.evidence_file_id}
-        open={source !== null}
+        open={source !== null && !recordOf(source)}
         onOpenChange={(open) => {
           if (!open) setSource(null)
         }}

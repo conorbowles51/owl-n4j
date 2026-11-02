@@ -42,6 +42,7 @@ vi.mock("./CaseSidePanel", () => ({
   CaseSidePanelRail: () => <div>Panel rail</div>,
   CaseSidePanelContent: () => <div>Panel content</div>,
 }))
+vi.mock("@/features/search/components/SearchDialog", () => ({ SearchDialog: () => null }))
 vi.mock("@/features/evidence/components/EvidenceContextSidebar", () => ({
   EvidenceContextSidebar: () => null,
 }))

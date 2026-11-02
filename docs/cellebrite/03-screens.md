@@ -1333,10 +1333,10 @@ case, including phones added later, and its results are reached from the list (0
 - The same `fold()` runs at ingest (02 fills `value_folded`) and at query; a mirror in
   `frontend_v2/src/features/search/lib/fold.ts` highlights matches in the browser, and both are tested
   against one shared fixture file `backend/tests/fixtures/fold_cases.json` read by both suites.
-- Existing documents: a migration adds `content_folded` to `evidence_document_texts` (filled by a
-  backfill job using the same `fold()`), with a trigram index like the existing one
-  (`20260721_add_evidence_document_texts.py:52-54`); highlight offsets map back to the original text
-  through a stored offset map so the citation points at the original characters.
+- Existing documents: a migration adds `evidence_text_folds` beside `evidence_document_texts` (D-40), filled by a
+  backfill using the same fold one character at a time (`fold_with_map`), with a trigram index on the folded text;
+  highlight offsets map back to the original text through the stored offset map so the citation points at the
+  original characters.
 
 ### 11.4 Results
 
@@ -1984,6 +1984,7 @@ Each is a decision the plan did not already settle, with its reason and what rev
 | D-37 | Rule v1's content includes the sorted references of the files a message points to | live read-only dry run 2 November: without it 32 groups of 100 records were empty-text messages carrying files (most likely different photos sent together) and would have collapsed; with it 57 groups of 115 records remain, all text messages with no file | copies of one message from two sources measured to refer to their file differently (a missed copy shows as an extra row, never a hidden one) |
 | D-38 | Conversations opens on the first thread of the list (in the URL, replacing the history entry) instead of 6.2's empty opening state | 07 J-8b, J-12 and J-13 press j, r, m and c straight after opening the screen; with nothing open those keys do nothing | a measured journey or a person's use showing the empty state is needed to choose a thread |
 | D-39 | Add to… on a whole result over 500 messages stores one frozen `phone_selection` (table `phone_selections`): every record the filter matches at that moment, copies included, with the filter, its sentence and each phone's generation | lx-collect: a whole filtered result goes through Add to… with nothing silently missing; a link per record would be thousands of rows and would follow none of the filter's meaning | a container that must list each record of a large result individually |
+| D-40 | Folded document text lives in its own table, `evidence_text_folds` (folded text, packed folded-to-original map, the content hash it was folded from, fold time), filled and refreshed by the phone worker after each pass (at most 20 s a pass) and by `scripts/fold_documents.py`; search uses a fold only when its hash matches the current text, and matches the rest as typed, saying how many | `evidence_document_texts` is under the audit chain and has many writers; a derived column in an evidence row would put 5,633 audit entries on the record for no change of evidence, and every writer would have to fold | a writer path that must return folded text in the same transaction as the evidence text |
 
 ---
 
