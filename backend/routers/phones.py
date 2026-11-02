@@ -343,3 +343,206 @@ def set_clock_offset(extraction_id: UUID, body: ClockOffset, db: Session = Depen
         _correction_error(db, exc)
     db.commit()
     return out
+
+
+# ---- screens: phone list, settings, streams, threads, record panel (03 sections 4 to 6) ----------------------------
+
+import logging as _logging  # noqa: E402
+import uuid as _uuid  # noqa: E402
+
+from pydantic import ValidationError  # noqa: E402
+
+from services.phone import records as phone_records  # noqa: E402
+from services.phone import streams  # noqa: E402
+from services.phone import time_display  # noqa: E402
+from services.phone.filters import StreamFilter  # noqa: E402
+
+_log = _logging.getLogger(__name__)
+LIST_FAILED = "The message list could not be loaded."
+
+
+def _failure(message: str, exc: Exception) -> HTTPException:
+    """3.8: an unexpected failure says what failed and gives a reference to quote, never 'unknown error'."""
+    ref = _uuid.uuid4().hex[:10]
+    _log.exception("phone screen request failed, reference %s", ref, exc_info=exc)
+    return HTTPException(status_code=500, detail={"message": message, "reference": ref,
+                                                  "text": "%s Reference: %s." % (message, ref)})
+
+
+def _filter(body: dict, db, user, permission=("case", "view")) -> StreamFilter:
+    try:
+        f = StreamFilter.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=[{"loc": e["loc"], "msg": e["msg"]} for e in exc.errors()])
+    authorize_case(db, UUID(f.case_id), user, permission)
+    return f
+
+
+@router.get("")
+def list_phones(case_id: UUID = Query(...), db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """``{"phones": [PhoneSummary]}`` (03 section 4.4). An empty list means the case has no phone; the sidebar's
+    Phones group shows only when it is not empty (5.2)."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    out = phone_records.phones(db.connection(), case_id)
+    return {"case_id": str(case_id), "phones": out, "total": len(out),
+            "case_zone": streams.case_zone(db.connection(), case_id)}
+
+
+class DisplaySettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    time_zone: str = Field(min_length=1, max_length=64)
+
+
+@router.get("/settings")
+def get_settings(case_id: UUID = Query(...), db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The case time zone for phone data (4.6): the setting if one is saved, else the default and why."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    from sqlalchemy import text as sql
+    row = db.connection().execute(sql(
+        "SELECT s.time_zone, s.updated_at, u.name FROM case_display_settings s LEFT JOIN users u ON u.id = s.updated_by "
+        "WHERE s.case_id = :c"), {"c": case_id}).first()
+    zone = streams.case_zone(db.connection(), case_id)
+    return {"case_id": str(case_id), "time_zone": row.time_zone if row else None, "effective": zone,
+            "updated_at": time_display.iso(row.updated_at) if row else None, "updated_by": row.name if row else None}
+
+
+@router.put("/settings")
+def put_settings(body: DisplaySettings, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Save the case time zone; the change is written to the audit log with the old and new values (4.6)."""
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    if not time_display.valid_zone(body.time_zone):
+        raise HTTPException(status_code=422, detail="Not a time zone name Loupe knows (for example America/New_York).")
+    from sqlalchemy import text as sql
+    from services.system_log_service import LogOrigin, LogType, system_log_service
+    conn = db.connection()
+    old = conn.execute(sql("SELECT time_zone FROM case_display_settings WHERE case_id = :c"),
+                       {"c": body.case_id}).scalar()
+    conn.execute(sql(
+        "INSERT INTO case_display_settings (case_id, time_zone, updated_by, updated_at) VALUES (:c, :z, :u, now()) "
+        "ON CONFLICT (case_id) DO UPDATE SET time_zone = EXCLUDED.time_zone, updated_by = EXCLUDED.updated_by, "
+        "updated_at = now()"), {"c": body.case_id, "z": body.time_zone, "u": user.id})
+    system_log_service.log(log_type=LogType.CASE_OPERATION, origin=LogOrigin.BACKEND,
+                           action="Set phone data time zone",
+                           details={"case_id": str(body.case_id), "changes": {"time_zone": {"from": old,
+                                                                                            "to": body.time_zone}}},
+                           user=user.email, success=True, db=db)
+    db.commit()
+    return get_settings(case_id=body.case_id, db=db, user=user)
+
+
+@router.post("/streams/index")
+def stream_index(body: dict, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """03 section 4.5: exact total, per-day counts in the display zone, the no-time count and a snapshot."""
+    f = _filter(body, db, user)
+    try:
+        return streams.index_comm_events(db.connection(), f)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 3.8 error wording with a reference
+        raise _failure(LIST_FAILED, exc)
+
+
+class WindowBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filter: dict
+    snapshot: str = Field(min_length=1, max_length=64)
+    day: Optional[str] = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=200, ge=1, le=streams.WINDOW_MAX)
+
+
+@router.post("/streams/window")
+def stream_window(body: WindowBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Rows of one day (or the no-time group, ``day`` null) by offset; 409 ``stale_snapshot`` when the data moved."""
+    f = _filter(body.filter, db, user)
+    try:
+        return streams.window_comm_events(db.connection(), f, snapshot_token=body.snapshot, day=body.day,
+                                          offset=body.offset, limit=body.limit)
+    except streams.StaleSnapshot:
+        raise HTTPException(status_code=409, detail="stale_snapshot")
+    except Exception as exc:  # noqa: BLE001
+        raise _failure("These messages could not be loaded.", exc)
+
+
+class LocateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filter: dict
+    snapshot: str = Field(min_length=1, max_length=64)
+    event_uid: UUID
+
+
+@router.post("/streams/locate")
+def stream_locate(body: LocateBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    f = _filter(body.filter, db, user)
+    try:
+        return streams.locate_comm_event(db.connection(), f, snapshot_token=body.snapshot,
+                                         event_uid=str(body.event_uid))
+    except streams.StaleSnapshot:
+        raise HTTPException(status_code=409, detail="stale_snapshot")
+    except streams.NotInCase:
+        raise HTTPException(status_code=404, detail="This message is not in the current list.")
+
+
+@router.post("/conversations/threads")
+def conversation_threads(body: dict, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Every thread with events under the filter, in one response (6.3, C-5)."""
+    f = _filter(body, db, user)
+    try:
+        return streams.thread_list(db.connection(), f)
+    except Exception as exc:  # noqa: BLE001
+        raise _failure("The conversation list could not be loaded.", exc)
+
+
+@router.get("/records/{record_uid}")
+def record_detail(record_uid: UUID, case_id: UUID = Query(...), zone: Optional[str] = Query(None, max_length=64),
+                  db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The record panel (3.6). A record of another case is 404, never 403 (3.11)."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    z = zone if zone and time_display.valid_zone(zone) else streams.case_zone(db.connection(), case_id)["name"]
+    try:
+        out = phone_records.record_detail(db.connection(), case_id, record_uid, zone=z)
+    except phone_records.NotFound:
+        raise HTTPException(status_code=404, detail="This record is not in this case.")
+    out["as_text"] = phone_records.record_text(out)
+    return out
+
+
+@router.get("/identities")
+def identity_picker(case_id: UUID = Query(...), q: str = Query("", max_length=200), limit: int = Query(50, ge=1, le=200),
+                    cursor: int = Query(0, ge=0), db: Session = Depends(get_db),
+                    user: User = Depends(get_current_db_user)):
+    """The identity picker (4.4): search as you type over every identity by value or any phone's name, with each
+    phone's names and the event count; ``total`` is exact."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    from sqlalchemy import text as sql
+    from services.phone import fold as phone_fold
+    conn = db.connection()
+    folded = phone_fold.fold(q) if q.strip() else ""
+    digits = "".join(ch for ch in q if ch.isdigit())
+    where = "i.case_id = :c"
+    params = {"c": case_id, "lim": limit, "off": cursor}
+    if folded:
+        where += (" AND (lower(i.value_display) LIKE :like OR lower(i.identity_key) LIKE :like OR EXISTS (SELECT 1 FROM "
+                  "pv_identity_name n WHERE n.identity_id = i.identity_id AND lower(n.name) LIKE :like)"
+                  + (" OR regexp_replace(i.value_normalised, '\\D', '', 'g') LIKE :digits" if len(digits) >= 3 else "")
+                  + ")")
+        params["like"] = "%" + q.strip().lower().replace("%", "\\%").replace("_", "\\_") + "%"
+        params["digits"] = "%" + digits + "%"
+    total = conn.execute(sql("SELECT count(*) FROM pv_identity i WHERE " + where), params).scalar()
+    rows = conn.execute(sql(
+        "SELECT i.identity_id, i.identity_key, i.kind, i.value_display, i.person_id, p.display_name AS person_name, "
+        "(SELECT count(DISTINCT p2.event_uid) FROM pv_comm_party p2 WHERE p2.case_id = i.case_id AND p2.identity_key = "
+        "i.identity_key) AS events FROM pv_identity i LEFT JOIN case_profiles p ON p.id = i.person_id WHERE " + where +
+        " ORDER BY events DESC, i.value_display, i.identity_key OFFSET :off LIMIT :lim"), params).fetchall()
+    labels = readings.phone_labels(conn, case_id)
+    items = []
+    for r in rows:
+        names = [{"phone_label": labels.get(str(n.extraction_id)), "name": n.name, "basis": n.basis}
+                 for n in conn.execute(sql("SELECT extraction_id, name, basis FROM pv_identity_name WHERE identity_id = "
+                                           ":i AND is_phone_name ORDER BY extraction_id"), {"i": r.identity_id})]
+        items.append({"identity_key": r.identity_key, "kind": r.kind, "value_display": r.value_display, "names": names,
+                      "person": {"id": str(r.person_id), "display_name": r.person_name} if r.person_id else None,
+                      "event_count": int(r.events)})
+    nxt = cursor + len(items)
+    return {"case_id": str(case_id), "items": items, "total": int(total), "next_cursor": nxt if nxt < total else None}

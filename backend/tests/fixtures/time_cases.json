@@ -1,0 +1,32 @@
+{
+  "_note": "03 section 3.2 / test A6 (T-time). Read by backend/tests/test_phone_time_display.py and frontend_v2/src/lib/evidence-time.test.ts. Expected strings are written by hand from the rules, not generated.",
+  "instants": [
+    {"id": "afternoon_edt", "instant": "2023-03-14T19:07:12Z", "zone": "America/New_York", "row": "3:07 PM", "row_seconds": "3:07:12 PM", "full": "Tue, Mar 14, 2023, 3:07:12 PM EDT", "day": "2023-03-14"},
+    {"id": "late_evening_stays_on_its_day", "instant": "2023-03-15T03:30:00Z", "zone": "America/New_York", "row": "11:30 PM", "row_seconds": "11:30:00 PM", "full": "Tue, Mar 14, 2023, 11:30:00 PM EDT", "day": "2023-03-14"},
+    {"id": "midnight", "instant": "2023-03-15T04:00:00Z", "zone": "America/New_York", "row": "12:00 AM", "row_seconds": "12:00:00 AM", "full": "Wed, Mar 15, 2023, 12:00:00 AM EDT", "day": "2023-03-15"},
+    {"id": "noon", "instant": "2023-07-04T16:00:00Z", "zone": "America/New_York", "row": "12:00 PM", "row_seconds": "12:00:00 PM", "full": "Tue, Jul 4, 2023, 12:00:00 PM EDT", "day": "2023-07-04"},
+    {"id": "before_spring_forward", "instant": "2023-03-12T06:59:59Z", "zone": "America/New_York", "row": "1:59 AM", "row_seconds": "1:59:59 AM", "full": "Sun, Mar 12, 2023, 1:59:59 AM EST", "day": "2023-03-12"},
+    {"id": "after_spring_forward", "instant": "2023-03-12T07:00:00Z", "zone": "America/New_York", "row": "3:00 AM", "row_seconds": "3:00:00 AM", "full": "Sun, Mar 12, 2023, 3:00:00 AM EDT", "day": "2023-03-12"},
+    {"id": "fall_back_first_130", "instant": "2023-11-05T05:30:00Z", "zone": "America/New_York", "row": "1:30 AM", "row_seconds": "1:30:00 AM", "full": "Sun, Nov 5, 2023, 1:30:00 AM EDT", "day": "2023-11-05"},
+    {"id": "fall_back_second_130", "instant": "2023-11-05T06:30:00Z", "zone": "America/New_York", "row": "1:30 AM", "row_seconds": "1:30:00 AM", "full": "Sun, Nov 5, 2023, 1:30:00 AM EST", "day": "2023-11-05"},
+    {"id": "winter_est", "instant": "2023-01-10T14:05:09Z", "zone": "America/New_York", "row": "9:05 AM", "row_seconds": "9:05:09 AM", "full": "Tue, Jan 10, 2023, 9:05:09 AM EST", "day": "2023-01-10"},
+    {"id": "pacific", "instant": "2023-03-14T19:07:12Z", "zone": "America/Los_Angeles", "row": "12:07 PM", "row_seconds": "12:07:12 PM", "full": "Tue, Mar 14, 2023, 12:07:12 PM PDT", "day": "2023-03-14"},
+    {"id": "non_us_half_hour_crosses_midnight", "instant": "2023-03-14T19:07:12Z", "zone": "Asia/Kolkata", "row": "12:37 AM", "row_seconds": "12:37:12 AM", "full": "Wed, Mar 15, 2023, 12:37:12 AM UTC+5:30", "day": "2023-03-15"},
+    {"id": "non_us_zero_offset", "instant": "2023-03-14T19:07:12Z", "zone": "Africa/Abidjan", "row": "7:07 PM", "row_seconds": "7:07:12 PM", "full": "Tue, Mar 14, 2023, 7:07:12 PM UTC", "day": "2023-03-14"},
+    {"id": "utc", "instant": "2023-03-14T19:07:12Z", "zone": "UTC", "row": "7:07 PM", "row_seconds": "7:07:12 PM", "full": "Tue, Mar 14, 2023, 7:07:12 PM UTC", "day": "2023-03-14"},
+    {"id": "input_with_offset", "instant": "2023-03-14T15:07:12-04:00", "zone": "America/New_York", "row": "3:07 PM", "row_seconds": "3:07:12 PM", "full": "Tue, Mar 14, 2023, 3:07:12 PM EDT", "day": "2023-03-14"},
+    {"id": "no_time", "instant": null, "zone": "America/New_York", "row": "No time recorded", "row_seconds": "No time recorded", "full": "No time recorded", "day": null}
+  ],
+  "days": [
+    {"day": "2023-03-14", "zone": "America/New_York", "header": "Tuesday, March 14, 2023", "zone_label": "Eastern Time (UTC-4)"},
+    {"day": "2023-01-10", "zone": "America/New_York", "header": "Tuesday, January 10, 2023", "zone_label": "Eastern Time (UTC-5)"},
+    {"day": "2023-03-12", "zone": "America/New_York", "header": "Sunday, March 12, 2023", "zone_label": "Eastern Time (UTC-5 until 2:00 AM, then UTC-4)"},
+    {"day": "2023-11-05", "zone": "America/New_York", "header": "Sunday, November 5, 2023", "zone_label": "Eastern Time (UTC-4 until 2:00 AM, then UTC-5)"},
+    {"day": "2023-03-15", "zone": "Asia/Kolkata", "header": "Wednesday, March 15, 2023", "zone_label": "Kolkata time (UTC+5:30)"},
+    {"day": "2023-03-14", "zone": "Africa/Abidjan", "header": "Tuesday, March 14, 2023", "zone_label": "Abidjan time (UTC+0)"},
+    {"day": "2023-03-14", "zone": "UTC", "header": "Tuesday, March 14, 2023", "zone_label": "UTC"}
+  ],
+  "walls": [
+    {"wall": "2023-03-14T15:07:12", "row": "3:07 PM", "full": "Tue, Mar 14, 2023, 3:07:12 PM, no offset in report"}
+  ]
+}

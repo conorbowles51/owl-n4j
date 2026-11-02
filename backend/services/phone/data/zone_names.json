@@ -1,0 +1,14 @@
+{
+  "_note": "Zone names and abbreviations shown on phone screens (docs/cellebrite/03 section 3.2). The same table is in frontend_v2/src/lib/evidence-time.ts and a unit test there asserts they are equal. A zone not listed is named '<City> time' from its IANA name and its abbreviation is its offset ('UTC+5:30'); UTC is 'UTC'.",
+  "zones": {
+    "America/New_York": {"name": "Eastern Time", "std": "EST", "dst": "EDT", "std_offset": -300},
+    "America/Detroit": {"name": "Eastern Time", "std": "EST", "dst": "EDT", "std_offset": -300},
+    "America/Chicago": {"name": "Central Time", "std": "CST", "dst": "CDT", "std_offset": -360},
+    "America/Denver": {"name": "Mountain Time", "std": "MST", "dst": "MDT", "std_offset": -420},
+    "America/Phoenix": {"name": "Mountain Time", "std": "MST", "dst": "MDT", "std_offset": -420},
+    "America/Los_Angeles": {"name": "Pacific Time", "std": "PST", "dst": "PDT", "std_offset": -480},
+    "America/Anchorage": {"name": "Alaska Time", "std": "AKST", "dst": "AKDT", "std_offset": -540},
+    "Pacific/Honolulu": {"name": "Hawaii Time", "std": "HST", "dst": "HDT", "std_offset": -600},
+    "America/Puerto_Rico": {"name": "Atlantic Time", "std": "AST", "dst": "ADT", "std_offset": -240}
+  }
+}

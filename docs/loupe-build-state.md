@@ -1,3 +1,33 @@
+## 2 November: phone screens, stage E (cb-screens), item A: shared backend
+
+Branch `cb/cb-screens` from `da89342c`. Spec 03 unit 03-1, tests first:
+
+- `backend/services/phone/time_display.py`: every phone time string (row `3:07 PM`, day header, zone label with the
+  day's offset or its change, full `Tue, Mar 14, 2023, 3:07:12 PM EDT`, an offset-less value as written). Zone table
+  `services/phone/data/zone_names.json` (D-30). Fixture `backend/tests/fixtures/time_cases.json` (A6), shared with the
+  frontend suite (item B).
+- `filters.py` (`StreamFilter` with `group_scope` default `direct`, canonical JSON, snapshot = filter + the case's phone
+  data sequence: extraction generations and standing, phone decisions), `labels.py` (3.3 table, owner forms, phone
+  or case names), `streams.py` (`index_comm_events`, `window_comm_events`, `locate_comm_event`, `thread_list`; one
+  `Query` class is the only comm-event join), `records.py` (record panel payload, phone list).
+- Routes in `routers/phones.py`: `GET /api/phones`, `GET/PUT /settings` (audited), `POST /streams/index|window|locate`
+  (409 `stale_snapshot`; failures answer `{message, reference, text}`), `POST /conversations/threads`,
+  `GET /records/{uid}` (404 across cases), `GET /identities` (picker; digits match).
+- Migration `20261102_phone_screens_read`: `pv_extraction`, `pv_identity`, `pv_file`, `pv_attachment_link` (02 never
+  built them), `case_display_settings`, the 4.7 comm-event indexes.
+- D-2 settled at 5,000 rows from 20.3; D-29 to D-33 added to 03 section 19.
+- Found: 02 never fills `dup_group_uid` (copies are never collapsed today; item C adds the 3.4 rule to `comms.py`);
+  owner-side party rows carry no identity key (D-31 handles it in the query).
+- Tests: `test_phone_time_display.py` (26), `test_phone_streams.py` (14: C-2 to C-5, A2, C-6, C-7, P-3, A14 counts,
+  3.1 rules 2 to 6), `test_phone_screens_router.py` (20, A16). Run: scratch PostgreSQL `cbs-pgtest` on
+  127.0.0.1:55444 (password `cbs`), template `loupe_tpl` at head, `LOUPE_TEST_PHONE_PG_TEMPLATE_URL=postgresql://
+  postgres:cbs@127.0.0.1:55444/loupe_tpl`, venv `/mnt/owl-data/tmp/cbi/venv/bin/python -m pytest`. All 241 phone
+  tests pass.
+- Next: item B (shared frontend: evidence-time.ts against the same fixture, use-stream, StreamList, labels, panel,
+  badges, copy-rows).
+
+## 2 November: pattern of life, stage F in progress (cb-pol)
+
 ## 2 November: pattern of life, stage F in progress (cb-pol), A to H live 1a6b3826
 
 Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for readers:
