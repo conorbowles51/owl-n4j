@@ -141,6 +141,8 @@ def test_a_rejected_pair_is_not_suggested_again(people):
             assert [[i["identity_key"] for i in s["identities"]] for s in idd.suggestions(c, case)] == [[A, C]]
             assert sorted(r[0] for r in c.execute(text(
                 "SELECT state FROM phone_identity_suggestions WHERE case_id = :c"), {"c": case})) == ["open", "rejected"]
+            assert c.execute(text("SELECT count(*) FROM manual_changes WHERE case_id = :c AND kind = 'phone_identity'"),
+                             {"c": case}).scalar() == 1  # one feed line for the rejection
 
 
 @needs_template
@@ -175,6 +177,9 @@ def test_split_writes_one_decision_per_identity_in_one_transaction_and_a_stale_r
             left = c.execute(text("SELECT i.identity_key FROM phone_identity_links l JOIN phone_identities i ON i.id = "
                                   "l.identity_id WHERE l.case_id = :c"), {"c": case}).fetchall()
             assert left == [(C,)]
+            # one feed line per action: the link of three, then the split of two
+            assert c.execute(text("SELECT count(*) FROM manual_changes WHERE case_id = :c AND kind = 'phone_identity'"),
+                             {"c": case}).scalar() == 2
 
 
 def test_every_phone_decision_and_subject_is_in_the_constraint():

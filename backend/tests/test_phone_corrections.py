@@ -25,7 +25,9 @@ def _message(body, when=T0):
 
 
 @pytest.fixture
-def phone(hooks):
+def phone(hooks, monkeypatch, tmp_path):
+    from services import manual_changes
+    monkeypatch.setattr(manual_changes, "INBOX", tmp_path / "inbox.jsonl")  # never the real feed inbox
     _shipped(hooks, ["type"])
     readings.install()
     with fresh_engine() as engine:
@@ -91,6 +93,9 @@ def test_a_corrected_body_is_the_one_searched_and_threaded_and_the_original_stay
         ch = corrections.chain(db.connection(), uid)
     assert [(x["corrected_text"], x["current"], x["is_undo"]) for x in ch] == [
         ("synthetic corrected words", False, False), ("synthetic original words", True, True)]
+    with engine.connect() as c:  # one feed line per action: the correction and its undo
+        assert c.execute(text("SELECT count(*) FROM manual_changes WHERE case_id = :c AND kind = 'phone_value'"),
+                         {"c": case}).scalar() == 2
     sweep.interpret_one(engine, ext)
     with engine.connect() as c:
         assert c.execute(text("SELECT value FROM pv_text WHERE record_uid = :r AND field_path = 'Body'"),
@@ -151,6 +156,8 @@ def test_a_clock_offset_moves_only_the_times_in_its_period(phone):
         r = c.execute(text("SELECT machine_instant, instant, instant_basis FROM pv_time WHERE record_uid = :r "
                            "AND field_path = 'TimeStamp'"), {"r": uid}).one()
         assert r[1] == r[0] and r[2] == "report"
+        assert c.execute(text("SELECT count(*) FROM manual_changes WHERE case_id = :c AND kind = "
+                              "'phone_clock_offset'"), {"c": case}).scalar() == 3  # one per decision
 
 
 def test_parse_instant_reads_z_and_offsets_and_refuses_a_bare_time():

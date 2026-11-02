@@ -177,6 +177,12 @@ def correct_value(db, *, case_id, record_uid, field_path, value_index=0, correct
     if prior is not None:
         conn.execute(text("UPDATE phone_value_corrections SET superseded_by_id = :n WHERE id = :p"),
                      {"n": new_id, "p": prior[0]})
+    from services import manual_changes
+    manual_changes.record_change(db, "phone_value", case_id, {"type": "phone_record", "id": str(record_uid)},
+                                 {key: was}, {key: corrected}, actor, reason.strip(), field=field_path,
+                                 link="/cases/%s/phone-review" % case_id,
+                                 change_type="change",
+                                 pattern_key=manual_changes.make_pattern_key("phone_value", field_path))
     return {"decision_id": str(row.id), "correction_id": str(new_id), "extraction_id": str(ext),
             "machine_text": machine_text, "corrected_text": corrected, "is_undo": corrected == machine_text,
             "revision": revision(conn, record_uid, field_path, value_index)}
@@ -205,6 +211,12 @@ def set_clock_offset(db, *, case_id, extraction_id, offset_seconds, start=None, 
                            decision=AdjudicationDecision.set_phone_clock_offset, reason=reason.strip(), actor=actor,
                            before={"offset_seconds": before, "from": start, "to": end},
                            after={"offset_seconds": offset_seconds, "from": start, "to": end})
+    from services import manual_changes
+    manual_changes.record_change(db, "phone_clock_offset", case_id, {"type": "phone_extraction", "id": str(extraction_id)},
+                                 {"offset_seconds": before, "from": start, "to": end},
+                                 {"offset_seconds": offset_seconds, "from": start, "to": end}, actor, reason.strip(),
+                                 link="/cases/%s/phone-review" % case_id,
+                                 pattern_key=manual_changes.make_pattern_key("phone_clock_offset"))
     return {"decision_id": str(row.id), "offset_seconds": offset_seconds}
 
 

@@ -76,7 +76,9 @@ def test_a_thread_and_an_identity_resolve_by_key_and_never_across_cases(interpre
 
 
 @needs_template
-def test_a_phone_file_is_processed_only_when_its_report_allows_it(interpreted):
+def test_a_phone_file_is_processed_only_when_its_report_allows_it(interpreted, monkeypatch, tmp_path):
+    from services import manual_changes
+    monkeypatch.setattr(manual_changes, "INBOX", tmp_path / "inbox.jsonl")  # never the real feed inbox
     engine, case, _, ext = interpreted
     with Session(engine) as db:
         uid, email = _one(db.connection(), "SELECT u.id, u.email FROM users u JOIN cases k ON k.owner_user_id = u.id "
@@ -95,6 +97,9 @@ def test_a_phone_file_is_processed_only_when_its_report_allows_it(interpreted):
         assert external_processing.check(db, case, f) is False  # the latest decision stands
         st = external_processing.state(db.connection(), case, ext)
         assert st["external_processing"] is False and st["decided_by"] == "Synthetic Owner"
+        assert db.connection().execute(text(
+            "SELECT count(*) FROM manual_changes WHERE case_id = :c AND kind = 'phone_external_processing'"),
+            {"c": case}).scalar() == 2  # one feed line per decision
         db.rollback()
 
 

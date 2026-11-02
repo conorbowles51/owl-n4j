@@ -66,6 +66,11 @@ def decide(db, *, case_id, extraction_id, allow: bool, reason: str, actor) -> di
                            decision=AdjudicationDecision.allow_phone_external_processing, reason=reason.strip(),
                            actor=actor, before={"external_processing": before},
                            after={"external_processing": bool(allow)})
+    from services import manual_changes
+    manual_changes.record_change(db, "phone_external_processing", case_id,
+                                 {"type": "phone_extraction", "id": str(extraction_id)},
+                                 {"external_processing": before}, {"external_processing": bool(allow)}, actor,
+                                 reason.strip(), pattern_key=manual_changes.make_pattern_key("phone_external_processing"))
     return {"decision_id": str(row.id), "external_processing": bool(allow)}
 
 
