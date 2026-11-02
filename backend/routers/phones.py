@@ -188,6 +188,50 @@ def phone_graph_pair(case_id: UUID = Query(...), a: str = Query(..., max_length=
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+class MediaFilter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    phones: list[UUID] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    verification: list[str] = Field(default_factory=list)
+    linked_to_message: Optional[bool] = None
+
+
+class MediaWindowBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filter: MediaFilter
+    offset: int = Field(0, ge=0)
+    limit: int = Field(200, ge=1, le=500)
+
+
+@router.post("/media/index")
+def phone_media_index(body: MediaFilter, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Media totals (03 section 8.2): the grid total equals the phone summary's file count (M-4)."""
+    from services.phone import media
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    return media.index(db.connection(), body.case_id, body.model_dump(exclude={"case_id"}))
+
+
+@router.post("/media/window")
+def phone_media_window(body: MediaWindowBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    from services.phone import media
+    authorize_case(db, body.filter.case_id, user, ("case", "view"))
+    return media.window(db.connection(), body.filter.case_id, body.filter.model_dump(exclude={"case_id"}),
+                        body.offset, body.limit)
+
+
+@router.get("/media/{file_uid}")
+def phone_media_detail(file_uid: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                       user: User = Depends(get_current_db_user)):
+    """One file: hashes, state, and every message that carried it with the mechanism that found it (M-1, M-2)."""
+    from services.phone import media
+    authorize_case(db, case_id, user, ("case", "view"))
+    out = media.detail(db.connection(), case_id, file_uid)
+    if out is None:
+        raise HTTPException(status_code=404, detail="This file is not in this case.")
+    return out
+
+
 @router.get("/registry/flags")
 def list_registry_flags(state: Optional[FlagState] = None, db: Session = Depends(get_db),
                         _: User = Depends(require_admin)):
