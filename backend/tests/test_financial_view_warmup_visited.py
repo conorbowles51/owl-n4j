@@ -134,7 +134,7 @@ def test_a_visit_is_noted_at_most_once_per_interval(tmp_path, monkeypatch):
 
 def test_warm_ups_and_refreshes_are_not_visits(monkeypatch):
     from services.financial import view_refresh
-    monkeypatch.setattr(view_warmup, '_warm_cases_now', lambda share, stop: view_cache.not_a_visit.get())
+    monkeypatch.setattr(view_warmup, '_warm_cases_now', lambda share, stop, *more: view_cache.not_a_visit.get())
     assert view_warmup._warm_cases() is True
     monkeypatch.setattr(view_refresh, '_refresh_one', lambda *args: view_cache.not_a_visit.get())
     assert view_refresh.refresh_one(None, dict(key=['x', '{}'])) is True
