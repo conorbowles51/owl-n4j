@@ -142,6 +142,31 @@ def idle_in_transaction_option(environ=None, prefix='POSTGRES_BACKGROUND',
     return '-c idle_in_transaction_session_timeout=%d' % milliseconds if milliseconds > 0 else None
 
 
+# How long opening a Postgres connection may take. Opening one takes 13-70 ms (2 Nov, 20 in a row); a database that
+# is down refuses at once. The limit only has to outlast the moments the web worker itself stalls: on 1 Nov every one
+# of its 9 connect timeouts (2 s limit) fell inside an event-loop stall of 2.2-5.1 s in the same worker, Postgres
+# waiting on a client that had not sent its next message. POSTGRES_CONNECT_TIMEOUT changes it.
+CONNECT_TIMEOUT_SECONDS = 10
+
+
+def connect_timeout(environ=None, default=CONNECT_TIMEOUT_SECONDS):
+    """Whole seconds for libpq's connect_timeout (libpq treats anything under 2 as 2); an unusable value keeps the
+    default and is logged."""
+    environ = os.environ if environ is None else environ
+    raw = environ.get('POSTGRES_CONNECT_TIMEOUT')
+    if raw is None or not str(raw).strip():
+        return default
+    try:
+        seconds = int(str(raw).strip())
+    except ValueError:
+        seconds = 0
+    if seconds < 2:
+        logger.warning('POSTGRES_CONNECT_TIMEOUT=%r is not a usable number of seconds; using the default %s',
+                       raw, default)
+        return default
+    return seconds
+
+
 def _database_url():
     if DATABASE_URL is None:
         raise RuntimeError(
@@ -161,7 +186,7 @@ def _new_engine(db_url, role_suffix='', prefix='POSTGRES', defaults=(5, 10, 30))
     connect_args = {}
     pool_args = {}
     if db_url.startswith("postgresql+psycopg://"):
-        connect_args["connect_timeout"] = int(os.getenv("POSTGRES_CONNECT_TIMEOUT", "2"))
+        connect_args["connect_timeout"] = connect_timeout()
         name = application_name()
         if role_suffix:
             role, _, pid = name.rpartition('-')

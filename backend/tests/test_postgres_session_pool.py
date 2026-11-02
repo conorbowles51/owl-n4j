@@ -192,6 +192,29 @@ class BackgroundPoolTest(unittest.TestCase):
         self.assertEqual(options['loupe-web-bg-%d' % os.getpid()], '-c idle_in_transaction_session_timeout=600000')
         self.assertIsNone(options['loupe-web-%d' % os.getpid()])
 
+    def test_opening_a_connection_outlasts_a_worker_stall(self):
+        # 1 Nov: 9 background connects failed at the 2 s limit, each inside a 2.2-5.1 s stall of the same worker.
+        os.environ['LOUPE_DB_ROLE'] = 'web'
+        os.environ.pop('POSTGRES_CONNECT_TIMEOUT', None)
+        limits = {}
+        real = session.create_engine
+
+        def recording(url, **kwargs):
+            limits[kwargs['connect_args']['application_name']] = kwargs['connect_args']['connect_timeout']
+            return real(url, **kwargs)
+
+        with unittest.mock.patch.object(session, 'create_engine', recording):
+            session._get_background_session_local()
+            session._get_session_local()
+        self.assertEqual(limits, {'loupe-web-bg-%d' % os.getpid(): 10, 'loupe-web-%d' % os.getpid(): 10})
+
+    def test_connect_timeout_can_be_changed_and_a_bad_value_keeps_the_default(self):
+        self.assertEqual(session.connect_timeout({'POSTGRES_CONNECT_TIMEOUT': '30'}), 30)
+        self.assertEqual(session.connect_timeout({}), 10)
+        for bad in ('soon', '1', '-5'):
+            with self.assertLogs(session.logger, level='WARNING'):
+                self.assertEqual(session.connect_timeout({'POSTGRES_CONNECT_TIMEOUT': bad}), 10)
+
     def test_idle_in_transaction_limit_can_be_changed_or_turned_off(self):
         self.assertEqual(session.idle_in_transaction_option({'POSTGRES_BACKGROUND_IDLE_IN_TRANSACTION_SECONDS': '90'}),
                          '-c idle_in_transaction_session_timeout=90000')
