@@ -35,11 +35,6 @@ const FinancialPage = lazy(() =>
     default: m.FinancialPage,
   }))
 )
-const CellebritePage = lazy(() =>
-  import("@/features/cellebrite/components/CellebritePage").then((m) => ({
-    default: m.CellebritePage,
-  }))
-)
 const PhonePrototypePage = lazy(() => import("@/features/phones/prototype/PhonePrototypePage"))
 const PhoneGuidePage = lazy(() => import("@/features/phones/PhoneGuidePage"))
 const PatternsPage = lazy(() =>
@@ -180,7 +175,7 @@ export function AppRoutes() {
             <Route path="map" element={<LazyPage><MapPage /></LazyPage>} />
             <Route path="table" element={<LazyPage><TablePage /></LazyPage>} />
             <Route path="financial" element={<LazyPage><FinancialPage /></LazyPage>} />
-            <Route path="cellebrite" element={<LazyPage><CellebritePage /></LazyPage>} />
+            <Route path="cellebrite" element={<Navigate to="../phones" replace />} />
             <Route path="phones-prototype/:view?" element={<LazyPage><PhonePrototypePage /></LazyPage>} />
             <Route path="phone-review" element={<LazyPage><PhoneReviewPage /></LazyPage>} />
             <Route path="conversations" element={<LazyPage><ConversationsPage /></LazyPage>} />

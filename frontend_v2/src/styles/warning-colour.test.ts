@@ -57,6 +57,5 @@ describe("warnings use the warning colour, not brand-red amber", () => {
       return lines.slice(i, i + 2).join("\n")
     }
     expect(tone("features/workspace/components/CanonicalWorkspaceOverview.tsx", /priorityBand === 1/)).not.toMatch(/amber-\d/)
-    expect(tone("features/cellebrite/components/overview/OverviewTab.tsx", /status === "under"/)).not.toMatch(/amber-\d/)
   })
 })

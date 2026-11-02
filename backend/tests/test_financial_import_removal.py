@@ -344,18 +344,18 @@ class EvidenceDeleteKeepsFinancialWholeTests(TestCase):
         self.assertIsNone(financial_hold(self.f.db, case_id=self.f.case.id, file_ids=[self.f.file.id]))
         self.f.db.rollback()
 
-    def test_deleting_a_phone_report_holding_an_imported_pdf_is_refused_before_the_graph_is_touched(self):
-        from unittest.mock import MagicMock, patch
+    def test_deleting_a_statement_taken_from_a_phone_is_refused_while_its_imports_count(self):
+        """The old phone screen's delete refused a phone report holding an imported PDF (the old route is removed with
+        that screen, 06 section 7). A file taken from a phone is now its own evidence row (services.phone_files), so
+        the same refusal must hold on the Evidence delete that replaces it."""
         from fastapi import HTTPException
-        from routers import cellebrite
         file = self.f.db.get(EvidenceFile, self.f.file.id)
-        file.source_type, file.cellebrite_report_key = 'cellebrite', 'report-1'
+        file.source_type, file.source_ref = 'phone_extraction', 'synthetic-phone-file'
         self.f.db.commit()
-        graph = MagicMock()
-        with patch.object(cellebrite, '_require_case_evidence_access'), patch.object(cellebrite, 'neo4j_service', graph):
-            with self.assertRaises(HTTPException) as refused:
-                cellebrite.delete_phone_report('report-1', case_id=str(self.f.case.id), db=self.f.db,
-                                               current_user=None)
+        with self.assertRaises(HTTPException) as refused:
+            self._delete_file(self.f.file.id)
         self.assertEqual(refused.exception.status_code, 409)
-        graph.delete_phone_report.assert_not_called()
+        self.assertIn('Nothing was deleted', refused.exception.detail)
+        self.f.db.rollback()
         self.assertIsNotNone(self.f.db.get(EvidenceFile, self.f.file.id))
+        self.assertEqual(self._payments(), 12)

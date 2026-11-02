@@ -59,7 +59,6 @@ from routers import (
     case_deadlines_router,
     notebook_router,
     evidence_folders_router,
-    cellebrite_router,
     triage_router,
     significant_router,
 )
@@ -303,7 +302,6 @@ app.include_router(maintenance_router)
 app.include_router(case_deadlines_router)
 app.include_router(notebook_router)
 app.include_router(evidence_folders_router)
-app.include_router(cellebrite_router)
 app.include_router(triage_router)
 app.include_router(significant_router)
 app.include_router(evidence_ws_router)
