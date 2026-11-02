@@ -9,7 +9,7 @@ import { useViewSpeed } from "@/features/financial/lib/page-speed"
 
 const CASE_ROUTES = new Set([
   "graph", "timeline", "map", "table", "financial", "dossiers", "evidence", "chat", "agent",
-  "workspace", "reports", "settings", "phone-review", "phone-patterns", "conversations",
+  "workspace", "reports", "settings", "phone-review", "phone-patterns", "conversations", "search",
 ])
 /** Phone record types named in a page (backend PHONE_RECORD_TYPES); any other type is "other". */
 export const PHONE_RECORD_TYPES = new Set([
