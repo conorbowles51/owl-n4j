@@ -80,7 +80,7 @@ function ModelReadingMark({
     <span className="block text-xs font-normal">
       <button
         type="button"
-        className="rounded border border-[#e7c66b] bg-[#fdf6dd] px-1 text-[#7a5200] hover:underline dark:border-status-warning/50 dark:bg-status-warning-soft dark:text-status-warning"
+        className="rounded border border-status-warning bg-status-warning-soft px-1 text-status-warning hover:underline"
         title={origin.explanation}
         aria-expanded={open}
         data-testid="model-reading-mark"

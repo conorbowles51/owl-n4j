@@ -108,8 +108,8 @@ export function EventStream({
               ref={virtualizer.measureElement}
             >
               {item.kind === "header" ? (
-                <div className="flex items-center justify-between gap-3 border-b border-border/60 bg-background/95 px-3 py-2">
-                  <span className="text-xs font-semibold tracking-normal text-foreground">
+                <div className="flex items-center justify-between gap-3 border-b-2 border-status-info bg-background/95 px-3 py-2" data-day-rule="">
+                  <span className="text-xs font-semibold tracking-normal text-status-info">
                     {item.label}
                   </span>
                   <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">

@@ -36,6 +36,8 @@ import { RouteBadge } from "./RouteBadge"
 import { ProcessHoldDialog } from "./ProcessHoldDialog"
 import { toast } from "sonner"
 import type { FileRoute } from "../hooks/use-route-checks"
+import { EVIDENCE_KIND_TONE, evidenceKind } from "../utils/evidence-kind"
+import { ShareBar } from "@/lib/data-colour"
 import type { EvidenceFileRecord, EvidenceFile } from "@/types/evidence.types"
 import {
   financialLine,
@@ -54,6 +56,8 @@ interface FileRowProps {
    * renders the list. A row that asked for itself would be one request per row.
    */
   route?: FileRoute
+  /** The most entities any file in view has, for the entity bar (lx-style mock2 #12). */
+  maxEntities?: number
   /** Uploaded by / added to Financial by (batch call by the list, like ``route``). */
   provenance?: FileProvenance
   onDelete?: (file: EvidenceFile) => void
@@ -89,18 +93,16 @@ function formatRelativeTime(dateStr: string | null): string {
 }
 
 const STATUS_STYLES: Record<string, string> = {
-  processed:
-    "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20",
-  processing:
-    "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
-  unprocessed:
-    "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20",
-  failed: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20",
+  processed: "bg-status-success-soft text-status-success border-status-success/30",
+  processing: "bg-status-info-soft text-status-info border-status-info/30",
+  unprocessed: "bg-status-neutral-soft text-status-neutral border-status-neutral/30",
+  failed: "bg-status-error-soft text-status-error border-status-error/30",
 }
 
 export function FileRow({
   dragSource,
   route,
+  maxEntities = 0,
   provenance,
   file,
   caseId,
@@ -127,6 +129,8 @@ export function FileRow({
   const typeCategory = getFileTypeCategory(file.original_filename)
   const displayStatus = getDisplayStatus(file)
   const statusClass = STATUS_STYLES[displayStatus] ?? STATUS_STYLES.unprocessed
+  const kind = evidenceKind(file.original_filename, route)
+  const kindTone = kind ? EVIDENCE_KIND_TONE[kind.kind] : null
 
   // Only the success is announced here. A hold and a failure are both reported
   // by the gate, which knows what it held and why.
@@ -157,8 +161,12 @@ export function FileRow({
       }
       onDragEnd={() => moves?.endDrag()}
     >
-      {/* Checkbox */}
-      <TableCell className="w-8">
+      {/* Checkbox; the row's edge is the colour of what the file holds (the word is in the Type column). */}
+      <TableCell
+        className="w-8"
+        style={kindTone ? { boxShadow: `inset 4px 0 0 ${kindTone.edge}` } : undefined}
+        data-kind={kind?.kind}
+      >
         <Checkbox
           aria-label={`Select ${file.original_filename}`}
           checked={isSelected}
@@ -225,6 +233,14 @@ export function FileRow({
             {typeCategory}
           </Badge>
           <RouteBadge route={route} />
+          {kind && kindTone && kind.kind !== "Document" && route?.outcome !== "native" && (
+            <span
+              title={kind.basis}
+              className={cn("rounded-full border px-2 text-[10px] font-bold", kindTone.text, kindTone.border)}
+            >
+              {kind.kind}
+            </span>
+          )}
         </div>
       </TableCell>
 
@@ -247,9 +263,16 @@ export function FileRow({
 
       {/* Entity count */}
       <TableCell className="font-mono text-xs text-muted-foreground">
-        {file.status === "processed"
-          ? `${file.entity_count ?? 0} / ${file.relationship_count ?? 0}`
-          : "--"}
+        {file.status === "processed" ? (
+          <>
+            {`${file.entity_count ?? 0} / ${file.relationship_count ?? 0}`}
+            {maxEntities > 0 && (
+              <ShareBar value={file.entity_count ?? 0} max={maxEntities} className="mt-1 ml-0 block" />
+            )}
+          </>
+        ) : (
+          "--"
+        )}
       </TableCell>
 
       {/* Date */}

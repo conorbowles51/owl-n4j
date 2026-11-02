@@ -160,6 +160,10 @@ export function FileListPanel({
   }
 
   const filteredFiles = activeQuery.data?.files ?? []
+  const maxEntities = Math.max(
+    0,
+    ...filteredFiles.filter((file) => file.status === "processed").map((file) => file.entity_count ?? 0)
+  )
   const filteredFolders = searching ? [] : (contents?.folders ?? [])
   const visibleFileIds = filteredFiles.map((file) => file.id)
   const pinStatusQuery = usePinStatus(caseId, visibleFileIds)
@@ -411,6 +415,7 @@ export function FileListPanel({
                   }}
                   caseId={caseId}
                   route={routes.get(file.id)}
+                  maxEntities={maxEntities}
                   provenance={provenance.data?.[file.id]}
                   onDelete={onDeleteFile}
                   onAddToDossier={

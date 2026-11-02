@@ -10,7 +10,7 @@ function block(selector: ":root" | ".dark"): Record<string, string> {
   const start = css.indexOf(`  ${selector} {`)
   const body = css.slice(start, css.indexOf("\n  }", start))
   const out: Record<string, string> = {}
-  for (const m of body.matchAll(/--([a-z-]+):\s*([^;]+);/g)) out[m[1]] = m[2].trim()
+  for (const m of body.matchAll(/--([a-z0-9-]+):\s*([^;]+);/g)) out[m[1]] = m[2].trim()
   return out
 }
 
@@ -103,4 +103,48 @@ describe("phone palette (07 4.11)", () => {
       }
     })
   }
+})
+
+/** lx-style data colour (Neil 2 Nov, mock2 "all, build them"): inside content only, beside Loupe red. */
+const DATA = [
+  "money-in",
+  "money-out",
+  "source-1",
+  "source-2",
+  "source-3",
+  "source-4",
+  "app-1",
+  "app-2",
+  "app-3",
+  "app-4",
+]
+describe("data colour tokens (lx-style)", () => {
+  for (const [theme, vars] of Object.entries(THEMES)) {
+    for (const name of DATA) {
+      it(`${name} is 4.5:1 or more on every surface and its soft fill, ${theme}`, () => {
+        expect(vars[name], `${name} defined in ${theme}`).toMatch(/^\d+ \d+% \d+%$/)
+        expect(vars[`${name}-soft`], `${name}-soft defined in ${theme}`).toMatch(/^\d+ \d+% \d+%$/)
+        for (const surface of [...SURFACES, "sidebar", `${name}-soft`]) {
+          const ratio = contrast(tripletToRgb(vars[name]), tripletToRgb(vars[surface]))
+          expect(ratio, `${name} on ${surface} (${theme}) = ${ratio.toFixed(2)}`).toBeGreaterThanOrEqual(4.5)
+        }
+      })
+      it(`${name} is dE2000 15 or more from Loupe red, the error colour and status-warning, ${theme}`, () => {
+        for (const other of ["primary", "status-error", "status-warning"]) {
+          const d = deltaE2000(tripletToRgb(vars[name]), tripletToRgb(vars[other]))
+          expect(d, `${name} vs ${other} (${theme}) = ${d.toFixed(1)}`).toBeGreaterThanOrEqual(15)
+        }
+      })
+    }
+  }
+  it("money out is told apart from money in", () => {
+    for (const vars of Object.values(THEMES))
+      expect(deltaE2000(tripletToRgb(vars["money-in"]), tripletToRgb(vars["money-out"]))).toBeGreaterThanOrEqual(15)
+  })
+  it("each token is mapped for Tailwind", () => {
+    for (const name of DATA) {
+      expect(css).toContain(`--color-${name}: hsl(var(--${name}));`)
+      expect(css).toContain(`--color-${name}-soft: hsl(var(--${name}-soft));`)
+    }
+  })
 })

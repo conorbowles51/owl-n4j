@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { MoreHorizontal, FolderInput } from "lucide-react"
 import type { MoveSource } from "../utils/move-targets"
+import { EVIDENCE_KIND_TONE, evidenceKind } from "../utils/evidence-kind"
+import { cn } from "@/lib/cn"
 
 interface FolderRowProps {
   folder: EvidenceFolder
@@ -31,6 +33,8 @@ export function FolderRow({ folder, onNavigate }: FolderRowProps) {
     name: folder.name,
     parent_id: folder.parent_id,
   }
+  const kind = evidenceKind(folder.name)
+  const tone = kind ? EVIDENCE_KIND_TONE[kind.kind] : null
   return (
     <TableRow
       className="group hover:bg-muted/50 transition-colors data-[drop-active=true]:bg-primary/15 data-[drop-active=true]:outline-2 data-[drop-active=true]:outline-primary"
@@ -39,14 +43,14 @@ export function FolderRow({ folder, onNavigate }: FolderRowProps) {
       onDragStart={(event) => moves?.startDrag(event, source)}
       onDragEnd={() => moves?.endDrag()}
     >
-      <TableCell className="w-8">
+      <TableCell className="w-8" style={tone ? { boxShadow: `inset 4px 0 0 ${tone.edge}` } : undefined} data-kind={kind?.kind}>
         <div className="cursor-grab opacity-0 group-hover:opacity-100 transition-opacity">
           <GripVertical className="size-3.5 text-muted-foreground" />
         </div>
       </TableCell>
       <TableCell className="font-medium">
         <div className="flex items-center gap-2">
-          <Folder className="size-4 shrink-0 text-amber-500" />
+          <Folder className={cn("size-4 shrink-0", tone ? tone.text : "text-muted-foreground")} />
           <button
             onClick={() => onNavigate(folder.id)}
             title={folder.name}
@@ -54,6 +58,14 @@ export function FolderRow({ folder, onNavigate }: FolderRowProps) {
           >
             {folder.name}
           </button>
+          {kind && tone && (
+            <span
+              title={kind.basis}
+              className={cn("shrink-0 rounded-full border px-2 text-[10px] font-bold", tone.text, tone.border)}
+            >
+              {kind.kind}
+            </span>
+          )}
           {folder.has_profile ? (
             <Badge variant="secondary" className="text-[10px]">
               Profile

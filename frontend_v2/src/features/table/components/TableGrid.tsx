@@ -18,7 +18,8 @@ import {
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/cn"
 import type { GraphNode } from "@/types/graph.types"
-import type { EntityType } from "@/lib/theme"
+import { getNodeColor, type EntityType } from "@/lib/theme"
+import { CheckTag, ShareBar } from "@/lib/data-colour"
 import type { TableColumn } from "../hooks/use-table-columns"
 import type { SortColumn } from "../stores/table.store"
 import type { RelationshipInfo } from "../hooks/use-relationship-nodes"
@@ -155,9 +156,12 @@ function CellRenderer({
   searchTerm,
   onExploreRelationships,
   relationshipMap,
+  maxConnections = 1,
 }: {
   node: GraphNode
   column: TableColumn
+  /** The busiest row's connection count on this page, for the Connections bar. */
+  maxConnections?: number
   connectionCounts: Map<string, number>
   sourceCounts: Map<string, number>
   searchTerm: string
@@ -196,16 +200,30 @@ function CellRenderer({
       return <NodeBadge type={node.type as EntityType} />
     case "connections":
       return (
-        <Badge variant="outline" className="font-mono text-[11px]">
-          {connectionCounts.get(node.key) ?? 0}
-        </Badge>
+        <span className="inline-flex items-center">
+          <Badge variant="outline" className="font-mono text-[11px]">
+            {connectionCounts.get(node.key) ?? 0}
+          </Badge>
+          <ShareBar value={connectionCounts.get(node.key) ?? 0} max={maxConnections} />
+        </span>
       )
-    case "sources":
+    case "sources": {
+      const sources = sourceCounts.get(node.key) ?? 0
       return (
-        <Badge variant="outline" className="font-mono text-[11px]">
-          {sourceCounts.get(node.key) ?? 0}
-        </Badge>
+        <span className="inline-flex items-center gap-1.5">
+          <Badge variant="outline" className="font-mono text-[11px]">
+            {sources}
+          </Badge>
+          {sources === 0 ? (
+            <CheckTag>no source</CheckTag>
+          ) : (
+            <Badge variant="success" className="text-[11px]">
+              {sources} cited
+            </Badge>
+          )}
+        </span>
       )
+    }
     default:
       if (column.key.startsWith("prop:")) {
         const propKey = column.key.slice(5)
@@ -244,6 +262,7 @@ export function TableGrid({
   onExploreRelationships,
   relationshipMap,
 }: TableGridProps) {
+  const maxConnections = Math.max(1, ...pageNodes.map((node) => connectionCounts.get(node.key) ?? 0))
   const handleRowClick = useCallback(
     (e: React.MouseEvent, node: GraphNode) => {
       // Don't handle if clicking checkbox
@@ -308,16 +327,26 @@ export function TableGrid({
                 )}
                 onClick={(e) => handleRowClick(e, node)}
               >
-                {visibleColumns.map((col) =>
+                {visibleColumns.map((col, colIndex) =>
                   col.key === "_checkbox" ? (
-                    <TableCell key={col.key} className="w-10 px-2">
+                    <TableCell
+                      key={col.key}
+                      className="w-10 px-2"
+                      style={colIndex === 0 ? { boxShadow: `inset 3px 0 0 ${getNodeColor(node.type)}` } : undefined}
+                      data-type-edge={colIndex === 0 ? node.type : undefined}
+                    >
                       <Checkbox
                         checked={isChecked}
                         onCheckedChange={() => onToggleChecked(node.key)}
                       />
                     </TableCell>
                   ) : (
-                    <TableCell key={col.key} className="py-1">
+                    <TableCell
+                      key={col.key}
+                      className="py-1"
+                      style={colIndex === 0 ? { boxShadow: `inset 3px 0 0 ${getNodeColor(node.type)}` } : undefined}
+                      data-type-edge={colIndex === 0 ? node.type : undefined}
+                    >
                       <CellRenderer
                         node={node}
                         column={col}
@@ -326,6 +355,7 @@ export function TableGrid({
                         searchTerm={searchTerm}
                         onExploreRelationships={onExploreRelationships}
                         relationshipMap={relationshipMap}
+                        maxConnections={maxConnections}
                       />
                     </TableCell>
                   )

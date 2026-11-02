@@ -17,6 +17,8 @@ export interface TimelineEvent {
   time: string | null
   // Text for most events; a number where the stored amount is numeric.
   amount: string | number | null
+  /** A ledger payment's own direction (credit = money in, debit = money out); absent for other events. */
+  direction?: "credit" | "debit"
   summary: string | null
   notes: string | null
   source?: {

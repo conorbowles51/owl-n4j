@@ -77,6 +77,34 @@
     --status-warning: var(--status-review);
     --status-warning-soft: var(--status-review-soft);
 
+    /* Data colour (lx-style, Neil 2 Nov: "all, build them"). Inside content only: the shell, surfaces and Loupe red
+       stay as they are; red stays for buttons that act and the active mark. Each is text-safe (4.5:1 or more on every
+       surface and its soft fill) and dE2000 15 or more from Loupe red, the error colour and status-warning
+       (features/phones/ui/tokens.test.ts). Colour never stands alone: an arrow, word or name sits beside it.
+         money-in / money-out: a payment's direction (arrow and "in"/"out" beside it).
+         source-1..4: which statement account or source a line came from (account name beside it).
+         app-1..4: which phone app a message came through (app name beside it). */
+    --money-in: 153 74% 27%;
+    --money-in-soft: 153 70% 95%;
+    --money-out: 289 41% 39%;
+    --money-out-soft: 289 41% 95%;
+    --source-1: 202 100% 34%;
+    --source-1-soft: 202 70% 95%;
+    --source-2: 194 65% 33%;
+    --source-2-soft: 194 65% 95%;
+    --source-3: 55 100% 22%;
+    --source-3-soft: 55 70% 95%;
+    --source-4: 232 51% 53%;
+    --source-4-soft: 232 51% 95%;
+    --app-1: 202 100% 34%;
+    --app-1-soft: 202 70% 95%;
+    --app-2: 164 100% 24%;
+    --app-2-soft: 164 70% 95%;
+    --app-3: 327 45% 47%;
+    --app-3-soft: 327 45% 95%;
+    --app-4: 250 30% 45%;
+    --app-4-soft: 250 30% 95%;
+
     /* Radius */
     --radius: 0.5rem;
   }
@@ -130,6 +158,27 @@
     --status-info-soft: 186 35% 14%;
     --status-success: 150 70% 58%;
     --status-success-soft: 150 35% 14%;
+
+    --money-in: 151 57% 60%;
+    --money-in-soft: 151 35% 14%;
+    --money-out: 289 58% 76%;
+    --money-out-soft: 289 35% 14%;
+    --source-1: 202 77% 63%;
+    --source-1-soft: 202 35% 14%;
+    --source-2: 189 61% 69%;
+    --source-2-soft: 189 35% 14%;
+    --source-3: 55 60% 60%;
+    --source-3-soft: 55 35% 14%;
+    --source-4: 232 100% 80%;
+    --source-4-soft: 232 35% 14%;
+    --app-1: 202 77% 63%;
+    --app-1-soft: 202 35% 14%;
+    --app-2: 164 100% 33%;
+    --app-2-soft: 164 35% 14%;
+    --app-3: 327 45% 64%;
+    --app-3-soft: 327 35% 14%;
+    --app-4: 250 50% 78%;
+    --app-4-soft: 250 35% 14%;
 
   }
 }
@@ -290,6 +339,26 @@
   --color-status-neutral-soft: hsl(var(--status-neutral-soft));
   --color-status-warning: hsl(var(--status-warning));
   --color-status-warning-soft: hsl(var(--status-warning-soft));
+  --color-money-in: hsl(var(--money-in));
+  --color-money-in-soft: hsl(var(--money-in-soft));
+  --color-money-out: hsl(var(--money-out));
+  --color-money-out-soft: hsl(var(--money-out-soft));
+  --color-source-1: hsl(var(--source-1));
+  --color-source-1-soft: hsl(var(--source-1-soft));
+  --color-source-2: hsl(var(--source-2));
+  --color-source-2-soft: hsl(var(--source-2-soft));
+  --color-source-3: hsl(var(--source-3));
+  --color-source-3-soft: hsl(var(--source-3-soft));
+  --color-source-4: hsl(var(--source-4));
+  --color-source-4-soft: hsl(var(--source-4-soft));
+  --color-app-1: hsl(var(--app-1));
+  --color-app-1-soft: hsl(var(--app-1-soft));
+  --color-app-2: hsl(var(--app-2));
+  --color-app-2-soft: hsl(var(--app-2-soft));
+  --color-app-3: hsl(var(--app-3));
+  --color-app-3-soft: hsl(var(--app-3-soft));
+  --color-app-4: hsl(var(--app-4));
+  --color-app-4-soft: hsl(var(--app-4-soft));
 
   /* Typography */
   --font-display: "Space Grotesk", "Segoe UI", sans-serif;

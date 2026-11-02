@@ -1,4 +1,5 @@
 import { AddToTimelineDialog } from "@/features/timeline/components/AddToTimelineDialog"
+import { CheckTag } from "@/lib/data-colour"
 import { useMoneyTrails } from "../hooks/use-money-trails"
 import { internalActivity, activityAmount } from "../lib/money-trails"
 import { correctionMoney } from "../lib/correction-contract"
@@ -1810,10 +1811,11 @@ export function LedgerRowBrowser({
       {waiting ? firstView?.loading : firstData && pendingAction && firstView?.status}
       {investigation && exportContext && !waiting && (unnamedCount > 0 || view.unnamedOnly) && (
         <div
-          className="flex flex-wrap items-center gap-2 rounded border bg-card px-3 py-2 text-sm"
+          className="flex flex-wrap items-center gap-2 rounded border border-status-warning border-l-4 bg-status-warning-soft px-3 py-2 text-sm"
           role="group"
           aria-label="Payments without a name"
         >
+          <CheckTag />
           <span role="status">
             <strong>{unnamedCount.toLocaleString()}</strong>{" "}
             {unnamedCount === 1 ? "payment" : "payments"} in view with
@@ -1839,10 +1841,11 @@ export function LedgerRowBrowser({
       )}
       {investigation && exportContext && !waiting && (unconfirmedCount > 0 || view.unconfirmedOnly) && (
         <div
-          className="flex flex-wrap items-center gap-2 rounded border border-[#e7c66b] bg-[#fdf6dd] px-3 py-2 text-sm text-[#5c3d00] dark:bg-status-warning-soft dark:text-status-warning"
+          className="flex flex-wrap items-center gap-2 rounded border border-status-warning border-l-4 bg-status-warning-soft px-3 py-2 text-sm"
           role="group"
           aria-label="Names read by Claude, not confirmed"
         >
+          <CheckTag />
           <span role="status">
             <strong>{unconfirmedCount.toLocaleString()}</strong>{" "}
             {unconfirmedCount === 1 ? "name" : "names"} in view read

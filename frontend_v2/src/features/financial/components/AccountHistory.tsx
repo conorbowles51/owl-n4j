@@ -34,6 +34,8 @@ import { useInvestigationScope } from "../stores/investigation-scope"
 import { useLedgerTransactions } from "../hooks/use-ledger-transactions"
 import { StatementSourceButton } from "./StatementSourceButton"
 import { PaymentSet } from "./PaymentSet"
+import { Badge } from "@/components/ui/badge"
+import { CheckTag, MONEY, sourceTone } from "@/lib/data-colour"
 
 export function AccountHistory({
   caseId,
@@ -441,7 +443,7 @@ export function AccountHistory({
                       )
                       .map((p) => (
                         <tr className="border-t" key={p.id}>
-                          <td className="p-2">
+                          <td className="p-2" style={{ boxShadow: `inset 4px 0 0 ${sourceEdge(g.account_id)}` }} data-account-edge="">
                             <span style={{ color: accountColor(g.key) }}>
                               ●{" "}
                             </span>
@@ -461,6 +463,7 @@ export function AccountHistory({
                             {format(p.opening_minor, g.currency)}
                           </td>
                           <td className="p-2 whitespace-nowrap">
+                            <BalanceMove opening={p.opening_minor} closing={p.closing_minor} />
                             {format(p.closing_minor, g.currency)}
                           </td>
                           <td className="p-2">
@@ -471,11 +474,13 @@ export function AccountHistory({
                               ` · ${p.undated_count} dates unprinted`}
                           </td>
                           <td className="p-2">
-                            {p.status === "needs_review"
-                              ? "Needs review — saved readings retained"
-                              : p.status === "confirmed_no_activity"
-                                ? "Confirmed quiet period"
-                                : "Reconciled"}
+                            {p.status === "needs_review" ? (
+                              <CheckTag>Needs review — saved readings retained</CheckTag>
+                            ) : p.status === "confirmed_no_activity" ? (
+                              <span className="text-status-neutral">Confirmed quiet period</span>
+                            ) : (
+                              <Badge variant="success">✓ Reconciled</Badge>
+                            )}
                             <PeriodJudgements caseId={caseId} periodId={p.id} />
                             {!!p.blockers?.length && (
                               <ul className="mt-1 text-xs list-disc pl-4">
@@ -568,5 +573,30 @@ function PeriodPayments({
       rows={query.data.transactions}
       title="Saved statement payments"
     />
+  )
+}
+
+/** The edge colour of an account's rows: its source colour, the same as on Transactions. */
+function sourceEdge(accountId: string) {
+  return `hsl(var(--${sourceTone(accountId).text.replace("text-", "")}))`
+}
+
+/** ▲ when the closing balance is above the opening, ▼ when below; nothing when equal or either is missing. */
+export function BalanceMove({ opening, closing }: { opening: unknown; closing: unknown }) {
+  const whole = (v: unknown) => (typeof v === "string" || typeof v === "number") && /^-?(0|[1-9][0-9]*)$/.test(String(v))
+  if (!whole(opening) || !whole(closing)) return null
+  const a = BigInt(String(opening))
+  const b = BigInt(String(closing))
+  if (a === b) return null
+  const up = b > a
+  return (
+    <span
+      className={`mr-1 ${MONEY[up ? "in" : "out"].text}`}
+      title={up ? "Closing balance above the opening" : "Closing balance below the opening"}
+      data-balance-move={up ? "up" : "down"}
+    >
+      {up ? "▲" : "▼"}
+      <span className="sr-only">{up ? " rose" : " fell"}</span>
+    </span>
   )
 }

@@ -11,6 +11,31 @@ import { cn } from "@/lib/cn"
 import type { ReactNode } from "react"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
 import { DescriptionCorrectionNote } from "./DescriptionCorrectionNote"
+import { MONEY, SourceTag } from "@/lib/data-colour"
+
+/**
+ * Money in and out of one day's payments, per currency, from the amounts shown on the cards (exact integer minor
+ * units). A currency with any amount that is not a whole number of minor units gets no total rather than a partial one.
+ */
+export function dayTotals(rows: LedgerTransaction[]) {
+  const by = new Map<string, { in: bigint; out: bigint; ok: boolean }>()
+  for (const row of rows) {
+    const code = (row.currency || "").trim().toUpperCase()
+    const entry = by.get(code) ?? { in: 0n, out: 0n, ok: true }
+    const raw = String(row.amount_minor).replace(/^-/, "")
+    if (!/^(0|[1-9][0-9]*)$/.test(raw)) entry.ok = false
+    else if (row.direction === "credit") entry.in += BigInt(raw)
+    else entry.out += BigInt(raw)
+    by.set(code, entry)
+  }
+  return [...by.entries()]
+    .filter(([, e]) => e.ok)
+    .map(([currency, e]) => ({
+      currency,
+      in: formatLedgerAmount(e.in.toString(), currency).text,
+      out: formatLedgerAmount(e.out.toString(), currency).text,
+    }))
+}
 
 /** A payment card; in a list of judgement calls it carries its tier's tint and left border. */
 function PriorityCard({ row, className, children }: { row: LedgerTransaction; className: string; children: ReactNode }) {
@@ -94,10 +119,18 @@ export function PaymentCardList({
     <div className="space-y-5" role="list" aria-label="Investigation transactions">
       {days.map(({ day, rows: dayRows }, groupIndex) => (
         <div key={`${day}-${groupIndex}`} role="listitem" className="space-y-2">
-          <h3 className="flex items-baseline gap-3 px-1 text-sm font-semibold">
+          <h3 className="flex items-baseline gap-3 border-b-2 border-status-info px-1 pb-1 text-sm font-semibold">
             {dayHeading(day)}
             <span className="font-mono text-[11px] font-normal uppercase tracking-[0.08em] text-muted-foreground">
               {dayRows.length} {dayRows.length === 1 ? "payment" : "payments"}
+            </span>
+            <span className="ml-auto flex flex-wrap justify-end gap-x-3 text-xs font-semibold tabular-nums" data-testid="day-totals">
+              {dayTotals(dayRows).map((t) => (
+                <span key={t.currency} className="flex gap-3">
+                  <span className={MONEY.in.text}>↓ in {t.in} {t.currency}</span>
+                  <span className={MONEY.out.text}>↑ out {t.out} {t.currency}</span>
+                </span>
+              ))}
             </span>
           </h3>
           <ul className="space-y-2">
@@ -114,7 +147,7 @@ export function PaymentCardList({
                 <PriorityCard
                   key={row.key}
                   row={row}
-                  className={`rounded-xl border bg-card shadow-sm transition-colors ${checked ? "border-[#3a6fd8] bg-[#3a6fd8]/5" : "hover:border-foreground/25"}`}
+                  className={`rounded-xl border border-l-4 bg-card shadow-sm transition-colors ${MONEY[incoming ? "in" : "out"].border} ${checked ? "border-[#3a6fd8] bg-[#3a6fd8]/5" : "hover:border-foreground/25"}`}
                 >
                   <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] items-start gap-3 p-3 sm:grid-cols-[auto_auto_minmax(0,1fr)_auto_auto] sm:items-center sm:p-4">
                     <input
@@ -179,9 +212,9 @@ export function PaymentCardList({
                         </button>
                         <PaymentLabelOrigin row={row} field={incoming ? "to_name" : "from_name"} />
                         {" · "}
-                        <span title={row.account_label || row.account_id}>
+                        <SourceTag sourceKey={row.account_id} title={row.account_label || row.account_id}>
                           {row.account_label || row.account_holder || row.account_id}
-                        </span>
+                        </SourceTag>
                       </span>
                       <RowJudgementMarkers transaction={row} />
                     </div>
@@ -200,9 +233,10 @@ export function PaymentCardList({
                     </div>
                     <div className="col-start-3 text-left sm:col-start-auto sm:min-w-36 sm:text-right">
                       <strong
-                        className={`block whitespace-nowrap text-[17px] tabular-nums ${incoming ? "text-[#12784a] dark:text-[#5fd39a]" : "text-foreground"}`}
+                        className={`block whitespace-nowrap text-[17px] tabular-nums ${MONEY[incoming ? "in" : "out"].text}`}
                         style={{ fontFamily: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif" }}
                       >
+                        <span aria-hidden="true">{incoming ? "↓ " : "↑ "}</span>
                         {incoming ? "+" : "−"}
                         {money(row.amount_minor, row.currency)}
                       </strong>

@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/context-menu"
 import { cn } from "@/lib/cn"
 import { useEvidenceStore } from "../evidence.store"
+import { EVIDENCE_KIND_TONE, evidenceKind } from "../utils/evidence-kind"
 import { useRenameFolder } from "../hooks/use-folder-mutations"
 import { useProcessFolder } from "../hooks/use-process-folder"
 import { toast } from "sonner"
@@ -58,6 +59,8 @@ export function FolderTreeNode({
   const processMutation = useProcessFolder(caseId)
 
   const isExpanded = expandedFolderIds.has(node.id)
+  const kind = evidenceKind(node.name)
+  const kindTone = kind ? EVIDENCE_KIND_TONE[kind.kind] : null
   const isActive = currentFolderId === node.id
   const hasChildren = node.children.length > 0
 
@@ -134,25 +137,19 @@ export function FolderTreeNode({
               />
             </span>
 
-            {/* Folder icon */}
+            {/* Folder icon: coloured by what the folder holds (its name; the word is on the folder list). A folder
+                with a processing profile keeps its mark, now as a dot beside the name. */}
             {isExpanded ? (
-              <FolderOpen
-                className={cn(
-                  "size-4 shrink-0",
-                  node.has_profile ? "text-amber-500" : "text-slate-400"
-                )}
-              />
+              <FolderOpen className={cn("size-4 shrink-0", kindTone ? kindTone.text : node.has_profile ? "text-amber-500" : "text-slate-400")} />
             ) : (
-              <Folder
-                className={cn(
-                  "size-4 shrink-0",
-                  node.has_profile ? "text-amber-500" : "text-slate-400"
-                )}
-              />
+              <Folder className={cn("size-4 shrink-0", kindTone ? kindTone.text : node.has_profile ? "text-amber-500" : "text-slate-400")} />
             )}
 
             {/* Name */}
             <span className="truncate text-xs">{node.name}</span>
+            {kindTone && node.has_profile && (
+              <span aria-label="Has a processing profile" title="Has a processing profile" className="size-1.5 shrink-0 rounded-full bg-brand-500" />
+            )}
 
             {/* File count badge */}
             {node.file_count > 0 && (

@@ -6,6 +6,7 @@ import { markdownToPlainText } from "@/lib/markdown-text"
 import { getEventTypeColor, hasAmount } from "../api"
 import type { TimelineEvent } from "../api"
 import { formatEventTime, getEventTimeValue } from "../lib/timeline-utils"
+import { CheckTag, DirectionMark, MONEY } from "@/lib/data-colour"
 
 interface EventCardProps {
   event: TimelineEvent
@@ -51,6 +52,7 @@ export const EventCard = memo(function EventCard({
   onToggleCurationSelection,
 }: EventCardProps) {
   const color = getEventTypeColor(event.type)
+  const direction = event.direction === "credit" ? "in" : event.direction === "debit" ? "out" : null
   const active = isSelected || isMultiSelected
   const summaryText = event.summary ? markdownToPlainText(event.summary) : null
   const timeLabel = formatEventTime(event)
@@ -88,12 +90,14 @@ export const EventCard = memo(function EventCard({
       onClick={handleClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        "group w-full cursor-pointer rounded-lg border bg-card px-3 py-3 text-left transition-colors duration-150",
+        "group w-full cursor-pointer rounded-lg border border-l-4 bg-card px-3 py-3 text-left transition-colors duration-150",
         "hover:bg-muted/40",
         active
           ? "border-brand-300 bg-brand-50 shadow-sm ring-1 ring-brand-300/40 dark:border-brand-700/60 dark:bg-brand-500/10 dark:ring-brand-600/35"
           : "border-border/80"
       )}
+      style={{ borderLeftColor: color }}
+      data-type-edge={event.type}
     >
       <div
         className={cn(
@@ -146,11 +150,22 @@ export const EventCard = memo(function EventCard({
             <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-foreground line-clamp-2">
               {highlightText(event.name, searchTerm)}
             </span>
-            {hasAmount(event.amount) && (
-              <span className="shrink-0 text-xs font-semibold text-yellow-700 dark:text-yellow-300">
-                {event.amount}
-              </span>
-            )}
+            {hasAmount(event.amount) &&
+              (/^\s*unknown\s*$/i.test(String(event.amount)) ? (
+                <CheckTag className="shrink-0">Amount unknown · check source</CheckTag>
+              ) : (
+                <span className="flex shrink-0 items-baseline gap-1.5">
+                  <span
+                    className={cn(
+                      "text-xs font-semibold tabular-nums",
+                      direction ? MONEY[direction].text : "text-status-info"
+                    )}
+                  >
+                    {event.amount}
+                  </span>
+                  {direction && <DirectionMark direction={direction} />}
+                </span>
+              ))}
           </div>
 
           {summaryText && (

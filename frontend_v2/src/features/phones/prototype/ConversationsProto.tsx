@@ -1,4 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual"
+import { appTone } from "@/lib/data-colour"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
@@ -170,7 +171,7 @@ export function ConversationsProto({ fx, client, targets }: { fx: FixtureCase; c
               <li key={t.id}>
                 <button type="button" aria-current={threadId === t.id ? "true" : undefined} onClick={() => (setThreadId(t.id), sel.clear())} className="w-full px-2 py-1.5 text-left text-sm hover:bg-muted aria-[current=true]:bg-accent">
                   <span className="block truncate font-medium">{names}</span>
-                  <span className="block text-xs">{t.app} · {fmt(t.count)} messages{t.group ? " · group" : ""}</span>
+                  <span className="block text-xs"><span aria-hidden className={`mr-1.5 inline-block size-2 rounded-[2px] ${appTone(t.app).bg}`} />{t.app} · {fmt(t.count)} messages{t.group ? " · group" : ""}</span>
                 </button>
               </li>
             )
@@ -209,7 +210,7 @@ export function ConversationsProto({ fx, client, targets }: { fx: FixtureCase; c
                 const it = items[v.index]
                 if (it.kind === "day")
                   return (
-                    <h3 key={`d-${it.date}-${v.index}`} ref={virtual.measureElement} data-index={v.index} className="absolute left-0 w-full border-b bg-muted px-3 py-1 text-xs font-semibold" style={{ top: v.start }}>
+                    <h3 key={`d-${it.date}-${v.index}`} ref={virtual.measureElement} data-index={v.index} className="absolute left-0 w-full border-b-2 border-status-info bg-muted px-3 py-1 text-xs font-semibold text-status-info" style={{ top: v.start }}>
                       {it.label}
                     </h3>
                   )
@@ -226,14 +227,15 @@ export function ConversationsProto({ fx, client, targets }: { fx: FixtureCase; c
                     aria-setsize={messages.length}
                     aria-selected={isSel}
                     onClick={(e) => (e.shiftKey ? sel.extendTo(m.id, order) : sel.focusOn(m.id))}
-                    className={`absolute left-0 w-full border-b px-3 py-1.5 text-sm ${isSel ? "bg-accent" : ""} ${isFocus ? "outline-2 -outline-offset-2 outline-ring" : ""}`}
+                    data-sent={m.direction === "outgoing" ? "" : undefined}
+                    className={`absolute left-0 w-full border-b px-3 py-1.5 text-sm ${isSel ? "bg-accent" : m.direction === "outgoing" ? "bg-status-info-soft shadow-[inset_4px_0_0_hsl(var(--status-info))]" : ""} ${isFocus ? "outline-2 -outline-offset-2 outline-ring" : ""}`}
                     style={{ top: v.start }}
                   >
                     <div className="flex flex-wrap items-center gap-x-2">
                       <span className="font-medium">{m.time ? timeOfDay(m.time, zone, it.withSeconds) : "No time"}</span>
                       <span aria-label={m.direction === "outgoing" ? "Sent" : "Received"}>{m.direction === "outgoing" ? "↗" : "↙"}</span>
                       <span>{participantsLine(view)}</span>
-                      <span className="text-muted-foreground">{m.app}</span>
+                      <span className={`rounded border px-1.5 text-xs font-semibold ${appTone(m.app).text} ${appTone(m.app).border}`}>{m.app}</span>
                       <BadgeRow badges={view.badges} />
                     </div>
                     <p className="whitespace-pre-wrap break-words">{m.body || <em>No text in this message</em>}</p>

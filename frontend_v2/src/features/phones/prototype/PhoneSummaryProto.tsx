@@ -4,6 +4,26 @@ import type { FixtureCase } from "../fixtures"
 import { fmt } from "../ui/ResultCount"
 import { PhoneChip } from "../ui/PhoneChip"
 import { apps, monthBands, phoneMessages, topPeople } from "./proto-data"
+import { ShareBar, appTone } from "@/lib/data-colour"
+import { cn } from "@/lib/cn"
+
+/** Section groups (lx-style mock2 #18): a top rule and a small label, so related sections read as one group. */
+const GROUPS = {
+  act: { label: "Act", rule: "border-t-status-warning", text: "text-status-warning border-status-warning" },
+  next: { label: "Next step", rule: "border-t-status-info", text: "text-status-info border-status-info" },
+  activity: { label: "Activity", rule: "border-t-source-1", text: "text-source-1 border-source-1" },
+  people: { label: "People", rule: "border-t-source-3", text: "text-source-3 border-source-3" },
+  gaps: { label: "Gaps", rule: "border-t-source-2", text: "text-source-2 border-source-2" },
+} as const
+type Group = keyof typeof GROUPS
+const groupRule = (g: Group) => cn("border-t-[3px]", GROUPS[g].rule)
+function GroupLabel({ group }: { group: Group }) {
+  return (
+    <span aria-hidden data-group={group} className={cn("mr-2 inline-flex rounded-full border px-2 text-[11px] font-bold tracking-[0.02em]", GROUPS[group].text)}>
+      {GROUPS[group].label}
+    </span>
+  )
+}
 
 /** Prototype: Phone summary (07 J-2): verdict line, Needs a decision box, triage block, Where to start. */
 export function PhoneSummaryProto({
@@ -33,6 +53,9 @@ export function PhoneSummaryProto({
   const people = topPeople(fx, phone)
   const bands = monthBands(fx, phone)
   const maxBand = Math.max(1, ...bands.map((b) => b.count))
+  const maxMessages = Math.max(1, ...people.map((x) => x.messages))
+  const maxCalls = Math.max(1, ...people.map((x) => x.calls))
+  const appTotal = appList.reduce((sum, [, n]) => sum + n, 0)
   const conv = (q: string) => `${base}/conversations?phone=${phone}${q}`
   return (
     <div className="flex flex-col gap-4">
@@ -44,8 +67,8 @@ export function PhoneSummaryProto({
         Read in full: {fmt(p.records)} records, {first} to {last}, {appList.length} apps. {decisions} {decisions === 1 ? "thing needs" : "things need"} a decision.
       </p>
 
-      <section aria-labelledby="nad" className="rounded border border-status-review bg-status-review-soft p-3 text-foreground">
-        <h2 id="nad" className="mb-2 text-sm font-semibold">Needs a decision</h2>
+      <section aria-labelledby="nad" className={cn("rounded border border-status-review bg-status-review-soft p-3 text-foreground", groupRule("act"))}>
+        <h2 id="nad" className="mb-2 text-sm font-semibold"><GroupLabel group="act" />Needs a decision</h2>
         <ul className="flex flex-col gap-2 text-sm">
           {!owner ? (
             <li className="flex flex-wrap items-center gap-2">
@@ -78,8 +101,8 @@ export function PhoneSummaryProto({
       </section>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <section aria-labelledby="cov" className="rounded border bg-card p-3">
-          <h2 id="cov" className="mb-2 text-sm font-semibold">Coverage by month</h2>
+        <section aria-labelledby="cov" className={cn("rounded border bg-card p-3", groupRule("activity"))}>
+          <h2 id="cov" className="mb-2 text-sm font-semibold"><GroupLabel group="activity" />Coverage by month</h2>
           <table className="w-full text-sm">
             <caption className="sr-only">Messages per month, with days that have no data</caption>
             <thead>
@@ -91,10 +114,20 @@ export function PhoneSummaryProto({
                   <td className="py-0.5 pr-2">{b.month}</td>
                   <td className="py-0.5 pr-2">
                     <Link className="underline underline-offset-2" to={conv(`&month=${encodeURIComponent(b.month)}`)}>{fmt(b.count)}</Link>
-                    {b.noDataDays > 0 && <span className="ml-2 text-status-deleted">No data on {b.noDataDays} days</span>}
+                    {b.noDataDays > 0 && <span className="ml-2 text-status-warning">No data on {b.noDataDays} days</span>}
                   </td>
                   <td className="w-1/2 py-0.5" aria-hidden>
-                    <div className="h-2 rounded bg-foreground/60" style={{ width: `${(b.count / maxBand) * 100}%` }} />
+                    <div
+                      data-gap={b.noDataDays > 0 ? "" : undefined}
+                      className={cn("h-2 rounded", b.noDataDays > 0 ? "bg-status-warning" : "bg-status-info")}
+                      style={{
+                        width: `${(b.count / maxBand) * 100}%`,
+                        backgroundImage:
+                          b.noDataDays > 0
+                            ? "repeating-linear-gradient(135deg, transparent 0 4px, hsl(var(--card) / 0.45) 4px 7px)"
+                            : undefined,
+                      }}
+                    />
                   </td>
                 </tr>
               ))}
@@ -102,8 +135,8 @@ export function PhoneSummaryProto({
           </table>
         </section>
 
-        <section aria-labelledby="top" className="rounded border bg-card p-3">
-          <h2 id="top" className="mb-2 text-sm font-semibold">Top {people.length} people by contact</h2>
+        <section aria-labelledby="top" className={cn("rounded border bg-card p-3", groupRule("people"))}>
+          <h2 id="top" className="mb-2 text-sm font-semibold"><GroupLabel group="people" />Top {people.length} people by contact</h2>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-muted-foreground"><th scope="col" className="font-medium">Name (number)</th><th scope="col" className="font-medium">Messages</th><th scope="col" className="font-medium">Calls</th></tr>
@@ -114,21 +147,28 @@ export function PhoneSummaryProto({
                   <td className="py-0.5 pr-2">
                     <Link className="underline underline-offset-2" to={conv(`&person=${x.key}`)}>{x.person.name} ({x.person.numbers[0]})</Link>
                   </td>
-                  <td>{fmt(x.messages)}</td>
-                  <td>{fmt(x.calls)}</td>
+                  <td className="whitespace-nowrap tabular-nums">{fmt(x.messages)}<ShareBar value={x.messages} max={maxMessages} barClassName="bg-source-1" width="w-14" /></td>
+                  <td className="whitespace-nowrap tabular-nums">{fmt(x.calls)}<ShareBar value={x.calls} max={maxCalls} barClassName="bg-source-3" width="w-9" /></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </section>
 
-        <section aria-labelledby="apps" className="rounded border bg-card p-3 text-sm">
-          <h2 id="apps" className="mb-2 text-sm font-semibold">Apps</h2>
-          <ul>{appList.map(([app, n]) => <li key={app}><Link className="underline underline-offset-2" to={conv(`&app=${encodeURIComponent(app)}`)}>{app}: {fmt(n)} messages</Link></li>)}</ul>
+        <section aria-labelledby="apps" className={cn("rounded border bg-card p-3 text-sm", groupRule("activity"))}>
+          <h2 id="apps" className="mb-2 text-sm font-semibold"><GroupLabel group="activity" />Apps</h2>
+          {appTotal > 0 && (
+            <div className="mb-2 flex h-2.5 max-w-[520px] overflow-hidden rounded-full" aria-hidden data-testid="apps-share">
+              {appList.map(([app, n]) => (
+                <span key={app} className={appTone(app).bg} style={{ width: `${(n / appTotal) * 100}%` }} />
+              ))}
+            </div>
+          )}
+          <ul>{appList.map(([app, n]) => <li key={app}><span aria-hidden className={cn("mr-2 inline-block size-2.5 rounded-[2px] align-[-1px]", appTone(app).bg)} /><Link className="underline underline-offset-2" to={conv(`&app=${encodeURIComponent(app)}`)}>{app}: {fmt(n)} messages</Link></li>)}</ul>
         </section>
 
-        <section aria-labelledby="del" className="rounded border bg-card p-3 text-sm">
-          <h2 id="del" className="mb-2 text-sm font-semibold">Deleted, undated and missing</h2>
+        <section aria-labelledby="del" className={cn("rounded border bg-card p-3 text-sm", groupRule("gaps"))}>
+          <h2 id="del" className="mb-2 text-sm font-semibold"><GroupLabel group="gaps" />Deleted, undated and missing</h2>
           <ul>
             <li><Link className="underline underline-offset-2" to={conv("&state=deleted")}>{fmt(deleted)} deleted or in trash</Link></li>
             <li>{fmt(noTime)} messages have no time and are listed at the end of their thread.</li>
@@ -137,8 +177,8 @@ export function PhoneSummaryProto({
         </section>
       </div>
 
-      <section aria-labelledby="start" className="rounded border bg-card p-3 text-sm">
-        <h2 id="start" className="mb-1 text-sm font-semibold">Where to start</h2>
+      <section aria-labelledby="start" className={cn("rounded border bg-card p-3 text-sm", groupRule("next"))}>
+        <h2 id="start" className="mb-1 text-sm font-semibold"><GroupLabel group="next" />Where to start</h2>
         <p className="mb-2 text-muted-foreground">Suggestions worked out from the counts above. They are suggestions, not findings.</p>
         <ul className="flex flex-col gap-1">
           {people[0] && <li><Link className="underline underline-offset-2" to={conv(`&person=${people[0].key}`)}>Read the busiest conversation: {people[0].person.name}, {fmt(people[0].messages)} messages</Link></li>}

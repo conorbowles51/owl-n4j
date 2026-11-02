@@ -32,3 +32,39 @@ it("shows numeric and text amounts, and nothing for a missing or blank amount", 
     u()
   }
 })
+
+function withEvent(extra: Partial<TimelineEvent>) {
+  const event: TimelineEvent = {
+    key: "e2", name: "Transfer From Somebody", type: "Transaction", date: "2021-02-08", time: null,
+    amount: "1,200.00", summary: null, notes: null, connections: [], ...extra,
+  }
+  return render(
+    <EventCard event={event} isSelected={false} isMultiSelected={false} searchTerm=""
+      highlightedEntityKeys={new Set()} onSelect={() => {}} onMultiSelect={() => {}} />
+  )
+}
+
+// lx-style (Neil 2 Nov): money in / out comes from the payment's own direction, never its title.
+it("marks money in and out from the payment's direction field, not its title", () => {
+  const { unmount } = withEvent({ name: "Transfer From Somebody", direction: "debit" })
+  expect(screen.getByText("↑ out")).toBeTruthy()
+  expect(screen.getByText("1,200.00").className).toContain("text-money-out")
+  unmount()
+  withEvent({ name: "Payment To Somebody", direction: "credit" })
+  expect(screen.getByText("↓ in")).toBeTruthy()
+  expect(screen.getByText("1,200.00").className).toContain("text-money-in")
+})
+
+it("shows no in/out mark without a direction, and a known amount in the info colour", () => {
+  withEvent({ name: "Transfer To Somebody" })
+  expect(screen.queryByText("↑ out")).toBeNull()
+  expect(screen.queryByText("↓ in")).toBeNull()
+  expect(screen.getByText("1,200.00").className).toContain("text-status-info")
+})
+
+it("turns an unknown amount into a check tag with words, and edges the card in its type colour", () => {
+  const { container } = withEvent({ amount: "unknown" })
+  expect(screen.getByText("Amount unknown · check source")).toBeTruthy()
+  const article = container.querySelector("article") as HTMLElement
+  expect(article.style.borderLeftColor).not.toBe("")
+})
