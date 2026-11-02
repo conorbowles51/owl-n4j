@@ -1,0 +1,20 @@
+{
+  "kind": "sensitive_fields",
+  "name": "generic",
+  "version": 1,
+  "status": "applied_unconfirmed",
+  "origin": "ai_draft",
+  "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "basis": "The generic list of spec 02 section 5.5: fields that hold credentials, card numbers, cookies, autofill entries, the keyboard dictionary and key-value pairs. Applied at once and not yet confirmed by a person. The interpreter also keeps its built-in copy of this list, so removing a line here never makes a field searchable.",
+    "registry_requirements": []
+  },
+  "body": {
+    "fields": [
+      ["Password", "Data"], ["Password", "GenericAttribute"], ["WirelessNetwork", "Password"],
+      ["UserAccount", "Password"], ["CreditCard", "CreditCardNumber"], ["Cookie", "Value"], ["Autofill", "Value"],
+      ["DictionaryWord", "Word"], ["KeyValueModel", "Value"]
+    ]
+  }
+}

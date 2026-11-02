@@ -92,6 +92,9 @@ async def lifespan(app: FastAPI):
     # Phone links (phone_extraction, phone_file) are checked against the capture tables (07 section 6).
     from services.phone import resolvers as phone_resolvers
     phone_resolvers.register()
+    # Phone mappings (02 section 6): the sweep re-derives when the loaded set changes.
+    from services.phone import mappings as phone_mappings
+    phone_mappings.install()
     try:
         # Reload snapshots from disk (non-blocking)
         snapshot_storage.reload()

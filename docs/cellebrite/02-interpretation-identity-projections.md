@@ -574,7 +574,8 @@ everything already captured with no re-ingest (plan 6.5). Readers query the curr
 A mapping is data that says what a type's fields mean: which TimeStamp is the event time, which party is
 the sender, which fields are the text, where the place is. It is not code. Plan 6.5: applied to everything
 already captured; AI may draft one; a row no person has confirmed is applied as `applied_unconfirmed` and
-shown as not yet confirmed until a person confirms it; a `draft` is never applied (section 6.2).
+shown as not yet confirmed until a person confirms it, as one judgement call per rule (6.10); a `draft` is
+never applied (section 6.2).
 
 ### 6.2 Format and location
 
@@ -804,6 +805,46 @@ Tests (cb-interpret gate, 07 section 11):
 | RQ-6 | Conflict wording (07 section 5) |
 | RQ-7 | A case correction leaves other cases' derived values unchanged |
 | RQ-8 | Whether examples were opened is recorded with each decision |
+
+### 6.10 Mappings apply at once as judgement calls
+
+A mapping file a build job writes has `status: applied_unconfirmed` and `origin: ai_draft`. It is applied as
+soon as it is loaded: the sweep (5.7) re-derives every extraction the set touches, and every row the mapping
+produced carries `interpretation_level = applied_unconfirmed`. It is never `reviewed` and never stored under a
+person's name; `reviewed_by` is empty and the loader refuses one that is not.
+
+**One judgement call per mapping rule, not per record.** A rule is one part of one mapping: `<name>.event_time`,
+`<name>.end_time`, `<name>.role.<From>`, `<name>.text`, `<name>.record` for a `type` mapping, and the `row_id`
+for a row-table mapping. `phone_mapping_judgements` holds one row per (extraction, rule, mapping version),
+modelled on `financial_judgements`:
+
+| Column | Holds |
+|---|---|
+| `rule_id`, `rule_part`, `type_name`, `mapping_version_id` | which rule of which version |
+| `summary` | the rule in plain words ("In each call, the party marked from is the caller.") |
+| `records_touched`, `sample_record_uids` | how many records the rule touched on this extraction, and three of them drawn across the set (`ORDER BY md5(record_uid)`) |
+| `evidence` | the registry fields the rule rests on (type, field, kind, value type, named set, this extraction's record and value counts) and the mapping's status, origin and basis |
+| `status` | `open`, `confirmed` or `corrected`; `resolved_by`, `resolved_at`, `resolution_reason` and `adjudication_id` name the person and the decision |
+
+Every derived row a rule produced carries `mapping_version_id` and `mapping_row_id` (the rule id). The product
+shows such a row with the origin wording "Mapped by the system, not yet confirmed" and names the rule; a total
+that includes such rows states how many of them are unconfirmed.
+
+**Confirming and correcting.** A person confirms or corrects a call through `decisions.record` with their name
+and a reason (8.8): `confirm_phone_reading` stores a labelled standard reason (`reason_kind = standard`) built
+from what was shown; `correct_phone_reading` offers choices from a closed list per rule part and requires a
+typed reason. A confirmation sets the rows of that rule on that extraction to `reviewed`. A correction is a new
+reading for the case: the applier re-derives from the generic rows (never from a new capture) with the
+corrected choice, the call becomes `corrected`, and the call and rows of the original version stay readable.
+It also writes a `phone_mapping_proposals` row (`case_correction`); a new global version is an admin change
+(6.8 steps 3 to 5), and its new id re-derives every extraction through the set id (6.6) while the earlier
+version's calls stay visible beside the new ones.
+
+**Queue.** The Needs a decision page (07 section 5, readings group) lists the open calls of a case grouped by
+phone and type; confirming a whole rule on a phone is one action.
+
+*Reverse if* a confirmed-only mode is wanted for a case: rows at `applied_unconfirmed` would then be left out
+of that case's views until confirmed.
 
 ### 6.9 Initial `type` mappings (to be reviewed; field names are the catalogue's)
 
@@ -1754,6 +1795,14 @@ Each with its reason and what would reverse it.
     and `pv_text` are created with the generic tables (`20261102_phone_read_views`); the communication,
     identity and coverage views are added by the migrations of their tables, each replacing the earlier
     definition, instead of one migration for all (12.1).
+44. **Job-written mappings apply at once; each rule is one judgement call** (Neil, 2026-10-29; 6.10). Every
+    mapping row a build job writes is applied as `applied_unconfirmed` and opens one call per (extraction,
+    rule, version) with its count, three samples and its evidence, for a person to confirm or correct through
+    `decisions.record`. A computed end time (start plus duration) marks no generic row: the summary row belongs
+    to the `record` rule and the comm event of 6.9 names the end-time rule; the end-time call counts the records
+    that carry a duration. The interpreter's built-in sensitive list (5.5) is always kept beside the
+    `sensitive_fields` mapping, so a mapping change can add a sensitive field but never remove one. *Reverse
+    if* a confirmed-only mode is wanted for a case.
 
 ## 15. Not yet established
 

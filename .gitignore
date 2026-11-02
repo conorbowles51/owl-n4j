@@ -81,8 +81,9 @@ neo4j/plugins/
 
 # Data and temporary files
 data/
-# Structure-only phone registry data (02 section 3.5); never evidence
+# Structure-only phone registry and mapping data (02 sections 3.5, 6.2); never evidence
 !backend/services/phone/data/
+!backend/services/phone/mappings/data/
 # `data/` above matches any directory of that name at any depth, which catches
 # source directories too. The landing site's case data is source, not a volume.
 !landing/src/data/

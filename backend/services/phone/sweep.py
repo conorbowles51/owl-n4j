@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 IDLE_SECONDS = 30
 BACKOFF_SECONDS = (30, 60, 120, 300, 600)
-_hooks = {"mapping_set": None, "apply": [], "decision_revision": None}
+_hooks = {"mapping_set": None, "apply": [], "decision_revision": None, "sensitive": None}
 
 
 def register_mapping_set(fn):
@@ -44,6 +44,17 @@ def register_applier(fn):
 def register_decision_revision(fn):
     """``fn(conn, extraction_id) -> str`` (8.8: sha256 over the extraction's phone decisions)."""
     _hooks["decision_revision"] = fn
+
+
+def register_sensitive_fields(fn):
+    """``fn() -> frozenset((type, field))``; the loader's ``sensitive_fields`` mapping (5.5). The interpreter's
+    built-in list is always kept as well, so a mapping change can add a sensitive field but never remove one."""
+    _hooks["sensitive"] = fn
+
+
+def sensitive_fields():
+    fn = _hooks["sensitive"]
+    return generic.SENSITIVE_DEFAULT | (fn() if fn else frozenset())
 
 
 def mapping_set(conn):
@@ -137,7 +148,7 @@ def interpret_one(engine, extraction_id) -> dict:
             set_id, named = mapping_set(conn)
             obs = registry.observe_extraction(conn, extraction_id, named)
             new_gen = generation + 1
-            counts = generic.interpret(conn, extraction_id, new_gen)
+            counts = generic.interpret(conn, extraction_id, new_gen, sensitive=sensitive_fields())
             applied = {}
             for fn in _hooks["apply"]:
                 applied.update(fn(conn, extraction_id, new_gen) or {})
