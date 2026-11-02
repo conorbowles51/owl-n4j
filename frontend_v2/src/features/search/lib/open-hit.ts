@@ -8,8 +8,16 @@ export function hitPath(caseId: string, hit: SearchHit): string {
   const p = hit.open.params as Record<string, string | number | null | undefined>
   const enc = (v: unknown) => encodeURIComponent(String(v))
   switch (hit.open.screen) {
-    case "conversations":
-      return `${c}/phones/${enc(p.phone)}/records/conversations?${p.thread ? `thread=${enc(p.thread)}&` : ""}record=${enc(hit.record_uid)}`
+    case "conversations": {
+      // the whole unfiltered thread at that message, the search's matches marked (S-8)
+      const q = new URLSearchParams()
+      if (p.thread) q.set("thread", String(p.thread))
+      else q.set("record", String(hit.record_uid))
+      if (p.event) q.set("at", String(p.event))
+      if (p.q) q.set("hl", String(p.q))
+      if (p.exact) q.set("hlexact", "1")
+      return `${c}/phones/${enc(p.phone)}/records/conversations?${q}`
+    }
     case "people":
       return `${c}/conversations?tab=people&people=${enc(p.people)}`
     case "dossier":

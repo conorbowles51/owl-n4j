@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { useEffect, useMemo, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useLocation, useNavigate } from "react-router-dom"
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { failureText } from "@/features/phones/api"
@@ -20,6 +20,22 @@ export function SearchDialog({ caseId }: { caseId: string }) {
   const [exact, setExact] = useState(false)
   const [value, setValue] = useState("")
   const navigate = useNavigate()
+  const location = useLocation()
+  const listRef = useRef<HTMLDivElement>(null)
+  const restoreScroll = useRef<number | null>(null)
+  const handledKey = useRef<string | null>(null)
+
+  // Back to the page a hit was opened from reopens the results where they were (S-9).
+  useEffect(() => {
+    const saved = (location.state as { caseSearch?: { q: string; exact: boolean; scroll: number } } | null)?.caseSearch
+    if (!saved || handledKey.current === location.key) return
+    handledKey.current = location.key
+    setTyped(saved.q)
+    setQ(saved.q)
+    setExact(saved.exact)
+    restoreScroll.current = saved.scroll
+    setOpen(true)
+  }, [location.key, location.state])
 
   useEffect(() => {
     const toggle = () => setOpen((o) => !o)
@@ -55,9 +71,21 @@ export function SearchDialog({ caseId }: { caseId: string }) {
 
   const go = (path: string) => {
     rememberQuery(q)
+    // this entry remembers the search, so Back to it shows the same results at the same place (S-9)
+    navigate(`${location.pathname}${location.search}${location.hash}`, {
+      replace: true,
+      state: { ...((location.state as object | null) ?? {}), caseSearch: { q, exact, scroll: listRef.current?.scrollTop ?? 0 } },
+    })
+    handledKey.current = null
     setOpen(false)
     navigate(path)
   }
+
+  useEffect(() => {
+    if (restoreScroll.current === null || !shown.length || !listRef.current) return
+    listRef.current.scrollTop = restoreScroll.current
+    restoreScroll.current = null
+  }, [shown])
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -75,7 +103,7 @@ export function SearchDialog({ caseId }: { caseId: string }) {
             </label>
             {res.isFetching && <span role="status">Searching</span>}
           </div>
-          <CommandList className="max-h-[60vh]">
+          <CommandList ref={listRef} className="max-h-[60vh]">
             <SearchBody
               q={q}
               typed={typed}
@@ -132,7 +160,12 @@ function SearchBody(props: {
   if (!data) return <p className="p-4 text-sm text-muted-foreground">Searching for {q || typed.trim()}</p>
   return (
     <>
-      {data.short && <p className="px-4 pt-3 text-xs">{data.short} Shorter text is matched against numbers and identifiers only.</p>}
+      {data.short && (
+        <div className="px-4 pt-3 text-xs">
+          <p>{data.short}</p>
+          <p className="text-muted-foreground">Shorter text is matched against numbers and identifiers only.</p>
+        </div>
+      )}
       {shown.length === 0 && <p className="p-4 text-sm">Nothing in this case matches {data.query}.</p>}
       {shown.map((g) => (
         <CommandGroup key={g.group} heading={`${GROUP_NAMES[g.group] ?? g.group} (${g.total.toLocaleString("en-US")})`}>

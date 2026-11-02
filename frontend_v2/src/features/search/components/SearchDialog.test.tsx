@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom"
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { SearchResult } from "../api"
 
@@ -28,7 +28,13 @@ function result(over: Partial<SearchResult> = {}): SearchResult {
 
 function Where() {
   const l = useLocation()
-  return <p data-testid="where">{l.pathname + l.search}</p>
+  const navigate = useNavigate()
+  return (
+    <>
+      <p data-testid="where">{l.pathname + l.search}</p>
+      <button data-testid="back" onClick={() => navigate(-1)} />
+    </>
+  )
 }
 
 function page() {
@@ -88,22 +94,33 @@ describe("Search dialog", () => {
     expect(JSON.parse(sessionStorage.getItem("loupe.search.recent") ?? "[]")).toEqual(["jose"])
   })
 
-  it("a message hit opens its whole thread with the record beside it; Show all opens Conversations with the text", async () => {
+  it("a message hit opens its whole thread at that message with the search marked (S-8); Show all opens Conversations with the text", async () => {
     page()
     await openAndType("jose")
     fireEvent.click(await screen.findByRole("option", { name: /^C3 WhatsApp message/ }))
-    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/cases/case-1/phones/e1/records/conversations?thread=chat%3Ae1%3At&record=r1"))
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/cases/case-1/phones/e1/records/conversations?thread=chat%3Ae1%3At&at=v1&hl=jose"))
     await openAndType("jose")
     fireEvent.click(await screen.findByRole("option", { name: /Show all 41 in Conversations/ }))
     await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/cases/case-1/conversations?q=jose&kinds=message%2Cchat_activity"))
   })
 
   it("a short query says text needs 3 letters, and Exact characters is sent", async () => {
-    api.searchCase.mockResolvedValue(result({ query: "jo", short: "Type at least 3 letters to search text.", groups: [] }))
+    api.searchCase.mockResolvedValue(result({ query: "jo", short: "Type at least 3 letters.", groups: [] }))
     page()
     await openAndType("jo")
-    expect(await screen.findByText(/Type at least 3 letters to search text\./)).toBeInTheDocument()
+    expect(await screen.findByText("Type at least 3 letters.")).toBeInTheDocument()
     fireEvent.click(screen.getByRole("checkbox", { name: "Exact characters" }))
     await waitFor(() => expect(api.searchCase).toHaveBeenCalledWith("case-1", "jo", true, expect.anything()))
+  })
+  it("Back from an opened hit shows the same results again (S-9)", async () => {
+    page()
+    await openAndType("jose")
+    fireEvent.click(await screen.findByText("synthetic.pdf · page 2", { exact: false }))
+    await waitFor(() => expect(screen.getByTestId("where").textContent).not.toBe("/cases/case-1/graph"))
+    expect(screen.queryByPlaceholderText("Search words, names, numbers or accounts")).toBeNull()
+    fireEvent.click(screen.getByTestId("back"))
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/cases/case-1/graph"))
+    expect(await screen.findByPlaceholderText("Search words, names, numbers or accounts")).toHaveValue("jose")
+    expect(await screen.findByText("People and identifiers (1)")).toBeInTheDocument()
   })
 })

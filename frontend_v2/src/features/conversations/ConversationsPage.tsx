@@ -16,12 +16,14 @@ import {
   markReviewed,
   undoReviewed,
   type ThreadSort,
+  streamLocate,
 } from "@/features/phones/api"
 import { liveCollectClient, undoCollect, type CollectLink, type CollectResult, type CollectTarget } from "@/features/phones/collect.api"
 import { PhoneRecordPanel } from "@/features/phones/components/RecordPanel"
 import { StreamList } from "@/features/phones/components/StreamList"
 import { useCollectTargets, useUsedIn } from "@/features/phones/hooks/use-collect"
 import { useStream } from "@/features/phones/hooks/use-stream"
+import { useThreadMatches } from "./use-thread-matches"
 import { viewFromSearch, viewToFilter, viewToSearch, type ConversationView } from "@/features/phones/lib/filter-url"
 import { rememberSpot } from "@/features/phones/lib/continue-reading"
 import { labelText } from "@/features/phones/lib/labels"
@@ -128,8 +130,41 @@ export function ConversationsPage() {
   const [focused, setFocused] = useState<StreamRow | null>(null)
   const [selection, setSelection] = useState<{ rows: StreamRow[]; all: boolean }>({ rows: [], all: false })
   const onSelectionChange = useCallback((rows: StreamRow[], all: boolean) => setSelection({ rows, all }), [])
-  const [jump, setJump] = useState<{ day: string | null; seq: number } | null>(null)
+  const [jump, setJump] = useState<{ day: string | null; seq: number; offset?: number } | null>(null)
   const listRoot = useRef<HTMLDivElement>(null)
+
+  // ---- a search hit: the whole thread, its matches marked, stepped through (03 S-8) -------------------------------
+  const matches = useThreadMatches(view.hl && view.thread ? streamFilter : null, view.hl, view.hlExact)
+  const [matchAt, setMatchAt] = useState(0)
+  const goTo = useCallback(
+    async (eventUid: string) => {
+      if (!streamFilter || !stream.index) return
+      try {
+        const loc = await streamLocate(streamFilter, stream.index.snapshot, eventUid)
+        setJump({ day: loc.day, offset: loc.offset, seq: Date.now() })
+      } catch {
+        /* the message left the list (a stale snapshot re-reads it); the list stays where it is */
+      }
+    },
+    [streamFilter, stream.index],
+  )
+  const arrivedAt = useRef<string | null>(null)
+  useEffect(() => {
+    // open at the hit's message once the list is ready
+    if (!view.at || !streamFilter || !stream.index || arrivedAt.current === view.at) return
+    arrivedAt.current = view.at
+    void goTo(view.at)
+  }, [view.at, streamFilter, stream.index, goTo])
+  useEffect(() => {
+    if (view.at && matches.data) setMatchAt(Math.max(0, matches.data.events.indexOf(view.at)))
+  }, [view.at, matches.data])
+  const stepMatch = (dir: 1 | -1) => {
+    const ev = matches.data?.events ?? []
+    if (!ev.length) return
+    const next = (matchAt + dir + ev.length) % ev.length
+    setMatchAt(next)
+    void goTo(ev[next])
+  }
 
   // ---- Add to… ---------------------------------------------------------------------------------------------------
   const targets = useCollectTargets(caseId)
@@ -488,6 +523,33 @@ export function ConversationsPage() {
               </p>
             )}
           </div>
+          {view.hl && view.thread && (
+            <div className="flex flex-wrap items-center gap-2 border-b bg-status-review-soft px-3 py-1.5 text-xs">
+              <p role="status">
+                {matches.isLoading
+                  ? "Showing the whole conversation. Counting the messages your search matched here."
+                  : matches.data
+                    ? `Showing the whole conversation. Your search matched ${fmt(matches.data.total)} ${matches.data.total === 1 ? "message" : "messages"} here.`
+                    : "Showing the whole conversation. The matches could not be counted."}
+              </p>
+              {matches.data && matches.data.events.length > 1 && (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => stepMatch(-1)}>
+                    Previous match
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => stepMatch(1)}>
+                    Next match
+                  </Button>
+                  <span>
+                    Match {fmt(matchAt + 1)} of {fmt(matches.data.events.length)}
+                  </span>
+                </>
+              )}
+              <Button size="sm" variant="ghost" className="ml-auto" onClick={() => navigate(-1)}>
+                Back to results
+              </Button>
+            </div>
+          )}
           {streamFilter ? (
             <StreamList
               // A new thread, person or filter starts with nothing selected (review of 03-3: Select all carried over).
@@ -501,6 +563,7 @@ export function ConversationsPage() {
               zoneBasis={stream.index?.zone.basis}
               globalKeys
               jumpTo={jump}
+              highlight={view.hl ? { query: view.hl, exact: view.hlExact } : null}
               onOpenRecord={(row) => setRecordUid(row.record_uid)}
               onFocusRow={setFocused}
               onSelectionChange={onSelectionChange}

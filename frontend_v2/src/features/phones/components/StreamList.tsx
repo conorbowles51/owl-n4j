@@ -8,6 +8,7 @@ import type { UseStream } from "../hooks/use-stream"
 import { WINDOW_FAILED } from "../hooks/use-stream"
 import { rowsHtml, rowsText } from "../lib/copy-rows"
 import { LONG_BODY, plural, STALE_COPY, totalWords, undatedWords } from "../lib/stream-words"
+import { matchRanges } from "@/features/search/lib/fold"
 import type { StreamRow } from "../schemas"
 import { Arrow, ParticipantLabel } from "./ParticipantLabel"
 import { rowBadges } from "../lib/badges"
@@ -45,7 +46,9 @@ export interface StreamListProps {
   /** Listen at the window too, so keys work before the list has focus (07 section 4.9). */
   globalKeys?: boolean
   /** Scroll to a day's header ("" for the undated group); `seq` changes for every request. */
-  jumpTo?: { day: string | null; seq: number } | null
+  jumpTo?: { day: string | null; seq: number; offset?: number } | null
+  /** Matches of a search marked in the bodies, without filtering the list (03 S-8). */
+  highlight?: { query: string; exact: boolean } | null
   onSelectionChange?: (rows: StreamRow[], all: boolean) => void
   /** Extra line under a row (e.g. "In 2 dossiers"). */
   rowExtra?: (row: StreamRow) => React.ReactNode
@@ -78,6 +81,7 @@ export function StreamList({
   onKey,
   globalKeys = false,
   jumpTo,
+  highlight,
   onSelectionChange,
   rowExtra,
   className,
@@ -261,8 +265,9 @@ export function StreamList({
     if (!jumpTo) return
     const seg = stream.segments.find((sg) => sg.day === (jumpTo.day || null))
     if (!seg) return
-    virtualizer.scrollToIndex(seg.start, { align: "start" })
-    setFocusIndex(seg.start + 1)
+    const at = jumpTo.offset === undefined ? null : seg.start + 1 + jumpTo.offset
+    virtualizer.scrollToIndex(at ?? seg.start, { align: at === null ? "start" : "center" })
+    setFocusIndex(at ?? seg.start + 1)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per request (seq)
   }, [jumpTo?.seq, stream.segments])
 
@@ -434,7 +439,7 @@ export function StreamList({
                   {row.subject && <p className="font-semibold">{row.subject}</p>}
                   {row.body && (
                     <p className="whitespace-pre-wrap break-words">
-                      {long ? row.body.slice(0, LONG_BODY) : row.body}
+                      {marked(long ? row.body.slice(0, LONG_BODY) : row.body, highlight)}
                       {long && (
                         <Button size="sm" variant="link" onClick={() => setExpanded((p) => new Set(p).add(row.event_uid))}>
                           Show all {row.body.length.toLocaleString("en-US")} characters
@@ -463,4 +468,24 @@ export function StreamList({
       </div>
     </div>
   )
+}
+
+/** A body with a search's matches marked on the original characters (folded the same way as the search). */
+function marked(text: string, highlight: { query: string; exact: boolean } | null | undefined): React.ReactNode {
+  if (!highlight?.query.trim()) return text
+  const ranges = matchRanges(text, highlight.query, highlight.exact)
+  if (!ranges.length) return text
+  const out: React.ReactNode[] = []
+  let pos = 0
+  ranges.forEach(([a, b], i) => {
+    if (a > pos) out.push(text.slice(pos, a))
+    out.push(
+      <mark key={i} className="rounded-sm bg-status-review-soft px-0.5">
+        {text.slice(a, b)}
+      </mark>,
+    )
+    pos = b
+  })
+  if (pos < text.length) out.push(text.slice(pos))
+  return out
 }

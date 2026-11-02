@@ -35,13 +35,17 @@ export interface ConversationView {
   threadSort: ThreadSort
   zone: "phone" | "case" | "utc"
   names: "phone" | "case"
+  /** A search's text marked in the list without filtering it (03 S-8), and the message to open at. */
+  hl: string
+  hlExact: boolean
+  at: string | null
 }
 
 export const DEFAULT_VIEW: ConversationView = {
   tab: "threads", thread: null, record: null, people: [], mode: "involving", expand: false, phones: [], from: null,
   to: null, kinds: [], apps: [], directions: [], deleted: null, unreadable: null, attachment: null, text: "",
   exact: false, everyCopy: false, allChannels: false, sort: "oldest_first", threadSort: "recent", zone: "case",
-  names: "phone",
+  names: "phone", hl: "", hlExact: false, at: null,
 }
 
 const list = (q: URLSearchParams, k: string) => (q.get(k) ? q.get(k)!.split(",").filter(Boolean) : [])
@@ -77,6 +81,9 @@ export function viewFromSearch(search: string, fixedPhone?: string | null): Conv
     threadSort: pick("threads", ["recent", "first", "volume", "unreviewed", "name"] as const, "recent"),
     zone: pick("zone", ["phone", "case", "utc"] as const, "case"),
     names: pick("names", ["phone", "case"] as const, "phone"),
+    hl: q.get("hl") ?? "",
+    hlExact: q.get("hlexact") === "1",
+    at: q.get("at"),
   }
 }
 
@@ -108,6 +115,9 @@ export function viewToSearch(v: ConversationView, fixedPhone?: string | null): s
   set("threads", v.threadSort, "recent")
   set("zone", v.zone, "case")
   set("names", v.names, "phone")
+  set("hl", v.hl.trim())
+  set("hlexact", v.hlExact ? "1" : null)
+  set("at", v.at)
   return q.toString()
 }
 

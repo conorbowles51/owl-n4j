@@ -29,7 +29,7 @@ MAX_PAGE = 200
 MIN_TEXT = 3
 SNIPPET = 60
 NOT_SEARCHED = [{"group": "media", "reason": "Text read from photos, audio and video is not searched yet."}]
-SHORT = "Type at least 3 letters to search text."
+SHORT = "Type at least 3 letters."
 
 
 class SearchError(ValueError):
@@ -109,7 +109,8 @@ def _comm(conn, case_id, group, q, exact, phones, start, end, offset, limit, ctx
             "instant": T.iso(r.sort_instant), "participants": senders.get(r.event_uid, []),
             "record_uid": str(r.record_uid), "evidence_file_id": None,
             "open": {"screen": "conversations", "params": {"phone": str(r.extraction_id), "thread": r.thread_key,
-                                                           "event": str(r.event_uid), "q": q}}})
+                                                           "event": str(r.event_uid), "q": q,
+                                                           "exact": exact}}})
     return total, out
 
 

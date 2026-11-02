@@ -55,3 +55,90 @@ export function fold(text: string | null | undefined, exact = false): string {
   s = s.replace(/[^\p{L}\p{N}\p{M}]/gu, " ")
   return s.replace(/\s+/gu, " ").trim()
 }
+
+function stepsAfterStyle(s: string): string {
+  s = stripFormat(s)
+  s = s.normalize("NFD").replace(/\p{Mn}/gu, "").normalize("NFC")
+  return casefold(s).replace(/[^\p{L}\p{N}\p{M}]/gu, " ")
+}
+
+/**
+ * ``fold`` one character at a time, with the index in ``text`` that produced each folded character, as the
+ * backend's ``fold_with_map`` does: a match at folded[a, b) is text.slice(starts[a], starts[b - 1] + length of
+ * that character) in the original. Indexes are UTF-16 offsets, so they slice JavaScript strings directly.
+ */
+export function foldWithMap(text: string, exact = false): { folded: string; starts: number[]; ends: number[] } {
+  const chars: { at: number; ch: string }[] = []
+  for (let i = 0; i < text.length; ) {
+    const cp = text.codePointAt(i)!
+    const ch = String.fromCodePoint(cp)
+    chars.push({ at: i, ch })
+    i += ch.length
+  }
+  let pieces: string[]
+  if (exact) pieces = chars.map(({ ch }) => casefold(stripFormat(ch)))
+  else {
+    const styled = chars.map(({ ch }) => Array.from(ch.normalize("NFKC"), (c) => STYLED.get(c) ?? c).join(""))
+    for (let i = 0; i < styled.length; ) {
+      if (!styled[i] || /^\s+$/u.test(styled[i])) {
+        i++
+        continue
+      }
+      let j = i
+      while (j < styled.length && styled[j] && !/^\s+$/u.test(styled[j])) j++
+      const scripts = new Set(styled.slice(i, j).flatMap((s) => Array.from(s, script)))
+      if (scripts.has("latin") && (scripts.has("cyrillic") || scripts.has("greek")))
+        for (let k = i; k < j; k++)
+          styled[k] = Array.from(styled[k], (c) => {
+            const s = script(c)
+            return s === "cyrillic" || s === "greek" ? (CONFUSABLE.get(c) ?? c) : c
+          }).join("")
+      i = j
+    }
+    pieces = styled.map(stepsAfterStyle)
+  }
+  const out: string[] = []
+  const starts: number[] = []
+  const ends: number[] = []
+  pieces.forEach((piece, n) => {
+    for (let c of Array.from(piece)) {
+      if (!exact && /\s/u.test(c)) {
+        if (!out.length || out[out.length - 1] === " ") continue
+        c = " "
+      }
+      for (let u = 0; u < c.length; u++) {
+        out.push(u === 0 ? c : "")
+        starts.push(chars[n].at)
+        ends.push(chars[n].at + chars[n].ch.length)
+      }
+    }
+  })
+  // drop the empty placeholders of surrogate pairs so folded indexes match string indexes
+  const folded: string[] = []
+  const s2: number[] = []
+  const e2: number[] = []
+  out.forEach((c, k) => {
+    if (c === "") return
+    for (let u = 0; u < c.length; u++) {
+      folded.push(c[u])
+      s2.push(starts[k])
+      e2.push(ends[k])
+    }
+  })
+  while (!exact && folded.length && folded[folded.length - 1] === " ") {
+    folded.pop()
+    s2.pop()
+    e2.pop()
+  }
+  return { folded: folded.join(""), starts: s2, ends: e2 }
+}
+
+/** Every match of ``query`` in ``text`` as original [start, end) ranges, folded the same way on both sides. */
+export function matchRanges(text: string, query: string, exact = false): [number, number][] {
+  const q = foldWithMap(query, exact).folded
+  if (!q || !text) return []
+  const { folded, starts, ends } = foldWithMap(text, exact)
+  const out: [number, number][] = []
+  for (let at = folded.indexOf(q); at >= 0; at = folded.indexOf(q, at + q.length)) out.push([starts[at], ends[at + q.length - 1]])
+  return out
+}

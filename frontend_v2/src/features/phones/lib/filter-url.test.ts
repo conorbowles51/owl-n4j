@@ -5,7 +5,8 @@ describe("Conversations view in the URL (03 6.4)", () => {
   it("round-trips every filter and leaves defaults out", () => {
     const v = { ...DEFAULT_VIEW, thread: "chat:x:1", people: ["phone:+12025550143", "phone:+12025550188"], mode: "between" as const,
       phones: ["p1"], from: "2023-03-01", to: "2023-03-31", kinds: ["message"], apps: ["WhatsApp"], deleted: true,
-      text: "café", everyCopy: true, allChannels: true, sort: "newest_first" as const, threadSort: "volume" as const }
+      text: "café", everyCopy: true, allChannels: true, sort: "newest_first" as const, threadSort: "volume" as const,
+      hl: "jose", hlExact: true, at: "v2" }
     const s = viewToSearch(v)
     expect(viewFromSearch(s)).toEqual(v)
     expect(viewToSearch(DEFAULT_VIEW)).toBe("")
@@ -33,5 +34,11 @@ describe("Conversations view in the URL (03 6.4)", () => {
     expect(viewToFilter("c", v, "UTC", false).threads).toBeUndefined()
     expect(viewToFilter("c", v, "UTC").threads).toEqual(["t1"])
     expect(viewToSearch(v, "p9")).toBe("thread=t1")
+  })
+
+  it("a search's marks and its message ride in the URL but never filter the thread (S-8)", () => {
+    const v = viewFromSearch("thread=t1&at=v2&hl=jose&hlexact=1")
+    expect([v.hl, v.hlExact, v.at]).toEqual(["jose", true, "v2"])
+    expect(viewToFilter("c", v, "UTC").text).toBeUndefined()
   })
 })

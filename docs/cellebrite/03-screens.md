@@ -1391,7 +1391,7 @@ try/catch, and are gone when the tab closes. Component: `src/features/search/com
 |---|---|---|
 | Grouped first page with exact totals, largest case | 1.5 s p95 | 263,077 message bodies plus other strings in the 10-report case; trigram GIN on folded text |
 | Group page of 200 | 400 ms | |
-| Queries under 3 characters | no trigram; exact identifier lookup only; the dialog says "Type at least 3 letters to search text." | trigram index cannot serve shorter strings efficiently |
+| Queries under 3 characters | no trigram; exact identifier lookup only; the dialog says "Type at least 3 letters." and that shorter text is matched against numbers and identifiers only | trigram index cannot serve shorter strings efficiently |
 
 ### 11.7 Acceptance tests (Search)
 

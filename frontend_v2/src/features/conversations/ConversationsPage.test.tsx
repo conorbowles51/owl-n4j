@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   undoReviewed: vi.fn(),
   markNotACopy: vi.fn(),
   freezeSelection: vi.fn(),
+  streamLocate: vi.fn(),
 }))
 vi.mock("@/features/phones/api", async (orig) => ({ ...(await orig<object>()), ...api }))
 vi.mock("@/features/cases/hooks/use-cases", () => ({ useCase: () => ({ data: { title: "Synthetic case" } }) }))
@@ -24,17 +25,22 @@ vi.mock("@/features/phones/hooks/use-collect", () => ({
   useUsedIn: () => ({ usedIn: {}, refresh: vi.fn() }),
 }))
 const streamFilters = vi.hoisted(() => [] as unknown[])
+const streamState = vi.hoisted(() => ({ index: null as unknown }))
+const threadMatches = vi.hoisted(() => ({ value: { isLoading: false, data: undefined as unknown } }))
+vi.mock("./use-thread-matches", () => ({ useThreadMatches: () => threadMatches.value }))
+const listProps = vi.hoisted(() => ({ last: null as null | { highlight?: unknown; jumpTo?: unknown } }))
 vi.mock("@/features/phones/hooks/use-stream", () => ({
   useStream: (f: unknown) => {
     streamFilters.push(f)
-    return { status: "idle", error: null, index: null, segments: [], count: 0, total: 0, notice: null, item: () => ({ type: "header", segment: 0 }), ensure: vi.fn(), retry: vi.fn(), reload: vi.fn(), positionOf: () => null, allRows: async () => [], setFocused: vi.fn() }
+    return { status: "idle", error: null, index: streamState.index, segments: [], count: 0, total: 0, notice: null, item: () => ({ type: "header", segment: 0 }), ensure: vi.fn(), retry: vi.fn(), reload: vi.fn(), positionOf: () => null, allRows: async () => [], setFocused: vi.fn() }
   },
 }))
 const mounts = vi.hoisted(() => ({ n: 0 }))
 vi.mock("@/features/phones/components/StreamList", async () => {
   const { useEffect } = await import("react")
   return {
-    StreamList: () => {
+    StreamList: (props: { highlight?: unknown; jumpTo?: unknown }) => {
+      listProps.last = props
       useEffect(() => {
         mounts.n += 1
       }, [])
@@ -90,7 +96,29 @@ describe("Conversations", () => {
     api.markReviewed.mockResolvedValue({ thread_key: "t1", review: { by: "x", at: "y", record_count: 3, added_since: 0, words: "w" } })
     api.undoReviewed.mockResolvedValue({ thread_key: "t1", restored: false })
   })
-  afterEach(() => vi.clearAllMocks())
+  afterEach(() => {
+    vi.clearAllMocks()
+    streamState.index = null
+    threadMatches.value = { isLoading: false, data: undefined }
+  })
+
+  it("a search hit shows the whole thread, says how many messages matched, marks them and steps through them (S-8)", async () => {
+    streamState.index = { snapshot: "s", zone: { label: "UTC" }, items: [], counts: {} }
+    threadMatches.value = { isLoading: false, data: { total: 3, events: ["v1", "v2", "v3"] } }
+    api.streamLocate.mockResolvedValue({ day: "2023-03-14", offset: 4 })
+    page("/cases/case-1/conversations?thread=t1&at=v2&hl=jose")
+    expect(await screen.findByText("Showing the whole conversation. Your search matched 3 messages here.")).toBeInTheDocument()
+    await waitFor(() => expect(api.streamLocate).toHaveBeenCalledWith(expect.anything(), "s", "v2"))
+    expect(await screen.findByText("Match 2 of 3")).toBeInTheDocument()
+    expect(listProps.last?.highlight).toEqual({ query: "jose", exact: false })
+    await waitFor(() => expect(listProps.last?.jumpTo).toMatchObject({ day: "2023-03-14", offset: 4 }))
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }))
+    await waitFor(() => expect(api.streamLocate).toHaveBeenCalledWith(expect.anything(), "s", "v3"))
+    expect(await screen.findByText("Match 3 of 3")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }))
+    expect(await screen.findByText("Match 1 of 3")).toBeInTheDocument()  // wraps round
+    expect(screen.getByRole("button", { name: "Back to results" })).toBeInTheDocument()
+  })
 
   it("opens the first thread on arrival so the keys act at once (D-38), in the URL", async () => {
     page()
