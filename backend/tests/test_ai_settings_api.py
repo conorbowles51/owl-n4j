@@ -77,8 +77,13 @@ class AISettingsAPITests(unittest.TestCase):
         self.assertFalse(any(reads[m["id"]] for m in payload["models"] if m["provider"] in ("anthropic", "gemini")))
         chain = payload["routing"]["financial_vision"]["chain"]
         self.assertEqual([e["provider"] for e in chain], ["deepseek", "openai"])
-        # The chain workload does not turn a one-provider profile into a mix.
-        self.assertEqual(payload["default_provider"], "openai")
+        # The chain workload does not turn a one-provider profile into a mix; statement claim drafting runs on
+        # DeepSeek by default (04 section 9.2 step 4), so the shipped policy is a mix of two providers.
+        routing = payload["routing"]
+        self.assertEqual(routing["statement_claim_drafting"]["provider"], "deepseek")
+        self.assertEqual({e["provider"] for w, e in routing.items()
+                          if not e.get("chain") and w != "statement_claim_drafting"}, {"openai"})
+        self.assertEqual(payload["default_provider"], "mixed")
 
     def test_deepseek_only_switch_is_on_by_default_and_switching_it_is_recorded(self):
         from services import ai_model_capabilities as cap

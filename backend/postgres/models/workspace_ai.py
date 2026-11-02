@@ -43,7 +43,7 @@ class WorkspaceAIOutput(Base, TimestampMixin):
             name="ck_workspace_ai_outputs_target_type",
         ),
         CheckConstraint(
-            "output_type IN ('statement_summary', 'statement_comparison', 'theory_analysis')",
+            "output_type IN ('statement_summary', 'statement_comparison', 'theory_analysis', 'statement_claims')",
             name="ck_workspace_ai_outputs_output_type",
         ),
         CheckConstraint(

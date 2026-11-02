@@ -58,6 +58,12 @@ def supersede(conn, old, new):
                       "WHERE id = :o"), {"n": new, "o": old})
 
 
+
+@pytest.fixture(autouse=True)
+def _feed_inbox(monkeypatch, tmp_path):
+    from services import manual_changes
+    monkeypatch.setattr(manual_changes, "INBOX", tmp_path / "inbox.jsonl")  # never the real feed inbox
+
 @needs_template
 def test_the_lane_holds_admitted_rows_on_their_dates_and_never_a_time_of_day():
     with fresh_engine() as engine:

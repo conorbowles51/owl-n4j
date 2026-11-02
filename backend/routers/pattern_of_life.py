@@ -12,7 +12,7 @@ from uuid import UUID
 
 from datetime import date as date_type
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -563,3 +563,36 @@ def post_evaluation_attach(claim_id: UUID, evaluation_id: UUID, body: AttachRequ
         raise HTTPException(status_code=422, detail=str(exc))
     db.commit()
     return _jsonable(out)
+
+
+class ClaimDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    dossier_id: UUID
+    interview_ids: list[UUID] = Field(default_factory=list, max_length=20)
+    conversation_locator: str | None = Field(default=None, max_length=512)
+    subject: dict
+
+
+@router.post("/{case_id}/claim-drafts")
+def post_claim_drafts(body: ClaimDraftRequest, background_tasks: BackgroundTasks,
+                      case_id: UUID = Depends(require_case_edit), db: Session = Depends(get_db),
+                      user=Depends(get_current_db_user)):
+    """Model drafting of claims from interviews or a conversation (04 section 9.2): a Workspace AI output of type
+    ``statement_claims`` under the ``statement_claim_drafting`` workload. Reviewed and accepted like any Workspace AI
+    output; accepting makes draft claims for a person to confirm."""
+    from services.workspace_ai_service import (WorkspaceAIError, WorkspaceAINotFound, create_output,
+                                               run_output_in_background)
+    resolve(db, case_id, json.dumps(body.subject))  # 404 when the phone or person is not in this case
+    if not body.interview_ids and not body.conversation_locator:
+        raise HTTPException(status_code=400, detail="Choose an interview or a conversation to draft from.")
+    try:
+        out = create_output(db, case_id=case_id, target_type="dossier", target_id=body.dossier_id,
+                            output_type="statement_claims", requested_by=user, interview_ids=body.interview_ids,
+                            subject=body.subject, conversation=body.conversation_locator)
+    except WorkspaceAINotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except WorkspaceAIError as exc:
+        status = 404 if "not in this case" in str(exc) else 400
+        raise HTTPException(status_code=status, detail=str(exc))
+    background_tasks.add_task(run_output_in_background, UUID(out["id"]))
+    return out

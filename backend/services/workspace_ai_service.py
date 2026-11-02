@@ -29,7 +29,7 @@ from services import phone_files
 from services.workspace_entry_service import add_entry_links
 
 
-OUTPUT_TYPES = {"statement_summary", "statement_comparison", "theory_analysis"}
+OUTPUT_TYPES = {"statement_summary", "statement_comparison", "theory_analysis", "statement_claims"}
 TERMINAL_JOB_STATES = {"completed", "failed", "cancelled"}
 MAX_SOURCE_CHUNKS = 36
 MAX_SOURCE_CHARACTERS = 72_000
@@ -84,8 +84,8 @@ def _load_target(
     output_type: str,
 ) -> CaseProfile | WorkspaceEntry:
     if target_type == "dossier":
-        if output_type not in {"statement_summary", "statement_comparison"}:
-            raise WorkspaceAIError("Dossiers support statement summaries and comparisons")
+        if output_type not in {"statement_summary", "statement_comparison", "statement_claims"}:
+            raise WorkspaceAIError("Dossiers support statement summaries, comparisons and drafted claims")
         target = db.scalar(
             select(CaseProfile).where(
                 CaseProfile.id == target_id,
@@ -297,7 +297,8 @@ def _public_source(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _load_evidence_with_text(db: Session, evidence_ids: list[uuid.UUID]) -> list[EvidenceFile]:
+def _load_evidence_with_text(db: Session, evidence_ids: list[uuid.UUID],
+                             phone_files_in_full: bool = False) -> list[EvidenceFile]:
     if not evidence_ids:
         return []
     rows = db.scalars(
@@ -307,7 +308,9 @@ def _load_evidence_with_text(db: Session, evidence_ids: list[uuid.UUID]) -> list
     ).unique().all()
     # A phone file used in a dossier is not an AI source without the case's external-processing decision
     # (07 section 6.4 item 4).
-    by_id = {item.id: item for item in rows if phone_files.external_processing_allowed(db, item)}
+    # Statement claim drafting reads the case's phone material in full (04 section 9.2 step 4, Neil 2026-11-01).
+    by_id = {item.id: item for item in rows
+             if phone_files_in_full or phone_files.external_processing_allowed(db, item)}
     return [by_id[item_id] for item_id in evidence_ids if item_id in by_id]
 
 
@@ -317,6 +320,7 @@ def _interview_sources(
     case_id: uuid.UUID,
     dossier_id: uuid.UUID,
     interview_ids: list[uuid.UUID],
+    phone_files_in_full: bool = False,
 ) -> list[dict[str, Any]]:
     interviews = db.scalars(
         select(DossierInterview).where(
@@ -343,7 +347,7 @@ def _interview_sources(
         links_by_interview[link.interview_id].append(link)
         if link.evidence_file_id not in evidence_ids:
             evidence_ids.append(link.evidence_file_id)
-    files = {item.id: item for item in _load_evidence_with_text(db, evidence_ids)}
+    files = {item.id: item for item in _load_evidence_with_text(db, evidence_ids, phone_files_in_full)}
     withheld = set(db.scalars(select(EvidenceFile.id).where(
         EvidenceFile.id.in_(evidence_ids), EvidenceFile.source_type == phone_files.SOURCE_TYPE,
     )).all()) - set(files) if evidence_ids else set()
@@ -496,7 +500,11 @@ def create_output(
     output_type: str,
     requested_by: User,
     interview_ids: list[uuid.UUID] | None = None,
+    subject: dict[str, Any] | None = None,
+    conversation: str | None = None,
 ) -> dict[str, Any]:
+    """``subject`` and ``conversation`` are for ``statement_claims`` (04 section 9.2): the phone or person the drafted
+    claims are about, and a conversation whose text is the statement (instead of interviews)."""
     target_type = str(target_type).strip().lower()
     output_type = str(output_type).strip().lower()
     if output_type not in OUTPUT_TYPES:
@@ -515,7 +523,30 @@ def create_output(
 
     selected_interviews: list[uuid.UUID] = []
     retrieval: dict[str, Any] = {}
-    if target_type == "dossier":
+    drafting_input: dict[str, Any] = {}
+    if output_type == "statement_claims":
+        from services.pattern_of_life import drafting
+        try:
+            resolved = drafting.check_subject(db, case_id, subject)
+            for value in interview_ids or []:
+                interview_id = _uuid(value, "interview identifier")
+                if interview_id not in selected_interviews:
+                    selected_interviews.append(interview_id)
+            if conversation:
+                sources, reading = drafting.conversation_sources(db, case_id, str(conversation))
+                retrieval = {"conversation": reading}
+            elif selected_interviews:
+                # the case's phone material is read in full for drafting (04 section 9.2 step 4)
+                sources = _interview_sources(db, case_id=case_id, dossier_id=target_id,
+                                             interview_ids=selected_interviews, phone_files_in_full=True)
+            else:
+                raise WorkspaceAIError("Select an interview or a conversation")
+        except drafting.DraftingError as exc:
+            raise WorkspaceAIError(str(exc)) from exc
+        target_snapshot = {"display_name": target.display_name}
+        drafting_input = {"subject": resolved["subject"], "conversation": conversation,
+                          "subject_label": resolved.get("name") or target.display_name}
+    elif target_type == "dossier":
         for value in interview_ids or []:
             interview_id = _uuid(value, "interview identifier")
             if interview_id not in selected_interviews:
@@ -555,6 +586,7 @@ def create_output(
             "target_snapshot": target_snapshot,
             "retrieval": retrieval,
             "sources": sources,
+            **drafting_input,
         },
     )
     db.add(item)
@@ -588,6 +620,9 @@ Target snapshot:
 Sources:
 {_source_lines(sources)}
 """
+    if item.output_type == "statement_claims":
+        from services.pattern_of_life import drafting
+        return drafting.prompt(common, generation_input)
     if item.output_type == "statement_summary":
         return common + """
 Create a detailed statement summary. Schema:
@@ -608,8 +643,9 @@ def _default_generator(
     db: Session,
     *,
     prompt: str,
+    workload: str = "workspace_analysis",
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    provider, model_id = get_workload_model(db, "workspace_analysis")
+    provider, model_id = get_workload_model(db, workload)
     api_key = get_provider_api_key(db, provider)
     if not api_key:
         raise WorkspaceAIError(f"{provider.title()} is not configured for Workspace AI")
@@ -647,6 +683,9 @@ def validate_generated_content(
     content: dict[str, Any],
     sources: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if output_type == "statement_claims":
+        from services.pattern_of_life import drafting
+        return drafting.validate(content, sources)
     if not isinstance(content, dict):
         raise WorkspaceAIError("Generated content must be an object")
     lookup = {str(item.get("source_id")): item for item in sources}
@@ -727,6 +766,9 @@ def _proposed_actions(
     content: dict[str, Any],
     citations: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    if item.output_type == "statement_claims":
+        from services.pattern_of_life import drafting
+        return drafting.proposed_actions(item, content, citations)
     if item.target_type == "dossier":
         links: list[dict[str, Any]] = []
         seen: set[str] = set()
@@ -811,7 +853,8 @@ def run_output(
         sources = list((item.generation_input or {}).get("sources") or [])
         prompt = _prompt_for(item, mandate.block)
         if generator is None:
-            raw_content, model_metadata = _default_generator(db, prompt=prompt)
+            workload = "statement_claim_drafting" if item.output_type == "statement_claims" else "workspace_analysis"
+            raw_content, model_metadata = _default_generator(db, prompt=prompt, workload=workload)
         else:
             generated = generator(prompt, sources, item)
             if isinstance(generated, tuple):
@@ -979,7 +1022,19 @@ def accept_output(
     if {citation["source_id"] for citation in citations} != {citation["source_id"] for citation in (item.citations or [])}:
         raise WorkspaceAIConflict("Stored citations no longer match the generated content")
     accepted: list[dict[str, Any]] = []
-    if item.target_type == "dossier":
+    if item.output_type == "statement_claims":
+        from services.pattern_of_life import drafting
+        try:
+            accepted.extend(drafting.accept(db, item, reviewer))
+        except drafting.DraftingError as exc:
+            raise WorkspaceAIConflict(str(exc)) from exc
+        except Exception as exc:  # a claim the drafts cannot become (the subject left the case): nothing is saved
+            from services.pattern_of_life.claims import ClaimError
+            if isinstance(exc, ClaimError):
+                db.rollback()
+                raise WorkspaceAIConflict(str(exc)) from exc
+            raise
+    elif item.target_type == "dossier":
         action = (item.proposed_actions or [None])[0]
         if not isinstance(action, dict) or action.get("action") != "create_dossier_assessment":
             raise WorkspaceAIConflict("The output has no valid Dossier assessment proposal")

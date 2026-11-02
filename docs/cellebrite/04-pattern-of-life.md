@@ -1129,11 +1129,16 @@ segment (`source_anchor` = `{"evidence_file_id", "start_seconds", "end_seconds"}
    counterpart (date pickers seeded by a deterministic parser of `window_text` against the interview
    date), then confirms. Accepting creates `pol_claim` rows with `origin = 'ai_draft'`, `status =
    'draft'`; each becomes `confirmed` only by an explicit confirm with the confirming user recorded.
-4. **Model location**: the drafting runs under a new workload `statement_claim_drafting` through the
-   existing model policy (`ai_model_policy.py:17-58`, `:64-97`), reading the case's phone material in full
-   with no separate case setting (plan standing decision 8; 07 section 7.1 and J-9). Only extractions of
-   the case the request is made in are read. Claims can also be typed. A drafted claim is marked "Drafted
-   by <model>, not confirmed" until each field is confirmed.
+4. **Model location**: the drafting runs under the workload `statement_claim_drafting` of the model policy
+   (`ai_model_policy.py`; DeepSeek by default), reading the case's phone material in full with no separate
+   case setting (plan standing decision 8; 07 section 7.1 and J-9). Only material of the case the request is
+   made in is read: an interview of the case's dossier, or a conversation of the case (404 otherwise). A
+   conversation is read oldest first in sources of 40 messages, up to 2,000 messages or 72,000 characters; a
+   longer one is read up to the bound and the output states how much it read. Every drafted claim cites a
+   supplied source and quotes the statement, or the output is rejected; any time field the model returns is
+   discarded and counted (`discarded_fields`). Claims can also be typed. A drafted claim is marked "Drafted
+   by <model>, not confirmed" until a person sets its window and confirms it. When the model call fails the
+   panel says "AI drafting could not run. Enter claims by hand, or try again."
 
 ### 9.3 Evaluation inputs
 
@@ -1444,8 +1449,12 @@ Each is a decision with its reasoning and what would reverse it.
     add links but never set an outcome. Follows standing decision 5.
 12. **AI claim drafting reads the case's phone material in full through the existing model policy.**
     Standing decision 8 gives the case's own agent and AI tools full phone visibility, scoped to the case;
-    the external-processing decision of 02 section 8.8 governs only the other outbound services. Reverse
-    if Neil restricts the agent's visibility.
+    the external-processing decision of 02 section 8.8 governs only the other outbound services. Drafting
+    runs under its own workload, `statement_claim_drafting`, DeepSeek (`deepseek-v4-pro`) by default and
+    switched on the AI settings page like any workload (each provider profile names its own model for it). It
+    reads a phone file linked to an interview, and a conversation's text, with no external-processing decision
+    (`_interview_sources(..., phone_files_in_full=True)`, `drafting.conversation_sources`). Reverse if Neil
+    restricts the agent's visibility.
 13. **New Workspace link target types `phone_record` and `statement_check`** rather than overloading
     `evidence` or `timeline_event`, registered in lx-collect's link-type registry rather than migrated
     here. A phone record is not an evidence file and must open to its locator.
@@ -1620,6 +1629,17 @@ Each is a decision with its reasoning and what would reverse it.
     reported. The `statement_check` resolver is registered at start-up. "What would contradict this?" lists towers
     not placed, app usage not read as use, and photo locations not used. *Reverse if* Neil wants tolerance as total
     minutes of use allowed, or a confirmed claim to stay confirmed through edits of its words only.
+
+30. **Claim drafting as built (04-U12; `services/pattern_of_life/drafting.py`, Workspace AI output type
+    `statement_claims`, migration `20261102_pol_claim_drafts`, `POST .../claim-drafts`).** A draft always has a
+    dossier as its Workspace AI target (the person whose statement it is), whether it reads that dossier's
+    interviews or a conversation, so it is reviewed, versioned and accepted with the other Workspace AI outputs.
+    Accepting creates one `pol_claim` per drafted claim: `origin = 'ai_draft'`, `status = 'draft'`, no window,
+    the model named in `ai_model`, and the quote, citations (with their transcript or message anchors), and the
+    model's words for the subject and the other side kept in `source_anchor`; a place given in words becomes
+    `place = {"text"}`, which must be resolved before confirming. The reviewer who accepts is the claim's
+    creator; the claim still reads "Drafted by <model>, not confirmed" until confirmed (decision 29). *Reverse
+    if* a conversation draft should stand without a dossier (then a phone-thread Workspace AI target).
 
 ## 15. Not yet established
 

@@ -43,6 +43,12 @@ def confirmed(conn, case, actor, kind, subject, a, b, **extra):
     return claims.confirm(conn, case, c["id"], c["version"], actor)
 
 
+
+@pytest.fixture(autouse=True)
+def _feed_inbox(monkeypatch, tmp_path):
+    from services import manual_changes
+    monkeypatch.setattr(manual_changes, "INBOX", tmp_path / "inbox.jsonl")  # never the real feed inbox
+
 @needs_template
 def test_inactive_is_consistent_over_a_recording_night_and_contradicted_by_an_unlock(hooks):
     setup(hooks)
