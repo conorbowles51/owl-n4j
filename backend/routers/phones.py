@@ -30,6 +30,21 @@ class FlagTransition(BaseModel):
     reason: str = Field(min_length=1, max_length=4000)
 
 
+@router.get("/compare")
+def compare_phones(case_id: UUID = Query(...), a: UUID = Query(...), b: UUID = Query(...),
+                   person: Optional[str] = Query(None, max_length=512), db: Session = Depends(get_db),
+                   user: User = Depends(get_current_db_user)):
+    """Compare two phones of the case (07 J-16): messages and calls on both, only on one, only on the other."""
+    from services.phone import compare as phone_compare
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        return phone_compare.compare(db.connection(), case_id, a, b, person=person or None)
+    except phone_compare.NotFound:
+        raise HTTPException(status_code=404, detail="Both phones must be in this case.")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.get("/registry/flags")
 def list_registry_flags(state: Optional[FlagState] = None, db: Session = Depends(get_db),
                         _: User = Depends(require_admin)):

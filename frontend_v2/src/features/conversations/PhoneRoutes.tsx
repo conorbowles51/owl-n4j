@@ -1,6 +1,9 @@
 import { useQuery } from "@tanstack/react-query"
+import { useState } from "react"
 import { Link, Navigate, useLocation, useParams } from "react-router-dom"
 import { failureText, getPhones, getRecord } from "@/features/phones/api"
+import { Button } from "@/components/ui/button"
+import { ComparePhones } from "@/features/phones/components/ComparePhones"
 import { phoneQueryTarget } from "./phone-query"
 
 /**
@@ -14,6 +17,7 @@ export function PhonesIndexPage() {
   const location = useLocation()
   const target = phoneQueryTarget(caseId, location.search)
   const phones = useQuery({ queryKey: ["phones", caseId], queryFn: () => getPhones(caseId), enabled: !!caseId && !target })
+  const [comparing, setComparing] = useState(false)
   if (target) return <Navigate to={target} replace />
   const q = new URLSearchParams(location.search)
   const unsupported = ["file", "selection", "view"].find((k) => q.get(k))
@@ -28,6 +32,14 @@ export function PhonesIndexPage() {
       {phones.isLoading && <p className="text-sm">Loading the phones</p>}
       {phones.isError && <p role="alert">{failureText(phones.error, "The phones could not be loaded.")}</p>}
       {phones.data && phones.data.phones.length === 0 && <p className="text-sm">This case has no phone yet.</p>}
+      {(phones.data?.phones.length ?? 0) >= 2 && (
+        <div>
+          <Button size="sm" variant="outline" aria-expanded={comparing} onClick={() => setComparing((v) => !v)}>
+            Compare phones
+          </Button>
+        </div>
+      )}
+      {comparing && phones.data && <ComparePhones caseId={caseId} phones={phones.data.phones} />}
       <ul className="flex flex-col gap-1">
         {(phones.data?.phones ?? []).map((p) => (
           <li key={p.extraction_id}>

@@ -1,4 +1,5 @@
 import { ApiError, fetchAPI } from "@/lib/api-client"
+import { z } from "zod"
 import {
   ParticipantListSchema,
   ProfileSchema,
@@ -158,6 +159,24 @@ export async function getProfile(caseId: string, extractionId: string) {
 }
 
 /** Set whose phone this is (03 section 7.3): a set_phone_owner decision with the person's reason. */
+const CompareCountsSchema = z.object({ both: z.number(), only_a: z.number(), only_a_outside: z.number(), only_b: z.number(), only_b_outside: z.number() })
+const CompareSideSchema = z.object({ extraction_id: z.string(), label: z.string(), first: z.string().nullable(), last: z.string().nullable(), no_time: z.number() })
+export const CompareSchema = z.object({
+  case_id: z.string(),
+  person: z.string().nullable(),
+  a: CompareSideSchema,
+  b: CompareSideSchema,
+  kinds: z.object({ message: CompareCountsSchema, call: CompareCountsSchema }),
+  key: z.string(),
+})
+export type PhoneComparison = z.infer<typeof CompareSchema>
+
+export async function comparePhones(caseId: string, a: string, b: string, person?: string | null, signal?: AbortSignal) {
+  const q = new URLSearchParams({ case_id: caseId, a, b })
+  if (person) q.set("person", person)
+  return CompareSchema.parse(await fetchAPI(`/api/phones/compare?${q}`, { signal }))
+}
+
 export async function setPhoneLabel(caseId: string, extractionId: string, label: string, reason: string) {
   return fetchAPI<{ decision_id: string; label: string; before: string | null }>(`/api/phones/${encodeURIComponent(extractionId)}/label`, {
     method: "POST",

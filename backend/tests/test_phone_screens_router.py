@@ -417,3 +417,33 @@ def test_naming_a_phone_is_a_decision_with_its_reason_and_every_screen_uses_the_
     assert d.before == {"label": before[ext]} and d.after == {"label": "C9 exhibit"} and mc == 1
     after = {p["extraction_id"]: p["label"] for p in c.get("/api/phones", params={"case_id": case}).json()["phones"]}
     assert after[ext] == "C9 exhibit"
+
+
+def test_comparing_two_phones_counts_on_both_and_only_on_each_with_the_reason(api):
+    """07 J-16: messages matched across two phones by app, time to the second and text; copies on one phone count
+    once; a message outside the other phone's period says so; undated messages are counted, not compared; a person
+    narrows both sides; a phone of another case is refused."""
+    c, case, ext = api["client"], api["case"], api["ext"]
+    with api["engine"].begin() as conn:
+        ext2, _ = phone(conn, uuid.UUID(case), label="C5", events=[
+            msg(at(2023, 3, 14, 19, 7, 12), ANA, [OWNER], thread="t"),  # the same message as on C3
+            msg(at(2023, 3, 14, 19, 7, 12), ANA, [OWNER], thread="t"),  # and its copy on C5
+            msg(at(2023, 3, 14, 20), ANA, [OWNER], body="only here", thread="t"),
+            msg(at(2024, 1, 1), BEN, [OWNER], body="later", thread="u")])
+    r = c.get("/api/phones/compare", params={"case_id": case, "a": ext, "b": str(ext2)})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["a"]["label"] == "C3" and out["b"]["label"] == "C5" and out["a"]["no_time"] == 1
+    assert out["kinds"]["message"] == {"both": 1, "only_a": 1, "only_a_outside": 0, "only_b": 2, "only_b_outside": 1}
+    ana = c.get("/api/phones/compare", params={"case_id": case, "a": ext, "b": str(ext2), "person": ANA}).json()
+    assert ana["kinds"]["message"] == {"both": 1, "only_a": 1, "only_a_outside": 0, "only_b": 1, "only_b_outside": 0}
+    other = api["other_evs"] and c.get("/api/phones/compare", params={
+        "case_id": case, "a": ext, "b": _other_ext(api)})
+    assert other.status_code == 404
+    assert c.get("/api/phones/compare", params={"case_id": case, "a": ext, "b": ext}).status_code == 422
+
+
+def _other_ext(api):
+    with api["engine"].connect() as conn:
+        return str(conn.execute(text("SELECT id FROM phone_extractions WHERE case_id = CAST(:c AS uuid)"),
+                                {"c": api["other_case"]}).scalar_one())
