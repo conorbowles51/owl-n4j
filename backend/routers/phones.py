@@ -135,6 +135,46 @@ def explain_finding(entry_id: UUID, case_id: UUID = Query(...), db: Session = De
         raise HTTPException(status_code=404, detail="This finding is not in this case.")
 
 
+class MapFilter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    phones: list[UUID] = Field(default_factory=list)
+    source_kinds: list[str] = Field(default_factory=list)
+    affiliations: list[str] = Field(default_factory=list)
+    from_instant: Optional[str] = None
+    to_instant: Optional[str] = None
+    include_no_time: bool = True
+
+
+class MapSummaryBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    filter: MapFilter = Field(default_factory=MapFilter)
+
+
+class MapPointsBody(MapSummaryBody):
+    bbox: list[float] = Field(min_length=4, max_length=4)
+    zoom: float = Field(ge=0, le=24)
+
+
+@router.post("/map/summary")
+def phone_map_summary(body: MapSummaryBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The Map phone layer's totals line and what cannot be placed (03 section 13.2)."""
+    from services.phone import map as phone_map
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    return phone_map.summary(db.connection(), body.case_id, body.filter.model_dump())
+
+
+@router.post("/map/points")
+def phone_map_points(body: MapPointsBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Phone positions in a viewport: points up to 5,000, else exact clusters with a limit (03 13.2, G-1)."""
+    from services.phone import map as phone_map
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    w, s, e, n = body.bbox
+    if not (-180 <= w <= 180 and -180 <= e <= 180 and -90 <= s <= n <= 90):
+        raise HTTPException(status_code=422, detail="The map area is not a valid longitude and latitude box.")
+    return phone_map.points(db.connection(), body.case_id, body.bbox, body.zoom, body.filter.model_dump())
+
+
 @router.get("/registry/flags")
 def list_registry_flags(state: Optional[FlagState] = None, db: Session = Depends(get_db),
                         _: User = Depends(require_admin)):
