@@ -1,6 +1,7 @@
 ## 2 November: phone interpretation, stage C in progress (cb-interpret)
 
-Head `b160c67e` (02-U5/U6). Next: 02-U7 runtime kill test and scale timing, then the initial type mappings.
+Head `4e0ded40` (04-U1 rows, identifiers, sweep worker). Next: C6 paced timing into 02 decision 46, P14 capture and
+timing, then the coverage map (02-U10) and the C to D gate.
 
 Branch `cb/cb-interpret`. Spec 02 units, in 06 order; each with its acceptance test.
 
@@ -47,7 +48,21 @@ Branch `cb/cb-interpret`. Spec 02 units, in 06 order; each with its acceptance t
   write (`apply.plan`, sweep hook `register_planner`) and stamped by `generic.interpret(marks=...)`. C3: 1,657 of
   1,657 calls with both sides, 2,716 + 201 messages threaded, 294 emails, 61 open calls (decision 45). Kill
   test `tests/test_phone_sweep_runtime.py`.
-- **Tests:** `tests/test_phone_body_values.py`, `tests/test_phone_registry_seed.py`, `tests/test_phone_registry_observe.py`, `tests/test_phone_generic.py`, `tests/test_phone_mappings.py`, `tests/test_phone_sweep_runtime.py`; PostgreSQL ones opt-in through
+- **04-U1, 02-U8/U9, 02-U17 (4e0ded40):** meaning, activity and attribution rows in
+  `mappings/data/{timestamp_meaning,activity_strength,attribution}/catalogue.json` (92 / 80 / 3, applied_unconfirmed;
+  04 decision 18); each time value carries `meaning_mapping_row_id` and `meaning_level` (migration
+  `20261102_phone_meaning`). `fold.py` confusables and styled-letter tables generated from Unicode 13.0.0 by
+  `scripts/phone_build_confusables.py`; shared fixture `tests/fixtures/fold_cases.json` passes on 3.10 (docker
+  `python:3.10-slim`). `numbers.py` (phonenumbers 9.0.31, in requirements and the bootstrap line) and
+  `identifiers.py` (`classify`) set identity key, kind and region basis on every participation as written; region
+  = case decision, else `cases.phone_default_region`, else US (migration `20261102_phone_identifiers`). The sweep
+  runs in its own process, `services/phone/sweep_worker.py` (one per box by advisory lock, supervised from
+  `main.py`, paced by `LOUPE_PHONE_SWEEP_PACE`), because C6 unpaced broke the 1.3 reverse-if (1,595 s swap, probe
+  p95 46 to 426 ms). The old generation is purged after commit by a physical-order walk; `purge_pending` in the
+  state counts marks one a stopped process left, finished at the next worker start. PostgreSQL in a container
+  with the default 64 MB /dev/shm fails a parallel VACUUM ("could not resize shared memory segment"); use
+  `PARALLEL 0` there.
+- **Tests:** `tests/test_phone_body_values.py`, `tests/test_phone_registry_seed.py`, `tests/test_phone_registry_observe.py`, `tests/test_phone_generic.py`, `tests/test_phone_mappings.py`, `tests/test_phone_sweep_runtime.py`, `tests/test_phone_fold.py`, `tests/test_phone_identifiers.py`; PostgreSQL ones opt-in through
   `LOUPE_TEST_PHONE_PG_TEMPLATE_URL` (a database at the head; each test gets a fresh copy) and
   `LOUPE_TEST_PHONE_PG_URL` (captured extractions, rolled back), helper `tests/phone_pg.py`.
 
