@@ -22,7 +22,7 @@ from sqlalchemy import text
 
 from services.phone import body as B
 from services.phone import fold as F
-from services.phone import ids
+from services.phone import identifiers, ids
 from services.phone import values as V
 
 GENERIC_VERSION = "generic-1"
@@ -50,7 +50,7 @@ COLUMNS = {
         "time_uid", "body_path", "field_name", "field_path", "value_index", "instant", "local_wall_time",
         "original_text", "formatted_text", "original_offset_minutes", "offset_state", "producer_format",
         "format_mismatch", "offset_present", "effective_instant", "instant_basis", "field_meaning", "semantics",
-        "is_event_time"),
+        "is_event_time", "meaning_mapping_row_id", "meaning_mapping_version_id", "meaning_level"),
     "phone_location_points": COMMON + (
         "point_uid", "coordinate_record_uid", "lat", "lon", "lat_text", "lon_text", "elevation_m", "accuracy_m",
         "accuracy_basis", "precision_text", "source_kind", "affiliation", "instant", "end_instant", "time_field"),
@@ -58,7 +58,7 @@ COLUMNS = {
     "phone_participations": COMMON + (
         "participation_uid", "party_record_uid", "container_field", "role", "role_basis", "role_in_record",
         "is_phone_owner", "identifier_raw", "name_in_record", "identity_key", "date_read", "date_delivered",
-        "date_played"),
+        "date_played", "region_basis", "identity_kind", "identity_subkind"),
     "phone_texts": COMMON + (
         "text_uid", "body_path", "field_name", "field_path", "value_index", "value", "value_folded",
         "effective_value", "is_sensitive"),
@@ -126,6 +126,16 @@ def _copy_text(v):
     return s.replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n").replace("\r", "\\r")
 
 
+# Write pacing (02 section 1.3, decision 46): after each flush the writer pauses PACE times as long as the flush took,
+# so a pass leaves the database to other work part of the time. The sweep process sets it; tests run unpaced.
+PACE = {"factor": 0.0}
+
+
+def pace(seconds):
+    if PACE["factor"] > 0 and seconds > 0:
+        time.sleep(min(30.0, PACE["factor"] * seconds))
+
+
 class Writer:
     def __init__(self, conn, columns=None):
         self.columns = dict(COLUMNS, **(columns or {}))
@@ -142,6 +152,11 @@ class Writer:
             self.flush()
 
     def flush(self):
+        started = time.monotonic()
+        self._flush()
+        pace(time.monotonic() - started)
+
+    def _flush(self):
         for table, rows in self.buf.items():
             if not rows:
                 continue
@@ -163,7 +178,7 @@ class _Ctx:
     """What a descendant needs from an ancestor."""
     __slots__ = ("type", "uid", "ordinal", "doc", "prefix", "container", "first_time", "accuracy", "precision",
                  "origin", "affiliation", "direction", "summary", "has_point", "point_problem", "positionable", "deleted_state",
-                 "decoding_confidence", "locator", "root_uid")
+                 "decoding_confidence", "locator", "root_uid", "source")
 
 
 def _first_text(fmap, name):
@@ -182,6 +197,9 @@ class Interpreter:
         marks = marks or {}
         self.m_time, self.m_text = marks.get("time", {}), marks.get("text", {})
         self.m_party, self.m_record = marks.get("party", {}), marks.get("record", {})
+        self.region = marks.get("region") or ("US", "assumed_default")  # 8.3: (region, basis)
+        self.m_meaning = marks.get("meaning", {})  # (type, field) -> candidates (6.5b rows), see _meaning
+        self._facts = (None, None)
         self.conn = conn
         self.ext = extraction_id
         self.case = case_id
@@ -200,6 +218,27 @@ class Interpreter:
                 "interpretation_level": "generic", "mapping_version_id": None, "mapping_row_id": None,
                 "deleted_state": deleted_state,
                 "decoding_confidence": dc, "flags": list(flags), "generation": self.gen}
+
+    def _meaning(self, row, cand, fmap, model_type, ds, dc, offset_state):
+        """The timestamp-meaning row (6.5b) for one time value, from its record's own fields and context.
+        ``cand``: [(version id, rows, rule-id prefix, {rule id: level}, {rule id: corrected outputs})]."""
+        from services.phone.mappings import rows as R
+        cached = self._facts
+        if cached[0] is not fmap:
+            cached = self._facts = (fmap, {
+                "fields": {k: [v.text for fv in fl for v in fv.real_values] for k, fl in fmap.items()},
+                "context": {"party_is_owner": V.parse_boolean(_first_text(fmap, "IsPhoneOwner"))
+                            if model_type == "Party" else None, "deleted_state": ds, "decoding_confidence": dc}})
+        facts = dict(cached[1], context=dict(cached[1]["context"], offset_state=offset_state))
+        for version_id, rule_rows, prefix, levels, corrected in cand:
+            r = R.match(rule_rows, model_type, row["field_name"], facts)
+            if r is not None:
+                rid = prefix + r["row_id"]
+                out = corrected.get(rid) or r["outputs"]
+                row.update(field_meaning=out.get("meaning"), semantics=out.get("semantics"),
+                           meaning_mapping_row_id=rid, meaning_mapping_version_id=version_id,
+                           meaning_level=levels.get(rid, "applied_unconfirmed"))
+                return
 
     def finish_subtree(self):
         for c in self.subtree:
@@ -236,6 +275,7 @@ class Interpreter:
         c.accuracy = _first_text(fmap, "GpsHorizontalAccuracy")
         c.precision = _first_text(fmap, "Precision")
         c.origin = _first_text(fmap, "Origin")
+        c.source = pctx.source if pctx is not None else _first_text(fmap, "Source")  # 8.2 A1: the top-level Source
         c.affiliation = _first_text(fmap, "DeviceLocationAffiliation") or _first_text(fmap, "AccountLocationAffiliation")
         c.direction = None
         title_text, first_instant, has_time, duration, user_mapping = None, None, False, None, None
@@ -268,6 +308,9 @@ class Interpreter:
                     if mk:
                         row.update(mapping_version_id=mk[0], mapping_row_id=mk[1], interpretation_level=mk[2],
                                    is_event_time=mk[3])
+                    cand = self.m_meaning.get((model_type, f.name))
+                    if cand:
+                        self._meaning(row, cand, fmap, model_type, ds, dc, st["offset_state"])
                     self.w.add("phone_time_values", row)
                     self.stats["time_values"] += 1
                     has_time = True
@@ -380,6 +423,14 @@ class Interpreter:
             date_played=party_time("DatePlayed"))
         if mk:
             row.update(mapping_version_id=mk[0], mapping_row_id=mk[1], interpretation_level=mk[2])
+        ident = identifiers.classify(row["identifier_raw"], context={"app": pctx.source, "name_only": not row["identifier_raw"]},
+                                     region=self.region[0], region_basis=self.region[1])
+        if ident is not None:
+            row.update(identity_key=ident.identity_key, identity_kind=ident.kind, identity_subkind=ident.subkind,
+                       region_basis=ident.region_basis)
+            self.stats["identities:%s" % ident.kind] += 1
+            if ident.region_basis == "assumed_default":
+                self.stats["numbers_assumed_region"] += 1
         self.w.add("phone_participations", row)
         self.stats["participations"] += 1
         pctx.summary["participant_count"] += 1
@@ -472,3 +523,49 @@ def delete_generations_before(conn, extraction_id, generation) -> dict:
                          {"e": extraction_id, "g": generation})
         deleted[t] = r.rowcount
     return deleted
+
+
+PURGE_BATCH = 20000
+
+
+def purge_generations_before(engine, extraction_id, generation, batch=PURGE_BATCH) -> dict:
+    """Delete rows of earlier generations after the swap has committed, in short paced transactions (5.7,
+    decision 46). The read views show only the current generation, so nothing a reader sees changes; a purge
+    cut short is finished by the next one (``sweep.purge_leftovers`` at worker start, or the next pass).
+
+    Each batch resumes after the last row it deleted (a TID range scan, physical order), so a table is read
+    about once per purge; a plain ``LIMIT`` scan would re-read every dead row of the earlier batches each time
+    (most rows match, so the planner does not use the case index). A last plain pass catches any row the
+    ordered walk passed over, so the result does not depend on scan order."""
+    with engine.connect() as conn:
+        case_id = conn.execute(text("SELECT case_id FROM phone_extractions WHERE id = :e"),
+                               {"e": extraction_id}).scalar()
+    where = "case_id = :c AND extraction_id = :e AND generation < :g"
+    args = {"c": case_id, "e": extraction_id, "g": generation, "n": batch}
+    deleted = {}
+    for t in dict.fromkeys(DERIVED_TABLES + MAPPED_TABLES):
+        n, last = 0, "(0,0)"
+        while True:
+            started = time.monotonic()
+            with engine.begin() as conn:
+                conn.execute(text("SET LOCAL enable_seqscan = off"))  # take the TID range scan
+                ctids = conn.execute(text(
+                    "SELECT ctid::text FROM %s WHERE ctid > CAST(:last AS tid) AND %s LIMIT :n" % (t, where)),
+                    dict(args, last=last)).scalars().all()
+                if ctids:
+                    conn.execute(text("DELETE FROM %s WHERE ctid = ANY(CAST(:ids AS tid[]))" % t), {"ids": ctids})
+            n += len(ctids)
+            pace(time.monotonic() - started)
+            if len(ctids) < batch:
+                break
+            last = max(ctids, key=lambda c: tuple(int(x) for x in c.strip("()").split(",")))
+        while True:  # anything the ordered walk did not reach
+            with engine.begin() as conn:
+                r = conn.execute(text("DELETE FROM %s WHERE ctid = ANY(ARRAY(SELECT ctid FROM %s WHERE %s LIMIT :n))"
+                                      % (t, t, where)), args)
+            n += r.rowcount
+            if r.rowcount < batch:
+                break
+        deleted[t] = n
+    return deleted
+

@@ -121,55 +121,9 @@ def rules_of(m):
     return t, b, out
 
 
-def _mark(conn, table, where, params, rule_id, version_id, level, extraction_id, generation, sets=""):
-    r = conn.execute(text(
-        "UPDATE %s SET mapping_version_id = :mv, mapping_row_id = :rid, interpretation_level = :lvl%s "
-        "WHERE extraction_id = :e AND generation = :g AND %s" % (table, sets, where)),
-        dict(params, mv=version_id, rid=rule_id, lvl=level, e=extraction_id, g=generation))
-    return r.rowcount
-
-
 TABLE_OF_PART = {"event_time": "phone_time_values", "end_time": "phone_time_values", "role": "phone_participations",
                  "text": "phone_texts", "record": "phone_record_summaries", "thread": "phone_comm_events",
                  "owner_implicit": "phone_participations"}
-
-
-def _apply_rule(conn, rule, t, b, version_id, level, extraction_id, generation):
-    part, choice = rule["part"], rule["choice"]
-    if part == "event_time":
-        conn.execute(text("UPDATE phone_time_values SET is_event_time = false WHERE extraction_id = :e AND "
-                          "generation = :g AND model_type = :t"), {"e": extraction_id, "g": generation, "t": t})
-        return _mark(conn, "phone_time_values", "model_type = :t AND field_name = :f", {"t": t, "f": choice},
-                     rule["rule_id"], version_id, level, extraction_id, generation, ", is_event_time = true")
-    if part == "end_time":
-        if choice.get("field"):
-            return _mark(conn, "phone_time_values", "model_type = :t AND field_name = :f",
-                         {"t": t, "f": choice["field"]}, rule["rule_id"], version_id, level, extraction_id, generation)
-        # A computed end (start plus duration) has no generic row of its own: the record's summary row belongs to
-        # the ``record`` rule, and the comm event that carries the end (6.9) names this rule.
-        return 0
-    if part == "role":
-        containers = list(b.participants.containers)
-        if containers:
-            where = "model_type = :t AND container_field = ANY(CAST(:cs AS text[])) AND role_in_record = :k"
-        else:
-            where = "model_type = :t AND container_field = :k"
-        r = conn.execute(text(
-            "UPDATE phone_participations SET mapping_version_id = :mv, mapping_row_id = :rid, "
-            "interpretation_level = :lvl, role = :role, role_basis = 'mapping' WHERE extraction_id = :e AND "
-            "generation = :g AND " + where),
-            {"t": t, "k": rule["key"], "cs": containers, "mv": version_id, "rid": rule["rule_id"], "lvl": level,
-             "role": choice, "e": extraction_id, "g": generation})
-        return r.rowcount
-    if part == "text":
-        return _mark(conn, "phone_texts", "model_type = :t AND field_name = ANY(CAST(:fs AS text[]))",
-                     {"t": t, "fs": list(choice)}, rule["rule_id"], version_id, level, extraction_id, generation)
-    if part in ("thread", "owner_implicit"):
-        return 0  # written by services.phone.comms with this rule's id and level
-    if part == "record":
-        return _mark(conn, "phone_record_summaries", "model_type = :t", {"t": t}, rule["rule_id"], version_id,
-                     level, extraction_id, generation)
-    raise ValueError(part)
 
 
 def _touched(conn, table, rule_id, extraction_id, generation, rule=None, type_name=None, version_id=None):
@@ -215,6 +169,29 @@ def _level(m, d):
     return "reviewed" if (m.status == "reviewed" or d) else "applied_unconfirmed"
 
 
+_region_hook = {"decided": None}
+
+
+def register_region_decision(fn):
+    """``fn(conn, extraction_id) -> region or None``: the current ``set_phone_default_region`` decision (8.8)."""
+    _region_hook["decided"] = fn
+
+
+def default_region(conn, extraction_id):
+    """(region, basis) for numbers written without + (02 section 8.3): the extraction's decision, then the case
+    setting, then US."""
+    fn = _region_hook["decided"]
+    decided = fn(conn, extraction_id) if fn else None
+    if decided:
+        return decided, "decided"
+    case_region = conn.execute(text(
+        "SELECT c.phone_default_region FROM cases c JOIN phone_extractions e ON e.case_id = c.id WHERE e.id = :e"),
+        {"e": extraction_id}).scalar()
+    if case_region:
+        return case_region, "case_setting"
+    return "US", "assumed_default"
+
+
 def _present_types(conn, extraction_id):
     """Record counts per type from this extraction's registry observations (written by the observation pass
     that runs before interpretation, 3.3). A type's registry id is derived from its name (``registry._type_rid``)."""
@@ -231,8 +208,8 @@ def plan(conn, extraction_id, mappings=None) -> dict:
     ms = loader.loaded() if mappings is None else mappings
     present = _present_types(conn, extraction_id)
     decisions = reading_decisions(conn, extraction_id)
-    out = {"present": present, "applied": [], "suspended": [], "levels": {},
-           "marks": {"time": {}, "text": {}, "party": {}, "record": {}}}
+    out = {"present": present, "applied": [], "suspended": [], "levels": {}, "row_mappings": [],
+           "marks": {"time": {}, "text": {}, "party": {}, "record": {}, "region": default_region(conn, extraction_id)}}
     marks = out["marks"]
     for m in ms:
         if m.kind != "type":
@@ -267,7 +244,30 @@ def plan(conn, extraction_id, mappings=None) -> dict:
                 marks["record"][t] = mk
             done.append((rule, d))
         out["applied"].append((m, t, done))
+    for m in ms:  # timestamp-meaning rows (04 section 2.3) are stamped on each time value as it is written
+        if m.kind != "timestamp_meaning":
+            continue
+        prefix = row_rule_prefix(m)
+        by_key = {}
+        for r in m.body["rows"]:
+            by_key.setdefault((r["type"], r["field"]), []).append(r)
+        levels, corrected = {}, {}
+        for r in m.body["rows"]:
+            rid = prefix + r["row_id"]
+            d = decisions.get((rid, str(m.id)))
+            levels[rid] = _level(m, d)
+            if d and d["decision"] == "correct":
+                corrected[rid] = d["choice"]
+        for key, rws in by_key.items():
+            if key[0] in present:
+                marks.setdefault("meaning", {}).setdefault(key, []).append((m.id, rws, prefix, levels, corrected))
+        out["row_mappings"].append((m, prefix, decisions))
     return out
+
+
+def row_rule_prefix(m):
+    """Rule ids of row-table rows are ``<kind>/<name>/<row_id>`` so they are unique across mappings."""
+    return "%s/%s/" % (m.kind, m.name)
 
 
 def _marked_counts(conn, extraction_id, generation):
@@ -283,28 +283,21 @@ def _marked_counts(conn, extraction_id, generation):
     return out
 
 
-def apply_extraction(conn, extraction_id, generation, the_plan=None) -> dict:
-    """The sweep's applier hook (6.7). With ``the_plan`` the rule marks were stamped as the generic rows were
-    written; without it (a direct call) they are stamped here by UPDATE. Then comm events and threads, then one
-    judgement call per rule."""
+def apply_extraction(conn, extraction_id, generation, the_plan) -> dict:
+    """The sweep's applier hook (6.7). The plan's marks were stamped as the generic rows were written
+    (``generic.interpret(marks=...)``); here: suspensions recorded, comm events and threads, then one judgement call
+    per rule and per meaning row that touched this extraction."""
     from services.phone import comms
-    stamped = the_plan is not None
-    p = the_plan if stamped else plan(conn, extraction_id)
+    p = the_plan
     case_id = conn.execute(text("SELECT case_id FROM phone_extractions WHERE id = :e"), {"e": extraction_id}).scalar()
-    stats = {"mappings_applied": 0, "mappings_suspended": 0, "rules": 0, "rows_marked": 0, "judgements_open": 0}
+    stats = {"mappings_applied": 0, "mappings_suspended": 0, "rules": 0, "judgements_open": 0}
     for m, t, reasons in p["suspended"]:
         conn.execute(text(
             "INSERT INTO phone_mapping_applications (extraction_id, mapping_version_id, generation, records_matched, "
             "records_suspended, suspension_reasons) VALUES (:e, :mv, :g, 0, :n, CAST(:r AS jsonb))"),
             {"e": extraction_id, "mv": m.id, "g": generation, "n": p["present"][t], "r": json.dumps(reasons)})
         stats["mappings_suspended"] += 1
-    for m, t, done in p["applied"]:
-        b = m.typed
-        for rule, d in done:
-            if not stamped:
-                stats["rows_marked"] += _apply_rule(conn, rule, t, b, m.id, p["levels"][rule["rule_id"]],
-                                                    extraction_id, generation)
-            stats["rules"] += 1
+    stats["rules"] = sum(len(done) for _, _, done in p["applied"])
     if p["applied"]:
         for k, v in comms.build(conn, extraction_id, case_id, generation, [m for m, _, _ in p["applied"]],
                                 p["levels"]).items():
@@ -350,4 +343,64 @@ def apply_extraction(conn, extraction_id, generation, the_plan=None) -> dict:
             "records_suspended, suspension_reasons) VALUES (:e, :mv, :g, :n, 0, '[]'::jsonb)"),
             {"e": extraction_id, "mv": m.id, "g": generation, "n": p["present"][t]})
         stats["mappings_applied"] += 1
+    for m, prefix, decisions in p.get("row_mappings", []):
+        stats["meaning_calls"] = stats.get("meaning_calls", 0) + _meaning_calls(conn, m, prefix, decisions, case_id,
+                                                                                 extraction_id, generation)
     return stats
+
+
+SEMANTICS_WORDS = {"event_instant": "the moment it happened", "interval_start": "the start of something that lasted",
+                   "interval_end": "the end of something that lasted", "aggregate_bucket": "a counting period",
+                   "latest_of_many": "the latest of several times; earlier ones are lost",
+                   "first_record": "when the record was first created", "last_modified": "when it was last changed",
+                   "service_observed": "when a service last saw it", "counterpart_action": "an action by the other person",
+                   "scheduled": "a planned time", "expiry": "an end of validity", "duration": "a length of time",
+                   "unknown": "not established"}
+
+
+def _meaning_calls(conn, m, prefix, decisions, case_id, extraction_id, generation):
+    """One judgement call per timestamp-meaning row that touched this extraction's time values."""
+    rows_by_id = {prefix + r["row_id"]: r for r in m.body["rows"]}
+    n_calls = 0
+    for rid, n, samples in conn.execute(text(
+            "SELECT rid, count(*), (array_agg(record_uid ORDER BY h))[1:3] FROM (SELECT DISTINCT meaning_mapping_row_id "
+            "AS rid, record_uid, md5(record_uid::text) AS h FROM phone_time_values WHERE extraction_id = :e AND "
+            "generation = :g AND meaning_mapping_version_id = :mv) s GROUP BY 1"),
+            {"e": extraction_id, "g": generation, "mv": m.id}):
+        r = rows_by_id.get(rid)
+        if r is None:
+            continue
+        d = decisions.get((rid, str(m.id)))
+        status = "confirmed" if m.status == "reviewed" else "open"
+        if d:
+            status = "confirmed" if d["decision"] == "confirm" else "corrected"
+        cond = "" if not (r.get("predicates") or r.get("context")) else " when %s" % ", ".join(
+            "%s %s%s" % (words(p.get("field") or p.get("name")), p["op"],
+                         "" if p.get("value") is None else " %s" % p["value"]) for p in (r["predicates"] + r["context"]))
+        summary = "The %s of a %s%s is read as %s: %s." % (words(r["field"]), words(r["type"]), cond,
+                                                         SEMANTICS_WORDS.get(r["outputs"].get("semantics"), "not established"),
+                                                         r["outputs"].get("meaning"))
+        evidence = {"fields": _evidence(conn, r["type"], [r["field"]] + [p["field"] for p in r["predicates"]],
+                                        extraction_id),
+                    "row": {k: r[k] for k in ("predicates", "context", "outputs", "basis", "reasoning", "would_change")},
+                    "mapping": {"kind": m.kind, "name": m.name, "version": m.version, "status": m.status,
+                                "origin": m.origin, "basis": m.content["review"]["basis"]}}
+        conn.execute(text(
+            "INSERT INTO phone_mapping_judgements (id, case_id, extraction_id, mapping_version_id, mapping_kind, "
+            "mapping_name, rule_id, type_name, rule_part, summary, strength, records_touched, sample_record_uids, "
+            "evidence, status, resolved_by, resolved_by_email, resolved_at, resolution_reason, adjudication_id, "
+            "generation) VALUES (:id, :c, :e, :mv, :k, :n, :r, :t, 'meaning', :s, 'inferred', :cnt, "
+            "CAST(:samples AS uuid[]), CAST(:ev AS jsonb), :st, :rb, :rbe, :ra, :rr, :adj, :g) "
+            "ON CONFLICT (extraction_id, rule_id, mapping_version_id) DO UPDATE SET summary = EXCLUDED.summary, "
+            "records_touched = EXCLUDED.records_touched, sample_record_uids = EXCLUDED.sample_record_uids, "
+            "evidence = EXCLUDED.evidence, status = EXCLUDED.status, resolved_by = EXCLUDED.resolved_by, "
+            "resolved_by_email = EXCLUDED.resolved_by_email, resolved_at = EXCLUDED.resolved_at, "
+            "resolution_reason = EXCLUDED.resolution_reason, adjudication_id = EXCLUDED.adjudication_id, "
+            "generation = EXCLUDED.generation, updated_at = now()"),
+            {"id": judgement_id(extraction_id, rid, m.id), "c": case_id, "e": extraction_id, "mv": m.id, "k": m.kind,
+             "n": m.name, "r": rid, "t": r["type"], "s": summary, "cnt": n, "samples": [str(x) for x in samples],
+             "ev": json.dumps(evidence, default=str), "st": status, "rb": (d or {}).get("by"),
+             "rbe": (d or {}).get("by_email"), "ra": (d or {}).get("at"), "rr": (d or {}).get("reason"),
+             "adj": (d or {}).get("decision_id"), "g": generation})
+        n_calls += 1
+    return n_calls

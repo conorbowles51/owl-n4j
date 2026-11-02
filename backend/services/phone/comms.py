@@ -69,9 +69,9 @@ def party_key(identity_key, identifier_raw):
 class _Writer(generic.Writer):
     """COPY writer for the mapped tables; the implicit owner rows go to ``phone_participations``."""
 
-    def flush(self):
+    def _flush(self):
         implicit = self.buf.pop("phone_participations_implicit", None)
-        super().flush()
+        super()._flush()
         if implicit:
             self.buf["phone_participations_implicit"] = implicit
             cols = PARTY_COLUMNS

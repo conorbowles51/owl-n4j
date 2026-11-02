@@ -135,10 +135,10 @@ Nothing backend runs until this is done. It takes about twenty seconds. The full
 `openai-whisper` and therefore torch, for no benefit to this suite.
 
 ```
-pip install --break-system-packages --quiet "SQLAlchemy==2.0.46" "pydantic==2.12.5" "fastapi==0.123.9" "psycopg[binary]==3.2.13" "python-dateutil==2.9.0.post0" "lxml==6.0.2" "openpyxl==3.1.5" "neo4j==5.28.2" "alembic==1.14.0" "email-validator==2.2.0" "python-multipart==0.0.20" "openai==2.9.0" "python-jose==3.5.0" "langchain-core==1.5.0" "langchain-openai==1.1.7" "langgraph==1.0.6" "langgraph-checkpoint==4.0.0" "orjson==3.11.5" "python-dotenv==1.2.1" "bcrypt==5.0.0" "cryptography==46.0.3" "pypdf==6.4.0" "PyMuPDF==1.28.0" "numpy==2.3.5" "Pillow==12.1.1" "uvicorn==0.38.0" "pytest==8.4.2" "pytest-asyncio==0.25.0"
+pip install --break-system-packages --quiet "SQLAlchemy==2.0.46" "pydantic==2.12.5" "fastapi==0.123.9" "psycopg[binary]==3.2.13" "python-dateutil==2.9.0.post0" "lxml==6.0.2" "openpyxl==3.1.5" "neo4j==5.28.2" "alembic==1.14.0" "email-validator==2.2.0" "python-multipart==0.0.20" "openai==2.9.0" "python-jose==3.5.0" "langchain-core==1.5.0" "langchain-openai==1.1.7" "langgraph==1.0.6" "langgraph-checkpoint==4.0.0" "orjson==3.11.5" "python-dotenv==1.2.1" "bcrypt==5.0.0" "cryptography==46.0.3" "pypdf==6.4.0" "phonenumbers==9.0.31" "PyMuPDF==1.28.0" "numpy==2.3.5" "Pillow==12.1.1" "uvicorn==0.38.0" "pytest==8.4.2" "pytest-asyncio==0.25.0"
 ```
 
-Twenty-eight packages (`pytest` and `pytest-asyncio` are for the tests only and are not in `requirements.txt`;
+Twenty-nine packages (`pytest` and `pytest-asyncio` are for the tests only and are not in `requirements.txt`;
 without `pytest-asyncio` every `@pytest.mark.asyncio` test fails with "async def functions are not natively
 supported"; without `uvicorn` the four server-shutdown tests skip; the benchmark corpus imports `numpy` and
 `Pillow` inside a function, which the line test cannot see).

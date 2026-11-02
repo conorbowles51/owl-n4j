@@ -1,0 +1,77 @@
+{
+ "kind": "attribution",
+ "name": "catalogue",
+ "version": 1,
+ "status": "applied_unconfirmed",
+ "origin": "ai_draft",
+ "review": {
+  "reviewed_by": null,
+  "reviewed_on": null,
+  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row.",
+  "registry_requirements": []
+ },
+ "body": {
+  "rows": [
+   {
+    "row_id": "attr-location-synced",
+    "type": "Location",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "DeviceLocationAffiliation",
+      "op": "eq",
+      "value": "Synced"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "flag": "synced_from_account",
+     "group": "A"
+    },
+    "basis": "field_name",
+    "reasoning": "The report says the place came from the account, so another device may have recorded it.",
+    "would_change": "A document shows Synced means this device."
+   },
+   {
+    "row_id": "attr-location-unknown",
+    "type": "Location",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "DeviceLocationAffiliation",
+      "op": "eq",
+      "value": "Unknown"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "flag": "affiliation_unknown",
+     "group": "B"
+    },
+    "basis": "field_name",
+    "reasoning": "The report does not say whether this device recorded it.",
+    "would_change": "M5 shows the source always records on the device."
+   },
+   {
+    "row_id": "attr-im-web",
+    "type": "InstantMessage",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Platform",
+      "op": "eq",
+      "value": "Web"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "flag": "other_device_platform",
+     "group": "A"
+    },
+    "basis": "field_name",
+    "reasoning": "Sent from a web or desktop session.",
+    "would_change": "A document shows Web means this phone's browser."
+   }
+  ]
+ }
+}

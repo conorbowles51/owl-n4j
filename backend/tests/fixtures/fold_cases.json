@@ -1,0 +1,97 @@
+{
+ "about": "Name folding test vectors shared by backend/services/phone/fold.py and frontend_v2/src/features/search/lib/fold.ts (docs/cellebrite/02 section 8.4, 03 section 11.3). Synthetic names only. 'fold' is fold(input); 'exact' is fold(input, exact=True).",
+ "unicode": "13.0.0",
+ "cases": [
+  {
+   "name": "mathematical bold script",
+   "input": "𝓐𝓷𝓪",
+   "fold": "ana"
+  },
+  {
+   "name": "fullwidth",
+   "input": "ＡＮＡ",
+   "fold": "ana"
+  },
+  {
+   "name": "small capitals",
+   "input": "ᴀɴᴀ",
+   "fold": "ana"
+  },
+  {
+   "name": "negative squared",
+   "input": "🅰🅽🅰",
+   "fold": "ana"
+  },
+  {
+   "name": "circled",
+   "input": "Ⓐⓝⓐ",
+   "fold": "ana"
+  },
+  {
+   "name": "cyrillic capital a then latin",
+   "input": "Аna",
+   "fold": "ana"
+  },
+  {
+   "name": "all cyrillic stays cyrillic",
+   "input": "Анна",
+   "fold": "анна"
+  },
+  {
+   "name": "precomposed accent",
+   "input": "José",
+   "fold": "jose",
+   "exact": "josé"
+  },
+  {
+   "name": "combining accent",
+   "input": "José",
+   "fold": "jose"
+  },
+  {
+   "name": "zero width space",
+   "input": "ANA​MARIA",
+   "fold": "ana maria"
+  },
+  {
+   "name": "mathematical bold words",
+   "input": "𝐀𝐧𝐚 𝐌𝐚𝐫𝐢𝐚",
+   "fold": "ana maria"
+  },
+  {
+   "name": "hyphen and accent",
+   "input": "Ana-María",
+   "fold": "ana maria"
+  },
+  {
+   "name": "dot",
+   "input": "ana.maria",
+   "fold": "ana maria"
+  },
+  {
+   "name": "greek capital alpha then latin",
+   "input": "Αna",
+   "fold": "ana"
+  },
+  {
+   "name": "sharp s",
+   "input": "Straße",
+   "fold": "strasse"
+  },
+  {
+   "name": "mathematical bold digits",
+   "input": "𝟏𝟐𝟑",
+   "fold": "123"
+  },
+  {
+   "name": "regional indicators",
+   "input": "Ana 🇺🇸",
+   "fold": "ana us"
+  },
+  {
+   "name": "exact keeps style",
+   "input": "𝓐𝓷𝓪",
+   "exact": "𝓐𝓷𝓪"
+  }
+ ]
+}

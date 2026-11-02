@@ -8,7 +8,7 @@
 3. inside a token that mixes Latin with Cyrillic or Greek letters, Cyrillic and Greek letters that UTS #39
    lists as confusable with one ASCII letter become that letter (``data/confusables_latin.json``); a token
    wholly in Cyrillic or Greek is left alone;
-4. format and control characters removed (Cf, Cc);
+4. format and control characters removed (Cf, Cc), except ZERO WIDTH SPACE, which becomes a space;
 5. unless ``exact``: NFD, combining marks (Mn) dropped, NFC;
 6. ``casefold()``;
 7. anything that is not a letter, digit or mark becomes a space; whitespace collapsed and trimmed.
@@ -64,8 +64,12 @@ def _confusables(text):
     return "".join(out)
 
 
+WORD_BREAKS = {"\u200b": " "}  # ZERO WIDTH SPACE marks a word break: a space, not nothing (8.4 test vector)
+
+
 def _strip_format(text):
-    return "".join(c for c in text if unicodedata.category(c) not in ("Cf", "Cc") or c in "\t\n\r")
+    return "".join(WORD_BREAKS.get(c, c) for c in text
+                   if c in WORD_BREAKS or unicodedata.category(c) not in ("Cf", "Cc") or c in "\t\n\r")
 
 
 def fold(text, exact=False):

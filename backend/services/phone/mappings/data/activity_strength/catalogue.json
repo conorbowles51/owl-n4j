@@ -1,0 +1,1603 @@
+{
+ "kind": "activity_strength",
+ "name": "catalogue",
+ "version": 1,
+ "status": "applied_unconfirmed",
+ "origin": "ai_draft",
+ "review": {
+  "reviewed_by": null,
+  "reviewed_on": null,
+  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row.",
+  "registry_requirements": []
+ },
+ "body": {
+  "rows": [
+   {
+    "row_id": "devev-unlock",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "DeviceLockStatus"
+     },
+     {
+      "field": "Value",
+      "op": "eq",
+      "value": "Unlocked"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "Unlocking needs a passcode, biometric or a deliberate gesture.",
+    "would_change": "M1 shows unlock values emitted by trusted-device or on-body auto-unlock without a person; then split by Source."
+   },
+   {
+    "row_id": "devev-lock",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "DeviceLockStatus"
+     },
+     {
+      "field": "Value",
+      "op": "eq",
+      "value": "Locked"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "Auto-lock on timeout needs no person.",
+    "would_change": "A value separating a manual lock appears."
+   },
+   {
+    "row_id": "devev-display",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "DisplayOnOff"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "A notification lights the screen (plan 11.2).",
+    "would_change": "M1 shows a value that distinguishes user wake from notification wake."
+   },
+   {
+    "row_id": "devev-textinput",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "TextInput"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Typing needs a person.",
+    "would_change": "M1 shows TextInput emitted by dictation or automation sources."
+   },
+   {
+    "row_id": "devev-camera-on",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "CameraState"
+     },
+     {
+      "field": "Value",
+      "op": "eq",
+      "value": "On"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "Foreground camera use needs a person.",
+    "would_change": "A source shows background camera access."
+   },
+   {
+    "row_id": "devev-camera-off",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "CameraState"
+     },
+     {
+      "field": "Value",
+      "op": "eq",
+      "value": "Off"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "Closing follows use but can be a timeout.",
+    "would_change": "A value separating a manual close appears."
+   },
+   {
+    "row_id": "devev-torch-on",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "FlashlightState"
+     },
+     {
+      "field": "Value",
+      "op": "eq",
+      "value": "On"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "Switched by a person.",
+    "would_change": "Apps that drive the torch (alarms) seen in Source."
+   },
+   {
+    "row_id": "devev-torch-off",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "FlashlightState"
+     },
+     {
+      "field": "Value",
+      "op": "eq",
+      "value": "Off"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "Switching off can be automatic.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "devev-orientation",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "OrientationChange"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": true
+    },
+    "basis": "field_name",
+    "reasoning": "Rotation needs movement, which a vehicle or bag can cause.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "devev-motion-still",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "MotionState"
+     },
+     {
+      "field": "Value",
+      "op": "eq",
+      "value": "Stationary"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "Motion classification needs no interaction; stationary is not movement.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "devev-motion-moving",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "MotionState"
+     },
+     {
+      "field": "Value",
+      "op": "in",
+      "value": [
+       "Walking",
+       "Driving"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": true
+    },
+    "basis": "corpus_measured",
+    "reasoning": "Motion classification needs no interaction; walking and driving are movement.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "devev-airplane",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "AirplaneMode"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Plan 11.2 lists it as device state; toggling is normally manual.",
+    "would_change": "A source showing scheduled or management toggles, or a ruling that it is an interaction."
+   },
+   {
+    "row_id": "devev-dnd",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "DoNotDisturbState"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Schedules and focus modes switch it.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "devev-audio-in",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "AudioInputRoute"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Route changes on headset or car connection.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "devev-audio-out",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "AudioOutputRoute"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Route changes on headset or car connection.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "devev-plugin",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "DevicePluginStatus"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Plugging in usually needs a person, but wireless pads and docks do not.",
+    "would_change": "M1 values separate cable from wireless."
+   },
+   {
+    "row_id": "devev-power",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "PowerEvent"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Power cycles occur on low battery and updates.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "devev-wifi",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "WifiState"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Radios toggle by automation and location rules.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "devev-notif-user",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "NotificationAction"
+     },
+     {
+      "field": "Value",
+      "op": "in",
+      "value": [
+       "Clear",
+       "Default Action",
+       "Long Look",
+       "Silence",
+       "Supplementary Action",
+       "Tap Coalesce",
+       "Tap Expand"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "Each value names a gesture on the notification (clear, tap, long look, silence, default or supplementary action).",
+    "would_change": "A source shows these values without a person."
+   },
+   {
+    "row_id": "devev-notif-posted",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "NotificationAction"
+     },
+     {
+      "field": "Value",
+      "op": "in",
+      "value": [
+       "Received And Delivered Prominently",
+       "Received And Delivered Nonprominently"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "Delivery of a notification needs no person.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "devev-notif-other",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "NotificationAction"
+     },
+     {
+      "field": "Value",
+      "op": "in",
+      "value": [
+       "Hide",
+       "Removed",
+       "Modified",
+       "Total"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "unknown",
+     "actor": "unknown",
+     "physical": false
+    },
+    "basis": "not_established",
+    "reasoning": "Whether hide, remove, modify and total are done by a person or by the system is not established.",
+    "would_change": "A source or document shows who causes them."
+   },
+   {
+    "row_id": "devev-wipe",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EventType",
+      "op": "eq",
+      "value": "Wipe"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "unknown",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "A reset can be local or remote.",
+    "would_change": "Source shows a local, user-initiated reset."
+   },
+   {
+    "row_id": "power",
+    "type": "PoweringEvent",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Power events are not proof of a person.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "netuse-fg",
+    "type": "NetworkUsage",
+    "field": "DateStarted",
+    "predicates": [
+     {
+      "field": "UsageMode",
+      "op": "eq",
+      "value": "Foreground"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Foreground app use; the period is a counting bucket, so strength is weak.",
+    "would_change": "M4 shows buckets narrow enough to move to moderate."
+   },
+   {
+    "row_id": "netuse-bg",
+    "type": "NetworkUsage",
+    "field": "DateStarted",
+    "predicates": [
+     {
+      "field": "UsageMode",
+      "op": "eq",
+      "value": "Background"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Background traffic needs no person.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "appuse-launch",
+    "type": "AppsUsageLog",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "Action",
+      "op": "eq",
+      "value": "Launch"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Launching an app is a user action in the common case.",
+    "would_change": "M2 shows Launch emitted for system-started apps."
+   },
+   {
+    "row_id": "appuse-close",
+    "type": "AppsUsageLog",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "Action",
+      "op": "eq",
+      "value": "Close"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Apps close on timeout or system kill.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "appuse-noaction",
+    "type": "AppsUsageLog",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "Action",
+      "op": "absent"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "unknown",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "not_established",
+    "reasoning": "The record kind depends on Source.",
+    "would_change": "M2 by Source; rows per Source."
+   },
+   {
+    "row_id": "install",
+    "type": "InstalledApplication",
+    "field": "InstallDate",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Install is normally a user action.",
+    "would_change": "Restore from backup or management (Source evidence)."
+   },
+   {
+    "row_id": "uninstall",
+    "type": "InstalledApplication",
+    "field": "DeletedDate",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Removal is normally a user action.",
+    "would_change": "Restore from backup or management (Source evidence)."
+   },
+   {
+    "row_id": "purchase",
+    "type": "InstalledApplication",
+    "field": "PurchaseDate",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "account",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "An account purchase, possibly on another device.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "im-out-mobile",
+    "type": "InstantMessage",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Platform",
+      "op": "in",
+      "value": [
+       "Mobile",
+       "Unknown"
+      ]
+     }
+    ],
+    "context": [
+     {
+      "name": "direction",
+      "op": "eq",
+      "value": "outgoing"
+     }
+    ],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Composing and sending needs a person.",
+    "would_change": "Scheduled send or auto-reply evidence."
+   },
+   {
+    "row_id": "im-out-noplatform",
+    "type": "InstantMessage",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Platform",
+      "op": "absent"
+     }
+    ],
+    "context": [
+     {
+      "name": "direction",
+      "op": "eq",
+      "value": "outgoing"
+     }
+    ],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Composing and sending needs a person.",
+    "would_change": "Scheduled send or auto-reply evidence."
+   },
+   {
+    "row_id": "im-out-web",
+    "type": "InstantMessage",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Platform",
+      "op": "eq",
+      "value": "Web"
+     }
+    ],
+    "context": [
+     {
+      "name": "direction",
+      "op": "eq",
+      "value": "outgoing"
+     }
+    ],
+    "outputs": {
+     "class": "interaction",
+     "actor": "other_device",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Sent from a web client on the same account, not from this phone.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "im-in",
+    "type": "InstantMessage",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [
+     {
+      "name": "direction",
+      "op": "eq",
+      "value": "incoming"
+     }
+    ],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Arrives without action.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "im-delivered",
+    "type": "InstantMessage",
+    "field": "DateDelivered",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Network delivery.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "party-dateread-owner",
+    "type": "Party",
+    "field": "DateRead",
+    "predicates": [],
+    "context": [
+     {
+      "name": "party_is_owner",
+      "op": "eq",
+      "value": true
+     }
+    ],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Reading or playing by the owner; read receipts can sync from the owner's other devices.",
+    "would_change": "M6."
+   },
+   {
+    "row_id": "party-dateread-other",
+    "type": "Party",
+    "field": "DateRead",
+    "predicates": [],
+    "context": [
+     {
+      "name": "party_is_owner",
+      "op": "eq",
+      "value": false
+     }
+    ],
+    "outputs": {
+     "class": "interaction",
+     "actor": "counterpart",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "The other person read or played it on their own device.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "party-dateplayed-owner",
+    "type": "Party",
+    "field": "DatePlayed",
+    "predicates": [],
+    "context": [
+     {
+      "name": "party_is_owner",
+      "op": "eq",
+      "value": true
+     }
+    ],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Reading or playing by the owner; read receipts can sync from the owner's other devices.",
+    "would_change": "M6."
+   },
+   {
+    "row_id": "party-dateplayed-other",
+    "type": "Party",
+    "field": "DatePlayed",
+    "predicates": [],
+    "context": [
+     {
+      "name": "party_is_owner",
+      "op": "eq",
+      "value": false
+     }
+    ],
+    "outputs": {
+     "class": "interaction",
+     "actor": "counterpart",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "The other person read or played it on their own device.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "party-delivered-owner",
+    "type": "Party",
+    "field": "DateDelivered",
+    "predicates": [],
+    "context": [
+     {
+      "name": "party_is_owner",
+      "op": "eq",
+      "value": true
+     }
+    ],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Delivery needs no person.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "party-delivered-other",
+    "type": "Party",
+    "field": "DateDelivered",
+    "predicates": [],
+    "context": [
+     {
+      "name": "party_is_owner",
+      "op": "eq",
+      "value": false
+     }
+    ],
+    "outputs": {
+     "class": "passive",
+     "actor": "counterpart",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Delivery to the other person's device.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "call-out",
+    "type": "Call",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Direction",
+      "op": "eq",
+      "value": "Outgoing"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Dialling needs a person, whatever the outcome.",
+    "would_change": "Automated redial or app call-backs identified by Source."
+   },
+   {
+    "row_id": "call-in-answered",
+    "type": "Call",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Direction",
+      "op": "eq",
+      "value": "Incoming"
+     },
+     {
+      "field": "Status",
+      "op": "eq",
+      "value": "Established"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Answering needs a person; auto-answer exists but is rare.",
+    "would_change": "Source shows auto-answer."
+   },
+   {
+    "row_id": "call-in-rejected",
+    "type": "Call",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Direction",
+      "op": "eq",
+      "value": "Incoming"
+     },
+     {
+      "field": "Status",
+      "op": "eq",
+      "value": "Rejected"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Declining is usually manual, but focus modes reject automatically.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "call-in-passive",
+    "type": "Call",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Direction",
+      "op": "eq",
+      "value": "Incoming"
+     },
+     {
+      "field": "Status",
+      "op": "in",
+      "value": [
+       "Missed",
+       "Voicemail",
+       "Unknown",
+       "NotEstablishedUnknownReason"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "No action needed.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "notification",
+    "type": "Notification",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Posting needs no person.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "social",
+    "type": "SocialMediaActivity",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "account",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Could be posted from any device on the account.",
+    "would_change": "IsFromActivityLog or Platform show the device."
+   },
+   {
+    "row_id": "chatactivity",
+    "type": "ChatActivity",
+    "field": "SystemMessageTimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "unknown",
+     "actor": "unknown",
+     "physical": false
+    },
+    "basis": "not_established",
+    "reasoning": "Whether the owner performed the action is not established.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "search",
+    "type": "SearchedItem",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Typing a search needs a person.",
+    "would_change": "M2 shows Source is a synced account history (then actor account)."
+   },
+   {
+    "row_id": "visited",
+    "type": "VisitedPage",
+    "field": "LastVisited",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "A visit needs a person; latest occurrence only.",
+    "would_change": "M7: a restored tab reloads a page."
+   },
+   {
+    "row_id": "acct-webbookmark-timestamp",
+    "type": "WebBookmark",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "account",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Browser and account sync can create these from another device.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "acct-autofill-lastuseddate",
+    "type": "Autofill",
+    "field": "LastUsedDate",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "account",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Browser and account sync can create these from another device.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "acct-note-creation",
+    "type": "Note",
+    "field": "Creation",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "account",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Browser and account sync can create these from another device.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "acct-note-modification",
+    "type": "Note",
+    "field": "Modification",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "account",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Browser and account sync can create these from another device.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "acct-contact-timecreated",
+    "type": "Contact",
+    "field": "TimeCreated",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "account",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Browser and account sync can create these from another device.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "acct-contact-timemodified",
+    "type": "Contact",
+    "field": "TimeModified",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "account",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Browser and account sync can create these from another device.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "acct-password-datecreated",
+    "type": "Password",
+    "field": "DateCreated",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "account",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Browser and account sync can create these from another device.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "acct-password-datemodified",
+    "type": "Password",
+    "field": "DateModified",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "account",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Browser and account sync can create these from another device.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "cookie-created",
+    "type": "Cookie",
+    "field": "CreationTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Pages and apps set cookies without a person (plan 11.2).",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "cookie-access",
+    "type": "Cookie",
+    "field": "LastAccessTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Pages and apps read cookies without a person (plan 11.2).",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "download",
+    "type": "FileDownload",
+    "field": "StartTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Starting a download needs a person in the common case.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "upload",
+    "type": "FileUpload",
+    "field": "DateUploaded",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "unknown",
+     "actor": "unknown",
+     "physical": false
+    },
+    "basis": "not_established",
+    "reasoning": "Apps upload in the background (backups).",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "recording",
+    "type": "Recording",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Recording needs a person.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "voicemail",
+    "type": "Voicemail",
+    "field": "Timestamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "A voicemail arrives without action.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "login",
+    "type": "User",
+    "field": "TimeLastLoggedIn",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Logging in needs a person; latest occurrence only.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "remote-session",
+    "type": "RemoteServiceSession",
+    "field": "DateStarted",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "other_device",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "A session on another device.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "logentry",
+    "type": "LogEntry",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "unknown",
+     "actor": "unknown",
+     "physical": false
+    },
+    "basis": "not_established",
+    "reasoning": "System log lines; content-dependent.",
+    "would_change": "Rows per Source and Application."
+   },
+   {
+    "row_id": "conn-change",
+    "type": "DeviceConnectivity",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "ConnectivityNature",
+      "op": "in",
+      "value": [
+       "Connected",
+       "Disconnected"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Headsets and cars connect automatically.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "conn-detected",
+    "type": "DeviceConnectivity",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "ConnectivityNature",
+      "op": "eq",
+      "value": "Detected"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "A scan result.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "conn-paired",
+    "type": "DeviceConnectivity",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "ConnectivityNature",
+      "op": "eq",
+      "value": "Paired"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "unknown",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "not_established",
+    "reasoning": "Whether the time is the pairing moment is not established (M4).",
+    "would_change": "M4."
+   },
+   {
+    "row_id": "wifi-seen",
+    "type": "WirelessNetwork",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "A scan or log entry.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "wifi-last",
+    "type": "WirelessNetwork",
+    "field": "LastConnection",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "device_state",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Latest connection only.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "wifi-auto",
+    "type": "WirelessNetwork",
+    "field": "LastAutoConnection",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Automatic.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "cell",
+    "type": "CellTower",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Registration.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "location-searched",
+    "type": "Location",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Type",
+      "op": "eq",
+      "value": "Searched"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "A searched place, which is not a presence.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "location",
+    "type": "Location",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Presence evidence, handled with places.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "sensor",
+    "type": "ActivitySensorData",
+    "field": "From",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Counted movement needs no interaction.",
+    "would_change": "M9 shows the source is a wearable (then other_device)."
+   },
+   {
+    "row_id": "sensor-sample",
+    "type": "ActivitySensorDataSample",
+    "field": "DateSampled",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Sampled movement needs no interaction.",
+    "would_change": "M9."
+   },
+   {
+    "row_id": "journey",
+    "type": "Journey",
+    "field": "StartTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "unknown",
+     "actor": "unknown",
+     "physical": false
+    },
+    "basis": "not_established",
+    "reasoning": "Meaning per Source is not established.",
+    "would_change": "A measurement or source shows the event happens without the stated actor."
+   }
+  ]
+ }
+}

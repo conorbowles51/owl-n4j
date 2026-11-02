@@ -26,6 +26,8 @@ class Case(Base, TimestampMixin):
         String(20), default="active", server_default="active", nullable=False
     )
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    # Region for phone numbers written without + (docs/cellebrite/02 section 8.3); null means the US default.
+    phone_default_region: Mapped[str | None] = mapped_column(String(2), nullable=True)
 
     created_by_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

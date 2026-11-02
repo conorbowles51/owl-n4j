@@ -36,7 +36,8 @@ def register_mapping_set(fn):
 
 
 def register_applier(fn):
-    """``fn(conn, extraction_id, generation) -> dict`` runs after the generic rows are written (6.7)."""
+    """``fn(conn, extraction_id, generation, plan) -> dict`` runs after the generic rows are written (6.7); ``plan`` is
+    the planner's result, or None when no planner is registered."""
     if fn not in _hooks["apply"]:
         _hooks["apply"].append(fn)
 
@@ -151,19 +152,31 @@ def interpret_one(engine, extraction_id) -> dict:
                      "err": "The check found differences in document %s; a person must accept them first."
                             % ", ".join(str(d) for d in held)})
                 return {"status": "held", "documents": held}
+            phase = {}
+
+            def lap(name, t0=[started]):  # noqa: B006 - seconds per phase, kept in the state row's counts
+                now = time.monotonic()
+                phase["phase_seconds:" + name] = round(now - t0[0], 1)
+                t0[0] = now
+
             set_id, named = mapping_set(conn)
             obs = registry.observe_extraction(conn, extraction_id, named)
+            lap("observe")
             new_gen = generation + 1
             the_plan = _hooks["planner"](conn, extraction_id) if _hooks["planner"] else None
+            lap("plan")
             counts = generic.interpret(conn, extraction_id, new_gen, sensitive=sensitive_fields(),
                                        marks=the_plan["marks"] if the_plan else None)
+            lap("generic")
             applied = {}
             for fn in _hooks["apply"]:
-                applied.update((fn(conn, extraction_id, new_gen, the_plan) if the_plan is not None
-                                else fn(conn, extraction_id, new_gen)) or {})
-            deleted = generic.delete_generations_before(conn, extraction_id, new_gen)
-            counts = dict(counts, flags_raised=obs["flags_raised"], deleted_previous=sum(deleted.values()),
-                          seconds=round(time.monotonic() - started, 1), **{"applied:%s" % k: v for k, v in applied.items()})
+                applied.update(fn(conn, extraction_id, new_gen, the_plan) or {})
+            lap("apply")
+            counts = dict(counts, flags_raised=obs["flags_raised"],
+                          seconds=round(time.monotonic() - started, 1), **phase,
+                          **{"applied:%s" % k: v for k, v in applied.items()})
+            if generation:
+                counts["purge_pending"] = True  # cleared by the purge below; a stopped process leaves it set
             conn.execute(text(
                 "UPDATE phone_interpretation_state SET generation = :g, mapping_set_id = :ms, interpreter_version = :iv, "
                 "capture_revision = :cr, decision_revision = :dr, registry_observed_at = now(), interpreted_at = now(), "
@@ -173,7 +186,36 @@ def interpret_one(engine, extraction_id) -> dict:
                  "dr": decision_revision(conn, extraction_id), "dz": ext["device_zone"],
                  "dzb": "device_setting_in_report" if ext["device_zone"] else "not_in_report",
                  "ez": examiner_zone(ext["flags"]), "counts": json.dumps(counts, default=str), "e": extraction_id})
-            return dict(counts, status="done", generation=new_gen)
+    # The swap has committed: readers see generation new_gen. Earlier generations go in short paced transactions.
+    t0 = time.monotonic()
+    deleted = generic.purge_generations_before(engine, extraction_id, new_gen) if generation else {}
+    done = {"deleted_previous": sum(deleted.values()), "phase_seconds:purge_previous": round(time.monotonic() - t0, 1)}
+    _purged(engine, extraction_id, new_gen, done)
+    counts.pop("purge_pending", None)
+    return dict(counts, status="done", generation=new_gen, **done)
+
+
+def _purged(engine, extraction_id, generation, done):
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE phone_interpretation_state SET counts = (counts - 'purge_pending') || CAST(:d AS jsonb) "
+                          "WHERE extraction_id = :e AND generation = :g"),
+                     {"d": json.dumps(done), "e": extraction_id, "g": generation})
+
+
+def purge_leftovers(engine) -> dict:
+    """Finish the purges a stopped process left (``purge_pending`` still set): rows older than the current
+    generation are invisible to readers but hold space until deleted."""
+    with engine.connect() as conn:
+        rows = conn.execute(text("SELECT extraction_id, generation FROM phone_interpretation_state "
+                                 "WHERE counts ? 'purge_pending'")).fetchall()
+    out = {}
+    for ext, gen in rows:
+        t0 = time.monotonic()
+        deleted = generic.purge_generations_before(engine, ext, gen)
+        _purged(engine, ext, gen, {"deleted_previous": sum(deleted.values()),
+                                   "phase_seconds:purge_previous": round(time.monotonic() - t0, 1)})
+        out[str(ext)] = sum(deleted.values())
+    return out
 
 
 def record_failure(engine, extraction_id, exc):
@@ -240,6 +282,7 @@ def sweep_forever(stop: threading.Event, engine_factory):
             engine = engine_factory()
             if not seeded:
                 seed_registry(engine)
+                purge_leftovers(engine)
                 seeded = True
             results = run_pass(engine)
             failures = 0 if all(r.get("status") != "failed" for _, r in results) else failures + 1

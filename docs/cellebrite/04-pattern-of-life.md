@@ -1460,6 +1460,25 @@ Each is a decision with its reasoning and what would reverse it.
 17. **Approximate times handled by a 30-minute context margin** rather than fuzzy windows. Keeps the
     window exact and the near misses visible.
 
+18. **04-U1 rows as shipped** (`backend/services/phone/mappings/data/{timestamp_meaning,activity_strength,attribution}/catalogue.json`,
+    all `applied_unconfirmed`, 02 section 6.10). Timestamp meaning: 92 rows covering all 85 (type, time field)
+    pairs of the catalogue; a pair 2.3 does not list gets an explicit `unknown` row; Party read, played and
+    delivered times split on the party's owner flag, with an `unknown` row when the flag is absent; a
+    DeviceEvent start with no end is `event_instant`. Each time value carries its meaning row, version and
+    level (`meaning_mapping_row_id`, `meaning_level`), stamped as it is written, and each row that touched an
+    extraction is one judgement call there. Activity strength: 80 rows; the DeviceEvent rows use the 15
+    EventTypes and their values measured by M1 on the 14 server reports; NotificationAction values that name a
+    gesture (Clear, Default Action, Long Look, Silence, Supplementary Action, Tap Coalesce, Tap Expand) are
+    `interaction`, the two Received values `passive`, and Hide, Removed, Modified and Total `unknown` with basis
+    `not_established`. Attribution: 3 rows that depend on a record's own fields (Location affiliation Synced and
+    Unknown, message Platform Web); the context flags of 4.2 (deleted, decoding confidence, offset absent,
+    latest only, bucketed, counterpart, account level) are computed by U3 from the event's context, not as rows
+    per type. Not written as rows: Email by folder (M2 has not measured folder values), a message Draft row (it
+    would tie with the direction rows at equal specificity; a draft follows them), `user_mapping_other` (the only
+    value measured is `Decoding`) and ApplicationUsage `ActiveTime > 0` (a TimeSpan; numeric predicates take
+    numbers only). Activity and attribution rows are evaluated by U2 and U3, which open their judgement calls.
+    *Reverse if* M2 measures folder values or a second UserMapping value.
+
 ## 15. Not yet established
 
 - The values of `DeviceEvent.Value` for 14 of 16 EventTypes (only `Power on` and `Factory Reset` are in

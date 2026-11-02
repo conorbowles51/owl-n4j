@@ -128,8 +128,9 @@ async def lifespan(app: FastAPI):
     from services.financial.identity_graph import run_identity_graph_forever
     identity_graph_task = asyncio.create_task(run_identity_graph_forever(), name="financial-reviewed-identities")
 
-    # Phone interpretation (docs/cellebrite/02 sections 1.3 and 5.7): registry, generic rows, mappings.
-    from services.phone.sweep import run_phone_interpretation_forever
+    # Phone interpretation (docs/cellebrite/02 sections 1.3 and 5.7) runs in a process of its own, one per box,
+    # supervised from here and stopped with the backend.
+    from services.phone.sweep_worker import supervise_forever as run_phone_interpretation_forever
     phone_interpretation_task = asyncio.create_task(run_phone_interpretation_forever(), name="phone-interpretation")
 
     from services.financial.deployment_recovery import run_recovery_forever

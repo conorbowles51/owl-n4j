@@ -1,0 +1,1346 @@
+{
+ "kind": "timestamp_meaning",
+ "name": "catalogue",
+ "version": 1,
+ "status": "applied_unconfirmed",
+ "origin": "ai_draft",
+ "review": {
+  "reviewed_by": null,
+  "reviewed_on": null,
+  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row.",
+  "registry_requirements": []
+ },
+ "body": {
+  "rows": [
+   {
+    "row_id": "tm-activitysensordata-from",
+    "type": "ActivitySensorData",
+    "field": "From",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "aggregate_bucket",
+     "meaning": "Start of a period over which movement was counted"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-activitysensordata-to",
+    "type": "ActivitySensorData",
+    "field": "To",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "aggregate_bucket",
+     "meaning": "End of a period over which movement was counted"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-activitysensordatasample-dateended",
+    "type": "ActivitySensorDataSample",
+    "field": "DateEnded",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "interval_end",
+     "meaning": "When the sensor sample ended"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-activitysensordatasample-datesampled",
+    "type": "ActivitySensorDataSample",
+    "field": "DateSampled",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "interval_start",
+     "meaning": "When the sensor sample started"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-applicationusage-activetime",
+    "type": "ApplicationUsage",
+    "field": "ActiveTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "duration",
+     "meaning": "How long the app was in use"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-applicationusage-backgroundtime",
+    "type": "ApplicationUsage",
+    "field": "BackgroundTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "duration",
+     "meaning": "How long the app ran in the background"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-applicationusage-endtime",
+    "type": "ApplicationUsage",
+    "field": "EndTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "End of the app usage period (not established whether this is a single use or a summary period)"
+    },
+    "basis": "not_established",
+    "reasoning": "Not settled by any measurement or document read so far; shown, never used to support or contradict a claim.",
+    "would_change": "M4 shows EndTime minus StartTime is a constant period (then aggregate_bucket)."
+   },
+   {
+    "row_id": "tm-applicationusage-lastlaunch",
+    "type": "ApplicationUsage",
+    "field": "LastLaunch",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "latest_of_many",
+     "meaning": "The last time the app was opened; earlier openings are not kept"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-applicationusage-lastusageduration",
+    "type": "ApplicationUsage",
+    "field": "LastUsageDuration",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "duration",
+     "meaning": "How long the app was used the last time"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-applicationusage-starttime",
+    "type": "ApplicationUsage",
+    "field": "StartTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "Start of the app usage period (not established whether this is a single use or a summary period)"
+    },
+    "basis": "not_established",
+    "reasoning": "Not settled by any measurement or document read so far; shown, never used to support or contradict a claim.",
+    "would_change": "M4 shows EndTime minus StartTime is a constant period (then aggregate_bucket)."
+   },
+   {
+    "row_id": "tm-appsusagelog-endtime",
+    "type": "AppsUsageLog",
+    "field": "EndTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "interval_end",
+     "meaning": "When the app use ended"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-appsusagelog-starttime",
+    "type": "AppsUsageLog",
+    "field": "StartTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "interval_start",
+     "meaning": "When the app use started"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-autofill-lastuseddate",
+    "type": "Autofill",
+    "field": "LastUsedDate",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "latest_of_many",
+     "meaning": "The last time the saved entry was used"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-autofill-timestamp",
+    "type": "Autofill",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "first_record",
+     "meaning": "When the saved entry was first stored"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-calendarentry-enddate",
+    "type": "CalendarEntry",
+    "field": "EndDate",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "scheduled",
+     "meaning": "Planned end of the calendar entry"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-calendarentry-reminders",
+    "type": "CalendarEntry",
+    "field": "Reminders",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "scheduled",
+     "meaning": "When a reminder was set to go off"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-calendarentry-repeatuntil",
+    "type": "CalendarEntry",
+    "field": "RepeatUntil",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "scheduled",
+     "meaning": "Last date the entry repeats"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-calendarentry-startdate",
+    "type": "CalendarEntry",
+    "field": "StartDate",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "scheduled",
+     "meaning": "Planned start of the calendar entry"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-call-duration",
+    "type": "Call",
+    "field": "Duration",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "duration",
+     "meaning": "How long the call lasted"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-call-timestamp",
+    "type": "Call",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the call attempt started"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-celltower-timestamp",
+    "type": "CellTower",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "Time recorded with the cell tower (not established)"
+    },
+    "basis": "not_established",
+    "reasoning": "Not settled by any measurement or document read so far; shown, never used to support or contradict a claim.",
+    "would_change": "M5 settles it."
+   },
+   {
+    "row_id": "tm-chat-lastactivity",
+    "type": "Chat",
+    "field": "LastActivity",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "latest_of_many",
+     "meaning": "The last activity in the chat"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-chat-starttime",
+    "type": "Chat",
+    "field": "StartTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "first_record",
+     "meaning": "When the chat started"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-chatactivity-systemmessagetimestamp",
+    "type": "ChatActivity",
+    "field": "SystemMessageTimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the chat change happened"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-contact-timecreated",
+    "type": "Contact",
+    "field": "TimeCreated",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "first_record",
+     "meaning": "Contact saved on this phone"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-contact-timemodified",
+    "type": "Contact",
+    "field": "TimeModified",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "last_modified",
+     "meaning": "Contact last changed on this phone"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-cookie-creationtime",
+    "type": "Cookie",
+    "field": "CreationTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "first_record",
+     "meaning": "When the cookie was set"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-cookie-expiry",
+    "type": "Cookie",
+    "field": "Expiry",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "expiry",
+     "meaning": "When the cookie stops being valid"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-cookie-lastaccesstime",
+    "type": "Cookie",
+    "field": "LastAccessTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "latest_of_many",
+     "meaning": "The last time the cookie was read (not a page view)"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-creditcard-datelastused",
+    "type": "CreditCard",
+    "field": "DateLastUsed",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "latest_of_many",
+     "meaning": "The last time the card was used"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-creditcard-expirationdate",
+    "type": "CreditCard",
+    "field": "ExpirationDate",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "expiry",
+     "meaning": "When the card expires"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-deviceconnectivity-starttime",
+    "type": "DeviceConnectivity",
+    "field": "StartTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the connection changed"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-deviceevent-endtime",
+    "type": "DeviceEvent",
+    "field": "EndTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "interval_end",
+     "meaning": "When the device event ended"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-deviceevent-starttime",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "interval_start",
+     "meaning": "When the device event started"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-deviceinfoentry-timestamp",
+    "type": "DeviceInfoEntry",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "Time recorded with the device detail (not established)"
+    },
+    "basis": "not_established",
+    "reasoning": "Not settled by any measurement or document read so far; shown, never used to support or contradict a claim.",
+    "would_change": "A vendor document or a second report shows what it records."
+   },
+   {
+    "row_id": "tm-email-timestamp",
+    "type": "Email",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the email was sent or received"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-filedownload-endtime",
+    "type": "FileDownload",
+    "field": "EndTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "interval_end",
+     "meaning": "When the download ended"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-filedownload-lastaccessed",
+    "type": "FileDownload",
+    "field": "LastAccessed",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "latest_of_many",
+     "meaning": "The last time the downloaded file was opened"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-filedownload-starttime",
+    "type": "FileDownload",
+    "field": "StartTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "interval_start",
+     "meaning": "When the download started"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-fileupload-datelastmodified",
+    "type": "FileUpload",
+    "field": "DateLastModified",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "last_modified",
+     "meaning": "When the uploaded file was last changed"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-fileupload-dateuploaded",
+    "type": "FileUpload",
+    "field": "DateUploaded",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the file was uploaded"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-forwardedmessagedata-timecreated",
+    "type": "ForwardedMessageData",
+    "field": "TimeCreated",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "Time of the original message, not of the forwarding"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-installedapplication-deleteddate",
+    "type": "InstalledApplication",
+    "field": "DeletedDate",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the app was removed"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-installedapplication-installdate",
+    "type": "InstalledApplication",
+    "field": "InstallDate",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the app was installed"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-installedapplication-purchasedate",
+    "type": "InstalledApplication",
+    "field": "PurchaseDate",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "first_record",
+     "meaning": "When the app was bought on the account"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-instantmessage-datedeleted",
+    "type": "InstantMessage",
+    "field": "DateDeleted",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the message was deleted"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-instantmessage-datedelivered",
+    "type": "InstantMessage",
+    "field": "DateDelivered",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the message reached the recipient's device"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-instantmessage-selfdestructduration",
+    "type": "InstantMessage",
+    "field": "SelfDestructDuration",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "duration",
+     "meaning": "How long the message was set to last before it disappeared"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-instantmessage-timestamp",
+    "type": "InstantMessage",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the message was sent or received"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-journey-endtime",
+    "type": "Journey",
+    "field": "EndTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "interval_end",
+     "meaning": "When the journey ended"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-journey-starttime",
+    "type": "Journey",
+    "field": "StartTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "interval_start",
+     "meaning": "When the journey started"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-location-endtime",
+    "type": "Location",
+    "field": "EndTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "End time recorded with the place (meaning depends on the source)"
+    },
+    "basis": "not_established",
+    "reasoning": "Not settled by any measurement or document read so far; shown, never used to support or contradict a claim.",
+    "would_change": "M5 by Source, Type and Category settles it per source."
+   },
+   {
+    "row_id": "tm-location-timestamp",
+    "type": "Location",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "Time recorded with the place (whether the phone was there then depends on the source)"
+    },
+    "basis": "not_established",
+    "reasoning": "Not settled by any measurement or document read so far; shown, never used to support or contradict a claim.",
+    "would_change": "M5 by Source, Type and Category settles it per source."
+   },
+   {
+    "row_id": "tm-logentry-endtime",
+    "type": "LogEntry",
+    "field": "EndTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "interval_end",
+     "meaning": "When the logged activity ended"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-logentry-timestamp",
+    "type": "LogEntry",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the log line was written"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-mobilecard-modifytime",
+    "type": "MobileCard",
+    "field": "ModifyTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "last_modified",
+     "meaning": "When the card was last changed"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-mobilecard-purchasetime",
+    "type": "MobileCard",
+    "field": "PurchaseTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "first_record",
+     "meaning": "When the card was bought"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-networkusage-dateended",
+    "type": "NetworkUsage",
+    "field": "DateEnded",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "End of a network usage period (not established)"
+    },
+    "basis": "not_established",
+    "reasoning": "Not settled by any measurement or document read so far; shown, never used to support or contradict a claim.",
+    "would_change": "M4 bucket-width histogram shows a fixed counting period (then aggregate_bucket)."
+   },
+   {
+    "row_id": "tm-networkusage-datestarted",
+    "type": "NetworkUsage",
+    "field": "DateStarted",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "Start of a network usage period (not established)"
+    },
+    "basis": "not_established",
+    "reasoning": "Not settled by any measurement or document read so far; shown, never used to support or contradict a claim.",
+    "would_change": "M4 bucket-width histogram shows a fixed counting period (then aggregate_bucket)."
+   },
+   {
+    "row_id": "tm-note-creation",
+    "type": "Note",
+    "field": "Creation",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "first_record",
+     "meaning": "When the note was created"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-note-modification",
+    "type": "Note",
+    "field": "Modification",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "last_modified",
+     "meaning": "When the note was last changed"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-notification-timestamp",
+    "type": "Notification",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the notification was posted"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-password-datecreated",
+    "type": "Password",
+    "field": "DateCreated",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "first_record",
+     "meaning": "When the saved password was created"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-password-datemodified",
+    "type": "Password",
+    "field": "DateModified",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "last_modified",
+     "meaning": "When the saved password was last changed"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-poweringevent-timestamp",
+    "type": "PoweringEvent",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the phone was switched on or off"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-recording-duration",
+    "type": "Recording",
+    "field": "Duration",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "duration",
+     "meaning": "How long the recording lasts"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-recording-timestamp",
+    "type": "Recording",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the recording was made"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-remoteservicesession-datestarted",
+    "type": "RemoteServiceSession",
+    "field": "DateStarted",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When a session started on another device"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-searcheditem-timestamp",
+    "type": "SearchedItem",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the search was made"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-socialmediaactivity-timestamp",
+    "type": "SocialMediaActivity",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the post, comment or check-in was made"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-user-timelastloggedin",
+    "type": "User",
+    "field": "TimeLastLoggedIn",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "latest_of_many",
+     "meaning": "The last time the user logged in"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-useraccount-timecreated",
+    "type": "UserAccount",
+    "field": "TimeCreated",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "first_record",
+     "meaning": "When the account was created"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-visitedpage-lastvisited",
+    "type": "VisitedPage",
+    "field": "LastVisited",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "latest_of_many",
+     "meaning": "The last time the page was visited; earlier visits are not kept"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-voicemail-duration",
+    "type": "Voicemail",
+    "field": "Duration",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "duration",
+     "meaning": "How long the voicemail lasts"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-voicemail-lastmodified",
+    "type": "Voicemail",
+    "field": "LastModified",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "last_modified",
+     "meaning": "When the voicemail was last changed"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-voicemail-timestamp",
+    "type": "Voicemail",
+    "field": "Timestamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the voicemail was left"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-webbookmark-lastvisited",
+    "type": "WebBookmark",
+    "field": "LastVisited",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "latest_of_many",
+     "meaning": "The last time the bookmarked page was visited"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-webbookmark-timestamp",
+    "type": "WebBookmark",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "first_record",
+     "meaning": "When the bookmark was created"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-wirelessnetwork-endtime",
+    "type": "WirelessNetwork",
+    "field": "EndTime",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "End time recorded with the wireless network (not established)"
+    },
+    "basis": "not_established",
+    "reasoning": "Not settled by any measurement or document read so far; shown, never used to support or contradict a claim.",
+    "would_change": "M5 by Source settles it."
+   },
+   {
+    "row_id": "tm-wirelessnetwork-lastautoconnection",
+    "type": "WirelessNetwork",
+    "field": "LastAutoConnection",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "latest_of_many",
+     "meaning": "The last time the phone connected to the network automatically"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-wirelessnetwork-lastconnection",
+    "type": "WirelessNetwork",
+    "field": "LastConnection",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "latest_of_many",
+     "meaning": "The last time the phone connected to the network"
+    },
+    "basis": "field_name",
+    "reasoning": "Read from the field's own name.",
+    "would_change": "A measurement or vendor document shows the field records something else."
+   },
+   {
+    "row_id": "tm-wirelessnetwork-timestamp",
+    "type": "WirelessNetwork",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "Time recorded with the wireless network (not established)"
+    },
+    "basis": "not_established",
+    "reasoning": "Not settled by any measurement or document read so far; shown, never used to support or contradict a claim.",
+    "would_change": "M5 by Source settles it."
+   },
+   {
+    "row_id": "tm-party-dateread-owner",
+    "type": "Party",
+    "field": "DateRead",
+    "predicates": [],
+    "context": [
+     {
+      "name": "party_is_owner",
+      "op": "eq",
+      "value": true
+     }
+    ],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the phone's owner read it"
+    },
+    "basis": "corpus_measured",
+    "reasoning": "The party is this phone's owner.",
+    "would_change": "M6 on all phones shows the time is not the party's own action."
+   },
+   {
+    "row_id": "tm-party-dateread-other",
+    "type": "Party",
+    "field": "DateRead",
+    "predicates": [],
+    "context": [
+     {
+      "name": "party_is_owner",
+      "op": "eq",
+      "value": false
+     }
+    ],
+    "outputs": {
+     "semantics": "counterpart_action",
+     "meaning": "When the other person read it, on their own device"
+    },
+    "basis": "corpus_measured",
+    "reasoning": "The party is not this phone's owner, so the time records the other person's action.",
+    "would_change": "M6 on all phones shows otherwise."
+   },
+   {
+    "row_id": "tm-party-dateread",
+    "type": "Party",
+    "field": "DateRead",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "Not known whose action this time records"
+    },
+    "basis": "not_established",
+    "reasoning": "The party carries no owner flag.",
+    "would_change": "The party's identity is linked to the owner."
+   },
+   {
+    "row_id": "tm-party-dateplayed-owner",
+    "type": "Party",
+    "field": "DatePlayed",
+    "predicates": [],
+    "context": [
+     {
+      "name": "party_is_owner",
+      "op": "eq",
+      "value": true
+     }
+    ],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "When the phone's owner played it"
+    },
+    "basis": "not_established",
+    "reasoning": "Whether a played time behaves like a read time is not measured (M6).",
+    "would_change": "M6 on all phones shows the time is not the party's own action."
+   },
+   {
+    "row_id": "tm-party-dateplayed-other",
+    "type": "Party",
+    "field": "DatePlayed",
+    "predicates": [],
+    "context": [
+     {
+      "name": "party_is_owner",
+      "op": "eq",
+      "value": false
+     }
+    ],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "When the other person played it, on their own device"
+    },
+    "basis": "not_established",
+    "reasoning": "Whether a played time behaves like a read time is not measured (M6).",
+    "would_change": "M6 on all phones shows otherwise."
+   },
+   {
+    "row_id": "tm-party-dateplayed",
+    "type": "Party",
+    "field": "DatePlayed",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "Not known whose action this time records"
+    },
+    "basis": "not_established",
+    "reasoning": "The party carries no owner flag.",
+    "would_change": "The party's identity is linked to the owner."
+   },
+   {
+    "row_id": "tm-party-datedelivered-owner",
+    "type": "Party",
+    "field": "DateDelivered",
+    "predicates": [],
+    "context": [
+     {
+      "name": "party_is_owner",
+      "op": "eq",
+      "value": true
+     }
+    ],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When it reached the phone's owner"
+    },
+    "basis": "field_name",
+    "reasoning": "The party is this phone's owner.",
+    "would_change": "M6 on all phones shows the time is not the party's own action."
+   },
+   {
+    "row_id": "tm-party-datedelivered-other",
+    "type": "Party",
+    "field": "DateDelivered",
+    "predicates": [],
+    "context": [
+     {
+      "name": "party_is_owner",
+      "op": "eq",
+      "value": false
+     }
+    ],
+    "outputs": {
+     "semantics": "counterpart_action",
+     "meaning": "When it reached the other person's device"
+    },
+    "basis": "field_name",
+    "reasoning": "The party is not this phone's owner, so the time records the other person's action.",
+    "would_change": "M6 on all phones shows otherwise."
+   },
+   {
+    "row_id": "tm-party-datedelivered",
+    "type": "Party",
+    "field": "DateDelivered",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "Not known whose action this time records"
+    },
+    "basis": "not_established",
+    "reasoning": "The party carries no owner flag.",
+    "would_change": "The party's identity is linked to the owner."
+   },
+   {
+    "row_id": "tm-deviceevent-starttime-noend",
+    "type": "DeviceEvent",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "EndTime",
+      "op": "absent"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "semantics": "event_instant",
+     "meaning": "When the device event happened"
+    },
+    "basis": "corpus_measured",
+    "reasoning": "M1: EndTime is absent on part of the starts, which are then single moments.",
+    "would_change": "M1 shows a start without an end is a cut interval."
+   }
+  ]
+ }
+}

@@ -337,37 +337,6 @@ def test_a_confirmation_raises_the_level_and_a_correction_replaces_the_choice(ho
             assert st["Call.role.To"] == "open/"
 
 
-@needs_template
-def test_marks_stamped_at_write_equal_marks_applied_afterwards(hooks):
-    """The sweep stamps the plan's marks as rows are written; a direct call stamps them by UPDATE. Same rows."""
-    write(str(hooks), CALL)
-    with fresh_engine() as engine:
-        with engine.begin() as c:
-            registry.apply_seed(c)
-            case = make_case(c)
-            a, b = call_extraction(c, case), call_extraction(c, case)
-        sweep.interpret_one(engine, a)
-        sweep._hooks["planner"] = None
-        sweep.interpret_one(engine, b)
-
-        def shape(c, ext):
-            out = {}
-            for t, cols in (("phone_time_values", "field_name, is_event_time"),
-                            ("phone_participations", "role, role_basis, implied_role"),
-                            ("phone_texts", "field_name"), ("phone_record_summaries", "model_type"),
-                            ("phone_comm_events", "kind, direction, thread_key IS NOT NULL")):
-                out[t] = sorted((tuple(str(x) for x in r) for r in c.execute(text(
-                    "SELECT mapping_row_id, interpretation_level, %s FROM %s WHERE extraction_id = :e" % (cols, t)),
-                    {"e": ext})))
-            out["calls"] = sorted(tuple(r) for r in c.execute(text(
-                "SELECT rule_id, status, records_touched FROM phone_mapping_judgements WHERE extraction_id = :e"),
-                {"e": ext}))
-            return out
-        with engine.connect() as c:
-            sa, sb = shape(c, a), shape(c, b)
-        assert sa == sb and sa["phone_comm_events"]
-
-
 # ---- shipped type mappings on a real capture (02-U7 acceptance; counts only) ------------------------------------
 
 @needs_corpus
@@ -410,3 +379,81 @@ def test_c3_calls_messages_and_emails_under_the_shipped_mappings():
         levels = q("SELECT DISTINCT interpretation_level FROM phone_comm_events WHERE extraction_id = :e AND "
                    "generation = 9999")
         assert [r[0] for r in levels] == ["applied_unconfirmed"]
+        meaning = q("SELECT count(*), count(meaning_mapping_row_id), count(*) FILTER (WHERE semantics = 'unknown') "
+                    "FROM phone_time_values WHERE extraction_id = :e AND generation = 9999")
+        assert meaning[0][0] == 22881 and meaning[0][1] == 22881  # every time value has its meaning row
+        assert out["meaning_calls"] > 0
+
+
+# ---- 04-U1: timestamp meaning, activity strength and attribution rows ------------------------------------------
+
+def test_every_time_field_in_the_catalogue_has_a_meaning_row():
+    seed = registry.load_seed()
+    time_fields = {(f["type_name"], f["field_name"]) for f in seed["fields"] if f["value_type"] in ("TimeStamp", "TimeSpan")}
+    ms = loader.load_files()
+    tm = [m for m in ms if m.kind == "timestamp_meaning"]
+    assert len(tm) == 1 and tm[0].status == "applied_unconfirmed" and tm[0].reviewed_by is None
+    covered = {(r["type"], r["field"]) for r in tm[0].body["rows"]}
+    assert len(time_fields) == 85 and time_fields <= covered
+    for r in tm[0].body["rows"]:  # a row whose basis is not established says unknown
+        if r["basis"] == "not_established":
+            assert r["outputs"]["semantics"] == "unknown", r["row_id"]
+    acts = [m for m in ms if m.kind == "activity_strength"][0].body["rows"]
+    devev = {p["value"] for r in acts if r["type"] == "DeviceEvent" for p in r["predicates"] if p["field"] == "EventType"}
+    m1 = {"AirplaneMode", "AudioInputRoute", "AudioOutputRoute", "CameraState", "DeviceLockStatus", "DevicePluginStatus",
+          "DisplayOnOff", "DoNotDisturbState", "FlashlightState", "MotionState", "NotificationAction",
+          "OrientationChange", "PowerEvent", "TextInput", "WifiState"}  # every EventType M1 measured on the 14 reports
+    assert m1 <= devev
+
+
+def _shipped(tmp_path, kinds):
+    import shutil
+    for k in kinds:
+        shutil.copytree(os.path.join(loader.DATA_DIR, k), os.path.join(str(tmp_path), k))
+
+
+@needs_template
+def test_read_times_and_device_event_times_take_their_meaning_from_the_record(hooks):
+    _shipped(hooks, ["timestamp_meaning"])
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            msg = model("InstantMessage", [fld("TimeStamp", ("TimeStamp", "2023-03-14T15:07:12-04:00")),
+                                           refs("To", 1, 2, kind="multiModelField")])
+            owner = model("Party", [fld("Identifier", ("String", "+12025550100")), fld("IsPhoneOwner", ("Boolean", "True")),
+                                    fld("DateRead", ("TimeStamp", "2023-03-14T15:08:00-04:00"))])
+            other = model("Party", [fld("Identifier", ("String", "+12025550143")), fld("IsPhoneOwner", ("Boolean", "False")),
+                                    fld("DateRead", ("TimeStamp", "2023-03-14T15:09:00-04:00"))])
+            ev_point = model("DeviceEvent", [fld("StartTime", ("TimeStamp", "2023-03-14T15:07:12-04:00")),
+                                             fld("EventType", ("DeviceEventTypes", "TextInput"))])
+            ev_span = model("DeviceEvent", [fld("StartTime", ("TimeStamp", "2023-03-14T15:07:12-04:00")),
+                                            fld("EndTime", ("TimeStamp", "2023-03-14T15:17:12-04:00")),
+                                            fld("EventType", ("DeviceEventTypes", "DisplayOnOff"))])
+            ext = make_extraction(c, case, [(0, None, 0, msg), (1, 0, 0, owner), (2, 0, 0, other), (3, None, 3, ev_point),
+                                            (4, None, 4, ev_span)],
+                                  timestamps=[stamp(0, "0.0", "TimeStamp", "InstantMessage"),
+                                              stamp(1, "2.0", "DateRead", "Party"), stamp(2, "2.0", "DateRead", "Party"),
+                                              stamp(3, "0.0", "StartTime", "DeviceEvent"),
+                                              stamp(4, "0.0", "StartTime", "DeviceEvent"),
+                                              stamp(4, "1.0", "EndTime", "DeviceEvent")])
+        sweep.interpret_one(engine, ext)
+        with engine.connect() as c:
+            got = {(r[0], r[1]): (r[2], r[3], r[4]) for r in c.execute(text(
+                "SELECT ordinal, field_name, semantics, meaning_mapping_row_id, meaning_level FROM phone_time_values "
+                "WHERE extraction_id = :e"), {"e": ext})}
+            P = "timestamp_meaning/catalogue/"
+            assert got[(0, "TimeStamp")] == ("event_instant", P + "tm-instantmessage-timestamp", "applied_unconfirmed")
+            assert got[(1, "DateRead")][:2] == ("event_instant", P + "tm-party-dateread-owner")
+            assert got[(2, "DateRead")][:2] == ("counterpart_action", P + "tm-party-dateread-other")
+            assert got[(3, "StartTime")][:2] == ("event_instant", P + "tm-deviceevent-starttime-noend")
+            assert got[(4, "StartTime")][:2] == ("interval_start", P + "tm-deviceevent-starttime")
+            assert got[(4, "EndTime")][:2] == ("interval_end", P + "tm-deviceevent-endtime")
+            tl = c.execute(text("SELECT count(*) FROM pv_timeline_entry WHERE extraction_id = :e AND semantics IS NOT "
+                                "NULL AND meaning_level = 'applied_unconfirmed'"), {"e": ext}).scalar()
+            assert tl == 6
+            calls = dict(c.execute(text("SELECT rule_id, records_touched FROM phone_mapping_judgements WHERE "
+                                        "extraction_id = :e AND rule_part = 'meaning'"), {"e": ext}).fetchall())
+            assert calls == {P + "tm-instantmessage-timestamp": 1, P + "tm-party-dateread-owner": 1,
+                             P + "tm-party-dateread-other": 1, P + "tm-deviceevent-starttime-noend": 1,
+                             P + "tm-deviceevent-starttime": 1, P + "tm-deviceevent-endtime": 1}
