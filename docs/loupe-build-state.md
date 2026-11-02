@@ -58,7 +58,7 @@ Branch `cb/cb-screens`, rebased on `1a6b3826` (cb-pol). Commits f6deb203 (A), 1b
   list's copy over http is checked live once item C mounts the list. cb-pol told.
 - Next: item C.
 
-## 2 November: pattern of life, stage F in progress (cb-pol), A to J, L and D live 5096990f
+## 2 November: pattern of life, stage F in progress (cb-pol), A to J, L, D and collecting live f9834e25
 
 Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for readers:
 `/mnt/owl-data/fin-wt/headless/CB-POL-STATUS.md` (written at the end); progress `headless/cb-pol-progress.md`.
@@ -110,11 +110,23 @@ Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for read
   4aa79795; screenshots in `headless/cb-pol-shots/`. Fixed on the way: Places read `items` (API says
   `observations`) and crashed the page; a view chosen straight after a subject reverted the subject. The phones-only
   case labels its phones Phone 1 to 3 and records no zone (journeys widened; cb-ux and cb-screens told).
-- **Next:** key dates as Workspace entries, phone_analysis snapshots through the link registry, device and sensor
-  counts per case, Draft with AI and interview linking in the statement check, Places/Together on Case Map panels,
-  CO cells for Patterns and Lanes, M-13a, Gate M (synthetic two-phone HTTP end to end and the P14 corpus run with
-  the 11 performance targets), J-10c with cb-screens.
-- **Tests:** `tests/test_pattern_u2_activity.py` (7), `tests/test_pattern_u4_availability.py` (4), `u7_grid` (4), `u5_places` (5), `u8_routine` (2), `u9_together` (6), `u10_money` (3), `u11_claims` (6), `u12_drafting` (4), `u6_day` (2); frontend `src/features/pattern/lanes.test.tsx` (3), `views.test.tsx` (1); opt-in PostgreSQL
+- **Collecting (6c8fcf6d, 345575e8, review fix f9834e25):** `snapshots.py` + `pol_analysis_snapshot`: "Keep this
+  result" freezes a Day view, window, grid or places result server-side as a `phone_analysis` link (resolver
+  registered at start-up); a grid is frozen local midnight to local midnight in its zone. `POST /api/dossiers/{id}/
+  interviews/{iid}/evidence:add` adds one interview item and keeps the rest. Shared `useCollectTargets`
+  (`features/phones/collect-targets.ts`) feeds `AddToMenu`; Patterns, the window, and the statement check offer
+  Add to… and Add to an interview; Draft with AI in the statement check. Window zone = case zone (03 4.6).
+  04 decisions 31 to 33.
+- **Live (f9834e25):** journeys J-5a, J-9, J-10b, POL-1 pass; CO cells Patterns (Day result to a finding, a dossier
+  and an interview) and Lanes (window result to a finding) pass signed in over http in 4aa79795, 0 console errors.
+  Draft with AI stops at Workspace AI's own rule (the case has no active case mandate) and says so; the model path
+  is verified by unit tests only. Synthetic dossier "Synthetic witness (cb-pol test)" and finding "Synthetic
+  finding (cb-pol test)" exist in 4aa79795 for these checks.
+- **Open follow-up (mine):** a grid frozen with strong-only plus device state, or with physical events, lists fewer
+  records than the grid counts (not reachable from the page today).
+- **Next:** key dates as Workspace entries, device and sensor counts per case, M-13a, Gate M (synthetic two-phone
+  HTTP end to end and the P14 corpus run with the 11 performance targets), J-10c with cb-screens.
+- **Tests:** `tests/test_pattern_u2_activity.py` (7), `tests/test_pattern_u4_availability.py` (4), `u7_grid` (4), `u5_places` (5), `u8_routine` (2), `u9_together` (6), `u10_money` (3), `u11_claims` (6), `u12_drafting` (4), `u6_day` (2); frontend `src/features/pattern/lanes.test.tsx` (3), `views.test.tsx` (1), `collect.test.tsx` (2); backend `u13_snapshots` (2), u6 window zone (+1); opt-in PostgreSQL
   through `LOUPE_TEST_PHONE_PG_TEMPLATE_URL`. HTTP helper `tests/pattern_pg.py` (`api_client`). Scratch PostgreSQL
   for this job: container `cbp-pgtest` on 127.0.0.1:55446 (template `loupe_tpl`, rebuilt from `loupe_cbp` after
   `alembic upgrade head`).
