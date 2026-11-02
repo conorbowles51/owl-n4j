@@ -599,7 +599,7 @@ STATEMENT_SECTIONS = ('queue', 'files', 'accounts', 'batches', 'remove', 'judgem
 # Every route of the app (frontend src/app/routes.tsx), reported by lib/page-timing.ts as "case/<view>",
 # "admin/<view>" and so on; a Financial view is also reported in detail by its own page-speed hook.
 CASE_ROUTES = ('graph', 'timeline', 'map', 'table', 'financial', 'cellebrite', 'dossiers', 'evidence', 'chat',
-               'agent', 'workspace', 'reports', 'settings')
+               'agent', 'workspace', 'reports', 'settings', 'phone-review', 'phone-patterns')
 # Phone pages below /cases/:id (07 4.13 and 10.2), so they are timed as themselves, never as "other".
 PHONE_PAGES = ('phones', 'phones/summary', 'phone-review', 'phone-patterns', 'phone-analyses',
                'phones-prototype/summary', 'phones-prototype/conversations', 'phones-prototype/needs-a-decision')

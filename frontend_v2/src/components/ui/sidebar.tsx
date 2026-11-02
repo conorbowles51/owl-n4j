@@ -65,6 +65,7 @@ function getFullDataCaseNav(caseId: string): NavItem[] {
   return [
     { label: "Financial", icon: DollarSign, to: `/cases/${caseId}/financial`, shortcut: "5" },
     { label: "Phones", icon: Smartphone, to: `/cases/${caseId}/cellebrite`, shortcut: "6" },
+    { label: "Phone patterns", icon: Smartphone, to: `/cases/${caseId}/phone-patterns` },
     { label: "Evidence", icon: FileText, to: `/cases/${caseId}/evidence`, shortcut: "8" },
   ]
 }

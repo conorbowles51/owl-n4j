@@ -42,6 +42,9 @@ const CellebritePage = lazy(() =>
 )
 const PhonePrototypePage = lazy(() => import("@/features/phones/prototype/PhonePrototypePage"))
 const PhoneGuidePage = lazy(() => import("@/features/phones/PhoneGuidePage"))
+const PatternsPage = lazy(() =>
+  import("@/features/pattern/components/PatternsPage").then((m) => ({ default: m.PatternsPage }))
+)
 const PhoneReviewPage = lazy(() => import("@/features/phones/review/PhoneReviewPage"))
 const DossiersPage = lazy(() =>
   import("@/features/dossiers/components/DossiersPage").then((m) => ({
@@ -176,6 +179,7 @@ export function AppRoutes() {
             <Route path="cellebrite" element={<LazyPage><CellebritePage /></LazyPage>} />
             <Route path="phones-prototype/:view?" element={<LazyPage><PhonePrototypePage /></LazyPage>} />
             <Route path="phone-review" element={<LazyPage><PhoneReviewPage /></LazyPage>} />
+            <Route path="phone-patterns" element={<LazyPage><PatternsPage /></LazyPage>} />
             <Route path="profiles" element={<Navigate to="../dossiers" replace />} />
             <Route path="dossiers" element={<LazyPage><DossiersPage /></LazyPage>} />
             <Route path="evidence" element={<EvidenceExplorer />} />

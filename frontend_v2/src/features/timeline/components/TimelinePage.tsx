@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useCallback, useRef, useState } from "react"
+import { TimelineWindowBar } from "@/features/pattern/components/WindowPanel"
+import { getEventTimeValue } from "../lib/timeline-utils"
 import { useParams, useLocation, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { FinancialAccessProvider } from "@/features/financial/components/FinancialAccessProvider"
@@ -297,7 +299,19 @@ export function TimelinePage() {
     )
   }
 
+  // The window around a moment (07 J-5): device lanes and the Case events lane, drawn by the shared Lanes component.
+  const windowEvents = events.map((e) => ({ key: e.key, name: e.name, type: e.type, at: getEventTimeValue(e) }))
+  const windowBar = caseId ? <TimelineWindowBar caseId={caseId} events={windowEvents} selectedKey={requestedKey} /> : null
+
   if (events.length === 0) {
+    if (windowBar && caseLayer !== "significant") {
+      return (
+        <div className="flex h-full flex-col">
+          {windowBar}
+          <EmptyState icon={Clock} title="No timeline events" description="Process evidence with temporal data to populate the timeline" />
+        </div>
+      )
+    }
     if (caseId && caseLayer === "significant") {
       return (
         <SignificantEmptyState
@@ -319,6 +333,7 @@ export function TimelinePage() {
 
   return (
     <div className="flex h-full flex-col bg-background">
+      {windowBar}
       {requestedKey && (
         <div
           className="flex flex-wrap items-center gap-3 border-b bg-primary/5 px-4 py-2 text-sm"
