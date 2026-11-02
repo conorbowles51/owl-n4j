@@ -45,7 +45,6 @@
     --sidebar-foreground: 228 9% 12%;
     --sidebar-muted: 226 5% 42%;
     --sidebar-border: 230 9% 87%;
-    --sidebar-hover: 240 5% 96%;
     --panel: 240 7% 95%;
     --panel-raised: 0 0% 100%;
     --canvas: 240 5% 96%;
@@ -146,7 +145,6 @@
     --sidebar-foreground: 240 5% 96%;
     --sidebar-muted: 228 5% 62%;
     --sidebar-border: 228 11% 16%;
-    --sidebar-hover: 228 10% 11%;
     --panel: 228 12% 9%;
     --panel-raised: 228 11% 12%;
     --canvas: 225 18% 4%;
@@ -340,7 +338,6 @@
   --color-sidebar-foreground: hsl(var(--sidebar-foreground));
   --color-sidebar-muted: hsl(var(--sidebar-muted));
   --color-sidebar-border: hsl(var(--sidebar-border));
-  --color-sidebar-hover: hsl(var(--sidebar-hover));
   --color-panel: hsl(var(--panel));
   --color-panel-raised: hsl(var(--panel-raised));
   --color-canvas: hsl(var(--canvas));
