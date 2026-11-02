@@ -1,10 +1,12 @@
-## 2 November: phone interpretation, stage D in progress (cb-interpret)
+## 2 November: phone interpretation, stages C and D done (cb-interpret)
 
-Head `3bfc416a` (spec decisions 46 to 57), after `a69013c4` (identity links on the review page) and `984f6c2f`
-(graph layer, thread documents, corrections, resolvers, external processing). Next: P14 capture (running in
-container `cbi-cap-p14`, case `00000000-0000-0000-0000-0000000f1414` in scratch) then its timing with
-`/mnt/owl-data/tmp/cbi/ftime2.py` and its 20.2/20.3 numbers; then the C to D and D to E/F gate records, rebase onto
-`integration/evidence-main-reunion`, release, J-8a and the live check signed in.
+Live `5893ad9c` (pace 2.0, P14 measured, gates C to D and D to E/F recorded in 06 section 8). Released today in order:
+`5dc7fecc` (graph layer, thread documents, corrections, resolvers, external processing, feed lines, AI source
+places), `8685db5f` (Needs a decision opens on the first open reading), `bed2d4bf` (a conversation hit opens as text
+and names its record), `5893ad9c`. J-8a passes on live, signed in over http. Status for readers:
+`/mnt/owl-data/fin-wt/headless/CB-INTERPRET-STATUS.md`. Open items went to followups (pace on a quiet box with
+`backend/scripts/phone_sweep_timing.py`, the observe-phase probe spike, D-2 and D-21 sizes and the record panel for
+cb-screens, phone_analysis for cb-approaches, live `/dev/shm`). Scratch PG `cbi-pgtest` and Neo4j `cbi-n4j` are removed.
 
 Branch `cb/cb-interpret`. Spec 02 units, in 06 order; each with its acceptance test.
 
