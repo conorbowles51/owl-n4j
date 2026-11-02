@@ -13,7 +13,7 @@ Downgrade drops them.
 from alembic import op
 
 revision = "20261102_phone_screens_read"
-down_revision = "20261102_phone_corrections"
+down_revision = "20261102_pol_colocation"
 branch_labels = None
 depends_on = None
 
@@ -29,7 +29,6 @@ CREATE INDEX ix_phone_comm_events_phone_stream ON phone_comm_events (case_id, ex
 CREATE INDEX ix_phone_comm_events_thread_stream ON phone_comm_events (case_id, thread_key, sort_instant, event_uid);
 CREATE INDEX ix_phone_comm_events_case_stream ON phone_comm_events (case_id, sort_instant, event_uid);
 CREATE INDEX ix_phone_comm_events_dup ON phone_comm_events (extraction_id, dup_group_uid) WHERE dup_group_uid IS NOT NULL;
-CREATE INDEX ix_phone_file_refs_record ON phone_file_references (extraction_id, document_index, record_ordinal);
 
 CREATE VIEW pv_extraction AS
 SELECT e.id AS extraction_id, e.case_id,
@@ -87,7 +86,7 @@ SELECT s.record_uid, r.extraction_id, s.case_id, f.file_uid,
 DOWNGRADE = """
 DROP VIEW IF EXISTS pv_attachment_link; DROP VIEW IF EXISTS pv_file; DROP VIEW IF EXISTS pv_identity;
 DROP VIEW IF EXISTS pv_extraction;
-DROP INDEX IF EXISTS ix_phone_file_refs_record; DROP INDEX IF EXISTS ix_phone_comm_events_dup;
+DROP INDEX IF EXISTS ix_phone_comm_events_dup;
 DROP INDEX IF EXISTS ix_phone_comm_events_case_stream; DROP INDEX IF EXISTS ix_phone_comm_events_thread_stream;
 DROP INDEX IF EXISTS ix_phone_comm_events_phone_stream;
 DROP TABLE IF EXISTS case_display_settings;

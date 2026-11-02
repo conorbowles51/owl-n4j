@@ -73,6 +73,24 @@ class StreamFilter(BaseModel):
     zone: Zone = Field(default_factory=Zone)
     sort: Literal["oldest_first", "newest_first"] = "oldest_first"
 
+    @field_validator("case_id")
+    @classmethod
+    def _case_uuid(cls, v):
+        import uuid
+        try:
+            return str(uuid.UUID(v))
+        except (ValueError, AttributeError, TypeError):
+            raise ValueError("case_id is not a case id")
+
+    @field_validator("phones")
+    @classmethod
+    def _phone_uuids(cls, v):
+        import uuid
+        try:
+            return [str(uuid.UUID(p)) for p in v]
+        except (ValueError, AttributeError, TypeError):
+            raise ValueError("phones holds something that is not a phone id")
+
     @field_validator("from_instant", "to_instant")
     @classmethod
     def _aware(cls, v):
@@ -104,7 +122,7 @@ def canonical_json(f: StreamFilter) -> str:
 
 def data_sequence(conn, case_id) -> str:
     """Changes whenever the case's phone data a list reads can change: an extraction's generation or standing, a
-    decision on phone subjects, a value correction."""
+    decision on phone subjects, a value correction, the case time zone."""
     phones = conn.execute(text(
         "SELECT coalesce(string_agg(e.id::text || ':' || e.standing::text || ':' || coalesce(s.generation, -1)::text, "
         "',' ORDER BY e.id), '') FROM phone_extractions e LEFT JOIN phone_interpretation_state s ON "
@@ -112,7 +130,10 @@ def data_sequence(conn, case_id) -> str:
     decisions = conn.execute(text(
         "SELECT count(*)::text || ':' || coalesce(max(created_at)::text, '') FROM adjudications WHERE case_id = :c "
         "AND subject_type LIKE 'phone%'"), {"c": case_id}).scalar()
-    return "%s|%s" % (phones, decisions)
+    # The case time zone sets the day bounds of every list shown in it; a change re-reads the index.
+    zone = conn.execute(text("SELECT time_zone FROM case_display_settings WHERE case_id = :c"),
+                        {"c": case_id}).scalar() or ""
+    return "%s|%s|%s" % (phones, decisions, zone)
 
 
 def snapshot(conn, f: StreamFilter, *, extra: str = "") -> str:

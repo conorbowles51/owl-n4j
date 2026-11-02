@@ -96,6 +96,9 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
   const wins = useRef(new Map<string, WinState>())
   const focused = useRef<string | null>(null)
   const generation = useRef(0)
+  // True while an index request runs: windows are never asked for with the previous index's snapshot and the new
+  // filter (that always answers 409 and would restart the index request, review of 03-2).
+  const indexLoading = useRef(false)
   const filterKey = filter ? JSON.stringify(filter) : ""
   const segments = useMemo(() => (index ? buildSegments(index) : []), [index])
   const count = itemCount(segments)
@@ -113,6 +116,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
     const f = filterRef.current
     if (!f) return
     const gen = ++generation.current
+    indexLoading.current = true
     rows.current = new Map()
     wins.current = new Map()
     setStatus("loading")
@@ -120,6 +124,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
     try {
       const idx = await streamIndex(f)
       if (gen !== generation.current) return
+      indexLoading.current = false
       setIndex(idx)
       setStatus("ready")
       if (stale) {
@@ -138,6 +143,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
       }
     } catch (e) {
       if (gen !== generation.current) return
+      indexLoading.current = false
       setStatus("error")
       setError(failureText(e, INDEX_FAILED))
     }
@@ -153,7 +159,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
     async (seg: number, start: number) => {
       const idx = index
       const f = filterRef.current
-      if (!idx || !f) return
+      if (!idx || !f || indexLoading.current) return
       const key = `${seg}|${start}`
       const prev = wins.current.get(key)
       if (prev && (prev.state === "loading" || prev.state === "loaded")) return
@@ -274,14 +280,20 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
     async (onProgress?: (done: number, total: number) => void) => {
       const idx = index
       const f = filterRef.current
-      if (!idx || !f) return []
+      if (!idx || !f || indexLoading.current) throw new Error("The list is still loading.")
       const segs = buildSegments(idx)
       const out: StreamRow[] = []
       for (let si = 0; si < segs.length; si++) {
         for (let start = 0; start < segs[si].count; start += windowSize) {
           let got = rows.current.get(`${si}|${start}`)
           if (!got) {
-            const w = await streamWindow(f, idx.snapshot, segs[si].day, start, Math.min(windowSize, segs[si].count - start))
+            let w
+            try {
+              w = await streamWindow(f, idx.snapshot, segs[si].day, start, Math.min(windowSize, segs[si].count - start))
+            } catch (e) {
+              if (e instanceof StaleSnapshotError) void loadIndex(true)
+              throw e
+            }
             got = w.items
             rows.current.set(`${si}|${start}`, got)
             wins.current.set(`${si}|${start}`, { state: "loaded", tries: 1 })
@@ -293,7 +305,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
       bump()
       return out
     },
-    [index, windowSize],
+    [index, windowSize, loadIndex],
   )
 
   return {

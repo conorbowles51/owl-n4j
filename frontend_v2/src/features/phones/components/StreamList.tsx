@@ -3,10 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { copyInGesture, readyToCopySentence, type CopyPayload } from "@/lib/copy-text"
 import { cn } from "@/lib/cn"
+import { failureText, StaleSnapshotError } from "../api"
 import type { UseStream } from "../hooks/use-stream"
 import { WINDOW_FAILED } from "../hooks/use-stream"
 import { rowsHtml, rowsText } from "../lib/copy-rows"
-import { LONG_BODY, plural, totalWords } from "../lib/stream-words"
+import { LONG_BODY, plural, STALE_COPY, totalWords } from "../lib/stream-words"
 import type { StreamRow } from "../schemas"
 import { Arrow, ParticipantLabel } from "./ParticipantLabel"
 import { rowBadges } from "../lib/badges"
@@ -60,7 +61,7 @@ export function StreamList({
   const [allSelected, setAllSelected] = useState(false)
   const [anchor, setAnchor] = useState<number | null>(null)
   const [focusIndex, setFocusIndex] = useState<number | null>(null)
-  const [copyState, setCopyState] = useState<{ kind: "idle" } | { kind: "preparing"; done: number; total: number } | { kind: "ready"; payload: CopyPayload; n: number } | { kind: "copied"; n: number } | { kind: "failed" }>({ kind: "idle" })
+  const [copyState, setCopyState] = useState<{ kind: "idle" } | { kind: "preparing"; done: number; total: number } | { kind: "ready"; payload: CopyPayload; n: number } | { kind: "copied"; n: number } | { kind: "failed" } | { kind: "load_failed"; message: string }>({ kind: "idle" })
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   const virtualizer = useVirtualizer({
@@ -121,7 +122,12 @@ export function StreamList({
         const payload = { text: rowsText(all, caseName, filterWords, zoneName), html: rowsHtml(all, caseName, filterWords, zoneName) }
         setCopyState({ kind: "ready", payload, n: all.length })
       })
-      .catch(() => setCopyState({ kind: "failed" }))
+      .catch((e) =>
+        setCopyState({
+          kind: "load_failed",
+          message: e instanceof StaleSnapshotError ? STALE_COPY : failureText(e, "The rows to copy could not be loaded. Nothing was copied."),
+        }),
+      )
   }, [loadedSelection, allSelected, stream, caseName, filterWords, zoneName])
 
   const toggle = (row: StreamRow, index: number, shift: boolean) => {
@@ -261,6 +267,7 @@ export function StreamList({
         )}
         {copyState.kind === "copied" && <span role="status">Copied {plural(copyState.n, noun)}.</span>}
         {copyState.kind === "failed" && <span role="status">The browser did not allow copying. Select the text and press Ctrl+C.</span>}
+        {copyState.kind === "load_failed" && <span role="alert">{copyState.message}</span>}
         {stream.notice && (
           <span role="status" className="text-muted-foreground">
             {stream.notice}

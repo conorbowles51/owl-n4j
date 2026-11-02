@@ -315,3 +315,53 @@ def test_a_large_day_windows_by_offset_with_no_gap_or_overlap(db):
     instants = [r for r in seen]
     assert instants  # order is checked by the window's ORDER BY; uniqueness and count prove no gap or overlap
     assert timezone.utc
+
+
+def test_a_record_kept_from_the_previous_reading_does_not_list_an_attachment_twice(db):
+    """Review of 03-1: while a phone is re-read, phone_record_summaries holds the earlier generation's rows too; an
+    attachment on a child record is listed once, from the current generation."""
+    case = make_case(db)
+    ext, evs = phone(db, case, events=[msg(at(2023, 3, 14), ANA, [OWNER])])
+    parent = evs[0]["record_uid"]
+    for gen in (0, 1):  # 1 is the current generation in the fixture; 0 is left from the earlier reading
+        db.execute(text(
+            "INSERT INTO phone_record_summaries (case_id, extraction_id, document_index, ordinal, record_uid, "
+            "root_record_uid, parent_record_uid, locator, model_type, generation, is_top_level, title, has_time, "
+            "has_point) VALUES (:c, :e, 0, 900, '00000000-0000-0000-0000-0000000000a1', :p, :p, 'x/0/r900', "
+            "'Attachment', :g, false, 'synthetic', false, false)"), {"c": case, "e": ext, "p": parent, "g": gen})
+    db.execute(text(
+        "INSERT INTO phone_file_references (extraction_id, document_index, record_ordinal, body_path, mechanism, "
+        "reference_text, resolution) VALUES (:e, 0, 900, 'f', 'file_id_attribute', 'chat/a.jpg', 'unresolved')"),
+        {"e": ext})
+    _, rows = _all_rows(db, F(case))
+    assert [a["filename"] for a in rows[0]["attachments"]] == ["a.jpg"]
+
+
+def test_a_report_zone_that_is_not_a_zone_name_shows_utc_and_says_so(db):
+    """Review of 03-1: capture keeps the report's zone text when it is not a zone name; lists still load."""
+    case = make_case(db)
+    ext, _ = phone(db, case, device_zone="GMT-05:00 Eastern", events=[msg(at(2023, 3, 14), ANA, [OWNER])])
+    for mode in ("case", "phone"):
+        idx = S.index_comm_events(db, F(case, zone={"mode": mode, "phone": str(ext)}))
+        assert idx["zone"]["name"] == "UTC" and "not one Loupe recognises" in idx["zone"]["note"]
+        assert idx["counts"]["events"] == 1
+
+
+def test_saving_the_case_time_zone_makes_an_open_list_stale(db):
+    """Review of 03-1: day bounds follow the case zone, so a new zone changes the snapshot (409, then re-read)."""
+    case = make_case(db)
+    phone(db, case, events=[msg(at(2023, 3, 14, 3), ANA, [OWNER])])
+    f = F(case)
+    before = S.index_comm_events(db, f)["snapshot"]
+    uid = db.execute(text("SELECT created_by_user_id FROM cases WHERE id = :c"), {"c": case}).scalar()
+    db.execute(text("INSERT INTO case_display_settings (case_id, time_zone, updated_by) VALUES (:c, "
+                    "'America/New_York', :u)"), {"c": case, "u": uid})
+    with pytest.raises(S.StaleSnapshot):
+        S.window_comm_events(db, f, snapshot_token=before, day="2023-03-14", offset=0, limit=10)
+
+
+def test_a_filter_with_a_case_or_phone_id_that_is_not_an_id_is_refused():
+    with pytest.raises(ValueError):
+        StreamFilter(case_id="not-a-case")
+    with pytest.raises(ValueError):
+        StreamFilter(case_id="00000000-0000-0000-0000-000000000001", phones=["C3"])

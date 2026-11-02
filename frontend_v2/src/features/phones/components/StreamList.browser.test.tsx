@@ -206,3 +206,41 @@ it("A13: three selected rows and Ctrl+C write text and HTML; Ctrl+A then copy co
     window.removeEventListener("copy", grab)
   }
 })
+
+it("a new filter asks for no window with the previous snapshot while its index loads (review of 03-2)", async () => {
+  const idx = index(200_000, 2_000)
+  const calls = serve(idx)
+  const base = mocked.getMockImplementation()!
+  let release: () => void = () => {}
+  const held = new Promise<void>((r) => (release = r))
+  const windowSnapshots: string[] = []
+  let changed = false
+  mocked.mockImplementation(async (url: string, init?: { body?: unknown }) => {
+    if (changed && url.startsWith("/api/phones/streams/index")) await held
+    if (changed && url.startsWith("/api/phones/streams/window")) windowSnapshots.push((init?.body as Body).snapshot)
+    return base(url, init as never)
+  })
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const view = render(
+    <QueryClientProvider client={client}>
+      <Harness filter={{ case_id: "c" }} />
+    </QueryClientProvider>,
+  )
+  await screen.findByText("row 0")
+  changed = true
+  view.rerender(
+    <QueryClientProvider client={client}>
+      <Harness filter={{ case_id: "c", apps: ["SMS"] }} />
+    </QueryClientProvider>,
+  )
+  const scroller = screen.getByTestId("stream-scroll")
+  scroller.focus()
+  fireEvent.keyDown(scroller, { key: "End" })
+  await new Promise((r) => setTimeout(r, 500))
+  expect(windowSnapshots).toEqual([])
+  release()
+  await waitFor(() => expect(windowSnapshots.length).toBeGreaterThan(0))
+  expect(new Set(windowSnapshots)).toEqual(new Set(["s2"]))
+  expect(calls.index).toBe(2)
+  expect(document.body.textContent).not.toContain("New data arrived")
+})

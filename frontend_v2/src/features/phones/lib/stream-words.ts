@@ -1,6 +1,7 @@
 import type { UseStream } from "../hooks/use-stream"
 
 export const LONG_BODY = 2000
+export const STALE_COPY = "New data arrived while the rows were loading. Nothing was copied; the list has been refreshed, copy again."
 
 export function plural(n: number, noun: { one: string; many: string }) {
   return `${n.toLocaleString("en-US")} ${n === 1 ? noun.one : noun.many}`

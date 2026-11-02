@@ -64,7 +64,10 @@ def case_zone(conn, case_id) -> dict:
     zones = [r[0] for r in conn.execute(text(
         "SELECT device_zone FROM pv_extraction WHERE case_id = :c AND standing = 'active'"), {"c": case_id})]
     if zones and all(zones) and len(set(zones)) == 1:
-        return {"name": zones[0], "basis": "phones_device_zone", "note": None}
+        if T.valid_zone(zones[0]):
+            return {"name": zones[0], "basis": "phones_device_zone", "note": None}
+        return {"name": "UTC", "basis": "utc_default",
+                "note": "The time zone in the report is not one Loupe recognises. Times are shown in UTC."}
     note = ("Phones in this case are in different or unknown time zones. Times are shown in UTC." if zones else None)
     return {"name": "UTC", "basis": "utc_default", "note": note}
 
@@ -86,6 +89,11 @@ def resolve_zone(conn, f: StreamFilter) -> dict:
             out["note"] = "This phone's time zone is not stated in the report. Times are shown in the case time zone."
     else:
         out = case_zone(conn, f.case_id)
+    if not T.valid_zone(out["name"]):
+        # The report's zone text is kept as written when it is not a zone name (capture flag
+        # device_zone_not_a_zone_name); the list is shown in UTC and says so, as thread documents do.
+        out = {"name": "UTC", "basis": "utc_default",
+               "note": "The time zone in the report is not one Loupe recognises. Times are shown in UTC."}
     out["mode"] = mode
     out["display_name"] = T.zone_name(out["name"])
     return out
@@ -413,11 +421,13 @@ def build_rows(conn, ctx: L.LabelContext, rows, zone: str, f: StreamFilter) -> l
     for a in conn.execute(text(
             "SELECT coalesce(s.parent_record_uid, a.record_uid) AS owner_uid, a.record_uid, a.file_uid, a.mechanism, "
             "a.reference_text, a.resolved, f.local_path, f.category, f.verification FROM pv_attachment_link a "
-            "LEFT JOIN phone_record_summaries s ON s.record_uid = a.record_uid AND s.record_uid <> ALL(:u) "
-            "AND s.parent_record_uid = ANY(:u) "
+            "LEFT JOIN (SELECT s.record_uid, s.parent_record_uid FROM phone_record_summaries s JOIN "
+            "phone_interpretation_state st ON st.extraction_id = s.extraction_id AND st.generation = s.generation) s "
+            "ON s.record_uid = a.record_uid AND s.record_uid <> ALL(:u) AND s.parent_record_uid = ANY(:u) "
             "LEFT JOIN pv_file f ON f.file_uid = a.file_uid "
-            "WHERE a.record_uid = ANY(:u) OR a.record_uid IN (SELECT record_uid FROM phone_record_summaries WHERE "
-            "parent_record_uid = ANY(:u))"), {"u": uids}):
+            "WHERE a.record_uid = ANY(:u) OR a.record_uid IN (SELECT s2.record_uid FROM phone_record_summaries s2 JOIN "
+            "phone_interpretation_state st2 ON st2.extraction_id = s2.extraction_id AND st2.generation = s2.generation "
+            "WHERE s2.parent_record_uid = ANY(:u))"), {"u": uids}):
         path = a.local_path or a.reference_text or ""
         atts[a.owner_uid].append({"file_uid": str(a.file_uid) if a.file_uid else None,
                                   "filename": path.replace("\\", "/").rsplit("/", 1)[-1] or None,
