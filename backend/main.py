@@ -95,6 +95,10 @@ async def lifespan(app: FastAPI):
     # Phone mappings (02 section 6): the sweep re-derives when the loaded set changes.
     from services.phone import mappings as phone_mappings
     phone_mappings.install()
+    from services.phone import identities as phone_identities
+    phone_identities.install()  # after the mappings: identities read the comm events
+    from services.phone import readings as phone_readings
+    phone_readings.install()  # reading, region and owner decisions; the decision revision
     try:
         # Reload snapshots from disk (non-blocking)
         snapshot_storage.reload()

@@ -55,6 +55,7 @@ from postgres.models.enums import (
 )
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.phone_extraction import PhoneExtraction, PhoneExtractionContainer
+from postgres.models.phone_identity import PhoneIdentity, PhoneRecordSubject
 from postgres.models.evidence_upload import EvidenceUploadGroup
 from postgres.models.financial import (
     FinancialAccount,
@@ -97,6 +98,8 @@ TABLES = [
     EvidenceUploadGroup.__table__,
     PhoneExtractionContainer.__table__,
     PhoneExtraction.__table__,
+    PhoneIdentity.__table__,
+    PhoneRecordSubject.__table__,
 ]
 
 USD = "USD"
@@ -354,13 +357,22 @@ class TheSubject(DecisionTestCase):
 
     def test_every_subject_type_in_the_vocabulary_maps_to_a_model(self):
         """A member with no model would raise ``KeyError`` at the first use."""
+        report = self._phone_report()
+        identity = PhoneIdentity(id=uuid.uuid4(), case_id=self.case.id, identity_key="phone:+12025550143",
+                                 kind="phone", value_normalised="+12025550143", value_display="+1 202-555-0143")
+        record = PhoneRecordSubject(id=uuid.uuid4(), case_id=self.case.id, extraction_id=report.id, document_index=0,
+                                    ordinal=1)
+        self.db.add_all([identity, record])
+        self.db.flush()
         subjects = {
             AdjudicationSubject.transaction: self.row,
             AdjudicationSubject.statement_period: self.period,
             AdjudicationSubject.source_document: self.document,
             AdjudicationSubject.account: self.account,
             AdjudicationSubject.evidence_file: self.evidence_file,
-            AdjudicationSubject.phone_extraction: self._phone_report(),
+            AdjudicationSubject.phone_extraction: report,
+            AdjudicationSubject.phone_identity: identity,
+            AdjudicationSubject.phone_record: record,
         }
         self.assertEqual(set(subjects), set(AdjudicationSubject))
 

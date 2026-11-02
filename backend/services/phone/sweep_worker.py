@@ -33,8 +33,11 @@ def main() -> int:
     from sqlalchemy import text
 
     from postgres.session import _get_engine
-    from services.phone import generic, mappings, resolvers, sweep  # noqa: F401  (resolvers: as the backend)
+    from services.phone import generic, identities, mappings, resolvers, sweep  # noqa: F401  (resolvers: as the backend)
     mappings.install()
+    identities.install()  # after the mappings: identities read the comm events
+    from services.phone import readings
+    readings.install()  # reading, region and owner decisions; the decision revision
     generic.PACE["factor"] = float(os.environ.get("LOUPE_PHONE_SWEEP_PACE", DEFAULT_PACE))
     engine = _get_engine()
     holder = engine.connect()

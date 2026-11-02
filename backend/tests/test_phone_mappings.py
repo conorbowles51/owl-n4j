@@ -166,7 +166,7 @@ def stamp(ordinal, body_path, field, mt):
             "os": "explicit", "off": -240, "ft": None, "lw": None}
 
 
-def call_extraction(c, case, *, timestamp_type="TimeStamp", calls=3):
+def call_extraction(c, case, *, timestamp_type="TimeStamp", calls=3, label="C77"):
     records, stamps, o = [], [], 0
     for _ in range(calls):
         top = o
@@ -181,7 +181,7 @@ def call_extraction(c, case, *, timestamp_type="TimeStamp", calls=3):
         if timestamp_type == "TimeStamp":
             stamps.append(stamp(top, "0.0", "TimeStamp", "Call"))
         o += 3
-    return make_extraction(c, case, records, timestamps=stamps)
+    return make_extraction(c, case, records, timestamps=stamps, label=label)
 
 
 def _setup(engine, **kw):

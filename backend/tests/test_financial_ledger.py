@@ -31,6 +31,7 @@ from postgres.base import Base
 from postgres.models.case import Case
 from postgres.models.enums import (
     AdjudicationDecision,
+    AdjudicationReasonKind,
     AdjudicationSubject,
     BalanceSource,
     DateSource,
@@ -100,6 +101,7 @@ VOCABULARY_CONSTRAINTS = {
     "ck_financial_transactions_ordering_date_source": DateSource,
     "ck_adjudications_subject_type": AdjudicationSubject,
     "ck_adjudications_decision": AdjudicationDecision,
+    "ck_adjudications_reason_kind": AdjudicationReasonKind,
 }
 
 _IN_LIST = re.compile(r"\bIN\s*\(([^)]*)\)", re.IGNORECASE)

@@ -62,9 +62,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Mapping, Optional
 
-from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
+from postgres.models.enums import AdjudicationDecision, AdjudicationReasonKind, AdjudicationSubject
 from postgres.models.evidence import EvidenceFile
 from postgres.models.phone_extraction import PhoneExtraction
+from postgres.models.phone_identity import PhoneIdentity, PhoneRecordSubject
 from postgres.models.financial import (
     FinancialAccount,
     AdjudicationEvent,
@@ -106,6 +107,8 @@ _SUBJECT_MODELS: dict[AdjudicationSubject, type] = {
     AdjudicationSubject.account: FinancialAccount,
     AdjudicationSubject.evidence_file: EvidenceFile,
     AdjudicationSubject.phone_extraction: PhoneExtraction,
+    AdjudicationSubject.phone_identity: PhoneIdentity,
+    AdjudicationSubject.phone_record: PhoneRecordSubject,
 }
 
 # Every member of the vocabulary must be reachable, or a decision that the
@@ -276,6 +279,7 @@ def record(
     before: Optional[Mapping[str, Any]] = None,
     after: Optional[Mapping[str, Any]] = None,
     ingestion_run_id: Optional[uuid.UUID] = None,
+    reason_kind: str = "typed",
 ) -> AdjudicationEvent:
     """Append one decision.  Call this *before* mutating ``subject``.
 
@@ -325,6 +329,11 @@ def record(
             "a decision without a stated reason is not an adjudication, it is "
             "an unexplained edit"
         )
+    if reason_kind not in {k.value for k in AdjudicationReasonKind}:
+        raise DecisionError(
+            f"reason_kind is 'typed' (the person's words) or 'standard' (built "
+            f"from what was shown), not {reason_kind!r}"
+        )
     if not isinstance(actor, Actor):
         raise DecisionError(
             f"actor must be an Actor, got {type(actor).__name__}"
@@ -341,6 +350,7 @@ def record(
         subject_sequence=_next_sequence(session, subject_type, subject.id),
         decision=decision.value,
         reason=reason,
+        reason_kind=reason_kind,
         before=before_json,
         after=after_json,
         actor_user_id=actor.user_id,

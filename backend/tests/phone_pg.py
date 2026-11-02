@@ -78,6 +78,12 @@ def make_case(conn):
     conn.execute(text("INSERT INTO cases (id,title,status,archived,created_by_user_id,owner_user_id,created_at,"
                       "updated_at) VALUES (:c, 'synthetic phone test', 'active', false, :u, :u, now(), now())"),
                  {"c": cid, "u": uid})
+    import json
+    from services.case_service import OWNER_PERMISSIONS
+    # the owner's membership, as create_case writes it, so case permission checks pass for the synthetic owner
+    conn.execute(text("INSERT INTO case_memberships (case_id, user_id, membership_role, permissions, added_by_user_id, "
+                      "created_at, updated_at) VALUES (:c, :u, 'owner', CAST(:p AS jsonb), :u, now(), now())"),
+                 {"c": cid, "u": uid, "p": json.dumps(OWNER_PERMISSIONS)})
     return cid
 
 

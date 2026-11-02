@@ -131,6 +131,18 @@ class AdjudicationSubject(str, Enum):
     # A phone report (01 section 10.7): Replace and Retire are decisions about which report of a phone the case
     # stands on. 02 section 8.8 adds its other phone decisions against the same subject.
     phone_extraction = "phone_extraction"
+    # 02 section 8.8: an identity in the case (a number, an app account, an address) and one record of a phone.
+    phone_identity = "phone_identity"
+    phone_record = "phone_record"
+
+
+class AdjudicationReasonKind(str, Enum):
+    """Whose words a decision's reason is (02 section 8.8). ``typed``: the person wrote it. ``standard``: built from
+    what the screen showed them when they confirmed (the examples opened, the reasons a suggestion listed), so a
+    routine confirmation is never presented as a reason the person wrote."""
+
+    typed = "typed"
+    standard = "standard"
 
 
 class AdjudicationDecision(str, Enum):
@@ -233,6 +245,30 @@ class AdjudicationDecision(str, Enum):
     # reason. The subject is the retired report; ``after`` names the report that replaces it. Its records stay
     # readable. It has no reversal member yet because nothing can undo it: there is no restore action.
     supersede_phone_extraction = "supersede_phone_extraction"
+    # 02 section 8.8. Identity links: each has its reversal in the same vocabulary.
+    link_phone_identity = "link_phone_identity"
+    unlink_phone_identity = "unlink_phone_identity"
+    reject_phone_identity_link = "reject_phone_identity_link"
+    restore_phone_identity_link = "restore_phone_identity_link"
+    set_phone_identity_label = "set_phone_identity_label"
+    # Phone setup: each is reversed by another of the same.
+    set_phone_owner = "set_phone_owner"
+    set_phone_device_zone = "set_phone_device_zone"
+    set_phone_default_region = "set_phone_default_region"
+    set_phone_clock_offset = "set_phone_clock_offset"
+    apply_phone_zone_to_offsetless = "apply_phone_zone_to_offsetless"
+    allow_phone_external_processing = "allow_phone_external_processing"
+    accept_phone_reconciliation_difference = "accept_phone_reconciliation_difference"
+    set_phone_label = "set_phone_label"
+    # A value of one record corrected; the machine value stays beside it (02 section 10).
+    correct_phone_value = "correct_phone_value"
+    mark_not_duplicate = "mark_not_duplicate"
+    # A reading of the system (a mapping rule) confirmed or corrected on one phone in one case (02 sections 6.8, 6.10).
+    confirm_phone_reading = "confirm_phone_reading"
+    correct_phone_reading = "correct_phone_reading"
+    # 05 section 3.7, on the subject 05's results table adds.
+    confirm_phone_result = "confirm_phone_result"
+    reject_phone_result = "reject_phone_result"
 
 
 class IngestionRunStatus(str, Enum):

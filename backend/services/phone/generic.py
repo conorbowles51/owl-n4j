@@ -70,6 +70,9 @@ COLUMNS = {
 DERIVED_TABLES = tuple(COLUMNS)
 # Rows the mappings derive (02 section 6.9); swapped by generation with the generic rows (5.7).
 MAPPED_TABLES = ("phone_comm_events", "phone_threads")
+# Identity rows of one phone (02 sections 8.5, 8.6); swapped by generation too.
+IDENTITY_TABLES = ("phone_identity_sightings", "phone_identity_names", "phone_owner_candidates")
+GENERATION_TABLES = DERIVED_TABLES + MAPPED_TABLES + IDENTITY_TABLES
 
 
 class Held(RuntimeError):
@@ -478,9 +481,9 @@ def held_documents(conn, ext):
     return [d for d, r in rows if r == "differs"]
 
 
-def interpret(conn, extraction_id, generation, sensitive=SENSITIVE_DEFAULT, marks=None) -> dict:
+def interpret(conn, extraction_id, generation, sensitive=SENSITIVE_DEFAULT, marks=None, progress=None) -> dict:
     """Write generation ``generation`` of the generic rows for one extraction (no delete, no commit), stamped
-    with the mapping ``marks`` when given."""
+    with the mapping ``marks`` when given. ``progress(records_done)`` is called after each batch."""
     meta = conn.execute(text("SELECT case_id FROM phone_extractions WHERE id = :e"), {"e": extraction_id}).one()
     it = Interpreter(conn, extraction_id, meta[0], generation, sensitive, positionable_types(conn), marks)
     rows = conn.execute(text(
@@ -488,7 +491,7 @@ def interpret(conn, extraction_id, generation, sensitive=SENSITIVE_DEFAULT, mark
         "WHERE extraction_id = :e ORDER BY document_index, ordinal").execution_options(
         stream_results=True, yield_per=BATCH), {"e": extraction_id})
     batch = []
-    state = {"doc": None}
+    state = {"doc": None, "done": 0}
 
     def run(batch):
         groups = defaultdict(list)
@@ -500,6 +503,9 @@ def interpret(conn, extraction_id, generation, sensitive=SENSITIVE_DEFAULT, mark
                 it.finish_subtree()
             state["doc"] = d
             it.record(d, o, p, t, mt, body, stamps[d].get(o, {}))
+        state["done"] += len(batch)
+        if progress is not None:
+            progress(state["done"])
 
     # Timestamps are read per batch on a second statement while the record cursor stays open.
     for row in rows:
@@ -514,15 +520,6 @@ def interpret(conn, extraction_id, generation, sensitive=SENSITIVE_DEFAULT, mark
     out = dict(it.stats)
     out.update({"rows:%s" % k: v for k, v in it.w.counts.items()})
     return out
-
-
-def delete_generations_before(conn, extraction_id, generation) -> dict:
-    deleted = {}
-    for t in DERIVED_TABLES + MAPPED_TABLES:
-        r = conn.execute(text("DELETE FROM %s WHERE extraction_id = :e AND generation < :g" % t),
-                         {"e": extraction_id, "g": generation})
-        deleted[t] = r.rowcount
-    return deleted
 
 
 PURGE_BATCH = 20000
@@ -543,7 +540,7 @@ def purge_generations_before(engine, extraction_id, generation, batch=PURGE_BATC
     where = "case_id = :c AND extraction_id = :e AND generation < :g"
     args = {"c": case_id, "e": extraction_id, "g": generation, "n": batch}
     deleted = {}
-    for t in dict.fromkeys(DERIVED_TABLES + MAPPED_TABLES):
+    for t in dict.fromkeys(GENERATION_TABLES):
         n, last = 0, "(0,0)"
         while True:
             started = time.monotonic()

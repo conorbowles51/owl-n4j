@@ -438,9 +438,13 @@ def _interview_date(data: dict[str, Any]) -> tuple[datetime | None, str | None]:
         raise ValueError("Enter a year, year-month, full date or timestamp with timezone") from exc
 
 
-def create_dossier(db: Session, *, case_id: uuid.UUID, user: User, data: dict[str, Any]) -> dict[str, Any]:
+def create_dossier(db: Session, *, case_id: uuid.UUID, user: User, data: dict[str, Any], commit: bool = True) -> dict[str, Any]:
+    """``commit=False`` flushes and leaves the commit to the caller, so a phone identity link (02 section 8.8) creates
+    the person and records the link in one transaction."""
     check_case_access(db, case_id, user, required_permission=("case", "edit"))
     key = _text(data.get("canonical_entity_key"))
+    if key and not commit:
+        raise ValueError("A Dossier on a graph entity is created with its own commit (its significant entities follow it)")
     identity = _require_graph_identity(case_id, key) if key else None
     if key and db.scalar(select(CaseProfile.id).where(
         CaseProfile.case_id == case_id, CaseProfile.canonical_entity_key == key,
@@ -461,10 +465,15 @@ def create_dossier(db: Session, *, case_id: uuid.UUID, user: User, data: dict[st
     try:
         db.flush()
         _replace_roles(db, dossier, data.get("roles") or [], user)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
     except IntegrityError as exc:
         db.rollback()
         raise DossierConflict("This graph entity already has an active Dossier in this case") from exc
+    if not commit:
+        return {"id": str(dossier.id), "display_name": dossier.display_name}
     if key:
         add_significant_entities(db, case_id=case_id, current_user=user, entity_keys=[key], addition_source="dossier", context={"dossier_id": str(dossier.id)})
     return serialize_dossier(db, _load(db, dossier.id))

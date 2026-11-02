@@ -165,8 +165,9 @@ def interpret_one(engine, extraction_id) -> dict:
             new_gen = generation + 1
             the_plan = _hooks["planner"](conn, extraction_id) if _hooks["planner"] else None
             lap("plan")
+            prog = _progress(engine, extraction_id, ext.get("record_count"))
             counts = generic.interpret(conn, extraction_id, new_gen, sensitive=sensitive_fields(),
-                                       marks=the_plan["marks"] if the_plan else None)
+                                       marks=the_plan["marks"] if the_plan else None, progress=prog)
             lap("generic")
             applied = {}
             for fn in _hooks["apply"]:
@@ -191,8 +192,34 @@ def interpret_one(engine, extraction_id) -> dict:
     deleted = generic.purge_generations_before(engine, extraction_id, new_gen) if generation else {}
     done = {"deleted_previous": sum(deleted.values()), "phase_seconds:purge_previous": round(time.monotonic() - t0, 1)}
     _purged(engine, extraction_id, new_gen, done)
+    prog(ext.get("record_count") or 0, finished=True)
     counts.pop("purge_pending", None)
     return dict(counts, status="done", generation=new_gen, **done)
+
+
+def _progress(engine, extraction_id, total):
+    """Records read so far, written on a connection of its own so readers see it while the pass runs (07 J-8)."""
+    state = {"at": 0.0}
+
+    def write(done, finished=False):
+        now = time.monotonic()
+        if not finished and now - state["at"] < 1.0:
+            return
+        state["at"] = now
+        try:
+            with engine.begin() as c:
+                c.execute(text(
+                    "INSERT INTO phone_interpretation_progress (extraction_id, records_total, records_done, started_at, "
+                    "updated_at, finished_at) VALUES (:e, :t, :d, now(), now(), CASE WHEN :f THEN now() END) "
+                    "ON CONFLICT (extraction_id) DO UPDATE SET records_total = EXCLUDED.records_total, records_done = "
+                    "EXCLUDED.records_done, updated_at = now(), finished_at = EXCLUDED.finished_at, started_at = CASE "
+                    "WHEN :d0 THEN now() ELSE phone_interpretation_progress.started_at END"),
+                    {"e": extraction_id, "t": total or 0, "d": done, "f": finished, "d0": done == 0})
+        except Exception:  # noqa: BLE001 - progress is a display aid; the pass stands
+            log.warning("phone interpretation progress not written for %s", extraction_id, exc_info=True)
+
+    write(0, False)
+    return write
 
 
 def _purged(engine, extraction_id, generation, done):

@@ -99,7 +99,7 @@ _PERIOD_BOUNDS_SOURCES = "('printed', 'derived', 'absent')"
 # ledger polymorphic in practice; subject_id has never carried a foreign key.
 _ADJUDICATION_SUBJECTS = (
     "('transaction', 'statement_period', 'source_document', 'account', "
-    "'evidence_file', 'phone_extraction')"
+    "'evidence_file', 'phone_extraction', 'phone_identity', 'phone_record')"
 )
 # Closed for the reason the quarantine reasons are closed: "how many rows did
 # you set aside, and how many did you put back" is answered by a GROUP BY, and
@@ -118,8 +118,14 @@ _ADJUDICATION_DECISIONS = (
     "('supersede_duplicate', 'restore_document', 'purge_duplicate', "
     "'quarantine_row', 'release_row', 'explain_balance_failure', "
     "'reclassify_document', 'admit_financial_document', 'correct_transaction', 'set_account_party', 'set_counterparty_party', 'set_account_identity', "
-    "'keep_printed_holders', 'supersede_phone_extraction')"
+    "'keep_printed_holders', 'supersede_phone_extraction', 'link_phone_identity', 'unlink_phone_identity', "
+    "'reject_phone_identity_link', 'restore_phone_identity_link', 'set_phone_owner', 'set_phone_device_zone', "
+    "'set_phone_default_region', 'set_phone_clock_offset', 'correct_phone_value', 'set_phone_identity_label', "
+    "'apply_phone_zone_to_offsetless', 'allow_phone_external_processing', "
+    "'accept_phone_reconciliation_difference', 'set_phone_label', 'confirm_phone_result', 'reject_phone_result', "
+    "'confirm_phone_reading', 'correct_phone_reading', 'mark_not_duplicate')"
 )
+_ADJUDICATION_REASON_KINDS = "('typed', 'standard')"
 _QUARANTINE_REASONS = (
     "('balance_break', 'unreadable_row', 'currency_mismatch', "
     "'unexplained_delta', 'adjudicated')"
@@ -951,6 +957,10 @@ class AdjudicationEvent(Base):
             "subject_sequence >= 1",
             name="ck_adjudications_sequence_positive",
         ),
+        CheckConstraint(
+            "reason_kind IN %s" % _ADJUDICATION_REASON_KINDS,
+            name="ck_adjudications_reason_kind",
+        ),
         UniqueConstraint(
             "subject_type",
             "subject_id",
@@ -983,6 +993,10 @@ class AdjudicationEvent(Base):
     # Free text and mandatory.  An adjudication without a stated reason is not
     # an adjudication; it is an unexplained edit.
     reason: Mapped[str] = mapped_column(Text, nullable=False)
+    # ``typed``: the person's own words.  ``standard``: a reason the system built
+    # from what the person was shown (a routine confirmation, an identity link;
+    # 02 section 8.8), displayed as "Standard reason", never as their words.
+    reason_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="typed", server_default="typed")
 
     before: Mapped[dict | None] = mapped_column(_jsonb_column(), nullable=True)
     after: Mapped[dict | None] = mapped_column(_jsonb_column(), nullable=True)
