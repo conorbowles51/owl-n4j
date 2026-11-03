@@ -39,3 +39,22 @@ they hold no answer. Answers took 26 to 105 s.
 
 After the instructions kept to the identities a question names (release abb17d87), the same question asked
 twice more answered 3 both times, each citing 3 records.
+
+## Cross questions, phones and money, tool layer, 2026-11-03 (`tool-layer-cross-2026-11-03.jsonl`)
+
+20 questions with known answers, written by hand in `backend/tests/test_agent_cross_evaluation.py`, on one synthetic
+case holding two handsets of one person (one with messages and calls, one with bank notifications, a one-time code
+and an exchange app), three more people, and a ledger of five payments from that person's account (one p3). They
+cover money and contact between two people (whole span, one month, a pair with no money, a person only in another
+case), the conversation around a payment (anchored on the phone alert, no conversation with each reason, widened to a
+week), a purpose reading drafted and one refused for quoting outside the window, the alerts that match rows, the
+leads with missing account and missing period, a control claim that holds, one for a person with no phone and one
+for a month with nothing tying the account to the phone, search, a person's numbers, and one day across phone and
+ledger.
+
+| Setting | Questions | Known total stated | Exactly the known records cited | Extra check (amounts, outcome, reason, label) | Refused with the boundary, no records |
+|---|---|---|---|---|---|
+| All data | 20 | 20 | 20 | 20 | not applicable |
+| Significant | 20 | not applicable | not applicable | not applicable | 20 |
+
+Before this release the score was 0 of 20: none of the tools these questions use existed (release 24fa46e3).

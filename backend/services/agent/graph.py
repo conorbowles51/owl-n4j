@@ -122,7 +122,25 @@ _INTERNAL_TOOL_MARKERS = (
     "phone_money_readings",
     "phone_colocation_results",
     "phone_record",
+    "get_payment_conversation",
+    "draft_payment_purpose",
+    "draft_control_claim",
+    "get_contact_and_money_between",
+    "get_money_signal_matches",
+    "get_money_signal_leads",
 )
+
+_CROSS_TITLES = {"search_case": "Searched the case", "get_person_phones": "Read a person's phones",
+                 "get_day_activity": "Read a day on the phones", "get_together_apart": "Compared two people's places",
+                 "get_routine_deviations": "Read routine and unusual days", "get_phone_map_summary": "Checked the map's phone totals",
+                 "get_contact_and_money_between": "Read contact and money between two people",
+                 "get_money_signal_matches": "Read phone alerts that match payments",
+                 "get_money_signal_leads": "Read accounts and periods the phones point to",
+                 "evaluate_statement": "Checked a statement against the phones",
+                 "get_analysis_results": "Read a phone analysis",
+                 "draft_control_claim": "Drafted who had the means to operate an account",
+                 "get_payment_conversation": "Read the conversation around a payment",
+                 "draft_payment_purpose": "Drafted a payment's stated purpose"}
 
 _PHONE_PROMPT = """Phones (extraction reports of the case's phones):
 - Read phone messages, calls, people, places and money with the phone tools: phone_find_people, phone_messages, phone_contact_summary, phone_coverage, phone_places, phone_money_readings, phone_colocation_results and phone_record. They read only this case; a phone, person or record they answer "Not in this case." for is not in this case: say exactly that, and never look for it another way.
@@ -133,6 +151,11 @@ _PHONE_PROMPT = """Phones (extraction reports of the case's phones):
 - Name the records that rest on readings not yet confirmed by a person (the tool's unconfirmed list) beside the claim they support.
 - A phone shows what was on the phone, not who used it. Places are where a phone recorded itself, with the stated accuracy. A money reading from a phone is a lead, never a statement: it does not change or replace a ledger row.
 - Phone records are sent to the AI provider in full for this answer; say so in one line at the end when you used a phone tool.
+- Phones and money together: search_case finds words, names and numbers in every group; get_person_phones lists a person's numbers and accounts; get_day_activity reads one day; get_together_apart, get_routine_deviations and get_phone_map_summary read places; get_analysis_results reads the phone analyses; evaluate_statement checks a statement a person confirmed and gives the check's outcome, which you report and never change.
+- For any "between A and B" question use get_contact_and_money_between: its money is the ledger's verified rows per currency with p3 beside them, and you never add totals yourself. Phone alerts that match ledger rows come from get_money_signal_matches, and accounts or months the ledger lacks from get_money_signal_leads (alerts are listed, never totalled). Cite payments by their txn:// link and phone records by rec://.
+- Who controlled an account: use draft_control_claim and present its claim as "had the means to operate", with every strand for and against and the note that strands from one handset are not independent. Never say a person is an account's holder.
+- What a payment was for: read get_payment_conversation, then record your reading with draft_payment_purpose (consistent, different, or discussed but purpose not stated), quoting the messages by rec://. When the tool says no conversation in the window, report that and its reason. Label both as "model drafted, not confirmed" until a person confirms them.
+- A place is an investigative location, not cell-site opinion. A card payment places a card, not a person, at a terminal.
 """
 
 _FINANCIAL_ANALYSIS_PROMPT = """Financial investigation:
@@ -308,6 +331,9 @@ def activity_for_tool_call(name: str | None, args: dict[str, Any] | None, call_i
                  "phone_colocation_results": "Read together-and-apart results",
                  "phone_record": "Opened a phone record"}.get(safe_name, "Read the phones")
         detail = "I'm reading this case's phone records in full, citing each record."
+    elif safe_name in _CROSS_TITLES:
+        title = _CROSS_TITLES[safe_name]
+        detail = "I'm reading this case's phones the way the screens do, and joining them to the ledger."
     elif safe_name == "get_map_locations":
         title = "Loaded map locations"
         detail = "I'm checking geocoded entities that can support a map view."

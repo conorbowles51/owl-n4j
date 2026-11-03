@@ -1,0 +1,40 @@
+{"id": "X01", "setting": "all data", "question": "Did Sam and Ana talk, and how much money moved between them?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 4, "stated_total": 4}
+{"id": "X02", "setting": "all data", "question": "Money between Sam and Ana in March 2023?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 3, "stated_total": 3}
+{"id": "X03", "setting": "all data", "question": "Did Sam and Ben talk, and did money move?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "X04", "setting": "all data", "question": "Money between Ana and Ben?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 0, "stated_total": 0}
+{"id": "X05", "setting": "all data", "question": "What did Sam and Ana say around the USD 500.00 payment?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "X06", "setting": "all data", "question": "Was the USD 70.00 payment to Ana discussed?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 0, "stated_total": 0}
+{"id": "X07", "setting": "all data", "question": "Was the April payment to Ana discussed?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 0, "stated_total": 0}
+{"id": "X08", "setting": "all data", "question": "The conversation around the USD 500.00 payment, a week either side?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 3, "stated_total": 3}
+{"id": "X09", "setting": "all data", "question": "Record the reading that the USD 500.00 was for the car", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "X10", "setting": "all data", "question": "Record a reading quoting a message from outside the window", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": "refused", "stated_total": "refused"}
+{"id": "X11", "setting": "all data", "question": "Which phone alerts match ledger rows?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "X12", "setting": "all data", "question": "Which accounts or periods do the phones point to that the ledger lacks?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "X13", "setting": "all data", "question": "Which months do the Synthetic Bank alerts fall in that no statement covers?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "X14", "setting": "all data", "question": "Did Sam have the means to operate the account ending 1234 in March 2023?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 4, "stated_total": 4}
+{"id": "X15", "setting": "all data", "question": "Did Ana have the means to operate the account ending 1234 in March 2023?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 0, "stated_total": 0}
+{"id": "X16", "setting": "all data", "question": "Did Sam have the means to operate the account ending 1234 in May 2023?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "X17", "setting": "all data", "question": "Which messages mention the car?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "X18", "setting": "all data", "question": "Which numbers are Ana's?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "X19", "setting": "all data", "question": "What happened on Sam's phones and account on 14 March 2023?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": 4, "stated_total": 4}
+{"id": "X20", "setting": "all data", "question": "Money between Sam and Zed Elsewhere (a person only in another case)?", "total_ok": true, "cited_ok": true, "check_ok": true, "known_total": "not_in_case", "stated_total": "not_in_case"}
+{"id": "X01", "setting": "significant", "question": "Did Sam and Ana talk, and how much money moved between them?", "refused": true, "no_records": true}
+{"id": "X02", "setting": "significant", "question": "Money between Sam and Ana in March 2023?", "refused": true, "no_records": true}
+{"id": "X03", "setting": "significant", "question": "Did Sam and Ben talk, and did money move?", "refused": true, "no_records": true}
+{"id": "X04", "setting": "significant", "question": "Money between Ana and Ben?", "refused": true, "no_records": true}
+{"id": "X05", "setting": "significant", "question": "What did Sam and Ana say around the USD 500.00 payment?", "refused": true, "no_records": true}
+{"id": "X06", "setting": "significant", "question": "Was the USD 70.00 payment to Ana discussed?", "refused": true, "no_records": true}
+{"id": "X07", "setting": "significant", "question": "Was the April payment to Ana discussed?", "refused": true, "no_records": true}
+{"id": "X08", "setting": "significant", "question": "The conversation around the USD 500.00 payment, a week either side?", "refused": true, "no_records": true}
+{"id": "X09", "setting": "significant", "question": "Record the reading that the USD 500.00 was for the car", "refused": true, "no_records": true}
+{"id": "X10", "setting": "significant", "question": "Record a reading quoting a message from outside the window", "refused": true, "no_records": true}
+{"id": "X11", "setting": "significant", "question": "Which phone alerts match ledger rows?", "refused": true, "no_records": true}
+{"id": "X12", "setting": "significant", "question": "Which accounts or periods do the phones point to that the ledger lacks?", "refused": true, "no_records": true}
+{"id": "X13", "setting": "significant", "question": "Which months do the Synthetic Bank alerts fall in that no statement covers?", "refused": true, "no_records": true}
+{"id": "X14", "setting": "significant", "question": "Did Sam have the means to operate the account ending 1234 in March 2023?", "refused": true, "no_records": true}
+{"id": "X15", "setting": "significant", "question": "Did Ana have the means to operate the account ending 1234 in March 2023?", "refused": true, "no_records": true}
+{"id": "X16", "setting": "significant", "question": "Did Sam have the means to operate the account ending 1234 in May 2023?", "refused": true, "no_records": true}
+{"id": "X17", "setting": "significant", "question": "Which messages mention the car?", "refused": true, "no_records": true}
+{"id": "X18", "setting": "significant", "question": "Which numbers are Ana's?", "refused": true, "no_records": true}
+{"id": "X19", "setting": "significant", "question": "What happened on Sam's phones and account on 14 March 2023?", "refused": true, "no_records": true}
+{"id": "X20", "setting": "significant", "question": "Money between Sam and Zed Elsewhere (a person only in another case)?", "refused": true, "no_records": true}
