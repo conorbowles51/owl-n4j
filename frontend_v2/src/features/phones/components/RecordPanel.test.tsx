@@ -52,3 +52,34 @@ describe("Record panel sensitive values", () => {
     expect(screen.getByText("(revealed; your reveal is recorded)")).toBeInTheDocument()
   })
 })
+
+describe("Record panel: the captured record in full (05 section 17.1)", () => {
+  it("opens a nested Party with its message and chat, names the report's producer, and shows a file's paths and hashes", () => {
+    const party = {
+      ...detail, model_type: "Party", fields: [],
+      extraction: { ...detail.extraction, producer: "Synthetic Reader 7.1", report_version: "5.2", extraction_type: "Logical" },
+      parents: [{ record_uid: "m-1", model_type: "InstantMessage", title: "Synthetic hello" }, { record_uid: "c-1", model_type: "Chat", title: "Synthetic chat" }],
+      attributes: { id: "7", isrelated: "False", extractionId: "0" },
+      files: [{ record_uid: "r-1", file_uid: null, mechanism: "jump_target", reference: "f-9", path: null, original_path: "/sdcard/DCIM/synthetic.jpg",
+        category: null, size: null, verification: "missing", badge: "File missing from production",
+        absence: "The report refers to a file that is not in the production.",
+        hashes: { stated_md5: "0".repeat(32), stated_sha256: "1".repeat(64), computed_md5: null, computed_sha256: null } }],
+    } as unknown as RecordDetail
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={new QueryClient()}>
+          <RecordDetailView detail={party} caseId="case-1" />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+    const inside = screen.getByRole("region", { name: "Inside" })
+    expect(inside.textContent).toContain("InstantMessage: Synthetic hello")
+    expect(inside.textContent).toContain("Chat: Synthetic chat")
+    expect(screen.getByTestId("record-producer").textContent).toBe("Made by Synthetic Reader 7.1, report version 5.2, Logical extraction")
+    expect(screen.getByTestId("record-attributes").textContent).toContain("isrelated")
+    expect(screen.getByText("On the phone at /sdcard/DCIM/synthetic.jpg")).toBeInTheDocument()
+    expect(screen.getByTestId("file-hashes").textContent).toContain("MD5 in the report " + "0".repeat(32))
+    expect(screen.getByText("The report refers to a file that is not in the production.")).toBeInTheDocument()
+    expect(document.body.textContent).not.toMatch(/—/)
+  })
+})

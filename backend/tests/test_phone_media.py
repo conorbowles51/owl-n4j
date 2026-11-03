@@ -189,3 +189,24 @@ def test_the_thumbnail_route_is_registered_beside_content():
     paths = {r.path for r in router.routes}
     assert "/api/phones/media/{file_uid}/thumbnail" in paths or "/media/{file_uid}/thumbnail" in {
         p.removeprefix(router.prefix) for p in paths}
+
+
+def test_the_record_view_opens_a_nested_record_with_its_parent_and_the_file_where_it_was_on_the_phone(world):
+    """05 section 17.1: the parent chain, the report's version and producer, and the file's original path."""
+    from services.phone import records
+    engine, case, _, ext = world
+    with engine.begin() as c:
+        c.execute(text("UPDATE phone_extractions SET report_version = '7.60', producer_version = 'Synthetic Reader 1' "
+                       "WHERE id = :e"), {"e": ext})
+        c.execute(text("UPDATE phone_files SET body = CAST(:b AS jsonb) WHERE file_uid = :f"),
+                  {"b": '["file", {"path": "/sdcard/WhatsApp/synthetic-a.jpg"}, null, []]', "f": LINKED})
+        att = str(c.execute(text("SELECT record_uid FROM phone_record_summaries WHERE extraction_id = :e AND "
+                                 "model_type = 'Attachment'"), {"e": ext}).scalar_one())
+        call = str(c.execute(text("SELECT record_uid FROM pv_comm_event WHERE extraction_id = :e"), {"e": ext}).scalar_one())
+    with engine.connect() as c:
+        d = records.record_detail(c, case, att)
+    assert [p["record_uid"] for p in d["parents"]] == [call]
+    assert d["extraction"]["report_version"] == "7.60" and d["extraction"]["producer"] == "Synthetic Reader 1"
+    f = next(x for x in d["files"] if x["file_uid"] == LINKED)
+    assert f["original_path"] == "/sdcard/WhatsApp/synthetic-a.jpg" and f["path"] == "chats/synthetic-a.jpg"
+    assert set(f["hashes"]) == {"stated_md5", "stated_sha256", "computed_md5", "computed_sha256"}

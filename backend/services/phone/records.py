@@ -57,6 +57,20 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
         "SELECT path, sha256 FROM phone_extraction_documents WHERE extraction_id = :e AND document_index = :d"),
         {"e": ext, "d": loc.document_index}).first()
     label = readings.phone_labels(conn, case_id).get(ext, "Phone")
+    meta = conn.execute(text(
+        "SELECT report_version, producer_version, extraction_type FROM phone_extractions WHERE id = :e"),
+        {"e": ext}).first()
+    # the records this one sits inside, nearest first, up to the top record (a Party opens with its message and chat)
+    parents, up, seen = [], loc.parent_record_uid, set()
+    while up is not None and str(up) not in seen and len(parents) < 32:
+        seen.add(str(up))
+        p = conn.execute(text(
+            "SELECT record_uid, model_type, title, parent_record_uid FROM phone_record_summaries WHERE record_uid = :u "
+            "AND extraction_id = :e"), {"u": str(up), "e": ext}).first()
+        if p is None:
+            break
+        parents.append({"record_uid": str(p.record_uid), "model_type": p.model_type, "title": p.title})
+        up = p.parent_record_uid
     bodies = {}
 
     def body_of(ordinal):
@@ -113,7 +127,8 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
     for a in conn.execute(text(
             "SELECT a.record_uid, a.mechanism, a.reference_text, a.resolved, a.ambiguous, f.file_uid, f.local_path, "
             "f.category, f.size, f.verification, f.declared_md5, f.declared_sha256, f.disk_md5, f.disk_sha256, "
-            "f.declared_size, f.disk_size FROM pv_attachment_link a LEFT JOIN pv_file f ON f.file_uid = a.file_uid "
+            "f.declared_size, f.disk_size, pf.body AS file_body FROM pv_attachment_link a LEFT JOIN pv_file f ON "
+            "f.file_uid = a.file_uid LEFT JOIN phone_files pf ON pf.file_uid = f.file_uid "
             "WHERE a.extraction_id = :e AND (a.record_uid = CAST(:u AS uuid) OR a.record_uid IN (SELECT record_uid FROM "
             "phone_record_summaries WHERE parent_record_uid = CAST(:u AS uuid) OR root_record_uid = CAST(:u AS uuid)))"),
             {"e": ext, "u": str(record_uid)}):
@@ -129,6 +144,7 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
             absence = None
         files.append({"record_uid": str(a.record_uid), "file_uid": str(a.file_uid) if a.file_uid else None,
                       "mechanism": a.mechanism, "reference": a.reference_text, "path": a.local_path,
+                      "original_path": _file_attr(a.file_body, "path"),
                       "category": a.category, "size": a.size, "verification": a.verification,
                       "badge": VERIFICATION_WORDS.get(a.verification) if a.verification else None,
                       "hashes": {"stated_md5": a.declared_md5, "stated_sha256": a.declared_sha256,
@@ -142,7 +158,11 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
         "record_uid": str(record_uid),
         "extraction": {"id": ext, "label": label,
                        "report_filename": os.path.basename((doc.path if doc else "").replace("\\", "/")) or None,
-                       "report_sha256": doc.sha256 if doc else None},
+                       "report_sha256": doc.sha256 if doc else None,
+                       "report_version": meta.report_version if meta else None,
+                       "producer": meta.producer_version if meta else None,
+                       "extraction_type": meta.extraction_type if meta else None},
+        "parents": parents,
         "model_type": loc.model_type, "cellebrite_id": root["cellebrite_id"] if root else None,
         "title": loc.title,
         "state": {"deleted_state": loc.deleted_state, "is_carved": False, "decoding_confidence": loc.decoding_confidence,
@@ -158,6 +178,15 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
         "corrections": corr, "interpretation_level": loc.interpretation_level, "zone": zone,
         "readings": _open_readings(conn, case_id, ext, loc.model_type, label),
     }
+
+
+def _file_attr(body, name):
+    """An attribute of the report's file element (``path`` is where the file was on the phone)."""
+    try:
+        v = (body[1] or {}).get(name) if isinstance(body, list) else None
+    except (IndexError, AttributeError):
+        return None
+    return v if isinstance(v, str) and v else None
 
 
 def _open_readings(conn, case_id, ext, model_type, label) -> list:

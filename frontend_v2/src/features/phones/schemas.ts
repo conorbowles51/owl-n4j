@@ -183,7 +183,13 @@ const FieldSchema: z.ZodType<RecordFieldData> = z.lazy(() =>
 
 export const RecordDetailSchema = z.object({
   record_uid: z.string(),
-  extraction: z.object({ id: z.string(), label: z.string(), report_filename: z.string().nullable(), report_sha256: z.string().nullable() }),
+  extraction: z.object({
+    id: z.string(), label: z.string(), report_filename: z.string().nullable(), report_sha256: z.string().nullable(),
+    report_version: z.string().nullable().optional(), producer: z.string().nullable().optional(),
+    extraction_type: z.string().nullable().optional(),
+  }),
+  parents: z.array(z.object({ record_uid: z.string(), model_type: z.string().nullable(), title: z.string().nullable() })).optional(),
+  attributes: z.record(z.string(), z.unknown()).optional(),
   model_type: z.string(),
   cellebrite_id: z.string().nullable(),
   title: z.string().nullable(),
@@ -213,10 +219,15 @@ export const RecordDetailSchema = z.object({
       mechanism: z.string(),
       reference: z.string().nullable(),
       path: z.string().nullable(),
+      original_path: z.string().nullable().optional(),
       category: z.string().nullable(),
       size: z.number().nullable(),
       verification: z.string().nullable(),
       badge: z.string().nullable(),
+      hashes: z.object({
+        stated_md5: z.string().nullable(), stated_sha256: z.string().nullable(),
+        computed_md5: z.string().nullable(), computed_sha256: z.string().nullable(),
+      }).optional(),
       absence: z.string().nullable(),
     }),
   ),

@@ -131,7 +131,42 @@ export function RecordDetailView({
           Report {d.extraction.report_filename ?? "not recorded"}
           {d.extraction.report_sha256 ? `, SHA-256 ${d.extraction.report_sha256}` : ""}
         </p>
+        {(d.extraction.producer || d.extraction.report_version) && (
+          <p className="text-xs text-muted-foreground" data-testid="record-producer">
+            Made by {d.extraction.producer ?? "a tool the report does not name"}
+            {d.extraction.report_version ? `, report version ${d.extraction.report_version}` : ""}
+            {d.extraction.extraction_type ? `, ${d.extraction.extraction_type} extraction` : ""}
+          </p>
+        )}
       </section>
+      {d.parents && d.parents.length > 0 && (
+        <section aria-label="Inside" className="text-xs">
+          <h3 className="font-semibold">Inside</h3>
+          <ol>
+            {d.parents.map((p) => (
+              <li key={p.record_uid}>
+                {caseId ? (
+                  <button type="button" className="underline" onClick={() => navigate(`/cases/${caseId}/records/${p.record_uid}`)}>
+                    {p.model_type ?? "Record"}{p.title ? `: ${p.title}` : ""}
+                  </button>
+                ) : (
+                  <span>{p.model_type ?? "Record"}{p.title ? `: ${p.title}` : ""}</span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+      {d.attributes && Object.keys(d.attributes).length > 0 && (
+        <details className="text-xs" data-testid="record-attributes">
+          <summary>Everything the report says about this record</summary>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-2">
+            {Object.entries(d.attributes).map(([k, v]) => (
+              <div key={k} className="contents"><dt className="text-muted-foreground">{k}</dt><dd className="break-all">{String(v)}</dd></div>
+            ))}
+          </dl>
+        </details>
+      )}
       <section aria-label="State" className="flex flex-wrap gap-2 text-xs">
         {d.state.deleted_state && <span className="rounded bg-muted px-1.5 py-0.5">Deletion state: {d.state.deleted_state}</span>}
         {d.state.is_carved && <span className="rounded bg-muted px-1.5 py-0.5">Recovered by carving</span>}
@@ -194,6 +229,14 @@ export function RecordDetailView({
         {d.files.map((f, k) => (
           <div key={k} className="rounded border p-1">
             <p className="break-all">{f.path ?? f.reference ?? "(no path in the report)"}</p>
+            {f.original_path && <p className="break-all text-muted-foreground">On the phone at {f.original_path}</p>}
+            {f.hashes && (f.hashes.stated_md5 || f.hashes.stated_sha256 || f.hashes.computed_sha256) && (
+              <p className="break-all text-muted-foreground" data-testid="file-hashes">
+                {f.hashes.stated_md5 ? `MD5 in the report ${f.hashes.stated_md5}. ` : ""}
+                {f.hashes.stated_sha256 ? `SHA-256 in the report ${f.hashes.stated_sha256}. ` : ""}
+                {f.hashes.computed_sha256 ? `SHA-256 of the file in the production ${f.hashes.computed_sha256}.` : ""}
+              </p>
+            )}
             <p className="text-muted-foreground">
               Found by {f.mechanism.replace(/_/g, " ")}
               {f.category ? `, ${f.category}` : ""}

@@ -1828,6 +1828,15 @@ verification state (match, mismatch, missing on disk); the extraction's report v
 Acceptance: a nested Party opens with its parent message and chat; a file whose bytes are absent shows "listed in
 the report, not present in the production".
 
+Built (05-S2). The record panel (`services/phone/records.record_detail`, `RecordPanel`) shows every field in report
+order with every value and its type, all model attributes under "Everything the report says about this record", the
+records it sits inside nearest first ("Inside", each opening its own record), the report file with its SHA-256, the
+producer, report version and extraction type, and for each linked file the production path, the path on the phone
+(the report's `path`), MD5 and SHA-256 as stated and as computed, and its check result. An absent file reads "The
+report refers to a file that is not in the production.", the sentence Media and the record panel already share; it
+says the same as the acceptance wording, and one sentence across screens keeps them consistent. Tests:
+`test_phone_media.py` (nested record, producer, original path, hashes) and `RecordPanel.test.tsx`.
+
 ### 17.2 Source database view
 
 **Measured on the local samples:**
