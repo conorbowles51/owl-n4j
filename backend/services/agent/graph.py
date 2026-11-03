@@ -189,7 +189,7 @@ _FINANCIAL_ANALYSIS_PROMPT = """Financial investigation:
 - When a result gives open_judgement_calls (or a figure's rows carry open judgement calls), say beside the figure how many open judgement calls it rests on, e.g. "this rests on 3 open judgement calls no person has confirmed". Use get_judgement_calls to give their sentences and get_decisions for who decided a record and whether a model drafted it (made_by.kind "model": drafted by a model, not a person's own decision).
 - For securities (bought, sold, lent by repo, or held), use get_trades: it gives the instrument as printed, quantity, price, trade and settlement dates and the cash leg, each cited. A trade date is a day, never a time: no execution time is printed, so never state that an order was placed during a call; say it was placed on the same day and cite both. Say when a trade was read by a model and not confirmed (origin.kind "model").
 - Before saying a payment did not happen or a month is missing, read get_statement_continuity for the account: a gap means no saved statement covers those days, which is not an absence of payments. get_account_mentions lists account numbers printed on payments with no statement in the case.
-- Link each ledger row you cite to the path in its financial_href field, e.g. [12 Mar payment to Acme](/cases/<case id>/financial?view=transactions&payment=<payment id>) copied from that field; never write the word financial_href as text or as a link, and never build a payment link yourself. Cite the statement it was read from as a document link with source.filename and the row's locator page: [filename, p.N](doc://<filename>/N), or [filename](doc://<filename>) when the row has no page.
+- Cite each ledger row you rely on with its cite field as a Markdown link, e.g. [12 Mar payment to Acme](txn://<transaction id>) copied from that field; never build a row link yourself and never write a field name as text. Cite the statement page it was read from with the row's statement_cite: [filename, p.N](doc://<evidence file id>/N) when statement_page is given, or [filename](doc://<evidence file id>) when it is not; never add a page that is not given.
 - Separate observed facts from hypotheses and investigative leads. Unusual amounts, repeated counterparties or timing patterns alone do not establish wrongdoing. Do not infer ownership, beneficiary identity, intent, or criminal conduct beyond the returned evidence.
 - If financial access is unavailable or the run is restricted to the Significant layer, explain the coverage boundary. Do not bypass that boundary through graph queries or another case's data.
 """
@@ -223,8 +223,8 @@ _FINAL_ANSWER_SYSTEM_PROMPT = (
     "or that has open judgement calls, "
     "say so beside it in plain words, with the number of open judgement calls a total rests on; money between two parties "
     "comes only from get_money_between (or get_contact_and_money_between for people on the phones) and graph TRANSFERRED_TO amounts are never summed; use a corrected row's corrected value and give its original value; never add p4 or "
-    "excluded rows into a total. Keep ledger-row links (the path in each row's financial_href) and document links "
-    "(doc://filename/page) as Markdown links; never write the word financial_href in the answer. If any tool result was shown in part (_paging) and not read in full, say the answer covers "
+    "excluded rows into a total. Keep ledger-row links (txn://, from each row's cite) and document links "
+    "(doc://, from statement_cite or a document's cite) as Markdown links, exactly as returned; never write a field name in the answer. If any tool result was shown in part (_paging) and not read in full, say the answer covers "
     "<returned> of <total> for that result. "
     "For phone alerts matched to payments, mention every pairing returned with its strength (strong, moderate, weak "
     "or faint) and its reasons, one line each, listing weak and faint ones as such rather than dropping them, and never "
@@ -601,7 +601,7 @@ Your job:
 - If the user asks for CSV export, build the relevant artifact and say it can be downloaded with the artifact CSV button. Do not claim you attached a file or wrote a local file.
 - Do not claim evidence exists unless a tool result supports it.
 - Keep final answers professional, concise, and specific. Mention artifact titles when you create them.
-- When using document search results, cite each document as a link: [filename, p.N](doc://<filename>/N) with the page from its metadata, or [filename](doc://<filename>) when no page is known. Never invent a page.
+- When using document search results, cite each passage with its cite field as a link: [filename, p.N](doc://<evidence file id>/N) when it has a page, or [filename](doc://<evidence file id>) when it has none. Copy the cite; never invent a page or a link.
 - A tool message with a _paging note is shown in part: _paging states total, returned and next_page. Read the rest with read_tool_result_page before drawing a conclusion that depends on the whole result. If you stop before reading every page (for example, the tool budget), the answer must say it covers <returned> of <total> and which result is partial.
 
 {_FINANCIAL_ANALYSIS_PROMPT}

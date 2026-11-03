@@ -466,8 +466,7 @@ class FinancialAgentRowProvenanceTests(LedgerToolFixture):
     def test_row_links_to_its_own_payment_on_the_financial_page(self):
         _, _, rows = self.source(rows=1)
         item = self.read()['items'][0]
-        self.assertEqual(item['financial_href'],
-            f'/cases/{self.case.id}/financial?view=transactions&payment={rows[0].id}')
+        self.assertEqual(item['cite'], f'txn://{rows[0].id}')
 
 
 class CorrectedRowProvenanceTests(unittest.TestCase):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -27,6 +28,8 @@ from services.agent.schemas import (
     AgentToolTraceItem,
 )
 from services.case_service import check_case_access
+
+logger = logging.getLogger(__name__)
 
 SUPPORTED_ARTIFACT_TYPES = {"graph", "table", "map", "report", "chart"}
 
@@ -227,6 +230,31 @@ def finish_run(
     return run
 
 
+def checked_answer(db: Session, *, case_id, answer: str) -> tuple[str, dict[str, Any]]:
+    """The answer as stored: citations in their stable form (a file named once in the case by its id, an old payment
+    link as txn://), and the check of every citation against the case (services.case_citations)."""
+    from services import case_citations
+
+    try:
+        with db.begin_nested():
+            canonical = case_citations.canonicalize(db, case_id, answer)
+            return canonical, case_citations.check_text(db, case_id, canonical)
+    except Exception:  # noqa: BLE001 - an unchecked answer says so; it is never shown as checked
+        logger.exception("Citation check failed for case %s", case_id)
+        return answer, {"available": False, "reason": "The citations in this answer could not be checked."}
+
+
+def citation_check_for(db: Session, *, case_id, content: str) -> dict[str, Any]:
+    from services import case_citations
+
+    try:
+        with db.begin_nested():
+            return case_citations.check_text(db, case_id, content)
+    except Exception:  # noqa: BLE001
+        logger.exception("Citation check failed for case %s", case_id)
+        return {"available": False, "reason": "The citations in this answer could not be checked."}
+
+
 def update_run_metadata(db: Session, *, run: AgentRun, metadata: dict[str, Any]) -> AgentRun:
     run.extra_metadata = to_jsonable({**(run.extra_metadata or {}), **metadata})
     db.flush()
@@ -377,6 +405,8 @@ def get_thread_detail(db: Session, *, thread_id: UUID, user: User) -> AgentThrea
             model_id=message.model_id,
             artifact_ids=[str(item) for item in (message.artifact_ids or [])],
             tool_trace_summary=message.tool_trace_summary or [],
+            citation_check=(citation_check_for(db, case_id=thread.case_id, content=message.content)
+                            if message.role == "assistant" else None),
             clarification=(
                 AgentClarification(**message.run.extra_metadata["clarification"])
                 if message.run

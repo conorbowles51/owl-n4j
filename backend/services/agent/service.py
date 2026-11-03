@@ -210,6 +210,8 @@ class AgentService:
                 answer = runner_clarification.question
             if not answer:
                 answer = "I could not produce an answer from the available case data."
+            answer, citation_check = storage.checked_answer(db, case_id=thread.case_id, answer=answer)
+            storage.update_run_metadata(db, run=run, metadata={"citation_check": citation_check})
 
             usage = final_result.get("usage")
             cost_record = self._record_usage(
@@ -293,6 +295,7 @@ class AgentService:
                 user_message_id=str(user_message.id),
                 assistant_message_id=str(assistant_message.id),
                 answer=answer,
+                citation_check=citation_check,
                 artifacts=[storage.to_api_artifact(record) for record in artifact_records],
                 tool_trace=[AgentToolTraceItem(**self._public_trace_item(item)) for item in tool_trace],
                 model_info=AgentModelInfo(
@@ -485,6 +488,8 @@ class AgentService:
                 answer = runner_clarification.question
             if not answer:
                 answer = "I could not produce an answer from the available case data."
+            answer, citation_check = storage.checked_answer(db, case_id=thread.case_id, answer=answer)
+            storage.update_run_metadata(db, run=run, metadata={"citation_check": citation_check})
 
             usage = result.get("usage")
             cost_record = self._record_usage(
@@ -572,6 +577,7 @@ class AgentService:
                 user_message_id=str(user_message.id) if user_message else None,
                 assistant_message_id=str(assistant_message.id) if assistant_message else None,
                 answer=answer,
+                citation_check=citation_check,
                 artifacts=[storage.to_api_artifact(record) for record in artifact_records],
                 tool_trace=[AgentToolTraceItem(**self._public_trace_item(item)) for item in tool_trace],
                 model_info=AgentModelInfo(

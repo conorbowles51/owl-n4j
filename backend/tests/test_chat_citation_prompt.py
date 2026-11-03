@@ -18,5 +18,6 @@ def test_the_chat_prompt_gives_no_page_when_none_is_known_and_promises_no_record
     assert answer == "synthetic answer" and prompt == sent["prompt"]
     assert "use page 1" not in prompt
     assert "never write p.1 for an unknown page" in prompt
-    assert "(doc://document_filename.pdf)" in prompt  # the no-page form
+    assert "[document name](<Cite>)" in prompt  # the no-page form
+    assert "Never build a doc:// link yourself" in prompt  # the passage's Cite carries the evidence file id
     assert "rec://" not in prompt  # the passage headers carry no record id, so the model would have to invent one

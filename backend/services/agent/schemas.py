@@ -117,6 +117,8 @@ class AgentMessageResponse(BaseModel):
     user_message_id: str | None = None
     assistant_message_id: str | None = None
     answer: str
+    # Every citation in the answer checked against the case (services.case_citations.check_text).
+    citation_check: dict[str, Any] | None = None
     artifacts: list[AgentArtifact] = Field(default_factory=list)
     tool_trace: list[AgentToolTraceItem] = Field(default_factory=list)
     model_info: AgentModelInfo
@@ -174,6 +176,7 @@ class AgentStoredMessage(BaseModel):
     model_id: str | None = None
     artifact_ids: list[str] = Field(default_factory=list)
     tool_trace_summary: list[dict[str, Any]] = Field(default_factory=list)
+    citation_check: dict[str, Any] | None = None
     clarification: AgentClarification | None = None
     created_at: datetime
 

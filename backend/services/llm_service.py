@@ -710,7 +710,7 @@ Guidelines:
 - {self.analysis_guidance}
 - Format your response using markdown (use **bold** for emphasis, bullet points with -)
 - Do NOT use tables - use bullet points or numbered lists instead for structured data
-- CITE SOURCES: When referencing specific facts, create a clickable markdown link using the format [document name, p.N](doc://document_filename.pdf/N) where N is the page number. For example: [Financial Report, p.3](doc://Financial_Report.pdf/3). Use the exact filename from the passage headers above (e.g., "USA-ET-000021.pdf"). Give a page only when the passage header gives one; when it does not, link the document with no page, [document name](doc://document_filename.pdf), and never write p.1 for an unknown page.
+- CITE SOURCES: When referencing specific facts, create a clickable markdown link to the passage's Cite target, copied exactly: [document name, p.N](<Cite>) where N is the page in the passage header. For example, a passage headed "USA-ET-000021.pdf (page 3)" with "Cite: doc://0b6c.../3" is cited as [USA-ET-000021.pdf, p.3](doc://0b6c.../3). When the header gives no page, the Cite has none: write [document name](<Cite>) and never write p.1 for an unknown page. Never build a doc:// link yourself.
 - When verified facts are provided with quotes, reference the original quote to support your answer
 - Be specific and cite document names when relevant
 - If you identify patterns or important information, explain them

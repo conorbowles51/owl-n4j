@@ -122,18 +122,19 @@ class AgentProvenanceAndPagingInstructionsTests(unittest.TestCase):
                 model = AgentFinancialInstructionsTests.run_path(AgentFinancialInstructionsTests(), path)
                 prompt = model.agent_prompts[0]
                 for rule in ("not confirmed by a person", "open judgement call", "Never add a p4 row",
-                             "read_tool_result_page", "covers <returned> of <total>", "doc://<filename>/N",
-                             "financial_href", "could not be checked", "model_read_names"):
+                             "read_tool_result_page", "covers <returned> of <total>", "doc://<evidence file id>/N",
+                             "statement_cite", "could not be checked", "model_read_names"):
                     self.assertIn(rule, prompt)
                 final = model.finalizer_messages[0][0].content
                 for rule in ("no person has confirmed", "a name a model read", "never add p4", "_paging",
-                             "doc://filename/page"):
+                             "txn://", "doc://"):
                     self.assertIn(rule, final)
-                # The row link's example is a real path, so the model copies a path, not the field's name.
-                self.assertNotIn("](financial_href)", prompt)
-                self.assertIn("payment=<payment id>)", prompt)
+                # The row link's example is a real txn:// link, so the model copies a link, not the field's name.
+                self.assertNotIn("](cite)", prompt)
+                self.assertIn("(txn://<transaction id>)", prompt)
+                self.assertIn("never add a page that is not given", prompt)
                 for text in (prompt, final):
-                    self.assertIn("never write the word financial_href", text)
+                    self.assertIn("never write a field name", text)
                 # A live answer named "a party named Carmen" from the printed "Cd C armen" as the sender.
                 self.assertIn("Never name a party from words in the printed description", prompt)
                 self.assertIn("Never name a sender or recipient from words in a printed description", final)

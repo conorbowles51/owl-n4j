@@ -219,17 +219,16 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             distance = chunk.get("distance")
             is_doc_scoped = chunk.get("_doc_scoped", False)
 
-            # Extract page number from chunk metadata
-            page_start = metadata.get("page_start")
-            if page_start and page_start != -1 and page_start != "-1":
-                page_start = int(page_start) if isinstance(page_start, str) else page_start
-            else:
-                page_start = 1
+            # The passage's page, or None when its metadata gives none: an unknown page is never page 1.
+            from services.case_citations import chunk_cite, chunk_page
+            page_start = chunk_page(metadata)
+            cite = chunk_cite({**metadata, "filename": filename})
 
             if filename not in doc_info:
                 doc_info[filename] = {
                     "best_distance": distance,
                     "best_page": page_start,
+                    "cite": cite,
                     "doc_scoped": is_doc_scoped,
                     "chunk_count": 1,
                 }
@@ -242,6 +241,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     if current_best is None or distance < current_best:
                         doc_info[filename]["best_distance"] = distance
                         doc_info[filename]["best_page"] = page_start
+                        doc_info[filename]["cite"] = cite
 
         # Sort: doc-scoped first, then by best distance
         sorted_docs = sorted(
@@ -271,8 +271,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 relevance_score = None
 
             from urllib.parse import quote
-            best_page = info.get("best_page", 1)
-            doc_link = f"doc://{quote(filename, safe='')}/{best_page}"
+            doc_link = info.get("cite") or f"doc://{quote(filename, safe='')}"
             line = f"{i}. [**{filename}**]({doc_link})"
             if relevance_score is not None:
                 line += f" (Relevance: {relevance_score:.1f}%)"
@@ -1139,6 +1138,10 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 distance = chunk.get("distance")
                 doc_marker = " [SELECTED DOCUMENT]" if chunk.get("_doc_scoped") else ""
                 lines.append(f"--- Passage {i}: {doc_name}{page_info}{doc_marker} ---")
+                from services.case_citations import chunk_cite
+                passage_cite = chunk_cite({**metadata, "filename": doc_name})
+                if passage_cite:
+                    lines.append(f"Cite: {passage_cite}")
                 if distance is not None:
                     lines.append(f"Relevance: {1 - distance:.4f}")
                 if chunk.get("_word_match"):
@@ -2415,6 +2418,7 @@ Only include candidates with score >= 5."""
             lambda m: f'[{m.group(1)}, p.{m.group(2)}](doc://{quote(m.group(1).strip(), safe="")}/{m.group(2)})',
             answer
         )
+        answer = self._pin_citations(case_id, answer)
 
         debug_log["final_prompt"] = final_prompt
         _add_stage(
@@ -2537,6 +2541,23 @@ Only include candidates with score >= 5."""
     # =====================
     # Source helpers
     # =====================
+
+    def _pin_citations(self, case_id, answer: str) -> str:
+        """A document the answer names once in the case is cited by its evidence file id (services.case_citations),
+        so a later upload with the same name cannot change what the citation opens. Left as written on failure."""
+        if not case_id or not answer:
+            return answer
+        try:
+            from sqlalchemy.orm import Session
+
+            from postgres.session import _get_engine
+            from services.case_citations import canonicalize
+            with Session(_get_engine()) as session:
+                return canonicalize(session, case_id, answer)
+        except Exception:  # noqa: BLE001 - the renderer still resolves names, and offers a choice when shared
+            import logging
+            logging.getLogger(__name__).exception("Chat citations could not be pinned for case %s", case_id)
+            return answer
 
     def _selected_phone_records(self, case_id: str, phone_context: Dict[str, Any],
                                 debug_log: Optional[Dict] = None) -> List[Dict[str, Any]]:

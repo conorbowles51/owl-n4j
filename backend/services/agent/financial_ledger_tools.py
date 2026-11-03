@@ -469,6 +469,18 @@ def _validate_period_ownership(session, case_id, readings):
             raise FinancialLedgerToolError('A ledger statement-period reference is inconsistent in this case.')
 
 
+def _row_citations(row, source):
+    """The row's own citation (txn://, opens the Financial page on this row at its statement page) and the statement
+    page it was read from (doc://<evidence file id>/<page>; no page when the row's locator gives none, never page 1)."""
+    from services.case_citations import doc_href, txn_href
+    locator = row.get('locator') if isinstance(row.get('locator'), dict) else {}
+    page = locator.get('page')
+    page = page if isinstance(page, int) and not isinstance(page, bool) and page >= 1 else None
+    file_id = source.get('evidence_file_id')
+    return dict(cite=txn_href(row['key']), statement_page=page,
+                statement_cite=doc_href(file_id, page) if file_id else None)
+
+
 def read_financial_ledger(session, *, case_id, account_ids=None, account_holders=None,
         start_date=None, end_date=None, filters=None, population='working', view='transactions',
         group_by='account', offset=0, limit=50, expected_revision=None, expected_ledger_revision=None):
@@ -608,7 +620,7 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
             currency_exponent=_currency_exponent(row['currency']),
             included_in_totals=eligible(reading), exclusion_reason=None if eligible(reading) else reading['exclusion_reason'],
             provenance=_row_provenance(reading, judgements, by_id, load_row, correctors),
-            financial_href=f'/cases/{case_id}/financial?view=transactions&payment={row["key"]}')
+            **_row_citations(row, source))
     if view == 'groups':
         items = _totals(matching, group_by, behind=behind)
     elif view == 'coverage':

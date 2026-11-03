@@ -1958,12 +1958,15 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 logger.exception("Vector gap could not be measured for case %s", context.case_id)
         if failure is not None:
             return word_search_documents_result(query, limit, offset, failure, gap)
+        from services.case_citations import chunk_cite
         compact = [
             {
                 "id": chunk.get("id"),
                 "text": sanitize_text(chunk.get("text")),
                 "metadata": chunk.get("metadata") or {},
                 "distance": chunk.get("distance"),
+                # the passage's doc:// citation (file id and page; no page when the passage gives none)
+                "cite": chunk_cite(chunk.get("metadata") or {}),
             }
             for chunk in chunks[offset:offset + limit]
         ]
@@ -1983,6 +1986,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                                      gap: dict[str, Any] | None) -> dict[str, Any]:
         """Meaning search failed: the query's words, through the case word search, said so (lx-docsearch 1, 2)."""
         from services import meaning_search
+        from services.case_citations import doc_href
         code, reason = failure
         try:
             with (context.ledger_session_factory or _financial_session)() as db:
@@ -2005,6 +2009,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 results.append({k: v for k, v in {
                     "evidence_file_id": doc["evidence_file_id"], "filename": doc["filename"],
                     "page": match.get("page_number"), "record_uid": match.get("record_uid"),
+                    "cite": (doc_href(doc["evidence_file_id"], match.get("page_number"))
+                             if doc.get("evidence_file_id") else None),
                     "location": match.get("location_label"), "folder_path": doc.get("folder_path"),
                     "match": "word (literal), not a meaning match", "matched": match.get("term"),
                     "snippet": sanitize_text(match.get("snippet")),
