@@ -283,15 +283,17 @@ class Query:
     def where_sql(self, extra=()):
         return " AND ".join(list(self.where) + list(extra))
 
-    def matched_sql(self, extra=()):
-        """Matching events with the copy rank and count (3.4)."""
+    def matched_sql(self, extra=(), columns=()):
+        """Matching events with the copy rank and count (3.4); ``columns``: more ``expr AS name`` items computed per
+        row before the copies are ranked."""
         populated = ("(ev.body IS NOT NULL)::int + (ev.subject IS NOT NULL)::int + (ev.app IS NOT NULL)::int + "
                      "(ev.sort_instant IS NOT NULL)::int + (ev.thread_key IS NOT NULL)::int + "
                      "(ev.call_duration_s IS NOT NULL)::int + (ev.status IS NOT NULL)::int")
         grp = "coalesce(ev.extraction_id::text || ':' || ev.dup_group_uid, ev.event_uid::text)"
-        return ("SELECT ev.*, row_number() OVER (PARTITION BY %s ORDER BY %s DESC, ev.record_uid) AS copy_rank, "
+        cols = "".join("%s, " % c for c in columns)
+        return ("SELECT ev.*, %srow_number() OVER (PARTITION BY %s ORDER BY %s DESC, ev.record_uid) AS copy_rank, "
                 "count(*) OVER (PARTITION BY %s) AS copy_count FROM %s WHERE %s"
-                % (grp, populated, grp, self.FROM, self.where_sql(extra)))
+                % (cols, grp, populated, grp, self.FROM, self.where_sql(extra)))
 
 
 def _query(conn, f, ctx=None):

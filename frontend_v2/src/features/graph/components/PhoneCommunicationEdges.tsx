@@ -28,11 +28,12 @@ function PairEdge({ caseId, a, b, aName, bName }: { caseId: string; a: string; b
   const c = edge?.communication
   const messages = c ? c.messages_ab + c.messages_ba : null
   const calls = c ? c.calls_ab + c.calls_ba : 0
+  const emails = c ? c.emails_ab + c.emails_ba : 0
   const A = edge?.a.label || aName
   const B = edge?.b.label || bName
   const words = messages === null
     ? `Counting messages between ${A} and ${B}`
-    : `${plural(messages, "message", "messages")}${calls ? ` and ${plural(calls, "call", "calls")}` : ""} between ${A} and ${B}`
+    : `${plural(messages, "message", "messages")}${calls ? ` and ${plural(calls, "call", "calls")}` : ""}${emails ? ` and ${plural(emails, "email", "emails")}` : ""} between ${A} and ${B}`
   return (
     <li>
       <Button size="sm" variant="outline" className="h-auto whitespace-normal text-left text-xs" disabled={q.isError}

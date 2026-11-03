@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useCallback, useRef, useState } from "react"
 import { TimelineWindowBar } from "@/features/pattern/components/WindowPanel"
-import { getEventTimeValue } from "../lib/timeline-utils"
+import { getEventInstant } from "../lib/timeline-utils"
 import { useParams, useLocation, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { FinancialAccessProvider } from "@/features/financial/components/FinancialAccessProvider"
@@ -312,7 +312,7 @@ export function TimelinePage() {
   }
 
   // The window around a moment (07 J-5): device lanes and the Case events lane, drawn by the shared Lanes component.
-  const windowEvents = events.map((e) => ({ key: e.key, name: e.name, type: e.type, at: getEventTimeValue(e),
+  const windowEvents = events.map((e) => ({ key: e.key, name: e.name, type: e.type, at: getEventInstant(e),
     date: e.date ? e.date.slice(0, 10) : null, payment: e.source?.kind === "transaction" }))
   const windowBar = caseId ? <TimelineWindowBar caseId={caseId} events={windowEvents} selectedKey={selectedEventKey ?? requestedKey} /> : null
 

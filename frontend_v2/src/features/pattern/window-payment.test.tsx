@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest"
 
 /** 07 J-5 (J-5b, a ledger payment start): a payment has a date and no time, so its window is its whole day. */
 const api = vi.hoisted(() => ({
-  subjects: vi.fn(), keyDates: vi.fn(), window: vi.fn(), windowDay: vi.fn(),
+  subjects: vi.fn(), keyDates: vi.fn(), window: vi.fn(), windowDay: vi.fn(), createKeyDate: vi.fn(),
 }))
 vi.mock("./api", async (orig) => ({ ...(await orig<object>()), patternAPI: { ...(await orig<{ patternAPI: object }>()).patternAPI, ...api } }))
 
@@ -49,6 +49,12 @@ describe("the window around a payment", () => {
     // the whole day is fixed: no time-of-day spans to pick
     expect(screen.queryByRole("button", { name: "±6 h" })).toBeNull()
     expect(document.body.textContent).not.toMatch(/—/)
+    // saving the moment keeps the day's start in the case zone (the server's midnight), never midnight UTC
+    vi.spyOn(window, "prompt").mockReturnValue("Payment day")
+    api.createKeyDate.mockResolvedValue({})
+    fireEvent.click(screen.getByRole("button", { name: "Save this moment as a key date" }))
+    await screen.findByText("Saved as a key date in Workspace.")
+    expect(api.createKeyDate).toHaveBeenCalledWith("case-1", { kind: "date", label: "Payment day", instant: "2023-11-08T00:00:00-05:00", zone: "America/New_York" })
   })
 
   it("with no payment selected, keeps the timed anchor and never says the sentence", async () => {

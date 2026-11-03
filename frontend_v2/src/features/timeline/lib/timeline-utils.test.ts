@@ -196,3 +196,15 @@ describe("displayEventTime (03 section 15.6)", () => {
     expect(displayEventTime({ date: "2023-03-14", time: null })).toEqual({ text: "No time", title: null })
   })
 })
+
+import { getEventInstant } from "./timeline-utils"
+
+describe("getEventInstant (the window's anchor)", () => {
+  it("returns an instant only when the event carries its offset, never a bare time of day", () => {
+    expect(getEventInstant({ date: "2023-11-08T14:30:00-05:00", time: null })).toBe("2023-11-08T19:30:00.000Z")
+    expect(getEventInstant({ date: "2023-11-08", time: "14:30:00Z" })).toBe("2023-11-08T14:30:00.000Z")
+    expect(getEventInstant({ date: "2023-11-08", time: "14:30" })).toBeNull() // zone not known: never guessed
+    expect(getEventInstant({ date: "2023-11-08", time: null })).toBeNull()
+    expect(getEventInstant({ date: "2023-11-08T14:30:00", time: null })).toBeNull()
+  })
+})

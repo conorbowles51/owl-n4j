@@ -153,3 +153,26 @@ def test_money_and_manual_places_over_http():
             assert client.post("/api/pattern/%s/places/manual" % case, json=body).status_code == 422
             h = client.get("/api/pattern/%s/places/manual/%s" % (case, t)).json()
             assert h["total"] == 1 and h["items"][0]["actor_name"] == "synthetic"
+
+
+@needs_template
+def test_the_whole_day_window_holds_that_days_payments_and_not_the_next_days():
+    """Review finding: the window ends at the next midnight, and the lane's end date is inclusive, so the next day's
+    payments were listed under "the whole of" the day."""
+    from tests.pattern_pg import api_client
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            ids = ledger(c, case)
+            today = txn(c, case, ids, 0, tdate=date(2026, 3, 4))
+            txn(c, case, ids, 1, tdate=date(2026, 3, 5))
+            txn(c, case, ids, 2, tdate=date(2026, 3, 3))
+        with api_client(engine, case) as client:
+            w = client.get("/api/pattern/%s/window" % case, params={"span": "day", "day": "2026-03-04", "zone": "UTC"})
+            assert w.status_code == 200, w.text
+            out = w.json()
+            assert out["money_total"] == 1 and [m["transaction_id"] for m in out["money"]] == [str(today)]
+            # a timed window that ends exactly at midnight does not take in the day after either
+            t = client.get("/api/pattern/%s/window" % case, params={"at": "2026-03-04T23:00:00+00:00", "span": "1h",
+                                                                    "zone": "UTC"}).json()
+            assert t["money_total"] == 1

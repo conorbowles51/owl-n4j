@@ -66,9 +66,10 @@ export function WindowPanel({ caseId, at, day, caseEvents, zone = "case", onClos
   return (
     <section aria-label="Window around this moment" className="rounded border bg-card p-3">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-medium">{day ? `The whole of ${day}` : `Around ${new Date(at).toISOString().replace("T", " ").slice(0, 16)} UTC`}</h3>
+        <h3 className="text-sm font-medium">{day ? `The whole of ${day}` : Number.isFinite(Date.parse(at)) ? `Around ${new Date(at).toISOString().replace("T", " ").slice(0, 16)} UTC` : `Around ${at}`}</h3>
         <span className="flex items-center gap-1">
-          <SaveMoment caseId={caseId} at={at} zone={q.data?.zone || "UTC"} />
+          {/* a whole day's moment is its start in the window's zone (the server's midnight), never midnight UTC */}
+          {(!day || q.data) && <SaveMoment caseId={caseId} at={day ? (q.data as { start: string }).start : at} zone={q.data?.zone || "UTC"} />}
           {onClose && <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>}
         </span>
       </div>

@@ -386,3 +386,20 @@ export function displayEventTime(event: Pick<TimelineEvent, "date" | "time">): {
   const t = getEventTimeValue(event)
   return t ? { text: t, title: "Time as entered" } : { text: "No time", title: null }
 }
+
+const OFFSET = /(?:Z|[+-]\d{2}:?\d{2})$/
+
+/**
+ * The event's moment as an instant (ISO with its offset), for the window around it; null when the event has no
+ * time or its time carries no offset, because the zone of a bare "14:30" is not known and is never guessed.
+ */
+export function getEventInstant(event: Pick<TimelineEvent, "date" | "time">): string | null {
+  const candidates = [
+    event.date?.includes("T") ? event.date : null,
+    event.time && event.date && !event.date.includes("T") ? `${event.date.slice(0, 10)}T${event.time.trim()}` : null,
+  ]
+  for (const c of candidates) {
+    if (c && OFFSET.test(c) && Number.isFinite(Date.parse(c))) return new Date(c).toISOString()
+  }
+  return null
+}

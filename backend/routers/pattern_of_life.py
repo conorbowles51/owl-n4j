@@ -751,7 +751,9 @@ def get_window(at: str | None = Query(None), span: str = Query("1h"), start: str
     for e in exts:
         w = day_view.window(conn, [e], labels, a, b)
         phones.append(dict(w, extraction_id=e, label=labels.get(e)))
-    money_rows, money_total = _money_days(db, case_id, a.astimezone(z).date(), b.astimezone(z).date(), z)
+    # the days the window touches, its end excluded (a window ending at midnight does not take in the next day)
+    last_day = (b - timedelta(microseconds=1)).astimezone(z).date()
+    money_rows, money_total = _money_days(db, case_id, a.astimezone(z).date(), last_day, z)
     return _WalkJSON({"start": a, "end": b, "span": span, "zone": zname,
                       "zone_basis": cz["basis"] if cz else ("device_zone" if zone == "device" else "chosen"),
                       "zone_note": cz["note"] if cz else None, "phones": phones,

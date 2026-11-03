@@ -121,29 +121,28 @@ def communication(conn, case_id, a_keys, b_keys, *, from_instant=None, to_instan
     windowed = from_instant is not None or to_instant is not None
     out.update({"first_instant": None, "last_instant": None, "phones": [], "no_time_count": None if windowed else 0})
     phones, firsts, lasts, slices = set(), [], [], defaultdict(lambda: {"messages": 0, "calls": 0, "emails": 0})
-    for d, sender in (("ab", 0), ("ba", 1)):
-        q = _SidesQuery(conn, f, owners, a_keys, b_keys)
-        # each event goes one way only: to the side of its actual sender, or, when neither side sent this copy, to
-        # the side of its original sender (a forwarded message is not also counted back to its author)
-        a_sent = "(%s OR (NOT %s AND %s))" % (q.party(q._sides[0], "a"), q.party(q._sides[1], "a"),
-                                              q.party(q._sides[0], "s"))
-        sent = a_sent if sender == 0 else "NOT %s" % a_sent
-        q.params["zone"] = zone
-        bucket = ("date_trunc('%s', sort_instant AT TIME ZONE :zone)::date" % slice_by) if slice_by else "NULL::date"
-        for r in conn.execute(text(
-                "WITH m AS (%s) SELECT kind, %s AS slice, count(*) AS n, min(sort_instant) AS first, "
-                "max(sort_instant) AS last, count(*) FILTER (WHERE sort_instant IS NULL) AS no_time, "
-                "array_agg(DISTINCT extraction_id::text) AS phones FROM m WHERE %s GROUP BY 1, 2"
-                % (q.matched_sql([sent]), bucket, shown)), q.params):
-            out["%s_%s" % (KIND_PREFIX[r.kind], d)] += int(r.n)
-            if not windowed:
-                out["no_time_count"] += int(r.no_time)
-            phones.update(r.phones)
-            if r.first:
-                firsts.append(r.first)
-                lasts.append(r.last)
-            if slice_by and r.slice is not None:
-                slices[r.slice][KIND_PREFIX[r.kind]] += int(r.n)
+    q = _SidesQuery(conn, f, owners, a_keys, b_keys)
+    # each event goes one way only: to the side of its actual sender, or, when neither side sent this copy, to the
+    # side of its original sender (a forwarded message is not also counted back to its author). The direction is a
+    # column of the matched set, so both directions are counted over the one set of shown copies Conversations shows.
+    a_sent = "(%s OR (NOT %s AND %s))" % (q.party(q._sides[0], "a"), q.party(q._sides[1], "a"), q.party(q._sides[0], "s"))
+    q.params["zone"] = zone
+    bucket = ("date_trunc('%s', sort_instant AT TIME ZONE :zone)::date" % slice_by) if slice_by else "NULL::date"
+    for r in conn.execute(text(
+            "WITH m AS (%s) SELECT kind, %s AS slice, count(*) FILTER (WHERE a_sent) AS n_ab, count(*) FILTER (WHERE "
+            "NOT a_sent) AS n_ba, min(sort_instant) AS first, max(sort_instant) AS last, count(*) FILTER (WHERE "
+            "sort_instant IS NULL) AS no_time, array_agg(DISTINCT extraction_id::text) AS phones FROM m WHERE %s "
+            "GROUP BY 1, 2" % (q.matched_sql(columns=["%s AS a_sent" % a_sent]), bucket, shown)), q.params):
+        out["%s_ab" % KIND_PREFIX[r.kind]] += int(r.n_ab)
+        out["%s_ba" % KIND_PREFIX[r.kind]] += int(r.n_ba)
+        if not windowed:
+            out["no_time_count"] += int(r.no_time)
+        phones.update(r.phones)
+        if r.first:
+            firsts.append(r.first)
+            lasts.append(r.last)
+        if slice_by and r.slice is not None:
+            slices[r.slice][KIND_PREFIX[r.kind]] += int(r.n_ab) + int(r.n_ba)
     labels = ctx.phone_labels
     out["first_instant"] = min(firsts).isoformat() if firsts else None
     out["last_instant"] = max(lasts).isoformat() if lasts else None

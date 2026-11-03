@@ -297,3 +297,25 @@ def test_no_time_count_is_not_applicable_when_a_window_is_set():
                            from_instant="2023-03-01T00:00:00+00:00", to_instant="2023-04-01T00:00:00+00:00")
             comm = win["edges"][0]["communication"]
             assert comm["no_time_count"] is None and comm["messages_ab"] == 1
+
+
+@needs_template
+def test_two_copies_with_different_senders_count_once_over_the_copies_conversations_shows():
+    """Review finding: the direction was a filter applied before the copies were ranked, so each direction kept its
+    own first copy and A to B plus B to A exceeded the Conversations count."""
+    from tests.phone_streams_fixture import at, phone
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            one = _m(at(2023, 3, 2, 9), ANA, [OWNER], dup="g1", app="Native Messages")
+            other = dict(kind="message", instant=at(2023, 3, 2, 9), body="synthetic", thread="t", app="WhatsApp",
+                         direction="outgoing", dup="g1",
+                         parties=[(OWNER, "sender", True, None, None), (ANA, "recipient", False, None, None),
+                                  (ANA, "original_sender", False, None, None)])
+            phone(c, case, label="C1", events=[one, other])
+        with engine.connect() as c:
+            for collapse in (True, False):
+                comm = LE.edges(c, case, [{"identity_key": ANA}, {"identity_key": OWNER}],
+                                collapse_copies=collapse)["edges"][0]["communication"]
+                assert LE.comm_total(comm, "messages") == _conversations(c, case, ANA, OWNER, "message", "direct",
+                                                                         collapse), (collapse, comm)
