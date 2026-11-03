@@ -263,9 +263,14 @@ export function StreamList({
 
   useEffect(() => {
     if (!jumpTo) return
-    const seg = stream.segments.find((sg) => sg.day === (jumpTo.day || null))
+    const want = jumpTo.day || null
+    const dated = stream.segments.filter((sg) => sg.day !== null)
+    // a day with no messages (picked on the time strip) goes to the next day that has some, else the last one
+    const seg =
+      stream.segments.find((sg) => sg.day === want) ??
+      (want === null ? undefined : (dated.find((sg) => (sg.day as string) > want) ?? dated[dated.length - 1]))
     if (!seg) return
-    const at = jumpTo.offset === undefined ? null : seg.start + 1 + jumpTo.offset
+    const at = jumpTo.offset === undefined || seg.day !== want ? null : seg.start + 1 + jumpTo.offset
     virtualizer.scrollToIndex(at ?? seg.start, { align: at === null ? "start" : "center" })
     setFocusIndex(at ?? seg.start + 1)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per request (seq)

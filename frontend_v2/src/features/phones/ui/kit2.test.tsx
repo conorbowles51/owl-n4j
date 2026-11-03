@@ -123,6 +123,12 @@ describe("scope bar (07 4.5)", () => {
     expect(screen.getByText(/Showing your last selection/).closest("[role=status]")).not.toBeNull()
     expect(screen.getByTestId("result-count")).toHaveAttribute("role", "status") // the count is announced (07 J-2)
   })
+
+  it("states no number while the total is being counted (never 0 for a result still loading)", () => {
+    render(<ScopeBar scope={EMPTY_SCOPE} onChange={() => {}} count={null} />)
+    expect(screen.getByRole("status")).toHaveTextContent("Counting")
+    expect(screen.getByRole("region", { name: "Scope" })).not.toHaveTextContent(/\d+ messages/)
+  })
 })
 
 type Row = { id: string; name: string; calls: number }

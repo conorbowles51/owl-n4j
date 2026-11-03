@@ -71,6 +71,15 @@ describe("Search dialog", () => {
     api.searchCase.mockResolvedValue(result())
   })
 
+  it("Ctrl/Cmd+K pressed again while open keeps the box open and selects the words, so typing starts anew (07 J-6)", async () => {
+    page()
+    const box = (await openAndType("synthetic")) as HTMLInputElement
+    act(() => void document.dispatchEvent(new CustomEvent("owl:toggle-command-palette")))
+    expect(screen.getByPlaceholderText("Search words, names, numbers or accounts")).toBe(box)
+    expect(document.activeElement).toBe(box)
+    expect([box.selectionStart, box.selectionEnd]).toEqual([0, "synthetic".length])
+  })
+
   it("opens on Ctrl/Cmd+K's event and shows each group's exact total, notes and what was not searched", async () => {
     page()
     await openAndType("jose")

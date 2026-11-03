@@ -37,8 +37,17 @@ export function SearchDialog({ caseId }: { caseId: string }) {
     setOpen(true)
   }, [location.key, location.state])
 
+  const inputRef = useRef<HTMLInputElement>(null)
+  const openRef = useRef(open)
+  openRef.current = open
   useEffect(() => {
-    const toggle = () => setOpen((o) => !o)
+    // Ctrl+K opens search; pressed again while it is open, it selects the words typed so a new search can start
+    // (Escape closes). Closing on the second press lost the box under the person's hands (07 J-6).
+    const toggle = () => {
+      if (!openRef.current) return setOpen(true)
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }
     document.addEventListener("owl:toggle-command-palette", toggle)
     return () => document.removeEventListener("owl:toggle-command-palette", toggle)
   }, [])
@@ -95,7 +104,7 @@ export function SearchDialog({ caseId }: { caseId: string }) {
           <DialogDescription>Search messages, calls, emails, people, phone records and documents</DialogDescription>
         </DialogHeader>
         <Command shouldFilter={false} value={value} onValueChange={setValue} className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2">
-          <CommandInput placeholder="Search words, names, numbers or accounts" value={typed} onValueChange={setTyped} aria-label="Search this case" />
+          <CommandInput ref={inputRef} placeholder="Search words, names, numbers or accounts" value={typed} onValueChange={setTyped} aria-label="Search this case" />
           <div className="flex items-center gap-3 border-b px-3 py-1.5 text-xs">
             <label className="flex items-center gap-1.5">
               <input type="checkbox" checked={exact} onChange={(e) => setExact(e.target.checked)} />

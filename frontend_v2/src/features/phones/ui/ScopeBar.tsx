@@ -109,7 +109,9 @@ export function ScopeBar({
 }: {
   scope: Scope
   onChange: (scope: Scope) => void
-  count: { shown: number; total: number; noun: string; unconfirmed?: number; soFar?: boolean }
+  /** null while the total is being counted: no number is stated until it is known (never "0 messages" for a
+   * result still loading). */
+  count: { shown: number; total: number; noun: string; unconfirmed?: number; soFar?: boolean } | null
   presets?: ScopePreset[]
   recent?: Scope[]
   /** Set when the scope was restored from this session: "Showing your last selection: 3 phones. Reset". */
@@ -202,7 +204,13 @@ export function ScopeBar({
         )}
       </div>
       {children}
-      <ResultCount shown={count.shown} total={count.total} noun={count.noun} unconfirmed={count.unconfirmed} soFar={count.soFar} />
+      {count ? (
+        <ResultCount shown={count.shown} total={count.total} noun={count.noun} unconfirmed={count.unconfirmed} soFar={count.soFar} />
+      ) : (
+        <p role="status" className="text-sm text-muted-foreground" data-testid="result-count-pending">
+          Counting
+        </p>
+      )}
     </div>
   )
 }

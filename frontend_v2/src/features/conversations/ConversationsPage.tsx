@@ -463,7 +463,7 @@ export function ConversationsPage() {
           )}
         </nav>
         <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col" ref={listRoot}>
-          <ScopeBar scope={scope} onChange={onScope} count={{ shown: stream.total, total: stream.total, noun: "messages" }}>
+          <ScopeBar scope={scope} onChange={onScope} count={stream.status === "ready" && stream.index ? { shown: stream.total, total: stream.total, noun: "messages" } : null}>
             {view.people.length > 0 && (
               <PersonScope
                 caseId={caseId}

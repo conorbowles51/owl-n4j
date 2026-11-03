@@ -110,11 +110,11 @@ function serve(idx: ReturnType<typeof index>, opts: { failWindow?: number; stale
   return calls
 }
 
-function Harness({ filter }: { filter: StreamFilter }) {
+function Harness({ filter, jumpTo, onFocusRow }: { filter: StreamFilter; jumpTo?: { day: string | null; seq: number } | null; onFocusRow?: (row: { event_uid: string } | null) => void }) {
   const stream = useStream(filter)
   return (
     <div style={{ height: 600, display: "flex", flexDirection: "column" }}>
-      <StreamList stream={stream} caseId="c" caseName="Synthetic case" filterWords="none" zoneName="Eastern Time" zone="America/New_York" />
+      <StreamList stream={stream} caseId="c" caseName="Synthetic case" filterWords="none" zoneName="Eastern Time" zone="America/New_York" jumpTo={jumpTo} onFocusRow={onFocusRow} />
     </div>
   )
 }
@@ -254,4 +254,26 @@ it("a new filter asks for no window with the previous snapshot while its index l
   expect(new Set(windowSnapshots)).toEqual(new Set(["s2"]))
   expect(calls.index).toBe(2)
   expect(document.body.textContent).not.toContain("New data arrived")
+})
+
+it("a day picked with no messages focuses the next day that has some, else the last one (07 J-4 time strip)", async () => {
+  const idx = index(20, 10)
+  idx.items = [idx.items[0], { ...idx.items[1], day: "2023-01-05", header: "Day 2023-01-05" }]
+  serve(idx)
+  const focused: (string | null)[] = []
+  const onFocusRow = (row: { event_uid: string } | null) => focused.push(row?.event_uid ?? null)
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const ui = (jumpTo: { day: string | null; seq: number } | null) => (
+    <QueryClientProvider client={client}>
+      <Harness filter={{ case_id: "c" }} jumpTo={jumpTo} onFocusRow={onFocusRow} />
+    </QueryClientProvider>
+  )
+  const view = render(ui(null))
+  await screen.findByText("20 messages")
+  view.rerender(ui({ day: "2023-01-03", seq: 1 }))  // between the two days: the next one
+  await waitFor(() => expect(focused.at(-1)).toBe("e10"), { timeout: 10_000 })
+  view.rerender(ui({ day: "2023-01-01", seq: 2 }))  // a day with messages: that day
+  await waitFor(() => expect(focused.at(-1)).toBe("e0"), { timeout: 10_000 })
+  view.rerender(ui({ day: "2023-02-01", seq: 3 }))  // after the last day: the last one
+  await waitFor(() => expect(focused.at(-1)).toBe("e10"), { timeout: 10_000 })
 })

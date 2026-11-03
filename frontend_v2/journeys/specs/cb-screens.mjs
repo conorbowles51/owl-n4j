@@ -14,6 +14,8 @@ async function conversations(ctx) {
   // the summary's own Conversations button (the sidebar and two summary sections also link there)
   await ctx.click(ctx.page.getByRole("main").locator("header").getByRole("link", { name: "Conversations" }))
   await ctx.see(ctx.page.getByRole("heading", { name: /Conversations/ }))
+  // keys act on message rows, so the first row is on screen before any key is pressed
+  await ctx.see(ctx.page.locator("[data-event]"), 10000)
 }
 
 const J = (id, title, run) => ({ id, owner: "cb-screens", gate: "cb-screens DONE", title, run })
@@ -44,7 +46,8 @@ export default [
       // the link names the person (a number may be their name) and then the count
       const shown = Number(((await link.innerText()).match(/([\d,]+) messages and calls/)?.[1] ?? "").replace(/,/g, ""))
       await ctx.click(link)
-      const total = await ctx.countIn(page.getByRole("status"), "messages")
+      // the count sentence once counted (it says "Counting" until the total is known)
+      const total = await ctx.countIn(page.getByRole("status").filter({ hasText: /[\d,]+ messages/ }), "messages")
       if (total !== shown) throw new StepFailed("count", `summary ${shown} vs screen ${total}`)
     })
     await ctx.step("owner and zone unknown are worded on C2", async () => {
@@ -81,7 +84,9 @@ export default [
     await ctx.step("time strip, click a day, day header names the zone", async () => {
       const strip = page.getByRole("group", { name: /Message density/ })
       await ctx.see(strip)
-      await ctx.click(strip.getByRole("button").first())
+      // the strip's days are a slider (its one button hides the strip): pick the day under the pointer with Enter
+      await ctx.click(strip.getByRole("slider"))
+      await ctx.press("Enter")
       // 03 3.2: "Tuesday, March 14, 2023, Eastern Time (UTC-4)" (or "..., UTC")
       await ctx.see(page.getByRole("heading", { name: /^\w+day, \w+ \d+, \d{4}, (UTC$|.+ \(UTC[+-]\d+)/ }))
     })
@@ -189,9 +194,15 @@ export default [
       await ctx.see(page.getByText(/Not yet reviewed: [\d,]+ of [\d,]+ threads/))
     })
     await ctx.step("m marks the thread reviewed and the count moves", async () => {
+      // a thread with no review mark yet (the J-13b thread keeps its carried, partly reviewed mark)
+      await ctx.click(page.getByRole("listbox", { name: /Threads/ }).getByRole("option").filter({ hasText: "Not yet reviewed" }).first())
       const before = await ctx.countIn(page.getByText(/Not yet reviewed/), "of")
       await ctx.press("m")
-      const after = await ctx.countIn(page.getByText(/Not yet reviewed/), "of")
+      let after = before
+      for (let i = 0; i < 50 && after === before; i++) {  // the mark is saved, then the count moves
+        await page.waitForTimeout(100)
+        after = await ctx.countIn(page.getByText(/Not yet reviewed/), "of")
+      }
       if (after !== before - 1) throw new StepFailed("coverage", `not reviewed ${before} -> ${after}`)
     })
   }),
