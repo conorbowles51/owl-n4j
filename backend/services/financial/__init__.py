@@ -2369,3 +2369,7 @@ __all__ += ["close_forgotten_batch"]
 # One answer for money between two parties (agent-ledger B); aliased so the submodule stays the package attribute.
 from services.financial.money_between import money_between as money_between_parties
 __all__ += ["money_between_parties"]
+# Proceeds calculator: every assumption is a judgement call a named person sets with its source (agent-proposals E).
+from services.financial.proceeds import (ProceedsError, confirm_assumption, list_calculations, propose_assumption,
+                                         set_assumption)
+__all__ += ["ProceedsError", "confirm_assumption", "list_calculations", "propose_assumption", "set_assumption"]
