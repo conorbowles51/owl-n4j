@@ -90,6 +90,9 @@ def test_contact_and_money_between_is_the_graph_edge_with_every_payment_cited(wo
     assert out["total_matching"] == 3 and {i["txn"] for i in out["items"]} == {
         "txn://%s" % world[k] for k in ("paid", "quiet", "late")}
     assert all(i["summed"] for i in out["items"])
+    # the payment opens the Financial page on that row, as the ledger tools' links do
+    assert all(i["financial_href"] == "/cases/%s/financial?view=transactions&payment=%s" % (
+        world["case"], i["txn"][len("txn://"):]) for i in out["items"])
 
 
 def test_a_person_of_another_case_is_not_in_this_case_in_the_same_words(world):

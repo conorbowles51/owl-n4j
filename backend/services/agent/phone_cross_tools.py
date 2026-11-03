@@ -1361,3 +1361,33 @@ TOOLS = [
      "quoting the messages by rec://; refused if a quote is outside the window. Returned as model drafted, not "
      "confirmed."),
 ]
+
+
+# ---- payment links ---------------------------------------------------------------------------------------------------
+# Every item that names a ledger row by txn:// also carries the Financial page path the ledger tools give
+# (financial_href), so the answer links a payment the way the live screens open it. Decision (agent-phones,
+# 2026-11-03): reverse when txn:// opens the Financial page on live (agent-citations), then the prompt cites txn://.
+
+def _with_hrefs(case_id, obj):
+    if isinstance(obj, dict):
+        out = {k: _with_hrefs(case_id, v) for k, v in obj.items()}
+        t = out.get("txn")
+        if isinstance(t, str) and t.startswith("txn://") and "financial_href" not in out:
+            out["financial_href"] = "/cases/%s/financial?view=transactions&payment=%s" % (case_id, t[len("txn://"):])
+        return out
+    if isinstance(obj, list):
+        return [_with_hrefs(case_id, v) for v in obj]
+    return obj
+
+
+def _hrefs(fn):
+    import functools
+
+    @functools.wraps(fn)
+    def run(conn, case_id, *a, **kw):
+        return _with_hrefs(case_id, fn(conn, case_id, *a, **kw))
+    return run
+
+
+for _name in {func for _, func, _, _ in TOOLS}:
+    globals()[_name] = _hrefs(globals()[_name])
