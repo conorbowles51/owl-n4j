@@ -76,6 +76,18 @@ function Thumb({ caseId, item, blur }: { caseId: string; item: MediaItem; blur: 
   )
 }
 
+const isAudio = (it: MediaItem) => /audio/i.test(it.category ?? "") || /\.(opus|ogg|oga|amr|m4a|aac|mp3|wav|caf|3ga|awb|flac)$/i.test(it.filename)
+
+/** An audio file plays in the grid, loaded only when asked for. */
+function TilePlayer({ caseId, item }: { caseId: string; item: MediaItem }) {
+  const [on, setOn] = useState(false)
+  const shown = useObjectUrl(caseId, item.file_uid, on)
+  if (!on) return <Button size="sm" variant="outline" className="h-6 self-start px-2 text-[11px]" onClick={() => setOn(true)} aria-label={`Play ${item.filename}`}>Play</Button>
+  if (shown && "error" in shown) return <span className="text-[11px]">{shown.error}</span>
+  if (!shown) return <span role="status" className="text-[11px] text-muted-foreground">Loading the audio</span>
+  return <audio controls autoPlay src={shown.url} aria-label={`Listen to ${item.filename}`} className="h-8 w-full" />
+}
+
 /** Exactly what made a machine text (05 17.4): model id, version, the weights' hash and the input's hash, in
  * full. Older texts that did not record it say so. */
 function MadeBy({ x }: { x: DerivedText }) {
@@ -427,6 +439,12 @@ export default function MediaPage() {
                 <span className="truncate text-muted-foreground">{it.phone_label} · {it.taken_or_sent.full}</span>
                 <span className="truncate">{it.verification_words}{it.message_count ? ` · ${n(it.message_count)} ${it.message_count === 1 ? "message" : "messages"}` : ""}</span>
               </button>
+              {(it.machine_text ?? []).map((m) => (
+                <span key={m.kind} title={m.words ?? undefined} data-origin={m.state} className={`block truncate px-1 text-[11px] ${m.state === "machine" ? "italic text-muted-foreground" : ""}`}>
+                  {m.kind === "transcript" ? "Transcript" : "Text read"}: {m.short}
+                </span>
+              ))}
+              {isAudio(it) && !it.missing && <div className="px-1 pt-1"><TilePlayer caseId={caseId} item={it} /></div>}
             </li>
           ))}
         </ul>

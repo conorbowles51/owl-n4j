@@ -213,3 +213,22 @@ def test_m6_a_later_machine_reading_never_displaces_a_persons_correction(world):
         rows = {r["id"]: r for r in derive.list_for(c, case, LINKED)}
     assert hits["total"] == 1 and stale["total"] == 0
     assert rows[str(first)]["in_use"] and not rows[str(later)]["in_use"]
+
+
+def test_the_media_grid_shows_each_files_machine_text_mark(world):
+    from services.phone import machine_text, media
+    engine, case, _, ext = world
+    with engine.connect() as c:
+        assert all(it["machine_text"] is None for it in media.window(c, case)["items"])
+    ident = _done(engine, case, ext, kind="transcript")
+    with engine.connect() as c:
+        [tile] = [it for it in media.window(c, case)["items"] if it["file_uid"] == LINKED]
+    assert [(m["kind"], m["state"], m["short"]) for m in tile["machine_text"]] == [
+        ("transcript", "machine", "Machine-generated")]
+    assert tile["machine_text"][0]["words"].endswith("not yet confirmed")
+    with _session(engine) as db:
+        machine_text.confirm(db, case_id=case, derived_id=ident, user=USER)
+        db.commit()
+    with engine.connect() as c:
+        [tile] = [it for it in media.window(c, case)["items"] if it["file_uid"] == LINKED]
+    assert tile["machine_text"][0]["short"] == "Confirmed"

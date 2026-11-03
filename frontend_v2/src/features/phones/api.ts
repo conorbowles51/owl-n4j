@@ -337,6 +337,8 @@ export interface MediaItem {
   taken_or_sent: { instant: string | null; full: string; basis: string }
   verification: string | null; verification_words: string; missing: boolean; deleted_state: string | null; is_carved: boolean
   message_count: number; thumbnail_url: string | null
+  /** The machine text in use for each kind, with its one origin mark (07 4.6); null when there is none. */
+  machine_text?: { kind: "ocr" | "transcript"; state: "machine" | "confirmed" | "corrected" | "pending"; short: string; words: string | null }[] | null
 }
 export interface MediaDetail {
   file_uid: string; extraction_id: string; category: string | null; local_path: string | null; size: number | null

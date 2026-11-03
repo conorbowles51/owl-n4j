@@ -93,8 +93,31 @@ def window(conn, case_id, f: dict | None = None, offset: int = 0, limit: int = 2
             "verification": r.verification, "verification_words": OUTCOME_WORDS.get(r.verification or "",
                                                                                      "Not checked"),
             "missing": r.verification == "missing", "deleted_state": r.deleted_state, "is_carved": bool(r.is_carved),
-            "message_count": int(r.messages), "thumbnail_url": None})
+            "message_count": int(r.messages), "thumbnail_url": None, "machine_text": None})
+    _machine_marks(conn, case_id, items)
     return {"case_id": str(case_id), "offset": p["o"], "limit": p["l"], "items": items}
+
+
+SHORT_MARK = {"machine": "Machine-generated", "confirmed": "Confirmed", "corrected": "Corrected"}
+
+
+def _machine_marks(conn, case_id, items) -> None:
+    """Each tile's machine text, by its one origin mark (07 4.6): the reading in use for each kind, so the grid says
+    which files have a transcript or text read and whether a person stands behind it."""
+    if not items:
+        return
+    from services.phone import derive
+    by_uid = {it["file_uid"]: it for it in items}
+    for r in conn.execute(text(
+            "SELECT DISTINCT ON (d.file_uid, d.kind) d.* FROM phone_derived_texts d WHERE d.case_id = :c AND "
+            "d.state = 'done' AND d.file_uid = ANY(CAST(:u AS uuid[])) " + derive.IN_USE_ORDER),
+            {"c": str(case_id), "u": list(by_uid)}):
+        d = dict(r._mapping)
+        mark = derive.origin(d)
+        it = by_uid[str(d["file_uid"])]
+        it["machine_text"] = (it["machine_text"] or []) + [{
+            "kind": d["kind"], "state": mark["state"], "short": SHORT_MARK.get(mark["state"], ""),
+            "words": mark["words"]}]
 
 
 def detail(conn, case_id, file_uid) -> dict | None:
