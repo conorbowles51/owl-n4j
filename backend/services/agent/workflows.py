@@ -42,7 +42,7 @@ DATA_KINDS = {
     "ledger": "ledger rows (payments read from statements)",
     "phones": "phone extractions",
     "documents": "evidence documents other than statements and phone files",
-    "dossiers": "people dossiers",
+    "dossiers": "people dossiers (a person on People; the person tools need one)",
     "timeline": "case timeline entries",
 }
 
@@ -90,7 +90,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
         starting_question=("When was {person} last demonstrably alive and acting, and who was with them? Separate the "
                            "last human-initiated event from the last device event."),
         steps=(
-            S("get_person_phones", "the person's phones and the identities linked to them", ("phones",)),
+            S("get_person_phones", "the person's phones and the identities linked to them", ("phones", "dossiers")),
             S("get_day_activity", "the last days on the person's phone: human-initiated events (outgoing messages, "
               "unlocks, typed input) apart from passive ones (incoming messages, background sync)", ("phones",)),
             S("get_money_signal_matches", "the last card payments bound to the alerts that give their time "
@@ -157,7 +157,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
             S("get_money_signal_matches", "which handset received each alert and code; a switch of alerts from one "
                                           "phone to the other from a date", ("phones", "ledger")),
             S("draft_control_claim", "the control claim for the account, strands for and against", ("phones",
-                                                                                                    "ledger")),
+                                                                                                    "ledger", "dossiers")),
             S("get_together_apart", "whether the carer's phone was at the holder's home when online transfers were "
                                     "made", ("phones",), optional=True),
             S("get_payment_conversation", "what was said around each transfer ('you said I could have it')",
@@ -232,7 +232,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
             S("get_day_activity", "call starts and ends and message times on the chain's phones", ("phones",)),
             S("get_payment_conversation", "messages around each trade", ("phones", "ledger")),
             S("get_analysis_results", "approach 4 (awareness): read and reply events", ("phones",), optional=True),
-            S("draft_control_claim", "nominee accounts (connection 3)", ("phones", "ledger"), optional=True),
+            S("draft_control_claim", "nominee accounts (connection 3)", ("phones", "ledger", "dossiers"), optional=True),
         ),
         proposals=(("propose_workspace_entry", "each 'order placed during call' relation with its two citations"),),
         person_confirms="each chain link and any nominee control claim",
@@ -320,7 +320,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
               optional=True),
             S("get_decisions", "the decisions behind ledger rows, with who made them", ("ledger",), optional=True),
             S("get_financial_coverage", "gaps as 'no record, and why'", ("ledger",), optional=True),
-            S("draft_control_claim", "attribution claims checked for strands against", ("phones", "ledger"),
+            S("draft_control_claim", "attribution claims checked for strands against", ("phones", "ledger", "dossiers"),
               optional=True),
             S("red_cell", "a person runs Red cell on the theory in Workspace: the away-from-the-suspect sweep",
               (), optional=True, by_person=True),
@@ -341,7 +341,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
                            "debt or threat messages sit beside the supply messages?"),
         steps=(
             S("get_analysis_results", "approach 5 (device_users): users of the line over periods", ("phones",)),
-            S("get_person_phones", "the identities on each phone", ("phones",)),
+            S("get_person_phones", "the identities on each phone", ("phones", "dossiers")),
             S("search_case", "debt and threat messages beside supply messages", ("phones",)),
         ),
         proposals=(("propose_workspace_entry", "the line's lineage over periods and the exploitation evidence"),),
@@ -377,7 +377,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
                            "from booking to controller?"),
         steps=(
             S("draft_control_claim", "device is not person: the phone-to-person link with strands against",
-              ("phones", "ledger")),
+              ("phones", "ledger", "dossiers")),
             S("get_analysis_results", "approach 5 (device_users): signs of more than one user", ("phones",)),
             S("get_money_between", "buyer payments to the controller account", ("ledger",)),
         ),
@@ -450,7 +450,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
                            "it, and which payments went from it to boosters?"),
         steps=(
             S("get_account_mentions", "the marketplace payout accounts named in the case", ("ledger",)),
-            S("draft_control_claim", "who had the means to operate the payout account", ("phones", "ledger")),
+            S("draft_control_claim", "who had the means to operate the payout account", ("phones", "ledger", "dossiers")),
             S("get_money_between", "payments from the payout account to boosters", ("ledger",)),
             S("search_case", "booster chats", ("phones",), optional=True),
         ),

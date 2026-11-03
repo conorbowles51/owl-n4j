@@ -171,3 +171,15 @@ def test_phone_evidence_rows_are_not_documents_and_a_failed_count_is_unknown(tmp
         assert W.case_counts(conn, case)["documents"] == 2  # e and f; the statement s and four phone rows left out
     r = W.assess(W.get("expense-fraud"), dict(ALL, documents=None), W.registered_tool_names())
     assert r["status"] == "unknown" and "could not be counted" in r["reasons"][0]
+
+
+def test_person_only_tools_need_a_dossier():
+    """get_person_phones and draft_control_claim take a person (dossier) and nothing else; a case with no dossier
+    cannot run them, so the workflow is partial, not ready (live: the synthetic training case holds 0 dossiers)."""
+    for w in W.WORKFLOWS:
+        for s in w.steps:
+            if s.tool in ("get_person_phones", "draft_control_claim"):
+                assert "dossiers" in s.needs, (w.id, s.tool)
+    tools = W.registered_tool_names() | PENDING_ON_SIBLING_BRANCHES
+    r = W.assess(W.get("carer-abuse"), dict(ALL, dossiers=0), tools)
+    assert r["status"] == "partial" and "draft_control_claim" in [s["tool"] for s in r["steps"] if not s["runs"]]
