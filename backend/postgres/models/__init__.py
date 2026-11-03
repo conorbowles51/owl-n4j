@@ -167,3 +167,5 @@ __all__ += ["PhoneSchemaType", "PhoneSchemaField", "PhoneSchemaNesting", "PhoneS
             "PhoneSchemaObservation", "PhoneSchemaFlag", "PhoneSchemaFlagEvent"]
 from postgres.models.phone_identity import PhoneIdentity, PhoneRecordSubject
 __all__ += ["PhoneIdentity", "PhoneRecordSubject"]
+from postgres.models.phone_analysis import PhoneAnalysisResultSubject
+__all__ += ["PhoneAnalysisResultSubject"]

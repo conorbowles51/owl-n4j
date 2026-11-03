@@ -106,6 +106,9 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
                 "deleted_state": r.deleted_state, "attributes": B.model_attrs(r.body), "fields": fields}
 
     root = detail(loc.ordinal)
+    # sensitive values are shown masked until a person presses Reveal (05 section 3.8)
+    from services.phone import sensitive
+    sensitive.mask_detail(root)
     files = []
     for a in conn.execute(text(
             "SELECT a.record_uid, a.mechanism, a.reference_text, a.resolved, a.ambiguous, f.file_uid, f.local_path, "

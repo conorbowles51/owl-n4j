@@ -100,6 +100,7 @@ TABLES = [
     PhoneExtraction.__table__,
     PhoneIdentity.__table__,
     PhoneRecordSubject.__table__,
+    __import__("postgres.models.phone_analysis", fromlist=["x"]).PhoneAnalysisResultSubject.__table__,
 ]
 
 USD = "USD"
@@ -362,7 +363,10 @@ class TheSubject(DecisionTestCase):
                                  kind="phone", value_normalised="+12025550143", value_display="+1 202-555-0143")
         record = PhoneRecordSubject(id=uuid.uuid4(), case_id=self.case.id, extraction_id=report.id, document_index=0,
                                     ordinal=1)
-        self.db.add_all([identity, record])
+        from postgres.models.phone_analysis import PhoneAnalysisResultSubject
+        result = PhoneAnalysisResultSubject(id=uuid.uuid4(), case_id=self.case.id, approach="money_signals",
+                                            result_key="0" * 64)
+        self.db.add_all([identity, record, result])
         self.db.flush()
         subjects = {
             AdjudicationSubject.transaction: self.row,
@@ -373,6 +377,7 @@ class TheSubject(DecisionTestCase):
             AdjudicationSubject.phone_extraction: report,
             AdjudicationSubject.phone_identity: identity,
             AdjudicationSubject.phone_record: record,
+            AdjudicationSubject.phone_analysis_result: result,
         }
         self.assertEqual(set(subjects), set(AdjudicationSubject))
 

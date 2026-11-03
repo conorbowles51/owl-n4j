@@ -134,6 +134,8 @@ class AdjudicationSubject(str, Enum):
     # 02 section 8.8: an identity in the case (a number, an app account, an address) and one record of a phone.
     phone_identity = "phone_identity"
     phone_record = "phone_record"
+    # 05 section 3.7: a result of a phone analysis, keyed on its result_key so a decision carries across reruns.
+    phone_analysis_result = "phone_analysis_result"
 
 
 class AdjudicationReasonKind(str, Enum):

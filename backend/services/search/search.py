@@ -124,8 +124,9 @@ def _comm(conn, case_id, group, q, exact, phones, start, end, offset, limit, ctx
 
 # a record's own text and its child records' text, each read through the record_uid index (an OR of the two made
 # Postgres read every phone text of every case, about 245 ms per hit on live)
-RECORD_TEXT_SQL = ("SELECT t.value FROM pv_text t WHERE t.record_uid = :u UNION ALL SELECT t.value FROM pv_text t "
-                   "JOIN pv_record s ON s.record_uid = t.record_uid WHERE s.parent_record_uid = :u")
+RECORD_TEXT_SQL = ("SELECT t.value FROM pv_text t WHERE t.record_uid = :u AND NOT t.is_sensitive UNION ALL SELECT "
+                   "t.value FROM pv_text t JOIN pv_record s ON s.record_uid = t.record_uid WHERE s.parent_record_uid = "
+                   ":u AND NOT t.is_sensitive")
 
 
 def _record_text(conn, record_uid, q, exact):
@@ -193,7 +194,9 @@ def _people(conn, case_id, q, exact, short, offset, limit):
 
 def _records_sql(exact):
     cond = "position(:q in lower(t.value)) > 0" if exact else "t.value_folded LIKE :like"
+    # sensitive values (passwords, cookies, card numbers, key-value pairs) are never searched (05 section 3.8)
     return ("FROM pv_text t JOIN pv_record r ON r.record_uid = t.record_uid WHERE t.case_id = :c AND %s "
+            "AND NOT t.is_sensitive "
             "AND (CAST(:p AS uuid[]) IS NULL OR t.extraction_id = ANY(CAST(:p AS uuid[]))) "
             "AND NOT EXISTS (SELECT 1 FROM pv_comm_event e WHERE e.record_uid = t.record_uid OR "
             "e.record_uid = r.parent_record_uid OR e.record_uid = r.root_record_uid)" % cond)

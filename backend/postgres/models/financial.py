@@ -99,7 +99,7 @@ _PERIOD_BOUNDS_SOURCES = "('printed', 'derived', 'absent')"
 # ledger polymorphic in practice; subject_id has never carried a foreign key.
 _ADJUDICATION_SUBJECTS = (
     "('transaction', 'statement_period', 'source_document', 'account', "
-    "'evidence_file', 'phone_extraction', 'phone_identity', 'phone_record')"
+    "'evidence_file', 'phone_extraction', 'phone_identity', 'phone_record', 'phone_analysis_result')"
 )
 # Closed for the reason the quarantine reasons are closed: "how many rows did
 # you set aside, and how many did you put back" is answered by a GROUP BY, and

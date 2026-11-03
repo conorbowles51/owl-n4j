@@ -65,9 +65,14 @@ def main() -> int:
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
+    # phone analyses (05 section 3.4, C16): their own loop, one run at a time, beside the sweep and never behind it
+    from services.phone_analysis import approaches, framework as analysis
+    approaches.install()
+    analysis.start_worker(engine)
     try:
         sweep.sweep_forever(stop, lambda: engine)
     finally:
+        analysis.stop_worker()
         holder.close()
     return 0
 

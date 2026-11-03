@@ -1108,6 +1108,31 @@ def record_detail(record_uid: UUID, case_id: UUID = Query(...), zone: Optional[s
     return out
 
 
+class RevealBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    field_path: str = Field(min_length=1, max_length=512)
+    value_index: int = Field(0, ge=0)
+
+
+@router.post("/records/{record_uid}/reveal")
+def reveal_sensitive(record_uid: UUID, body: RevealBody, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_db_user)):
+    """Reveal one sensitive value (05 section 3.8); the reveal is logged (actor, time, locator, field) first."""
+    from services.phone import sensitive
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    try:
+        out = sensitive.reveal(db, body.case_id, record_uid, body.field_path, body.value_index, _actor(user))
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    except sensitive.RevealError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+    db.commit()
+    return out
+
+
 @router.get("/identities")
 def identity_picker(case_id: UUID = Query(...), q: str = Query("", max_length=200), limit: int = Query(50, ge=1, le=200),
                     cursor: int = Query(0, ge=0), db: Session = Depends(get_db),
