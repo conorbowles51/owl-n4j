@@ -196,7 +196,21 @@ def test_the_statement_writer_asks_for_a_brief():
     import inspect
     from services.financial import statement_import
     src = inspect.getsource(statement_import.confirm_statement_import)
-    assert "request_brief(case_id" in src
+    assert "request_brief(case_id, 'import', session_factory)" in src
+
+
+def test_a_brief_request_uses_the_callers_database_and_never_raises():
+    calls = []
+
+    class Broken:
+        def __enter__(self):
+            calls.append("opened")
+            raise RuntimeError("database down")
+
+        def __exit__(self, *a):
+            return False
+    B.request_brief("00000000-0000-4000-8000-000000000000", "import", lambda: Broken())
+    assert calls == ["opened"]
 
 
 # ---- PostgreSQL ----------------------------------------------------------------------------------------------------

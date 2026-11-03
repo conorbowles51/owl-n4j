@@ -680,11 +680,14 @@ def history(conn, case_id, *, offset=0, limit=20) -> dict:
 
 # ---- triggers ------------------------------------------------------------------------------------------------------
 
-def request_brief(case_id, reason: str = "import") -> None:
-    """Ask for a brief of this case once it is quiet. Cheap; never raises (called after a ledger commit)."""
+def request_brief(case_id, reason: str = "import", session_factory=None) -> None:
+    """Ask for a brief of this case once it is quiet. Cheap; never raises (called after a ledger commit). It writes
+    through ``session_factory`` (the caller's database) when given, else the background sessions."""
     try:
-        from postgres.session import _get_background_session_local
-        with _get_background_session_local()() as s:
+        if session_factory is None:
+            from postgres.session import _get_background_session_local
+            session_factory = _get_background_session_local()
+        with session_factory() as s:
             if s.get_bind().dialect.name != "postgresql":
                 return
             s.execute(text(
