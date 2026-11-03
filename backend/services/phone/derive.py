@@ -412,6 +412,12 @@ def _loop(engine, stop):
         except Exception:  # noqa: BLE001
             log.exception("phone derived text step failed")
             busy = []
+        # translations (05 17.5) take turns with readings on this one thread, so one model runs at a time
+        try:
+            from services.phone import translate
+            busy = busy + translate.run_pending(engine)
+        except Exception:  # noqa: BLE001
+            log.exception("phone translation step failed")
         stop.wait(0 if busy else IDLE_SECONDS)
 
 

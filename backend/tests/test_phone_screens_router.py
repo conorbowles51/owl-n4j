@@ -487,6 +487,29 @@ def test_media_derive_routes_queue_a_reading_and_refuse_in_words(api):
     assert gone.status_code in (403, 404)  # refused either way: no access to that case, or no such file
 
 
+def test_translation_routes_queue_a_message_and_a_conversation_list_them_and_refuse_in_words(api):
+    """05 17.5 routes: a message is queued for translation (once), a conversation queues the rest with counts, the
+    translations are read back by message, and another case's message is refused."""
+    cl, ev = api["client"], api["evs"][0]["event_uid"]
+    r = cl.post("/api/phones/messages/%s/translate" % ev, json={"case_id": api["case"]})
+    assert r.status_code == 200 and r.json()["state"] == "queued" and r.json()["machine_generated"]
+    again = cl.post("/api/phones/messages/%s/translate" % ev, json={"case_id": api["case"]})
+    assert again.json()["id"] == r.json()["id"]
+    thread = api["evs"][0]["thread_key"]
+    t = cl.post("/api/phones/threads/translate", json={"case_id": api["case"], "thread_key": thread})
+    assert t.status_code == 200 and t.json() == {"in_conversation": 2, "queued": 1, "left_out": {
+        "no_text": 0, "already_translated": 0, "already_waiting": 1}}
+    got = cl.post("/api/phones/translations", json={"case_id": api["case"], "keys": [e["event_uid"] for e in
+                                                                                    api["evs"]]}).json()["items"]
+    assert set(got) == {api["evs"][0]["event_uid"], api["evs"][1]["event_uid"]}
+    assert {g["state"] for g in got.values()} == {"queued"}
+    other = cl.post("/api/phones/messages/%s/translate" % api["other_evs"][0]["event_uid"],
+                    json={"case_id": api["case"]})
+    assert other.status_code == 404
+    missing = cl.post("/api/phones/media/derived/%s/translate" % uuid.uuid4(), json={"case_id": api["case"]})
+    assert missing.status_code == 404
+
+
 def test_timeline_lens_routes_index_window_and_buckets(api):
     cl = api["client"]
     idx = cl.post("/api/phones/timeline/index", json={"case_id": api["case"]})

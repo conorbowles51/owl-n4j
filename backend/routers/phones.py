@@ -432,6 +432,87 @@ def phone_media_derive(file_uid: UUID, body: DeriveBody, db: Session = Depends(g
     return out
 
 
+class TranslateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+
+
+class TranslateThreadBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    thread_key: str = Field(min_length=1, max_length=2000)
+
+
+class TranslationsBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    source_type: Literal["message", "derived_text"] = "message"
+    keys: list[UUID] = Field(max_length=1000)
+
+
+def _translate_call(db, fn):
+    from services.phone import translate
+    try:
+        out = fn()
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except translate.TranslateError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    db.commit()
+    return out
+
+
+@router.post("/messages/{event_uid}/translate")
+def phone_message_translate(event_uid: UUID, body: TranslateBody, db: Session = Depends(get_db),
+                            user: User = Depends(get_current_db_user)):
+    """Ask for one message to be translated to English on this server (05 17.5). The translation is machine-generated
+    and stored beside the message, never replacing it; nothing is sent anywhere."""
+    from services.phone import translate
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    return _translate_call(db, lambda: translate.request(db.connection(), body.case_id, "message", event_uid,
+                                                         user_id=user.id))
+
+
+@router.post("/media/derived/{derived_id}/translate")
+def phone_derived_translate(derived_id: UUID, body: TranslateBody, db: Session = Depends(get_db),
+                            user: User = Depends(get_current_db_user)):
+    """Ask for a finished transcript (or text read from an image) to be translated, segment by segment (05 17.5)."""
+    from services.phone import translate
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    return _translate_call(db, lambda: translate.request(db.connection(), body.case_id, "derived_text", derived_id,
+                                                         user_id=user.id))
+
+
+@router.post("/threads/translate")
+def phone_thread_translate(body: TranslateThreadBody, db: Session = Depends(get_db),
+                           user: User = Depends(get_current_db_user)):
+    """Translate this conversation: every message with text, one translation each. Returns true counts, queued and
+    left out by reason."""
+    from services.phone import translate
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    return _translate_call(db, lambda: translate.request_thread(db.connection(), body.case_id, body.thread_key,
+                                                                user_id=user.id))
+
+
+@router.post("/translations")
+def phone_translations(body: TranslationsBody, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_db_user)):
+    """The translation to show for each of a set of messages (or machine texts): open, else the latest finished
+    (marked stale when the text has been corrected since), else the latest failed."""
+    from services.phone import translate
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    got = translate.latest_for(db.connection(), body.case_id, body.source_type, body.keys)
+    return {"case_id": str(body.case_id), "items": got}
+
+
+@router.get("/media/derived/{derived_id}/translations")
+def phone_derived_translations(derived_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                               user: User = Depends(get_current_db_user)):
+    from services.phone import translate
+    authorize_case(db, case_id, user, ("case", "view"))
+    return {"items": translate.list_for(db.connection(), case_id, "derived_text", derived_id)}
+
+
 class CorrectBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID

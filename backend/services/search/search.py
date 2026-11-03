@@ -8,9 +8,10 @@ that is mostly digits also finds identities whose digits contain it (S-3). Queri
 identifiers only (11.6). Snippets are cut from the original text, and the match inside a snippet is the original
 characters, found through the folded-to-original map (S-5).
 
-``machine_text`` is text read from phone photos and audio on request (OCR and transcripts, 03 8.3): its own group,
-always labelled machine-generated with the model that made it. Media nobody asked to read is not searched, and the
-response says so.
+``machine_text`` is text read from phone photos and audio on request (OCR and transcripts, 03 8.3), and machine
+translations of messages and transcripts (05 17.5): its own group, always labelled machine-generated with the model
+that made it, a translation citing its original. Media nobody asked to read is not searched, and the response says
+so.
 """
 from __future__ import annotations
 
@@ -293,33 +294,104 @@ def _machine_sql(exact):
             "uuid[]))) AND " + cond)
 
 
+def _translation_sql(exact):
+    # the latest finished translation of each source, and only one of the text in effect now: a translation of a
+    # text corrected since is not searched (05 17.5; only the corrected value is searched)
+    cond = "position(:qe in lower(t.text)) > 0" if exact else "t.text_folded LIKE :like"
+    return ("FROM (SELECT DISTINCT ON (t.source_type, t.source_key) t.* FROM phone_translations t WHERE t.case_id = :c "
+            "AND t.state = 'done' ORDER BY t.source_type, t.source_key, t.finished_at DESC, t.id) t "
+            "LEFT JOIN pv_comm_event ev ON t.source_type = 'message' AND ev.event_uid = t.source_key AND "
+            "ev.case_id = :c LEFT JOIN phone_derived_texts dt ON t.source_type = 'derived_text' AND dt.id = t.source_key "
+            "AND dt.case_id = :c LEFT JOIN pv_file tf ON tf.file_uid = dt.file_uid AND tf.case_id = :c "
+            "WHERE t.outcome = 'translated' AND (ev.event_uid IS NOT NULL OR tf.file_uid IS NOT NULL) AND "
+            "t.source_sha256 = encode(sha256(convert_to(coalesce(ev.body, dt.corrected_text, dt.text, ''), 'UTF8')), "
+            "'hex') AND (CAST(:p AS uuid[]) IS NULL OR coalesce(ev.extraction_id, tf.extraction_id) = ANY(CAST(:p AS "
+            "uuid[]))) AND " + cond)
+
+
 def _machine(conn, case_id, q, exact, phones, offset, limit, ctx):
-    from services.phone import derive
+    """Machine texts (OCR, transcripts) and machine translations (05 17.5) in one group, newest first. Each item
+    says which it is; a translation cites its original."""
     p = {"c": case_id, "qe": F.fold(q, exact=True), "like": _like(F.fold(q)), "p": phones or None}
-    total = int(conn.execute(text("SELECT count(*) " + _machine_sql(exact)), p).scalar() or 0)
+    total = int(conn.execute(text("SELECT (SELECT count(*) " + _machine_sql(exact) + ") + (SELECT count(*) "
+                                  + _translation_sql(exact) + ")"), p).scalar() or 0)
     if not total or not limit:
         return total, []
     p.update({"lim": limit, "off": offset})
-    out = []
+    page = conn.execute(text(
+        "SELECT * FROM (SELECT 'derived' AS src, d.id, d.finished_at " + _machine_sql(exact) + " UNION ALL "
+        "SELECT 'translation' AS src, t.id, t.finished_at " + _translation_sql(exact) + ") u "
+        "ORDER BY u.finished_at DESC, u.src, u.id LIMIT :lim OFFSET :off"), p).fetchall()
+    derived = _derived_items(conn, case_id, q, exact, [r.id for r in page if r.src == "derived"], ctx)
+    translated = _translation_items(conn, case_id, q, exact, [r.id for r in page if r.src == "translation"], ctx)
+    return total, [derived[r.id] if r.src == "derived" else translated[r.id] for r in page]
+
+
+def _derived_items(conn, case_id, q, exact, ids, ctx):
+    from services.phone import derive
+    if not ids:
+        return {}
+    out = {}
     for r in conn.execute(text(
-            "SELECT d.file_uid, d.kind, coalesce(d.corrected_text, d.text) AS text, d.model, d.model_version, "
+            "SELECT d.id, d.file_uid, d.kind, coalesce(d.corrected_text, d.text) AS text, d.model, d.model_version, "
             "d.finished_at, d.state, d.corrected_at, d.corrected_by_name, d.correction_reason, d.confirmed_at, "
-            "d.confirmed_by_name, f.extraction_id, "
-            "f.local_path " + _machine_sql(exact) + " ORDER BY d.finished_at DESC, d.file_uid, d.kind LIMIT :lim "
-            "OFFSET :off"), p):
+            "d.confirmed_by_name, f.extraction_id, f.local_path FROM phone_derived_texts d JOIN pv_file f ON "
+            "f.file_uid = d.file_uid AND f.case_id = :c WHERE d.id = ANY(:i)"), {"c": case_id, "i": ids}):
         phone = ctx["phones"].get(str(r.extraction_id), "Phone")
         name = (r.local_path or "").replace("\\", "/").rsplit("/", 1)[-1] or "File not named in the report"
-        out.append({"kind": "machine_text", "title": "%s %s: %s" % (
-                        phone, "text read from" if r.kind == "ocr" else "transcript of", name),
-                    "phone_label": phone, "machine_generated": r.corrected_at is None,
-                    "origin": derive.origin(dict(r._mapping)),
-                    "label": derive.label(r.model, r.model_version, r.finished_at),
-                    "snippet": snippet(r.text, q, exact) or {"before": "", "match": "", "after": (r.text or "")[:120]},
-                    "record_uid": None, "evidence_file_id": None, "file_uid": str(r.file_uid),
-                    "extraction_id": str(r.extraction_id),
-                    "open": {"screen": "media", "params": {"file_uid": str(r.file_uid),
-                                                           "extraction_id": str(r.extraction_id)}}})
-    return total, out
+        out[r.id] = {"kind": "machine_text", "title": "%s %s: %s" % (
+                         phone, "text read from" if r.kind == "ocr" else "transcript of", name),
+                     "phone_label": phone, "machine_generated": r.corrected_at is None,
+                     "origin": derive.origin(dict(r._mapping)),
+                     "label": derive.label(r.model, r.model_version, r.finished_at),
+                     "snippet": snippet(r.text, q, exact) or {"before": "", "match": "", "after": (r.text or "")[:120]},
+                     "record_uid": None, "evidence_file_id": None, "file_uid": str(r.file_uid),
+                     "extraction_id": str(r.extraction_id),
+                     "open": {"screen": "media", "params": {"file_uid": str(r.file_uid),
+                                                            "extraction_id": str(r.extraction_id)}}}
+    return out
+
+
+ORIGINAL_CHARS = 200
+
+
+def _translation_items(conn, case_id, q, exact, ids, ctx):
+    from services.phone import translate
+    if not ids:
+        return {}
+    out = {}
+    for r in conn.execute(text(
+            "SELECT t.id, t.source_type, t.source_key, t.text, t.model, t.model_version, t.detected_language_name, "
+            "ev.body, ev.record_uid, ev.thread_key, ev.extraction_id AS ev_ext, ev.app, dt.kind AS dkind, "
+            "coalesce(dt.corrected_text, dt.text) AS dtext, dt.file_uid, tf.extraction_id AS f_ext, tf.local_path "
+            "FROM phone_translations t LEFT JOIN pv_comm_event ev ON t.source_type = 'message' AND ev.event_uid = "
+            "t.source_key AND ev.case_id = :c LEFT JOIN phone_derived_texts dt ON t.source_type = 'derived_text' AND "
+            "dt.id = t.source_key LEFT JOIN pv_file tf ON tf.file_uid = dt.file_uid AND tf.case_id = :c "
+            "WHERE t.id = ANY(:i)"), {"c": case_id, "i": ids}):
+        ext = str(r.ev_ext or r.f_ext)
+        phone = ctx["phones"].get(ext, "Phone")
+        original = r.body if r.source_type == "message" else r.dtext
+        if r.source_type == "message":
+            what = "message"
+            where = {"screen": "conversations", "params": {"phone": ext, "thread": r.thread_key,
+                                                           "event": str(r.source_key), "q": q, "exact": exact}}
+        else:
+            name = (r.local_path or "").replace("\\", "/").rsplit("/", 1)[-1] or "File not named in the report"
+            what = "%s %s" % ("transcript of" if r.dkind == "transcript" else "text read from", name)
+            where = {"screen": "media", "params": {"file_uid": str(r.file_uid), "extraction_id": ext}}
+        out[r.id] = {"kind": "machine_translation", "title": "%s machine translation of a %s" % (phone, what)
+                     if r.source_type == "message" else "%s machine translation of the %s" % (phone, what),
+                     "phone_label": phone, "machine_generated": True,
+                     "label": translate.label(r.model, r.model_version),
+                     "translated_from": r.detected_language_name,
+                     "original": {"text": (original or "")[:ORIGINAL_CHARS],
+                                  "clipped": len(original or "") > ORIGINAL_CHARS, "chars": len(original or "")},
+                     "snippet": snippet(r.text, q, exact) or {"before": "", "match": "", "after": (r.text or "")[:120]},
+                     "record_uid": str(r.record_uid) if r.record_uid else None, "evidence_file_id": None,
+                     "extraction_id": ext, "translation_id": str(r.id), "open": where}
+        if r.file_uid:
+            out[r.id]["file_uid"] = str(r.file_uid)
+    return out
 
 
 # ---- entry points -----------------------------------------------------------------------------------------------------------

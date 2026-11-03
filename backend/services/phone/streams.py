@@ -520,6 +520,9 @@ def build_rows(conn, ctx: L.LabelContext, rows, zone: str, f: StreamFilter) -> l
     titles = {t.thread_key: t.title_in_record for t in conn.execute(text(
         "SELECT thread_key, title_in_record FROM pv_thread WHERE case_id = :c AND thread_key = ANY(:k)"),
         {"c": f.case_id, "k": sorted({r.thread_key for r in rows if r.thread_key})})}
+    # a translation asked for (05 17.5) travels with its message, under the original
+    from services.phone import translate
+    translations = translate.latest_for(conn, f.case_id, "message", [r.event_uid for r in rows if r.body])
     out = []
     for r in rows:
         ext = str(r.extraction_id)
@@ -555,6 +558,7 @@ def build_rows(conn, ctx: L.LabelContext, rows, zone: str, f: StreamFilter) -> l
             "owner_read": {"date_read": T.iso(owner_p.date_read) if owner_p and owner_p.date_read else None,
                            "date_played": T.iso(owner_p.date_played) if owner_p and owner_p.date_played else None},
             "interpretation_level": r.interpretation_level,
+            "translation": translations.get(str(r.event_uid)),
         }
         row["line"] = L.line_text(frm, to)
         out.append(row)

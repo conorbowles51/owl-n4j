@@ -97,6 +97,19 @@ def font_faces() -> str:
         % (fam, os.path.join(FONT_DIR, name), weight) for fam, name, weight in FONTS)
 
 
+def _translation_html(t, missing) -> list:
+    """A machine translation under its original (05 17.5): the language it was translated from, the text, and its
+    label; a translation of a text corrected since says so."""
+    if not t:
+        return []
+    out = ['<div class="body">%s</div>' % _e("Machine translation from %s: %s" % (
+        t.get("detected_language_name") or "another language", t.get("text") or ""), missing),
+        '<div class="origin">%s</div>' % _e(t.get("label") or "", missing)]
+    if t.get("stale"):
+        out.append('<div class="origin">%s</div>' % _e(t.get("stale_words") or "", missing))
+    return out
+
+
 def _row_html(r, missing) -> str:
     t = (r.get("time") or {}).get("full") or "No time recorded"
     who = r.get("line") or ""
@@ -108,6 +121,7 @@ def _row_html(r, missing) -> str:
         parts.append('<div class="body">%s</div>' % _e(r["call"].get("words") or "Call", missing))
     if r.get("body"):
         parts.append('<div class="body">%s</div>' % _e(r["body"], missing))
+        parts += _translation_html(r.get("translation"), missing)
     for a in r.get("attachments") or []:
         parts.append('<div class="badges">Attachment: %s%s</div>' % (
             _e(a.get("filename") or "file not named in the report", missing),
@@ -117,6 +131,7 @@ def _row_html(r, missing) -> str:
             parts.append('<div class="body">%s: %s</div>' % (_e(what, missing), _e(t["text"] or "No text was found.",
                                                                                  missing)))
             parts.append('<div class="origin">%s</div>' % _e(t["origin"]["words"] or "", missing))
+            parts += _translation_html(t.get("translation"), missing)
     flags = [f for f in (r.get("flags") or []) if f != "Mapped by the system, not yet confirmed"]
     if r.get("interpretation_level") == "applied_unconfirmed":
         parts.append('<div class="origin">Mapped by the system, not yet confirmed</div>')

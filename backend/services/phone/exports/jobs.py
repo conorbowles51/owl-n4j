@@ -97,7 +97,20 @@ def machine_texts(conn, case_id, file_uids) -> dict:
         out.setdefault(str(d["file_uid"]), []).append({
             "id": str(d["id"]), "kind": d["kind"], "origin": mark,
             "text": d["corrected_text"] if d.get("corrected_text") is not None else (d["text"] or "")})
+    # a machine translation of the text (05 17.5) prints under it with its own label
+    from services.phone import translate
+    tr = translate.latest_for(conn, case_id, "derived_text", [t["id"] for ts in out.values() for t in ts])
+    for ts in out.values():
+        for t in ts:
+            t["translation"] = printable_translation(tr.get(t["id"]))
     return out
+
+
+def printable_translation(t):
+    """A finished translation to print, or None: what was made, with its label, or its stale words."""
+    if not t or t["state"] != "done" or t["outcome"] != "translated":
+        return None
+    return t
 
 
 def describe_machine_text(conn, case_id, filter_body: dict) -> dict:
@@ -310,8 +323,16 @@ def draw(engine, export_id, claimed=None) -> dict:
         texts = machine_texts(conn, e.case_id, [a.get("file_uid") for _, rows in out_days for r in rows
                                                 for a in r.get("attachments") or []])
         machine = {"total": 0, "unconfirmed": 0}
+        translations = {"total": 0, "stale": 0}
         for _, rows in out_days:
             for r in rows:
+                # a message's machine translation prints under the original with its label (05 17.5)
+                r["translation"] = printable_translation(r.get("translation"))
+                for t in [r["translation"]] + [m.get("translation") for a in r.get("attachments") or []
+                                               for m in texts.get(a.get("file_uid") or "", [])]:
+                    if t:
+                        translations["total"] += 1
+                        translations["stale"] += 1 if t["stale"] else 0
                 for a in r.get("attachments") or []:
                     a["machine_texts"] = texts.get(a.get("file_uid") or "", [])
                     machine["total"] += len(a["machine_texts"])
@@ -342,6 +363,15 @@ def draw(engine, export_id, claimed=None) -> dict:
         contains.insert(-1, "%s machine-generated %s (transcripts or text read from images) %s printed under %s; %s not yet confirmed by a person, and each says so." % (
                                 "{:,}".format(n), "text" if n == 1 else "texts", "is" if n == 1 else "are",
                                 "its attachment" if n == 1 else "their attachments", "{:,}".format(u) + (" is" if u == 1 else " are")))
+    if translations["total"]:
+        n, st = translations["total"], translations["stale"]
+        contains.insert(-1, "%s machine %s made on this server %s printed under %s original%s, each labelled and "
+                            "not checked by a person.%s" % (
+                                "{:,}".format(n), "translation" if n == 1 else "translations",
+                                "is" if n == 1 else "are", "its" if n == 1 else "their", "" if n == 1 else "s",
+                                (" %s %s made from an earlier text of a message corrected since, and %s so."
+                                 % ("{:,}".format(st), "was" if st == 1 else "were", "says" if st == 1 else "say"))
+                                if st else ""))
     if phones:
         contains.insert(1, "Phones: %s." % ", ".join(phones))
     contains += [lim["message"] for lim in facts["limits"]]
@@ -368,7 +398,8 @@ def draw(engine, export_id, claimed=None) -> dict:
     filename = "%s.%s" % (stem.strip(" _") and stem.strip() or "phone-messages", fmt)
     counts = {"total": total, "messages": facts["messages"], "calls": facts["calls"],
               "unconfirmed": facts["unconfirmed"], "phones": facts["phones"], "snapshot": snap,
-              "machine_texts": machine["total"], "machine_texts_unconfirmed": machine["unconfirmed"], **extra}
+              "machine_texts": machine["total"], "machine_texts_unconfirmed": machine["unconfirmed"],
+              "machine_translations": translations["total"], "machine_translations_stale": translations["stale"], **extra}
     with engine.begin() as c:
         done = c.execute(text(
             "UPDATE phone_exports SET state = 'done', progress = 1, counts = CAST(:k AS jsonb), filename = :n, "

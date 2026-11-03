@@ -186,6 +186,24 @@ def whisper_identity(model_path, package_version: str | None) -> dict:
             "weights_sha256": weights_sha256(model_path), "provider": LOCAL}
 
 
+def marian_identity(model_dir, transformers_version: str | None) -> dict:
+    """Model id, version and weights hash for a local MarianMT translation model folder (05 17.5). The repository
+    and pinned revision come from the folder's ``loupe-model.json`` (written when it was installed); a folder
+    without one says the revision was not recorded. The hash is of the weights file actually in the folder."""
+    import json
+    d = Path(model_dir)
+    try:
+        manifest = json.loads((d / "loupe-model.json").read_text())
+    except (OSError, ValueError):
+        manifest = {}
+    repo = manifest.get("repo") or d.name
+    revision = manifest.get("revision")
+    version = "%s, transformers %s" % (revision[:7] if revision else "revision not recorded",
+                                       transformers_version or "version not recorded")
+    return {"model": d.name, "model_id": "%s@%s" % (repo, revision) if revision else repo,
+            "model_version": version, "weights_sha256": weights_sha256(d / "pytorch_model.bin"), "provider": LOCAL}
+
+
 def tesseract_identity(version: str | None, tessdata_dir, languages: str) -> dict:
     """Tesseract's version, and one hash over the language data files it reads (in the order given)."""
     h = hashlib.sha256()
