@@ -9,4 +9,9 @@ describe("Who contacts whom words", () => {
     expect(w.title).toBe("From Synthetic Y to Owner of C1: 2 calls")
     expect(w.line).toBe("Calls: 1 connected, 1 missed; 1 minute connected. In the other direction: 3.")
   })
+  it("never shows a raw status code (seen live: \"1 Unknown\")", () => {
+    const w = matrixWords({ measures: { from_display: "A", to_display: "B", total: 1, by_channel: { call: 1 }, calls_by_status: { Unknown: 1 },
+      connected_call_seconds: 0, reverse_total: 0, unmatched_owner_copies: 0 } } as never)
+    expect(w.line).toBe("Calls: 1 status not recorded. In the other direction: 0.")
+  })
 })

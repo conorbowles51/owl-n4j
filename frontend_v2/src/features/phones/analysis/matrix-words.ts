@@ -6,7 +6,7 @@ export const TABS = [
 ]
 
 const CHANNEL: Record<string, [string, string]> = { message: ["message", "messages"], call: ["call", "calls"], email: ["email", "emails"] }
-const STATUS: Record<string, string> = { Established: "connected", Missed: "missed", Rejected: "rejected", Canceled: "cancelled", BusyLine: "busy", NotEstablishedUnknownReason: "not connected, reason not recorded" }
+const STATUS: Record<string, string> = { Established: "connected", Missed: "missed", Rejected: "rejected", Canceled: "cancelled", BusyLine: "busy", NotEstablishedUnknownReason: "not connected, reason not recorded", Unknown: "status not recorded", "Not recorded": "status not recorded" }
 const n = (v: number) => v.toLocaleString("en-US")
 type M = { from_display: string; to_display: string; total: number; by_channel: Record<string, number>; calls_by_status: Record<string, number>; connected_call_seconds: number; reverse_total: number; unmatched_owner_copies: number }
 
