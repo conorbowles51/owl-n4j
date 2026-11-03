@@ -222,6 +222,8 @@ def _judgements(conn, case_id) -> dict:
             all_by_rule[rule] = all_by_rule.get(rule, 0) + n
     return {"open": sum(by.get("open", {}).values()), "confirmed": sum(by.get("confirmed", {}).values()),
             "corrected": sum(by.get("corrected", {}).values()), "open_by_rule": by.get("open", {}),
+            # a case agent's proposal a person rejected is answered too (agent-proposals)
+            "rejected": sum(by.get("rejected", {}).values()),
             "total": sum(all_by_rule.values()), "by_rule": all_by_rule}
 
 
@@ -526,8 +528,8 @@ def diff(prev: dict | None, cur: dict) -> dict:
     out["judgement_calls"] = {
         "open": cj.get("open", 0), "open_before": pj.get("open") if not first else None,
         "added_open": 0 if first else sum(added.values()), "added_by_rule": {} if first else added,
-        "resolved": 0 if first else max(0, (cj.get("confirmed", 0) + cj.get("corrected", 0))
-                                        - (pj.get("confirmed", 0) + pj.get("corrected", 0))),
+        "resolved": 0 if first else max(0, (cj.get("confirmed", 0) + cj.get("corrected", 0) + cj.get("rejected", 0))
+                                        - (pj.get("confirmed", 0) + pj.get("corrected", 0) + pj.get("rejected", 0))),
     }
 
     # Conclusions whose cited rows changed

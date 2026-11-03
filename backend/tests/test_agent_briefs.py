@@ -121,6 +121,14 @@ def test_calls_added_and_resolved_under_one_rule_are_not_netted():
     assert j["added_open"] == 3 and j["resolved"] == 3
 
 
+def test_a_rejected_proposal_counts_as_resolved():
+    """A case agent's proposal a person rejected is answered (agent-proposals' status); old code left it out."""
+    after = _snap(judgements={"open": 1, "confirmed": 0, "corrected": 0, "rejected": 1, "open_by_rule": {"r.date": 1},
+                              "total": 2, "by_rule": {"r.date": 2}})
+    j = B.diff(_snap(), after)["judgement_calls"]
+    assert j["resolved"] == 1
+
+
 def test_a_conclusion_whose_cited_row_was_corrected_is_named():
     rows = dict(_snap()["conclusions"]["rows"])
     rows["t1"] = {**rows["t1"], "status": "superseded", "replaced_by": "t9"}
