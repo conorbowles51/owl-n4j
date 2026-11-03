@@ -17,13 +17,14 @@ import csv
 import html
 import io
 import json
+import uuid
 from collections import Counter
 from typing import Any, Literal
 
 from sqlalchemy import text
 
 from services.agent.exports import AgentArtifactExport, _safe_filename
-from services.agent.run_record import CATEGORY_LABELS, NOT_DETERMINISTIC, category_of
+from services.agent.run_record import CATEGORY_LABELS, NOT_DETERMINISTIC, OTHER_CASES_LABEL, category_of
 
 RecordExportKind = Literal["strategy", "not_examined"]
 RecordExportFormat = Literal["csv", "pdf"]
@@ -94,6 +95,19 @@ def _unread_phone_types(db, case_id) -> list[dict[str, Any]]:
     return rows
 
 
+def _cases_read(db, run, metadata) -> list[dict[str, Any]]:
+    """This run's own case, then every other case all-cases mode read (names read now, ids as stored)."""
+    from postgres.models.case import Case
+
+    stored = [c for c in metadata.get("cases_read") or [] if isinstance(c, dict) and c.get("case_id")]
+    ids = [str(run.case_id)] + [str(c["case_id"]) for c in stored if str(c["case_id"]) != str(run.case_id)]
+    out = []
+    for cid in dict.fromkeys(ids):
+        case = db.get(Case, uuid.UUID(cid))
+        out.append({"case_id": cid, "case_name": getattr(case, "title", None), "this_case": cid == str(run.case_id)})
+    return out
+
+
 def load_record(db, run) -> dict[str, Any]:
     """The stored run record as one document (the run-record API and both exports read this)."""
     from postgres.models.agent import AgentPromptVersion, AgentRunItem
@@ -140,6 +154,9 @@ def load_record(db, run) -> dict[str, Any]:
         else len(calls),
         "unrun_tool_calls": run.unrun_tool_calls or [],
         "case_layer": metadata.get("case_layer") or "all",
+        # All-cases mode (agent-allcases): off unless the person switched it on for this message; every case read.
+        "all_cases": bool(metadata.get("all_cases")),
+        "cases_read": _cases_read(db, run, metadata),
         "summary": run.record_summary or {},
         "recorded": run.prompt_version is not None or any(c["recorded"] for c in calls),
         "calls": calls,
@@ -169,7 +186,11 @@ def _header_rows(record: dict[str, Any]) -> list[tuple[str, str]]:
                                                or "not recorded (run made before the run record)")),
         ("Tool calls used", "%s of %s" % (record["tool_calls_used"], record["tool_budget"] or "not recorded")),
         ("Scope", "Significant layer only (case decision for this run)" if record["case_layer"] == "significant"
-         else "Whole case"),
+         else ("All cases the person may open (all-cases mode, switched on for this message)"
+               if record.get("all_cases") else "Whole case")),
+        ("Cases read", "; ".join("%s%s" % (c.get("case_name") or c["case_id"], " (this case)" if c.get("this_case")
+                                                                                else "")
+                                 for c in record.get("cases_read") or []) or (record.get("case_name") or "")),
         ("Question", record.get("question") or ""),
         ("Reproducibility", NOT_DETERMINISTIC),
         ("How items are counted", ITEM_RULE),
@@ -180,7 +201,7 @@ def strategy_rows(record: dict[str, Any]) -> dict[str, Any]:
     searches = []
     for c in record["calls"]:
         searches.append({
-            "#": c["sequence"], "tool": c["name"], "material": CATEGORY_LABELS.get(c["category"] or "", "")
+            "#": c["sequence"], "tool": c["name"], "material": {**CATEGORY_LABELS, "other_cases": OTHER_CASES_LABEL}.get(c["category"] or "", "")
             or ("artifact or paging" if c["category"] is None else c["category"]),
             "result schema": c.get("schema") or "", "parameters": json.dumps(c["arguments"], ensure_ascii=False,
                                                                             default=str),

@@ -21,6 +21,8 @@ export interface SendAgentMessageParams {
   caseLayer?: CaseLayer
   mandateOverride?: Record<string, unknown>
   workflowId?: string
+  /** All-cases mode: off unless the person switches it on; off again for each new conversation. */
+  allCases?: boolean
 }
 
 export const agentAPI = {
@@ -47,6 +49,7 @@ export const agentAPI = {
         persist: true,
         mandate_override: params.mandateOverride,
         ...(params.workflowId ? { workflow_id: params.workflowId } : {}),
+        ...(params.allCases ? { all_cases: true } : {}),
       },
       timeout: 240000,
     }),
@@ -74,6 +77,7 @@ export const agentAPI = {
         persist: true,
         mandate_override: params.mandateOverride,
         ...(params.workflowId ? { workflow_id: params.workflowId } : {}),
+        ...(params.allCases ? { all_cases: true } : {}),
       }),
     })
 

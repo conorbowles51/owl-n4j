@@ -33,6 +33,8 @@ class AgentMessageRequest(BaseModel):
     mandate_override: dict[str, Any] | None = None
     # A guided investigative workflow (services.agent.workflows): its plan is added to this run's prompt.
     workflow_id: str | None = Field(None, max_length=64)
+    # All-cases mode (Neil 2026-11-01: an option, never the default). Per message: a new conversation starts off.
+    all_cases: bool = False
 
     @field_validator("message")
     @classmethod

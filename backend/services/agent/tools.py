@@ -79,6 +79,13 @@ class AgentToolContext:
     # Who the run is for and which model runs it (services.agent.proposal_tools): a proposal records it as the
     # model's work for that person. None: the run cannot propose.
     proposer: dict[str, Any] | None = None
+    # All-cases mode (agent-allcases): the person the run is for, and whether they switched all-cases mode on for
+    # this message. Off by default; the runner sets both from the request, never the model.
+    user_id: str | None = None
+    all_cases: bool = False
+    # Other cases this run read (case id -> title) and the citations their results carried (href -> (id, title)).
+    cases_read: dict[str, str | None] = field(default_factory=dict)
+    other_case_citations: dict[str, tuple[str, str | None]] = field(default_factory=dict)
 
     @property
     def significant_scope(self) -> bool:
@@ -312,6 +319,11 @@ class PhoneMoneyArgs(BaseModel):
 class PhonePageArgs(BaseModel):
     offset: int = Field(0, ge=0)
     limit: int = Field(40, ge=1, le=100)
+
+
+def _cross_case_tools(context):
+    from services.agent.all_cases import make_cross_case_tools
+    return make_cross_case_tools(context)
 
 
 def _phone_cross_tools():
@@ -2995,4 +3007,4 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "doc:// for files). Says 'Not in this case' when no dossier in this case matches."),
             args_schema=DossierArgs,
         ),
-    ] + _proposal_tools(context)
+    ] + _proposal_tools(context) + _cross_case_tools(context)

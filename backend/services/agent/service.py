@@ -70,6 +70,8 @@ class AgentService:
             raise ValueError("Ephemeral agent runs are not supported yet")
 
         check_case_access(db, request.case_id, user, required_permission=("case", "view"))
+        if request.all_cases and request.case_layer == "significant":
+            raise ValueError("All-cases mode reads whole cases; switch the case layer to All data to use it.")
         allowed_entity_keys = (
             get_significant_entity_keys(db, case_id=request.case_id)
             if request.case_layer == "significant"
@@ -119,6 +121,7 @@ class AgentService:
                 "artifact_preference": request.artifact_preference,
                 "case_layer": request.case_layer,
                 **self._workflow_metadata(request),
+                **({"all_cases": True} if request.all_cases else {}),
             },
             mandate_override=mandate_context.override,
             tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
@@ -175,6 +178,8 @@ class AgentService:
                 allowed_entity_keys=allowed_entity_keys,
                 mandate_context_block=self._prompt_block(mandate_context.block, request),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
+                user_id=str(user.id),
+                all_cases=request.all_cases,
             ):
                 if event.get("type") == "final":
                     final_result = event.get("result") or {}
@@ -197,7 +202,7 @@ class AgentService:
                 run_id=str(run.id),
                 original_message=request.message,
             )
-            answer = (final_result.get("answer") or "").strip()
+            answer = self._name_other_cases(db, run, final_result, request.case_id)
             if runner_clarification:
                 answer = runner_clarification.question
             if not answer:
@@ -371,6 +376,8 @@ class AgentService:
             raise ValueError("Ephemeral agent runs are not supported yet")
 
         check_case_access(db, request.case_id, user, required_permission=("case", "view"))
+        if request.all_cases and request.case_layer == "significant":
+            raise ValueError("All-cases mode reads whole cases; switch the case layer to All data to use it.")
         allowed_entity_keys = (
             get_significant_entity_keys(db, case_id=request.case_id)
             if request.case_layer == "significant"
@@ -423,6 +430,7 @@ class AgentService:
                 "artifact_preference": request.artifact_preference,
                 "case_layer": request.case_layer,
                 **self._workflow_metadata(request),
+                **({"all_cases": True} if request.all_cases else {}),
             },
             mandate_override=mandate_context.override,
             tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
@@ -459,6 +467,8 @@ class AgentService:
                 allowed_entity_keys=allowed_entity_keys,
                 mandate_context_block=self._prompt_block(mandate_context.block, request),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
+                user_id=str(user.id),
+                all_cases=request.all_cases,
             )
             runner_clarification = self._clarification_from_runner(
                 result.get("clarification"),
@@ -466,7 +476,7 @@ class AgentService:
                 run_id=str(run.id),
                 original_message=request.message,
             )
-            answer = (result.get("answer") or "").strip()
+            answer = self._name_other_cases(db, run, result, request.case_id)
             if runner_clarification:
                 answer = runner_clarification.question
             if not answer:
@@ -755,6 +765,19 @@ class AgentService:
             return mandate_block
         from services.agent import workflows
         return "\n\n".join(x for x in (mandate_block, workflows.render_block(workflows.get(request.workflow_id))) if x)
+
+    @staticmethod
+    def _name_other_cases(db: Session, run, result: dict[str, Any], case_id) -> str:
+        """All-cases mode: every citation of another case's record names that case (deterministic), and the run
+        record keeps the cases read."""
+        answer = (result.get("answer") or "").strip()
+        if not result.get("all_cases"):
+            return answer
+        from services.agent.all_cases import name_cases_in_answer
+        cited = {href: tuple(owner) for href, owner in (result.get("other_case_citations") or {}).items()}
+        storage.update_run_metadata(db, run=run, metadata={"all_cases": True,
+                                                            "cases_read": result.get("cases_read") or []})
+        return name_cases_in_answer(answer, cited, str(case_id)).strip()
 
     @staticmethod
     def _prompt_version(db: Session) -> dict[str, Any]:

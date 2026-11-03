@@ -220,6 +220,10 @@ export interface AgentRunRecord {
   tool_calls_used: number
   unrun_tool_calls: { name: string | null }[]
   case_layer: string
+  /** All-cases mode was on for this run (the person switched it on). */
+  all_cases?: boolean
+  /** This run's case, then every other case it read. */
+  cases_read?: { case_id: string; case_name: string | null; this_case: boolean }[]
   summary: {
     items_returned?: number
     items_shown?: number

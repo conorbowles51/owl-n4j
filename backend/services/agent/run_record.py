@@ -56,7 +56,11 @@ CATEGORY_BY_TOOL = {
     "get_together_apart": "phones", "get_routine_deviations": "phones", "get_phone_map_summary": "phones",
     "get_contact_and_money_between": "phones", "get_money_signal_matches": "phones",
     "get_money_signal_leads": "phones", "evaluate_statement": "phones",
+    # agent-allcases: reads of other cases (or of the identifier index over them), never this case's material.
+    "identifier_in_other_cases": "other_cases", "list_my_cases": "other_cases",
+    "find_identifier_across_cases": "other_cases", "read_in_case": "other_cases",
 }
+OTHER_CASES_LABEL = "Other cases the person may open (identifier index or all-cases mode)"
 CATEGORY_LABELS = {
     "graph": "Case graph (people, organisations, accounts, events)",
     "documents": "Document text (search of the case's documents)",
@@ -94,9 +98,11 @@ def prompt_version_source() -> dict[str, Any]:
             artifact_preference="{artifact_preference}", available_artifact_context="{available_artifacts}")
         for layer in ("all", "significant")
     }
+    prompts["all_cases"] = graph.ALL_CASES_PROMPT
     prompts["final_answer_system"] = graph._FINAL_ANSWER_SYSTEM_PROMPT
     prompts["final_answer_request"] = graph._FINAL_ANSWER_REQUEST
-    tools = sorted((convert_to_openai_tool(tool) for tool in make_agent_tools(AgentToolContext(case_id="{case_id}"))),
+    tools = sorted((convert_to_openai_tool(tool) for tool in make_agent_tools(AgentToolContext(case_id="{case_id}",
+                                                                                               all_cases=True))),
                    key=lambda item: item.get("function", {}).get("name", ""))
     from services.agent import workflows
     names = [item.get("function", {}).get("name", "") for item in tools]

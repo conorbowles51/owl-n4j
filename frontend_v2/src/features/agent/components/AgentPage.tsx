@@ -67,6 +67,7 @@ import { AgentRunRecordPanel } from "./AgentRunRecordPanel"
 import { AgentWorkflowPicker } from "./AgentWorkflowPicker"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
+import { AllCasesSwitch } from "./AllCasesSwitch"
 import { downloadProtectedFile } from "@/lib/protected-file"
 import { getCanvasColors, getNodeColor } from "@/lib/theme"
 import { useTheme } from "@/lib/theme-context"
@@ -565,6 +566,9 @@ export function AgentPage() {
   const [threadWorkflowId, setThreadWorkflowId] = useState<string | null>(null)
   const [input, setInput] = useState("")
   const [mandateOverride, setMandateOverride] = useState("")
+  // All-cases mode (Neil 2026-11-01: an option, never the default): off for every new or reopened conversation.
+  const [allCases, setAllCases] = useState(false)
+  useEffect(() => setAllCases(false), [caseId])
   const [mandateUsage, setMandateUsage] = useState<AgentMandateUsage | null>(null)
   const [pendingClarification, setPendingClarification] = useState<AgentClarification | null>(null)
   const [showInvestigationTrail, setShowInvestigationTrail] = useState(loadInvestigationTrailSetting)
@@ -666,7 +670,10 @@ export function AgentPage() {
         workspaceAPI.getCaseContext(caseId),
         workspaceAPI.listMandateVersions(caseId),
       ])
-      setActiveThreadId(thread.id)
+      setActiveThreadId((current) => {
+        if (current !== thread.id) setAllCases(false)
+        return thread.id
+      })
       setMessages(thread.messages.map(storedToClientMessage).filter(Boolean) as AgentClientMessage[])
       setArtifacts(thread.artifacts)
       setToolTrace([])
@@ -733,6 +740,7 @@ export function AgentPage() {
   }, [caseId, loadThread, loadThreads, sharedRun?.error, sharedRun?.runId, sharedRun?.terminalState, sharedRun?.threadId])
 
   const startNewThread = () => {
+    setAllCases(false)
     setActiveThreadId(null)
     setThreadWorkflowId(null)
     setMessages([])
@@ -775,6 +783,7 @@ export function AgentPage() {
           caseLayer,
           mandateOverride: requestMandateOverride ? { perspective: requestMandateOverride } : undefined,
           workflowId: runWorkflowId,
+          allCases: allCases && caseLayer !== "significant",
         },
         (event) => {
           if (event.type === "run_started") {
@@ -1028,6 +1037,11 @@ export function AgentPage() {
                     Significant only
                   </Badge>
                 ) : null}
+                <AllCasesSwitch
+                  checked={allCases && caseLayer !== "significant"}
+                  disabled={caseLayer === "significant" || isLoading}
+                  onCheckedChange={setAllCases}
+                />
                 <Popover>
                   <PopoverTrigger asChild>
                     <Button

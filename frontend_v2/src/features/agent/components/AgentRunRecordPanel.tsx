@@ -99,6 +99,13 @@ export function AgentRunRecordPanel({ runId }: { runId: string }) {
                     ? `; ${record.unrun_tool_calls.length} more asked for but stopped by the budget`
                     : ""}
                 </dd>
+                <dt>Cases read</dt>
+                <dd className="text-foreground" data-testid="run-record-cases">
+                  {record.all_cases ? "All my cases mode: " : "This case only: "}
+                  {(record.cases_read ?? [])
+                    .map((c) => (c.case_name ?? c.case_id) + (c.this_case ? " (this case)" : ""))
+                    .join("; ") || "this case"}
+                </dd>
                 <dt>Items returned</dt>
                 <dd className="text-foreground" data-testid="run-record-items">
                   {n(s.items_returned)}: {n(s.items_opened)} read further, {n(s.items_cited)} cited by link,{" "}

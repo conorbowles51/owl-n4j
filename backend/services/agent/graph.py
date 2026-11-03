@@ -15,6 +15,7 @@ from langgraph.graph import END, START, StateGraph, add_messages
 
 from config import ANTHROPIC_API_KEY, DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
 from services.agent.citations import link_document_citations
+from services.agent.all_cases import ALL_CASES_PROMPT
 from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
 from services.agent.model_payloads import (
     context_window_for,
@@ -503,8 +504,20 @@ def _tool_message_chars(messages: list[Any]) -> int:
     return sum(len(str(message.content)) for message in messages if isinstance(message, ToolMessage))
 
 
+def _cross_case_result(tool_context: AgentToolContext, case_id: str) -> dict[str, Any]:
+    """All-cases mode: the cases the run read besides its own, and the citations their results carried."""
+    if not tool_context.all_cases:
+        return {}
+    return {"all_cases": True,
+            "cases_read": [{"case_id": case_id, "this_case": True}]
+            + [{"case_id": cid, "case_name": title, "this_case": False}
+               for cid, title in sorted(tool_context.cases_read.items()) if cid != str(case_id)],
+            "other_case_citations": {href: list(owner) for href, owner in tool_context.other_case_citations.items()}}
+
+
 def render_system_prompt(*, case_id: str, significant: bool, mandate_context_block: str,
-                          artifact_preference: str, available_artifact_context: str) -> str:
+                          artifact_preference: str, available_artifact_context: str,
+                          all_cases: bool = False) -> str:
     """The agent's system prompt. One function, so the run record can fingerprint the exact text
     (services.agent.run_record.prompt_version) and the two runners can never drift apart."""
     allowed_entity_keys = [] if significant else None
@@ -512,7 +525,7 @@ def render_system_prompt(*, case_id: str, significant: bool, mandate_context_blo
     return f"""You are the OWL AI Agent, an investigative case analyst.
 
 You are working inside one case only. Every tool is already scoped to case_id={case_id}.
-{"You are additionally restricted to the Significant layer. Use only its entities and relationships between those entities; do not infer from or request case-wide data." if allowed_entity_keys is not None else "You may use the full case dataset."}
+{"You are additionally restricted to the Significant layer. Use only its entities and relationships between those entities; do not infer from or request case-wide data." if allowed_entity_keys is not None else "You may use the full case dataset."}{(chr(10) + ALL_CASES_PROMPT) if all_cases else ""}
 
 {mandate_context_block}
 
@@ -645,6 +658,8 @@ class AgentGraphRunner:
         allowed_entity_keys: list[str] | None = None,
         mandate_context_block: str = "",
         proposer: dict[str, Any] | None = None,
+        user_id: str | None = None,
+        all_cases: bool = False,
     ) -> dict[str, Any]:
         available_artifact_context = _format_available_artifacts(available_artifacts)
         tool_context = AgentToolContext(
@@ -653,6 +668,8 @@ class AgentGraphRunner:
             allowed_entity_keys=(set(allowed_entity_keys) if allowed_entity_keys is not None else None),
             artifact_store=_artifact_store_from_available(available_artifacts),
             proposer=proposer,
+            user_id=user_id,
+            all_cases=bool(all_cases) and allowed_entity_keys is None,
         )
         tools = make_agent_tools(tool_context)
         tools_by_name = {tool.name: tool for tool in tools}
@@ -667,6 +684,7 @@ class AgentGraphRunner:
                 mandate_context_block=mandate_context_block,
                 artifact_preference=state.get("artifact_preference", "auto"),
                 available_artifact_context=available_artifact_context,
+                all_cases=tool_context.all_cases,
             )
 
         def agent_node(state: AgentState) -> dict[str, Any]:
@@ -823,6 +841,7 @@ class AgentGraphRunner:
             "tool_trace": result.get("tool_trace") or [],
             "messages": result.get("messages") or [],
             "usage": self._extract_usage(result.get("messages") or []),
+            **_cross_case_result(tool_context, case_id),
         }
 
     def stream(
@@ -838,6 +857,8 @@ class AgentGraphRunner:
         allowed_entity_keys: list[str] | None = None,
         mandate_context_block: str = "",
         proposer: dict[str, Any] | None = None,
+        user_id: str | None = None,
+        all_cases: bool = False,
     ):
         available_artifact_context = _format_available_artifacts(available_artifacts)
         tool_context = AgentToolContext(
@@ -846,6 +867,8 @@ class AgentGraphRunner:
             allowed_entity_keys=(set(allowed_entity_keys) if allowed_entity_keys is not None else None),
             artifact_store=_artifact_store_from_available(available_artifacts),
             proposer=proposer,
+            user_id=user_id,
+            all_cases=bool(all_cases) and allowed_entity_keys is None,
         )
         tools = make_agent_tools(tool_context)
         tools_by_name = {tool.name: tool for tool in tools}
@@ -860,6 +883,7 @@ class AgentGraphRunner:
                 mandate_context_block=mandate_context_block,
                 artifact_preference=state.get("artifact_preference", "auto"),
                 available_artifact_context=available_artifact_context,
+                all_cases=tool_context.all_cases,
             )
 
         def agent_node(state: AgentState) -> dict[str, Any]:
@@ -1092,6 +1116,7 @@ class AgentGraphRunner:
             "tool_trace": collected_trace,
             "messages": collected_messages,
             "usage": self._extract_usage(collected_messages),
+            **_cross_case_result(tool_context, case_id),
         }
         yield {"type": "final", "result": result}
 
