@@ -11,7 +11,8 @@ vi.mock("./analysis-api", () => ({ analysisAPI: () => client }))
 vi.mock("@/features/pattern/api", () => ({ patternAPI: { keyDates: vi.fn().mockResolvedValue({ total: 0, items: [] }) } }))
 vi.mock("@/features/pattern/components/CollectBar", () => ({ CollectBar: () => <div>Add to…</div> }))
 
-import DeviceUsersPage, { NOT_BUILT, WHAT_IT_DOES, deviceWords } from "./DeviceUsersPage"
+import DeviceUsersPage, { NOT_BUILT, WHAT_IT_DOES } from "./DeviceUsersPage"
+import { deviceWords } from "./device-words"
 
 const RUN = { id: "run-5", approach: "device_users", status: "completed", progress: {}, error: null, counts: { by_kind: { shared_markers: 1 } },
   coverage: { sentence: "Owner activity exist on all 2 phones." }, created_at: "2026-11-03T08:00:00Z", finished_at: "2026-11-03T08:01:00Z" }

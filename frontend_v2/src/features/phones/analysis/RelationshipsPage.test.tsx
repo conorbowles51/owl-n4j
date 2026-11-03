@@ -11,7 +11,8 @@ vi.mock("./analysis-api", () => ({ analysisAPI: () => client }))
 vi.mock("@/features/pattern/api", () => ({ patternAPI: { keyDates: vi.fn().mockResolvedValue({ total: 0, items: [] }) } }))
 vi.mock("@/features/pattern/components/CollectBar", () => ({ CollectBar: () => <div>Add to…</div> }))
 
-import RelationshipsPage, { WHAT_IT_DOES, relationshipWords } from "./RelationshipsPage"
+import RelationshipsPage, { WHAT_IT_DOES } from "./RelationshipsPage"
+import { relationshipWords } from "./relationship-words"
 
 const RUN = { id: "run-11", approach: "relationships", status: "completed", progress: {}, error: null, counts: { by_kind: { relationship: 1, volume_change: 1 } },
   coverage: { sentence: "Contacts exist on all 2 phones. Contact saved times exist on 1 of 2 phones (C1). Calls and messages exist on all 2 phones. Results below cover those phones only." },

@@ -12,7 +12,8 @@ vi.mock("./analysis-api", () => ({ analysisAPI: () => client }))
 vi.mock("@/features/pattern/api", () => pattern)
 vi.mock("@/features/pattern/components/CollectBar", () => ({ CollectBar: () => <div>Add to…</div> }))
 
-import DeletionTimelinePage, { TABS, WHAT_IT_DOES, deletionWords } from "./DeletionTimelinePage"
+import DeletionTimelinePage, { WHAT_IT_DOES } from "./DeletionTimelinePage"
+import { TABS, deletionWords } from "./deletion-words"
 import { anchorWords } from "./anchor-words"
 
 const RUN = { id: "run-3", approach: "deletion_timeline", status: "completed", progress: {}, error: null,

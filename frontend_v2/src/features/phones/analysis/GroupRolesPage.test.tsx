@@ -12,7 +12,8 @@ vi.mock("@/features/pattern/api", () => ({ patternAPI: { keyDates: vi.fn().mockR
 vi.mock("@/features/pattern/components/CollectBar", () => ({ CollectBar: () => <div>Add to…</div> }))
 
 import GroupRolesPage, { NOT_BUILT, WHAT_IT_DOES } from "./GroupRolesPage"
-import AnalysesPage, { ANALYSES } from "./AnalysesPage"
+import AnalysesPage from "./AnalysesPage"
+import { ANALYSES } from "./analyses-list"
 
 const RUN = { id: "run-4", approach: "awareness", status: "completed", progress: {}, error: null, counts: { by_kind: { group_roles: 1 } },
   coverage: { sentence: "Group chats exist on all 1 phones. Group admin flags exist on all 1 phones. Recorded membership changes exist on all 1 phones." },
