@@ -485,10 +485,11 @@ def _finish(engine, job, got=None, error=None):
 def run_pending(engine, limit=BATCH) -> list:
     """Draw up to ``limit`` waiting translations and run them in one child process; each row ends done or failed
     with words."""
+    # the provider is settled before anything is claimed: a refusal leaves every waiting row waiting, never running
+    derive.phone_media().provider_for("translation")
     jobs = _claim(engine, limit)
     if not jobs:
         return []
-    derive.phone_media().provider_for("translation")
     done, work = [], []
     for job in jobs:
         try:

@@ -302,7 +302,12 @@ def _translation_sql(exact):
             "AND t.state = 'done' ORDER BY t.source_type, t.source_key, t.finished_at DESC, t.id) t "
             "LEFT JOIN pv_comm_event ev ON t.source_type = 'message' AND ev.event_uid = t.source_key AND "
             "ev.case_id = :c LEFT JOIN phone_derived_texts dt ON t.source_type = 'derived_text' AND dt.id = t.source_key "
-            "AND dt.case_id = :c LEFT JOIN pv_file tf ON tf.file_uid = dt.file_uid AND tf.case_id = :c "
+            "AND dt.case_id = :c "
+            # only a translation of the reading in use for its file and kind (a person's latest, else the latest
+            # finished; the same reading the PDF prints): a translation of a reading displaced since is not searched
+            "AND dt.id IN (SELECT DISTINCT ON (d.file_uid, d.kind) d.id FROM phone_derived_texts d WHERE "
+            "d.case_id = :c AND d.state = 'done' " + IN_USE_ORDER + ") "
+            "LEFT JOIN pv_file tf ON tf.file_uid = dt.file_uid AND tf.case_id = :c "
             "WHERE t.outcome = 'translated' AND (ev.event_uid IS NOT NULL OR tf.file_uid IS NOT NULL) AND "
             "t.source_sha256 = encode(sha256(convert_to(coalesce(ev.body, dt.corrected_text, dt.text, ''), 'UTF8')), "
             "'hex') AND (CAST(:p AS uuid[]) IS NULL OR coalesce(ev.extraction_id, tf.extraction_id) = ANY(CAST(:p AS "

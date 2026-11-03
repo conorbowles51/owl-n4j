@@ -299,13 +299,20 @@ def test_a_failed_draw_of_several_is_drawn_again_one_by_one_so_the_failure_names
         "This text could not be translated. The original is unchanged."]
 
 
-def _transcript(w, corrected=None):
+def _transcript(w, corrected=None, attach=False):
+    """A finished Yoruba transcript of a synthetic voice note; ``attach``: the note is the first message's attachment."""
     ident = uuid.uuid4()
     file_uid = uuid.uuid4()
     with w["engine"].begin() as c:
         c.execute(text("INSERT INTO phone_files (extraction_id, document_index, ordinal, file_uid, local_path, outcome, "
                        "body) VALUES (:e, 0, 9000, :f, 'voice/synthetic-note.ogg', 'match', CAST('[]' AS jsonb))"),
                   {"e": w["ext"], "f": file_uid})
+        if attach:
+            c.execute(text(
+                "INSERT INTO phone_file_references (extraction_id, document_index, record_ordinal, body_path, mechanism, "
+                "reference_text, file_document_index, file_ordinal, resolution, ambiguous) VALUES (:e, 0, 0, 'f', "
+                "'extracted_path_value', 'voice/synthetic-note.ogg', 0, 9000, 'container_entry', false)"),
+                {"e": w["ext"]})
         body = "\n".join(s["text"] for s in YO_SEG)
         c.execute(text(
             "INSERT INTO phone_derived_texts (id, case_id, extraction_id, file_uid, kind, state, text, text_folded, "
@@ -316,15 +323,20 @@ def _transcript(w, corrected=None):
     return str(ident), str(file_uid)
 
 
-def test_a_transcript_is_translated_segment_by_segment_keeping_its_times(world, monkeypatch, models):
-    from services.phone import translate
-    from services.phone import translate_models as M
-    from services.search import search as S
-    # a Yoruba stand-in model beside the Spanish one
+def _yoruba(models):
+    """A Yoruba stand-in model beside the Spanish one."""
     import shutil
+
+    from services.phone import translate_models as M
     yo = models / M.PAIRS["yo"]["folder"]
     shutil.copytree(models / M.PAIRS["es"]["folder"], yo)
     (yo / M.MANIFEST).write_text(json.dumps({"repo": M.PAIRS["yo"]["repo"], "revision": M.PAIRS["yo"]["revision"]}))
+
+
+def test_a_transcript_is_translated_segment_by_segment_keeping_its_times(world, monkeypatch, models):
+    from services.phone import translate
+    from services.search import search as S
+    _yoruba(models)
     FakeChild(monkeypatch)
     ident, file_uid = _transcript(world)
     req = _request(world, ident, "derived_text")
@@ -343,6 +355,35 @@ def test_a_transcript_is_translated_segment_by_segment_keeping_its_times(world, 
     assert item["label"].startswith("Machine translation (local, opus-mt-yo-en f3d791b")
     assert item["open"] == {"screen": "media", "params": {"file_uid": file_uid, "extraction_id": str(world["ext"])}}
     assert hits["messages"]["total"] == 0  # a translation is never counted as a message
+
+
+def test_a_translation_of_a_transcript_reading_displaced_since_is_not_searched(world, monkeypatch, models):
+    """Search uses the reading in use for a file (a person's latest, else the latest finished; derive.IN_USE_ORDER):
+    a translation of an older reading is not found once a newer reading is the one in use, and is found again when
+    a person confirms the older reading."""
+    from services.phone import translate
+    from services.search import search as S
+    _yoruba(models)
+    FakeChild(monkeypatch)
+    ident, file_uid = _transcript(world)
+    _request(world, ident, "derived_text")
+    translate.run_pending(world["engine"])
+
+    def found():
+        with world["engine"].connect() as c:
+            return {g["group"]: g for g in S.search(c, world["case"], "come tomorrow")["groups"]}["machine_text"]
+    assert found()["total"] == 1
+    with world["engine"].begin() as c:  # a newer machine reading of the same file is now the one in use
+        c.execute(text(
+            "INSERT INTO phone_derived_texts (id, case_id, extraction_id, file_uid, kind, state, text, text_folded, "
+            "model, model_version, finished_at) VALUES (gen_random_uuid(), :c, :e, :f, 'transcript', 'done', "
+            "'synthetic newer words', 'synthetic newer words', 'Whisper', 'base 20250625', :at)"),
+            {"c": world["case"], "e": world["ext"], "f": file_uid, "at": datetime(2026, 11, 4, tzinfo=timezone.utc)})
+    assert found()["total"] == 0
+    with world["engine"].begin() as c:  # a person confirms the older reading: it is in use again
+        c.execute(text("UPDATE phone_derived_texts SET confirmed_at = now(), confirmed_by_name = 'Synthetic Reviewer' "
+                       "WHERE id = :i"), {"i": ident})
+    assert found()["total"] == 1
 
 
 def test_search_finds_a_message_translation_labelled_and_citing_its_original(world, monkeypatch):
@@ -382,6 +423,44 @@ def test_the_export_prints_the_translation_under_the_original_with_its_label_and
     assert ("1 machine translation made on this server is printed under its original, each labelled and not checked "
             "by a person.") in words
     assert (state["counts"]["machine_translations"], state["counts"]["machine_translations_stale"]) == (1, 0)
+
+
+def test_the_export_says_a_transcript_translation_made_from_an_earlier_text_is_of_a_transcript(
+        world, monkeypatch, models):
+    pytest.importorskip("weasyprint")
+    from services.phone import translate
+    from tests.test_phone_exports import _export
+    _yoruba(models)
+    FakeChild(monkeypatch)
+    ident, _ = _transcript(world, attach=True)
+    _request(world, ident, "derived_text")
+    translate.run_pending(world["engine"])
+    with world["engine"].begin() as c:  # a person corrects the transcript after it was translated
+        c.execute(text("UPDATE phone_derived_texts SET corrected_text = 'Synthetic corrected words.', corrected_at = "
+                       "now(), corrected_by_name = 'Synthetic Reviewer', correction_reason = 'heard it' WHERE id = :i"),
+                  {"i": ident})
+    state, _, txt = _export(world)
+    words = " ".join(txt.split())
+    assert ("1 was made from an earlier text of a transcript or text read from an image corrected since, and says "
+            "so.") in words
+    assert "earlier text of a message" not in words
+    assert "Made from an earlier text: the original has been corrected since" in words
+    assert (state["counts"]["machine_translations"], state["counts"]["machine_translations_stale"]) == (1, 1)
+
+
+def test_a_refused_provider_leaves_every_waiting_translation_waiting(world, monkeypatch):
+    """The provider is settled before rows are claimed: a refusal never leaves rows running until they go stale."""
+    from services.phone import derive, translate
+    FakeChild(monkeypatch)
+    _request(world, world["evs"][0]["event_uid"])
+
+    def refuse(workload, case_setting=None):
+        raise ValueError("Only the local provider is available for %s." % workload)
+    monkeypatch.setattr(derive.phone_media(), "provider_for", refuse)
+    with pytest.raises(ValueError):
+        translate.run_pending(world["engine"])
+    with world["engine"].connect() as c:
+        assert c.execute(text("SELECT state, attempts FROM phone_translations")).one() == ("queued", 0)
 
 
 def test_the_child_refuses_every_outbound_connection_before_it_loads_anything():

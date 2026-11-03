@@ -323,7 +323,7 @@ def draw(engine, export_id, claimed=None) -> dict:
         texts = machine_texts(conn, e.case_id, [a.get("file_uid") for _, rows in out_days for r in rows
                                                 for a in r.get("attachments") or []])
         machine = {"total": 0, "unconfirmed": 0}
-        translations = {"total": 0, "stale": 0}
+        translations = {"total": 0, "stale": 0, "stale_message": 0, "stale_derived_text": 0}
         for _, rows in out_days:
             for r in rows:
                 # a message's machine translation prints under the original with its label (05 17.5)
@@ -332,7 +332,9 @@ def draw(engine, export_id, claimed=None) -> dict:
                                                for m in texts.get(a.get("file_uid") or "", [])]:
                     if t:
                         translations["total"] += 1
-                        translations["stale"] += 1 if t["stale"] else 0
+                        if t["stale"]:
+                            translations["stale"] += 1
+                            translations["stale_" + t["source_type"]] += 1
                 for a in r.get("attachments") or []:
                     a["machine_texts"] = texts.get(a.get("file_uid") or "", [])
                     machine["total"] += len(a["machine_texts"])
@@ -364,14 +366,12 @@ def draw(engine, export_id, claimed=None) -> dict:
                                 "{:,}".format(n), "text" if n == 1 else "texts", "is" if n == 1 else "are",
                                 "its attachment" if n == 1 else "their attachments", "{:,}".format(u) + (" is" if u == 1 else " are")))
     if translations["total"]:
-        n, st = translations["total"], translations["stale"]
+        n = translations["total"]
         contains.insert(-1, "%s machine %s made on this server %s printed under %s original%s, each labelled and "
                             "not checked by a person.%s" % (
                                 "{:,}".format(n), "translation" if n == 1 else "translations",
                                 "is" if n == 1 else "are", "its" if n == 1 else "their", "" if n == 1 else "s",
-                                (" %s %s made from an earlier text of a message corrected since, and %s so."
-                                 % ("{:,}".format(st), "was" if st == 1 else "were", "says" if st == 1 else "say"))
-                                if st else ""))
+                                _stale_words(translations["stale_message"], translations["stale_derived_text"])))
     if phones:
         contains.insert(1, "Phones: %s." % ", ".join(phones))
     contains += [lim["message"] for lim in facts["limits"]]
@@ -435,6 +435,16 @@ def _rsmf(engine, e, options, contains, out_days):
     if counts["events"] != len(rows):
         raise RuntimeError("RSMF events %d differ from the rows %d" % (counts["events"], len(rows)))
     return data, {"rsmf": counts}
+
+
+def _stale_words(messages: int, texts: int) -> str:
+    """The cover's count of translations made from an earlier text, said per kind of original (05 17.5)."""
+    parts = []
+    for k, what in ((messages, "a message"), (texts, "a transcript or text read from an image")):
+        if k:
+            parts.append(" %s %s made from an earlier text of %s corrected since, and %s so." % (
+                "{:,}".format(k), "was" if k == 1 else "were", what, "says" if k == 1 else "say"))
+    return "".join(parts)
 
 
 def _kinds_words(facts) -> str:
