@@ -191,3 +191,43 @@ async def reconcile_again(case_id: str, extraction_id: uuid.UUID):
     if out is None:
         raise HTTPException(404, "Extraction not found in this case")
     return {"documents": out}
+
+
+@router.get("/cases/{case_id}/phone/extractions/{extraction_id}/files/{document_index}/{ordinal}/database")
+async def source_database(case_id: str, extraction_id: uuid.UUID, document_index: int, ordinal: int,
+                          table: str | None = None, offset: str | None = None, browse: str | None = None,
+                          page: int = Query(1, ge=1)):
+    """05 section 17.2: a verified app database named as a record's source, opened read-only from a scratch copy."""
+    import os
+
+    from app.phone import source_db
+    from app.phone.store import connect
+
+    def go():
+        scratch = os.path.join(settings.storage_path, "_scratch", "source-db")
+        source_db.clear_old(scratch)
+        conn = connect(settings.database_url)
+        try:
+            located = source_db.locate(conn, str(paths.data_root() / str(case_id)), case_id, extraction_id,
+                                       document_index, ordinal)
+        finally:
+            conn.close()
+        t0 = __import__("time").monotonic()
+        copy = source_db.prepared_copy(located, scratch)
+        out = source_db.view(copy["path"], table=table, offset=offset, browse=browse, page_no=page)
+        out["copy"] = {"sha256": copy["sha256"], "size": copy["size"], "siblings": copy["siblings"],
+                       "copy_ms": copy.get("copy_ms"), "reused": copy["reused"]}
+        out["total_ms"] = round((__import__("time").monotonic() - t0) * 1000, 1)
+        out["opened_by"] = {"module": "app.phone.source_db", "version": source_db.MODULE_VERSION,
+                            "sqlite": __import__("sqlite3").sqlite_version}
+        return out
+
+    try:
+        return await asyncio.to_thread(go)
+    except source_db_refused() as exc:
+        raise HTTPException(409, str(exc)) from None
+
+
+def source_db_refused():
+    from app.phone.source_db import Refused
+    return Refused

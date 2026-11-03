@@ -1578,6 +1578,47 @@ def record_detail(record_uid: UUID, case_id: UUID = Query(...), zone: Optional[s
     return out
 
 
+@router.get("/records/{record_uid}/source-database")
+async def record_source_database(record_uid: UUID, case_id: UUID = Query(...), source: int = Query(0, ge=0),
+                                 browse: Optional[str] = Query(None, max_length=256), page: int = Query(1, ge=1),
+                                 db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """05 section 17.2: the app database the report names as this record's source, opened read-only from a copy.
+    ``source`` is the index into the record panel's ``sources``. Only a file tagged Database, present and verified
+    is opened; anything else is answered with the reason, never opened."""
+    from starlette.concurrency import run_in_threadpool
+
+    from services import evidence_engine_client as engine
+    from services.phone import source_db
+
+    def resolve():
+        authorize_case(db, case_id, user, ("case", "view"))
+        loc = phone_records._locate(db.connection(), case_id, record_uid)
+        if loc is None:
+            return None, None
+        return loc, source_db.record_sources(db.connection(), loc.extraction_id, loc.document_index, loc.ordinal)
+
+    loc, sources = await run_in_threadpool(resolve)
+    if loc is None:
+        raise HTTPException(status_code=404, detail="This record is not in this case.")
+    if source >= len(sources):
+        raise HTTPException(status_code=404, detail="This record has no such source.")
+    s = sources[source]
+    base = {"record_uid": str(record_uid), "source": s,
+            "read_by": "Read from the app database file by Loupe's read-only viewer; not the report's record."}
+    if not s["file"] or not s["file"]["is_database"] or s["state"] != "verified":
+        return dict(base, refused=s["state_words"] if s["file"] else source_db.STATE_WORDS["unresolved"],
+                    view=None)
+    f = s["file"]
+    out = await engine.source_database(str(case_id), str(loc.extraction_id), f["document_index"], f["ordinal"],
+                                       {"table": s["table_name"], "offset": s["offset"], "browse": browse,
+                                        "page": page})
+    if "refused" in out:
+        return dict(base, refused=out["refused"], view=None)
+    if not s["table_name"]:
+        out["named_row"] = {"found": False, "reason": source_db.NO_ROW_NAMED}
+    return dict(base, refused=None, view=out)
+
+
 class RevealBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID

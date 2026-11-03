@@ -298,3 +298,17 @@ async def health_check() -> Dict[str, Any]:
     except httpx.HTTPError as e:
         logger.warning("Evidence engine health check failed: %s", e)
         return {"status": "unavailable", "error": str(e)}
+
+
+async def source_database(case_id: str, extraction_id: str, document_index: int, ordinal: int,
+                          params: Dict[str, Any]) -> Dict[str, Any]:
+    """A verified app database named as a record's source, read by the engine from a read-only scratch copy
+    (05 section 17.2). A refusal comes back as ``{"refused": "<words>"}``."""
+    client = _get_client()
+    response = await client.get(
+        f"/cases/{case_id}/phone/extractions/{extraction_id}/files/{document_index}/{ordinal}/database",
+        params={k: v for k, v in params.items() if v is not None}, timeout=httpx.Timeout(60.0, connect=10.0))
+    if response.status_code == 409:
+        return {"refused": response.json().get("detail") or "The database could not be opened."}
+    response.raise_for_status()
+    return response.json()

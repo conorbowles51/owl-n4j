@@ -145,3 +145,70 @@ def test_the_gate_count_takes_top_level_records_once_by_each_mechanism(world):
         n = source_db.record_count(c, ext)
     assert n == {"verified_database_files": 2, "records_by_extra_info_id": 1, "records_by_extra_info": 1,
                  "records_by_jump_target": 1, "records": 2}
+
+
+@pytest.fixture
+def api(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from sqlalchemy.orm import sessionmaker
+
+    from postgres.models.user import User
+    from postgres.session import get_db
+    from routers.phones import router
+    from routers.users import get_current_db_user
+    from services import evidence_engine_client
+    from services.phone import ids, registry, sweep
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case, ext = _world(c)
+            owner = c.execute(text("SELECT owner_user_id FROM cases WHERE id = :c"), {"c": case}).scalar()
+        assert sweep.interpret_one(engine, ext)["status"] == "done"
+        Session = sessionmaker(bind=engine)
+        app = FastAPI()
+        app.include_router(router)
+
+        def db():
+            s = Session()
+            try:
+                yield s
+            finally:
+                s.close()
+
+        def user():
+            s = Session()
+            try:
+                return s.get(User, owner)
+            finally:
+                s.close()
+        app.dependency_overrides[get_db] = db
+        app.dependency_overrides[get_current_db_user] = user
+        calls = []
+
+        async def fake(case_id, extraction_id, document_index, ordinal, params):
+            calls.append((document_index, ordinal, params))
+            return {"open_mode": "read-only, immutable", "tables": [], "named_row": {"found": True, "rowid": 12}}
+        monkeypatch.setattr(evidence_engine_client, "source_database", fake)
+        rec = lambda o: str(ids.record_uid(ext, 0, o))  # noqa: E731
+        yield TestClient(app, raise_server_exceptions=True), case, rec, calls
+
+
+@needs_template
+def test_the_route_opens_only_a_verified_database_and_says_why_otherwise(api):
+    client, case, rec, calls = api
+    r = client.get("/api/phones/records/%s/source-database" % rec(2), params={"case_id": str(case)})
+    assert r.status_code == 200 and r.json()["view"] is None and calls == []
+    assert r.json()["refused"] == "The report lists this file, but it is not in the production."
+    panel = client.get("/api/phones/records/%s" % rec(2), params={"case_id": str(case)}).json()
+    assert panel["source_row"]["files"][0]["state"] == "absent" and len(panel["sources"]) == 1
+    r = client.get("/api/phones/records/%s/source-database" % rec(0), params={"case_id": str(case)})
+    body = r.json()
+    assert r.status_code == 200 and body["refused"] is None and body["view"]["named_row"]["rowid"] == 12
+    assert calls == [(0, 0, {"table": "messages", "offset": "12", "browse": None, "page": 1})]
+    assert body["read_by"].startswith("Read from the app database file") and "not the report's record" in body["read_by"]
+    r = client.get("/api/phones/records/%s/source-database" % rec(5), params={"case_id": str(case)})
+    assert r.json()["view"]["named_row"] == {"found": False,
+                                             "reason": "The report does not say which row this record came from."}
+    assert client.get("/api/phones/records/%s/source-database" % rec(4),
+                      params={"case_id": str(case)}).status_code == 404
