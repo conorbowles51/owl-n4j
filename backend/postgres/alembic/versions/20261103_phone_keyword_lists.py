@@ -9,7 +9,7 @@ entry and its row are written in one transaction.
 from alembic import op
 
 revision = "20261103_phone_keyword_lists"
-down_revision = "20261103_agent_proposals"
+down_revision = "20261103_phone_result_not_pursued"
 branch_labels = None
 depends_on = None
 
