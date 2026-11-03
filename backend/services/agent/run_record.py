@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote
@@ -115,14 +116,20 @@ def register_prompt_version(db, sha: str, source: dict[str, Any]) -> str:
     row = db.get(AgentPromptVersion, sha)
     if row is None:
         from sqlalchemy import func, select
+        from sqlalchemy.exc import IntegrityError
         number = int(db.scalar(select(func.count()).select_from(AgentPromptVersion)) or 0) + 1
         now = datetime.now(timezone.utc)
-        row = AgentPromptVersion(
+        # The sha8 in the label keeps two versions apart even if two first uses race for the same number.
+        candidate = AgentPromptVersion(
             sha256=sha, label="v%d · %s · %s" % (number, now.date().isoformat(), sha[:8]), first_used_at=now,
             prompt_text=to_jsonable(source.get("prompts")), tool_schemas=to_jsonable(source.get("tools")),
             tool_count=len(source.get("tools") or []))
-        db.add(row)
-        db.flush()
+        try:
+            with db.begin_nested():
+                db.add(candidate)
+            row = candidate
+        except IntegrityError:  # another run stored this version first: use its label
+            row = db.get(AgentPromptVersion, sha, populate_existing=True)
     return row.label
 
 
@@ -273,7 +280,10 @@ def call_facts(name: str | None, args: dict[str, Any] | None, output: dict[str, 
     output = output if isinstance(output, dict) else {}
     data = output.get("data")
     d = data if isinstance(data, dict) else {}
-    items, lengths = returned_items(d)
+    page_read = name == PAGE_TOOL
+    # A page read returns items of an earlier result: they are that result's items (shown, not new), so they are
+    # not listed again here; its own paging note sits in its data.
+    items, lengths = ([], {}) if page_read else returned_items(d)
     total = _int(d.get("total_matching"))
     if total is None:
         total = _int(d.get("total"))
@@ -283,7 +293,8 @@ def call_facts(name: str | None, args: dict[str, Any] | None, output: dict[str, 
         returned = lengths[main]
     if returned is None and isinstance(data, list):
         returned = len(data)
-    paging = [to_jsonable(note) for note in ((model_payload or {}).get("_paging") or []) if isinstance(note, dict)]
+    notes = (model_payload or {}).get("_paging") or (d.get("_paging") if page_read else None) or []
+    paging = [to_jsonable(note) for note in notes if isinstance(note, dict)]
     next_page: dict[str, Any] = {}
     if _int(d.get("next_offset")) is not None:
         next_page["tool"] = {"offset": _int(d.get("next_offset")), "revision": d.get("revision")}
@@ -357,6 +368,14 @@ def _shown_ranges(seq: int, facts: dict[str, Any], trace: list[dict[str, Any]]) 
     return ranges
 
 
+def _mentions(text: str, ref: str) -> bool:
+    """``ref`` appears in ``text`` as a whole reference: not as the start of a longer one ("doc://f.pdf/1" is not
+    named by "doc://f.pdf/12"; "john-smith" is not named by "john-smith-jr")."""
+    if not ref or ref not in text:
+        return False
+    return re.search(r"(?<![\w-])%s(?![\w-])" % re.escape(ref), text) is not None
+
+
 def _covered(ranges: list[tuple[int, int]]) -> int:
     covered, end = 0, -1
     for start, stop in sorted(ranges):
@@ -395,15 +414,15 @@ def examine(trace: list[dict[str, Any]], *, answer: str | None, artifacts: list[
                 if trace[later_index].get("name") == PAGE_TOOL or str(trace[later_index].get("name") or "").startswith(
                         "build_"):
                     continue
-                if any(str(r) in later_args[later_index] for r in refs):
+                if any(_mentions(later_args[later_index], str(r)) for r in refs):
                     opened_by = later_index + 1
                     break
-            cited = any(str(r) in answer_text for r in refs)
+            cited = any(_mentions(answer_text, str(r)) for r in refs)
             rows.append(dict(tool_call_sequence=seq, kind=item.get("kind"), ref=item.get("ref"),
                              label=item.get("label"), list_path=".".join(map(str, path)),
                              position=item.get("position"), shown_to_model=bool(shown),
                              opened=opened_by is not None, opened_by_sequence=opened_by, cited=cited,
-                             in_artifact=any(str(r) in artifact_text for r in refs)))
+                             in_artifact=any(_mentions(artifact_text, str(r)) for r in refs)))
         model_not_shown = 0
         for note in facts.get("model_paging") or []:
             if note.get("path") is None or _int(note.get("total")) is None:
@@ -506,6 +525,15 @@ def backfill_run(db, run) -> dict[str, Any] | None:
     if run.record_summary is not None:
         return None
     calls = db.query(AgentToolCall).filter(AgentToolCall.run_id == run.id).order_by(AgentToolCall.sequence_number).all()
+    if run.prompt_version is not None or any(call.record_facts is not None for call in calls):
+        # Made with the run record but never finished (the process ended): its calls were stored whole as they
+        # ran and are kept as they are; only the summary is added, saying what is not known.
+        run.tool_calls_used = len(calls)
+        run.record_summary = {"items_returned": 0, "basis": (
+            "The run did not finish (the process ended while it ran). Its tool calls were stored as they ran and "
+            "are shown as stored; which returned items it opened or cited was never computed.")}
+        db.flush()
+        return {"items_returned": 0}
     trace = []
     for call in calls:
         output = {"data": call.result_preview, "status": call.status, "error": call.error, "result_id": call.result_id}

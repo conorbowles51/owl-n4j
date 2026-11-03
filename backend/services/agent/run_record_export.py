@@ -39,11 +39,11 @@ def _case_material(db, case_id) -> dict[str, dict[str, Any]]:
     out: dict[str, dict[str, Any]] = {}
     queries = {
         "documents": "SELECT count(*) FROM evidence_files WHERE case_id = :c",
-        "ledger": "SELECT count(*) FROM financial_transactions WHERE case_id = :c",
+        "ledger": "SELECT count(*) FROM financial_transactions WHERE case_id = :c AND ledger_status = 'admitted'",
         "phones": "SELECT count(*) FROM phone_extractions WHERE case_id = :c",
         "casework": "SELECT count(*) FROM workspace_entries WHERE case_id = :c AND deleted_at IS NULL",
     }
-    units = {"documents": "evidence files", "ledger": "imported payments", "phones": "phone extractions",
+    units = {"documents": "evidence files", "ledger": "admitted imported payments", "phones": "phone extractions",
              "casework": "casework entries"}
     for key, sql in queries.items():
         try:

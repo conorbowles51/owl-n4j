@@ -194,12 +194,23 @@ class RunRecordTests(RunRecordFixture):
         before = run_record.examine(trace, answer="", artifacts=[])
         self.assertEqual(sum(1 for r in before["items"] if not r["shown_to_model"]), 60 - shown)
         self.assertEqual(before["calls"][0]["model_not_shown"], 60 - shown)
-        page = {"_paging": [dict(path=["data", "items"], total=60, offset=shown, returned=10)]}
+        # The real page tool: its data is the page (items and its own _paging note), as tools.py returns it.
+        from services.agent.model_payloads import model_view, page_for_model
+        page = page_for_model(model_view(data), budget_chars=6_000, result_id="res_1", offset=shown,
+                              path=["data", "items"])
+        page_data = {"page_of": "res_1", **page}
+        read = page["_paging"][0]["returned"]
+        page_payload = tool_message_payload(result_id="res_2", summary="p", data=page_data, budget_chars=600_000)
         trace.append({"name": "read_tool_result_page",
                       "arguments": {"result_id": "res_1", "path": ["data", "items"], "offset": shown},
-                      "record": run_record.call_facts("read_tool_result_page", {}, {"data": {}}, page)})
+                      "record": run_record.call_facts("read_tool_result_page", {}, {"data": page_data},
+                                                      page_payload)})
         after = run_record.examine(trace, answer="", artifacts=[])
-        self.assertEqual(after["calls"][0]["model_not_shown"], 60 - shown - 10)
+        self.assertGreater(read, 0)
+        self.assertEqual(after["calls"][0]["model_not_shown"], 60 - shown - read)
+        self.assertEqual(sum(1 for r in after["items"] if not r["shown_to_model"]), 60 - shown - read)
+        # The page's items are the first call's items: not listed a second time.
+        self.assertEqual(len(after["items"]), 60)
         # Reading a page shows items; it does not count as opening them.
         self.assertFalse(any(r["opened"] for r in after["items"]))
 
@@ -254,6 +265,13 @@ class RunRecordTests(RunRecordFixture):
             ("Statement March.pdf#p2", True, False, False),
             ("Statement March.pdf#p3", False, False, True)])
 
+    def test_a_reference_is_not_credited_by_a_longer_one_it_starts(self):
+        self.assertFalse(run_record._mentions("see doc://f.pdf/12 and [f.pdf, p.12]", "doc://f.pdf/1"))
+        self.assertFalse(run_record._mentions("see [f.pdf, p.12]", "f.pdf, p.1"))
+        self.assertFalse(run_record._mentions('{"entity_key": "john-smith-jr"}', "john-smith"))
+        self.assertTrue(run_record._mentions('{"entity_key": "john-smith"}', "john-smith"))
+        self.assertTrue(run_record._mentions("[f.pdf, p.1](doc://f.pdf/1).", "doc://f.pdf/1"))
+
     def test_earlier_runs_are_rebuilt_from_previews_and_say_so(self):
         result = self.run_agent([lambda o: ("get_financial_transactions", {"limit": 2})], lambda o: "ok")
         db, user = self.fx.db, self.fx.user
@@ -273,6 +291,20 @@ class RunRecordTests(RunRecordFixture):
         self.assertEqual(run.for_user_email, user.email)
         self.assertEqual(run.prompt_version_label, "not recorded (run made before the run record)")
         self.assertIsNone(run_record.backfill_run(db, run))
+
+    def test_backfill_keeps_the_calls_a_killed_run_stored_as_it_ran(self):
+        result = self.run_agent([lambda o: ("get_financial_transactions", {"limit": 2})], lambda o: "ok")
+        db, user = self.fx.db, self.fx.user
+        thread = storage.create_thread(db, user=user, case_id=self.fx.case.id, title="killed")
+        run = storage.create_run(db, thread=thread, user=user, provider="deepseek", model_id="m", input_message="q",
+                                 tool_budget=28, prompt_version="b" * 64, prompt_version_label="v2 · x · bbbbbbbb")
+        storage.persist_tool_call(db, run=run, sequence=1, item=result["tool_trace"][0])
+        db.commit()
+        run_record.backfill_run(db, run)
+        call = db.query(AgentToolCall).filter_by(run_id=run.id).one()
+        self.assertEqual((call.total, call.returned), (5, 2))
+        self.assertEqual(run.prompt_version_label, "v2 · x · bbbbbbbb")
+        self.assertIn("did not finish", run.record_summary["basis"])
 
     def test_case_material_not_held_is_not_listed_as_unsearched(self):
         from services.agent import run_record_export as rx

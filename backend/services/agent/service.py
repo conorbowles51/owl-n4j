@@ -215,7 +215,8 @@ class AgentService:
             storage.persist_tool_trace(db, run=run, trace=tool_trace, skip_existing=True)
             run_record.persist_call_facts(
                 db, run=run, trace=tool_trace, answer=answer,
-                artifacts=[storage.to_api_artifact(r).model_dump(mode="json") for r in artifact_records] or artifacts,
+                # Only artifacts that were kept: an artifact thrown away (a clarification) is no use of an item.
+                artifacts=[storage.to_api_artifact(r).model_dump(mode="json") for r in artifact_records],
                 messages=final_result.get("messages"),
                 budget_exhausted=self._is_tool_budget_clarification(runner_clarification),
             )
@@ -481,7 +482,8 @@ class AgentService:
             storage.persist_tool_trace(db, run=run, trace=tool_trace, skip_existing=True)
             run_record.persist_call_facts(
                 db, run=run, trace=tool_trace, answer=answer,
-                artifacts=[storage.to_api_artifact(r).model_dump(mode="json") for r in artifact_records] or artifacts,
+                # Only artifacts that were kept: an artifact thrown away (a clarification) is no use of an item.
+                artifacts=[storage.to_api_artifact(r).model_dump(mode="json") for r in artifact_records],
                 messages=result.get("messages"),
                 budget_exhausted=self._is_tool_budget_clarification(runner_clarification),
             )
@@ -579,7 +581,12 @@ class AgentService:
                     model_id=model.id,
                     input_message=request.message,
                     extra_metadata={"artifact_preference": request.artifact_preference},
+                    tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
+                    **self._prompt_version(db),
                 )
+                failed_run.record_summary = {"items_returned": 0, "basis": (
+                    "The run failed before its tool calls could be stored (a run sent without streaming keeps its "
+                    "calls only when it finishes); what it searched is not known.")}
                 storage.finish_run(db, run=failed_run, status="failed", error=str(exc))
                 self._log_agent_event(
                     db,
@@ -714,6 +721,7 @@ class AgentService:
             return {"prompt_version": sha, "prompt_version_label": run_record.register_prompt_version(db, sha, source)}
         except Exception as exc:  # noqa: BLE001 - the run goes ahead; its record says the version was not read
             logger.exception("Agent prompt version could not be computed")
+            db.rollback()
             return {"prompt_version": None, "prompt_version_label": f"not recorded: {type(exc).__name__}"}
 
     @staticmethod
@@ -731,8 +739,11 @@ class AgentService:
         try:
             storage.persist_tool_trace(db, run=run, trace=trace, skip_existing=True)
             run_record.persist_call_facts(db, run=run, trace=trace, answer=None, artifacts=None, messages=None)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - the run is still marked stopped; its record says what is missing
             logger.exception("Run record of stopped run %s could not be completed", run.id)
+            db.rollback()
+            run.record_summary = {"basis": "The run stopped and its record could not be completed; the tool calls "
+                                           "stored as they ran are shown as stored."}
 
     def _resolve_thread(self, db: Session, *, user: User, request: AgentMessageRequest) -> AgentThread:
         if request.thread_id:
