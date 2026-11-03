@@ -234,3 +234,45 @@ export interface AgentRunRecord {
   calls: { sequence: number; name: string; total: number | null; returned: number | null }[]
   not_deterministic: string
 }
+
+/** A guided investigative workflow (backend services/agent/workflows.py) and its readiness on one case. */
+export interface AgentWorkflowReadiness {
+  id: string
+  number: number
+  title: string
+  status: "ready" | "partial" | "not_possible"
+  reasons: string[]
+  tools_missing: string[]
+  steps_that_run: number
+  steps: {
+    tool: string
+    why: string
+    optional: boolean
+    by_person: boolean
+    in_build: boolean
+    data_missing: string[]
+    runs: boolean
+  }[]
+}
+
+export interface AgentWorkflow {
+  id: string
+  number: number
+  title: string
+  question: string
+  starting_question: string
+  extra: boolean
+  steps: string[]
+  proposals: string[]
+  person_confirms: string
+  adds_requirement: string | null
+  requirement_met_by: string[]
+  readiness?: AgentWorkflowReadiness
+}
+
+export interface AgentWorkflowCatalogue {
+  schema: string
+  counts: Record<string, number> | null
+  workflows: AgentWorkflow[]
+  total: number
+}

@@ -5,6 +5,7 @@ import type {
   AgentStreamEvent,
   AgentThreadDetail,
   AgentThreadSummary,
+  AgentWorkflowCatalogue,
 } from "./types"
 import type { CaseLayer } from "@/features/significant/types"
 
@@ -19,11 +20,15 @@ export interface SendAgentMessageParams {
   model?: string
   caseLayer?: CaseLayer
   mandateOverride?: Record<string, unknown>
+  workflowId?: string
 }
 
 export const agentAPI = {
   listThreads: (caseId: string) =>
     fetchAPI<AgentThreadSummary[]>(`/api/agent/threads?case_id=${caseId}`),
+
+  listWorkflows: (caseId: string) =>
+    fetchAPI<AgentWorkflowCatalogue>(`/api/agent/workflows?case_id=${encodeURIComponent(caseId)}`),
 
   getThread: (threadId: string) =>
     fetchAPI<AgentThreadDetail>(`/api/agent/threads/${threadId}`),
@@ -41,6 +46,7 @@ export const agentAPI = {
         case_layer: params.caseLayer || "all",
         persist: true,
         mandate_override: params.mandateOverride,
+        ...(params.workflowId ? { workflow_id: params.workflowId } : {}),
       },
       timeout: 240000,
     }),
@@ -67,6 +73,7 @@ export const agentAPI = {
         case_layer: params.caseLayer || "all",
         persist: true,
         mandate_override: params.mandateOverride,
+        ...(params.workflowId ? { workflow_id: params.workflowId } : {}),
       }),
     })
 

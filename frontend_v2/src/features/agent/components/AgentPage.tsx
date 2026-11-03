@@ -64,6 +64,7 @@ import { AgentCitationProvider, AgentMarkdown } from "./AgentCitations"
 import { AgentArtifactNotes } from "./AgentArtifactNotes"
 import { AcceptAnswerIntoAssessment } from "./AcceptAnswerIntoAssessment"
 import { AgentRunRecordPanel } from "./AgentRunRecordPanel"
+import { AgentWorkflowPicker } from "./AgentWorkflowPicker"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { downloadProtectedFile } from "@/lib/protected-file"
@@ -557,6 +558,7 @@ export function AgentPage() {
   const [artifacts, setArtifacts] = useState<AgentArtifact[]>([])
   const [toolTrace, setToolTrace] = useState<AgentToolTraceItem[]>([])
   const [activityTrail, setActivityTrail] = useState<AgentActivityItem[]>([])
+  const [showWorkflows, setShowWorkflows] = useState(false)
   const [input, setInput] = useState("")
   const [mandateOverride, setMandateOverride] = useState("")
   const [mandateUsage, setMandateUsage] = useState<AgentMandateUsage | null>(null)
@@ -739,7 +741,7 @@ export function AgentPage() {
     setMandateUsage(null)
   }
 
-  const sendMessage = async (overridePrompt?: string) => {
+  const sendMessage = async (overridePrompt?: string, workflowId?: string) => {
     const prompt = (overridePrompt ?? input).trim()
     if (!prompt || !caseId || isLoading) return
 
@@ -764,6 +766,7 @@ export function AgentPage() {
           threadId: activeThreadId,
           caseLayer,
           mandateOverride: requestMandateOverride ? { perspective: requestMandateOverride } : undefined,
+          workflowId,
         },
         (event) => {
           if (event.type === "run_started") {
@@ -1080,7 +1083,7 @@ export function AgentPage() {
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
               {messages.length === 0 ? (
                 <div className="flex h-full items-center justify-center">
-                  <div className="max-w-lg text-center">
+                  <div className="w-full max-w-2xl text-center">
                     <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-lg border border-border bg-card">
                       <Sparkles className="size-5 text-amber-600 dark:text-amber-300" />
                     </div>
@@ -1092,6 +1095,18 @@ export function AgentPage() {
                         ? "It will investigate only the entities and induced relationships in your Significant layer."
                         : "It can search the graph, inspect documents, run safe read-only Cypher, and build focused views."}
                     </p>
+                    {caseId && caseLayer !== "significant" && (
+                      <div className="mt-5">
+                        <h3 className="mb-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          Or start a guided workflow
+                        </h3>
+                        <AgentWorkflowPicker
+                          caseId={caseId}
+                          disabled={isLoading}
+                          onStart={(workflowId, question) => sendMessage(question, workflowId)}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -1141,7 +1156,30 @@ export function AgentPage() {
                   />
                 </div>
               )}
+              {showWorkflows && caseId && messages.length > 0 && caseLayer !== "significant" && (
+                <div className="mx-auto mb-3 max-h-96 max-w-3xl overflow-y-auto rounded-lg border border-border bg-background p-3">
+                  <AgentWorkflowPicker
+                    caseId={caseId}
+                    disabled={isLoading}
+                    onStart={(workflowId, question) => {
+                      setShowWorkflows(false)
+                      sendMessage(question, workflowId)
+                    }}
+                  />
+                </div>
+              )}
               <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-lg border border-border bg-card p-2 shadow-sm">
+                {messages.length > 0 && caseLayer !== "significant" && (
+                  <Button
+                    size="sm"
+                    variant={showWorkflows ? "secondary" : "ghost"}
+                    onClick={() => setShowWorkflows(!showWorkflows)}
+                    aria-expanded={showWorkflows}
+                    aria-label="Guided workflows"
+                  >
+                    Workflows
+                  </Button>
+                )}
                 <textarea
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
