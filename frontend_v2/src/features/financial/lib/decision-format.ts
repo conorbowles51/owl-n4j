@@ -135,6 +135,10 @@ const SUBJECT_COPY: Record<AdjudicationSubject, TermCopy> = {
     label: "Phone record",
     description: "One record of a phone report, such as a message, call or contact. Not part of the financial ledger.",
   },
+  phone_analysis_result: {
+    label: "Phone analysis result",
+    description: "One result of an analysis of the phones, such as money a phone records, confirmed or rejected by a person. Not part of the financial ledger.",
+  },
 }
 
 export function readDecisionSubject(

@@ -857,6 +857,7 @@ export const ADJUDICATION_SUBJECTS = [
   "phone_extraction",
   "phone_identity",
   "phone_record",
+  "phone_analysis_result",
 ] as const
 export type AdjudicationSubject = (typeof ADJUDICATION_SUBJECTS)[number]
 

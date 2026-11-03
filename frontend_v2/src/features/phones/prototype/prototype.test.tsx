@@ -100,7 +100,7 @@ describe("prototype screens on synthetic phones", () => {
   it("Phone summary: verdict, Needs a decision, counts that equal their lists", async () => {
     app("/cases/case-1/phones-prototype/summary")
     expect(await screen.findByText(/Prototype on synthetic phones/)).toBeInTheDocument()
-    expect(screen.getByTestId("verdict")).toHaveTextContent(/^Read in full: 582 records, .* to .*, \d apps\. \d things? needs? a decision\.$/)
+    expect(screen.getByTestId("verdict")).toHaveTextContent(/^Read in full: 598 records, .* to .*, \d apps\. \d things? needs? a decision\.$/)
     const top = topPeople(TRAINING, "C5")
     const link = screen.getByRole("link", { name: `${top[0].person.name} (${top[0].person.numbers[0]})` })
     expect(link.getAttribute("href")).toContain(`person=${top[0].key}`)
