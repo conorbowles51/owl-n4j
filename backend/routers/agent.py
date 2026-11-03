@@ -155,6 +155,55 @@ def get_agent_run(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
+@router.get("/runs/{run_id}/record")
+def get_agent_run_record(
+    run_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """The run record: the disclosure record of one agent run (who, when, model, prompt version, every call)."""
+    try:
+        return agent_service.get_run_record(db=db, user=current_user, run_id=run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404 if "not found" in str(exc).lower() else 400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.get("/runs/{run_id}/record/export")
+def export_agent_run_record(
+    run_id: UUID,
+    kind: Literal["strategy", "not_examined"] = Query(default="strategy"),
+    format: Literal["csv", "pdf"] = Query(default="csv"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        exported = agent_service.export_run_record(db=db, user=current_user, run_id=run_id, kind=kind,
+                                                   export_format=format)
+    except ValueError as exc:
+        raise HTTPException(status_code=404 if "not found" in str(exc).lower() else 400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    ascii_filename = exported.filename.encode("ascii", "ignore").decode("ascii") or "agent-run-record.csv"
+    return Response(
+        content=exported.content,
+        media_type=exported.media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{ascii_filename}"; filename*=UTF-8\'\'{quote(exported.filename)}',
+            "X-Agent-Export-Format": format,
+        },
+    )
+
+
 @router.get("/costs/summary")
 def get_agent_cost_summary(
     db: Session = Depends(get_db),

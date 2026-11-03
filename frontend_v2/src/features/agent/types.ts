@@ -201,4 +201,36 @@ export interface AgentClientMessage {
   toolTraceSummary?: AgentToolTraceItem[]
   pending?: boolean
   createdAt?: string
+  /** The run that produced this answer (its run record opens from the answer). */
+  runId?: string | null
+}
+
+/** The disclosure record of one agent run (GET /api/agent/runs/{id}/record). */
+export interface AgentRunRecord {
+  run_id: string
+  status: string
+  for_user: { id: string | null; name: string | null; email: string | null }
+  started_at: string | null
+  completed_at: string | null
+  provider: string
+  model_id: string
+  prompt_version: string | null
+  prompt_version_label: string | null
+  tool_budget: number | null
+  tool_calls_used: number
+  unrun_tool_calls: { name: string | null }[]
+  case_layer: string
+  summary: {
+    items_returned?: number
+    items_shown?: number
+    items_opened?: number
+    items_cited?: number
+    items_in_artifact?: number
+    items_not_examined?: number
+    model_not_shown?: number
+    tool_not_returned?: number
+    basis?: string
+  }
+  calls: { sequence: number; name: string; total: number | null; returned: number | null }[]
+  not_deterministic: string
 }

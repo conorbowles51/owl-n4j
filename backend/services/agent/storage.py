@@ -180,6 +180,9 @@ def create_run(
     input_message: str,
     extra_metadata: dict[str, Any] | None = None,
     mandate_override: dict[str, Any] | None = None,
+    tool_budget: int | None = None,
+    prompt_version: str | None = None,
+    prompt_version_label: str | None = None,
 ) -> AgentRun:
     run = AgentRun(
         thread_id=thread.id,
@@ -192,6 +195,12 @@ def create_run(
         extra_metadata=to_jsonable(extra_metadata) if extra_metadata else None,
         mandate_version_id=thread.mandate_version_id,
         mandate_override=to_jsonable(mandate_override) if mandate_override else None,
+        # The person the run was for, as named when it ran (the record outlives a later change of name).
+        for_user_name=sanitize_text(getattr(user, "name", None) or "")[:255] or None,
+        for_user_email=sanitize_text(getattr(user, "email", None) or "")[:255] or None,
+        tool_budget=tool_budget,
+        prompt_version=prompt_version,
+        prompt_version_label=sanitize_text(prompt_version_label)[:100] if prompt_version_label else None,
     )
     db.add(run)
     db.flush()
@@ -230,25 +239,52 @@ def persist_tool_trace(
     *,
     run: AgentRun,
     trace: list[dict[str, Any]],
+    skip_existing: bool = False,
 ) -> list[AgentToolCall]:
+    """Store every call of the trace. ``skip_existing``: keep the calls already stored while the run was going
+    (same sequence) and store only the rest."""
+    existing = {
+        record.sequence_number
+        for record in db.query(AgentToolCall).filter(AgentToolCall.run_id == run.id)
+    } if skip_existing else set()
     records: list[AgentToolCall] = []
     for index, item in enumerate(trace, start=1):
-        record = AgentToolCall(
-            run_id=run.id,
-            sequence_number=index,
-            name=sanitize_text(item.get("name") or "unknown"),
-            arguments=to_jsonable(item.get("arguments") or {}),
-            status=sanitize_text(item.get("status") or "error"),
-            duration_ms=int(item.get("duration_ms") or 0),
-            result_id=sanitize_text(item.get("result_id")) if item.get("result_id") else None,
-            summary=sanitize_text(item.get("summary")) if item.get("summary") is not None else None,
-            error=sanitize_text(item.get("error")) if item.get("error") is not None else None,
-            result_preview=truncate_payload(item.get("result_preview")),
-        )
-        db.add(record)
-        records.append(record)
+        if index in existing:
+            continue
+        records.append(persist_tool_call(db, run=run, sequence=index, item=item, flush=False))
     db.flush()
     return records
+
+
+def persist_tool_call(
+    db: Session,
+    *,
+    run: AgentRun,
+    sequence: int,
+    item: dict[str, Any],
+    flush: bool = True,
+) -> AgentToolCall:
+    """Store one call as soon as it has run, so a run that is stopped or dies still keeps the calls it made."""
+    from services.agent.run_record import apply_facts
+
+    record = AgentToolCall(
+        run_id=run.id,
+        sequence_number=sequence,
+        name=sanitize_text(item.get("name") or "unknown"),
+        arguments=to_jsonable(item.get("arguments") or {}),
+        status=sanitize_text(item.get("status") or "error"),
+        duration_ms=int(item.get("duration_ms") or 0),
+        result_id=sanitize_text(item.get("result_id")) if item.get("result_id") else None,
+        summary=sanitize_text(item.get("summary")) if item.get("summary") is not None else None,
+        error=sanitize_text(item.get("error")) if item.get("error") is not None else None,
+        result_preview=truncate_payload(item.get("result_preview")),
+    )
+    if isinstance(item.get("record"), dict):
+        apply_facts(record, item["record"])
+    db.add(record)
+    if flush:
+        db.flush()
+    return record
 
 
 def persist_artifacts(

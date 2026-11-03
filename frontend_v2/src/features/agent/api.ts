@@ -133,6 +133,12 @@ export const agentAPI = {
       body: { case_id: caseId, dossier_id: dossierId, category },
     }),
 
+  getRunRecord: (runId: string) =>
+    fetchAPI<import("./types").AgentRunRecord>(`/api/agent/runs/${encodeURIComponent(runId)}/record`),
+
+  runRecordExportUrl: (runId: string, kind: "strategy" | "not_examined", format: "csv" | "pdf") =>
+    `/api/agent/runs/${encodeURIComponent(runId)}/record/export?kind=${kind}&format=${format}`,
+
   artifactExportUrl: (artifactId: string, format: AgentArtifactExportFormat = "csv") =>
     `/api/agent/artifacts/${artifactId}/export?format=${format}`,
 }

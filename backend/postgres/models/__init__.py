@@ -40,6 +40,8 @@ from postgres.models.agent import (
     AgentRun,
     AgentThread,
     AgentToolCall,
+    AgentPromptVersion,
+    AgentRunItem,
 )
 from postgres.models.evidence import EvidenceClaim, EvidenceDocumentText, EvidenceFolder, EvidenceFile, IngestionLog
 from postgres.models.case_profile import (
@@ -112,7 +114,7 @@ __all__ = [
     "ProcessingProfile", "CaseProcessingConfig",
     "GeocodingCacheEntry",
     "CaseRevision", "ChatConversation", "ChatMessage",
-    "AgentArtifactRecord", "AgentMessage", "AgentRun", "AgentThread", "AgentToolCall",
+    "AgentArtifactRecord", "AgentMessage", "AgentRun", "AgentThread", "AgentToolCall", "AgentPromptVersion", "AgentRunItem",
     "EvidenceClaim", "EvidenceDocumentText", "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
     "SignificantEntity",
     "Loupe",

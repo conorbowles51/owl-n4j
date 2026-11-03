@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -30,6 +31,7 @@ from services.agent.schemas import (
     AgentToolTraceItem,
 )
 import services.agent.storage as storage
+import services.agent.run_record as run_record
 from services.ai_costs_service import CostOperationKind, record_cost
 from services.ai_model_policy import get_workload_model
 from services.ai_provider_credentials import get_provider_api_key
@@ -40,6 +42,7 @@ from services.mandate_context_service import mandate_context_service
 
 
 DEFAULT_AGENT_MAX_TOOL_CALLS = 28
+logger = logging.getLogger(__name__)
 
 
 class AgentService:
@@ -104,6 +107,8 @@ class AgentService:
                 "case_layer": request.case_layer,
             },
             mandate_override=mandate_context.override,
+            tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
+            **self._prompt_version(db),
         )
         db.commit()
         db.refresh(thread)
@@ -138,6 +143,7 @@ class AgentService:
         )
         runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key)
         final_result: dict[str, Any] | None = None
+        collected_trace: list[dict[str, Any]] = []
 
         try:
             for event in runner.stream(
@@ -158,6 +164,11 @@ class AgentService:
                 if event.get("type") == "final":
                     final_result = event.get("result") or {}
                     continue
+                if event.get("type") == "tool_result" and isinstance(event.get("tool"), dict):
+                    # Each call is stored as soon as it has run (the record survives a stopped or dead run).
+                    collected_trace.append(event["tool"])
+                    self._store_call_now(db, run=run, sequence=len(collected_trace), item=event["tool"])
+                    event = {**event, "tool": {k: v for k, v in event["tool"].items() if k != "record"}}
                 yield event
 
             if is_cancelled(run_id):
@@ -201,7 +212,13 @@ class AgentService:
                 if artifacts and (not runner_clarification or persist_partial_artifacts)
                 else []
             )
-            storage.persist_tool_trace(db, run=run, trace=tool_trace)
+            storage.persist_tool_trace(db, run=run, trace=tool_trace, skip_existing=True)
+            run_record.persist_call_facts(
+                db, run=run, trace=tool_trace, answer=answer,
+                artifacts=[storage.to_api_artifact(r).model_dump(mode="json") for r in artifact_records] or artifacts,
+                messages=final_result.get("messages"),
+                budget_exhausted=self._is_tool_budget_clarification(runner_clarification),
+            )
             if runner_clarification:
                 storage.update_run_metadata(
                     db,
@@ -283,6 +300,7 @@ class AgentService:
         except AgentRunCancelled as exc:
             db.rollback()
             run = db.merge(run)
+            self._record_stopped_run(db, run=run, trace=collected_trace)
             storage.finish_run(db, run=run, status="cancelled", error=str(exc))
             self._log_agent_event(
                 db,
@@ -304,6 +322,7 @@ class AgentService:
             db.rollback()
             try:
                 run = db.merge(run)
+                self._record_stopped_run(db, run=run, trace=collected_trace)
                 storage.finish_run(db, run=run, status="failed", error=str(exc))
                 self._log_agent_event(
                     db,
@@ -389,6 +408,8 @@ class AgentService:
                 "case_layer": request.case_layer,
             },
             mandate_override=mandate_context.override,
+            tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
+            **self._prompt_version(db),
         )
         db.flush()
         self._log_agent_event(
@@ -457,7 +478,13 @@ class AgentService:
                 if artifacts and (not runner_clarification or persist_partial_artifacts)
                 else []
             )
-            storage.persist_tool_trace(db, run=run, trace=tool_trace)
+            storage.persist_tool_trace(db, run=run, trace=tool_trace, skip_existing=True)
+            run_record.persist_call_facts(
+                db, run=run, trace=tool_trace, answer=answer,
+                artifacts=[storage.to_api_artifact(r).model_dump(mode="json") for r in artifact_records] or artifacts,
+                messages=result.get("messages"),
+                budget_exhausted=self._is_tool_budget_clarification(runner_clarification),
+            )
             if runner_clarification:
                 storage.update_run_metadata(
                     db,
@@ -614,6 +641,21 @@ class AgentService:
     def get_run(self, *, db: Session, user: User, run_id: UUID) -> AgentRunDetail:
         return storage.get_run_detail(db, run_id=run_id, user=user)
 
+    def get_run_record(self, *, db: Session, user: User, run_id: UUID) -> dict[str, Any]:
+        from services.agent.run_record_export import load_record
+        run = storage.get_run_for_user(db, run_id=run_id, user=user)
+        return load_record(db, run)
+
+    def export_run_record(self, *, db: Session, user: User, run_id: UUID, kind: str, export_format: str):
+        """The DMD strategy summary or the "what was not examined" statement of one run (CSV or PDF)."""
+        from services.agent.run_record_export import render_record_export
+        run = storage.get_run_for_user(db, run_id=run_id, user=user)
+        exported = render_record_export(db, run, kind, export_format)
+        self._log_agent_event(db, action="agent_run_record_exported", user=user, run=run,
+                              details={"kind": kind, "format": export_format})
+        db.commit()
+        return exported
+
     def get_cost_summary(self, *, db: Session, user: User) -> dict[str, Any]:
         records = (
             db.query(CostRecord)
@@ -663,6 +705,34 @@ class AgentService:
         )
         db.commit()
         return exported
+
+    @staticmethod
+    def _prompt_version(db: Session) -> dict[str, Any]:
+        """The prompt version this run is given (sha256 and readable label), registered on first use."""
+        try:
+            sha, source = run_record.current_prompt_version()
+            return {"prompt_version": sha, "prompt_version_label": run_record.register_prompt_version(db, sha, source)}
+        except Exception as exc:  # noqa: BLE001 - the run goes ahead; its record says the version was not read
+            logger.exception("Agent prompt version could not be computed")
+            return {"prompt_version": None, "prompt_version_label": f"not recorded: {type(exc).__name__}"}
+
+    @staticmethod
+    def _store_call_now(db: Session, *, run, sequence: int, item: dict[str, Any]) -> None:
+        try:
+            storage.persist_tool_call(db, run=run, sequence=sequence, item=item)
+            db.commit()
+        except Exception:  # noqa: BLE001 - the final step stores any call not stored here
+            logger.exception("Agent tool call %s of run %s could not be stored as it ran", sequence, run.id)
+            db.rollback()
+
+    @staticmethod
+    def _record_stopped_run(db: Session, *, run, trace: list[dict[str, Any]]) -> None:
+        """A cancelled or failed run keeps the calls it made and what they returned."""
+        try:
+            storage.persist_tool_trace(db, run=run, trace=trace, skip_existing=True)
+            run_record.persist_call_facts(db, run=run, trace=trace, answer=None, artifacts=None, messages=None)
+        except Exception:  # noqa: BLE001
+            logger.exception("Run record of stopped run %s could not be completed", run.id)
 
     def _resolve_thread(self, db: Session, *, user: User, request: AgentMessageRequest) -> AgentThread:
         if request.thread_id:

@@ -2013,6 +2013,9 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         try:
             with (context.ledger_session_factory or _financial_session)() as db:
                 data = getattr(phone_tools, func_name)(db.connection(), uuid.UUID(context.case_id), **kwargs)
+                # The run record names the phone generation read, from the same snapshot (agent-record A).
+                from services.agent.run_record import phone_generation
+                generation = phone_generation(db.connection(), context.case_id)
         except ValueError as exc:
             return context.result(tool_name, {"available": False, "reason": str(exc)},
                 summary=str(exc), status="error", error=str(exc))
@@ -2023,10 +2026,10 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 summary="The phones could not be read; no partial result was returned.", status="error",
                 error="The phone records could not be read.")
         if data.get("available") is False:
-            return context.result(tool_name, data, summary=str(data.get("reason")))
+            return {**context.result(tool_name, data, summary=str(data.get("reason"))), "phone_generation": generation}
         summary = " ".join(x for x in (data.get("coverage"), data.get("limitation"), data.get("unconfirmed_sentence"),
                                        data.get("group_sentence")) if x)
-        return context.result(tool_name, data, summary=summary or "Read the phones.")
+        return {**context.result(tool_name, data, summary=summary or "Read the phones."), "phone_generation": generation}
 
     def read_casework(tool_name: str, func_name: str, **kwargs) -> dict[str, Any]:
         """Casework and dossiers with their links cited (07 6.4 item 15, CO-11). The case id is the run's."""

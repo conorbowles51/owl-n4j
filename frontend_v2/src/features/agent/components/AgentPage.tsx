@@ -63,6 +63,7 @@ import { Badge } from "@/components/ui/badge"
 import { AgentCitationProvider, AgentMarkdown } from "./AgentCitations"
 import { AgentArtifactNotes } from "./AgentArtifactNotes"
 import { AcceptAnswerIntoAssessment } from "./AcceptAnswerIntoAssessment"
+import { AgentRunRecordPanel } from "./AgentRunRecordPanel"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { downloadProtectedFile } from "@/lib/protected-file"
@@ -278,6 +279,7 @@ function storedToClientMessage(message: AgentStoredMessage): AgentClientMessage 
     clarification: message.clarification ?? null,
     toolTraceSummary: normalizeStoredToolTrace(message.tool_trace_summary),
     createdAt: message.created_at,
+    runId: message.run_id ?? null,
   }
 }
 
@@ -883,6 +885,7 @@ export function AgentPage() {
                 clarification: response.clarification ?? null,
                 toolTraceSummary: response.tool_trace,
                 createdAt: response.created_at,
+                runId: response.run_id,
               },
             ])
             setPendingClarification(null)
@@ -1265,6 +1268,9 @@ function MessageBubble({
         </div>
         {caseId && !message.pending && !showClarificationPanel && message.content.trim() && SAVED_MESSAGE_ID.test(message.id) ? (
           <AcceptAnswerIntoAssessment caseId={caseId} messageId={message.id} />
+        ) : null}
+        {!message.pending && message.runId && SAVED_MESSAGE_ID.test(message.runId) ? (
+          <AgentRunRecordPanel runId={message.runId} />
         ) : null}
       </div>
     </article>
