@@ -2168,7 +2168,6 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
   `extraInfos` is measured (17.2).
 - Pinned versions of ALEAPP or iLEAPP, the exact LAVA output schema of that version, and how to disable all network
   features in it.
-- Choice and licences of the local transcription, translation, language-identification and image-embedding models.
 - Whether SMS receive times on recipient phones are device-stamped or service-centre-stamped (affects clock offset
   from SMS pairs, M-2c).
 - Gates that need 02's identities, the ledger or the case vocabulary: M-2b to M-2d (`cb-crossev`); M-7a, M-9b, M-11b,

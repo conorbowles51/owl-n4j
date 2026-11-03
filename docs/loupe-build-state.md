@@ -1,3 +1,49 @@
+## 3 November: phone media, stage I (cb-media): local OCR, transcription, translation, image search, media spread
+
+**Live:** d2e425db holds A to F, M-5 to M-7, CO-18 and the exact tier of C; the release after it adds translation,
+image search and the phone summary's Media link (full suites on bc768e48: unittest 8,058 OK, pytest 2,417 passed with
+the two quarantined docx failures).
+
+- **Media entry point (05-S12).** `evidence-engine/app/pipeline/phone_media.py` sniffs a file's kind from its bytes
+  (the name is used only when the bytes name nothing) and holds the provider policy (local only) and model identity.
+  `backend/services/phone/derive.py` runs Tesseract and Whisper `base` in a child process that refuses every
+  outbound connection before it loads anything. Every machine text records model id, version, weights SHA-256,
+  parameters, input SHA-256, provider, sniffed container, language and duration.
+- **Measured.** M-17.4: voice notes 31.57, 32.51 and 22.26 hours in the three corpus cases (05 17.4,
+  `measurements/m17_4-media.json`). Whisper base real-time factor 0.34 on this server. Live message languages
+  (4,117 bodies of 25+ characters): English 57.7%, Spanish 17.5%, Yoruba 7.1%. M-17.6: attachment-linked images
+  with bytes 2,165 / 2,165 / 2,109 per case (gate met).
+- **Archive-kept files (F).** A phone file inside an uploaded ZIP or UFDR opens from its recorded local-header
+  offset (`services/phone/archive_member.py`), CRC and size checked, seekable for byte ranges (206). Live: 29,115
+  entry positions backfilled; all 28,937 zip-kept files open signed in over http (206, one byte each).
+- **Machine text in use (M-6, M-7, CO-18).** A person corrects (reason required) or confirms; the original stays
+  visible; only corrected text is searched, quoted, exported and used. The text in use is `derive.IN_USE_ORDER`.
+  An export asks "Listen and confirm, or keep it marked" before a PDF prints unconfirmed machine text; RSMF carries
+  no machine text or translation and its cover says so. A transcript accepted into a dossier assessment is
+  `ai_assisted` with its reading cited.
+- **Batch reading (M-5).** "Transcribe all N voice notes in this scope" with true counts and the left-out reasons;
+  progress in the job tray on the Media toolbar (the app has no global header). A reading a person asks for one at a
+  time jumps the batch and survives its cancel.
+- **Media spread, exact tier (approach 8).** `services/phone/media_spread.py`, Media spread screen. Live cases each
+  hold one phone, so live shows no cross-phone groups; the 4-phone synthetic case shows 5. The perceptual tier's
+  gate is not met (7.1% of matched pairs differ by MD5, below a quarter; 05 11.6) and it is not built.
+- **Translation (05 17.5).** `services/phone/translate.py`: lingua language identification, MarianMT OPUS-MT
+  es-en and yo-en at pinned revisions (Apache-2.0 cards, CC-BY 4.0 upstream), one sentence at a time, beside the
+  original; English and unsure text are not translated; a translation made from text corrected since is shown as
+  made from an earlier text and not searched. Models: `python -m services.phone.translate_models` as the service
+  user (installed 3 Nov in `~conorbowles51/.cache/loupe-mt`).
+- **Image search (05 17.6).** `services/phone/image_search.py`: SigLIP 2 base (Apache-2.0; the LAION CLIP card
+  puts deployed use out of scope), vectors per case, content hash and weights; an indexing job per case with true
+  counts; search scores in chunks with a running top list (25.5 MB peak on 35,000 vectors). Model:
+  `python -m services.phone.image_search_models` (installed in `~conorbowles51/.cache/loupe-image`).
+
+**Standing decisions.** Job tray on the Media toolbar (reverse: a global header exists). Language confidence
+threshold 0.5 is a chosen setting, not measured (reverse: a measured false-translation rate). Perceptual tier not
+built (reverse: a case with 20+ image pairs with MD5 on both sides of which a quarter differ).
+
+**Test templates (server).** PostgreSQL `cbs-pgtest` on 127.0.0.1:55444: `loupe_tpl_cbm12` is at
+`20261103_phone_image_search`.
+
 ## 2 November: phone screens, stage E (cb-screens), item C built (not yet released)
 
 Commits on `cb/cb-screens` after the A+B release: c51bb0fa (Conversations backend: thread list, People, review marks,
