@@ -662,6 +662,25 @@ per phone on 11 phones; S3 email up to 4,899 (P10); S9 app messages up to 502 (P
 P13 (3,951, 21 distinct `ServiceIdentifier`) and P14 (3,089, 19). M-1a against the reviewed directory and M-1c
 to M-1e need the ledger and the Loupe case: `cb-crossev` measures them before this gate is marked.
 
+**Loupe result (`measurements` m1.1 on live, release 6538f238, 2026-11-03; `measurements/g/`):**
+
+| Case | Phones; ledger rows | M-1a notifications / distinct `ServiceIdentifier` / in the reviewed directory | M-1b | M-1c | M-1d | M-1e | Gate |
+|---|---|---|---|---|---|---|---|
+| reference 88e01b57 (C3) | 1; 0 | 0 / 0 / 0 | S3 34 | not measurable: no ledger | not measurable | not measurable | inconclusive |
+| reference 7006c0ab (C9) | 1; 0 | 0 / 0 / 0 | 0 | not measurable: no ledger | not measurable | not measurable | inconclusive |
+| reference 574a9752 (C9) | 1; 0 | 0 / 0 / 0 | 0 | not measurable: no ledger | not measurable | not measurable | inconclusive |
+| phones-only 4aa79795 (synthetic) | 3; 0 | 0 / 0 / 0 | 0 | not measurable: no ledger | not measurable | not measurable | inconclusive |
+| training d9945277 (synthetic) | 2; 65 | 16 / 1 / 0 | S1 16 | 16 bound, 0 ambiguous, 0 unbound | 16 corroborated; lag 0 days on all 16 | `possible_statement` transactional 1 | do not build (synthetic) |
+
+The directory holds 11 entries and none is reviewed (a review is a person's act), so M-1a against the reviewed
+directory is 0 on every case; the training alerts bind by the account ending, not by the directory. No live case
+holds both real phones and a ledger: the three reference cases hold one phone each and no financial records, and
+the 3-phone case with notifications (P13, P14) is not loaded in Loupe. Gate on real data: **not measurable: no case
+with both**. The build stays (05-S3). The training figures are synthetic: they show the path works end to end
+(each alert linked to its ledger row) and are not a basis for the gate. The reference cases are measured
+read-only and not stored in `phone_analysis_measurements`, because writes on them are outside this job's run
+rules; the two synthetic cases are stored.
+
 ### 4.8 Dependencies
 
 01 (records, locators, file ids of the production), 02 (message view; owner identity; identifier registry
@@ -828,6 +847,13 @@ results; the local three-phone figure (18) alone is **inconclusive**.
 across 8 phone pairs (P04 and P08 259, P04 and P06 74, P05 and P08 73), 82 of them with `deleted_state` differing
 between the copies; 3-phone case 571 (P13 and P14 564). Gate **changed**: the volume exists; the tiered count
 (`matched_strong`, M-2b to M-2d) needs 02's identities and is measured by `cb-crossev`.
+
+**Loupe result (`measurements` m2.1 on live, 2026-11-03; `measurements/g/`):** M-2b to M-2d are **not measurable**
+on real data: each live case with a real phone holds one phone (no pair). The tiers (`matched_strong`) are approach
+2's and approach 2 is not built, so M-2b by tier is not measurable on any case. Untiered, on the synthetic cases:
+training (1 pair) M-2a 1 owner identity seen on the other phone and 6 shared parties, M-2b 0 body-and-time pairs,
+M-2d 0; phones-only (3 pairs) shared parties 6 to 8, M-2b 0, M-2d 0. The A3 server figures above (494 and 82; 571)
+stand as the volume evidence; the gate stays **changed** until approach 2's tiers exist.
 
 ### 5.7 Dependencies
 
@@ -1311,6 +1337,11 @@ unmatched; content not used). The corpus holds no 20 such media pairs: with 5.3.
 have an MD5 on both sides and 1 of 14 (7.1 percent) differs (44 lack the file on one side); with the loosest rule
 tried (receiver side only), 3 of 17 (17.6 percent). Images alone: 1 of 3 and 3 of 6. Reverse if a case yields at
 least 20 image pairs with an MD5 on both sides of which at least a quarter differ.
+
+**Loupe result (`measurements` m8.1 on live, 2026-11-03; `measurements/g/`):** M-8a on the live reference phones:
+C3 2,497 and C9 3,017 attachment-linked files with an MD5; M-8b 0 groups spanning phones (one phone per case).
+Synthetic cases: 5 groups spanning phones in each. M-8c on the live cases adds nothing to the corpus result above:
+no live case holds two real phones.
 
 ### 11.7 Dependencies
 
