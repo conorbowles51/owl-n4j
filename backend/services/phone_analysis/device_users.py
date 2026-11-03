@@ -86,9 +86,13 @@ def markers(conn, ext) -> dict:
         n = _norm(kind, value)
         if n:
             out[(kind, hashlib.sha256(("%s|%s" % (kind, n)).encode()).hexdigest())].append(uid)
-    for r in conn.execute(text("SELECT identity_key FROM phone_owner_candidates WHERE extraction_id = :e AND "
-                               "identity_key LIKE 'phone:+%'"), {"e": ext}):
-        add("owner_number", r[0], None)
+    # 19.S8-e: the phone's numbers as 02 computes its owner: header (tier 1) numbers, else tier 2's top
+    cands = conn.execute(text(
+        "SELECT identity_key, tier FROM pv_owner_candidate WHERE extraction_id = :e AND candidate_kind = 'number' AND "
+        "identity_key LIKE 'phone:+%' ORDER BY tier, occurrences DESC, identity_key"), {"e": ext}).fetchall()
+    tier1 = [r[0] for r in cands if r[1] == 1]
+    for key in tier1 or [r[0] for r in cands if r[1] == 2][:1]:
+        add("owner_number", key, None)
     try:
         from services.phone import identities
         items = identities.header_items(conn, ext)
@@ -189,8 +193,8 @@ def coverage(conn, case_id) -> dict:
 
 
 def _indicators(conn, ext) -> dict:
-    owners = int(conn.execute(text("SELECT count(DISTINCT identity_key) FROM phone_owner_candidates WHERE extraction_id "
-                                   "= :e AND identity_key LIKE 'phone:+%'"), {"e": ext}).scalar() or 0)
+    owners = int(conn.execute(text("SELECT count(DISTINCT identity_key) FROM pv_owner_candidate WHERE extraction_id "
+                                   "= :e AND tier = 1 AND identity_key LIKE 'phone:+%'"), {"e": ext}).scalar() or 0)
     users = FV.field_values(conn, ext, ("User",), ("UserType", "Name", "Identifier"))
     acc = FV.field_values(conn, ext, ("UserAccount",), ("ServiceType", "ServiceIdentifier", "Username"))
     per_service = defaultdict(set)
@@ -267,13 +271,13 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                                 recs.append({"extraction_id": e, "record_uid": uid, "field_path": k[0],
                                              "role": "marker_" + k[0]})
                 best = min((STRENGTH[k] for k in by_kind), key=["strong", "medium", "weak"].index)
-                if not recs:
-                    for e in (x, y):
-                        rec = next(iter(conn.execute(text("SELECT record_uid::text FROM pv_record WHERE extraction_id "
-                                                          "= :e ORDER BY ordinal LIMIT 1"), {"e": e})), None)
-                        if rec:
-                            recs.append({"extraction_id": e, "record_uid": rec[0], "field_path": "pair:markers:%s"
-                                         % (x if e == y else y), "role": "phone"})
+                # the pair's own anchor always: two pairs can rest on one phone's same marker record (19.S8-d)
+                for e in (x, y):
+                    rec = next(iter(conn.execute(text("SELECT record_uid::text FROM pv_record WHERE extraction_id "
+                                                      "= :e ORDER BY ordinal LIMIT 1"), {"e": e})), None)
+                    if rec:
+                        recs.append({"extraction_id": e, "record_uid": rec[0], "field_path": "pair:markers:%s"
+                                     % (x if e == y else y), "role": "phone"})
                 if recs:
                     counts["pairs_with_markers"] += 1
                     out.append({

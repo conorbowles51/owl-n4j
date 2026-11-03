@@ -234,3 +234,49 @@ def test_measurement_m3_counts_reasons_and_absent_references(engine):
     assert result["m3c_deletion_reasons"] == {"UserDeleted": 1}
     assert result["m3d_referenced_absent"] == {label: 1}
     assert gate == "build"  # M-3d non-zero on a phone (6.6)
+
+
+@needs_template
+def test_deleted_concealment_app_and_deleted_events_keep_their_own_keys(engine):
+    """Review finding: a deleted concealment app, wipe or power-off record gave a deleted_record result and a context
+    result on the same record with no field path, so the run failed. The context results now rest on the field that
+    makes them (Categories, EventType, Event)."""
+    F.register(D)
+    with engine.begin() as c:
+        case = make_case(c)
+        ext, _ = phone(c, case, events=[_m(at(2023, 3, 2, 9), ANA, "kept")])
+        _record(c, case, ext, 2000, "DeviceEvent", [("EventType", "DeviceEventTypes", "Wipe")], deleted="Deleted",
+                times=[("StartTime", at(2023, 4, 1))])
+        _record(c, case, ext, 2001, "InstalledApplication", [("Categories", "String", "HideFilesPictures")],
+                deleted="Deleted", times=[("InstallDate", at(2023, 2, 1))])
+        _record(c, case, ext, 2002, "PoweringEvent", [("Event", "PowerEventType", "Off")], deleted="Deleted",
+                times=[("TimeStamp", at(2023, 4, 2))])
+        run, _ = F.request_run(c, case, "deletion_timeline", None, "synthetic@example.org")
+    assert F.execute(engine, uuid.UUID(run["id"]))["status"] == "completed"
+    with engine.connect() as c:
+        assert F.results(c, case, run["id"], kind="deleted_record")["total"] == 3
+        for kind in ("wipe", "concealment_app", "power_off"):
+            assert F.results(c, case, run["id"], kind=kind)["total"] == 1
+
+
+@needs_template
+def test_one_deletion_against_a_zero_baseline_is_not_selective_clearing(engine):
+    """Review finding: when the app's other conversations hold no deletion the baseline was 0, so one deletion in a
+    20-message conversation scored p = 0. The baseline is now the rule-of-three upper bound (19.S6-f); a fully
+    cleared conversation is still found."""
+    base = at(2023, 1, 1)
+    others = [_m(base + timedelta(hours=i, minutes=30), BEN, "other %d" % i, thread="o%d" % (i % 5))
+              for i in range(500)]
+    one = [_m(base + timedelta(hours=i), ANA, "one %d" % i, thread="one", deleted="Deleted" if i == 0 else "Intact")
+           for i in range(20)]
+    every = [_m(base + timedelta(hours=i, minutes=10), ANA, "all %d" % i, thread="all", deleted="Deleted")
+             for i in range(20)]
+    with engine.begin() as c:
+        case = make_case(c)
+        phone(c, case, label="C1", events=one + others)
+        phone(c, case, label="C2", owner="phone:+12025550111", events=every + others)
+    res, _ = _run(engine, case)
+    sel = _kind(res, "selective_clearing")
+    assert [(s["measures"]["phone_label"], s["measures"]["thread_key"].rsplit(":", 1)[-1]) for s in sel] == [
+        ("C2", "all")]
+    assert sel[0]["measures"]["baseline_share"] == 0.006

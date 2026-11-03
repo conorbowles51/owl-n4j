@@ -94,7 +94,7 @@ def test_signs_of_more_than_one_user_are_listed_not_scored(engine):
         case = make_case(c)
         ext, _ = phone(c, case, events=[])
         c.execute(text("INSERT INTO phone_owner_candidates (case_id, extraction_id, candidate_kind, identity_key, tier, "
-                       "occurrences, basis, generation) VALUES (:c, :e, 'number', 'phone:+12025550199', 2, 1, "
+                       "occurrences, basis, generation) VALUES (:c, :e, 'number', 'phone:+12025550199', 1, 1, "
                        "'extracted', 1)"), {"c": case, "e": ext})
         record(c, case, ext, 500, "User", [("UserType", "UserType", "Owner")])
         record(c, case, ext, 501, "User", [("UserType", "UserType", "Guest")])
@@ -103,3 +103,41 @@ def test_signs_of_more_than_one_user_are_listed_not_scored(engine):
     (r,) = [r for r in res if r["kind"] == "more_than_one_user"]
     assert r["measures"]["signs"] == ["2 owner phone numbers", "2 device user records"]
     assert r["strength"] == "indicators"
+
+
+@needs_template
+def test_two_pairs_resting_on_one_phones_sim_record_keep_their_own_keys(engine):
+    """Review finding: X holds the ICCID in a SIM record, Y and Z only in their report headers. Pairs (X,Y) and
+    (X,Z) both rested on X's SIM record alone and the run failed. Each pair now carries its own anchor."""
+    F.register(U)
+    with engine.begin() as c:
+        case = make_case(c)
+        x, _ = phone(c, case, label="C1", events=[dict(kind="message", instant=at(2023, 1, 2), body="hi", thread="t", parties=[])])
+        y, _ = phone(c, case, label="C2", owner="phone:+12025550111", events=[dict(kind="message", instant=at(2023, 1, 2), body="hi", thread="t", parties=[])])
+        z, _ = phone(c, case, label="C3", owner="phone:+12025550122", events=[dict(kind="message", instant=at(2023, 1, 2), body="hi", thread="t", parties=[])])
+        record(c, case, x, 50, "SIMData", fields=[("Name", "String", "ICCID"),
+                                                  ("Value", "String", "89441000000000000001")])
+        _iccid(c, y, "89441000000000000001")
+        _iccid(c, z, "89441000000000000001")
+        run, _ = F.request_run(c, case, "device_users", None, "synthetic@example.org")
+    assert F.execute(engine, uuid.UUID(run["id"]))["status"] == "completed"
+    with engine.connect() as c:
+        page = F.results(c, case, run["id"], kind="shared_markers")
+    assert page["total"] == 3
+
+
+@needs_template
+def test_owner_numbers_count_only_the_current_generation_and_extracted_tier(engine):
+    """Review finding: owner numbers were read from the table, so an earlier generation's or an inferred (tier 2)
+    number counted as an owner number. They are now read from the current-generation view at tier 1."""
+    with engine.begin() as c:
+        case = make_case(c)
+        x, _ = phone(c, case, label="C1", events=[])
+        for key, tier, gen in (("phone:+12025550188", 2, 1), ("phone:+12025550199", 1, 0)):
+            c.execute(text(
+                "INSERT INTO phone_owner_candidates (case_id, extraction_id, candidate_kind, identity_key, tier, "
+                "occurrences, basis, generation) VALUES (:c, :e, 'number', :k, :t, 1, 'inferred', :g)"),
+                {"c": case, "e": x, "k": key, "t": tier, "g": gen})
+    with engine.connect() as c:
+        assert U._indicators(c, x)["owner_numbers"] == 1
+        assert len([k for k in U.markers(c, x) if k[0] == "owner_number"]) == 1

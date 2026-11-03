@@ -319,7 +319,9 @@ def analyse_phone(conn, ext, label, params, counts) -> list:
         base_n = app_n - n
         if base_n <= 0:
             continue
-        d0 = (app_k - k) / base_n
+        # 19.S6-f: with no unexplained deletion elsewhere in the app the baseline is its 95 percent upper bound
+        # (rule of three), never 0, so a single deletion is not "significant" on a zero baseline
+        d0 = (app_k - k) / base_n if app_k > k else min(1.0, 3 / base_n)
         tested.append((key, k, n, explained_n, d0, binomial_upper_tail(k, n, d0)))
     qs = benjamini_hochberg([t[5] for t in tested])
     thread_rec = {r[0]: str(r[1]) for r in conn.execute(text(
@@ -403,7 +405,7 @@ def analyse_phone(conn, ext, label, params, counts) -> list:
                                "undercuts": [_d("synced_attribution", "Installed is not used: the records do not "
                                                 "show the app was opened.")]},
                 "period_start": when, "period_end": t.get("DeletedDate") or when,
-                "records": [_rec(ext, uid, "app")]})
+                "records": [_rec(ext, uid, "app", "Categories")]})
         if t.get("DeletedDate"):
             counts["apps_removed"] += 1
             out.append({
@@ -426,14 +428,14 @@ def analyse_phone(conn, ext, label, params, counts) -> list:
                                "undercuts": [_d("wipe_scope_unknown", "Which records a wipe would clear is not "
                                                 "established, so it is shown beside deletions and never used to "
                                                 "date them.")]},
-                "period_start": when, "period_end": when, "records": [_rec(ext, uid, "event")]})
+                "period_start": when, "period_end": when, "records": [_rec(ext, uid, "event", "EventType")]})
         elif v["model_type"] == "PoweringEvent" and any(str(x).lower() == "off" for x in v["values"].get("Event", ())):
             counts["power_offs"] += 1
             out.append({
                 "kind": "power_off", "strength": "event_recorded", "measures": {"phone_label": label, "instant": when},
                 "directions": {"supports": [_d("event_recorded", "The phone recorded being switched off.", [uid])],
                                "undercuts": []},
-                "period_start": when, "period_end": when, "records": [_rec(ext, uid, "event")]})
+                "period_start": when, "period_end": when, "records": [_rec(ext, uid, "event", "Event")]})
     scr = defaultdict(list)
     for r in conn.execute(text(
             "SELECT p.document_index, p.parent_ordinal FROM phone_records p WHERE p.extraction_id = :e AND "

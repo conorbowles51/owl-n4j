@@ -20,7 +20,7 @@ const RUN = { id: "run-11", approach: "relationships", status: "completed", prog
 const REL = {
   id: "r1", kind: "relationship", strength: "identity", label: "Lead for enquiry", decision: null, decisions: [],
   period_start: "2023-01-02T12:00:00Z", period_end: "2023-01-16T21:00:00Z",
-  measures: { phone_label: "C1", group: "phone:+12025550143", identity_keys: ["phone:+12025550143"], names_here: ["Ana S"],
+  measures: { phone_label: "C1", extraction_id: "ext-1", group: "phone:+12025550143", identity_keys: ["phone:+12025550143"], names_here: ["Ana S"],
     names_elsewhere: { C2: ["Mum"] }, saved: null, modified: null, contact_cards: 1, communications: 30, untimed: 0,
     first: { message: "2023-01-02T12:00:00Z", call: null, email: null }, last: { message: "2023-01-16T21:00:00Z", call: null, email: null }, monthly: {} },
   directions: { supports: [], undercuts: [] },
@@ -56,7 +56,7 @@ describe("Relationships over time (AP-1, 05 14.8)", () => {
     expect(row).toHaveTextContent("C2 calls them Mum")
     expect(row).toHaveTextContent("Saved as a contact; the phone recorded no saved time.")
     expect(within(row).getByRole("link", { name: "Open their calls and messages" }).getAttribute("href"))
-      .toBe("/cases/c1/conversations?tab=people&people=phone%3A%2B12025550143")
+      .toBe("/cases/c1/conversations?tab=people&people=phone%3A%2B12025550143&phones=ext-1")
   })
 
   it("words a fall in contact with its rates and never a reason", () => {

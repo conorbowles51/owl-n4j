@@ -17,8 +17,9 @@ export default function RelationshipsPage() {
       collectLabel={(r) => relationshipWords(r).title} emptyWords="No calls, messages or contacts with anyone on the phones in this case."
       extra={<p className="text-sm">To test a statement such as "no contact after a date", use <Link className="underline" to={`/cases/${caseId}/phone-patterns`}>Check a statement</Link> in Patterns.</p>}
       openLink={(r) => {
-        const keys = ((r.measures as M).identity_keys as string[]) || []
-        return keys.length ? { to: `/cases/${encodeURIComponent(caseId)}/conversations?${new URLSearchParams({ tab: "people", people: keys.join(",") }).toString()}`, label: "Open their calls and messages" } : null
+        const keys = (r.measures.identity_keys as string[] | undefined) || []
+        const ext = r.measures.extraction_id as string | undefined
+        return keys.length ? { to: `/cases/${encodeURIComponent(caseId)}/conversations?${new URLSearchParams({ tab: "people", people: keys.join(","), ...(ext ? { phones: ext } : {}) }).toString()}`, label: "Open their calls and messages" } : null
       }} />
   )
 }

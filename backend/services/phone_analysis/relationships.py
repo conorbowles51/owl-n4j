@@ -203,15 +203,16 @@ def analyse_phone(conn, case_id, ext, label, people, names_by_group, params, cou
             if e is not None:
                 recs.append({"extraction_id": ext, "record_uid": e[3], "field_path": anchor_path,
                              "role": "%s_communication" % which})
-        if not recs:
-            recs.append({"extraction_id": ext, "record_uid": evs[0][3], "field_path": anchor_path,
-                         "role": "untimed_communication"})
+        if not timed:
+            # one card can list several identities (19.S9-f): the group's own locator keeps its key unique
+            recs.append({"extraction_id": ext, "record_uid": cs[0] if cs else evs[0][3], "field_path": anchor_path,
+                         "role": "person" if cs else "untimed_communication"})
         counts["relationships"] += 1
         period = (min(t for t, *_ in timed), max(t for t, *_ in timed)) if timed else (
             (created[0], created[0]) if created else (None, None))
         out.append({
             "kind": "relationship", "strength": "reviewed_person" if person[2] else "identity",
-            "measures": {"phone_label": label, "group": g, "display": person[1], "person_id": person[2],
+            "measures": {"phone_label": label, "extraction_id": ext, "group": g, "display": person[1], "person_id": person[2],
                          "identity_keys": sorted(keys_of[g]), "names_here": here, "names_elsewhere": elsewhere,
                          "saved": created[0] if created else None, "modified": modified[-1] if modified else None,
                          "contact_cards": len(cs), "communications": len(evs), "untimed": len(evs) - len(timed),
@@ -237,7 +238,7 @@ def analyse_phone(conn, case_id, ext, label, people, names_by_group, params, cou
                 rb, ra = sum(seg_before) / len(seg_before), sum(seg_after) / len(seg_after)
                 out.append({
                     "kind": "volume_change", "strength": "rise" if ra > rb else "fall",
-                    "measures": {"phone_label": label, "group": g, "display": person[1], "week_start": at.isoformat(),
+                    "measures": {"phone_label": label, "extraction_id": ext, "group": g, "display": person[1], "week_start": at.isoformat(),
                                  "rate_before": round(rb, 3), "rate_after": round(ra, 3),
                                  "weeks_before": len(seg_before), "weeks_after": len(seg_after),
                                  "series_weeks": weeks},

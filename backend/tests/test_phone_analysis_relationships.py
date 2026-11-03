@@ -96,3 +96,29 @@ def test_runs_through_the_framework_with_unique_keys_and_the_lead_label(engine):
     with engine.connect() as c:
         page = F.results(c, case, run["id"], kind="relationship")
     assert page["total"] == 2 and {i["label"] for i in page["items"]} == {"Lead for enquiry"}
+
+
+@needs_template
+def test_one_contact_card_listing_two_numbers_gives_two_results_with_their_own_keys(engine):
+    """Review finding: a card listing two numbers, neither with a timed communication, gave two results resting on
+    the card alone, so the run failed on "two results rest on the same records". Each group now carries its own
+    locator on the card. The link to Conversations is scoped to the row's phone."""
+    from tests.phone_streams_fixture import GEN, ensure_identity
+    F.register(R)
+    with engine.begin() as c:
+        case = make_case(c)
+        ext, _ = phone(c, case)
+        card = uuid.uuid4()
+        for j, key in enumerate((ANA, BEN)):
+            iid = ensure_identity(c, case, key)
+            c.execute(F.text(
+                "INSERT INTO phone_identity_sightings (sighting_uid, case_id, extraction_id, identity_id, identity_key, "
+                "record_uid, root_record_uid, card_record_uid, card_type, field_path, identifier_raw, context, "
+                "generation) VALUES (:s, :c, :e, :i, :k, :r, :r, :r, 'Contact', 'Entries', 'x', 'listed_on_card', :g)"),
+                {"s": uuid.uuid4(), "c": case, "e": ext, "i": iid, "k": key, "r": card, "g": GEN})
+        run, _ = F.request_run(c, case, "relationships", None, "synthetic@example.org")
+    assert F.execute(engine, uuid.UUID(run["id"]))["status"] == "completed"
+    with engine.connect() as c:
+        page = F.results(c, case, run["id"], kind="relationship")
+    assert page["total"] == 2
+    assert {i["measures"]["extraction_id"] for i in page["items"]} == {str(ext)}
