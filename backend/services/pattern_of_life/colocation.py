@@ -196,17 +196,16 @@ def create_run(conn, case_id, subj_a, subj_b, ea, eb, start, end, params, reques
     return rid
 
 
-def execute_run(conn, run_id) -> dict:
-    run = conn.execute(text("SELECT * FROM pol_colocation_run WHERE id = :i"), {"i": run_id}).mappings().one()
-    p = dict(DEFAULT_PARAMS, **run["params"])
-    conn.execute(text("UPDATE pol_colocation_run SET status = 'running' WHERE id = :i"), {"i": run_id})
-    sa, sb = run["subjects"]
-    ea, eb = [str(x) for x in sa["extraction_ids"]], [str(x) for x in sb["extraction_ids"]]
-    A = _observations(conn, ea, run["window_start"], run["window_end"], p["include_synced"])
-    B = _observations(conn, eb, run["window_start"], run["window_end"], p["include_synced"])
+def compute(conn, case_id, ea, eb, start, end, params, run_id=None) -> tuple:
+    """Every compared pair of two subjects' phones in [start, end) by the pair rule, without writing anything:
+    ``(items, counts, episodes)``. ``execute_run`` stores exactly these; the agent reads them directly."""
+    p = dict(DEFAULT_PARAMS, **(params or {}))
+    ea, eb = [str(x) for x in ea], [str(x) for x in eb]
+    A = _observations(conn, ea, start, end, p["include_synced"])
+    B = _observations(conn, eb, start, end, p["include_synced"])
     pairs = sweep_pairs(A, B, p)
-    pairs += _bssid_pairs(conn, run["case_id"], set(ea), set(eb), run["window_start"], run["window_end"], p)
-    pairs += _cell_pairs(conn, ea, eb, run["window_start"], run["window_end"], p)
+    pairs += _bssid_pairs(conn, case_id, set(ea), set(eb), start, end, p)
+    pairs += _cell_pairs(conn, ea, eb, start, end, p)
     items = []
     for n, (a, b, v) in enumerate(sorted(pairs, key=lambda x: (min(x[0]["start"], x[1]["start"]),
                                                                str(x[0].get("id") or x[0].get("ref")),
@@ -215,16 +214,24 @@ def execute_run(conn, run_id) -> dict:
                       "br": b.get("ref"), "at_utc": max(a["start"], b["start"]), "verdict": v["verdict"],
                       "d": v["distance_m"], "r": v["radii_sum_m"], "dt": v["dt_s"], "basis": v["basis"],
                       "tight": v["tight"], "assumed": v["assumed"], "flags": v["flags"]})
+    counts = {"pairs": len(items), "observations_a": len(A), "observations_b": len(B)}
+    for it in items:
+        counts[it["verdict"]] = counts.get(it["verdict"], 0) + 1
+        counts["basis:" + it["basis"]] = counts.get("basis:" + it["basis"], 0) + 1
+    return items, counts, episodes(items, p["episode_gap_s"])
+
+
+def execute_run(conn, run_id) -> dict:
+    run = conn.execute(text("SELECT * FROM pol_colocation_run WHERE id = :i"), {"i": run_id}).mappings().one()
+    conn.execute(text("UPDATE pol_colocation_run SET status = 'running' WHERE id = :i"), {"i": run_id})
+    sa, sb = run["subjects"]
+    items, counts, eps = compute(conn, run["case_id"], sa["extraction_ids"], sb["extraction_ids"],
+                                 run["window_start"], run["window_end"], run["params"], run_id=run_id)
     for i in range(0, len(items), 5000):
         conn.execute(text(
             "INSERT INTO pol_colocation_item (run_id, ordinal, a_observation_id, b_observation_id, a_ref, b_ref, at_utc, "
             "verdict, distance_m, radii_sum_m, dt_s, basis, tight, assumed, flags) VALUES (:run_id, :ordinal, :a, :b, "
             ":ar, :br, :at_utc, :verdict, :d, :r, :dt, :basis, :tight, :assumed, :flags)"), items[i:i + 5000])
-    counts = {"pairs": len(items), "observations_a": len(A), "observations_b": len(B)}
-    for it in items:
-        counts[it["verdict"]] = counts.get(it["verdict"], 0) + 1
-        counts["basis:" + it["basis"]] = counts.get("basis:" + it["basis"], 0) + 1
-    eps = episodes(items, p["episode_gap_s"])
     conn.execute(text("UPDATE pol_colocation_run SET status = 'done', finished_at = now(), counts = CAST(:c AS jsonb), "
                       "episodes = CAST(:e AS jsonb) WHERE id = :i"),
                  {"i": run_id, "c": json.dumps(counts), "e": json.dumps(eps, default=str)})

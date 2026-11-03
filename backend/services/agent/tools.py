@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import uuid
 import logging
 from contextlib import contextmanager
@@ -256,6 +257,11 @@ class PhoneMoneyArgs(BaseModel):
 class PhonePageArgs(BaseModel):
     offset: int = Field(0, ge=0)
     limit: int = Field(40, ge=1, le=100)
+
+
+def _phone_cross_tools():
+    from services.agent.phone_cross_tools import TOOLS
+    return TOOLS
 
 
 class PhoneRecordArgs(BaseModel):
@@ -1998,11 +2004,12 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
     def get_financial_coverage(**kwargs) -> dict[str, Any]:
         return read_ledger("get_financial_coverage", view="coverage", **kwargs)
 
-    def read_phones(tool_name: str, func_name: str, **kwargs) -> dict[str, Any]:
+    def read_phones(tool_name: str, func_name: str, module: str = "phone_tools", **kwargs) -> dict[str, Any]:
         """Read-only phone tools (07 section 7.1). The case id is the run's, never the model's."""
         if context.significant_scope:
             return scope_error(tool_name, "Phone analysis")
-        from services.agent import phone_tools
+        import importlib
+        phone_tools = importlib.import_module("services.agent.%s" % module)
         try:
             with (context.ledger_session_factory or _financial_session)() as db:
                 data = getattr(phone_tools, func_name)(db.connection(), uuid.UUID(context.case_id), **kwargs)
@@ -2725,6 +2732,9 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             description="One phone record in full, every field, by its record id or rec:// link.",
             args_schema=PhoneRecordArgs,
         ),
+        # agent-phones: phones read as the screens read them, and joined to money (phone_cross_tools.TOOLS)
+        *[wrap(functools.partial(read_phones, name, func, "phone_cross_tools"), name=name, description=desc,
+               args_schema=args) for name, func, args, desc in _phone_cross_tools()],
         wrap(
             get_map_locations,
             name="get_map_locations",
