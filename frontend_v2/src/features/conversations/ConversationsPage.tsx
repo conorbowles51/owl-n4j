@@ -22,6 +22,8 @@ import {
 } from "@/features/phones/api"
 import { liveCollectClient, undoCollect, type CollectLink, type CollectResult, type CollectTarget } from "@/features/phones/collect.api"
 import { MessageTranslation } from "@/features/phones/components/MessageTranslation"
+import { AcrossBadges, AcrossBadgesSource } from "@/features/phones/AcrossBadges"
+import { useAcrossBadges } from "@/features/phones/across-badges"
 import { PhoneRecordPanel } from "@/features/phones/components/RecordPanel"
 import { StreamList } from "@/features/phones/components/StreamList"
 import { useCollectTargets, useUsedIn } from "@/features/phones/hooks/use-collect"
@@ -201,6 +203,7 @@ export function ConversationsPage() {
     return { ids: out, complete }
   }, [stream])
   const { usedIn, refresh: refreshUsedIn } = useUsedIn(caseId, marked.ids, marked.complete)
+  const across = useAcrossBadges(caseId, stream)
   const filterWords = current ? `${current.title} on ${current.phone.label}` : view.people.length ? "Messages with the chosen people" : "Conversations"
   const freeze = useQuery({
     queryKey: ["phone-selection", streamFilter, selection.all],
@@ -654,6 +657,7 @@ export function ConversationsPage() {
               </Button>
             </div>
           )}
+          {streamFilter && <AcrossBadgesSource run={across.run} />}
           {streamFilter ? (
             <StreamList
               // A new thread, person or filter starts with nothing selected (review of 03-3: Select all carried over).
@@ -676,6 +680,7 @@ export function ConversationsPage() {
                 <MessageTranslation caseId={caseId} row={row} />
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   {usedIn[row.record_uid] && <span className="text-muted-foreground">{usedIn[row.record_uid]}</span>}
+                  <AcrossBadges caseId={caseId} badges={across.forRow(row)} />
                   {row.copies.count > 1 && !view.everyCopy && (
                     <>
                       <span>Found {fmt(row.copies.count)} times</span>

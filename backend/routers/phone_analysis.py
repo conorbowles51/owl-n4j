@@ -163,6 +163,23 @@ def kept(case_id: UUID = Query(...), limit: int = Query(50, ge=1, le=200), offse
     return K.list_kept(db.connection(), case_id, limit, offset)
 
 
+class AcrossBadgesBody(BaseModel):
+    case_id: UUID
+    record_uids: list[str] = Field(default_factory=list)
+
+
+@router.post("/across-badges")
+def across_badges(body: AcrossBadgesBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Approach 2's badge per message in Conversations (05 section 5.4), from the latest completed run. A read; POST
+    carries the list."""
+    from services.phone_analysis import across_badges as B
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    try:
+        return B.badges(db.connection(), body.case_id, body.record_uids)
+    except B.TooMany as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.post("/results/{result_id}/decisions")
 def decide(result_id: UUID, body: DecisionBody, db: Session = Depends(get_db),
            user: User = Depends(get_current_db_user)):
