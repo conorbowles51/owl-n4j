@@ -82,6 +82,14 @@ class DossierAssessment(Base, TimestampMixin):
         index=True,
     )
 
+    # CO-18 (agent): an assessment accepted from an agent answer names that answer
+    agent_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_messages.id", ondelete="SET NULL", name="fk_dossier_assessments_agent_message"),
+        nullable=True,
+        index=True,
+    )
+
     dossier = relationship("CaseProfile", foreign_keys=[dossier_id])
     author = relationship("User", foreign_keys=[author_user_id])
     updated_by = relationship("User", foreign_keys=[updated_by_user_id])

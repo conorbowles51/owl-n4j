@@ -153,7 +153,16 @@ def _serialize_link(item: DossierLink) -> dict[str, Any]:
 
 
 def _read_by(db: Session, item: DossierAssessment) -> str | None:
-    """CO-18: "Read by <model>, accepted by <name>" for an assessment accepted from machine text."""
+    """CO-18: "Read by <model>, accepted by <name>" for an assessment accepted from machine text or an agent
+    answer."""
+    if getattr(item, "agent_message_id", None):
+        from postgres.models.agent import AgentMessage
+        from postgres.models.user import User as _User
+        m = db.get(AgentMessage, item.agent_message_id)
+        who = db.get(_User, item.author_user_id) if item.author_user_id else None
+        model = (m.model_id if m else None) or (m.model_provider if m else None) or "the agent"
+        return "Read by %s, accepted by %s" % (model, (getattr(who, "name", None) or getattr(who, "email", None)
+                                                       or "a person"))
     if not getattr(item, "derived_text_id", None):
         return None
     from postgres.models.phone_derived import PhoneDerivedText
@@ -176,6 +185,7 @@ def _serialize_assessment(db: Session, item: DossierAssessment) -> dict[str, Any
         "provenance_type": item.provenance_type,
         "generated_output_id": str(item.generated_output_id) if item.generated_output_id else None,
         "derived_text_id": str(item.derived_text_id) if getattr(item, "derived_text_id", None) else None,
+        "agent_message_id": str(item.agent_message_id) if getattr(item, "agent_message_id", None) else None,
         "read_by": _read_by(db, item),
         "created_at": _dt(item.created_at), "updated_at": _dt(item.updated_at),
         "supporting_links": [
@@ -867,6 +877,7 @@ def create_assessment(
         provenance_type=_text(data.get("provenance_type")) or "investigator",
         generated_output_id=data.get("generated_output_id"),
         derived_text_id=data.get("derived_text_id"),
+        agent_message_id=data.get("agent_message_id"),
     )
     db.add(assessment); db.flush()
     for raw in data.get("supporting_links") or []:

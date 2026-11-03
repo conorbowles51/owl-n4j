@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from postgres.models.user import User
@@ -216,3 +217,32 @@ def export_agent_artifact(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except CaseAccessDenied as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+class AcceptAnswerBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    dossier_id: UUID
+    category: str = Field(min_length=1, max_length=128)
+
+
+@router.post("/messages/{message_id}/accept-into-assessment", status_code=201)
+def accept_answer_into_assessment(message_id: UUID, body: AcceptAnswerBody, db: Session = Depends(get_db),
+                                  user: User = Depends(get_current_db_user)):
+    """CO-18 (agent): a person accepts an agent answer into a dossier assessment, stored ai_assisted with "Read by
+    <model>, accepted by <name>"; the records the answer cites become its supporting links."""
+    from routers.case_access import authorize_case
+    from services.agent import accept
+    from services.dossier_service import DossierNotFound
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        out = accept.accept_answer_into_assessment(db, case_id=body.case_id, message_id=message_id,
+                                                   dossier_id=body.dossier_id, category=body.category, user=user)
+        db.commit()
+        return out
+    except (LookupError, DossierNotFound) as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))

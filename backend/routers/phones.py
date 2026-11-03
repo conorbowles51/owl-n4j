@@ -139,6 +139,65 @@ def financial_presence(case_id: UUID = Query(...), db: Session = Depends(get_db)
     return money_presence.presence(db.connection(), case_id)
 
 
+@router.get("/crossings/payment/{transaction_id}")
+def crossing_payment(transaction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                     user: User = Depends(get_current_db_user)):
+    """XF-1: phone activity around a payment, its counterparty's linked people, the payment date and a day either
+    side, each count equal to the Conversations page it opens."""
+    from services.phone import crossings
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        return crossings.payment_activity(db, case_id, transaction_id)
+    except crossings.NotInCase as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/crossings/payment/{transaction_id}/payee-dossier", status_code=201)
+def crossing_payee_dossier(transaction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                           user: User = Depends(get_current_db_user)):
+    """XF-1: a payee that exists only on payments gets a person dossier, unlinked until a person links it."""
+    from services.phone import crossings
+    authorize_case(db, case_id, user, ("case", "edit"))
+    try:
+        out = crossings.create_payee_dossier(db, case_id, transaction_id, user)
+        db.commit()
+        return out
+    except crossings.NotInCase as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/crossings/person")
+def crossing_person(case_id: UUID = Query(...), dossier_id: Optional[UUID] = Query(None),
+                    entity_key: Optional[str] = Query(None, max_length=512), db: Session = Depends(get_db),
+                    user: User = Depends(get_current_db_user)):
+    """XF-2: a Graph person (its dossier) to its messages and calls on the phones, the count Conversations shows."""
+    from services.phone import crossings
+    authorize_case(db, case_id, user, ("case", "view"))
+    if not dossier_id and not entity_key:
+        raise HTTPException(status_code=422, detail="Name a dossier or a graph entity.")
+    try:
+        return crossings.person_activity(db.connection(), case_id, dossier_id=dossier_id, entity_key=entity_key)
+    except crossings.NotInCase as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/crossings/counterparty-suggestions")
+def crossing_counterparty_suggestions(case_id: UUID = Query(...), identity_key: str = Query(..., max_length=512),
+                                      db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """XF-8: a phone contact's number or address used as a reviewed account reference suggests that account's
+    payments. Suggested, not reviewed; nothing on the ledger changes."""
+    from services.phone import crossings
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        return crossings.counterparty_suggestions(db, case_id, identity_key)
+    except crossings.NotInCase as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
 @router.get("/findings/{entry_id}/explain")
 def explain_finding(entry_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
                     user: User = Depends(get_current_db_user)):

@@ -162,3 +162,39 @@ def test_overview_timeline_and_map_count_the_phones_and_xf12_the_map_says_or_sho
     point = shown["artifact"]["data"]["locations"][0]
     assert point["rec"].startswith("rec://") and point["latitude"] == 38.9
     assert shown["artifact"]["metadata"]["notes"].startswith("Includes 1 of 1 phone location points")
+
+
+def test_co18_an_accepted_agent_answer_is_ai_assisted_names_its_model_and_links_the_records_it_cites(world):
+    from services.agent import accept
+    from services.phone import resolvers
+    from postgres.models.user import User
+    resolvers.register()  # as main.py does at start-up
+    case, rec = world["case"], world["evs"][0]["record_uid"]
+    with world["engine"].begin() as c:
+        owner = c.execute(text("SELECT owner_user_id FROM cases WHERE id = :c"), {"c": case}).scalar()
+        thread, msg_id, question = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        c.execute(text("INSERT INTO agent_threads (id, case_id, owner_user_id, title, status) VALUES (:t, :c, :u, "
+                       "'q', 'active')"), {"t": thread, "c": case, "u": owner})
+        c.execute(text("INSERT INTO agent_messages (id, thread_id, sequence_number, role, content) VALUES (:m, :t, 1, "
+                       "'user', 'Who wrote the day before?')"), {"m": question, "t": thread})
+        c.execute(text("INSERT INTO agent_messages (id, thread_id, sequence_number, role, content, model_provider, "
+                       "model_id) VALUES (:m, :t, 2, 'assistant', :b, 'openai', 'gpt-synthetic')"),
+                  {"m": msg_id, "t": thread, "b": "Maria wrote first ([message](rec://%s)); a record of another case "
+                                                    "(rec://%s) is not linked." % (rec, world["other_rec"])})
+    with Session(bind=world["engine"]) as db:
+        user = db.get(User, owner)
+        out = accept.accept_answer_into_assessment(db, case_id=case, message_id=msg_id, dossier_id=world["dossier"],
+                                                   category="Contact", user=user)
+        assert out["provenance_type"] == "ai_assisted" and out["agent_message_id"] == str(msg_id)
+        assert out["read_by"] == "Read by gpt-synthetic, accepted by synthetic"
+        assert [l["target_id"] for l in out["supporting_links"]] == [rec]
+        assert out["cited_records"]["not_in_case"] == 1
+        assert "1 cited record is not in this case and was not linked." == out["cited_records"]["sentence"]
+        for bad in (dict(message_id=question, dossier_id=world["dossier"]),       # a question is not an answer
+                    dict(message_id=msg_id, dossier_id=world["foreign"])):        # a dossier of another case
+            with pytest.raises((ValueError, LookupError)):
+                accept.accept_answer_into_assessment(db, case_id=case, category="Contact", user=user, **bad)
+        with pytest.raises(LookupError):                                          # asked in the other case
+            accept.accept_answer_into_assessment(db, case_id=world["other"], message_id=msg_id,
+                                                 dossier_id=world["foreign"], category="Contact", user=user)
+        db.rollback()

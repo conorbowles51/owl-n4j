@@ -134,3 +134,33 @@ def test_phone_graph_nodes_are_never_embedded(no_embedding, monkeypatch):
     EntityService._rebuild_entity_embedding({"key": "k", "type": "Person", "name": "Someone",
                                              "properties": {"name": "Someone"}}, "case")
     assert no_embedding == ["Someone"]  # the guard is only for phone nodes
+
+
+@needs_template
+def test_co10_theory_analysis_reads_a_linked_message_in_full_and_cites_its_record():
+    """07 CO-10 / XF-7: a theory with a phone message linked gets that message, its words and saved names in full,
+    as a source anchored to its record; another case's theory never reads it."""
+    from sqlalchemy.orm import Session
+    from postgres.models.workspace_entry import WorkspaceEntry, WorkspaceEntryLink
+    from services import workspace_ai_service as W
+    with fresh_engine() as engine:
+        case, ext = _build(engine)
+        with engine.connect() as c:
+            uid = str(c.execute(text("SELECT record_uid FROM pv_comm_event WHERE extraction_id = :e AND body LIKE "
+                                     "'Lunch%'"), {"e": ext}).scalar())
+        with Session(engine) as db:
+            theory = WorkspaceEntry(case_id=case, entry_type="theory", title="They met on Sunday",
+                                    body="The two met for lunch on Sunday.", tags=[], migration_metadata={})
+            db.add(theory)
+            db.flush()
+            db.add(WorkspaceEntryLink(entry_id=theory.id, case_id=case, target_type="phone_record", target_id=uid,
+                                      relationship_type="supports", source_anchor={}, link_metadata={}))
+            db.flush()
+            sources, retrieval = W._theory_sources(db, case_id=case, theory=theory)
+            cited = [s for s in sources if (s.get("source_anchor") or {}).get("record_uid") == uid]
+            assert cited, "the linked message is a source"
+            assert cited[0]["source_anchor"]["kind"] == "phone_record"
+            assert "Lunch on Sunday" in cited[0]["text"] and "Synthetic Anabel" in cited[0]["text"]
+            assert "existing_supports" in cited[0]["retrieval_roles"]
+            assert retrieval["linked_evidence_ids"]
+            db.rollback()
