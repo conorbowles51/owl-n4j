@@ -172,8 +172,14 @@ export default [
     const { page } = ctx
     await openPhone(ctx)
     await conversations(ctx)
+    await ctx.step("rows with their dossier marks", async () => {
+      // the "In N dossiers" marks arrive just after the rows; none at all is also a state the page can be in
+      await page.getByText(/In \d+ dossiers?/).first().waitFor({ timeout: 15000 }).catch(() => {})
+    })
     await ctx.step("select, c d, reply with counts and Undo", async () => {
-      await ctx.press("j")
+      // the first message not yet in a dossier, so the add is new on every run (the Undo below takes it out again)
+      const free = (await page.locator("[data-event]").evaluateAll((els) => els.map((e) => !/In \d+ dossiers?/.test(e.textContent || "")))).indexOf(true)
+      for (let i = 0; i <= Math.max(0, free); i++) await ctx.press("j")
       await ctx.press("Space")
       await ctx.press("c")
       await ctx.press("d")
@@ -184,6 +190,10 @@ export default [
     }, { limitMs: 5000 })
     await ctx.step("the row shows where it is used", async () => {
       await ctx.see(page.getByText(/In \d+ dossiers?/))
+    })
+    await ctx.step("Undo takes the link out again", async () => {
+      await ctx.click(page.getByRole("button", { name: "Undo" }))
+      await ctx.see(page.getByText(/^Undone: removed 1 link from .+\./))
     })
   }),
 
