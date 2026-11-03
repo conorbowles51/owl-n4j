@@ -1,5 +1,5 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useCallback } from "react"
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useCallback, useEffect, useState } from "react"
 import { fetchAPI } from "@/lib/api-client"
 import type { CollectTarget, TargetKind } from "../collect.api"
 
@@ -35,18 +35,32 @@ export function useCollectTargets(caseId: string | undefined) {
   })
 }
 
-/** "In 2 dossiers and 1 finding" for each record shown (07 section 6.2), 200 ids per request as the server allows. */
+/** How long the shown rows must stay the same before their marks are asked for: a list loads its windows one after
+ * another (10 growths on one load of a 9-row thread), and each growth asked again. */
+export const USED_IN_SETTLE_MS = 150
+
+/** "In 2 dossiers and 1 finding" for each record shown (07 section 6.2), 200 ids per request as the server allows.
+ * Asked once the shown rows have settled, so one load of a list makes one request. */
 export function useUsedIn(caseId: string | undefined, recordUids: string[]) {
   const qc = useQueryClient()
-  const key = ["used-in", caseId, recordUids.slice().sort().join(",")]
+  const joined = recordUids.slice().sort().join(",")
+  const [settled, setSettled] = useState(joined)
+  useEffect(() => {
+    if (joined === settled) return
+    const t = setTimeout(() => setSettled(joined), USED_IN_SETTLE_MS)
+    return () => clearTimeout(t)
+  }, [joined, settled])
+  const ids = settled ? settled.split(",") : []
+  const key = ["used-in", caseId, settled]
   const q = useQuery({
     queryKey: key,
-    enabled: !!caseId && recordUids.length > 0,
+    enabled: !!caseId && ids.length > 0,
     staleTime: 10_000,
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const out: Record<string, string | null> = {}
-      for (let i = 0; i < recordUids.length; i += 200) {
-        const part = recordUids.slice(i, i + 200)
+      for (let i = 0; i < ids.length; i += 200) {
+        const part = ids.slice(i, i + 200)
         const qs = part.map((id) => `target_ids[]=${encodeURIComponent(id)}`).join("&")
         const r = await fetchAPI<{ results: { target_id: string; summary: string | null }[] }>(
           `/api/workspace/${encodeURIComponent(caseId!)}/collections?target_type=phone_record&${qs}`,
