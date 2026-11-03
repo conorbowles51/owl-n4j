@@ -115,6 +115,8 @@ class PermissionResolverTests(unittest.TestCase):
                 "/api/financial/money-trails/preview": ["POST"],
                 "/api/financial/money-trails": ["POST"],
                 "/api/financial/money-trails/{trail_id}/remove": ["POST"],
+                "/api/financial/security-rows/{row_id}/correct": ["POST"],
+                "/api/financial/security-rows/{row_id}/confirm": ["POST"],
                 "/api/financial/candidates/{candidate_id}/review": ["POST"],
                 "/api/financial/ledger/payment-labels": ["PUT"],
                 "/api/financial/ledger/payment-labels/confirm": ["POST"],

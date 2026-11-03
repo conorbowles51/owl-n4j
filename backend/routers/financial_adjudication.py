@@ -820,7 +820,7 @@ class SecurityRowConfirmation(BaseModel):
 
 
 @router.post('/security-rows/{row_id}/correct')
-@records('security_row', 'change')
+@records('security_row_correct', 'change')
 def correct_security_row(row_id: UUID, body: SecurityRowCorrection, case_id: UUID = Query(...),
                          db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     """A person corrects one value of a trade or holding; the value as read stays visible beside it."""
@@ -834,7 +834,7 @@ def correct_security_row(row_id: UUID, body: SecurityRowCorrection, case_id: UUI
 
 
 @router.post('/security-rows/{row_id}/confirm')
-@records('security_row', 'change')
+@records('security_row_confirm', 'confirm')
 def confirm_security_row(row_id: UUID, body: SecurityRowConfirmation, case_id: UUID = Query(...),
                          db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     """A person confirms a trade or holding reading (a model's reading is shown as the model's until then)."""

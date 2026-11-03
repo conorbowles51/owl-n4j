@@ -103,6 +103,7 @@ TABLES = [
     PhoneRecordSubject.__table__,
     __import__("postgres.models.phone_analysis", fromlist=["x"]).PhoneAnalysisResultSubject.__table__,
     PhoneDerivedText.__table__,
+    __import__("postgres.models.financial_securities", fromlist=["x"]).FinancialSecurityRow.__table__,
 ]
 
 USD = "USD"
@@ -370,9 +371,16 @@ class TheSubject(DecisionTestCase):
                                             result_key="0" * 64)
         derived = PhoneDerivedText(id=uuid.uuid4(), case_id=self.case.id, extraction_id=report.id,
                                    file_uid=uuid.uuid4(), kind="transcript", state="done")
-        self.db.add_all([identity, record, result, derived])
+        from postgres.models.financial_securities import FinancialSecurityRow
+        security = FinancialSecurityRow(id=uuid.uuid4(), case_id=self.case.id, row_kind="trade",
+                                        evidence_file_id=self.evidence_file.id, reading_key="cash:1:0:0",
+                                        reader="casa_de_bolsa_movements_v1", instrument="BONDESF 271014",
+                                        proof_class="p3", extraction_layer=4, content_hash="0" * 64,
+                                        trade_date_source="absent", ledger_status="admitted")
+        self.db.add_all([identity, record, result, derived, security])
         self.db.flush()
         subjects = {
+            AdjudicationSubject.security_row: security,
             AdjudicationSubject.phone_derived_text: derived,
             AdjudicationSubject.transaction: self.row,
             AdjudicationSubject.statement_period: self.period,

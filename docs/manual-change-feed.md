@@ -62,6 +62,8 @@ existed on the 6 financial cases (recorded as historic by the backfill; automate
 | `candidate_finalize` | POST /api/financial/candidate-sources/{file}/finalize | confirm | yes | reviewed candidates → ledger rows | – |
 | `statement_draft_edit` | PUT /api/financial/candidate-sources/{file}/statement-draft | change | yes | draft controls → edited controls | – |
 | `model_attempt_abandon` | POST /api/financial/model-nominations/{id}/abandon | set aside | no | pending model reading → abandoned | – |
+| `security_row_correct` | POST /api/financial/security-rows/{id}/correct | change | yes | a trade or holding value as read → corrected (the value as read stays visible) | – |
+| `security_row_confirm` | POST /api/financial/security-rows/{id}/confirm | confirm | yes | a trade or holding reading (a model's, or the reader's) → confirmed by a person | – |
 
 ### Financial: names, categories, parties, accounts
 

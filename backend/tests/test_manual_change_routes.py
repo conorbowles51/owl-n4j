@@ -39,6 +39,7 @@ ROUTE_KINDS = {
     'entity_restore', 'transcript_speaker_correct', 'evidence_relevance_set',
     'significant_entity_add', 'significant_entity_remove', 'significant_entity_clear', 'workspace_ai_accept',
     'workspace_ai_reject', 'attention_dismiss', 'attention_clear', 'timeline_event_add', 'statement_draft_edit',
+    'security_row_correct', 'security_row_confirm',
 }
 
 
