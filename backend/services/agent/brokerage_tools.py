@@ -17,7 +17,9 @@ from decimal import Decimal
 from uuid import UUID
 
 from services.agent.ledger_reading_tools import (LedgerReadingError, _day, _page, _revision, _unavailable,
-                                                 payment_href)
+                                                 formatted, payment_href)
+
+MONEY = ("net", "gross", "commission", "premium", "tax", "market_value")
 
 SCHEMA = "loupe.agent.trades/1"
 NOT_IN_CASE = "That account is not in this case."
@@ -86,7 +88,11 @@ def _item(case_id, r):
         account=r["account"], account_id=r["account_id"], file=r["file"], proof_class=r["proof_class"],
         origin=r["origin"], corrections={k: dict(read=v.get("read"), value=v.get("value"), by=(v.get("by") or {}).get("name"))
                                          for k, v in (r.get("corrections") or {}).items()},
-        not_printed=r["not_printed"], not_read=r["not_read"], checks=r["checks"], citation=citation)
+        not_printed=r["not_printed"], not_read=r["not_read"], checks=r["checks"], citation=citation,
+        # Each minor-unit figure beside its formatted amount, so a model never reads centavos as pesos.
+        currency_exponent=formatted(0, r["currency"])["currency_exponent"],
+        **{m: formatted(r[m + "_minor"], r["currency"])["amount"] if r[m + "_minor"] is not None else None
+           for m in MONEY})
 
 
 def _totals(rows, kind):
@@ -122,13 +128,18 @@ def _totals(rows, kind):
     out = []
     for g in groups.values():
         latest = g.pop("latest")
+        g["currency_exponent"] = formatted(0, g["currency"])["currency_exponent"]
         if kind == "holding":
+            value = latest[2] if latest else None
             g.update(latest_as_of=latest[0] if latest else None,
                      latest_quantity=str(latest[1]) if latest else None,
-                     latest_market_value_minor=latest[2] if latest else None)
+                     latest_market_value_minor=value,
+                     latest_market_value=formatted(value, g["currency"])["amount"] if value is not None else None)
             for k in ("quantity_in", "quantity_out", "net_paid_minor", "net_received_minor"):
                 g.pop(k)
         else:
             g["quantity_in"], g["quantity_out"] = str(g["quantity_in"]), str(g["quantity_out"])
+            g["net_paid"] = formatted(g["net_paid_minor"], g["currency"])["amount"]
+            g["net_received"] = formatted(g["net_received_minor"], g["currency"])["amount"]
         out.append(g)
     return sorted(out, key=lambda g: (g["instrument"], g["currency"] or ""))

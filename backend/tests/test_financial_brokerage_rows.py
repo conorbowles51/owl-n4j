@@ -260,6 +260,10 @@ class BrokerageLedgerTests(DuplicateTestCase):
         assert item['citation']['cash_leg_href'].endswith('payment=%s' % item['citation']['cash_leg']['transaction_id'])
         totals = {t['instrument']: t for t in data['totals_by_instrument']}
         assert totals['+TASA M1']['quantity_in'] == '380834' and totals['+TASA M1']['net_paid_minor'] == 52987529
+        # Money reaches the agent formatted beside its minor units (a model read centavos as pesos otherwise).
+        assert totals['+TASA M1']['net_paid'] == 'GBP 529,875.29' and totals['+TASA M1']['currency_exponent'] == 2
+        assert item['net'] == ('GBP 1,029,795.54' if item['net_minor'] == 102979554 else 'GBP 529,875.29')
+        assert item['currency_exponent'] == 2
         elsewhere = call(self.case.id, account_id=str(self.other_account.id))
         nowhere = call(self.case.id, account_id=str(uuid.uuid4()))
         assert elsewhere['data']['reason'] == nowhere['data']['reason'] == 'That account is not in this case.'
