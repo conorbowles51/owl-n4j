@@ -116,6 +116,8 @@ class EntryResponse(BaseModel):
     confidence: int | None = None
     confidence_rationale: str | None = None
     review_state: str
+    actor_origin: dict[str, Any] | None = None
+    origin_label: str | None = None
     author_user_id: str | None = None
     author_email: str | None = None
     author_name: str | None = None
@@ -170,6 +172,8 @@ class EntryCreateRequest(BaseModel):
     confidence: int | None = Field(default=None, ge=0, le=100, multiple_of=5)
     confidence_rationale: str | None = None
     links: list[EntryLinkInput] = Field(default_factory=list)
+    # A model drafted this entry (services/financial/model_work.model_origin shape); it stays on the entry.
+    actor_origin: dict[str, Any] | None = None
 
 
 class EntryUpdateRequest(BaseModel):

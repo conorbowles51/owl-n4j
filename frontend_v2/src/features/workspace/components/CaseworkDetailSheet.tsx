@@ -13,6 +13,7 @@ import {
   Edit3,
   FileText,
   GitBranch,
+  Landmark,
   Link2,
   Loader2,
   RotateCcw,
@@ -68,6 +69,7 @@ import {
   useRestoreCaseworkEntry,
 } from "../hooks/use-casework"
 import { useCurrentCaseworkLinks } from "../hooks/use-current-casework-links"
+import { financialLinkHref, isFinancialLinkType } from "../financial-links"
 import { CaseworkEditor } from "./CaseworkEditor"
 import { EntryPhoneExport } from "./EntryPhoneExport"
 import { RelationshipBadge, ReviewBadge } from "./CaseworkBadges"
@@ -165,6 +167,10 @@ export function CaseworkDetailSheet({
   }, [entry])
 
   const openLink = (targetType: string, targetId: string) => {
+    if (isFinancialLinkType(targetType)) {
+      navigate(financialLinkHref(caseId, targetType, targetId))
+      return
+    }
     if (isPhoneLinkType(targetType)) {
       const link = entry?.links.find(
         (item) => item.target_type === targetType && item.target_id === targetId
@@ -401,6 +407,17 @@ export function CaseworkDetailSheet({
                     ))}
                 </div>
 
+                {entry.origin_label && (
+                  <p
+                    className="flex items-center gap-2 rounded-lg border border-border bg-muted/25 px-3 py-2 text-xs"
+                    data-testid="entry-origin"
+                    title={entry.actor_origin?.model_id ? `Model ${entry.actor_origin.model_id}` : undefined}
+                  >
+                    <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
+                    {entry.origin_label}
+                  </p>
+                )}
+
                 {entry.source_theory_entry_id && (
                   <button
                     type="button"
@@ -493,7 +510,8 @@ export function CaseworkDetailSheet({
                                   "dossier",
                                 ] as string[]
                               ).includes(link.target_type) &&
-                              !isPhoneLinkType(link.target_type)
+                              !isPhoneLinkType(link.target_type) &&
+                              !isFinancialLinkType(link.target_type)
                             }
                             className="flex min-h-10 w-full min-w-0 items-center gap-2 py-2 text-left transition-colors enabled:hover:bg-muted/35 disabled:cursor-default"
                             onClick={() =>
@@ -504,6 +522,8 @@ export function CaseworkDetailSheet({
                               <Smartphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                             ) : link.target_type === "evidence" ? (
                               <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                            ) : isFinancialLinkType(link.target_type) ? (
+                              <Landmark className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                             ) : link.target_type === "graph_entity" ? (
                               <GitBranch className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
                             ) : (

@@ -91,6 +91,10 @@ export interface CaseworkEntry {
   created_at?: string | null
   updated_at?: string | null
   links: CaseworkLink[]
+  /** set when a model drafted the entry: which model, for whom, and when */
+  actor_origin?: { kind: "model"; model?: string | null; model_id?: string | null; for?: { name?: string | null } | null } | null
+  /** "Drafted by <model>, accepted by <name>", or null for an entry a person wrote */
+  origin_label?: string | null
   revisions?: CaseworkRevision[]
   events?: CaseworkEvent[]
 }

@@ -492,6 +492,58 @@ def search_attachment_options(
         ]
     if target_type == "graph_entity":
         return []
+    if target_type == "financial_transaction":
+        # the ids asked for, or the Loupe-wide payments search (description, counterparty, amount)
+        from services.financial_link_targets import FinancialTargetError, financial_target_label
+        if bounded_ids:
+            found = []
+            for value in bounded_ids:
+                try:
+                    found.append({"target_type": target_type, "target_id": value.lower(),
+                                  "label": financial_target_label(db, case_id, target_type, value),
+                                  "description": f"txn://{value.lower()}", "metadata": {}})
+                except FinancialTargetError:
+                    continue
+            return found
+        if not search:
+            return []
+        from services.search.payments import search_payments
+        _, items, _ = search_payments(db.connection(), case_id, search, limit=limit)
+        return [{"target_type": target_type, "target_id": item["transaction_id"],
+                 "label": financial_target_label(db, case_id, target_type, item["transaction_id"]),
+                 "description": item.get("account_label"), "metadata": {"cite": item["cite"]}} for item in items]
+    if target_type == "financial_account":
+        from postgres.models.financial import FinancialAccount
+        query = db.query(FinancialAccount).filter(FinancialAccount.case_id == case_id)
+        if bounded_ids:
+            valid = []
+            for value in bounded_ids:
+                try:
+                    valid.append(UUID(value))
+                except ValueError:
+                    continue
+            if not valid:
+                return []
+            query = query.filter(FinancialAccount.id.in_(valid))
+        if pattern:
+            query = query.filter(or_(FinancialAccount.holder_name.ilike(pattern),
+                                     FinancialAccount.institution_name.ilike(pattern),
+                                     FinancialAccount.identifier_as_printed.ilike(pattern)))
+        rows = query.order_by(FinancialAccount.holder_name, FinancialAccount.id).limit(limit).all()
+        return [{"target_type": target_type, "target_id": str(row.id),
+                 "label": " · ".join(v for v in (row.holder_name, row.institution_name, row.identifier_as_printed,
+                                                row.currency) if v) or f"Account {str(row.id)[:8]}",
+                 "description": row.account_type, "metadata": {}} for row in rows]
+    if target_type == "financial_party":
+        from services.financial.account_parties import account_parties
+        parties = account_parties(db, case_id=case_id)["parties"]
+        wanted = {value.lower() for value in bounded_ids}
+        lowered = (search or "").lower()
+        return [{"target_type": target_type, "target_id": party["id"], "label": party.get("name") or "Person or business",
+                 "description": party.get("kind"), "metadata": {}}
+                for party in parties
+                if (not wanted or party["id"] in wanted) and (not lowered or lowered in (party.get("name") or "").lower())
+                ][:limit]
     raise WorkspaceEntryValidationError(f"Unsupported attachment search: {target_type}")
 
 
@@ -531,6 +583,17 @@ def _sanitize_link(
         source_anchor = link_types.phone_anchor(phone, source_anchor)
         if not _clean_optional_text(link.get("target_label"), max_length=512) and phone.label:
             link = {**link, "target_label": phone.label}
+    elif link_types.is_financial_type(target_type):
+        # Money links are always checked against the case; a payment's anchor carries its txn:// citation.
+        from services.financial_link_targets import FinancialTargetError, financial_anchor, financial_target_label
+        try:
+            label = financial_target_label(db, case_id, target_type, target_id)
+        except FinancialTargetError as exc:
+            raise WorkspaceEntryValidationError(str(exc)) from exc
+        target_id = target_id.lower()
+        source_anchor = financial_anchor(target_type, target_id, source_anchor)
+        if not _clean_optional_text(link.get("target_label"), max_length=512):
+            link = {**link, "target_label": label}
     elif validate_target:
         _validate_link_target(
             db, case_id=case_id, target_type=target_type, target_id=target_id
@@ -723,6 +786,8 @@ def entry_to_dict(
         "confidence": entry.confidence,
         "confidence_rationale": entry.confidence_rationale,
         "review_state": entry.review_state,
+        "actor_origin": entry.actor_origin,
+        "origin_label": origin_label(entry),
         "author_user_id": str(entry.author_user_id) if entry.author_user_id else None,
         "author_email": entry.author_email,
         "author_name": entry.author_name,
@@ -750,6 +815,34 @@ def entry_to_dict(
     return data
 
 
+def _model_origin(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A model drafted the entry: the origin services/financial/model_work.model_origin writes, checked here."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or value.get("kind") != "model":
+        raise WorkspaceEntryValidationError("A drafted entry's origin must name the model that drafted it")
+    from services.financial.model_work import ModelWorkError, model_origin
+    try:
+        return model_origin(for_name=(value.get("for") or {}).get("name"), for_user_id=(value.get("for") or {}).get("user_id"),
+                            model=value.get("model") or "", model_id=value.get("model_id") or "",
+                            citation=value.get("citation"), how=value.get("how") or "", at=value.get("at"))
+    except ModelWorkError as exc:
+        raise WorkspaceEntryValidationError(str(exc)) from exc
+
+
+def origin_label(entry: WorkspaceEntry) -> str | None:
+    """'Drafted by <model>, accepted by <name>' for an entry a model drafted; None for a person's own entry."""
+    origin = entry.actor_origin
+    if not isinstance(origin, dict) or origin.get("kind") != "model":
+        return None
+    model = origin.get("model") or "a model"
+    if entry.review_state == "accepted":
+        return f"Drafted by {model}, accepted by {entry.author_name or entry.author_email or 'a person'}"
+    if entry.review_state == "rejected":
+        return f"Drafted by {model}, rejected"
+    return f"Drafted by {model}, not yet accepted by a person"
+
+
 def create_entry(
     db: Session,
     *,
@@ -766,6 +859,7 @@ def create_entry(
     confidence_rationale: str | None = None,
     review_state: str = "accepted",
     links: list[dict[str, Any]] | None = None,
+    actor_origin: dict[str, Any] | None = None,
     legacy_source: str | None = None,
     legacy_id: str | None = None,
     compatibility_metadata: dict[str, Any] | None = None,
@@ -780,6 +874,7 @@ def create_entry(
     )
     if review_state not in {"accepted", "pending", "rejected"}:
         raise WorkspaceEntryValidationError("Invalid review state")
+    origin = _model_origin(actor_origin)
     actor = _actor_fields(current_user)
     entry = WorkspaceEntry(
         id=entry_id or None,
@@ -802,6 +897,7 @@ def create_entry(
         legacy_source=_clean_optional_text(legacy_source, max_length=64),
         legacy_id=_clean_optional_text(legacy_id, max_length=255),
         migration_metadata=dict(compatibility_metadata or {}),
+        actor_origin=origin,
     )
     db.add(entry)
     db.flush()
@@ -930,21 +1026,27 @@ def list_financial_payment_links(
     query = db.query(WorkspaceEntry.id, WorkspaceEntry.title, WorkspaceEntry.tags).filter(
         WorkspaceEntry.case_id == case_id, WorkspaceEntry.deleted_at.is_(None)
     )
+    # entries tagged financial, and any entry that links a payment directly (a pin's bundle)
+    linked = WorkspaceEntry.id.in_(select(WorkspaceEntryLink.entry_id).where(
+        WorkspaceEntryLink.case_id == case_id, WorkspaceEntryLink.target_type == "financial_transaction"))
     if db.get_bind().dialect.name == "postgresql":
         from sqlalchemy.dialects.postgresql import JSONB
-        query = query.filter(cast(WorkspaceEntry.tags, JSONB).contains(["financial"]))
+        query = query.filter(or_(cast(WorkspaceEntry.tags, JSONB).contains(["financial"]), linked))
     else:
         values = func.json_each(WorkspaceEntry.tags).table_valued("value")
-        query = query.filter(exists(select(1).select_from(values).where(values.c.value == "financial")))
+        query = query.filter(or_(exists(select(1).select_from(values).where(values.c.value == "financial")), linked))
     total = query.count()
     entries = query.order_by(WorkspaceEntry.id).offset(offset).limit(limit).all()
     by_entry: dict[UUID, set[str]] = {entry.id: set() for entry in entries}
     if by_entry:
-        links = db.query(WorkspaceEntryLink.entry_id, WorkspaceEntryLink.source_anchor).filter(
+        links = db.query(WorkspaceEntryLink.entry_id, WorkspaceEntryLink.source_anchor,
+                         WorkspaceEntryLink.target_type, WorkspaceEntryLink.target_id).filter(
             WorkspaceEntryLink.case_id == case_id,
             WorkspaceEntryLink.entry_id.in_(list(by_entry)),
         ).all()
-        for entry_id, anchor in links:
+        for entry_id, anchor, target_type, target_id in links:
+            if target_type == "financial_transaction":
+                by_entry[entry_id].add(target_id)
             if not isinstance(anchor, dict):
                 continue
             ids = anchor.get("financial_transaction_ids", [])

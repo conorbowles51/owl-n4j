@@ -69,8 +69,16 @@ def test_migration_allows_exactly_the_registry_types():
     def parse(text):
         return tuple(value.strip().strip("'") for value in text.split(","))
 
-    assert parse(module.WORKSPACE_OLD) + parse(module.PHONE) == link_types.WORKSPACE_TYPES
     assert parse(module.TASK_OLD) + parse(module.PHONE) == link_types.TASK_TYPES
+    # the financial types came with the link-targets migration, the latest to write the workspace check
+    spec = importlib.util.spec_from_file_location(
+        "f", BACKEND / "postgres/alembic/versions/20261103_financial_link_targets.py"
+    )
+    financial = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(financial)
+    assert parse(financial.WORKSPACE_OLD) == parse(module.WORKSPACE_OLD)
+    assert parse(financial.WORKSPACE_OLD) + parse(financial.PHONE) + parse(financial.FINANCIAL) == link_types.WORKSPACE_TYPES
+    assert set(parse(financial.FINANCIAL)) <= set(link_types.DOSSIER_TYPES)
 
 
 def test_every_phone_type_is_refused_with_a_stated_message_until_a_resolver_registers():

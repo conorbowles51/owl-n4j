@@ -43,11 +43,19 @@ PHONE_TYPES: tuple[str, ...] = (
     "statement_check",
 )
 
+# Money (the ledger): an account, a party (a person or business behind accounts) and one ledger row. Each is checked
+# against the case by services.financial_link_targets; a pin holds a message, the payment and its statement page.
+FINANCIAL_TYPES: tuple[str, ...] = (
+    "financial_account",
+    "financial_party",
+    "financial_transaction",
+)
+
 # Old Notebook names that the Notebook still accepts and maps onto the canonical names.
 NOTEBOOK_ALIASES: dict[str, str] = {"entity": "graph_entity", "document": "evidence"}
 
 # Per container, in display order. 07 section 6.1 decides which phone types each container takes.
-WORKSPACE_TYPES: tuple[str, ...] = CORE_TYPES + PHONE_TYPES
+WORKSPACE_TYPES: tuple[str, ...] = CORE_TYPES + PHONE_TYPES + FINANCIAL_TYPES
 DOSSIER_TYPES: tuple[str, ...] = (
     "entry",
     "task",
@@ -57,7 +65,7 @@ DOSSIER_TYPES: tuple[str, ...] = (
     "agent_artifact",
     "graph_entity",
     "dossier",
-) + tuple(value for value in PHONE_TYPES if value != "phone_view")
+) + tuple(value for value in PHONE_TYPES if value != "phone_view") + FINANCIAL_TYPES
 NOTEBOOK_TYPES: tuple[str, ...] = (
     "entity",
     "evidence",
@@ -94,6 +102,10 @@ def sql_in_check(column: str, types: tuple[str, ...]) -> str:
     """The text of a database check that `column` holds one of `types`."""
 
     return f"{column} IN (" + ", ".join(f"'{value}'" for value in types) + ")"
+
+
+def is_financial_type(target_type: str | None) -> bool:
+    return target_type in FINANCIAL_TYPES
 
 
 def is_phone_type(target_type: str | None) -> bool:

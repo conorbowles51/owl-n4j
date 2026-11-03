@@ -159,6 +159,8 @@ class WorkspaceEntry(Base, TimestampMixin):
     updated_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    # A model drafted this entry (services/financial/model_work.model_origin); kept when a person accepts it.
+    actor_origin: Mapped[dict[str, Any] | None] = mapped_column(JSON_DOCUMENT, nullable=True)
     source_theory_entry_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("workspace_entries.id", ondelete="SET NULL"),

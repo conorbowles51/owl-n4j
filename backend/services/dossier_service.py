@@ -865,6 +865,12 @@ def _validate_target(
             raise ValueError("Agent artifact is not in this case")
     elif target_type == "graph_entity":
         _require_graph_identity(case_id, target_id)
+    elif link_types.is_financial_type(target_type):
+        from services.financial_link_targets import FinancialTargetError, financial_target_label
+        try:
+            financial_target_label(db, case_id, target_type, target_id)
+        except FinancialTargetError as exc:
+            raise ValueError(str(exc)) from exc
     return None
 
 

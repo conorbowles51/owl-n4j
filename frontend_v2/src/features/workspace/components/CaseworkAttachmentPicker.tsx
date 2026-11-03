@@ -7,6 +7,9 @@ import {
   GitBranch,
   History,
   ContactRound,
+  Landmark,
+  Receipt,
+  UsersRound,
   Link2,
   Loader2,
   Plus,
@@ -39,6 +42,9 @@ const TARGETS: Array<{
   { value: "deadline", label: "Deadline", icon: CalendarClock },
   { value: "timeline_event", label: "Event", icon: History },
   { value: "agent_artifact", label: "AI output", icon: Bot },
+  { value: "financial_transaction", label: "Payment", icon: Receipt },
+  { value: "financial_account", label: "Account", icon: Landmark },
+  { value: "financial_party", label: "Party", icon: UsersRound },
 ]
 
 export function CaseworkAttachmentPicker({
