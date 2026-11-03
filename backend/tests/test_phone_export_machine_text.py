@@ -108,3 +108,19 @@ def test_m7_the_pdf_prints_the_persons_correction_even_after_a_later_machine_rea
     _, _, txt = _export(world)
     words = " ".join(txt.split())
     assert "Transcript: SYNTHETIC SPOKEN HARBOUR MOTION" in words and "SYNTHETIC LATER WORDS" not in words
+
+
+def test_m7_an_rsmf_file_says_the_machine_texts_are_not_in_it_and_never_that_they_are_printed(world):
+    """RSMF carries the original files only: its cover names the machine texts kept in Loupe and says they are not in
+    the file, never the PDF's "printed under its attachment"."""
+    import email
+
+    from services.phone.exports.rsmf import SMTP
+    from tests.test_phone_exports_rsmf import _rsmf_export
+    _voice_note(world)
+    state, data, _ = _rsmf_export(world)
+    body = " ".join(email.message_from_bytes(data, policy=SMTP).get_body(("plain",)).get_content().split())
+    assert ("1 machine-generated text (transcripts or text read from images) is kept in Loupe for these attachments; "
+            "an RSMF file carries the original files only, so it is not in this file.") in body
+    assert "printed under" not in body and WORDS not in body
+    assert state["counts"]["machine_texts"] == 1

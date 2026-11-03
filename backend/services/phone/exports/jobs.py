@@ -333,10 +333,10 @@ def draw(engine, export_id, claimed=None) -> dict:
     if machine["total"] and fmt == "rsmf":
         # RSMF carries the original files only; the machine texts are named so their absence is not silent
         n = machine["total"]
-        contains.insert(-1, "%s machine-generated %s (transcripts or text read from images) %s for these attachments in "
-                            "Loupe; an RSMF file carries the original files only, so %s not in this file." % (
-                                "{:,}".format(n), "text exists" if n == 1 else "texts exist",
-                                "is kept" if n == 1 else "are kept", "it is" if n == 1 else "they are"))
+        contains.insert(-1, "%s machine-generated %s (transcripts or text read from images) %s kept in Loupe for these "
+                            "attachments; an RSMF file carries the original files only, so %s not in this file." % (
+                                "{:,}".format(n), "text" if n == 1 else "texts", "is" if n == 1 else "are",
+                                "it is" if n == 1 else "they are"))
     elif machine["total"]:
         n, u = machine["total"], machine["unconfirmed"]
         contains.insert(-1, "%s machine-generated %s (transcripts or text read from images) %s printed under %s; %s not yet confirmed by a person, and each says so." % (
