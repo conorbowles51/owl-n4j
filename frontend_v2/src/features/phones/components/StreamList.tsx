@@ -271,8 +271,16 @@ export function StreamList({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per request (seq)
   }, [jumpTo?.seq, stream.segments])
 
+  // Reported only when the selection changes: the stream object is new on every render, and a parent that stores
+  // the rows (Conversations) would otherwise render again forever.
+  const reported = useRef<string | null>(null)
   useEffect(() => {
-    onSelectionChange?.(loadedSelection() ?? [], allSelected)
+    if (!onSelectionChange) return
+    const rows = loadedSelection() ?? []
+    const key = `${allSelected ? 1 : 0}|${rows.map((r) => r.event_uid).join(",")}`
+    if (reported.current === key) return
+    reported.current = key
+    onSelectionChange(rows, allSelected)
   }, [selected, allSelected, loadedSelection, onSelectionChange])
 
   const jumpDay = (dir: 1 | -1) => {

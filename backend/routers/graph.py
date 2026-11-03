@@ -432,11 +432,9 @@ def phone_case_cap(db, case_id, limit, sort_by):
 
 def warm_graph_page(case_id, db=None) -> int:
     """The Graph page's read as the page asks for it (lightweight=true&scope=all), into the saved responses."""
-    n = warm_response(*_graph_read(str(case_id), "all", None, True, None, None))  # the Table page's read
-    limit, sort_by = phone_case_cap(db, case_id, None, None)
-    if limit is not None:  # the Graph page's capped read on a case with phones (03 D-21)
-        n += warm_response(*_graph_read(str(case_id), "all", None, True, limit, sort_by))
-    return n
+    # The Table and Graph pages read the same whole graph; the phone cap (03 D-21) is opt-in and off on the Graph
+    # page until search and expand reach past it, so no capped read is warmed.
+    return warm_response(*_graph_read(str(case_id), "all", None, True, None, None))
 
 
 @router.get("")

@@ -360,6 +360,11 @@ def window(conn, f: TimelineLensFilter, *, snapshot_token, day, offset=0, limit=
 def _no_data_hours(conn, ext, start, end) -> set:
     from services.pattern_of_life import availability
     try:
+        # no hourly rollup built for this phone yet: no claim either way, never "No data" by default
+        if not conn.execute(text("SELECT to_regclass('pol_hourly_rollup') IS NOT NULL")).scalar() or \
+                not conn.execute(text("SELECT EXISTS (SELECT 1 FROM pol_hourly_rollup WHERE extraction_id = :e)"),
+                                 {"e": ext}).scalar():
+            return set()
         states = availability.hour_states(conn, ext, start, end)
     except Exception:  # noqa: BLE001 (04's tables not built for this phone: no claim either way)
         return set()
@@ -380,13 +385,6 @@ def buckets(conn, f: TimelineLensFilter, *, snapshot_token, start: datetime, end
         raise ValueError("Daily lanes cover at most ten years.")
     zone = streams.resolve_zone(conn, f)
     zn = "UTC" if T.is_utc(zone["name"]) else zone["name"]
-    ec = ["ev.sort_instant >= CAST(:b0 AS timestamptz)", "ev.sort_instant < CAST(:b1 AS timestamptz)"]
-    eo = ["t.instant >= CAST(:b0 AS timestamptz)", "t.instant < CAST(:b1 AS timestamptz)"]
-    sql, p = _union(conn, f, zone, ec, eo)
-    p.update({"b0": start, "b1": end, "zone": zn})
-    rows = conn.execute(text(
-        "WITH u AS (%s) SELECT lane, date_trunc('%s', instant AT TIME ZONE :zone) AS b, count(*) AS n FROM u GROUP BY "
-        "1, 2" % (sql, bucket)), p).fetchall()
     tz = T.tz(zone["name"])
     step = timedelta(hours=1) if bucket == "hour" else timedelta(days=1)
     first = start.astimezone(tz).replace(minute=0, second=0, microsecond=0, tzinfo=None)
@@ -397,6 +395,17 @@ def buckets(conn, f: TimelineLensFilter, *, snapshot_token, start: datetime, end
     while w.replace(tzinfo=tz) < end:
         walls.append(w)
         w = w + step
+    # every bucket is whole: rows are counted from the first bucket's start to the last bucket's end in the display
+    # zone, so a day's mark equals the day's list
+    b0 = walls[0].replace(tzinfo=tz).astimezone(timezone.utc)
+    b1 = (walls[-1] + step).replace(tzinfo=tz).astimezone(timezone.utc)
+    ec = ["ev.sort_instant >= CAST(:b0 AS timestamptz)", "ev.sort_instant < CAST(:b1 AS timestamptz)"]
+    eo = ["t.instant >= CAST(:b0 AS timestamptz)", "t.instant < CAST(:b1 AS timestamptz)"]
+    sql, p = _union(conn, f, zone, ec, eo)
+    p.update({"b0": b0, "b1": b1, "zone": zn})
+    rows = conn.execute(text(
+        "WITH u AS (%s) SELECT lane, date_trunc('%s', instant AT TIME ZONE :zone) AS b, count(*) AS n FROM u GROUP BY "
+        "1, 2" % (sql, bucket)), p).fetchall()
     counts = {}
     for r in rows:
         counts.setdefault(r.lane, {})[r.b] = int(r.n)
@@ -408,7 +417,7 @@ def buckets(conn, f: TimelineLensFilter, *, snapshot_token, start: datetime, end
     labels = _lane_labels(conn, f, lane_keys)
     out = []
     for k in lane_keys:
-        gaps = _no_data_hours(conn, k, start, end) if f.lane_by == "phone" else set()
+        gaps = _no_data_hours(conn, k, b0, b1) if f.lane_by == "phone" else set()
         bs = []
         for wall in walls:
             s = wall.replace(tzinfo=tz).astimezone(timezone.utc)

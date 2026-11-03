@@ -125,7 +125,7 @@ export function PeopleSuggestions({ caseId }: { caseId: string }) {
         { key: "k", label: "Previous suggestion", run: () => move(-1) },
       ]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [s?.id, name, note, busy, list.length],
+    [s?.id, s?.expected_revision, s?.dossier_id, name, note, busy, list.length],
   )
 
   return (

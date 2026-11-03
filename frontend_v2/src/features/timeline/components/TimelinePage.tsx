@@ -63,7 +63,8 @@ export function TimelinePage() {
   const phonesQ = useQuery({ queryKey: ["phones", caseId], queryFn: () => getPhones(caseId!), enabled: !!caseId })
   const phoneCount = phonesQ.data?.total ?? 0
   const caseName = useCase(caseId ?? "").data?.title ?? "This case"
-  const lens = usePhoneLens(caseId ?? "", events.length > 0, !isLoading && phoneCount > 0)
+  // the first-use choice is stored only from a complete load of the whole case, never from a failed read or a layer
+  const lens = usePhoneLens(caseId ?? "", events.length > 0, phoneCount > 0, !isLoading && !error && caseLayer !== "significant")
   const lensToggle = phoneCount > 0 ? <PhoneLensToggle on={lens.on} onChange={lens.setOn} phones={phoneCount} /> : undefined
 
   const searchInputRef = useRef<HTMLInputElement>(null)

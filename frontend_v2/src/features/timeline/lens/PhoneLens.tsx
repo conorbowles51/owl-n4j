@@ -43,9 +43,10 @@ function writeStored(caseId: string, v: Stored) {
  * off otherwise. That choice is stored for this case at first use and never recomputed from the case's contents;
  * when the case later gains other events the screen says so.
  */
-export function usePhoneLens(caseId: string, hasOtherEvents: boolean, hasPhones: boolean) {
+export function usePhoneLens(caseId: string, hasOtherEvents: boolean, hasPhones: boolean, ready = true) {
   const [state, setState] = useState<Stored | null>(() => (caseId ? readStored(caseId) : null))
-  const first = !state && caseId && hasPhones ? { on: !hasOtherEvents, emptyAtFirstUse: !hasOtherEvents } : null
+  // stored only once the case has loaded completely (ready), never from a failed read
+  const first = !state && caseId && hasPhones && ready ? { on: !hasOtherEvents, emptyAtFirstUse: !hasOtherEvents } : null
   const current = state ?? first
   useEffect(() => {
     if (!first) return

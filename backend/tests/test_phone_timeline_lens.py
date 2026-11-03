@@ -160,3 +160,29 @@ def test_t6_a_phone_with_no_data_in_a_period_shows_no_data_distinct_from_zero(wo
     with world["engine"].connect() as c, pytest.raises(ValueError, match="at most 7 days"):
         timeline_lens.buckets(c, f, snapshot_token=idx["snapshot"], start=datetime(2023, 3, 1, tzinfo=timezone.utc),
                               end=datetime(2023, 3, 9, tzinfo=timezone.utc), bucket="hour")
+
+
+def test_lane_buckets_are_whole_days_in_the_display_zone_and_equal_the_days_list():
+    """Review of 03-6: a span given in UTC is widened to whole days in the phone's zone, so the first and last
+    days' marks count the whole day, as the list it opens does."""
+    from services.phone import timeline_lens
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            phone(c, case, device_zone="America/New_York", events=[
+                _msg(at(2023, 3, 13, 22), ANA, [OWNER]),     # 6 PM on March 13 in New York, before the UTC span
+                _msg(at(2023, 3, 14, 12), ANA, [OWNER]),
+                _msg(at(2023, 3, 21, 1), ANA, [OWNER])])     # 9 PM on March 20 in New York, after the UTC span
+        with engine.connect() as c:
+            f = timeline_lens.TimelineLensFilter.model_validate({"case_id": str(case)})
+            idx = timeline_lens.index(c, f)
+            out = timeline_lens.buckets(c, f, snapshot_token=idx["snapshot"],
+                                        start=datetime(2023, 3, 14, tzinfo=timezone.utc),
+                                        end=datetime(2023, 3, 21, tzinfo=timezone.utc), bucket="day")
+        days = {b["wall"][:10]: b["count"] for b in out["lanes"][0]["buckets"]}
+        per_day = {d["day"]: d["count"] for d in idx["items"]}
+        assert days["2023-03-13"] == per_day["2023-03-13"] == 1
+        assert days["2023-03-20"] == per_day["2023-03-20"] == 1
+        assert sum(days.values()) == 3
+        # no hourly rollup built for this phone: no day is claimed to have no data
+        assert not any(b["no_data"] for b in out["lanes"][0]["buckets"])

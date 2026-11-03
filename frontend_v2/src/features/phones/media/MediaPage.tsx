@@ -175,6 +175,9 @@ function Detail({ caseId, fileUid, onClose }: { caseId: string; fileUid: string;
   )
 }
 
+/** The filter value for files with no category or no check: sent as "" so the server matches the empty ones. */
+const NONE = "__none__"
+
 /** Media (03 section 8): every file on the phone, by category and state; the total is the phone summary's. */
 export default function MediaPage() {
   const { id: caseId = "", extraction = "" } = useParams()
@@ -189,7 +192,7 @@ export default function MediaPage() {
     return next
   }, { replace: true })
   const [blur, setBlur] = useState(() => localStorage.getItem(BLUR_KEY) !== "off")
-  const filter: MediaFilter = { case_id: caseId, phones: [extraction], ...(category ? { categories: [category] } : {}), ...(state ? { verification: [state] } : {}) }
+  const filter: MediaFilter = { case_id: caseId, phones: [extraction], ...(category ? { categories: [category === NONE ? "" : category] } : {}), ...(state ? { verification: [state === NONE ? "" : state] } : {}) }
   const idx = useQuery({ queryKey: ["phone-media-index", filter], queryFn: () => getMediaIndex(filter), enabled: !!caseId })
   const all = useQuery({ queryKey: ["phone-media-index", caseId, extraction], queryFn: () => getMediaIndex({ case_id: caseId, phones: [extraction] }), enabled: !!caseId })
   const pages = useInfiniteQuery({
@@ -226,13 +229,13 @@ export default function MediaPage() {
           <label className="flex items-center gap-1">Category
             <select value={category} onChange={(e) => setCategory(e.target.value)} className="rounded border bg-background px-1 py-0.5">
               <option value="">All</option>
-              {Object.entries(all.data?.by_category ?? {}).map(([k, v]) => <option key={k} value={k === "Uncategorised" ? "" : k}>{k} ({n(v)})</option>)}
+              {Object.entries(all.data?.by_category ?? {}).map(([k, v]) => <option key={k} value={k === "Uncategorised" ? NONE : k}>{k} ({n(v)})</option>)}
             </select>
           </label>
           <label className="flex items-center gap-1">State
             <select value={state} onChange={(e) => setState(e.target.value)} className="rounded border bg-background px-1 py-0.5">
               <option value="">All</option>
-              {Object.entries(all.data?.verification ?? {}).map(([k, v]) => <option key={k} value={k === "unchecked" ? "" : k}>{k} ({n(v)})</option>)}
+              {Object.entries(all.data?.verification ?? {}).map(([k, v]) => <option key={k} value={k === "unchecked" ? NONE : k}>{k} ({n(v)})</option>)}
             </select>
           </label>
           <label className="flex items-center gap-1">

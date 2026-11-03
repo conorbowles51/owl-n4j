@@ -111,3 +111,14 @@ describe("the Phones switch (03 9.5, 07 4.12)", () => {
     expect(renderHook(() => usePhoneLens("c3", false, false)).result.current.on).toBe(false) // no phones, no lens
   })
 })
+
+describe("the Phones switch is not stored from an incomplete load", () => {
+  it("stores nothing until the case has loaded, then stores the first-use choice", async () => {
+    const h = renderHook(({ ready }) => usePhoneLens("c9", false, true, ready), { initialProps: { ready: false } })
+    await act(async () => {})
+    expect(localStorage.getItem("loupe.timeline.phones.c9")).toBeNull()
+    h.rerender({ ready: true })
+    await act(async () => {})
+    expect(JSON.parse(localStorage.getItem("loupe.timeline.phones.c9")!)).toEqual({ on: true, emptyAtFirstUse: true })
+  })
+})

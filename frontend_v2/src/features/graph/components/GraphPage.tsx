@@ -43,6 +43,8 @@ const GraphCanvas3D = lazy(() =>
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
+export const PHONE_GRAPH_CAP_ON = false
+
 export function GraphPage() {
   const { id: caseId } = useParams()
   const location = useLocation()
@@ -57,7 +59,9 @@ export function GraphPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const openedAt = useMemo(() => performance.now(), [caseId])
   const [layoutWork, setLayoutWork] = useState<PageWork | null>(null)
-  const { data: graphData, isLoading } = useGraphData(caseId, { phoneCap: true })
+  // The phone-case cap (03 D-21) stays off: search and expand read only the loaded nodes, so a capped graph would
+  // leave the rest unreachable. It is switched on once both reach past the cap.
+  const { data: graphData, isLoading } = useGraphData(caseId, { phoneCap: PHONE_GRAPH_CAP_ON })
   const { filteredData, filteredNodes, totalNodes } = useGraphSearch(graphData)
 
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)

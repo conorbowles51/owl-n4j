@@ -609,7 +609,8 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo }: MapCanvasPro
       {phoneItems && phoneItems.length > 0 && (
         <Source id="phone-points" type="geojson" data={phoneGeoJSON(phoneItems)}>
           <Layer id="phone-accuracy" type="circle" filter={["==", ["get", "has_accuracy"], true]} paint={{
-            "circle-radius": ["interpolate", ["exponential", 2], ["zoom"], 0, 0, 20, ["/", ["get", "accuracy_m"], 0.149]],
+            // the reported accuracy in screen pixels: metres per pixel on 512-pixel tiles, corrected for latitude
+            "circle-radius": ["interpolate", ["exponential", 2], ["zoom"], 0, ["/", ["get", "r20"], 1048576], 20, ["get", "r20"]],
             "circle-color": "#2563eb", "circle-opacity": 0.12, "circle-stroke-color": "#2563eb", "circle-stroke-width": 1,
           }} />
           <Layer id="phone-point" type="circle" filter={["==", ["get", "kind"], "point"]} paint={{
@@ -650,6 +651,14 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo }: MapCanvasPro
   )
 }
 
+/** Metres per pixel at zoom 20 on the equator for 512-pixel tiles (MapLibre): 40,075,016.686 m / 512 / 2^20. */
+export const METRES_PER_PIXEL_Z20 = 40075016.686 / 512 / 2 ** 20
+
+/** A radius in metres as pixels at zoom 20 at this latitude, so the circle shows the accuracy the phone reported. */
+export function accuracyPixelsAtZoom20(metres: number, lat: number): number {
+  return metres / (METRES_PER_PIXEL_Z20 * Math.max(0.01, Math.cos((lat * Math.PI) / 180)))
+}
+
 function phoneGeoJSON(items: PhoneMapItem[]): GeoJSON.FeatureCollection {
   return {
     type: "FeatureCollection",
@@ -657,7 +666,7 @@ function phoneGeoJSON(items: PhoneMapItem[]): GeoJSON.FeatureCollection {
       type: "Feature",
       geometry: { type: "Point", coordinates: [i.lon, i.lat] },
       properties: i.type === "point"
-        ? { kind: "point", has_accuracy: i.accuracy_m !== null, accuracy_m: i.accuracy_m ?? 0, label: i.phone_label }
+        ? { kind: "point", has_accuracy: i.accuracy_m !== null, accuracy_m: i.accuracy_m ?? 0, r20: accuracyPixelsAtZoom20(i.accuracy_m ?? 0, i.lat), label: i.phone_label }
         : { kind: "cluster", has_accuracy: false, count: i.count, label: i.count.toLocaleString("en-US") },
     })),
   }
