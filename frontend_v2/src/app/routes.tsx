@@ -40,6 +40,8 @@ const PhoneGuidePage = lazy(() => import("@/features/phones/PhoneGuidePage"))
 const MoneySignalsPage = lazy(() => import("@/features/phones/analysis/MoneySignalsPage"))
 const DeletionTimelinePage = lazy(() => import("@/features/phones/analysis/DeletionTimelinePage"))
 const RelationshipsPage = lazy(() => import("@/features/phones/analysis/RelationshipsPage"))
+const GroupRolesPage = lazy(() => import("@/features/phones/analysis/GroupRolesPage"))
+const AnalysesPage = lazy(() => import("@/features/phones/analysis/AnalysesPage"))
 const PatternsPage = lazy(() =>
   import("@/features/pattern/components/PatternsPage").then((m) => ({ default: m.PatternsPage }))
 )
@@ -198,6 +200,8 @@ export function AppRoutes() {
             <Route path="phone-money" element={<LazyPage><MoneySignalsPage /></LazyPage>} />
             <Route path="phone-analyses/deletions" element={<LazyPage><DeletionTimelinePage /></LazyPage>} />
             <Route path="phone-analyses/relationships" element={<LazyPage><RelationshipsPage /></LazyPage>} />
+            <Route path="phone-analyses/groups" element={<LazyPage><GroupRolesPage /></LazyPage>} />
+            <Route path="phone-analyses" element={<LazyPage><AnalysesPage /></LazyPage>} />
             <Route path="profiles" element={<Navigate to="../dossiers" replace />} />
             <Route path="dossiers" element={<LazyPage><DossiersPage /></LazyPage>} />
             <Route path="evidence" element={<EvidenceExplorer />} />

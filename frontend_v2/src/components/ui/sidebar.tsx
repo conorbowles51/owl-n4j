@@ -27,7 +27,7 @@ import {
   Gauge,
   type LucideIcon,
   Search as SearchIcon,
-  Trash2,
+  ListChecks,
 } from "lucide-react"
 import { cn } from "@/lib/cn"
 import { LoupeLogo } from "@/components/brand/LoupeLogo"
@@ -80,8 +80,7 @@ function getPhonesNav(caseId: string): NavItem[] {
     { label: "Conversations", icon: MessageSquare, to: `/cases/${caseId}/conversations`, shortcut: "6" },
     { label: "Patterns", icon: Clock, to: `/cases/${caseId}/phone-patterns` },
     { label: "Money on the phones", icon: Banknote, to: `/cases/${caseId}/phone-money` },
-    { label: "Deleted and hidden", icon: Trash2, to: `/cases/${caseId}/phone-analyses/deletions` },
-    { label: "Relationships over time", icon: Users, to: `/cases/${caseId}/phone-analyses/relationships` },
+    { label: "Analyses", icon: ListChecks, to: `/cases/${caseId}/phone-analyses` },
     { label: "Needs a decision", icon: ShieldCheck, to: `/cases/${caseId}/phone-review` },
   ]
 }

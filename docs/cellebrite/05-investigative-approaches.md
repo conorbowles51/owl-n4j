@@ -1063,7 +1063,9 @@ next P07 872 of 4,619 (18.9 percent); 0 to 2.2 percent elsewhere (P05, P06, P08,
 ChatActivity 277 on P14 (3-phone case) and 25 on P04 (10-report case). Live reference phones (m4.1, read-only): C3 0
 of 1,702 and C9 0 of 2,013 incoming with an owner read time. Gate: read-and-latency **fail** (2 phones < 5);
 group roles **pass** (277 >= 50 in the 3-phone case). Reverse if a case adds phones with read times on 20 percent of
-incoming messages until 5 phones meet it.
+incoming messages until 5 phones meet it. **Built (`cb-approaches`, 05-S7, `awareness` version 4.1-groups, screen "Group admins and
+membership"):** step 5 only; steps 1 to 4 (read and play events, reply latency, read without reply, unread) are
+**not built** on these numbers, and the screen says so.
 
 ### 7.7 Dependencies
 
@@ -2148,6 +2150,10 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | 19.S9-c PELT with a Poisson cost and a BIC penalty of 2 x ln(weeks) per changepoint | 14.3 step 2; a changepoint adds a location and a new rate | |
 | 19.S9-d "No contact after D" (14.3 step 2) is 04's statement check; the screen links to it | 04 already gathers the supporting and contradicting records and the data gaps for a claim | 04's check cannot take a person and a date |
 | 19.S9-e A person is a reviewed person (02) when one exists, else one identity; identities joined only by equal value carry `identity_unreviewed` | 17.7 | |
+| 19.S7-a A chat is a group when its ChatType is Group, or, where the report gives none, when it lists more than two participants | ChatType exists on 4 of 14 reports (A3 section 9) | a reviewed mapping gives the chat type per app |
+| 19.S7-b The party on a ChatActivity is shown as "participant named", never as who made the change | actor or subject is not established (section 20) | a reviewed mapping establishes it per app |
+| 19.S7-c A group chat with no admin flag and no recorded change gives no result; the run counts every group | nothing to show for it; its existence is in the count | |
+| 19.S-ix The analyses are reached from one Phones sidebar entry, "Analyses", which also lists the approaches whose gate failed with the measured reason | one entry per approach would put ten links in the group; an absent analysis is stated, not silent | |
 | Deletion time is an interval to extraction start unless `DateDeleted` exists | `DateDeleted` 1 in corpus | a source of deletion times is found |
 | Media spread population restricted to attachment, camera-path and EXIF-camera files | X10 against X11 | |
 | Approach code in `backend/services/phone_analysis/`; media and re-parse in the engine | backend 3.10 versus tool requirements 3.11+ | 01/02 fix another root |
