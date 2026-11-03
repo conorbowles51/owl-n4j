@@ -1,0 +1,189 @@
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
+import { useEffect, useRef, useState } from "react"
+import { Link, useParams } from "react-router-dom"
+import { Button } from "@/components/ui/button"
+import { recordPath } from "@/lib/record-links"
+import { getMediaDetail, getMediaIndex, getMediaWindow, mediaObjectUrl, type MediaFilter, type MediaItem } from "../api"
+
+const n = (v: number) => v.toLocaleString("en-US")
+const WINDOW = 200
+const BLUR_KEY = "loupe.media.blur"
+
+/** A file's bytes shown in the page, fetched only when asked for (visible, or opened). */
+function useObjectUrl(caseId: string, fileUid: string | null, enabled: boolean) {
+  const [state, setState] = useState<{ url: string; type: string } | { error: string } | null>(null)
+  useEffect(() => {
+    if (!fileUid || !enabled) return
+    const ctrl = new AbortController()
+    let made: string | null = null
+    mediaObjectUrl(caseId, fileUid, ctrl.signal)
+      .then((r) => {
+        made = r.url
+        setState(r)
+      })
+      .catch((e: unknown) => {
+        if (!ctrl.signal.aborted) setState({ error: e instanceof Error ? e.message : "This file could not be shown." })
+      })
+    return () => {
+      ctrl.abort()
+      if (made) URL.revokeObjectURL(made)
+      setState(null)
+    }
+  }, [caseId, fileUid, enabled])
+  return state
+}
+
+function Thumb({ caseId, item, blur }: { caseId: string; item: MediaItem; blur: boolean }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [seen, setSeen] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || typeof IntersectionObserver === "undefined") return
+    const io = new IntersectionObserver((e) => e.some((x) => x.isIntersecting) && setSeen(true), { rootMargin: "200px" })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [])
+  const isImage = (item.category ?? "").toLowerCase().includes("image") || /\.(jpe?g|png|gif|webp|heic|bmp)$/i.test(item.filename)
+  const shown = useObjectUrl(caseId, item.file_uid, seen && isImage && !item.missing)
+  return (
+    <div ref={ref} className="flex h-28 items-center justify-center overflow-hidden rounded bg-muted text-center text-[11px]">
+      {item.missing ? (
+        <span className="px-2">The report refers to a file that is not in the production.</span>
+      ) : shown && "url" in shown ? (
+        <img src={shown.url} alt={item.filename} className={`h-full w-full object-cover ${blur ? "blur-md" : ""}`} />
+      ) : shown && "error" in shown ? (
+        <span className="px-2">{shown.error}</span>
+      ) : (
+        <span className="px-2 text-muted-foreground">{item.category ?? "File"}</span>
+      )}
+    </div>
+  )
+}
+
+function Detail({ caseId, fileUid, onClose }: { caseId: string; fileUid: string; onClose: () => void }) {
+  const d = useQuery({ queryKey: ["phone-media-detail", caseId, fileUid], queryFn: () => getMediaDetail(caseId, fileUid) })
+  const file = useObjectUrl(caseId, fileUid, !!d.data && !d.data.missing)
+  const x = d.data
+  return (
+    <aside aria-label="File" className="flex w-96 shrink-0 flex-col gap-2 overflow-auto border-l p-3 text-xs">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold">File</h2>
+        <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
+      </div>
+      {d.isLoading && <p role="status">Loading the file.</p>}
+      {d.isError && <p role="alert">This file could not be loaded.</p>}
+      {x && (
+        <>
+          <p className="break-all font-medium">{x.local_path ?? "No path given in the report"}</p>
+          {x.missing ? (
+            <p role="note">{x.missing_words}</p>
+          ) : file && "url" in file ? (
+            file.type.startsWith("image/") ? <img src={file.url} alt={x.local_path ?? "file"} className="max-h-80 object-contain" />
+              : file.type.startsWith("video/") ? <video src={file.url} controls className="max-h-80" />
+              : file.type.startsWith("audio/") ? <audio src={file.url} controls />
+              : <a className="underline" href={file.url} download>Save the original</a>
+          ) : file && "error" in file ? (
+            <p role="alert">{file.error}</p>
+          ) : (
+            <p role="status">Loading the file.</p>
+          )}
+          <p>{x.verification_words}</p>
+          {x.deleted_state && <p>Deleted state: {x.deleted_state}</p>}
+          <dl className="grid grid-cols-[auto_1fr] gap-x-2">
+            {Object.entries(x.hashes).filter(([, v]) => v).map(([k, v]) => (
+              <div key={k} className="contents"><dt className="text-muted-foreground">{k}</dt><dd className="break-all font-mono">{v}</dd></div>
+            ))}
+          </dl>
+          <h3 className="font-medium">Carried by {n(x.message_count)} {x.message_count === 1 ? "message" : "messages"}</h3>
+          <ul className="flex flex-col gap-1">
+            {x.messages.map((m) => (
+              <li key={m.record_uid}>
+                <Link className="underline" to={recordPath(caseId, m.message_record_uid)}>{m.kind === "call" ? "The call" : "The message"}{m.instant ? ` at ${new Date(m.instant).toISOString().slice(0, 16).replace("T", " ")} UTC` : ""}</Link>
+                <span className="text-muted-foreground"> (found by {m.mechanism_words})</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </aside>
+  )
+}
+
+/** Media (03 section 8): every file on the phone, by category and state; the total is the phone summary's. */
+export default function MediaPage() {
+  const { id: caseId = "", extraction = "" } = useParams()
+  const [category, setCategory] = useState("")
+  const [state, setState] = useState("")
+  const [open, setOpen] = useState<string | null>(null)
+  const [blur, setBlur] = useState(() => localStorage.getItem(BLUR_KEY) !== "off")
+  const filter: MediaFilter = { case_id: caseId, phones: [extraction], ...(category ? { categories: [category] } : {}), ...(state ? { verification: [state] } : {}) }
+  const idx = useQuery({ queryKey: ["phone-media-index", filter], queryFn: () => getMediaIndex(filter), enabled: !!caseId })
+  const all = useQuery({ queryKey: ["phone-media-index", caseId, extraction], queryFn: () => getMediaIndex({ case_id: caseId, phones: [extraction] }), enabled: !!caseId })
+  const pages = useInfiniteQuery({
+    queryKey: ["phone-media-window", filter],
+    queryFn: ({ pageParam }) => getMediaWindow(filter, pageParam, WINDOW),
+    initialPageParam: 0,
+    getNextPageParam: (last) => (last.items.length === WINDOW ? last.offset + WINDOW : undefined),
+    enabled: !!caseId,
+  })
+  const items = pages.data?.pages.flatMap((p) => p.items) ?? []
+  const sentinel = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = sentinel.current
+    if (!el || typeof IntersectionObserver === "undefined") return
+    const io = new IntersectionObserver((e) => {
+      if (e.some((x) => x.isIntersecting) && pages.hasNextPage && !pages.isFetchingNextPage) void pages.fetchNextPage()
+    }, { rootMargin: "600px" })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [pages])
+  const total = idx.data?.total ?? 0
+  return (
+    <div className="flex h-full">
+      <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-auto p-4">
+        <h1 className="text-lg font-semibold">Media</h1>
+        {idx.data && (
+          <p role="status" className="text-sm">
+            {n(total)} {total === 1 ? "file" : "files"}{category || state ? ` match the filter (of ${n(all.data?.total ?? total)})` : ""}.
+            {idx.data.missing ? ` ${n(idx.data.missing)} the report refers to are not in the production.` : ""}
+            {idx.data.no_time_count ? ` ${n(idx.data.no_time_count)} were carried by no message and have no time; they are listed at the end.` : ""}
+          </p>
+        )}
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <label className="flex items-center gap-1">Category
+            <select value={category} onChange={(e) => setCategory(e.target.value)} className="rounded border bg-background px-1 py-0.5">
+              <option value="">All</option>
+              {Object.entries(all.data?.by_category ?? {}).map(([k, v]) => <option key={k} value={k === "Uncategorised" ? "" : k}>{k} ({n(v)})</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-1">State
+            <select value={state} onChange={(e) => setState(e.target.value)} className="rounded border bg-background px-1 py-0.5">
+              <option value="">All</option>
+              {Object.entries(all.data?.verification ?? {}).map(([k, v]) => <option key={k} value={k === "unchecked" ? "" : k}>{k} ({n(v)})</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-1">
+            <input type="checkbox" checked={blur} onChange={(e) => { setBlur(e.target.checked); localStorage.setItem(BLUR_KEY, e.target.checked ? "on" : "off") }} />
+            Blur pictures until opened
+          </label>
+        </div>
+        {pages.isError && <p role="alert" className="text-sm">The files could not be loaded.</p>}
+        <ul aria-label="Files" className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2">
+          {items.map((it) => (
+            <li key={it.file_uid}>
+              <button type="button" onClick={() => setOpen(it.file_uid)} className="flex w-full flex-col gap-1 rounded border p-1 text-left text-[11px] hover:bg-muted/40">
+                <Thumb caseId={caseId} item={it} blur={blur && open !== it.file_uid} />
+                <span className="truncate font-medium">{it.filename}</span>
+                <span className="truncate text-muted-foreground">{it.phone_label} · {it.taken_or_sent.full}</span>
+                <span className="truncate">{it.verification_words}{it.message_count ? ` · ${n(it.message_count)} ${it.message_count === 1 ? "message" : "messages"}` : ""}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+        <div ref={sentinel} />
+        {pages.isFetchingNextPage && <p role="status" className="text-xs">Loading more files ({n(items.length)} of {n(total)} shown).</p>}
+      </div>
+      {open && <Detail caseId={caseId} fileUid={open} onClose={() => setOpen(null)} />}
+    </div>
+  )
+}

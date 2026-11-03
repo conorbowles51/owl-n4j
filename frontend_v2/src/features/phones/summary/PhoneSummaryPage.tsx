@@ -258,7 +258,10 @@ export function PhoneSummaryPage() {
       </Section>
       <Section name="Files">
         <p>
-          {fmt(p.files.total)} files{soFar}
+          <Link className="underline" to={`/cases/${encodeURIComponent(caseId)}/phones/${encodeURIComponent(extraction)}/records/media`}>
+            {fmt(p.files.total)} files
+          </Link>
+          {soFar}
         </p>
         <ul className="text-xs">
           {Object.entries(p.files.verification).map(([k, v]) => (

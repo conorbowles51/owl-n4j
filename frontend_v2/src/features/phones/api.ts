@@ -297,3 +297,54 @@ export async function getPhoneMapSummary(caseId: string, filter: PhoneMapFilter 
 export async function getPhoneMapPoints(caseId: string, bbox: number[], zoom: number, filter: PhoneMapFilter = {}, signal?: AbortSignal) {
   return PhoneMapPointsSchema.parse(await fetchAPI("/api/phones/map/points", { method: "POST", body: { case_id: caseId, bbox, zoom, filter }, read: true, signal }))
 }
+
+export interface MediaFilter {
+  case_id: string
+  phones?: string[]
+  categories?: string[]
+  verification?: string[]
+  linked_to_message?: boolean | null
+}
+export interface MediaIndex { total: number; no_time_count: number; missing: number; by_category: Record<string, number>; verification: Record<string, number> }
+export interface MediaItem {
+  file_uid: string; extraction_id: string; phone_label: string; category: string | null; filename: string; size: number | null
+  taken_or_sent: { instant: string | null; full: string; basis: string }
+  verification: string | null; verification_words: string; missing: boolean; deleted_state: string | null; is_carved: boolean
+  message_count: number; thumbnail_url: string | null
+}
+export interface MediaDetail {
+  file_uid: string; extraction_id: string; category: string | null; local_path: string | null; size: number | null
+  hashes: Record<string, string | null>; verification: string | null; verification_words: string; missing: boolean
+  missing_words: string | null; deleted_state: string | null; is_carved: boolean; message_count: number
+  messages: { record_uid: string; message_record_uid: string; kind: string | null; instant: string | null; mechanism: string; mechanism_words: string }[]
+}
+
+/** Media (03 section 8.2). */
+export async function getMediaIndex(filter: MediaFilter) {
+  return fetchAPI<MediaIndex>("/api/phones/media/index", { method: "POST", body: filter, read: true })
+}
+export async function getMediaWindow(filter: MediaFilter, offset: number, limit = 200) {
+  return fetchAPI<{ items: MediaItem[]; offset: number; limit: number }>("/api/phones/media/window", { method: "POST", body: { filter, offset, limit }, read: true })
+}
+export async function getMediaDetail(caseId: string, fileUid: string) {
+  return fetchAPI<MediaDetail>(`/api/phones/media/${encodeURIComponent(fileUid)}?case_id=${encodeURIComponent(caseId)}`)
+}
+/** A phone file's bytes as an object URL (the bearer token cannot ride on an <img src>). The caller revokes it. */
+export async function mediaObjectUrl(caseId: string, fileUid: string, signal?: AbortSignal) {
+  const token = localStorage.getItem("authToken")
+  const response = await fetch(`/api/phones/media/${encodeURIComponent(fileUid)}/content?case_id=${encodeURIComponent(caseId)}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    credentials: "include",
+    signal,
+  })
+  if (!response.ok) {
+    let words = "This file could not be shown."
+    try {
+      words = ((await response.json()) as { detail?: string }).detail ?? words
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(words)
+  }
+  return { url: URL.createObjectURL(await response.blob()), type: response.headers.get("Content-Type") ?? "" }
+}
