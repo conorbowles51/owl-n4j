@@ -106,6 +106,17 @@ class CalculationTests(unittest.TestCase):
             P.propose_assumption(self.db, case_id=self.case.id, calculation_id=calc['id'], key='share_deals',
                                  low='1', high='2', source='x', why='x', origin=dict(kind='person'))
 
+    def test_the_generic_looks_right_cannot_confirm_an_agent_assumption(self):
+        """Old code: the Judgement calls page's one-click confirm put the model's value into the result."""
+        from services.agent.proposals import agent_origin
+        from services.financial import judgements
+        calc = self._calc()
+        out = P.propose_assumption(self.db, case_id=self.case.id, calculation_id=calc['id'], key='messages',
+                                   low='5', high='6', source='x', why='x', origin=agent_origin(for_name='Alex', model='M'))
+        jid = next(a for a in out['assumptions'] if a['key'] == 'messages')['proposed'][0]['id']
+        with self.assertRaises(judgements.JudgementError):
+            judgements.confirm(self.db, case_id=self.case.id, judgement_id=__import__('uuid').UUID(jid), actor=self.actor)
+
     def test_a_model_cannot_set_an_assumption_and_a_source_is_required(self):
         from services.financial.model_work import model_actor
         calc = self._calc()

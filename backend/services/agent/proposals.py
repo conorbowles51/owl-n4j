@@ -577,7 +577,7 @@ def _week(value: datetime) -> str:
     return f'{iso[0]}-W{iso[1]:02d}'
 
 
-def precision(session, case_id=None) -> dict:
+def precision(session, case_id=None, case_ids=None) -> dict:
     """Per proposal kind: open / accepted / corrected / rejected in total and per ISO week of the answer, and the
     share of confirmations made after a cited source was opened. Ledger proposals and Workspace AI agent drafts."""
     from postgres.models.financial_judgements import FinancialJudgement as J
@@ -588,6 +588,8 @@ def precision(session, case_id=None) -> dict:
     query = select(J.rule_id, J.status, J.resolved_at, J.evidence).where(J.rule_id.like(PREFIX + '%'))
     if case_id is not None:
         query = query.where(J.case_id == case_id)
+    if case_ids is not None:  # only the cases the reader can open
+        query = query.where(J.case_id.in_(list(case_ids)))
     for rule_id, status, resolved_at, evidence in session.execute(query):
         kind = RULE_KIND.get(rule_id, rule_id[len(PREFIX):])
         outcome = 'accepted' if status == 'confirmed' else status
@@ -604,6 +606,8 @@ def precision(session, case_id=None) -> dict:
         W.output_type.in_(AGENT_OUTPUT_TYPES))
     if case_id is not None:
         wquery = wquery.where(W.case_id == case_id)
+    if case_ids is not None:
+        wquery = wquery.where(W.case_id.in_(list(case_ids)))
     for output_type, status, reviewed_at, meta in session.execute(wquery):
         outcome = dict(pending_review='open', accepted='accepted', rejected='rejected').get(status, status)
         kinds.setdefault(output_type, Counter())[outcome] += 1

@@ -340,3 +340,27 @@ def test_a_payment_purpose_quoting_another_cases_record_is_refused(db):
     with pytest.raises(proposals.ProposalError, match="Not in this case"):
         W.propose_phone_draft(db, case_id=db.info["case"].id, kind="payment_purpose", args={}, origin=_origin(),
                               _run=lambda: result)
+
+
+def test_accepting_a_timeline_proposal_stamps_only_the_rows_it_added(db, monkeypatch):
+    """A row already on the timeline is someone's own work; old code stamped it with the model origin."""
+    from services import timeline_entries as T
+    item = _draft(db)
+    db.get(WorkspaceAIOutput, uuid.UUID(item["id"])).output_type = "timeline_addition"
+    out = db.get(WorkspaceAIOutput, uuid.UUID(item["id"]))
+    out.proposed_actions = [dict(action="add_to_timeline", source_kind="transaction", source_ids=["a", "b"])]
+    db.commit()
+    mine, theirs = uuid.uuid4(), uuid.uuid4()
+    rows = [dict(source_id="a", status="ready", event=dict(key=f"timeline-entry:{mine}")),
+            dict(source_id="b", status="already_added", event=dict(key=f"timeline-entry:{theirs}"))]
+    monkeypatch.setattr(T, "TimelineAddition", lambda **kw: type("R", (), dict(kw, expected_revision=None))())
+    monkeypatch.setattr(T, "preview_addition", lambda s, case_id, request: dict(revision="r", rows=rows, ready=1))
+    monkeypatch.setattr(T, "save_addition", lambda s, case_id, request, actor: dict(
+        event_keys=[f"timeline-entry:{mine}", f"timeline-entry:{theirs}"]))
+    owner = db.info["owner"]
+    proposals.record_open(db, case_id=db.info["case"].id, proposal_type="workspace_ai", proposal_id=item["id"],
+                          citation=item["content"]["citations"][0], user=owner)
+    from postgres.models.timeline_entry import TimelineEntry
+    TimelineEntry.__table__.create(db.get_bind(), checkfirst=True)
+    done = W.accept(db, case_id=db.info["case"].id, output_id=item["id"], reviewer=owner, via="ui")
+    assert [t["target_id"] for t in done["accepted_targets"]] == [str(mine)]

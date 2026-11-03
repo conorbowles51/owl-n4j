@@ -125,7 +125,9 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True, reas
             metadata['investigation_labels'] = current
             if 'category' in row_changes:
                 from services.financial.payment_categories import record_person_choice
-                record_person_choice(session, row, row_changes['category'], actor)
+                record_person_choice(session, row, row_changes['category'], actor, why=(
+                    f"Proposed by {(proposed_by.get('origin') or {}).get('model') or 'the case agent'} (case agent), "
+                    f"accepted by {getattr(actor, 'name', None) or 'a person'}") if proposed_by else None)
             metadata['investigation_label_history'] = [*metadata.get('investigation_label_history', []), dict(
                 at=datetime.now(timezone.utc).isoformat(), actor_name=actor.name,
                 actor_email=actor.email, actor_id=str(actor.user_id) if actor.user_id else None,

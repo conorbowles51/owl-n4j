@@ -185,6 +185,7 @@ class LedgerProposalTests(_Fixture):
         self.db.expire_all()
         stored = self.db.get(FinancialPaymentCategory, self.row.id)
         self.assertEqual((stored.category, stored.origin), ('Travel', 'person'))
+        self.assertEqual(stored.why, 'Proposed by DeepSeek V4 Pro (case agent), accepted by ' + self.f.actor.name)
         history = self.db.get(FinancialTransaction, self.row.id).metadata_['investigation_label_history'][-1]
         self.assertEqual(history['proposed_by']['judgement_id'], item['id'])
         self.assertEqual(history['proposed_by']['origin']['model'], 'DeepSeek V4 Pro')
@@ -262,6 +263,9 @@ class LedgerProposalTests(_Fixture):
                          (1, 1, 0, 0, 2))
         self.assertEqual(sum(w['accepted'] + w['rejected'] for w in kind['weeks']), 2)
         self.assertEqual(proposals.precision(self.db, uuid.uuid4())['kinds'], [])
+        # Every case counts only the cases the reader can open (old code: every case in the system).
+        self.assertEqual(proposals.precision(self.db, None, case_ids=[uuid.uuid4()])['kinds'], [])
+        self.assertEqual(proposals.precision(self.db, None, case_ids=[self.f.case.id])['kinds'][0]['decided'], 2)
 
     def test_the_export_names_the_case_agent_not_a_hand_entry(self):
         self._category()

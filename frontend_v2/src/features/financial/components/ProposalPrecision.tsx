@@ -70,7 +70,7 @@ export function ProposalPrecisionPanel({ caseId }: { caseId: string }) {
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           <Block title="This case" data={query.data.case} />
-          <Block title="Every case" data={query.data.all_cases} />
+          <Block title="Every case you are a member of" data={query.data.all_cases} />
         </div>
       )}
     </section>

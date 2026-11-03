@@ -362,10 +362,17 @@ def accept(session, *, case_id, output_id, reviewer, via='api', due_at=None, edi
     provenance = _origin_record(item, reviewer, facts)
     content, action = dict(item.content or {}), (item.proposed_actions or [{}])[0]
     edits = {k: v for k, v in dict(edits or {}).items() if k in ('title', 'body') and str(v or '').strip()}
+    # Claimed first, under the row lock: the work below commits on its own (entries, timeline), so a second accept
+    # waiting on the lock then sees 'accepted' and is refused instead of applying the proposal twice.
+    item.review_status, item.reviewed_by_user_id, item.reviewed_at = 'accepted', reviewer.id, _now()
+    session.commit()
     try:
         accepted = _apply(session, item, content, action, reviewer, provenance, due_at, edits)
-    except ProposalError:
+    except Exception:
         session.rollback()
+        released = _load(session, case_id, output_id)
+        released.review_status, released.reviewed_by_user_id, released.reviewed_at = 'pending_review', None, None
+        session.commit()
         raise
     item = _load(session, case_id, output_id)
     item.review_status, item.reviewed_by_user_id, item.reviewed_at = 'accepted', reviewer.id, _now()
@@ -434,11 +441,16 @@ def _apply(session, item, content, action, reviewer, provenance, due_at, edits):
         request = TimelineAddition(source_kind=action['source_kind'], source_ids=action['source_ids'],
                                    event_date=action.get('event_date'))
         try:
-            request.expected_revision = preview_addition(session, case_id=case_id, request=request)['revision']
+            preview = preview_addition(session, case_id=case_id, request=request)
+            request.expected_revision = preview['revision']
+            # Only the rows this accept adds carry the model origin; a row already on the timeline is someone's own.
+            ready = {r['event']['key'] for r in preview['rows'] if r.get('event') and r['status'] == 'ready'}
+            if not ready:
+                raise ProposalError('Nothing to add: every source is already on the timeline or has no date.', 409)
             saved = save_addition(session, case_id=case_id, request=request, actor=reviewer.name)
         except ValueError as exc:
             raise ProposalError(str(exc), 409) from exc
-        keys = [k[len('timeline-entry:'):] for k in saved['event_keys']]
+        keys = [k[len('timeline-entry:'):] for k in saved['event_keys'] if k in ready]
         for entry in session.scalars(select(TimelineEntry).where(TimelineEntry.case_id == case_id,
                                                                   TimelineEntry.id.in_([_uuid(k) for k in keys]))):
             if not (entry.event_snapshot or {}).get('actor_origin'):

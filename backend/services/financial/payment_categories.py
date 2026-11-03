@@ -169,7 +169,7 @@ def _last_label_actor(row):
     return None
 
 
-def record_person_choice(session, row, category, actor):
+def record_person_choice(session, row, category, actor, why=None):
     """A person chose this row's category. Replaces whatever was stored; a model guess they changed is a correction."""
     from postgres.models.financial_payment_category import FinancialPaymentCategory as C
     if not table_ready(session):
@@ -177,12 +177,26 @@ def record_person_choice(session, row, category, actor):
     previous = session.get(C, row.id)
     before = (previous.category, previous.origin) if previous is not None else None
     _upsert(session, row, category=category, origin='person', basis='investigation_labels', confidence=None,
-            why=None, set_by=getattr(actor, 'email', None) or getattr(actor, 'name', None))
+            why=why, set_by=getattr(actor, 'email', None) or getattr(actor, 'name', None))
     if before and before[1] == 'model' and before[0] != category:
         _correct_model_judgement(session, row, before[0], category, actor)
     # An open category proposal by the case agent is settled by the person's choice (services.agent.proposals).
-    from services.agent.proposals import on_person_category
-    on_person_category(session, row, category, actor)
+    if _open_category_proposal(session, row):
+        from services.agent.proposals import on_person_category
+        on_person_category(session, row, category, actor)
+
+
+def _open_category_proposal(session, row) -> bool:
+    """Whether the case agent has an open category proposal on this payment; checked before the agent package is
+    loaded, so an ordinary category save never imports it. A database without judgement calls has none."""
+    from postgres.models.financial_judgements import FinancialJudgement as J
+    try:
+        with session.begin_nested():
+            return session.scalar(select(J.id).where(
+                J.subject_type == 'transaction', J.subject_id == row.id, J.rule_id == 'proposal.category',
+                J.status == 'open').limit(1)) is not None
+    except Exception:  # noqa: BLE001 - no judgement calls table here (a partial test database)
+        return False
 
 
 def _correct_model_judgement(session, row, before, after, actor):

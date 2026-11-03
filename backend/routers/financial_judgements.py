@@ -209,11 +209,15 @@ def _proposal_call(fn):
 
 
 @router.get("/proposals/precision")
-def proposal_precision(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+def proposal_precision(case_id: UUID = Query(...), db: Session = Depends(get_db),
+                       current_user=Depends(get_current_db_user)):
     """Per proposal kind, what people did with the case agent's proposals (accepted / corrected / rejected) per week,
-    and how many confirmations were made after a cited source was opened. This case and every case."""
+    and how many confirmations were made after a cited source was opened. This case, and every case the reader is a
+    member of (never counts from a case they cannot open)."""
     from services.agent.proposals import precision
-    return dict(case=precision(db, case_id), all_cases=precision(db, None))
+    from services.case_service import list_cases_for_user
+    mine = [case.id for case, _, _ in list_cases_for_user(db, current_user)]
+    return dict(case=precision(db, case_id), all_cases=precision(db, None, case_ids=mine))
 
 
 @router.post("/{judgement_id}/opened")

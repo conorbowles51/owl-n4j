@@ -1282,6 +1282,9 @@ def confirm(session, *, case_id, judgement_id, actor, reason=''):
     if row.rule_id.startswith('proposal.'):
         # Accepting a proposal applies it and records what the person opened first (services.agent.proposals).
         raise JudgementError('This is a proposal by the case agent: accept it from the proposal.', 409)
+    if row.rule_id == 'assumption.proceeds':
+        # An assumption enters the calculation only through the calculator, which names who set it and its source.
+        raise JudgementError('This is a proceeds assumption: set or confirm it in the proceeds calculator.', 409)
     if row.status == 'corrected':
         raise JudgementError('This judgement call was already corrected.', 409)
     row.status, row.resolved_by, row.resolved_by_email = 'confirmed', actor.name, actor.email
