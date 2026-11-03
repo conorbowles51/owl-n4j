@@ -26,6 +26,15 @@ export interface UploadGroup {
   receipt: { file_ids: string[]; job_ids: string[]; message: string } | null
 }
 const endpoint = "/api/evidence-upload-groups"
+/** The largest single file an upload group accepts (the server's limit: 2,048 parts of 4 MiB). */
+export const MAX_FILE_BYTES = 8 * 1024 ** 3
+
+export function tooLargeMessage(file: File, isArchive?: boolean) {
+  const size = `${(file.size / 1024 ** 3).toFixed(1)} GB`
+  return isArchive
+    ? `This ZIP file is ${size}; one file can be at most 8 GB, so it was not uploaded. Unpack it and upload the report folder instead.`
+    : `${file.name} is ${size}; one file can be at most 8 GB, so nothing was uploaded.`
+}
 type Active = {
   files: File[]
   paused: boolean
@@ -267,6 +276,10 @@ export async function uploadFolderOrArchive(
 ): Promise<UploadResponse> {
   const checkSession = uploadSessionGuard()
   if (!files.length) throw new Error("Select files to upload.")
+  // the server takes one file of at most MAX_FILE_BYTES (backend/routers/evidence_upload_groups.py Member.size); say so
+  // before the whole selection is hashed, never after
+  const tooLarge = files.find((file) => file.size > MAX_FILE_BYTES)
+  if (tooLarge) throw new Error(tooLargeMessage(tooLarge, options.isArchive && !selectionKind))
   const kind = selectionKind || (options.isArchive ? "archive" : "folder")
   const onProgress = options.onProgress
   const hashed: UploadProgress = {

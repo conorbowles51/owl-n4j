@@ -112,8 +112,9 @@ try {
       }
     }
     // an error on the page ends the watch with its words (the run would otherwise wait out --minutes)
-    const alert = await page.getByRole("alert").first().textContent({ timeout: 500 }).catch(() => "")
-    if (alert && /could not|failed|error|refused/i.test(alert)) {
+    const alert = (await page.getByRole("alert").first().textContent({ timeout: 500 }).catch(() => "")) ||
+      (await page.getByText(/so it was not uploaded|so nothing was uploaded/).first().textContent({ timeout: 500 }).catch(() => ""))
+    if (alert && /could not|failed|error|refused|not uploaded|nothing was uploaded/i.test(alert)) {
       failed = `page error: ${alert.replace(name, "[report]").slice(0, 300)}`
       console.log(`${secs()} s ${failed}`)
       await snap("page-error", page.getByRole("alert").first())
