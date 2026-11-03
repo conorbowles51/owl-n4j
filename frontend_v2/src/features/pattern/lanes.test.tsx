@@ -52,11 +52,15 @@ describe("the shared Lanes component (04 section 8.6, 07 J-5)", () => {
     ])
   })
 
-  it("is one component: defined once, used by the Timeline window and the Day view", () => {
+  it("is one component: defined once, used by the Timeline window, the Day view and the phone lens (03 T-1)", () => {
     const defining = Object.entries(sources).filter(([, src]) => /export function Lanes\(/.test(src)).map(([p]) => p)
     expect(defining).toEqual(["/src/features/pattern/components/Lanes.tsx"])
     const users = Object.entries(sources).filter(([, src]) => /<Lanes[\s>]/.test(src)).map(([p]) => p).sort()
-    expect(users).toEqual(["/src/features/pattern/components/PatternsPage.tsx", "/src/features/pattern/components/WindowPanel.tsx"])
+    expect(users).toEqual([
+      "/src/features/pattern/components/PatternsPage.tsx",
+      "/src/features/pattern/components/WindowPanel.tsx",
+      "/src/features/timeline/lens/PhoneLens.tsx",
+    ])
     expect(sources["/src/features/timeline/components/TimelinePage.tsx"]).toContain("TimelineWindowBar")
   })
 })
