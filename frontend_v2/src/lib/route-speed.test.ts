@@ -84,6 +84,7 @@ describe("phone pages below /cases/:id (07 10.2)", () => {
     expect(routePage(`${c}/phones/${x}/records/conversations`).page).toBe("case/phones/records/conversations")
     expect(routePage(`${c}/phone-patterns`).page).toBe("case/phone-patterns")
     expect(routePage(`${c}/phone-analyses/co-location`).page).toBe("case/phone-analyses")
+    expect(routePage(`${c}/phone-money`).page).toBe("case/phone-money")
     expect(routePage(`${c}/phones-prototype`).page).toBe("case/phones-prototype/summary")
     expect(routePage(`${c}/phones-prototype/needs-a-decision`).page).toBe("case/phones-prototype/needs-a-decision")
     expect(routePage(`${c}/phones/${x}`).caseId).toBe("4aa79795-1076-4c75-985f-784936abb71f")

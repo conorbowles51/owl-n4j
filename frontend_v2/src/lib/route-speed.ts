@@ -27,7 +27,7 @@ function phonePage(rest: string[]): string | null {
     if (kind === "records" && type && rest.length === 4 && PHONE_RECORD_TYPES.has(type)) return `case/phones/records/${type}`
     return null
   }
-  if ((view === "phone-review" || view === "phone-patterns") && rest.length === 1) return `case/${view}`
+  if ((view === "phone-review" || view === "phone-patterns" || view === "phone-money") && rest.length === 1) return `case/${view}`
   if (view === "phone-analyses" && rest.length <= 2) return "case/phone-analyses"
   if (view === "phones-prototype" && rest.length <= 2) {
     const v = sub ?? "summary"
