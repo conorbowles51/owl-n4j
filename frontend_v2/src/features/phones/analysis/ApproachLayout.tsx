@@ -112,6 +112,7 @@ function Behind({ caseId, client, queryKey, result, label, origin }: { caseId: s
       </ul>
       <CollectBar caseId={caseId} noun="record" origin={origin}
         links={uniq.map((r) => ({ target_type: "phone_record", target_id: r.record_uid!, label, source_anchor: { kind: "phone_record", record_uid: r.record_uid } }))} />
+      {uniq.length > 0 && <SourceExport caseId={caseId} source="analysis_result" refBody={{ result_id: result.id }} label="Export the messages and calls behind it…" />}
     </div>
   )
 }
@@ -179,7 +180,6 @@ function Row({ p, r, anchors, onChanged }: { p: ApproachLayoutProps; r: Approach
           )}
           <Behind caseId={p.caseId} client={p.client} queryKey={p.queryKey} result={r} label={p.collectLabel(r)} origin={p.origin} />
           <KeepThis p={p} r={r} />
-          <SourceExport caseId={p.caseId} source="analysis_result" refBody={{ result_id: r.id }} label="Export the messages and calls behind it…" />
           <Decide caseId={p.caseId} client={p.client} result={r} onDone={onChanged} />
         </div>
       )}

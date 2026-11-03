@@ -49,7 +49,7 @@ function KeptList({ caseId }: { caseId: string }) {
             <li key={k.id} className="rounded border p-2" data-testid="kept-result">
               {a ? <Link className="underline" to={`/cases/${caseId}/${a.path}?kept=${encodeURIComponent(k.id)}`}>{k.label}</Link> : <span>{k.label}</span>}
               <p className="text-xs">{recordsWords(k.record_count)} behind it{k.created_by_name ? `, kept by ${k.created_by_name}` : ""}.</p>
-              <SourceExport caseId={caseId} source="analysis_result" refBody={{ kept_id: k.id }} label="Export…" />
+              {k.record_count > 0 && <SourceExport caseId={caseId} source="analysis_result" refBody={{ kept_id: k.id }} label="Export…" />}
             </li>
           )
         })}

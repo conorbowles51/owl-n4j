@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { describe, expect, it, vi } from "vitest"
@@ -50,6 +50,22 @@ describe("Group admins and membership (AP-1, 05 7.8)", () => {
     expect(row).toHaveTextContent("Admin at extraction: Synthetic Person 2.")
     // 7.8.4: a change with no timestamp says its time is not recorded; the party is "participant named", never the actor
     expect(row).toHaveTextContent("participant left (time not recorded, participant named: Synthetic X)")
+  })
+})
+
+describe("Export from a result", () => {
+  it("offers the export only when the result has records behind it", async () => {
+    client.runs.mockResolvedValue({ items: [RUN] })
+    client.coverage.mockResolvedValue({ sentence: RUN.coverage.sentence })
+    client.results.mockResolvedValue({ total: 2, offset: 0, limit: 100, items: [GROUP, { ...GROUP, id: "g2" }] })
+    client.detail.mockImplementation((_c: string, id: string) => Promise.resolve({ records: id === "g1" ? [] : [{ record_uid: "u1", role: "group" }] }))
+    mount("/cases/c1/phone-analyses/groups", <GroupRolesPage />, "/cases/:id/phone-analyses/groups")
+    const [none, some] = await screen.findAllByTestId("group-result")
+    for (const row of [none, some]) fireEvent.click(within(row).getByRole("button", { expanded: false }))
+    await within(none).findByText("0 records behind it.")
+    await within(some).findByText("1 record behind it.")
+    expect(within(none).queryByRole("button", { name: /^Export/ })).toBeNull()
+    expect(within(some).getByRole("button", { name: "Export the messages and calls behind it…" })).toBeInTheDocument()
   })
 })
 

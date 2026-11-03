@@ -33,4 +33,15 @@ describe("Kept results on the analyses page (J-14b)", () => {
     expect(await screen.findByRole("dialog")).toHaveTextContent("analysis_result: The records behind the kept result. 1 record behind it is not a message or call")
     expect(prepareSourceExport).toHaveBeenCalledWith("c1", "analysis_result", { kept_id: "pa_1" })
   })
+  it("offers no export for a kept result with no records behind it", async () => {
+    keptResults.mockResolvedValue({ total: 1, offset: 0, limit: 50, items: [
+      { id: "pa_2", label: "Two extractions of one phone: identity check, C1 and C2 (Lead for enquiry)", approach: "extraction_comparison", record_count: 0, created_by_name: null, created_at: null }] })
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={["/cases/c1/phone-analyses"]}><Routes><Route path="/cases/:id/phone-analyses" element={<AnalysesPage />} /></Routes></MemoryRouter>
+      </QueryClientProvider>)
+    const row = await screen.findByTestId("kept-result")
+    expect(row).toHaveTextContent("0 records behind it.")
+    expect(within(row).queryByRole("button", { name: "Export…" })).toBeNull()
+  })
 })
