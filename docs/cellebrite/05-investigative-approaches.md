@@ -2044,7 +2044,12 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 |---|---|---|
 | Bank short codes are identified from the sender Party identifier; `SMSC` is never used | M5: SMSC never equals the sender; few distinct values per phone | never; it is a fact of the data |
 | `InstantMessage.Identifier` and `Chat.Id` are never cross-phone keys | X8, X9 collisions in local-id sources | a reviewed mapping shows a source app whose ids are global and measurement confirms |
-| Phone money readings never contradict a ledger in the first build | `claim_comparison.py:55-59` precedent; the coverage join has no production caller | step 4 lands with tests |
+| Phase 1b is the default: a reading is `contradicted` only when every account it could be on has a complete statement run with every period reconciled over the claim window and no such payment; phase 1a (never contradicts) stays a run parameter | 05-S4 built the join `read_account_continuity` to `coverage_from_continuity`, with unreconciled periods passed as unverified (tests in `test_phone_analysis_money_signals.py`) | a contradicted reading is shown wrong on real data |
+| An account merged with others (account consolidation) gives no coverage, so an absence there is unresolved, never contradicted | its run spans every merged account while the rows weighed are its own; weighing the group together is on the follow-up list | the group's rows and periods are weighed together |
+| Several payments that could each answer one reading link none of them: outcome `several_candidates`, each stored as a candidate | 4.3.4: tested against each, merged into none; a link names one payment | a tie-break rule is reviewed |
+| Readings with no anchor (no institution, no account) are not correlated | nothing to bind them to an account; correlating against every account would invent a binding | a reviewed rule binds by holder or app |
+| The results' `strength` column holds the reading strength (4.3.6), and the correlation outcome is in `measures.outcome` | 4.3.6 makes strength the filter on screen | the screen filters by outcome |
+| A case alias may name a drafted directory entry; a drafted entry's templates are still not used | the person's decision in the case is the review for that channel value in that case | |
 | Alert claim window `[d−1, d+7]` | authorisation versus posting, zone edge | M-1d lag distribution |
 | Zero materiality first, default materiality second pass reported as `near_amount` | alerts are exact; FX and fees need tolerance | near-amount results mostly wrong |
 | Institution directory is committed reviewed data plus case-scoped aliases | not evidence; review per plan 6.5 | 02 defines a reference-data store |
@@ -2062,7 +2067,7 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | One sensitive list shared with 02 section 5.5: `Password.GenericAttribute` and `KeyValueModel.Value` included | the two lists must agree, or a field sensitive in one spec would be searchable or exportable through the other; `KeyValueModel.Value` contents are unknown per key | a reviewed mapping shows a key's values hold no credential |
 | Every approach uses one results layout and labels its results "Lead for enquiry" (3.9) | an approach result points to records to examine and does not state probative value | a result kind is shown to be evaluative, then it carries the evaluative label with its propositions |
 | Approaches 14 to 16 measured first like the others (16a.6, 16b.6, 16c.6) | the same gate discipline as approaches 1 to 13 | |
-| Analysis runs have their own arq queue and worker settings, one job at a time, under the phone worker's memory cap (3.4) | the phone capture worker runs `max_jobs = 1`, so a shared queue would make an analysis wait behind an ingest and an ingest behind an analysis | measured host memory cannot hold both workers |
+| Analysis runs have their own queue (C16), a table `phone_analysis_runs` claimed by its own thread in the phone worker, one run at a time | the backend image has no arq worker for phones (03 D-43); a run left `running` by a worker that died is queued again at start, and a run whose phones or records changed after it was asked for is queued again on the current material | measured host memory cannot hold both, or an analysis waits longer than a phone pass |
 
 ---
 
