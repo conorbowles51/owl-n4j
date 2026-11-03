@@ -20,6 +20,8 @@ const api = vi.hoisted(() => ({
   acceptDerivedText: vi.fn().mockResolvedValue({ id: "a1", read_by: "Read by Whisper base 20250625, accepted by Synthetic Reviewer" }),
   getTranslations: vi.fn().mockResolvedValue({}),
   translateDerivedText: vi.fn(),
+  describeImageIndex: vi.fn().mockResolvedValue({ images: 0, eligible: 0, indexed: 0, indexed_contents: 0, waiting: 0, left_out: { not_in_population: 0, not_in_production: 0, empty_placeholder: 0, could_not_open: 0, could_not_open_by_reason: {} }, uncategorised_files: 0, model_installed: true, model_words: null, model: "siglip2-base-patch16-224", model_id: "m", revision_short: "75de2d5", population_words: "" }),
+  getImageIndexJobs: vi.fn().mockResolvedValue({ case_id: "c", items: [] }),
 }))
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
 vi.mock("../collect-targets", () => ({ useCollectTargets: () => ({ targets: [{ kind: "dossier", id: "p1", label: "Synthetic Person" }, { kind: "note", id: "n1", label: "A note" }], note: null, loading: false, error: null }) }))

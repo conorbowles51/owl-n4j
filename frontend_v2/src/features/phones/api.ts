@@ -447,6 +447,39 @@ export async function getDerivedTexts(caseId: string, fileUid: string) {
 export async function requestDerivedText(caseId: string, fileUid: string, kind: "ocr" | "transcript") {
   return fetchAPI<DerivedText>(`/api/phones/media/${encodeURIComponent(fileUid)}/derive`, { method: "POST", body: { case_id: caseId, kind } })
 }
+/** Image search by description (05 17.6): a case's images indexed and ranked by a model on this server. */
+export interface ImageIndexFacts {
+  images: number; eligible: number; indexed: number; indexed_contents: number; waiting: number
+  left_out: { not_in_population: number; not_in_production: number; empty_placeholder: number; could_not_open: number; could_not_open_by_reason: Record<string, number> }
+  uncategorised_files: number; model_installed: boolean; model_words: string | null
+  model: string | null; model_id: string | null; revision_short: string | null; population_words: string
+}
+export interface ImageIndexJob {
+  id: string; total: number; done: number; embedded: number; reused: number; failed: number
+  failed_by_reason: Record<string, number>; queued: number; running: number; cancelled: boolean; cancelled_count: number
+  state: "running" | "done" | "cancelled"; created_at: string; first_started_at: string | null; last_finished_at: string | null; noun: string
+}
+export interface ImageSearchCopy { file_uid: string; extraction_id: string; phone_label: string; filename: string; category: string | null; message_count: number }
+export interface ImageSearchResults {
+  query: string; label: string; model: string; model_id: string; revision_short: string; provider_words: string
+  scored: number; shown: number; coverage: ImageIndexFacts; truncated_query: boolean; truncated_words?: string | null
+  results: { rank: number; content_sha256: string; copy_count: number; copies: ImageSearchCopy[]; phones: string[] }[]
+}
+export async function describeImageIndex(caseId: string) {
+  return fetchAPI<ImageIndexFacts>("/api/phones/media/image-index/describe", { method: "POST", body: { case_id: caseId }, read: true })
+}
+export async function createImageIndex(caseId: string) {
+  return fetchAPI<ImageIndexJob>("/api/phones/media/image-index", { method: "POST", body: { case_id: caseId } })
+}
+export async function getImageIndexJobs(caseId: string) {
+  return fetchAPI<{ case_id: string; items: ImageIndexJob[] }>(`/api/phones/media/image-index?case_id=${encodeURIComponent(caseId)}`)
+}
+export async function cancelImageIndex(caseId: string, jobId: string) {
+  return fetchAPI<ImageIndexJob>(`/api/phones/media/image-index/${encodeURIComponent(jobId)}/cancel?case_id=${encodeURIComponent(caseId)}`, { method: "POST" })
+}
+export async function searchImages(caseId: string, query: string, limit = 24) {
+  return fetchAPI<ImageSearchResults>("/api/phones/media/image-search", { method: "POST", body: { case_id: caseId, query, limit }, read: true })
+}
 /** Machine translation on this server (05 17.5): one message, one machine text, or every message of a conversation. */
 export async function translateMessage(caseId: string, eventUid: string) {
   return TranslationSchema.parse(await fetchAPI(`/api/phones/messages/${encodeURIComponent(eventUid)}/translate`, { method: "POST", body: { case_id: caseId } }))

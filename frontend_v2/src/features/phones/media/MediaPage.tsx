@@ -6,6 +6,7 @@ import { recordPath } from "@/lib/record-links"
 import { useCollectTargets } from "../collect-targets"
 import { translationKey } from "../lib/translation-key"
 import { BatchReading } from "./BatchReading"
+import { ImageSearch } from "./ImageSearch"
 import { MachineTextPrompt } from "./MachineTextPrompt"
 import { useObjectUrl } from "./use-object-url"
 import { acceptDerivedText, confirmDerivedText, correctDerivedText, getDerivedTexts, getMediaDetail, getMediaIndex, getMediaWindow, getTranslations, requestDerivedText, translateDerivedText, type DerivedText, type MediaFilter, type MediaItem } from "../api"
@@ -496,6 +497,7 @@ export default function MediaPage() {
         </div>
         {pages.isError && <p role="alert" className="text-sm">The files could not be loaded.</p>}
         <BatchReading caseId={caseId} filter={filter} scopeWords={[category && `${category === NONE ? "uncategorised" : category} files`, state && `${state === NONE ? "unchecked" : state} files`].filter(Boolean).join(", ") || "this phone"} />
+        <ImageSearch caseId={caseId} blur={blur} onOpen={setOpen} />
         <ul aria-label="Files" className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2">
           {items.map((it) => (
             <li key={it.file_uid}>
