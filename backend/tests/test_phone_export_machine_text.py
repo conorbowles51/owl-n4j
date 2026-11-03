@@ -86,3 +86,25 @@ def test_m7_another_cases_transcript_is_never_listed(world):
     from services.phone.exports import jobs
     with world["engine"].connect() as c:
         assert jobs.describe_machine_text(c, world["other"], {"zone": {"mode": "case"}})["total"] == 0
+
+
+def test_m7_the_pdf_prints_the_persons_correction_even_after_a_later_machine_reading(world):
+    from sqlalchemy.orm import Session
+
+    from services.phone import machine_text
+    ident = _voice_note(world)
+    with Session(bind=world["engine"]) as db:
+        machine_text.correct(db, case_id=world["case"], derived_id=ident, text="SYNTHETIC SPOKEN HARBOUR MOTION",
+                             reason="heard it", user=SimpleNamespace(id=None, name="Synthetic Reviewer",
+                                                                     email="reviewer@synthetic.test"))
+        db.commit()
+    with world["engine"].begin() as c:
+        c.execute(text(
+            "INSERT INTO phone_derived_texts (id, case_id, extraction_id, file_uid, kind, state, text, text_folded, "
+            "model, model_version, finished_at) VALUES (gen_random_uuid(), :c, :e, :f, 'transcript', 'done', "
+            "'SYNTHETIC LATER WORDS', 'synthetic later words', 'Whisper', 'base 20250625', now())"),
+            {"c": world["case"], "e": world["ext"], "f": FILE})
+    assert _describe(world)["unconfirmed"] == 0
+    _, _, txt = _export(world)
+    words = " ".join(txt.split())
+    assert "Transcript: SYNTHETIC SPOKEN HARBOUR MOTION" in words and "SYNTHETIC LATER WORDS" not in words

@@ -22,6 +22,7 @@ from services.phone import fold as F
 from services.phone import labels as L
 from services.phone import streams
 from services.phone import time_display as T
+from services.phone.derive import IN_USE_ORDER
 from services.search import document_folds
 
 GROUPS = ("messages", "calls", "emails", "people", "records", "documents", "machine_text")
@@ -287,7 +288,7 @@ def _machine_sql(exact):
     cond = ("position(:qe in lower(coalesce(d.corrected_text, d.text))) > 0" if exact
             else "coalesce(d.corrected_text_folded, d.text_folded) LIKE :like")
     return ("FROM (SELECT DISTINCT ON (d.file_uid, d.kind) d.* FROM phone_derived_texts d WHERE d.case_id = :c AND "
-            "d.state = 'done' ORDER BY d.file_uid, d.kind, d.finished_at DESC) d JOIN pv_file f ON f.file_uid = "
+            "d.state = 'done' " + IN_USE_ORDER + ") d JOIN pv_file f ON f.file_uid = "
             "d.file_uid AND f.case_id = :c WHERE (CAST(:p AS uuid[]) IS NULL OR f.extraction_id = ANY(CAST(:p AS "
             "uuid[]))) AND " + cond)
 

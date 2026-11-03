@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { confirmDerivedText } from "../api"
 import { useObjectUrl } from "./use-object-url"
@@ -36,34 +36,34 @@ function Original({ caseId, item }: { caseId: string; item: MachineTextItem }) {
  * unconfirmed text is shown with its original inline: confirm it, or keep it marked. Either way the use goes ahead;
  * a text kept marked prints and shows its mark. `onSettled(true)` once every listed text has an answer.
  */
-export function MachineTextPrompt({ caseId, facts, onSettled }: { caseId: string; facts: MachineTextFacts; onSettled: (settled: boolean) => void }) {
+export function MachineTextPrompt({ caseId, facts, onSettled, onConfirmed }: { caseId: string; facts: MachineTextFacts; onSettled: (settled: boolean) => void; onConfirmed?: () => void }) {
   const [answers, setAnswers] = useState<Record<string, "confirmed" | "marked">>({})
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const items = facts.items
-  const answer = (id: string, value: "confirmed" | "marked") => {
-    const next = { ...answers, [id]: value }
-    setAnswers(next)
-    onSettled(items.every((x) => next[x.id]))
-  }
+  // from the latest answers: a confirmation that returns after another answer must not undo it
+  const record = (change: (prev: Record<string, "confirmed" | "marked">) => Record<string, "confirmed" | "marked">) => setAnswers(change)
+  useEffect(() => onSettled(items.every((x) => answers[x.id])), [answers, items, onSettled])
+  const answer = (id: string, value: "confirmed" | "marked") => record((prev) => ({ ...prev, [id]: value }))
   const confirm = async (x: MachineTextItem) => {
     setBusy(x.id)
     setError(null)
     try {
       await confirmDerivedText(caseId, x.id)
       answer(x.id, "confirmed")
+      onConfirmed?.()
     } catch (e) {
       setError(e instanceof Error ? e.message : "The confirmation could not be saved.")
     } finally {
       setBusy(null)
     }
   }
-  const keepAll = () => {
-    const next = { ...answers }
-    for (const x of items) next[x.id] = next[x.id] ?? "marked"
-    setAnswers(next)
-    onSettled(true)
-  }
+  const keepAll = () =>
+    record((prev) => {
+      const next = { ...prev }
+      for (const x of items) next[x.id] = next[x.id] ?? "marked"
+      return next
+    })
   if (!facts.unconfirmed) return null
   const more = facts.unconfirmed - items.length
   return (

@@ -188,3 +188,28 @@ def test_co18_a_transcript_accepted_into_a_dossier_assessment_is_ai_assisted_and
     with engine.connect() as c:
         [got] = derive.list_for(c, case, LINKED)
     assert got["origin"]["state"] == "machine"  # accepting is not confirming: the text keeps its mark
+
+
+def test_m6_a_later_machine_reading_never_displaces_a_persons_correction(world):
+    """Review finding on 8f4a6141: a re-reading finished after a correction took over search; the person's reading
+    must stay the one used, and the screen says which reading is used."""
+    from services.phone import derive, machine_text
+    from services.search import search as S
+    engine, case, _, ext = world
+    first = _done(engine, case, ext)
+    with _session(engine) as db:
+        machine_text.correct(db, case_id=case, derived_id=first, text="SYNTHETIC HARBOUR MOTION", reason="read it",
+                             user=USER)
+        db.commit()
+    later = uuid.uuid4()
+    with engine.begin() as c:  # a re-reading of the same file finishes later
+        c.execute(text(
+            "INSERT INTO phone_derived_texts (id, case_id, extraction_id, file_uid, kind, state, text, text_folded, "
+            "model, model_version, finished_at) VALUES (:i, :c, :e, :f, 'ocr', 'done', 'SYNTHETIC HARBOUR NOTION', "
+            "'synthetic harbour notion', 'Tesseract', '5.3.4', now())"), {"i": later, "c": case, "e": ext, "f": LINKED})
+    with engine.connect() as c:
+        hits = {g["group"]: g for g in S.search(c, case, "motion")["groups"]}["machine_text"]
+        stale = {g["group"]: g for g in S.search(c, case, "notion")["groups"]}["machine_text"]
+        rows = {r["id"]: r for r in derive.list_for(c, case, LINKED)}
+    assert hits["total"] == 1 and stale["total"] == 0
+    assert rows[str(first)]["in_use"] and not rows[str(later)]["in_use"]

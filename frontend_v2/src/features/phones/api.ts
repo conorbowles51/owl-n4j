@@ -365,6 +365,8 @@ export interface DerivedText {
   /** A person's correction or confirmation (07 4.6). The machine text stays in `text` and stays shown. */
   corrected_text?: string | null; correction_reason?: string | null; corrected_by?: string | null; corrected_at?: string | null
   confirmed_by?: string | null; confirmed_at?: string | null; effective_text?: string | null
+  /** The reading search, the PDF and assessments use for this file and kind: a person's latest, else the latest. */
+  in_use?: boolean
   origin?: { state: "pending" | "machine" | "confirmed" | "corrected"; words: string | null; confirmed: boolean }
 }
 export async function correctDerivedText(caseId: string, derivedId: string, text: string, reason: string) {

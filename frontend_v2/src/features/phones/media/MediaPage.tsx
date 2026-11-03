@@ -196,7 +196,7 @@ function UseInAssessment({ caseId, x, filename, onSaved }: { caseId: string; x: 
   return (
     <div className="flex flex-col gap-1 rounded border p-2">
       {needsAnswer && (
-        <MachineTextPrompt caseId={caseId} onSettled={setSettled}
+        <MachineTextPrompt caseId={caseId} onSettled={setSettled} onConfirmed={() => void onSaved()}
           facts={{ total: 1, unconfirmed: 1, items_cap: 1, items: [{ id: x.id, file_uid: x.file_uid, kind: x.kind, filename, words: x.origin?.words ?? x.label }] }} />
       )}
       <label className="flex flex-col gap-0.5">Dossier
@@ -271,6 +271,7 @@ export function DerivedTexts({ caseId, fileUid, category, filename = null }: { c
           {x.state === "done" && (
             <>
               {x.origin?.words && <p className="font-medium" data-origin={x.origin.state}>{x.origin.words}</p>}
+              {x.in_use === false && <p className="text-muted-foreground">Another reading of this file is the one searched and exported.</p>}
               {x.corrected_text != null ? (
                 <>
                   <p className="text-muted-foreground">Corrected text, used in search and quotes:</p>

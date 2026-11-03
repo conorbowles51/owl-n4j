@@ -171,10 +171,22 @@ def request(conn, case_id, file_uid, kind, user_id=None) -> dict:
     return _out(r)
 
 
+# The one text of each file and kind that search, the PDF and assessments use: the latest a person corrected or
+# confirmed, else the latest finished. A later machine reading never displaces a person's reading (07 4.6).
+IN_USE_ORDER = ("ORDER BY d.file_uid, d.kind, greatest(d.corrected_at, d.confirmed_at) DESC NULLS LAST, "
+                "d.finished_at DESC, d.id")
+
+
 def list_for(conn, case_id, file_uid) -> list:
-    return [_out(r) for r in conn.execute(text(
+    rows = [_out(r) for r in conn.execute(text(
         "SELECT * FROM phone_derived_texts WHERE case_id = :c AND file_uid::text = :u ORDER BY created_at DESC"),
         {"c": str(case_id), "u": str(file_uid)})]
+    used = {str(i) for (i,) in conn.execute(text(
+        "SELECT DISTINCT ON (d.file_uid, d.kind) d.id FROM phone_derived_texts d WHERE d.case_id = :c AND "
+        "d.file_uid::text = :u AND d.state = 'done' " + IN_USE_ORDER), {"c": str(case_id), "u": str(file_uid)})}
+    for r in rows:
+        r["in_use"] = r["id"] in used
+    return rows
 
 
 # ---- the work ------------------------------------------------------------------------------------------------------

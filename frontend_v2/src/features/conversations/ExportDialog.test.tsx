@@ -50,6 +50,22 @@ describe("Export for counsel", () => {
     await waitFor(() => expect(api.createExport).toHaveBeenCalled())
   })
 
+  it("keeps every answer when a confirmation returns after another answer was given", async () => {
+    const items = ["a", "b"].map((k) => ({ id: `d-${k}`, file_uid: `f-${k}`, kind: "transcript", filename: `synthetic-${k}.ogg`, words: "not yet confirmed" }))
+    api.describeExport.mockResolvedValue({ ...facts, machine_text: { total: 2, unconfirmed: 2, items, items_cap: 50 } })
+    api.mediaObjectUrl.mockResolvedValue({ url: "blob:synthetic", type: "audio/ogg" })
+    let finish: (v: unknown) => void = () => {}
+    api.confirmDerivedText.mockReturnValue(new Promise((r) => { finish = r }))
+    show()
+    await screen.findByText("2 machine-generated texts in this export are not yet confirmed by a person.")
+    fireEvent.click(screen.getAllByRole("button", { name: "Confirm" })[0]) // still pending
+    fireEvent.click(screen.getAllByRole("button", { name: "Keep it marked" })[1])
+    finish({ id: "d-a", decision_id: "x" })
+    expect(await screen.findByText("Confirmed by you.")).toBeInTheDocument()
+    expect(screen.getByText("Kept marked: it prints with its mark.")).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole("button", { name: "Export PDF" })).toBeEnabled())
+  })
+
   it("states the scope and the reading state before drawing, then draws and offers the file", async () => {
     api.describeExport.mockResolvedValue(facts)
     api.createExport.mockResolvedValue({ export_id: "x1" })

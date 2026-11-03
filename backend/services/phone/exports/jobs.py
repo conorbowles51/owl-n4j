@@ -24,6 +24,7 @@ from sqlalchemy import text
 from services.phone import labels as L
 from services.phone import streams
 from services.phone import time_display as T
+from services.phone.derive import IN_USE_ORDER
 from services.phone.filters import StreamFilter, snapshot
 
 log = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ def describe(conn, case_id, filter_body: dict) -> dict:
 # ---- machine-generated text on the attachments in scope (07 5 Media, M-7) -------------------------------------------
 
 _LATEST_DONE = ("SELECT DISTINCT ON (d.file_uid, d.kind) d.* FROM phone_derived_texts d WHERE d.case_id = "
-                "CAST(:c AS uuid) AND d.state = 'done' ORDER BY d.file_uid, d.kind, d.finished_at DESC")
+                "CAST(:c AS uuid) AND d.state = 'done' " + IN_USE_ORDER)
 PROMPT_ITEMS = 50  # the export dialog lists at most this many unconfirmed texts; it states the rest as a count
 
 

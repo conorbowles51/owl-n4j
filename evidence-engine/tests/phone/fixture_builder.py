@@ -105,6 +105,10 @@ class PhoneSpec:
     later_messages: int = 0
     # bank alerts for some of the case ledger's payments in this phone's period (05 approach 1: money on the phones)
     bank_alerts: bool = False
+    # voice notes (cb-media): bytes of audio files given to the first present attachments, in order, as Audio files;
+    # the caller supplies invented speech. Empty leaves every fixture exactly as before.
+    voice_notes: tuple = ()
+    report_name: str = "Report.xml"
 
 
 @dataclass
@@ -417,6 +421,17 @@ class PhoneBuild:
     def attachment(self, t: dt.datetime | None) -> Model:
         present = self.rng.random() < 0.8  # some attachments are referenced but not in the report
         file_id = self.ids.guid()
+        voiced = sum(1 for f in self.files if f.get("kind") == "Audio")
+        if present and voiced < len(self.spec.voice_notes):
+            name = f"PTT-{voiced + 1:05d}.opus"
+            a = Model(self, "Attachment", True, file_id=file_id)
+            a.f("Filename", "String", name).f("ContentType", "String", "audio/ogg")
+            path = f"files\\Audio\\{name}"
+            a.f("attachment_extracted_path", "String", path)
+            self.files.append({"id": file_id, "name": name, "path": path, "time": t or self.end, "kind": "Audio",
+                               "data": self.spec.voice_notes[voiced]})
+            self.count.fact("attachments_present")
+            return a
         name = f"IMG_{len(self.files):05d}.jpg"
         a = Model(self, "Attachment", True, file_id=file_id if present else None)
         a.f("Filename", "String", name).f("ContentType", "String", "image/jpeg")
@@ -550,7 +565,7 @@ class PhoneBuild:
                   ("DeviceInfoOSType", "Android"), ("DeviceInfoExtractionStartDateTime", self.reported_end.strftime("%m/%d/%Y %I:%M:%S %p +00:00"))]
         if own:
             device.append(("MSISDN", own.numbers[0]))
-        with open(out / "Report.xml", "w", encoding="utf-8", newline="\n") as fh:
+        with open(out / spec.report_name, "w", encoding="utf-8", newline="\n") as fh:
             w = fh.write
             w('<?xml version="1.0" encoding="utf-8"?>\n')
             w(f'<project id="{project_id}" name="Synthetic {spec.label}" reportVersion="{REPORT_VERSION}" '
@@ -612,12 +627,13 @@ class PhoneBuild:
         return out
 
     def tagged_files(self, out: Path) -> str:
-        img = out / "files" / "Image"
-        img.mkdir(parents=True, exist_ok=True)
         parts = []
         for f in self.files:
-            data = _tiny_png(f["name"])
-            (img / f["name"]).write_bytes(data)
+            kind = f.get("kind", "Image")
+            folder = out / "files" / kind
+            folder.mkdir(parents=True, exist_ok=True)
+            data = f.get("data") or _tiny_png(f["name"])
+            (folder / f["name"]).write_bytes(data)
             t = f["time"]
             parts.append(
                 f'    <file fs="Synthetic" fsid="0" path="/sdcard/DCIM/{f["name"]}" size="{len(data)}" id="{f["id"]}" '
@@ -625,7 +641,7 @@ class PhoneBuild:
                 f'<accessInfo><timestamp name="CreationTime">{ts(t)}</timestamp></accessInfo>'
                 f'<metadata section="File"><item name="Local Path">{escape(f["path"])}</item>'
                 f'<item name="SHA256">{hashlib.sha256(data).hexdigest()}</item>'
-                f'<item name="MD5">{hashlib.md5(data).hexdigest()}</item><item name="Tags">Image</item></metadata>'
+                f'<item name="MD5">{hashlib.md5(data).hexdigest()}</item><item name="Tags">{kind}</item></metadata>'
                 f"</file>\n")
         return "".join(parts)
 
