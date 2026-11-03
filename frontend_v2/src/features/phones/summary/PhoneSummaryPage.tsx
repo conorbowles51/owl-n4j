@@ -60,6 +60,9 @@ export function PhoneSummaryPage() {
           <Button asChild size="sm" variant="outline">
             <Link to={conv}>Conversations</Link>
           </Button>
+          <Button asChild size="sm" variant="outline">
+            <Link to={`/cases/${encodeURIComponent(caseId)}/phones/${encodeURIComponent(extraction)}/records/media`}>Media</Link>
+          </Button>
         </span>
       </header>
       <p className="text-sm font-medium">

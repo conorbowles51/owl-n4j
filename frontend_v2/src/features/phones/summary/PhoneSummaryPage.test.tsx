@@ -120,6 +120,11 @@ describe("Phone summary", () => {
     expect(within(screen.getByRole("region", { name: "Top people" })).getByRole("link", { name: /41 messages and calls/ })).toHaveAttribute("href", `${conv}?tab=people&people=phone:Synthetic A`)
   })
 
+  it("the header opens the phone's Media screen beside its Conversations", async () => {
+    page()
+    expect(await screen.findByRole("link", { name: "Media" })).toHaveAttribute("href", "/cases/case-1/phones/e1/records/media")
+  })
+
   it("the deleted count opens the deleted messages (07 J-11) and a quiet month says none", async () => {
     page()
     expect(await screen.findByRole("link", { name: "12 deleted or in trash" })).toHaveAttribute("href", `${conv}?deleted=only`)
