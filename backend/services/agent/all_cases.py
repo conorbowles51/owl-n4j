@@ -56,18 +56,19 @@ def lookup_keys(identifier: str) -> dict[str, Any]:
     compact = re.sub(r"[\s\-./()]", "", raw)
     if re.fullmatch(r"[A-Za-z]{2}\d{2}[A-Za-z0-9]{8,30}", compact):
         keys["ibans"].append(compact.upper())
-    if not any(c.isalpha() for c in raw.lstrip("+")) and re.fullmatch(r"[\d+()\-./ *•xX]+", raw):
+    unmasked = re.sub(r"[*•xX]", "", raw)
+    if not any(c.isalpha() for c in unmasked.lstrip("+")) and re.fullmatch(r"[\d+()\-./ *•xX]+", raw):
         digits = re.sub(r"\D", "", raw)
         if len(digits) >= MIN_ACCOUNT_DIGITS:
             keys["accounts"].append(digits)
         else:
             keys["too_short"] = True
         if 7 <= len(digits) <= 17:
-            e164, _display, valid, _basis = numbers.parse(raw if "*" not in raw else digits)
+            e164, _display, valid, _basis = numbers.parse(raw if unmasked == raw else digits)
             if valid:
                 keys["phone_identities"].append(("phone", e164))
         return keys
-    handle = raw.casefold().lstrip("@")
+    handle = raw.lower().lstrip("@")  # lower(), as the database compares
     if len(handle) >= MIN_HANDLE_CHARS:
         keys["handles"].append(handle)
     else:
@@ -188,8 +189,11 @@ def other_case_count(db, user, home_case_id, identifier: str) -> dict[str, Any]:
             "sentence": sentence}
 
 
-TXN = re.compile(r"txn://([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})")
-CITE = re.compile(r"(?:txn|doc|rec|evidence)://[^\s)\]\"'>]+|/cases/[0-9a-fA-F-]{36}/financial\?[^\s)\]\"'>]+")
+UUID_RE = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+TXN = re.compile(r"txn://(%s)" % UUID_RE)
+DOC = re.compile(r"(?:doc|evidence)://([^\s)\]\"'>]+)")
+REC = re.compile(r"rec://(%s)(#[^\s)\]\"'>]*)?" % UUID_RE)
+CITE = re.compile(r"(?:txn|doc|rec|evidence)://[^\s)\]\"'>]+|/cases/[0-9a-fA-F-]{36}/[^\s)\]\"'>]+")
 
 
 def payment_path(case_id: str, transaction_id: str) -> str:
@@ -197,11 +201,24 @@ def payment_path(case_id: str, transaction_id: str) -> str:
     return f"/cases/{case_id}/financial?view=transactions&payment={transaction_id}"
 
 
+def _doc_path(case_id: str, target: str) -> str:
+    """A document citation of another case as that case's evidence page: on the file (and page) when it is cited by
+    file id; the case's evidence list when it is cited by filename (a name is never resolved in the wrong case)."""
+    head, _, tail = target.rstrip("/").rpartition("/")
+    file_id, page = (head, tail) if head and tail.isdigit() else (target.rstrip("/"), "")
+    if re.fullmatch(UUID_RE, file_id):
+        return f"/cases/{case_id}/evidence?file={file_id}" + (f"&page={page}" if page else "")
+    return f"/cases/{case_id}/evidence"
+
+
 def case_qualify(value: Any, case_id: str, seen: set[str]) -> Any:
-    """Rewrite txn:// citations in a result from another case into links that carry that case; collect every
-    citation the result holds into ``seen``."""
+    """Rewrite citations in a result from another case (txn://, doc://, rec://) into links that carry that case, so
+    no renderer resolves them in the conversation's own case; collect every citation the result holds into
+    ``seen``."""
     if isinstance(value, str):
         out = TXN.sub(lambda m: payment_path(case_id, m.group(1)), value)
+        out = DOC.sub(lambda m: _doc_path(case_id, m.group(1)), out)
+        out = REC.sub(lambda m: f"/cases/{case_id}/records/{m.group(1)}{m.group(2) or ''}", out)
         seen.update(CITE.findall(out))
         return out
     if isinstance(value, dict):
@@ -214,14 +231,18 @@ def case_qualify(value: Any, case_id: str, seen: set[str]) -> Any:
 _LINK = re.compile(r"\[([^\]]*)\]\(\s*<?([^)>\s]+)>?\s*\)")
 
 
-def name_cases_in_answer(answer: str, cited: dict[str, tuple[str, str]], home_case_id: str) -> str:
+def name_cases_in_answer(answer: str, cited: dict[str, tuple[str, str]], home_case_id: str,
+                         titles: dict[str, str | None] | None = None) -> str:
     """Every citation in the answer to a record of another case names its case beside the link.
 
     ``cited`` maps a citation href (as tools returned it) to (case_id, case title). A txn:// link the model wrote
     bare for another case's row is rewritten to the link that carries the case. Deterministic: the model may
     forget to name a case; this never does.
     """
-    if not answer or not cited:
+    titles = {k.lower(): v for k, v in (titles or {}).items()}
+    for cid, title in cited.values():
+        titles.setdefault(cid.lower(), title)
+    if not answer or not titles:
         return answer
     by_txn = {m.group(1).lower(): cid_title for href, cid_title in cited.items()
               for m in [re.search(r"payment=([0-9a-fA-F-]{36})", href)] if m}
@@ -235,9 +256,9 @@ def name_cases_in_answer(answer: str, cited: dict[str, tuple[str, str]], home_ca
             if owner:
                 href = payment_path(owner[0], txn.group(1))
         if not owner:
-            path = re.match(r"/cases/([0-9a-fA-F-]{36})/financial\?", href)
+            path = re.match(r"(?:https?://[^/\s]+)?/cases/([0-9a-fA-F-]{36})/", href)
             if path and path.group(1).lower() != str(home_case_id).lower():
-                owner = next((v for v in cited.values() if v[0].lower() == path.group(1).lower()), None)
+                owner = (path.group(1), titles.get(path.group(1).lower()) or "another case")
         link = f"[{label}]({href})"
         if not owner or owner[0] == str(home_case_id):
             return link

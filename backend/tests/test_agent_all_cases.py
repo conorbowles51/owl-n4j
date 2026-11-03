@@ -191,3 +191,55 @@ class AllCasesTests(DuplicateTestCase):
         rows = _cases_read(self.db, run, meta)
         self.assertEqual([(r["case_name"], r["this_case"]) for r in rows], [("Matter A", True), ("Matter B", False)])
         self.assertEqual([r["case_name"] for r in _cases_read(self.db, run, {})], ["Matter A"])
+
+    # -- review fixes -----------------------------------------------------------------------------------------
+
+    def test_document_and_phone_citations_of_another_case_open_in_that_case(self):
+        from services.agent.all_cases import case_qualify
+        other, fid, uid = str(self.other_case.id), str(uuid.uuid4()), str(uuid.uuid4())
+        seen = set()
+        out = case_qualify(["doc://%s/4" % fid, "doc://%s" % fid, "doc://March%%20statement.pdf/2",
+                            "rec://%s#body" % uid], other, seen)
+        self.assertEqual(out, ["/cases/%s/evidence?file=%s&page=4" % (other, fid),
+                               "/cases/%s/evidence?file=%s" % (other, fid), "/cases/%s/evidence" % other,
+                               "/cases/%s/records/%s#body" % (other, uid)])
+        self.assertTrue(all("://" not in href for href in seen))
+
+    def test_a_link_into_another_case_is_named_even_when_no_read_in_this_run_cited_it(self):
+        from services.agent.all_cases import name_cases_in_answer
+        other = str(self.other_case.id)
+        answer = "See [row](/cases/%s/financial?view=transactions&payment=%s)." % (other, uuid.uuid4())
+        out = name_cases_in_answer(answer, {}, str(self.case.id), titles={other: "Matter B"})
+        self.assertIn("(case: Matter B)", out)
+
+    def test_masked_account_numbers_are_read_as_numbers_not_handles(self):
+        from services.agent.all_cases import lookup_keys
+        self.assertEqual(lookup_keys("XXXX2233")["accounts"], [])
+        self.assertTrue(lookup_keys("XXXX2233")["too_short"])
+        self.assertEqual(lookup_keys("xx40112233")["accounts"], [NUMBER])
+        self.assertEqual(lookup_keys("xx40112233")["handles"], [])
+
+    def test_the_run_record_counts_reads_of_a_run_that_stopped_before_its_end(self):
+        from types import SimpleNamespace
+
+        from services.agent.run_record_export import _cases_read
+        calls = [SimpleNamespace(name="read_in_case", status="success", arguments={"case_id": str(self.other_case.id)}),
+                 SimpleNamespace(name="read_in_case", status="error", arguments={"case_id": str(self.closed_case.id)})]
+        run = SimpleNamespace(case_id=self.case.id, tool_calls=calls)
+        self.assertEqual([r["case_name"] for r in _cases_read(self.db, run, {"all_cases": True})],
+                         ["Matter A", "Matter B"])
+
+    def test_a_case_only_message_never_sees_an_earlier_all_cases_answer(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from services.agent.service import WITHHELD_ALL_CASES_ANSWER, AgentService
+        msgs = [SimpleNamespace(role="user", content="q1", run=None),
+                SimpleNamespace(role="assistant", content="Matter B paid X", run=SimpleNamespace(
+                    extra_metadata={"all_cases": True})),
+                SimpleNamespace(role="assistant", content="own case", run=SimpleNamespace(extra_metadata={}))]
+        with patch("services.agent.service.storage.recent_messages", return_value=msgs):
+            scoped = AgentService()._build_history(None, thread=SimpleNamespace(id=1))
+            wide = AgentService()._build_history(None, thread=SimpleNamespace(id=1), all_cases=True)
+        self.assertEqual([m.content for m in scoped], ["q1", WITHHELD_ALL_CASES_ANSWER, "own case"])
+        self.assertEqual(wide[1].content, "Matter B paid X")

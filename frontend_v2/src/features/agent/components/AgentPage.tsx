@@ -569,6 +569,10 @@ export function AgentPage() {
   // All-cases mode (Neil 2026-11-01: an option, never the default): off for every new or reopened conversation.
   const [allCases, setAllCases] = useState(false)
   useEffect(() => setAllCases(false), [caseId])
+  const activeThreadIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    activeThreadIdRef.current = activeThreadId
+  }, [activeThreadId])
   const [mandateUsage, setMandateUsage] = useState<AgentMandateUsage | null>(null)
   const [pendingClarification, setPendingClarification] = useState<AgentClarification | null>(null)
   const [showInvestigationTrail, setShowInvestigationTrail] = useState(loadInvestigationTrailSetting)
@@ -670,10 +674,8 @@ export function AgentPage() {
         workspaceAPI.getCaseContext(caseId),
         workspaceAPI.listMandateVersions(caseId),
       ])
-      setActiveThreadId((current) => {
-        if (current !== thread.id) setAllCases(false)
-        return thread.id
-      })
+      if (activeThreadIdRef.current !== thread.id) setAllCases(false)
+      setActiveThreadId(thread.id)
       setMessages(thread.messages.map(storedToClientMessage).filter(Boolean) as AgentClientMessage[])
       setArtifacts(thread.artifacts)
       setToolTrace([])

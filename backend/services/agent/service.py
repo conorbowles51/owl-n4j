@@ -42,6 +42,8 @@ from services.mandate_context_service import mandate_context_service
 
 
 DEFAULT_AGENT_MAX_TOOL_CALLS = 28
+WITHHELD_ALL_CASES_ANSWER = ("[An earlier answer in this conversation read other cases in all-cases mode. It is "
+                             "withheld from this message, which reads this case only.]")
 logger = logging.getLogger(__name__)
 
 
@@ -156,7 +158,7 @@ class AgentService:
         history = (
             [HumanMessage(content=request.message)]
             if request.case_layer == "significant"
-            else self._build_history(db, thread=thread)
+            else self._build_history(db, thread=thread, all_cases=request.all_cases)
         )
         runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key)
         final_result: dict[str, Any] | None = None
@@ -448,7 +450,7 @@ class AgentService:
         history = (
             [HumanMessage(content=request.message)]
             if request.case_layer == "significant"
-            else self._build_history(db, thread=thread)
+            else self._build_history(db, thread=thread, all_cases=request.all_cases)
         )
         runner = AgentGraphRunner(provider=provider, model_id=model.id, api_key=api_key)
 
@@ -775,9 +777,10 @@ class AgentService:
             return answer
         from services.agent.all_cases import name_cases_in_answer
         cited = {href: tuple(owner) for href, owner in (result.get("other_case_citations") or {}).items()}
-        storage.update_run_metadata(db, run=run, metadata={"all_cases": True,
-                                                            "cases_read": result.get("cases_read") or []})
-        return name_cases_in_answer(answer, cited, str(case_id)).strip()
+        cases_read = result.get("cases_read") or []
+        storage.update_run_metadata(db, run=run, metadata={"all_cases": True, "cases_read": cases_read})
+        titles = {str(c["case_id"]): c.get("case_name") for c in cases_read if not c.get("this_case")}
+        return name_cases_in_answer(answer, cited, str(case_id), titles=titles).strip()
 
     @staticmethod
     def _prompt_version(db: Session) -> dict[str, Any]:
@@ -831,13 +834,20 @@ class AgentService:
             ),
         )
 
-    def _build_history(self, db: Session, *, thread: AgentThread) -> list[HumanMessage | AIMessage]:
+    def _build_history(self, db: Session, *, thread: AgentThread, all_cases: bool = False
+                       ) -> list[HumanMessage | AIMessage]:
         messages = storage.recent_messages(db, thread_id=thread.id, limit=20)
         history: list[HumanMessage | AIMessage] = []
         for message in messages:
             if message.role == "user":
                 history.append(HumanMessage(content=message.content))
             elif message.role == "assistant":
+                run = getattr(message, "run", None)
+                if not all_cases and isinstance(getattr(run, "extra_metadata", None), dict) \
+                        and run.extra_metadata.get("all_cases"):
+                    # An answer that read other cases never reaches a message that reads this case only.
+                    history.append(AIMessage(content=WITHHELD_ALL_CASES_ANSWER))
+                    continue
                 history.append(AIMessage(content=message.content))
         return history
 

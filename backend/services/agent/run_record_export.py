@@ -95,12 +95,24 @@ def _unread_phone_types(db, case_id) -> list[dict[str, Any]]:
     return rows
 
 
+# Strategy rows name reads of other cases; "what was not examined" lists this case's material only (CATEGORY_LABELS).
+STRATEGY_LABELS = {**CATEGORY_LABELS, "other_cases": OTHER_CASES_LABEL}
+
+
 def _cases_read(db, run, metadata) -> list[dict[str, Any]]:
-    """This run's own case, then every other case all-cases mode read (names read now, ids as stored)."""
+    """This run's own case, then every other case all-cases mode read (names read now, ids as stored). A run that
+    was stopped or failed before its end keeps no metadata, so each read_in_case call stored as it ran counts too."""
     from postgres.models.case import Case
 
     stored = [c for c in metadata.get("cases_read") or [] if isinstance(c, dict) and c.get("case_id")]
+    from_calls = [(call.arguments or {}).get("case_id") for call in (getattr(run, "tool_calls", None) or [])
+                  if call.name == "read_in_case" and call.status != "error"]
     ids = [str(run.case_id)] + [str(c["case_id"]) for c in stored if str(c["case_id"]) != str(run.case_id)]
+    for cid in from_calls:
+        try:
+            ids.append(str(uuid.UUID(str(cid))))
+        except (TypeError, ValueError):
+            continue
     out = []
     for cid in dict.fromkeys(ids):
         case = db.get(Case, uuid.UUID(cid))
@@ -201,7 +213,7 @@ def strategy_rows(record: dict[str, Any]) -> dict[str, Any]:
     searches = []
     for c in record["calls"]:
         searches.append({
-            "#": c["sequence"], "tool": c["name"], "material": {**CATEGORY_LABELS, "other_cases": OTHER_CASES_LABEL}.get(c["category"] or "", "")
+            "#": c["sequence"], "tool": c["name"], "material": STRATEGY_LABELS.get(c["category"] or "", "")
             or ("artifact or paging" if c["category"] is None else c["category"]),
             "result schema": c.get("schema") or "", "parameters": json.dumps(c["arguments"], ensure_ascii=False,
                                                                             default=str),
