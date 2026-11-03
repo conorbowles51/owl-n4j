@@ -1,0 +1,9 @@
+{"question": "Which payments are in the ledger? (ledger rows, cite)", "citations": 5, "right": 5, "misses": []}
+{"question": "On which statement page is each payment? (ledger rows, statement_cite)", "citations": 4, "right": 4, "misses": []}
+{"question": "Which payments are on the card? (account filter)", "citations": 2, "right": 2, "misses": []}
+{"question": "Find the ACME payments (payments search)", "citations": 2, "right": 2, "misses": []}
+{"question": "Find the payment of 500.01 (payments search by amount)", "citations": 1, "right": 1, "misses": []}
+{"question": "What does the board memo say? (document passages, cite)", "citations": 2, "right": 2, "misses": []}
+{"question": "Answer with filename citations and an old payment link", "citations": 4, "right": 4, "misses": []}
+{"question": "Answer citing another case's statement and invented objects", "citations": 5, "right": 5, "misses": []}
+{"total": 25, "right": 25}

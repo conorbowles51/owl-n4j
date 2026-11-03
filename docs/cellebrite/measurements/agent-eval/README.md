@@ -133,3 +133,22 @@ near-identical pictures, and the strong ones with the counts by strength.
 |---|---|---|---|
 | before (origin 9395ef45, `tool-layer-spread-before-2026-11-04.jsonl`) | 0 of 8 | not measured: the tool refused the approach names | the analysis tool did not accept other_devices or plans (neither approach existed) and there was no picture tool |
 | after (cb-gated-spread) | 8 of 8 | 8 of 8 | |
+## Citations, tool layer, 2026-11-03 (`citations-tool-layer-2026-11-03.jsonl`)
+
+`backend/tests/test_agent_citation_evaluation.py`: 8 questions on a synthetic case (two statements on two accounts,
+rows at known pages and one row with no page, five evidence files of which two share a name, a statement and a
+payment in another case). Each question takes its citations from the layer the model copies them from (the ledger
+tool's `cite` and `statement_cite`, the payments search group, a document passage's `cite`) or from a fixed answer in
+older or wrong forms, and each citation is resolved the way the answer check and the renderer resolve it. A citation
+is right when it opens the known object: the payment with its statement file and page, the file at the known page
+(or "page not given" when there is none), the choice of exactly the files that share a name, or "not in this case".
+
+| Questions | Citations | Right |
+|---|---|---|
+| 8 | 25 | 25 |
+
+## Stored answers on live, 2026-11-03
+
+Every stored assistant answer on live (158 messages) was checked read-only with the citation check of this release
+before it shipped. 20 answers carry citations, 268 in all (258 `rec://`, 7 `doc://`, 3 payment links): 268 open
+their object, 0 are not in their case, 0 name a file several files share, 2 document citations give no page.
