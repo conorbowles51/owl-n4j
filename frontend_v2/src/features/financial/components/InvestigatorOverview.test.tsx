@@ -386,3 +386,23 @@ it("shows no 'could not be updated' note for a count still loading or never load
     view.unmount()
   }
 })
+
+it("a case with no payments (phones only, so far) says so and never shows 0 payments (07 section 8)", () => {
+  const was = totals.payments
+  totals.payments = 0
+  state.uncategorised = 0
+  try {
+    render(
+      <MemoryRouter>
+        <InvestigatorOverview caseId="case" />
+      </MemoryRouter>
+    )
+    const progress = screen.getByRole("list", { name: "Your progress on this case" })
+    expect(progress.textContent).toContain("No payments yet")
+    expect(progress.textContent).not.toMatch(/\b0 payments\b/)
+    expect(screen.getByText("No payments to categorise yet")).toBeTruthy()
+    expect(screen.queryByText("Every payment has a category")).toBeNull()
+  } finally {
+    totals.payments = was
+  }
+})

@@ -142,7 +142,8 @@ export function InvestigatorOverview({
     { name: "Load", detail: registerReady ? plural(files.length, "file") : registerState, done: registerReady && files.length > 0 },
     { name: "Read", detail: registerReady ? `${n(importedIds.size)} saved${toCheck ? ` · ${n(toCheck)} to check` : ""}${notImported.length ? ` · ${n(notImported.length)} not saved` : ""}` : registerState, done: registerReady && files.length > 0 && !toCheck && !notImported.length },
     { name: "Check", detail: held(judgements) ? (openCalls ? `${n(openCalls)} of Loupe's calls open` : "Loupe's calls checked") : "Loupe's calls", done: held(judgements) && !openCalls },
-    { name: "Analyse", detail: totalsReady ? `${plural(payments, "payment")}${uncategorised ? ` · ${n(uncategorised)} uncategorised` : ""}` : totals.isError ? "Payments could not be counted" : "Counting payments…", done: totalsReady && payments > 0 && !uncategorised },
+    // 07 section 8: a case with no payments (phones only, so far) says what is absent, never "0 payments"
+    { name: "Analyse", detail: totalsReady ? (payments ? `${plural(payments, "payment")}${uncategorised ? ` · ${n(uncategorised)} uncategorised` : ""}` : "No payments yet") : totals.isError ? "Payments could not be counted" : "Counting payments…", done: totalsReady && payments > 0 && !uncategorised },
     { name: "Report", detail: !held(findings) ? (findings.isError ? "Findings could not be loaded" : "Loading findings…") : findingCount ? plural(findingCount, "finding") : "No findings yet", done: held(findings) && findingCount > 0 },
   ]
   const now = steps.findIndex((step) => !step.done)
@@ -308,7 +309,7 @@ export function InvestigatorOverview({
           >
             <span className={`${eyebrow} ${!totalsReady ? "text-[#3b3d44]" : uncategorised ? "text-[#8a5300]" : "text-[#1d6a3a]"}`}>Categorise</span>
             <span className="text-[22px] font-semibold leading-tight tabular-nums" style={heading}>
-              {!totalsReady ? (totals.isError ? "Payments could not be counted" : "Counting payments…") : uncategorised ? `${plural(uncategorised, "payment has", "payments have")} no category yet` : "Every payment has a category"}
+              {!totalsReady ? (totals.isError ? "Payments could not be counted" : "Counting payments…") : uncategorised ? `${plural(uncategorised, "payment has", "payments have")} no category yet` : payments ? "Every payment has a category" : "No payments to categorise yet"}
             </span>
             <span className="mt-auto text-sm">{totalsReady && uncategorised ? "Categorise them in bulk →" : "See where the money went →"}</span>
           </button>
