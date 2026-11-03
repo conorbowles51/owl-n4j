@@ -168,6 +168,13 @@ Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for read
   accepts the sidebar's "Patterns" in the Phones group, 03 D-18); a new synthetic check "synthetic grouped check
   (cb-pol test)" there shows a counted group and lists its event. J-10c is carried by cb-screens (decision 36,
   accepted in m110219504726403).
+- **Saved links (live ee457b1f, 3 Nov, for cb-screens m11030408467613):** `/phone-patterns?check=<evaluation id>`
+  opens that statement check as it ran, on its statement's subject (GET `/api/pattern/{case}/checks/{id}`; it stays
+  shown when the statement was edited since, until another statement is chosen); `?analysis=<kind>&snapshot=<id>`
+  shows the frozen result as kept, then the same view live on its subject, ending on its last day in its own zone.
+  Tests `src/features/pattern/saved-links.test.tsx` (5) and `u11_claims` HTTP test. Verified signed in over http in
+  4aa79795 (screenshots `saved-check-link.png`, `saved-result-link.png`); a grid snapshot `pa_889e6daf…` was frozen
+  there for the check.
 - **Follow-ups handed to the followups job (m110301441618308):** counterparts not refreshed on re-apply; the view's
   version fallback for an event that matches no row; P14 build time on live; the cell import timing.
 - **Scratch:** `loupe_gatef` dropped and `/tmp/cbpol-root` removed at the end of the job.
