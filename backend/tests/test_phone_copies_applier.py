@@ -55,3 +55,26 @@ def test_a_phone_with_many_events_and_parties_is_grouped_in_time_that_grows_with
     # 8.9 s for 4,000 before it; 11.7 s for a synthetic phone the size of the largest corpus phone (61,317 events,
     # 122,634 participations, half the events copies), which ran 24+ minutes unfinished before it
     assert took < 5, took
+
+
+def test_a_copy_group_never_spans_two_instants_so_never_two_days():
+    """Conversations counts copies within one day's window (streams.window_comm_events) while the index ranks them
+    across the result; the two agree only because a group's key holds the instant to the microsecond, so a group
+    never spans two days. Guard: identical messages one microsecond apart across midnight in the display zone
+    (UTC) and in New York are never one group, and no group holds two instants."""
+    from datetime import timedelta
+    midnight = at(2023, 3, 15, 0)
+    ny_midnight = at(2023, 3, 15, 4)  # midnight in New York (EDT)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            ext, _ = phone(c, case, events=[
+                _m(midnight - timedelta(microseconds=1), "same"), _m(midnight, "same"),
+                _m(ny_midnight - timedelta(microseconds=1), "same ny"), _m(ny_midnight, "same ny"),
+                _m(midnight + timedelta(hours=1), "a true copy"), _m(midnight + timedelta(hours=1), "a true copy")])
+            out = copies.assign(c, ext, GEN)
+            spans = c.execute(text(
+                "SELECT dup_group_uid, count(DISTINCT sort_instant) FROM phone_comm_events WHERE extraction_id = :e "
+                "AND dup_group_uid IS NOT NULL GROUP BY 1 HAVING count(DISTINCT sort_instant) > 1"), {"e": ext}).all()
+    assert spans == []
+    assert out["groups"] == 1  # only the two messages at the same instant
