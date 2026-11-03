@@ -14,12 +14,14 @@ import inspect
 from services.phone_analysis.approaches import BUILT
 
 RECORDED = {
-    "money_signals": ("1a.1", "436c0c7ca42533a7"),
-    "message_reconciliation": ("2.2", "0b332499d41a5207"),
+    "money_signals": ("1a.1", "bd3641f548e85576"),
+    "message_reconciliation": ("2.3", "ffedaf987c223271"),
     "deletion_timeline": ("3.2", "3899f38f95baea84"),
     "relationships": ("11.2", "d2415dadbd83d048"),
     "awareness": ("4.1-groups", "9cedd74c445622e5"),
     "device_users": ("5.2-use", "cd7bf7201f8f4b6b"),
+    "typed_words": ("7.1", "ebdc62fe49dc2742"),
+    "intent": ("9.1", "3a46cb8858a18271"),
 }
 
 
@@ -32,3 +34,12 @@ def test_every_built_analysis_has_a_recorded_version_and_fingerprint():
         assert (module.VERSION, fingerprint) == RECORDED[name], (
             "%s changed: bump VERSION if its results can change, then record (VERSION, fingerprint) = (%r, %r)"
             % (name, module.VERSION, fingerprint))
+
+
+def test_every_signal_label_reads_with_exist():
+    """The coverage line reads "<label> exist on all N phones" (framework.coverage_sentence), so a label is plural:
+    "A known owner exist" was seen on the live screen."""
+    for name in BUILT:
+        module = importlib.import_module("services.phone_analysis." + name)
+        for sig in getattr(module, "SIGNALS", ()):
+            assert not sig["label"].startswith(("A ", "An ", "One ")), (name, sig["label"])

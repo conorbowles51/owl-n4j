@@ -44,7 +44,7 @@ from services.phone.fold import STYLED, _WS, _strip_format
 from services.phone_analysis import fields as FV
 
 CODE = "message_reconciliation"
-VERSION = "2.2"
+VERSION = "2.3"
 PARAMETERS = {
     "tau_s": {"type": "number", "default": 120, "min": 1, "max": 3600,
               "label": "Seconds two copies may differ after the clock offset"},
@@ -59,7 +59,7 @@ UNDERCUTS = ("identity_unreviewed", "server_stamped", "clock_offset_unknown", "m
 DIRECTION_CODES = SUPPORTS + UNDERCUTS
 SIGNALS = [
     {"code": "messages", "label": "Messages with a time"},
-    {"code": "owner", "label": "A known owner"},
+    {"code": "owner", "label": "Known owner identities"},
 ]
 DELETED = ("Deleted", "Trash")
 MIN_BODY = 10

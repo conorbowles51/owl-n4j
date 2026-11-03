@@ -1300,6 +1300,16 @@ elsewhere. Gate: **build** if any case with these types has at least 10 vocabula
 
 **Server result (stage A3, `measurements/a3/README.md` section 9):** M-7a needs the case vocabulary (02 identities and Loupe entities) and is measured by `cb-approaches`.
 
+**Server result (`cb-approaches`, typed_words m7.3, read-only on the live reference cases, 2026-11-03).** Vocabulary
+from 02 identities (names and numbers) and the case's financial records (account endings, holders, counterparties;
+none in the three reference cases); Loupe case entities, ledger amounts, addresses and investigator terms are not
+included, so the counts are a lower bound. The C9 phones: 639 learned words and autofill values, 37 vocabulary hits
+(all on contact names), 12 of them found in no message, email, note, search or calendar entry. C3: 8 typed records, 3
+hits, 0 not found elsewhere. Gate: **pass** (37, 10 needed). **Built (`cb-approaches`, 05-S10, `typed_words`
+version 7.1, screen "Typed words").** 10.3 steps 1 to 4 with the vocabulary above (`vocabulary.py`); 10.8 tests 1 to 3
+in `test_phone_analysis_typed_intent.py`. Results carry the kind of term matched and the masked value; the value is
+seen through the record's Reveal, which is logged (3.8). Not built yet: the vocabulary parts listed as not included.
+
 ### 10.7 Dependencies
 
 02, financial records of the case, 03 fold, 3.8.
@@ -1439,6 +1449,15 @@ has at least 10 vocabulary hits.
 
 **Server result (stage A3, `measurements/a3/README.md` section 9):** M-9a: pages 0 to 55,590 per phone (P11), with title up to 2,621 (P02); searches with time up to 897,
 without time up to 7,884 (P11). M-9b needs the case vocabulary and is measured by `cb-approaches`.
+
+**Server result (`cb-approaches`, intent m9.3, read-only on the live reference cases, 2026-11-03).** Vocabulary as
+approach 7 (10.6). C3: 399 hits (3 searches, 396 pages, 340 of the pages only through words in the page address), 29
+distinct terms, 17 of them matching fewer than 3 records (specific terms, 20 hits). The C9 phones: 57 hits (1 search,
+56 pages), 4 distinct terms, 1 specific. Page addresses are matched on their path words only: with any 4-digit run
+counted as a phone-number hit, 5,866 C3 addresses matched 3,523 distinct numbers. Gate: **pass** (399 and 57, 10
+needed; 20 on specific terms). **Built (`cb-approaches`, 05-S12, `intent` version 9.1, screen "Searches and
+pages").** 12.3 steps 1 to 3 with the vocabulary of 10.3; 12.8 tests 1 and 2 in `test_phone_analysis_typed_intent.py`
+(server) and `TypedIntentPages.test.tsx` (screen). Investigator-added terms are not built yet.
 
 ### 12.7 Dependencies
 
@@ -2204,6 +2223,10 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | 19.S8-c Marker strength: same owner number, ICCID or IMSI strong; same account username or saved-login account on one service medium; same WiFi BSSID weak. Values are compared as SHA-256 digests inside the backend and never returned; the result gives counts by kind and the records on each side | 8.3 step 1; identifiers stay in the records, where the record panel shows them | |
 | 19.S8-d Every shared-markers result carries its own pair locator on each phone | a phone's one SIM record can be the only record behind two pairs (its other sides hold the value in the report header only), and two results on the same records cannot be stored | |
 | 19.S8-e Owner numbers are read from the current-generation owner candidates. The indicator "owner phone numbers" counts header (tier 1) numbers; the shared-number marker uses the numbers 02 computes the owner from (tier 1, else tier 2's top) | tier 2 numbers are inferred from account fields and owner parties, so several are expected on one phone used by one person | 02 changes how it computes the owner |
+| 19.S10-a Typed and searched text matches the vocabulary by word tokens of 4 or more characters (not all digits) for names, a digit run equal to or ending with an account ending, and a run of 7 or more digits for phone numbers | 10.3 step 2 allows 4-digit runs for every number; on C3 any 4 digits in a web address matched some phone number (3,523 distinct matches in 5,866 addresses) | a measured sample shows 4 to 6 digit typed numbers that are real hits |
+| 19.S10-b A typed hit is `typed_not_in_extraction` when no matched term occurs in the phone's messages, emails, notes, searches or calendar (10.3 step 3), else `typed_and_present` with up to 20 of those records linked and the full count stated | the elsewhere search counts every record; 20 links keep a result readable, and the count says how many there are | |
+| 19.S12-a A search or page whose every matched term matches 3 or more records of the case has strength `common_term` (a business or site name), the others `specific_term`; nothing is dropped | on C3, 29 terms gave 399 hits, 20 of them on terms matching fewer than 3 records | reviews show common-term hits confirmed as often as specific ones |
+| 19.S12-b Page addresses are matched on their path words only, and a hit only in the address says so | the host is a site name and the query repeats the search; 340 of C3's 396 page hits are address-only | address hits are rejected on review far more than title hits |
 | 19.S-ix The analyses are reached from one Phones sidebar entry, "Analyses", which also lists the approaches whose gate failed with the measured reason | one entry per approach would put ten links in the group; an absent analysis is stated, not silent | |
 | Deletion time is an interval to extraction start unless `DateDeleted` exists | `DateDeleted` 1 in corpus | a source of deletion times is found |
 | Media spread population restricted to attachment, camera-path and EXIF-camera files | X10 against X11 | |

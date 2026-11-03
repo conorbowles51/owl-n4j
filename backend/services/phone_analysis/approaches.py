@@ -15,7 +15,7 @@ def install() -> None:
 
 
 BUILT = ["money_signals", "message_reconciliation", "deletion_timeline", "relationships", "awareness", "device_users",
-         "reparse_comparison"]
+         "reparse_comparison", "typed_words", "intent"]
 
 # The screen titles, for words outside the screens (a kept result's label).
 TITLES = {
@@ -26,4 +26,6 @@ TITLES = {
     "awareness": "Group admins and membership",
     "device_users": "Who used which phone",
     "reparse_comparison": "Read again by an independent tool",
+    "typed_words": "Typed words",
+    "intent": "Searches and pages",
 }
