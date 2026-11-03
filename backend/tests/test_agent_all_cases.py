@@ -158,7 +158,8 @@ class AllCasesTests(DuplicateTestCase):
 
     def test_read_in_case_runs_readers_only(self):
         read = self.tools(self.context(all_cases=True))["read_in_case"]
-        for tool in ("build_table_artifact_from_rows", "request_clarification", "read_in_case"):
+        for tool in ("build_table_artifact_from_rows", "request_clarification", "read_in_case",
+                     "propose_judgement_call", "propose_workspace_entry"):
             out = read.invoke({"case_id": str(self.other_case.id), "tool": tool, "arguments": {}})
             self.assertEqual(out["status"], "error", tool)
 

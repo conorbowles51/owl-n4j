@@ -273,8 +273,7 @@ def name_cases_in_answer(answer: str, cited: dict[str, tuple[str, str]], home_ca
 # --------------------------------------------------------------------------------------------- agent tools
 
 # Tools a cross-case read may run in another case: readers only. Artifact builders, clarification, drafting and
-# proposal tools
-# belong to the person's own case and conversation, so they never run against another case.
+# proposal tools belong to the person's own case and conversation, so they never run against another case.
 def _readable_elsewhere(name: str) -> bool:
     return not (name.startswith(("build_", "draft_", "propose_")) or name == "request_clarification"
                 or name in CROSS_CASE_TOOL_NAMES)
