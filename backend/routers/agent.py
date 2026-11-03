@@ -46,6 +46,21 @@ def list_agent_threads(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
+@router.get("/workflows")
+def list_agent_workflows(
+    case_id: UUID | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """The guided investigative workflows; with case_id, each one's readiness on that case's measured counts."""
+    try:
+        return agent_service.list_workflows(db=db, user=current_user, case_id=case_id)
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
 @router.get("/threads/{thread_id}", response_model=AgentThreadDetail)
 def get_agent_thread(
     thread_id: UUID,

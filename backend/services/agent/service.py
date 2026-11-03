@@ -118,6 +118,7 @@ class AgentService:
             extra_metadata={
                 "artifact_preference": request.artifact_preference,
                 "case_layer": request.case_layer,
+                **self._workflow_metadata(request),
             },
             mandate_override=mandate_context.override,
             tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
@@ -172,7 +173,7 @@ class AgentService:
                 ),
                 should_cancel=lambda: is_cancelled(run_id),
                 allowed_entity_keys=allowed_entity_keys,
-                mandate_context_block=mandate_context.block,
+                mandate_context_block=self._prompt_block(mandate_context.block, request),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
             ):
                 if event.get("type") == "final":
@@ -421,6 +422,7 @@ class AgentService:
             extra_metadata={
                 "artifact_preference": request.artifact_preference,
                 "case_layer": request.case_layer,
+                **self._workflow_metadata(request),
             },
             mandate_override=mandate_context.override,
             tool_budget=DEFAULT_AGENT_MAX_TOOL_CALLS,
@@ -455,7 +457,7 @@ class AgentService:
                     else self._available_artifacts_for_runner(thread)
                 ),
                 allowed_entity_keys=allowed_entity_keys,
-                mandate_context_block=mandate_context.block,
+                mandate_context_block=self._prompt_block(mandate_context.block, request),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
             )
             runner_clarification = self._clarification_from_runner(
@@ -648,6 +650,14 @@ class AgentService:
     def list_threads(self, *, db: Session, user: User, case_id: UUID | None = None) -> list[AgentThreadSummary]:
         return storage.list_threads(db, user=user, case_id=case_id)
 
+    def list_workflows(self, *, db: Session, user: User, case_id: UUID | None = None) -> dict[str, Any]:
+        """The workflow catalogue; with a case, readiness on its own counts (read-only)."""
+        from services.agent import workflows
+        if case_id is None:
+            return workflows.catalogue()
+        check_case_access(db, case_id, user, required_permission=("case", "view"))
+        return workflows.catalogue(workflows.case_counts(db.connection(), case_id))
+
     def get_thread(self, *, db: Session, user: User, thread_id: UUID) -> AgentThreadDetail:
         return storage.get_thread_detail(db, thread_id=thread_id, user=user)
 
@@ -727,6 +737,24 @@ class AgentService:
         )
         db.commit()
         return exported
+
+    @staticmethod
+    def _workflow_metadata(request: AgentMessageRequest) -> dict[str, Any]:
+        """The guided workflow this run follows, recorded on the run (agent-workflows). Unknown id: refused."""
+        if not request.workflow_id:
+            return {}
+        from services.agent import workflows
+        w = workflows.get(request.workflow_id)
+        return {"workflow": {"id": w.id, "number": w.number, "title": w.title,
+                             "steps": [s.tool for s in w.steps], "proposals": [t for t, _ in w.proposals]}}
+
+    @staticmethod
+    def _prompt_block(mandate_block: str, request: AgentMessageRequest) -> str:
+        """The mandate block, followed by the guided workflow's plan when the run follows one."""
+        if not request.workflow_id:
+            return mandate_block
+        from services.agent import workflows
+        return "\n\n".join(x for x in (mandate_block, workflows.render_block(workflows.get(request.workflow_id))) if x)
 
     @staticmethod
     def _prompt_version(db: Session) -> dict[str, Any]:

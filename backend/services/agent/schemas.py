@@ -31,6 +31,8 @@ class AgentMessageRequest(BaseModel):
     case_layer: Literal["all", "significant"] = "all"
     persist: bool = True
     mandate_override: dict[str, Any] | None = None
+    # A guided investigative workflow (services.agent.workflows): its plan is added to this run's prompt.
+    workflow_id: str | None = Field(None, max_length=64)
 
     @field_validator("message")
     @classmethod
@@ -39,6 +41,16 @@ class AgentMessageRequest(BaseModel):
         if not stripped:
             raise ValueError("Message is required")
         return stripped
+
+    @field_validator("workflow_id")
+    @classmethod
+    def _known_workflow(cls, value: str | None) -> str | None:
+        if not value:
+            return None
+        from services.agent.workflows import BY_ID
+        if value not in BY_ID:
+            raise ValueError("Unknown workflow: %s" % value)
+        return value
 
     @field_validator("provider")
     @classmethod

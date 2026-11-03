@@ -98,6 +98,9 @@ def prompt_version_source() -> dict[str, Any]:
     prompts["final_answer_request"] = graph._FINAL_ANSWER_REQUEST
     tools = sorted((convert_to_openai_tool(tool) for tool in make_agent_tools(AgentToolContext(case_id="{case_id}"))),
                    key=lambda item: item.get("function", {}).get("name", ""))
+    from services.agent import workflows
+    names = [item.get("function", {}).get("name", "") for item in tools]
+    prompts["workflows"] = {w.id: workflows.render_block(w, names) for w in workflows.WORKFLOWS}
     return {"prompts": prompts, "tools": tools}
 
 
