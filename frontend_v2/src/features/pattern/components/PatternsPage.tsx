@@ -125,7 +125,7 @@ export function PatternsPage() {
       )}
       {savedSnap.data && <SavedResult snap={savedSnap.data} last={snapOpen!.last} />}
       {subjects.data && !subject && <p className="text-sm">This case has no phones to show yet.</p>}
-      {!opening && subject && view === "day" && <DayView key={subjectKey(subject)} caseId={caseId} subject={subject} initial={last(subject)} />}
+      {!opening && subject && view === "day" && <DayView caseId={caseId} subject={subject} initial={last(subject)} />}
       {!opening && subject && view === "grid" && <GridView caseId={caseId} subject={subject} last={last(subject)} />}
       {!opening && subject && view === "places" && <PlacesView caseId={caseId} subject={subject} last={last(subject)} />}
       {!opening && subject && view === "together" && subjects.data && <TogetherView caseId={caseId} subject={subject} list={subjects.data} />}

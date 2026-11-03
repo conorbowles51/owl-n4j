@@ -41,7 +41,9 @@ export function StatementCheckPanel({ caseId, subject, saved }: { caseId: string
   const [current, setCurrent] = useState<string | null>(saved?.claim_id ?? null)
   const claim = mine.find((c) => c.id === current) || (saved && current === saved.claim_id ? saved.claim : undefined)
     || mine.filter((c) => c.status === "confirmed").pop() || mine[mine.length - 1]
-  const savedShown = useRef(false)
+  // the saved check stays shown until another statement is chosen, even when the statement was edited since
+  const left = useRef(false)
+  const choose = (id: string) => { if (id !== saved?.claim_id) left.current = true; setCurrent(id) }
   const [ev, setEv] = useState<Evaluation | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -49,8 +51,7 @@ export function StatementCheckPanel({ caseId, subject, saved }: { caseId: string
   useEffect(() => {
     let live = true
     setEv(null)
-    if (saved && !savedShown.current && claim?.id === saved.claim_id) {
-      savedShown.current = true
+    if (saved && !left.current && claim?.id === saved.claim_id) {
       setEv(saved)
       return
     }
@@ -71,14 +72,14 @@ export function StatementCheckPanel({ caseId, subject, saved }: { caseId: string
 
   return (
     <section aria-label="Statement check" className="flex flex-col gap-3 text-sm">
-      <ClaimForm caseId={caseId} subject={subject} onMade={(c) => { setCurrent(c.id); void qc.invalidateQueries({ queryKey: ["pattern-claims", caseId] }) }} />
+      <ClaimForm caseId={caseId} subject={subject} onMade={(c) => { choose(c.id); void qc.invalidateQueries({ queryKey: ["pattern-claims", caseId] }) }} />
       <DraftPanel caseId={caseId} subject={subject} onAccepted={() => void qc.invalidateQueries({ queryKey: ["pattern-claims", caseId] })} />
       <div>
         <h3 className="font-medium">Statements for this phone or person ({mine.length.toLocaleString()})</h3>
         <ul className="flex flex-col gap-1">
           {mine.map((c) => (
             <li key={c.id} className="flex flex-wrap items-center gap-2">
-              <button className={`underline-offset-2 hover:underline ${claim?.id === c.id ? "font-medium" : ""}`} onClick={() => setCurrent(c.id)}>
+              <button className={`underline-offset-2 hover:underline ${claim?.id === c.id ? "font-medium" : ""}`} onClick={() => choose(c.id)}>
                 {KIND_WORDS[c.kind]}{c.window_text ? `: "${c.window_text}"` : ""}
               </button>
               <span className="text-xs text-muted-foreground">{c.status_words}</span>

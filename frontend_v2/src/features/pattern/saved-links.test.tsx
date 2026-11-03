@@ -75,6 +75,19 @@ describe("saved links open on the Patterns screen", () => {
     expect(evaluate).not.toHaveBeenCalled()
   })
 
+  it("keeps the saved check when the statement was edited after it ran", async () => {
+    vi.spyOn(patternAPI, "check").mockResolvedValue(saved)
+    vi.spyOn(patternAPI, "claims").mockResolvedValue({ total: 1, items: [{ ...claim, version: 3 }] })
+    const evaluations = vi.spyOn(patternAPI, "evaluations").mockResolvedValue({ total: 0, items: [] })
+    const evaluate = vi.spyOn(patternAPI, "evaluate")
+    show("/cases/c1/phone-patterns?check=ev-old")
+    expect(await screen.findByText("Consistent with the phone's records (saved check).")).toBeTruthy()
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.getByText("Consistent with the phone's records (saved check).")).toBeTruthy()
+    expect(evaluations).not.toHaveBeenCalled()
+    expect(evaluate).not.toHaveBeenCalled()
+  })
+
   it("says plainly when the saved check is not in this case", async () => {
     vi.spyOn(patternAPI, "check").mockRejectedValue(new Error("That check is not in this case."))
     vi.spyOn(patternAPI, "claims").mockResolvedValue({ total: 0, items: [] })
