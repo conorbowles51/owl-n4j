@@ -52,5 +52,6 @@ def test_a_phone_with_many_events_and_parties_is_grouped_in_time_that_grows_with
             took = time.monotonic() - started
     assert out == {"groups": 0, "records": 0}  # a minute apart: no copies
     # measured on the scratch server (EXPLAIN ANALYZE): 0.13 s for 4,000 events with this change (0.78 s for 16,000),
-    # 8.9 s for 4,000 before it
+    # 8.9 s for 4,000 before it; 11.7 s for a synthetic phone the size of the largest corpus phone (61,317 events,
+    # 122,634 participations, half the events copies), which ran 24+ minutes unfinished before it
     assert took < 5, took
