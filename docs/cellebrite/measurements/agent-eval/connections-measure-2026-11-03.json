@@ -1,0 +1,114 @@
+[
+ {
+  "case": "88e01b57",
+  "title": "Phone reference 1 (restricted)",
+  "phones": 1,
+  "ledger_rows": 0,
+  "readings": 195,
+  "bound": 0,
+  "ambiguous": 0,
+  "unbound": 195,
+  "binding": {
+   "no_anchor": 195
+  },
+  "outcome": {
+   "not_tested": 195
+  },
+  "leads": 0,
+  "lead_status": {},
+  "gate_20_bound": false,
+  "seconds": 24.1,
+  "stored_run": null,
+  "tool_matches": 0,
+  "tool_leads": 0,
+  "tool_leads_by_ledger": null
+ },
+ {
+  "case": "7006c0ab",
+  "title": "Phone reference 2 (restricted)",
+  "phones": 1,
+  "ledger_rows": 0,
+  "readings": 0,
+  "bound": 0,
+  "ambiguous": 0,
+  "unbound": 0,
+  "binding": {},
+  "outcome": {},
+  "leads": 0,
+  "lead_status": {},
+  "gate_20_bound": false,
+  "seconds": 0.3,
+  "stored_run": null,
+  "tool_matches": 0,
+  "tool_leads": 0,
+  "tool_leads_by_ledger": null
+ },
+ {
+  "case": "574a9752",
+  "title": "Phone reference 3 (restricted)",
+  "phones": 1,
+  "ledger_rows": 0,
+  "readings": 0,
+  "bound": 0,
+  "ambiguous": 0,
+  "unbound": 0,
+  "binding": {},
+  "outcome": {},
+  "leads": 0,
+  "lead_status": {},
+  "gate_20_bound": false,
+  "seconds": 0.3,
+  "stored_run": null,
+  "tool_matches": 0,
+  "tool_leads": 0,
+  "tool_leads_by_ledger": null
+ },
+ {
+  "case": "4aa79795",
+  "title": "Phones-only check (synthetic)",
+  "phones": 3,
+  "ledger_rows": 0,
+  "readings": 0,
+  "bound": 0,
+  "ambiguous": 0,
+  "unbound": 0,
+  "binding": {},
+  "outcome": {},
+  "leads": 0,
+  "lead_status": {},
+  "gate_20_bound": false,
+  "seconds": 0.1,
+  "stored_run": null,
+  "tool_matches": 0,
+  "tool_leads": 0,
+  "tool_leads_by_ledger": null
+ },
+ {
+  "case": "d9945277",
+  "title": "Phone training (synthetic)",
+  "phones": 3,
+  "ledger_rows": 65,
+  "readings": 16,
+  "bound": 16,
+  "ambiguous": 0,
+  "unbound": 0,
+  "binding": {
+   "bound": 16
+  },
+  "outcome": {
+   "corroborated": 16
+  },
+  "leads": 1,
+  "lead_status": {
+   "possible_statement": 1
+  },
+  "gate_20_bound": false,
+  "seconds": 1.1,
+  "stored_run": "3a4a5419-5417-48e1-b035-3d22872bf816",
+  "tool_matches": 16,
+  "tool_leads": 1,
+  "tool_leads_by_ledger": {
+   "covered": 1
+  }
+ }
+]
