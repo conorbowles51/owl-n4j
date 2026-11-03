@@ -174,30 +174,55 @@ def m2(conn, case_id):
     return result, ("build" if total >= 100 or differing >= 10 else "inconclusive")
 
 
-@measure("deletion_timeline", "m3.1")
+@measure("deletion_timeline", "m3.2")
 def m3(conn, case_id):
-    """M-3a to M-3c, M-3e (05 6.6). Gate: build if at least 3 phones have 50 or more deleted messages."""
+    """M-3a to M-3e (05 6.6), read from the captured bodies for the named sets (m3.1 read them from the text table,
+    which holds String fields only, so M-3b and M-3c were always 0). Gate: build if at least 3 phones have 50 or more
+    deleted messages or M-3d is non-zero on any phone."""
+    from services.phone_analysis import deletion_timeline as D
+    from services.phone_analysis import fields as FV
+    phones = _phones(conn, case_id)
     deleted = _per_phone(conn, case_id, "SELECT extraction_id, count(*) FROM pv_comm_event WHERE case_id = :c AND kind = "
                          "'message' AND deleted_state IS NOT NULL AND deleted_state NOT IN ('Intact', 'Unknown') GROUP BY 1")
     by_type = {}
-    phones = _phones(conn, case_id)
     for r in conn.execute(text(
             "SELECT extraction_id, model_type, deleted_state, count(*) FROM pv_record WHERE case_id = :c AND "
             "parent_record_uid IS NULL GROUP BY 1, 2, 3"), {"c": case_id}):
         if str(r[0]) in phones:
             by_type.setdefault(phones[str(r[0])], {}).setdefault(r[1], {})[r[2] or "none"] = int(r[3])
-    labels = {}
-    for r in conn.execute(text(
-            "SELECT field_path, value, count(*) FROM pv_text WHERE case_id = :c AND field_path IN ('Label', "
-            "'DeletionReason') GROUP BY 1, 2"), {"c": case_id}):
-        labels.setdefault(r[0], {})[r[1]] = int(r[2])
-    holes = _per_phone(conn, case_id, "SELECT t.extraction_id, count(*) FROM pv_thread t WHERE t.case_id = :c AND "
-                       "t.event_count >= 20 AND EXISTS (SELECT 1 FROM pv_comm_event e WHERE e.thread_key = t.thread_key "
-                       "AND e.deleted_state IS NOT NULL AND e.deleted_state NOT IN ('Intact', 'Unknown')) GROUP BY 1")
-    result = {"m3a_deleted_messages": deleted, "m3a_by_type": by_type, "m3b_m3c_values": labels,
-              "m3e_conversations_20_plus_with_deletion": holes,
-              "not_counted": {"m3d": "the reply-to link is not interpreted yet (02)"}}
-    return result, ("build" if sum(1 for n in deleted.values() if n >= 50) >= 3 else "inconclusive")
+    labels, reasons, self_destruct, wipes = {}, {}, {}, {}
+    params = {k: v["default"] for k, v in D.PARAMETERS.items()}
+    absent, holes, convs = {}, {}, {}
+    for ext, label in phones.items():
+        vals = FV.field_values(conn, ext, ("InstantMessage",), ("Label", "DeletionReason", "SelfDestructDuration"))
+        for v in vals.values():
+            for x in v["values"].get("Label", ()):
+                labels[x] = labels.get(x, 0) + 1
+            for x in v["values"].get("DeletionReason", ()):
+                reasons[x] = reasons.get(x, 0) + 1
+            if any(D.timespan_seconds(x) for x in v["values"].get("SelfDestructDuration", ())):
+                self_destruct[label] = self_destruct.get(label, 0) + 1
+        ev = FV.field_values(conn, ext, ("DeviceEvent",), ("EventType",))
+        wipes[label] = sum(1 for v in ev.values() if "Wipe" in v["values"].get("EventType", ()))
+        counts = {"references": 0, "referenced_absent": 0, "references_without_id": 0, "deleted_records": 0,
+                  "conversations_tested": 0, "selective_clearing": 0, "holes": 0, "gaps_without_app_data": 0,
+                  "concealment_apps": 0, "apps_removed": 0, "wipes": 0, "power_offs": 0, "scrambled": 0,
+                  "by_explanation": {}}
+        from collections import defaultdict
+        c2 = defaultdict(int, counts)
+        c2["by_explanation"] = defaultdict(int)
+        D.analyse_phone(conn, ext, label, params, c2)
+        absent[label] = c2["referenced_absent"]
+        holes[label] = c2["holes"]
+        convs[label] = int(conn.execute(text(
+            "SELECT count(*) FROM pv_thread t WHERE t.extraction_id = :e AND t.event_count >= 20 AND EXISTS (SELECT 1 "
+            "FROM pv_comm_event e WHERE e.thread_key = t.thread_key AND e.deleted_state IN ('Deleted', 'Trash'))"),
+            {"e": ext}).scalar() or 0)
+    result = {"m3a_deleted_messages": deleted, "m3a_by_type": by_type, "m3b_labels": labels,
+              "m3b_self_destruct_nonzero": self_destruct, "m3c_deletion_reasons": reasons, "m3c_wipes": wipes,
+              "m3d_referenced_absent": absent, "m3e_conversations_20_plus_with_deletion": convs, "m3e_holes": holes}
+    passed = sum(1 for n in deleted.values() if n >= 50) >= 3 or any(absent.values())
+    return result, ("build" if passed else "inconclusive")
 
 
 def _type_counts(conn, case_id, types):

@@ -76,7 +76,7 @@ describe("AppSidebar case navigation", () => {
     sidebar()
     const group = await screen.findByRole("region", { name: "Phones" })
     expect(within(group).getAllByRole("link").map((l) => l.textContent?.replace(/Ctrl\+\d/, ""))).toEqual([
-      "Phone summary", "Conversations", "Patterns", "Money on the phones", "Needs a decision",
+      "Phone summary", "Conversations", "Patterns", "Money on the phones", "Deleted and hidden", "Needs a decision",
     ])
     expect(within(group).getByRole("link", { name: /Conversations/ })).toHaveAttribute("href", "/cases/case-1/conversations")
     expect(screen.queryByText("Phones (prototype)")).not.toBeInTheDocument()

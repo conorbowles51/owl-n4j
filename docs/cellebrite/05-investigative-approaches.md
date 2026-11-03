@@ -975,6 +975,12 @@ A-C8 alone meets the first half on one phone; server measurement decides.
 events: 1 each on P02, P07, P13. Conversations with at least 20 messages and a deletion (M-3e): 0 to 68 per
 phone (P10 68, P14 48). Gate **pass**: build.
 
+**Built (`cb-approaches`, 05-S6, `deletion_timeline` version 3.1, screen "Deleted and hidden").** Measure m3.2
+replaces m3.1: m3.1 read `Label` and `DeletionReason` from the text table, which holds String fields only, so M-3b and
+M-3c were always 0 on every case; m3.2 reads named sets and TimeSpans from the captured record body and adds M-3d
+(referenced messages absent) and holes from the approach's own functions. The gate stands on the A3 server result
+above (7 phones over 50 deleted messages; M-3d on 6 phones).
+
 ### 6.7 Dependencies
 
 01 (deleted state, carved records), 02 (chat membership of messages), 04 (availability bands), approach 2
@@ -1050,6 +1056,14 @@ M-4a: per phone, share of incoming messages with an owner `DateRead`, with `Date
 conversations with at least 10 reply pairs; M-4c: groups with admin flags and with timed ChatActivity. Gate:
 **build** read-and-latency if at least 5 phones have owner read times on at least 20 percent of incoming
 messages; **build** group roles if at least 50 timed ChatActivity records exist in a case.
+
+**Server result (stage A3, `measurements/a3/P*.json` `s05_m4a`, `s05_m4c`; read by `cb-approaches` 3 Nov).** M-4a:
+owner read times on at least 20 percent of incoming messages on 2 phones (P03 457 of 867, P04 2,471 of 4,797);
+next P07 872 of 4,619 (18.9 percent); 0 to 2.2 percent elsewhere (P05, P06, P08, P09, P12 none). M-4c: timed
+ChatActivity 277 on P14 (3-phone case) and 25 on P04 (10-report case). Live reference phones (m4.1, read-only): C3 0
+of 1,702 and C9 0 of 2,013 incoming with an owner read time. Gate: read-and-latency **fail** (2 phones < 5);
+group roles **pass** (277 >= 50 in the 3-phone case). Reverse if a case adds phones with read times on 20 percent of
+incoming messages until 5 phones meet it.
 
 ### 7.7 Dependencies
 
@@ -1134,7 +1148,9 @@ not met; server measurement on the 10-report case decides.
 **Server result (stage A3, `measurements/a3/README.md` section 9):** M-5a: the most co-placed 15-minute bins for any pair is 43 (P03 and P04), and no pair shares a BSSID in a
 bin; M-5b: one pair has a strong marker (P04 and P06: 2 owner E.164 numbers in common); M-5c: 43 pairs have at
 least 14 days of overlapping interaction data (most: P08 and P10, 729). Gate: co-location **fail** (43 < 200);
-complementary use **pass**.
+complementary use **pass**. `cb-approaches` builds the complementary-use part (8.3 steps 1, 3 and 5: shared markers,
+complementary use, signs of more than one user) and not the co-location statistic or "use while apart" (steps 2 and
+4 rest on co-placed bins). Reverse if a case yields a pair with at least 200 co-placed bins.
 
 ### 8.7 Dependencies
 
@@ -1510,6 +1526,12 @@ times and at least 10 identities meet M-11b in a case.
 **Server result (stage A3, `measurements/a3/README.md` section 9):** M-11a: contacts with a created time on 6 phones of the 10-report case (P11 2,357, P10 1,530, P04 529, P03
 182, P02 10, P07 7) and 2 of the 3-phone case (P13 280, P14 101). The first half of the gate is met; M-11b and M-11c need 02's
 identities and are measured by `cb-approaches`.
+
+**Loupe result (`measurements` m11.1 on the live reference phones, read-only, `measurements/g/`).** M-11b: 16
+identities with at least 20 communications on C3 and 37 on C9, both phones of the 10-report case. With M-11a's six
+phones with created times in that case, the gate **passes**: build. M-11c (identities named differently on two
+phones) needs two phones of one case in Loupe; none of the live cases with a real phone holds two, so it is counted
+on the synthetic cases when the approach runs and is not a gate input.
 
 ### 14.7 Dependencies
 
@@ -2115,6 +2137,11 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | App-message matches split into server-stamped and device-stamped for clock offsets | X7: 18 of 18 exactly zero | measurement shows app times are device times for a source |
 | Distinct-body rule (≥ 10 chars, ≤ 3 occurrences) unless all keys agree | X3 ratio of common to distinct bodies | precision review of matches |
 | Selective clearing excludes explained deletions and uses per-app baselines | disappearing messages and decoder differences | |
+| 19.S6-a Hole threshold: a gap is compared with the 99th percentile of the conversation's other gaps (leave one out) | with fewer than 100 gaps the nearest-rank 99th percentile is the largest gap itself, so no gap could exceed it | a corpus run shows leave-one-out marking more than 5 percent of conversations with 20 or more messages |
+| 19.S6-b "Inside the availability band for app A" (6.3 step 4): a gap is a hole only when the phone holds messages of the same app in other conversations inside the gap | 04's observed bands come from observing streams only (device events, connectivity, places), never from messages, so there is no band per app; a gap in which the app recorded nothing on the phone is that app's no-data period, not a hole | 04 gains a per-app band |
+| 19.S6-c `hole_confirmed_by_counterpart` is not emitted | it needs approach 2's matches, and approach 2 is not built (5.6) | approach 2 ships |
+| 19.S6-d Named-set, TimeSpan and Boolean fields are read from the captured record body (`phone_analysis/fields.py`), never from the text table | the text table holds String fields only (measured on C3: no `Label`, `DeletionReason`, `EventType` or `Categories` rows) | 02 adds those values to a read view |
+| 19.S6-e Key dates are placed beside results by the screen at display time, not stored in results | a key date added later must show without a rerun, and a result's key stays equal across runs | |
 | Deletion time is an interval to extraction start unless `DateDeleted` exists | `DateDeleted` 1 in corpus | a source of deletion times is found |
 | Media spread population restricted to attachment, camera-path and EXIF-camera files | X10 against X11 | |
 | Approach code in `backend/services/phone_analysis/`; media and re-parse in the engine | backend 3.10 versus tool requirements 3.11+ | 01/02 fix another root |
