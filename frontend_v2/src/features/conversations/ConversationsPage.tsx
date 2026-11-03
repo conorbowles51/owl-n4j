@@ -232,6 +232,8 @@ export function ConversationsPage() {
     useChatStore.getState().setPhoneContext({
       caseId, thread: view.thread, thread_title: current?.title ?? null, scope_words: scopeWords(scope),
       scope_total: stream.status === "ready" ? stream.total : null, record_ids: ids,
+      // "select all" covers every message in scope, but only the rows loaded on screen have ids to send
+      selected_total: selection.all && stream.status === "ready" ? stream.total : ids.length,
     })
     useUIStore.getState().expandGraphPanelTo("chat")
   }
@@ -404,6 +406,15 @@ export function ConversationsPage() {
             </button>
           </p>
         )}
+        {!view.noTime && (
+          // opened from a crossing that names days (07 XF-1, XF-4): records with no time cannot be placed on a day
+          <p role="status" className="w-full text-sm" data-testid="dated-only">
+            Showing only messages and calls with a time.{" "}
+            <button type="button" className="underline underline-offset-2" onClick={() => setView({ noTime: true })}>
+              Include those with no time
+            </button>
+          </p>
+        )}
         {counts && (
           <p className="text-sm" data-testid="not-reviewed">
             Not yet reviewed: {fmt(counts.not_reviewed ?? 0)} of {fmt(counts.threads ?? 0)} threads
@@ -564,8 +575,9 @@ export function ConversationsPage() {
               <Button size="sm" variant="outline" disabled={!focused?.time.instant} onClick={() => focused && setAround(focused)}>
                 Around this time <kbd className="ml-1 text-xs text-muted-foreground">a</kbd>
               </Button>
-              <Button size="sm" variant="outline" disabled={!streamFilter} onClick={askAboutThese}>
-                Ask about these messages
+              <Button size="sm" variant="outline" disabled={!streamFilter || selection.rows.length === 0} onClick={askAboutThese}
+                title={selection.rows.length === 0 ? "Select messages to ask about them" : undefined}>
+                {selection.rows.length === 0 ? "Select messages to ask about them" : "Ask about these messages"}
               </Button>
               <AddToMenu
                 caseId={caseId}

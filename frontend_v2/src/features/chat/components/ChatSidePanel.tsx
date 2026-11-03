@@ -241,9 +241,11 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
         {phoneContext && phoneContext.caseId === caseId && (
           <div role="status" data-testid="chat-phone-context" className="mb-2 flex items-start gap-2 rounded border bg-muted/40 px-2 py-1 text-xs">
             <span className="min-w-0 flex-1">
-              Asking about {phoneContext.record_ids.length
-                ? `${phoneContext.record_ids.length.toLocaleString("en-US")} selected ${phoneContext.record_ids.length === 1 ? "message" : "messages"}`
-                : phoneContext.thread_title ? `the conversation ${phoneContext.thread_title}` : "these messages"}
+              Asking about {phoneContext.record_ids.length.toLocaleString("en-US")} selected {phoneContext.record_ids.length === 1 ? "message" : "messages"}
+              {(phoneContext.selected_total ?? 0) > phoneContext.record_ids.length
+                ? `, the ones loaded on screen of the ${phoneContext.selected_total!.toLocaleString("en-US")} selected`
+                : ""}
+              {phoneContext.thread_title ? ` in ${phoneContext.thread_title}` : ""}
               {phoneContext.scope_words ? ` (${phoneContext.scope_words})` : ""}.
               {phoneContext.record_ids.length > 50 ? " Only the first 50 are read with the question." : ""}
             </span>

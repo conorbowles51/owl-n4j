@@ -162,6 +162,14 @@ def test_overview_timeline_and_map_count_the_phones_and_xf12_the_map_says_or_sho
     point = shown["artifact"]["data"]["locations"][0]
     assert point["rec"].startswith("rec://") and point["latitude"] == 38.9
     assert shown["artifact"]["metadata"]["notes"].startswith("Includes 1 of 1 phone location points")
+    from services.agent import phone_tools
+
+    def broken(*a, **k):
+        raise RuntimeError("synthetic read failure")
+    monkeypatch.setattr(phone_tools, "places", broken)
+    kept = tools["build_map_artifact"].invoke({"include_phone_points": True})
+    assert kept["status"] != "error" and kept["data"]["phone_points_included"] is False
+    assert "could not be read just now" in kept["artifact"]["metadata"]["notes"]
 
 
 def test_co18_an_accepted_agent_answer_is_ai_assisted_names_its_model_and_links_the_records_it_cites(world):
@@ -197,6 +205,10 @@ def test_co18_an_accepted_agent_answer_is_ai_assisted_names_its_model_and_links_
         with pytest.raises(LookupError):                                          # asked in the other case
             accept.accept_answer_into_assessment(db, case_id=world["other"], message_id=msg_id,
                                                  dossier_id=world["foreign"], category="Contact", user=user)
+        someone_else = User(id=uuid.uuid4(), email="else@synthetic.test", name="Else", password_hash="x")
+        with pytest.raises(LookupError):                                          # another person's agent thread
+            accept.accept_answer_into_assessment(db, case_id=case, message_id=msg_id, dossier_id=world["dossier"],
+                                                 category="Contact", user=someone_else)
         db.rollback()
 
 
@@ -217,3 +229,8 @@ def test_xf10_ask_about_these_messages_reads_only_the_chosen_records_of_this_cas
         assert chat_retrieval.selected_windows(c, world["case"], many) == []  # the 51st is past the cap: not read
     assert "Only the first 50 selected records are read with this question; 11 were left out." in \
         RAGService._format_view_context({"phone": many})
+    # what was read is said to the model: 2 of the 3 chosen are in this case; a failed read is never silent
+    two = RAGService._format_view_context({"phone": dict(ctx, _read=2)})
+    assert "Only 2 of them were found in this case" in two and "the other 1 were not found in this case" in two
+    failed = RAGService._format_view_context({"phone": dict(ctx, _read=None)})
+    assert "could not be read just now" in failed and "appear below" not in failed

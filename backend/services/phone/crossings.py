@@ -54,10 +54,12 @@ def _day_bounds(d: date, zone: str) -> tuple[datetime, datetime]:
 
 
 def conversations_scope(case_id, keys: list[str], from_day: date | None = None, to_day: date | None = None,
-                        zone: str = "UTC", phones: list[str] | None = None) -> tuple[dict, str]:
+                        zone: str = "UTC", phones: list[str] | None = None,
+                        dated_only: bool = False) -> tuple[dict, str]:
     """``(stream filter, Conversations href)`` for Involving any of ``keys`` (one person's identities), or for
     ``phones`` with no people, optionally from one day to another in the case zone, as the page builds them from that
-    URL."""
+    URL. ``dated_only`` leaves out records with no time (``notime=0`` on the page): a count named by days ("same
+    day", "from 2023-03-13 to 2023-03-15") never holds a record that cannot be placed on a day."""
     f = {"case_id": str(case_id), "zone": {"mode": "case", "phone": None}, "names": {"mode": "phone"}}
     q = {}
     if keys:
@@ -72,6 +74,9 @@ def conversations_scope(case_id, keys: list[str], from_day: date | None = None, 
     if to_day:
         f["to_instant"] = _day_bounds(to_day, zone)[1].isoformat()
         q["to"] = to_day.isoformat()
+    if dated_only:
+        f["include_no_time"] = False
+        q["notime"] = "0"
     return f, "/cases/%s/conversations?%s" % (case_id, urlencode(q))
 
 
@@ -152,16 +157,28 @@ def payment_activity(session, case_id, transaction_id) -> dict:
     days = []
     for offset in (-1, 0, 1):
         day = d + timedelta(days=offset)
-        f, href = conversations_scope(case_id, keys, day, day, zone)
+        f, href = conversations_scope(case_id, keys, day, day, zone, dated_only=True)
         days.append({"offset": offset, "words": DAY_WORDS[offset], "date": day.isoformat(), "count": count(conn, f),
                      "conversations_href": href})
-    f, href = conversations_scope(case_id, keys, d - timedelta(days=1), d + timedelta(days=1), zone)
+    f, href = conversations_scope(case_id, keys, d - timedelta(days=1), d + timedelta(days=1), zone, dated_only=True)
     total = count(conn, f)
     names = ", ".join(x["name"] for x in dossiers)
+    no_time = _no_time(conn, case_id, keys)
     return {**base, "state": "linked", "people": dossiers, "identity_keys": keys, "zone": zone, "days": days,
-            "total": total, "conversations_href": href,
+            "total": total, "conversations_href": href, "no_time": no_time,
             "sentence": "%s message%s and call%s with %s from 1 day before to 1 day after the payment (days in %s)." % (
-                "{:,}".format(total), "" if total == 1 else "s", "" if total == 1 else "s", names, zone)}
+                "{:,}".format(total), "" if total == 1 else "s", "" if total == 1 else "s", names, zone)
+            + (" %s more with %s %s no time, so %s cannot be placed around the payment." % (
+                "{:,}".format(no_time), names, "has" if no_time == 1 else "have", "it" if no_time == 1 else "they")
+               if no_time else "")}
+
+
+def _no_time(conn, case_id, keys=(), phones=None) -> int:
+    """Records with no time in a person's or a phone's Conversations scope: stated beside a count named by days."""
+    from services.phone import streams
+    from services.phone.filters import StreamFilter
+    f, _ = conversations_scope(case_id, list(keys), phones=phones)
+    return int(streams.index_comm_events(conn, StreamFilter.model_validate(f))["no_time_count"] or 0)
 
 
 def create_payee_dossier(session, case_id, transaction_id, user) -> dict:
@@ -284,9 +301,11 @@ def period_activity(conn, case_id, from_day: date, to_day: date) -> dict:
     _, b = _day_bounds(to_day, zone)
     phones = []
     for p in records.phones(conn, case_id):
-        f, href = conversations_scope(case_id, [], from_day, to_day, zone, phones=[p["extraction_id"]])
+        f, href = conversations_scope(case_id, [], from_day, to_day, zone, phones=[p["extraction_id"]],
+                                      dated_only=True)
         phones.append({"extraction_id": p["extraction_id"], "label": p["label"], "count": count(conn, f),
-                       "conversations_href": href})
+                       "conversations_href": href,
+                       "no_time": _no_time(conn, case_id, phones=[p["extraction_id"]])})
     lens_filter = {"case_id": str(case_id), "zone": {"mode": "case", "phone": None}, "from_instant": a.isoformat(),
                    "to_instant": b.isoformat(), "include_no_time": False, "lens_kinds": LENS_COMM_KINDS,
                    "lane_by": "phone"}

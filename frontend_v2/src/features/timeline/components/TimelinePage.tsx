@@ -318,7 +318,7 @@ export function TimelinePage() {
   const windowBar = caseId ? (
     <>
       <TimelineWindowBar caseId={caseId} events={windowEvents} selectedKey={selectedEventKey ?? requestedKey} />
-      {phoneCount > 0 && <PeriodPhones caseId={caseId} from={dateRange.start} to={dateRange.end} />}
+      {phoneCount > 0 && <PeriodPhones caseId={caseId} caseName={caseName} from={dateRange.start} to={dateRange.end} />}
     </>
   ) : null
 

@@ -77,15 +77,27 @@ def gather(db, case_id, entry_id) -> dict:
             "SELECT record_uid::text FROM pv_comm_event WHERE case_id = :c AND record_uid::text = ANY(:r)"),
             {"c": case, "r": ordered}).scalars()}
     records = [r for r in ordered if r in found]
-    if len(ordered) > len(records):
-        not_exported["phone_record_not_communication"] = len(ordered) - len(records)
+    missing = [r for r in ordered if r not in found]
+    if missing:
+        # a record of a report since replaced is still in the raw tables but not in the case's read views
+        stale = {str(r) for r in db.execute(text(
+            "SELECT s.record_uid::text FROM phone_record_summaries s JOIN phone_extractions e ON e.id = "
+            "s.extraction_id WHERE s.case_id = :c AND e.standing <> 'active' AND s.record_uid::text = ANY(:r)"),
+            {"c": case, "r": missing}).scalars()}
+        if stale:
+            not_exported["phone_record_replaced"] = len(stale)
+        if len(missing) > len(stale):
+            not_exported["phone_record_not_communication"] = len(missing) - len(stale)
     return {"entry": entry, "records": records, "not_exported": not_exported, "replaced": replaced}
 
 
 def sentence(g: dict) -> str | None:
     parts = []
     for kind, n in sorted(g["not_exported"].items()):
-        if kind == "phone_record_not_communication":
+        if kind == "phone_record_replaced":
+            parts.append(_plural(n, ("linked record on a phone report that was replaced", "linked records on phone "
+                                                                                       "reports that were replaced")))
+        elif kind == "phone_record_not_communication":
             parts.append(_plural(n, ("linked phone record that is not a message or call", "linked phone records that "
                                                                                         "are not messages or calls")))
         elif kind in KIND_WORDS:

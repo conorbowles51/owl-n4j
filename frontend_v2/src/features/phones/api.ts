@@ -632,7 +632,7 @@ export interface PeriodCrossing {
   zone: string
   total: number
   sentence: string
-  phones: { extraction_id: string; label: string; count: number; conversations_href: string }[]
+  phones: { extraction_id: string; label: string; count: number; conversations_href: string; no_time?: number }[]
   lens_filter: StreamFilter & { lens_kinds: string[]; lane_by: string }
 }
 export async function getPeriodCrossing(caseId: string, from: string, to: string) {

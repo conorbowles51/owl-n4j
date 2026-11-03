@@ -41,13 +41,15 @@ export interface ConversationView {
   at: string | null
   /** A saved selection opened from a link: only its frozen records. */
   selection: string | null
+  /** False: only records with a time (?notime=0), as a crossing that names days opens them (07 XF-1, XF-4). */
+  noTime: boolean
 }
 
 export const DEFAULT_VIEW: ConversationView = {
   tab: "threads", thread: null, record: null, people: [], mode: "involving", expand: false, phones: [], from: null,
   to: null, kinds: [], apps: [], directions: [], deleted: null, unreadable: null, attachment: null, text: "",
   exact: false, everyCopy: false, allChannels: false, sort: "oldest_first", threadSort: "recent", zone: "case",
-  names: "phone", hl: "", hlExact: false, at: null, selection: null,
+  names: "phone", hl: "", hlExact: false, at: null, selection: null, noTime: true,
 }
 
 const list = (q: URLSearchParams, k: string) => (q.get(k) ? q.get(k)!.split(",").filter(Boolean) : [])
@@ -87,6 +89,7 @@ export function viewFromSearch(search: string, fixedPhone?: string | null): Conv
     hlExact: q.get("hlexact") === "1",
     at: q.get("at"),
     selection: q.get("selection"),
+    noTime: q.get("notime") !== "0",
   }
 }
 
@@ -122,6 +125,7 @@ export function viewToSearch(v: ConversationView, fixedPhone?: string | null): s
   set("hlexact", v.hlExact ? "1" : null)
   set("at", v.at)
   set("selection", v.selection)
+  set("notime", v.noTime ? null : "0")
   return q.toString()
 }
 
@@ -163,6 +167,7 @@ export function viewToFilter(caseId: string, v: ConversationView, zoneName: stri
   if (v.unreadable !== null) flags.unreadable = v.unreadable
   if (v.attachment !== null) flags.has_attachment = v.attachment
   if (Object.keys(flags).length) f.flags = flags
+  if (!v.noTime) f.include_no_time = false
   if (v.from) f.from_instant = new Date(dayStart(v.from, zoneName)).toISOString()
   if (v.to) {
     const next = new Date(Date.UTC(Number(v.to.slice(0, 4)), Number(v.to.slice(5, 7)) - 1, Number(v.to.slice(8, 10)) + 1))

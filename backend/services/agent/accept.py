@@ -34,9 +34,12 @@ def accept_answer_into_assessment(db, *, case_id, message_id, dossier_id, catego
     from postgres.models.agent import AgentMessage, AgentThread
     from postgres.models.case_profile import CaseProfile
     from services import dossier_service
-    row = db.execute(select(AgentMessage, AgentThread.case_id).join(AgentThread, AgentThread.id == AgentMessage.thread_id)
+    row = db.execute(select(AgentMessage, AgentThread.case_id, AgentThread.owner_user_id)
+                     .join(AgentThread, AgentThread.id == AgentMessage.thread_id)
                      .where(AgentMessage.id == message_id)).first()
-    if row is None or str(row[1]) != str(case_id):
+    # an agent thread is its owner's, as everywhere else in the agent (storage.get_thread_for_user): another
+    # person's answer is never found here, even in the same case
+    if row is None or str(row[1]) != str(case_id) or str(row[2]) != str(getattr(user, "id", None)):
         raise LookupError("This answer is not in this case.")
     message = row[0]
     if message.role != "assistant":

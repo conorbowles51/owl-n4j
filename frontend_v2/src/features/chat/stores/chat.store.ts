@@ -19,6 +19,8 @@ export interface PhoneChatContext {
   scope_words: string
   scope_total: number | null
   record_ids: string[]
+  /** How many messages were selected; more than record_ids when "select all" covered rows not loaded on screen */
+  selected_total?: number
 }
 
 interface ChatStore {

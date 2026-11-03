@@ -143,7 +143,7 @@ function LensLanes({ caseId, caseName, filter, snapshot, firstDay, lastDay, filt
   )
 }
 
-function LensList({ caseId, caseName, filter, filterWords }: { caseId: string; caseName: string; filter: LensFilter; filterWords: string }) {
+export function LensList({ caseId, caseName, filter, filterWords }: { caseId: string; caseName: string; filter: LensFilter; filterWords: string }) {
   const stream = useStream(filter, { source: LENS_SOURCE })
   if (stream.status === "error") return <p role="alert" className="text-sm">{stream.error}</p>
   return (

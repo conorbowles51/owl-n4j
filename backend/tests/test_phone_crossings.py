@@ -41,7 +41,8 @@ def world():
                 msg(at(2023, 3, 14, 10), ANA2, [OWNER], "got it, by email"),    # same day, her other identity
                 msg(at(2023, 3, 15, 9), ANA, [OWNER], "thanks"),                # 1 day after
                 msg(at(2023, 3, 17, 9), ANA, [OWNER], "outside the window"),
-                msg(at(2023, 3, 14, 11), BEN, [OWNER], "someone else")])
+                msg(at(2023, 3, 14, 11), BEN, [OWNER], "someone else"),
+                msg(None, ANA, [OWNER], "a message the report gives no time")])          # undated
             dossier = uuid.uuid4()
             c.execute(text("INSERT INTO case_profiles (id, case_id, profile_type, display_name, contacts, "
                            "canonical_entity_key, linkage_state, status, needs_link_review, graph_entity_deleted, "
@@ -79,7 +80,8 @@ def _screen(conn, case, href):
     zone = X._zone(conn, case)
     from_day = date.fromisoformat(q["from"]) if "from" in q else None
     to_day = date.fromisoformat(q["to"]) if "to" in q else None
-    f, again = X.conversations_scope(case, q["people"].split(","), from_day, to_day, zone)
+    f, again = X.conversations_scope(case, q["people"].split(","), from_day, to_day, zone,
+                                     dated_only=q.get("notime") == "0")
     assert again == href
     return X.count(conn, f)
 
@@ -91,13 +93,15 @@ def test_xf1_activity_around_a_payment_is_its_linked_people_by_day_and_equals_co
         assert out["identity_keys"] == sorted([ANA, ANA2])
         assert [(d["words"], d["date"], d["count"]) for d in out["days"]] == [
             ("1 day before", "2023-03-13", 1), ("same day", "2023-03-14", 2), ("1 day after", "2023-03-15", 1)]
-        assert out["total"] == 4
+        assert out["total"] == 4                    # the undated message is never placed on a day
+        assert out["no_time"] == 1 and out["sentence"].endswith(
+            "1 more with Ana Synthetic has no time, so it cannot be placed around the payment.")
         conn = db.connection()
         for d in out["days"]:
             assert _screen(conn, world["case"], d["conversations_href"]) == d["count"]
         assert _screen(conn, world["case"], out["conversations_href"]) == out["total"]
         q = parse_qs(urlparse(out["conversations_href"]).query)
-        assert q["from"] == ["2023-03-13"] and q["to"] == ["2023-03-15"]
+        assert q["from"] == ["2023-03-13"] and q["to"] == ["2023-03-15"] and q["notime"] == ["0"]
         words = json.dumps(out)
         assert ":00" not in out["sentence"] and "AM" not in words and "PM" not in words  # never a time of day
 
@@ -122,8 +126,8 @@ def test_xf2_a_graph_person_opens_conversations_with_the_same_count(world):
         conn = db.connection()
         for kw in ({"dossier_id": world["dossier"]}, {"entity_key": "ent-ana"}):
             out = X.person_activity(conn, world["case"], **kw)
-            assert out["state"] == "linked" and out["total"] == 5
-            assert _screen(conn, world["case"], out["conversations_href"]) == 5
+            assert out["state"] == "linked" and out["total"] == 6     # no days named: the undated one counts
+            assert _screen(conn, world["case"], out["conversations_href"]) == 6
         none = X.person_activity(conn, world["case"], entity_key="ent-nobody")
         assert none["state"] == "unlinked" and none["total"] is None
 
@@ -177,9 +181,10 @@ def test_xf4_a_timeline_period_per_phone_equals_the_lens_lanes_and_conversations
         assert out["total"] == 5 and len(out["phones"]) == 1      # the 17th is outside; Ben's 14th is inside
         p = out["phones"][0]
         q = parse_qs(urlparse(p["conversations_href"]).query)
-        assert q == {"phones": [p["extraction_id"]], "from": ["2023-03-13"], "to": ["2023-03-15"]}
+        assert q == {"phones": [p["extraction_id"]], "from": ["2023-03-13"], "to": ["2023-03-15"], "notime": ["0"]}
+        assert p["no_time"] == 1                     # stated beside the count, never inside it
         f, again = X.conversations_scope(world["case"], [], date(2023, 3, 13), date(2023, 3, 15), out["zone"],
-                                         phones=[p["extraction_id"]])
+                                         phones=[p["extraction_id"]], dated_only=True)
         assert again == p["conversations_href"] and X.count(conn, f) == p["count"] == 5
         lens = TL.index(conn, TL.TimelineLensFilter.model_validate(out["lens_filter"]))
         assert {l["key"]: l["count"] for l in lens["lanes"]} == {p["extraction_id"]: 5}

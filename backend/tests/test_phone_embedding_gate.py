@@ -202,6 +202,17 @@ def test_xf7_search_hit_to_finding_to_export_and_theory_analysis_with_the_same_r
                 made[kind] = eid
             out = entry_export.freeze_entry(db, case, made["finding"], owner)
             assert out["collected"] == 2 and out["sentence"] == "Not in this export: 1 person on the phones."
+            # a linked record whose report is later replaced is named as such, never as "not a message"
+            from tests.phone_streams_fixture import at, phone
+            ext2, evs2 = phone(db.connection(), case, label="C2", events=[_m(at(2023, 3, 4, 9), ANA, [OWNER],
+                                                                              "Old report copy", thread="r1")])
+            entries.batch_add_entry_links(db, case_id=case, entry_id=made["finding"], current_user=owner, links=[
+                {"target_type": "phone_record", "target_id": evs2[0]["record_uid"], "target_label": "old",
+                 "relationship": "context", "source_anchor": {}}], rationale="Added from Search")
+            db.execute(text("UPDATE phone_extractions SET standing = 'superseded' WHERE id = :e"), {"e": ext2})
+            again = entry_export.freeze_entry(db, case, made["finding"], owner)
+            assert again["collected"] == 2 and again["sentence"] == (
+                "Not in this export: 1 person on the phones; 1 linked record on a phone report that was replaced.")
             facts = jobs.describe(db.connection(), case, out["filter"])
             assert facts["total"] == out["collected"] == facts["messages"]
             created = jobs.create(db.connection(), case_id=case, user_id=owner.id, fmt="pdf", source="finding",

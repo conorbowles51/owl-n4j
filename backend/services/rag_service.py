@@ -1156,9 +1156,17 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 lines.append(f"- Open conversation: {clean(phone.get('thread_title') or phone.get('thread'), 200)}")
             n = len(phone.get("record_ids") or [])
             total = phone.get("scope_total")
+            read = phone.get("_read", n)
             lines.append(f"- {n} selected record{'s' if n != 1 else ''}"
                          + (f" of {total} in the scope" if total is not None else "")
-                         + "; they appear below as passages citing rec:// links.")
+                         + ("; they appear below as passages citing rec:// links." if read == n or (n > 50 and read)
+                            else ""))
+            if read is None:
+                lines.append("- The selected records could not be read just now. Say so, and do not answer as if "
+                             "they had been read.")
+            elif read < min(n, 50):
+                lines.append(f"- Only {read} of them were found in this case and appear below as passages citing "
+                             f"rec:// links; the other {min(n, 50) - read} were not found in this case. Say so.")
             if n > 50:  # chat_retrieval.MAX_SELECTED
                 lines.append(f"- Only the first 50 selected records are read with this question; {n - 50} were left "
                              "out. Say so in the answer.")
@@ -1823,6 +1831,14 @@ Only include candidates with score >= 5."""
         context_mode = "significant" if strict_entity_scope else "hybrid"
         context_description = ""
         cypher_context = None
+        selected_phone: List[Dict[str, Any]] = []
+        if case_id and isinstance(view_context, dict) and isinstance(view_context.get("phone"), dict):
+            # XF-10: the records the person chose in Conversations, read here by id (the request holds no text);
+            # read before the prompt is written so it states how many were read, or that the read failed
+            view_context = dict(view_context)
+            view_context["phone"] = dict(view_context["phone"])
+            selected_phone, view_context["phone"]["_read"] = self._selected_phone_records(
+                case_id, view_context["phone"], debug_log)
         view_context_block = self._format_view_context(view_context)
         debug_log["view_context"] = view_context_block[:2000] if view_context_block else None
 
@@ -1920,9 +1936,8 @@ Only include candidates with score >= 5."""
             # Phone text is not embedded (02 section 9.8): it is found by the folded search, read in full.
             phone_windows = self._phone_windows(question, case_id, debug_log)
             chunk_results = list(chunk_results) + phone_windows
-        if case_id and isinstance(view_context, dict) and isinstance(view_context.get("phone"), dict):
-            # XF-10: the records the person chose in Conversations, read here by id (the request holds no text)
-            chunk_results = self._selected_phone_records(case_id, view_context["phone"], debug_log) + list(chunk_results)
+        if selected_phone:
+            chunk_results = selected_phone + list(chunk_results)
         chunk_search_info = debug_log.get("chunk_search") or {}
         doc_scoped_count = sum(1 for c in chunk_results if c.get("_doc_scoped"))
         _add_stage(
@@ -2371,19 +2386,23 @@ Only include candidates with score >= 5."""
 
     def _selected_phone_records(self, case_id: str, phone_context: Dict[str, Any],
                                 debug_log: Optional[Dict] = None) -> List[Dict[str, Any]]:
-        """The phone records chosen with "Ask about these messages" (07 XF-10), read in this case by id."""
+        """The phone records chosen with "Ask about these messages" (07 XF-10), read in this case by id:
+        ``(passages, records read or None when the read failed)``."""
         try:
             from postgres.session import _get_engine
             from services.phone import chat_retrieval
             with _get_engine().connect() as conn:
                 found = chat_retrieval.selected_windows(conn, case_id, phone_context)
         except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception("Selected phone records could not be read for case %s", case_id)
             if debug_log is not None:
                 debug_log["phone_selected"] = {"error": str(exc)[:300]}
-            return []
+            return [], None
+        read = len(found)  # one passage per record read
         if debug_log is not None:
-            debug_log["phone_selected"] = {"asked": len(phone_context.get("record_ids") or []), "read": len(found)}
-        return found
+            debug_log["phone_selected"] = {"asked": len(phone_context.get("record_ids") or []), "read": read}
+        return found, read
 
     def _phone_windows(self, question: str, case_id: str, debug_log: Optional[Dict] = None) -> List[Dict[str, Any]]:
         """Up to 8 phone message windows found lexically for the question's terms (02 section 9.8)."""

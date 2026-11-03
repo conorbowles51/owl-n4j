@@ -215,4 +215,20 @@ describe("Conversations", () => {
     await waitFor(() => expect(seen.search).toContain("thread=t2"))
     await waitFor(() => expect(mounts.n).toBeGreaterThan(before))
   })
+
+  it("a crossing that names days opens only records with a time and says so (07 XF-1, XF-4)", async () => {
+    page("/cases/case-1/conversations?tab=people&people=phone%3A%2B12025550143&from=2023-03-13&to=2023-03-15&notime=0")
+    const line = await screen.findByTestId("dated-only")
+    expect(line.textContent).toContain("Showing only messages and calls with a time.")
+    await waitFor(() => expect(streamFilters.at(-1)).toMatchObject({ include_no_time: false }))
+    fireEvent.click(screen.getByRole("button", { name: "Include those with no time" }))
+    await waitFor(() => expect(seen.search).not.toContain("notime"))
+  })
+
+  it("Ask about these messages waits for a selection, so a conversation is never named when none of it is sent", async () => {
+    page()
+    await waitFor(() => expect(seen.search).toContain("thread=t1"))
+    const ask = await screen.findByRole("button", { name: "Select messages to ask about them" })
+    expect(ask).toBeDisabled()
+  })
 })

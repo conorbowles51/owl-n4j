@@ -2500,9 +2500,14 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             t = phone_totals()
             if include_phone_points and t.get("location_points"):
                 from services.agent import phone_tools
-                with (context.ledger_session_factory or _financial_session)() as db:
-                    got = phone_tools.places(db.connection(), uuid.UUID(context.case_id), start=phone_start,
-                                             end=phone_end, phones=phones or (), limit=phone_tools.MAX_LIMIT)
+                try:
+                    with (context.ledger_session_factory or _financial_session)() as db:
+                        got = phone_tools.places(db.connection(), uuid.UUID(context.case_id), start=phone_start,
+                                                 end=phone_end, phones=phones or (), limit=phone_tools.MAX_LIMIT)
+                except Exception:  # the map keeps its places and says the phone points are left out, and why
+                    logger.exception("Agent map phone points failed for case %s", context.case_id)
+                    got = {"available": False, "reason": "Phone location points are not in this map: the phones "
+                                                         "could not be read just now."}
                 if got.get("available") is False:
                     phone_sentence = str(got.get("reason"))
                 else:
