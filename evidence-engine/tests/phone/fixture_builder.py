@@ -103,6 +103,8 @@ class PhoneSpec:
     # in the busiest thread dated in the ``later_days`` after the original extraction, which moves that much later
     later_days: int = 0
     later_messages: int = 0
+    # bank alerts for some of the case ledger's payments in this phone's period (05 approach 1: money on the phones)
+    bank_alerts: bool = False
 
 
 @dataclass
@@ -265,6 +267,7 @@ class PhoneBuild:
         self.ui_threads: list[dict] = []
         self.ui_messages: list[dict] = []
         self.ui_calls: list[dict] = []
+        self.alert_rows: list[dict] = []
 
     # -- counts ---------------------------------------------------------------------------
     def target(self, mtype: str, minimum: int = 0) -> int:
@@ -533,6 +536,10 @@ class PhoneBuild:
         for mtype in self.cat["model_types"]:
             if mtype not in NESTED_ONLY and mtype not in BUILT:
                 model_types[mtype] = self.generic(mtype)
+        if self.alert_rows:
+            # written last, so every other record keeps the ids and content it had before alerts existed
+            model_types.setdefault("Notification", [])
+            model_types["Notification"] = list(model_types["Notification"]) + self.bank_alerts()
         files_xml = self.tagged_files(out)
         top = sum(len(v) for v in model_types.values())
         spec = self.spec
@@ -583,6 +590,24 @@ class PhoneBuild:
             "facts": dict(sorted(self.count.facts.items())), "files": len(self.files),
             "top_level_total": top,
         }
+
+    def bank_alerts(self) -> list[str]:
+        """One notification per chosen ledger row, the same day at 10:00 UTC: the amount, money in or out, the
+        statement's account ending and the payee as the statement prints it. Invented bank, invented people."""
+        out = []
+        for r in self.alert_rows:
+            amount = float(r["Amount"])
+            month, day, year = r["Date"].split("/")
+            when = dt.datetime(int(year), int(month), int(day), 10, 0)
+            who = r["Description"].split(" ", 2)[-1].title()
+            body = (f"Synthetic Community Bank: account ending 0100, USD {abs(amount):,.2f} "
+                    f"{'sent to' if amount < 0 else 'received from'} {who}.")
+            m = Model(self, "Notification", False)
+            m.f("ServiceIdentifier", "String", "test.synthcommunity.bank").f("Body", "String", body)
+            m.t("TimeStamp", when)
+            out.append(m.xml())
+            self.count.fact("bank_alerts")
+        return out
 
     def tagged_files(self, out: Path) -> str:
         img = out / "files" / "Image"
@@ -638,7 +663,8 @@ def training_case() -> CaseSpec:
     """Two synthetic phones that talk to each other, and a small synthetic ledger."""
     people = invent_people(14, seed=23)
     phones = [
-        PhoneSpec("C5", like="P12", scale=0.08, owner="p0", contacts=[p.key for p in people[1:10]], seed=201),
+        PhoneSpec("C5", like="P12", scale=0.08, owner="p0", contacts=[p.key for p in people[1:10]], seed=201,
+                  bank_alerts=True),
         PhoneSpec("C6", like="P09", scale=0.05, owner="p1", contacts=["p0"] + [p.key for p in people[5:13]], seed=202,
                   extraction_date=dt.date(2024, 5, 10)),
     ]
@@ -762,12 +788,21 @@ def build_case(case: CaseSpec, out: Path) -> dict:
     ui = {"case": case.name, "synthetic": True,
           "people": [{"key": p.key, "name": p.name, "numbers": p.numbers, "email": p.email} for p in case.people],
           "phones": [], "threads": [], "messages": [], "calls": []}
-    periods = []
-    for spec in case.phones:
-        b = PhoneBuild(spec, people, catalogue)
+    builds = [PhoneBuild(spec, people, catalogue) for spec in case.phones]
+    periods = [(b.start, b.end) for b in builds]
+    if case.ledger:
+        # the ledger first (its own seed; the phones' periods only), so a phone can carry alerts for its payments
+        manifest["ledger"] = write_ledger(case, out, (min(p[0] for p in periods), max(p[1] for p in periods)))
+        with open(out / manifest["ledger"]["file"], newline="") as fh:
+            rows = list(csv.DictReader(fh))
+        for b in builds:
+            if b.spec.bank_alerts:
+                inside = [r for r in rows if b.start.date() <= dt.datetime.strptime(r["Date"], "%m/%d/%Y").date()
+                          < b.end.date()]
+                b.alert_rows = inside[::4]
+    for spec, b in zip(case.phones, builds):
         info = b.write(out / spec.label)
         manifest["phones"].append(info)
-        periods.append((b.start, b.end))
         ui["phones"].append({k: info[k] for k in ("label", "owner", "zone", "extraction_date", "period_start",
                                                   "period_end", "no_data_days")}
                             | {"messages": info["facts"].get("messages", 0), "calls": len(b.ui_calls),
@@ -776,8 +811,6 @@ def build_case(case: CaseSpec, out: Path) -> dict:
         ui["threads"] += b.ui_threads
         ui["messages"] += b.ui_messages
         ui["calls"] += b.ui_calls
-    if case.ledger:
-        manifest["ledger"] = write_ledger(case, out, (min(p[0] for p in periods), max(p[1] for p in periods)))
     (out / "manifest.json").write_text(json.dumps(manifest, indent=1, sort_keys=True))
     (out / "ui-fixture.json").write_text(json.dumps(ui, indent=1, ensure_ascii=False))
     return manifest

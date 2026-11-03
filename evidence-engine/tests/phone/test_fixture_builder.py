@@ -80,6 +80,22 @@ class BuilderShapes(unittest.TestCase):
         c6 = [t for t in ui["threads"] if t["phone"] == "C6"]
         self.assertTrue(any("p0" in t["participants"] for t in c6))
 
+    def test_training_c5_carries_bank_alerts_for_some_of_its_ledger_payments_and_c6_none(self):
+        """05 approach 1 on live: each alert on C5 states a ledger row's amount, direction and day and the
+        statement's account ending, so money on the phone can be linked to its payment."""
+        rows = list(csv.DictReader(open(self.tr_dir / self.tr["ledger"]["file"])))
+        by_text = {(f"{abs(float(r['Amount'])):,.2f}", "sent to" if float(r["Amount"]) < 0 else "received from",
+                    r["Date"]) for r in rows}
+        xml = (self.tr_dir / "C5" / "Report.xml").read_text()
+        alerts = re.findall(r"Synthetic Community Bank: account ending 0100, USD ([\d,.]+) (sent to|received from) "
+                            r"[^<]*</value></field><field name=\"TimeStamp\"><value type=\"TimeStamp\"[^>]*>"
+                            r"(\d{4})-(\d\d)-(\d\d)T10:00", xml)
+        self.assertGreaterEqual(len(alerts), 10)
+        for amount, way, y, m, d in alerts:
+            self.assertIn((amount, way, f"{m}/{d}/{y}"), by_text)
+        self.assertEqual(self.tr["phones"][0]["facts"]["bank_alerts"], len(alerts))
+        self.assertNotIn("Synthetic Community Bank:", (self.tr_dir / "C6" / "Report.xml").read_text())
+
     def test_training_ledger_is_also_monthly_single_page_pdf_statements_with_every_row(self):
         """The ledger goes through Loupe's real Financial intake, which reads PDF statements (item I)."""
         rows = list(csv.DictReader(open(self.tr_dir / self.tr["ledger"]["file"])))
