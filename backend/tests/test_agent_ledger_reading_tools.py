@@ -169,6 +169,15 @@ class LedgerReadingToolTests(DuplicateTestCase):
         assert cov['covered_from'] == '2026-01-01' and cov['covered_to'] == '2026-03-31'
         assert cov['gaps'] == [['2026-02-01', '2026-02-28']]
         assert '1 gap' in data['sentence']
+        doc3 = self.make_document()
+        undated = self.make_period(doc3, bounds=PeriodBounds.printed(date(2026, 5, 1), date(2026, 5, 31)))
+        undated.period_start = undated.period_end = None
+        undated.period_start_source = undated.period_end_source = 'absent'
+        self.db.commit()
+        data = self.call('get_statement_continuity', account=str(self.account.id))['data']
+        # a saved period left out of the run is stated, never silently dropped
+        assert (data['periods_saved'], data['periods_in_run'], len(data['excluded_periods'])) == (3, 2, 1)
+        assert '2 of 3 saved statement periods' in data['sentence'] and 'left out of the run' in data['sentence']
         none = self.call('get_statement_continuity', account=str(uuid.uuid4()))
         assert none['data']['reason'] == 'That account is not in this case.'
 

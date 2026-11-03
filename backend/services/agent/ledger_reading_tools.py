@@ -319,21 +319,31 @@ def get_statement_continuity(session, *, case_id, account, offset=0, limit=50):
                   discrepancy=_money(s.discrepancy)) for s in run.seams]
     excluded = [dict(period_id=str(e.period_id), source_document_id=str(e.document_id), reason=e.reason.value,
                      detail=e.detail) for e in run.excluded]
-    sentence = ("No statement period is saved for this account, so it covers no dates: an absence of payments "
-                "here proves nothing." if not run.periods else
-                "%d statement period%s from %s to %s; %d gap%s, %d break%s, %d overlap%s, %d period%s whose "
-                "arithmetic did not close." % (len(run.periods), "" if len(run.periods) == 1 else "s",
+    saved = len(run.periods) + len(excluded)
+    left_out = ""
+    if excluded:
+        from collections import Counter
+        why = Counter(e["reason"] for e in excluded)
+        left_out = " %d saved period%s %s left out of the run (%s); %s cover%s no dates here." % (
+            len(excluded), "" if len(excluded) == 1 else "s", "is" if len(excluded) == 1 else "are",
+            ", ".join("%d %s" % (n, r.replace("_", " ")) for r, n in sorted(why.items())),
+            "it" if len(excluded) == 1 else "they", "s" if len(excluded) == 1 else "")
+    sentence = ("No dated statement period is saved for this account, so it covers no dates: an absence of payments "
+                "here proves nothing." + left_out if not run.periods else
+                "%d of %d saved statement period%s in the run, from %s to %s; %d gap%s, %d break%s, %d overlap%s, "
+                "%d period%s whose arithmetic did not close." % (len(run.periods), saved, "" if saved == 1 else "s",
                                                coverage["covered_from"], coverage["covered_to"],
                                                len(coverage["gaps"]), "" if len(coverage["gaps"]) == 1 else "s",
                                                len(coverage["breaks"]), "" if len(coverage["breaks"]) == 1 else "s",
                                                len(coverage["overlaps"]), "" if len(coverage["overlaps"]) == 1 else "s",
                                                len(coverage["unverified"]),
-                                               "" if len(coverage["unverified"]) == 1 else "s"))
+                                               "" if len(coverage["unverified"]) == 1 else "s") + left_out)
     return _paged(CONTINUITY_SCHEMA, case_id, items, offset, limit,
                   _revision([items, seams, excluded, coverage]), account_id=str(account_id),
                   account_label=" · ".join(v for v in (row.holder_name, row.institution_name,
                                                        row.identifier_as_printed) if v) or None,
-                  merged_accounts=len(members), coverage=coverage, seams=seams, excluded_periods=excluded,
+                  merged_accounts=len(members), periods_saved=saved, periods_in_run=len(run.periods),
+                  coverage=coverage, seams=seams, excluded_periods=excluded,
                   sentence=sentence,
                   limitation="Coverage is from the printed statement dates. A gap means no saved statement covers "
                              "those days, not that the account was inactive.")
