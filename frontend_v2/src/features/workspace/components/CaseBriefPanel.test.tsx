@@ -53,7 +53,7 @@ describe("What changed brief", () => {
     expect(screen.getByText("1000.00 USD → 1500.00 USD")).toBeInTheDocument()
     expect(screen.getByText(/Ledger revision 11111111 → 22222222/)).toBeInTheDocument()
     expect(screen.getByText(/all 5 payments were accepted after review/)).toBeInTheDocument()
-    expect(screen.getByText(/1 added and 0 confirmed or corrected/)).toBeInTheDocument()
+    expect(screen.getByText(/1 added and 0 answered \(confirmed, corrected or rejected\)/)).toBeInTheDocument()
     expect(screen.getByText(/Hypothesis “Rent” cites 1 ledger row/)).toBeInTheDocument()
     expect(screen.getByText(/no AI model was used/)).toBeInTheDocument()
     expect(mocks.fetchAPI).toHaveBeenCalledWith("/api/case-briefs/latest?case_id=case-1")

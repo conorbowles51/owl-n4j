@@ -246,7 +246,7 @@ export function CaseBriefPanel({ caseId, canEdit }: { caseId: string; canEdit: b
             <h3 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Judgement calls</h3>
             <p className="mt-1.5 text-xs">
               {plural(c.judgement_calls.open, "open call")}
-              {c.first ? "." : `; ${c.judgement_calls.added_open.toLocaleString()} added and ${c.judgement_calls.resolved.toLocaleString()} confirmed or corrected since the last brief.`}
+              {c.first ? "." : `; ${c.judgement_calls.added_open.toLocaleString()} added and ${c.judgement_calls.resolved.toLocaleString()} answered (confirmed, corrected or rejected) since the last brief.`}
             </p>
           </div>
           <List
