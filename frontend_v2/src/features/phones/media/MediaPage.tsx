@@ -1,9 +1,9 @@
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useRef, useState } from "react"
-import { Link, useParams } from "react-router-dom"
+import { Link, useParams, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { recordPath } from "@/lib/record-links"
-import { getMediaDetail, getMediaIndex, getMediaWindow, mediaObjectUrl, type MediaFilter, type MediaItem } from "../api"
+import { getDerivedTexts, getMediaDetail, getMediaIndex, getMediaWindow, mediaObjectUrl, requestDerivedText, type MediaFilter, type MediaItem } from "../api"
 
 const n = (v: number) => v.toLocaleString("en-US")
 const WINDOW = 200
@@ -60,6 +60,71 @@ function Thumb({ caseId, item, blur }: { caseId: string; item: MediaItem; blur: 
   )
 }
 
+const fmtSeconds = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`
+
+/** Machine-generated text (03 8.3, M-3): asked for here, made by a model on the server, always shown with its
+ * label under the original. Nothing is sent anywhere. */
+export function DerivedTexts({ caseId, fileUid, category }: { caseId: string; fileUid: string; category: string | null }) {
+  const client = useQueryClient()
+  const kind = category === "Image" ? "ocr" : category === "Audio" || category === "Video" ? "transcript" : null
+  const q = useQuery({
+    queryKey: ["phone-media-derived", caseId, fileUid],
+    queryFn: () => getDerivedTexts(caseId, fileUid),
+    refetchInterval: (query) => (query.state.data?.items.some((x) => x.state === "queued" || x.state === "running") ? 3000 : false),
+  })
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const items = q.data?.items ?? []
+  const waiting = items.some((x) => x.state === "queued" || x.state === "running")
+  const ask = async () => {
+    if (!kind) return
+    setBusy(true)
+    setError(null)
+    try {
+      await requestDerivedText(caseId, fileUid, kind)
+      await client.invalidateQueries({ queryKey: ["phone-media-derived", caseId, fileUid] })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The request could not be made.")
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (!kind && !items.length) return null
+  return (
+    <section aria-label="Machine-generated text" className="flex flex-col gap-1">
+      <h3 className="font-medium">Machine-generated text</h3>
+      {kind && (
+        <Button size="sm" variant="outline" onClick={ask} disabled={busy || waiting} className="self-start">
+          {kind === "ocr" ? "Read text in this image" : "Transcribe this audio"}
+        </Button>
+      )}
+      <p className="text-muted-foreground">Made by a model on this server; nothing is sent anywhere. A person has not checked it.</p>
+      {error && <p role="alert">{error}</p>}
+      {items.map((x) => (
+        <div key={x.id} className="flex flex-col gap-1 rounded border p-2">
+          {x.state === "queued" && <p role="status">Waiting to be read.</p>}
+          {x.state === "running" && <p role="status">Being read now.</p>}
+          {x.state === "failed" && <p role="alert">{x.error}</p>}
+          {x.state === "done" && (
+            <>
+              <p className="italic text-muted-foreground">{x.label}</p>
+              {x.segments.length ? (
+                <ol className="flex flex-col gap-0.5">
+                  {x.segments.map((s, i) => <li key={i}><span className="font-mono text-muted-foreground">{fmtSeconds(s.start)}</span> {s.text}</li>)}
+                </ol>
+              ) : x.text ? (
+                <p className="whitespace-pre-wrap">{x.text}</p>
+              ) : (
+                <p>No text was found.</p>
+              )}
+            </>
+          )}
+        </div>
+      ))}
+    </section>
+  )
+}
+
 function Detail({ caseId, fileUid, onClose }: { caseId: string; fileUid: string; onClose: () => void }) {
   const d = useQuery({ queryKey: ["phone-media-detail", caseId, fileUid], queryFn: () => getMediaDetail(caseId, fileUid) })
   const file = useObjectUrl(caseId, fileUid, !!d.data && !d.data.missing)
@@ -87,6 +152,7 @@ function Detail({ caseId, fileUid, onClose }: { caseId: string; fileUid: string;
           ) : (
             <p role="status">Loading the file.</p>
           )}
+          {!x.missing && <DerivedTexts caseId={caseId} fileUid={fileUid} category={x.category} />}
           <p>{x.verification_words}</p>
           {x.deleted_state && <p>Deleted state: {x.deleted_state}</p>}
           <dl className="grid grid-cols-[auto_1fr] gap-x-2">
@@ -114,7 +180,14 @@ export default function MediaPage() {
   const { id: caseId = "", extraction = "" } = useParams()
   const [category, setCategory] = useState("")
   const [state, setState] = useState("")
-  const [open, setOpen] = useState<string | null>(null)
+  const [params, setParams] = useSearchParams()
+  const open = params.get("file")
+  const setOpen = (uid: string | null) => setParams((p) => {
+    const next = new URLSearchParams(p)
+    if (uid) next.set("file", uid)
+    else next.delete("file")
+    return next
+  }, { replace: true })
   const [blur, setBlur] = useState(() => localStorage.getItem(BLUR_KEY) !== "off")
   const filter: MediaFilter = { case_id: caseId, phones: [extraction], ...(category ? { categories: [category] } : {}), ...(state ? { verification: [state] } : {}) }
   const idx = useQuery({ queryKey: ["phone-media-index", filter], queryFn: () => getMediaIndex(filter), enabled: !!caseId })

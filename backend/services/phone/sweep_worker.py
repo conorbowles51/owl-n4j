@@ -47,6 +47,8 @@ def main() -> int:
     document_folds.install()  # documents folded for Loupe-wide search, 20 s per pass (03 section 11.3)
     from services.phone.exports import jobs as exports
     exports.install()  # queued phone exports are drawn after each pass, one at a time (03 section 12.2)
+    from services.phone import derive
+    derive.install()  # requested OCR and transcripts of phone media, by local models (03 section 8.3)
     from services.pattern_of_life import activity
     activity.install()  # pattern of life: activity events after each pass (04 section 7.2)
     from services.pattern_of_life import availability

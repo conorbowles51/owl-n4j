@@ -8,7 +8,9 @@ that is mostly digits also finds identities whose digits contain it (S-3). Queri
 identifiers only (11.6). Snippets are cut from the original text, and the match inside a snippet is the original
 characters, found through the folded-to-original map (S-5).
 
-Media text arrives with the Media screen (item I); until then the response says it was not searched.
+``machine_text`` is text read from phone photos and audio on request (OCR and transcripts, 03 8.3): its own group,
+always labelled machine-generated with the model that made it. Media nobody asked to read is not searched, and the
+response says so.
 """
 from __future__ import annotations
 
@@ -22,13 +24,14 @@ from services.phone import streams
 from services.phone import time_display as T
 from services.search import document_folds
 
-GROUPS = ("messages", "calls", "emails", "people", "records", "documents")
+GROUPS = ("messages", "calls", "emails", "people", "records", "documents", "machine_text")
 COMM_KINDS = {"messages": ["message", "chat_activity"], "calls": ["call", "voicemail"], "emails": ["email"]}
 FIRST = 20
 MAX_PAGE = 200
 MIN_TEXT = 3
 SNIPPET = 60
-NOT_SEARCHED = [{"group": "media", "reason": "Text read from photos, audio and video is not searched yet."}]
+NOT_SEARCHED = [{"group": "media", "reason": "Photos, audio and video are searched only where someone asked on the "
+                   "Media screen for their text to be read or transcribed."}]
 SHORT = "Type at least 3 letters."
 
 
@@ -265,6 +268,42 @@ def _page(locations, at):
     return best[1] if best else None
 
 
+# ---- machine-generated text (OCR and transcripts) -----------------------------------------------------------------
+
+def _machine_sql(exact):
+    cond = "position(:qe in lower(d.text)) > 0" if exact else "d.text_folded LIKE :like"
+    return ("FROM (SELECT DISTINCT ON (d.file_uid, d.kind) d.* FROM phone_derived_texts d WHERE d.case_id = :c AND "
+            "d.state = 'done' ORDER BY d.file_uid, d.kind, d.finished_at DESC) d JOIN pv_file f ON f.file_uid = "
+            "d.file_uid AND f.case_id = :c WHERE (CAST(:p AS uuid[]) IS NULL OR f.extraction_id = ANY(CAST(:p AS "
+            "uuid[]))) AND " + cond)
+
+
+def _machine(conn, case_id, q, exact, phones, offset, limit, ctx):
+    from services.phone import derive
+    p = {"c": case_id, "qe": F.fold(q, exact=True), "like": _like(F.fold(q)), "p": phones or None}
+    total = int(conn.execute(text("SELECT count(*) " + _machine_sql(exact)), p).scalar() or 0)
+    if not total or not limit:
+        return total, []
+    p.update({"lim": limit, "off": offset})
+    out = []
+    for r in conn.execute(text(
+            "SELECT d.file_uid, d.kind, d.text, d.model, d.model_version, d.finished_at, f.extraction_id, "
+            "f.local_path " + _machine_sql(exact) + " ORDER BY d.finished_at DESC, d.file_uid, d.kind LIMIT :lim "
+            "OFFSET :off"), p):
+        phone = ctx["phones"].get(str(r.extraction_id), "Phone")
+        name = (r.local_path or "").replace("\\", "/").rsplit("/", 1)[-1] or "File not named in the report"
+        out.append({"kind": "machine_text", "title": "%s %s: %s" % (
+                        phone, "text read from" if r.kind == "ocr" else "transcript of", name),
+                    "phone_label": phone, "machine_generated": True,
+                    "label": derive.label(r.model, r.model_version, r.finished_at),
+                    "snippet": snippet(r.text, q, exact) or {"before": "", "match": "", "after": (r.text or "")[:120]},
+                    "record_uid": None, "evidence_file_id": None, "file_uid": str(r.file_uid),
+                    "extraction_id": str(r.extraction_id),
+                    "open": {"screen": "media", "params": {"file_uid": str(r.file_uid),
+                                                           "extraction_id": str(r.extraction_id)}}})
+    return total, out
+
+
 # ---- entry points -----------------------------------------------------------------------------------------------------------
 
 def _context(conn, case_id):
@@ -282,6 +321,8 @@ def _group(conn, case_id, group, q, exact, phones, start, end, offset, limit, ct
         total, items = _people(conn, case_id, q, exact, short, offset, limit)
     elif group == "records":
         total, items = (0, []) if short else _records(conn, case_id, q, exact, phones, offset, limit, ctx)
+    elif group == "machine_text":
+        total, items = (0, []) if short else _machine(conn, case_id, q, exact, phones, offset, limit, ctx)
     elif group == "documents":
         total, items, unprepared = (0, [], None) if short else _documents(conn, case_id, q, exact, offset, limit)
     else:
@@ -356,5 +397,5 @@ def _score(g, q, exact):
     fq = F.fold(q, exact=exact)
     if g["group"] == "people" and F.fold(top["title"], exact=exact) == fq:
         return 3.0
-    base = {"messages": 2.0, "people": 1.5, "emails": 1.4, "calls": 1.2, "documents": 1.1, "records": 1.0}
+    base = {"messages": 2.0, "people": 1.5, "emails": 1.4, "calls": 1.2, "documents": 1.1, "records": 1.0, "machine_text": 0.9}
     return base.get(g["group"], 1.0)

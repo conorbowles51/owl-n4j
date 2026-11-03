@@ -2,7 +2,7 @@ import { recordPath } from "@/lib/record-links"
 import type { SearchHit } from "../api"
 
 /** Where a search hit opens (03 section 11.2): messages in their whole thread with the record beside it, people
- * in Conversations' people tab, other records in the record panel, documents in the viewer at the page. */
+ * in Conversations' people tab, other records in the record panel, documents in the viewer at the page, machine-generated text beside its photo or audio on the Media screen. */
 export function hitPath(caseId: string, hit: SearchHit): string {
   const c = `/cases/${encodeURIComponent(caseId)}`
   const p = hit.open.params as Record<string, string | number | null | undefined>
@@ -24,6 +24,8 @@ export function hitPath(caseId: string, hit: SearchHit): string {
       return `${c}/dossiers?dossier=${enc(p.id)}`
     case "record":
       return recordPath(caseId, String(p.record_uid))
+    case "media":
+      return `${c}/phones/${enc(p.extraction_id)}/records/media?file=${enc(p.file_uid)}`
     case "document":
       return `${c}/evidence?file=${enc(p.evidence_file_id)}${p.page ? `&page=${enc(p.page)}` : ""}`
     default:

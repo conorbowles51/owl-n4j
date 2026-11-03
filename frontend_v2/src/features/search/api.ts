@@ -14,6 +14,9 @@ export const HitSchema = z.object({
   record_uid: z.string().nullable(),
   evidence_file_id: z.string().nullable(),
   identity_key: z.string().optional(),
+  file_uid: z.string().optional(),
+  machine_generated: z.boolean().optional(),
+  label: z.string().optional(),
   open: z.object({ screen: z.string(), params: z.record(z.string(), z.unknown()) }),
 })
 export type SearchHit = z.infer<typeof HitSchema>

@@ -326,6 +326,19 @@ export async function getMediaIndex(filter: MediaFilter) {
 export async function getMediaWindow(filter: MediaFilter, offset: number, limit = 200) {
   return fetchAPI<{ items: MediaItem[]; offset: number; limit: number }>("/api/phones/media/window", { method: "POST", body: { filter, offset, limit }, read: true })
 }
+/** Machine-generated text from a photo or audio (03 8.3, M-3): made by a model on the server, never by a person. */
+export interface DerivedText {
+  id: string; file_uid: string; kind: "ocr" | "transcript"; state: "queued" | "running" | "done" | "failed"
+  text: string | null; model: string | null; model_version: string | null
+  segments: { start: number; end: number; text: string }[]; error: string | null
+  created_at: string | null; finished_at: string | null; machine_generated: true; label: string | null
+}
+export async function getDerivedTexts(caseId: string, fileUid: string) {
+  return fetchAPI<{ file_uid: string; items: DerivedText[] }>(`/api/phones/media/${encodeURIComponent(fileUid)}/derived?case_id=${encodeURIComponent(caseId)}`)
+}
+export async function requestDerivedText(caseId: string, fileUid: string, kind: "ocr" | "transcript") {
+  return fetchAPI<DerivedText>(`/api/phones/media/${encodeURIComponent(fileUid)}/derive`, { method: "POST", body: { case_id: caseId, kind } })
+}
 export async function getMediaDetail(caseId: string, fileUid: string) {
   return fetchAPI<MediaDetail>(`/api/phones/media/${encodeURIComponent(fileUid)}?case_id=${encodeURIComponent(caseId)}`)
 }

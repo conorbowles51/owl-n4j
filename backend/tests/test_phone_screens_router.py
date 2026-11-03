@@ -465,3 +465,23 @@ def test_between_a_person_and_each_phones_owner_and_the_counts_the_sentence_read
     assert ben["events"] == 1  # BEN's one message to the owner (undated, so counted with no time)
     linked = c.get("/api/phones/people/linked", params={"case_id": case, "key": ANA})
     assert linked.status_code == 200 and linked.json()["others"] == [] and linked.json()["numbers"] == 0
+
+
+def test_media_derive_routes_queue_a_reading_and_refuse_in_words(api):
+    """M-3 routes: a photo's reading is queued and listed; a text file is refused with words; another case's file
+    is not found."""
+    uid, txt = "00000000-0000-4000-8000-00000000d001", "00000000-0000-4000-8000-00000000d002"
+    with api["engine"].begin() as c:
+        for o, u, tag in ((9100, uid, "Image"), (9101, txt, "Text")):
+            c.execute(text("INSERT INTO phone_files (extraction_id, document_index, ordinal, file_uid, local_path, "
+                           "outcome, tags, body) VALUES (:e, 0, :o, :f, 'synthetic/x', 'no_hash', :t, "
+                           "CAST('[]' AS jsonb))"), {"e": api["ext"], "o": o, "f": u, "t": tag})
+    cl = api["client"]
+    r = cl.post("/api/phones/media/%s/derive" % uid, json={"case_id": api["case"], "kind": "ocr"})
+    assert r.status_code == 200 and r.json()["state"] == "queued" and r.json()["machine_generated"]
+    listed = cl.get("/api/phones/media/%s/derived" % uid, params={"case_id": api["case"]}).json()["items"]
+    assert [x["id"] for x in listed] == [r.json()["id"]]
+    bad = cl.post("/api/phones/media/%s/derive" % txt, json={"case_id": api["case"], "kind": "ocr"})
+    assert bad.status_code == 422 and "only from photos" in bad.json()["detail"]
+    gone = cl.post("/api/phones/media/%s/derive" % uid, json={"case_id": api["other_case"], "kind": "ocr"})
+    assert gone.status_code in (403, 404)  # refused either way: no access to that case, or no such file

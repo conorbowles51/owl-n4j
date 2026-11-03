@@ -257,6 +257,37 @@ def phone_media_content(file_uid: UUID, case_id: UUID = Query(...), db: Session 
         "Content-Disposition": "%s; filename*=UTF-8''%s" % ("inline" if inline else "attachment", quote(name))})
 
 
+class DeriveBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    kind: Literal["ocr", "transcript"]
+
+
+@router.post("/media/{file_uid}/derive")
+def phone_media_derive(file_uid: UUID, body: DeriveBody, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_db_user)):
+    """Ask for a photo's text to be read or an audio file to be transcribed (03 8.3, M-3), by a model on this
+    server. The result is machine-generated text stored beside the original; the original is never changed."""
+    from services.phone import derive
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        out = derive.request(db.connection(), body.case_id, file_uid, body.kind, user_id=user.id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except derive.DeriveError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    db.commit()
+    return out
+
+
+@router.get("/media/{file_uid}/derived")
+def phone_media_derived(file_uid: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                        user: User = Depends(get_current_db_user)):
+    from services.phone import derive
+    authorize_case(db, case_id, user, ("case", "view"))
+    return {"file_uid": str(file_uid), "items": derive.list_for(db.connection(), case_id, file_uid)}
+
+
 @router.get("/media/{file_uid}")
 def phone_media_detail(file_uid: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
                        user: User = Depends(get_current_db_user)):
