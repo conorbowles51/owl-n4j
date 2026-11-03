@@ -1304,6 +1304,14 @@ population; **build** perceptual tier only if a sample of 20 attachment pairs kn
 to 1,115; M-8b: 112 exact groups spanning phones in the 10-report case, 46 in the 3-phone case. Gate: exact tier
 **pass** (112 >= 25); the perceptual tier needs approach 2's `both_sides` sample and is measured by `cb-crossev`.
 
+**Perceptual-tier gate (cb-media, `measurements/m8-perceptual-gate.md`, scripts `scripts/p8_extract.py` and
+`scripts/p8_cross.py`, 3 Nov):** **not met; the perceptual tier is not built.** Every phone pair of the 10-report
+and 3-phone cases was matched by approach 2's rules (same family, opposite directions, within 120 s, ties left
+unmatched; content not used). The corpus holds no 20 such media pairs: with 5.3.2's K3 rule, 58 pairs, of which 14
+have an MD5 on both sides and 1 of 14 (7.1 percent) differs (44 lack the file on one side); with the loosest rule
+tried (receiver side only), 3 of 17 (17.6 percent). Images alone: 1 of 3 and 3 of 6. Reverse if a case yields at
+least 20 image pairs with an MD5 on both sides of which at least a quarter differ.
+
 ### 11.7 Dependencies
 
 01 (file resolution and hash verification), 03 Media, 04 (places), approach 2 (offsets, media message pairs),
@@ -2118,6 +2126,6 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 - Choice and licences of the local transcription, translation, language-identification and image-embedding models.
 - Whether SMS receive times on recipient phones are device-stamped or service-centre-stamped (affects clock offset
   from SMS pairs, M-2c).
-- Gates that need 02's identities, the ledger or the case vocabulary: M-2b to M-2d and the perceptual tier of
-  M-8 (`cb-crossev`); M-7a, M-9b, M-11b, M-11c, M-14a to M-16c (`cb-approaches`); M-13a (`cb-pol`, with 04's
-  day view). Every other gate is marked with its server result in its section.
+- Gates that need 02's identities, the ledger or the case vocabulary: M-2b to M-2d (`cb-crossev`); M-7a, M-9b, M-11b,
+  M-11c, M-14a to M-16c (`cb-approaches`); M-13a (`cb-pol`, with 04's day view). Every other gate is marked with its
+  server result in its section.
