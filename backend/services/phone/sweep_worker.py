@@ -66,13 +66,18 @@ def main() -> int:
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
     # phone analyses (05 section 3.4, C16): their own loop, one run at a time, beside the sweep and never behind it
-    from services.phone_analysis import approaches, framework as analysis
-    approaches.install()
-    analysis.start_worker(engine)
+    analysis = None
+    try:
+        from services.phone_analysis import approaches, framework as analysis
+        approaches.install()
+        analysis.start_worker(engine, stop)
+    except Exception:  # noqa: BLE001 - a broken analysis never stops phones being interpreted
+        log.exception("phone analysis worker did not start; the sweep carries on")
     try:
         sweep.sweep_forever(stop, lambda: engine)
     finally:
-        analysis.stop_worker()
+        if analysis is not None:
+            analysis.stop_worker()
         holder.close()
     return 0
 

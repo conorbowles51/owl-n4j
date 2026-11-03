@@ -99,8 +99,16 @@ def _machine(conn, record_uid, field_path, value_index):
         "ON s.extraction_id = x.extraction_id AND s.generation = x.generation WHERE x.record_uid = :r AND "
         "x.field_path = :f AND x.value_index = :i"), {"r": record_uid, "f": field_path, "i": value_index}).first()
     if x is not None:
-        return x[0], x[1], "String", x[2], None
+        return x[0], x[1], "String", x[2], bool(x[3])
     return None
+
+
+def _sensitive_paths(conn, record_uid) -> set:
+    """``(field_path, value_index)`` of the record's sensitive values (05 section 3.8)."""
+    return {(r[0], r[1]) for r in conn.execute(text(
+        "SELECT x.field_path, x.value_index FROM phone_texts x JOIN phone_interpretation_state s ON s.extraction_id = "
+        "x.extraction_id AND s.generation = x.generation WHERE x.record_uid = :r AND x.is_sensitive"),
+        {"r": record_uid})}
 
 
 def chain(conn, record_uid, field_path=None, value_index=None) -> list:
@@ -109,13 +117,19 @@ def chain(conn, record_uid, field_path=None, value_index=None) -> list:
          "c.superseded_by_id, c.created_at, a.actor_name, a.reason FROM phone_value_corrections c JOIN adjudications a "
          "ON a.id = c.decision_id WHERE c.record_uid = :r")
     p = {"r": record_uid}
+    hidden = _sensitive_paths(conn, record_uid)
     if field_path is not None:
         q += " AND c.field_path = :f AND c.value_index = :i"
         p.update(f=field_path, i=value_index or 0)
-    return [{"id": str(r[0]), "field_path": r[1], "value_index": r[2], "value_type": r[3], "machine_text": r[4],
-             "corrected_text": r[5], "current": r[6] is None, "at": r[7].isoformat() if r[7] else None,
-             "by": r[8], "reason": r[9], "is_undo": r[5] == r[4]}
-            for r in conn.execute(text(q + " ORDER BY c.created_at, c.id"), p)]
+    from services.phone.sensitive import MASK
+    out = []
+    for r in conn.execute(text(q + " ORDER BY c.created_at, c.id"), p):
+        masked = (r[1], r[2]) in hidden  # a sensitive value is never shown through its corrections either
+        out.append({"id": str(r[0]), "field_path": r[1], "value_index": r[2], "value_type": r[3],
+                    "machine_text": MASK if masked else r[4], "corrected_text": MASK if masked else r[5],
+                    "masked": masked, "current": r[6] is None, "at": r[7].isoformat() if r[7] else None,
+                    "by": r[8], "reason": r[9], "is_undo": r[5] == r[4]})
+    return out
 
 
 def revision(conn, record_uid, field_path, value_index) -> str:
@@ -135,7 +149,9 @@ def correct_value(db, *, case_id, record_uid, field_path, value_index=0, correct
     found = _machine(conn, record_uid, field_path, value_index)
     if found is None or str(found[1]) != str(case_id):
         raise CorrectionError("That value is not in this case.")
-    ext, _, value_type, machine_text, _ = found
+    ext, _, value_type, machine_text, sensitive_value = found
+    if sensitive_value is True:
+        raise CorrectionError("This value is sensitive and stays hidden, so it cannot be corrected here.")
     if expected_revision is not None and expected_revision != revision(conn, record_uid, field_path, value_index):
         raise StaleCorrection("Someone else corrected this value while you were looking. Their change is shown. "
                               "Your correction was not saved.")

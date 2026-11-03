@@ -250,9 +250,158 @@ def test_sensitive_values_are_masked_until_revealed_and_each_reveal_is_logged(ho
 
 
 @pytest.fixture
-def hooks(tmp_path, monkeypatch):
-    from services.phone import identities, readings
-    from tests.test_phone_mappings import hooks as _h  # noqa: F401
+def hooks(tmp_path):
+    """The sweep's hooks are process-wide: install the identity and reading passes for one test, restore after (a
+    later test file's sweep must not run them)."""
+    import copy
+    from services.phone import identities, readings, sweep
+    saved = copy.copy(sweep._hooks), {k: list(v) for k, v in sweep._hooks.items() if isinstance(v, list)}
     identities.install()
     readings.install()
-    return tmp_path
+    yield tmp_path
+    sweep._hooks.clear()
+    sweep._hooks.update(saved[0])
+    sweep._hooks.update(saved[1])
+
+
+# ---- review of the framework (05-S0): each case below failed on the first version ----------------------------------
+
+def test_asking_again_for_a_superseded_run_runs_it_again_and_makes_it_current():
+    with fresh_engine() as engine:
+        case, actor = _case(engine)
+        with engine.begin() as c:
+            a, _ = F.request_run(c, case, "common_contacts", {"window_days": 3}, actor.email)
+        F.execute(engine, a["id"])
+        with engine.begin() as c:
+            b, _ = F.request_run(c, case, "common_contacts", {"window_days": 4}, actor.email)
+        F.execute(engine, b["id"])
+        with engine.begin() as c:
+            assert F.get_run(c, case, a["id"])["status"] == "superseded"
+            again, created = F.request_run(c, case, "common_contacts", {"window_days": 3}, actor.email)
+            assert created and again["id"] == a["id"] and again["status"] == "queued"
+        assert F.execute(engine, a["id"])["status"] == "completed"
+        with engine.connect() as c:
+            assert F.get_run(c, case, b["id"])["status"] == "superseded"
+            assert F.results(c, case, a["id"])["total"] == 2
+
+
+def test_a_run_whose_inputs_changed_before_it_ran_is_closed_and_queued_on_the_new_inputs():
+    with fresh_engine() as engine:
+        case, actor = _case(engine)
+        with engine.begin() as c:
+            run, _ = F.request_run(c, case, "common_contacts", None, actor.email)
+            c.execute(text("INSERT INTO adjudications (id, case_id, subject_type, subject_id, subject_sequence, decision, "
+                           "reason, actor_name, actor_email, created_at, before, after) SELECT gen_random_uuid(), :c, "
+                           "'phone_identity', gen_random_uuid(), 1, 'set_phone_identity_label', 'synthetic', 'x', "
+                           "'x@x.test', now(), '{}', '{}'"), {"c": case})
+        out = F.execute(engine, run["id"])
+        assert out["status"] == "inputs_changed" and out["requeued"] != run["id"]
+        with engine.connect() as c:
+            old = F.get_run(c, case, run["id"])
+            assert old["status"] == "failed" and "changed after this analysis was asked for" in old["error"]
+            assert F.get_run(c, case, out["requeued"])["status"] == "queued"
+
+
+def test_a_stopping_worker_puts_its_run_back_on_the_queue_and_a_new_worker_picks_up_strays():
+    import threading
+    with fresh_engine() as engine:
+        case, actor = _case(engine)
+        with engine.begin() as c:
+            run, _ = F.request_run(c, case, "common_contacts", None, actor.email)
+        stop = threading.Event()
+        stop.set()
+        assert F.execute(engine, run["id"], stop)["status"] == "requeued"
+        with engine.begin() as c:
+            assert F.get_run(c, case, run["id"])["status"] == "queued"
+            c.execute(text("UPDATE phone_analysis_runs SET status = 'running', started_at = now() WHERE id = :i"),
+                      {"i": run["id"]})
+        assert F.requeue_interrupted(engine) == 1
+        with engine.connect() as c:
+            assert F.get_run(c, case, run["id"])["status"] == "queued"
+
+
+def test_cancelling_a_run_the_worker_just_took_asks_it_to_stop_instead_of_mislabelling_it(monkeypatch):
+    with fresh_engine() as engine:
+        case, actor = _case(engine)
+        with engine.begin() as c:
+            run, _ = F.request_run(c, case, "common_contacts", None, actor.email)
+            c.execute(text("UPDATE phone_analysis_runs SET status = 'running' WHERE id = :i"), {"i": run["id"]})
+            real = F.get_run
+            seen = iter([dict(run, status="queued")])  # what cancel read before the worker took it
+            monkeypatch.setattr(F, "get_run", lambda conn, cid, rid: next(seen, None) or real(conn, cid, rid))
+            out = F.cancel(c, case, run["id"])
+            assert out["status"] == "running"
+            assert c.execute(text("SELECT cancel_requested FROM phone_analysis_runs WHERE id = :i"),
+                             {"i": run["id"]}).scalar() is True
+
+
+def test_a_malformed_date_filter_is_refused_as_bad_input():
+    with fresh_engine() as engine:
+        case, actor = _case(engine)
+        with engine.begin() as c:
+            run, _ = F.request_run(c, case, "common_contacts", None, actor.email)
+        F.execute(engine, run["id"])
+        with engine.connect() as c:
+            with pytest.raises(F.AnalysisError) as e:
+                F.results(c, case, run["id"], start="last tuesday")
+            assert e.value.status == 422
+
+
+def test_sensitive_values_are_never_corrected_shown_through_corrections_matched_or_revealed_off_case(hooks):
+    from services.phone import corrections, records, sensitive
+    with fresh_engine() as engine:
+        case, ext, actor = _password_phone(engine)
+        with engine.connect() as c:
+            uid = str(c.execute(text("SELECT record_uid FROM phone_record_summaries WHERE extraction_id = :e AND "
+                                     "model_type = 'Password'"), {"e": ext}).scalar())
+        with Session(engine) as db:
+            with pytest.raises(corrections.CorrectionError):
+                corrections.correct_value(db, case_id=case, record_uid=uid, field_path="Data", corrected_text="x",
+                                          reason="typo", actor=actor)
+        # a correction made before the refusal existed is masked on both sides
+        with engine.begin() as c:
+            did = c.execute(text("INSERT INTO adjudications (id, case_id, subject_type, subject_id, subject_sequence, "
+                                 "decision, reason, actor_name, actor_email, created_at, before, after) SELECT "
+                                 "gen_random_uuid(), :c, 'phone_identity', gen_random_uuid(), 1, "
+                                 "'set_phone_identity_label', 'synthetic', 'x', 'x@x.test', now(), '{}', '{}' RETURNING "
+                                 "id"), {"c": case}).scalar()
+            c.execute(text("INSERT INTO phone_value_corrections (id, case_id, extraction_id, record_uid, field_path, "
+                           "value_index, value_type, machine_text, corrected_text, decision_id) VALUES "
+                           "(gen_random_uuid(), :c, :e, :r, 'Data', 0, 'String', 'hunter2-synthetic', 'hunter3', :d)"),
+                      {"c": case, "e": ext, "r": uid, "d": did})
+        with engine.connect() as c:
+            got = corrections.chain(c, uid)
+            assert got and got[0]["masked"] and "hunter" not in str(got)
+            assert "hunter" not in str(records.record_detail(c, case, uid)["corrections"])
+        # a phone no longer active: nothing to reveal
+        with engine.begin() as c:
+            c.execute(text("UPDATE phone_extractions SET standing = 'superseded' WHERE id = :e"), {"e": ext})
+        with Session(engine) as db:
+            with pytest.raises(LookupError):
+                sensitive.reveal(db, case, uid, "Data", 0, actor)
+
+
+def test_the_timeline_text_filter_never_matches_a_sensitive_value(hooks):
+    from datetime import datetime, timezone
+    from services.phone import registry, sweep, timeline_lens as L
+    from tests.phone_pg import fld, make_extraction, model
+    when = datetime(2024, 3, 2, 15, tzinfo=timezone.utc)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = make_extraction(c, case, [(0, None, 0, model("Password", [
+                fld("Service", ("String", "synthetic-bank.test")), fld("Data", ("String", "hunter2-synthetic")),
+                fld("DateCreated", ("TimeStamp", when.isoformat()))]))], timestamps=[
+                {"o": 0, "bp": "2.0", "mt": "Password", "fn": "DateCreated", "ot": when.isoformat(), "i": when,
+                 "os": "explicit", "off": 0}])
+        assert sweep.interpret_one(engine, ext)["status"] == "done"
+        with engine.begin() as c:  # the filter is under test, not which times are events: make this one an event
+            c.execute(text("UPDATE phone_time_values SET is_event_time = true WHERE extraction_id = :e"), {"e": ext})
+        with engine.connect() as c:
+            def hits(q):
+                f = L.TimelineLensFilter(case_id=str(case), lens_kinds=["accounts"], text={"query": q})
+                o = L._Other(c, f, ["accounts"])
+                return c.execute(text("SELECT count(*) FROM pv_timeline_entry t WHERE " + o.where), o.p).scalar()
+            assert hits("synthetic-bank") == 1
+            assert hits("hunter2") == 0

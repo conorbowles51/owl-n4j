@@ -141,12 +141,12 @@ class _Other:
         if f.text.query.strip():
             from services.phone import fold as F
             if f.text.exact_characters:
-                w.append("EXISTS (SELECT 1 FROM pv_text x WHERE x.record_uid = t.record_uid AND position(:tq in "
+                w.append("EXISTS (SELECT 1 FROM pv_text x WHERE x.record_uid = t.record_uid AND NOT x.is_sensitive AND position(:tq in "
                          "lower(x.value)) > 0)")
                 self.p["tq"] = F.fold(f.text.query, exact=True)
             else:
                 q = F.fold(f.text.query)
-                w.append("EXISTS (SELECT 1 FROM pv_text x WHERE x.record_uid = t.record_uid AND x.value_folded LIKE "
+                w.append("EXISTS (SELECT 1 FROM pv_text x WHERE x.record_uid = t.record_uid AND NOT x.is_sensitive AND x.value_folded LIKE "
                          ":tq)")
                 self.p["tq"] = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         self.where = " AND ".join(w)

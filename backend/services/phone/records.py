@@ -135,7 +135,7 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
                                  "computed_md5": a.disk_md5, "computed_sha256": a.disk_sha256},
                       "sizes": {"stated": a.declared_size, "on_disk": a.disk_size}, "absence": absence})
     corr = [{"field_path": c["field_path"], "value_index": c["value_index"], "original": c["machine_text"],
-             "corrected": c["corrected_text"], "current": c["current"], "is_undo": c["is_undo"],
+             "corrected": c["corrected_text"], "masked": c["masked"], "current": c["current"], "is_undo": c["is_undo"],
              "reason": c["reason"], "by": c["by"], "at": c["at"]}
             for c in corrections.chain(conn, str(record_uid))]
     return {

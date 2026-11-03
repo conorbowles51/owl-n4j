@@ -60,7 +60,7 @@ def reveal(db, case_id, record_uid, field_name, value_index, actor) -> dict:
     row = conn.execute(text(
         "SELECT s.extraction_id, s.document_index, s.ordinal, s.model_type FROM phone_record_summaries s JOIN "
         "phone_interpretation_state st ON st.extraction_id = s.extraction_id AND st.generation = s.generation JOIN "
-        "phone_extractions e ON e.id = s.extraction_id WHERE s.record_uid = CAST(:u AS uuid) AND e.case_id = :c"),
+        "phone_extractions e ON e.id = s.extraction_id AND e.standing = 'active' WHERE s.record_uid = CAST(:u AS uuid) AND e.case_id = :c"),
         {"u": str(record_uid), "c": str(case_id)}).first()
     if row is None:
         raise LookupError("That record is not in this case.")

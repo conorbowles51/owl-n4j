@@ -155,21 +155,30 @@ def request_run(conn, case_id, code, parameters, requested_by) -> tuple:
         "SELECT %s FROM phone_analysis_runs WHERE case_id = :c AND approach = :a AND approach_version = :v AND "
         "input_revision = :r AND parameters_sha256 = :p" % RUN_COLS),
         {"c": str(case_id), "a": code, "v": module.VERSION, "r": irev, "p": psha}).first()
-    if row is not None and row.status not in ("failed", "cancelled"):
+    if row is not None and row.status not in ("failed", "cancelled", "superseded"):
         return _run_out(row), False
     if row is not None:
+        # asked again after a later run replaced it: it runs again and becomes current (its old results go; a
+        # decision carries over by result key)
+        conn.execute(text("DELETE FROM phone_analysis_results WHERE run_id = :i"), {"i": row.id})
         conn.execute(text("UPDATE phone_analysis_runs SET status = 'queued', error = NULL, cancel_requested = false, "
-                          "progress = '{}', started_at = NULL, finished_at = NULL, requested_by = :b WHERE id = :i"),
-                     {"i": row.id, "b": requested_by})
+                          "progress = '{}', counts = NULL, started_at = NULL, finished_at = NULL, requested_by = :b "
+                          "WHERE id = :i"), {"i": row.id, "b": requested_by})
         rid = row.id
     else:
         rid = uuid.uuid4()
+        # two identical requests at once: the second finds the first's run instead of failing on the unique index
         conn.execute(text(
             "INSERT INTO phone_analysis_runs (id, case_id, approach, approach_version, parameters, parameters_sha256, "
             "input_manifest, input_revision, status, requested_by, coverage) VALUES (:i, :c, :a, :v, CAST(:pa AS jsonb), "
-            ":p, CAST(:m AS jsonb), :r, 'queued', :b, CAST(:cov AS jsonb))"),
+            ":p, CAST(:m AS jsonb), :r, 'queued', :b, CAST(:cov AS jsonb)) ON CONFLICT DO NOTHING"),
             {"i": rid, "c": str(case_id), "a": code, "v": module.VERSION, "pa": canonical(params), "p": psha,
              "m": canonical(manifest), "r": irev, "b": requested_by, "cov": canonical(coverage(conn, case_id, code))})
+        won = conn.execute(text("SELECT id FROM phone_analysis_runs WHERE case_id = :c AND approach = :a AND "
+                                "approach_version = :v AND input_revision = :r AND parameters_sha256 = :p"),
+                           {"c": str(case_id), "a": code, "v": module.VERSION, "r": irev, "p": psha}).scalar()
+        if won != rid:
+            return get_run(conn, case_id, won), False
     return get_run(conn, case_id, rid), True
 
 
@@ -193,8 +202,11 @@ def list_runs(conn, case_id, code=None) -> list:
 def cancel(conn, case_id, run_id) -> dict:
     run = get_run(conn, case_id, run_id)
     if run["status"] == "queued":
-        conn.execute(text("UPDATE phone_analysis_runs SET status = 'cancelled', finished_at = now() WHERE id = :i"),
-                     {"i": run_id})
+        done = conn.execute(text("UPDATE phone_analysis_runs SET status = 'cancelled', finished_at = now() WHERE id = :i "
+                                 "AND status = 'queued' RETURNING id"), {"i": run_id}).first()
+        if done is None:  # the worker took it in between: ask it to stop
+            conn.execute(text("UPDATE phone_analysis_runs SET cancel_requested = true WHERE id = :i AND status = "
+                              "'running'"), {"i": run_id})
     elif run["status"] == "running":
         conn.execute(text("UPDATE phone_analysis_runs SET cancel_requested = true WHERE id = :i"), {"i": run_id})
     return get_run(conn, case_id, run_id)
@@ -203,8 +215,8 @@ def cancel(conn, case_id, run_id) -> dict:
 # ---- execution ---------------------------------------------------------------------------------------------------
 
 class _Ctx:
-    def __init__(self, engine, run_id):
-        self.engine, self.run_id, self._last = engine, run_id, 0.0
+    def __init__(self, engine, run_id, stop=None):
+        self.engine, self.run_id, self._last, self.stop = engine, run_id, 0.0, stop
 
     def progress(self, read, total, phone=None):
         now = time.monotonic()
@@ -216,6 +228,8 @@ class _Ctx:
                       {"i": self.run_id, "p": canonical({"read": read, "total": total, "phone": phone})})
 
     def cancelled(self) -> bool:
+        if self.stop is not None and self.stop.is_set():
+            raise Interrupted()
         with self.engine.connect() as c:
             return bool(c.execute(text("SELECT cancel_requested FROM phone_analysis_runs WHERE id = :i"),
                                   {"i": self.run_id}).scalar())
@@ -225,22 +239,38 @@ class Cancelled(Exception):
     pass
 
 
-def execute(engine, run_id) -> dict:
+class Interrupted(Exception):
+    """The worker is stopping (a deploy): the run goes back to the queue and runs again from the start."""
+
+
+def execute(engine, run_id, stop=None) -> dict:
     """Run one queued run to its end: results written in one transaction with the run's completion; the previous
     completed run of the same approach in the case becomes ``superseded`` and stays readable."""
     with engine.begin() as c:
         row = c.execute(text("UPDATE phone_analysis_runs SET status = 'running', started_at = now() WHERE id = :i AND "
-                             "status = 'queued' RETURNING case_id, approach, approach_version, parameters"),
+                             "status = 'queued' RETURNING case_id, approach, approach_version, parameters, input_revision, requested_by"),
                         {"i": run_id}).first()
     if row is None:
         return {"run_id": str(run_id), "status": "not_queued"}
     module, case_id = approach(row.approach), str(row.case_id)
-    ctx = _Ctx(engine, run_id)
+    ctx = _Ctx(engine, run_id, stop)
+    # the inputs recorded at the request must be the inputs read: when a phone changed in between, this run is
+    # closed with the reason and the same request is queued against the new inputs
+    with engine.begin() as c:
+        if sha256(input_manifest(c, case_id, module)) != row.input_revision:
+            c.execute(text("UPDATE phone_analysis_runs SET status = 'failed', finished_at = now(), error = :e WHERE "
+                           "id = :i"), {"i": run_id, "e": "The phones or records changed after this analysis was "
+                                                          "asked for. It was queued again on the current material."})
+            again, _ = request_run(c, case_id, row.approach, dict(row.parameters), row.requested_by)
+        else:
+            again = None
+    if again is not None:
+        return {"run_id": str(run_id), "status": "inputs_changed", "requeued": again["id"]}
     try:
         with engine.connect() as c:
             results = module.run(c, case_id, dict(row.parameters), ctx)
             cov = coverage(c, case_id, row.approach)
-        if ctx.cancelled():
+        if ctx.cancelled():  # also raises Interrupted when the worker is stopping
             raise Cancelled()
         counts = {"results": len(results), "by_kind": {}}
         for r in results:
@@ -254,6 +284,11 @@ def execute(engine, run_id) -> dict:
                            "CAST(:n AS jsonb), coverage = CAST(:cov AS jsonb) WHERE id = :i"),
                       {"i": run_id, "n": canonical(counts), "cov": canonical(cov)})
         return {"run_id": str(run_id), "status": "completed", "results": len(results)}
+    except Interrupted:
+        with engine.begin() as c:
+            c.execute(text("UPDATE phone_analysis_runs SET status = 'queued', started_at = NULL, progress = '{}' WHERE "
+                           "id = :i"), {"i": run_id})
+        return {"run_id": str(run_id), "status": "requeued"}
     except Cancelled:
         with engine.begin() as c:
             c.execute(text("UPDATE phone_analysis_runs SET status = 'cancelled', finished_at = now() WHERE id = :i"),
@@ -313,18 +348,28 @@ def _loop(engine, stop):
         try:
             rid = claim_next(engine)
             if rid is not None:
-                execute(engine, rid)
+                execute(engine, rid, stop)
                 continue
         except Exception:  # noqa: BLE001 - the loop keeps going; the run, if any, records its failure
             log.exception("phone analysis worker loop")
         stop.wait(5.0)
 
 
-def start_worker(engine):
-    """One loop per process, one run at a time (``max_jobs = 1``)."""
+def requeue_interrupted(engine) -> int:
+    """Runs left ``running`` by a worker that stopped. Called at worker start only: the worker holds the box's
+    advisory lock, so no other loop is running one."""
+    with engine.begin() as c:
+        return c.execute(text("UPDATE phone_analysis_runs SET status = 'queued', started_at = NULL, progress = '{}' "
+                              "WHERE status = 'running'")).rowcount
+
+
+def start_worker(engine, stop=None):
+    """One loop per process, one run at a time (``max_jobs = 1``). ``stop`` is the worker's own stop event, so a
+    run in progress is put back on the queue when the process is asked to stop."""
     if _worker.get("thread") and _worker["thread"].is_alive():
         return _worker["thread"]
-    stop = threading.Event()
+    requeue_interrupted(engine)
+    stop = stop or threading.Event()
     _worker["stop"] = stop
     _worker["thread"] = threading.Thread(target=_loop, args=(engine, stop), name="phone-analysis", daemon=True)
     _worker["thread"].start()
@@ -371,6 +416,13 @@ def coverage_sentence(cov) -> str:
 
 # ---- results -----------------------------------------------------------------------------------------------------
 
+def _instant(name, value):
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        raise AnalysisError("%s is not a date and time." % name) from None
+
+
 def _filters(case_id, run_id, kind=None, strength=None, start=None, end=None, phone=None, identity=None):
     w = ["r.run_id = CAST(:run AS uuid)", "r.case_id = :c"]
     p = {"run": str(run_id), "c": str(case_id)}
@@ -382,10 +434,10 @@ def _filters(case_id, run_id, kind=None, strength=None, start=None, end=None, ph
         p["strength"] = strength
     if start:
         w.append("r.period_end >= CAST(:start AS timestamptz)")
-        p["start"] = start
+        p["start"] = _instant("from", start)
     if end:
         w.append("r.period_start < CAST(:end AS timestamptz)")
-        p["end"] = end
+        p["end"] = _instant("to", end)
     if phone:
         w.append("EXISTS (SELECT 1 FROM phone_analysis_result_records x WHERE x.result_id = r.id AND x.extraction_id = "
                  "CAST(:phone AS uuid))")
@@ -494,12 +546,11 @@ def decide(db, case_id, result_id, decision, reason, actor) -> dict:
     if r.status != "completed":
         raise Conflict("This result belongs to an earlier run. Reload to see the current reading.")
     sid = subject_id(case_id, r.approach, r.result_key)
+    # first decision on a result: the subject row is made once even when two people decide at the same moment
+    conn.execute(text("INSERT INTO phone_analysis_result_subjects (id, case_id, approach, result_key) VALUES (:i, :c, "
+                      ":a, :k) ON CONFLICT DO NOTHING"), {"i": sid, "c": str(case_id), "a": r.approach,
+                                                          "k": r.result_key})
     subject = db.get(PhoneAnalysisResultSubject, sid)
-    if subject is None:
-        subject = PhoneAnalysisResultSubject(id=sid, case_id=uuid.UUID(str(case_id)), approach=r.approach,
-                                             result_key=r.result_key)
-        db.add(subject)
-        db.flush()
     D.record(db, case_id=uuid.UUID(str(case_id)), subject=subject,
              subject_type=AdjudicationSubject.phone_analysis_result,
              decision=(AdjudicationDecision.confirm_phone_result if decision == "confirmed"

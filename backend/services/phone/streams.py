@@ -218,10 +218,10 @@ class Query:
                 # event; as one OR the child lookup ran once per event and text pair (1,050 ms -> 66 ms measured on
                 # the synthetic phones, same counts)
                 w.append("(EXISTS (SELECT 1 FROM phone_texts t WHERE t.extraction_id = ev.extraction_id AND "
-                         "t.generation = ev.generation AND t.record_uid = ev.record_uid AND %s) OR EXISTS (SELECT 1 "
+                         "t.generation = ev.generation AND t.record_uid = ev.record_uid AND NOT t.is_sensitive AND %s) OR EXISTS (SELECT 1 "
                          "FROM phone_record_summaries s JOIN phone_texts t ON t.record_uid = s.record_uid WHERE "
                          "s.parent_record_uid = ev.record_uid AND s.generation = ev.generation AND t.extraction_id = "
-                         "ev.extraction_id AND t.generation = ev.generation AND %s))" % (cond, cond))
+                         "ev.extraction_id AND t.generation = ev.generation AND NOT t.is_sensitive AND %s))" % (cond, cond))
         self._participants()
 
     def _flags(self):
