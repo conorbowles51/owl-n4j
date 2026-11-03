@@ -115,22 +115,134 @@ def fold_with_map(text, exact=False):
     ``fold``'s; the only difference is that compositions across characters (Hangul conjoining jamo) are not made.
     Document search folds both the query and the text with this function, so the two always agree.
     """
+    out, starts = [], []
+    for piece, at in iter_fold_with_map(text, exact):
+        out.append(piece)
+        starts.extend(at)
+    return "".join(out), starts
+
+
+FOLD_CHUNK = 4096
+_TOKEN = re.compile(r"[^ ]+")
+
+
+def _ascii_tables():
+    """Each ASCII character's fold, taken from the steps themselves (no step joins ASCII characters, and step 3
+    needs a Cyrillic or Greek letter), as ``str.translate`` tables, with the characters that fold to nothing. None
+    when an ASCII character folds to anything but one character or nothing, so the fast path is never wrong."""
+    fold_t, exact_t, drops = {}, {}, []
+    for i in range(128):
+        ch = chr(i)
+        f, e = _rest(_styled(ch)), _strip_format(ch).casefold()
+        if len(f) > 1 or len(e) > 1 or (f == "") != (e == "") or (f.isspace() and f != " "):
+            return None
+        if f == "":
+            drops.append(ch)
+        fold_t[i], exact_t[i] = f, e
+    return fold_t, exact_t, re.compile("[%s]" % re.escape("".join(drops))) if drops else None
+
+
+_ASCII = _ascii_tables()
+_SLOW_CHAR = re.compile("[^\\x00-\\x7f]|%s" % _ASCII[2].pattern if _ASCII and _ASCII[2] else "[^\\x00-\\x7f]")
+_ASCII_WS = re.compile("[ \\t\\n\\r\\x0b\\x0c]")
+
+
+def _cut_after(text, b):
+    """The first index at or after ``b`` whose character is whitespace after steps 1 and 2: no token of step 3
+    crosses it, so the text can be folded either side of it separately."""
+    n = len(text)
+    while b < n and not _styled(text[b]).isspace():
+        b += 1
+    return b
+
+
+def iter_fold_with_map(text, exact=False, chunk=None):
+    """``fold_with_map`` in pieces of about ``chunk`` original characters, each ``(folded piece, starts)``.
+
+    Joined, the pieces are exactly ``fold_with_map(text)``, and a piece once given never changes, so a caller
+    looking for the first match can stop at the piece that completes it instead of folding a long text whole
+    (search snippets of long emails). Cuts fall on whitespace (any place when ``exact``), where no step joins
+    characters; a whitespace run is given as its one space only when a later character follows it, so a trailing
+    space is never given. Words of plain ASCII are folded by a table taken from the steps; any other word goes
+    through the steps one character at a time.
+    """
     if not text:
-        return "", []
+        return
+    chunk = chunk or FOLD_CHUNK
+    n, a = len(text), 0
+    st = [False, None]  # anything given yet; the index of a collapsed space not yet given
+    while a < n:
+        b = min(n, a + chunk)
+        if not exact:
+            b = _cut_after(text, b)
+        out, starts = [], []
+        seg = text[a:b]
+        if _ASCII is None:
+            _slow(seg, a, exact, st, out, starts)
+        elif seg.isascii() and not (_ASCII[2] and _ASCII[2].search(seg)):
+            _fast(seg, a, exact, st, out, starts)
+        else:
+            # words with a character outside the table go through the steps; the rest through the table. A word
+            # here runs between ASCII whitespace, so it holds whole tokens of step 3.
+            p = 0
+            for m in _SLOW_CHAR.finditer(seg):
+                if m.start() < p:
+                    continue  # inside a word already folded
+                s0, e0 = m.start(), m.end()
+                if not exact:
+                    s0 = max([p] + [seg.rfind(c, p, s0) + 1 for c in " \t\n\r\x0b\x0c"])
+                    w = _ASCII_WS.search(seg, e0)
+                    e0 = w.start() if w else len(seg)
+                if s0 > p:
+                    _fast(seg[p:s0], a + p, exact, st, out, starts)
+                _slow(seg[s0:e0], a + s0, exact, st, out, starts)
+                p = e0
+            if p < len(seg):
+                _fast(seg[p:], a + p, exact, st, out, starts)
+        if out:
+            yield "".join(out), starts
+        a = b
+
+
+def _fast(seg, a, exact, st, out, starts):
+    """Plain ASCII with no character that folds to nothing: one folded character per original one."""
+    tr = seg.translate(_ASCII[1] if exact else _ASCII[0])
+    if exact:
+        out.append(tr)
+        starts.extend(range(a, a + len(tr)))
+        return
+    prev = 0
+    for m in _TOKEN.finditer(tr):
+        if m.start() > prev and st[0] and st[1] is None:
+            st[1] = a + prev
+        if st[1] is not None:
+            out.append(" ")
+            starts.append(st[1])
+            st[1] = None
+        out.append(m.group())
+        starts.extend(range(a + m.start(), a + m.end()))
+        st[0], prev = True, m.end()
+    if len(tr) > prev and st[0] and st[1] is None:
+        st[1] = a + prev
+
+
+def _slow(seg, a, exact, st, out, starts):
+    """The steps one original character at a time (``seg`` holds whole tokens of step 3)."""
     pieces = []  # (original index, folded piece) before whitespace is collapsed
     if exact:
-        for i, ch in enumerate(text):
-            pieces.append((i, _strip_format(ch).casefold()))
+        for k, ch in enumerate(seg):
+            pieces.append((a + k, _strip_format(ch).casefold()))
     else:
-        styled = [_styled(ch) for ch in text]
+        styled = [_styled(ch) for ch in seg]
+        m = len(styled)
         if CONFUSABLE:  # step 3 by token, a token being a run of characters that are not whitespace after step 2
             i = 0
-            while i < len(text):
+            while i < m:
                 if styled[i].isspace() or not styled[i]:
                     i += 1
                     continue
                 j = i
-                while j < len(text) and not (styled[j].isspace()) and (styled[j] or j == i):
+                while j < m and not (styled[j].isspace()) and (styled[j] or j == i):
                     j += 1
                 scripts = {_script(c) for k in range(i, j) for c in styled[k]}
                 if "latin" in scripts and scripts & {"cyrillic", "greek"}:
@@ -138,21 +250,21 @@ def fold_with_map(text, exact=False):
                         styled[k] = "".join(CONFUSABLE.get(c, c) if _script(c) in ("cyrillic", "greek") else c
                                             for c in styled[k])
                 i = j
-        for i, s in enumerate(styled):
-            pieces.append((i, _rest(s)))
-    out, starts = [], []
-    for i, s in pieces:
-        for c in s:
+        for k, sty in enumerate(styled):
+            pieces.append((a + k, _rest(sty)))
+    for i, piece in pieces:
+        for c in piece:
             if not exact and c.isspace():
-                if not out or out[-1] == " ":
-                    continue  # leading and repeated whitespace collapse into one space
-                c = " "
+                if st[0] and st[1] is None:
+                    st[1] = i  # leading and repeated whitespace collapse into one space
+                continue
+            if st[1] is not None:
+                out.append(" ")
+                starts.append(st[1])
+                st[1] = None
             out.append(c)
             starts.append(i)
-    if not exact and out and out[-1] == " ":
-        out.pop()
-        starts.pop()
-    return "".join(out), starts
+            st[0] = True
 
 
 def pack_map(starts):

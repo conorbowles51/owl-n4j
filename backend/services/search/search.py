@@ -56,12 +56,17 @@ def snippet(original, query, exact=False):
     fq = F.fold_with_map(query, exact=exact)[0]
     if not fq:
         return None
-    folded, starts = F.fold_with_map(original, exact=exact)
-    at = folded.find(fq)
-    if at < 0:
-        return None
-    s, e = starts[at], starts[at + len(fq) - 1] + 1
-    return _cut(original, s, e)
+    # folded piece by piece up to the first match: a long email is not folded whole for a snippet near its start
+    folded, starts = "", []
+    for piece, at_ in F.iter_fold_with_map(original, exact=exact):
+        before = len(folded)
+        folded += piece
+        starts.extend(at_)
+        at = folded.find(fq, max(0, before - len(fq) + 1))
+        if at >= 0:
+            s, e = starts[at], starts[at + len(fq) - 1] + 1
+            return _cut(original, s, e)
+    return None
 
 
 def _cut(original, s, e):
