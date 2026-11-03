@@ -45,6 +45,7 @@ import { LedgerTracingWorkbench } from "./LedgerTracingWorkbench"
 import { InvestigatorPeople } from "./InvestigatorPeople"
 import { AccountTypeReview } from "./AccountTypeReview"
 import { InvestigatorOverview } from "./InvestigatorOverview"
+import { TradesView } from "./TradesView"
 import { useFinancialViewSpeed } from "../lib/page-speed"
 import { LoadProgress } from "./LoadProgress"
 import { InvestigatorFollowMoney } from "./InvestigatorFollowMoney"
@@ -1369,6 +1370,15 @@ function FinancialPageContent() {
         >
           <ErrorBoundary level="section">
             <FinancialCaseTimeline key={caseId} caseId={caseId} />
+          </ErrorBoundary>
+        </RetainedFinancialTab>
+        <RetainedFinancialTab
+          value="trades"
+          className="min-h-0 flex-1 overflow-auto"
+          active={store.mainView === "trades"}
+        >
+          <ErrorBoundary level="section">
+            {caseId && store.mainView === "trades" && <TradesView key={caseId} caseId={caseId} />}
           </ErrorBoundary>
         </RetainedFinancialTab>
         <RetainedFinancialTab

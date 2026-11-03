@@ -26,6 +26,7 @@ export const financialMainViews = [
   "tracing",
   "transfers",
   "posting-graph",
+  "trades",
 ] as const
 export type FinancialMainView = (typeof financialMainViews)[number]
 export type ChartGroupingOption = "auto" | "daily" | "weekly" | "monthly"

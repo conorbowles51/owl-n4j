@@ -30,6 +30,7 @@ const analysis: [FinancialMainView, string][] = [
   ["patterns", "Look for patterns"],
   ["posting-graph", "Payment graph"],
   ["tracing", "Trace funds"],
+  ["trades", "Trades & holdings"],
   ["case-context", "Payments and case events"],
 ]
 const history: [FinancialMainView, string][] = [
