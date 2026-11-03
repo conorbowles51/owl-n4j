@@ -148,3 +148,17 @@ def test_a_long_run_without_spaces_folds_in_time_that_grows_with_its_length():
     folded, starts = F.fold_with_map(text)
     assert len(folded) == len(text) and starts[-1] == len(text) - 1
     assert time.monotonic() - started < 5
+
+
+def test_dense_non_latin_text_looks_up_each_characters_script_once(monkeypatch):
+    """Dense Greek, Cyrillic or CJK text goes through the steps one character at a time; the script of a character
+    (a Unicode name lookup) was looked up again for every occurrence, which made such text fold 4-13% slower than
+    before the ASCII fast path. Each distinct character is now looked up once, and the result is unchanged."""
+    words = " ".join(["αβγδε", "ζηθικ", "λμνξο", "абвгд", "жзийк", "东南西北", "Pαypal"] * 400)
+    expected = F.fold_with_map(words)
+    calls = []
+    real = unicodedata.name
+    monkeypatch.setattr(F.unicodedata, "name", lambda ch, default=None: calls.append(ch) or real(ch, default))
+    F._script.cache_clear()
+    assert F.fold_with_map(words) == expected
+    assert len(calls) <= len(set(words))

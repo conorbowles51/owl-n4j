@@ -40,6 +40,7 @@ CONFUSABLE = _load("confusables_latin.json")
 _WS = re.compile(r"\s+")
 
 
+@functools.lru_cache(maxsize=65536)
 def _script(ch):
     if not ch.isalpha():
         return None
@@ -263,6 +264,15 @@ def _slow(seg, a, exact, st, out, starts):
     emitted, pending = st
     put, at = out.append, starts.append
     for i, piece in pieces:
+        if len(piece) == 1 and (exact or not piece.isspace()):  # most characters: one folded character, no space
+            if pending is not None:
+                put(" ")
+                at(pending)
+                pending = None
+            put(piece)
+            at(i)
+            emitted = True
+            continue
         for c in piece:
             if not exact and c.isspace():
                 if emitted and pending is None:
