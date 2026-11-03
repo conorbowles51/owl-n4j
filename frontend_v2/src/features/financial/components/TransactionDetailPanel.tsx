@@ -7,6 +7,7 @@ import { formatEvidenceAmount } from "../lib/evidence-amounts"
 import { Button } from "@/components/ui/button"
 import { DocumentViewer } from "@/components/ui/document-viewer"
 import { evidenceAPI } from "@/features/evidence/api"
+import { PhoneMentions } from "./PhoneMentions"
 
 interface TransactionDetailPanelProps {
   caseId?: string
@@ -214,6 +215,8 @@ export function TransactionDetailPanel({
             </p>
           )}
         </div>
+
+        <PhoneMentions caseId={caseId} transactionId={transaction.key} />
 
         {/* Purpose */}
         <div>

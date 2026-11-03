@@ -185,3 +185,57 @@ def measurements(case_id: Optional[UUID] = Query(None), approach: Optional[str] 
     else:
         authorize_case(db, case_id, user, ("case", "view"))
     return {"items": M.rows(db.connection(), case_id, approach)}
+
+
+# ---- approach 1 (05 section 4): the ledger side, the directory and case aliases --------------------------------------
+
+class PhoneLinksBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    transaction_ids: list[UUID] = Field(max_length=500)
+
+
+@router.post("/money/ledger-links")
+def ledger_links(body: PhoneLinksBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """"Also recorded on phone" for ledger rows (05 4.4): per transaction, the phone readings of the current run that
+    corroborate it, each with its record link. A link only: the row's class is unchanged."""
+    from services.phone_analysis import money_signals
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    return {"links": money_signals.phone_links(db.connection(), body.case_id, body.transaction_ids)}
+
+
+@router.get("/money/directory")
+def directory(case_id: UUID = Query(...), db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The institution directory as this case uses it: every entry with whether it is reviewed (an unreviewed entry is
+    never used), and the case's aliases."""
+    from services.phone_analysis import institutions as INST
+    authorize_case(db, case_id, user, ("case", "view"))
+    d = INST.load()
+    return {"version": d["version"], "entries": [
+        {"institution_id": e["institution_id"], "display_name": e["display_name"], "kind": e["kind"],
+         "reviewed": INST.reviewed(e), "review": e.get("review")} for e in d["entries"]],
+        "aliases": [dict(a, created_at=a["created_at"].isoformat()) for a in INST.aliases(db.connection(), case_id)]}
+
+
+class AliasBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    institution_id: str = Field(min_length=6, max_length=120)
+    channel: Literal["app_package", "web_domain", "sms_sender", "email_domain"]
+    value: str = Field(min_length=1, max_length=320)
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+@router.post("/money/aliases")
+def add_alias(body: AliasBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """A person's "this sender is this institution" in this case, with a reason (05 4.3.1). The next run reads it."""
+    from services.phone_analysis import institutions as INST
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        out = INST.add_alias(db.connection(), body.case_id, institution_id=body.institution_id, channel=body.channel,
+                             value=body.value, reason=body.reason, actor=_actor(user).email)
+    except INST.DirectoryError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    db.commit()
+    return out

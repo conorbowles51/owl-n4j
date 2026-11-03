@@ -325,12 +325,13 @@ def money_mentioned(conn, case_id, a_keys, b_keys, *, from_instant=None, to_inst
         "SELECT count(DISTINCT r.id) FROM phone_analysis_results r JOIN phone_analysis_result_records x ON "
         "x.result_id = r.id AND x.record_uid IS NOT NULL JOIN phone_comm_events ev ON ev.record_uid = x.record_uid "
         "JOIN phone_interpretation_state st ON st.extraction_id = ev.extraction_id AND st.generation = ev.generation "
-        "WHERE r.run_id = :run AND r.kind = 'money_reading' AND (CAST(:f AS timestamptz) IS NULL OR "
+        "JOIN phone_extractions e ON e.id = ev.extraction_id AND e.standing = 'active' AND e.case_id = :c "
+        "WHERE r.run_id = :run AND r.case_id = :c AND ev.case_id = :c AND r.kind = 'money_reading' AND (CAST(:f AS timestamptz) IS NULL OR "
         "ev.sort_instant >= CAST(:f AS timestamptz)) AND (CAST(:t AS timestamptz) IS NULL OR ev.sort_instant < "
         "CAST(:t AS timestamptz)) AND EXISTS (SELECT 1 FROM phone_participations p WHERE p.record_uid = ev.record_uid "
         "AND p.generation = ev.generation AND p.identity_key = ANY(:a)) AND EXISTS (SELECT 1 FROM "
         "phone_participations p WHERE p.record_uid = ev.record_uid AND p.generation = ev.generation AND "
-        "p.identity_key = ANY(:b))"), {"run": run, "f": from_instant, "t": to_instant, "a": list(a_keys),
+        "p.identity_key = ANY(:b))"), {"run": run, "c": str(case_id), "f": from_instant, "t": to_instant, "a": list(a_keys),
                                        "b": list(b_keys)}).scalar() or 0)
 
 

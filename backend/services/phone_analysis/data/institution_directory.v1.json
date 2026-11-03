@@ -1,0 +1,295 @@
+{
+ "version": "v1",
+ "about": "Institution directory, docs/cellebrite/05 section 4.3.1. An entry is used only after a person reviews it (review.reviewed_by, review.reviewed_on).",
+ "entries": [
+  {
+   "institution_id": "inst:chase",
+   "display_name": "Chase",
+   "country": "US",
+   "kind": "bank",
+   "app_packages": [
+    "com.chase.sig.android",
+    "com.chase.sig.Chase"
+   ],
+   "web_domains": [
+    "chase.com"
+   ],
+   "sms_senders": [],
+   "email_domains": [
+    "chase.com"
+   ],
+   "currencies": [
+    "USD"
+   ],
+   "templates": [],
+   "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "source_note": "Drafted by a model from public app-store listings and the institution's own website; not reviewed. Unused until a person reviews it."
+   }
+  },
+  {
+   "institution_id": "inst:bank-of-america",
+   "display_name": "Bank of America",
+   "country": "US",
+   "kind": "bank",
+   "app_packages": [
+    "com.infonow.bofa",
+    "com.bankofamerica.BofA"
+   ],
+   "web_domains": [
+    "bankofamerica.com"
+   ],
+   "sms_senders": [],
+   "email_domains": [
+    "bankofamerica.com",
+    "ealerts.bankofamerica.com"
+   ],
+   "currencies": [
+    "USD"
+   ],
+   "templates": [],
+   "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "source_note": "Drafted by a model from public app-store listings and the institution's own website; not reviewed. Unused until a person reviews it."
+   }
+  },
+  {
+   "institution_id": "inst:wells-fargo",
+   "display_name": "Wells Fargo",
+   "country": "US",
+   "kind": "bank",
+   "app_packages": [
+    "com.wf.wellsfargomobile",
+    "com.wellsfargo.wellsfargomobile"
+   ],
+   "web_domains": [
+    "wellsfargo.com"
+   ],
+   "sms_senders": [],
+   "email_domains": [
+    "wellsfargo.com"
+   ],
+   "currencies": [
+    "USD"
+   ],
+   "templates": [],
+   "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "source_note": "Drafted by a model from public app-store listings and the institution's own website; not reviewed. Unused until a person reviews it."
+   }
+  },
+  {
+   "institution_id": "inst:capital-one",
+   "display_name": "Capital One",
+   "country": "US",
+   "kind": "bank",
+   "app_packages": [
+    "com.konylabs.capitalone",
+    "com.capitalone.enterprisemobilebanking"
+   ],
+   "web_domains": [
+    "capitalone.com"
+   ],
+   "sms_senders": [],
+   "email_domains": [
+    "capitalone.com"
+   ],
+   "currencies": [
+    "USD"
+   ],
+   "templates": [],
+   "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "source_note": "Drafted by a model from public app-store listings and the institution's own website; not reviewed. Unused until a person reviews it."
+   }
+  },
+  {
+   "institution_id": "inst:citi",
+   "display_name": "Citi",
+   "country": "US",
+   "kind": "bank",
+   "app_packages": [
+    "com.citi.citimobile"
+   ],
+   "web_domains": [
+    "citi.com",
+    "citibank.com"
+   ],
+   "sms_senders": [],
+   "email_domains": [
+    "citi.com",
+    "citibank.com"
+   ],
+   "currencies": [
+    "USD"
+   ],
+   "templates": [],
+   "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "source_note": "Drafted by a model from public app-store listings and the institution's own website; not reviewed. Unused until a person reviews it."
+   }
+  },
+  {
+   "institution_id": "inst:paypal",
+   "display_name": "PayPal",
+   "country": "US",
+   "kind": "payment_app",
+   "app_packages": [
+    "com.paypal.android.p2pmobile",
+    "com.yourcompany.PPClient"
+   ],
+   "web_domains": [
+    "paypal.com"
+   ],
+   "sms_senders": [],
+   "email_domains": [
+    "paypal.com"
+   ],
+   "currencies": [
+    "USD"
+   ],
+   "templates": [],
+   "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "source_note": "Drafted by a model from public app-store listings and the institution's own website; not reviewed. Unused until a person reviews it."
+   }
+  },
+  {
+   "institution_id": "inst:venmo",
+   "display_name": "Venmo",
+   "country": "US",
+   "kind": "payment_app",
+   "app_packages": [
+    "com.venmo",
+    "net.kortina.labs.Venmo"
+   ],
+   "web_domains": [
+    "venmo.com"
+   ],
+   "sms_senders": [],
+   "email_domains": [
+    "venmo.com"
+   ],
+   "currencies": [
+    "USD"
+   ],
+   "templates": [],
+   "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "source_note": "Drafted by a model from public app-store listings and the institution's own website; not reviewed. Unused until a person reviews it."
+   }
+  },
+  {
+   "institution_id": "inst:cash-app",
+   "display_name": "Cash App",
+   "country": "US",
+   "kind": "payment_app",
+   "app_packages": [
+    "com.squareup.cash",
+    "com.squareup.cash.ios"
+   ],
+   "web_domains": [
+    "cash.app",
+    "cash.me"
+   ],
+   "sms_senders": [],
+   "email_domains": [
+    "square.com",
+    "cash.app"
+   ],
+   "currencies": [
+    "USD"
+   ],
+   "templates": [],
+   "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "source_note": "Drafted by a model from public app-store listings and the institution's own website; not reviewed. Unused until a person reviews it."
+   }
+  },
+  {
+   "institution_id": "inst:zelle",
+   "display_name": "Zelle",
+   "country": "US",
+   "kind": "payment_app",
+   "app_packages": [
+    "com.zellepay.zelle"
+   ],
+   "web_domains": [
+    "zellepay.com"
+   ],
+   "sms_senders": [],
+   "email_domains": [
+    "zellepay.com"
+   ],
+   "currencies": [
+    "USD"
+   ],
+   "templates": [],
+   "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "source_note": "Drafted by a model from public app-store listings and the institution's own website; not reviewed. Unused until a person reviews it."
+   }
+  },
+  {
+   "institution_id": "inst:western-union",
+   "display_name": "Western Union",
+   "country": "US",
+   "kind": "remittance",
+   "app_packages": [
+    "com.westernunion.android.mtapp",
+    "com.westernunion.mtapp"
+   ],
+   "web_domains": [
+    "westernunion.com"
+   ],
+   "sms_senders": [],
+   "email_domains": [
+    "westernunion.com"
+   ],
+   "currencies": [
+    "USD"
+   ],
+   "templates": [],
+   "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "source_note": "Drafted by a model from public app-store listings and the institution's own website; not reviewed. Unused until a person reviews it."
+   }
+  },
+  {
+   "institution_id": "inst:coinbase",
+   "display_name": "Coinbase",
+   "country": "US",
+   "kind": "crypto_exchange",
+   "app_packages": [
+    "com.coinbase.android",
+    "com.vilcsak.bitcoin2"
+   ],
+   "web_domains": [
+    "coinbase.com"
+   ],
+   "sms_senders": [],
+   "email_domains": [
+    "coinbase.com"
+   ],
+   "currencies": [
+    "USD"
+   ],
+   "templates": [],
+   "review": {
+    "reviewed_by": null,
+    "reviewed_on": null,
+    "source_note": "Drafted by a model from public app-store listings and the institution's own website; not reviewed. Unused until a person reviews it."
+   }
+  }
+ ]
+}

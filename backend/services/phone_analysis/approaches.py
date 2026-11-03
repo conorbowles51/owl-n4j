@@ -14,4 +14,4 @@ def install() -> None:
     _done["installed"] = True
 
 
-BUILT = []
+BUILT = ["money_signals"]

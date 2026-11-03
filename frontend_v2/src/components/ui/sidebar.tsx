@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useEffect, type ReactNode } from "react"
 import { Link, useLocation, useParams } from "react-router-dom"
 import {
+  Banknote,
   FolderOpen,
   Network,
   Clock,
@@ -77,6 +78,7 @@ function getPhonesNav(caseId: string): NavItem[] {
     { label: "Phone summary", icon: Smartphone, to: `/cases/${caseId}/phones`, end: true },
     { label: "Conversations", icon: MessageSquare, to: `/cases/${caseId}/conversations`, shortcut: "6" },
     { label: "Patterns", icon: Clock, to: `/cases/${caseId}/phone-patterns` },
+    { label: "Money on the phones", icon: Banknote, to: `/cases/${caseId}/phone-money` },
     { label: "Needs a decision", icon: ShieldCheck, to: `/cases/${caseId}/phone-review` },
   ]
 }
