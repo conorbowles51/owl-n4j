@@ -137,3 +137,29 @@ def test_a_messages_other_parties_are_listed_senders_first_and_the_phones_own_si
         assert len(msgs) == 5
         for m in msgs:
             assert [p["role"] for p in m["parties"]] == ["sender", "recipient"], m["parties"]
+
+
+@needs_template
+def test_a_payment_with_a_date_and_no_time_opens_its_whole_day_in_the_case_zone(hooks):
+    """07 J-5 failure state: a date-only anchor opens the whole calendar day (in the case zone), never a time of day."""
+    from sqlalchemy import text
+    from tests.pattern_pg import api_client
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            _phone().make(c, case)
+            c.execute(text("INSERT INTO case_display_settings (case_id, time_zone, updated_by) SELECT id, "
+                           "'America/New_York', owner_user_id FROM cases WHERE id = :c"), {"c": case})
+        with api_client(engine, case) as client:
+            w = client.get("/api/pattern/%s/window" % case, params={"span": "day", "day": "2023-11-08"}).json()
+            assert w["date_only"] == "2023-11-08" and w["span"] == "day" and w["zone"] == "America/New_York"
+            assert w["start"].startswith("2023-11-08T00:00:00") and w["start"].endswith("-05:00")
+            assert w["end"].startswith("2023-11-09T00:00:00")
+            # a day the clocks change is 25 hours long, still from midnight to midnight
+            dst = client.get("/api/pattern/%s/window" % case, params={"span": "day", "day": "2023-11-05"}).json()
+            assert dst["start"].endswith("-04:00") and dst["end"].endswith("-05:00")
+            assert client.get("/api/pattern/%s/window" % case, params={"span": "day", "day": "8 Nov"}).status_code == 400
+            timed = client.get("/api/pattern/%s/window" % case, params={"at": DAY.isoformat(), "span": "1h"}).json()
+            assert timed["date_only"] is None

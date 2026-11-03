@@ -17,17 +17,27 @@ export interface CaseEventLike {
   name: string
   type: string
   at: string | null
+  /** The calendar day (YYYY-MM-DD) of an event with a date and no time. */
+  date?: string | null
+  /** A ledger payment: it has a date and no time, so its window is its whole day. */
+  payment?: boolean
 }
 
-export function WindowPanel({ caseId, at, caseEvents, zone = "case", onClose }: {
+export const DATE_ONLY_WORDS = "This payment has a date but no time. Showing the whole day."
+
+export function WindowPanel({ caseId, at, day, caseEvents, zone = "case", onClose }: {
   caseId: string
+  /** The moment the window is around; for a date-only anchor, the start of its day. */
   at: string
+  /** A date-only anchor (YYYY-MM-DD): the window is that whole day in the zone, never a time of day. */
+  day?: string | null
   caseEvents: CaseEventLike[]
   zone?: string
   onClose?: () => void
 }) {
   const [span, setSpan] = useState("1h")
-  const q = useQuery({ queryKey: ["pattern-window", caseId, at, span, zone], queryFn: () => patternAPI.window(caseId, at, span, zone) })
+  const q = useQuery({ queryKey: ["pattern-window", caseId, day ? `day:${day}` : at, day ? "day" : span, zone],
+    queryFn: () => day ? patternAPI.windowDay(caseId, day, zone) : patternAPI.window(caseId, at, span, zone) })
   let rows: LaneRow[] = []
   if (q.data) {
     const a = new Date(q.data.start).getTime()
@@ -50,13 +60,13 @@ export function WindowPanel({ caseId, at, caseEvents, zone = "case", onClose }: 
     const inWindow = caseEvents.filter((e) => e.at && new Date(e.at).getTime() >= a && new Date(e.at).getTime() < b)
     rows.push({ id: "case", label: "Case events", total: inWindow.length,
       marks: inWindow.map((e) => ({ key: e.key, at: e.at as string, label: `${e.type} · ${e.name}`, tone: "case" })) })
-    rows.push({ id: "money", label: "Payments", total: q.data.money_total, marks: [],
+    rows.push({ id: "money", label: "Money", total: q.data.money_total, marks: [],
       allDay: q.data.money.map((m) => ({ key: m.transaction_id, label: `${(m.amount_minor / 100).toFixed(2)} ${m.currency}${m.counterparty ? ` · ${m.counterparty}` : ""}`, detail: m.date_words })) })
   }
   return (
     <section aria-label="Window around this moment" className="rounded border bg-card p-3">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-medium">Around {new Date(at).toISOString().replace("T", " ").slice(0, 16)} UTC</h3>
+        <h3 className="text-sm font-medium">{day ? `The whole of ${day}` : `Around ${new Date(at).toISOString().replace("T", " ").slice(0, 16)} UTC`}</h3>
         <span className="flex items-center gap-1">
           <SaveMoment caseId={caseId} at={at} zone={q.data?.zone || "UTC"} />
           {onClose && <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>}
@@ -64,8 +74,10 @@ export function WindowPanel({ caseId, at, caseEvents, zone = "case", onClose }: 
       </div>
       {q.isLoading && <p className="text-sm text-muted-foreground">Opening the window…</p>}
       {q.isError && <p role="alert" className="text-sm text-destructive">{errorWords(q.error)}</p>}
+      {day && <p className="text-sm" data-testid="date-only-anchor">{DATE_ONLY_WORDS}</p>}
       {q.data?.zone_note && <p className="text-xs text-muted-foreground">{q.data.zone_note}</p>}
-      {q.data && <Lanes start={q.data.start} end={q.data.end} zone={q.data.zone} zoneBasis={q.data.zone_basis} rows={rows} span={span} onSpan={setSpan}
+      {q.data && <Lanes start={q.data.start} end={q.data.end} zone={q.data.zone} zoneBasis={q.data.zone_basis} rows={rows}
+        span={day ? undefined : span} onSpan={day ? undefined : setSpan}
         header={<KeepResult caseId={caseId} origin="Added from the window around a moment"
           request={{ kind: "window", start: q.data.start, end: q.data.end, zone: q.data.zone }} />} />}
     </section>
@@ -98,25 +110,31 @@ export function TimelineWindowBar({ caseId, events, selectedKey }: {
   events: CaseEventLike[]
   selectedKey?: string | null
 }) {
-  const [open, setOpen] = useState<string | null>(null)
+  const [open, setOpen] = useState<{ at: string; day: string | null } | null>(null)
   const subjects = useQuery({ queryKey: ["pattern-subjects", caseId], queryFn: () => patternAPI.subjects(caseId) })
   const keys = useQuery({ queryKey: ["pattern-key-dates", caseId], queryFn: () => patternAPI.keyDates(caseId, "date") })
   const timed = events.filter((e) => e.at)
-  const chosen = timed.find((e) => e.key === selectedKey) || timed[timed.length - 1]
+  // a selected payment has a date and no time: its window is its whole day (07 J-5, a ledger payment start)
+  const selected = events.find((e) => e.key === selectedKey)
+  const payment = selected && !selected.at && selected.payment && selected.date && /^\d{4}-\d{2}-\d{2}$/.test(selected.date) ? selected : null
+  const chosen = payment || timed.find((e) => e.key === selectedKey) || timed[timed.length - 1]
   const phoneLast = subjects.data?.extractions.map((e) => e.last).filter(Boolean).sort().pop() || null
-  const anchor = chosen?.at || phoneLast
+  const anchor = payment ? { at: `${payment.date}T00:00:00Z`, day: payment.date as string }
+    : (chosen?.at || phoneLast) ? { at: (chosen?.at || phoneLast) as string, day: null } : null
   if (!anchor || (subjects.data && subjects.data.total_extractions === 0)) return null
   return (
     <div className="flex flex-col gap-2 border-b px-4 py-2">
       <div className="flex items-center gap-2 text-sm">
         <Button size="sm" variant="outline" onClick={() => setOpen(anchor)}>Open the window around this</Button>
-        <span className="text-xs text-muted-foreground">{chosen ? `Around "${chosen.name}"` : "Around the latest moment on the case's phones"}</span>
+        <span className="text-xs text-muted-foreground">
+          {payment ? `The day of "${payment.name}", ${payment.date}` : chosen ? `Around "${chosen.name}"` : "Around the latest moment on the case's phones"}
+        </span>
         {(keys.data?.items || []).length > 0 && <span className="text-xs">Or a key date:</span>}
         {(keys.data?.items || []).map((k) => k.instant_utc && (
-          <Button key={k.entry_id} size="sm" variant="ghost" onClick={() => setOpen(k.instant_utc)}>{keyDateWords(k)}</Button>
+          <Button key={k.entry_id} size="sm" variant="ghost" onClick={() => setOpen({ at: k.instant_utc as string, day: null })}>{keyDateWords(k)}</Button>
         ))}
       </div>
-      {open && <WindowPanel caseId={caseId} at={open} caseEvents={events} onClose={() => setOpen(null)} />}
+      {open && <WindowPanel key={open.day ?? open.at} caseId={caseId} at={open.at} day={open.day} caseEvents={events} onClose={() => setOpen(null)} />}
     </div>
   )
 }

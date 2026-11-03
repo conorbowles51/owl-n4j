@@ -124,6 +124,8 @@ export interface WindowResponse {
   phones_total: number
   money: MoneyItem[]
   money_total: number
+  /** The whole day (YYYY-MM-DD) when the anchor has a date and no time (a payment); null otherwise. */
+  date_only?: string | null
 }
 
 export interface GridResponse {
@@ -278,6 +280,9 @@ export const patternAPI = {
     fetchAPI<DayResponse>(`${base(caseId)}/day?subject=${subj(s)}&date=${date}&zone=${encodeURIComponent(zone)}`),
   window: (caseId: string, at: string, span: string, zone = "device") =>
     fetchAPI<WindowResponse>(`${base(caseId)}/window?at=${encodeURIComponent(at)}&span=${span}&zone=${encodeURIComponent(zone)}`),
+  /** The whole calendar day, in the zone, around an anchor with a date and no time (07 J-5). */
+  windowDay: (caseId: string, day: string, zone = "case") =>
+    fetchAPI<WindowResponse>(`${base(caseId)}/window?span=day&day=${encodeURIComponent(day)}&zone=${encodeURIComponent(zone)}`),
   grid: (caseId: string, s: Subject, start: string, end: string, zone = "device") =>
     fetchAPI<GridResponse>(`${base(caseId)}/grid?subject=${subj(s)}&start_date=${start}&end_date=${end}&zone=${encodeURIComponent(zone)}`),
   places: (caseId: string, s: Subject, start: string, end: string, cursor = 0) =>

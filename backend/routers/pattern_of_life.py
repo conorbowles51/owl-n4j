@@ -712,15 +712,27 @@ WINDOW_SPANS = {"1h": timedelta(hours=1), "6h": timedelta(hours=6), "24h": timed
 @router.get("/{case_id}/window")
 def get_window(at: str | None = Query(None), span: str = Query("1h"), start: str | None = Query(None),
                end: str | None = Query(None), subject: str | None = Query(None), zone: str = Query("case"),
+               day: str | None = Query(None),
                case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
     """The window around a moment (07 J-5): one lane per phone (every active phone of the case, or the subject's),
     each with its availability, plus the money lane for the days it touches. ``span`` is 1h, 6h or 24h either side of
-    ``at``, or ``custom`` with ``start`` and ``end``."""
+    ``at``, ``custom`` with ``start`` and ``end``, or ``day`` with ``day`` (YYYY-MM-DD): the whole calendar day in the
+    window's zone, for an anchor that has a date and no time (a payment); ``date_only`` says so."""
+    from datetime import date as _date, datetime as _datetime, time as _time
     from services.pattern_of_life import day as day_view
     conn = db.connection()
     labels = _labels(conn, case_id)
     exts = resolve(db, case_id, subject)["extraction_ids"] if subject else list(labels)
-    if span == "custom":
+    date_only = None
+    if span == "day":
+        try:
+            date_only = _date.fromisoformat(day or "")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Say which day, as YYYY-MM-DD.")
+        dz, _ = _zone_for(conn, exts, zone, case_id)
+        a = _datetime.combine(date_only, _time(0), tzinfo=dz)
+        b = _datetime.combine(date_only + timedelta(days=1), _time(0), tzinfo=dz)
+    elif span == "custom":
         if not (start and end):
             raise HTTPException(status_code=400, detail="A custom window needs a start and an end.")
         a, b = parse_range(start, end)
@@ -730,7 +742,7 @@ def get_window(at: str | None = Query(None), span: str = Query("1h"), start: str
         t = parse_instant(at, "at")
         a, b = t - WINDOW_SPANS[span], t + WINDOW_SPANS[span]
     else:
-        raise HTTPException(status_code=400, detail="The window is 1h, 6h, 24h or custom.")
+        raise HTTPException(status_code=400, detail="The window is 1h, 6h, 24h, a whole day or custom.")
     if b - a > timedelta(days=31):
         raise HTTPException(status_code=400, detail="A window is at most 31 days.")
     z, zname = _zone_for(conn, exts, zone, case_id)
@@ -743,7 +755,8 @@ def get_window(at: str | None = Query(None), span: str = Query("1h"), start: str
     return _WalkJSON({"start": a, "end": b, "span": span, "zone": zname,
                       "zone_basis": cz["basis"] if cz else ("device_zone" if zone == "device" else "chosen"),
                       "zone_note": cz["note"] if cz else None, "phones": phones,
-                      "phones_total": len(phones), "money": money_rows, "money_total": money_total})
+                      "phones_total": len(phones), "money": money_rows, "money_total": money_total,
+                      "date_only": date_only.isoformat() if date_only else None})
 
 
 @router.get("/{case_id}/events")

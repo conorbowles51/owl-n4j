@@ -312,8 +312,9 @@ export function TimelinePage() {
   }
 
   // The window around a moment (07 J-5): device lanes and the Case events lane, drawn by the shared Lanes component.
-  const windowEvents = events.map((e) => ({ key: e.key, name: e.name, type: e.type, at: getEventTimeValue(e) }))
-  const windowBar = caseId ? <TimelineWindowBar caseId={caseId} events={windowEvents} selectedKey={requestedKey} /> : null
+  const windowEvents = events.map((e) => ({ key: e.key, name: e.name, type: e.type, at: getEventTimeValue(e),
+    date: e.date ? e.date.slice(0, 10) : null, payment: e.source?.kind === "transaction" }))
+  const windowBar = caseId ? <TimelineWindowBar caseId={caseId} events={windowEvents} selectedKey={selectedEventKey ?? requestedKey} /> : null
 
   if (events.length === 0) {
     if (caseId && phoneCount > 0 && caseLayer !== "significant") {
