@@ -36,7 +36,8 @@ NEW = dict(
     origin="origin IN ('processor', 'agent', 'person')",
     target="target_type IN ('dossier', 'theory', 'case')",
     output="output_type IN ('statement_summary', 'statement_comparison', 'theory_analysis', 'statement_claims', "
-           "'entry_draft', 'lead_card', 'timeline_addition', 'link_proposal', 'alternative_explanation')",
+           "'entry_draft', 'lead_card', 'timeline_addition', 'link_proposal', 'alternative_explanation', "
+           "'control_claim', 'payment_purpose')",
 )
 NAMES = dict(subject=("financial_judgements", "ck_financial_judgements_subject"),
              status=("financial_judgements", "ck_financial_judgements_status"),

@@ -45,6 +45,19 @@ function ProposalBody({ item }: { item: AgentProposal }) {
       </div>
     )
   }
+  if (item.output_type === "control_claim" || item.output_type === "payment_purpose") {
+    return (
+      <div className="space-y-1">
+        <p className="text-sm font-semibold">{text(c.title)}</p>
+        <p className="text-xs text-muted-foreground">
+          {item.output_type === "control_claim"
+            ? "Drafted from the phones' own check. Accepting adds it as a finding about means; the statement's printed holder does not change."
+            : "The model's reading of the messages around the payment. Accepting adds it as a finding."}
+        </p>
+        <p className="whitespace-pre-wrap text-sm">{text(c.body)}</p>
+      </div>
+    )
+  }
   if (item.output_type === "link_proposal") {
     return (
       <p className="text-sm">

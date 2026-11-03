@@ -54,8 +54,11 @@ KIND_LABELS = {
     'timeline_addition': 'Timeline addition',
     'link_proposal': 'Link to evidence',
     'alternative_explanation': 'Alternative explanation (red cell)',
+    'control_claim': 'Means to operate an account (phones)',
+    'payment_purpose': 'Stated purpose of a payment (phones)',
 }
 MAX_CITATIONS = 20
+MAX_RECORD_CITATIONS = 500
 MAX_WHY = 1200
 CITATION = re.compile(r'^(txn|doc|rec)://([^\s#]+)(#\S*)?$')
 NOT_IN_CASE = 'Not in this case.'
@@ -107,51 +110,59 @@ def _uuid(value) -> Optional[uuid.UUID]:
 
 def check_citations(session, case_id, citations: Iterable[str]) -> list[dict]:
     """[{citation, scheme, status: 'valid'|'not_in_case'|'invalid', label}] for each citation, checked against the
-    case. Uses the agent-citations checker when it is present (``services.case_citations.resolve_citations``);
-    otherwise checks ``txn://``, ``doc://`` and ``rec://`` against the case's own rows."""
+    case. ``txn://``, ``doc://`` and ``rec://`` are checked against the case's own rows (phone records in one query);
+    when the agent-citations checker is present (``services.case_citations.resolve_citations``) it must pass too, in
+    one call for the whole list."""
     try:
         from services import case_citations  # type: ignore
     except ImportError:  # agent-citations not yet merged: the local check below is the whole check
         case_citations = None
+    texts = [str(raw or '').strip() for raw in citations]
+    matches = [CITATION.match(t) for t in texts]
+    records = _records_in_case(session, _uuid(case_id), [m.group(2) for m in matches if m and m.group(1) == 'rec'])
     out = []
-    for raw in citations:
-        text = str(raw or '').strip()
-        match = CITATION.match(text)
+    for text, match in zip(texts, matches):
         if not match:
             out.append(dict(citation=text, scheme='', status='invalid', label='Not a source link.'))
             continue
-        scheme, rest = match.group(1), match.group(2)
-        local = _local_check(session, case_id, scheme, rest, text)
-        if local['status'] == 'valid' and case_citations is not None and hasattr(case_citations, 'resolve_citations'):
-            # Both checks must pass: the shared checker also refuses an ambiguous or foreign link.
-            try:
-                parsed = case_citations.parse_citation(text)
-                resolved = case_citations.resolve_citations(session, case_id, [parsed])[0] if parsed else None
-                if resolved is None or resolved.status != 'ok':
-                    local = dict(citation=text, scheme=scheme, status='not_in_case',
-                                 label=getattr(resolved, 'reason', None) or NOT_IN_CASE)
-            except Exception:  # noqa: BLE001 - the local check stands
-                log.exception('Citation check through case_citations failed for %s', text)
-        out.append(local)
+        out.append(_local_check(session, case_id, match.group(1), match.group(2), text, records))
+    if case_citations is not None and hasattr(case_citations, 'resolve_citations'):
+        # Both checks must pass: the shared checker also refuses an ambiguous or foreign link.
+        try:
+            valid = [i for i, o in enumerate(out) if o['status'] == 'valid']
+            parsed = [case_citations.parse_citation(out[i]['citation']) for i in valid]
+            pairs = [(i, p) for i, p in zip(valid, parsed) if p is not None]
+            for i in (i for i, p in zip(valid, parsed) if p is None):
+                out[i] = dict(out[i], status='invalid', label='Not a source link.')
+            resolved = case_citations.resolve_citations(session, case_id, [p for _, p in pairs]) if pairs else []
+            for (i, _), r in zip(pairs, resolved):
+                if r.status != 'ok':
+                    out[i] = dict(out[i], status='not_in_case', label=getattr(r, 'reason', None) or NOT_IN_CASE)
+        except Exception:  # noqa: BLE001 - the local check stands
+            log.exception('Citation check through case_citations failed for case %s', case_id)
     return out
 
 
-def _record_in_case(session, case_id, uid) -> bool:
-    """A phone record of the case (pv_record, as the agent-citations checker reads it)."""
-    from sqlalchemy import inspect, text as sql
+def _records_in_case(session, case_id, uids) -> set[str]:
+    """The phone records of the case among ``uids`` (pv_record, as the agent-citations checker reads it), lower
+    case, in one query."""
+    from sqlalchemy import bindparam, inspect, text as sql
+    wanted = sorted({str(_uuid(u)) for u in uids if _uuid(u) is not None})
+    if not wanted or case_id is None:
+        return set()
     conn = session.connection()
     if not inspect(conn).has_table('pv_record'):
-        return False
+        return set()
     if conn.dialect.name == 'postgresql':
-        row = session.execute(sql('SELECT 1 FROM pv_record WHERE case_id = :c AND record_uid = CAST(:u AS uuid) '
-                                  'LIMIT 1'), dict(c=str(case_id), u=str(uid))).first()
+        rows = session.execute(sql('SELECT record_uid FROM pv_record WHERE case_id = CAST(:c AS uuid) AND '
+                                   'record_uid = ANY(CAST(:u AS uuid[]))'), dict(c=str(case_id), u=wanted))
     else:
-        row = session.execute(sql('SELECT 1 FROM pv_record WHERE case_id = :c AND lower(record_uid) = :u LIMIT 1'),
-                              dict(c=str(case_id), u=str(uid).lower())).first()
-    return row is not None
+        rows = session.execute(sql('SELECT record_uid FROM pv_record WHERE case_id = :c AND lower(record_uid) IN '
+                                   ':u').bindparams(bindparam('u', expanding=True)), dict(c=str(case_id), u=wanted))
+    return {str(r[0]).lower() for r in rows}
 
 
-def _local_check(session, case_id, scheme, rest, text):
+def _local_check(session, case_id, scheme, rest, text, records=frozenset()):
     from postgres.models.evidence import EvidenceFile
     from postgres.models.financial import FinancialTransaction
     if scheme == 'txn':
@@ -171,18 +182,20 @@ def _local_check(session, case_id, scheme, rest, text):
                     label=(file.original_filename or 'File') + (f', page {page}' if page else ''))
     if scheme == 'rec':
         uid = rest.partition('#')[0]
-        if _uuid(uid) is None or not _record_in_case(session, _uuid(case_id), _uuid(uid)):
+        if _uuid(uid) is None or str(_uuid(uid)) not in records:
             return dict(citation=text, scheme=scheme, status='not_in_case', label=NOT_IN_CASE)
         return dict(citation=text, scheme=scheme, status='valid', label='Phone record')
     return dict(citation=text, scheme=scheme, status='not_in_case', label=NOT_IN_CASE)
 
 
-def _checked_citations(session, case_id, citations, extra=()):
+def _checked_citations(session, case_id, citations, extra=(), limit=MAX_CITATIONS):
+    """Every citation checked against the case. ``limit``: the model's own citations are capped at 20; a lead card
+    or a phone draft cites every alert or strand the code found, up to ``MAX_RECORD_CITATIONS``."""
     wanted = list(dict.fromkeys([str(c).strip() for c in list(citations or []) + list(extra) if str(c).strip()]))
     if not wanted:
         raise ProposalError('A proposal cites at least one source in this case.')
-    if len(wanted) > MAX_CITATIONS:
-        raise ProposalError(f'A proposal cites at most {MAX_CITATIONS} sources; this one cites {len(wanted)}.')
+    if len(wanted) > limit:
+        raise ProposalError(f'A proposal cites at most {limit} sources; this one cites {len(wanted)}.')
     checked = check_citations(session, case_id, wanted)
     bad = [c for c in checked if c['status'] != 'valid']
     if bad:

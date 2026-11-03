@@ -18,6 +18,7 @@ creates carries the model origin (``actor_origin``) so it always shows a model d
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 import uuid
@@ -26,11 +27,15 @@ from typing import Any, Mapping
 
 from sqlalchemy import func, select
 
-from services.agent.proposals import ProposalError, _checked_citations, _require_origin, _uuid, _why, review_facts
+from services.agent.proposals import (NOT_IN_CASE, ProposalError, _checked_citations, _require_origin, _uuid, _why,
+                                      review_facts)
 
 log = logging.getLogger(__name__)
 
-AGENT_OUTPUT_TYPES = ('entry_draft', 'lead_card', 'timeline_addition', 'link_proposal', 'alternative_explanation')
+AGENT_OUTPUT_TYPES = ('entry_draft', 'lead_card', 'timeline_addition', 'link_proposal', 'alternative_explanation',
+                      'control_claim', 'payment_purpose')
+# The phones' two drafts (agent-phones, phone_cross_tools): the deterministic check is re-run when stored.
+PHONE_DRAFTS = ('control_claim', 'payment_purpose')
 ENTRY_KINDS = ('note', 'finding')
 RELATIONSHIPS = ('supports', 'contradicts', 'context')
 MAX_TITLE, MAX_BODY = 255, 8000
@@ -158,6 +163,86 @@ def propose_timeline(session, *, case_id, source_kind, source_ids, event_date=No
 
 
 # ---------------------------------------------------------------------------
+# The phones' drafts (connections 3 and 4, agent-phones): a control claim and a payment's stated purpose
+# ---------------------------------------------------------------------------
+
+_CITE = re.compile(r'\b(?:rec|txn|doc)://[0-9A-Za-z-]+(?:/\d+)?')
+
+
+def _cites_in(obj) -> list[str]:
+    return list(dict.fromkeys(_CITE.findall(json.dumps(obj, default=str))))
+
+
+def _strand_line(s) -> str:
+    cites = ', '.join(_cites_in(s)) or 'no record'
+    words = ' '.join(str(s.get('words') or s.get('kind') or '').split())
+    return f"- {s.get('link', '').replace('_', ' ')}: {words} ({s.get('strength') or 'context'}; {cites})"
+
+
+def control_claim_content(result) -> dict:
+    """The stored proposal for a control claim, from the phones' own check. Never a holder finding."""
+    items = result.get('items') or []
+    body = [result['claim'] + '.', '', result.get('coverage') or '', '', result.get('correlated_strands') or '',
+            '', 'For and against, each cited:'] + [_strand_line(s) for s in items] + [
+            '', result.get('not_a_holder_finding') or '']
+    return dict(title=('Means to operate: ' + result['claim'])[:MAX_TITLE], body='\n'.join(body)[:MAX_BODY],
+                claim=result['claim'], person=result.get('person'), account=result.get('account'),
+                period=result.get('period'), coverage=result.get('coverage'),
+                chain=[dict(link=c.get('link'), holds=c.get('holds'), counts=c.get('counts')) for c in
+                       result.get('chain') or []],
+                items=items, items_total=len(items), established=result.get('established'),
+                not_a_holder_finding=result.get('not_a_holder_finding'))
+
+
+def payment_purpose_content(result) -> dict:
+    item = (result.get('items') or [{}])[0]
+    outcome = str(item.get('outcome') or '').replace('_', ' ')
+    names = result.get('coverage') or ''
+    body = [f"Model reading of the messages around {item.get('payment')}: {outcome}.",
+            f"Purpose the messages state: {item['purpose_stated']}." if item.get('purpose_stated') else '',
+            f"Row description: {item.get('row_description') or 'none printed'}; reference: "
+            f"{item.get('row_reference') or 'none printed'}.", names, '', 'Messages quoted:'] + [
+            f'- {q}' for q in item.get('quoted') or []]
+    return dict(title=f"Stated purpose of a payment: {outcome}"[:MAX_TITLE],
+                body='\n'.join(x for x in body if x is not None)[:MAX_BODY], payment=item.get('payment'),
+                outcome=item.get('outcome'), purpose_stated=item.get('purpose_stated'), quoted=item.get('quoted'),
+                between=item.get('between'), window=item.get('window'), row_description=item.get('row_description'),
+                row_reference=item.get('row_reference'))
+
+
+def propose_phone_draft(session, *, case_id, kind, args, why='', origin, requested_by_user_id=None, _run=None):
+    """Store one of the phones' drafts as a proposal. The phones' own check is re-run here with the run's case, so
+    the stored claim is exactly what the code found; the model's words are only the reason it gives."""
+    origin = _require_origin(origin)
+    if kind not in PHONE_DRAFTS:
+        raise ProposalError('A phone draft is a control claim or a payment purpose.')
+    if _run is None:
+        from services.agent import phone_cross_tools as P
+        fn = P.control_claim if kind == 'control_claim' else P.draft_payment_purpose
+        _run = lambda: fn(session.connection(), _uuid(case_id), **args)  # noqa: E731
+    try:
+        result = _run()
+    except ValueError as exc:
+        raise ProposalError(str(exc)) from exc
+    if result.get('not_in_case'):
+        raise ProposalError(NOT_IN_CASE, 404)
+    if result.get('available') is False:
+        raise ProposalError(str(result.get('reason') or 'The phones could not be read for this draft.'), 409)
+    if kind == 'control_claim':
+        if not result.get('established'):
+            raise ProposalError(result.get('limitation') or 'The chain does not hold, so there is no claim to '
+                                                             'propose.', 409)
+        content = control_claim_content(result)
+    else:
+        content = payment_purpose_content(result)
+    content['why'] = ' '.join(str(why or '').split())[:1200] or None
+    checked = _checked_citations(session, case_id, _cites_in(result), limit=MAX_ALERTS)
+    return _store(session, case_id=_uuid(case_id), output_type=kind, content=content, checked=checked,
+                  action=dict(action='create_workspace_finding', kind=kind), origin=origin,
+                  requested_by_user_id=requested_by_user_id)
+
+
+# ---------------------------------------------------------------------------
 # Lead cards (connection 2)
 # ---------------------------------------------------------------------------
 
@@ -231,7 +316,7 @@ def propose_lead_card(session, *, case_id, lead_result_id, why='', origin, reque
         raise ProposalError('This lead has no alert left in the case to cite.', 409)
     content = lead_card_content(lead, alerts, phones)
     content['why'] = ' '.join(str(why or '').split())[:1200] or None
-    checked = _checked_citations(session, case_id, [a['cite'] for a in content['alerts']])
+    checked = _checked_citations(session, case_id, [a['cite'] for a in content['alerts']], limit=MAX_ALERTS)
     return _store(session, case_id=_uuid(case_id), output_type='lead_card', content=content, checked=checked,
                   action=dict(action='create_lead_task', lead_result_id=str(lead_result_id)), origin=origin,
                   requested_by_user_id=requested_by_user_id)
@@ -314,6 +399,11 @@ def _citation_links(content):
 def _apply(session, item, content, action, reviewer, provenance, due_at, edits):
     kind = item.output_type
     case_id = item.case_id
+    if kind in PHONE_DRAFTS:
+        entry = _entry(session, case_id=case_id, reviewer=reviewer, entry_type='finding',
+                       title=edits.get('title') or content.get('title'), body=edits.get('body') or content.get('body'),
+                       provenance=provenance, tags=(kind.replace('_', '-'), 'phones'), links=_citation_links(content))
+        return [dict(target_type='workspace_entry', target_id=entry['id'])]
     if kind in ('entry_draft', 'alternative_explanation'):
         entry_type = content.get('entry_type') if kind == 'entry_draft' else 'theory'
         entry = _entry(session, case_id=case_id, reviewer=reviewer, entry_type=entry_type,

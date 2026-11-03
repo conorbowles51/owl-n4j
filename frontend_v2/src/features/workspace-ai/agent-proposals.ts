@@ -7,6 +7,8 @@ export type AgentProposalKind =
   | "timeline_addition"
   | "link_proposal"
   | "alternative_explanation"
+  | "control_claim"
+  | "payment_purpose"
 
 export interface LeadAlert {
   cite: string
@@ -62,6 +64,8 @@ export const AGENT_PROPOSAL_LABELS: Record<AgentProposalKind, string> = {
   timeline_addition: "Timeline addition",
   link_proposal: "Link to an entry",
   alternative_explanation: "Alternative explanation (red cell)",
+  control_claim: "Means to operate an account (phones)",
+  payment_purpose: "Stated purpose of a payment (phones)",
 }
 
 const base = (caseId: string) => `/api/workspace/${encodeURIComponent(caseId)}/proposals`

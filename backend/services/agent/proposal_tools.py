@@ -74,6 +74,26 @@ class LinkProposalArgs(BaseModel):
     citations: list[str] = Field(..., min_length=1, max_length=20)
 
 
+class ControlClaimProposalArgs(BaseModel):
+    person: str = Field(..., description='A person (dossier) name or id.')
+    account: str = Field(..., description='A financial account id, or its ending (four or more digits).')
+    start: str
+    end: str
+    why: str = Field('', max_length=1200)
+
+
+class PaymentPurposeProposalArgs(BaseModel):
+    payment: str = Field(..., description="The payment's txn:// link, id or reference.")
+    outcome: Literal['consistent', 'different', 'discussed_purpose_not_stated']
+    quoted: list[str] = Field(..., min_length=1, max_length=50, description='The rec:// links of the messages.')
+    purpose: str | None = Field(None, description='The purpose the messages state, in their words.')
+    person_a: str | None = None
+    person_b: str | None = None
+    hours: float = Field(2, gt=0, le=168)
+    days: float | None = Field(None, gt=0, le=7)
+    why: str = Field('', max_length=1200)
+
+
 class AssumptionProposalArgs(BaseModel):
     calculation_id: str
     key: Literal['messages', 'share_deals', 'deals_per_message', 'price_per_deal']
@@ -159,6 +179,23 @@ def make_proposal_tools(context) -> list[StructuredTool]:
             target_id=args.target_id, relationship=args.relationship, why=args.why, citations=args.citations,
             origin=o, requested_by_user_id=(context.proposer or {}).get('for_user_id')))
 
+    def propose_control_claim(**kw):
+        args = ControlClaimProposalArgs(**kw)
+        from services.agent import workspace_proposals as W
+        return call('propose_control_claim', 'Workspace proposals', lambda s, o: W.propose_phone_draft(
+            s, case_id=context.case_id, kind='control_claim', why=args.why, origin=o,
+            args=dict(person=args.person, account=args.account, start=args.start, end=args.end),
+            requested_by_user_id=(context.proposer or {}).get('for_user_id')))
+
+    def propose_payment_purpose(**kw):
+        args = PaymentPurposeProposalArgs(**kw)
+        from services.agent import workspace_proposals as W
+        return call('propose_payment_purpose', 'Workspace proposals', lambda s, o: W.propose_phone_draft(
+            s, case_id=context.case_id, kind='payment_purpose', why=args.why, origin=o,
+            args=dict(payment=args.payment, outcome=args.outcome, quoted=args.quoted, purpose=args.purpose,
+                      person_a=args.person_a, person_b=args.person_b, hours=args.hours, days=args.days),
+            requested_by_user_id=(context.proposer or {}).get('for_user_id')))
+
     def propose_assumption(**kw):
         args = AssumptionProposalArgs(**kw)
         from services.financial import proceeds as PR
@@ -199,6 +236,15 @@ def make_proposal_tools(context) -> list[StructuredTool]:
             func=propose_link, name='propose_link', args_schema=LinkProposalArgs,
             description='Propose linking a source to a Workspace entry as supporting, contradicting or context.'
                         + rule),
+        StructuredTool.from_function(
+            func=propose_control_claim, name='propose_control_claim', args_schema=ControlClaimProposalArgs,
+            description=('Record the phones\' control claim (as draft_control_claim reads it) as a proposal: "P had '
+                         'the means to operate account A from t1 to t2", both links with every strand cited. '
+                         'Refused when the chain does not hold. Never a holder finding.' + rule)),
+        StructuredTool.from_function(
+            func=propose_payment_purpose, name='propose_payment_purpose', args_schema=PaymentPurposeProposalArgs,
+            description=('Record your reading of a payment\'s stated purpose (as draft_payment_purpose checks it) as a '
+                         'proposal, quoting the messages by rec:// with the row\'s txn://.' + rule)),
         StructuredTool.from_function(
             func=propose_assumption, name='propose_assumption', args_schema=AssumptionProposalArgs,
             description=('Propose one assumption of a proceeds calculation (volume, share that are deals, deals per '

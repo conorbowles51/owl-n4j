@@ -271,3 +271,72 @@ def test_a_phone_record_citation_is_checked_against_the_case(db):
                                                   "rec://not-a-uid"])
     assert [o["status"] for o in out] == ["valid", "valid", "not_in_case", "not_in_case"]
     assert out[2]["label"] == out[3]["label"] == "Not in this case."
+
+
+def _pv(db, uids, case_id=None):
+    from sqlalchemy import text
+    db.execute(text("CREATE TABLE IF NOT EXISTS pv_record (case_id TEXT, record_uid TEXT)"))
+    for u in uids:
+        db.execute(text("INSERT INTO pv_record VALUES (:c, :u)"), dict(c=str(case_id or db.info["case"].id), u=str(u)))
+
+
+def test_a_lead_card_cites_every_alert_even_past_twenty(db):
+    """The model's own citations stop at 20; a lead card cites every alert the code found (old code: refused)."""
+    uids = [uuid.uuid4() for _ in range(25)]
+    _pv(db, uids)
+    alerts = [dict(record_uid=str(u), extraction_id="x", instant=f"2024-01-{i + 1:02d}T09:00:00+00:00",
+                   amount_minor=100, currency="MXN", direction="debit", **{"class": "transactional"})
+              for i, u in enumerate(uids)]
+    item = W.propose_lead_card(db, case_id=db.info["case"].id, lead_result_id=LEAD["id"], origin=_origin(),
+                               _read=lambda s, c, l: (LEAD, alerts, {}))
+    assert len(item["content"]["citations"]) == 25
+
+
+CLAIM = dict(claim="Maria Lopez had the means to operate the BBVA account ending 4821 from 2024-01-01 to 2024-03-31",
+             established=True, coverage="Account to device: 1 codes, 1 alerts, 0 app or login records.",
+             correlated_strands="Strands from one handset are not independent.",
+             not_a_holder_finding="This is never a finding that the person is the account holder.",
+             person={"name": "Maria Lopez"}, account={"ending": "4821"}, period={"start": "2024-01-01"},
+             chain=[{"link": "account_to_device", "holds": True, "counts": {"code": 1, "alert": 1}},
+                    {"link": "device_to_person", "holds": True}])
+
+
+def test_a_control_claim_is_stored_from_the_phones_check_and_accepted_as_a_finding_never_a_holder(db):
+    code, alert = uuid.uuid4(), uuid.uuid4()
+    _pv(db, [code, alert])
+    result = dict(CLAIM, items=[dict(link="account_to_device", kind="code", strength="supporting",
+                                     words="one-time code from BBVA", rec=f"rec://{code}"),
+                                dict(link="account_to_device", kind="alert", strength="supporting",
+                                     words="alert for the account", rec=f"rec://{alert}")])
+    item = W.propose_phone_draft(db, case_id=db.info["case"].id, kind="control_claim", args={}, origin=_origin(),
+                                 _run=lambda: result)
+    assert item["output_type"] == "control_claim" and item["review_status"] == "pending_review"
+    assert sorted(item["content"]["citations"]) == sorted([f"rec://{code}", f"rec://{alert}"])
+    assert db.scalars(select(WorkspaceEntry)).all() == []
+    owner = db.info["owner"]
+    proposals.record_open(db, case_id=db.info["case"].id, proposal_type="workspace_ai", proposal_id=item["id"],
+                          citation=f"rec://{code}", user=owner)
+    W.accept(db, case_id=db.info["case"].id, output_id=item["id"], reviewer=owner, via="ui")
+    entry = db.scalars(select(WorkspaceEntry)).one()
+    assert entry.entry_type == "finding" and "control-claim" in entry.tags
+    assert "never a finding that the person is the account holder" in entry.body
+    assert entry.migration_metadata["actor_origin"]["origin"]["model"] == "DeepSeek V4 Pro"
+
+
+def test_a_control_claim_that_does_not_hold_is_not_proposed(db):
+    result = dict(CLAIM, established=False, items=[], limitation="The chain does not hold: no reviewed link.")
+    with pytest.raises(proposals.ProposalError, match="does not hold"):
+        W.propose_phone_draft(db, case_id=db.info["case"].id, kind="control_claim", args={}, origin=_origin(),
+                              _run=lambda: result)
+    assert db.scalars(select(WorkspaceAIOutput)).all() == []
+
+
+def test_a_payment_purpose_quoting_another_cases_record_is_refused(db):
+    mine, theirs = uuid.uuid4(), uuid.uuid4()
+    _pv(db, [mine])
+    _pv(db, [theirs], case_id=db.info["other"].id)
+    result = dict(items=[dict(payment=None, outcome="consistent", purpose_stated="rent",
+                              quoted=[f"rec://{mine}", f"rec://{theirs}"])])
+    with pytest.raises(proposals.ProposalError, match="Not in this case"):
+        W.propose_phone_draft(db, case_id=db.info["case"].id, kind="payment_purpose", args={}, origin=_origin(),
+                              _run=lambda: result)
