@@ -3,35 +3,14 @@ import { Fragment, useEffect, useRef, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { recordPath } from "@/lib/record-links"
-import { getDerivedTexts, getMediaDetail, getMediaIndex, getMediaWindow, mediaObjectUrl, requestDerivedText, type DerivedText, type MediaFilter, type MediaItem } from "../api"
+import { useCollectTargets } from "../collect-targets"
+import { MachineTextPrompt } from "./MachineTextPrompt"
+import { useObjectUrl } from "./use-object-url"
+import { acceptDerivedText, confirmDerivedText, correctDerivedText, getDerivedTexts, getMediaDetail, getMediaIndex, getMediaWindow, requestDerivedText, type DerivedText, type MediaFilter, type MediaItem } from "../api"
 
 const n = (v: number) => v.toLocaleString("en-US")
 const WINDOW = 200
 const BLUR_KEY = "loupe.media.blur"
-
-/** A file's bytes shown in the page, fetched only when asked for (visible, or opened). */
-function useObjectUrl(caseId: string, fileUid: string | null, enabled: boolean, variant: "content" | "thumbnail" | "converted" = "content") {
-  const [state, setState] = useState<{ url: string; type: string } | { error: string } | null>(null)
-  useEffect(() => {
-    if (!fileUid || !enabled) return
-    const ctrl = new AbortController()
-    let made: string | null = null
-    mediaObjectUrl(caseId, fileUid, ctrl.signal, variant)
-      .then((r) => {
-        made = r.url
-        setState(r)
-      })
-      .catch((e: unknown) => {
-        if (!ctrl.signal.aborted) setState({ error: e instanceof Error ? e.message : "This file could not be shown." })
-      })
-    return () => {
-      ctrl.abort()
-      if (made) URL.revokeObjectURL(made)
-      setState(null)
-    }
-  }, [caseId, fileUid, enabled, variant])
-  return state
-}
 
 const CONVERTED_WORDS = "Playing a converted copy. The original file is unchanged."
 
@@ -119,11 +98,134 @@ function MadeBy({ x }: { x: DerivedText }) {
   )
 }
 
+/** A person checks machine text (07 4.6, M-6): confirm it stands, or correct it with a reason. The machine original
+ * stays shown under a correction; the corrected text is the one searched and quoted. */
+function Review({ caseId, x, onSaved }: { caseId: string; x: DerivedText; onSaved: () => Promise<unknown> }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState("")
+  const [reason, setReason] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const run = async (fn: () => Promise<unknown>) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await fn()
+      setEditing(false)
+      await onSaved()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The change could not be saved.")
+    } finally {
+      setBusy(false)
+    }
+  }
+  const what = x.kind === "transcript" ? "the audio" : "the image"
+  return (
+    <div className="flex flex-col gap-1">
+      {!editing && (
+        <div className="flex flex-wrap gap-1">
+          {x.origin?.state !== "confirmed" && (
+            <Button size="sm" variant="outline" disabled={busy} onClick={() => run(() => confirmDerivedText(caseId, x.id))}>
+              I checked it against {what}: confirm
+            </Button>
+          )}
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => { setDraft(x.effective_text ?? x.text ?? ""); setReason(""); setEditing(true) }}>
+            Correct this text
+          </Button>
+        </div>
+      )}
+      {editing && (
+        <form className="flex flex-col gap-1" onSubmit={(e) => { e.preventDefault(); void run(() => correctDerivedText(caseId, x.id, draft, reason)) }}>
+          <label className="flex flex-col gap-0.5">Corrected text
+            <textarea className="rounded border p-1" rows={4} value={draft} onChange={(e) => setDraft(e.target.value)} />
+          </label>
+          <label className="flex flex-col gap-0.5">Reason, in your own words
+            <input className="rounded border p-1" value={reason} onChange={(e) => setReason(e.target.value)} />
+          </label>
+          <p className="text-muted-foreground">The machine text stays shown beside your correction. Your correction is the text searched and quoted.</p>
+          <div className="flex gap-1">
+            <Button size="sm" type="submit" disabled={busy || !draft.trim() || !reason.trim()}>Save correction</Button>
+            <Button size="sm" type="button" variant="ghost" disabled={busy} onClick={() => setEditing(false)}>Cancel</Button>
+          </div>
+        </form>
+      )}
+      {error && <p role="alert">{error}</p>}
+    </div>
+  )
+}
+
+function MachineBody({ x }: { x: DerivedText }) {
+  return x.segments.length ? (
+    <ol className="flex flex-col gap-0.5">
+      {x.segments.map((s, i) => <li key={i}><span className="font-mono text-muted-foreground">{fmtSeconds(s.start)}</span> {s.text}</li>)}
+    </ol>
+  ) : x.text ? (
+    <p className="whitespace-pre-wrap">{x.text}</p>
+  ) : (
+    <p>No text was found.</p>
+  )
+}
+
+/** CO-18 and M-7: machine text used in a dossier assessment. An unconfirmed text is shown with its original first
+ * (confirm it, or keep it marked); the assessment is stored as AI-assisted, "Read by <model>, accepted by <name>". */
+function UseInAssessment({ caseId, x, filename, onSaved }: { caseId: string; x: DerivedText; filename: string | null; onSaved: () => Promise<unknown> }) {
+  const [open, setOpen] = useState(false)
+  const [dossier, setDossier] = useState("")
+  const [category, setCategory] = useState("Statement")
+  const [settled, setSettled] = useState(false)
+  const [done, setDone] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const targets = useCollectTargets(open ? caseId : "")
+  const dossiers = targets.targets.filter((t) => t.kind === "dossier")
+  const needsAnswer = !x.origin?.confirmed
+  if (!open) return <Button size="sm" variant="outline" className="self-start" onClick={() => setOpen(true)}>Use in a dossier assessment</Button>
+  const save = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await acceptDerivedText(caseId, x.id, dossier, category.trim())
+      setDone(r.read_by ?? "Added.")
+      await onSaved()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "The assessment could not be saved.")
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="flex flex-col gap-1 rounded border p-2">
+      {needsAnswer && (
+        <MachineTextPrompt caseId={caseId} onSettled={setSettled}
+          facts={{ total: 1, unconfirmed: 1, items_cap: 1, items: [{ id: x.id, file_uid: x.file_uid, kind: x.kind, filename, words: x.origin?.words ?? x.label }] }} />
+      )}
+      <label className="flex flex-col gap-0.5">Dossier
+        <select className="rounded border p-1" value={dossier} onChange={(e) => setDossier(e.target.value)}>
+          <option value="">Choose a dossier</option>
+          {dossiers.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+        </select>
+      </label>
+      {targets.note && <p className="text-muted-foreground">{targets.note}</p>}
+      <label className="flex flex-col gap-0.5">Assessment category
+        <input className="rounded border p-1" value={category} maxLength={128} onChange={(e) => setCategory(e.target.value)} />
+      </label>
+      <p className="text-muted-foreground">Stored as AI-assisted, with the model that read it and your name.</p>
+      {done ? <p role="status">Added to the dossier: {done}</p> : (
+        <div className="flex gap-1">
+          <Button size="sm" disabled={busy || !dossier || !category.trim() || (needsAnswer && !settled)} onClick={save}>Add to the assessment</Button>
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+        </div>
+      )}
+      {error && <p role="alert">{error}</p>}
+    </div>
+  )
+}
+
 const fmtSeconds = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`
 
 /** Machine-generated text (03 8.3, M-3): asked for here, made by a model on the server, always shown with its
  * label under the original. Nothing is sent anywhere. */
-export function DerivedTexts({ caseId, fileUid, category }: { caseId: string; fileUid: string; category: string | null }) {
+export function DerivedTexts({ caseId, fileUid, category, filename = null }: { caseId: string; fileUid: string; category: string | null; filename?: string | null }) {
   const client = useQueryClient()
   // A file the report left uncategorised may be read either way; its contents decide (05 17.4 point 1).
   const uncategorised = !category || category === "Uncategorized"
@@ -159,7 +261,7 @@ export function DerivedTexts({ caseId, fileUid, category }: { caseId: string; fi
           {kind === "ocr" ? "Read text in this image" : "Transcribe this audio"}
         </Button>
       ))}
-      <p className="text-muted-foreground">Made by a model on this server; nothing is sent anywhere. A person has not checked it.</p>
+      <p className="text-muted-foreground">Made by a model on this server; nothing is sent anywhere. Until a person confirms or corrects it, it is marked as not checked.</p>
       {error && <p role="alert">{error}</p>}
       {items.map((x) => (
         <div key={x.id} className="flex flex-col gap-1 rounded border p-2">
@@ -168,18 +270,27 @@ export function DerivedTexts({ caseId, fileUid, category }: { caseId: string; fi
           {x.state === "failed" && <p role="alert">{x.error}</p>}
           {x.state === "done" && (
             <>
-              <p className="italic text-muted-foreground">{x.label}</p>
+              {x.origin?.words && <p className="font-medium" data-origin={x.origin.state}>{x.origin.words}</p>}
+              {x.corrected_text != null ? (
+                <>
+                  <p className="text-muted-foreground">Corrected text, used in search and quotes:</p>
+                  <p className="whitespace-pre-wrap">{x.corrected_text}</p>
+                  <details open className="text-muted-foreground">
+                    <summary className="cursor-pointer">Machine original, kept as it was read</summary>
+                    <p className="italic">{x.label}</p>
+                    <MachineBody x={x} />
+                  </details>
+                </>
+              ) : (
+                <>
+                  <p className="italic text-muted-foreground">{x.label}</p>
+                  <MachineBody x={x} />
+                </>
+              )}
               {x.provider_words && <p className="text-muted-foreground">{x.provider_words}</p>}
               <MadeBy x={x} />
-              {x.segments.length ? (
-                <ol className="flex flex-col gap-0.5">
-                  {x.segments.map((s, i) => <li key={i}><span className="font-mono text-muted-foreground">{fmtSeconds(s.start)}</span> {s.text}</li>)}
-                </ol>
-              ) : x.text ? (
-                <p className="whitespace-pre-wrap">{x.text}</p>
-              ) : (
-                <p>No text was found.</p>
-              )}
+              <Review caseId={caseId} x={x} onSaved={() => client.invalidateQueries({ queryKey: ["phone-media-derived", caseId, fileUid] })} />
+              {x.text || x.corrected_text ? <UseInAssessment caseId={caseId} x={x} filename={filename} onSaved={() => client.invalidateQueries({ queryKey: ["phone-media-derived", caseId, fileUid] })} /> : null}
             </>
           )}
         </div>
@@ -214,7 +325,7 @@ function Detail({ caseId, fileUid, onClose }: { caseId: string; fileUid: string;
           ) : (
             <p role="status">Loading the file.</p>
           )}
-          {!x.missing && <DerivedTexts caseId={caseId} fileUid={fileUid} category={x.category} />}
+          {!x.missing && <DerivedTexts caseId={caseId} fileUid={fileUid} category={x.category} filename={(x.local_path ?? "").replace(/\\/g, "/").split("/").pop() || null} />}
           <p>{x.verification_words}</p>
           {x.deleted_state && <p>Deleted state: {x.deleted_state}</p>}
           <dl className="grid grid-cols-[auto_1fr] gap-x-2">

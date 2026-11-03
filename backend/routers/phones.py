@@ -55,7 +55,10 @@ def describe_export(body: ExportDescribeBody, db: Session = Depends(get_db),
     from services.phone.exports import jobs
     authorize_case(db, body.case_id, user, ("case", "view"))
     try:
-        return jobs.describe(db.connection(), body.case_id, body.filter)
+        out = jobs.describe(db.connection(), body.case_id, body.filter)
+        # machine text on the attachments in scope: the dialog asks to confirm it or keep it marked (07 5 Media)
+        out["machine_text"] = jobs.describe_machine_text(db.connection(), body.case_id, body.filter)
+        return out
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc.errors()[0].get("msg")))
 
@@ -406,6 +409,77 @@ def phone_media_derive(file_uid: UUID, body: DeriveBody, db: Session = Depends(g
         raise HTTPException(status_code=422, detail=str(exc))
     db.commit()
     return out
+
+
+class CorrectBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    text: str
+    reason: str
+
+
+class ConfirmBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    note: str = ""
+
+
+def _machine_text_call(db, fn):
+    from services.phone import machine_text
+    try:
+        out = fn()
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except machine_text.MachineTextError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    db.commit()
+    return out
+
+
+@router.post("/media/derived/{derived_id}/correct")
+def phone_media_derived_correct(derived_id: UUID, body: CorrectBody, db: Session = Depends(get_db),
+                                user: User = Depends(get_current_db_user)):
+    """A person corrects machine-generated text (07 4.6): the machine text stays and stays visible; the corrected
+    text is the one searched, quoted and exported. One decision in the case ledger per save."""
+    from services.phone import machine_text
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    return _machine_text_call(db, lambda: machine_text.correct(db, case_id=body.case_id, derived_id=derived_id,
+                                                               text=body.text, reason=body.reason, user=user))
+
+
+@router.post("/media/derived/{derived_id}/confirm")
+def phone_media_derived_confirm(derived_id: UUID, body: ConfirmBody, db: Session = Depends(get_db),
+                                user: User = Depends(get_current_db_user)):
+    """A person checked machine-generated text against the original and it stands (07 4.6, M-7)."""
+    from services.phone import machine_text
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    return _machine_text_call(db, lambda: machine_text.confirm(db, case_id=body.case_id, derived_id=derived_id,
+                                                               user=user, note=body.note))
+
+
+class AcceptBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    dossier_id: UUID
+    category: str = Field(min_length=1, max_length=128)
+
+
+@router.post("/media/derived/{derived_id}/accept-into-assessment", status_code=201)
+def phone_media_derived_accept(derived_id: UUID, body: AcceptBody, db: Session = Depends(get_db),
+                               user: User = Depends(get_current_db_user)):
+    """CO-18: accept machine text into a dossier assessment, stored ai_assisted with "Read by <model>, accepted by
+    <name>". The text keeps its own mark until a person confirms it."""
+    from services.dossier_service import DossierNotFound
+    from services.phone import machine_text
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        return _machine_text_call(db, lambda: machine_text.accept_into_assessment(
+            db, case_id=body.case_id, derived_id=derived_id, dossier_id=body.dossier_id, category=body.category,
+            user=user))
+    except DossierNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("/media/{file_uid}/derived")

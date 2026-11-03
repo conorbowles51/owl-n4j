@@ -169,3 +169,5 @@ from postgres.models.phone_identity import PhoneIdentity, PhoneRecordSubject
 __all__ += ["PhoneIdentity", "PhoneRecordSubject"]
 from postgres.models.phone_analysis import PhoneAnalysisResultSubject
 __all__ += ["PhoneAnalysisResultSubject"]
+from postgres.models.phone_derived import PhoneDerivedText
+__all__ += ["PhoneDerivedText"]

@@ -206,6 +206,11 @@ export async function getLinkedIdentities(caseId: string, key: string) {
 export const ExportFactsSchema = z.object({
   total: z.number(), messages: z.number(), calls: z.number(), other: z.number(), unconfirmed: z.number(), phones: z.number(),
   collapsed_copies: z.number(), zone: z.string(), left_out: z.string(), limits: z.array(z.object({ message: z.string() }).passthrough()),
+  /** Machine text on the attachments in scope (07 5 Media, M-7): confirm it or keep it marked before exporting. */
+  machine_text: z.object({
+    total: z.number(), unconfirmed: z.number(), items_cap: z.number(),
+    items: z.array(z.object({ id: z.string(), file_uid: z.string(), kind: z.enum(["ocr", "transcript"]), filename: z.string().nullable(), words: z.string().nullable() })),
+  }).optional(),
 })
 export const ExportStateSchema = z.object({
   export_id: z.string(), format: z.string(), source: z.string(), state: z.enum(["queued", "rendering", "done", "failed"]), progress: z.number(),
@@ -357,6 +362,19 @@ export interface DerivedText {
   model_id?: string | null; weights_sha256?: string | null; input_sha256?: string | null
   parameters?: Record<string, unknown> | null; provider?: string | null; provider_words?: string | null
   language?: string | null; duration_seconds?: number | null; sniffed_container?: string | null
+  /** A person's correction or confirmation (07 4.6). The machine text stays in `text` and stays shown. */
+  corrected_text?: string | null; correction_reason?: string | null; corrected_by?: string | null; corrected_at?: string | null
+  confirmed_by?: string | null; confirmed_at?: string | null; effective_text?: string | null
+  origin?: { state: "pending" | "machine" | "confirmed" | "corrected"; words: string | null; confirmed: boolean }
+}
+export async function correctDerivedText(caseId: string, derivedId: string, text: string, reason: string) {
+  return fetchAPI<{ id: string; decision_id: string }>(`/api/phones/media/derived/${encodeURIComponent(derivedId)}/correct`, { method: "POST", body: { case_id: caseId, text, reason } })
+}
+export async function acceptDerivedText(caseId: string, derivedId: string, dossierId: string, category: string) {
+  return fetchAPI<{ id: string; read_by: string | null }>(`/api/phones/media/derived/${encodeURIComponent(derivedId)}/accept-into-assessment`, { method: "POST", body: { case_id: caseId, dossier_id: dossierId, category } })
+}
+export async function confirmDerivedText(caseId: string, derivedId: string, note = "") {
+  return fetchAPI<{ id: string; decision_id: string }>(`/api/phones/media/derived/${encodeURIComponent(derivedId)}/confirm`, { method: "POST", body: { case_id: caseId, note } })
 }
 export async function getDerivedTexts(caseId: string, fileUid: string) {
   return fetchAPI<{ file_uid: string; items: DerivedText[] }>(`/api/phones/media/${encodeURIComponent(fileUid)}/derived?case_id=${encodeURIComponent(caseId)}`)

@@ -152,6 +152,19 @@ def _serialize_link(item: DossierLink) -> dict[str, Any]:
     }
 
 
+def _read_by(db: Session, item: DossierAssessment) -> str | None:
+    """CO-18: "Read by <model>, accepted by <name>" for an assessment accepted from machine text."""
+    if not getattr(item, "derived_text_id", None):
+        return None
+    from postgres.models.phone_derived import PhoneDerivedText
+    from postgres.models.user import User as _User
+    d = db.get(PhoneDerivedText, item.derived_text_id)
+    who = db.get(_User, item.author_user_id) if item.author_user_id else None
+    model = " ".join(x for x in ((d.model if d else None), (d.model_version if d else None)) if x) or "a model"
+    return "Read by %s, accepted by %s" % (model, (getattr(who, "name", None) or getattr(who, "email", None)
+                                                  or "a person"))
+
+
 def _serialize_assessment(db: Session, item: DossierAssessment) -> dict[str, Any]:
     links = db.scalars(select(DossierAssessmentLink).where(DossierAssessmentLink.assessment_id == item.id).order_by(DossierAssessmentLink.created_at)).all()
     return {
@@ -162,6 +175,8 @@ def _serialize_assessment(db: Session, item: DossierAssessment) -> dict[str, Any
         "legacy_label": item.legacy_label,
         "provenance_type": item.provenance_type,
         "generated_output_id": str(item.generated_output_id) if item.generated_output_id else None,
+        "derived_text_id": str(item.derived_text_id) if getattr(item, "derived_text_id", None) else None,
+        "read_by": _read_by(db, item),
         "created_at": _dt(item.created_at), "updated_at": _dt(item.updated_at),
         "supporting_links": [
             {"id": str(link.id), "target_type": link.target_type, "target_id": link.target_id,
@@ -851,6 +866,7 @@ def create_assessment(
         assessment_date=data.get("assessment_date"), author_user_id=user.id, updated_by_user_id=user.id,
         provenance_type=_text(data.get("provenance_type")) or "investigator",
         generated_output_id=data.get("generated_output_id"),
+        derived_text_id=data.get("derived_text_id"),
     )
     db.add(assessment); db.flush()
     for raw in data.get("supporting_links") or []:

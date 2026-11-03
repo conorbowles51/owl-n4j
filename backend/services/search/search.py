@@ -283,7 +283,9 @@ def _page(locations, at):
 # ---- machine-generated text (OCR and transcripts) -----------------------------------------------------------------
 
 def _machine_sql(exact):
-    cond = "position(:qe in lower(d.text)) > 0" if exact else "d.text_folded LIKE :like"
+    # a person's correction replaces the machine text in search (07 4.6); the machine text is not searched then
+    cond = ("position(:qe in lower(coalesce(d.corrected_text, d.text))) > 0" if exact
+            else "coalesce(d.corrected_text_folded, d.text_folded) LIKE :like")
     return ("FROM (SELECT DISTINCT ON (d.file_uid, d.kind) d.* FROM phone_derived_texts d WHERE d.case_id = :c AND "
             "d.state = 'done' ORDER BY d.file_uid, d.kind, d.finished_at DESC) d JOIN pv_file f ON f.file_uid = "
             "d.file_uid AND f.case_id = :c WHERE (CAST(:p AS uuid[]) IS NULL OR f.extraction_id = ANY(CAST(:p AS "
@@ -299,14 +301,17 @@ def _machine(conn, case_id, q, exact, phones, offset, limit, ctx):
     p.update({"lim": limit, "off": offset})
     out = []
     for r in conn.execute(text(
-            "SELECT d.file_uid, d.kind, d.text, d.model, d.model_version, d.finished_at, f.extraction_id, "
+            "SELECT d.file_uid, d.kind, coalesce(d.corrected_text, d.text) AS text, d.model, d.model_version, "
+            "d.finished_at, d.state, d.corrected_at, d.corrected_by_name, d.correction_reason, d.confirmed_at, "
+            "d.confirmed_by_name, f.extraction_id, "
             "f.local_path " + _machine_sql(exact) + " ORDER BY d.finished_at DESC, d.file_uid, d.kind LIMIT :lim "
             "OFFSET :off"), p):
         phone = ctx["phones"].get(str(r.extraction_id), "Phone")
         name = (r.local_path or "").replace("\\", "/").rsplit("/", 1)[-1] or "File not named in the report"
         out.append({"kind": "machine_text", "title": "%s %s: %s" % (
                         phone, "text read from" if r.kind == "ocr" else "transcript of", name),
-                    "phone_label": phone, "machine_generated": True,
+                    "phone_label": phone, "machine_generated": r.corrected_at is None,
+                    "origin": derive.origin(dict(r._mapping)),
                     "label": derive.label(r.model, r.model_version, r.finished_at),
                     "snippet": snippet(r.text, q, exact) or {"before": "", "match": "", "after": (r.text or "")[:120]},
                     "record_uid": None, "evidence_file_id": None, "file_uid": str(r.file_uid),

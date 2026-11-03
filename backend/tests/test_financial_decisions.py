@@ -55,6 +55,7 @@ from postgres.models.enums import (
 )
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.phone_extraction import PhoneExtraction, PhoneExtractionContainer
+from postgres.models.phone_derived import PhoneDerivedText
 from postgres.models.phone_identity import PhoneIdentity, PhoneRecordSubject
 from postgres.models.evidence_upload import EvidenceUploadGroup
 from postgres.models.financial import (
@@ -101,6 +102,7 @@ TABLES = [
     PhoneIdentity.__table__,
     PhoneRecordSubject.__table__,
     __import__("postgres.models.phone_analysis", fromlist=["x"]).PhoneAnalysisResultSubject.__table__,
+    PhoneDerivedText.__table__,
 ]
 
 USD = "USD"
@@ -366,9 +368,12 @@ class TheSubject(DecisionTestCase):
         from postgres.models.phone_analysis import PhoneAnalysisResultSubject
         result = PhoneAnalysisResultSubject(id=uuid.uuid4(), case_id=self.case.id, approach="money_signals",
                                             result_key="0" * 64)
-        self.db.add_all([identity, record, result])
+        derived = PhoneDerivedText(id=uuid.uuid4(), case_id=self.case.id, extraction_id=report.id,
+                                   file_uid=uuid.uuid4(), kind="transcript", state="done")
+        self.db.add_all([identity, record, result, derived])
         self.db.flush()
         subjects = {
+            AdjudicationSubject.phone_derived_text: derived,
             AdjudicationSubject.transaction: self.row,
             AdjudicationSubject.statement_period: self.period,
             AdjudicationSubject.source_document: self.document,

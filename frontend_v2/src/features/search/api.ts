@@ -17,6 +17,8 @@ export const HitSchema = z.object({
   file_uid: z.string().optional(),
   machine_generated: z.boolean().optional(),
   label: z.string().optional(),
+  /** Machine text's one origin mark (07 4.6): machine-generated and not yet confirmed, confirmed, or corrected. */
+  origin: z.object({ state: z.string(), words: z.string().nullable(), confirmed: z.boolean() }).optional(),
   open: z.object({ screen: z.string(), params: z.record(z.string(), z.unknown()) }),
 })
 export type SearchHit = z.infer<typeof HitSchema>

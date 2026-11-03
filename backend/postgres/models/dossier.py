@@ -74,6 +74,13 @@ class DossierAssessment(Base, TimestampMixin):
         nullable=True,
         index=True,
     )
+    # CO-18: an assessment accepted from machine text (a transcript or text read from an image) names that text
+    derived_text_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("phone_derived_texts.id", ondelete="SET NULL", name="fk_dossier_assessments_derived_text"),
+        nullable=True,
+        index=True,
+    )
 
     dossier = relationship("CaseProfile", foreign_keys=[dossier_id])
     author = relationship("User", foreign_keys=[author_user_id])

@@ -832,9 +832,11 @@ export function DossierDetailSheet({
                               : "Statement comparison"}
                           </Badge>
                           <span className="text-[11px] text-muted-foreground">
-                            {item.provenance_type === "ai_assisted"
-                              ? "AI-assisted · investigator accepted"
-                              : "Investigator recorded"}{" "}
+                            {item.read_by
+                              ? item.read_by
+                              : item.provenance_type === "ai_assisted"
+                                ? "AI-assisted · investigator accepted"
+                                : "Investigator recorded"}{" "}
                             · {formatDate(item.created_at)}
                           </span>
                         </div>
@@ -1088,8 +1090,8 @@ export function DossierDetailSheet({
                         ) : null}
                         {item.provenance_type === "ai_assisted" ? (
                           <Badge variant="info">
-                            <Sparkles className="size-3" /> AI-assisted ·
-                            investigator accepted
+                            <Sparkles className="size-3" />{" "}
+                            {item.read_by ?? "AI-assisted · investigator accepted"}
                           </Badge>
                         ) : null}
                         <span className="ml-auto text-[10px] text-muted-foreground">

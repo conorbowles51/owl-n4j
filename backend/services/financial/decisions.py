@@ -67,6 +67,7 @@ from postgres.models.evidence import EvidenceFile
 from postgres.models.phone_extraction import PhoneExtraction
 from postgres.models.phone_identity import PhoneIdentity, PhoneRecordSubject
 from postgres.models.phone_analysis import PhoneAnalysisResultSubject
+from postgres.models.phone_derived import PhoneDerivedText
 from postgres.models.financial import (
     FinancialAccount,
     AdjudicationEvent,
@@ -111,6 +112,7 @@ _SUBJECT_MODELS: dict[AdjudicationSubject, type] = {
     AdjudicationSubject.phone_identity: PhoneIdentity,
     AdjudicationSubject.phone_record: PhoneRecordSubject,
     AdjudicationSubject.phone_analysis_result: PhoneAnalysisResultSubject,
+    AdjudicationSubject.phone_derived_text: PhoneDerivedText,
 }
 
 # Every member of the vocabulary must be reachable, or a decision that the

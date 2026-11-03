@@ -136,6 +136,8 @@ class AdjudicationSubject(str, Enum):
     phone_record = "phone_record"
     # 05 section 3.7: a result of a phone analysis, keyed on its result_key so a decision carries across reruns.
     phone_analysis_result = "phone_analysis_result"
+    # 03 8.3: a machine-generated text (a transcript or text read from an image) a person corrects or confirms.
+    phone_derived_text = "phone_derived_text"
 
 
 class AdjudicationReasonKind(str, Enum):
@@ -279,6 +281,11 @@ class AdjudicationDecision(str, Enum):
     # changes no computed outcome (decision 11); withdrawing the mark is its reversal.
     dispute_check_item = "dispute_check_item"
     withdraw_check_item_dispute = "withdraw_check_item_dispute"
+    # 03 8.3, 07 4.6: machine text corrected (typed reason; the machine text stays beside it, only the correction is
+    # searched) or confirmed (standard reason built from what was shown). A correction is reversed by another
+    # correction; a confirmation by a correction.
+    correct_machine_text = "correct_machine_text"
+    confirm_machine_text = "confirm_machine_text"
 
 
 class IngestionRunStatus(str, Enum):

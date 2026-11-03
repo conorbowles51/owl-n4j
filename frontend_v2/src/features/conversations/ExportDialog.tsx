@@ -4,6 +4,7 @@ import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { createExport, describeExport, downloadExport, failureText, getExport, type StreamFilter } from "@/features/phones/api"
+import { MachineTextPrompt } from "@/features/phones/media/MachineTextPrompt"
 
 const fmt = (n: number) => n.toLocaleString("en-US")
 const plural = (n: number, one: string, many: string) => `${fmt(n)} ${n === 1 ? one : many}`
@@ -20,6 +21,7 @@ export function ExportDialog(props: { caseId: string; filter: StreamFilter; word
   const [exportId, setExportId] = useState<string | null>(null)
   const [format, setFormat] = useState<"pdf" | "rsmf">("pdf")
   const noun = format === "rsmf" ? "RSMF file" : "PDF"
+  const [machineSettled, setMachineSettled] = useState(false)
   const facts = useQuery({ queryKey: ["export-facts", caseId, filter], queryFn: () => describeExport(caseId, filter), enabled: open, retry: false })
   const start = useMutation({
     mutationFn: () => createExport(caseId, filter, { title: title.trim() || words, words }, format),
@@ -78,6 +80,9 @@ export function ExportDialog(props: { caseId: string; filter: StreamFilter; word
                 <input type="radio" name="export-format" checked={format === "rsmf"} onChange={() => { setFormat("rsmf"); setExportId(null) }} /> RSMF for a review platform
               </label>
             </fieldset>
+            {format === "pdf" && f.machine_text && f.machine_text.unconfirmed > 0 && !exportId && (
+              <MachineTextPrompt caseId={caseId} facts={f.machine_text} onSettled={setMachineSettled} />
+            )}
             <label className="flex flex-col gap-0.5 text-xs">
               <span className="font-medium">{format === "pdf" ? "Title on the cover" : "Title"}</span>
               <input className="rounded border bg-background px-2 py-1 text-sm" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
@@ -105,7 +110,7 @@ export function ExportDialog(props: { caseId: string; filter: StreamFilter; word
               Save the {noun}
             </Button>
           ) : (
-            <Button onClick={() => start.mutate()} disabled={!f || start.isPending || !!running}>
+            <Button onClick={() => start.mutate()} disabled={!f || start.isPending || !!running || (format === "pdf" && !exportId && !!f.machine_text?.unconfirmed && !machineSettled)}>
               {job.data?.state === "failed" ? "Try again" : format === "pdf" ? "Export PDF" : "Export RSMF"}
             </Button>
           )}

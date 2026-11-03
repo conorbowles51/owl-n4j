@@ -99,7 +99,8 @@ _PERIOD_BOUNDS_SOURCES = "('printed', 'derived', 'absent')"
 # ledger polymorphic in practice; subject_id has never carried a foreign key.
 _ADJUDICATION_SUBJECTS = (
     "('transaction', 'statement_period', 'source_document', 'account', "
-    "'evidence_file', 'phone_extraction', 'phone_identity', 'phone_record', 'phone_analysis_result')"
+    "'evidence_file', 'phone_extraction', 'phone_identity', 'phone_record', 'phone_analysis_result', "
+    "'phone_derived_text')"
 )
 # Closed for the reason the quarantine reasons are closed: "how many rows did
 # you set aside, and how many did you put back" is answered by a GROUP BY, and
@@ -124,7 +125,8 @@ _ADJUDICATION_DECISIONS = (
     "'apply_phone_zone_to_offsetless', 'allow_phone_external_processing', "
     "'accept_phone_reconciliation_difference', 'set_phone_label', 'confirm_phone_result', 'reject_phone_result', "
     "'confirm_phone_reading', 'correct_phone_reading', 'mark_not_duplicate', "
-    "'attach_transaction_place', 'remove_transaction_place', 'dispute_check_item', 'withdraw_check_item_dispute')"
+    "'attach_transaction_place', 'remove_transaction_place', 'dispute_check_item', 'withdraw_check_item_dispute', "
+    "'correct_machine_text', 'confirm_machine_text')"
 )
 _ADJUDICATION_REASON_KINDS = "('typed', 'standard')"
 _QUARANTINE_REASONS = (

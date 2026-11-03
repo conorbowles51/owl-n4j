@@ -74,6 +74,69 @@ def describe(conn, case_id, filter_body: dict) -> dict:
             "left_out": LEFT_OUT, "limits": streams.limits_for(conn, f), "snapshot": snapshot(conn, f)}
 
 
+# ---- machine-generated text on the attachments in scope (07 5 Media, M-7) -------------------------------------------
+
+_LATEST_DONE = ("SELECT DISTINCT ON (d.file_uid, d.kind) d.* FROM phone_derived_texts d WHERE d.case_id = "
+                "CAST(:c AS uuid) AND d.state = 'done' ORDER BY d.file_uid, d.kind, d.finished_at DESC")
+PROMPT_ITEMS = 50  # the export dialog lists at most this many unconfirmed texts; it states the rest as a count
+
+
+def machine_texts(conn, case_id, file_uids) -> dict:
+    """{file_uid: [machine text with its origin mark]} for the given files: the latest finished text of each kind.
+    The text printed is the corrected text where a person corrected it; the mark says which it is (07 4.6)."""
+    from services.phone import derive
+    uids = sorted({u for u in file_uids if u})
+    if not uids:
+        return {}
+    out = {}
+    for r in conn.execute(text("SELECT * FROM (" + _LATEST_DONE + ") d WHERE d.file_uid = ANY(CAST(:u AS uuid[])) "
+                               "ORDER BY d.file_uid, d.kind"), {"c": str(case_id), "u": uids}):
+        d = dict(r._mapping)
+        mark = derive.origin(d)
+        out.setdefault(str(d["file_uid"]), []).append({
+            "id": str(d["id"]), "kind": d["kind"], "origin": mark,
+            "text": d["corrected_text"] if d.get("corrected_text") is not None else (d["text"] or "")})
+    return out
+
+
+def describe_machine_text(conn, case_id, filter_body: dict) -> dict:
+    """Machine-generated texts on the attachments of the rows an export would print, for the prompt "This transcript
+    is machine-generated. Listen and confirm, or keep it marked" (07 5 Media). Counts are true; the list is capped at
+    ``PROMPT_ITEMS`` and says so."""
+    none = {"total": 0, "unconfirmed": 0, "items": [], "items_cap": PROMPT_ITEMS}
+    if not conn.execute(text("SELECT EXISTS (SELECT 1 FROM phone_derived_texts WHERE case_id = CAST(:c AS uuid) AND "
+                             "state = 'done')"), {"c": str(case_id)}).scalar():
+        return none
+    from services.phone import derive
+    f = _filter(case_id, filter_body)
+    q, _ = streams._query(conn, f)
+    p = dict(q.params, dc=str(case_id))
+    rows = conn.execute(text(
+        "WITH m AS (%s), shown AS (SELECT record_uid FROM m WHERE %s), "
+        "d AS (%s) "
+        "SELECT DISTINCT d.id, d.file_uid, d.kind, d.state, d.model, d.model_version, d.finished_at, d.corrected_at, "
+        "d.corrected_by_name, d.correction_reason, d.confirmed_at, d.confirmed_by_name, f.local_path FROM d "
+        "JOIN pv_attachment_link a ON a.file_uid = d.file_uid LEFT JOIN pv_file f ON f.file_uid = d.file_uid "
+        "LEFT JOIN (SELECT s.record_uid, s.parent_record_uid FROM phone_record_summaries s JOIN "
+        "phone_interpretation_state st ON st.extraction_id = s.extraction_id AND st.generation = s.generation) s "
+        "ON s.record_uid = a.record_uid "
+        "WHERE a.record_uid IN (SELECT record_uid FROM shown) OR s.parent_record_uid IN (SELECT record_uid FROM shown)"
+        % (q.matched_sql(), streams._shown(f), _LATEST_DONE.replace(":c", ":dc"))), p).fetchall()
+    items = []
+    unconfirmed = 0
+    for r in rows:
+        d = dict(r._mapping)
+        mark = derive.origin(d)
+        if mark["confirmed"]:
+            continue
+        unconfirmed += 1
+        if len(items) < PROMPT_ITEMS:
+            items.append({"id": str(d["id"]), "file_uid": str(d["file_uid"]), "kind": d["kind"],
+                          "filename": (d["local_path"] or "").replace("\\", "/").rsplit("/", 1)[-1] or None,
+                          "words": mark["words"]})
+    return {"total": len(rows), "unconfirmed": unconfirmed, "items": items, "items_cap": PROMPT_ITEMS}
+
+
 def create(conn, *, case_id, user_id, fmt, source, filter_body, options) -> dict:
     if fmt not in BUILT_FORMATS:
         raise ExportError("An export is a PDF or an RSMF file.")
@@ -242,6 +305,16 @@ def draw(engine, export_id, claimed=None) -> dict:
                 _progress(engine, export_id, 0.8 * seen / total)
         if seen != total:  # the stated total and the printed rows must agree (E-4); never deliver a mismatch
             raise RuntimeError("export rows %d differ from the index total %d" % (seen, total))
+        # machine text on the attachments prints under each one with its mark (07 5 Media, M-7)
+        texts = machine_texts(conn, e.case_id, [a.get("file_uid") for _, rows in out_days for r in rows
+                                                for a in r.get("attachments") or []])
+        machine = {"total": 0, "unconfirmed": 0}
+        for _, rows in out_days:
+            for r in rows:
+                for a in r.get("attachments") or []:
+                    a["machine_texts"] = texts.get(a.get("file_uid") or "", [])
+                    machine["total"] += len(a["machine_texts"])
+                    machine["unconfirmed"] += sum(1 for t in a["machine_texts"] if not t["origin"]["confirmed"])
         phones = sorted(set(phone_labels(conn, e.case_id).get(p, "") for p in (f.phones or [])) - {""})
     words = (options.get("words") or "").strip()
     contains = [
@@ -255,12 +328,24 @@ def draw(engine, export_id, claimed=None) -> dict:
         "Every row rests on readings confirmed by a person.",
         LEFT_OUT,
     ]
+    fmt = e.format or "pdf"
+    if machine["total"] and fmt == "rsmf":
+        # RSMF carries the original files only; the machine texts are named so their absence is not silent
+        n = machine["total"]
+        contains.insert(-1, "%s machine-generated %s (transcripts or text read from images) %s for these attachments in "
+                            "Loupe; an RSMF file carries the original files only, so %s not in this file." % (
+                                "{:,}".format(n), "text exists" if n == 1 else "texts exist",
+                                "is kept" if n == 1 else "are kept", "it is" if n == 1 else "they are"))
+    elif machine["total"]:
+        n, u = machine["total"], machine["unconfirmed"]
+        contains.insert(-1, "%s machine-generated %s (transcripts or text read from images) %s printed under %s; %s not yet confirmed by a person, and each says so." % (
+                                "{:,}".format(n), "text" if n == 1 else "texts", "is" if n == 1 else "are",
+                                "its attachment" if n == 1 else "their attachments", "{:,}".format(u) + (" is" if u == 1 else " are")))
     if phones:
         contains.insert(1, "Phones: %s." % ", ".join(phones))
     contains += [lim["message"] for lim in facts["limits"]]
     generated = "Generated by %s on %s UTC." % (e.who or "a Loupe user",
                                                 datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"))
-    fmt = e.format or "pdf"
     extra = {}
     if fmt == "rsmf":
         data, extra = _rsmf(engine, e, options, contains + [generated, "Export %s." % export_id], out_days)
@@ -281,7 +366,8 @@ def draw(engine, export_id, claimed=None) -> dict:
     stem = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in (options.get("title") or ""))[:80]
     filename = "%s.%s" % (stem.strip(" _") and stem.strip() or "phone-messages", fmt)
     counts = {"total": total, "messages": facts["messages"], "calls": facts["calls"],
-              "unconfirmed": facts["unconfirmed"], "phones": facts["phones"], "snapshot": snap, **extra}
+              "unconfirmed": facts["unconfirmed"], "phones": facts["phones"], "snapshot": snap,
+              "machine_texts": machine["total"], "machine_texts_unconfirmed": machine["unconfirmed"], **extra}
     with engine.begin() as c:
         done = c.execute(text(
             "UPDATE phone_exports SET state = 'done', progress = 1, counts = CAST(:k AS jsonb), filename = :n, "

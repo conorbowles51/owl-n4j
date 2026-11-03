@@ -218,7 +218,11 @@ export function HitLine({ hit }: { hit: SearchHit }) {
           {s.after}
         </span>
       )}
-      {hit.machine_generated && hit.label && <span className="text-xs italic text-muted-foreground">{hit.label}</span>}
+      {hit.origin?.words ? (
+        <span className="text-xs italic text-muted-foreground">{hit.origin.words}</span>
+      ) : hit.machine_generated && hit.label ? (
+        <span className="text-xs italic text-muted-foreground">{hit.label}</span>
+      ) : null}
     </span>
   )
 }

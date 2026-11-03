@@ -112,6 +112,11 @@ def _row_html(r, missing) -> str:
         parts.append('<div class="badges">Attachment: %s%s</div>' % (
             _e(a.get("filename") or "file not named in the report", missing),
             _e(" (%s)" % a["verification"], missing) if a.get("verification") else ""))
+        for t in a.get("machine_texts") or []:
+            what = "Transcript" if t["kind"] == "transcript" else "Text read from the image"
+            parts.append('<div class="body">%s: %s</div>' % (_e(what, missing), _e(t["text"] or "No text was found.",
+                                                                                 missing)))
+            parts.append('<div class="origin">%s</div>' % _e(t["origin"]["words"] or "", missing))
     flags = [f for f in (r.get("flags") or []) if f != "Mapped by the system, not yet confirmed"]
     if r.get("interpretation_level") == "applied_unconfirmed":
         parts.append('<div class="origin">Mapped by the system, not yet confirmed</div>')

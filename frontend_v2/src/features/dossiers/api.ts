@@ -48,6 +48,9 @@ export interface DossierAssessment {
   legacy_label?: string | null
   provenance_type?: "investigator" | "ai_assisted" | string
   generated_output_id?: string | null
+  /** CO-18: accepted from machine text (a transcript or text read from an image): which text, and the reader. */
+  derived_text_id?: string | null
+  read_by?: string | null
   created_at?: string | null
   updated_at?: string | null
   supporting_links: DossierLink[]
