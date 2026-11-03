@@ -42,6 +42,8 @@ export interface LaneRow {
   collapsible?: boolean
   /** What a hidden row holds, [one, many], for the "hidden" sentence (default device events and sensor readings). */
   hiddenAs?: [string, string]
+  /** What is absent, said instead of a count (07 section 8: a phones-only case's money lane never says "0 items"). */
+  absent?: string
 }
 
 export const SPANS = [
@@ -117,8 +119,12 @@ export function Lanes({ start, end, zone, zoneBasis, rows, span, onSpan, header 
           <div className="mb-1 flex items-baseline justify-between text-sm">
             <span className="font-medium">{row.label}</span>
             <span className="text-xs text-muted-foreground">
-              {(row.total ?? row.marks.length).toLocaleString()} item{(row.total ?? row.marks.length) === 1 ? "" : "s"}
-              {row.note ? ` · ${row.note}` : ""}
+              {row.absent ?? (
+                <>
+                  {(row.total ?? row.marks.length).toLocaleString()} item{(row.total ?? row.marks.length) === 1 ? "" : "s"}
+                  {row.note ? ` · ${row.note}` : ""}
+                </>
+              )}
             </span>
           </div>
           {row.allDay && row.allDay.length > 0 && (

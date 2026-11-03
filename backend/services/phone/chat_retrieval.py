@@ -179,3 +179,43 @@ def windows(conn, case_id, question, *, max_windows=MAX_WINDOWS) -> list:
         if len(out) >= max_windows:
             break
     return out
+
+
+MAX_SELECTED = 50
+
+
+def selected_windows(conn, case_id, phone_context) -> list:
+    """XF-10 (07 section 7.2): "Ask about these messages" sends the open thread, the scope and the selected record ids,
+    never their text. The records are read here, in this case only, each as one chunk citing its record, so the
+    answer is about exactly the records the person chose. More than ``MAX_SELECTED``: the first are read and the
+    chunk list ends with a note saying how many were left out."""
+    if not isinstance(phone_context, dict):
+        return []
+    import uuid as _uuid
+    from services.phone import records
+    ids = []
+    for v in phone_context.get("record_ids") or []:
+        try:
+            u = str(_uuid.UUID(str(v).replace("rec://", "")))
+        except ValueError:
+            continue
+        if u not in ids:
+            ids.append(u)
+    out = []
+    for uid in ids[:MAX_SELECTED]:
+        try:
+            d = records.record_detail(conn, case_id, uid)
+        except records.NotFound:
+            continue  # not in this case: never read, never cited
+        label = (d.get("extraction") or {}).get("label") or "phone"
+        out.append({
+            "id": "phone-selected:%s" % uid, "text": "%s [rec://%s]" % (records.record_text(d), uid), "distance": 0.0,
+            "metadata": {"case_id": str(case_id), "doc_name": "Phone %s record" % label,
+                         "filename": "Phone %s record %s" % (label, uid[:8]), "source_kind": "phone_record",
+                         "record_uid": uid, "url": "rec://%s" % uid, "selected": True},
+        })
+    if len(ids) > MAX_SELECTED and out:
+        out[-1]["metadata"]["selection_note"] = (
+            "The first %d of %d selected records were read; %d were left out." % (MAX_SELECTED, len(ids),
+                                                                                 len(ids) - MAX_SELECTED))
+    return out

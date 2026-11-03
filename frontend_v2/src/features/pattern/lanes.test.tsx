@@ -70,13 +70,14 @@ describe("the shared Lanes component (04 section 8.6, 07 J-5)", () => {
     expect(swatch("No continuous recording; records this hour").className).not.toEqual(swatch("No data").className)
   })
 
-  it("is one component: defined once, used by the Timeline window, the Day view and the phone lens (03 T-1)", () => {
+  it("is one component: defined once, used by the Timeline window, the Day view, the phone lens and a Timeline period's phones (03 T-1, 07 XF-4)", () => {
     const defining = Object.entries(sources).filter(([, src]) => /export function Lanes\(/.test(src)).map(([p]) => p)
     expect(defining).toEqual(["/src/features/pattern/components/Lanes.tsx"])
     const users = Object.entries(sources).filter(([, src]) => /<Lanes[\s>]/.test(src)).map(([p]) => p).sort()
     expect(users).toEqual([
       "/src/features/pattern/components/PatternsPage.tsx",
       "/src/features/pattern/components/WindowPanel.tsx",
+      "/src/features/timeline/lens/PeriodPhones.tsx",
       "/src/features/timeline/lens/PhoneLens.tsx",
     ])
     expect(sources["/src/features/timeline/components/TimelinePage.tsx"]).toContain("TimelineWindowBar")

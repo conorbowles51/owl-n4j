@@ -39,6 +39,7 @@ import { useQuery } from "@tanstack/react-query"
 import { getPhones } from "@/features/phones/api"
 import { useCase } from "@/features/cases/hooks/use-cases"
 import { PhoneLens, PhoneLensToggle, usePhoneLens } from "../lens/PhoneLens"
+import { PeriodPhones } from "../lens/PeriodPhones"
 import { UndatedEvents } from "./UndatedEvents"
 import { SignificantEmptyState } from "@/features/significant/components/SignificantEmptyState"
 
@@ -313,7 +314,13 @@ export function TimelinePage() {
 
   // The window around a moment (07 J-5): device lanes and the Case events lane, drawn by the shared Lanes component.
   const windowEvents = events.map(toWindowEvent)
-  const windowBar = caseId ? <TimelineWindowBar caseId={caseId} events={windowEvents} selectedKey={selectedEventKey ?? requestedKey} /> : null
+  // XF-4: a period chosen on the Timeline opens what the phones did in it (shown when a from and to date are set)
+  const windowBar = caseId ? (
+    <>
+      <TimelineWindowBar caseId={caseId} events={windowEvents} selectedKey={selectedEventKey ?? requestedKey} />
+      {phoneCount > 0 && <PeriodPhones caseId={caseId} from={dateRange.start} to={dateRange.end} />}
+    </>
+  ) : null
 
   if (events.length === 0) {
     if (caseId && phoneCount > 0 && caseLayer !== "significant") {

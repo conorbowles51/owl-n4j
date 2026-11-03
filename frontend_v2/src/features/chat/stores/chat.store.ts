@@ -10,6 +10,17 @@ import type {
 
 type ResultGraphMode = "cumulative" | "last"
 
+/** XF-10 (07 section 7.2): what "Ask about these messages" hands the chat. Ids, the thread and the scope only;
+ * the server reads the records' text itself, in this case. */
+export interface PhoneChatContext {
+  caseId: string
+  thread: string | null
+  thread_title: string | null
+  scope_words: string
+  scope_total: number | null
+  record_ids: string[]
+}
+
 interface ChatStore {
   // Conversations
   activeCaseId: string | null
@@ -24,6 +35,10 @@ interface ChatStore {
   cumulativeGraph: ResultGraph
   lastResponseGraph: ResultGraph
   selectedResultNodeKey: string | null
+
+  // XF-10: phone messages the next question is about
+  phoneContext: PhoneChatContext | null
+  setPhoneContext: (ctx: PhoneChatContext | null) => void
 
   // UI
   conversationPanelOpen: boolean
@@ -137,5 +152,7 @@ export const useChatStore = create<ChatStore>((set) => ({
 
   // UI actions
   setConversationPanelOpen: (open) => set({ conversationPanelOpen: open }),
+  phoneContext: null,
+  setPhoneContext: (ctx) => set({ phoneContext: ctx }),
   setResultGraphPanelOpen: (open) => set({ resultGraphPanelOpen: open }),
 }))

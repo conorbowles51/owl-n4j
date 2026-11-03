@@ -6,7 +6,7 @@ and the readings queue (02 sections 6.8, 6.10): anyone who can view the case; de
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal, Optional
 from uuid import UUID
 
@@ -183,6 +183,21 @@ def crossing_person(case_id: UUID = Query(...), dossier_id: Optional[UUID] = Que
         return crossings.person_activity(db.connection(), case_id, dossier_id=dossier_id, entity_key=entity_key)
     except crossings.NotInCase as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/crossings/period")
+def crossing_period(case_id: UUID = Query(...), from_day: date = Query(..., alias="from"),
+                    to_day: date = Query(..., alias="to"), db: Session = Depends(get_db),
+                    user: User = Depends(get_current_db_user)):
+    """XF-4: what the phones did in a Timeline period, per phone, equal to the lens lanes and Conversations."""
+    from services.phone import crossings
+    authorize_case(db, case_id, user, ("case", "view"))
+    if (to_day - from_day).days > 3700:
+        raise HTTPException(status_code=422, detail="Choose a period of ten years or less.")
+    try:
+        return crossings.period_activity(db.connection(), case_id, from_day, to_day)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("/crossings/counterparty-suggestions")

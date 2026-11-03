@@ -167,3 +167,21 @@ def test_sa3_sa8_phones_only_says_what_is_absent_and_a_ledger_added_later_lights
         assert out["state"] == "suggested" and out["payment_total"] == 1
         assert db.execute(text("SELECT generation FROM phone_interpretation_state WHERE case_id = :c"),
                           {"c": case}).scalar() == gen_before
+
+
+def test_xf4_a_timeline_period_per_phone_equals_the_lens_lanes_and_conversations(world):
+    from services.phone import timeline_lens as TL
+    with Session(world["engine"]) as db:
+        conn = db.connection()
+        out = X.period_activity(conn, world["case"], date(2023, 3, 13), date(2023, 3, 15))
+        assert out["total"] == 5 and len(out["phones"]) == 1      # the 17th is outside; Ben's 14th is inside
+        p = out["phones"][0]
+        q = parse_qs(urlparse(p["conversations_href"]).query)
+        assert q == {"phones": [p["extraction_id"]], "from": ["2023-03-13"], "to": ["2023-03-15"]}
+        f, again = X.conversations_scope(world["case"], [], date(2023, 3, 13), date(2023, 3, 15), out["zone"],
+                                         phones=[p["extraction_id"]])
+        assert again == p["conversations_href"] and X.count(conn, f) == p["count"] == 5
+        lens = TL.index(conn, TL.TimelineLensFilter.model_validate(out["lens_filter"]))
+        assert {l["key"]: l["count"] for l in lens["lanes"]} == {p["extraction_id"]: 5}
+        with pytest.raises(ValueError):
+            X.period_activity(conn, world["case"], date(2023, 3, 15), date(2023, 3, 13))

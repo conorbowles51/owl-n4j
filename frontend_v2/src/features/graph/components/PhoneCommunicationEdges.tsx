@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { getLinkEdges } from "@/features/phones/api"
+import { useFinancialPresence } from "@/features/phones/financial-presence"
 import type { GraphEdge, GraphNode } from "@/types/graph.types"
 import { pairConversationsHref } from "@/features/graph/lib/pair-href"
 
@@ -44,6 +45,7 @@ function PairEdge({ caseId, a, b, aName, bName }: { caseId: string; a: string; b
  */
 export function PhoneCommunicationEdges({ caseId, nodes, edges }: { caseId: string; nodes: GraphNode[]; edges: GraphEdge[] }) {
   const [all, setAll] = useState(false)
+  const presence = useFinancialPresence(caseId)
   const pairs = edges.filter((e) => e.type === "COMMUNICATED" && e.source.startsWith(PREFIX) && e.target.startsWith(PREFIX))
   if (!pairs.length) return null
   const name = new Map(nodes.map((n) => [n.key, n.label]))
@@ -51,6 +53,10 @@ export function PhoneCommunicationEdges({ caseId, nodes, edges }: { caseId: stri
   return (
     <section aria-label="Messages and calls between people" className="border-b border-border bg-card px-4 py-2">
       <h2 className="text-xs font-medium">Messages and calls between people on the phones ({fmt(pairs.length)} {pairs.length === 1 ? "pair" : "pairs"})</h2>
+      {presence.data && !presence.data.has_financial_evidence && presence.data.phone_sentence && (
+        // 07 section 8, SA-3 and SA-4: the edges carry no money words; the absence is said once
+        <p className="text-xs text-muted-foreground">{presence.data.phone_sentence}</p>
+      )}
       <ul className="mt-1 flex flex-wrap gap-1.5">
         {shown.map((e) => {
           const a = e.source.slice(PREFIX.length)

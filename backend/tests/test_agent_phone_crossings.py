@@ -198,3 +198,22 @@ def test_co18_an_accepted_agent_answer_is_ai_assisted_names_its_model_and_links_
             accept.accept_answer_into_assessment(db, case_id=world["other"], message_id=msg_id,
                                                  dossier_id=world["foreign"], category="Contact", user=user)
         db.rollback()
+
+
+def test_xf10_ask_about_these_messages_reads_only_the_chosen_records_of_this_case_by_id(world):
+    from services.phone import chat_retrieval
+    from services.rag_service import RAGService
+    chosen = [world["evs"][0]["record_uid"], "rec://%s" % world["evs"][2]["record_uid"], str(world["other_rec"])]
+    ctx = {"thread": "t1", "scope_words": "Maria Lopez, 13 to 14 March 2023", "scope_total": 3, "record_ids": chosen}
+    with world["engine"].connect() as c:
+        got = chat_retrieval.selected_windows(c, world["case"], ctx)
+    assert [g["metadata"]["record_uid"] for g in got] == [world["evs"][0]["record_uid"], world["evs"][2]["record_uid"]]
+    assert "the day before the payment" in got[0]["text"] and got[0]["text"].endswith("[rec://%s]" % chosen[0])
+    assert all("other case only" not in g["text"] for g in got)          # another case's record is never read
+    block = RAGService._format_view_context({"label": "Conversations", "phone": ctx})
+    assert "Scope: Maria Lopez, 13 to 14 March 2023" in block and "3 selected records of 3 in the scope" in block
+    many = {"record_ids": [str(uuid.uuid4()) for _ in range(60)] + [world["evs"][0]["record_uid"]]}
+    with world["engine"].connect() as c:
+        assert chat_retrieval.selected_windows(c, world["case"], many) == []  # the 51st is past the cap: not read
+    assert "Only the first 50 selected records are read with this question; 11 were left out." in \
+        RAGService._format_view_context({"phone": many})

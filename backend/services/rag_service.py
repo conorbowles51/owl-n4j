@@ -1146,6 +1146,23 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             for item in filters[:20]:
                 lines.append(f"- {clean(item)}")
 
+        phone = view_context.get("phone")
+        if isinstance(phone, dict) and phone:
+            # XF-10: what was open in Conversations; the chosen records themselves are read as cited passages
+            lines.append("Phone messages the question is about:")
+            if phone.get("scope_words"):
+                lines.append(f"- Scope: {clean(phone['scope_words'], 400)}")
+            if phone.get("thread_title") or phone.get("thread"):
+                lines.append(f"- Open conversation: {clean(phone.get('thread_title') or phone.get('thread'), 200)}")
+            n = len(phone.get("record_ids") or [])
+            total = phone.get("scope_total")
+            lines.append(f"- {n} selected record{'s' if n != 1 else ''}"
+                         + (f" of {total} in the scope" if total is not None else "")
+                         + "; they appear below as passages citing rec:// links.")
+            if n > 50:  # chat_retrieval.MAX_SELECTED
+                lines.append(f"- Only the first 50 selected records are read with this question; {n - 50} were left "
+                             "out. Say so in the answer.")
+
         selections = view_context.get("selections") or view_context.get("selected")
         if isinstance(selections, dict) and selections:
             lines.append("Selected items:")
@@ -1903,6 +1920,9 @@ Only include candidates with score >= 5."""
             # Phone text is not embedded (02 section 9.8): it is found by the folded search, read in full.
             phone_windows = self._phone_windows(question, case_id, debug_log)
             chunk_results = list(chunk_results) + phone_windows
+        if case_id and isinstance(view_context, dict) and isinstance(view_context.get("phone"), dict):
+            # XF-10: the records the person chose in Conversations, read here by id (the request holds no text)
+            chunk_results = self._selected_phone_records(case_id, view_context["phone"], debug_log) + list(chunk_results)
         chunk_search_info = debug_log.get("chunk_search") or {}
         doc_scoped_count = sum(1 for c in chunk_results if c.get("_doc_scoped"))
         _add_stage(
@@ -2348,6 +2368,22 @@ Only include candidates with score >= 5."""
     # =====================
     # Source helpers
     # =====================
+
+    def _selected_phone_records(self, case_id: str, phone_context: Dict[str, Any],
+                                debug_log: Optional[Dict] = None) -> List[Dict[str, Any]]:
+        """The phone records chosen with "Ask about these messages" (07 XF-10), read in this case by id."""
+        try:
+            from postgres.session import _get_engine
+            from services.phone import chat_retrieval
+            with _get_engine().connect() as conn:
+                found = chat_retrieval.selected_windows(conn, case_id, phone_context)
+        except Exception as exc:
+            if debug_log is not None:
+                debug_log["phone_selected"] = {"error": str(exc)[:300]}
+            return []
+        if debug_log is not None:
+            debug_log["phone_selected"] = {"asked": len(phone_context.get("record_ids") or []), "read": len(found)}
+        return found
 
     def _phone_windows(self, question: str, case_id: str, debug_log: Optional[Dict] = None) -> List[Dict[str, Any]]:
         """Up to 8 phone message windows found lexically for the question's terms (02 section 9.8)."""

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { useFinancialPresence } from "@/features/phones/financial-presence"
 import { Link, useParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
@@ -170,6 +171,7 @@ export default function MoneySignalsPage() {
   const [kind, setKind] = useState<string>("money_reading")
   const [strength, setStrength] = useState("")
   const [offset, setOffset] = useState(0)
+  const presence = useFinancialPresence(caseId)
   const runs = useQuery({ queryKey: ["money-runs", caseId], queryFn: () => moneyAPI.runs(caseId), enabled: !!caseId })
   const coverage = useQuery({ queryKey: ["money-coverage", caseId], queryFn: () => moneyAPI.coverage(caseId), enabled: !!caseId })
   useEffect(() => {
@@ -200,6 +202,10 @@ export default function MoneySignalsPage() {
       <p data-part="what">{WHAT_IT_DOES}</p>
       <div data-part="run"><RunControl caseId={caseId} run={run} onRequested={setRun} /></div>
       <p data-part="coverage" className="text-sm">{done?.coverage?.sentence || coverage.data?.sentence}</p>
+      {presence.data && !presence.data.has_financial_evidence && presence.data.phone_sentence && (
+        // 07 section 8, SA-3: the readings are still read from the phones; there is no ledger to compare them with
+        <p data-part="no-ledger" className="text-sm">{presence.data.phone_sentence} The readings below are not compared with any payment.</p>
+      )}
       <section data-part="results" aria-label="Results" className="space-y-2">
         <div className="flex flex-wrap gap-2" role="tablist">
           {KIND_TABS.map((t) => (

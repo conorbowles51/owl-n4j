@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { getLinkedIdentities, getParticipants, streamIndex, type StreamFilter } from "@/features/phones/api"
 import type { ConversationView } from "@/features/phones/lib/filter-url"
+import { CounterpartySuggestions } from "./CounterpartySuggestions"
 
 const fmt = (n: number) => n.toLocaleString("en-US")
 const plural = (n: number, one: string, many: string) => `${fmt(n)} ${n === 1 ? one : many}`
@@ -110,6 +111,7 @@ export function PersonScope(props: {
                 : `Include ${plural(others, "more number or account", "more numbers and accounts")}${more !== null ? ` (+${plural(more, "message", "messages")})` : ""}.`}
         </span>
       </div>
+      {key && <CounterpartySuggestions caseId={caseId} identityKey={key} />}
       {between && counts && (
         <p role="status">
           {plural(counts.messages ?? 0, "message", "messages")}

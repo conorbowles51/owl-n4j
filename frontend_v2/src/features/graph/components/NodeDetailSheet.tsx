@@ -55,6 +55,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useCreateDossier } from "@/features/dossiers"
+import { NodePhoneConversations } from "./NodePhoneConversations"
 import { useCase } from "@/features/cases/hooks/use-cases"
 import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
 
@@ -423,6 +424,7 @@ export function NodeDetailSheet({
       </div>
 
       <ScrollArea className="flex-1 min-w-0 overflow-hidden">
+        <NodePhoneConversations caseId={caseId} entityKey={detail.key} />
         {managedIdentity && (
           <section className="m-3 rounded border p-3 text-sm space-y-2">
             <p>

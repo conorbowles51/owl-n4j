@@ -62,6 +62,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { AgentCitationProvider, AgentMarkdown } from "./AgentCitations"
 import { AgentArtifactNotes } from "./AgentArtifactNotes"
+import { AcceptAnswerIntoAssessment } from "./AcceptAnswerIntoAssessment"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
 import { downloadProtectedFile } from "@/lib/protected-file"
@@ -1096,6 +1097,7 @@ export function AgentPage() {
                     <MessageBubble
                       key={message.id}
                       message={message}
+                      caseId={caseId}
                       showInvestigationTrail={showInvestigationTrail}
                       onClarificationAnswer={
                         message.id === activeClarificationMessageId && !isLoading
@@ -1197,12 +1199,16 @@ export function AgentPage() {
   )
 }
 
+const SAVED_MESSAGE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 function MessageBubble({
   message,
+  caseId,
   showInvestigationTrail,
   onClarificationAnswer,
 }: {
   message: AgentClientMessage
+  caseId?: string
   showInvestigationTrail: boolean
   onClarificationAnswer?: (answer: string) => void
 }) {
@@ -1257,6 +1263,9 @@ function MessageBubble({
         <div className="mt-1 text-[11px] text-muted-foreground">
           {formatTime(message.createdAt)}
         </div>
+        {caseId && !message.pending && !showClarificationPanel && message.content.trim() && SAVED_MESSAGE_ID.test(message.id) ? (
+          <AcceptAnswerIntoAssessment caseId={caseId} messageId={message.id} />
+        ) : null}
       </div>
     </article>
   )
@@ -2842,7 +2851,16 @@ function MapArtifact({
   exportEnabled: boolean
   onEntitySelect: (key: string) => void
 }) {
+  const { id: caseId } = useParams()
+  const navigate = useNavigate()
   const locations = asArray<Dict>(artifact.data.locations)
+  // XF-12: a phone point carries its rec:// link and opens its record; an entity opens in the graph.
+  const open = (raw: Dict) => {
+    const rec = typeof raw.rec === "string" ? raw.rec.replace(/^rec:\/\//, "") : ""
+    if (rec && caseId) return navigate(`/cases/${encodeURIComponent(caseId)}/records/${encodeURIComponent(rec)}`)
+    const key = entityKeyFromRecord(raw)
+    if (key) onEntitySelect(key)
+  }
   const coords = locations
     .map((location) => ({
       raw: location,
@@ -2860,12 +2878,12 @@ function MapArtifact({
 
   return (
     <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
+      <AgentArtifactNotes artifact={artifact} />
       <div className="relative min-h-[320px] flex-1 overflow-hidden rounded-md border border-border bg-slate-950">
         <div className="absolute inset-0 opacity-30 [background-image:linear-gradient(rgba(255,255,255,.18)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.18)_1px,transparent_1px)] [background-size:32px_32px]" />
         {coords.map((location, index) => {
           const left = ((location.longitude - minLng) / lngSpan) * 86 + 7
           const top = 93 - ((location.latitude - minLat) / latSpan) * 86
-          const key = entityKeyFromRecord(location.raw)
           return (
             <button
               key={valueText(location.raw.key || index)}
@@ -2873,7 +2891,7 @@ function MapArtifact({
               className="absolute size-3 rounded-full bg-amber-400 shadow-[0_0_0_4px_rgba(227,59,76,.22)] outline-none ring-offset-2 ring-offset-slate-950 transition-transform hover:scale-125 focus-visible:ring-2 focus-visible:ring-amber-300"
               style={{ left: `${left}%`, top: `${top}%` }}
               title={valueText(location.raw.name || location.raw.key)}
-              onClick={() => key && onEntitySelect(key)}
+              onClick={() => open(location.raw)}
             />
           )
         })}
@@ -2885,7 +2903,7 @@ function MapArtifact({
             <button
               key={valueText(location.key || index)}
               type="button"
-              onClick={() => key && onEntitySelect(key)}
+              onClick={() => open(location)}
               className={cn(
                 "rounded-md border border-border px-3 py-2 text-left text-xs",
                 key && "hover:border-amber-400/70 hover:bg-amber-50/40 dark:hover:bg-amber-500/10"

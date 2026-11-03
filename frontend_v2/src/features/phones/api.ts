@@ -543,9 +543,92 @@ export interface LinkEdge {
 /** Combined edges between subjects, counted as Conversations counts Between A and B (direct, copies collapsed by
  * default), so an edge's count equals the list it opens. */
 export async function getLinkEdges(caseId: string, subjects: EdgeSubject[], opts: { groupScope?: "direct" | "include_groups"; collapseCopies?: boolean } = {}) {
-  return fetchAPI<{ edges: LinkEdge[] }>("/api/phones/link-analysis/edges", {
+  return fetchAPI<{ edges: LinkEdge[]; financial_records?: boolean; money_absent?: string | null }>("/api/phones/link-analysis/edges", {
     method: "POST",
     body: { case_id: caseId, subjects, group_scope: opts.groupScope ?? "direct", collapse_copies: opts.collapseCopies ?? true },
     read: true,
   })
+}
+
+/** 07 section 8: whether the case holds financial evidence, and the sentence each money part shows when not. */
+export interface FinancialPresence {
+  has_financial_evidence: boolean
+  source_documents: number | null
+  ledger_rows: number
+  phones: number | null
+  phone_sentence: string | null
+  financial_sentence: string | null
+}
+export async function getFinancialPresence(caseId: string) {
+  return fetchAPI<FinancialPresence>(`/api/phones/financial-presence?case_id=${encodeURIComponent(caseId)}`)
+}
+
+export interface CrossingPerson { id: string; name: string }
+export interface PaymentCrossingDay { offset: number; words: string; date: string; count: number; conversations_href: string }
+/** XF-1: phone activity around a payment. */
+export interface PaymentCrossing {
+  transaction_id: string
+  payment_date: string | null
+  state: "linked" | "unlinked" | "no_counterparty" | "no_phones" | "no_date"
+  sentence: string
+  people?: CrossingPerson[]
+  counterparty?: { kind: string; id: string; label: string | null }
+  days: PaymentCrossingDay[]
+  total?: number
+  conversations_href?: string
+  people_href?: string
+  payee_dossier_offer?: boolean
+}
+export async function getPaymentCrossing(caseId: string, transactionId: string) {
+  return fetchAPI<PaymentCrossing>(`/api/phones/crossings/payment/${encodeURIComponent(transactionId)}?case_id=${encodeURIComponent(caseId)}`)
+}
+export async function createPayeeDossier(caseId: string, transactionId: string) {
+  return fetchAPI<{ id: string; display_name: string }>(
+    `/api/phones/crossings/payment/${encodeURIComponent(transactionId)}/payee-dossier?case_id=${encodeURIComponent(caseId)}`,
+    { method: "POST" },
+  )
+}
+/** XF-2: a Graph person to its messages and calls on the phones. */
+export interface PersonCrossing {
+  state: "linked" | "unlinked"
+  people: CrossingPerson[]
+  total: number | null
+  conversations_href?: string
+  sentence: string
+}
+export async function getPersonCrossing(caseId: string, subject: { dossierId?: string; entityKey?: string }) {
+  const q = new URLSearchParams({ case_id: caseId })
+  if (subject.dossierId) q.set("dossier_id", subject.dossierId)
+  if (subject.entityKey) q.set("entity_key", subject.entityKey)
+  return fetchAPI<PersonCrossing>(`/api/phones/crossings/person?${q.toString()}`)
+}
+/** XF-8: payments suggested for a phone contact; never reviewed by this. */
+export interface CounterpartySuggestions {
+  identity_key: string
+  label: string
+  status: string
+  state: "suggested" | "none" | "no_financial_records"
+  sentence: string
+  accounts: { account_id: string; identifier: string; identifier_kind: string; label: string | null }[]
+  payment_total?: number
+  payments?: { id: string; date: string | null; amount_minor: number; currency: string; direction: string; description: string | null; href: string }[]
+  limitation?: string | null
+}
+export async function getCounterpartySuggestions(caseId: string, identityKey: string) {
+  return fetchAPI<CounterpartySuggestions>(
+    `/api/phones/crossings/counterparty-suggestions?case_id=${encodeURIComponent(caseId)}&identity_key=${encodeURIComponent(identityKey)}`,
+  )
+}
+/** XF-4: what the phones did in a Timeline period. */
+export interface PeriodCrossing {
+  from: string
+  to: string
+  zone: string
+  total: number
+  sentence: string
+  phones: { extraction_id: string; label: string; count: number; conversations_href: string }[]
+  lens_filter: StreamFilter & { lens_kinds: string[]; lane_by: string }
+}
+export async function getPeriodCrossing(caseId: string, from: string, to: string) {
+  return fetchAPI<PeriodCrossing>(`/api/phones/crossings/period?case_id=${encodeURIComponent(caseId)}&from=${from}&to=${to}`)
 }

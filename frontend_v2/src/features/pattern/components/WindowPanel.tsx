@@ -7,6 +7,18 @@ import { Lanes, type LaneRow } from "./Lanes"
 import { bandsFromHours, splitPassive } from "../lanes-lib"
 import { errorWords, keyDateWords } from "../lanes-lib"
 import { KeepResult } from "./CollectBar"
+import { useFinancialPresence } from "@/features/phones/financial-presence"
+
+/** An amount in the currency's own minor unit (JPY has none), never a fixed hundredth. */
+function minorWords(minor: number, currency: string) {
+  let digits = 2
+  try {
+    digits = new Intl.NumberFormat("en-US", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2
+  } catch {
+    /* an unknown code keeps two places */
+  }
+  return `${(minor / 10 ** digits).toFixed(digits)} ${currency}`
+}
 
 /**
  * The window around a moment (07 J-5; 04 section 8.6): one lane per phone with its availability, a Case events lane
@@ -36,6 +48,7 @@ export function WindowPanel({ caseId, at, day, caseEvents, zone = "case", onClos
   onClose?: () => void
 }) {
   const [span, setSpan] = useState("1h")
+  const presence = useFinancialPresence(caseId)
   const q = useQuery({ queryKey: ["pattern-window", caseId, day ? `day:${day}` : at, day ? "day" : span, zone],
     queryFn: () => day ? patternAPI.windowDay(caseId, day, zone) : patternAPI.window(caseId, at, span, zone) })
   let rows: LaneRow[] = []
@@ -75,7 +88,8 @@ export function WindowPanel({ caseId, at, day, caseEvents, zone = "case", onClos
     rows.push({ id: "case", label: "Case events", total: inWindow.length,
       marks: inWindow.map((e) => ({ key: e.key, at: e.at as string, label: `${e.type} · ${e.name}`, tone: "case" })) })
     rows.push({ id: "money", label: "Money", total: q.data.money_total, marks: [],
-      allDay: q.data.money.map((m) => ({ key: m.transaction_id, label: `${(m.amount_minor / 100).toFixed(2)} ${m.currency}${m.counterparty ? ` · ${m.counterparty}` : ""}`, detail: m.date_words })) })
+      absent: presence.data && !presence.data.has_financial_evidence ? presence.data.phone_sentence ?? undefined : undefined,
+      allDay: q.data.money.map((m) => ({ key: m.transaction_id, label: `${minorWords(m.amount_minor, m.currency)}${m.counterparty ? ` · ${m.counterparty}` : ""}`, detail: m.date_words })) })
   }
   return (
     <section aria-label="Window around this moment" className="rounded border bg-card p-3">

@@ -38,6 +38,8 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
 
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
+  const phoneContext = useChatStore((s) => s.phoneContext)
+  const setPhoneContext = useChatStore((s) => s.setPhoneContext)
   const { data: conversations = [] } = useConversations(caseId)
   const { messages, isLoading, sendMessage, startNewConversation } = useChat(caseId)
 
@@ -85,6 +87,11 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
       selections: {
         entity_keys: contextMode === "selection" ? Array.from(selectedNodeKeys) : [],
       },
+      // XF-10: ids, thread and scope only; never the messages' text
+      ...(phoneContext && phoneContext.caseId === caseId
+        ? { phone: { thread: phoneContext.thread, thread_title: phoneContext.thread_title, scope_words: phoneContext.scope_words,
+            scope_total: phoneContext.scope_total, record_ids: phoneContext.record_ids } }
+        : {}),
     }
     void sendMessage(
       trimmed,
@@ -231,6 +238,18 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
 
       {/* Input */}
       <div className="border-t p-3">
+        {phoneContext && phoneContext.caseId === caseId && (
+          <div role="status" data-testid="chat-phone-context" className="mb-2 flex items-start gap-2 rounded border bg-muted/40 px-2 py-1 text-xs">
+            <span className="min-w-0 flex-1">
+              Asking about {phoneContext.record_ids.length
+                ? `${phoneContext.record_ids.length.toLocaleString("en-US")} selected ${phoneContext.record_ids.length === 1 ? "message" : "messages"}`
+                : phoneContext.thread_title ? `the conversation ${phoneContext.thread_title}` : "these messages"}
+              {phoneContext.scope_words ? ` (${phoneContext.scope_words})` : ""}.
+              {phoneContext.record_ids.length > 50 ? " Only the first 50 are read with the question." : ""}
+            </span>
+            <button type="button" className="underline" onClick={() => setPhoneContext(null)}>Clear</button>
+          </div>
+        )}
         <div className="flex items-end gap-2">
           <Textarea
             ref={textareaRef}

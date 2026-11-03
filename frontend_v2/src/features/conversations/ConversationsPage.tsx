@@ -36,7 +36,9 @@ import { labelText } from "@/features/phones/lib/labels"
 import type { StreamRow, ThreadRow } from "@/features/phones/schemas"
 import { AddToMenu } from "@/features/phones/ui/AddToMenu"
 import { fmt } from "@/features/phones/ui/ResultCount"
-import { EMPTY_SCOPE, ScopeBar, type Scope } from "@/features/phones/ui/ScopeBar"
+import { EMPTY_SCOPE, ScopeBar, scopeWords, type Scope } from "@/features/phones/ui/ScopeBar"
+import { useChatStore } from "@/features/chat/stores/chat.store"
+import { useUIStore } from "@/stores/ui.store"
 import { TimeStrip, type StripDay } from "@/features/phones/ui/TimeStrip"
 
 /**
@@ -223,6 +225,16 @@ export function ConversationsPage() {
     return out
   }, [selection, stream.total, freeze.data])
   // A message found more than once adds each copy as its own record, so the count then names records (review of D).
+  // XF-10: the chat gets the open thread, the scope words and the selected record ids, never the messages' text
+  const askAboutThese = () => {
+    const ids: string[] = []
+    for (const r of selection.rows) if (!ids.includes(r.record_uid)) ids.push(r.record_uid)
+    useChatStore.getState().setPhoneContext({
+      caseId, thread: view.thread, thread_title: current?.title ?? null, scope_words: scopeWords(scope),
+      scope_total: stream.status === "ready" ? stream.total : null, record_ids: ids,
+    })
+    useUIStore.getState().expandGraphPanelTo("chat")
+  }
   const addNoun = selection.all && stream.total > SELECTION_AS_ONE ? "selection" : links.length > selection.rows.length ? "records (messages and their copies)" : "messages"
   const addDisabled = selection.all && stream.total > SELECTION_AS_ONE && freeze.isError ? failureText(freeze.error, "The whole result could not be prepared for adding.") : undefined
   const onAdded = useCallback(() => void refreshUsedIn(), [refreshUsedIn])
@@ -551,6 +563,9 @@ export function ConversationsPage() {
               )}
               <Button size="sm" variant="outline" disabled={!focused?.time.instant} onClick={() => focused && setAround(focused)}>
                 Around this time <kbd className="ml-1 text-xs text-muted-foreground">a</kbd>
+              </Button>
+              <Button size="sm" variant="outline" disabled={!streamFilter} onClick={askAboutThese}>
+                Ask about these messages
               </Button>
               <AddToMenu
                 caseId={caseId}

@@ -54,12 +54,18 @@ def _day_bounds(d: date, zone: str) -> tuple[datetime, datetime]:
 
 
 def conversations_scope(case_id, keys: list[str], from_day: date | None = None, to_day: date | None = None,
-                        zone: str = "UTC") -> tuple[dict, str]:
-    """``(stream filter, Conversations href)`` for Involving any of ``keys`` (one person's identities), optionally
-    from one day to another in the case zone, as the page builds them from that URL."""
-    f = {"case_id": str(case_id), "zone": {"mode": "case", "phone": None}, "participants": list(keys),
-         "participant_mode": "any", "names": {"mode": "phone"}}
-    q = {"tab": "people", "people": ",".join(keys)}
+                        zone: str = "UTC", phones: list[str] | None = None) -> tuple[dict, str]:
+    """``(stream filter, Conversations href)`` for Involving any of ``keys`` (one person's identities), or for
+    ``phones`` with no people, optionally from one day to another in the case zone, as the page builds them from that
+    URL."""
+    f = {"case_id": str(case_id), "zone": {"mode": "case", "phone": None}, "names": {"mode": "phone"}}
+    q = {}
+    if keys:
+        f.update({"participants": list(keys), "participant_mode": "any"})
+        q.update({"tab": "people", "people": ",".join(keys)})
+    if phones:
+        f["phones"] = list(phones)
+        q["phones"] = ",".join(phones)
     if from_day:
         f["from_instant"] = _day_bounds(from_day, zone)[0].isoformat()
         q["from"] = from_day.isoformat()
@@ -259,3 +265,35 @@ def counterparty_suggestions(session, case_id, identity_key: str) -> dict:
             "sentence": "%s: %s on %d account%s whose reference is %s." % (
                 SUGGESTED, "%s payment%s" % ("{:,}".format(total), "" if total == 1 else "s"), len(accounts),
                 "" if len(accounts) == 1 else "s", row.value_display)}
+
+
+# ---- XF-4 ---------------------------------------------------------------------------------------------------------
+
+LENS_COMM_KINDS = ["messages", "calls", "emails"]
+
+
+def period_activity(conn, case_id, from_day: date, to_day: date) -> dict:
+    """XF-4: what the phones did in a Timeline period: per phone, its messages, calls and emails in the period (the
+    Conversations count for the link, and the lens lane's count for the same kinds), and the lens filter the screen
+    draws the lanes and their "No data" bands with."""
+    from services.phone import records
+    if to_day < from_day:
+        raise ValueError("The period ends before it starts.")
+    zone = _zone(conn, case_id)
+    a, _ = _day_bounds(from_day, zone)
+    _, b = _day_bounds(to_day, zone)
+    phones = []
+    for p in records.phones(conn, case_id):
+        f, href = conversations_scope(case_id, [], from_day, to_day, zone, phones=[p["extraction_id"]])
+        phones.append({"extraction_id": p["extraction_id"], "label": p["label"], "count": count(conn, f),
+                       "conversations_href": href})
+    lens_filter = {"case_id": str(case_id), "zone": {"mode": "case", "phone": None}, "from_instant": a.isoformat(),
+                   "to_instant": b.isoformat(), "include_no_time": False, "lens_kinds": LENS_COMM_KINDS,
+                   "lane_by": "phone"}
+    total = sum(p["count"] for p in phones)
+    return {"from": from_day.isoformat(), "to": to_day.isoformat(), "zone": zone, "phones": phones, "total": total,
+            "lens_filter": lens_filter,
+            "sentence": ("%s message%s, call%s and email%s on %d phone%s from %s to %s (days in %s)." % (
+                "{:,}".format(total), "" if total == 1 else "s", "" if total == 1 else "s", "" if total == 1 else "s",
+                len(phones), "" if len(phones) == 1 else "s", from_day.isoformat(), to_day.isoformat(), zone))
+            if phones else "There are no phones in this case."}

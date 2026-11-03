@@ -1,4 +1,5 @@
 import { OverviewStatementCoverage } from "./OverviewStatementCoverage"
+import { NoFinancialEvidenceNotice } from "./NoFinancialEvidenceNotice"
 import { QUEUE_KEYS } from "../lib/queue-address"
 import { Disclosure } from "./Disclosure"
 import { BatchSavedAccounts } from "./BatchSavedAccounts"
@@ -721,6 +722,7 @@ function FinancialPageContent() {
         </p>
         <FinancialGuide />
       </div>
+      <NoFinancialEvidenceNotice caseId={caseId} />
       {/* "Reset view" sits at the right end of the tab bar, not in a band of its own. */}
       <FinancialResetSlotProvider>
       {/* Drawn once this visit's view is applied, so no other tab opens first. */}

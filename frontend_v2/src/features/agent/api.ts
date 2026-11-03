@@ -122,6 +122,17 @@ export const agentAPI = {
       { method: "POST" },
     ),
 
+  /** CO-18: a person accepts an answer into a dossier assessment (stored AI-assisted, its model named). */
+  acceptIntoAssessment: (caseId: string, messageId: string, dossierId: string, category: string) =>
+    fetchAPI<{
+      id: string
+      read_by: string | null
+      cited_records: { cited: number; linked: number; not_in_case: number; over_limit: number; sentence: string | null }
+    }>(`/api/agent/messages/${encodeURIComponent(messageId)}/accept-into-assessment`, {
+      method: "POST",
+      body: { case_id: caseId, dossier_id: dossierId, category },
+    }),
+
   artifactExportUrl: (artifactId: string, format: AgentArtifactExportFormat = "csv") =>
     `/api/agent/artifacts/${artifactId}/export?format=${format}`,
 }
