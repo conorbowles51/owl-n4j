@@ -127,12 +127,15 @@ class _Other:
         if f.participants:
             keys = streams._person_keys(conn, f.case_id, f.participants) if f.expand_person_identities else \
                 {k: [k] for k in f.participants}
-            sets = [[k for k in keys[p] if k != streams.PHONE_OWNER] for p in f.participants]
+            # the phone's owner takes part in every entry of the phone (it is the owner's phone), so a participant
+            # that is, or is linked to, the owner matches every entry; only the others narrow the entries
+            sets = [[k for k in keys[p] if k != streams.PHONE_OWNER] for p in f.participants
+                    if streams.PHONE_OWNER not in keys[p]]
             if f.participant_mode == "all":
                 for i, s in enumerate(sets):
                     w.append("t.identity_keys && CAST(:pk%d AS text[])" % i)
                     self.p["pk%d" % i] = s
-            else:
+            elif len(sets) == len(f.participants):
                 w.append("t.identity_keys && CAST(:pk AS text[])")
                 self.p["pk"] = sorted({k for s in sets for k in s})
         if f.text.query.strip():

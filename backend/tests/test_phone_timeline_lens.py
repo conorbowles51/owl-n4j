@@ -227,3 +227,23 @@ def test_the_week_bucket_is_accepted_by_the_lanes_route():
     body = LensBucketsBody.model_validate({"filter": {}, "snapshot": "s", "start": "2017-08-29T00:00:00Z",
                                            "end": "2036-12-02T00:00:00Z", "bucket": "week"})
     assert body.bucket == "week"
+
+
+def test_the_owner_as_the_only_participant_keeps_the_phones_other_entries(world):
+    """The phone's owner takes part in every entry of their own phone, so choosing the owner (alone, with another
+    person under "all", or under "any") never hides the location, device and web entries; another person still
+    narrows them to the entries that name that person."""
+    from services.phone import streams, timeline_lens
+    own = streams.PHONE_OWNER
+    every = list(timeline_lens.KIND_WORDS)
+    with world["engine"].connect() as c:
+        unfiltered = timeline_lens.index(c, _f(world, lens_kinds=every))["counts"]["other"]
+        owner_only = timeline_lens.index(c, _f(world, lens_kinds=every, participants=[own]))
+        owner_any = timeline_lens.index(c, _f(world, lens_kinds=every, participants=[own, BEN]))
+        owner_and_ana = timeline_lens.index(c, _f(world, lens_kinds=every, participants=[own, ANA],
+                                                  participant_mode="all"))
+        ana_only = timeline_lens.index(c, _f(world, lens_kinds=every, participants=[ANA]))
+    assert unfiltered == 4  # the location, the device event, the network usage and the visited page
+    assert owner_only["counts"]["other"] == 4 and owner_only["other_filter_applies"]
+    assert owner_any["counts"]["other"] == 4
+    assert owner_and_ana["counts"]["other"] == ana_only["counts"]["other"] == 1  # the location naming Ana
