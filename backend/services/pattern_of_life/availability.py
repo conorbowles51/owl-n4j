@@ -43,6 +43,24 @@ UI_COPY = {"no_data": "No data", "data_no_interaction": "Phone recording, no use
            "after_extraction": "After the extraction", "outside_selection": "Outside what the production selected",
            "not_selected": "Outside what the production selected", "interaction": "In use"}
 NO_SELECTION_STATED = "The production does not state a selection."
+# a no_data hour that still holds records (a notification, a cookie, a received message): no stream establishes the
+# phone was recording through the hour (5.3 step 4), but "No data" over a record would contradict the record shown
+RECORDS_NO_RECORDING_WORDS = "No continuous recording; records this hour"
+
+
+def hours_with_records(conn, extraction_id, start, end) -> set:
+    """The UTC hours in [start, end) holding at least one activity event of the phone, whatever its class."""
+    return {r[0] for r in conn.execute(text(
+        "SELECT DISTINCT date_trunc('hour', instant_utc AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' FROM pol_activity_event "
+        "WHERE extraction_id = :e AND instant_utc >= :a AND instant_utc < :b"),
+        {"e": str(extraction_id), "a": start, "b": end})}
+
+
+def hour_words(state, has_records=False) -> str:
+    """The words of an hour state; a no_data hour holding records never reads "No data"."""
+    if state == "no_data" and has_records:
+        return RECORDS_NO_RECORDING_WORDS
+    return UI_COPY.get(state, state)
 
 
 def extraction_start(conn, extraction_id):

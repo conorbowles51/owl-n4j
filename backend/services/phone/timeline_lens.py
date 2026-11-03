@@ -371,9 +371,12 @@ def _no_data_hours(conn, ext, start, end) -> set:
                                  {"e": ext}).scalar():
             return set()
         states = availability.hour_states(conn, ext, start, end)
+        held = availability.hours_with_records(conn, ext, start, end)
     except Exception:  # noqa: BLE001 (04's tables not built for this phone: no claim either way)
         return set()
-    return {s["hour_utc"] for s in states if s["state"] in ("no_data", "after_extraction", "powered_off")}
+    # an hour holding a record the lens is not showing (a notification while Apps is off) is never "No data"
+    return {s["hour_utc"] for s in states if s["state"] in ("after_extraction", "powered_off")
+            or (s["state"] == "no_data" and s["hour_utc"] not in held)}
 
 
 def buckets(conn, f: TimelineLensFilter, *, snapshot_token, start: datetime, end: datetime,

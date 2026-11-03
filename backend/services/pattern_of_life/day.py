@@ -24,7 +24,7 @@ LANE_WORDS = {"interaction": "Use of the phone", "device_state": "Device state",
               "others": "Others' actions"}
 EVENT_COLUMNS = ("id, extraction_id, record_uid, record_type, time_field, field_path, instant_utc, end_utc, "
                  "time_semantics, activity_class, actor, physical, attribution_flags, strength, source_app, "
-                 "offset_status, class_basis")
+                 "offset_status, class_basis, family")
 
 
 def day_bounds(day, zone):
@@ -48,7 +48,8 @@ def _event_item(ev, labels):
             "strength": ev["strength"], "actor": ev["actor"], "physical": ev["physical"],
             "flags": list(ev["attribution_flags"] or []), "source_app": ev["source_app"],
             "extraction_id": str(ev["extraction_id"]), "phone": labels.get(str(ev["extraction_id"])),
-            "record_uid": str(ev["record_uid"]), "record_type": ev["record_type"], "field_path": ev["field_path"]}
+            "record_uid": str(ev["record_uid"]), "record_type": ev["record_type"], "field_path": ev["field_path"],
+            "family": ev["family"]}
 
 
 def window(conn, extraction_ids, labels, a, b, *, include_passive=True, case_id=None, money_rows=None) -> dict:
@@ -107,9 +108,11 @@ def window(conn, extraction_ids, labels, a, b, *, include_passive=True, case_id=
     avail = []
     for e in exts:
         hours = availability.hour_states(conn, e, a, b)
+        held = availability.hours_with_records(conn, e, a, b)
         avail.append({"extraction_id": e, "phone": labels.get(e),
-                      "hours": [{"hour_utc": h["hour_utc"], "state": h["state"],
-                                 "words": availability.UI_COPY.get(h["state"], h["state"])} for h in hours]})
+                      "hours": [{"hour_utc": h["hour_utc"], "state": h["state"], "has_records": h["hour_utc"] in held,
+                                 "words": availability.hour_words(h["state"], h["hour_utc"] in held)}
+                                for h in hours]})
     totals = {k: len(lanes[k]) for k in LANES}
     if passive_hours is not None:
         totals["passive"] = sum(h["count"] for h in passive_hours)

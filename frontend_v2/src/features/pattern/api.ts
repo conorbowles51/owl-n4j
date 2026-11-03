@@ -56,6 +56,8 @@ export interface HourState {
   hour_utc: string
   state: string
   words: string
+  /** The hour holds at least one record of the phone (a no_data hour then never reads "No data"). */
+  has_records?: boolean
 }
 
 export interface LaneItem {
@@ -79,6 +81,8 @@ export interface LaneItem {
   record_type?: string | null
   radius_m?: number | null
   source_kind?: string
+  /** The record's stream family (04 5.2): notifications, web, app_usage, sensors, wifi, ... */
+  family?: string | null
 }
 
 export interface MoneyItem {

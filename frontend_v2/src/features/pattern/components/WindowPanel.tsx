@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { phoneLinkHref } from "@/features/phones/phone-links"
 import { patternAPI, type LaneItem } from "../api"
 import { Lanes, type LaneRow } from "./Lanes"
-import { bandsFromHours } from "../lanes-lib"
+import { bandsFromHours, splitPassive } from "../lanes-lib"
 import { errorWords, keyDateWords } from "../lanes-lib"
 import { KeepResult } from "./CollectBar"
 
@@ -45,17 +45,31 @@ export function WindowPanel({ caseId, at, day, caseEvents, zone = "case", onClos
     const mark = (i: LaneItem) => ({ key: `${i.ref_kind}:${i.id}`, at: i.at, label: i.ref_kind === "comm_event" ? `${i.kind} ${i.direction}` : `${i.record_type} · ${i.field}`,
       tone: (i.strength as never) || "none", href: i.record_uid ? phoneLinkHref(caseId, { target_type: "phone_record", target_id: i.record_uid }) : null })
     rows = q.data.phones.flatMap((p): LaneRow[] => {
+      const name = p.label || "Phone"
       const items: LaneItem[] = ["interaction", "communications", "places", "others"].flatMap((k) => p.lanes[k] || [])
-      const device: LaneItem[] = ["device_state", "passive"].flatMap((k) => p.lanes[k] || [])
-      const counted = (p.totals.device_state || 0) + (p.totals.passive || 0)
-      return [{
-        id: p.extraction_id, label: p.label || "Phone", bands: bandsFromHours(p.availability[0]?.hours || []),
+      const main: LaneRow = {
+        id: p.extraction_id, label: name, bands: bandsFromHours(p.availability[0]?.hours || []),
         total: (p.totals.interaction || 0) + (p.totals.communications || 0) + (p.totals.places || 0) + (p.totals.others || 0),
         marks: items.map(mark),
-      }, {
-        id: `${p.extraction_id}-device`, label: `${p.label || "Phone"}: device events and sensor readings`, total: counted, collapsible: true,
-        note: p.passive_as_hourly_counts ? p.limit_words || undefined : undefined, marks: device.map(mark),
-      }]
+      }
+      if (p.passive_as_hourly_counts) {
+        // a crowded window returns its passive items as hourly counts: they stay counted together, one click away
+        return [main, { id: `${p.extraction_id}-device`, label: `${name}: device events, sensor readings and records made without use`,
+          total: (p.totals.device_state || 0) + (p.totals.passive || 0), collapsible: true, hiddenAs: ["device event, sensor reading or record made without use", "device events, sensor readings and records made without use"] as [string, string],
+          note: p.limit_words || undefined, marks: (p.lanes.device_state || []).map(mark) }]
+      }
+      const parts = splitPassive(p.lanes.passive || [])
+      const device = [...(p.lanes.device_state || []), ...parts.device]
+      return [main, ...(parts.recorded.length ? [{
+        id: `${p.extraction_id}-recorded`, label: `${name}: recorded without use`, total: parts.recorded.length,
+        note: "notifications, cookies, app installs: the phone recorded them, no one needed to use it", marks: parts.recorded.map(mark),
+      }] : []), {
+        id: `${p.extraction_id}-device`, label: `${name}: device events and sensor readings`, total: device.length, collapsible: true,
+        marks: device.map(mark),
+      }, ...(parts.copies.length ? [{
+        id: `${p.extraction_id}-copies`, label: `${name}: times of messages and calls already in its lane`, total: parts.copies.length,
+        collapsible: true, hiddenAs: ["time of a message or call already shown", "times of messages and calls already shown"] as [string, string], marks: parts.copies.map(mark),
+      }] : [])]
     })
     const inWindow = caseEvents.filter((e) => e.at && new Date(e.at).getTime() >= a && new Date(e.at).getTime() < b)
     rows.push({ id: "case", label: "Case events", total: inWindow.length,

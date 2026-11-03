@@ -64,4 +64,32 @@ describe("the window around a payment", () => {
     expect(api.window).toHaveBeenCalled()
     expect(screen.queryByText("This payment has a date but no time. Showing the whole day.")).toBeNull()
   })
+
+  it("shows the day's bank notification on the phone, never as a device event, and never calls its hour No data", async () => {
+    const ev = (id: number, at: string, record_type: string, field: string, family: string) => ({
+      ref_kind: "activity_event", id, at, end: null, field, meaning: "event_instant", class: "passive", strength: "none",
+      actor: "owner", flags: [], source_app: null, extraction_id: "p1", phone: "Phone 1", record_uid: `r${id}`, record_type, family })
+    const hours = Array.from({ length: 24 }, (_, h) => ({ hour_utc: `2023-11-08T${String(h).padStart(2, "0")}:00:00Z`, state: "no_data",
+      has_records: h === 1 || h === 10, words: h === 1 || h === 10 ? "No continuous recording; records this hour" : "No data" }))
+    const phone = {
+      extraction_id: "p1", label: "Phone 1", availability: [{ extraction_id: "p1", phone: "Phone 1", hours }],
+      lanes: { interaction: [], device_state: [], communications: [], places: [], others: [], money: [], passive: [
+        ev(1, "2023-11-08T01:21:19Z", "Cookie", "CreationTime", "web"),
+        ev(2, "2023-11-08T10:00:00Z", "Notification", "TimeStamp", "notifications"),
+        ev(3, "2023-11-08T10:05:00Z", "WirelessNetwork", "TimeStamp", "wifi"),
+        ev(4, "2023-11-08T10:06:00Z", "InstantMessage", "TimeStamp", "messages")] },
+      totals: { interaction: 0, device_state: 0, communications: 0, places: 0, others: 0, money: 0, passive: 4 },
+      lane_words: {}, truncated: false, passive_as_hourly_counts: false, passive_hours: null, limit_words: null,
+    }
+    mount("pay-1")
+    api.windowDay.mockResolvedValue({ ...day, start: "2023-11-08T00:00:00Z", end: "2023-11-09T00:00:00Z", zone: "UTC", phones: [phone], phones_total: 1 })
+    fireEvent.click(await screen.findByRole("button", { name: "Open the window around this" }))
+    const recorded = await screen.findByRole("region", { name: "Lane: Phone 1: recorded without use" })
+    expect(recorded.textContent).toMatch(/2 items/)
+    expect(recorded.querySelector('[title*="Notification · TimeStamp"]')).toBeTruthy()
+    expect(screen.getByText("1 device event or sensor reading and 1 time of a message or call already shown hidden.")).toBeTruthy()
+    const lane = screen.getByRole("region", { name: "Lane: Phone 1" })
+    expect(lane.textContent).toMatch(/No continuous recording; records this hour/)
+    expect(lane.textContent).toMatch(/No data/)
+  })
 })

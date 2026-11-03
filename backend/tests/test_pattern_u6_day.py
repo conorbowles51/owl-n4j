@@ -163,3 +163,33 @@ def test_a_payment_with_a_date_and_no_time_opens_its_whole_day_in_the_case_zone(
             assert client.get("/api/pattern/%s/window" % case, params={"span": "day", "day": "8 Nov"}).status_code == 400
             timed = client.get("/api/pattern/%s/window" % case, params={"at": DAY.isoformat(), "span": "1h"}).json()
             assert timed["date_only"] is None
+
+
+@needs_template
+def test_an_hour_holding_only_a_notification_never_reads_no_data_and_the_item_says_its_family(hooks):
+    """cb-crossev m110311471222822 (live d9945277, 2023-11-08): a bank alert at 10:00 is a record of the phone; the
+    hour stays not-observed (notifications never establish recording, 04 5.3 step 4) but is never called "No data"."""
+    from services.pattern_of_life import availability
+    from tests.test_pattern_u4_availability import _stamp
+    from tests.phone_pg import fld, model
+    setup(hooks)
+    p = _phone()
+    when = DAY + timedelta(hours=14)
+    p.records.append((p.o, None, p.o, model("Notification", [fld("TimeStamp", ("TimeStamp", when.isoformat())),
+                                                              fld("Body", ("String", "You paid 390.02 USD"))])))
+    p.stamps.append(_stamp(p.o, "TimeStamp", "Notification", when))
+    p.o += 1
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = p.make(c, case)
+        build(engine, ext)
+        with engine.connect() as c:
+            out = day.window(c, [ext], {}, DAY, DAY + timedelta(days=1))
+        hours = {h["hour_utc"].hour: h for h in out["availability"][0]["hours"]}
+        assert hours[14]["state"] == "no_data" and hours[14]["has_records"] is True
+        assert hours[14]["words"] == availability.RECORDS_NO_RECORDING_WORDS
+        assert hours[20]["words"] == "No data" and hours[20]["has_records"] is False
+        note = [i for i in out["lanes"]["passive"] if i["record_type"] == "Notification"]
+        assert len(note) == 1 and note[0]["family"] == "notifications"

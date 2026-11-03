@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { zoneWords } from "@/features/phones/lib/time-words"
+import { hiddenWords } from "../lanes-lib"
 
 /**
  * The one shared Lanes component (04 section 8.6; 07 J-5): the Case Timeline's window, the Day view and the incident
@@ -37,6 +38,8 @@ export interface LaneRow {
   allDay?: { key: string; label: string; detail?: string }[]
   /** Device events and sensor readings: hidden by default and counted (07 section 5), one click away. */
   collapsible?: boolean
+  /** What a hidden row holds, [one, many], for the "hidden" sentence (default device events and sensor readings). */
+  hiddenAs?: [string, string]
 }
 
 export const SPANS = [
@@ -75,8 +78,8 @@ export function Lanes({ start, end, zone, zoneBasis, rows, span, onSpan, header 
   header?: ReactNode
 }) {
   const [showAll, setShowAll] = useState(false)
-  const hiddenRows = rows.filter((r) => r.collapsible)
-  const hiddenCount = hiddenRows.reduce((n, r) => n + (r.total ?? r.marks.length), 0)
+  const hidden = hiddenWords(rows.filter((r) => r.collapsible))
+  const hiddenCount = hidden.count
   const shown = showAll ? rows : rows.filter((r) => !r.collapsible)
   const s = new Date(start).getTime()
   const width = Math.max(1, new Date(end).getTime() - s)
@@ -96,8 +99,7 @@ export function Lanes({ start, end, zone, zoneBasis, rows, span, onSpan, header 
       </div>
       {hiddenCount > 0 && (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          {showAll ? `Showing ${hiddenCount.toLocaleString("en-US")} device events and sensor readings.`
-            : `${hiddenCount.toLocaleString("en-US")} device events and sensor readings hidden.`}
+          {showAll ? `Showing ${hidden.words}.` : `${hidden.words} hidden.`}
           <Button size="sm" variant="link" onClick={() => setShowAll(!showAll)}>{showAll ? "Hide" : "Show"}</Button>
         </p>
       )}

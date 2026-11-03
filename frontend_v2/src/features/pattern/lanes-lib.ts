@@ -20,7 +20,8 @@ export function bandsFromHours(hours: { hour_utc: string; state: string; words: 
   for (const h of hours) {
     const end = new Date(new Date(h.hour_utc).getTime() + 3600_000).toISOString()
     const last = out[out.length - 1]
-    if (last && last.state === h.state && last.end === new Date(h.hour_utc).toISOString()) last.end = end
+    // one band per state and words: a not-observed hour holding records reads apart from "No data"
+    if (last && last.state === h.state && last.words === h.words && last.end === new Date(h.hour_utc).toISOString()) last.end = end
     else out.push({ start: new Date(h.hour_utc).toISOString(), end, state: h.state, words: h.words })
   }
   return out
@@ -42,6 +43,7 @@ export function laneRowsOf(caseId: string, d: DayResponse | (DayResponse & { lab
     const items = d.lanes[k] || []
     rows.push({
       id: k, label: d.lane_words[k] || k, total: d.totals[k] ?? items.length, collapsible: k === "device_state" || k === "passive",
+      hiddenAs: k === "passive" ? ["record made without use", "records made without use"] as [string, string] : undefined,
       note: k === "passive" && d.passive_as_hourly_counts ? d.limit_words || undefined : undefined,
       marks: items.map((i) => ({ key: `${i.ref_kind}:${i.id}`, at: i.at, end: i.end, label: itemLabel(i),
         detail: [i.strength && `strength ${i.strength}`, i.actor && `actor ${i.actor}`, i.source_app, i.phone, ...(i.flags || [])].filter(Boolean).join(" · "),
@@ -122,4 +124,36 @@ export function snapshotView(s: Snapshot): { view: "day" | "grid" | "places"; la
   const last = dateIn(new Date(new Date(w.end).getTime() - 1).toISOString(), w.zone)
   const view: "day" | "grid" | "places" = s.kind === "grid" ? "grid" : s.kind === "places" ? "places" : "day"
   return { view, last }
+}
+
+const DEVICE_WORDS: [string, string] = ["device event or sensor reading", "device events and sensor readings"]
+
+/** "4 device events and sensor readings and 2 records made without use": the hidden rows counted by what they are. */
+export function hiddenWords(rows: LaneRow[]): { count: number; words: string } {
+  const by = new Map<string, { n: number; noun: [string, string] }>()
+  for (const r of rows) {
+    const n = r.total ?? r.marks.length
+    const noun = r.hiddenAs || DEVICE_WORDS
+    if (n > 0) by.set(noun[1], { n: (by.get(noun[1])?.n || 0) + n, noun })
+  }
+  const parts = Array.from(by.values(), ({ n, noun }) => `${n.toLocaleString("en-US")} ${n === 1 ? noun[0] : noun[1]}`)
+  const words = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0] || ""
+  return { count: Array.from(by.values()).reduce((a, b) => a + b.n, 0), words }
+}
+
+// stream families (04 5.2) whose records are the phone's own state, signal or sensors: hidden by default (07 section 5)
+const DEVICE_FAMILIES = new Set(["device_events", "power", "connectivity", "network_usage", "wifi", "cell", "sensors", "locations", "logs"])
+// families whose times are the messages, calls and emails the phone's lane already shows
+const COPY_FAMILIES = new Set(["messages", "calls", "email"])
+
+/** The passive lane split three ways: records made without use that a reader looks for (a bank notification, a cookie,
+ * an app install) are shown; device and sensor records, and second copies of messages and calls, are counted and hidden. */
+export function splitPassive(items: LaneItem[]) {
+  const out = { recorded: [] as LaneItem[], device: [] as LaneItem[], copies: [] as LaneItem[] }
+  for (const i of items) {
+    if (i.family && DEVICE_FAMILIES.has(i.family)) out.device.push(i)
+    else if (i.family && COPY_FAMILIES.has(i.family)) out.copies.push(i)
+    else out.recorded.push(i)
+  }
+  return out
 }

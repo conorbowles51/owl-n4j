@@ -247,3 +247,26 @@ def test_the_owner_as_the_only_participant_keeps_the_phones_other_entries(world)
     assert owner_only["counts"]["other"] == 4 and owner_only["other_filter_applies"]
     assert owner_any["counts"]["other"] == 4
     assert owner_and_ana["counts"]["other"] == ana_only["counts"]["other"] == 1  # the location naming Ana
+
+
+def test_a_no_data_hour_holding_a_hidden_record_is_not_drawn_as_no_data(monkeypatch):
+    """cb-crossev m110311471222822: a notification hour (Apps off in the lens) is not observed but holds a record, so the
+    lane never hatches it as "No data"; an hour with no record still is."""
+    from datetime import datetime, timezone
+    from services.pattern_of_life import availability
+    from services.phone import timeline_lens
+
+    h10, h11 = datetime(2023, 11, 8, 10, tzinfo=timezone.utc), datetime(2023, 11, 8, 11, tzinfo=timezone.utc)
+
+    class Conn:
+        def execute(self, *a, **k):
+            class R:
+                @staticmethod
+                def scalar():
+                    return True
+            return R()
+
+    monkeypatch.setattr(availability, "hour_states", lambda c, e, a, b: [
+        {"hour_utc": h10, "state": "no_data"}, {"hour_utc": h11, "state": "no_data"}])
+    monkeypatch.setattr(availability, "hours_with_records", lambda c, e, a, b: {h10})
+    assert timeline_lens._no_data_hours(Conn(), "e", h10, h11) == {h11}
