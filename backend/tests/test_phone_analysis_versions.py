@@ -22,6 +22,7 @@ RECORDED = {
     "device_users": ("5.2-use", "cd7bf7201f8f4b6b"),
     "typed_words": ("7.1", "ebdc62fe49dc2742"),
     "intent": ("9.1", "3a46cb8858a18271"),
+    "common_contacts": ("14.1", "46ee93fe71781001"),
 }
 
 

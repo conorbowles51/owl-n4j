@@ -1812,7 +1812,11 @@ one case has a pair of owners with 3 or more common contacts.
 2026-11-03, `measurements/a2/m14-16-10-report.json`).** Messages only (the extracts hold no calls or emails), so
 counts are a lower bound. 10 phones, 8 owners (phones sharing an owner identity are one owner), 28 owner pairs: 21
 have 3 or more common contacts, the most 36. M-14b: 1.0, by construction: the corpus joins identities by equal
-normalised identifier only, never by a reviewed decision. Gate: **pass** (21 pairs with 3 or more).
+normalised identifier only, never by a reviewed decision. Gate: **pass** (21 pairs with 3 or more). **Built
+(`cb-approaches`, 05-S16a, `common_contacts` version 14.1, screen "Common contacts").** Every pair of the case's
+owners (19.S16a-a), whole span (19.S16a-b); 16a.8 tests 1 to 3 in `test_phone_analysis_common_contacts.py`. A message
+held on both phones is counted on each phone and the result says so; counting it once needs approach 2's matches,
+which approach 15 uses. The agent's "who links A and B" tool does not read this result yet.
 
 ### 16a.7 Dependencies
 
@@ -2246,6 +2250,10 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | 19.S10-b A typed hit is `typed_not_in_extraction` when no matched term occurs in the phone's messages, emails, notes, searches or calendar (10.3 step 3), else `typed_and_present` with up to 20 of those records linked and the full count stated | the elsewhere search counts every record; 20 links keep a result readable, and the count says how many there are | |
 | 19.S12-a A search or page whose every matched term matches 3 or more records of the case has strength `common_term` (a business or site name), the others `specific_term`; nothing is dropped | on C3, 29 terms gave 399 hits, 20 of them on terms matching fewer than 3 records | reviews show common-term hits confirmed as often as specific ones |
 | 19.S12-b Page addresses are matched on their path words only, and a hit only in the address says so | the host is a site name and the query repeats the search; 340 of C3's 396 page hits are address-only | address hits are rejected on review far more than title hits |
+| 19.S16a-a Owners for common contacts are each phone's owner identities as 02 computes them (with account candidates), read through reviewed persons; phones whose owners share a person or identity are one owner | the 10-report case has 10 phones and 8 owners | 02 records owners per phone in another way |
+| 19.S16a-b Common contacts cover the whole span; a narrower window is the Conversations filter the counts open | 16a.3 step 3 default; key dates never need a rerun | |
+| 19.S16a-c A common-contact result rests on the first and last communication of each side and the saved entries, with a pair anchor of its own | one record can be the first contact of two owner pairs | |
+| 19.S14b-a A phone analysis result, a kept result, a statement check and an incident window are exported by freezing their records as one selection, as a finding is; records that are not a message or call are counted in the dialog as not in the export, and a source with none is refused with that reason | the export draws communications; a silent drop would present a partial export as whole | the export draws other record kinds |
 | 19.S-ix The analyses are reached from one Phones sidebar entry, "Analyses", which also lists the approaches whose gate failed with the measured reason | one entry per approach would put ten links in the group; an absent analysis is stated, not silent | |
 | Deletion time is an interval to extraction start unless `DateDeleted` exists | `DateDeleted` 1 in corpus | a source of deletion times is found |
 | Media spread population restricted to attachment, camera-path and EXIF-camera files | X10 against X11 | |
