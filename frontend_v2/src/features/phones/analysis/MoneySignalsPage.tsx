@@ -216,7 +216,7 @@ export default function MoneySignalsPage() {
       <section data-part="results" aria-label="Results" className="space-y-2">
         <div className="flex flex-wrap gap-2" role="tablist">
           {KIND_TABS.map((t) => (
-            <Button key={t.kind} size="sm" role="tab" aria-selected={kind === t.kind} variant={kind === t.kind ? "default" : "outline"}
+            <Button key={t.kind} size="sm" role="tab" aria-selected={kind === t.kind} variant={kind === t.kind ? "primary" : "outline"}
               onClick={() => { setKind(t.kind); setStrength(""); setOffset(0) }}>{t.label}</Button>
           ))}
           <select aria-label="Strength" className="rounded border px-1 text-xs" value={strength} onChange={(e) => { setStrength(e.target.value); setOffset(0) }}>
