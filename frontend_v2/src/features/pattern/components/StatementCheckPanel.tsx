@@ -86,7 +86,7 @@ export function StatementCheckPanel({ caseId, subject }: { caseId: string; subje
       {busy && <p aria-live="polite">{busy}</p>}
       {err && <p role="alert" className="text-destructive">{err}</p>}
       {claim && claim.status === "confirmed" && !ev && !err && <p className="text-muted-foreground">Checking the statement…</p>}
-      {ev && claim && <EvaluationView caseId={caseId} claim={claim} ev={ev}
+      {ev && claim && <EvaluationView key={ev.evaluation_id} caseId={caseId} claim={claim} ev={ev}
         onAgain={() => act("Checking again…", async () => setEv(await patternAPI.evaluate(caseId, claim.id)))}
         onDispute={(o) => {
           const reason = window.prompt("Why is this item wrong?")
@@ -166,13 +166,16 @@ function GroupEventsList({ caseId, claimId, evaluationId, item }: { caseId: stri
   const [open, setOpen] = useState(false)
   const [pages, setPages] = useState<GroupEvents[]>([])
   const [err, setErr] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   const count = Number((item.display as { count?: number }).count || 0)
   async function more(cursor: number) {
+    if (loading) return  // one page at a time: a second click before the first page arrives adds nothing
     setErr(null)
+    setLoading(true)
     try {
       const page = await patternAPI.groupEvents(caseId, claimId, evaluationId, item.ordinal, cursor)
       setPages((p) => [...p, page])
-    } catch (e) { setErr(errorWords(e)) }
+    } catch (e) { setErr(errorWords(e)) } finally { setLoading(false) }
   }
   const last = pages[pages.length - 1]
   const rows = pages.flatMap((p) => p.items)
@@ -188,8 +191,9 @@ function GroupEventsList({ caseId, claimId, evaluationId, item }: { caseId: stri
             {r.display.source_app && <span>{r.display.source_app}</span>}{href && <a className="underline" href={href}>Open the record</a>}</li>
         })}
       </ul>
+      {!last && loading && <p aria-live="polite">Loading the events…</p>}
       {last && <p className="flex items-center gap-2">Showing {rows.length.toLocaleString("en-US")} of {last.total.toLocaleString("en-US")}.
-        {last.next_cursor !== null && <button className="underline" onClick={() => void more(last.next_cursor as number)}>Show more</button>}
+        {last.next_cursor !== null && <button className="underline" disabled={loading} onClick={() => void more(last.next_cursor as number)}>{loading ? "Loading the next events…" : "Show more"}</button>}
         <button className="underline" onClick={() => setOpen(false)}>Hide</button></p>}
     </div>
   )

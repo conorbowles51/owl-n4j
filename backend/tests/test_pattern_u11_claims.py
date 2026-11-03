@@ -325,6 +325,15 @@ def test_context_events_are_one_item_per_phone_hour_and_reason_and_each_is_liste
             other = "/api/pattern/%s/claims/%s/evaluations/%s/items/%d/events" % (case, uuid.uuid4(),
                                                                                   ev["evaluation_id"], 0)
             assert client.get(other).status_code == 404
+        # the statement edited after the check (a later window, the other kind): the old check's group still lists
+        # the events it counted, from the window and kind it ran with
+        with engine.begin() as c:
+            claims.edit(c, case, cl["id"], {"kind": "active", "window_start": (night + timedelta(hours=5)).isoformat(),
+                                            "window_end": (night + timedelta(hours=7)).isoformat()},
+                        cl["version"], me)
+        with api_client(engine, case) as client:
+            got = client.get(url).json()
+            assert (got["total"], got["stored_count"], got["changed_since_check"]) == (6, 6, False)
 
 
 @needs_template

@@ -64,8 +64,9 @@ def usual_span(conn, extraction_id) -> dict:
         "SELECT count(*), min(instant_utc), max(instant_utc) FROM pol_activity_event WHERE extraction_id = :e AND " + w),
         {"e": extraction_id, "t": datetime.combine(t, time(0), tzinfo=timezone.utc)}).one()
         for w, t in (("instant_utc < :t", first), ("instant_utc >= :t", last + timedelta(days=1))))
+    utc = lambda v: v.astimezone(timezone.utc) if v is not None else None  # noqa: E731 (the page shows UTC dates)
     return {"first": first, "last": last, "set_apart": int(before[0]) + int(after[0]),
-            "set_apart_first": before[1] or after[1], "set_apart_last": after[2] or before[2]}
+            "set_apart_first": utc(before[1] or after[1]), "set_apart_last": utc(after[2] or before[2])}
 
 
 def extractions(conn, case_id) -> list:

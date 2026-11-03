@@ -125,8 +125,8 @@ def _overlap(cols):
     """Events overlapping [a - margin, b + margin): those starting inside it, and those starting earlier whose end
     falls inside it (two index ranges; one overlap test read every earlier event of the phone, 04 section 11)."""
     sel = cols + " FROM pol_activity_event_v WHERE extraction_id = ANY(CAST(:e AS uuid[])) AND "
-    return "(" + sel + "instant_utc >= :lo AND instant_utc < :hi UNION ALL " + sel + \
-        "instant_utc < :lo AND end_utc >= :lo) x"
+    return "(" + sel + "instant_utc >= :lo AND instant_utc < :hi AND coalesce(end_utc, instant_utc) >= :lo UNION ALL " + \
+        sel + "instant_utc < :lo AND end_utc >= :lo) x"
 
 
 # An event inside the window that is neither the owner's use nor (for "inactive") the phone moving: context, kept
@@ -631,12 +631,20 @@ def group_events(conn, case_id, evaluation_id, ordinal, cursor=0) -> dict:
 
 
 def read_head(conn, case_id, evaluation_id) -> dict:
-    """The evaluation's window and claim kind, without its items."""
-    ev = conn.execute(text("SELECT e.claim_id, c.kind, c.window_start, c.window_end FROM pol_claim_evaluation e JOIN "
-                           "pol_claim c ON c.id = e.claim_id WHERE e.id = :i AND e.case_id = :c"),
-                      {"i": evaluation_id, "c": case_id}).mappings().first()
+    """The evaluation's window and claim kind as the check ran them (the claim's revision at the checked version; a
+    statement edited since keeps its old check), without its items."""
+    ev = conn.execute(text(
+        "SELECT e.claim_id, c.kind, c.window_start, c.window_end, r.snapshot FROM pol_claim_evaluation e JOIN "
+        "pol_claim c ON c.id = e.claim_id LEFT JOIN pol_claim_revision r ON r.claim_id = e.claim_id AND "
+        "r.version = e.claim_version WHERE e.id = :i AND e.case_id = :c"),
+        {"i": evaluation_id, "c": case_id}).mappings().first()
     if ev is None:
         raise EvaluationError("That check is not in this case.", 404)
+    snap = ev["snapshot"] or {}
+    if snap.get("window_start") and snap.get("window_end") and snap.get("kind"):
+        return {"claim_id": ev["claim_id"], "kind": snap["kind"],
+                "window": {"start": datetime.fromisoformat(snap["window_start"]),
+                           "end": datetime.fromisoformat(snap["window_end"])}}
     return {"claim_id": ev["claim_id"], "kind": ev["kind"],
             "window": {"start": ev["window_start"], "end": ev["window_end"]}}
 

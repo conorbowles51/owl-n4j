@@ -41,6 +41,28 @@ describe("statement check items", () => {
     expect(screen.getAllByText("DeviceEvent, StartTime")).toHaveLength(3)
     expect(screen.getByText(/Showing 3 of 3\./)).toBeTruthy()
     expect(spy).toHaveBeenCalledWith("c", "cl", "ev1", 3, 0)
+    spy.mockRestore()
+  })
+
+  it("asks for the next page of a group once, however often Show more is clicked while it loads", async () => {
+    const group = item(4, { role: "context", ref_kind: "event_group", reason_code: "passive", strength: null,
+      explanation: "1,500 events in this hour.", display: { count: 1500, hour_utc: "2023-03-14T23:00:00+00:00" } })
+    const ev = (n: number) => ({ activity_event_id: n, at_utc: "2023-03-14T23:00:00+00:00", end_utc: null, record_uid: null,
+      field_path: null, display: { type: "DeviceEvent", field: "StartTime", meaning: "event_instant", source_app: null,
+        activity_class: "passive", actor: "owner" } })
+    const first: GroupEvents = { ordinal: 4, stored_count: 1500, total: 1500, cursor: 0, limit: 1000, returned: 2, next_cursor: 2,
+      changed_since_check: false, items: [ev(1), ev(2)] }
+    let release: (g: GroupEvents) => void = () => {}
+    const spy = vi.spyOn(patternAPI, "groupEvents").mockResolvedValueOnce(first)
+      .mockImplementationOnce(() => new Promise<GroupEvents>((r) => { release = r }))
+    render(<RoleList caseId="c" claimId="cl" ev={evaluation([group])} role="context" title="Context" onDispute={() => {}} />)
+    fireEvent.click(screen.getByText("Show the 1,500 events"))
+    fireEvent.click(await screen.findByText("Show more"))
+    fireEvent.click(screen.getByText(/Loading the next events|Show more/))
+    expect(spy).toHaveBeenCalledTimes(2)
+    release({ ...first, cursor: 2, returned: 1, next_cursor: null, items: [ev(3)] })
+    expect(await screen.findByText(/Showing 3 of 1,500\./)).toBeTruthy()
+    spy.mockRestore()
   })
 })
 
