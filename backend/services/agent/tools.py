@@ -427,6 +427,24 @@ class MapArtifactArgs(BaseModel):
     entity_keys: list[str] = Field(default_factory=list)
     entity_types: list[str] | None = None
     limit: int = Field(100, ge=1, le=200)
+    include_phone_points: bool = Field(False, description=(
+        "Put the phones' recorded location points on the map too (up to 100, in the phone window). Without it the "
+        "map says the phone points are left out."))
+    phone_start: str | None = Field(None, description="First day (YYYY-MM-DD) or instant of the phone points.")
+    phone_end: str | None = Field(None, description="Last day (YYYY-MM-DD, inclusive) or instant of the phone points.")
+    phones: list[str] = Field(default_factory=list, description="Phone labels such as C5; empty for every phone.")
+
+
+class CaseworkArgs(BaseModel):
+    kinds: list[Literal["note", "finding", "theory"]] = Field(default_factory=list, description=(
+        "Which casework entries; empty for notes, findings and theories."))
+    search: str | None = Field(None, description="Words the title or body must contain.")
+    offset: int = Field(0, ge=0)
+    limit: int = Field(20, ge=1, le=50)
+
+
+class DossierArgs(BaseModel):
+    dossier: str = Field(..., description="A dossier id, or the name of the person or subject it is about.")
 
 
 def _artifact(artifact_type: str, title: str, data: dict[str, Any], metadata: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1644,6 +1662,28 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             artifact=None,
         ) | {"clarification": clarification}
 
+    phone_totals_cache: dict[str, Any] = {}
+
+    def phone_totals() -> dict[str, Any]:
+        """The case's phone totals, read once per run, for the sentences the non-phone tools carry (07 7.1)."""
+        if "t" not in phone_totals_cache:
+            from services.agent import phone_tools
+            try:
+                with (context.ledger_session_factory or _financial_session)() as db:
+                    phone_totals_cache["t"] = phone_tools.totals(db.connection(), uuid.UUID(context.case_id))
+            except Exception:
+                logger.exception("Agent phone totals failed for case %s", context.case_id)
+                phone_totals_cache["t"] = {"phones": 0, "messages_and_calls": 0, "location_points": 0,
+                                           "unreadable": True}
+        return phone_totals_cache["t"]
+
+    def phone_note(what: str = "Phone messages and calls") -> str | None:
+        from services.agent import phone_tools
+        t = phone_totals()
+        if t.get("unreadable"):
+            return "The phones could not be counted just now; this result does not include phone records."
+        return phone_tools.not_in_result_sentence(t, what)
+
     def get_case_overview() -> dict[str, Any]:
         if context.significant_scope:
             graph = graph_service.get_graph_structure(
@@ -1680,12 +1720,23 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             f"sample_entities shows {len(compact['sample_entities'])} of {compact['total_nodes']} entities, as a "
             "sample; search or query the graph for the others."
         )
+        phone_sentence = ""
+        if not context.significant_scope:
+            # 07 section 8: the agent overview counts phone records (a phones-only case is not an empty case).
+            t = phone_totals()
+            compact["phones"] = {k: v for k, v in t.items() if k != "unreadable"}
+            if t.get("unreadable"):
+                phone_sentence = " The phones could not be counted just now."
+            elif t.get("phones"):
+                phone_sentence = (f" The case's {t['phones']} phone{'s' if t['phones'] != 1 else ''} hold "
+                                  f"{t['messages_and_calls']:,} messages and calls and {t['location_points']:,} "
+                                  "location points; read them with the phone tools.")
         return context.result(
             "get_case_overview",
             compact,
             summary=(
                 f"Case has {compact['total_nodes']} nodes and "
-                f"{compact['total_relationships']} relationships."
+                f"{compact['total_relationships']} relationships." + phone_sentence
             ),
         )
 
@@ -1851,10 +1902,13 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 else None
             ),
         )
+        note = None if context.significant_scope else phone_note()
+        if note:
+            page = {**page, "phone_note": note}
         return context.result(
             "get_timeline_events",
             page,
-            summary=f"Loaded {page.get('count', 0)} timeline event(s).",
+            summary=f"Loaded {page.get('count', 0)} timeline event(s)." + (f" {note}" if note else ""),
         )
 
     def read_ledger(tool_name: str, *, view: str, **kwargs) -> dict[str, Any]:
@@ -1873,6 +1927,16 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             # These are sessions opened for reading, never the caller's write
             # transaction. Closing them rolls back; no import/edit is performed.
             with (context.ledger_session_factory or _financial_session)() as db:
+                from services.phone import money_presence
+                presence = money_presence.presence(db.connection(), uuid.UUID(context.case_id))
+                if not presence["has_financial_evidence"]:
+                    # 07 section 8, SA-7: a phones-only case has no financial evidence; never "0 payments".
+                    reason = money_presence.NO_FINANCIAL_EVIDENCE + (
+                        " The case's phones can still be read with the phone tools." if presence["phones"] else "")
+                    return context.result(tool_name, {"schema": "loupe.agent.financial_ledger/1",
+                        "case_id": context.case_id, "available": False, "applied": False,
+                        "no_financial_evidence": True, "reason": reason, "total_matching": None, "returned": 0},
+                        summary=reason)
                 data = read_financial_ledger(db, case_id=uuid.UUID(context.case_id),
                     view=view, filters=filters or None, **kwargs)
         except ValueError as exc:
@@ -1955,6 +2019,28 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                                        data.get("group_sentence")) if x)
         return context.result(tool_name, data, summary=summary or "Read the phones.")
 
+    def read_casework(tool_name: str, func_name: str, **kwargs) -> dict[str, Any]:
+        """Casework and dossiers with their links cited (07 6.4 item 15, CO-11). The case id is the run's."""
+        if context.significant_scope:
+            return scope_error(tool_name, "Casework and dossier reading")
+        from services.agent import casework_tools
+        try:
+            with (context.ledger_session_factory or _financial_session)() as db:
+                data = getattr(casework_tools, func_name)(db, uuid.UUID(context.case_id), **kwargs)
+        except ValueError as exc:
+            return context.result(tool_name, {"available": False, "reason": str(exc)},
+                summary=str(exc), status="error", error=str(exc))
+        except Exception:
+            logger.exception("Agent casework read failed for case %s", context.case_id)
+            return context.result(tool_name, {"available": False,
+                "reason": "The casework could not be read just now. Retry; nothing partial was returned."},
+                summary="The casework could not be read; no partial result was returned.", status="error",
+                error="The casework could not be read.")
+        if data.get("available") is False:
+            return context.result(tool_name, data, summary=str(data.get("reason")))
+        summary = " ".join(x for x in (data.get("coverage"), data.get("limitation")) if x)
+        return context.result(tool_name, data, summary=summary or "Read the casework.")
+
     def read_tool_result_page(result_id: str, path: list[str | int], offset: int) -> dict[str, Any]:
         from services.agent.model_payloads import MAX_MESSAGE_CHARS, page_for_model
         view = context.model_views.get(result_id)
@@ -1997,12 +2083,15 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         total = len(locations)
         page = locations[offset:offset + limit]
         more = offset + len(page) < total
+        note = None if context.significant_scope else phone_note("Phone location points")
         return context.result(
             "get_map_locations",
             {"locations": page, "count": len(page), "total": total, "returned": len(page), "offset": offset,
-             "has_more": more, "next_offset": offset + len(page) if more else None},
+             "has_more": more, "next_offset": offset + len(page) if more else None,
+             **({"phone_note": note} if note else {})},
             summary=(f"Loaded {len(page)} of {total} mapped location(s)"
-                     + (f"; {total - offset - len(page)} more from offset {offset + len(page)}." if more else ".")),
+                     + (f"; {total - offset - len(page)} more from offset {offset + len(page)}." if more else ".")
+                     + (f" {note}" if note else "")),
         )
 
     def build_graph_artifact(
@@ -2383,6 +2472,10 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         entity_keys: list[str] | None = None,
         entity_types: list[str] | None = None,
         limit: int = 100,
+        include_phone_points: bool = False,
+        phone_start: str | None = None,
+        phone_end: str | None = None,
+        phones: list[str] | None = None,
     ) -> dict[str, Any]:
         locations = geo_service.get_entities_with_locations(
             entity_types=entity_types,
@@ -2398,17 +2491,52 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             locations = [location for location in locations if location.get("key") in keys]
         total = len(locations)
         locations = locations[:limit]
+        # XF-12: a map in a case with phones either holds phone points or says they are left out.
+        phone_points: list[dict[str, Any]] = []
+        phone_sentence = None
+        if not context.significant_scope:
+            t = phone_totals()
+            if include_phone_points and t.get("location_points"):
+                from services.agent import phone_tools
+                with (context.ledger_session_factory or _financial_session)() as db:
+                    got = phone_tools.places(db.connection(), uuid.UUID(context.case_id), start=phone_start,
+                                             end=phone_end, phones=phones or (), limit=phone_tools.MAX_LIMIT)
+                if got.get("available") is False:
+                    phone_sentence = str(got.get("reason"))
+                else:
+                    for item in got["items"]:
+                        phone_points.append({
+                            "key": item["rec"], "rec": item["rec"], "latitude": item["lat"], "longitude": item["lon"],
+                            "name": f"Phone {item.get('phone') or ''} point, {item.get('instant') or 'no time'}".replace("  ", " "),
+                            "type": "PhoneLocationPoint", "accuracy_m": item.get("accuracy_m"),
+                            "unconfirmed": item.get("unconfirmed")})
+                    phone_sentence = (f"Includes {len(phone_points)} of {got['total_matching']:,} phone location "
+                                      "points in this window" + (
+                                          "; the others are left out of this map." if got.get("has_more") else ".")
+                                      + " A point is where a phone recorded itself, not proof a person was there.")
+            elif t.get("unreadable"):
+                phone_sentence = "The phones could not be counted just now; phone location points are not on this map."
+            elif t.get("location_points"):
+                phone_sentence = (f"Phone location points are left out of this map; {t['location_points']:,} "
+                                  f"{'is' if t['location_points'] == 1 else 'are'} on the phones.")
+        metadata = {"location_count": len(locations), "total_locations": total,
+                    "phone_points_included": bool(phone_points), "phone_point_count": len(phone_points)}
+        if phone_sentence:
+            metadata["notes"] = phone_sentence
         artifact = _artifact(
             "map",
             title or "Agent map",
-            {"locations": locations},
-            {"location_count": len(locations), "total_locations": total},
+            {"locations": locations + phone_points},
+            metadata,
         )
         return context.result(
             "build_map_artifact",
-            {"artifact_id": artifact["id"], "location_count": len(locations), "total_locations": total},
+            {"artifact_id": artifact["id"], "location_count": len(locations), "total_locations": total,
+             "phone_points_included": bool(phone_points), "phone_point_count": len(phone_points),
+             **({"phone_note": phone_sentence} if phone_sentence else {})},
             summary=(f"Built map artifact with {len(locations)} of {total} location(s)"
-                     + (f"; the map shows the first {len(locations)} (limit {limit})." if total > len(locations) else ".")),
+                     + (f"; the map shows the first {len(locations)} (limit {limit})." if total > len(locations) else ".")
+                     + (f" {phone_sentence}" if phone_sentence else "")),
             artifact=artifact,
         )
 
@@ -2585,7 +2713,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             args_schema=PhonePageArgs,
         ),
         wrap(
-            lambda **kw: read_phones("phone_record", "record", **kw),
+            lambda record: read_phones("phone_record", "record", record_uid=record),
             name="phone_record",
             description="One phone record in full, every field, by its record id or rec:// link.",
             args_schema=PhoneRecordArgs,
@@ -2658,7 +2786,25 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         wrap(
             build_map_artifact,
             name="build_map_artifact",
-            description="Create a mini map artifact for display in the Agent workspace.",
+            description=("Create a mini map artifact for display in the Agent workspace. In a case with phones, set "
+                "include_phone_points to put the phones' recorded points on it; otherwise the map says they are "
+                "left out."),
             args_schema=MapArtifactArgs,
+        ),
+        StructuredTool.from_function(
+            func=lambda **kw: read_casework("get_casework", "casework", **kw),
+            name="get_casework",
+            description=("Read this case's notes, findings and theories, newest first, each with its links. Phone "
+                "links come back with their citation: a message or call as its rec:// link with the record in full, "
+                "a conversation, selection, phone or analysis with what it holds. Cite those links in the answer."),
+            args_schema=CaseworkArgs,
+        ),
+        StructuredTool.from_function(
+            func=lambda **kw: read_casework("get_dossier", "dossier", **kw),
+            name="get_dossier",
+            description=("Read one dossier of this case (by id or name): summary, contacts, links, assessments with "
+                "how each was made, and interview evidence, every link with its citation (rec:// for phone records, "
+                "doc:// for files). Says 'Not in this case' when no dossier in this case matches."),
+            args_schema=DossierArgs,
         ),
     ]

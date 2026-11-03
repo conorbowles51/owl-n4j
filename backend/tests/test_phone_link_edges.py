@@ -319,3 +319,27 @@ def test_two_copies_with_different_senders_count_once_over_the_copies_conversati
                                 collapse_copies=collapse)["edges"][0]["communication"]
                 assert LE.comm_total(comm, "messages") == _conversations(c, case, ANA, OWNER, "message", "direct",
                                                                          collapse), (collapse, comm)
+
+
+@needs_template
+def test_sa4_in_a_phones_only_case_edges_carry_no_money_words_and_say_once_what_is_absent():
+    """07 section 8, SA-3 and SA-4: no "0 payments" anywhere; the money part states the absence in its sentence."""
+    from tests.phone_streams_fixture import at, phone
+    from services.phone import money_presence
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            phone(c, case, label="C1", events=[_m(at(2023, 3, 2, 9), ANA, [OWNER]),
+                                               _m(at(2023, 3, 3, 9), BEN, [OWNER])])
+        with engine.connect() as c:
+            out = LE.edges(c, case, [{"identity_key": ANA}, {"identity_key": OWNER}])
+            quiet = LE.edges(c, case, [{"identity_key": BEN}, {"identity_key": ANA}])
+            p = money_presence.presence(c, case)
+    assert out["financial_records"] is False
+    assert out["money_absent"] == money_presence.NO_FINANCIAL_RECORDS
+    assert out["edges"][0]["label"] == "1 message"
+    assert quiet["edges"][0]["label"] == "No calls, messages or emails in this period"
+    assert "payment" not in out["edges"][0]["label"] + quiet["edges"][0]["label"]
+    assert p == {"has_financial_evidence": False, "source_documents": 0, "ledger_rows": 0, "phones": 1,
+                 "phone_sentence": money_presence.NO_FINANCIAL_RECORDS,
+                 "financial_sentence": money_presence.NO_FINANCIAL_EVIDENCE}

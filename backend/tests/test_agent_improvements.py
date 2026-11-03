@@ -94,7 +94,8 @@ class AgentImprovementTests(unittest.TestCase):
         self.assertIsNotNone(clarification)
         self.assertEqual(
             clarification.question,
-            "I reached the investigation step limit before I could finish cleanly. Would you like me to continue?",
+            "I reached the limit of 28 tool calls for one answer before I could finish, so this answer may be "
+            "incomplete. Would you like me to continue?",
         )
         self.assertEqual(clarification.options[0].label, "Continue")
         self.assertEqual(clarification.options[1].label, "Stop here")

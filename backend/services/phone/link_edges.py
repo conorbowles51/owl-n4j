@@ -292,8 +292,9 @@ def _plural(n, one, many=None):
     return "%s %s" % ("{:,}".format(n), one if n == 1 else (many or one + "s"))
 
 
-def edge_label(comm: dict, money: list) -> str:
-    """02 11.2 ``label``, computed, never stored. UI copy: no em dash."""
+def edge_label(comm: dict, money: list, financial: bool = True) -> str:
+    """02 11.2 ``label``, computed, never stored. UI copy: no em dash. In a case with no financial evidence the label
+    carries no money words at all (07 section 8, SA-4): the absence is said once, in ``money_absent``."""
     parts = []
     for prefix, word in (("calls", "call"), ("messages", "message"), ("emails", "email")):
         n = comm_total(comm, prefix)
@@ -314,6 +315,8 @@ def edge_label(comm: dict, money: list) -> str:
         text_ = ", ".join(x for x in (text_, "; ".join(money_parts)) if x)
     if stated:
         text_ = "; ".join(x for x in (text_, "; ".join(stated)) if x)
+    if not financial:
+        return text_ or "No calls, messages or emails in this period"
     return text_ or "No calls, messages, emails or payments in this period"
 
 
@@ -394,6 +397,8 @@ def edges(conn, case_id, subjects: list, *, from_instant=None, to_instant=None, 
     zone = _zone(conn, case_id)
     session = Session(bind=conn)
     limits = []
+    from services.phone import money_presence
+    financial = money_presence.has_financial_evidence(conn, case_id)
     try:
         fin = financial_sides(session, case_id, [s["entity_key"] for s in sides])
         empty = {"parties": set(), "accounts": set()}
@@ -433,11 +438,12 @@ def edges(conn, case_id, subjects: list, *, from_instant=None, to_instant=None, 
                             "money_mentioned_on_phones": mentioned or 0,
                             "money_readings_available": mentioned is not None,
                             "money_date_basis": "ledger ordering date",
-                            "slices": slices, "label": edge_label(comm, money)})
+                            "slices": slices, "label": edge_label(comm, money, financial)})
     finally:
         session.close()
     return {"edges": out, "limits": limits, "zone": zone, "group_scope": group_scope,
-            "collapse_copies": collapse_copies}
+            "collapse_copies": collapse_copies, "financial_records": financial,
+            "money_absent": None if financial else money_presence.NO_FINANCIAL_RECORDS}
 
 
 def edge_records(conn, case_id, a: dict, b: dict, kind: str, *, from_instant=None, to_instant=None, offset=0,

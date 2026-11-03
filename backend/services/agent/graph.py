@@ -423,7 +423,8 @@ def _messages_for_finalizer(state: AgentState) -> list[AnyMessage]:
 
 def _budget_continuation_clarification(max_tool_calls: int) -> dict[str, Any]:
     return {
-        "question": "I reached the investigation step limit before I could finish cleanly. Would you like me to continue?",
+        "question": (f"I reached the limit of {max_tool_calls} tool calls for one answer before I could finish, so "
+                     "this answer may be incomplete. Would you like me to continue?"),
         "options": [
             {
                 "id": "continue",

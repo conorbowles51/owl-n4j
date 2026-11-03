@@ -251,7 +251,8 @@ def messages(conn, case_id, *, people=(), mode="between", start=None, end=None, 
     items = [_row_out(r) for r in rows]
     nxt = offset + len(items) if offset + len(items) < total else None
     phones_n = int(counts.get("phones") or 0)
-    window = ("from %s to %s" % (a.date().isoformat(), (b - timedelta(seconds=1)).date().isoformat())
+    window = ("on %s" % a.date().isoformat() if a and b and b - a == timedelta(days=1) and a.time() == time(0)
+              else "from %s to %s" % (a.date().isoformat(), (b - timedelta(seconds=1)).date().isoformat())
               if a and b else "from %s" % a.date().isoformat() if a else "until %s" % (
                   b - timedelta(seconds=1)).date().isoformat() if b else "over every date")
     coverage = "Read %d of %d messages and calls on %d phone%s %s%s (times in %s)." % (
@@ -307,6 +308,29 @@ def contact_summary(conn, case_id, person) -> dict:
 
 
 # ---- coverage, places, money ---------------------------------------------------------------------------------------
+
+def totals(conn, case_id) -> dict:
+    """The case's phone totals for the other tools' sentences (07 section 7.1): phones, messages and calls as
+    Conversations counts them with no filter (copies once), and recorded location points. Zero phones: all zero."""
+    from services.phone import records
+    phones = records.phones(conn, case_id)
+    if not phones:
+        return {"phones": 0, "messages_and_calls": 0, "location_points": 0}
+    events = messages(conn, case_id, limit=1)
+    points = int(conn.execute(text("SELECT count(*) FROM pv_location_point WHERE case_id = :c AND lat IS NOT NULL "
+                                   "AND lon IS NOT NULL"), {"c": str(case_id)}).scalar())
+    return {"phones": len(phones), "messages_and_calls": int(events.get("total_matching") or 0),
+            "location_points": points}
+
+
+def not_in_result_sentence(t: dict, what: str = "Phone messages and calls") -> str | None:
+    """'Phone messages and calls are not in this result; 186,787 are on the phones. Use the phone tools.'"""
+    n = t.get("location_points") if what.startswith("Phone location") else t.get("messages_and_calls")
+    if not t.get("phones") or not n:
+        return None
+    return "%s are not in this result; %s %s on the phones. Use the phone tools." % (
+        what, "{:,}".format(n), "is" if n == 1 else "are")
+
 
 def coverage(conn, case_id) -> dict:
     """The case's phones: owner, the period each covers, what each holds, deleted records, and what is incomplete."""

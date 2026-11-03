@@ -1,0 +1,164 @@
+"""The agent beside the rest of Loupe (docs/cellebrite/07 sections 6.4 item 15, 7.1 and 8): CO-11 (casework and
+dossiers return phone links with citations), SA-7 (financial tools in a phones-only case), XF-3 (the day before a
+payment, with its scope sentence), XF-12 (a map says whether phone points are on it), the overview counting phone
+records, and asking in one case about a phone of another case. Synthetic data only; needs the PostgreSQL template."""
+from __future__ import annotations
+
+import uuid
+from contextlib import contextmanager
+
+import pytest
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from tests.phone_pg import fresh_engine, make_case, needs_template
+from tests.phone_streams_fixture import at, phone
+
+pytestmark = needs_template
+OWNER, ANA, BEN, ZED = "phone:+12025550100", "phone:+12025550143", "phone:+12025550188", "phone:+12025550199"
+
+
+def msg(instant, sender, recips, body="hello", **kw):
+    parties = [(sender, "sender", sender == OWNER, None, None)] + [(r, "recipient", r == OWNER, None, None)
+                                                                    for r in recips]
+    return dict(kind="message", instant=instant, body=body, parties=parties,
+                direction="outgoing" if sender == OWNER else "incoming", **kw)
+
+
+@pytest.fixture
+def world():
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case, other = make_case(c), make_case(c)
+            ext, evs = phone(c, case, label="C3", contacts={ANA: "Maria Lopez", BEN: "Ben Synthetic"}, events=[
+                msg(at(2023, 3, 13, 9), ANA, [OWNER], body="the day before the payment", thread="t1"),
+                msg(at(2023, 3, 13, 18), OWNER, [BEN], body="ask Ben about the money", thread="t2",
+                    level="applied_unconfirmed"),
+                msg(at(2023, 3, 14, 10), OWNER, [ANA], body="payment sent", thread="t1")])
+            phone(c, other, label="C9", owner="phone:+12025550111", contacts={ZED: "Zed Elsewhere"},
+                  events=[msg(at(2023, 3, 14, 9), ZED, ["phone:+12025550111"], body="other case only")])
+            other_rec = c.execute(text("SELECT record_uid FROM pv_comm_event WHERE case_id = :c"),
+                                  {"c": str(other)}).scalar()
+            # casework and a dossier in the case, each linking a phone record; and a dossier in the other case
+            entry = uuid.uuid4()
+            c.execute(text("INSERT INTO workspace_entries (id, case_id, entry_type, title, body, tags, review_state, "
+                           "version, migration_metadata, needs_migration_review, created_at, updated_at) VALUES (:i, "
+                           ":c, 'finding', 'Payment agreed by text', 'Maria agreed the payment the day before.', "
+                           "'[]', 'accepted', 1, '{}', false, now(), now())"), {"i": entry, "c": case})
+            c.execute(text("INSERT INTO workspace_entry_links (id, entry_id, case_id, target_type, target_id, "
+                           "target_label, relationship, source_anchor, metadata, created_at, updated_at) VALUES "
+                           "(:i, :e, :c, 'phone_record', :r, 'Message from Maria', 'supports', '{}', '{}', now(), "
+                           "now())"), {"i": uuid.uuid4(), "e": entry, "c": case, "r": evs[0]["record_uid"]})
+            dossier, foreign = uuid.uuid4(), uuid.uuid4()
+            for did, cid, name in ((dossier, case, "Maria Lopez"), (foreign, other, "Zed Elsewhere")):
+                c.execute(text("INSERT INTO case_profiles (id, case_id, profile_type, display_name, contacts, "
+                               "linkage_state, status, needs_link_review, graph_entity_deleted, created_at, "
+                               "updated_at) VALUES (:i, :c, 'person', :n, '[]', 'unlinked', 'active', false, false, "
+                               "now(), now())"), {"i": did, "c": cid, "n": name})
+            c.execute(text("INSERT INTO dossier_links (id, dossier_id, case_id, target_type, target_id, "
+                           "relationship_type, label, source_anchor, created_at, updated_at) VALUES (:i, :d, :c, "
+                           "'phone_record', :r, 'supports', 'Payment sent', '{}', now(), now())"),
+                      {"i": uuid.uuid4(), "d": dossier, "c": case, "r": evs[2]["record_uid"]})
+        yield {"engine": engine, "case": case, "other": other, "evs": evs, "other_rec": other_rec,
+               "dossier": dossier, "foreign": foreign}
+
+
+def _tools(w, case=None, monkeypatch=None):
+    from services.agent.tools import AgentToolContext, make_agent_tools
+
+    @contextmanager
+    def session():
+        with Session(bind=w["engine"]) as s:
+            yield s
+    ctx = AgentToolContext(case_id=str(case or w["case"]), ledger_session_factory=session)
+    return {t.name: t for t in make_agent_tools(ctx)}
+
+
+def test_co11_casework_returns_its_phone_links_with_rec_citations_and_the_record_in_full(world):
+    out = _tools(world)["get_casework"].invoke({})
+    assert out["status"] == "success"
+    data = out["data"]
+    assert data["schema"] == "loupe.agent.casework/1" and data["total_matching"] == 1
+    entry = data["items"][0]
+    assert entry["kind"] == "finding" and entry["phone_links"] == 1
+    link = entry["links"][0]
+    assert link["target_type"] == "phone_record" and link["relationship"] == "supports"
+    assert link["citation"]["rec"] == "rec://%s" % world["evs"][0]["record_uid"]
+    assert "the day before the payment" in link["citation"]["text"]  # full visibility
+    assert "case_id" not in _tools(world)["get_casework"].args
+
+
+def test_co11_dossier_returns_its_phone_links_with_citations_by_name_or_id(world):
+    tools = _tools(world)
+    for ref in ("Maria", str(world["dossier"])):
+        out = tools["get_dossier"].invoke({"dossier": ref})
+        item = out["data"]["items"][0]
+        assert item["name"] == "Maria Lopez" and item["phone_links"] == 1
+        assert item["links"][0]["citation"]["rec"] == "rec://%s" % world["evs"][2]["record_uid"]
+        assert "payment sent" in item["links"][0]["citation"]["text"]
+        assert "1 to phone material" in out["data"]["coverage"]
+
+
+def test_a_dossier_or_record_of_another_case_is_not_in_this_case(world):
+    tools = _tools(world)
+    for ref in (str(world["foreign"]), "Zed Elsewhere"):
+        out = tools["get_dossier"].invoke({"dossier": ref})
+        assert out["data"]["not_in_case"] is True and out["summary"].startswith("Not in this case.")
+        assert "Zed" not in str(out["data"]["items"])
+    rec = tools["phone_record"].invoke({"record": str(world["other_rec"])})
+    assert rec["data"]["not_in_case"] is True and "other case only" not in str(rec)
+    gone = tools["phone_find_people"].invoke({"query": "Zed Elsewhere"})
+    assert gone["summary"].startswith("Not in this case.")
+
+
+def test_sa7_financial_tools_in_a_phones_only_case_say_there_is_no_financial_evidence(world):
+    tools = _tools(world)
+    for name in ("get_financial_transactions", "analyze_financial_transactions", "get_financial_coverage"):
+        out = tools[name].invoke({})
+        assert out["data"]["no_financial_evidence"] is True, name
+        assert out["summary"].startswith("No financial evidence in this case."), out["summary"]
+        assert "0 payments" not in str(out) and "0 transactions" not in str(out)
+    # the phone tools answer in the same case, with full visibility
+    msgs = tools["phone_messages"].invoke({"people": ["Maria Lopez"], "mode": "any"})
+    assert msgs["data"]["total_matching"] == 2 and "payment sent" in str(msgs["data"]["items"])
+
+
+def test_xf3_the_day_before_a_payment_cites_every_record_with_a_scope_sentence_and_names_unconfirmed(world):
+    # "Who did the owner talk to the day before the payment of 2023-03-14?"
+    out = _tools(world)["phone_messages"].invoke({"start": "2023-03-13", "end": "2023-03-13"})
+    data = out["data"]
+    assert data["total_matching"] == 2 and data["has_more"] is False
+    assert all(i["rec"].startswith("rec://") for i in data["items"])
+    assert data["coverage"].startswith("Read 2 of 2 messages and calls on 1 phone on 2023-03-13")
+    assert len(data["unconfirmed"]) == 1 and "not yet confirmed" in out["summary"]
+    clipped = _tools(world)["phone_messages"].invoke({"start": "2023-03-13", "end": "2023-03-13", "limit": 1})
+    assert "Only 1 of 2 are in this result" in clipped["summary"]
+
+
+def test_overview_timeline_and_map_count_the_phones_and_xf12_the_map_says_or_shows_phone_points(world, monkeypatch):
+    from services.agent import tools as T
+    monkeypatch.setattr(T.graph_service, "get_graph_summary", lambda case_id: {
+        "total_nodes": 0, "total_relationships": 0, "entity_types": {}, "relationship_types": {}, "entities": []})
+    monkeypatch.setattr(T.timeline_service, "get_timeline_page", lambda **kw: {"events": [], "count": 0})
+    monkeypatch.setattr(T.geo_service, "get_entities_with_locations", lambda **kw: [])
+    from tests.test_phone_map import _points
+    with world["engine"].begin() as c:
+        ext = c.execute(text("SELECT id FROM phone_extractions WHERE case_id = :c"),
+                        {"c": str(world["case"])}).scalar()
+        _points(c, world["case"], ext, [(38.9, -77.0)])
+    tools = _tools(world)
+    ov = tools["get_case_overview"].invoke({})
+    assert ov["data"]["phones"] == {"phones": 1, "messages_and_calls": 3, "location_points": 1}
+    assert "hold 3 messages and calls" in ov["summary"]
+    tl = tools["get_timeline_events"].invoke({})
+    assert "Phone messages and calls are not in this result; 3 are on the phones. Use the phone tools." in tl["summary"]
+    mp = tools["get_map_locations"].invoke({})
+    assert "Phone location points are not in this result; 1 is on the phones." in mp["summary"]
+    left = tools["build_map_artifact"].invoke({})
+    assert left["data"]["phone_points_included"] is False
+    assert left["artifact"]["metadata"]["notes"].startswith("Phone location points are left out of this map; 1 is")
+    shown = tools["build_map_artifact"].invoke({"include_phone_points": True})
+    assert shown["data"]["phone_points_included"] is True and shown["data"]["phone_point_count"] == 1
+    point = shown["artifact"]["data"]["locations"][0]
+    assert point["rec"].startswith("rec://") and point["latitude"] == 38.9
+    assert shown["artifact"]["metadata"]["notes"].startswith("Includes 1 of 1 phone location points")

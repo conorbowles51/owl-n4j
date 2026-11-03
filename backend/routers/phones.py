@@ -129,6 +129,16 @@ def compare_phones(case_id: UUID = Query(...), a: UUID = Query(...), b: UUID = Q
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+@router.get("/financial-presence")
+def financial_presence(case_id: UUID = Query(...), db: Session = Depends(get_db),
+                       user: User = Depends(get_current_db_user)):
+    """Whether the case holds financial evidence, and the sentence every money part shows when it does not (07
+    section 8). Case view only: a person with no financial access still sees why the money parts are empty."""
+    from services.phone import money_presence
+    authorize_case(db, case_id, user, ("case", "view"))
+    return money_presence.presence(db.connection(), case_id)
+
+
 @router.get("/findings/{entry_id}/explain")
 def explain_finding(entry_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
                     user: User = Depends(get_current_db_user)):
