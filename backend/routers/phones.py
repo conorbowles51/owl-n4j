@@ -674,6 +674,8 @@ def _image_search_call(fn, db=None):
         out = fn()
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except image_search.ImageSearchBusy as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     except image_search.ImageSearchError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     if db is not None:

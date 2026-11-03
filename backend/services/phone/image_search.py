@@ -27,9 +27,14 @@ Rules carried here:
   refused in words and never downloaded.
 - **Search time.** Loading the libraries and the text model takes about 30 s on this server, a description then
   about 1 to 2 s (measured 3 Nov under load), so the text model stays loaded in its child between searches and the
-  child stops after ``LOUPE_IMAGE_QUERY_IDLE_SECONDS`` (default 600; 0 runs a child per description). Scoring is
-  in this process: every indexed image of the case is scored (3,000 vectors loaded in about 0.3 s, scored in under
-  0.05 s), and the result says how many were scored and how many are shown.
+  child stops after ``LOUPE_IMAGE_QUERY_IDLE_SECONDS`` (default 600; 0 runs a child per description). A search
+  waits at most ``BUSY_WAIT_SECONDS`` for its turn and the child at most ``ANSWER_TIMEOUT_SECONDS`` for an answer;
+  past either the person is told in words and a stuck child is killed.
+- **Scoring memory.** Every indexed picture of the case is scored, in this process, ``SCORE_CHUNK`` vectors at a
+  time from a server-side cursor with a running top list, and at most ``SEARCH_SLOTS`` searches score at once per
+  process. Measured on 35,000 synthetic vectors (3 Nov): peak 25.5 MB and 3.3 to 4.2 s, against 228.6 MB and
+  1.5 to 1.9 s when every vector was loaded at once. The result says how many distinct pictures and files were
+  scored and how many pictures are shown.
 """
 from __future__ import annotations
 
@@ -92,10 +97,30 @@ RESULTS_MAX = 200
 COPIES_PER_RESULT = 20
 DRAFT_EDGE = 448              # a JPEG is decoded at a reduced scale no smaller than this before the 224 px resize
 THREADS = 2
+# the kept-warm text child: starting it loads the libraries and the text model (about 31 s measured under load), one
+# description then takes 1 to 2 s; past these deadlines the child is killed and the person told in words
+READY_TIMEOUT_SECONDS = 180
+ANSWER_TIMEOUT_SECONDS = 60
+# how long a search waits for its turn (on the text child, or for a scoring slot) before it is told to try again
+BUSY_WAIT_SECONDS = 45
+# scoring reads the case's vectors this many at a time and keeps a running top list, so a search holds at most one
+# chunk (2,000 x 768 x 4 bytes, about 6 MB) whatever the case's size; at most this many searches score at once
+SCORE_CHUNK = 2000
+SEARCH_SLOTS = 2
 
 
 class ImageSearchError(ValueError):
     pass
+
+
+class ImageSearchBusy(ImageSearchError):
+    """Too many searches at once in this server process; the person is told to try again (HTTP 503)."""
+
+
+BUSY_WORDS = "Another search is running; try again in a moment."
+TOO_LONG_WORDS = "The image search model took too long and was stopped. Nothing was sent anywhere."
+STOPPED_WORDS = "The image search model stopped. Try the search again. Nothing was sent anywhere."
+COULD_NOT_RUN = "The image search model could not run. Nothing was sent anywhere."
 
 
 def parameters() -> dict:
@@ -136,9 +161,12 @@ _INDEXED = ("EXISTS (SELECT 1 FROM phone_image_index_items i WHERE i.case_id = f
 _WAITING = ("EXISTS (SELECT 1 FROM phone_image_index_items i WHERE i.case_id = f.case_id AND i.file_uid = f.file_uid "
             "AND i.state IN ('queued', 'running'))")
 # the file's latest finished attempt failed for a reason that another attempt would not change
-_COULD_NOT_OPEN = ("coalesce((SELECT i.reason FROM phone_image_index_items i WHERE i.case_id = f.case_id AND "
-                   "i.file_uid = f.file_uid AND i.state IN ('done', 'failed') ORDER BY i.finished_at DESC NULLS LAST, "
-                   "i.id LIMIT 1) = ANY(:perm), false)")
+_LATEST_REASON = ("(SELECT i.reason FROM phone_image_index_items i WHERE i.case_id = f.case_id AND i.file_uid = "
+                  "f.file_uid AND i.state IN ('done', 'failed') ORDER BY i.finished_at DESC NULLS LAST, i.id LIMIT 1)")
+_COULD_NOT_OPEN = "coalesce(%s = ANY(:perm), false)" % _LATEST_REASON
+# an indexed file the search ranks: in the population and the production (the "indexed" count of ``describe``)
+SEARCHABLE_SQL = ("%s AND %s AND %s AND coalesce(f.verification, '') <> 'empty_placeholder'"
+                  % (IMAGE_SQL, POPULATION_SQL, PRESENT_SQL))
 ELIGIBLE_SQL = ("%s AND %s AND %s AND coalesce(f.verification, '') <> 'empty_placeholder' AND NOT %s AND NOT %s AND "
                 "NOT %s" % (IMAGE_SQL, POPULATION_SQL, PRESENT_SQL, _INDEXED, _WAITING, _COULD_NOT_OPEN))
 
@@ -168,15 +196,13 @@ def describe(conn, case_id) -> dict:
         _params(case_id, w=w)).one()
     reasons = {}
     if r.could_not_open:
+        # the same files as the total: in the population and the production, not indexed, not waiting
         for reason, n in conn.execute(text(
-                "SELECT x.reason, count(*) FROM (SELECT DISTINCT ON (i.file_uid) i.reason FROM phone_image_index_items "
-                "i JOIN pv_file f ON f.file_uid = i.file_uid WHERE i.case_id = :c AND i.state IN ('done', 'failed') "
-                "ORDER BY i.file_uid, i.finished_at DESC NULLS LAST, i.id) x WHERE x.reason = ANY(:perm) GROUP BY 1"),
-                _params(case_id)):
+                "SELECT x.reason, count(*) FROM (SELECT " + _LATEST_REASON + " AS reason " + _base() + " AND " +
+                present + " AND NOT " + _INDEXED + " AND NOT " + _WAITING + ") x WHERE x.reason = ANY(:perm) "
+                "GROUP BY 1"), _params(case_id, w=w)):
             reasons[reason] = int(n)
-    vectors = int(conn.execute(text(
-        "SELECT count(*) FROM phone_image_vectors WHERE case_id = :c AND weights_sha256 = :w"),
-        {"c": str(case_id), "w": w}).scalar())
+    vectors = indexed_counts(conn, case_id, w)["pictures"]
     return {"images": int(r.images), "eligible": int(r.eligible), "indexed": int(r.indexed),
             "indexed_contents": vectors, "waiting": int(r.waiting),
             "left_out": {"not_in_population": int(r.not_in_population), "not_in_production": int(r.not_in_production),
@@ -199,6 +225,8 @@ POPULATION_WORDS = ("Images sent or received in a message, in a camera or screen
 def create(conn, *, case_id, user_id) -> dict:
     """Queue one indexing row per eligible image in one statement; the job's total is the number of rows queued."""
     ident = identity()
+    # one request at a time per case: a second one waits here, then finds nothing eligible and is told so
+    conn.execute(text("SELECT pg_advisory_xact_lock(hashtext('phone_image_index:' || :c))"), {"c": str(case_id)})
     facts = describe(conn, case_id)
     if not facts["eligible"]:
         raise ImageSearchError("Every image in this case's search population is already indexed, waiting, or "
@@ -215,6 +243,9 @@ def create(conn, *, case_id, user_id) -> dict:
         "SELECT gen_random_uuid(), :j, f.case_id, f.extraction_id, f.file_uid " + _base() + " AND " + ELIGIBLE_SQL +
         " ON CONFLICT (case_id, file_uid) WHERE state IN ('queued', 'running') DO NOTHING"),
         _params(case_id, j=job, w=ident["weights_sha256"])).rowcount
+    if not queued:
+        raise ImageSearchError("Every image in this case's search population is already indexed, waiting, or "
+                               "cannot be indexed; nothing was queued.")
     conn.execute(text("UPDATE phone_image_index_jobs SET total = :n WHERE id = :j"), {"n": queued, "j": job})
     return get(conn, case_id, job)
 
@@ -568,7 +599,11 @@ def query_idle_seconds() -> int:
 class _TextServer:
     """The text half of the model, kept loaded in one isolated child per server process between searches and
     stopped after ``query_idle_seconds`` without one. It is the same child script, guard and limits as every other
-    run; descriptions go to it one per line on its standard input. Searches take turns on it."""
+    run; descriptions go to it one per line on its standard input. Searches take turns on it: a search waits at
+    most ``BUSY_WAIT_SECONDS`` for its turn, and an answer is waited for at most ``ANSWER_TIMEOUT_SECONDS`` (the
+    first, while the model loads, ``READY_TIMEOUT_SECONDS``). A child that misses its deadline, writes something
+    that is not an answer, or has stopped is killed and discarded, and the person is told in words; the next search
+    starts a fresh one."""
 
     def __init__(self):
         self.lock = threading.Lock()
@@ -576,76 +611,125 @@ class _TextServer:
         self.weights = None
         self.err = None
         self.timer = None
+        self.buf = b""
 
     def _start(self, weights):
         import tempfile as _tf
-        self._stop()
+        self._kill()
         self.err = _tf.TemporaryFile()
         self.proc = subprocess.Popen([sys.executable, "-I", "-c", _CHILD], stdin=subprocess.PIPE,
-                                     stdout=subprocess.PIPE, stderr=self.err, text=True, env=_child_env(), bufsize=1)
-        self.weights = weights
+                                     stdout=subprocess.PIPE, stderr=self.err, env=_child_env())
+        self.weights, self.buf = weights, b""
         self._send({"mode": "text", "serve": True, "max_tokens": TEXT_MAX_TOKENS, "model": str(M.model_dir())})
-        ready = self._answer()
-        if not ready.get("ready"):
-            raise ImageSearchError("The image search model could not run. Nothing was sent anywhere.")
+        if not self._answer(READY_TIMEOUT_SECONDS).get("ready"):
+            self._kill()
+            raise ImageSearchError(COULD_NOT_RUN)
 
     def _send(self, obj):
-        self.proc.stdin.write(json.dumps(obj) + "\n")
-        self.proc.stdin.flush()
+        try:
+            self.proc.stdin.write((json.dumps(obj) + "\n").encode("utf-8"))
+            self.proc.stdin.flush()
+        except (OSError, ValueError):  # the child has gone (broken pipe, closed stream)
+            self._kill()
+            raise ImageSearchError(STOPPED_WORDS) from None
 
-    def _answer(self) -> dict:
+    def _answer(self, timeout) -> dict:
+        """One answer line, read in chunks with a real deadline: half a line never blocks past it."""
         import select
-        ready, _, _ = select.select([self.proc.stdout], [], [], QUERY_TIMEOUT_SECONDS)
-        line = self.proc.stdout.readline() if ready else ""
-        if not line:
-            words = "The image search model took too long and was stopped. Nothing was sent anywhere."
-            if ready:  # the child ended
-                self.proc.wait(timeout=30)
-                self.err.seek(0)
-                words = _child_words(self.err.read().decode("utf-8", "replace"))
-            self._stop()
-            raise ImageSearchError(words)
-        return json.loads(line)
+        import time
+        deadline = time.monotonic() + timeout
+        fd = self.proc.stdout.fileno()
+        while b"\n" not in self.buf:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                self._kill()
+                raise ImageSearchError(TOO_LONG_WORDS)
+            ready, _, _ = select.select([fd], [], [], left)
+            if not ready:
+                continue
+            chunk = os.read(fd, 1 << 16)
+            if not chunk:  # the child ended
+                words = self._ended_words()
+                self._kill()
+                raise ImageSearchError(words)
+            self.buf += chunk
+        line, self.buf = self.buf.split(b"\n", 1)
+        try:
+            got = json.loads(line)
+            if not isinstance(got, dict):
+                raise ValueError("not an object")
+        except ValueError:
+            log.warning("image search text child wrote something that is not an answer (%d bytes)", len(line))
+            self._kill()
+            raise ImageSearchError(COULD_NOT_RUN) from None
+        return got
 
-    def _stop(self):
+    def _ended_words(self) -> str:
+        try:
+            self.proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            self.err.seek(0)
+            return _child_words(self.err.read().decode("utf-8", "replace"))
+        except (OSError, ValueError):
+            return COULD_NOT_RUN
+
+    def _kill(self):
         if self.timer is not None:
             self.timer.cancel()
             self.timer = None
         if self.proc is not None:
+            proc, self.proc = self.proc, None
             try:
-                self.proc.stdin.close()
+                proc.kill()
             except OSError:
                 pass
             try:
-                self.proc.wait(timeout=5)
+                proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                self.proc.kill()
-                self.proc.wait()
-            self.proc = None
+                log.warning("image search text child %s did not stop after kill", proc.pid)
+            for stream in (proc.stdin, proc.stdout):
+                try:
+                    stream.close()
+                except (OSError, ValueError):
+                    pass
         if self.err is not None:
             self.err.close()
             self.err = None
+        self.buf = b""
 
     def _idle(self):
-        with self.lock:
-            self._stop()
+        # a search under way re-arms the timer when it finishes; the idle stop never waits for it
+        if self.lock.acquire(blocking=False):
+            try:
+                self._kill()
+            finally:
+                self.lock.release()
 
     def vector(self, value: str, weights: str) -> dict:
         idle = query_idle_seconds()
         if idle == 0:
             return run_child({"mode": "text", "text": value, "max_tokens": TEXT_MAX_TOKENS}, QUERY_TIMEOUT_SECONDS)
-        with self.lock:
+        if not self.lock.acquire(timeout=BUSY_WAIT_SECONDS):
+            raise ImageSearchBusy(BUSY_WORDS)
+        try:
             if self.timer is not None:
                 self.timer.cancel()
                 self.timer = None
             if self.proc is None or self.proc.poll() is not None or self.weights != weights:
                 self._start(weights)
             self._send({"text": value})
-            got = self._answer()
+            got = self._answer(ANSWER_TIMEOUT_SECONDS)
+            if not isinstance(got.get("vector"), list):
+                self._kill()
+                raise ImageSearchError(COULD_NOT_RUN)
             self.timer = threading.Timer(idle, self._idle)
             self.timer.daemon = True
             self.timer.start()
             return got
+        finally:
+            self.lock.release()
 
 
 _TEXT = _TextServer()
@@ -672,25 +756,76 @@ def embed_query(query: str, ident: dict) -> dict:
     return got
 
 
-def _vectors(conn, case_id, weights):
-    """The case's vectors made by these weights that link to a file of an active phone."""
+_SEARCH_SLOTS = threading.BoundedSemaphore(SEARCH_SLOTS)
+
+# the files the search ranks, each linked to its content: finished with these weights, and still in the population
+# and the production on an active phone; the same files ``describe`` counts as indexed
+_LINKED = ("SELECT DISTINCT i.content_sha256, i.file_uid FROM phone_image_index_items i WHERE i.case_id = :c AND "
+           "i.state = 'done' AND i.weights_sha256 = :w AND i.file_uid IN (SELECT f.file_uid " + "%s" + " AND " +
+           SEARCHABLE_SQL + ")")
+
+
+def _linked_sql() -> str:
+    return _LINKED % _base()
+
+
+def indexed_counts(conn, case_id, weights) -> dict:
+    """What a search ranks: distinct pictures (contents), and the files holding them."""
+    r = conn.execute(text("SELECT count(DISTINCT content_sha256) AS pictures, count(DISTINCT file_uid) AS files "
+                          "FROM (" + _linked_sql() + ") x"), _params(case_id, w=weights)).one()
+    return {"pictures": int(r.pictures), "files": int(r.files)}
+
+
+def _vector_chunks(conn, case_id, weights, dim_check=None):
+    """The ranked pictures' vectors, ``SCORE_CHUNK`` at a time in content-hash order, from a server-side cursor:
+    (hashes, float32 matrix) per chunk, so only one chunk is held at once."""
     import numpy as np
-    rows = conn.execute(text(
+    res = conn.execution_options(stream_results=True, yield_per=SCORE_CHUNK).execute(text(
         "SELECT v.content_sha256, v.dim, v.vector FROM phone_image_vectors v WHERE v.case_id = :c AND "
-        "v.weights_sha256 = :w AND EXISTS (SELECT 1 FROM phone_image_index_items i JOIN pv_file f ON f.file_uid = "
-        "i.file_uid WHERE i.case_id = v.case_id AND i.content_sha256 = v.content_sha256 AND i.weights_sha256 = "
-        "v.weights_sha256 AND i.state = 'done') ORDER BY v.content_sha256"), {"c": str(case_id), "w": weights}
-    ).fetchall()
-    if not rows:
-        return [], np.zeros((0, 0), dtype="<f4")
-    mat = np.frombuffer(b"".join(bytes(r.vector) for r in rows), dtype="<f4").reshape(len(rows), int(rows[0].dim))
-    return [r.content_sha256 for r in rows], mat
+        "v.weights_sha256 = :w AND v.content_sha256 IN (SELECT content_sha256 FROM (" + _linked_sql() + ") x) "
+        "ORDER BY v.content_sha256"), _params(case_id, w=weights))
+    try:
+        for part in res.partitions(SCORE_CHUNK):
+            dim = int(part[0].dim)
+            mat = np.empty((len(part), dim), dtype="<f4")
+            for j, r in enumerate(part):
+                mat[j] = np.frombuffer(r.vector, dtype="<f4", count=dim)
+            yield [r.content_sha256 for r in part], mat
+    finally:
+        res.close()
+
+
+def scores_of(mat, qv):
+    """Cosine scores of unit vectors, in float64 rounded to 9 places, so equal pictures score exactly equal whichever
+    chunk they are scored in (ties then go by content hash)."""
+    import numpy as np
+    return np.round(np.asarray(mat, dtype=np.float64) @ np.asarray(qv, dtype=np.float64), 9)
+
+
+def top_k(parts, qv, k) -> list:
+    """The ``k`` highest-scoring hashes over chunks given in content-hash order, highest first, equal scores in
+    hash order: a running top list merged with each chunk, so memory is one chunk plus ``k``."""
+    import numpy as np
+    best_s, best_i, best_h = np.empty(0), np.empty(0, dtype=np.int64), []
+    offset = 0
+    for shas, mat in parts:
+        if not len(shas):
+            continue
+        s = scores_of(mat, qv)
+        all_s = np.concatenate([best_s, s])
+        all_i = np.concatenate([best_i, np.arange(offset, offset + len(shas), dtype=np.int64)])
+        all_h = best_h + list(shas)
+        offset += len(shas)
+        keep = np.lexsort((all_i, -all_s))[:k]
+        best_s, best_i, best_h = all_s[keep], all_i[keep], [all_h[j] for j in keep]
+    return best_h
 
 
 def search(conn, case_id, query: str, limit: int = 24) -> dict:
-    """Rank the case's indexed images by similarity to ``query``. Every indexed image is scored; the first
-    ``limit`` are returned with the number scored, so a partial list is never presented as the whole. Each
-    result is one image content with every indexed copy of it (phone, file, messages)."""
+    """Rank the case's indexed pictures by similarity to ``query``. Every indexed picture is scored; the first
+    ``limit`` are returned with the number scored (distinct pictures, and the files holding them), so a partial
+    list is never presented as the whole. Each result is one picture with every indexed copy of it (phone, file,
+    messages). At most ``SEARCH_SLOTS`` searches score at once in this process; another is told to try again."""
     import numpy as np
     q = (query or "").strip()
     if not q:
@@ -699,21 +834,23 @@ def search(conn, case_id, query: str, limit: int = 24) -> dict:
         raise ImageSearchError("A description is at most %d characters." % QUERY_MAX_CHARS)
     limit = max(1, min(RESULTS_MAX, int(limit)))
     ident = identity()
-    shas, mat = _vectors(conn, case_id, ident["weights_sha256"])
-    facts = describe(conn, case_id)
-    base = {"query": q, "label": label(ident), "model": ident["model"], "model_id": ident["model_id"],
-            "revision_short": ident["revision_short"], "weights_sha256": ident["weights_sha256"],
-            "provider_words": derive.provider_words("local"), "scored": len(shas), "coverage": facts,
-            "results": [], "truncated_query": False}
-    if not shas:
-        return dict(base, shown=0)
-    got = embed_query(q, ident)
-    qv = np.asarray(got["vector"], dtype="<f4")
-    scores = mat @ qv
-    # highest first; equal scores in content-hash order, so the ranking is the same every time
-    order = np.lexsort((np.arange(len(shas)), -scores))[:limit]
-    top = [shas[i] for i in order]
-    copies = _copies(conn, case_id, top, ident["weights_sha256"])
+    if not _SEARCH_SLOTS.acquire(timeout=BUSY_WAIT_SECONDS):
+        raise ImageSearchBusy(BUSY_WORDS)
+    try:
+        counts = indexed_counts(conn, case_id, ident["weights_sha256"])
+        facts = describe(conn, case_id)
+        base = {"query": q, "label": label(ident), "model": ident["model"], "model_id": ident["model_id"],
+                "revision_short": ident["revision_short"], "weights_sha256": ident["weights_sha256"],
+                "provider_words": derive.provider_words("local"), "scored": counts["pictures"],
+                "scored_files": counts["files"], "coverage": facts, "results": [], "truncated_query": False}
+        if not counts["pictures"]:
+            return dict(base, shown=0)
+        got = embed_query(q, ident)
+        qv = np.asarray(got["vector"], dtype="<f4")
+        top = top_k(_vector_chunks(conn, case_id, ident["weights_sha256"]), qv, limit)
+        copies = _copies(conn, case_id, top, ident["weights_sha256"])
+    finally:
+        _SEARCH_SLOTS.release()
     results = []
     for rank, sha in enumerate(top, start=1):
         cs = copies.get(sha, [])
@@ -732,10 +869,10 @@ def _copies(conn, case_id, shas, weights) -> dict:
     out = {}
     for r in conn.execute(text(
             "SELECT DISTINCT ON (i.content_sha256, f.file_uid) i.content_sha256, f.file_uid, f.extraction_id, "
-            "f.local_path, f.category, coalesce(c.messages, 0) AS messages FROM phone_image_index_items i JOIN pv_file "
-            "f ON f.file_uid = i.file_uid LEFT JOIN (" + media._CARRIED + ") c ON c.file_uid = f.file_uid WHERE "
-            "i.case_id = :c AND i.state = 'done' AND i.weights_sha256 = :w AND i.content_sha256 = ANY(:h) ORDER BY "
-            "i.content_sha256, f.file_uid"), {"c": str(case_id), "w": weights, "h": list(shas)}):
+            "f.local_path, f.category, coalesce(c.messages, 0) AS messages FROM (" + _linked_sql() + ") i JOIN "
+            "pv_file f ON f.file_uid = i.file_uid LEFT JOIN (" + media._CARRIED + ") c ON c.file_uid = f.file_uid "
+            "WHERE i.content_sha256 = ANY(:h) ORDER BY i.content_sha256, f.file_uid"),
+            _params(case_id, w=weights, h=list(shas))):
         name = (r.local_path or "").replace("\\", "/").rsplit("/", 1)[-1] or "File not named in the report"
         out.setdefault(r.content_sha256, []).append({
             "file_uid": str(r.file_uid), "extraction_id": str(r.extraction_id),

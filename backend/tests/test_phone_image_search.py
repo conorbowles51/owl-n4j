@@ -300,7 +300,7 @@ def test_a_description_ranks_the_case_images_and_each_result_shows_its_phones_an
         labels = phone_labels(c, world.case)
         again = image_search.search(c, world.case, "A red square ", limit=1)
         other = image_search.search(c, world.other, "a red square")
-    assert got["scored"] == 3 and got["shown"] == 3
+    assert got["scored"] == 3 and got["shown"] == 3 and got["scored_files"] == 4
     assert [r["content_sha256"] for r in got["results"]] == [sha(RED), sha(BLUE), sha(INVOICE)]
     assert [r["rank"] for r in got["results"]] == [1, 2, 3] and "score" not in got["results"][0]
     top = got["results"][0]
@@ -335,6 +335,9 @@ def test_a_superseded_phone_drops_out_of_the_results(world, monkeypatch):
     # the blue photo was only on the superseded phone; the red square stays through its copy on the other phone
     assert got["scored"] == 2 and [r["copy_count"] for r in got["results"]][0] == 1
     assert sha(BLUE) not in [r["content_sha256"] for r in got["results"]]
+    # the ranking and the coverage count the same things: distinct pictures, and the files holding them
+    assert got["scored_files"] == 2 == got["coverage"]["indexed"]
+    assert got["coverage"]["indexed_contents"] == got["scored"] == 2
 
 
 def test_a_file_whose_verified_hash_is_already_embedded_is_linked_without_reading_it(world, monkeypatch):
@@ -404,6 +407,86 @@ def test_cancel_removes_files_not_started_and_keeps_every_indexed_one(world, mon
         image_search.cancel(c, world.other, job["id"])
 
 
+def test_the_could_not_open_reasons_add_up_to_their_total(world, monkeypatch):
+    """Review finding: the breakdown counted every failed file of the case, the total only those still in the
+    population, in the production and not indexed since."""
+    FakeChild(monkeypatch)
+    _create(world)
+    _drain(world)
+    with world.engine.begin() as c:  # the HEIC file is no longer in the production
+        c.execute(text("UPDATE phone_files SET outcome = 'missing', disk_relpath = NULL WHERE file_uid = :f"),
+                  {"f": world.files["photo.heic"]})
+    d = _describe(world)
+    assert d["left_out"]["could_not_open"] == 2 and d["left_out"]["not_in_production"] == 2
+    assert d["left_out"]["could_not_open_by_reason"] == {"not_image": 1, "unreadable": 1}
+
+
+def test_two_index_requests_at_the_same_moment_make_one_job_and_the_second_is_told_why(world):
+    """Review finding: two clicks at once made a second job with nothing in it."""
+    import threading
+    from services.phone import image_search
+    first = world.engine.connect()
+    tx = first.begin()
+    made = image_search.create(first, case_id=world.case, user_id=None)
+    out = {}
+
+    def second():
+        try:
+            with world.engine.begin() as c:
+                out["job"] = image_search.create(c, case_id=world.case, user_id=None)
+        except Exception as e:  # noqa: BLE001
+            out["error"] = e
+    t = threading.Thread(target=second)
+    t.start()
+    t.join(1.0)
+    assert t.is_alive()  # the second waits for the first to finish
+    tx.commit()
+    first.close()
+    t.join(30)
+    assert made["total"] == 7 and "job" not in out
+    assert isinstance(out["error"], image_search.ImageSearchError) and "nothing was queued" in str(out["error"])
+    with world.engine.connect() as c:
+        assert c.execute(text("SELECT count(*) FROM phone_image_index_jobs WHERE case_id = :c"),
+                         {"c": world.case}).scalar() == 1
+
+
+def test_ranking_in_chunks_keeps_the_same_order_as_ranking_all_at_once():
+    """Scoring is streamed in chunks with a running top list, so memory is bounded by the chunk; the order, ties
+    included (broken by content hash), is the order of scoring everything at once."""
+    import numpy as np
+    from services.phone import image_search
+    rng = np.random.default_rng(7)
+    n, dim = 503, 8
+    mat = rng.standard_normal((n, dim)).astype("<f4")
+    mat /= np.linalg.norm(mat, axis=1, keepdims=True)  # unit vectors, as stored
+    qv = rng.standard_normal(dim).astype("<f4")
+    qv /= np.linalg.norm(qv)
+    mat[300] = mat[100] = mat[7] = qv  # the three best, with equal scores
+    shas = ["%064x" % i for i in range(n)]
+    exact = np.round(mat.astype(np.float64) @ qv.astype(np.float64), 9)
+    whole = [shas[i] for i in np.lexsort((np.arange(n), -exact))[:40]]
+    assert whole[:3] == [shas[7], shas[100], shas[300]]  # a tie, in hash order
+    for chunk in (1, 2, 37, 1000):
+        parts = [(shas[i:i + chunk], mat[i:i + chunk]) for i in range(0, n, chunk)]
+        assert image_search.top_k(parts, qv, 40) == whole, chunk
+    assert image_search.top_k([], qv, 5) == []
+
+
+def test_searches_beyond_the_allowed_number_at_once_are_told_to_try_again(world, monkeypatch):
+    from services.phone import image_search
+    FakeChild(monkeypatch)
+    monkeypatch.setattr(image_search, "_SEARCH_SLOTS", threading_semaphore(0))
+    monkeypatch.setattr(image_search, "BUSY_WAIT_SECONDS", 0.2)
+    with world.engine.connect() as c, pytest.raises(image_search.ImageSearchBusy,
+                                                   match="^Another search is running; try again in a moment"):
+        image_search.search(c, world.case, "a red square")
+
+
+def threading_semaphore(n):
+    import threading
+    return threading.BoundedSemaphore(n) if n else threading.Semaphore(0)
+
+
 def test_a_failed_draw_of_several_is_drawn_again_one_by_one_so_the_failure_names_its_file(world, monkeypatch):
     from services.phone import image_search
     child = FakeChild(monkeypatch, fail=True)
@@ -456,6 +539,16 @@ for line in sys.stdin:
     if t == "stop now":
         sys.stderr.write("synthetic failure\n")
         sys.exit(3)
+    if t == "hang":
+        import time
+        time.sleep(600)
+    if t == "partial":
+        sys.stdout.write('{"vector": [1.0'); sys.stdout.flush()
+        import time
+        time.sleep(600)
+    if t == "garbage":
+        print("not an answer", flush=True)
+        continue
     print(json.dumps({"vector": [1.0, 0, 0, 0], "text": t, "pid": os.getpid()}), flush=True)
 '''
 
@@ -482,6 +575,84 @@ def test_the_text_model_stays_loaded_between_searches_and_stops_when_idle_or_fai
         assert server.vector("again", "w1")["text"] == "again"
     finally:
         server._idle()
+
+
+def test_a_hung_or_garbled_text_child_is_stopped_within_its_deadline_and_said_in_words(model, monkeypatch):
+    """Review finding: a child that stopped answering, or wrote half a line, held every search forever; one that
+    wrote something other than an answer gave a bare server error."""
+    import time
+    from services.phone import image_search
+    monkeypatch.setattr(image_search, "_CHILD", _STAND_IN_SERVER)
+    monkeypatch.setenv("LOUPE_IMAGE_QUERY_IDLE_SECONDS", "60")
+    monkeypatch.setattr(image_search, "ANSWER_TIMEOUT_SECONDS", 1)
+    server = image_search._TextServer()
+    try:
+        for value, words in (("hang", "took too long"), ("partial", "took too long"), ("garbage", "could not run")):
+            before = server.vector("warm", "w1")["pid"]
+            proc = server.proc
+            t0 = time.monotonic()
+            with pytest.raises(image_search.ImageSearchError, match=words):
+                server.vector(value, "w1")
+            assert time.monotonic() - t0 < 10
+            assert server.proc is None and proc.poll() is not None  # killed and discarded
+            assert server.vector("after", "w1")["pid"] != before  # the next search starts a fresh child
+    finally:
+        server._idle()
+
+
+def test_a_text_child_that_died_before_the_description_was_sent_is_said_in_words(model, monkeypatch):
+    from services.phone import image_search
+    monkeypatch.setattr(image_search, "_CHILD", _STAND_IN_SERVER)
+    monkeypatch.setenv("LOUPE_IMAGE_QUERY_IDLE_SECONDS", "60")
+    server = image_search._TextServer()
+    try:
+        server.vector("warm", "w1")
+        proc = server.proc
+        proc.kill()
+        proc.wait()
+        monkeypatch.setattr(proc, "poll", lambda: None)  # it died between the check and the send
+        with pytest.raises(image_search.ImageSearchError, match="stopped. Try the search again"):
+            server.vector("a red square", "w1")
+        assert server.proc is None
+        assert server.vector("again", "w1")["text"] == "again"
+    finally:
+        server._idle()
+
+
+def test_a_second_search_waits_a_bounded_time_for_the_text_child_then_is_told_to_try_again(model, monkeypatch):
+    import threading
+    import time
+    from services.phone import image_search
+    monkeypatch.setattr(image_search, "_CHILD", _STAND_IN_SERVER)
+    monkeypatch.setenv("LOUPE_IMAGE_QUERY_IDLE_SECONDS", "60")
+    monkeypatch.setattr(image_search, "ANSWER_TIMEOUT_SECONDS", 3)
+    monkeypatch.setattr(image_search, "BUSY_WAIT_SECONDS", 0.3)
+    server = image_search._TextServer()
+    server.vector("warm", "w1")
+    held = threading.Thread(target=lambda: pytest.raises(image_search.ImageSearchError, server.vector, "hang", "w1"))
+    held.start()
+    time.sleep(0.3)
+    try:
+        t0 = time.monotonic()
+        with pytest.raises(image_search.ImageSearchBusy, match="^Another search is running; try again in a moment"):
+            server.vector("a red square", "w1")
+        assert time.monotonic() - t0 < 2
+    finally:
+        held.join(10)
+        server._idle()
+
+
+def test_a_busy_search_is_answered_503_and_a_refusal_422():
+    from fastapi import HTTPException
+    from routers.phones import _image_search_call
+    from services.phone import image_search
+    for exc, code in ((image_search.ImageSearchBusy("Another search is running; try again in a moment."), 503),
+                      (image_search.ImageSearchError(image_search.NO_MODEL), 422)):
+        def boom(e=exc):
+            raise e
+        with pytest.raises(HTTPException) as got:
+            _image_search_call(boom)
+        assert got.value.status_code == code and got.value.detail == str(exc)
 
 
 # ---- the real model ------------------------------------------------------------------------------------------------
