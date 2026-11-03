@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { instantWords } from "@/features/phones/lib/time-words"
 import { CollectBar } from "@/features/pattern/components/CollectBar"
 import { moneyAPI, type AnalysisResult, type AnalysisRun } from "./money-api"
+import { amountWords } from "./money-words"
 
 /**
  * Approach 1, money signals on the phone (05 section 4), in the shared results layout (05 section 3.9, AP-1): what it
@@ -47,20 +48,6 @@ const KIND_TABS = [
   { kind: "money_reading", label: "Money on the phones" },
   { kind: "account_lead", label: "Accounts the financial records do not include" },
 ] as const
-
-/** "USD 1,234.56" from integer minor units and the currency's exponent; the text as written when either is unknown. */
-export function amountWords(m: Record<string, any>): string {
-  if (m.amount_minor == null || !m.currency) return `${m.amount_text} (as written)`
-  let exp = 2
-  try {
-    exp = new Intl.NumberFormat("en-US", { style: "currency", currency: m.currency }).resolvedOptions().maximumFractionDigits ?? 2
-  } catch {
-    return `${m.amount_text} (as written)`
-  }
-  const digits = String(m.amount_minor).padStart(exp + 1, "0")
-  const whole = digits.slice(0, digits.length - exp).replace(/\B(?=(\d{3})+(?!\d))/g, ",")
-  return `${m.currency} ${whole}${exp ? "." + digits.slice(-exp) : ""}`
-}
 
 function RunControl({ caseId, run, onRequested }: { caseId: string; run: AnalysisRun | null; onRequested: (r: AnalysisRun) => void }) {
   const [err, setErr] = useState<string | null>(null)

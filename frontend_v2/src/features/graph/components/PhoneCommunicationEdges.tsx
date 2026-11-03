@@ -4,18 +4,12 @@ import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { getLinkEdges } from "@/features/phones/api"
 import type { GraphEdge, GraphNode } from "@/types/graph.types"
+import { pairConversationsHref } from "@/features/graph/lib/pair-href"
 
 const PREFIX = "phone-identity:"
 const SHOWN = 8
 const fmt = (n: number) => n.toLocaleString("en-US")
 const plural = (n: number, one: string, many: string) => `${fmt(n)} ${n === 1 ? one : many}`
-
-/** Where a pair's edge opens: Conversations, Between A and B, with the same direct, copies-collapsed scope the edge
- * is counted with (07 J-3, a Graph edge start). */
-export function pairConversationsHref(caseId: string, a: string, b: string): string {
-  const q = new URLSearchParams({ tab: "people", people: `${a},${b}`, mode: "between" })
-  return `/cases/${encodeURIComponent(caseId)}/conversations?${q.toString()}`
-}
 
 function PairEdge({ caseId, a, b, aName, bName }: { caseId: string; a: string; b: string; aName: string; bName: string }) {
   const navigate = useNavigate()

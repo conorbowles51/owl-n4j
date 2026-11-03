@@ -13,7 +13,8 @@ const api = vi.hoisted(() => ({
 vi.mock("./money-api", () => api)
 vi.mock("@/features/pattern/components/CollectBar", () => ({ CollectBar: () => <div>Add to…</div> }))
 
-import MoneySignalsPage, { WHAT_IT_DOES, amountWords } from "./MoneySignalsPage"
+import MoneySignalsPage, { WHAT_IT_DOES } from "./MoneySignalsPage"
+import { amountWords } from "./money-words"
 import { PhoneMentions } from "@/features/financial/components/PhoneMentions"
 
 const RUN = { id: "run-1", approach: "money_signals", status: "completed", progress: {}, counts: {}, error: null,
