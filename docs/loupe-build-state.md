@@ -1,3 +1,26 @@
+## 3 November: investigative approaches, stage H (cb-approaches)
+
+**Live:** LIVE_SHA. Each approach was measured with `phone_analysis.measurements` on the reference cases before it was
+built; numbers, reverse-ifs and decisions are in 05. Screens are checked signed in over http on both synthetic cases.
+
+- **Built, gate passed:** 2 Messages across phones (and its badge per message in Conversations, 5.4), 3 Deleted and
+  hidden, 4 group roles, 5 complementary use, 7 Typed words (37 hits on C9), 9 Searches and pages (399 on C3), 11
+  Relationships over time, 14 Common contacts (21 of 28 owner pairs), 15 Who contacts whom (8 owners in contact), 16
+  Possible number changes (3 pairs against 0 in 20 shuffles), 13 Incident window (always built; states approach 2's
+  clock differences above its lanes, never moving a time).
+- **Built on a synthetic pair (corpus gate failed):** 12 Two extractions of one phone. Compare phones (J-16) reads
+  its keys when a pair is shown to be one device (none on live: 6 pairs, 2 cases). Links to a record of a replaced
+  report say "From a replaced copy" and offer the equal-key record (CO-9a, CO-9b): CO-9a was not in the code although
+  listed under cb-screens; built here, follow-up m110322573227530. The A-C8 control waits for the Mac copy.
+- **Recorded do-not-build:** 6 cross-phone devices (2 of 5 strong keys), 10 plans and places (3 of 20), F link edges
+  in approach screens (no live case holds a reviewed phone-to-counterparty link).
+- **Exports (J-14b):** an analysis result, a kept result, a statement check and an incident window export their
+  messages and calls; the offer appears only when records stand behind the result. **CO-1 cells for analyses:** a
+  kept result and its records into a finding, a dossier and an interview, each opening back.
+- **Traps learnt:** the case views (`pv_record`, `pv_comm_event`, `pv_text`) hold only reports in use, so anything
+  about a replaced report reads the tables at the current interpretation (`replaced_links.keys_any`, held equal to
+  approach 12's keys by a test). A new analysis module's source change needs its VERSION and fingerprint in
+  `test_phone_analysis_versions.py`; helpers that do not change results belong outside the module.
 ## 3 November: source database view and independent re-parse, stage J (cb-stagej), in progress
 
 - **Live (da4c03f9, 21:09 UTC):** record view source panel (05 17.2): states in words (verified, absent, MD5

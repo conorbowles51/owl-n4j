@@ -871,7 +871,11 @@ K1 to K5, tiers, assignment with ties left out, clock offsets per pair, family a
 and the outcomes `both_sides`, `deleted_one_side` (recovered from the other copy), `one_side_only` with reasons
 `counterpart_extraction_ended` and `counterpart_app_no_data`, `ambiguous_pair` and `clock_offset`. Acceptance
 tests 5.8.1 to 5.8.9 pass. Measure m2.2 counts the tiers in Loupe. The per-message badge in Conversations (5.4)
-is not built yet.
+reads the case's latest completed run: "Also on C2" (with which side holds a deleted copy), "Only on this phone, not
+on C2" with the run's reasons, or two equally close copies; the other copy opens from the badge. A message the run
+did not compare has no badge, and the list says so and says when the phones changed since the run
+(`across_badges.py`, `test_phone_analysis_across_badges.py`). The side-by-side "Show both copies" view is the other
+copy opened from the badge.
 
 ### 5.7 Dependencies
 
@@ -1682,7 +1686,11 @@ Natural keys are needed (record ids do not overlap).
 of one phone").** Built by Neil's brief although the corpus gate failed: the identity check (15.3 step 1, with the
 contradiction rule), natural keys (19.S15-a), the five diff kinds and the attribution of step 5, on every pair of a
 case's extractions; 15.8 tests 1 to 4 in `test_phone_analysis_extraction_comparison.py`. On the live cases no pair is
-shown to be one device, so the screen gives identity checks only. `diff_counts` gives the per-pair counts J-16 reads.
+shown to be one device, so the screen gives identity checks only. Compare phones (J-16) reads this approach's keys
+when the pair is shown to be one device, so its counts equal `diff_counts` for the dated messages and calls in scope
+(15.8 test 5); measured read-only on live, 6 pairs in 2 cases, none shown to be one device, so nothing on live
+changes. A link to a record of a replaced report says "From a replaced copy" and offers the record with the equal key
+in the report that replaced it, or says why none is offered (15.8 test 6; CO-9a and CO-9b; `phone/replaced_links.py`).
 The A-C8 control (M-12d) waits for the second C8 export, which is only on the Mac.
 
 ### 15.7 Dependencies
@@ -1760,8 +1768,9 @@ chooses shows phones with nothing at ±1 h that ±2 h would show; the script tak
 **Built (`cb-approaches`, 05-S16, screen "Incident window").** The 04 window view (shared Lanes, availability per
 phone, the money lane) on its own screen with a typed moment, opened from a statement (its own start, end and zone),
 a selected message or call in Conversations, and, as before, a key date and the Timeline. With no moment chosen it
-opens around the latest moment on the case's phones and says so. Default ±1 h (16.6). Approach 2's offsets are not
-drawn beside the times yet.
+opens around the latest moment on the case's phones and says so. Default ±1 h (16.6). Approach 2's clock offsets
+are stated above the lanes, from the latest run, as readings about the clocks; no time is moved, and with no run the
+window says no difference is known.
 
 ### 16.7 Dependencies
 
