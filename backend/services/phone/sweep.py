@@ -116,15 +116,16 @@ def _extraction(conn, extraction_id, lock=False):
 
 
 def candidates(conn, limit=50, only=None):
-    """Extractions whose derived rows are missing or stale, oldest capture first."""
+    """Extractions whose derived rows are missing or stale, oldest capture first (none of a deleted case)."""
+    from postgres.soft_delete import live_case_sql
     set_id, _ = mapping_set(conn)
     where = " AND e.id = :only" if only is not None else ""
     rows = conn.execute(text(
         "SELECT e.id, e.captured_at, e.record_count, e.capture_code_version, e.capture_state::text AS capture_state, "
         "s.interpreter_version, s.mapping_set_id, s.capture_revision, s.decision_revision, s.status "
         "FROM phone_extractions e LEFT JOIN phone_interpretation_state s ON s.extraction_id = e.id "
-        "WHERE e.capture_state IN ('captured', 'captured_incomplete') AND e.standing IN ('pending', 'active')"
-        + where + " ORDER BY e.captured_at NULLS LAST, e.id"), {"only": only} if only is not None else {}).fetchall()
+        "WHERE e.capture_state IN ('captured', 'captured_incomplete') AND e.standing IN ('pending', 'active') AND "
+        + live_case_sql("e.case_id") + where + " ORDER BY e.captured_at NULLS LAST, e.id"), {"only": only} if only is not None else {}).fetchall()
     out = []
     for r in rows:
         m = r._mapping

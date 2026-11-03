@@ -817,11 +817,14 @@ class EvidenceDBStorage:
         """Stored paths that another evidence row (any case) still points at.
 
         Two rows can share one file on disk (the same upload recorded twice). Deleting one row must not remove the
-        file the other row still serves, so callers unlink only paths not in this set."""
+        file the other row still serves, so callers unlink only paths not in this set. A row in Deleted items counts:
+        a restore must find its file."""
+        from postgres.soft_delete import SHOW_DELETED
         wanted = sorted({p for p in paths if p})
         if not wanted:
             return set()
-        query = select(EvidenceFile.stored_path).where(EvidenceFile.stored_path.in_(wanted))
+        query = select(EvidenceFile.stored_path).where(EvidenceFile.stored_path.in_(wanted)).execution_options(
+            **{SHOW_DELETED: True})
         excluded = [i for i in excluding_ids if i is not None]
         if excluded:
             query = query.where(EvidenceFile.id.notin_(excluded))

@@ -98,7 +98,8 @@ def cite_link(db, conn, case_id, target_type: str, target_id: str, anchor: dict 
             cite["phone"] = target.label
         return cite
     if target_type == "evidence":
-        name = conn.execute(text("SELECT original_filename FROM evidence_files WHERE id::text = :i AND case_id = :c"),
+        name = conn.execute(text("SELECT original_filename FROM evidence_files WHERE id::text = :i AND case_id = :c "
+                                 "AND deleted_at IS NULL"),
                             {"i": target_id, "c": str(case_id)}).scalar()
         if name is None:
             return {"state": "not_in_case", "reason": "%s No such evidence file." % NOT_IN_CASE}

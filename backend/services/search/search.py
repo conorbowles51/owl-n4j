@@ -233,7 +233,8 @@ def _records(conn, case_id, q, exact, phones, offset, limit, ctx):
 DOC_FROM = ("FROM evidence_document_texts t JOIN evidence_files f ON f.id = t.evidence_file_id "
             "LEFT JOIN evidence_text_folds x ON x.evidence_file_id = t.evidence_file_id AND x.content_sha256 = "
             "t.content_sha256 AND x.fold_version = :v "
-            "WHERE f.case_id = :c AND f.source_type IS DISTINCT FROM 'phone_text' AND t.content IS NOT NULL ")
+            "WHERE f.case_id = :c AND f.deleted_at IS NULL AND f.source_type IS DISTINCT FROM 'phone_text' "
+            "AND t.content IS NOT NULL ")
 
 
 def _documents(conn, case_id, q, exact, offset, limit):

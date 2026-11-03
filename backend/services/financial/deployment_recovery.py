@@ -555,7 +555,9 @@ async def run_recovery_forever():
             with factory() as db:
                 runs = list(db.scalars(select(Run).where(_running_releases(), Run.status == 'running').with_for_update(skip_locked=True)))
                 for run in runs:
-                    if not db.scalar(select(Item.id).where(Item.run_id == run.id, Item.status.in_(PENDING)).limit(1)):
+                    # Items of a file in Deleted items are still pending: the run waits for them (postgres/soft_delete.py).
+                    if not db.scalar(select(Item.id).where(Item.run_id == run.id, Item.status.in_(PENDING)).limit(1)
+                                     .execution_options(loupe_show_deleted=True)):
                         run.status = 'complete'
                 db.commit()
         except asyncio.CancelledError:

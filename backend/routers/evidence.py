@@ -899,6 +899,22 @@ def text_search(
     return result
 
 
+@router.get("/deleted")
+def list_deleted_evidence(
+    case_id: str = Query(..., description="Case ID"),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Deleted items of a case's Evidence: who deleted each file, when, what it holds, days left to restore."""
+    from uuid import UUID
+    from routers.case_access import authorize_case_view
+    from services import evidence_casebin
+    case_uuid = authorize_case_view(db, case_id, current_user)
+    return dict(files=evidence_casebin.list_deleted(db, case_uuid),
+                retention_days=evidence_casebin.DELETED_RETENTION_DAYS,
+                can_restore=evidence_casebin.can_restore(db, case_uuid, current_user))
+
+
 @router.get("/{evidence_id}", response_model=EvidenceRecord)
 def get_evidence_record(
     evidence_id: str,
@@ -2139,170 +2155,74 @@ def process_wiretap_folders(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/{evidence_id}/restore")
+def restore_deleted_evidence(
+    evidence_id: str,
+    case_id: str = Query(..., description="Case ID"),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Bring a file back from Deleted items: the row, its graph and its text search, exactly as they were."""
+    from routers.case_access import authorize_case_view
+    from services import evidence_casebin
+    case_uuid = authorize_case_view(db, case_id, current_user)
+    try:
+        return evidence_casebin.restore_file(db, case_uuid, evidence_id, current_user)
+    except evidence_casebin.EvidenceNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except evidence_casebin.EvidenceNotDeleted as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except evidence_casebin.EvidenceRestoreDenied as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
+
 @router.delete("/{evidence_id}")
-async def delete_evidence_file(
+def delete_evidence_file(
     evidence_id: str,
     case_id: str = Query(..., description="Case ID for scoping"),
-    delete_exclusive_entities: bool = Query(True, description="Also delete entities only mentioned in this file"),
+    delete_exclusive_entities: bool = Query(True, description="Also hide entities only mentioned in this file"),
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
-    Delete an evidence file and optionally its exclusive entities.
+    Move an evidence file to Deleted items for 30 days (services/evidence_casebin.py).
 
-    This will:
-    1. Remove the evidence record from storage
-    2. Delete the physical file from disk
-    3. Delete the Document node from Neo4j
-    4. If delete_exclusive_entities=True, delete entities that are ONLY
-       mentioned in this document (not shared with other documents)
-    5. Clean up related embeddings from ChromaDB
-    6. Exclusive entities are soft-deleted to the recycling bin
+    The file, its record, its Document node, the entities found only in it and its text search are kept and hidden
+    from every screen, search and agent; the case owner or an admin can restore it. After 30 days it is purged with
+    the delete used before (graph recycle bin for its exclusive entities, file and record removed).
     """
-    import logging
-    logger = logging.getLogger(__name__)
-
+    from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+    from services import evidence_casebin
+    from uuid import UUID
     try:
-        # Async for the engine call only: the checks, graph, vector and disk clean-up and the record delete run in
-        # the thread pool, in the same order.
-        def remove_all_but_engine_copy():
-            from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
-            from uuid import UUID
-            try:
-                check_case_access(db, UUID(case_id), current_user, required_permission=("evidence", "upload"))
-            except (CaseNotFound, CaseAccessDenied) as e:
-                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+        check_case_access(db, UUID(case_id), current_user, required_permission=("evidence", "upload"))
+    except (CaseNotFound, CaseAccessDenied, ValueError) as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-            # 1. Get the evidence record from Postgres
-            db_record = None
-            try:
-                db_record = EvidenceDBStorage.get(db, UUID(evidence_id))
-            except (ValueError, AttributeError):
-                db_record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
-
-            if not db_record:
-                raise HTTPException(status_code=404, detail="Evidence file not found")
-            if str(db_record.case_id) != case_id:
-                raise HTTPException(status_code=403, detail="Evidence file does not belong to this case")
-
-            # Check if file is currently being processed
-            if db_record.status == "processing":
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Cannot delete file while it is being processed. Wait for processing to complete."
-                )
-            from services.financial.import_removal import financial_hold, financial_hold_message
-            hold = financial_hold(db, case_id=db_record.case_id, file_ids=[db_record.id])
-            if hold:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=financial_hold_message(hold))
-
-            filename = db_record.original_filename
-            stored_path = db_record.stored_path
-            engine_job_id = db_record.engine_job_id
-            result_info = {
-                "evidence_id": evidence_id,
-                "filename": filename,
-                "file_deleted": False,
-                "document_deleted": False,
-                "exclusive_entities_recycled": [],
-                "shared_entities_unlinked": [],
-                "chromadb_cleaned": False,
-            }
-            doc_key = None
-
-            # 2. Delete from Neo4j (Document node + exclusive entities)
-            try:
-                doc_node = neo4j_service.find_document_node(filename, case_id)
-                if doc_node:
-                    doc_key = doc_node["key"]
-
-                    if delete_exclusive_entities:
-                        # Find exclusive entities BEFORE deleting doc, then soft-delete them
-                        exclusive = neo4j_service.find_exclusive_entities(doc_key, case_id)
-
-                        # Soft-delete exclusive entities to recycling bin first
-                        for entity in exclusive:
-                            try:
-                                neo4j_service.soft_delete_entity(
-                                    node_key=entity["key"],
-                                    case_id=case_id,
-                                    deleted_by=current_user.email,
-                                    reason=f"file_delete:{filename}",
-                                    db=db,
-                                )
-                                result_info["exclusive_entities_recycled"].append(entity)
-                            except Exception as e:
-                                logger.warning(f"Failed to recycle entity {entity['key']}: {e}")
-
-                    # Find shared entities (for response info) before deleting doc
-                    try:
-                        shared = neo4j_service.find_document_node(doc_key, case_id)  # just to verify
-                    except Exception:
-                        pass
-
-                    # Remove MENTIONED_IN relationships from remaining entities
-                    # and delete the Document node itself
-                    neo4j_service.delete_node(doc_key, case_id=case_id)
-                    result_info["document_deleted"] = True
-
-                else:
-                    logger.info(f"No Document node found in Neo4j for {filename}")
-            except ValueError as e:
-                logger.info(f"Neo4j document deletion: {e}")
-            except Exception as e:
-                logger.warning(f"Neo4j cleanup error: {e}")
-
-            # 3. Clean up ChromaDB independently of graph cleanup. A missing or
-            # partially-written Document node must not leave searchable chunks.
-            try:
-                from services.vector_db_service import get_vector_db_service
-                vector_db = get_vector_db_service()
-                if vector_db:
-                    vector_db.delete_chunks_for_document(
-                        case_id=case_id,
-                        evidence_file_id=str(db_record.id),
-                        doc_key=doc_key,
-                        file_name=filename,
-                    )
-                    for entity in result_info["exclusive_entities_recycled"]:
-                        vector_db.delete_entity(entity["key"])
-                    result_info["chromadb_cleaned"] = True
-            except Exception as e:
-                logger.warning(f"ChromaDB cleanup error: {e}")
-
-            # 4. Delete physical file from backend disk, unless another evidence row still uses the same file
-            if stored_path and EvidenceDBStorage.keeps_file_on_delete(db_record.source_type):
-                result_info["file_kept_production"] = True
-            elif stored_path and EvidenceDBStorage.stored_paths_in_use(db, [stored_path], [db_record.id]):
-                result_info["file_kept_shared"] = True
-            elif stored_path:
-                file_path = _resolve_stored_path(stored_path) or Path(stored_path)
-                if file_path.exists():
-                    try:
-                        file_path.unlink()
-                        result_info["file_deleted"] = True
-                    except Exception as e:
-                        logger.warning("Failed to delete physical file: %s", e)
-
-            return db_record.id, engine_job_id, result_info
-
-        record_id, engine_job_id, result_info = await run_in_threadpool(remove_all_but_engine_copy)
-
-        # 5. Tell evidence engine to clean up its processing copy
-        if engine_job_id:
-            try:
-                await evidence_engine_client.delete_file(case_id, engine_job_id)
-            except Exception as e:
-                logger.warning("Failed to delete file from evidence engine: %s", e)
-
-        # 6. Delete evidence record from Postgres
-        def delete_record():
-            EvidenceDBStorage.delete_record(db, record_id)
-            db.commit()
-        await run_in_threadpool(delete_record)
-
-        return result_info
-
+    db_record = None
+    try:
+        db_record = EvidenceDBStorage.get(db, UUID(evidence_id))
+    except (ValueError, AttributeError):
+        db_record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
+    if not db_record:
+        raise HTTPException(status_code=404, detail="Evidence file not found")
+    if str(db_record.case_id) != case_id:
+        raise HTTPException(status_code=403, detail="Evidence file does not belong to this case")
+    if db_record.status == "processing":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot delete file while it is being processed. Wait for processing to complete."
+        )
+    from services.financial.import_removal import financial_hold, financial_hold_message
+    hold = financial_hold(db, case_id=db_record.case_id, file_ids=[db_record.id])
+    if hold:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=financial_hold_message(hold))
+    if evidence_casebin.import_in_progress(db, db_record.case_id, [db_record.id]):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A Financial import is still preparing "
+                            "this file. Wait for it to finish, or remove the import, then delete the file.")
+    try:
+        return evidence_casebin.delete_file(db, db_record, current_user,
+                                            delete_exclusive_entities=delete_exclusive_entities)
     except HTTPException:
         raise
     except Exception as e:

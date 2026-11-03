@@ -441,7 +441,7 @@ def _thread_documents_for_record(db: Session, case_id: uuid.UUID, record_uid: st
     from sqlalchemy import text as sql
     rows = db.execute(sql(
         "SELECT f.id FROM evidence_files f JOIN evidence_document_texts t ON t.evidence_file_id = f.id WHERE "
-        "f.case_id = :c AND f.source_type = 'phone_text' AND t.source_locations @> CAST(:loc AS jsonb) ORDER BY f.id"),
+        "f.case_id = :c AND f.deleted_at IS NULL AND f.source_type = 'phone_text' AND t.source_locations @> CAST(:loc AS jsonb) ORDER BY f.id"),
         {"c": str(case_id), "loc": json.dumps([{"record_uid": str(record_uid)}])}).scalars().all()
     return [uuid.UUID(str(r)) for r in rows]
 

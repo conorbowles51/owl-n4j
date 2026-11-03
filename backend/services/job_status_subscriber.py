@@ -177,11 +177,14 @@ class JobStatusSubscriber:
     def _load_in_flight():
         """(kind, row id, engine job id, case id) for every row left processing, read in one short session."""
         from postgres.session import get_background_session
+        from postgres.soft_delete import SHOW_DELETED
         from sqlalchemy import select
         from postgres.models.evidence import EvidenceFile
         from postgres.models.merge_job import MergeJob
 
         with get_background_session() as db:
+            # A job of a file or case in Deleted items still lands on its row, so a restore shows the true state.
+            db.info[SHOW_DELETED] = True
             files = [("file", ef.id, ef.engine_job_id, str(ef.case_id)) for ef in db.scalars(
                 select(EvidenceFile).where(
                     EvidenceFile.status == "processing",
@@ -201,12 +204,15 @@ class JobStatusSubscriber:
     def _apply_in_flight(self, answers):
         """Write the engine's answers (in a thread). Returns (job id, case id, error) to subscribe to."""
         from postgres.session import get_background_session
+        from postgres.soft_delete import SHOW_DELETED
         from postgres.models.evidence import EvidenceFile
         from postgres.models.merge_job import MergeJob
         from services.evidence_db_storage import EvidenceDBStorage
 
         to_subscribe = []
         with get_background_session() as db:
+            # A job of a file or case in Deleted items still lands on its row, so a restore shows the true state.
+            db.info[SHOW_DELETED] = True
             for kind, row_id, jid, case_id, job, error in answers:
                 row = db.get(EvidenceFile if kind == "file" else MergeJob, row_id)
                 if row is None or row.status != "processing" or row.engine_job_id != jid:
@@ -414,10 +420,13 @@ class JobStatusSubscriber:
 
     def _write_terminal(self, job_id: str, data: dict, job_detail: dict, status: str, case_id: str | None) -> bool:
         from postgres.session import get_background_session
+        from postgres.soft_delete import SHOW_DELETED
         from postgres.models.merge_job import MergeJob
         from services.evidence_db_storage import EvidenceDBStorage
 
         with get_background_session() as db:
+            # A job of a file or case in Deleted items still lands on its row, so a restore shows the true state.
+            db.info[SHOW_DELETED] = True
             merge_job = db.query(MergeJob).filter(
                 MergeJob.engine_job_id == job_id
             ).first()

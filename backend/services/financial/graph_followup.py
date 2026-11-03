@@ -355,6 +355,11 @@ def project_case_graph(case_id, *, session_factory=None, graph_session_factory=N
     # The SQL snapshot is closed before any graph work starts, so no Postgres
     # transaction or row lock is held while Neo4j is slow or unavailable.
     with session_factory() as db:
+        # A case in Deleted items reads as an empty ledger (postgres/soft_delete.py); projecting that would retract
+        # its whole ledger graph, analyst edges included. Its graph is left exactly as it is until restore or purge.
+        if case_is_deleted(db, case_id):
+            db.rollback()
+            return dict(case_id=str(case_id), skipped="case is in Deleted items")
         snapshot = snapshot_case(db, case_id, batch_size=batch_size)
         db.rollback()
     report = summarize(snapshot)
@@ -725,6 +730,12 @@ def retry_delay(attempts: int) -> float:
     return float(min(RETRY_BASE_SECONDS * (2 ** max(attempts - 1, 0)), RETRY_CAP_SECONDS))
 
 
+def case_is_deleted(db, case_id) -> bool:
+    from sqlalchemy import text as _text
+    return bool(db.execute(_text("SELECT deleted_at IS NOT NULL FROM cases WHERE id = CAST(:c AS uuid)"),
+                           {"c": str(case_id)}).scalar())
+
+
 def _drift_scan(session_factory, graph_session_factory, now: float) -> None:
     with graph_session_factory() as graph:
         markers = graph.run(_ALL_MARKERS).data()
@@ -735,6 +746,8 @@ def _drift_scan(session_factory, graph_session_factory, now: float) -> None:
                 if _states.get(str(case_id), _CaseState()).first_requested is not None:
                     continue
             try:
+                if case_is_deleted(db, UUID(str(case_id))):
+                    continue  # Deleted items: its graph is left as it is
                 current = ledger_fingerprint(db, UUID(str(case_id)))
             except ValueError:
                 continue

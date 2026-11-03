@@ -239,7 +239,10 @@ class MaintenanceService:
             SessionLocal = _get_session_local()
             db = SessionLocal()
             try:
-                case_ids = db.query(Case.id).all()
+                # A case in Deleted items still exists until it is purged: its graph and vectors are not orphans.
+                from postgres.soft_delete import showing_deleted
+                with showing_deleted(db):
+                    case_ids = db.query(Case.id).all()
                 return {str(cid[0]) for cid in case_ids}
             finally:
                 db.close()

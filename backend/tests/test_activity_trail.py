@@ -181,10 +181,10 @@ class CaseDeletionTests(TrailBase):
         self.assertEqual((event.user_email, event.case_id, event.source_address, event.session_ref),
                          (self.f.user.email, self.f.case.id, '203.0.113.7', '0123456789abcdef'))
         self.assertEqual(event.details['case_title'], title)
-        self.assertEqual(event.details['records_removed']['evidence_files'], files)
-        self.assertEqual(event.details['records_removed']['case_memberships'], 1)
+        self.assertEqual(event.details['records_held']['evidence_files'], files)
+        self.assertEqual(event.details['records_held']['case_memberships'], 1)
         self.assertIsNotNone(event.at)
-        self.assertEqual(activity_trail.ACTIONS['case_deleted'], 'Deleted a case')
+        self.assertEqual(activity_trail.ACTIONS['case_deleted'], 'Deleted a case (kept 30 days in Deleted items)')
 
     def test_a_refused_delete_records_nothing(self):
         from services import case_service

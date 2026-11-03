@@ -135,6 +135,7 @@ def windows(conn, case_id, question, *, max_windows=MAX_WINDOWS) -> list:
         "JOIN phone_extractions e ON e.id::text = f.metadata ->> 'phone_extraction_id' AND e.case_id = f.case_id "
         "AND e.standing = 'active' LEFT JOIN evidence_text_folds x ON x.evidence_file_id = f.id AND "
         "x.content_sha256 IS NOT DISTINCT FROM t.content_sha256 AND x.fold_version = :v WHERE f.case_id = :c AND "
+        "f.deleted_at IS NULL AND "
         "f.source_type = 'phone_text' AND (%s) ORDER BY 8 DESC, f.original_filename, f.id LIMIT %d"
         % (score, " OR ".join(conds), CANDIDATE_DOCS)), params).fetchall()
     found = []

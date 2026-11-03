@@ -99,6 +99,7 @@ class EvidenceFile(Base, TimestampMixin):
         Index("ix_evidence_files_sha256", "sha256"),
         Index("ix_evidence_files_case_status", "case_id", "status"),
         Index("ix_evidence_files_legacy_id", "legacy_id"),
+        Index("ix_evidence_files_deleted", "id", postgresql_where=text("deleted_at IS NOT NULL")),
         Index("ix_evidence_files_source_type", "source_type"),
         Index("ix_evidence_files_case_source", "case_id", "source_type"),
         Index("ix_evidence_files_case_cellebrite_report", "case_id", "cellebrite_report_key"),
@@ -143,6 +144,13 @@ class EvidenceFile(Base, TimestampMixin):
         ForeignKey("evidence_files.id", ondelete="SET NULL"),
         nullable=True,
     )
+
+    # Deleted items (postgres/soft_delete.py): set while the file waits 30 days to be purged; every read hides it.
+    # deleted_state keeps what the delete moved aside (graph recycle-bin keys, chunk states) for the restore.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    deleted_state: Mapped[dict | None] = mapped_column(_jsonb_column(), nullable=True)
 
     is_relevant: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     owner: Mapped[str | None] = mapped_column(String(255), nullable=True)

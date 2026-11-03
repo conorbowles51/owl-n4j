@@ -166,6 +166,11 @@ async def lifespan(app: FastAPI):
     from services.financial.view_warmup import warm_case_files_once
     case_files_task = asyncio.create_task(warm_case_files_once(), name="financial-case-files-warmup")
 
+    # Deleted items older than 30 days are purged with the delete used before (services/casebin_purge.py); one
+    # process at a time across the host (advisory lock).
+    from services.casebin_purge import run_purge_forever
+    casebin_purge_task = asyncio.create_task(run_purge_forever(), name="deleted-items-purge")
+
     # The application loaded so far lives as long as the process: keep it out
     # of every later garbage-collector pass (services.process_memory).
     from services.process_memory import freeze_startup_objects
@@ -180,7 +185,8 @@ async def lifespan(app: FastAPI):
     # pending recovery item, revisioned graph sweep) resumes on the next start.
     await process_shutdown.stop_background_tasks(
         [recovery_task, identity_graph_task, address_lookup_task, phone_interpretation_task, financial_batches_task,
-         view_warmup_task, view_refresh_task, case_files_task, cleanup_task, platform_update_task, loop_lag_task],
+         view_warmup_task, view_refresh_task, case_files_task, cleanup_task, platform_update_task, loop_lag_task,
+         casebin_purge_task],
         timeout=process_shutdown.BACKGROUND_STOP_SECONDS,
     )
 

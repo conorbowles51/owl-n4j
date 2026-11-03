@@ -327,30 +327,49 @@ def delete_folder(
                               file_ids=EvidenceDBStorage.folder_tree_file_ids(db, uuid.UUID(folder_id)))
         if hold:
             raise HTTPException(status_code=409, detail=financial_hold_message(hold))
-        stored_paths = EvidenceDBStorage.delete_folder(
-            db, uuid.UUID(folder_id), uuid.UUID(case_id)
-        )
-
-        # Clean up physical files. The folder's rows are already flushed away, so any row still pointing at a path
-        # lives outside this folder and keeps its file.
-        from pathlib import Path
-        deleted_files = 0
-        shared = EvidenceDBStorage.stored_paths_in_use(db, stored_paths)
-        for path_str in dict.fromkeys(stored_paths):
-            if not path_str or path_str in shared:
-                continue
-            try:
-                p = Path(path_str)
-                if p.exists():
-                    p.unlink()
-                    deleted_files += 1
-            except Exception as e:
-                logger.warning("Failed to delete file %s: %s", path_str, e)
-
+        # Every file in the folder tree goes to Deleted items (services/evidence_casebin.py), restorable for 30 days;
+        # files already there are kept. Then the folders go. A restored file goes back to its folder if that folder
+        # exists again, else to the top of Evidence.
+        from services import evidence_casebin
+        from postgres.soft_delete import showing_deleted
+        from postgres.models.evidence import EvidenceFile, EvidenceFolder
+        folder_uuid = uuid.UUID(folder_id)
+        root = db.get(EvidenceFolder, folder_uuid)
+        if root is None or str(root.case_id) != case_id:
+            raise HTTPException(status_code=404, detail="Folder not found")
+        tree, pending, names = [], [folder_uuid], {folder_uuid: root.name}
+        while pending:
+            fid = pending.pop()
+            tree.append(fid)
+            for child in db.query(EvidenceFolder).filter(EvidenceFolder.parent_id == fid).all():
+                names[child.id] = child.name
+                pending.append(child.id)
+        with showing_deleted(db):
+            files = db.query(EvidenceFile).filter(EvidenceFile.folder_id.in_(tree)).all()
+        busy = [f.original_filename for f in files if f.deleted_at is None and f.status == "processing"]
+        if busy:
+            raise HTTPException(status_code=409, detail="Cannot delete the folder while files in it are being "
+                                "processed: " + ", ".join(sorted(busy)[:5]))
+        if evidence_casebin.import_in_progress(db, root.case_id, [f.id for f in files if f.deleted_at is None]):
+            raise HTTPException(status_code=409, detail="A Financial import is still preparing files in this "
+                                "folder. Wait for it to finish, or remove the import, then delete the folder.")
+        moved = 0
+        for f in files:
+            if f.deleted_at is None:
+                evidence_casebin.delete_file(db, f, current_user)
+                moved += 1
+        with showing_deleted(db):
+            for f in db.query(EvidenceFile).filter(EvidenceFile.id.in_([f.id for f in files])).all():
+                f.deleted_state = dict(f.deleted_state or {}, folder_id=str(f.folder_id),
+                                       folder_name=names.get(f.folder_id))
+                f.folder_id = None
+            db.flush()
+        db.delete(root)
         db.commit()
         return {
-            "deleted_files": deleted_files,
-            "deleted_folders": 1,  # The root folder
+            "deleted_files": moved,
+            "deleted_folders": len(tree),
+            "restorable_days": evidence_casebin.DELETED_RETENTION_DAYS,
         }
     except HTTPException:
         raise

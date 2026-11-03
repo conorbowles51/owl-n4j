@@ -392,6 +392,9 @@ def project_stale(engine, graph_session=None) -> dict:
     from contextlib import nullcontext
     with engine.connect() as conn:
         sigs = signatures(conn)
+        # A case in Deleted items is skipped: its projection is neither rebuilt nor removed until it is restored or
+        # purged (left out of the signatures alone it would read as "no phones" and lose its projection).
+        deleted = {str(r[0]) for r in conn.execute(text("SELECT id FROM cases WHERE deleted_at IS NOT NULL"))}
     if graph_session is None:
         from services.neo4j_service import neo4j_service
         ctx = neo4j_service.session()
@@ -400,7 +403,7 @@ def project_stale(engine, graph_session=None) -> dict:
     done = {}
     with ctx as gs:
         marks = _markers(gs)
-        for case in sorted(set(sigs) | set(marks)):
+        for case in sorted((set(sigs) | set(marks)) - deleted):
             if sigs.get(case) is not None and marks.get(case) == sigs.get(case):
                 continue
             if sigs.get(case) is not None:

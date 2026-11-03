@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, String, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,6 +22,7 @@ class Case(Base, TimestampMixin):
             "address_lookup_mode IS NULL OR address_lookup_mode IN ('auto', 'flag')",
             name="ck_cases_address_lookup_mode",
         ),
+        Index("ix_cases_deleted", "id", postgresql_where=text("deleted_at IS NOT NULL")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -48,6 +51,11 @@ class Case(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
+
+    # Deleted items (postgres/soft_delete.py): set while the case waits 30 days to be purged; every read hides it.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     created_by = relationship("User", foreign_keys=[created_by_user_id])
     owner = relationship("User", foreign_keys=[owner_user_id])

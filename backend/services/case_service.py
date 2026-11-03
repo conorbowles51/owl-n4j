@@ -364,23 +364,131 @@ def update_case(
     return case
 
 
+# A deleted case waits this long in Deleted items before it is purged (lx-casebin decision 1).
+DELETED_RETENTION_DAYS = 30
+
+
+class CaseNotDeleted(Exception):
+    """Raised when restoring a case that is not in Deleted items."""
+
+
 def delete_case(db: Session, case_id: UUID, user: User) -> None:
     """
-    Delete a case and all associated memberships.
-
-    Args:
-        db: Database session
-        case_id: The case ID
-        user: The user performing the deletion
+    Move a case to Deleted items. Nothing is removed: the case and everything in it are hidden from every screen,
+    search, agent, export and background job (postgres/soft_delete.py) until the owner or an admin restores it,
+    or until it is purged DELETED_RETENTION_DAYS later (purge_case, the delete used before).
 
     Raises:
-        CaseNotFound: If the case doesn't exist
+        CaseNotFound: If the case doesn't exist (or is already deleted)
         CaseAccessDenied: If the user doesn't have delete permission
     """
+    from datetime import datetime, timezone
     case, _ = check_case_access(db, case_id, user, required_permission=("case", "delete"))
+    now = datetime.now(timezone.utc)
     details = dict(case_title=case.title,
                    case_created_at=case.created_at.isoformat() if case.created_at else None,
                    owner_user_id=str(case.owner_user_id) if case.owner_user_id else None,
+                   records_held=_case_record_counts(db, case_id),
+                   purge_after=_purge_after(now).isoformat())
+    case.deleted_at = now
+    case.deleted_by_user_id = user.id
+    # The audit row goes in the same transaction: it commits only if the case is really moved to Deleted items.
+    from services import activity_trail
+    activity_trail.record("case_deleted", db=db, user=user, case_id=case_id, details=details)
+    db.commit()
+    from postgres import soft_delete
+    soft_delete.forget()
+
+
+def _purge_after(deleted_at):
+    from datetime import timedelta
+    return deleted_at + timedelta(days=DELETED_RETENTION_DAYS)
+
+
+def can_restore_case(case: Case, user: User) -> bool:
+    """The case owner or an admin restores a deleted case (decision 1)."""
+    return is_super_admin(user) or case.owner_user_id == user.id
+
+
+def _deleted_case(db: Session, case_id: UUID) -> Case:
+    from postgres.soft_delete import showing_deleted
+    with showing_deleted(db):
+        case = db.query(Case).filter(Case.id == case_id).first()
+    if case is None:
+        raise CaseNotFound(f"Case {case_id} not found")
+    if case.deleted_at is None:
+        raise CaseNotDeleted(f"Case {case_id} is not deleted")
+    return case
+
+
+def list_deleted_cases(db: Session, user: User) -> list[dict]:
+    """The deleted cases this user may restore, newest first, with who deleted them, when, what they hold and the
+    days left before the purge."""
+    from datetime import datetime, timezone
+    from postgres.soft_delete import showing_deleted
+    with showing_deleted(db):
+        query = db.query(Case).filter(Case.deleted_at.is_not(None))
+        if not is_super_admin(user):
+            query = query.filter(Case.owner_user_id == user.id)
+        cases = query.order_by(Case.deleted_at.desc()).all()
+        people = {u.id: u for u in db.query(User).filter(User.id.in_(
+            {c.deleted_by_user_id for c in cases if c.deleted_by_user_id} | {c.owner_user_id for c in cases})).all()}
+    now = datetime.now(timezone.utc)
+    rows = []
+    for case in cases:
+        purge_at = _purge_after(case.deleted_at)
+        deleter = people.get(case.deleted_by_user_id)
+        owner = people.get(case.owner_user_id)
+        rows.append(dict(
+            id=str(case.id), title=case.title,
+            deleted_at=case.deleted_at.isoformat(),
+            deleted_by=dict(id=str(deleter.id), name=deleter.name, email=deleter.email) if deleter else None,
+            owner=dict(id=str(owner.id), name=owner.name, email=owner.email) if owner else None,
+            purge_at=purge_at.isoformat(),
+            days_left=max(0, (purge_at - now).days),
+            holds=_case_record_counts(db, case.id),
+        ))
+    return rows
+
+
+def restore_case(db: Session, case_id: UUID, user: User) -> Case:
+    """Bring a deleted case back exactly as it was: only the deleted marker is cleared.
+
+    Raises:
+        CaseNotFound: no such case (or already purged)
+        CaseNotDeleted: the case is not in Deleted items
+        CaseAccessDenied: the user is neither the case owner nor an admin
+    """
+    case = _deleted_case(db, case_id)
+    if not can_restore_case(case, user):
+        raise CaseAccessDenied("Only the case owner or an admin can restore a deleted case")
+    deleted_at, deleted_by = case.deleted_at, case.deleted_by_user_id
+    case.deleted_at = None
+    case.deleted_by_user_id = None
+    from services import activity_trail
+    activity_trail.record("case_restored", db=db, user=user, case_id=case_id, details=dict(
+        case_title=case.title, deleted_at=deleted_at.isoformat(),
+        deleted_by_user_id=str(deleted_by) if deleted_by else None,
+        records_held=_case_record_counts(db, case_id)))
+    db.commit()
+    from postgres import soft_delete
+    soft_delete.forget()
+    db.refresh(case)
+    return case
+
+
+def purge_case(db: Session, case_id: UUID, *, reason: str = "retention") -> dict:
+    """Remove a deleted case for good, with the delete used before Deleted items existed: its ChromaDB chunks and
+    entities, then the case row (about 140 tables cascade). Only a case already in Deleted items is purged.
+    Returns the audit details."""
+    from postgres.soft_delete import showing_deleted
+    case = _deleted_case(db, case_id)
+    details = dict(case_title=case.title,
+                   case_created_at=case.created_at.isoformat() if case.created_at else None,
+                   owner_user_id=str(case.owner_user_id) if case.owner_user_id else None,
+                   deleted_at=case.deleted_at.isoformat(),
+                   deleted_by_user_id=str(case.deleted_by_user_id) if case.deleted_by_user_id else None,
+                   reason=reason,
                    records_removed=_case_record_counts(db, case_id))
 
     # Clean up vector database entries for this case
@@ -396,16 +504,19 @@ def delete_case(db: Session, case_id: UUID, user: User) -> None:
     except Exception as e:
         details.update(vector_cleanup_error=str(e)[:200])
         print(f"[CaseService] Warning: ChromaDB cleanup failed for case {case_id}: {e}")
-        # Don't block case deletion if vector cleanup fails
+        # Don't block the purge if vector cleanup fails
 
     # The audit row goes in the same transaction as the delete: it commits only if the case is really gone, and
     # activity_events has no foreign key to cases, so the row outlives the case.
     from services import activity_trail
-    activity_trail.record("case_deleted", db=db, user=user, case_id=case_id, details=details)
+    activity_trail.record("case_purged", db=db, system=True, case_id=case_id, details=details)
 
-    # Memberships will be cascade deleted due to FK constraint
-    db.delete(case)
-    db.commit()
+    with showing_deleted(db):
+        db.delete(case)
+        db.commit()
+    from postgres import soft_delete
+    soft_delete.forget()
+    return details
 
     # The case's graph goes only once its rows are gone for good (a failed delete keeps both). Before, a deleted
     # case's nodes stayed in Neo4j: 7 deleted cases held 1,548 nodes on live, 3 Nov (followups m110323033215300).

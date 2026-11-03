@@ -45,8 +45,13 @@ ACTIONS = {
     'financial_send': 'Added files to Financial',
     'financial_auto_add': 'Added to Financial automatically',
     'phone_extraction_superseded': 'Replaced a phone report',
-    'case_deleted': 'Deleted a case',
+    'case_deleted': 'Deleted a case (kept 30 days in Deleted items)',
     'case_graph_removed': "Removed a deleted case's graph",
+    'case_restored': 'Restored a deleted case',
+    'case_purged': 'Removed a deleted case for good (30 days after it was deleted)',
+    'evidence_deleted': 'Deleted an evidence file (kept 30 days in Deleted items)',
+    'evidence_restored': 'Restored a deleted evidence file',
+    'evidence_purged': 'Removed a deleted evidence file for good (30 days after it was deleted)',
 }
 
 _context = contextvars.ContextVar('loupe_activity_context', default=None)

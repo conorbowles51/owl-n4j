@@ -506,11 +506,11 @@ def phone_candidate(case_id: UUID, row: Any, *, now: datetime, readiness: dict |
 
 _PHONE_READINESS = text(
     "SELECT e.id::text AS id, coalesce(s.generation, 0) > 0 AS interpreted, "
-    "(SELECT count(*) FROM evidence_files f WHERE f.source_type = 'phone_text' AND "
+    "(SELECT count(*) FROM evidence_files f WHERE f.source_type = 'phone_text' AND f.deleted_at IS NULL AND "
     " f.metadata ->> 'phone_extraction_id' = e.id::text) AS documents, "
     "(SELECT count(*) FROM evidence_files f JOIN evidence_document_texts t ON t.evidence_file_id = f.id "
     " JOIN evidence_text_folds x ON x.evidence_file_id = f.id AND x.content_sha256 IS NOT DISTINCT FROM "
-    " t.content_sha256 AND x.fold_version = :v WHERE f.source_type = 'phone_text' AND "
+    " t.content_sha256 AND x.fold_version = :v WHERE f.source_type = 'phone_text' AND f.deleted_at IS NULL AND "
     " f.metadata ->> 'phone_extraction_id' = e.id::text) AS folded "
     "FROM phone_extractions e LEFT JOIN phone_interpretation_state s ON s.extraction_id = e.id "
     "WHERE e.case_id = :case AND e.standing = 'active'")

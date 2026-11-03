@@ -753,8 +753,9 @@ def due_cases(conn, now=None, *, scan=False, nightly=False) -> list:
     records whose inputs differ from its latest brief, with ``nightly`` every such case not checked today."""
     now = now or _now()
     out = {}
+    from postgres.soft_delete import live_case_sql
     for r in conn.execute(text("SELECT case_id, first_requested_at, last_requested_at, reason FROM "
-                               "case_brief_requests")):
+                               "case_brief_requests WHERE " + live_case_sql("case_brief_requests.case_id"))):
         if (now - r.last_requested_at).total_seconds() >= QUIET_SECONDS or \
                 (now - r.first_requested_at).total_seconds() >= MAX_DEFER_SECONDS:
             if not _importing(conn, r.case_id) or (now - r.first_requested_at).total_seconds() >= MAX_DEFER_SECONDS:
@@ -763,7 +764,8 @@ def due_cases(conn, now=None, *, scan=False, nightly=False) -> list:
         for r in conn.execute(text(
                 "SELECT c.id, b.input_revision, b.checked_at FROM cases c LEFT JOIN LATERAL (SELECT input_revision, "
                 "checked_at FROM case_briefs x WHERE x.case_id = c.id ORDER BY created_at DESC, id DESC LIMIT 1) b ON "
-                "true WHERE EXISTS (SELECT 1 FROM financial_accounts a WHERE a.case_id = c.id) ORDER BY c.id")):
+                "true WHERE c.deleted_at IS NULL AND EXISTS (SELECT 1 FROM financial_accounts a WHERE a.case_id = c.id) "
+                "ORDER BY c.id")):
             cid = str(r.id)
             if cid in out:
                 continue
