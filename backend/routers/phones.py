@@ -656,6 +656,78 @@ def phone_media_batch_cancel(batch_id: UUID, case_id: UUID = Query(...), db: Ses
     return out
 
 
+class ImageIndexBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+
+
+class ImageSearchBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    query: str = Field(min_length=1, max_length=300)
+    limit: int = Field(24, ge=1, le=200)
+
+
+def _image_search_call(fn, db=None):
+    from services.phone import image_search
+    try:
+        out = fn()
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except image_search.ImageSearchError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if db is not None:
+        db.commit()
+    return out
+
+
+@router.post("/media/image-index/describe")
+def phone_image_index_describe(body: ImageIndexBody, db: Session = Depends(get_db),
+                               user: User = Depends(get_current_db_user)):
+    """True counts for indexing this case's images for search by description (05 17.6): the images it would index
+    and every image it leaves out, by reason; whether the model is installed on this server."""
+    from services.phone import image_search
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    return _image_search_call(lambda: image_search.describe(db.connection(), body.case_id))
+
+
+@router.post("/media/image-index", status_code=201)
+def phone_image_index_create(body: ImageIndexBody, db: Session = Depends(get_db),
+                             user: User = Depends(get_current_db_user)):
+    """Index this case's images for search, on this server: one row per eligible image, drawn by the media worker."""
+    from services.phone import image_search
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    return _image_search_call(lambda: image_search.create(db.connection(), case_id=body.case_id, user_id=user.id), db)
+
+
+@router.get("/media/image-index")
+def phone_image_index_status(case_id: UUID = Query(...), db: Session = Depends(get_db),
+                             user: User = Depends(get_current_db_user)):
+    """This case's indexing jobs with true counts by state and failures by reason, newest first."""
+    from services.phone import image_search
+    authorize_case(db, case_id, user, ("case", "view"))
+    return {"case_id": str(case_id), "items": image_search.status(db.connection(), case_id)}
+
+
+@router.post("/media/image-index/{job_id}/cancel")
+def phone_image_index_cancel(job_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                             user: User = Depends(get_current_db_user)):
+    """Stop indexing: images not yet started are removed from the job; every indexed image is kept."""
+    from services.phone import image_search
+    authorize_case(db, case_id, user, ("case", "edit"))
+    return _image_search_call(lambda: image_search.cancel(db.connection(), case_id, job_id), db)
+
+
+@router.post("/media/image-search")
+def phone_image_search(body: ImageSearchBody, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_db_user)):
+    """Find images by description (05 17.6): the case's indexed images ranked by a model on this server. A result
+    points to an image; it does not describe it. The description is not stored and is not sent anywhere."""
+    from services.phone import image_search
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    return _image_search_call(lambda: image_search.search(db.connection(), body.case_id, body.query, body.limit))
+
+
 @router.get("/media/{file_uid}/derived")
 def phone_media_derived(file_uid: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
                         user: User = Depends(get_current_db_user)):

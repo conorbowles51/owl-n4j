@@ -418,6 +418,12 @@ def _loop(engine, stop):
             busy = busy + translate.run_pending(engine)
         except Exception:  # noqa: BLE001
             log.exception("phone translation step failed")
+        # image search indexing (05 17.6) takes its turn on the same thread: one draw of images per turn
+        try:
+            from services.phone import image_search
+            busy = busy + image_search.run_pending(engine)
+        except Exception:  # noqa: BLE001
+            log.exception("phone image indexing step failed")
         stop.wait(0 if busy else IDLE_SECONDS)
 
 
