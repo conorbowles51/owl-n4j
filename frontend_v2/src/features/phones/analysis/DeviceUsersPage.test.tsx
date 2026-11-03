@@ -15,7 +15,7 @@ import DeviceUsersPage, { NOT_BUILT, WHAT_IT_DOES } from "./DeviceUsersPage"
 import { deviceWords } from "./device-words"
 
 const RUN = { id: "run-5", approach: "device_users", status: "completed", progress: {}, error: null, counts: { by_kind: { shared_markers: 1 } },
-  coverage: { sentence: "Owner activity exist on all 2 phones." }, created_at: "2026-11-03T08:00:00Z", finished_at: "2026-11-03T08:01:00Z" }
+  coverage: { sentence: "Records of the owner using the phone exist on all 2 phones." }, created_at: "2026-11-03T08:00:00Z", finished_at: "2026-11-03T08:01:00Z" }
 const MARK = { id: "m1", kind: "shared_markers", strength: "strong", label: "Lead for enquiry", decision: null, decisions: [], period_start: null, period_end: null,
   measures: { phones: ["C1", "C2"], by_kind: { iccid: 1 } }, directions: { supports: [], undercuts: [] } }
 
@@ -34,7 +34,7 @@ describe("Who used which phone (AP-1, 05 8.8)", () => {
     expect(screen.getByText(NOT_BUILT)).toBeInTheDocument()
     expect(screen.getByTestId("device-user-result-total").textContent).toBe("1 result.")
     expect(within(row).getByText("Lead for enquiry")).toBeInTheDocument()
-    expect(row).toHaveTextContent("C1 and C2 have 1 SIM card numbers in common")
+    expect(row).toHaveTextContent("C1 and C2 have 1 SIM card number in common")
   })
 
   it("words use in turn as numbers, never as who used the phone", () => {

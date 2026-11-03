@@ -50,11 +50,14 @@ UNDERCUTS = ("shared_network_weak", "interaction_mapping", "clock_offset_small",
 DIRECTION_CODES = SUPPORTS + UNDERCUTS
 STRENGTH = {"owner_number": "strong", "iccid": "strong", "imsi": "strong", "account": "medium",
             "saved_login": "medium", "wifi_bssid": "weak"}
-KIND_WORDS = {"owner_number": "owner phone numbers", "iccid": "SIM card numbers (ICCID)",
-              "imsi": "SIM subscriber numbers (IMSI)", "account": "account usernames on one service",
-              "saved_login": "saved-login accounts on one service", "wifi_bssid": "WiFi access points (BSSID)"}
+KIND_WORDS = {"owner_number": ("owner phone number", "owner phone numbers"),
+              "iccid": ("SIM card number (ICCID)", "SIM card numbers (ICCID)"),
+              "imsi": ("SIM subscriber number (IMSI)", "SIM subscriber numbers (IMSI)"),
+              "account": ("account username on one service", "account usernames on one service"),
+              "saved_login": ("saved-login account on one service", "saved-login accounts on one service"),
+              "wifi_bssid": ("WiFi access point (BSSID)", "WiFi access points (BSSID)")}
 SIGNALS = [
-    {"code": "interaction", "label": "Owner activity"},
+    {"code": "interaction", "label": "Records of the owner using the phone"},
     {"code": "markers", "label": "Numbers, SIMs, accounts or WiFi networks"},
 ]
 _last = {"counts": {}}
@@ -285,7 +288,8 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                         "measures": {"phones": [phones[x], phones[y]], "by_kind": dict(by_kind),
                                      "strength_by_kind": {k: STRENGTH[k] for k in by_kind}},
                         "directions": {"supports": [_d("marker_" + STRENGTH[k], "%d %s in common." %
-                                                       (n, KIND_WORDS[k])) for k, n in sorted(by_kind.items())],
+                                                       (n, KIND_WORDS[k][0 if n == 1 else 1]))
+                                                    for k, n in sorted(by_kind.items())],
                                        "undercuts": ([_d("shared_network_weak", "People who live or work together "
                                                          "share WiFi networks.")] if "wifi_bssid" in by_kind else [])},
                         "period_start": None, "period_end": None, "records": recs})

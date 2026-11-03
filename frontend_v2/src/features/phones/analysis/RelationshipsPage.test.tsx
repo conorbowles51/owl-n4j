@@ -67,3 +67,12 @@ describe("Relationships over time (AP-1, 05 14.8)", () => {
     expect(JSON.stringify(w) + WHAT_IT_DOES).not.toMatch(/—|because|argued|fell out|ended the/)
   })
 })
+
+describe("Relationship wording", () => {
+  it("writes dates without stray commas and agrees one untimed record", () => {
+    const { line } = relationshipWords({ ...REL, measures: { ...REL.measures, untimed: 1 } } as never)
+    expect(line).not.toMatch(/,,|,\./)
+    expect(line).toMatch(/^First \S.*2023, last \S.*2023\. /)
+    expect(line).toContain("1 of them has no time.")
+  })
+})

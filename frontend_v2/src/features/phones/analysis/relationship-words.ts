@@ -7,7 +7,7 @@ export const TABS = [
 ]
 
 type M = Record<string, unknown>
-const day = (iso: unknown) => (typeof iso === "string" && iso ? instantWords(iso, "UTC").replace(/ \d{1,2}:\d{2}.*$/, "") : null)
+const day = (iso: unknown) => (typeof iso === "string" && iso ? instantWords(iso, "UTC").replace(/,? \d{1,2}:\d{2}.*$/, "") : null)
 
 function firstLast(m: M): string {
   const first = (m.first || {}) as Record<string, string | null>
@@ -33,6 +33,6 @@ export function relationshipWords(r: ApproachResult) {
   const changed = m.modified ? ` Contact last changed ${day(m.modified)}.` : ""
   return {
     title: `${who} on ${phone}: ${Number(m.communications).toLocaleString("en-US")} calls, messages and emails`,
-    line: `${firstLast(m)} ${saved}${changed}${elsewhere.length ? ` ${elsewhere.join("; ")}.` : ""}${Number(m.untimed) ? ` ${m.untimed} have no time.` : ""}`,
+    line: `${firstLast(m)} ${saved}${changed}${elsewhere.length ? ` ${elsewhere.join("; ")}.` : ""}${Number(m.untimed) ? ` ${m.untimed} of them ${Number(m.untimed) === 1 ? "has" : "have"} no time.` : ""}`,
   }
 }

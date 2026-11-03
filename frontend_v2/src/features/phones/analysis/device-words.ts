@@ -6,9 +6,10 @@ export const TABS = [
   { kind: "more_than_one_user", label: "Signs of more than one user" },
 ]
 
-const KIND_WORDS: Record<string, string> = {
-  owner_number: "owner phone numbers", iccid: "SIM card numbers", imsi: "SIM subscriber numbers",
-  account: "account usernames on one service", saved_login: "saved-login accounts on one service", wifi_bssid: "WiFi access points",
+const KIND_WORDS: Record<string, [string, string]> = {
+  owner_number: ["owner phone number", "owner phone numbers"], iccid: ["SIM card number", "SIM card numbers"],
+  imsi: ["SIM subscriber number", "SIM subscriber numbers"], account: ["account username on one service", "account usernames on one service"],
+  saved_login: ["saved-login account on one service", "saved-login accounts on one service"], wifi_bssid: ["WiFi access point", "WiFi access points"],
 }
 const STRENGTH_WORDS: Record<string, string> = { strong: "strong", medium: "medium", weak: "weak (families and workplaces share networks)" }
 
@@ -19,7 +20,7 @@ export function deviceWords(r: ApproachResult) {
   const m = r.measures as M
   const pair = ((m.phones as string[]) || []).join(" and ")
   if (r.kind === "shared_markers") {
-    const kinds = Object.entries((m.by_kind || {}) as Record<string, number>).map(([k, c]) => `${c} ${KIND_WORDS[k] || k}`)
+    const kinds = Object.entries((m.by_kind || {}) as Record<string, number>).map(([k, c]) => `${c} ${KIND_WORDS[k] ? KIND_WORDS[k][c === 1 ? 0 : 1] : k}`)
     return { title: `${pair} have ${kinds.join(", ")} in common`, line: `Strongest kind: ${STRENGTH_WORDS[r.strength] || r.strength}. The values are compared on the server and not shown here; open the records to see them.` }
   }
   if (r.kind === "complementary_use") {
