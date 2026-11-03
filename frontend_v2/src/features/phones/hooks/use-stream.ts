@@ -83,6 +83,9 @@ export interface UseStream {
   positionOf: (eventUid: string) => number | null
   /** Every row of the result, fetching windows not yet loaded (for Copy and Select all, 3.7). */
   allRows: (onProgress?: (done: number, total: number) => void) => Promise<StreamRow[]>
+  /** Whether the loaded rows are still the current result: one window request with the list's snapshot. False
+   * (and the list re-read) when new data arrived since they were loaded. */
+  checkSnapshot: () => Promise<boolean>
   setFocused: (eventUid: string | null) => void
 }
 
@@ -295,6 +298,24 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
     [segments],
   )
 
+  const checkSnapshot = useCallback(async () => {
+    const idx = index
+    const f = filterRef.current
+    if (!idx || !f || indexLoading.current) return false
+    const segs = buildSegments(idx)
+    if (!segs.length) return true
+    try {
+      await sourceRef.current.window(f, idx.snapshot, segs[0].day, 0, 1)
+      return true
+    } catch (e) {
+      if (e instanceof StaleSnapshotError) {
+        void loadIndex(true)
+        return false
+      }
+      throw e
+    }
+  }, [index, loadIndex])
+
   const allRows = useCallback(
     async (onProgress?: (done: number, total: number) => void) => {
       const idx = index
@@ -302,6 +323,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
       if (!idx || !f || indexLoading.current) throw new Error("The list is still loading.")
       const segs = buildSegments(idx)
       const out: StreamRow[] = []
+      let asked = false
       for (let si = 0; si < segs.length; si++) {
         for (let start = 0; start < segs[si].count; start += windowSize) {
           let got = rows.current.get(`${si}|${start}`)
@@ -313,6 +335,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
               if (e instanceof StaleSnapshotError) void loadIndex(true)
               throw e
             }
+            asked = true
             got = w.items
             rows.current.set(`${si}|${start}`, got)
             wins.current.set(`${si}|${start}`, { state: "loaded", tries: 1 })
@@ -321,10 +344,12 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
           onProgress?.(out.length, idx.counts.events)
         }
       }
+      // every window was already loaded: no request has checked the snapshot, so one does now
+      if (!asked && !(await checkSnapshot())) throw new StaleSnapshotError()
       bump()
       return out
     },
-    [index, windowSize, loadIndex],
+    [index, windowSize, loadIndex, checkSnapshot],
   )
 
   return {
@@ -341,6 +366,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
     reload: () => void loadIndex(false),
     positionOf,
     allRows,
+    checkSnapshot,
     setFocused: (uid) => {
       focused.current = uid
     },

@@ -65,7 +65,7 @@ function makeRow(n: number, day: string) {
 
 type Body = { filter: unknown; snapshot: string; day: string | null; offset: number; limit: number }
 
-function serve(idx: ReturnType<typeof index>, opts: { failWindow?: number; staleOnce?: boolean; recordTime?: string } = {}) {
+function serve(idx: ReturnType<typeof index>, opts: { failWindow?: number; staleOnce?: boolean; recordTime?: string; changed?: { now: boolean } } = {}) {
   const starts = new Map<string, number>()
   let pos = 0
   for (const d of idx.items) {
@@ -83,6 +83,10 @@ function serve(idx: ReturnType<typeof index>, opts: { failWindow?: number; stale
     if (url.startsWith("/api/phones/streams/window")) {
       calls.window++
       const b = init?.body as Body
+      if (opts.changed?.now && b.snapshot === `s${calls.index}`) {
+        opts.changed.now = false // new data arrived: this snapshot is out of date; the next index read is current
+        throw new ApiError("stale", 409, { detail: "stale_snapshot" })
+      }
       if (stale) {
         stale = false
         throw new ApiError("stale", 409, { detail: "stale_snapshot" })
@@ -283,4 +287,34 @@ it("the undated messages are counted beside the total, not only at the far end o
   mount()
   await screen.findByText("4,003 messages")
   expect(screen.getByTestId("stream-undated")).toHaveTextContent("3 messages have no time and are listed at the end.")
+})
+
+it("copying rows already loaded checks the snapshot: new data since they loaded says so and re-reads the list", async () => {
+  const changed = { now: false }
+  const calls = serve(index(6, 6), { changed })
+  mount()
+  await screen.findByText("row 5")
+  const captured: string[] = []
+  const grab = (e: ClipboardEvent) => captured.push(e.clipboardData?.getData("text/plain") ?? "")
+  window.addEventListener("copy", grab)
+  try {
+    // every row is loaded; Ctrl+A then copy copies at once, and one window request checks the snapshot
+    await userEvent.click(screen.getAllByRole("checkbox", { name: "Select this message" })[0])
+    await userEvent.keyboard("{Control>}a{/Control}")
+    await screen.findByText("6 messages selected")
+    const asked = calls.window
+    await userEvent.keyboard("{Control>}c{/Control}")
+    await waitFor(() => expect(captured.length).toBe(1))
+    await waitFor(() => expect(calls.window).toBe(asked + 1))
+    await screen.findByText("Copied 6 messages.")
+    expect(calls.index).toBe(1)
+    // the phone is re-read on the server: the next copy is told, and the list is read again
+    changed.now = true
+    await userEvent.keyboard("{Control>}c{/Control}")
+    await waitFor(() => expect(captured.length).toBe(2))
+    await screen.findByText(/New data arrived after these rows were loaded, so what was just copied may be out of date/)
+    await waitFor(() => expect(calls.index).toBe(2))
+  } finally {
+    window.removeEventListener("copy", grab)
+  }
 })

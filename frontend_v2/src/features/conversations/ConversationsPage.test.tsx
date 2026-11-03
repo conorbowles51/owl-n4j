@@ -35,7 +35,7 @@ const listProps = vi.hoisted(() => ({ last: null as null | { highlight?: unknown
 vi.mock("@/features/phones/hooks/use-stream", () => ({
   useStream: (f: unknown) => {
     streamFilters.push(f)
-    return { status: "idle", error: null, index: streamState.index, segments: [], count: 0, total: 0, notice: null, item: () => ({ type: "header", segment: 0 }), ensure: vi.fn(), retry: vi.fn(), reload: vi.fn(), positionOf: () => null, allRows: async () => [], setFocused: vi.fn() }
+    return { status: "idle", error: null, index: streamState.index, segments: [], count: 0, total: 0, notice: null, item: () => ({ type: "header", segment: 0 }), ensure: vi.fn(), retry: vi.fn(), reload: vi.fn(), positionOf: () => null, allRows: async () => [], checkSnapshot: async () => true, setFocused: vi.fn() }
   },
 }))
 const mounts = vi.hoisted(() => ({ n: 0 }))

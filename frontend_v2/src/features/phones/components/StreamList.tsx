@@ -7,7 +7,7 @@ import { failureText, StaleSnapshotError } from "../api"
 import type { UseStream } from "../hooks/use-stream"
 import { WINDOW_FAILED } from "../hooks/use-stream"
 import { rowsHtml, rowsText } from "../lib/copy-rows"
-import { LONG_BODY, plural, STALE_COPY, totalWords, undatedSentence, undatedWords } from "../lib/stream-words"
+import { LONG_BODY, plural, STALE_AFTER_COPY, STALE_COPY, totalWords, undatedSentence, undatedWords } from "../lib/stream-words"
 import { matchRanges } from "@/features/search/lib/fold"
 import type { StreamRow } from "../schemas"
 import { Arrow, ParticipantLabel } from "./ParticipantLabel"
@@ -139,8 +139,21 @@ export function StreamList({
     const rows = loadedSelection()
     if (rows && rows.length) {
       const payload = { text: rowsText(rows, caseName, filterWords, zoneName), html: rowsHtml(rows, caseName, filterWords, zoneName) }
-      if (copyInGesture(payload)) setCopyState({ kind: "copied", n: rows.length })
-      else setCopyState({ kind: "ready", payload, n: rows.length })
+      // copied at once from the loaded rows (a browser lets a page copy only inside the click), then checked against
+      // the server: when new data arrived since they were loaded, the person is told what they copied may be out
+      // of date and the list is re-read
+      setCopyState(copyInGesture(payload) ? { kind: "copied", n: rows.length } : { kind: "ready", payload, n: rows.length })
+      void stream
+        .checkSnapshot()
+        .then((current) => {
+          if (!current)
+            setCopyState((prev) =>
+              prev.kind === "copied" ? { kind: "load_failed", message: STALE_AFTER_COPY } : prev.kind === "ready" ? { kind: "load_failed", message: STALE_COPY } : prev,
+            )
+        })
+        .catch(() => {
+          /* the check could not be made: what was copied stands, as before */
+        })
       return
     }
     if (!allSelected) return
