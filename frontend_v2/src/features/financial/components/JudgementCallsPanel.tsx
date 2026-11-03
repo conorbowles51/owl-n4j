@@ -21,13 +21,15 @@ import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { SavedStatementPayments } from "./SavedStatementPayments"
 import { InfoTip } from "./InfoTip"
 import { CategoryRulesTable } from "./CategoryRules"
+import { ProposalPrecisionPanel } from "./ProposalPrecision"
+import { ProceedsPanel } from "./ProceedsPanel"
 
 const heading = { fontFamily: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif", letterSpacing: "-0.025em" }
 
 const PAGE_SIZE = 50
-const STATUSES = ["open", "confirmed", "corrected"] as const
+const STATUSES = ["open", "confirmed", "corrected", "rejected"] as const
 const STRENGTHS = ["inferred", "proved"] as const
-const ORIGINS = ["agent", "processor"] as const
+const ORIGINS = ["agent", "processor", "person"] as const
 
 function ChipRow({
   label,
@@ -214,7 +216,7 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
         label="Show"
         allLabel="All"
         value={status}
-        choices={STATUSES.map((value) => ({ value, label: STATUS_LABELS[value], glyph: { open: "○", confirmed: "✓", corrected: "✕" }[value] }))}
+        choices={STATUSES.map((value) => ({ value, label: STATUS_LABELS[value], glyph: { open: "○", confirmed: "✓", corrected: "✕", rejected: "✕" }[value] }))}
         counts={facets?.status}
         onChoose={(value) => update({ jStatus: value || "all" })}
       />
@@ -254,7 +256,7 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
       />
       <ChipRow
         label="Made by"
-        allLabel="Both"
+        allLabel="All"
         value={origin}
         choices={ORIGINS.map((value) => ({ value, label: ORIGIN_LABELS[value] }))}
         counts={facets?.origin}
@@ -354,6 +356,8 @@ export function JudgementCallsPanel({ caseId }: { caseId: string }) {
           </Button>
         </nav>
       ) : null}
+      <ProposalPrecisionPanel caseId={caseId} />
+      <ProceedsPanel caseId={caseId} />
       <ProcessorRulesPanel caseId={caseId} />
     </section>
   )

@@ -1,0 +1,119 @@
+import { fetchAPI } from "@/lib/api-client"
+
+/** A case agent's drafted Workspace work, held for a person (backend routers/agent_proposals.py). */
+export type AgentProposalKind =
+  | "entry_draft"
+  | "lead_card"
+  | "timeline_addition"
+  | "link_proposal"
+  | "alternative_explanation"
+
+export interface LeadAlert {
+  cite: string
+  evidence_class?: string | null
+  at?: string | null
+  amount_minor?: number | null
+  currency?: string | null
+  direction?: string | null
+  phone?: string | null
+}
+
+export interface AgentProposal {
+  id: string
+  case_id: string
+  output_type: AgentProposalKind
+  review_status: "pending_review" | "accepted" | "rejected"
+  created_at?: string | null
+  reviewed_at?: string | null
+  content: Record<string, unknown> & { citations?: string[] }
+  citations: { source_id?: string; cite?: string; label?: string | null; status?: string }[]
+  proposal: {
+    kind: AgentProposalKind
+    model?: string | null
+    model_id?: string | null
+    run_id?: string | null
+    for_name?: string | null
+    review?: { source_opened?: boolean; opened?: string[]; via?: string } | null
+  }
+}
+
+export interface AgentProposalPage {
+  items: AgentProposal[]
+  total: number
+  returned: number
+  limit: number
+  offset: number
+}
+
+export interface RedCellResult {
+  theory_id: string
+  model: { provider: string; model_id: string }
+  agent_model: { provider: string; model_id: string }
+  facts: number
+  names_neutralised: number
+  returned: number
+  recorded: number
+  refused: { title: string | null; why: string }[]
+}
+
+export const AGENT_PROPOSAL_LABELS: Record<AgentProposalKind, string> = {
+  entry_draft: "Drafted note or finding",
+  lead_card: "Lead card",
+  timeline_addition: "Timeline addition",
+  link_proposal: "Link to an entry",
+  alternative_explanation: "Alternative explanation (red cell)",
+}
+
+const base = (caseId: string) => `/api/workspace/${encodeURIComponent(caseId)}/proposals`
+
+export const agentProposalKeys = {
+  all: (caseId: string) => ["agent-proposals", caseId] as const,
+  list: (caseId: string, status: string) => ["agent-proposals", caseId, status] as const,
+}
+
+export function listAgentProposals(caseId: string, status = "pending_review", offset = 0) {
+  return fetchAPI<AgentProposalPage>(`${base(caseId)}?status=${encodeURIComponent(status)}&limit=50&offset=${offset}`)
+}
+
+export function agentProposalOpened(caseId: string, id: string, citation: string) {
+  return fetchAPI<{ opened: string[] }>(`${base(caseId)}/${id}/opened`, { method: "POST", body: { citation } })
+}
+
+export function acceptAgentProposal(caseId: string, id: string, body: { due_at?: string | null; title?: string; body?: string } = {}) {
+  return fetchAPI<AgentProposal>(`${base(caseId)}/${id}/accept`, { method: "POST", body: { ...body, via: "ui" } })
+}
+
+export function rejectAgentProposal(caseId: string, id: string, reason: string) {
+  return fetchAPI<AgentProposal>(`${base(caseId)}/${id}/reject`, { method: "POST", body: { reason } })
+}
+
+export function runRedCell(caseId: string, theoryId: string) {
+  return fetchAPI<RedCellResult>(`${base(caseId)}/red-cell`, { method: "POST", body: { theory_id: theoryId } })
+}
+
+/** The red cell's alternatives for one theory, counted by what people decided (latest 100 in the case). */
+export async function fetchTheoryAlternatives(caseId: string, theoryId: string) {
+  const page = await fetchAPI<AgentProposalPage>(
+    `${base(caseId)}?status=all&output_type=alternative_explanation&limit=100`
+  )
+  const mine = page.items.filter((item) => item.content.theory_id === theoryId)
+  return {
+    total: mine.length,
+    accepted: mine.filter((item) => item.review_status === "accepted").length,
+    rejected: mine.filter((item) => item.review_status === "rejected").length,
+    waiting: mine.filter((item) => item.review_status === "pending_review").length,
+    truncated: page.total > page.items.length,
+  }
+}
+
+/** An alert's amount as printed, in its currency's own minor unit. Never added to another. */
+export function alertAmount(alert: Pick<LeadAlert, "amount_minor" | "currency">) {
+  if (alert.amount_minor == null || !alert.currency) return null
+  try {
+    const format = new Intl.NumberFormat("en-US", { style: "currency", currency: alert.currency })
+    const digits = format.resolvedOptions().maximumFractionDigits ?? 2
+    return format.format(alert.amount_minor / 10 ** digits)
+  } catch {
+    return `${alert.amount_minor} (minor units) ${alert.currency}`
+  }
+}

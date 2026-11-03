@@ -2,6 +2,26 @@ import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import type { LedgerTransaction } from "../api"
 
+/** The case agent's proposal on a judgement call (services.agent.proposals): changes nothing until a person accepts. */
+export const proposalSchema = z.object({
+  kind: z.string().nullable().optional(),
+  value: z.unknown().optional(),
+  why: z.string().nullable().optional(),
+  citations: z.array(z.string()).optional().default([]),
+  citation_labels: z.record(z.string(), z.string().nullable()).optional().default({}),
+  model: z.string().nullable().optional(),
+  model_id: z.string().nullable().optional(),
+  run_id: z.string().nullable().optional(),
+  for_name: z.string().nullable().optional(),
+  review: z
+    .object({ source_opened: z.boolean().nullable().optional(), opened: z.array(z.string()).optional().default([]),
+      via: z.string().optional() })
+    .nullable()
+    .optional(),
+  applied: z.unknown().optional(),
+})
+export type JudgementProposal = z.infer<typeof proposalSchema>
+
 /** A value the processor chose that the page does not print outright, or a choice between two readings. */
 export const judgementSchema = z.object({
   id: z.string(),
@@ -16,7 +36,8 @@ export const judgementSchema = z.object({
   rule_label: z.string(),
   rule_source: z.string(),
   target_key: z.string(),
-  origin: z.enum(["processor", "agent"]),
+  // "person": an assumption a named person set with its source (a proceeds calculation).
+  origin: z.enum(["processor", "agent", "person"]),
   strength: z.enum(["proved", "inferred"]),
   summary: z.string(),
   page: z.number().nullable().optional(),
@@ -28,14 +49,18 @@ export const judgementSchema = z.object({
   payment_description: z.string().nullable().optional(),
   payment_amount_minor: z.string().nullable().optional(),
   working_notes: z.string().nullable().optional(),
+  // What the call rests on (a proceeds assumption keeps its low, high and source here).
+  evidence: z.record(z.string(), z.unknown()).nullable().optional(),
   period_start: z.string().nullable().optional(),
   period_end: z.string().nullable().optional(),
   account_label: z.string().nullable().optional(),
-  status: z.enum(["open", "confirmed", "corrected"]),
+  // "rejected": a case agent's proposal a person found wrong, with nothing to change.
+  status: z.enum(["open", "confirmed", "corrected", "rejected"]),
   resolved_by: z.string().nullable(),
   resolved_at: z.string().nullable(),
   resolution_reason: z.string().nullable(),
   adjudication_id: z.string().nullable(),
+  proposal: proposalSchema.nullable().optional(),
 })
 export type Judgement = z.infer<typeof judgementSchema>
 
@@ -207,6 +232,58 @@ export async function correctJudgement(caseId: string, id: string, reason: strin
   )
 }
 
+/** A case agent's proposal: accepted only after a cited source was opened (the screen); the API records either way. */
+export async function acceptProposal(caseId: string, id: string, reason = "") {
+  return judgementSchema.parse(
+    await fetchAPI(`/api/financial/judgements/${id}/accept?case_id=${caseId}`, {
+      method: "POST",
+      body: { reason, via: "ui" },
+    })
+  )
+}
+
+export async function rejectProposal(caseId: string, id: string, reason: string) {
+  return judgementSchema.parse(
+    await fetchAPI(`/api/financial/judgements/${id}/reject?case_id=${caseId}`, {
+      method: "POST",
+      body: { reason },
+    })
+  )
+}
+
+/** A person opened one of the proposal's cited sources; returns every source they have opened from it. */
+export async function proposalSourceOpened(caseId: string, id: string, citation: string) {
+  return z
+    .object({ opened: z.array(z.string()) })
+    .parse(
+      await fetchAPI(`/api/financial/judgements/${id}/opened?case_id=${caseId}`, {
+        method: "POST",
+        body: { citation },
+      })
+    )
+}
+
+const precisionKind = z.object({
+  kind: z.string(),
+  label: z.string(),
+  open: z.number(),
+  accepted: z.number(),
+  corrected: z.number(),
+  rejected: z.number(),
+  decided: z.number(),
+  weeks: z.array(z.object({ week: z.string(), accepted: z.number(), corrected: z.number(), rejected: z.number() })),
+})
+const precisionBlock = z.object({
+  kinds: z.array(precisionKind),
+  confirmations: z.object({ total: z.number(), with_source_opened: z.number(), without_source_opened: z.number() }),
+})
+export const precisionSchema = z.object({ case: precisionBlock, all_cases: precisionBlock })
+export type ProposalPrecision = z.infer<typeof precisionSchema>
+
+export async function proposalPrecision(caseId: string) {
+  return precisionSchema.parse(await fetchAPI(`/api/financial/judgements/proposals/precision?case_id=${caseId}`))
+}
+
 /** Claude changed a saved statement's details (its account, holder, number, bank or balances) for a person. */
 export const MODEL_DETAILS_RULES = ["model.statement_account", "model.statement_balances", "model.statement_details"]
 export function isModelDetailsEdit(ruleId?: string) {
@@ -215,6 +292,8 @@ export function isModelDetailsEdit(ruleId?: string) {
 
 /** The marker's short label: plain words, no rule ids. Work Claude did for a person has its own. */
 export function strengthLabel(judgement: Pick<Judgement, "strength"> & { origin?: string; rule_id?: string }) {
+  if (isProposal(judgement.rule_id)) return "Proposed by the case agent · not checked"
+  if (judgement.origin === "person") return "Set by a person, with its source"
   if (judgement.origin === "agent" && judgement.rule_id === "holder.printed_on_statement")
     return "Kept as printed by Claude · not confirmed"
   if (judgement.origin === "agent" && isModelDetailsEdit(judgement.rule_id)) return "Changed by Claude · not confirmed"
@@ -224,6 +303,10 @@ export function strengthLabel(judgement: Pick<Judgement, "strength"> & { origin?
 }
 
 export function strengthHelp(judgement: Pick<Judgement, "strength"> & { origin?: string; rule_id?: string }) {
+  if (isProposal(judgement.rule_id))
+    return "A model working as the case agent proposed this. Nothing in the case changed. Open a cited source, then accept or reject it."
+  if (judgement.origin === "person")
+    return "A named person set this value and stated where it comes from. It is an assumption, not a measurement."
   // Whoever made it (the processor or Claude for a person), the holder call says what is and is not printed.
   if (judgement.rule_id === "holder.printed_on_statement")
     return "The page prints this name. Which person holds the account has not been established, so filing the statement under the name printed on it is a judgement call."
@@ -247,11 +330,13 @@ export const STRENGTH_LABELS: Record<string, string> = {
 export const ORIGIN_LABELS: Record<string, string> = {
   agent: "Claude, for a person",
   processor: "Processor",
+  person: "A person",
 }
 export const STATUS_LABELS: Record<string, string> = {
   open: "Not yet checked",
   confirmed: "Looks right",
   corrected: "Corrected",
+  rejected: "Rejected",
 }
 
 export function statusLabel(judgement: Pick<Judgement, "status">) {
@@ -259,7 +344,31 @@ export function statusLabel(judgement: Pick<Judgement, "status">) {
     ? "Looks right"
     : judgement.status === "corrected"
       ? "Corrected"
-      : "Not yet checked"
+      : judgement.status === "rejected"
+        ? "Rejected"
+        : "Not yet checked"
+}
+
+/** A judgement call the case agent proposed (rule ids proposal.*). */
+export function isProposal(ruleId?: string) {
+  return !!ruleId && ruleId.startsWith("proposal.")
+}
+
+/** Where a cited source opens: txn:// on the Financial page row, doc:// in the file at its page, rec:// the record. */
+export function citationHref(caseId: string, citation: string): string | null {
+  const [scheme, rest] = citation.split("://")
+  if (!rest) return null
+  const c = encodeURIComponent(caseId)
+  if (scheme === "txn") return `/cases/${c}/financial?view=transactions&payment=${encodeURIComponent(rest)}`
+  if (scheme === "doc") {
+    const [file, page] = rest.split("/")
+    return `/cases/${c}/evidence?file=${encodeURIComponent(file)}${page ? `&page=${encodeURIComponent(page)}` : ""}`
+  }
+  if (scheme === "rec") {
+    const [uid, field] = rest.split("#")
+    return `/cases/${c}/records/${encodeURIComponent(uid)}${field ? `#${encodeURIComponent(field)}` : ""}`
+  }
+  return null
 }
 
 /** Which existing correction path fixes this value. */

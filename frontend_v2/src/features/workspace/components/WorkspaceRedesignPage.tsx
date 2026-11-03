@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
-import { BriefcaseBusiness, FolderKanban, LayoutDashboard, FileText, Lightbulb, ShieldCheck } from "lucide-react"
+import { BriefcaseBusiness, Bot, FolderKanban, LayoutDashboard, FileText, Lightbulb, ShieldCheck } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useCase } from "@/features/cases/hooks/use-cases"
@@ -8,6 +8,7 @@ import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
 import { CanonicalWorkspaceOverview } from "./CanonicalWorkspaceOverview"
 import { CaseworkListView } from "./CaseworkListView"
 import { TasksSection } from "./TasksSection"
+import { AgentProposalsPanel } from "@/features/workspace-ai/components/AgentProposalsPanel"
 
 export function WorkspaceRedesignPage({ caseId }: { caseId: string }) {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -22,7 +23,7 @@ export function WorkspaceRedesignPage({ caseId }: { caseId: string }) {
     return () => document.removeEventListener("click", warn, true)
   }, [setupDirty])
   const requestedView = searchParams.get("view")
-  const section = requestedView === "casework" || requestedView === "work" ? requestedView : "overview"
+  const section = requestedView === "casework" || requestedView === "work" || requestedView === "proposals" ? requestedView : "overview"
   const caseworkSection = searchParams.get("kind") === "theory" ? "theories" : searchParams.get("kind") === "note" ? "notes" : "findings"
   const selectedEntryId = section === "casework" ? searchParams.get("entry") : null
   const selectedWorkItemId = section === "work" ? searchParams.get("item") : null
@@ -55,6 +56,7 @@ export function WorkspaceRedesignPage({ caseId }: { caseId: string }) {
           <TabsTrigger value="overview"><LayoutDashboard className="size-3.5" /> Overview</TabsTrigger>
           <TabsTrigger value="casework"><FolderKanban className="size-3.5" /> Casework</TabsTrigger>
           <TabsTrigger value="work"><BriefcaseBusiness className="size-3.5" /> Deadlines</TabsTrigger>
+          <TabsTrigger value="proposals"><Bot className="size-3.5" /> Agent proposals</TabsTrigger>
         </TabsList>
       </div>
 
@@ -75,6 +77,10 @@ export function WorkspaceRedesignPage({ caseId }: { caseId: string }) {
           <TabsContent value="findings" className="min-h-0 flex-1 overflow-hidden"><ScrollArea className="h-full"><div className="mx-auto max-w-6xl p-4 sm:p-5"><CaseworkListView caseId={caseId} entryType="finding" canEdit={canEdit} initialSelectedEntryId={selectedEntryId} /></div></ScrollArea></TabsContent>
           <TabsContent value="theories" className="min-h-0 flex-1 overflow-hidden"><ScrollArea className="h-full"><div className="mx-auto max-w-6xl p-4 sm:p-5"><CaseworkListView caseId={caseId} entryType="theory" canEdit={canEdit} initialSelectedEntryId={selectedEntryId} /></div></ScrollArea></TabsContent>
         </Tabs>
+      </TabsContent>
+
+      <TabsContent value="proposals" className="min-h-0 flex-1 overflow-hidden">
+        <ScrollArea className="h-full"><div className="mx-auto max-w-5xl p-4 sm:p-5"><AgentProposalsPanel caseId={caseId} canEdit={canEdit} /></div></ScrollArea>
       </TabsContent>
 
       <TabsContent value="work" className="min-h-0 flex-1 overflow-hidden">

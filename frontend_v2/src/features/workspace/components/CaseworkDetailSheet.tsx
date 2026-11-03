@@ -68,6 +68,7 @@ import { CaseworkEditor } from "./CaseworkEditor"
 import { EntryPhoneExport } from "./EntryPhoneExport"
 import { RelationshipBadge, ReviewBadge } from "./CaseworkBadges"
 import { WorkspaceAIPanel } from "@/features/workspace-ai/components/WorkspaceAIPanel"
+import { RedCellPanel } from "@/features/workspace-ai/components/RedCellPanel"
 
 interface CaseworkDetailSheetProps {
   caseId: string
@@ -450,6 +451,10 @@ export function CaseworkDetailSheet({
                     targetId={entry.id}
                     canEdit={canEdit}
                   />
+                ) : null}
+
+                {entry.entry_type === "theory" && !entry.deleted_at ? (
+                  <RedCellPanel caseId={caseId} theoryId={entry.id} canEdit={canEdit} />
                 ) : null}
 
                 {!!entry.links.length && (

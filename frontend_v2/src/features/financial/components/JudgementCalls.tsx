@@ -8,7 +8,11 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/cn"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
+  acceptProposal,
   confirmJudgement,
+  isProposal,
+  proposalSourceOpened,
+  rejectProposal,
   judgementLookup,
   previewJudgements,
   correctJudgement,
@@ -25,6 +29,7 @@ import {
 } from "../lib/judgements"
 import type { LedgerTransaction } from "../api"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
+import { ProposalReview } from "./ProposalReview"
 
 const PRIORITY_ICONS = { "1": CircleAlert, "2": Flag, "3": Clock3 } as const
 
@@ -243,9 +248,10 @@ export function JudgementMarker({
     },
   })
   const settled = judgement.status !== "open"
+  const proposal = isProposal(judgement.rule_id) ? judgement.proposal : null
   // State colours follow the review queue's badges (spec tokens); the glyph carries the type without colour.
   const tone =
-    judgement.status === "corrected"
+    judgement.status === "corrected" || judgement.status === "rejected"
       ? "border-transparent bg-[#fde6e8] text-[#a3142a] dark:bg-[#4a1219] dark:text-[#ffc2c9]"
       : judgement.status === "confirmed"
         ? "border-transparent bg-[#e3f4ea] text-[#15653f] dark:bg-[#12351f] dark:text-[#a7e3bf]"
@@ -256,7 +262,7 @@ export function JudgementMarker({
             : "border-transparent bg-[#e6efff] text-[#1f4fa8] dark:bg-[#172a4a] dark:text-[#b9d0ff]"
   const word = settled ? statusLabel(judgement) : strengthLabel(judgement)
   const glyph =
-    judgement.status === "corrected"
+    judgement.status === "corrected" || judgement.status === "rejected"
       ? "✕"
       : judgement.status === "confirmed"
         ? "✓"
@@ -313,7 +319,7 @@ export function JudgementMarker({
             <PriorityLabel priority={judgement.priority} reason={judgement.priority_reason} />
           </div>
           <div>
-            <span className="block font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Why Loupe did it</span>
+            <span className="block font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{proposal ? "Why the case agent proposes it" : "Why Loupe did it"}</span>
             <p className="text-sm">{judgement.summary}</p>
           </div>
           <div>
@@ -329,6 +335,29 @@ export function JudgementMarker({
               {judgement.priority_reason ? ` Here, ${judgement.priority_reason}.` : ""}
             </p>
           </div>
+          {proposal && judgement.status === "open" && (
+            <ProposalReview
+              caseId={caseId}
+              citations={proposal.citations}
+              citationLabels={proposal.citation_labels}
+              model={proposal.model}
+              forName={proposal.for_name}
+              canEdit={canEdit}
+              onOpened={(citation) => proposalSourceOpened(caseId, judgement.id, citation)}
+              onAccept={() => acceptProposal(caseId, judgement.id).then(refresh)}
+              onReject={(why) => rejectProposal(caseId, judgement.id, why).then(refresh)}
+            />
+          )}
+          {proposal && settled && (
+            <p data-testid="proposal-review-facts">
+              Proposed by the case agent{proposal.model ? ` (${proposal.model})` : ""}.{" "}
+              {proposal.review?.source_opened === true
+                ? "Accepted after a cited source was opened."
+                : proposal.review?.source_opened === false
+                  ? "Decided without opening a cited source (recorded through the API)."
+                  : ""}
+            </p>
+          )}
           {settled && (
             <p>
               {statusLabel(judgement)}
@@ -342,7 +371,7 @@ export function JudgementMarker({
                 {showPage ? "Hide page" : `Show page ${judgement.page}`}
               </Button>
             )}
-            {canEdit && judgement.status === "open" && (
+            {canEdit && judgement.status === "open" && !proposal && (
               <Button
                 size="sm"
                 className="bg-[#15653f] text-white hover:bg-[#0f5133]"
@@ -352,7 +381,7 @@ export function JudgementMarker({
                 <span aria-hidden="true">✓</span>Looks right
               </Button>
             )}
-            {canEdit && judgement.status !== "corrected" && (
+            {canEdit && judgement.status !== "corrected" && !proposal && (
               <Button
                 size="sm"
                 variant="outline"

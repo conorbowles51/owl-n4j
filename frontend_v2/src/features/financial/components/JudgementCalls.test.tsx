@@ -181,3 +181,82 @@ it("says so when an opened period's calls could not be loaded, instead of showin
   await waitFor(() => expect(screen.queryByRole("alert")).toBeNull())
   await waitFor(() => expect(vi.mocked(fetchAPI).mock.calls.filter(([url]) => String(url).includes("statement_period_id=p-1"))).toHaveLength(2))
 })
+
+const proposal: Judgement = {
+  ...judgement,
+  id: "j-prop",
+  subject_type: "transaction",
+  subject_id: "t-1",
+  rule_id: "proposal.category",
+  rule_label: "Category proposed by the case agent",
+  origin: "agent",
+  summary: "Rent paid to the landlord every month.",
+  page: null,
+  category: "agent_proposal",
+  category_label: "Proposed by the case agent, for a person to decide",
+  priority: 3,
+  proposal: {
+    kind: "category",
+    value: "Rent",
+    why: "Rent paid to the landlord every month.",
+    citations: ["txn://t-1"],
+    citation_labels: { "txn://t-1": "Payment RENTA OCT" },
+    model: "DeepSeek V4 Pro",
+    for_name: "Verification user",
+  },
+}
+
+it("accepts a case agent's proposal only after a cited source was opened, and says which model made it", async () => {
+  const api = vi.mocked(fetchAPI)
+  api.mockReset()
+  api.mockImplementation(async (url: string) => {
+    if (url.includes("/opened")) return { opened: ["txn://t-1"] }
+    return { ...proposal, status: "confirmed" }
+  })
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <JudgementMarker caseId="case-a" judgement={proposal} defaultOpen />
+    </QueryClientProvider>
+  )
+  expect(screen.getByText(/Proposed by the case agent \(DeepSeek V4 Pro\) for Verification user/)).toBeVisible()
+  // The processor's one-click Looks right is not offered on a proposal.
+  expect(screen.queryByRole("button", { name: /Looks right/ })).toBeNull()
+  const accept = screen.getByTestId("proposal-accept")
+  expect(accept).toBeDisabled()
+  const link = screen.getByTestId("proposal-open-source")
+  expect(link).toHaveAttribute("href", "/cases/case-a/financial?view=transactions&payment=t-1")
+  expect(link).toHaveAttribute("target", "_blank")
+  fireEvent.click(link)
+  await waitFor(() => expect(accept).toBeEnabled())
+  expect(api).toHaveBeenCalledWith("/api/financial/judgements/j-prop/opened?case_id=case-a", {
+    method: "POST",
+    body: { citation: "txn://t-1" },
+  })
+  fireEvent.click(accept)
+  await waitFor(() =>
+    expect(api).toHaveBeenCalledWith("/api/financial/judgements/j-prop/accept?case_id=case-a", {
+      method: "POST",
+      body: { reason: "", via: "ui" },
+    })
+  )
+})
+
+it("rejects a proposal with a reason", async () => {
+  const api = vi.mocked(fetchAPI)
+  api.mockReset()
+  api.mockResolvedValue({ ...proposal, status: "rejected" })
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <JudgementMarker caseId="case-a" judgement={proposal} defaultOpen />
+    </QueryClientProvider>
+  )
+  fireEvent.click(screen.getByRole("button", { name: "Reject" }))
+  fireEvent.change(screen.getByLabelText("Why the proposal is wrong"), { target: { value: "It is a utility bill." } })
+  fireEvent.click(screen.getByRole("button", { name: "Record the rejection" }))
+  await waitFor(() =>
+    expect(api).toHaveBeenCalledWith("/api/financial/judgements/j-prop/reject?case_id=case-a", {
+      method: "POST",
+      body: { reason: "It is a utility bill." },
+    })
+  )
+})
