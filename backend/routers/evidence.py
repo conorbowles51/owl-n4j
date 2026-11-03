@@ -21,7 +21,7 @@ from types import SimpleNamespace
 from typing import Dict, List, Optional
 from uuid import UUID
 from services.manual_changes import records
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Header, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
@@ -2263,6 +2263,7 @@ def get_evidence_file(
     evidence_id: str,
     user: dict = Depends(get_current_user),
     db: Session = Depends(get_db),
+    range_header: Optional[str] = Header(None, alias="Range"),
 ):
     """
     Serve the actual file content for a given evidence ID.
@@ -2292,7 +2293,7 @@ def get_evidence_file(
         # A phone file kept inside an uploaded archive has no path of its own: the phone file reader serves it
         # straight from the archive (cb-media item F). A phone file from a folder upload is served from disk below.
         if record.source_type == "phone_file" and str(record.stored_path or "").startswith("phone-file:"):
-            return _phone_file_response(db, record)
+            return _phone_file_response(db, record, range_header)
 
         # Primary path: serve from backend disk
         filename = record.original_filename or "file"
@@ -2315,35 +2316,30 @@ def get_evidence_file(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _phone_file_response(db: Session, record):
+def _phone_file_response(db: Session, record, range_header: Optional[str] = None):
+    """An archive-kept phone file, read from the archive. A byte range is answered with 206 (the member is
+    decompressed up to the start), so audio and video can be seeked and Safari plays them; past the end is 416."""
     from urllib.parse import quote
 
-    from fastapi.responses import StreamingResponse
     from services.phone import media as phone_media
+    from services.ranged_stream import ranged_response
 
     try:
         _name, size, opener = phone_media.content(db.connection(), record.case_id, record.source_ref)
     except phone_media.ContentRefused as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     filename = record.original_filename or "file"
-    handle = opener()
-    if handle is None:  # the archive changed between the check and the read
-        raise HTTPException(status_code=409, detail="The uploaded archive changed while this file was being opened. "
-                                                    "Try again.")
 
-    def chunks():
-        try:
-            while True:
-                block = handle.read(1 << 20)
-                if not block:
-                    break
-                yield block
-        finally:
-            handle.close()
+    def open_member():
+        handle = opener()
+        if handle is None:  # the archive changed between the check and the read
+            raise HTTPException(status_code=409, detail="The uploaded archive changed while this file was being "
+                                                        "opened. Try again.")
+        return handle
 
     content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    return StreamingResponse(chunks(), media_type=content_type, headers={
-        "Content-Length": str(size), "X-Content-Type-Options": "nosniff",
+    return ranged_response(range_header, open_member, size, content_type, {
+        "X-Content-Type-Options": "nosniff",
         "Content-Disposition": "inline; filename*=UTF-8''%s" % quote(filename)})
 
 

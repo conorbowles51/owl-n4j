@@ -163,6 +163,55 @@ def test_f_a_zip_kept_file_collected_as_evidence_opens_with_the_members_bytes(wo
     assert resp.headers["content-length"] == str(len(DATA)) and resp.media_type == "image/jpeg"
 
 
+def test_f_a_zip_kept_evidence_file_answers_a_byte_range_with_206(world, tmp_path, monkeypatch):
+    """Followup m110308340222832: the archive-kept branch ignored Range (a 200 with the whole file), so audio and
+    video could not be seeked and Safari would not play them. A range is a 206 with exactly those bytes; past the
+    end is a 416."""
+    from sqlalchemy.orm import Session
+
+    from routers import evidence as R
+    from services import phone_files
+    from services.phone import resolvers
+    engine, case = _in_zip(world, tmp_path, monkeypatch)
+    resolvers.register()
+    with engine.connect() as c:
+        owner = c.execute(text("SELECT created_by_user_id FROM cases WHERE id = :c"), {"c": case}).scalar()
+    with Session(engine) as db:
+        row, _ = phone_files.ensure_phone_file_evidence(db, case_id=case, phone_file_id=LINKED,
+                                                        user=SimpleNamespace(id=owner))
+        db.commit()
+        resp = R._phone_file_response(db, row, "bytes=10-99")
+        body = asyncio.run(_collect(resp.body_iterator))
+        assert resp.status_code == 206 and body == DATA[10:100]
+        assert resp.headers["content-range"] == "bytes 10-99/%d" % len(DATA)
+        assert resp.headers["accept-ranges"] == "bytes" and resp.headers["content-length"] == "90"
+        tail = R._phone_file_response(db, row, "bytes=-5")
+        assert tail.status_code == 206 and asyncio.run(_collect(tail.body_iterator)) == DATA[-5:]
+        whole = R._phone_file_response(db, row)
+        assert whole.status_code == 200 and asyncio.run(_collect(whole.body_iterator)) == DATA
+        past = R._phone_file_response(db, row, "bytes=%d-" % (len(DATA) + 10))
+        assert past.status_code == 416
+
+
+@pytest.mark.parametrize("method", [zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED])
+def test_f_a_member_seeks_forward_and_back_and_reads_the_exact_bytes(tmp_path, method):
+    data = bytes(range(256)) * 900
+    raw = _zip([("A", b"before"), ("V", data), ("Z", b"after")], method)
+    path = tmp_path / "S.zip"
+    path.write_bytes(raw)
+    off, csize, m, crc, size = _loc(raw, "V")
+    with AM.open_at(path, off, csize, m, crc, size) as fh:
+        assert fh.seekable()
+        fh.seek(100_000)
+        assert fh.read(50) == data[100_000:100_050] and fh.tell() == 100_050
+        fh.seek(7)
+        assert fh.read(10) == data[7:17]
+        fh.seek(-3, 2)
+        assert fh.read() == data[-3:]
+        fh.seek(0)
+        assert fh.read() == data  # a whole read from the start is CRC-checked
+
+
 def test_a_corrupt_compressed_stream_is_refused_in_words(tmp_path):
     data = bytes(range(256)) * 400
     raw = bytearray(_zip([("V", data)], zipfile.ZIP_DEFLATED))
