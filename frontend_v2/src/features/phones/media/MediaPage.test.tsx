@@ -106,4 +106,39 @@ describe("Media (03 section 8)", () => {
       vi.unstubAllGlobals()
     }
   })
+
+  it.each([
+    ["an error", (v: HTMLVideoElement) => fireEvent.error(v)],
+    ["no picture after loading", (v: HTMLVideoElement) => {
+      Object.defineProperty(v, "videoWidth", { value: 0, configurable: true })
+      fireEvent.loadedData(v)
+    }],
+  ])("a video the browser cannot play on %s is played from a converted copy, and says so (03 8.3, 03 20.5)", async (_why, fail) => {
+    api.getMediaDetail.mockResolvedValueOnce({ file_uid: "f1", extraction_id: "e1", category: "Video", local_path: "chats/synthetic-clip.ts", size: 10, hashes: {}, verification: "match", verification_words: "Intact: matches its stated hash", missing: false, missing_words: null, deleted_state: null, is_carved: false, message_count: 0, messages: [] })
+    api.mediaObjectUrl.mockReset()
+    api.mediaObjectUrl.mockImplementation((_c: string, _f: string, _s: AbortSignal, variant: string) =>
+      Promise.resolve(variant === "converted" ? { url: "blob:converted", type: "video/mp4" } : variant === "content" ? { url: "blob:original", type: "video/mp2t" } : Promise.reject(new Error("no thumbnail"))))
+    try {
+      render(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <MemoryRouter initialEntries={["/cases/c/phones/e1/records/media"]}>
+            <Routes><Route path="/cases/:id/phones/:extraction/records/media" element={<MediaPage />} /></Routes>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      )
+      const grid = await screen.findByRole("list", { name: "Files" })
+      fireEvent.click(await within(grid).findByText("synthetic-a.jpg"))
+      const panel = await screen.findByRole("complementary", { name: "File" })
+      await waitFor(() => expect(panel.querySelector("video")).toHaveAttribute("src", "blob:original"))
+      expect(within(panel).queryByText("Playing a converted copy. The original file is unchanged.")).toBeNull()
+      fail(panel.querySelector("video") as HTMLVideoElement)
+      await waitFor(() => expect(panel.querySelector("video")).toHaveAttribute("src", "blob:converted"))
+      expect(within(panel).getByText("Playing a converted copy. The original file is unchanged.")).toBeInTheDocument()
+      expect(within(panel).getByRole("link", { name: "Save the original" })).toHaveAttribute("href", "blob:original")
+      expect(api.mediaObjectUrl.mock.calls.filter((c) => c[3] === "converted")).toHaveLength(1)
+    } finally {
+      api.mediaObjectUrl.mockReset()
+      api.mediaObjectUrl.mockRejectedValue(new Error("not in a browser"))
+    }
+  })
 })

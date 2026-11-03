@@ -10,7 +10,7 @@ const WINDOW = 200
 const BLUR_KEY = "loupe.media.blur"
 
 /** A file's bytes shown in the page, fetched only when asked for (visible, or opened). */
-function useObjectUrl(caseId: string, fileUid: string | null, enabled: boolean, variant: "content" | "thumbnail" = "content") {
+function useObjectUrl(caseId: string, fileUid: string | null, enabled: boolean, variant: "content" | "thumbnail" | "converted" = "content") {
   const [state, setState] = useState<{ url: string; type: string } | { error: string } | null>(null)
   useEffect(() => {
     if (!fileUid || !enabled) return
@@ -31,6 +31,43 @@ function useObjectUrl(caseId: string, fileUid: string | null, enabled: boolean, 
     }
   }, [caseId, fileUid, enabled, variant])
   return state
+}
+
+const CONVERTED_WORDS = "Playing a converted copy. The original file is unchanged."
+
+/** Plays a phone audio or video file. When the browser cannot play the original (an error, or a video that loads
+ * with no picture: 03 20.5 measured H.263, MPEG-4 Part 2 and HEVC playing sound only), it asks once for a
+ * converted copy made on the server and says so; the original stays the one saved and hashed. */
+function MediaPlayer({ caseId, fileUid, original }: { caseId: string; fileUid: string; original: { url: string; type: string } }) {
+  const [wantConverted, setWantConverted] = useState(false)
+  const converted = useObjectUrl(caseId, fileUid, wantConverted, "converted")
+  const shown = wantConverted && converted && "url" in converted ? converted : wantConverted ? null : original
+  const fallBack = () => setWantConverted(true)
+  const isVideo = (shown ?? original).type.startsWith("video/")
+  return (
+    <div className="flex flex-col gap-1">
+      {shown ? (
+        isVideo ? (
+          <video
+            key={shown.url}
+            src={shown.url}
+            controls
+            className="max-h-80"
+            onError={shown === original ? fallBack : undefined}
+            onLoadedData={shown === original ? (e) => { if (e.currentTarget.videoWidth === 0) fallBack() } : undefined}
+          />
+        ) : (
+          <audio key={shown.url} src={shown.url} controls onError={shown === original ? fallBack : undefined} />
+        )
+      ) : converted && "error" in converted ? (
+        <p role="alert">This browser cannot play the original. {converted.error}</p>
+      ) : (
+        <p role="status">This browser cannot play the original; making a converted copy.</p>
+      )}
+      {shown && shown !== original && <p role="note">{CONVERTED_WORDS}</p>}
+      {wantConverted && <a className="underline" href={original.url} download>Save the original</a>}
+    </div>
+  )
 }
 
 function Thumb({ caseId, item, blur }: { caseId: string; item: MediaItem; blur: boolean }) {
@@ -144,8 +181,7 @@ function Detail({ caseId, fileUid, onClose }: { caseId: string; fileUid: string;
             <p role="note">{x.missing_words}</p>
           ) : file && "url" in file ? (
             file.type.startsWith("image/") ? <img src={file.url} alt={x.local_path ?? "file"} className="max-h-80 object-contain" />
-              : file.type.startsWith("video/") ? <video src={file.url} controls className="max-h-80" />
-              : file.type.startsWith("audio/") ? <audio src={file.url} controls />
+              : file.type.startsWith("video/") || file.type.startsWith("audio/") ? <MediaPlayer caseId={caseId} fileUid={fileUid} original={file} />
               : <a className="underline" href={file.url} download>Save the original</a>
           ) : file && "error" in file ? (
             <p role="alert">{file.error}</p>

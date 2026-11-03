@@ -299,14 +299,26 @@ def phone_media_window(body: MediaWindowBody, db: Session = Depends(get_db), use
                         body.offset, body.limit)
 
 
+# phone media types Python's table gets wrong or does not know (03 20.5 groups): .ts is MPEG-TS video, not a Qt
+# translation file; without these the viewer is sent an attachment and never tries to play the file
+PHONE_MEDIA_TYPES = {".ts": "video/mp2t", ".amr": "audio/amr", ".caf": "audio/x-caf", ".3gp": "video/3gpp",
+                     ".3g2": "video/3gpp2", ".aif": "audio/aiff", ".aiff": "audio/aiff", ".m4a": "audio/mp4",
+                     ".opus": "audio/ogg", ".mov": "video/quicktime", ".m4v": "video/mp4", ".mts": "video/mp2t"}
+
+
+def media_type_of(name):
+    import mimetypes
+    import posixpath
+    ext = posixpath.splitext((name or "").lower())[1]
+    return PHONE_MEDIA_TYPES.get(ext) or mimetypes.guess_type(name)[0] or "application/octet-stream"
+
+
 @router.get("/media/{file_uid}/content")
 def phone_media_content(file_uid: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
                         user: User = Depends(get_current_db_user), range_header: Optional[str] = Header(
                             None, alias="Range")):
     """One phone file's bytes, read in place from its container (03 8.3 viewer). Nothing is fetched elsewhere.
     A byte range is answered with 206, so audio and video can be seeked and Safari plays them."""
-    import mimetypes
-
     from services.phone import media
     from services.ranged_stream import ranged_response
     authorize_case(db, case_id, user, ("case", "view"))
@@ -315,7 +327,7 @@ def phone_media_content(file_uid: UUID, case_id: UUID = Query(...), db: Session 
     except media.ContentRefused as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     from urllib.parse import quote
-    kind = mimetypes.guess_type(name)[0] or "application/octet-stream"
+    kind = media_type_of(name)
     # evidence never runs in the app's origin: only passive types are shown inline, and nothing may script
     inline = (kind.startswith(("image/", "audio/", "video/")) and kind != "image/svg+xml") or kind in (
         "application/pdf", "text/plain")
@@ -325,6 +337,32 @@ def phone_media_content(file_uid: UUID, case_id: UUID = Query(...), db: Session 
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy": "default-src 'none'; img-src 'self'; media-src 'self'; sandbox",
         "Content-Disposition": "%s; filename*=UTF-8''%s" % ("inline" if inline else "attachment", quote(name))})
+
+
+@router.get("/media/{file_uid}/converted")
+def phone_media_converted(file_uid: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                          user: User = Depends(get_current_db_user), range_header: Optional[str] = Header(
+                              None, alias="Range")):
+    """A converted copy of a phone file the browsers cannot play (03 8.3, 03 20.5): H.264/AAC in MP4, or AAC in
+    M4A, made on demand and kept beside the case's files. The original is never changed; /content still sends it."""
+    from pathlib import Path
+
+    from config import EVIDENCE_DATA_ROOT
+    from services.phone import media, media_convert
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        _name, size, opener = media.content(db.connection(), case_id, file_uid)
+    except media.ContentRefused as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    try:
+        path, kind = media_convert.converted(Path(EVIDENCE_DATA_ROOT) / str(case_id), file_uid, size, opener)
+    except media_convert.NotConvertible as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    from services.ranged_stream import ranged_response
+    return ranged_response(range_header, lambda: open(path, "rb"), path.stat().st_size, kind, {
+        "X-Content-Type-Options": "nosniff", "X-Converted-Copy": "1", "Cache-Control": "private, max-age=300",
+        "Content-Security-Policy": "default-src 'none'; media-src 'self'; sandbox",
+        "Content-Disposition": "inline"})
 
 
 @router.get("/media/{file_uid}/thumbnail")
