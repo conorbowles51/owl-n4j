@@ -264,3 +264,71 @@ class BrokerageLedgerTests(DuplicateTestCase):
         nowhere = call(self.case.id, account_id=str(uuid.uuid4()))
         assert elsewhere['data']['reason'] == nowhere['data']['reason'] == 'That account is not in this case.'
         assert call(self.other_case.id)['data']['total'] == 0
+
+
+FUND_TABLES = [dict(page_number=1, table_index=0, rows=[
+    dict(row_index=0, cells=cells('ESTADO DE CUENTA FONDOS DE INVERSIÓN')),
+    dict(row_index=1, cells=cells('Periodo', 'Del 01/11/2025 Al 28/11/2025')),
+    dict(row_index=2, cells=cells('MONEDA NACIONAL')),
+    dict(row_index=3, cells=cells('SYNTHFD B-2 00')),
+    dict(row_index=4, cells=cells('0 43.259385 0.00 44,090 43.455366 1,915,947.08 1,359,856.81 43.287161 100.00')),
+]), dict(page_number=3, table_index=0, rows=[
+    dict(row_index=0, cells=cells('Detalle de Movimientos Realizados Fondo: SYNTHFD 00 B-2')),
+    dict(row_index=1, cells=cells('03/NOV', '03/NOV', 'RECLASIFICACION', '31,429', '43.259385', '1,359,599.21',
+                                  '31,429', '1,359,599.21', '0.00')),
+    dict(row_index=2, cells=cells('06/NOV', '06/NOV', 'VENTA', '-11,553', '43.281603', '-500,032.35', '19,876',
+                                  '860,265.14', '0.00')),
+]), dict(page_number=4, table_index=0, rows=[
+    # The table continues on the next page without its heading.
+    dict(row_index=0, cells=cells('18/NOV', '18/NOV', 'COMPRA', '44,971', '43.361108', '1,949,992.38', '64,847',
+                                  '2,811,857.52', '0.00')),
+    dict(row_index=1, cells=cells('19/NOV', '19/NOV', 'VENTA', '-100', '43.000000', '-9,999.99', '64,747',
+                                  '2,801,857.53', '0.00')),
+])]
+
+
+class FundStatementTests(DuplicateTestCase):
+    """C: the investment-fund statement format (BBVA, 12 statements on live, set aside from the money ledger)."""
+
+    def test_fund_movements_and_positions_read_with_their_own_arithmetic(self):
+        out = R.fund_statement_rows(FUND_TABLES)
+        assert out['period'] == (date(2025, 11, 1), date(2025, 11, 28))
+        trades = out['trades']
+        assert [(t['side'], t['instrument'], t['quantity'], t['trade_date']) for t in trades] == [
+            ('other', 'SYNTHFD B-2', Decimal('31429'), date(2025, 11, 3)),
+            ('sell', 'SYNTHFD B-2', Decimal('11553'), date(2025, 11, 6)),
+            ('buy', 'SYNTHFD B-2', Decimal('44971'), date(2025, 11, 18))]
+        assert trades[1]['checks'] == {'units_times_price_equals_amount': True, 'units_chain': True}
+        assert trades[2]['checks']['units_chain'] is True and trades[2]['currency'] == 'MXN'
+        # 100 x 43.000000 is 4,300.00, not the printed 9,999.99: the line is not read, and says so.
+        assert out['not_read'] == [dict(page_number=4, printed_text=out['not_read'][0]['printed_text'],
+                                        why='units x price != amount')]
+        (holding,) = out['holdings']
+        assert (holding['instrument'], holding['quantity'], holding['market_value_minor'], holding['as_of']) == (
+            'SYNTHFD B-2', Decimal('44090'), 191594708, date(2025, 11, 28))
+
+    def test_only_the_first_copy_of_a_fund_statement_gets_rows(self):
+        from postgres.models.evidence import EvidenceFile
+        from services.financial import brokerage_ledger as BL
+        Base.metadata.create_all(self.engine, tables=[FinancialSecurityRow.__table__])
+        doc = self.make_document()
+        first = self.db.get(EvidenceFile, doc.evidence_file_id)
+        copy = EvidenceFile(id=uuid.uuid4(), case_id=self.case.id, original_filename='copy.pdf', stored_path='x',
+                            sha256=first.sha256, size=1)
+        self.db.add(copy)
+        self.db.commit()
+        from datetime import datetime, timedelta, timezone
+        first.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        copy.created_at = first.created_at + timedelta(days=1)
+        self.db.commit()
+        with patch.object(BL, '_file_tables', return_value=FUND_TABLES), \
+                patch.object(BL, '_text_content', return_value=''):
+            one = BL.sync_fund_statement(self.db, first.id)
+            two = BL.sync_fund_statement(self.db, copy.id)
+        self.db.commit()
+        assert (one['fund_statement'], one['trades'], one['holdings']) == (True, 3, 1)
+        assert (two['copy'], two['trades']) == (True, 0)
+        rows = self.db.query(FinancialSecurityRow).filter_by(ledger_status='admitted').all()
+        assert {r.evidence_file_id for r in rows} == {first.id}
+        assert all(r.proof_class == 'p3' and r.source_document_id is None for r in rows)
+

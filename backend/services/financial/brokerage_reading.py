@@ -363,3 +363,145 @@ def _row_locator(cells):
     first = rects[0]
     xs0, ys0, xs1, ys1 = zip(*(r['rect'] for r in rects))
     return dict(first, rect=[min(xs0), min(ys0), max(xs1), max(ys1)])
+
+
+# ---------------------------------------------------------------------------------------------------------------
+# Investment-fund statements (BBVA "FONDOS DE INVERSIÓN"): fund-unit movements and month-end positions
+# ---------------------------------------------------------------------------------------------------------------
+
+_MONTHS_SHORT = {'ENE': 1, 'FEB': 2, 'MAR': 3, 'ABR': 4, 'MAY': 5, 'JUN': 6, 'JUL': 7, 'AGO': 8, 'SEP': 9,
+                 'SET': 9, 'OCT': 10, 'NOV': 11, 'DIC': 12}
+_FUND_HEADING = re.compile(r'DETALLE DE MOVIMIENTOS REALIZADOS FONDO:?\s+(?P<fund>[A-Z0-9+\-]+)\s+(?:\d{2}\s+)?'
+                           r'(?P<series>[A-Z]{1,3}-?\d{0,3})\b')
+_SIGNED_QTY = r'-?\d{1,3}(?:,\d{3})*'
+_SIGNED_MONEY = r'-?\d{1,3}(?:,\d{3})*\.\d{2}'
+_FUND_MOVE = re.compile(
+    r'^(?P<op_day>\d{2})/(?P<op_mon>[A-Z]{3})\s+(?P<st_day>\d{2})/(?P<st_mon>[A-Z]{3})\s+(?P<operation>[A-Z][A-Z .]*?)\s+'
+    r'(?P<qty>' + _SIGNED_QTY + r')\s+(?P<price>\d+\.\d{4,8})\s+(?P<amount>' + _SIGNED_MONEY + r')\s+'
+    r'(?P<balance_qty>' + _SIGNED_QTY + r')\s+(?P<balance_value>' + _SIGNED_MONEY + r')\s+(?P<tax>' + _SIGNED_MONEY + r')$')
+_FUND_NAME_ROW = re.compile(r'^(?P<fund>[A-Z][A-Z0-9+\-]{2,})\s+(?P<series>[A-Z]{1,3}-?\d{1,3})\s+\d{2}$')
+_FUND_POSITION = re.compile(
+    r'^(?P<prev_qty>' + _QTY + r')\s+(?P<prev_price>\d+\.\d{4,8})\s+(?P<prev_value>' + _MONEY + r')\s+'
+    r'(?P<qty>' + _QTY + r')\s+(?P<price>\d+\.\d{4,8})\s+(?P<value>' + _MONEY + r')(?:\s+.*)?$')
+_PERIOD = re.compile(r'(\d{2})/(\d{2})/(\d{4})\s+AL\s+(\d{2})/(\d{2})/(\d{4})')
+_FUND_TITLE = re.compile(r'FONDOS DE INVERSION')
+
+
+def statement_period(texts: Iterable[str]):
+    """(start, end) of a fund statement, from the printed 'Del dd/mm/yyyy Al dd/mm/yyyy'."""
+    for text in texts:
+        match = _PERIOD.search(_fold(text))
+        if match:
+            d1, m1, y1, d2, m2, y2 = map(int, match.groups())
+            try:
+                return date(y1, m1, d1), date(y2, m2, d2)
+            except ValueError:
+                continue
+    return None
+
+
+def _fund_day(day: str, month: str, period_end: date) -> Optional[date]:
+    number = _MONTHS_SHORT.get(month)
+    if not number:
+        return None
+    year = period_end.year - (1 if number > period_end.month else 0)
+    try:
+        return date(year, number, int(day))
+    except ValueError:
+        return None
+
+
+def _units_price_agree(quantity: Decimal, price: Decimal, amount: Decimal) -> bool:
+    """Units times the printed unit price equals the printed amount within the price's own rounding (half a unit of
+    its last printed decimal per unit) and one centavo (the amount is printed to the centavo, cut or rounded)."""
+    places = -price.as_tuple().exponent
+    tolerance = abs(quantity) * Decimal(5) / (Decimal(10) ** (places + 1)) + Decimal('0.01')
+    return abs(abs(quantity) * price - abs(amount)) <= tolerance
+
+
+def fund_statement_rows(sources: Iterable[dict], *, extra_texts: Iterable[str] = ()) -> dict:
+    """Trades (fund-unit movements) and holdings (month-end positions) of an investment-fund statement.
+
+    A movement line is read only under its fund's heading, and only when units times price equals its amount (within
+    the price's rounding); each line's closing units must follow from the line before (``units_chain``). A position
+    is read only when closing units times closing price equals the printed closing value. Returns
+    ``dict(period=(start, end) or None, trades=[...], holdings=[...], not_read=[printed lines that look like
+    movements but did not prove])``.
+    """
+    sources = list(sources)
+    texts = [t for s in sources for _, _, t in _table_rows(s)]
+    period = statement_period(texts + list(extra_texts))
+    out = dict(period=period, trades=[], holdings=[], not_read=[])
+    if period is None:
+        return out
+    currency = 'MXN' if any('MONEDA NACIONAL' in _fold(t) or 'PESOS' in _fold(t) for t in texts) else None
+    # A fund's movement table continues onto the next page without its heading: the fund carries across pages until
+    # the next heading, and the units chain (each line's closing units = the line before's + its units) checks it.
+    fund = None
+    last_balance = {}
+    for source in sources:
+        rows = list(_table_rows(source))
+        for index, (row, cells, text) in enumerate(rows):
+            folded = _fold(text)
+            heading = _FUND_HEADING.search(folded)
+            if heading:
+                fund = f"{heading.group('fund')} {heading.group('series')}"
+                continue
+            name = _FUND_NAME_ROW.match(text)
+            if name and index + 1 < len(rows):
+                position = _FUND_POSITION.match(rows[index + 1][2])
+                if position:
+                    parts = position.groupdict()
+                    quantity, price, value = _number(parts['qty']), _number(parts['price']), _number(parts['value'])
+                    if quantity is not None and price is not None and value is not None and (
+                            quantity == 0 and value == 0 or _units_price_agree(quantity, price, value)):
+                        out['holdings'].append(dict(
+                            row_kind='holding', reader=READER_FUNDS, holding_kind='security',
+                            instrument=f"{name.group('fund')} {name.group('series')}", issuer=name.group('fund'),
+                            series=name.group('series'), coupon=None, isin=None, currency=currency,
+                            quantity_printed=parts['qty'], quantity=quantity, price_printed=parts['price'],
+                            price=price, market_value_minor=_minor(parts['value']),
+                            previous=dict(quantity_printed=parts['prev_qty'], price_printed=parts['prev_price'],
+                                          value_minor=_minor(parts['prev_value'])),
+                            as_of=period[1], proof='units_times_price_equals_printed_value',
+                            page_number=source.get('page_number'), table_index=source.get('table_index'),
+                            row_index=rows[index + 1][0].get('row_index'), printed_text=f"{text} {rows[index + 1][2]}",
+                            locator=_row_locator(cells + rows[index + 1][1])))
+                continue
+            move = _FUND_MOVE.match(folded)
+            if not move:
+                continue
+            parts = move.groupdict()
+            quantity, price, amount = _number(parts['qty']), _number(parts['price']), _number(parts['amount'])
+            balance = _number(parts['balance_qty'])
+            if fund is None or not _units_price_agree(quantity, price, amount):
+                out['not_read'].append(dict(page_number=source.get('page_number'), printed_text=text,
+                                            why='no fund heading' if fund is None else 'units x price != amount'))
+                continue
+            previous = last_balance.get(fund)
+            chain = None if previous is None else previous + quantity == balance
+            last_balance[fund] = balance
+            operation = ' '.join(parts['operation'].split())
+            side = 'buy' if operation.startswith('COMPRA') else 'sell' if operation.startswith('VENTA') else 'other'
+            trade_date = _fund_day(parts['op_day'], parts['op_mon'], period[1])
+            out['trades'].append(dict(
+                row_kind='trade', reader=READER_FUNDS, basis='printed_line', printed_text=text, operation=operation,
+                side=side, folio=None, instrument=fund, issuer=fund.split()[0], series=fund.split()[-1], coupon=None,
+                isin=None, quantity_printed=parts['qty'], quantity=abs(quantity), price_printed=parts['price'],
+                price=price, term_days=None, rate_printed=None, gross_minor=_minor(parts['amount']),
+                commission_minor=None, premium_minor=None, tax_minor=_minor(parts['tax']),
+                net_minor=_minor(parts['amount']), cash_direction='debit' if quantity > 0 else 'credit',
+                currency=currency, trade_date=trade_date, trade_day_printed=int(parts['op_day']),
+                settlement_date=_fund_day(parts['st_day'], parts['st_mon'], period[1]),
+                settlement_day_printed=int(parts['st_day']), execution_time=None,
+                not_printed=['execution_time', 'isin', 'commission'], not_read=[], unreadable=[],
+                checks={'units_times_price_equals_amount': True,
+                        **({'units_chain': chain} if chain is not None else {})},
+                balance_after=dict(quantity_printed=parts['balance_qty'], value_minor=_minor(parts['balance_value'])),
+                page_number=source.get('page_number'), table_index=source.get('table_index'),
+                row_index=row.get('row_index'), locator=_row_locator(cells)))
+    return out
+
+
+def is_fund_statement(texts: Iterable[str]) -> bool:
+    return any(_FUND_TITLE.search(_fold(t)) for t in texts)

@@ -38,6 +38,7 @@ from services.financial import brokerage_reading as reading
 log = logging.getLogger(__name__)
 
 READERS = (reading.READER_MOVEMENTS, reading.READER_HOLDINGS)
+FUND_READERS = (reading.READER_FUNDS,)
 # Fields a person may correct, and the reading value each correction is held against.
 CORRECTABLE = ('instrument', 'quantity', 'price', 'trade_date', 'settlement_date', 'execution_time', 'isin',
                'gross_minor', 'commission_minor', 'premium_minor', 'tax_minor', 'net_minor', 'market_value_minor')
@@ -169,21 +170,25 @@ def desired_rows(session, document) -> list:
 
 
 def _page_tables(session, document) -> list:
+    return _file_tables(session, document.case_id, document.evidence_file_id)
+
+
+def _file_tables(session, case_id, evidence_file_id) -> list:
     from postgres.models.evidence import EvidenceTableGeometry
     from services.financial.candidate_sources import read_candidate_source
     pages = session.execute(select(EvidenceTableGeometry.page_number, EvidenceTableGeometry.payload).where(
-        EvidenceTableGeometry.evidence_file_id == document.evidence_file_id).order_by(
+        EvidenceTableGeometry.evidence_file_id == evidence_file_id).order_by(
         EvidenceTableGeometry.page_number)).all()
     sources = []
     for number, payload in pages:
         for index in range(len(payload or [])):
             try:
-                sources.append(read_candidate_source(session, case_id=document.case_id,
-                                                     evidence_file_id=document.evidence_file_id,
+                sources.append(read_candidate_source(session, case_id=case_id,
+                                                     evidence_file_id=evidence_file_id,
                                                      page_number=number, table_index=index))
             except Exception as exc:  # a table the reader refuses is not read; say so in the log
                 log.info('brokerage holdings: page %s table %s of %s not read: %s', number, index,
-                         document.evidence_file_id, exc)
+                         evidence_file_id, exc)
     return sources
 
 
@@ -213,14 +218,24 @@ def sync_document(session, document_id, *, force: bool = False) -> dict:
     if document is None or not is_brokerage_document(session, document):
         return counts
     counts['brokerage'] = True
-    existing = {row.reading_key: row for row in session.scalars(select(FinancialSecurityRow).where(
-        FinancialSecurityRow.evidence_file_id == document.evidence_file_id,
-        FinancialSecurityRow.reader.in_(READERS), FinancialSecurityRow.ledger_status == 'admitted'))}
     wanted = {}
     for key, values, provenance in (desired_rows(session, document) if document.status == 'admitted' else []):
         wanted[key] = (values, provenance)
-        counts['trades' if values['row_kind'] == 'trade' else 'holdings'] += 1
+    return _apply(session, case_id=document.case_id, evidence_file_id=document.evidence_file_id,
+                  source_document_id=document.id, readers=READERS, wanted=wanted, counts=counts)
+
+
+def _apply(session, *, case_id, evidence_file_id, source_document_id, readers, wanted, counts):
+    """Make the admitted rows of one file (for ``readers``) equal ``wanted``: unchanged rows stay, changed readings
+    supersede, lines no longer read are superseded. Never deletes."""
+    existing = {row.reading_key: row for row in session.scalars(select(FinancialSecurityRow).where(
+        FinancialSecurityRow.evidence_file_id == evidence_file_id,
+        # One file can print several statements (source documents): each keeps its own rows.
+        (FinancialSecurityRow.source_document_id == source_document_id) if source_document_id is not None
+        else FinancialSecurityRow.source_document_id.is_(None),
+        FinancialSecurityRow.reader.in_(readers), FinancialSecurityRow.ledger_status == 'admitted'))}
     for key, (values, provenance) in wanted.items():
+        counts['trades' if values['row_kind'] == 'trade' else 'holdings'] += 1
         digest = _digest(dict(values, provenance=provenance))
         old = existing.pop(key, None)
         if old is not None and old.content_hash == digest:
@@ -230,8 +245,8 @@ def sync_document(session, document_id, *, force: bool = False) -> dict:
         if old is not None:
             counts['carried_corrections'] += len(corrections)
             counts['dropped_corrections'] += len(old.corrections or {}) - len(corrections)
-        row = FinancialSecurityRow(id=uuid.uuid4(), case_id=document.case_id, evidence_file_id=document.evidence_file_id,
-                                   source_document_id=document.id, reading_key=key, ledger_status='admitted',
+        row = FinancialSecurityRow(id=uuid.uuid4(), case_id=case_id, evidence_file_id=evidence_file_id,
+                                   source_document_id=source_document_id, reading_key=key, ledger_status='admitted',
                                    provenance=_plain(provenance), corrections=corrections, confirmation=confirmation,
                                    content_hash=digest, **values)
         if old is not None:
@@ -246,6 +261,98 @@ def sync_document(session, document_id, *, force: bool = False) -> dict:
         counts['superseded'] += 1
     session.flush()
     return counts
+
+
+def canonical_copy(session, file) -> bool:
+    """The one file of a case whose fund-statement rows count, among copies with the same bytes: the earliest
+    uploaded file not marked a duplicate. Other copies get no rows (their rows would count the same trades twice)."""
+    from postgres.models.evidence import EvidenceFile
+    if file.is_duplicate:
+        return False
+    first = session.execute(select(EvidenceFile.id).where(
+        EvidenceFile.case_id == file.case_id, EvidenceFile.sha256 == file.sha256,
+        EvidenceFile.is_duplicate.is_(False)).order_by(EvidenceFile.created_at, EvidenceFile.id).limit(1)).scalar()
+    return first == file.id
+
+
+def _text_content(session, evidence_file_id) -> str:
+    from postgres.models.evidence import EvidenceDocumentText
+    text = session.get(EvidenceDocumentText, evidence_file_id)
+    return (text.content or '') if text is not None else ''
+
+
+def fund_rows(session, file) -> list:
+    """[(reading_key, values, provenance)] of an investment-fund statement file (``brokerage_reading``)."""
+    sources = _file_tables(session, file.case_id, file.id)
+    content = _text_content(session, file.id)
+    texts = [t for s in sources for _, _, t in reading._table_rows(s)]
+    if not reading.is_fund_statement(texts + [content[:4000]]):
+        return []
+    read = reading.fund_statement_rows(sources, extra_texts=[content] if content else [])
+    found = []
+    for item in read['trades'] + read['holdings']:
+        kind = item['row_kind']
+        values = dict(
+            row_kind=kind, operation=item.get('operation'), side=item.get('side'), holding_kind=item.get('holding_kind'),
+            instrument=item['instrument'], issuer=item['issuer'], series=item['series'], isin=None,
+            quantity_printed=item['quantity_printed'], quantity=item['quantity'], price_printed=item['price_printed'],
+            price=item['price'], currency=item.get('currency'), gross_minor=item.get('gross_minor'),
+            commission_minor=item.get('commission_minor'), premium_minor=item.get('premium_minor'),
+            tax_minor=item.get('tax_minor'), net_minor=item.get('net_minor'),
+            market_value_minor=item.get('market_value_minor'), trade_date=item.get('trade_date'),
+            trade_date_source='printed' if item.get('trade_date') else 'absent', execution_time=None,
+            settlement_date=item.get('settlement_date'), as_of_date=item.get('as_of'), term_days=None,
+            rate_printed=None, proof_class='p3', extraction_layer=1, reader=reading.READER_FUNDS, account_id=None,
+            statement_period_id=None, cash_transaction_id=None)
+        provenance = dict(
+            locator=item.get('locator'), printed_text=item['printed_text'], basis='printed_line',
+            source=dict(page=item['page_number'], table=item['table_index'], row=item['row_index']),
+            checks=item.get('checks') or {'proof': item.get('proof')}, not_printed=item.get('not_printed') or
+            ['execution_time', 'isin'], not_read=[], unreadable=[], reading_origin=None,
+            previous=item.get('previous'), balance_after=item.get('balance_after'),
+            period=[d.isoformat() for d in read['period']] if read['period'] else None,
+            outside_money_ledger='An investment-fund statement: set aside from the money ledger (no cash lines); '
+                                 'its unit movements and positions are read here.')
+        prefix = 'fund' if kind == 'trade' else 'fundpos'
+        found.append((f"{prefix}:{item['page_number']}:{item['table_index']}:{item['row_index']}", values, provenance))
+    return found
+
+
+def sync_fund_statement(session, evidence_file_id, *, force: bool = False) -> dict:
+    """Make an investment-fund statement file's trades and holdings match its reading. A copy of another file of the
+    case (same bytes) gets none. Writes no cash row (a fund statement has none in the money ledger)."""
+    from postgres.models.evidence import EvidenceFile
+    counts = dict(evidence_file_id=str(evidence_file_id), added=0, superseded=0, unchanged=0, trades=0,
+                  holdings=0, carried_corrections=0, dropped_corrections=0, fund_statement=False, copy=False)
+    if not enabled() and not force:
+        return counts
+    file_id = evidence_file_id if isinstance(evidence_file_id, uuid.UUID) else uuid.UUID(str(evidence_file_id))
+    file = session.get(EvidenceFile, file_id)
+    if file is None:
+        return counts
+    wanted = {}
+    if canonical_copy(session, file):
+        for key, values, provenance in fund_rows(session, file):
+            wanted[key] = (values, provenance)
+    else:
+        counts['copy'] = True
+    counts['fund_statement'] = bool(wanted)
+    return _apply(session, case_id=file.case_id, evidence_file_id=file.id, source_document_id=None,
+                  readers=FUND_READERS, wanted=wanted, counts=counts)
+
+
+def after_fund_statement_assessed(session, evidence_file_id) -> None:
+    """Called where a fund statement is set aside or put back (not_payment_statements). Never stops that write."""
+    if not enabled() or evidence_file_id is None:
+        return
+    try:
+        if session.get_bind().dialect.name == 'postgresql':
+            with session.begin_nested():
+                sync_fund_statement(session, evidence_file_id)
+        else:
+            sync_fund_statement(session, evidence_file_id)
+    except Exception:
+        log.exception('fund statement rows not updated for file %s', evidence_file_id)
 
 
 def after_cash_rows_changed(session, document_id) -> None:

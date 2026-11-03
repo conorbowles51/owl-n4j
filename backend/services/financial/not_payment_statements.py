@@ -238,4 +238,8 @@ def reassess_items(session, case_id, file_id, statement_key, proposal):
             item.status, item.summary = state, merged
             changed += 1
     session.flush()
+    if proposal.get('not_payment_statement'):
+        # The fund statement's unit movements and positions are read into the security rows (lx-brokerage).
+        from services.financial.brokerage_ledger import after_fund_statement_assessed
+        after_fund_statement_assessed(session, file_id)
     return changed
