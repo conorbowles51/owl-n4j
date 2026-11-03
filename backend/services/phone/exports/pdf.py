@@ -146,9 +146,12 @@ def _row_html(r, missing) -> str:
     return "".join(parts)
 
 
-def build_html(*, title, case_name, generated, export_id, contains, days, participants, page="letter") -> tuple:
+def build_html(*, title, case_name, generated, export_id, contains, days, participants, page="letter", review=None,
+               review_threads=None) -> tuple:
     """``days``: [(header words, rows)] in screen order; ``contains``: sentences for "What this export contains";
-    ``participants``: [(label, [identifier, ...])]. Returns (html, missing Counter)."""
+    ``participants``: [(label, [identifier, ...])]; ``review``: the cover's "Review coverage" sentences and
+    ``review_threads`` the coverage summary whose threads the appendix lists (07 J-13 step 6). Returns
+    (html, missing Counter)."""
     missing = Counter()
     cover = ['<section class="cover"><h1>%s</h1>' % _e(title, missing),
              "<p>%s</p>" % _e(case_name, missing),
@@ -156,6 +159,9 @@ def build_html(*, title, case_name, generated, export_id, contains, days, partic
              "<p>Export %s</p></section>" % _e(export_id, missing),
              '<h2>What this export contains</h2><ul class="contains">']
     cover += ["<li>%s</li>" % _e(s, missing) for s in contains]
+    # drawn before the missing-character count is written, so a character they hold is counted too
+    review_html = (['<h2>Review coverage</h2><ul class="contains">'] + ["<li>%s</li>" % _e(x, missing) for x in review]
+                   + ["</ul>"]) if review else []
     body = []
     for header, rows in days:
         body.append('<h3 class="day">%s</h3>' % _e(header, missing))
@@ -164,6 +170,15 @@ def build_html(*, title, case_name, generated, export_id, contains, days, partic
     for label, idents in participants:
         body.append("<tr><td>%s</td><td>%s</td></tr>" % (_e(label, missing), _e(", ".join(idents), missing)))
     body.append("</table>")
+    if review_threads:
+        body.append('<h2>Review coverage of these threads</h2><table class="appendix">')
+        for state, key in (("Not yet reviewed", "not_reviewed"), ("Partly reviewed", "partly_reviewed"),
+                           ("Reviewed", "reviewed")):
+            for t in review_threads.get(key) or []:
+                body.append("<tr><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+                    _e(state, missing), _e("%s (%s)" % (t["title"], t["phone"]), missing),
+                    _e(t["review"] or "{:,} messages".format(t["messages"]), missing)))
+        body.append("</table>")
     # the missing characters are known only now: the cover counts them and the appendix lists every one
     if missing:
         n = sum(missing.values())
@@ -175,7 +190,7 @@ def build_html(*, title, case_name, generated, export_id, contains, days, partic
             body.append("<tr><td>%s</td><td>%s</td></tr>" % (token, "{:,}".format(k)))
         body.append("</table>")
     cover.append("</ul>")
-    body = cover + body
+    body = cover + review_html + body
     page_css = "A4" if page == "a4" else "letter"
     doc = ("<!doctype html><html><head><meta charset='utf-8'><style>%s\n%s</style></head><body>%s</body></html>"
            % (font_faces(), CSS % {"page": page_css, "chain": FAMILY_CHAIN}, "".join(body)))

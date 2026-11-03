@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 from datetime import date, datetime
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -1314,11 +1314,16 @@ def stream_index(body: dict, db: Session = Depends(get_db), user: User = Depends
     """03 section 4.5: exact total, per-day counts in the display zone, the no-time count and a snapshot."""
     f = _filter(body, db, user)
     try:
-        return streams.index_comm_events(db.connection(), f)
+        out = streams.index_comm_events(db.connection(), f)
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001 - 3.8 error wording with a reference
         raise _failure(LIST_FAILED, exc)
+    if (f.text.query or "").strip():  # searches run, for the review coverage summary (07 J-13 step 6)
+        from services.phone import review_share
+        review_share.record_search(db, f.case_id, user, f.text.query, exact=f.text.exact_characters,
+                                   surface="conversations", hits=(out.get("counts") or {}).get("events"))
+    return out
 
 
 class WindowBody(BaseModel):
@@ -1582,6 +1587,135 @@ def undo_thread_review(body: ReviewMarkBody, db: Session = Depends(get_db),
         db.rollback()
         raise HTTPException(status_code=404, detail=str(exc))
     return {"thread_key": body.thread_key, "restored": bool(prev)}
+
+
+class SplitBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filter: dict
+    by: str = Field(pattern="^(thread|person)$")
+    reviewers: List[UUID] = Field(min_length=1, max_length=50)
+    only_not_reviewed: bool = True
+    expect_threads: Optional[int] = Field(default=None, ge=0)
+    scope_words: Optional[str] = Field(default=None, max_length=1000)
+
+
+@router.post("/conversations/review/split/preview")
+def preview_review_split(body: SplitBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The counts "Split for review" makes, before anything is made (07 J-13 step 1)."""
+    from services.phone import review_share
+    f = _filter(body.filter, db, user, ("case", "edit"))
+    try:
+        plan = review_share.plan_split(db.connection(), f, by=body.by, reviewers=[str(r) for r in body.reviewers],
+                                       only_not_reviewed=body.only_not_reviewed)
+    except review_share.ReviewShareError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    plan.pop("_threads", None)
+    for p in plan["parts"]:
+        p.pop("thread_keys", None)
+    return plan
+
+
+@router.post("/conversations/review/split")
+def make_review_split(body: SplitBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Make one Workspace task per reviewer, each linking its threads; 409 when the threads changed since the
+    counts were shown (nothing is made)."""
+    from services.phone import review_share
+    f = _filter(body.filter, db, user, ("case", "edit"))
+    if body.expect_threads is None:
+        raise HTTPException(status_code=422, detail="Show the counts first: the split needs the thread count seen.")
+    try:
+        return review_share.create_split(db, f, by=body.by, reviewers=[str(r) for r in body.reviewers], user=user,
+                                         expect_threads=body.expect_threads, only_not_reviewed=body.only_not_reviewed,
+                                         scope_words=body.scope_words)
+    except review_share.SplitChanged as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc))
+    except review_share.ReviewShareError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+class SecondPassBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    reviewer: UUID
+    percent: int = Field(default=10, ge=1, le=100)
+    seed: Optional[int] = Field(default=None, ge=0, le=2**31 - 1)
+
+
+@router.post("/conversations/review/second-pass")
+def start_second_pass(body: SecondPassBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Draw a second-pass sample of reviewed threads for a different person (07 J-13 step 5); the seed is kept."""
+    from services.phone import review_share
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        return review_share.start_second_pass(db, body.case_id, reviewer_id=str(body.reviewer), user=user,
+                                              percent=body.percent, seed=body.seed)
+    except review_share.ReviewShareError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+class SecondPassResultBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    task_id: UUID
+    thread_key: str = Field(min_length=1, max_length=512)
+    agrees: bool
+    note: Optional[str] = Field(default=None, max_length=4000)
+
+
+@router.post("/conversations/review/second-pass/result")
+def record_second_pass(body: SecondPassResultBody, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_db_user)):
+    """The second reviewer's result, recorded beside the first mark; the first mark is never changed."""
+    from services.phone import review_share
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        return review_share.record_second_pass(db, body.case_id, task_id=body.task_id, thread_key=body.thread_key,
+                                               user=user, agrees=body.agrees, note=body.note)
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    except review_share.ReviewShareError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/conversations/review/thread")
+def thread_review_state(case_id: UUID = Query(...), thread_key: str = Query(..., min_length=1, max_length=512),
+                        db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The open thread's review task and second-pass samples, for its header."""
+    from services.phone import review_share
+    authorize_case(db, case_id, user, ("case", "view"))
+    return review_share.thread_review_state(db.connection(), case_id, thread_key, user.id)
+
+
+class PresenceBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    thread_key: str = Field(min_length=1, max_length=512)
+    leaving: bool = False
+
+
+@router.post("/conversations/presence")
+def thread_presence(body: PresenceBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """"[name] is also reviewing this thread." One beat per open thread every 45 s; a person is gone after 100 s."""
+    from services.phone import review_share
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    return review_share.heartbeat(db, body.case_id, body.thread_key, user, leaving=body.leaving)
+
+
+@router.get("/conversations/review/coverage")
+def review_coverage(case_id: UUID = Query(...), phones: Optional[str] = None, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_db_user)):
+    """The review coverage summary (07 J-13 step 6), whole: counts equal to the marks, who reviewed what, every
+    thread not yet reviewed, the splits, the second-pass results, the searches run and the terms used."""
+    from services.phone import review_share
+    authorize_case(db, case_id, user, ("case", "view"))
+    out = review_share.coverage(db.connection(), case_id, phones=[p for p in (phones or "").split(",") if p] or None)
+    out["cover"] = review_share.cover_lines(out)
+    return out
 
 
 class CopyDecisionBody(BaseModel):

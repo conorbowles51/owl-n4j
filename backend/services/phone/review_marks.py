@@ -193,6 +193,8 @@ def mark(db, case_id, thread_key: str, user, *, scope=None, position=None) -> di
                            action="Marked a phone conversation reviewed",
                            details={"case_id": str(case_id), "thread_key": thread_key, "record_count": int(total)},
                            user=user.email, success=True, db=db)
+    from services.phone import review_share
+    review_share.after_mark(conn, case_id, thread_key)  # a split task holding the thread moves on (J-13 step 1)
     db.commit()
     return review_words(new, total)
 

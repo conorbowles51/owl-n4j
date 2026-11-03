@@ -345,6 +345,12 @@ def draw(engine, export_id, claimed=None) -> dict:
                     machine["total"] += len(a["machine_texts"])
                     machine["unconfirmed"] += sum(1 for t in a["machine_texts"] if not t["origin"]["confirmed"])
         phones = sorted(set(phone_labels(conn, e.case_id).get(p, "") for p in (f.phones or [])) - {""})
+        # the review coverage of the threads this export prints (07 J-13 step 6, CO-20): the marks' own counts
+        from services.phone import review_share
+        exported = {(r.get("thread") or {}).get("thread_key") or (streams.NO_THREAD_PREFIX + r["phone"]["extraction_id"])
+                    for _, rows in out_days for r in rows}
+        review_cov = review_share.coverage(conn, e.case_id, thread_keys=exported)
+        review = review_share.cover_lines(review_cov)
     words = (options.get("words") or "").strip()
     contains = [
         "All %s%s." % (_kinds_words(facts), (" %s" % words) if words else ""),
@@ -391,12 +397,14 @@ def draw(engine, export_id, claimed=None) -> dict:
                                                 datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"))
     extra = {}
     if fmt == "rsmf":
-        data, extra = _rsmf(engine, e, options, contains + [generated, "Export %s." % export_id], out_days)
+        data, extra = _rsmf(engine, e, options, contains + ["Review coverage: " + " ".join(review), generated,
+                                                            "Export %s." % export_id], out_days)
     else:
         doc, missing = pdf.build_html(
             title=options.get("title") or "Phone messages", case_name=e.case_title or "", generated=generated,
             export_id=str(export_id), contains=contains, days=out_days,
-            participants=sorted((k, sorted(v)) for k, v in people.items()), page=options.get("page_size") or "letter")
+            participants=sorted((k, sorted(v)) for k, v in people.items()), page=options.get("page_size") or "letter",
+            review=review, review_threads=review_cov)
         data = pdf.render_isolated(doc)
         extra = {"missing_characters": sum(missing.values())}
     sha = hashlib.sha256(data).hexdigest()
@@ -411,7 +419,8 @@ def draw(engine, export_id, claimed=None) -> dict:
     counts = {"total": total, "messages": facts["messages"], "calls": facts["calls"],
               "unconfirmed": facts["unconfirmed"], "phones": facts["phones"], "snapshot": snap,
               "machine_texts": machine["total"], "machine_texts_unconfirmed": machine["unconfirmed"],
-              "machine_translations": translations["total"], "machine_translations_stale": translations["stale"], **extra}
+              "machine_translations": translations["total"], "machine_translations_stale": translations["stale"],
+              "review": review_cov["counts"], **extra}
     with engine.begin() as c:
         done = c.execute(text(
             "UPDATE phone_exports SET state = 'done', progress = 1, counts = CAST(:k AS jsonb), filename = :n, "

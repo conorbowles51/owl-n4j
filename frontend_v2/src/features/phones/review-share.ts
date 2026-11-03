@@ -1,0 +1,159 @@
+import { fetchAPI } from "@/lib/api-client"
+import type { StreamFilter } from "./api"
+
+/** Sharing a phone review across people (07 J-13 steps 1, 5 and 6 and "[name] is also reviewing this thread."). */
+
+export type SplitBy = "thread" | "person"
+
+export interface SplitPart {
+  part: number
+  reviewer: { user_id: string; name: string }
+  threads: number
+  messages: number
+  people: number
+  words: string
+}
+
+export interface SplitPlan {
+  by: SplitBy
+  only_not_reviewed: boolean
+  threads_in_filter: number
+  threads: number
+  messages: number
+  already_reviewed_left_out: number
+  parts: SplitPart[]
+  words: string
+  warning: string | null
+}
+
+export interface SplitMade {
+  split_id: string
+  tasks: { task_id: string; title: string; reviewer: { user_id: string; name: string }; threads: number; messages: number }[]
+  threads: number
+  words: string
+}
+
+interface SplitRequest {
+  filter: StreamFilter
+  by: SplitBy
+  reviewers: string[]
+  only_not_reviewed: boolean
+  scope_words?: string
+}
+
+export function previewSplit(body: SplitRequest) {
+  return fetchAPI<SplitPlan>("/api/phones/conversations/review/split/preview", { method: "POST", body })
+}
+
+/** Makes the tasks; 409 when the threads changed since the counts were shown (nothing is made). */
+export function makeSplit(body: SplitRequest & { expect_threads: number }) {
+  return fetchAPI<SplitMade>("/api/phones/conversations/review/split", { method: "POST", body })
+}
+
+export interface SecondPassMade {
+  pass_id: string
+  task_id: string
+  title: string
+  seed: number
+  percent: number
+  sample: number
+  eligible: number
+  words: string
+}
+
+export function startSecondPass(caseId: string, reviewer: string, percent = 10) {
+  return fetchAPI<SecondPassMade>("/api/phones/conversations/review/second-pass", {
+    method: "POST",
+    body: { case_id: caseId, reviewer, percent },
+  })
+}
+
+export interface SecondPassState {
+  first: { reviewed_by?: string; reviewed_by_name?: string; reviewed_at?: string; record_count?: number }
+  result: { agrees: boolean; note: string | null; by_name: string; at: string } | null
+  earlier_results: number
+  assigned_to: string | null
+  assigned_to_name: string | null
+  seed: number
+  percent: number
+  words: string
+  task_id: string
+  title: string
+  mine: boolean
+}
+
+export function recordSecondPass(caseId: string, taskId: string, threadKey: string, agrees: boolean, note: string) {
+  return fetchAPI<SecondPassState>("/api/phones/conversations/review/second-pass/result", {
+    method: "POST",
+    body: { case_id: caseId, task_id: taskId, thread_key: threadKey, agrees, note: note.trim() || null },
+  })
+}
+
+export interface ThreadReviewState {
+  thread_key: string
+  tasks: { task_id: string; title: string; assigned_to_name: string | null; mine: boolean }[]
+  second_pass: SecondPassState[]
+}
+
+export function getThreadReviewState(caseId: string, threadKey: string) {
+  return fetchAPI<ThreadReviewState>(
+    `/api/phones/conversations/review/thread?case_id=${encodeURIComponent(caseId)}&thread_key=${encodeURIComponent(threadKey)}`,
+  )
+}
+
+export interface PresenceBeat {
+  thread_key: string
+  others: string[]
+  words: string | null
+  next_in_seconds: number
+}
+
+export function presenceBeat(caseId: string, threadKey: string, leaving = false) {
+  return fetchAPI<PresenceBeat>("/api/phones/conversations/presence", {
+    method: "POST",
+    body: { case_id: caseId, thread_key: threadKey, leaving },
+  })
+}
+
+export interface CoverageThread {
+  thread_key: string
+  title: string
+  phone: string
+  messages: number
+  review: string | null
+  added_since: number | null
+}
+
+export interface ReviewCoverageSummary {
+  counts: { threads: number; reviewed: number; partly_reviewed: number; not_reviewed: number; never_reviewed: number }
+  words: string
+  reviewers: { name: string; reviewed: number; partly_reviewed: number; messages_at_review: number }[]
+  not_reviewed: CoverageThread[]
+  partly_reviewed: CoverageThread[]
+  reviewed: CoverageThread[]
+  splits: { task_id: string; title: string; status: string; reviewer: string | null; threads: number; reviewed: number; words: string }[]
+  second_pass: {
+    pass_id: string
+    task_id: string
+    title: string
+    seed: number
+    percent: number
+    eligible: number
+    reviewer: string | null
+    sampled: number
+    agrees: number
+    disagrees: number
+    pending: number
+    disagreements: { thread_key: string; title: string; by: string; first_by: string | null; note: string }[]
+  }[]
+  searches: { query: string; exact: boolean; runs: number; people: string[]; surfaces: string[]; last_hits: number | null; last_run_at: string }[]
+  keyword_lists: { name: string; terms: string[] }[]
+  terms: string[]
+  cover: string[]
+}
+
+export function getReviewCoverage(caseId: string, phones: string[] = []) {
+  const p = new URLSearchParams({ case_id: caseId })
+  if (phones.length) p.set("phones", phones.join(","))
+  return fetchAPI<ReviewCoverageSummary>(`/api/phones/conversations/review/coverage?${p.toString()}`)
+}

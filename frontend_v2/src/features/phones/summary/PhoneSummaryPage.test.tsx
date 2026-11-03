@@ -18,6 +18,18 @@ const api = vi.hoisted(() => ({
   }),
 }))
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
+// the coverage panel reads the coverage summary (07 J-13 step 6), the same counts as the thread list
+const share = vi.hoisted(() => ({
+  getReviewCoverage: vi.fn().mockResolvedValue({
+    counts: { threads: 3, reviewed: 1, partly_reviewed: 1, not_reviewed: 2, never_reviewed: 1 },
+    words: "", cover: [], keyword_lists: [], terms: [], splits: [], second_pass: [], searches: [],
+    reviewers: [{ name: "A Reviewer", reviewed: 1, partly_reviewed: 1, messages_at_review: 17 }],
+    partly_reviewed: [{ thread_key: "t1", title: "Synthetic thread", phone: "C3", messages: 15, review: "Reviewed by A Reviewer on Tuesday, March 14 (12 messages); 3 added since", added_since: 3 }],
+    not_reviewed: [{ thread_key: "t3", title: "Third", phone: "C3", messages: 1, review: null, added_since: null }],
+    reviewed: [{ thread_key: "t2", title: "Other", phone: "C3", messages: 5, review: "Reviewed by A Reviewer on Tuesday, March 14 (5 messages)", added_since: 0 }],
+  }),
+}))
+vi.mock("../review-share", async (orig) => ({ ...(await orig<object>()), ...share }))
 
 import PhoneSummaryPage from "./PhoneSummaryPage"
 

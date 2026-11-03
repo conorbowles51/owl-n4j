@@ -29,10 +29,15 @@ def search(case_id: UUID = Query(...), q: str = Query(..., max_length=500), exac
     authorize_case(db, case_id, user, ("case", "view"))
     wanted = tuple(g for g in (groups or "").split(",") if g) or S.GROUPS
     try:
-        return S.search(db.connection(), case_id, q, exact=exact, groups=wanted, phones=_phones(phones), start=start,
-                        end=end)
+        out = S.search(db.connection(), case_id, q, exact=exact, groups=wanted, phones=_phones(phones), start=start,
+                       end=end)
     except S.SearchError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    # searches run, for the phone review coverage summary (07 J-13 step 6); a failed record never fails the search
+    from services.phone import review_share
+    review_share.record_search(db, case_id, user, q, exact=exact, surface="search",
+                               hits=sum(int(g.get("total") or 0) for g in out.get("groups") or []))
+    return out
 
 
 @router.get("/group")

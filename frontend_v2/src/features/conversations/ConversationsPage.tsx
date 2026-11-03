@@ -29,6 +29,8 @@ import { StreamList } from "@/features/phones/components/StreamList"
 import { useCollectTargets, useUsedIn } from "@/features/phones/hooks/use-collect"
 import { useStream } from "@/features/phones/hooks/use-stream"
 import { ExportDialog } from "./ExportDialog"
+import { SplitForReview } from "./SplitForReview"
+import { ThreadReviewBar } from "./ThreadReviewBar"
 import { PersonScope } from "./PersonScope"
 import { useThreadMatches } from "./use-thread-matches"
 import { viewFromSearch, viewToFilter, viewToSearch, type ConversationView } from "@/features/phones/lib/filter-url"
@@ -151,6 +153,7 @@ export function ConversationsPage() {
   const [selection, setSelection] = useState<{ rows: StreamRow[]; all: boolean }>({ rows: [], all: false })
   const onSelectionChange = useCallback((rows: StreamRow[], all: boolean) => setSelection({ rows, all }), [])
   const [exporting, setExporting] = useState(false)
+  const [splitting, setSplitting] = useState(false)
   const [jump, setJump] = useState<{ day: string | null; seq: number; offset?: number } | null>(null)
   const listRoot = useRef<HTMLDivElement>(null)
 
@@ -424,6 +427,12 @@ export function ConversationsPage() {
             Not yet reviewed: {fmt(counts.not_reviewed ?? 0)} of {fmt(counts.threads ?? 0)} threads
           </p>
         )}
+        {counts && (
+          <Button size="sm" variant="outline" onClick={() => setSplitting(true)}>
+            Split for review…
+          </Button>
+        )}
+        <SplitForReview caseId={caseId} filter={listFilter} scopeWords={scopeWords(scope)} open={splitting} onClose={() => setSplitting(false)} />
         {reviewNote && (
           <p role="status" className="text-sm">
             {reviewNote.text}{" "}
@@ -630,6 +639,7 @@ export function ConversationsPage() {
               </p>
             )}
           </div>
+          {view.thread && <ThreadReviewBar caseId={caseId} threadKey={view.thread} />}
           {view.hl && view.thread && (
             <div className="flex flex-wrap items-center gap-2 border-b bg-status-review-soft px-3 py-1.5 text-xs">
               <p role="status">
