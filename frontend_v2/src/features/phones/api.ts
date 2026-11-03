@@ -356,9 +356,10 @@ export async function getMediaDetail(caseId: string, fileUid: string) {
   return fetchAPI<MediaDetail>(`/api/phones/media/${encodeURIComponent(fileUid)}?case_id=${encodeURIComponent(caseId)}`)
 }
 /** A phone file's bytes as an object URL (the bearer token cannot ride on an <img src>). The caller revokes it. */
-export async function mediaObjectUrl(caseId: string, fileUid: string, signal?: AbortSignal) {
+export async function mediaObjectUrl(caseId: string, fileUid: string, signal?: AbortSignal, variant: "content" | "thumbnail" = "content") {
   const token = localStorage.getItem("authToken")
-  const response = await fetch(`/api/phones/media/${encodeURIComponent(fileUid)}/content?case_id=${encodeURIComponent(caseId)}`, {
+  // the Media grid asks for a small preview made on the server; the viewer asks for the original
+  const response = await fetch(`/api/phones/media/${encodeURIComponent(fileUid)}/${variant}?case_id=${encodeURIComponent(caseId)}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     credentials: "include",
     signal,

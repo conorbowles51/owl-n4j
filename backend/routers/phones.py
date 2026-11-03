@@ -258,6 +258,26 @@ def phone_media_content(file_uid: UUID, case_id: UUID = Query(...), db: Session 
         "Content-Disposition": "%s; filename*=UTF-8''%s" % ("inline" if inline else "attachment", quote(name))})
 
 
+@router.get("/media/{file_uid}/thumbnail")
+def phone_media_thumbnail(file_uid: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                          user: User = Depends(get_current_db_user)):
+    """A small JPEG preview of one phone image for the Media grid, made in memory; the original is unchanged. A
+    small file, or one no preview can be made of, is sent whole exactly as /content sends it."""
+    from fastapi.responses import Response
+    from services.phone import media
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        made = media.thumbnail(db.connection(), case_id, file_uid)
+    except media.ContentRefused as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    if made is None:
+        return phone_media_content(file_uid, case_id, db, user)
+    body, kind = made
+    return Response(body, media_type=kind, headers={
+        "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=300",
+        "Content-Security-Policy": "default-src 'none'; img-src 'self'; sandbox"})
+
+
 class DeriveBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID

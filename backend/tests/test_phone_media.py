@@ -143,3 +143,49 @@ def test_a_file_only_in_a_later_container_of_the_phone_is_read_from_that_contain
         z.writestr("C2/other.txt", b"x")
     with engine.connect() as c, pytest.raises(media.ContentRefused, match="not in the production"):
         media.content(c, case, LINKED)
+
+
+def test_the_grid_preview_of_a_large_photo_is_a_small_jpeg_and_the_original_is_untouched(world, tmp_path, monkeypatch):
+    """Media thumbnails fetched the whole file for every tile (live: 68,050 images, up to 10 MB). The preview is a
+    JPEG at most 256 px on its longest side; a small file, or one the image library cannot read, gives None so
+    the caller sends the original as before."""
+    import io
+    import os
+    from PIL import Image
+    from services.phone import media
+    engine, case, _, ext = world
+    monkeypatch.setattr("config.EVIDENCE_DATA_ROOT", str(tmp_path))
+    folder = tmp_path / str(case) / "up" / "chats"
+    folder.mkdir(parents=True)
+    buf = io.BytesIO()
+    Image.frombytes("RGB", (1600, 1200), os.urandom(1600 * 1200 * 3)).save(buf, "PNG")
+    original = buf.getvalue()
+    (folder / "synthetic-a.jpg").write_bytes(original)
+    with engine.begin() as c:
+        c.execute(text("UPDATE phone_files SET disk_relpath = 'chats/synthetic-a.jpg', disk_size = :s WHERE file_uid = :f"),
+                  {"f": LINKED, "s": len(original)})
+        cid = c.execute(text("SELECT first_container_id FROM phone_extractions WHERE id = :e"), {"e": ext}).scalar()
+        c.execute(text("UPDATE phone_extraction_containers SET container_kind = 'folder', stored_path = 'up' WHERE id = :i"),
+                  {"i": cid})
+        c.execute(text("DELETE FROM phone_extraction_container_links WHERE extraction_id = :e"), {"e": ext})
+        c.execute(text("INSERT INTO phone_extraction_container_links (extraction_id, container_id, root_path) VALUES "
+                       "(:e, :i, '')"), {"e": ext, "i": cid})
+    with engine.connect() as c:
+        body, kind = media.thumbnail(c, case, LINKED)
+        assert kind == "image/jpeg" and len(body) < len(original) // 20
+        with Image.open(io.BytesIO(body)) as im:
+            assert im.format == "JPEG" and max(im.size) == 256 and im.size == (256, 192)
+        assert (folder / "synthetic-a.jpg").read_bytes() == original
+        (folder / "synthetic-a.jpg").write_bytes(b"not an image " * 10000)   # large, unreadable: the original
+        assert media.thumbnail(c, case, LINKED) is None
+        (folder / "synthetic-a.jpg").write_bytes(b"tiny")                       # small: sent whole
+        assert media.thumbnail(c, case, LINKED) is None
+        with pytest.raises(media.ContentRefused, match="not in the production"):
+            media.thumbnail(c, case, MISSING)
+
+
+def test_the_thumbnail_route_is_registered_beside_content():
+    from routers.phones import router
+    paths = {r.path for r in router.routes}
+    assert "/api/phones/media/{file_uid}/thumbnail" in paths or "/media/{file_uid}/thumbnail" in {
+        p.removeprefix(router.prefix) for p in paths}

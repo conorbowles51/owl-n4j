@@ -10,13 +10,13 @@ const WINDOW = 200
 const BLUR_KEY = "loupe.media.blur"
 
 /** A file's bytes shown in the page, fetched only when asked for (visible, or opened). */
-function useObjectUrl(caseId: string, fileUid: string | null, enabled: boolean) {
+function useObjectUrl(caseId: string, fileUid: string | null, enabled: boolean, variant: "content" | "thumbnail" = "content") {
   const [state, setState] = useState<{ url: string; type: string } | { error: string } | null>(null)
   useEffect(() => {
     if (!fileUid || !enabled) return
     const ctrl = new AbortController()
     let made: string | null = null
-    mediaObjectUrl(caseId, fileUid, ctrl.signal)
+    mediaObjectUrl(caseId, fileUid, ctrl.signal, variant)
       .then((r) => {
         made = r.url
         setState(r)
@@ -29,7 +29,7 @@ function useObjectUrl(caseId: string, fileUid: string | null, enabled: boolean) 
       if (made) URL.revokeObjectURL(made)
       setState(null)
     }
-  }, [caseId, fileUid, enabled])
+  }, [caseId, fileUid, enabled, variant])
   return state
 }
 
@@ -44,7 +44,7 @@ function Thumb({ caseId, item, blur }: { caseId: string; item: MediaItem; blur: 
     return () => io.disconnect()
   }, [])
   const isImage = (item.category ?? "").toLowerCase().includes("image") || /\.(jpe?g|png|gif|webp|heic|bmp)$/i.test(item.filename)
-  const shown = useObjectUrl(caseId, item.file_uid, seen && isImage && !item.missing)
+  const shown = useObjectUrl(caseId, item.file_uid, seen && isImage && !item.missing, "thumbnail")
   return (
     <div ref={ref} className="flex h-28 items-center justify-center overflow-hidden rounded bg-muted text-center text-[11px]">
       {item.missing ? (

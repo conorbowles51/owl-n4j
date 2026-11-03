@@ -173,6 +173,37 @@ def content(conn, case_id, file_uid):
     raise ContentRefused(MISSING_WORDS if MISSING_WORDS in refusals else refusals[0])
 
 
+THUMB_EDGE = 256            # the grid tile is 112 px tall; 256 keeps it sharp on a 2x screen
+THUMB_PASS_BYTES = 48 * 1024  # a file this small is sent as it is: a preview would not be smaller
+
+
+def thumbnail(conn, case_id, file_uid, edge=THUMB_EDGE):
+    """``(bytes, media_type)`` of a small JPEG preview of a phone image for the Media grid, made in memory from the
+    file in its container; the original is never changed and the viewer still opens the original. ``None`` when
+    the file is small enough to send whole or no preview can be made (a format the image library does not read):
+    the caller then sends the original, as before. Refusals are the same as ``content``."""
+    import io
+
+    _name, size, opener = content(conn, case_id, file_uid)
+    if size <= THUMB_PASS_BYTES:
+        return None
+    try:
+        from PIL import Image, ImageOps
+        with opener() as fh:
+            data = io.BytesIO(fh.read())
+        with Image.open(data) as im:
+            im.draft("RGB", (edge, edge))  # JPEG: decode at a reduced scale, much faster for large photos
+            im = ImageOps.exif_transpose(im)
+            im.thumbnail((edge, edge))
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            out = io.BytesIO()
+            im.save(out, "JPEG", quality=80)
+        return out.getvalue(), "image/jpeg"
+    except Exception:  # noqa: BLE001 (not an image the library reads, or damaged: the original is sent instead)
+        return None
+
+
 def _in_container(c, case_root, disk_relpath):
     """(size, opener) of one file in one container, or ContentRefused with the reason."""
     import posixpath

@@ -73,4 +73,31 @@ describe("Media (03 section 8)", () => {
     fireEvent.change(st, { target: { value: within(st).getByRole("option", { name: "unchecked (1)" }).getAttribute("value") } })
     await waitFor(() => expect(api.getMediaIndex).toHaveBeenCalledWith(expect.objectContaining({ categories: [""], verification: [""] })))
   })
+
+  it("a visible tile asks for the server's small preview; opening the file asks for the original", async () => {
+    const seen = vi.fn()
+    vi.stubGlobal("IntersectionObserver", class {
+      constructor(private cb: (e: { isIntersecting: boolean }[]) => void) {}
+      observe() { seen(); this.cb([{ isIntersecting: true }]) }
+      disconnect() {}
+    })
+    api.mediaObjectUrl.mockClear()
+    try {
+      render(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <MemoryRouter initialEntries={["/cases/c/phones/e1/records/media"]}>
+            <Routes><Route path="/cases/:id/phones/:extraction/records/media" element={<MediaPage />} /></Routes>
+          </MemoryRouter>
+        </QueryClientProvider>,
+      )
+      const grid = await screen.findByRole("list", { name: "Files" })
+      await waitFor(() => expect(api.mediaObjectUrl).toHaveBeenCalledWith("c", "f1", expect.anything(), "thumbnail"))
+      // the missing file is never fetched
+      expect(api.mediaObjectUrl.mock.calls.some((c) => c[1] === "f2")).toBe(false)
+      fireEvent.click(within(grid).getByText("synthetic-a.jpg"))
+      await waitFor(() => expect(api.mediaObjectUrl.mock.calls.some((c) => c[1] === "f1" && c[3] === "content")).toBe(true))
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })
