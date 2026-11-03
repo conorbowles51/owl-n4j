@@ -76,6 +76,14 @@ ACTIVE_STATES = ('preparing', 'pausing', 'paused')
 # Phone material is never read as a statement: the old ingester's files and the phone report container rows, which
 # the phone capture job reads (01 section 4.4).
 PHONE_SOURCE_TYPES = ('cellebrite', 'phone_extraction')
+# A phone file kept inside an uploaded archive has no path to read (its stored_path is the locator
+# 'phone-file:<uid>', cb-media item F); the statement check never looks at it, so it never gets a verdict it did
+# not earn (a missing path read as "not a statement").
+ARCHIVE_MEMBER_PREFIX = 'phone-file:'
+
+
+def _in_archive(file_record):
+    return str(getattr(file_record, 'stored_path', '') or '').startswith(ARCHIVE_MEMBER_PREFIX)
 
 
 def enabled():
@@ -119,7 +127,7 @@ def mark_registered(file_record):
     (``_backfill_marks``).
     """
     if (not detect_enabled() or not _is_pdf(file_record.original_filename)
-            or file_record.source_type in PHONE_SOURCE_TYPES):
+            or file_record.source_type in PHONE_SOURCE_TYPES or _in_archive(file_record)):
         return
     metadata = dict(file_record.metadata_ or {})
     if MARK not in metadata:
@@ -411,7 +419,8 @@ def _backfill_marks(session):
 def _marked_none(session):
     query = (select(EvidenceFile).where(EvidenceFile.metadata_[MARK]['state'].as_string().is_(None),
              func.lower(EvidenceFile.original_filename).like('%.pdf'),
-             func.coalesce(EvidenceFile.source_type, '').notin_(PHONE_SOURCE_TYPES))
+             func.coalesce(EvidenceFile.source_type, '').notin_(PHONE_SOURCE_TYPES),
+             ~func.coalesce(EvidenceFile.stored_path, '').like(ARCHIVE_MEMBER_PREFIX + '%'))
              .order_by(EvidenceFile.created_at, EvidenceFile.id).limit(BACKFILL_LIMIT))
     if session.get_bind().dialect.name == 'postgresql':
         query = query.with_for_update(skip_locked=True)
@@ -425,6 +434,8 @@ def _detect_pending(session, resolve_path, deadline):
     for file in _marked(session, ('pending',), SWEEP_LIMIT, (EvidenceFile.status != 'processing',)):
         if time.monotonic() >= deadline:
             break
+        if _in_archive(file):
+            continue
         checked += 1
         result = detect(resolve_path(file.stored_path))
         if not result['statement']:
@@ -578,6 +589,7 @@ def evidence_statements(session, *, case_id, resolve_path, limit=None):
     files = [f for f in session.scalars(select(EvidenceFile).where(EvidenceFile.case_id == case_id)
              .order_by(EvidenceFile.created_at, EvidenceFile.id))
              if _is_pdf(f.original_filename) and f.id not in library and f.source_type not in PHONE_SOURCE_TYPES
+             and not _in_archive(f)
              and f.status != 'processing' and not ((f.metadata_ or {}).get(MARK) or {}).get('state')
              in ('statement', 'enrolled', 'copy', 'not_statement')]
     if limit:

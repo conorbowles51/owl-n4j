@@ -161,3 +161,17 @@ def test_f_a_zip_kept_file_collected_as_evidence_opens_with_the_members_bytes(wo
         body = asyncio.run(_collect(resp.body_iterator))
     assert hashlib.md5(body).hexdigest() == hashlib.md5(DATA).hexdigest()
     assert resp.headers["content-length"] == str(len(DATA)) and resp.media_type == "image/jpeg"
+
+
+def test_a_corrupt_compressed_stream_is_refused_in_words(tmp_path):
+    data = bytes(range(256)) * 400
+    raw = bytearray(_zip([("V", data)], zipfile.ZIP_DEFLATED))
+    off, csize, method, crc, size = _loc(bytes(raw), "V")
+    start = off + 30 + 1
+    for i in range(start, start + min(64, csize)):  # garble the start of the deflate stream itself
+        raw[i] = 0xFF
+    path = tmp_path / "C.zip"
+    path.write_bytes(bytes(raw))
+    with AM.open_at(path, off, csize, method, crc, size) as fh:
+        with pytest.raises(AM.MemberDamaged):
+            fh.read()

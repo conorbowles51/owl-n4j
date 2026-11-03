@@ -2289,9 +2289,9 @@ def get_evidence_file(
                 raise HTTPException(status_code=404, detail="This conversation's text is not written yet")
             return PlainTextResponse(text_row.content or "", headers={"Content-Disposition": "inline"})
 
-        # A phone file is served by the phone file reader: from its folder upload, or straight from the uploaded
-        # archive that keeps it (cb-media item F); a file inside an archive has no path of its own.
-        if record.source_type == "phone_file":
+        # A phone file kept inside an uploaded archive has no path of its own: the phone file reader serves it
+        # straight from the archive (cb-media item F). A phone file from a folder upload is served from disk below.
+        if record.source_type == "phone_file" and str(record.stored_path or "").startswith("phone-file:"):
             return _phone_file_response(db, record)
 
         # Primary path: serve from backend disk
@@ -2327,6 +2327,9 @@ def _phone_file_response(db: Session, record):
         raise HTTPException(status_code=404, detail=str(exc))
     filename = record.original_filename or "file"
     handle = opener()
+    if handle is None:  # the archive changed between the check and the read
+        raise HTTPException(status_code=409, detail="The uploaded archive changed while this file was being opened. "
+                                                    "Try again.")
 
     def chunks():
         try:

@@ -155,6 +155,23 @@ class AutoReadTests(AutoReadBase):
             self.assertNotIn(auto_read.MARK, record.metadata_ or {})
         self.assertEqual(self.batches(), [])
 
+    def test_a_phone_file_kept_inside_an_archive_is_never_given_a_verdict(self):
+        """cb-media item F: its stored_path is the locator 'phone-file:<uid>', not a path; before, the sweep read the
+        missing path and recorded 'not_statement' for a file it never read."""
+        record = EvidenceFile(case_id=self.f.case.id, original_filename='kept.pdf', stored_path='phone-file:%s' % uuid4(),
+                              sha256='0' * 64, source_type='phone_file')
+        auto_read.mark_registered(record)
+        self.assertNotIn(auto_read.MARK, record.metadata_ or {})
+        with self.f.SessionLocal() as db:  # a file marked before the guard existed is skipped by the sweep too
+            file = db.get(EvidenceFile, self.f.file.id)
+            file.stored_path, file.source_type = 'phone-file:%s' % uuid4(), 'phone_file'
+            file.metadata_ = {auto_read.MARK: {'state': 'pending'}}
+            db.commit()
+        self.sweep()
+        with self.f.SessionLocal() as db:
+            self.assertEqual(db.get(EvidenceFile, self.f.file.id).metadata_[auto_read.MARK]['state'], 'pending')
+        self.assertEqual(self.batches(), [])
+
     def test_files_in_financial_never_read_are_read_only_by_the_explicit_action(self):
         from services.financial.file_scope import mark_financial_workspace
         with self.f.SessionLocal() as db:

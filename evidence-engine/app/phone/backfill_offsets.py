@@ -38,7 +38,12 @@ def run(conn, data_root: str, dry_run: bool = False) -> list:
             row["state"] = "dry run" if dry_run else "nothing to fill"
         else:
             source = detect.open_source(path)
-            row["filled"] = files.record_member_offsets(conn, ext, cid, source, root or "")
+            try:
+                row["filled"] = files.record_member_offsets(conn, ext, cid, source, root or "")
+            finally:
+                close = getattr(getattr(source, "zf", None), "close", None)
+                if close:
+                    close()
             row["state"] = "filled"
         out.append(row)
     return out

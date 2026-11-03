@@ -45,9 +45,13 @@ class _Member(io.RawIOBase):
             if self._z is None:
                 data = chunk
             else:
-                data = self._z.decompress(chunk) if chunk else b""
-                if not chunk or self._left <= 0:
-                    data += self._z.flush()
+                try:
+                    data = self._z.decompress(chunk) if chunk else b""
+                    if not chunk or self._left <= 0:
+                        data += self._z.flush()
+                except zlib.error:
+                    raise MemberDamaged("This file's bytes inside the uploaded archive could not be read: the "
+                                        "archive is damaged at this file.") from None
             if not chunk or self._left <= 0:
                 self._done = True
             self._crc = zlib.crc32(data, self._crc)
