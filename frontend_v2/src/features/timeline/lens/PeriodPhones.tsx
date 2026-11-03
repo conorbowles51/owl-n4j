@@ -47,7 +47,6 @@ export function PeriodPhones({ caseId, caseName, from, to }: { caseId: string; c
   )
   if (!valid) return null
   const step = bucket === "hour" ? 3600000 : bucket === "day" ? 86400000 : 7 * 86400000
-  const counts = new Map((period.data?.phones ?? []).map((p) => [p.extraction_id, p]))
   const rows: LaneRow[] = (buckets.data?.lanes ?? []).map((l) => ({
     id: l.key,
     label: l.label,
