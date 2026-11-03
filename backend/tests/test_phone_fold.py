@@ -144,10 +144,10 @@ def test_the_plain_ascii_fast_path_folds_exactly_as_the_character_steps(monkeypa
 def test_a_long_run_without_spaces_folds_in_time_that_grows_with_its_length():
     import time
     text = ("A1b2C3" * 40000) + "\u00e9" + ("x" * 240000)
-    started = time.monotonic()
+    started = time.process_time()  # CPU time, not wall clock: a loaded box must not turn this red
     folded, starts = F.fold_with_map(text)
     assert len(folded) == len(text) and starts[-1] == len(text) - 1
-    assert time.monotonic() - started < 5
+    assert time.process_time() - started < 5
 
 
 def test_dense_non_latin_text_looks_up_each_characters_script_once(monkeypatch):

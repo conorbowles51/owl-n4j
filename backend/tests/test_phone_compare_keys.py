@@ -55,6 +55,6 @@ def test_large_groups_are_matched_in_a_window_not_every_pair():
     import time
     calls = [ev(A, k * 600, kind="call", app="Phone", d=30, body=None) for k in range(20000)] + \
             [ev(B, k * 600 + 3, kind="call", app=None, d=30, body=None) for k in range(20000)]
-    t = time.time()
+    t = time.process_time()  # CPU time, not wall clock: a loaded box must not turn this red
     assert len(match(calls, A, B)) == 40000
-    assert time.time() - t < 10
+    assert time.process_time() - t < 10
