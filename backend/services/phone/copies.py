@@ -43,25 +43,34 @@ def assign(conn, ext, gen) -> dict:
         "ev.call_duration_s, ev.call_status, ev.thread_key FROM phone_comm_events ev WHERE ev.extraction_id = :e AND "
         "ev.generation = :g AND ev.sort_instant IS NOT NULL AND ev.record_uid::text NOT IN (SELECT record_uid FROM x "
         "WHERE (after ->> 'dup_group_uid') IS NULL)), "
-        "pk AS (SELECT p.record_uid, CASE WHEN p.role = ANY(CAST(:sr AS text[])) THEN 's' WHEN p.role = "
-        "ANY(CAST(:rr AS text[])) THEN 'r' END AS side, coalesce(p.identity_key, CASE WHEN p.role = 'owner_implicit' "
-        "OR p.is_phone_owner IS TRUE THEN 'owner' END, 'raw:' || coalesce(p.identifier_raw, '')) AS k "
-        "FROM phone_participations p WHERE p.extraction_id = :e AND p.generation = :g), "
+        # each event's sender and recipient keys and its files are read through the record_uid and
+        # parent_record_uid indexes, once per event (the cost grows with the phone's size, not events times
+        # participations); the key text is exactly rule v1's, so existing group ids and decisions keep their meaning
         "keyed AS (SELECT ev.event_uid, encode(sha256(convert_to(concat_ws('|', ev.kind, coalesce(ev.direction, ''), "
         "to_char(ev.sort_instant AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US'), "
-        "(SELECT string_agg(k, ',' ORDER BY k) FROM pk WHERE pk.record_uid = ev.record_uid AND side = 's'), "
-        "(SELECT string_agg(DISTINCT k, ',' ORDER BY k) FROM pk WHERE pk.record_uid = ev.record_uid AND side = 'r'), "
+        "sd.s, sd.r, "
         "CASE WHEN ev.kind = 'call' THEN coalesce(ev.call_duration_s::text, '') || '/' || coalesce(ev.call_status, '') "
         "WHEN ev.kind = 'email' THEN coalesce(ev.thread_key, '') || '/' || encode(sha256(convert_to(normalize("
         "coalesce(ev.subject, '') || chr(10) || coalesce(ev.body, ''), NFC), 'UTF8')), 'hex') "
         "ELSE encode(sha256(convert_to(normalize(coalesce(ev.body, ''), NFC), 'UTF8')), 'hex') END, "
-        "(SELECT string_agg(r.reference_text, ',' ORDER BY r.reference_text) FROM phone_file_references r JOIN "
-        "phone_record_summaries s ON s.extraction_id = r.extraction_id AND s.document_index = r.document_index AND "
-        "s.ordinal = r.record_ordinal WHERE s.generation = :g AND (s.record_uid = ev.record_uid OR "
-        "s.parent_record_uid = ev.record_uid))), 'UTF8')), 'hex') AS grp FROM ev), "
-        "groups AS (SELECT grp FROM keyed GROUP BY grp HAVING count(*) > 1) "
-        "UPDATE phone_comm_events t SET dup_group_uid = k.grp FROM keyed k JOIN groups USING (grp) "
-        "WHERE t.event_uid = k.event_uid AND t.extraction_id = :e AND t.generation = :g"),
+        "fl.f), 'UTF8')), 'hex') AS grp FROM ev "
+        "LEFT JOIN LATERAL (SELECT string_agg(k, ',' ORDER BY k) FILTER (WHERE side = 's') AS s, "
+        "string_agg(DISTINCT k, ',' ORDER BY k) FILTER (WHERE side = 'r') AS r FROM (SELECT CASE WHEN p.role = "
+        "ANY(CAST(:sr AS text[])) THEN 's' WHEN p.role = ANY(CAST(:rr AS text[])) THEN 'r' END AS side, "
+        "coalesce(p.identity_key, CASE WHEN p.role = 'owner_implicit' OR p.is_phone_owner IS TRUE THEN 'owner' END, "
+        "'raw:' || coalesce(p.identifier_raw, '')) AS k FROM phone_participations p WHERE p.record_uid = ev.record_uid "
+        "AND p.extraction_id = :e AND p.generation = :g) pk) sd ON true "
+        "LEFT JOIN LATERAL (SELECT string_agg(q.reference_text, ',' ORDER BY q.reference_text) AS f FROM ("
+        "SELECT r.reference_text FROM phone_record_summaries s JOIN phone_file_references r ON r.extraction_id = "
+        "s.extraction_id AND r.document_index = s.document_index AND r.record_ordinal = s.ordinal WHERE s.record_uid = "
+        "ev.record_uid AND s.generation = :g UNION ALL "
+        "SELECT r.reference_text FROM phone_record_summaries s JOIN phone_file_references r ON r.extraction_id = "
+        "s.extraction_id AND r.document_index = s.document_index AND r.record_ordinal = s.ordinal WHERE "
+        "s.parent_record_uid = ev.record_uid AND s.generation = :g) q) fl ON true), "
+        # a window count needs one sort; a join back to a grouped list was re-read once per event
+        "counted AS (SELECT event_uid, grp, count(*) OVER (PARTITION BY grp) AS n FROM keyed) "
+        "UPDATE phone_comm_events t SET dup_group_uid = k.grp FROM counted k "
+        "WHERE k.n > 1 AND t.event_uid = k.event_uid AND t.extraction_id = :e AND t.generation = :g"),
         {"e": ext, "g": gen, "sr": list(SENDER_ROLES), "rr": list(RECIPIENT_ROLES)})
     row = conn.execute(text(
         "SELECT count(DISTINCT dup_group_uid), count(dup_group_uid) FROM phone_comm_events WHERE extraction_id = :e "
