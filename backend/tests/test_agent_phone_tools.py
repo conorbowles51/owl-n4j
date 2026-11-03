@@ -139,3 +139,12 @@ def test_a_person_is_one_identity_or_the_tool_asks_which_and_nobody_is_dropped(w
         amb = PT.messages(c, world["case"], people=["maria"])
         assert amb["available"] is False and amb["not_in_case"] is False and "say which one" in amb["reason"]
         assert sorted(amb["candidates"]["maria"]) == sorted([ANA, "app:synthchat:maria.l"])
+
+
+def test_the_agent_keeps_to_the_identities_a_question_names():
+    """Agent evaluation on live (docs/cellebrite/measurements/agent-eval): asked about two app handles, an answer once
+    counted the same people's other identities too (5 for the handles' 3). The instructions now keep to the named
+    identities and make a wider total say what it covers."""
+    from services.agent.graph import _PHONE_PROMPT
+    assert "Keep to the identities the question names" in _PHONE_PROMPT
+    assert "say which identities the total covers" in _PHONE_PROMPT

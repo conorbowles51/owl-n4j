@@ -306,17 +306,26 @@ Gate D to E and F, recorded 2026-11-02: **pass**. Membership deletion: `test_pho
 
 Gate F to H, recorded 2026-11-03: **pass, with two section 11 targets not met**. End to end: `test_pattern_gate_f_e2e.py` drives a statement check on two synthetic phones through HTTP only (subjects, Day view, window, key date, Together, inactive and with-subject checks, a disputed item, a stale check checked again, the result attached to a finding and frozen). Corpus run on P12 and P14 (`measurements/scripts/pol_gate_f_corpus.py`, 04 section 11 and decision 41): the P14 build holds 542,091 activity events at a peak of 294 MB and takes 258.9 to 369.2 s in five runs on the shared server (met in 2 of 5; 161 s of processor time); re-applying a new mapping version 40.9 s; Day view p95 389 ms; Show all p95 253 ms a page; grid p95 1,140 ms (P14, 831 days) and 1,429 ms (two phones, 874 days); 24-hour statement checks p95 97 to 1,345 ms; Together 24.6 s; routine 945 ms. The cell reference import is not measured: no cell reference file is held. 07 section 11 tests: J-5a, J-9, J-10b and POL-1 pass on live (`546d5621`, signed in over http, phones-only case); CO cells for Patterns and Lanes pass on live (`f9834e25`). J-10c is carried by stage E, which finishes second (04 decision 36).
 
-Gate G to H, recorded 2026-11-03: **not passed; the approach 1 gate is recorded, and the 07 section 11 tests are
-partly met.** Approach 1 (05 section 4.7): on real data **not measurable: no case with both** phones and a ledger
-(the three reference cases hold one phone each and no financial records); the build stays. On the synthetic
-training case (two phones, a 65-row ledger) 16 bank alerts bind, 16 corroborate at lag 0, every one stays p4 and
-each payment shows "Also recorded on phone" with its record link, on live (`604f08c8`, signed in over http).
-07 section 11 tests met on live: J-3b (Graph pair to Conversations Between A and B, equal counts) and J-5b (a
-payment's whole day with the Money lane), both passing in `journeys/run.mjs`; CO-13 (Add to Dossiers on a phone
-identity opens the identity decision with the identity key). Not met: XF-1 to XF-4, XF-7, XF-8, XF-10, XF-12,
-SA-3 (rest), SA-7, SA-8 (second part), CO-10, CO-11, CO-18 (agent), CO cells for Graph, and the agent evaluation
-set (not built, not measured). SA-4 is met by the Graph pair list's wording and is not yet checked on the
-phones-only case.
+Gate G to H, recorded 2026-11-03: **pass, with approach 1 not measurable on real data.** Approach 1 (05 section
+4.7): on real data not measurable, because no case holds both phones and a ledger (the three reference cases hold
+one phone each and no financial records); the build stays. On the synthetic training case (two phones, a 65-row
+ledger) 16 bank alerts bind, 16 corroborate at lag 0, every one stays p4, and each payment shows "Also recorded on
+phone" with its record link. 07 section 11 tests, on live (`ca28a9ef`, signed in over http, synthetic cases):
+J-3b and J-5b pass in `journeys/run.mjs`; CO-13 opens the identity decision with the identity key; CO cell for Graph:
+a pair is kept as the selection its edge opens (10 events, equal to the edge's 10) and opens in Conversations with 10;
+XF-10: Ask about these messages waits for a selection; XF-4: a Timeline period lists each phone with its count, the
+records with no time beside it, and lanes whose marks list their own bucket; SA-4: the phones-only Graph says once
+"No financial records in this case..." and its edges carry no money words; SA-7: the phones-only Financial page says
+"No financial evidence in this case..." and nowhere "0 payments". XF-1 on live: a payment with no reviewed
+counterparty says so; the linked case (days around the payment equal to Conversations, dated records only, undated
+stated) is held by `test_phone_crossings.py` on PostgreSQL, with no linked payment found in the synthetic ledger to
+open on live. Held by tests on PostgreSQL: XF-2, XF-3, XF-7 (a finding's export total equals the collected count;
+theory analysis cites every linked record), XF-8, XF-12, SA-3, SA-8 second part (a ledger added later lights the
+crossings with no re-reading), CO-10, CO-11, CO-18 (agent). Agent evaluation set (`measurements/agent-eval/`): 36
+questions at the tool layer, all data 36 of 36 totals and cited records right, Significant 36 of 36 refused with the
+boundary; the live model (13 complete answers) stated the known total in 12 and cited as many records as it stated
+in 13; the miss counted a person's other identities and the instructions now keep to the identities a question
+names.
 
 ## 9. Risks and what to do if they occur
 
