@@ -11,7 +11,7 @@ const EXT_MAP: Record<string, FileTypeCategory> = {
   md: "Document", eml: "Document", msg: "Document",
   // Audio
   mp3: "Audio", wav: "Audio", ogg: "Audio", flac: "Audio", aac: "Audio",
-  wma: "Audio", m4a: "Audio", opus: "Audio",
+  wma: "Audio", m4a: "Audio", opus: "Audio", mpeg: "Audio", mpga: "Audio",
   // Video
   mp4: "Video", avi: "Video", mov: "Video", mkv: "Video", wmv: "Video",
   flv: "Video", webm: "Video", m4v: "Video",

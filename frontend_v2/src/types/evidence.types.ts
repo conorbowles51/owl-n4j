@@ -19,6 +19,7 @@ export interface EvidenceReadingVersion {
 }
 
 export interface EvidenceFile {
+  transcript_review?: import('@/features/evidence/transcripts.api').TranscriptSummary
   reading_versions?: EvidenceReadingVersion[]
   id: string
   original_filename: string
@@ -301,6 +302,7 @@ export interface FolderContentsResponse {
 }
 
 export interface EvidenceFileRecord {
+  transcript_review?: import('@/features/evidence/transcripts.api').TranscriptSummary
   reading_versions?: EvidenceReadingVersion[]
   folder_path?: { id: string; name: string }[]
   id: string

@@ -29,6 +29,14 @@ The application opens the guide from the always-visible **Financial guide** butt
 
 ## Technical And Product Notes
 
+- [Audio Transcript Review Implementation Plan](audio-transcript-review-implementation-plan.md)
+
+  Agreed optional transcription and review workflow, including mixed batches, speaker entity links, preserved corrections, processing contracts, recovery and acceptance gates.
+
+- [Audio Transcript Review Acceptance and Rollout](audio-transcript-review-acceptance.md)
+
+  Implemented behavior, local browser and real-service verification, provider smoke test, migration requirements and safe feature activation.
+
 - [Workspace Redesign](workspace-redesign.md)
 
   Living product and engineering plan for rebuilding the investigator workspace, including agreed direction, current-state findings, open decisions, and migration considerations.

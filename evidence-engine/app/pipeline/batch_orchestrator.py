@@ -158,6 +158,7 @@ async def _extract_file(
     effective_context: str | None = None,
     effective_mandatory_instructions: list | None = None,
     effective_special_entity_types: list | None = None,
+    transcript_revision_id: str | None = None,
 ) -> tuple[
     list[RawEntity],
     list[RawRelationship],
@@ -190,11 +191,19 @@ async def _extract_file(
                 update.message,
             )
 
-        doc = await extract_text(
-            file_path,
-            file_name,
+        from app.pipeline.audio_review import ingestion_document
+        doc = await ingestion_document(
+            job_id, file_path, file_name, case_id, source_evidence_file_id,
+            revision_id=transcript_revision_id, extractor=extract_text,
             progress_callback=report_pdf_progress,
         )
+        if doc.metadata.get('transcript_revision_id'):
+            async with async_session() as input_db:
+                input_job = await input_db.get(Job, job_id)
+                input_job.pipeline_state = {**(input_job.pipeline_state or {}),
+                    'transcript_revision_id': doc.metadata['transcript_revision_id'],
+                    'transcript_input_format': doc.metadata.get('transcript_input_format')}
+                await input_db.commit()
         if source_evidence_file_id:
             async with async_session() as text_db:
                 await upsert_evidence_document_text(
@@ -348,6 +357,12 @@ async def _activate_chunk_revisions(
     pending_job_ids: set[str] = set()
     for revision in revisions:
         if not revision.has_chunks:
+            if revision.job_id:
+                async with async_session() as db:
+                    job = await db.get(Job, uuid.UUID(revision.job_id))
+                    from app.pipeline.audio_review import publish_audio_document_text
+                    await publish_audio_document_text(job, db)
+                    await db.commit()
             continue
         try:
             if getattr(revision, "job_id", None):
@@ -471,6 +486,7 @@ async def run_batch_pipeline(
             "effective_special_entity_types": job.effective_special_entity_types,
             "requested_by_user_id": str(job.requested_by_user_id) if job.requested_by_user_id else None,
             "source_evidence_file_id": str(job.source_evidence_file_id) if job.source_evidence_file_id else None,
+            'transcript_revision_id': (job.pipeline_state or {}).get('transcript_revision_id'),
         }
         for job in jobs
     ]
@@ -503,6 +519,7 @@ async def run_batch_pipeline(
                     effective_context=ji.get("effective_context"),
                     effective_mandatory_instructions=ji.get("effective_mandatory_instructions"),
                     effective_special_entity_types=ji.get("effective_special_entity_types"),
+                    transcript_revision_id=ji.get('transcript_revision_id'),
                 )
 
         results = await asyncio.gather(
@@ -568,7 +585,16 @@ async def run_batch_pipeline(
             active_job_ids.append(ji["id"])
             active_file_names.append(ji["file_name"])
 
+        from pathlib import Path
+        from services.audio_media import SUPPORTED_AUDIO_EXTENSIONS
+        from services.transcript_review import feature_enabled
+        from app.pipeline.transcript_replacement import load_retired_claims
+        retired_claims = await load_retired_claims(case_id, {revision.evidence_file_id: revision.revision_id
+            for revision in staged_chunk_revisions if feature_enabled() and Path(revision.file_name).suffix.lower() in SUPPORTED_AUDIO_EXTENSIONS})
+        replacement = {'retired_claims': retired_claims} if retired_claims else {}
         if not all_raw_entities:
+            if retired_claims:
+                await write_graph([], [], case_id, batch_id, **replacement)
             logger.warning("No entities extracted from any file in batch %s", batch_id)
             for jid in active_job_ids:
                 await _update_job_status(
@@ -626,7 +652,7 @@ async def run_batch_pipeline(
             for jid in active_job_ids:
                 await _update_job_status(jid, JobStatus.RESOLVING_ENTITIES, 0.60, "Resolving entities...")
 
-            resolved_ents, resolved_rels = await resolve_entities(all_raw_entities, all_raw_rels, case_id)
+            resolved_ents, resolved_rels = await resolve_entities(all_raw_entities, all_raw_rels, case_id, **replacement)
             logger.info("Unified entity resolution: %d -> %d entities", len(all_raw_entities), len(resolved_ents))
 
             for jid in active_job_ids:
@@ -662,7 +688,7 @@ async def run_batch_pipeline(
             for jid in active_job_ids:
                 await _update_job_status(jid, JobStatus.WRITING_GRAPH, 0.85, "Writing graph...")
 
-            await write_graph(resolved_ents, resolved_rels, case_id, batch_id)
+            await write_graph(resolved_ents, resolved_rels, case_id, batch_id, **replacement)
 
         for jid, fname in zip(active_job_ids, active_file_names):
             ent_count = len([entity for entity in resolved_ents if fname in entity.source_files])

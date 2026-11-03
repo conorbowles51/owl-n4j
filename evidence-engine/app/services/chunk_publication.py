@@ -39,6 +39,8 @@ async def publish_chunk_revision(job: Job | Any, db: Any) -> ChunkActivationResu
             revision_id=publication["revision_id"],
             file_name=publication["file_name"],
         )
+        from app.pipeline.audio_review import publish_audio_document_text
+        await publish_audio_document_text(job, db)
     except Exception as exc:
         job.pipeline_state = transition_chunk_publication(
             job.pipeline_state,

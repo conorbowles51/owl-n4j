@@ -8,6 +8,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
+from fastapi import HTTPException
+from services.transcript_review import is_audio, summary, ensure_source, feature_enabled
 
 from postgres.models.evidence import EvidenceFile
 from services import evidence_engine_client, phone_files
@@ -48,6 +50,8 @@ def _serialize_profile_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         # Persist before uploading to the engine. Case refreshes may arrive
         # before the new engine job exists and must not resurrect an old run.
         "ingestion_request_id": snapshot.get("ingestion_request_id"),
+        "execution_plan_id": snapshot.get("execution_plan_id"),
+        "transcript_revision_id": snapshot.get("transcript_revision_id"),
         "preparation_mode": snapshot.get("preparation_mode", "full"),
         "source_folder_id": snapshot.get("source_folder_id"),
         "effective_context": snapshot.get("effective_context"),
@@ -80,11 +84,17 @@ async def process_db_files(
     force_reprocess: bool = False,
     preparation_mode: str = "full",
     requested_by_user_id: uuid.UUID | None = None,
+    audio_mode: str | None = None,
+    _audio_resolved: bool = False,
+    transcript_revisions: dict[str, str] | None = None,
+    reviewed_ids: set[str] | None = None,
+    execution_plan_id: str | None = None,
+    processing_snapshots: dict[str, dict] | None = None,
 ) -> dict[str, Any]:
     """Send evidence files to the engine. The database work (selection, snapshots, the admission gate, marking the
     files, recording the jobs) runs in the thread pool on this session, in this order; only the engine calls and the
     job subscription are awaited on the event loop."""
-    if preparation_mode not in ("full", "pdf_review"):
+    if preparation_mode not in ("full", "pdf_review", "audio_review"):
         raise ValueError("Unknown document preparation mode")
     if preparation_mode == "pdf_review":
         # Financial callers may retain the Case/Evidence locks from selecting
@@ -93,6 +103,35 @@ async def process_db_files(
         # again under lock below before a processing request can be committed.
         await run_in_threadpool(db.commit)
     await reconcile_case_jobs(db, str(case_id))
+    if (preparation_mode == 'audio_review' or audio_mode == 'review_first') and not feature_enabled():
+        raise HTTPException(409, 'Transcript review is not enabled')
+    if preparation_mode == 'full' and not _audio_resolved and audio_mode == 'review_first':
+        full, preparations, deferred, recovered_job_ids = await run_in_threadpool(
+            _partition_audio_files, db, case_id=case_id, file_ids=file_ids,
+            force_reprocess=force_reprocess, audio_mode=audio_mode,
+            reviewed_ids=reviewed_ids, execution_plan_id=execution_plan_id)
+        results = []
+        processing_count = 0
+        if full:
+            full_result = await process_db_files(db, case_id=case_id, file_ids=full,
+                force_reprocess=force_reprocess, requested_by_user_id=requested_by_user_id,
+                audio_mode=audio_mode, _audio_resolved=True, transcript_revisions=transcript_revisions,
+                execution_plan_id=execution_plan_id, processing_snapshots=processing_snapshots)
+            results.append(full_result)
+            processing_count = full_result.get('file_count', 0)
+        for file_id in preparations:
+            results.append(await process_db_files(db, case_id=case_id, file_ids=[file_id],
+                preparation_mode='audio_review', requested_by_user_id=requested_by_user_id,
+                execution_plan_id=execution_plan_id, processing_snapshots=processing_snapshots))
+        await run_in_threadpool(db.commit)
+        return {'job_ids': recovered_job_ids + [job for result in results for job in result.get('job_ids', [])],
+            'file_count': len(recovered_job_ids) + sum(result.get('file_count', 0) for result in results),
+            'awaiting_review_ids': deferred, 'transcription_count': len(preparations),
+            'processing_count': processing_count,
+            'skipped_count': sum(result.get('skipped_count', 0) for result in results),
+            'skipped_phone_files': sum(result.get('skipped_phone_files', 0) for result in results),
+            'missing_on_disk': sum(result.get('missing_on_disk', 0) for result in results),
+            'message': f'{processing_count} file(s) queued for processing; {len(preparations)} recording(s) queued for transcription; {len(deferred)} awaiting review'}
     ingestion_request_id = str(uuid.uuid4())
 
     prepared = await run_in_threadpool(
@@ -104,6 +143,8 @@ async def process_db_files(
         preparation_mode=preparation_mode,
         requested_by_user_id=requested_by_user_id,
         ingestion_request_id=ingestion_request_id,
+        audio_mode=audio_mode, transcript_revisions=transcript_revisions,
+        execution_plan_id=execution_plan_id, processing_snapshots=processing_snapshots,
     )
     if isinstance(prepared, dict):
         return prepared
@@ -175,6 +216,47 @@ async def process_db_files(
     }
 
 
+def _partition_audio_files(db, *, case_id, file_ids, force_reprocess, audio_mode,
+                           reviewed_ids, execution_plan_id):
+    chosen = EvidenceDBStorage.get_files_by_ids(db, file_ids)
+    for file in chosen:
+        if file.case_id != case_id:
+            raise ValueError('Evidence file does not belong to this case')
+    preparations, full, deferred, recovered_job_ids = [], [], [], []
+    excluded_source_ids = set()
+    for file in chosen:
+        if (file.source_type in ('phone_extraction', 'phone_text')
+            or not phone_files.external_processing_allowed(db, file)
+            or phone_files.is_member_locator(file.stored_path)):
+            full.append(file.id)  # The ordinary handoff reports the existing source-policy skip.
+            excluded_source_ids.add(file.id)
+            continue
+        if execution_plan_id and (file.last_processed_profile_snapshot or {}).get('execution_plan_id') == execution_plan_id and file.engine_job_id:
+            recovered_job_ids.append(str(file.engine_job_id))
+            continue
+        if file.status == 'processing' or (file.status == 'processed' and not force_reprocess):
+            continue
+        info = summary(file)
+        reviewed = str(file.id) in reviewed_ids if reviewed_ids is not None else info.get('reviewed')
+        if is_audio(file) and audio_mode == 'review_first' and not reviewed:
+            if file.transcription or file.transcription_segments:
+                ensure_source(db, file)
+                deferred.append(str(file.id))
+            else:
+                preparations.append(file.id)
+        else:
+            full.append(file.id)
+    # Apply the existing admission gate to the complete requested handoff
+    # before any group starts. No audio choice bypasses a financial hold.
+    eligible_ids = set(full + preparations) - excluded_source_ids
+    candidates_for_gate = [f for f in chosen if f.id in eligible_ids]
+    gate_document_processing(db, case_id=case_id, files=candidates_for_gate, resolve_path=_stored_path)
+    # Legacy transcript adoption may have acquired the case audit lock.
+    # Release it before a child group awaits the engine over HTTP.
+    db.commit()
+    return full, preparations, deferred, recovered_job_ids
+
+
 def _prepare_files(
     db: Session,
     *,
@@ -184,11 +266,21 @@ def _prepare_files(
     preparation_mode: str,
     requested_by_user_id: uuid.UUID | None,
     ingestion_request_id: str,
+    audio_mode: str | None = None,
+    transcript_revisions: dict[str, str] | None = None,
+    execution_plan_id: str | None = None,
+    processing_snapshots: dict[str, dict] | None = None,
 ):
     """Select, snapshot, gate and mark the files to send, and commit. Returns the early result dict when nothing is
     sent, otherwise (file_tuples, per_file_metadata, valid_files, valid_ids, skipped_processing, missing_on_disk)."""
+    if isinstance(db, Session):
+        from services.financial.audit_chain import lock_case_audit_chain
+        lock_case_audit_chain(db, case_id)
     if preparation_mode == "pdf_review":
         files = _financial_processing_files(db, case_id, file_ids)
+    elif isinstance(db, Session):
+        files = list(db.scalars(select(EvidenceFile).where(EvidenceFile.id.in_(file_ids))
+            .order_by(EvidenceFile.id).with_for_update().execution_options(populate_existing=True)))
     else:
         files = EvidenceDBStorage.get_files_by_ids(db, file_ids)
     files_by_id = {f.id: f for f in files}
@@ -200,6 +292,7 @@ def _prepare_files(
     skipped_phone_texts = 0
     skipped_in_archive = 0
     missing_on_disk = 0
+    recovered_job_ids = []
 
     for file_id in file_ids:
         ef = files_by_id.get(file_id)
@@ -216,6 +309,15 @@ def _prepare_files(
             # A thread document is written from the phone's records (02 section 9.7); there is no file to process.
             skipped_phone_texts += 1
             continue
+        if execution_plan_id and (ef.last_processed_profile_snapshot or {}).get('execution_plan_id') == execution_plan_id and ef.engine_job_id:
+            recovered_job_ids.append(str(ef.engine_job_id))
+            skipped_processing += 1
+            continue
+        reservation = (getattr(ef, 'metadata_', None) or {}).get('processing_reservation') or {}
+        if reservation and reservation.get('plan_id') != execution_plan_id:
+            from datetime import datetime, timezone
+            if reservation.get('expires_at', '') > datetime.now(timezone.utc).isoformat():
+                raise HTTPException(409, 'This file has already been reserved for another processing request.')
         if ef.status == "processing":
             skipped_processing += 1
             continue
@@ -229,6 +331,19 @@ def _prepare_files(
             skipped_in_archive += 1
             continue
         if ef.status == "processed" and not force_reprocess:
+            skipped_processing += 1
+            continue
+        if is_audio(ef) and preparation_mode == 'full':
+            info = summary(ef)
+            if info.get('review_required') and not feature_enabled():
+                raise HTTPException(409, 'Transcript review is disabled; saved revisions have been retained.')
+            if audio_mode is None and (info.get('review_required') or (ef.metadata_ or {}).get('review_opted_in')) and not info.get('reviewed'):
+                raise HTTPException(409, {'code': 'audio_review_choice_required',
+                    'message': 'This recording is awaiting transcript review. Review it or explicitly choose Process without review.'})
+        if preparation_mode == 'audio_review' and not is_audio(ef):
+            raise HTTPException(422, 'Transcript review requires an audio recording')
+        if preparation_mode == 'audio_review' and (ef.transcription or ef.transcription_segments):
+            ensure_source(db, ef)
             skipped_processing += 1
             continue
         if preparation_mode == "pdf_review" and Path(ef.original_filename).suffix.lower() != ".pdf":
@@ -248,8 +363,8 @@ def _prepare_files(
             message += (f"; {skipped_in_archive} phone file(s) are kept inside an uploaded archive and read there, "
                         "so they are not sent for processing")
         return {
-            "job_ids": [],
-            "file_count": 0,
+            "job_ids": recovered_job_ids,
+            "file_count": len(recovered_job_ids),
             "skipped_count": (skipped_processing + skipped_external + skipped_phone_reports + skipped_phone_texts
                               + skipped_in_archive),
             "skipped_phone_files": skipped_external,
@@ -266,7 +381,7 @@ def _prepare_files(
             missing_on_disk += 1
             continue
 
-        snapshot = build_processing_snapshot(
+        snapshot = (processing_snapshots or {}).get(str(ef.id)) or build_processing_snapshot(
             db,
             case_id=case_id,
             folder_id=ef.folder_id,
@@ -276,6 +391,7 @@ def _prepare_files(
             **snapshot,
             "preparation_mode": preparation_mode,
             "ingestion_request_id": ingestion_request_id,
+            "execution_plan_id": execution_plan_id,
             "requested_by_user_id": str(requested_by_user_id) if requested_by_user_id else None,
             "source_evidence_file_id": str(ef.id),
         }
@@ -324,6 +440,19 @@ def _prepare_files(
         files=valid_files,
         resolve_path=_stored_path,
     )
+
+    for ef, snapshot in zip(valid_files, per_file_metadata):
+        if execution_plan_id and (ef.metadata_ or {}).get('processing_reservation', {}).get('plan_id') == execution_plan_id:
+            metadata = dict(ef.metadata_ or {})
+            metadata.pop('processing_reservation', None)
+            ef.metadata_ = metadata
+        if is_audio(ef):
+            if preparation_mode == 'audio_review':
+                ef.metadata_ = {**(ef.metadata_ or {}), 'review_opted_in': True}
+            elif feature_enabled():
+                state = ensure_source(db, ef)
+                if state:
+                    snapshot['transcript_revision_id'] = (transcript_revisions or {}).get(str(ef.id)) or str(state.working_revision_id)
 
     EvidenceDBStorage.mark_processing(
         db,

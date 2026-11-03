@@ -428,6 +428,8 @@ async def consolidate_entities(
         return entities, relationships
 
     initial_count = len(entities)
+    bound = [e for e in entities if e.properties.get('_transcript_entity_id')]
+    entities = [e for e in entities if not e.properties.get('_transcript_entity_id')]
 
     # Pass 1: Deterministic
     entities, relationships, _, det_merges = _deterministic_consolidate(
@@ -456,4 +458,4 @@ async def consolidate_entities(
             initial_count, len(entities), total_merges,
         )
 
-    return entities, relationships
+    return entities + bound, relationships

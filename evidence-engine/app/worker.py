@@ -26,7 +26,18 @@ async def process_file(ctx: dict, job_id: str) -> None:
         job = await db.get(Job, job_id)
         if job is None:
             raise ValueError("Processing job no longer exists")
-        if job.job_type == "pdf_review":
+        if job.job_type == 'audio_review':
+            from app.pipeline.audio_review import prepare_audio_review
+            from app.pipeline.batch_orchestrator import _update_job_status
+            from app.models.job import JobStatus
+            async def operation():
+                try:
+                    await prepare_audio_review(job, _update_job_status)
+                except Exception:
+                    await _update_job_status(job.id, JobStatus.FAILED, 0.0,
+                        'Transcription failed', error_message='Transcription failed; retry the saved recording.')
+                    raise
+        elif job.job_type == "pdf_review":
             from app.pipeline.prepare_pdf_review import prepare_pdf_review
             from app.pipeline.batch_orchestrator import _update_job_status
             from app.models.job import JobStatus
@@ -114,5 +125,20 @@ class PhoneCaptureWorkerSettings:
     # Six hours leaves room for the largest phone on a loaded host without a run being cut off midway.
     job_timeout = 21600
     job_completion_wait = 21630
+    retry_jobs = True
+    max_tries = 3
+
+
+class AudioReviewWorkerSettings(WorkerSettings):
+    """Versioned queue: older ingestion workers cannot consume review jobs."""
+    from app.services.processing_queues import AUDIO_REVIEW_QUEUE as queue_name, audio_worker_heartbeat
+    on_startup = audio_worker_heartbeat
+    functions = [process_file, process_batch]
+    cron_jobs = WorkerSettings.cron_jobs + [cron(audio_worker_heartbeat, second={0, 30}, unique=True)]
+    max_jobs = 2
+    # ARQ converts vars(settings_class), rather than inherited attributes.
+    redis_settings = WorkerSettings.redis_settings
+    job_timeout = WorkerSettings.job_timeout
+    job_completion_wait = WorkerSettings.job_completion_wait
     retry_jobs = True
     max_tries = 3

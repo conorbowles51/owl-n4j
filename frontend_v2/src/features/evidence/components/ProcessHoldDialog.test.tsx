@@ -116,6 +116,9 @@ function stubGate(held: HeldRequest | null, overrides: Partial<ProcessGate> = {}
     // The gate carries the case so the dialog can offer a bank file somewhere
     // to go. Spread last, so a case passed in an override still wins.
     caseId: CASE_ID,
+    audioChoice: null,
+    dismissAudioChoice: vi.fn(),
+    confirmAudioChoice: vi.fn(),
     start: vi.fn().mockResolvedValue("held"),
     release: vi.fn().mockResolvedValue(0),
     dismiss: vi.fn(),

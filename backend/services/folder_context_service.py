@@ -154,6 +154,7 @@ def build_processing_snapshot(
     case_id: uuid.UUID,
     folder_id: uuid.UUID | None,
     file_id: uuid.UUID | None = None,
+    include_sibling_ids: bool = False,
 ) -> dict[str, Any]:
     effective = resolve_effective_profile(db, folder_id, case_id)
     sibling_files = gather_sibling_files(
@@ -161,6 +162,7 @@ def build_processing_snapshot(
         case_id,
         folder_id,
         exclude_file_id=file_id,
+        include_ids=include_sibling_ids,
     )
     return {
         "source_folder_id": str(folder_id) if folder_id else None,
@@ -177,6 +179,7 @@ def gather_sibling_files(
     case_id: uuid.UUID,
     folder_id: uuid.UUID | None,
     exclude_file_id: uuid.UUID | None = None,
+    include_ids: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Return basic info about all files in the same folder for sibling awareness.
@@ -199,6 +202,7 @@ def gather_sibling_files(
     return [
         {
             "name": f.original_filename,
+              **({'evidence_file_id': str(f.id)} if include_ids else {}),
             "mime_type": mimetypes.guess_type(f.original_filename)[0] or "application/octet-stream",
             "size": f.size,
         }

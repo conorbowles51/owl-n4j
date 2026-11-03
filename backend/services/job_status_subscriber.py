@@ -229,26 +229,30 @@ class JobStatusSubscriber:
                     self._handle_merge_completion(db, row, job, engine_status, case_id)
                     logger.info("Recovered merge job %s: %s", jid, engine_status)
                     continue
-                # Already terminal — sync immediately
-                ef = row
-                err = _extract_failure_message(job) if engine_status == "failed" else None
-                EvidenceDBStorage.mark_processed(db, [ef.id], error=err)
-                if engine_status == "completed":
-                    doc_summary = job.get("document_summary")
-                    if doc_summary:
-                        ef.summary = doc_summary
-                    transcription = job.get("transcription")
-                    if transcription is not None:
-                        ef.transcription = transcription
-                    transcription_segments = job.get("transcription_segments")
-                    if transcription_segments is not None:
-                        ef.transcription_segments = transcription_segments
-                    ec = job.get("entity_count")
-                    rc = job.get("relationship_count")
-                    if ec is not None:
-                        ef.entity_count = ec
-                    if rc is not None:
-                        ef.relationship_count = rc
+                if job.get('job_type') == 'audio_review' or (job.get('pipeline_state') or {}).get('transcript_revision_id'):
+                    from services.evidence_job_sync import _sync_db_record_from_job
+                    _sync_db_record_from_job(row, job, db=db)
+                else:
+                    # Already terminal — sync immediately
+                    ef = row
+                    err = _extract_failure_message(job) if engine_status == "failed" else None
+                    EvidenceDBStorage.mark_processed(db, [ef.id], error=err)
+                    if engine_status == "completed":
+                        doc_summary = job.get("document_summary")
+                        if doc_summary:
+                            ef.summary = doc_summary
+                        transcription = job.get("transcription")
+                        if transcription is not None:
+                            ef.transcription = transcription
+                        transcription_segments = job.get("transcription_segments")
+                        if transcription_segments is not None:
+                            ef.transcription_segments = transcription_segments
+                        ec = job.get("entity_count")
+                        rc = job.get("relationship_count")
+                        if ec is not None:
+                            ef.entity_count = ec
+                        if rc is not None:
+                            ef.relationship_count = rc
                 logger.info("Recovered job %s: %s", jid, engine_status)
             db.commit()
         return to_subscribe
@@ -396,7 +400,7 @@ class JobStatusSubscriber:
         from services import evidence_engine_client
 
         job_detail = data
-        if status == "completed":
+        if status in ('completed', 'failed'):
             try:
                 fetched_detail = await evidence_engine_client.get_job(job_id)
                 job_detail = {**data, **fetched_detail}
@@ -428,19 +432,25 @@ class JobStatusSubscriber:
                 return True
 
             err = _failure_reason(data, _MISSING_FILE_REASON) if status == "failed" else None
-            EvidenceDBStorage.mark_processed(db, [db_rec.id], error=err)
+            from services.evidence_job_sync import _sync_db_record_from_job
+            if job_detail.get('job_type') == 'audio_review' or (job_detail.get('pipeline_state') or {}).get('transcript_revision_id'):
+                _sync_db_record_from_job(db_rec, {**job_detail, 'id': job_id, 'status': status,
+                    **({'error_message': err} if err else {})}, db=db)
+            else:
+                EvidenceDBStorage.mark_processed(db, [db_rec.id], error=err)
+                if status == 'completed':
+                    for field in ('transcription', 'transcription_segments'):
+                        if job_detail.get(field) is not None:
+                            setattr(db_rec, field, job_detail[field])
 
-            if status == "completed":
+            if status == 'completed' and job_detail.get('job_type') == 'audio_review':
+                EvidenceDBStorage.add_log(db, case_id=db_rec.case_id, evidence_file_id=db_rec.id,
+                    filename=db_rec.original_filename, level='info',
+                    message=f'Transcript ready for review: {db_rec.original_filename}. Graph processing has not started.')
+            elif status == "completed":
                 doc_summary = job_detail.get("document_summary")
                 if doc_summary:
                     db_rec.summary = doc_summary
-
-                transcription = job_detail.get("transcription")
-                if transcription is not None:
-                    db_rec.transcription = transcription
-                transcription_segments = job_detail.get("transcription_segments")
-                if transcription_segments is not None:
-                    db_rec.transcription_segments = transcription_segments
 
                 entity_count = job_detail.get("entity_count")
                 rel_count = job_detail.get("relationship_count")

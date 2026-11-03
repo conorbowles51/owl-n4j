@@ -85,8 +85,15 @@ def _file_filters(search=None, status=None, type_category=None):
     if search:
         conditions.append(func.lower(EvidenceFile.original_filename).contains(search.lower(), autoescape=True))
     if status and status != "all":
-        # Deprecated stale filter is treated as processed for older clients.
-        conditions.append(EvidenceFile.status == ("processed" if status == "stale" else status))
+        if status in ('awaiting_review', 'ready'):
+            conditions.append(EvidenceFile.metadata_['transcript_review']['review_state'].as_string() == status)
+            conditions.append(EvidenceFile.status != 'processing')
+            if status == 'ready':
+                conditions.append(EvidenceFile.status != 'processed')
+                conditions.append(EvidenceFile.metadata_['transcript_review']['published_revision_id'].as_string().is_(None))
+        else:
+            # Deprecated stale filter is treated as processed for older clients.
+            conditions.append(EvidenceFile.status == ("processed" if status == "stale" else status))
     type_condition = _file_type_condition(type_category or "")
     if type_condition is not None:
         conditions.append(type_condition)
@@ -764,10 +771,9 @@ class EvidenceDBStorage:
                 continue
             ef.status = "processing"
             ef.last_error = None
-            ef.processed_at = None
             ef.engine_job_id = None
-            ef.transcription = None
-            ef.transcription_segments = None
+            # Preserve machine output, investigator revisions and last successful
+            # publication while a new attempt runs (or fails).
         db.flush()
 
     @staticmethod
@@ -1005,6 +1011,7 @@ class EvidenceDBStorage:
             "legacy_id": ef.legacy_id,
             "summary": ef.summary,
             "transcription": ef.transcription,
+            'transcript_review': dict((ef.metadata_ or {}).get('transcript_review') or {}),
             "transcription_segments": list(ef.transcription_segments or []),
             "transcription_speakers": dict(ef.transcription_speakers or {}),
             "transcription_speaker_merges": dict(

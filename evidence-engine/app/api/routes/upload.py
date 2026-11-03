@@ -136,7 +136,7 @@ async def upload_files(
                 parsed_siblings = metadata.get("sibling_files")
 
             preparation_mode = (metadata or {}).get("preparation_mode", "full")
-            if preparation_mode not in ("full", "pdf_review"):
+            if preparation_mode not in ("full", "pdf_review", "audio_review"):
                 raise HTTPException(status_code=400, detail="Unknown preparation mode")
             if preparation_mode == "pdf_review" and (Path(safe_name).suffix.lower() != ".pdf" or not (metadata or {}).get("source_evidence_file_id")):
                 raise HTTPException(status_code=400, detail="PDF preparation requires a registered PDF evidence file")
@@ -152,7 +152,7 @@ async def upload_files(
             job = Job(
                 id=job_id,
                 case_id=case_id,
-                job_type="pdf_review" if preparation_mode == "pdf_review" else "ingestion",
+                job_type=preparation_mode if preparation_mode in ('pdf_review', 'audio_review') else 'ingestion',
                 batch_id=batch_id,
                 file_name=safe_name,
                 file_path=str(file_path),
@@ -168,6 +168,7 @@ async def upload_files(
                 pipeline_state={
                     **({"ingestion_request_id": ingestion_request_id} if ingestion_request_id else {}),
                     **({"pdf_reading_mode": reading_mode} if preparation_mode == "pdf_review" else {}),
+                    **({'transcript_revision_id': metadata['transcript_revision_id']} if (metadata or {}).get('transcript_revision_id') else {}),
                 },
                 file_size=file_size,
                 mime_type=mime_type,
@@ -176,6 +177,9 @@ async def upload_files(
             db.add(job)
             jobs.append(job)
         from app.services.processing_queues import batch_queue
+        if any(job.job_type == 'audio_review' for job in jobs):
+            if len(jobs) != 1:
+                raise HTTPException(400, 'Audio preparation is dispatched per recording')
         jobs[0].pipeline_state = transition_batch_dispatch(
             jobs[0].pipeline_state,
             dispatch_state="ready",
@@ -183,6 +187,9 @@ async def upload_files(
             case_id=case_id,
         )
         jobs[0].pipeline_state = {**jobs[0].pipeline_state, 'processing_queue': batch_queue(jobs)}
+        if jobs[0].job_type == 'audio_review':
+            jobs[0].pipeline_state = {**jobs[0].pipeline_state,
+                'batch_dispatch': {**jobs[0].pipeline_state['batch_dispatch'], 'function': 'process_file'}}
         await db.commit()
     except Exception:
         await db.rollback()

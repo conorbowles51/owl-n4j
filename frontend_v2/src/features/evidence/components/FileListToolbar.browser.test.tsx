@@ -11,6 +11,7 @@ vi.mock("../hooks/use-guarded-process", () => ({
   useGuardedProcess: () => ({ start: vi.fn(), isChecking: false, isProcessing: false }),
 }))
 vi.mock("./ProcessHoldDialog", () => ({ ProcessHoldDialog: () => null }))
+vi.mock("./TranscriptWorkActions", () => ({ TranscriptWorkActions: () => null }))
 vi.mock("@/features/financial/components/FinancialAccessProvider", () => ({
   FinancialAccessProvider: ({ children }: { children: React.ReactNode }) => children,
 }))

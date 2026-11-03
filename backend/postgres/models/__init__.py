@@ -143,6 +143,8 @@ from postgres.models.financial_import_batches import FinancialImportBatch, Finan
 __all__ += ['FinancialImportBatch', 'FinancialImportBatchItem', 'FinancialImportOperation']
 
 from postgres.models.timeline_entry import TimelineEntry
+from postgres.models.transcript import TranscriptSource, TranscriptRevision, TranscriptState, TranscriptReview, EvidenceProcessingPlan
+__all__ += ['TranscriptSource', 'TranscriptRevision', 'TranscriptState', 'TranscriptReview', 'EvidenceProcessingPlan']
 __all__ += ["TimelineEntry"]
 from postgres.models.evidence_upload import EvidenceUploadSession, EvidenceUploadGroup
 from postgres.models.activity_event import ActivityEvent

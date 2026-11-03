@@ -19,16 +19,22 @@ import { fileURLToPath } from "node:url"
 import type { FileRouteCheck, RouteCheckResponse } from "@/types/evidence.types"
 import type { HeldRequest } from "./use-guarded-process"
 import { describeHold, useGuardedProcess } from "./use-guarded-process"
+import { ApiError } from '@/lib/api-client'
 
 const apiMocks = vi.hoisted(() => ({
   routeCheck: vi.fn(),
   processBackground: vi.fn(),
+  planningEnabled: false,
+  createProcessingPlan: vi.fn(),
+  executeProcessingPlan: vi.fn(),
 }))
 
 vi.mock("../api", () => ({
   evidenceAPI: {
     routeCheck: apiMocks.routeCheck,
     processBackground: apiMocks.processBackground,
+    get createProcessingPlan() { return apiMocks.planningEnabled ? apiMocks.createProcessingPlan : undefined },
+    executeProcessingPlan: apiMocks.executeProcessingPlan,
   },
 }))
 
@@ -46,6 +52,10 @@ function resetMocks() {
   apiMocks.routeCheck.mockReset()
   apiMocks.processBackground.mockReset()
   apiMocks.processBackground.mockResolvedValue({ task_id: "task-1" })
+  apiMocks.planningEnabled = false
+  apiMocks.createProcessingPlan.mockReset()
+  apiMocks.executeProcessingPlan.mockReset()
+  apiMocks.executeProcessingPlan.mockResolvedValue({ job_ids: ['job-1'], state: 'completed' })
   toastMocks.warning.mockReset()
   toastMocks.success.mockReset()
   toastMocks.error.mockReset()
@@ -92,6 +102,38 @@ function response(files: FileRouteCheck[]): RouteCheckResponse {
 function renderGate() {
   return renderHook(() => useGuardedProcess("case-1"), { wrapper: createWrapper() })
 }
+
+describe('mixed audio processing choices', () => {
+  beforeEach(() => {
+    resetMocks(); apiMocks.planningEnabled = true
+    apiMocks.routeCheck.mockResolvedValue(response([fileCheck({ file_id: 'audio' }), fileCheck({ file_id: 'pdf' })]))
+    apiMocks.createProcessingPlan.mockResolvedValue({ id: 'plan-1', case_id: 'case-1',
+      eligible_count: 2, audio_count: 1, document_count: 1, unreviewed_audio_count: 1, files: [] })
+  })
+  it.each(['review_first', 'direct'] as const)('waits for the choice, then submits the frozen plan using %s', async mode => {
+    const { result } = renderGate()
+    await act(async () => { expect(await result.current.start({ fileIds: ['audio', 'pdf'] })).toBe('held') })
+    expect(apiMocks.executeProcessingPlan).not.toHaveBeenCalled()
+    expect(apiMocks.processBackground).not.toHaveBeenCalled()
+    expect(result.current.audioChoice?.plan.audio_count).toBe(1)
+    await act(async () => { await result.current.confirmAudioChoice(mode) })
+    expect(apiMocks.executeProcessingPlan).toHaveBeenCalledWith('plan-1', mode, expect.any(String))
+    expect(result.current.audioChoice).toBeNull()
+  })
+  it('fails closed if preview cannot be obtained', async () => {
+    apiMocks.createProcessingPlan.mockRejectedValue(new Error('Network disconnected'))
+    const { result } = renderGate()
+    await act(async () => { expect(await result.current.start({ fileIds: ['audio', 'pdf'] })).toBe('failed') })
+    expect(apiMocks.processBackground).not.toHaveBeenCalled()
+    expect(apiMocks.executeProcessingPlan).not.toHaveBeenCalled()
+  })
+  it('retains the guarded original processing route for an older backend', async () => {
+    apiMocks.createProcessingPlan.mockRejectedValue(new ApiError('Not found', 404))
+    const { result } = renderGate()
+    await act(async () => { expect(await result.current.start({ fileIds: ['audio', 'pdf'] })).toBe('started') })
+    expect(apiMocks.processBackground).toHaveBeenCalledOnce()
+  })
+})
 
 describe("starting a process request", () => {
   beforeEach(resetMocks)
@@ -526,7 +568,8 @@ const ALLOWED = [
 const WAYS_TO_ASK = [
   /processBackground/,
   /evidenceAPI\s*\.\s*process\s*\(/,
-  /["'`]\/api\/evidence\/process/,
+  /["'`]\/api\/evidence\/process(?:\/background)?["'`?]/,
+  /executeProcessingPlan/,
 ]
 
 describe("no door around the gate", () => {

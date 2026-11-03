@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { useVirtualizer } from '@tanstack/react-virtual'
 import {
   Check,
   ChevronDown,
@@ -31,7 +32,10 @@ import {
 } from "./audio-transcript.utils"
 import { TranscriptSpeakerManager } from "./TranscriptSpeakerManager"
 
-interface AudioTranscriptViewerProps {
+export interface AudioTranscriptViewerProps {
+  onTurnTextChange?: (id: string, text: string) => void
+  onTurnSpeakerChange?: (id: string, speaker: string) => void
+  onBodyTextChange?: (text: string) => void
   audioUrl?: string
   documentName?: string
   transcription?: string | null
@@ -96,9 +100,19 @@ export function AudioTranscriptViewer({
   onCanPlay,
   onError,
   initialTime,
+  onTurnTextChange,
+  onTurnSpeakerChange,
+  onBodyTextChange,
 }: AudioTranscriptViewerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const segmentRefs = useRef<Array<HTMLDivElement | null>>([])
+  const transcriptScrollRef = useRef<HTMLDivElement>(null)
+  const virtualized = segments.length > 150
+  const turns = useVirtualizer({ count: virtualized ? segments.length : 0,
+    getScrollElement: () => transcriptScrollRef.current, estimateSize: () => onTurnTextChange ? 180 : 110,
+    overscan: 6, getItemKey: index => segments[index].id || index })
+  const visibleTurns = virtualized ? turns.getVirtualItems() : segments.map((_, index) => ({ index, start: 0, key: index }))
+  const mapSegments = useMemo(() => segments.filter((_, index) => index % Math.max(1, Math.ceil(segments.length / 200)) === 0), [segments])
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -117,6 +131,7 @@ export function AudioTranscriptViewer({
     () => getDefaultSpeakerNames(segments),
     [segments]
   )
+  const turnSpeakerOptions = useMemo(() => Array.from(new Set([...segments.map(s => s.speaker), 'unknown'])), [segments])
   const speakerGroups = useMemo(
     () =>
       getTranscriptSpeakerGroups(
@@ -175,11 +190,12 @@ export function AudioTranscriptViewer({
 
   useEffect(() => {
     if (!followPlayback || activeSegmentIndex < 0) return
+    if (virtualized) { turns.scrollToIndex(activeSegmentIndex, { align: 'center' }); return }
     segmentRefs.current[activeSegmentIndex]?.scrollIntoView?.({
       block: "center",
       behavior: playing ? "smooth" : "auto",
     })
-  }, [activeSegmentIndex, followPlayback, playing])
+  }, [activeSegmentIndex, followPlayback, playing, virtualized, turns])
 
   const canonicalSpeaker = (speaker: string) =>
     resolveCanonicalSpeaker(speaker, workingMerges)
@@ -222,6 +238,7 @@ export function AudioTranscriptViewer({
     setMatchPosition(nextPosition)
     const segmentIndex = matchIndices[nextPosition]
     seek(segments[segmentIndex].start)
+    if (virtualized) { turns.scrollToIndex(segmentIndex, { align: 'center' }); return }
     segmentRefs.current[segmentIndex]?.scrollIntoView?.({
       block: "center",
       behavior: "smooth",
@@ -324,10 +341,10 @@ export function AudioTranscriptViewer({
     activeSegmentIndex >= 0 ? speakerName(segments[activeSegmentIndex].speaker) : null
 
   return (
-    <div className="grid h-full min-h-0 grid-cols-[minmax(250px,0.34fr)_minmax(0,0.66fr)] bg-stone-950 text-stone-100">
+    <div className="grid h-full min-h-[480px] grid-cols-1 grid-rows-[auto_minmax(0,1fr)] md:min-h-0 md:grid-rows-1 md:grid-cols-[minmax(250px,0.34fr)_minmax(0,0.66fr)] bg-stone-950 text-stone-100">
       <section className="relative flex min-h-0 flex-col overflow-hidden border-r border-white/10">
         <div className="absolute inset-0 opacity-40 [background-image:radial-gradient(circle_at_20%_10%,rgba(245,158,11,0.24),transparent_38%),linear-gradient(145deg,transparent_42%,rgba(255,255,255,0.035)_42%,rgba(255,255,255,0.035)_43%,transparent_43%)]" />
-        <div className="relative flex flex-1 flex-col justify-between p-6">
+        <div className="relative flex flex-1 flex-col justify-between p-3 md:p-6">
           <div>
             <div className="mb-8 flex items-center justify-between">
               <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-amber-300/80">
@@ -339,20 +356,20 @@ export function AudioTranscriptViewer({
               </span>
             </div>
 
-            <p className="line-clamp-2 text-lg font-semibold leading-snug text-white">
+            <p className="hidden line-clamp-2 text-sm font-semibold leading-snug text-white md:block md:text-lg">
               {documentName || "Audio recording"}
             </p>
             <p className="mt-2 text-xs text-stone-500">
               {activeSpeaker ? `${activeSpeaker} is speaking` : "Ready to review"}
             </p>
 
-            <div className="mt-10 rounded-xl border border-white/10 bg-black/20 px-4 py-3">
+            <div className="mt-10 hidden rounded-xl border border-white/10 bg-black/20 px-4 py-3 md:block">
               <p className="mb-3 text-[9px] font-semibold uppercase tracking-[0.18em] text-stone-600">
                 Conversation map
               </p>
               <div className="relative h-16 overflow-hidden">
                 <div className="absolute left-0 right-0 top-1/2 h-px bg-white/10" />
-                {segments.map((segment, index) => {
+                {mapSegments.map((segment, index) => {
                   const mapDuration = Math.max(timelineDuration, 1)
                   const left = (segment.start / mapDuration) * 100
                   const width = Math.max(
@@ -393,7 +410,7 @@ export function AudioTranscriptViewer({
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-2 md:space-y-4">
             <input
               aria-label="Recording position"
               type="range"
@@ -519,6 +536,7 @@ export function AudioTranscriptViewer({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search this transcript"
+                aria-label="Search this transcript"
                 className="h-9 bg-stone-50 pl-9 pr-9 text-sm dark:bg-black/20"
               />
               {query && (
@@ -558,10 +576,13 @@ export function AudioTranscriptViewer({
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto scroll-smooth px-5 py-5">
+        <div ref={transcriptScrollRef} role="region" aria-label="Transcript turns" className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
           {segments.length > 0 ? (
-            <div className="mx-auto max-w-3xl space-y-2 pb-24">
-              {segments.map((segment, index) => {
+            <div className={cn('relative mx-auto max-w-3xl pb-24', !virtualized && 'space-y-2')}
+              style={virtualized ? { height: turns.getTotalSize() + 96 } : undefined}>
+              {visibleTurns.map(item => {
+                const index = item.index
+                const segment = segments[index]
                 const active = index === activeSegmentIndex
                 const isMatch = matchIndices[matchPosition] === index
                 const segmentCanonicalSpeaker = canonicalSpeaker(
@@ -573,8 +594,11 @@ export function AudioTranscriptViewer({
                 return (
                   <div
                     key={segment.id || `${segment.start}-${index}`}
+                    data-index={index}
+                    style={virtualized ? { position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${item.start}px)` } : undefined}
                     ref={(element) => {
                       segmentRefs.current[index] = element
+                      if (virtualized) turns.measureElement(element)
                     }}
                     className={cn(
                       "group grid grid-cols-[76px_minmax(0,1fr)] gap-3 rounded-lg border px-3 py-3 transition-all",
@@ -641,23 +665,35 @@ export function AudioTranscriptViewer({
                           </>
                         )}
                       </div>
-                      <button
+                      {onTurnSpeakerChange && <label className="mb-2 block text-xs">Speaker for turn {index + 1}
+                        <select aria-label={`Speaker for turn ${index + 1}`} value={segment.speaker}
+                          className="ml-2 rounded border bg-background p-1 text-foreground"
+                          onChange={event => onTurnSpeakerChange(segment.id, event.target.value)}>
+                          {turnSpeakerOptions.map(speaker =>
+                            <option key={speaker} value={speaker}>{speakerName(speaker)}</option>)}
+                        </select>
+                      </label>}
+                      {onTurnTextChange ? <textarea aria-label={`Transcript turn ${index + 1}`} value={segment.text}
+                        onChange={event => onTurnTextChange(segment.id, event.target.value)}
+                        className="min-h-20 w-full resize-y rounded border bg-background p-2 text-sm text-foreground" /> : <button
                         type="button"
                         onClick={() => seek(segment.start)}
                         className="w-full text-left text-[15px] leading-6 text-stone-700 dark:text-stone-200"
                       >
                         <HighlightedText text={segment.text} query={query} />
-                      </button>
+                      </button>}
                     </div>
                   </div>
                 )
               })}
             </div>
-          ) : transcription?.trim() ? (
+          ) : onBodyTextChange ? <textarea aria-label="Transcript text" value={transcription ?? ''}
+            onChange={event => onBodyTextChange(event.target.value)}
+            className="min-h-64 w-full rounded border bg-background p-3 text-foreground" /> : transcription?.trim() ? (
             <div className="mx-auto max-w-3xl">
               <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-200">
-                This is a legacy plain-text transcript. Reprocess the recording to add
-                speaker labels and synchronized timestamps.
+                This recording has a plain-text transcript without speaker turns. Text can be corrected;
+                speaker naming and synchronized turn assignment require a diarized transcript.
               </div>
               <p className="whitespace-pre-wrap text-[15px] leading-7 text-stone-700 dark:text-stone-200">
                 {transcription}

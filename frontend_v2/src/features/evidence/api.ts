@@ -1,4 +1,5 @@
 import { fetchAPI } from "@/lib/api-client"
+import { transcriptsAPI } from './transcripts.api'
 import { uploadOrdinaryFiles } from "./resumable-upload"
 import { uploadFolderOrArchive } from "./resumable-upload-groups"
 import type { UploadProgress } from "./upload-progress"
@@ -35,6 +36,11 @@ export interface EvidenceUploadOptions {
 }
 
 export const evidenceAPI = {
+  createProcessingPlan: transcriptsAPI.plan,
+  executeProcessingPlan: (planId: string, mode: import('./transcripts.api').AudioMode | undefined, requestKey: string) =>
+    fetchAPI<{ job_ids: string[]; message?: string }>(`/api/evidence/processing-plans/${planId}/executions`, {
+      method: 'POST', body: { request_key: requestKey, audio_mode: mode },
+    }),
   get: (evidenceId: string) =>
     fetchAPI<EvidenceFileRecord>(`/api/evidence/${evidenceId}`),
 

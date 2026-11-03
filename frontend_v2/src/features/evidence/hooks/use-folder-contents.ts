@@ -11,6 +11,7 @@ export function useFolderContents(
     queryFn: ({ signal }) =>
       foldersAPI.getContents(caseId!, folderId, params, signal),
     enabled: !!caseId,
+    refetchInterval: query => query.state.data?.files.some(file => file.status === 'processing') ? 3000 : false,
   })
 }
 
@@ -36,5 +37,6 @@ export function useFilenameSearch(
     queryFn: ({ signal }) =>
       foldersAPI.search(caseId, query, scope, folderId, params, signal),
     enabled: enabled && query.length > 0,
+    refetchInterval: query => query.state.data?.files.some(file => file.status === 'processing') ? 3000 : false,
   })
 }

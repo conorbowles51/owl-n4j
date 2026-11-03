@@ -11,7 +11,7 @@ export function OpenFileLocationButton({
   caseId: string
   evidenceId: string
   compact?: boolean
-  onNavigate?: () => void
+  onNavigate?: () => boolean | void
 }) {
   const search = new URLSearchParams({ file: evidenceId, reveal: "1" })
   return (
@@ -26,7 +26,7 @@ export function OpenFileLocationButton({
             !event.altKey &&
             event.button === 0
           ) {
-            onNavigate?.()
+            if (onNavigate?.() === false) event.preventDefault()
           }
         }}
         title="Open file location"

@@ -11,6 +11,7 @@ import {
   waitFor,
 } from "@testing-library/react"
 import { DocumentViewer } from "./document-viewer"
+import { resetPageImagesForTests } from "./pdf-page-images"
 
 const requests: number[] = []
 let totalPages = 1928
@@ -25,6 +26,7 @@ vi.mock("@/lib/protected-file", () => ({
 }))
 
 beforeEach(() => {
+  resetPageImagesForTests()
   requests.length = 0
   totalPages = 1928
   failedPage = null
@@ -104,7 +106,11 @@ it("scrolls across PDF pages, updates navigation and keeps a long document bound
   expect(screen.getByText("125%")).toBeVisible()
   fireEvent.click(screen.getByRole("button", { name: "Fit page width" }))
   expect(screen.getByText("100%")).toBeVisible()
-  expect(screen.getAllByRole("img").length).toBeLessThan(12)
+  await waitFor(() => {
+    const pages = screen.queryAllByRole('img')
+    expect(pages.length).toBeGreaterThan(0)
+    expect(pages.length).toBeLessThan(12)
+  })
   expect(new Set(requests).size).toBeLessThan(20)
   fireEvent.click(screen.getByRole("button", { name: "Close document" }))
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())

@@ -24,6 +24,8 @@ import { useEvidenceStore } from "../evidence.store"
 import { EVIDENCE_KIND_TONE, evidenceKind } from "../utils/evidence-kind"
 import { useRenameFolder } from "../hooks/use-folder-mutations"
 import { useProcessFolder } from "../hooks/use-process-folder"
+import { useGuardedProcess } from '../hooks/use-guarded-process'
+import { ProcessHoldDialog } from './ProcessHoldDialog'
 import { toast } from "sonner"
 import type { FolderTreeNode as FolderTreeNodeType } from "@/types/evidence.types"
 
@@ -56,7 +58,8 @@ export function FolderTreeNode({
   const drop = useEvidenceDropTarget(node.id, true)
   const source: MoveSource = { kind: "folder", id: node.id, name: node.name, parent_id: node.parent_id }
   const renameMutation = useRenameFolder(caseId)
-  const processMutation = useProcessFolder(caseId)
+  const processGate = useGuardedProcess(caseId)
+  const processMutation = useProcessFolder(caseId, processGate)
 
   const isExpanded = expandedFolderIds.has(node.id)
   const kind = evidenceKind(node.name)
@@ -92,6 +95,7 @@ export function FolderTreeNode({
       { folderId: node.id, recursive: true },
       {
         onSuccess: (data) => {
+          if (data.held) return
           toast.success(`Processing ${data.file_count} files from "${node.name}"`)
           useEvidenceStore.getState().openSidebarTo("processing")
         },
@@ -104,6 +108,7 @@ export function FolderTreeNode({
 
   return (
     <div>
+      <ProcessHoldDialog gate={processMutation.gate} />
       <ContextMenu>
         <ContextMenuTrigger asChild>
           <button

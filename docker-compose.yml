@@ -190,6 +190,7 @@ services:
       AUDIO_TRANSCRIPTION_SEGMENT_SECONDS: ${AUDIO_TRANSCRIPTION_SEGMENT_SECONDS:-240}
       AUDIO_TRANSCRIPTION_MAX_SINGLE_SECONDS: ${AUDIO_TRANSCRIPTION_MAX_SINGLE_SECONDS:-240}
       AUDIO_TRANSCRIPTION_READ_TIMEOUT_SECONDS: ${AUDIO_TRANSCRIPTION_READ_TIMEOUT_SECONDS:-900}
+      AUDIO_TRANSCRIPT_REVIEW_ENABLED: ${AUDIO_TRANSCRIPT_REVIEW_ENABLED:-0}
       IMAGE_PROVIDER: ${IMAGE_PROVIDER:-tesseract}
       TESSERACT_LANG: ${TESSERACT_LANG:-eng}
       PDF_OCR_DPI: ${PDF_OCR_DPI:-300}
@@ -271,6 +272,7 @@ services:
       AUDIO_TRANSCRIPTION_SEGMENT_SECONDS: ${AUDIO_TRANSCRIPTION_SEGMENT_SECONDS:-240}
       AUDIO_TRANSCRIPTION_MAX_SINGLE_SECONDS: ${AUDIO_TRANSCRIPTION_MAX_SINGLE_SECONDS:-240}
       AUDIO_TRANSCRIPTION_READ_TIMEOUT_SECONDS: ${AUDIO_TRANSCRIPTION_READ_TIMEOUT_SECONDS:-900}
+      AUDIO_TRANSCRIPT_REVIEW_ENABLED: ${AUDIO_TRANSCRIPT_REVIEW_ENABLED:-0}
       IMAGE_PROVIDER: ${IMAGE_PROVIDER:-tesseract}
       TESSERACT_LANG: ${TESSERACT_LANG:-eng}
       PDF_OCR_DPI: ${PDF_OCR_DPI:-300}
@@ -315,6 +317,11 @@ services:
     command: arq app.worker.PhoneCaptureWorkerSettings
     # one phone at a time inside a hard 1 GB limit; the capture keeps itself under 512 MiB (01 sections 5.4, 10.2)
     mem_limit: 1g
+
+  evidence-audio-review-worker:
+    <<: *evidence-worker
+    container_name: owl-v2-evidence-audio-review-worker
+    command: arq app.worker.AudioReviewWorkerSettings
 
 volumes:
   evidence-files:

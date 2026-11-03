@@ -29,10 +29,28 @@ _ACTIVE_JOB_STATUSES = {
 }
 
 
-def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
+def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any], db=None) -> bool:
     changed = False
     status = str(job.get("status", "") or "")
     now = datetime.now(timezone.utc)
+
+    snapshot = getattr(db_rec, 'last_processed_profile_snapshot', None) or {}
+    incoming = job.get('pipeline_state') or {}
+    if snapshot.get('ingestion_request_id') and incoming.get('ingestion_request_id') and incoming['ingestion_request_id'] != snapshot['ingestion_request_id']:
+        return False
+    if job.get('job_type') == 'audio_review' and status in ('completed', 'failed'):
+        from services.transcript_review import capture_source, summary
+        if status == 'completed':
+            if db is None:
+                raise ValueError('Audio preparation synchronization requires a database session')
+            capture_source(db, db_rec, job_id=job['id'], text=job.get('transcription'),
+                segments=job.get('transcription_segments'), review_required=True)
+            db_rec.status = 'processed' if summary(db_rec).get('published_revision_id') else 'unprocessed'
+            db_rec.last_error = None
+        else:
+            db_rec.status = 'failed'
+            db_rec.last_error = job.get('error_message') or 'Transcription failed; retry transcription.'
+        return True
 
     if status in _ACTIVE_JOB_STATUSES:
         if db_rec.status != "processing":
@@ -44,6 +62,15 @@ def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
         return changed
 
     if status == "completed":
+        if db is not None and incoming.get('transcript_revision_id'):
+            from services.transcript_review import refresh_summary, ensure_source
+            state = ensure_source(db, db_rec)
+            if state:
+                revision_id = uuid.UUID(incoming['transcript_revision_id'])
+                if state.published_revision_id != revision_id:
+                    state.published_revision_id = revision_id
+                    changed = True
+                refresh_summary(db, db_rec, state)
         if db_rec.status != "processed":
             db_rec.status = "processed"
             changed = True
@@ -96,7 +123,8 @@ def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
             db_rec.last_error = error_message
             changed = True
         if db_rec.processed_at is not None:
-            db_rec.processed_at = None
+            if not (getattr(db_rec, 'metadata_', None) or {}).get('transcript_review', {}).get('published_revision_id'):
+                db_rec.processed_at = None
             changed = True
         return changed
 
@@ -215,7 +243,7 @@ def _reconcile(db: Session, jobs: list[dict[str, Any]], record_cases: set | None
 
     updated = 0
     for db_rec, job in pending:
-        if _apply_job(db_rec, job):
+        if _apply_job(db_rec, job, db=db):
             updated += 1
 
     if updated:
@@ -235,18 +263,27 @@ def _accepted_request_ids(db: Session, predicates) -> dict | None:
     return {row[0]: row[1] for row in rows if row[1]}
 
 
-def _apply_job(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
+def _apply_job(db_rec: EvidenceFile, job: dict[str, Any], db=None) -> bool:
     changed = False
     job_id = str(job.get("id") or "")
     if job_id and db_rec.engine_job_id != job_id:
         db_rec.engine_job_id = job_id
         changed = True
-    if _sync_db_record_from_job(db_rec, job):
+    if _sync_db_record_from_job(db_rec, job, db=db):
         changed = True
     return changed
 
 
 def _record_would_change(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
+    if job.get('job_type') == 'audio_review':
+        info = (getattr(db_rec, 'metadata_', None) or {}).get('transcript_review') or {}
+        if job.get('status') == 'completed':
+            return not info or db_rec.status == 'processing' or db_rec.engine_job_id != str(job.get('id'))
+    revision = (job.get('pipeline_state') or {}).get('transcript_revision_id')
+    if revision and job.get('status') == 'completed':
+        info = (getattr(db_rec, 'metadata_', None) or {}).get('transcript_review') or {}
+        if info.get('published_revision_id') != revision:
+            return True
     return _apply_job(_detached_copy(db_rec), job)
 
 

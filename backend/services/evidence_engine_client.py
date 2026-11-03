@@ -59,6 +59,12 @@ async def close():
         _client = None
 
 
+async def audio_review_capabilities():
+    response = await _get_client().get('/capabilities', timeout=3.0)
+    response.raise_for_status()
+    return response.json()
+
+
 async def control_job(job_id: str, case_id: str, action: str):
     """pause, resume, or cancel (phone readings only; the engine refuses it for an extraction already in the case)."""
     if action not in {"pause", "resume", "cancel"}:

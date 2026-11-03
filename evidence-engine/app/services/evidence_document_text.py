@@ -129,6 +129,12 @@ def build_canonical_document_text(doc: ExtractedDocument) -> CanonicalDocumentTe
                 }
             )
 
+        if file_type == 'audio':
+            for turn in doc.metadata.get('transcript_turns') or []:
+                locations.append({'kind': 'audio_turn', 'label': turn.get('speaker_name', 'Speaker'),
+                    'transcript_revision_id': doc.metadata.get('transcript_revision_id'),
+                    **turn})
+
     return CanonicalDocumentText(
         content=content,
         content_sha256=hashlib.sha256(content.encode("utf-8")).hexdigest(),
@@ -144,8 +150,13 @@ async def upsert_evidence_document_text(
     engine_job_id: uuid.UUID | str | None,
     doc: ExtractedDocument,
     commit: bool = True,
+    published: bool = False,
 ) -> CanonicalDocumentText:
     canonical = build_canonical_document_text(doc)
+    if doc.metadata.get('transcript_revision_id') and not published:
+        # Reviewed audio is private until graph writing succeeds. A failed
+        # update must not replace the previously published searchable text.
+        return canonical
     evidence_uuid = uuid.UUID(str(evidence_file_id))
     job_uuid = uuid.UUID(str(engine_job_id)) if engine_job_id else None
     statement = insert(EvidenceDocumentText).values(

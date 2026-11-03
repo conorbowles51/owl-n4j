@@ -113,11 +113,14 @@ describe("held file admission through the real API clients", () => {
     expect(
       client.getQueryState(["financial-decisions", "other-case"])?.isInvalidated
     ).toBe(false)
+    // Exercise the older backend's original settings contract after the
+    // optional transcript-plan endpoint explicitly reports unavailable.
+    fetchMock.mockResolvedValueOnce(json({ detail: 'Not found' }, 404))
     fetchMock.mockResolvedValueOnce(json({ task_id: "task-1" }))
     await act(async () => {
       expect(await result.current.processAdmitted("a")).toBe("started")
     })
-    const body = JSON.parse(fetchMock.mock.calls[2][1]?.body as string)
+    const body = JSON.parse(fetchMock.mock.calls[3][1]?.body as string)
     expect(body).toMatchObject({
       file_ids: ["a"],
       profile: "detailed",
@@ -130,7 +133,7 @@ describe("held file admission through the real API clients", () => {
     await act(async () => {
       await result.current.processAdmitted("a")
     })
-    expect(fetchMock).toHaveBeenCalledTimes(3)
+    expect(fetchMock).toHaveBeenCalledTimes(4)
   })
   it.each(["refused", "future"])(
     "does not process a %s 200 response",

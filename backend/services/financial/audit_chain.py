@@ -11,6 +11,11 @@ MAX_AUDIT_EVENTS = 10000
 MAX_AUDIT_BYTES = 64 * 1024 * 1024
 _HASH = re.compile(r'^[a-f0-9]{64}$')
 AUDIT_COVERAGE = {
+    'evidence_transcription_sources': ['INSERT', 'DELETE'],
+    'evidence_transcript_revisions': ['INSERT', 'DELETE'],
+    'evidence_transcript_state': ['INSERT', 'UPDATE', 'DELETE'],
+    'evidence_transcript_reviews': ['INSERT', 'DELETE'],
+    'evidence_processing_plans': ['INSERT', 'UPDATE', 'DELETE'],
     'financial_custody_events': ['INSERT'],
     'jobs': ['INSERT','UPDATE','DELETE'],
     'merge_jobs': ['INSERT','UPDATE','DELETE'],
@@ -111,7 +116,7 @@ def capture_financial_audit_chain(session, *, case_id):
     return dict(schema_version='loupe.financial.audit_chain/1', case_id=str(case_id),
         verification=verification, entries=entries, coverage=AUDIT_COVERAGE,
         installed_by_migration='20260910_financial_audit_chain',
-        coverage_migrations=['20260910_financial_audit_chain','20260910_audit_state_changes','20260910_audit_source_exports','20260910_audit_graph_jobs','20260910_custody'],
+        coverage_migrations=['20260910_financial_audit_chain','20260910_audit_state_changes','20260910_audit_source_exports','20260910_audit_graph_jobs','20260910_custody','20261026_audio_integrity'],
         coverage_conditions={'jobs':'Canonical UUID case IDs only; progress/updated_at-only updates are omitted. Job/recovery records do not prove an atomic cross-database graph commit.'},
         hash_algorithm='SHA-256(previous hash as 32 bytes || exact payload_text UTF-8 bytes)',
         limitation='Prospective database trigger history for the listed tables and operations only. Earlier records were not backfilled. Private run fields and evidence storage paths, errors, profile metadata and document text are represented by digests, not plaintext. Actors use case-bound authorized request context when available, otherwise source records or unavailable identity; an ingestion-run actor does not identify who caused each later run update. This covers listed ledger/evidence registration/Workspace operations since their respective migrations, not complete historical custody or proof of atomic graph changes. Recorded processing/merge/recovery states are included for UUID cases; progress-only job updates and private execution/recovery bodies are not reproduced. Prepared-export events do not confirm download delivery. Source text and geometry bodies are represented by their digests. Database guards reject updates, deletes and truncation, but a database owner can disable them. No external timestamp or independently retained head was checked; an internally consistent chain alone cannot detect wholesale rewriting or tail removal.')

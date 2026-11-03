@@ -15,6 +15,7 @@
  */
 
 import { useState } from "react"
+import { AudioProcessingChoice } from './AudioProcessingChoice'
 import { AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 
@@ -81,6 +82,14 @@ function holdTitle(held: HeldRequest): string {
 }
 
 export function ProcessHoldDialog({ gate }: ProcessHoldDialogProps) {
+  return <>
+    {gate.audioChoice && <AudioProcessingChoice plan={gate.audioChoice.plan} busy={gate.isBusy || gate.isProcessing}
+      onChoose={mode => void gate.confirmAudioChoice(mode)} onCancel={() => gate.dismissAudioChoice()} />}
+    <FinancialProcessHoldDialog gate={gate} />
+  </>
+}
+
+function FinancialProcessHoldDialog({ gate }: ProcessHoldDialogProps) {
   // Declared before the early return, so that a hold arriving does not change
   // how many hooks this component runs.
   const [isReleasing, setIsReleasing] = useState(false)

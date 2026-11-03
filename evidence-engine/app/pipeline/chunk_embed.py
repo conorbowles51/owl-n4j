@@ -26,7 +26,10 @@ def normalize_document_key(file_name: str) -> str:
 
 def get_document_revision_id(doc: ExtractedDocument) -> str:
     """Return the stable hash of the canonical extracted document content."""
-    return build_canonical_document_text(doc).content_sha256
+    if doc.metadata.get('transcript_input_format'):
+        import hashlib
+        return hashlib.sha256((doc.metadata['transcript_digest'] + ':' + doc.metadata['transcript_input_format']).encode()).hexdigest()
+    return doc.metadata.get('transcript_digest') or build_canonical_document_text(doc).content_sha256
 
 
 @dataclass
@@ -149,6 +152,10 @@ def chunk_document(
                         "file_type": doc.metadata.get("file_type"),
                         "page_start": page_start,
                         "page_end": page_end,
+                        **({'transcript_turns': [span for span in doc.metadata['transcript_turns']
+                                if span['start_char'] < end and span['end_char'] > start],
+                            'transcript_revision_id': doc.metadata['transcript_revision_id']}
+                           if doc.metadata.get('transcript_turns') else {}),
                     },
                 )
             )
@@ -267,12 +274,28 @@ async def chunk_and_embed(
 
     def stage_embeddings() -> None:
         collection = get_or_create_collection("chunks")
+        active = set()
+        if doc.metadata.get('transcript_revision_id'):
+            # A deliberate repeat can select an already published immutable
+            # revision. Do not demote its active chunks while the new attempt
+            # is still capable of failing before graph/publication commit.
+            for offset in range(0, len(ids), 1000):
+                existing = collection.get(ids=ids[offset:offset + 1000], include=['metadatas'])
+                for chunk_id, metadata in zip(existing.get('ids') or [], existing.get('metadatas') or []):
+                    if (metadata and metadata.get('case_id') == case_id
+                        and metadata.get('evidence_file_id') == document_identity
+                        and metadata.get('revision_id') == resolved_revision_id
+                        and metadata.get('ingestion_state') == 'active'):
+                        active.add(chunk_id)
+        pending = [index for index, chunk_id in enumerate(ids) if chunk_id not in active]
+        if not pending:
+            return
         upsert_embeddings(
             collection=collection,
-            ids=ids,
-            embeddings=embeddings,
-            documents=texts,
-            metadatas=metadatas,
+            ids=[ids[index] for index in pending],
+            embeddings=[embeddings[index] for index in pending],
+            documents=[texts[index] for index in pending],
+            metadatas=[metadatas[index] for index in pending],
         )
 
     await asyncio.to_thread(stage_embeddings)

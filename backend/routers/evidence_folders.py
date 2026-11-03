@@ -58,6 +58,7 @@ class UpdateProfileRequest(BaseModel):
 
 
 class ProcessFolderRequest(BaseModel):
+    audio_mode: Literal['review_first', 'direct'] | None = None
     case_id: str
     recursive: bool = True
     reprocess_completed: bool = False
@@ -459,7 +460,7 @@ async def process_folder(
     try:
         # Async for the engine send; the access check and the file selection run in the thread pool.
         def select_files():
-            _check_case_access(db, req.case_id, current_user, permission=("evidence", "process"))
+            _check_case_access(db, req.case_id, current_user, permission=("evidence", "upload"))
 
             # Collect file IDs
             if folder_id == "root":
@@ -528,6 +529,7 @@ async def process_folder(
             file_ids=file_ids,
             force_reprocess=req.reprocess_completed,
             requested_by_user_id=user_id,
+            audio_mode=req.audio_mode,
         )
         result["effective_profile"] = await run_in_threadpool(
             resolve_effective_profile, db, fid, uuid.UUID(req.case_id)

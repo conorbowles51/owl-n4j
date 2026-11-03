@@ -3,7 +3,7 @@ import { create } from "zustand"
 import { useUIStore } from "@/stores/ui.store"
 import type { EvidenceFileLocation } from "./folders.api"
 
-type StatusFilter = "all" | "unprocessed" | "processing" | "processed" | "failed"
+type StatusFilter = "all" | "unprocessed" | "processing" | "processed" | "failed" | 'awaiting_review' | 'ready'
 export type EvidenceSearchMode = "files" | "subtree" | "text"
 import type { UploadProgress } from "./upload-progress"
 
@@ -31,6 +31,8 @@ export interface UploadActivity {
 }
 
 interface EvidenceState {
+  transcriptQueue: { id: string; name: string }[]
+  setTranscriptQueue: (files: { id: string; name: string }[]) => void
   sortBy: EvidenceSort["sort_by"]
   sortDirection: EvidenceSort["sort_direction"]
   toggleSort: (column: EvidenceSort["sort_by"]) => void
@@ -109,6 +111,8 @@ interface EvidenceState {
 }
 
 export const useEvidenceStore = create<EvidenceState>((set, get) => ({
+  transcriptQueue: [],
+  setTranscriptQueue: (files) => set({ transcriptQueue: files }),
   ...readEvidencePreferences(),
   toggleSort: (column) => {
     const state = get()
@@ -283,6 +287,7 @@ export const useEvidenceStore = create<EvidenceState>((set, get) => ({
         textSearchTerm: "",
         textSearchOverlayOpen: false,
         statusFilter: "all" as StatusFilter,
+        transcriptQueue: [],
         typeFilter: "",
       }
     }),

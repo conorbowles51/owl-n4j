@@ -44,8 +44,15 @@ import {
   type RouteOutcome,
 } from "../utils/financial-route"
 import type { FileRouteCheck, RouteCheckSummary } from "@/types/evidence.types"
+import type { AudioMode, ProcessingPlan } from '../transcripts.api'
+import { useEvidenceStore } from '../evidence.store'
+import { ApiError } from '@/lib/api-client'
 
 export interface ProcessRequest {
+  reprocessCompleted?: boolean
+  planId?: string
+  requestKey?: string
+  audioMode?: AudioMode
   fileIds: string[]
   profile?: string
   maxWorkers?: number
@@ -147,6 +154,9 @@ export function describeHold(held: HeldRequest): string {
 }
 
 const QUERY_KEYS_TO_REFRESH = [
+  'transcript',
+  'transcript-queue',
+  'evidence-file',
   "evidence-jobs",
   "evidence-folder-contents",
   "evidence-folder-tree",
@@ -180,17 +190,20 @@ export function useGuardedProcess(caseId: string) {
     setIsBusy(false)
   }, [])
   const [isChecking, setIsChecking] = useState(false)
+  const [audioChoice, setAudioChoice] = useState<{ plan: ProcessingPlan; request: ProcessRequest } | null>(null)
 
   const processMutation = useMutation({
     retry: false,
-    mutationFn: ({
+    mutationFn: async ({
       request,
       requestCaseId,
     }: {
       request: ProcessRequest
       requestCaseId: string
     }) =>
-      evidenceAPI.processBackground(
+      request.planId
+        ? evidenceAPI.executeProcessingPlan(request.planId, request.audioMode, request.requestKey!)
+        : evidenceAPI.processBackground(
         requestCaseId,
         request.fileIds,
         request.profile,
@@ -198,6 +211,8 @@ export function useGuardedProcess(caseId: string) {
         request.imageProvider
       ),
     onSuccess: async (_data, { requestCaseId }) => {
+      for (const key of ['transcript', 'transcript-queue', 'evidence-file'])
+        void queryClient.invalidateQueries({ queryKey: [key] })
       // The four keys every previous copy of this mutation invalidated, plus
       // the background-tasks key the detail hook also invalidated. Collected
       // here so that a screen added later cannot forget one of them.
@@ -243,6 +258,20 @@ export function useGuardedProcess(caseId: string) {
   const send = useCallback(
     async (request: ProcessRequest): Promise<StartOutcome> => {
       try {
+        if (!request.planId && evidenceAPI.createProcessingPlan) {
+          try {
+            const plan = await evidenceAPI.createProcessingPlan({ case_id: caseId, file_ids: request.fileIds, reprocess_completed: request.reprocessCompleted })
+            request = { ...request, planId: plan.id, requestKey: crypto.randomUUID() }
+            if (plan.unreviewed_audio_count > 0 && !request.audioMode) {
+              setAudioChoice({ plan, request })
+              return 'held'
+            }
+          } catch (error) {
+            // Older backends retain their original guarded processing route.
+            // Network failures and state conflicts must never bypass a plan.
+            if (!(error instanceof ApiError) || error.status !== 404) throw error
+          }
+        }
         await processMutation.mutateAsync({ request, requestCaseId: caseId })
         return "started"
       } catch (error) {
@@ -404,7 +433,7 @@ export function useGuardedProcess(caseId: string) {
         return 0
       }
       const count = held.cleared.length
-      const outcome = await send({ ...held.request, fileIds: held.cleared })
+      const outcome = await send({ ...held.request, fileIds: held.cleared, planId: undefined, requestKey: undefined })
       // A new 409 is a new hold, not a dialog to immediately close.
       if (outcome === "started") setHeld(null)
       return outcome === "started" ? count : 0
@@ -501,7 +530,7 @@ export function useGuardedProcess(caseId: string) {
         return "failed"
       const snapshot = heldState
       try {
-        const outcome = await send({ ...held.request, fileIds: [fileId] })
+        const outcome = await send({ ...held.request, fileIds: [fileId], planId: undefined, requestKey: undefined })
         if (outcome === "started") {
           setHeldState((current) =>
             current !== snapshot || !current
@@ -545,6 +574,24 @@ export function useGuardedProcess(caseId: string) {
   }, [setHeld])
 
   return {
+    audioChoice,
+    dismissAudioChoice: () => setAudioChoice(null),
+    confirmAudioChoice: async (mode: AudioMode) => {
+      if (!audioChoice || !begin()) return
+      try {
+        const result = await send({ ...audioChoice.request, audioMode: mode })
+        if (result === 'started' || result === 'held') setAudioChoice(null)
+        if (result === 'started') {
+          useEvidenceStore.getState().clearSelection()
+          useEvidenceStore.getState().openSidebarTo('processing')
+          toast.success(mode === 'review_first'
+            ? 'Processing request accepted. Unreviewed recordings will stop after transcription.'
+            : 'Processing request accepted. Files will continue through the normal pipeline.')
+        }
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Could not start processing')
+      } finally { finish() }
+    },
     // Returned rather than left in the closure because the hold dialog has to
     // offer a native bank file somewhere to go, and both ends of that road
     // need the case.  Putting it on the gate means every screen that already

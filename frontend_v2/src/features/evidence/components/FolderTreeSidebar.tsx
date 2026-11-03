@@ -15,6 +15,8 @@ import { useCaseProcessingProfile } from "../hooks/use-case-processing-profile"
 import { useEvidenceStore } from "../evidence.store"
 import { FolderTreeNode } from "./FolderTreeNode"
 import { useProcessFolder } from "../hooks/use-process-folder"
+import { useGuardedProcess } from '../hooks/use-guarded-process'
+import { ProcessHoldDialog } from './ProcessHoldDialog'
 import { toast } from "sonner"
 
 interface FolderTreeSidebarProps {
@@ -36,7 +38,8 @@ export function FolderTreeSidebar({
   const { data: tree, isLoading } = useFolderTree(caseId)
   const { data: caseProfile } = useCaseProcessingProfile(caseId)
   const { currentFolderId, setCurrentFolder } = useEvidenceStore()
-  const processFolder = useProcessFolder(caseId)
+  const processGate = useGuardedProcess(caseId)
+  const processFolder = useProcessFolder(caseId, processGate)
 
   const hasCaseProfile = Boolean(
     caseProfile?.context_instructions || caseProfile?.special_entity_types?.length
@@ -47,6 +50,7 @@ export function FolderTreeSidebar({
       { folderId: "root", recursive: true },
       {
         onSuccess: (data) => {
+          if (data.held) return
           toast.success(data.message || `Processing ${data.file_count} files`)
           useEvidenceStore.getState().openSidebarTo("processing")
         },
@@ -57,6 +61,7 @@ export function FolderTreeSidebar({
 
   return (
     <div className="flex h-full flex-col border-r border-border bg-panel">
+      <ProcessHoldDialog gate={processFolder.gate} />
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <h3 className="font-display text-sm font-semibold tracking-[-0.015em] text-foreground">

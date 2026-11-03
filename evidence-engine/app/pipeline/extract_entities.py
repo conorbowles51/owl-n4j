@@ -849,6 +849,7 @@ async def _extract_relationships_from_chunk(
                 "category": e.category,
                 "name": e.name,
                 "specific_type": e.specific_type,
+                **({'transcript_speaker': e.source_location} if (e.source_location or {}).get('speaker_id') else {}),
             }
             for e in entities
         ],
@@ -1228,7 +1229,7 @@ def _dedup_within_file(
     # Group by (category, normalized_name)
     groups: dict[tuple[str, str], list[int]] = {}
     for i, e in enumerate(entities):
-        key = (e.category, _normalize_name(e.name))
+        key = (e.category, _normalize_name(e.name), e.properties.get('_transcript_entity_id'))
         groups.setdefault(key, []).append(i)
 
     id_remap: dict[str, str] = {}  # old temp_id → surviving temp_id
@@ -1347,11 +1348,13 @@ async def extract_entities_and_relationships(
     # Pass 1: Extract entities with a fixed worker pool. This avoids creating
     # thousands of tasks up front for very large evidence files.
     async def extract_chunk_entities(chunk: TextChunk) -> list[RawEntity]:
-        return await _extract_entities_from_chunk(
+        from app.pipeline.transcript_bindings import chunk_speaker_context
+        speaker_context = chunk_speaker_context(chunk)
+        extracted = await _extract_entities_from_chunk(
                 chunk.text,
                 chunk.index,
                 file_name,
-                case_context,
+                case_context + ('\n\n' + speaker_context if speaker_context else ''),
                 mandatory_instructions=mandatory_instructions,
                 special_entity_types=special_entity_types,
                 is_table=chunk.is_table,
@@ -1366,6 +1369,10 @@ async def extract_entities_and_relationships(
                 revision_id=chunk.metadata.get("revision_id"),
                 chunk_start_char=chunk.start_char,
             )
+        if chunk.metadata.get('transcript_turns'):
+            from app.pipeline.transcript_bindings import add_speaker_entities
+            extracted = add_speaker_entities(extracted, chunk, file_name)
+        return extracted
 
     entity_results = await _bounded_map(
         chunks,
@@ -1383,12 +1390,14 @@ async def extract_entities_and_relationships(
     async def extract_chunk_relationships(
         chunk: TextChunk,
     ) -> list[RawRelationship]:
+        from app.pipeline.transcript_bindings import chunk_speaker_context
+        speaker_context = chunk_speaker_context(chunk)
         return await _extract_relationships_from_chunk(
                 chunk.text,
                 chunk.index,
                 entities_by_chunk.get(chunk.index, []),
                 file_name,
-                case_context,
+                case_context + ('\n\n' + speaker_context if speaker_context else ''),
                 mandatory_instructions=mandatory_instructions,
                 page_start=chunk.metadata.get("page_start"),
                 page_end=chunk.metadata.get("page_end"),
@@ -1411,6 +1420,9 @@ async def extract_entities_and_relationships(
     for chunk_rels in rel_results:
         all_relationships.extend(chunk_rels)
 
+    if any(chunk.metadata.get('transcript_turns') for chunk in chunks):
+        from app.pipeline.transcript_bindings import locate_transcript_quotes
+        locate_transcript_quotes(all_entities + all_relationships, chunks)
     # Deduplicate entities extracted from overlapping chunks
     all_entities, all_relationships = _dedup_within_file(all_entities, all_relationships)
 

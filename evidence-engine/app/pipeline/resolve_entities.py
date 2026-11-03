@@ -546,6 +546,8 @@ def _apply_merges(
     for e in entities:
         uf.find(e.temp_id)
     for a, b in merge_pairs:
+        if entities[a].properties.get('_transcript_entity_id') or entities[b].properties.get('_transcript_entity_id'):
+            continue
         uf.union(entities[a].temp_id, entities[b].temp_id)
 
     groups: dict[str, list[int]] = {}
@@ -556,7 +558,7 @@ def _apply_merges(
     id_map: dict[str, str] = {}
 
     for indices in groups.values():
-        final_id = str(uuid.uuid4())
+        final_id = entities[indices[0]].properties.get('_transcript_entity_id') or str(uuid.uuid4())
         primary_idx = max(
             indices, key=lambda i: (entities[i].confidence, len(entities[i].properties))
         )
@@ -965,6 +967,7 @@ async def resolve_entities(
     raw_entities: list[RawEntity],
     raw_relationships: list[RawRelationship],
     case_id: str,
+    retired_claims: list[dict] | None = None,
 ) -> tuple[list[ResolvedEntity], list[ResolvedRelationship]]:
     if not raw_entities:
         return [], []
@@ -992,7 +995,8 @@ async def resolve_entities(
             raw_entities[b].name, raw_entities[b].category,
         )
 
-    all_candidates = blocking_pairs + embedding_pairs
+    all_candidates = [(a, b) for a, b in blocking_pairs + embedding_pairs
+        if not raw_entities[a].properties.get('_transcript_entity_id') and not raw_entities[b].properties.get('_transcript_entity_id')]
 
     # Phase 3: LLM confirmation
     merge_pairs = await _llm_confirm(raw_entities, all_candidates)
@@ -1012,7 +1016,9 @@ async def resolve_entities(
     )
 
     # Cross-job dedup
-    cross_merges = await _cross_job_dedup(resolved_entities, case_id)
+    explicit_ids = {e.id for e in resolved_entities if e.properties.get('_transcript_entity_id')}
+    cross_merges = await _cross_job_dedup([e for e in resolved_entities if e.id not in explicit_ids], case_id)
+    cross_merges.update({entity_id: entity_id for entity_id in explicit_ids})
 
     # Apply cross-job merges — fetch existing entity properties and merge
     for entity in resolved_entities:
@@ -1023,11 +1029,16 @@ async def resolve_entities(
 
             # Merge properties from the existing Neo4j node
             existing_props = await neo4j_client.execute_query(
-                f"MATCH (n:{ENTITY_LABEL_EXPRESSION} {{id: $id, case_id: $case_id}}) RETURN properties(n) AS props",
+                f"MATCH (n:{'Person' if entity.id in explicit_ids else ENTITY_LABEL_EXPRESSION} {{id: $id, case_id: $case_id}}) WHERE NOT n:RecycleBin RETURN properties(n) AS props",
                 {"id": entity.id, "case_id": case_id},
             )
             if existing_props:
                 props = existing_props[0]["props"]
+                if retired_claims:
+                    from app.pipeline.transcript_replacement import prune_existing
+                    props = await prune_existing(props, retired_claims)
+                if entity.id in explicit_ids:
+                    entity.name = props.get('name') or entity.name
                 _reconcile_existing_location_state(entity, props)
 
                 # List properties: accumulate
@@ -1084,10 +1095,14 @@ async def resolve_entities(
                     "id", "key", "case_id", "name", "aliases", "source_files",
                     "source_quotes", "summary", "job_id", "description",
                     "role", "specific_type", "confidence",
+                    "source_locations", "source_claim_ids", "verified_facts", "ai_insights", "manual_fields",
                 }
                 for k, v in props.items():
                     if k not in SKIP_KEYS and v and k not in entity.properties:
                         entity.properties[k] = v
+
+            elif entity.id in explicit_ids:
+                raise ValueError('A selected transcript person is no longer available in this case')
 
     # Chain id_map through cross-job merges
     for temp_id in id_map:

@@ -99,3 +99,20 @@ async def test_pdf_preparation_uses_reserved_queue_with_same_durable_job_id():
     pool = FakePool()
     await batch_dispatch.dispatch_ingestion_batch(general, FakeDb(general), pool)
     assert pool.calls[0][1]['_queue_name'] == 'arq:queue'
+
+
+@pytest.mark.asyncio
+async def test_audio_preparation_and_saved_revision_never_reach_old_general_workers(monkeypatch):
+    from app.services.processing_queues import AUDIO_REVIEW_QUEUE, batch_queue
+    monkeypatch.setenv('AUDIO_TRANSCRIPT_REVIEW_ENABLED', '1')
+    audio = dispatch_job(); audio.job_type = 'audio_review'
+    audio.pipeline_state['processing_queue'] = batch_queue([audio])
+    audio.pipeline_state['batch_dispatch']['function'] = 'process_file'
+    pool = FakePool()
+    await batch_dispatch.dispatch_ingestion_batch(audio, FakeDb(audio), pool)
+    assert pool.calls[0][0] == ('process_file', 'job-1')
+    assert pool.calls[0][1]['_queue_name'] == AUDIO_REVIEW_QUEUE
+    saved = SimpleNamespace(job_type='ingestion', pipeline_state={'transcript_revision_id': 'revision'})
+    document = SimpleNamespace(job_type='ingestion', pipeline_state={})
+    assert batch_queue([document, saved]) == AUDIO_REVIEW_QUEUE
+    assert batch_queue([document]) == 'arq:queue'

@@ -210,6 +210,7 @@ def _evidence_record_from_db(record) -> dict:
         "legacy_id": record.legacy_id,
         "summary": record.summary,
         "transcription": record.transcription,
+        'transcript_review': dict((record.metadata_ or {}).get('transcript_review') or {}),
         "transcription_segments": list(record.transcription_segments or []),
         "transcription_speakers": dict(record.transcription_speakers or {}),
         "transcription_speaker_merges": dict(
@@ -664,6 +665,7 @@ class EvidenceRecord(BaseModel):
     transcription_segments: List[dict] = Field(default_factory=list)
     transcription_speakers: Dict[str, str] = Field(default_factory=dict)
     transcription_speaker_merges: Dict[str, str] = Field(default_factory=dict)
+    transcript_review: dict = Field(default_factory=dict)
     entity_count: Optional[int] = None
     relationship_count: Optional[int] = None
     engine_job_id: Optional[str] = None  # Evidence engine job ID for progress tracking
@@ -687,7 +689,8 @@ class UploadResponse(BaseModel):
 from typing import Literal
 
 class ProcessRequest(BaseModel):
-    preparation_mode: Literal["full", "pdf_review"] = "full"
+    preparation_mode: Literal["full", "pdf_review", "audio_review"] = "full"
+    audio_mode: Literal['review_first', 'direct'] | None = None
     case_id: Optional[str] = None
     file_ids: List[str]
     profile: Optional[str] = None  # LLM profile name (e.g., "fraud", "generic")
@@ -719,6 +722,7 @@ class ProcessResponse(BaseModel):
 
 
 class TranscriptSpeakersUpdate(BaseModel):
+    expected_revision_id: Optional[str] = None
     speakers: Dict[str, str]
     merges: Dict[str, str] = Field(default_factory=dict)
 
@@ -911,6 +915,7 @@ def update_transcript_speakers(
     evidence_id: str,
     update: TranscriptSpeakersUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Persist investigator-assigned names and reversible diarization label merges."""
     record = _evidence_record_for_id(db, evidence_id)
@@ -986,6 +991,22 @@ def update_transcript_speakers(
         source: resolve_merge_target(source) for source in requested_merges
     }
 
+    from services.transcript_review import feature_enabled
+    if hasattr(record, 'case_id') and not feature_enabled():
+        from postgres.models.transcript import TranscriptState
+        if db.get(TranscriptState, record.id):
+            raise HTTPException(409, 'Transcript review is unavailable. Saved speaker revisions are retained.')
+    if hasattr(record, 'case_id') and feature_enabled():
+        from services import transcript_review
+        state = transcript_review.ensure_source(db, record)
+        if state:
+            if update.expected_revision_id is None and state.review_required:
+                raise HTTPException(409, 'Open Transcript review to change this saved revision safely.')
+            transcript_review.save_draft(db, record, update.expected_revision_id or str(state.working_revision_id),
+                {'speakers': normalized, 'speaker_merges': normalized_merges}, getattr(current_user, 'id', None))
+            if update.expected_revision_id is None:
+                state.review_required = False  # Legacy naming remains usable until explicit review/edit opt-in.
+                transcript_review.refresh_summary(db, record, state)
     record.transcription_speakers = normalized
     record.transcription_speaker_merges = normalized_merges
     db.commit()
@@ -1379,6 +1400,7 @@ async def process_evidence_background(
                 force_reprocess=False,
                 preparation_mode=request.preparation_mode,
                 requested_by_user_id=user_id,
+                audio_mode=request.audio_mode,
             )
             job_ids = engine_result.get("job_ids", [])
             if engine_result.get("message"):
@@ -1553,6 +1575,7 @@ async def process_evidence(
                 force_reprocess=False,
                 preparation_mode=request.preparation_mode,
                 requested_by_user_id=current_user.id,
+                audio_mode=request.audio_mode,
             )
             processed += engine_result.get("file_count", 0)
             skipped += engine_result.get("skipped_count", 0)

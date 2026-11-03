@@ -22,14 +22,39 @@ import {
 import { openProtectedFile, useProtectedObjectUrl } from "@/lib/protected-file"
 import { cn } from "@/lib/cn"
 import { AudioTranscriptViewer } from "@/features/evidence/components/AudioTranscriptViewer"
+import {
+  TranscriptReviewPane,
+  type TranscriptCloseActions,
+} from "@/features/evidence/components/TranscriptReviewPane"
 import { OpenFileLocationButton } from "@/features/evidence/components/OpenFileLocationButton"
 import type {
   TranscriptSegment,
   TranscriptSpeakerSettings,
 } from "@/types/evidence.types"
 
-const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp", ".tiff", ".tif"]
-const AUDIO_EXTS = [".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", ".wma"]
+const IMAGE_EXTS = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".bmp",
+  ".svg",
+  ".webp",
+  ".tiff",
+  ".tif",
+]
+const AUDIO_EXTS = [
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".flac",
+  ".aac",
+  ".m4a",
+  ".wma",
+  ".opus",
+  ".mpeg",
+  ".mpga",
+]
 const VIDEO_EXTS = [".mp4", ".webm", ".mov", ".avi", ".mkv", ".flv", ".wmv"]
 const PDF_EXTS = [".pdf"]
 const TEXT_EXTS = [".txt", ".md", ".json", ".xml", ".csv", ".log", ".rtf"]
@@ -92,15 +117,42 @@ export function DocumentViewer({
   onTranscriptSpeakerSettingsChange,
 }: DocumentViewerProps) {
   const [loading, setLoading] = useState(true)
+  const transcriptCloseActions = useRef<TranscriptCloseActions | null>(null)
+  const [confirmTranscriptClose, setConfirmTranscriptClose] = useState(false)
+  const [closeError, setCloseError] = useState<string | null>(null)
+  const [savingBeforeClose, setSavingBeforeClose] = useState(false)
+  const savingBeforeCloseRef = useRef(false)
+  const registerCloseActions = useCallback(
+    (actions: TranscriptCloseActions) => {
+      transcriptCloseActions.current = actions
+    },
+    []
+  )
+  const requestOpenChange = (value: boolean) => {
+    if (!value && transcriptCloseActions.current?.dirty) {
+      setCloseError(null)
+      setConfirmTranscriptClose(true)
+      return false
+    }
+    onOpenChange(value)
+    return true
+  }
   const [error, setError] = useState<string | null>(null)
   const [openFileError, setOpenFileError] = useState<string | null>(null)
   const [openingFile, setOpeningFile] = useState(false)
   const openFileAttempt = useRef(0)
   const openFileBusy = useRef(false)
   const [currentPage, setCurrentPage] = useState(initialPage)
-  const [pageTotal, setPageTotal] = useState<{ fileId: string; count: number } | null>(null)
-  const onPageCount = useCallback((fileId: string, count: number) => setPageTotal({ fileId, count }), [])
-  const totalPages = pageTotal && pageTotal.fileId === evidenceId ? pageTotal.count : null
+  const [pageTotal, setPageTotal] = useState<{
+    fileId: string
+    count: number
+  } | null>(null)
+  const onPageCount = useCallback(
+    (fileId: string, count: number) => setPageTotal({ fileId, count }),
+    []
+  )
+  const totalPages =
+    pageTotal && pageTotal.fileId === evidenceId ? pageTotal.count : null
   const [textContent, setTextContent] = useState<string | null>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const fetchIdRef = useRef(0)
@@ -109,7 +161,8 @@ export function DocumentViewer({
   const IconComp = FILE_ICONS[fileType] ?? FileText
   const isPdf = fileType === "pdf"
   const usesPageImages = isPdf && Boolean(evidenceId)
-  const shouldFetchBlob = open && Boolean(documentUrl) && fileType !== "text" && !usesPageImages
+  const shouldFetchBlob =
+    open && Boolean(documentUrl) && fileType !== "text" && !usesPageImages
   const {
     objectUrl: protectedUrl,
     loading: protectedLoading,
@@ -166,7 +219,8 @@ export function DocumentViewer({
   }, [fileType, open, protectedError, protectedLoading, protectedUrl])
 
   const displayUrl = fileType === "text" ? documentUrl : protectedUrl
-  const pdfUrlWithPage = displayUrl && isPdf ? `${displayUrl}#page=${currentPage}` : null
+  const pdfUrlWithPage =
+    displayUrl && isPdf ? `${displayUrl}#page=${currentPage}` : null
 
   const handleOpenInNewTab = () => {
     if (!documentUrl || openFileBusy.current) return
@@ -177,7 +231,9 @@ export function DocumentViewer({
     void openProtectedFile(documentUrl)
       .catch(() => {
         if (attempt === openFileAttempt.current)
-          setOpenFileError("The original file could not be opened in a new tab. You can keep using this viewer or try again.")
+          setOpenFileError(
+            "The original file could not be opened in a new tab. You can keep using this viewer or try again."
+          )
       })
       .finally(() => {
         if (attempt === openFileAttempt.current) {
@@ -193,7 +249,9 @@ export function DocumentViewer({
         <div className="flex h-full items-center justify-center">
           <div className="flex flex-col items-center gap-3 text-center p-6">
             <FileText className="size-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">No document selected</p>
+            <p className="text-sm text-muted-foreground">
+              No document selected
+            </p>
           </div>
         </div>
       )
@@ -209,13 +267,37 @@ export function DocumentViewer({
                 alt={documentName}
                 className="max-w-full max-h-full object-contain rounded shadow-lg"
                 onLoad={() => setLoading(false)}
-                onError={() => { setLoading(false); setError("Failed to load image") }}
+                onError={() => {
+                  setLoading(false)
+                  setError("Failed to load image")
+                }}
               />
             ) : null}
           </div>
         )
 
       case "audio":
+        if (evidenceId && caseId && open)
+          return (
+            <TranscriptReviewPane
+              key={evidenceId}
+              evidenceId={evidenceId}
+              caseId={caseId}
+              registerCloseActions={registerCloseActions}
+              audioUrl={displayUrl ?? undefined}
+              documentName={documentName}
+              transcription={transcription}
+              segments={transcriptionSegments}
+              speakers={transcriptSpeakers}
+              speakerMerges={transcriptSpeakerMerges}
+              initialTime={initialTime}
+              onCanPlay={() => setLoading(false)}
+              onError={() => {
+                setLoading(false)
+                setError("Failed to load audio")
+              }}
+            />
+          )
         return (
           <AudioTranscriptViewer
             audioUrl={displayUrl ?? undefined}
@@ -242,7 +324,10 @@ export function DocumentViewer({
               src={displayUrl ?? undefined}
               className="max-w-full max-h-full rounded"
               onCanPlay={() => setLoading(false)}
-              onError={() => { setLoading(false); setError("Failed to load video") }}
+              onError={() => {
+                setLoading(false)
+                setError("Failed to load video")
+              }}
               preload="metadata"
             />
           </div>
@@ -260,14 +345,26 @@ export function DocumentViewer({
         )
 
       case "pdf":
-        if (evidenceId) return open ? <EvidencePdfDocument key={evidenceId} evidenceId={evidenceId} page={currentPage} onPageCount={onPageCount} onVisiblePageChange={setCurrentPage} /> : null
+        if (evidenceId)
+          return open ? (
+            <EvidencePdfDocument
+              key={evidenceId}
+              evidenceId={evidenceId}
+              page={currentPage}
+              onPageCount={onPageCount}
+              onVisiblePageChange={setCurrentPage}
+            />
+          ) : null
         return (
           <iframe
             ref={iframeRef}
             src={pdfUrlWithPage ?? undefined}
             className="h-full w-full border-0"
             onLoad={() => setLoading(false)}
-            onError={() => { setLoading(false); setError("Failed to load document") }}
+            onError={() => {
+              setLoading(false)
+              setError("Failed to load document")
+            }}
             title={documentName || "Document"}
           />
         )
@@ -279,7 +376,10 @@ export function DocumentViewer({
             src={displayUrl ?? undefined}
             className="h-full w-full border-0"
             onLoad={() => setLoading(false)}
-            onError={() => { setLoading(false); setError("Failed to load document") }}
+            onError={() => {
+              setLoading(false)
+              setError("Failed to load document")
+            }}
             title={documentName || "Document"}
           />
         )
@@ -287,7 +387,7 @@ export function DocumentViewer({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={requestOpenChange}>
       <DialogContent
         onCloseAutoFocus={onCloseAutoFocus}
         className={cn(
@@ -306,7 +406,8 @@ export function DocumentViewer({
                 {documentName || "Document Viewer"}
               </DialogTitle>
               <DialogDescription className="sr-only">
-                Review this evidence file and any available source location or transcript.
+                Review this evidence file and any available source location or
+                transcript.
               </DialogDescription>
             </div>
           </div>
@@ -323,7 +424,8 @@ export function DocumentViewer({
                   <ChevronLeft className="size-4" />
                 </Button>
                 <span className="text-xs text-muted-foreground min-w-[60px] text-center">
-                  Page {currentPage}{totalPages ? ` of ${totalPages}` : ""}
+                  Page {currentPage}
+                  {totalPages ? ` of ${totalPages}` : ""}
                 </span>
                 <Button
                   variant="ghost"
@@ -340,13 +442,24 @@ export function DocumentViewer({
               <OpenFileLocationButton
                 caseId={caseId}
                 evidenceId={evidenceId}
-                onNavigate={() => onOpenChange(false)}
+                onNavigate={() => requestOpenChange(false)}
               />
             )}
-            <Button variant="ghost" size="icon-sm" onClick={handleOpenInNewTab} disabled={openingFile} title="Open in new tab">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={handleOpenInNewTab}
+              disabled={openingFile}
+              title="Open in new tab"
+            >
               <ExternalLink className="size-4" />
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} aria-label="Close document">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => requestOpenChange(false)}
+              aria-label="Close document"
+            >
               <X className="size-4" />
               <span className="hidden sm:inline">Close</span>
             </Button>
@@ -354,34 +467,108 @@ export function DocumentViewer({
         </DialogHeader>
 
         {notice && (
-          <p role="status" className="border-b px-4 py-2 text-sm text-muted-foreground">
+          <p
+            role="status"
+            className="border-b px-4 py-2 text-sm text-muted-foreground"
+          >
             {notice}
           </p>
+        )}
+
+        {confirmTranscriptClose && (
+          <div
+            role="alertdialog"
+            aria-label="Unsaved transcript changes"
+            className="flex flex-wrap items-center gap-2 border-b bg-muted p-3 text-sm"
+          >
+            <p>Save your transcript changes before leaving?</p>
+            <Button
+              size="sm"
+              disabled={savingBeforeClose}
+              onClick={() => {
+                if (savingBeforeCloseRef.current) return
+                savingBeforeCloseRef.current = true
+                setSavingBeforeClose(true)
+                setCloseError(null)
+                void transcriptCloseActions.current
+                  ?.save()
+                  .then(() => {
+                    setConfirmTranscriptClose(false)
+                    onOpenChange(false)
+                  })
+                  .catch((reason) =>
+                    setCloseError(
+                      reason instanceof Error
+                        ? reason.message
+                        : "Could not save"
+                    )
+                  )
+                  .finally(() => {
+                    savingBeforeCloseRef.current = false
+                    setSavingBeforeClose(false)
+                  })
+              }}
+            >
+              Save and close
+            </Button>
+            <Button
+              size="sm"
+              disabled={savingBeforeClose}
+              variant="outline"
+              onClick={() => {
+                transcriptCloseActions.current?.discard()
+                setConfirmTranscriptClose(false)
+                onOpenChange(false)
+              }}
+            >
+              Discard unsaved edits
+            </Button>
+            <Button
+              size="sm"
+              disabled={savingBeforeClose}
+              variant="ghost"
+              onClick={() => setConfirmTranscriptClose(false)}
+            >
+              Stay
+            </Button>
+            {closeError && <p role="alert">{closeError}</p>}
+          </div>
         )}
         {openFileError && (
           <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2 text-sm">
             <p role="alert">{openFileError}</p>
-            <Button variant="outline" size="sm" onClick={handleOpenInNewTab} disabled={openingFile}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleOpenInNewTab}
+              disabled={openingFile}
+            >
               Try opening again
             </Button>
           </div>
         )}
         <div className="min-h-0 flex-1 relative overflow-hidden">
-          {loading && !usesPageImages && (
+          {loading && !usesPageImages && fileType !== "audio" && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-background">
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="size-8 text-muted-foreground animate-spin" />
-                <p className="text-sm text-muted-foreground">Loading {fileType}...</p>
+                <p className="text-sm text-muted-foreground">
+                  Loading {fileType}...
+                </p>
               </div>
             </div>
           )}
 
-          {error && (
+          {error && fileType !== "audio" && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-background">
               <div className="flex flex-col items-center gap-3 text-center p-6">
                 <FileText className="size-8 text-destructive" />
                 <p className="text-sm font-medium">Failed to load {fileType}</p>
-                <Button variant="outline" size="sm" onClick={handleOpenInNewTab}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenInNewTab}
+                >
                   <ExternalLink className="size-3.5 mr-1.5" />
                   Try opening in new tab
                 </Button>

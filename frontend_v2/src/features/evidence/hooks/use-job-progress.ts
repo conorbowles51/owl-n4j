@@ -58,6 +58,10 @@ export function useJobProgress(options: UseJobProgressOptions) {
       )
 
       // Handle terminal states
+      if (data.status === 'completed' || data.status === 'failed') {
+        for (const key of ['transcript', 'transcript-queue', 'evidence-file'])
+          void queryClient.invalidateQueries({ queryKey: [key] })
+      }
       if (data.status === "completed") {
         queryClient.invalidateQueries({
           queryKey: ["evidence-folder-contents", caseId],

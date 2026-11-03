@@ -105,6 +105,7 @@ export function JobCard({
   // A release flags every unfinished job as paused while it runs; a job that finished meanwhile is finished.
   const paused = isActive && !!job.paused
   const canResume = !!job.resumable && (paused || isFailed)
+  const isAudioReview = job.job_type === "audio_review"
   const canRetry = isFailed && !!job.evidence_file_id && !canResume && !!onRetry
   const canClear = (isFailed || isCompleted) && !!onClear
   const canControl = canResume ? !!onResume : !!onPause
@@ -118,7 +119,7 @@ export function JobCard({
     ? "Paused"
     : job.pause_requested
       ? "Pausing"
-      : isStatementReading && isCompleted
+      : (isStatementReading || isAudioReview) && isCompleted
         ? "Ready for review"
         : (STAGE_LABELS[job.status] ?? job.status)
   const stageColor = STAGE_COLORS[job.status] ?? STAGE_COLORS.pending
@@ -127,7 +128,7 @@ export function JobCard({
   return (
     <div
       role="group"
-      aria-label={`${isStatementReading ? "Financial statement reading" : "Processing"}: ${job.file_name}`}
+      aria-label={`${isAudioReview ? "Audio transcription" : isStatementReading ? "Financial statement reading" : "Processing"}: ${job.file_name}`}
       className={cn(
         "rounded-lg border bg-card p-3 transition-colors",
         isFailed && "border-red-500/20",
@@ -188,7 +189,12 @@ export function JobCard({
           {duration}
         </span>
 
-        {isCompleted && !isStatementReading && (
+        {isCompleted && isAudioReview && (
+          <span>
+            Awaiting transcript review · Graph processing has not started
+          </span>
+        )}
+        {isCompleted && !isStatementReading && !isAudioReview && (
           <>
             <span className="flex items-center gap-1">
               <Hash className="size-2.5" />

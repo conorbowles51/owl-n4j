@@ -13,6 +13,14 @@ from app.services.projection_reconciliation import audit_case_projection
 router = APIRouter()
 
 
+@router.get('/capabilities')
+async def capabilities():
+    from app.services.processing_queues import AUDIO_REVIEW_HEARTBEAT
+    from services.transcript_review import feature_enabled
+    ready = feature_enabled() and await redis_client.get_redis().get(AUDIO_REVIEW_HEARTBEAT) == '1'
+    return {'audio_transcript_review_protocol': 1 if ready else 0, 'audio_review_worker_ready': ready}
+
+
 def _ocr_runtime_available() -> bool:
     try:
         installed_languages = set(pytesseract.get_languages(config=""))

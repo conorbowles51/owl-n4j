@@ -264,6 +264,8 @@ app.include_router(case_members_router)
 app.include_router(dossiers_router)
 app.include_router(auth_router)
 app.include_router(evidence_router)
+from routers.transcripts import router as transcripts_router
+app.include_router(transcripts_router)
 from routers.evidence_uploads import router as evidence_uploads_router
 app.include_router(evidence_uploads_router)
 from routers.evidence_upload_groups import router as evidence_upload_groups_router

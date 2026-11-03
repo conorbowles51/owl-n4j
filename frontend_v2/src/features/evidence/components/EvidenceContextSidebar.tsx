@@ -1,4 +1,7 @@
 import { useEffect, useState, useMemo } from "react"
+import { useQuery } from '@tanstack/react-query'
+import { transcriptsAPI } from '../transcripts.api'
+import { canonicalName } from '../utils/transcript-status'
 import {
   Info,
   Loader2,
@@ -68,7 +71,7 @@ import {
 // --- Shared helpers ---
 
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "bmp", "svg", "webp"])
-const AUDIO_EXTS = new Set(["mp3", "wav", "ogg", "flac", "aac", "m4a"])
+const AUDIO_EXTS = new Set(["mp3", "wav", "ogg", "flac", "aac", "m4a", "wma", "opus", "mpeg", "mpga"])
 const VIDEO_EXTS = new Set(["mp4", "webm", "mov", "avi", "mkv", "flv", "wmv"])
 
 function getExt(filename: string): string {
@@ -455,6 +458,8 @@ function DetailsPanelContent({
   const ext = getExt(file.original_filename)
   const mediaType = getMediaType(file.original_filename)
   const displayStatus = getDisplayStatus(file)
+  const reviewedTranscript = useQuery({ queryKey: ['transcript', file.id], queryFn: () => transcriptsAPI.get(file.id),
+    enabled: mediaType === 'audio' && !!file.transcript_review?.revision_id, retry: false })
 
   const isProcessed = file.status === "processed"
   const isProcessing = file.status === "processing"
@@ -586,6 +591,10 @@ function DetailsPanelContent({
           />
 
           {/* --- Unprocessed: prominent Process button --- */}
+          {mediaType === 'audio' && file.transcript_review?.revision_id && <div className="space-y-2 rounded-lg border p-3 text-xs">
+            <p>{canonicalName(file.transcript_review)}</p>
+            <Button size="sm" variant="outline" onClick={() => setViewerOpen(true)}>Review transcript</Button>
+          </div>}
           {isUnprocessed && (
             <div className="overflow-hidden rounded-lg border border-amber-500/20 bg-amber-500/5">
               <div className="flex flex-col items-center gap-3 p-4">
@@ -725,10 +734,10 @@ function DetailsPanelContent({
                   defaultOpen={Boolean(file.transcription?.trim())}
                 >
                   <TranscriptionPanel
-                    transcription={file.transcription}
-                    segments={file.transcription_segments || []}
-                    speakers={transcriptSpeakers}
-                    speakerMerges={transcriptSpeakerMerges}
+                    transcription={reviewedTranscript.data?.transcription ?? file.transcription}
+                    segments={reviewedTranscript.data?.segments ?? file.transcription_segments ?? []}
+                    speakers={reviewedTranscript.data?.speakers ?? transcriptSpeakers}
+                    speakerMerges={reviewedTranscript.data?.speaker_merges ?? transcriptSpeakerMerges}
                   />
                 </CollapsibleSection>
               )}
@@ -914,13 +923,14 @@ export function EvidenceContextSidebar({
         </div>
       ) : (
         <div className="flex items-center border-b border-border bg-muted/30">
+          <div className="flex min-w-0 flex-1 overflow-x-auto">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setSidebarTab(tab.id)}
               className={cn(
-                "flex items-center gap-1.5 px-4 py-2 text-xs font-medium transition-colors border-b-2",
+                "flex shrink-0 items-center gap-1.5 whitespace-nowrap px-4 py-2 text-xs font-medium transition-colors border-b-2",
                 sidebarTab === tab.id
                   ? "border-amber-500 text-foreground"
                   : "border-transparent text-muted-foreground hover:text-foreground"
@@ -933,12 +943,14 @@ export function EvidenceContextSidebar({
               )}
             </button>
           ))}
-          <div className="ml-auto pr-1">
+          </div>
+          <div className="shrink-0 pr-1">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
+                  aria-label="Collapse evidence panel"
                   onClick={() => setCollapsed(true)}
                 >
                   <PanelRightClose className="size-3.5" />

@@ -33,9 +33,8 @@ from app.pipeline import phone_media
 
 logger = logging.getLogger(__name__)
 
-AUDIO_EXTENSIONS = {
-    ".mp3", ".m4a", ".wav", ".mpeg", ".mpga", ".ogg", ".flac",
-}
+from services.audio_media import SUPPORTED_AUDIO_EXTENSIONS
+AUDIO_EXTENSIONS = SUPPORTED_AUDIO_EXTENSIONS
 VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".gif"}
 PLAIN_TEXT_EXTENSIONS = {

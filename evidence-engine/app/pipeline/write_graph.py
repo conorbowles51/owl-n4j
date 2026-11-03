@@ -1,5 +1,6 @@
 import asyncio
 import json
+from contextvars import ContextVar
 from typing import Any
 
 from app.services.ingestion_checkpoints import checkpointed
@@ -22,6 +23,7 @@ from app.utils.text_sanitize import sanitize_json
 _ontology = load_ontology()
 ENTITY_CATEGORIES = _ontology.categories
 GEOCODABLE_CATEGORIES = set(_ontology.geocodable_categories)
+_replacement_transaction = ContextVar('audio_graph_replacement_transaction', default=None)
 
 
 async def _ensure_indexes() -> None:
@@ -170,9 +172,10 @@ async def _write_entities(
             "specific_type": e.specific_type,
             "verified_facts": json.dumps(e.verified_facts),
             "ai_insights": json.dumps(e.ai_insights),
+            '_transcript_binding': e.properties.get('_transcript_entity_id'),
         }
         for k, v in e.properties.items():
-            if k.startswith("_") or k in ("description", "aliases", "id", "key", "case_id", "job_id"):
+            if k.startswith("_") or k in props:
                 continue
             if isinstance(v, (str, int, float, bool)) or is_neo4j_primitive_list(v):
                 props[k] = v
@@ -186,6 +189,7 @@ async def _write_entities(
                 f"UNWIND $nodes AS node "
                 f"OPTIONAL MATCH (existing:{ENTITY_LABEL_EXPRESSION} {{id: node.id, case_id: node.case_id}}) "
                 f"WITH node, existing "
+                f"CALL apoc.util.validate(node._transcript_binding IS NOT NULL AND (existing IS NULL OR NOT existing:Person OR existing:RecycleBin), 'Selected transcript person is no longer available', []) "
                 f"FOREACH (_ IN CASE WHEN existing IS NULL THEN [1] ELSE [] END | "
                 f"CREATE (created:{category} {{id: node.id, case_id: node.case_id}})) "
                 f"WITH node "
@@ -200,7 +204,7 @@ async def _write_entities(
                 f"n.ai_insights AS prev_ai "
                 f"FOREACH (_ IN CASE WHEN NOT 'category' IN manual_fields THEN [1] ELSE [] END | "
                 f"SET n:{category}) "
-                f"SET n += apoc.map.removeKeys(node, manual_fields), "
+                f"SET n += apoc.map.removeKeys(node, manual_fields + ['_transcript_binding']), "
                 # List properties: accumulate with dedup
                 f"n.aliases = reduce(acc = [], x IN (coalesce(prev_aliases, []) + coalesce(node.aliases, [])) "
                 f"| CASE WHEN x IN acc THEN acc ELSE acc + x END), "
@@ -275,7 +279,7 @@ async def _write_relationships(
             "source_claim_ids": rel.source_claim_ids,
         }
         for k, v in rel.properties.items():
-            if k not in ('source_id', 'target_id', 'case_id') and isinstance(v, (str, int, float, bool)):
+            if k not in props and isinstance(v, (str, int, float, bool)):
                 props[k] = v
 
         safe_type = "".join(
@@ -367,16 +371,43 @@ async def write_graph(
     relationships: list[ResolvedRelationship],
     case_id: str,
     job_id: str,
+    retired_claims: list[dict] | None = None,
 ) -> None:
     entities = coalesce_resolved_entities_by_id(entities)
     await _ensure_indexes()
+    if retired_claims:
+        from app.pipeline.transcript_replacement import retire_graph_contributions
+        async with neo4j_client.get_neo4j_driver().session() as session:
+            async with await session.begin_transaction() as tx:
+                await (await tx.run('MERGE (lock:IngestionCaseWriteLock {case_id:$case_id}) '
+                    'SET lock.sequence=coalesce(lock.sequence,0)+1', {'case_id': case_id})).consume()
+                token = _replacement_transaction.set(tx)
+                try:
+                    await retire_graph_contributions(tx, case_id, retired_claims)
+                    await _write_entities(entities, case_id, job_id)
+                    await _write_relationships(relationships, case_id)
+                    await _embed_entities(entities, case_id)
+                    await tx.commit()
+                finally:
+                    _replacement_transaction.reset(token)
+        return
     await _write_entities(entities, case_id, job_id)
     await _write_relationships(relationships, case_id)
     await _embed_entities(entities, case_id)
 
 
-@checkpointed("graph-write-v2")
 async def _checkpointed_graph_write(query, parameters):
+    transaction = _replacement_transaction.get()
+    if transaction is not None:
+        # Never checkpoint an uncommitted part of an atomic replacement. A
+        # retry after rollback must execute every write again.
+        await (await transaction.run(query, parameters)).consume()
+        return
+    await _bounded_graph_write(query, parameters)
+
+
+@checkpointed("graph-write-v2")
+async def _bounded_graph_write(query, parameters):
     # Acquire a case-scoped graph lock in the same transaction as the bounded
     # write. Two ingestion runs must not both observe a missing entity and CREATE
     # it. This survives separate worker processes and releases on rollback/crash.

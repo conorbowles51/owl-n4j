@@ -714,6 +714,7 @@ class GraphService:
                 )
                 AND {active_node_predicate("n")}
                 RETURN
+                    n.id AS id,
                     n.key AS key,
                     n.name AS name,
                     labels(n)[0] AS type,

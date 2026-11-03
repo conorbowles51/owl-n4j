@@ -149,11 +149,16 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
                     update.message,
                 )
 
-            doc = await extract_text(
-                job.file_path,
-                job.file_name,
+            from app.pipeline.audio_review import ingestion_document
+            doc = await ingestion_document(
+                job.id, job.file_path, job.file_name, job.case_id, job.source_evidence_file_id,
+                revision_id=(job.pipeline_state or {}).get('transcript_revision_id'),
+                extractor=extract_text,
                 progress_callback=report_pdf_progress,
             )
+            if doc.metadata.get('transcript_revision_id'):
+                job.pipeline_state = {**job.pipeline_state, 'transcript_revision_id': doc.metadata['transcript_revision_id'],
+                    'transcript_input_format': doc.metadata.get('transcript_input_format')}
             chunk_evidence_file_id = str(job.source_evidence_file_id or job.id)
             chunk_revision_id = get_document_revision_id(doc)
             if job.source_evidence_file_id:
@@ -292,7 +297,12 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
 
             # Stage 4: Entity resolution / deduplication -> 60-70%
             await _update_job(job, JobStatus.RESOLVING_ENTITIES, 0.60, db, "Resolving entities...")
-            resolved_ents, resolved_rels = await resolve_entities(raw_entities, raw_rels, job.case_id)
+            from app.pipeline.transcript_replacement import load_retired_claims
+            retired_claims = await load_retired_claims(job.case_id,
+                {str(job.source_evidence_file_id): chunk_revision_id}
+                if job.source_evidence_file_id and doc.metadata.get('transcript_revision_id') else {})
+            replacement = {'retired_claims': retired_claims} if retired_claims else {}
+            resolved_ents, resolved_rels = await resolve_entities(raw_entities, raw_rels, job.case_id, **replacement)
             await _update_job(
                 job,
                 JobStatus.RESOLVING_ENTITIES,
@@ -320,7 +330,10 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
 
             # Stage 7: Write to Neo4j + embed for RAG -> 85-100%
             await _update_job(job, JobStatus.WRITING_GRAPH, 0.85, db, "Writing graph...")
-            await write_graph(resolved_ents, resolved_rels, job.case_id, str(job.id))
+            await write_graph(resolved_ents, resolved_rels, job.case_id, str(job.id), **replacement)
+            if not chunks:
+                from app.pipeline.audio_review import publish_audio_document_text
+                await publish_audio_document_text(job, db)
             job.entity_count = len(resolved_ents)
             job.relationship_count = len(resolved_rels)
             if chunks:

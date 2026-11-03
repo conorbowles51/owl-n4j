@@ -89,6 +89,7 @@ class EvidenceFolder(Base, TimestampMixin):
 class EvidenceFile(Base, TimestampMixin):
     __tablename__ = "evidence_files"
     __table_args__ = (
+        UniqueConstraint('id', 'case_id', name='uq_evidence_file_case'),
         CheckConstraint(
             "status IN ('unprocessed', 'processing', 'processed', 'failed')",
             name="ck_evidence_files_status",

@@ -31,6 +31,8 @@ it("handles a server hold, records a decision, and processes only on a separate 
     requests.push(url)
     const json = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), { status })
+    // This regression deliberately exercises the supported older-backend path.
+    if (url.includes('/processing-plans')) return json({ detail: 'Not found' }, 404)
     if (url.includes("route-check"))
       return json({
         case_id: "case-browser",
