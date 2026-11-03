@@ -75,7 +75,7 @@ export function SourceBody({ data, browse, onBrowse, busy }: {
   data: SourceDatabase; browse?: string; onBrowse: (table: string | undefined, page: number) => void; busy?: boolean
 }) {
   const path = data.source.file?.original_path ?? "(no path in the report)"
-  if (data.refused || !data.view) return <p>{data.refused}</p>
+  if (data.refused || !data.view) return <p role="alert">{data.refused}</p>
   const v = data.view
   const nr = v.named_row
   return (

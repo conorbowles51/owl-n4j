@@ -108,6 +108,7 @@ def test_the_mapping_reads_the_pinned_tools_real_output_on_the_synthetic_tree(tm
     counts, rows = M.read_lava(R.lava_db(str(tmp_path / "out")), "aleapp")
     assert counts["mapped"] == {"sms": 3, "call": 2}, counts
     assert "get_sms_mms" not in counts["missing_roles"] and "get_calllog" not in counts["missing_roles"]
+    assert "date" in counts["columns"]["get_sms_mms"] and "call_date" in counts["columns"]["get_calllog"]
     sms = sorted((r for r in rows if r["kind"] == "sms"), key=lambda r: r["row_index"])
     want = [(a, dt.datetime.fromtimestamp(d // 1000, dt.timezone.utc), b) for _, _, a, d, _, b in synthetic_android.SMS]
     assert [(r["values"]["roles"]["party"], r["instant"], r["values"]["roles"]["body"]) for r in sms] == want

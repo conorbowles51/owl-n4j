@@ -103,16 +103,25 @@ try {
     const line = (await card.count())
       ? await card.locator('[aria-live="polite"]').first().textContent({ timeout: 1000 }).catch(() => "")
       : await page.getByText(watch[0][1]).or(page.getByText(watch[1][1])).first().textContent({ timeout: 1000 }).catch(() => "")
+    // a changed line counts as shown only once printed, so the log never stays on a line the page has left
     if (line && line !== last && /\d/.test(line)) {
-      last = line
       if (!seen.length || Number(secs()) - (seen.at(-1).printed || 0) >= 30) {
+        last = line
         console.log(`${secs()} s   ${line.replace(name, "[report]")}`)
         if (seen.length) seen.at(-1).printed = Number(secs())
       }
     }
+    // an error on the page ends the watch with its words (the run would otherwise wait out --minutes)
+    const alert = await page.getByRole("alert").first().textContent({ timeout: 500 }).catch(() => "")
+    if (alert && /could not|failed|error|refused/i.test(alert)) {
+      failed = `page error: ${alert.replace(name, "[report]").slice(0, 300)}`
+      console.log(`${secs()} s ${failed}`)
+      await snap("page-error", page.getByRole("alert").first())
+      break
+    }
     await page.waitForTimeout(3000)
   }
-  if (!seen.some((s) => s.stage === "finished")) failed = `not finished within ${minutes} min`
+  if (!failed && !seen.some((s) => s.stage === "finished")) failed = `not finished within ${minutes} min`
   // the end state: the card, the outcome lines and the attention feed
   await page.waitForTimeout(2000)
   await snap("end-card", card.first())

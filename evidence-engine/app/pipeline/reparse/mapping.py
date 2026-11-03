@@ -52,13 +52,15 @@ def read_lava(path: str, tool: str):
     uri = "file:%s?mode=ro" % path
     conn = sqlite3.connect(uri, uri=True)
     conn.text_factory = lambda b: b.decode("utf-8", "replace")
-    counts = {"artefacts": {}, "mapped": {}, "missing_roles": {}, "mapping_version": VERSION}
+    counts = {"artefacts": {}, "columns": {}, "mapped": {}, "missing_roles": {}, "mapping_version": VERSION}
     rows = []
     try:
         tables = [n for (n,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE "
                                              "'\\_%' ESCAPE '\\' ORDER BY name")]
         for t in tables:
             counts["artefacts"][t] = conn.execute('SELECT count(*) FROM "%s"' % t.replace('"', '""')).fetchone()[0]
+            # column names only (the schema the mapping is reviewed against), never values
+            counts["columns"][t] = [r[1] for r in conn.execute('PRAGMA table_info("%s")' % t.replace('"', '""'))]
         for artefact, m in spec.items():
             if artefact not in counts["artefacts"]:
                 continue

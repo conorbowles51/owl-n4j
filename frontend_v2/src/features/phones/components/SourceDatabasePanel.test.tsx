@@ -80,6 +80,6 @@ describe("Source database panel wording", () => {
     })
     show(withRow({ available: true, row_named: false, reason: "The report does not say which row this record came from.", source_index: 0 }))
     fireEvent.click(screen.getByRole("button", { name: "Open source database" }))
-    expect(await screen.findByText("This file is not an SQLite database.")).toBeInTheDocument()
+    expect(await screen.findByRole("alert")).toHaveTextContent("This file is not an SQLite database.")
   })
 })
