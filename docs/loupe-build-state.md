@@ -1,8 +1,10 @@
 ## 3 November: phone media, stage I (cb-media): local OCR, transcription, translation, image search, media spread
 
-**Live:** 4607f590 holds A to F, M-5 to M-7, CO-18, the exact tier of C, translation, image search and the phone
-summary's Media link (full suites on bc768e48: unittest 8,058 OK, pytest 2,417 passed with the two quarantined docx
-failures); the release after it translates any text whose top language has a model.
+**Live:** 0d22ce55 holds all of stage I: A to F, M-5 to M-7, CO-18, the exact tier of C, translation, image search
+and the phone summary's Media link (full suites on bc768e48: unittest 8,058 OK, pytest 2,417 passed with the two
+quarantined docx failures; the later fixes are covered by their own tests). Checked signed in over http on the
+synthetic training case: a Spanish voice note's transcript translated under the original (Spanish, confidence 41%),
+and its 19 images indexed (10 distinct pictures) with a description ranking the matching picture first.
 
 - **Media entry point (05-S12).** `evidence-engine/app/pipeline/phone_media.py` sniffs a file's kind from its bytes
   (the name is used only when the bytes name nothing) and holds the provider policy (local only) and model identity.
@@ -36,6 +38,10 @@ failures); the release after it translates any text whose top language has a mod
   puts deployed use out of scope), vectors per case, content hash and weights; an indexing job per case with true
   counts; search scores in chunks with a running top list (25.5 MB peak on 35,000 vectors). Model:
   `python -m services.phone.image_search_models` (installed in `~conorbowles51/.cache/loupe-image`).
+  The model child has its own address-space cap (`LOUPE_PHONE_IMAGE_MEMORY_MB`, 10 GB): the server's CUDA build of
+  torch peaks at 6.43 to 6.82 GB with the model, over the 6 GB the other children share. A picture is handed to the
+  model as height x width x 3 (a 1 or 3 pixel high picture was otherwise refused); a model failure is retried, the
+  library's refusal (`cannot_open`) is not.
 
 **Standing decisions.** Job tray on the Media toolbar (reverse: a global header exists). A text is translated
 when its top language has a model, whatever lingua's relative confidence, which is stated on the translation:
