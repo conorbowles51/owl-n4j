@@ -105,3 +105,41 @@ def test_a_folder_file_is_read_in_place_and_a_missing_one_is_refused_in_words(wo
             assert fh.read() == b"synthetic bytes" and name == "synthetic-a.jpg" and size == 15
         with pytest.raises(media.ContentRefused, match="not in the production"):
             media.content(c, case, MISSING)
+
+
+def test_a_file_only_in_a_later_container_of_the_phone_is_read_from_that_container(world, tmp_path, monkeypatch):
+    """A phone can arrive in several containers (split sections, or the production uploaded again). The first
+    container in link order lacks the file; the second, a zip, holds it under its root: the bytes come from the zip.
+    With neither holding it, the refusal says the file is not in the production."""
+    import zipfile
+    import uuid as _uuid
+    from services.phone import media
+    engine, case, _, ext = world
+    monkeypatch.setattr("config.EVIDENCE_DATA_ROOT", str(tmp_path))
+    (tmp_path / str(case) / "up" / "C2").mkdir(parents=True)               # first container: a folder without it
+    with zipfile.ZipFile(tmp_path / str(case) / "C2.zip", "w") as z:
+        z.writestr("C2/chats/synthetic-a.jpg", b"synthetic zip bytes")
+    with engine.begin() as c:
+        c.execute(text("UPDATE phone_files SET disk_relpath = 'chats/synthetic-a.jpg', disk_size = 19 WHERE file_uid = :f"),
+                  {"f": LINKED})
+        first = c.execute(text("SELECT first_container_id FROM phone_extractions WHERE id = :e"), {"e": ext}).scalar()
+        c.execute(text("UPDATE phone_extraction_containers SET container_kind = 'folder', stored_path = 'up/C2' WHERE id = :i"),
+                  {"i": first})
+        second = _uuid.uuid4()
+        c.execute(text(
+            "INSERT INTO phone_extraction_containers (id, case_id, container_kind, original_name, stored_path, size_bytes, "
+            "sha256, md5, intake_outcome, classification) SELECT :n, case_id, 'zip', 'C2.zip', 'C2.zip', 1, sha256, md5, intake_outcome, classification "
+            "FROM phone_extraction_containers WHERE id = :i"), {"n": second, "i": first})
+        c.execute(text("DELETE FROM phone_extraction_container_links WHERE extraction_id = :e"), {"e": ext})
+        c.execute(text("INSERT INTO phone_extraction_container_links (extraction_id, container_id, root_path, linked_at) "
+                       "VALUES (:e, :a, '', now() - interval '1 hour'), (:e, :b, 'C2', now())"),
+                  {"e": ext, "a": first, "b": second})
+    with engine.connect() as c:
+        name, size, opener = media.content(c, case, LINKED)
+        with opener() as fh:
+            assert fh.read() == b"synthetic zip bytes" and name == "synthetic-a.jpg" and size == 19
+    (tmp_path / str(case) / "C2.zip").unlink()
+    with zipfile.ZipFile(tmp_path / str(case) / "C2.zip", "w") as z:
+        z.writestr("C2/other.txt", b"x")
+    with engine.connect() as c, pytest.raises(media.ContentRefused, match="not in the production"):
+        media.content(c, case, LINKED)

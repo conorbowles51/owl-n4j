@@ -139,7 +139,6 @@ def content(conn, case_id, file_uid):
     upload from disk under the case's data root, a zip by its member. A file absent from the production, or
     larger than ``CONTENT_MAX_BYTES``, is refused with words."""
     import posixpath
-    import zipfile
     from pathlib import Path
 
     from config import EVIDENCE_DATA_ROOT
@@ -153,22 +152,39 @@ def content(conn, case_id, file_uid):
     if r.disk_size and r.disk_size > CONTENT_MAX_BYTES:
         raise ContentRefused("This file is %s MB, too large to show here. Download the original instead."
                              % "{:,}".format(int(r.disk_size) // (1024 * 1024)))
-    c = conn.execute(text(
+    conts = conn.execute(text(
         "SELECT c.container_kind, c.stored_path, l.root_path FROM phone_extraction_container_links l JOIN "
         "phone_extraction_containers c ON c.id = l.container_id WHERE l.extraction_id = :e AND c.case_id = :c "
-        "ORDER BY l.linked_at LIMIT 1"), {"e": r.extraction_id, "c": str(case_id)}).first()
-    if c is None:
+        "ORDER BY l.linked_at, c.id"), {"e": r.extraction_id, "c": str(case_id)}).fetchall()
+    if not conts:
         raise ContentRefused("The container holding this file is not recorded.")
     case_root = (Path(EVIDENCE_DATA_ROOT) / str(case_id)).resolve()
     name = posixpath.basename((r.local_path or "").replace("\\", "/")) or "file"
-    rel = posixpath.normpath(posixpath.join(c.root_path or "", r.disk_relpath)).lstrip("/")
+    # a phone can come in several containers (split sections, or the same production uploaded again): the file is
+    # read from the first container, in the order they were linked, that holds it
+    refusals = []
+    for c in conts:
+        try:
+            size, opener = _in_container(c, case_root, r.disk_relpath)
+        except ContentRefused as exc:
+            refusals.append(str(exc))
+            continue
+        return name, size, opener
+    raise ContentRefused(MISSING_WORDS if MISSING_WORDS in refusals else refusals[0])
+
+
+def _in_container(c, case_root, disk_relpath):
+    """(size, opener) of one file in one container, or ContentRefused with the reason."""
+    import posixpath
+    import zipfile
+    rel = posixpath.normpath(posixpath.join(c.root_path or "", disk_relpath)).lstrip("/")
     if rel.startswith(".."):
         raise ContentRefused("The file's place in its container is not valid.")
     if c.container_kind == "folder":
         path = (case_root / c.stored_path / rel).resolve()
         if not str(path).startswith(str(case_root) + "/") or not path.is_file():
             raise ContentRefused(MISSING_WORDS)
-        return name, path.stat().st_size, lambda: open(path, "rb")
+        return path.stat().st_size, lambda: open(path, "rb")
     if c.container_kind in ("zip", "ufdr"):  # a UFDR is a zip
         zpath = (case_root / c.stored_path).resolve()
         if not str(zpath).startswith(str(case_root) + "/") or not zpath.is_file():
@@ -190,5 +206,5 @@ def content(conn, case_id, file_uid):
                 z.close()
             member.close = closing
             return member
-        return name, size, opener
+        return size, opener
     raise ContentRefused("Files in a %s container are not shown yet." % c.container_kind)
