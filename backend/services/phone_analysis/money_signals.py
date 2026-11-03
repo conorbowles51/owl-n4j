@@ -720,41 +720,62 @@ def _source_id(conn, case_id, extraction_id):
     return v if v is not None else uuid.UUID(str(extraction_id))
 
 
-def continuity_coverage(conn, case_id):
+def merge_groups(conn, case_id):
+    """``group_of(account_id)``: the account and every account merged with it (account consolidation), sorted; or
+    ``None`` when the merge history cannot be read (each read in a savepoint, so a failure leaves the run usable)."""
+    from sqlalchemy.orm import Session
+    from services.financial import account_consolidation as AC
+    cache = {}
+
+    def group_of(aid):
+        if aid not in cache:
+            try:
+                with conn.begin_nested(), Session(bind=conn) as db:
+                    members = AC.expand_account_ids(db, uuid.UUID(str(case_id)), [uuid.UUID(aid)])
+                cache[aid] = sorted({str(m) for m in members} | {aid})
+            except Exception:  # noqa: BLE001 - an unreadable merge is weighed on the account's own rows, never contradicts
+                log.warning("money signals: merge history of account %s not read; absences stay unresolved", aid)
+                cache[aid] = None
+        return cache[aid]
+    return group_of
+
+
+def continuity_coverage(conn, case_id, group_of=None):
     """Phase 1b (05 4.3.5 step 3; 05-S4): ``coverage_for(account, claim)`` reading the account's statement run
     (``continuity.read_account_continuity``) into ``correlation.coverage_from_continuity``, with every period whose
     arithmetic did not close (reconciliation status other than balanced) passed as unverified. An account with no
-    statement period covers nothing, so an absence there stays unresolved. Nor does an account merged with others
-    (account consolidation): its run reads every member's statements while the rows weighed are its own, so an
-    absence there is never called a contradiction; a merge that cannot be read is treated the same way."""
+    statement period covers nothing, so an absence there stays unresolved. An account merged with others is covered
+    by the whole group's run (the run reads every member's statements) and ``analyse`` weighs the whole group's rows
+    against it, so a complete merged run can contradict; a merge that cannot be read covers nothing."""
     from sqlalchemy.orm import Session
-    from services.financial.account_consolidation import expand_account_ids
     from services.financial.continuity import read_account_continuity
     from services.financial.correlation import AccountCoverage, Coverage, coverage_from_continuity
+    group_of = group_of or merge_groups(conn, case_id)
     cache = {}
 
     def coverage_for(account, claim):
         aid = account["id"]
         if aid not in cache:
             spanless = AccountCoverage(uuid.UUID(aid), holder=account.get("holder"))
-            try:
-                # a savepoint, so a failed read leaves the run's connection usable for every later query
-                with conn.begin_nested(), Session(bind=conn) as db:
-                    group = expand_account_ids(db, uuid.UUID(str(case_id)), [uuid.UUID(aid)])
-                    run = read_account_continuity(db, case_id=uuid.UUID(str(case_id)),
-                                                  account_id=uuid.UUID(aid)) if len(group) <= 1 else None
-            except Exception:  # noqa: BLE001 - a merge chain that cannot be read covers nothing (never contradicts)
-                log.warning("money signals: statement run of account %s not read; absences stay unresolved", aid)
-                run = None
+            members = group_of(aid)
+            run = None
+            if members is not None:
+                try:
+                    # a savepoint, so a failed read leaves the run's connection usable for every later query
+                    with conn.begin_nested(), Session(bind=conn) as db:
+                        run = read_account_continuity(db, case_id=uuid.UUID(str(case_id)), account_id=uuid.UUID(aid))
+                except Exception:  # noqa: BLE001 - a run that cannot be read covers nothing (never contradicts)
+                    log.warning("money signals: statement run of account %s not read; absences stay unresolved", aid)
+                    run = None
             if run is None:
                 cache[aid] = spanless
                 return Coverage([cache[aid]])
             unverified = [(r.period_start, r.period_end) for r in conn.execute(text(
                 "SELECT p.period_start, p.period_end FROM financial_statement_periods p WHERE p.case_id = :c AND "
-                "p.account_id = :a AND p.period_start IS NOT NULL AND p.period_end IS NOT NULL AND "
-                "p.reconciliation_status <> 'balanced'"), {"c": str(case_id), "a": aid})]
+                "p.account_id = ANY(CAST(:a AS uuid[])) AND p.period_start IS NOT NULL AND p.period_end IS NOT NULL "
+                "AND p.reconciliation_status <> 'balanced'"), {"c": str(case_id), "a": members})]
             if run.account_id is None or not run.periods:
-                cache[aid] = AccountCoverage(uuid.UUID(aid), holder=account.get("holder"))
+                cache[aid] = spanless
             else:
                 cache[aid] = coverage_from_continuity(run, holder=account.get("holder"), unverified=unverified)
         return Coverage([cache[aid]])
@@ -764,8 +785,9 @@ def continuity_coverage(conn, case_id):
 def analyse(conn, case_id, params, ctx=None, coverage_for=None) -> tuple:
     """(results, counts). ``coverage_for(account, claim)``: phase 1b supplies coverage from the statement run; 1a
     passes none (an absence is never a contradiction)."""
+    group_of = merge_groups(conn, case_id)
     if coverage_for is None and params.get("phase", "1b") == "1b":
-        coverage_for = continuity_coverage(conn, case_id)
+        coverage_for = continuity_coverage(conn, case_id, group_of)
     directory = INST.for_case(conn, case_id)
     phones = _phone_context(conn, case_id)
     signals = read_signals(conn, case_id)
@@ -793,8 +815,15 @@ def analyse(conn, case_id, params, ctx=None, coverage_for=None) -> tuple:
             ext = item["sig"]["extraction_id"]
             if ext not in sources:
                 sources[ext] = _source_id(conn, case_id, ext)
+            weighed = set()
             for aid in b["accounts"]:
-                per.append(correlate_item(item, accounts[aid], entries.get(aid, []), sources[ext],
+                # a merged account is one account: its whole group's rows are weighed, once per group
+                members = tuple(group_of(aid) or [aid])
+                if members in weighed:
+                    continue
+                weighed.add(members)
+                rows = [e for m in members for e in entries.get(m, [])]
+                per.append(correlate_item(item, accounts[aid], rows, sources[ext],
                                           params["near_amount_pass"], coverage_for))
         res = reading_result(item, b, per, accounts)
         counts["outcome"][res["measures"]["outcome"]] += 1

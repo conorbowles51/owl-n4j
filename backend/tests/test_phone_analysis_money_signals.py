@@ -668,3 +668,57 @@ def test_a_person_whose_name_contains_a_model_name_is_a_person():
 def test_a_grouped_card_number_is_read_whole_before_punctuation_and_after_any_word(text_):
     r = P.parse(text_, institution=None, phone_country="US", template=None)
     assert r.account_digits == "4111111111111234" and MS._masked_ref(r) == "ending 1234"
+
+
+# ---- followups m110308343413358 (1): a merged account is weighed as its whole group ---------------------------------
+
+def _merged_case(engine, a_periods, b_periods, b_rows=()):
+    """A (ending 1234) and B (ending 9876) at one bank, B merged into A; the alert names A's ending."""
+    with engine.begin() as c:
+        case = make_case(c)
+        L = Ledger(c, case)
+        a = L.account("Synthetic Bank", "XXXX1234", statement=False)
+        b = L.account("Synthetic Bank", "XXXX9876", statement=False)
+        for p in a_periods:
+            L.period(a, *p)
+        bp = [L.period(b, *p) for p in b_periods]
+        for amount, day in b_rows:
+            L.txn(b, amount, day, period=bp[0])
+        c.execute(text("UPDATE financial_accounts SET metadata = CAST(:m AS jsonb) WHERE id = :b"),
+                  {"m": json.dumps({"canonical_account_id": str(a)}), "b": b})
+    p = Phone()
+    p.notification("test.synthbank.mobile", "Synthetic Bank: Purchase of $50.00 on card ending 1234",
+                   when=datetime(2024, 2, 10, 15, tzinfo=timezone.utc))
+    p.make(engine, case)
+    return case
+
+
+def test_a_payment_on_another_account_of_the_merge_group_matches_the_alert():
+    with fresh_engine() as engine:
+        case = _merged_case(engine, [(*JAN, 100000, 90000)], [(*FEB, 90000, 85000), (*MAR, 85000, 85000)],
+                            b_rows=[(5000, date(2024, 2, 12))])
+        r = _reading(_run(engine, case)[1])
+        assert r["measures"]["outcome"] == "corroborated", r["measures"]
+        assert r["measures"]["proof_class"] == "p4"
+        with engine.connect() as c:
+            row = c.execute(text("SELECT id::text FROM financial_transactions WHERE case_id = :c"), {"c": str(case)}).scalar()
+            assert len(MS.phone_links(c, case, [row])[row]) == 1
+
+
+def test_a_complete_merged_run_without_the_payment_contradicts():
+    with fresh_engine() as engine:
+        case = _merged_case(engine, [(*JAN, 100000, 90000)], [(*FEB, 90000, 80000), (*MAR, 80000, 70000)])
+        m = _reading(_run(engine, case)[1])["measures"]
+        assert m["outcome"] == "contradicted" and m["reason"] == "no_transaction", m
+
+
+def test_a_merge_that_cannot_be_read_stays_unresolved(monkeypatch):
+    import services.financial.account_consolidation as AC
+
+    def broken(*a, **k):
+        raise RuntimeError("synthetic: merge history unreadable")
+    monkeypatch.setattr(AC, "expand_account_ids", broken)
+    with fresh_engine() as engine:
+        case = _merged_case(engine, [(*JAN, 100000, 90000)], [(*FEB, 90000, 80000), (*MAR, 80000, 70000)])
+        m = _reading(_run(engine, case)[1])["measures"]
+        assert m["outcome"] == "unresolved", m
