@@ -35,6 +35,7 @@ export function useDeleteFolder(caseId: string) {
       qc.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
       qc.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
       qc.invalidateQueries({ queryKey: ["evidence", caseId] })
+      qc.invalidateQueries({ queryKey: ["evidence-deleted", caseId] })
     },
   })
 }

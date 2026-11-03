@@ -67,7 +67,8 @@ export function DeleteFolderDialog({
           </div>
           <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm">
             <p className="text-primary">
-              Graph data (entities, relationships) extracted from these files will be preserved in Neo4j.
+              Graph data (entities, relationships) found only in these files is hidden with them and comes back
+              with a restore.
             </p>
           </div>
           {error && (

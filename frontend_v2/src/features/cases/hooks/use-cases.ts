@@ -38,6 +38,36 @@ export function useDeleteCase() {
     mutationFn: casesAPI.delete,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["cases"] })
+      queryClient.invalidateQueries({ queryKey: ["deleted-cases"] })
+    },
+  })
+}
+
+export function useCaseDeletePreview(caseId: string | undefined) {
+  return useQuery({
+    queryKey: ["cases", caseId, "delete-preview"],
+    queryFn: () => casesAPI.deletePreview(caseId!),
+    enabled: !!caseId,
+    staleTime: 0,
+  })
+}
+
+export function useDeletedCases(enabled = true) {
+  return useQuery({
+    queryKey: ["deleted-cases"],
+    queryFn: casesAPI.listDeleted,
+    enabled,
+    staleTime: 0,
+  })
+}
+
+export function useRestoreCase() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: casesAPI.restore,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cases"] })
+      queryClient.invalidateQueries({ queryKey: ["deleted-cases"] })
     },
   })
 }

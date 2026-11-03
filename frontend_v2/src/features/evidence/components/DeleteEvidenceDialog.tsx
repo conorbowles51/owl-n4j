@@ -37,7 +37,10 @@ export function DeleteEvidenceDialog({
             Delete Evidence
           </DialogTitle>
           <DialogDescription>
-            This will permanently delete {fileCount} file{fileCount !== 1 ? "s" : ""} from this case.
+            {fileCount} file{fileCount !== 1 ? "s" : ""} will be moved to Deleted items and disappear from every
+            screen, search and the agent. The case owner or an admin can restore{" "}
+            {fileCount !== 1 ? "them" : "it"} exactly as before for 30 days; after that{" "}
+            {fileCount !== 1 ? "they are" : "it is"} removed for good.
           </DialogDescription>
         </DialogHeader>
 
@@ -50,10 +53,10 @@ export function DeleteEvidenceDialog({
             />
             <div>
               <p className="text-sm font-medium text-foreground">
-                Also delete exclusive entities
+                Also hide exclusive entities
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Remove entities and relationships that were only found in these files
+                Hide the entities and relationships found only in these files (they come back with a restore)
               </p>
             </div>
           </label>
@@ -68,7 +71,7 @@ export function DeleteEvidenceDialog({
             onClick={() => onConfirm(deleteEntities)}
             disabled={isPending}
           >
-            {isPending ? "Deleting..." : "Delete"}
+            {isPending ? "Moving..." : "Move to Deleted items"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -19,6 +19,7 @@ import { CreateFolderDialog } from "./CreateFolderDialog"
 import { DeleteFolderDialog } from "./DeleteFolderDialog"
 import { folderDeleteRefusal } from "../folder-delete"
 import { DeleteEvidenceDialog } from "./DeleteEvidenceDialog"
+import { DeletedEvidenceDialog } from "./DeletedEvidenceDialog"
 import { FolderContextDialog } from "./FolderContextDialog"
 import { CaseProcessingProfileDialog } from "./CaseProcessingProfileDialog"
 import { toast } from "sonner"
@@ -110,6 +111,7 @@ export function EvidenceExplorer() {
   const [folderProfileFolderId, setFolderProfileFolderId] = useState<string | null>(null)
   const [caseProfileOpen, setCaseProfileOpen] = useState(false)
   const [deleteEvidenceOpen, setDeleteEvidenceOpen] = useState(false)
+  const [deletedItemsOpen, setDeletedItemsOpen] = useState(false)
   const [deleteEvidenceTarget, setDeleteEvidenceTarget] = useState<EvidenceFile | null>(null)
 
   // Mutations
@@ -149,7 +151,7 @@ export function EvidenceExplorer() {
       onSuccess: () => {
         setDeleteFolderOpen(false)
         setDeleteFolderTarget(null)
-        toast.success(`Folder "${deleteFolderTarget.name}" deleted`)
+        toast.success(`Folder "${deleteFolderTarget.name}" deleted; its files are in Deleted items for 30 days`)
       },
       onError: (err) => {
         const message = folderDeleteRefusal(err)
@@ -171,7 +173,7 @@ export function EvidenceExplorer() {
 
     const deleteNext = (index: number) => {
       if (index >= ids.length) {
-        toast.success(`Deleted ${ids.length} file${ids.length !== 1 ? "s" : ""}`)
+        toast.success(`Moved ${ids.length} file${ids.length !== 1 ? "s" : ""} to Deleted items (restorable for 30 days)`)
         setDeleteEvidenceOpen(false)
         setDeleteEvidenceTarget(null)
         clearSelection()
@@ -232,6 +234,7 @@ export function EvidenceExplorer() {
               onDeleteFolder={handleOpenDeleteFolder}
               onEditFolderProfile={setFolderProfileFolderId}
               onEditCaseProfile={() => setCaseProfileOpen(true)}
+              onOpenDeleted={() => setDeletedItemsOpen(true)}
             />
           </ResizablePanel>
 
@@ -249,6 +252,7 @@ export function EvidenceExplorer() {
         </ResizablePanelGroup>
 
         {/* Dialog portals */}
+        <DeletedEvidenceDialog caseId={caseId!} open={deletedItemsOpen} onOpenChange={setDeletedItemsOpen} />
         <CreateFolderDialog
           open={createFolderOpen}
           onOpenChange={setCreateFolderOpen}

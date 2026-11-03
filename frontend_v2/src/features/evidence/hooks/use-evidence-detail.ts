@@ -42,6 +42,29 @@ export function useDeleteEvidence(caseId: string) {
       queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
       queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
       queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-deleted", caseId] })
+    },
+  })
+}
+
+export function useDeletedEvidence(caseId: string, enabled = true) {
+  return useQuery({
+    queryKey: ["evidence-deleted", caseId],
+    queryFn: () => evidenceAPI.listDeleted(caseId),
+    enabled: enabled && !!caseId,
+    staleTime: 0,
+  })
+}
+
+export function useRestoreEvidence(caseId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (evidenceId: string) => evidenceAPI.restore(evidenceId, caseId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-deleted", caseId] })
     },
   })
 }

@@ -172,6 +172,15 @@ export const evidenceAPI = {
       { method: "DELETE" }
     ),
 
+  listDeleted: (caseId: string) =>
+    fetchAPI<DeletedEvidenceResponse>(`/api/evidence/deleted?case_id=${caseId}`),
+
+  restore: (evidenceId: string, caseId: string) =>
+    fetchAPI<{ evidence_id: string; filename: string; restored: boolean; merged_entities: string[] }>(
+      `/api/evidence/${evidenceId}/restore?case_id=${caseId}`,
+      { method: "POST" }
+    ),
+
   logs: async (caseId: string, limit = 50) => {
     const res = await fetchAPI<{ logs: IngestionLog[] }>(
       `/api/evidence/logs?case_id=${caseId}&limit=${limit}`
@@ -298,4 +307,23 @@ export const llmConfigAPI = {
       method: "PUT",
       body: { revision, configuration },
     }),
+}
+
+
+export interface DeletedEvidenceFile {
+  id: string
+  filename: string
+  size: number
+  folder_id: string | null
+  deleted_at: string
+  purge_at: string
+  days_left: number
+  deleted_by: { id: string; name: string; email: string } | null
+  holds: { graph_nodes: number; entities_only_in_this_file: number; text_chunks: number }
+}
+
+export interface DeletedEvidenceResponse {
+  files: DeletedEvidenceFile[]
+  retention_days: number
+  can_restore: boolean
 }

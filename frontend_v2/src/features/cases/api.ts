@@ -64,6 +64,70 @@ export const casesAPI = {
   setAddressLookup: (caseId: string, mode: AddressLookupMode | null) =>
     fetchAPI<AddressLookupState>(`/api/cases/${caseId}/address-lookup`, { method: "PUT", body: { mode } }),
 
-  delete: (caseId: string) =>
-    fetchAPI<void>(`/api/cases/${caseId}`, { method: "DELETE" }),
+  /** Moves the case to Deleted items (restorable for 30 days); the title must be typed exactly. */
+  delete: ({ caseId, confirmTitle }: { caseId: string; confirmTitle: string }) =>
+    fetchAPI<void>(
+      `/api/cases/${caseId}?confirm_title=${encodeURIComponent(confirmTitle)}`,
+      { method: "DELETE" }
+    ),
+
+  deletePreview: (caseId: string) =>
+    fetchAPI<CaseDeletePreview>(`/api/cases/${caseId}/delete-preview`),
+
+  listDeleted: () => fetchAPI<DeletedCasesResponse>("/api/cases/deleted"),
+
+  restore: (caseId: string) =>
+    fetchAPI<Case>(`/api/cases/${caseId}/restore`, { method: "POST" }),
+}
+
+/** Record counts a case holds, keyed by table (what deleting it takes out of view). */
+export type CaseRecordCounts = Record<string, number | string>
+
+export interface CaseDeletePreview {
+  case_id: string
+  title: string
+  holds: CaseRecordCounts
+  restorable_days: number
+}
+
+export interface DeletedPerson {
+  id: string
+  name: string
+  email: string
+}
+
+export interface DeletedCase {
+  id: string
+  title: string
+  deleted_at: string
+  deleted_by: DeletedPerson | null
+  owner: DeletedPerson | null
+  purge_at: string
+  days_left: number
+  holds: CaseRecordCounts
+}
+
+export interface DeletedCasesResponse {
+  cases: DeletedCase[]
+  retention_days: number
+}
+
+/** Plain words for the counted tables, in the order a person reads them. */
+export const CASE_COUNT_LABELS: [string, string][] = [
+  ["evidence_files", "evidence files"],
+  ["financial_accounts", "accounts"],
+  ["financial_statement_periods", "statement periods"],
+  ["financial_transactions", "ledger rows"],
+  ["adjudications", "review decisions"],
+  ["financial_judgements", "judgement calls"],
+  ["phone_extractions", "phone reports"],
+  ["phone_comm_events", "phone messages and calls"],
+  ["workspace_entries", "notes and workspace entries"],
+  ["case_memberships", "members"],
+]
+
+export function describeCaseCounts(holds: CaseRecordCounts): string[] {
+  return CASE_COUNT_LABELS.filter(([key]) => typeof holds[key] === "number" && (holds[key] as number) > 0).map(
+    ([key, label]) => `${(holds[key] as number).toLocaleString()} ${label}`
+  )
 }

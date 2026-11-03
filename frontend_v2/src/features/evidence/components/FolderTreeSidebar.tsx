@@ -1,6 +1,6 @@
 import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useEvidenceDropTarget } from "../hooks/use-evidence-moves"
-import { FolderPlus, PanelLeftClose, Play, Settings2 } from "lucide-react"
+import { FolderPlus, PanelLeftClose, Play, Settings2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
@@ -25,6 +25,7 @@ interface FolderTreeSidebarProps {
   onDeleteFolder: (id: string, name: string, fileCount: number) => void
   onEditFolderProfile: (folderId: string) => void
   onEditCaseProfile: () => void
+  onOpenDeleted?: () => void
 }
 
 export function FolderTreeSidebar({
@@ -33,6 +34,7 @@ export function FolderTreeSidebar({
   onDeleteFolder,
   onEditFolderProfile,
   onEditCaseProfile,
+  onOpenDeleted,
 }: FolderTreeSidebarProps) {
   const rootDrop = useEvidenceDropTarget(null)
   const { data: tree, isLoading } = useFolderTree(caseId)
@@ -153,6 +155,20 @@ export function FolderTreeSidebar({
           </div>
         )}
       </ScrollArea>
+
+      {onOpenDeleted && (
+        <div className="border-t border-border px-2 py-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-full justify-start gap-2 px-2 text-xs text-muted-foreground"
+            onClick={onOpenDeleted}
+          >
+            <Trash2 className="size-3.5" />
+            Deleted items
+          </Button>
+        </div>
+      )}
 
       {/* Footer: New Folder button */}
       <div className="border-t border-border p-2">

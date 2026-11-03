@@ -1,6 +1,6 @@
 import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { useMemo, useState } from "react"
-import { Plus, Search, FolderOpen } from "lucide-react"
+import { Plus, Search, FolderOpen, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -18,6 +18,7 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { isSuperAdminUser } from "@/features/auth/auth.types"
 import { CaseListItem } from "./CaseListItem"
 import { CreateCaseDialog } from "./CreateCaseDialog"
+import { DeletedCasesDialog } from "./DeletedCasesDialog"
 import type { Case } from "@/types/case.types"
 
 interface CaseListSidebarProps {
@@ -28,6 +29,7 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
   const [search, setSearch] = useState("")
   const [createOpen, setCreateOpen] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
+  const [deletedOpen, setDeletedOpen] = useState(false)
   const { selectedCaseId, setSelectedCaseId, viewMode, setViewMode, sortBy, setSortBy } =
     useCaseManagementStore()
   const user = useAuthStore((s) => s.user)
@@ -127,6 +129,15 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
           />
           Archived
         </label>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 w-full justify-start gap-2 px-1 text-xs text-muted-foreground"
+          onClick={() => setDeletedOpen(true)}
+        >
+          <Trash2 className="size-3.5" />
+          Deleted items
+        </Button>
       </div>
 
       {/* Case list */}
@@ -175,6 +186,7 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
       </div>
 
       <CreateCaseDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <DeletedCasesDialog open={deletedOpen} onOpenChange={setDeletedOpen} />
     </div>
   )
 }
