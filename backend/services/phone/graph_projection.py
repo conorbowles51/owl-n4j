@@ -419,15 +419,11 @@ def install():
 
 def pair_counts(conn, case_id, a: str, b: str, from_instant=None, to_instant=None) -> dict:
     """03 R-3: a pair edge's counts for a time slice, read as Conversations reads Between A and B in that window
-    (every copy, direct and group-free as the edge counts them), so the sliced edge equals the list it opens."""
-    from services.phone import streams
-    from services.phone.filters import StreamFilter
-    out = {}
-    for kind, prefix in KIND_PREFIX.items():
-        f = StreamFilter.model_validate({"case_id": str(case_id), "participants": [a, b], "participant_mode": "between",
-                                         "kinds": [kind], "collapse_copies": False, "from_instant": from_instant,
-                                         "to_instant": to_instant, "include_no_time": from_instant is None and
-                                         to_instant is None})
-        out[prefix] = streams.shown_count(conn, f)
+    (every copy, direct and group-free as the edge counts them), so the sliced edge equals the list it opens. Counted
+    by the one edge implementation, ``link_edges.communication`` (02 section 11.1, C11)."""
+    from services.phone import link_edges
+    c = link_edges.communication(conn, case_id, [a], [b], from_instant=from_instant, to_instant=to_instant,
+                                 group_scope="direct", collapse_copies=False)
+    out = {prefix: link_edges.comm_total(c, prefix) for prefix in KIND_PREFIX.values()}
     out["total"] = sum(out.values())
     return out

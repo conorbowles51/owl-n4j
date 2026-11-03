@@ -189,6 +189,82 @@ def phone_graph_pair(case_id: UUID = Query(...), a: str = Query(..., max_length=
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+class EdgeSubject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    dossier_id: Optional[UUID] = None
+    identity_key: Optional[str] = Field(None, max_length=512)
+
+
+class LinkEdgesBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    from_instant: Optional[datetime] = None
+    to_instant: Optional[datetime] = None
+    subjects: list[EdgeSubject] = Field(min_length=2, max_length=20)
+    slice: Optional[Literal["day", "week", "month", "year"]] = None
+    group_scope: Literal["direct", "include_groups"] = "direct"
+    collapse_copies: bool = True
+
+
+class EdgeRecordsBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    a: EdgeSubject
+    b: EdgeSubject
+    from_instant: Optional[datetime] = None
+    to_instant: Optional[datetime] = None
+    kind: Literal["messages", "calls", "emails", "payments"]
+    cursor: int = Field(0, ge=0)
+    limit: int = Field(200, ge=1, le=200)
+    group_scope: Literal["direct", "include_groups"] = "direct"
+    collapse_copies: bool = True
+
+
+def _subject(s: EdgeSubject) -> dict:
+    if bool(s.dossier_id) == bool(s.identity_key):
+        raise HTTPException(status_code=422, detail="Each subject is a person (dossier_id) or one identity (identity_key).")
+    return {"dossier_id": str(s.dossier_id)} if s.dossier_id else {"identity_key": s.identity_key}
+
+
+def _aware(*instants):
+    if any(i is not None and i.tzinfo is None for i in instants):
+        raise HTTPException(status_code=422, detail="Dates are sent as instants with an offset.")
+
+
+@router.post("/link-analysis/edges")
+def phone_link_edges(body: LinkEdgesBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Combined communication and money edges (02 section 11.2, 05 section 17.8)."""
+    from services.phone import link_edges
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    _aware(body.from_instant, body.to_instant)
+    try:
+        return link_edges.edges(db.connection(), body.case_id, [_subject(s) for s in body.subjects],
+                                from_instant=body.from_instant, to_instant=body.to_instant, slice_by=body.slice,
+                                group_scope=body.group_scope, collapse_copies=body.collapse_copies)
+    except link_edges.NotInCase as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/link-analysis/edge-records")
+def phone_link_edge_records(body: EdgeRecordsBody, db: Session = Depends(get_db),
+                            user: User = Depends(get_current_db_user)):
+    """The records behind one edge's count; ``total`` equals the edge count (03 R-1, R-3)."""
+    from services.phone import link_edges
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    _aware(body.from_instant, body.to_instant)
+    try:
+        return link_edges.edge_records(db.connection(), body.case_id, _subject(body.a), _subject(body.b), body.kind,
+                                       from_instant=body.from_instant, to_instant=body.to_instant,
+                                       offset=body.cursor, limit=body.limit, group_scope=body.group_scope,
+                                       collapse_copies=body.collapse_copies)
+    except link_edges.NotInCase as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except (ValueError, ValidationError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 class MediaFilter(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID
