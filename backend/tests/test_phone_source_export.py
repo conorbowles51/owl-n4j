@@ -128,3 +128,24 @@ def test_a_kept_result_is_listed_and_exports_its_records_as_frozen(world):
     assert "kept result" in out["words"]
     with Session(w["engine"]) as db, pytest.raises(LookupError):
         S.freeze_source(db, w["other"], "analysis_result", {"kept_id": "pa_synthetic"}, _U(w["user"]))
+
+
+def test_a_statement_check_exports_its_items_and_every_page_of_its_event_groups(monkeypatch):
+    """J-14b: a check's own records plus every event of each context group, across all pages, each once."""
+    from services.pattern_of_life import evaluation
+    items = [{"ordinal": 1, "ref_kind": "record", "record_uid": "u1"},
+             {"ordinal": 2, "ref_kind": "event_group", "record_uid": None},
+             {"ordinal": 3, "ref_kind": "event_group", "record_uid": None}]
+    pages = {(2, 0): {"items": [{"record_uid": "u2"}, {"record_uid": "u1"}], "next_cursor": 2},
+             (2, 2): {"items": [{"record_uid": "u3"}, {"record_uid": None}], "next_cursor": None},
+             (3, 0): {"items": [{"record_uid": "u4"}], "next_cursor": None}}
+    calls = []
+
+    def group_events(_conn, _case, _eid, ordinal, cursor):
+        calls.append((ordinal, cursor))
+        return pages[(ordinal, cursor)]
+    monkeypatch.setattr(evaluation, "read", lambda _conn, _case, _eid: {"items": items})
+    monkeypatch.setattr(evaluation, "group_events", group_events)
+    records, words = S._check_records(None, "c", {"evaluation_id": "e"})
+    assert records == ["u1", "u2", "u3", "u4"] and words == "The records of a statement check"
+    assert calls == [(2, 0), (2, 2), (3, 0)]
