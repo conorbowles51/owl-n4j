@@ -58,3 +58,21 @@ ledger.
 | Significant | 20 | not applicable | not applicable | not applicable | 20 |
 
 Before this release the score was 0 of 20: none of the tools these questions use existed (release 24fa46e3).
+
+## Ledger questions, tool layer, 2026-11-03 (`ledger-tool-layer-2026-11-03.jsonl`)
+
+12 questions on two live cases (BNB2, read only, and the verification case), asked through the agent's own tools
+with the run's case by `backend/scripts/financial_agent_ledger_eval.py`. Each known answer is computed by plain SQL in
+the script, independently of the code under test. The file holds scores only, never case values.
+
+| Tree | Score | Why the misses missed |
+|---|---|---|
+| before (38f6bdbc) | 0 of 12 | 8 had no tool (money between two parties, judgement calls, decisions, statement continuity); the timeline had no investigator additions; an account total did not say how many open judgement calls it rests on; summed graph money did not say it is not a total |
+| after (agent-ledger) | 12 of 12 | |
+
+The questions: money between the one pair of BNB2 accounts linked by reviewed identity, p0 to p2 and p3 apart; how
+many open judgement calls that figure rests on; open judgement calls in the case; the calls on one payment; who
+decided one payment and whether a model drafted it; the dates one account's statements cover; how many periods it has
+(saved, in the run, left out); the investigator's Timeline additions; money out of one account with the open calls
+it rests on; summed graph money marked not a total; decisions on a record of the verification case; judgement calls
+of the verification case.
