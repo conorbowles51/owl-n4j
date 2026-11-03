@@ -9,6 +9,7 @@ export function leftOutWords(f: DeriveBatchFacts): string {
   if (f.left_out.already_read) parts.push(`${n(f.left_out.already_read)} already read or waiting`)
   if (f.left_out.not_in_production) parts.push(`${n(f.left_out.not_in_production)} not in the production`)
   if (f.left_out.empty_placeholder) parts.push(`${n(f.left_out.empty_placeholder)} empty placeholders`)
+  if (f.left_out.uncategorised) parts.push(`${n(f.left_out.uncategorised)} the report gives no category (open one to have it read: its contents decide)`)
   return parts.length ? `Left out: ${parts.join(", ")}.` : ""
 }
 

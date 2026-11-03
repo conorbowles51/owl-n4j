@@ -8,7 +8,7 @@ vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
 import { BatchReading } from "./BatchReading"
 import { batchJob } from "./batch-words"
 
-const facts = (kind: string, eligible: number) => ({ kind, in_scope: eligible + 3, eligible, noun: kind === "transcript" ? "voice notes and videos" : "images", left_out: { already_read: 1, not_in_production: 2, empty_placeholder: 0 } })
+const facts = (kind: string, eligible: number) => ({ kind, in_scope: eligible + 3, eligible, noun: kind === "transcript" ? "voice notes and videos" : "images", left_out: { already_read: 1, not_in_production: 2, empty_placeholder: 0, uncategorised: 3 } })
 const batch = (over: object) => ({ id: "b1", kind: "transcript", scope_words: "this phone", total: 3, done: 0, failed: 0, queued: 3, running: 0, cancelled: false, cancelled_count: 0, state: "running", created_at: "2026-11-03T08:00:00Z", first_started_at: null, last_finished_at: null, noun: "voice notes and videos", left_out: {}, ...over })
 
 describe("Batch reading (M-5)", () => {
@@ -22,7 +22,7 @@ describe("Batch reading (M-5)", () => {
       </QueryClientProvider>,
     )
     const go = await screen.findByRole("button", { name: "Transcribe all 3 voice notes and videos in this scope" })
-    expect(screen.getByText("Left out: 1 already read or waiting, 2 not in the production.")).toBeInTheDocument()
+    expect(screen.getByText("Left out: 1 already read or waiting, 2 not in the production, 3 the report gives no category (open one to have it read: its contents decide).")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /Read text in all/ })).toBeNull() // no image in scope to read
     fireEvent.click(go)
     await waitFor(() => expect(api.createDeriveBatch).toHaveBeenCalledWith({ case_id: "c", phones: ["e1"] }, "transcript", "this phone"))

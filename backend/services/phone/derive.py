@@ -165,8 +165,10 @@ def request(conn, case_id, file_uid, kind, user_id=None) -> dict:
         {"i": uuid.uuid4(), "c": str(case_id), "e": f.extraction_id, "u": str(file_uid), "k": kind,
          "by": str(user_id) if user_id else None}).first()
     if r is None:
-        r = conn.execute(text("SELECT * FROM phone_derived_texts WHERE case_id = :c AND file_uid = :u AND kind = :k "
-                              "AND state IN ('queued', 'running') ORDER BY created_at LIMIT 1"),
+        # the reading already open may be waiting in a batch: a person asking for it moves it ahead of the batch,
+        # and a cancel of the batch keeps it (M-5)
+        r = conn.execute(text("UPDATE phone_derived_texts SET asked_by_person = true WHERE case_id = :c AND "
+                              "file_uid = :u AND kind = :k AND state IN ('queued', 'running') RETURNING *"),
                          {"c": str(case_id), "u": str(file_uid), "k": kind}).first()
     return _out(r)
 
@@ -345,7 +347,7 @@ def _claim(engine):
                 "SELECT id, state, attempts FROM phone_derived_texts WHERE state = 'queued' OR (state = 'running' AND "
                 "started_at < now() - make_interval(secs => CASE kind WHEN 'ocr' THEN :so ELSE :st END)) "
                 # a reading a person asked for is drawn before batch readings (M-5)
-                "ORDER BY (batch_id IS NOT NULL), created_at FOR UPDATE SKIP LOCKED LIMIT 1"),
+                "ORDER BY (batch_id IS NOT NULL AND NOT asked_by_person), created_at FOR UPDATE SKIP LOCKED LIMIT 1"),
                 {"so": STALE_SECONDS["ocr"], "st": STALE_SECONDS["transcript"]}).one_or_none()
             if r is None:
                 return None

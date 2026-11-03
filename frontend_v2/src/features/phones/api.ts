@@ -377,7 +377,7 @@ export async function correctDerivedText(caseId: string, derivedId: string, text
 /** Batch reading of a Media scope (07 5 Media, M-5): true counts by state, from the server. */
 export interface DeriveBatchFacts {
   kind: "ocr" | "transcript"; in_scope: number; eligible: number; noun: string
-  left_out: { already_read: number; not_in_production: number; empty_placeholder: number }
+  left_out: { already_read: number; not_in_production: number; empty_placeholder: number; uncategorised?: number }
 }
 export interface DeriveBatch {
   id: string; kind: "ocr" | "transcript"; scope_words: string | null; total: number; done: number; failed: number

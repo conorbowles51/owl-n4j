@@ -35,9 +35,13 @@ def upgrade():
     op.add_column("phone_derived_texts", sa.Column("batch_id", postgresql.UUID(as_uuid=True), sa.ForeignKey(
         "phone_derive_batches.id", ondelete="SET NULL", name="fk_phone_derived_texts_batch"), nullable=True))
     op.create_index("ix_phone_derived_texts_batch", "phone_derived_texts", ["batch_id", "state"])
+    # a person asked for this reading while it waited in a batch: drawn first, and a batch cancel keeps it
+    op.add_column("phone_derived_texts", sa.Column("asked_by_person", sa.Boolean(), nullable=False,
+                                                   server_default=sa.false()))
 
 
 def downgrade():
+    op.execute("ALTER TABLE phone_derived_texts DROP COLUMN IF EXISTS asked_by_person")
     op.drop_index("ix_phone_derived_texts_batch", table_name="phone_derived_texts")
     op.drop_column("phone_derived_texts", "batch_id")
     op.drop_index("ix_phone_derive_batches_case", table_name="phone_derive_batches")

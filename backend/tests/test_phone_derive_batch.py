@@ -18,15 +18,18 @@ pytestmark = needs_template
 
 
 def _files(engine, ext, rows):
-    """rows: (category, outcome); returns the file uids in order."""
+    """rows: (category, outcome[, has bytes]); returns the file uids in order."""
     out = []
     with engine.begin() as c:
-        for i, (cat, outcome) in enumerate(rows):
+        for i, row in enumerate(rows):
+            cat, outcome = row[:2]
+            on_disk = row[2] if len(row) > 2 else outcome != "missing"
             uid = str(uuid.uuid4())
             c.execute(text("INSERT INTO phone_files (extraction_id, document_index, ordinal, file_uid, local_path, "
-                           "outcome, tags, body) VALUES (:e, 0, :o, :f, :p, :out, :t, CAST('[]' AS jsonb))"),
+                           "disk_relpath, outcome, tags, body) VALUES (:e, 0, :o, :f, :p, :d, :out, :t, "
+                           "CAST('[]' AS jsonb))"),
                       {"e": ext, "o": 9500 + i, "f": uid, "p": "voice/synthetic-%d.opus" % i, "out": outcome,
-                       "t": cat})
+                       "t": cat, "d": "files/Audio/synthetic-%d.opus" % i if on_disk else None})
             out.append(uid)
     return out
 
@@ -34,14 +37,15 @@ def _files(engine, ext, rows):
 def test_m5_a_batch_queues_every_eligible_file_and_says_what_it_left_out(world):
     from services.phone import derive, derive_batch
     engine, case, other, ext = world
-    a, b, c_, missing, empty, image = _files(engine, ext, [
+    a, b, c_, missing, empty, image, uncat, no_bytes = _files(engine, ext, [
         ("Audio", "match"), ("Audio", "match"), ("Video", "no_hash"), ("Audio", "missing"),
-        ("Audio", "empty_placeholder"), ("Image", "match")])
+        ("Audio", "empty_placeholder"), ("Image", "match"), ("Uncategorized", "match"), ("Audio", "no_hash", False)])
     with engine.begin() as c:
         derive.request(c, case, a, "transcript")  # already asked for one at a time
     with engine.connect() as c:
         d = derive_batch.describe(c, case, "transcript", {})
-    assert d["eligible"] == 2 and d["left_out"] == {"already_read": 1, "not_in_production": 1, "empty_placeholder": 1}
+    assert d["eligible"] == 2 and d["left_out"] == {"already_read": 1, "not_in_production": 2, "empty_placeholder": 1,
+                                                    "uncategorised": 4}  # 3 of the fixture's files carry no category
     assert d["noun"] == "voice notes and videos"
     with engine.begin() as c:
         made = derive_batch.create(c, case_id=case, kind="transcript", scope={}, scope_words="all phones",
@@ -108,3 +112,25 @@ def test_m5_the_scope_is_the_media_filter(world):
         assert derive_batch.describe(c, case, "ocr", {})["eligible"] == 2
         assert derive_batch.describe(c, case, "ocr", {"phones": [str(uuid.uuid4())]})["eligible"] == 0
         assert derive_batch.describe(c, case, "transcript", {"categories": ["Image"]})["eligible"] == 0
+
+
+def test_m5_a_person_asking_for_a_reading_waiting_in_a_batch_moves_it_ahead_and_a_cancel_keeps_it(world):
+    """Review finding: the request returned the batch's open row, which then waited at the batch's place and was
+    deleted by a cancel of the batch."""
+    from services.phone import derive, derive_batch
+    engine, case, _, ext = world
+    first, second = _files(engine, ext, [("Audio", "match"), ("Audio", "match")])
+    with engine.begin() as c:
+        made = derive_batch.create(c, case_id=case, kind="transcript", scope={}, scope_words="", user_id=None)
+    with engine.begin() as c:
+        asked = derive.request(c, case, second, "transcript")
+    assert derive._claim(engine).id == uuid.UUID(asked["id"])
+    with engine.begin() as c:
+        c.execute(text("UPDATE phone_derived_texts SET state = 'queued', started_at = NULL WHERE id = :i"),
+                  {"i": asked["id"]})
+        out = derive_batch.cancel(c, case, made["id"])
+    assert out["cancelled_count"] == 1
+    with engine.connect() as c:
+        left = c.execute(text("SELECT id::text FROM phone_derived_texts WHERE batch_id = :b"),
+                         {"b": made["id"]}).scalars().all()
+    assert left == [asked["id"]]  # the person's reading stays queued

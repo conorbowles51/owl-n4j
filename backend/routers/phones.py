@@ -482,18 +482,25 @@ def phone_media_derived_accept(derived_id: UUID, body: AcceptBody, db: Session =
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+class BatchScope(BaseModel):
+    """The Media filter without its case (the case is the body's): unknown keys are refused, never ignored."""
+    model_config = ConfigDict(extra="forbid")
+    phones: list[UUID] = Field(default_factory=list)
+    categories: list[str] = Field(default_factory=list)
+    verification: list[str] = Field(default_factory=list)
+    linked_to_message: Optional[bool] = None
+
+
 class BatchBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID
     kind: Literal["ocr", "transcript"]
-    filter: dict = Field(default_factory=dict)
+    filter: BatchScope = Field(default_factory=BatchScope)
     scope_words: str = Field(default="", max_length=500)
 
 
-def _batch_scope(case_id, body_filter):
-    scope = dict(body_filter or {})
-    scope.pop("case_id", None)
-    return scope
+def _batch_scope(case_id, body_filter: BatchScope):
+    return body_filter.model_dump(mode="json", exclude_defaults=True)
 
 
 @router.post("/media/derive-batches/describe")

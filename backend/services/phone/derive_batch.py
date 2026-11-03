@@ -27,6 +27,12 @@ KINDS = {"transcript": ("Audio", "Video"), "ocr": ("Image",)}
 NOUN = {"transcript": ("voice note or video", "voice notes and videos"), "ocr": ("image", "images")}
 
 
+UNCAT = "coalesce(f.category, '') IN ('', 'Uncategorized')"
+# a file the batch reads: categorised for this kind, its bytes in the production, not an empty placeholder
+READABLE_SQL = ("NOT " + UNCAT + " AND f.disk_relpath IS NOT NULL AND coalesce(f.verification, '') NOT IN "
+                "('missing', 'empty_placeholder')")
+
+
 class BatchError(ValueError):
     pass
 
@@ -35,7 +41,9 @@ def _scope(conn, case_id, kind, scope):
     if kind not in KINDS:
         raise BatchError("Only transcription of audio and text reading of images can be run for a whole scope.")
     p = {"c": str(case_id), "kc": list(KINDS[kind]), "k": kind}
-    where = media._where(dict(scope or {}), p) + " AND f.category = ANY(:kc)"
+    # an uncategorised file is counted and left out (its bytes decide, so it is read one at a time, 05 17.4)
+    where = media._where(dict(scope or {}), p) + " AND (f.category = ANY(:kc) OR coalesce(f.category, '') IN ('', " \
+        "'Uncategorized'))"
     already = ("EXISTS (SELECT 1 FROM phone_derived_texts d WHERE d.case_id = :c AND d.file_uid = f.file_uid AND "
                "d.kind = :k AND d.state IN ('queued', 'running', 'done'))")
     return media._base(where), p, already
@@ -44,14 +52,16 @@ def _scope(conn, case_id, kind, scope):
 def describe(conn, case_id, kind, scope) -> dict:
     base, p, already = _scope(conn, case_id, kind, scope)
     r = conn.execute(text(
-        "SELECT count(*) AS in_scope, count(*) FILTER (WHERE coalesce(f.verification, '') = 'missing') AS missing, "
-        "count(*) FILTER (WHERE f.verification = 'empty_placeholder') AS placeholder, "
-        "count(*) FILTER (WHERE coalesce(f.verification, '') NOT IN ('missing', 'empty_placeholder') AND " + already +
-        ") AS already, count(*) FILTER (WHERE coalesce(f.verification, '') NOT IN ('missing', 'empty_placeholder') "
-        "AND NOT " + already + ") AS eligible " + base), p).one()
+        "SELECT count(*) AS in_scope, count(*) FILTER (WHERE " + UNCAT + ") AS uncategorised, "
+        "count(*) FILTER (WHERE NOT " + UNCAT + " AND "
+        "(coalesce(f.verification, '') = 'missing' OR f.disk_relpath IS NULL)) AS missing, "
+        "count(*) FILTER (WHERE NOT " + UNCAT + " AND f.disk_relpath IS NOT NULL AND f.verification = "
+        "'empty_placeholder') AS placeholder, "
+        "count(*) FILTER (WHERE " + READABLE_SQL + " AND " + already + ") AS already, "
+        "count(*) FILTER (WHERE " + READABLE_SQL + " AND NOT " + already + ") AS eligible " + base), p).one()
     return {"kind": kind, "in_scope": int(r.in_scope), "eligible": int(r.eligible),
             "left_out": {"already_read": int(r.already), "not_in_production": int(r.missing),
-                         "empty_placeholder": int(r.placeholder)},
+                         "empty_placeholder": int(r.placeholder), "uncategorised": int(r.uncategorised)},
             "noun": NOUN[kind][0 if r.eligible == 1 else 1]}
 
 
@@ -70,7 +80,7 @@ def create(conn, *, case_id, kind, scope, scope_words, user_id) -> dict:
     queued = conn.execute(text(
         "INSERT INTO phone_derived_texts (id, case_id, extraction_id, file_uid, kind, created_by_user_id, batch_id) "
         "SELECT gen_random_uuid(), :c, f.extraction_id, f.file_uid, :k, :u, :b " + base +
-        " AND coalesce(f.verification, '') NOT IN ('missing', 'empty_placeholder') AND NOT " + already +
+        " AND " + READABLE_SQL + " AND NOT " + already +
         # one open reading per file and kind (unique partial index): a reading asked for at the same moment wins
         " ON CONFLICT (case_id, file_uid, kind) WHERE state IN ('queued', 'running') DO NOTHING"),
         dict(p, b=batch, u=str(user_id) if user_id else None)).rowcount
@@ -114,7 +124,8 @@ def cancel(conn, case_id, batch_id) -> dict:
                      {"b": str(batch_id), "c": str(case_id)}).one_or_none()
     if b is None:
         raise LookupError("That batch is not in this case.")
-    gone = conn.execute(text("DELETE FROM phone_derived_texts WHERE batch_id = :b AND state = 'queued'"),
+    gone = conn.execute(text("DELETE FROM phone_derived_texts WHERE batch_id = :b AND state = 'queued' AND NOT "
+                             "asked_by_person"),
                         {"b": str(batch_id)}).rowcount
     conn.execute(text("UPDATE phone_derive_batches SET cancelled_at = coalesce(cancelled_at, now()), "
                       "cancelled_count = cancelled_count + :n WHERE id = :b"), {"n": gone, "b": str(batch_id)})
