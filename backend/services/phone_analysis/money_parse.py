@@ -204,7 +204,8 @@ def _direction(lower: str, template: dict | None):
 
 # a card number printed in groups of four ("4111 1111 1111 1234"): only whole groups of four, never a date or an
 # amount that follows an ending ("ending 1234 12/05", "ending in 1234 2025-11-02")
-_MORE_GROUPS = re.compile(r"(?:[ -]\d{4}){1,4}(?![\w/.,:-])")
+_MORE_GROUPS = re.compile(r"(?:[ -]\d{4}){1,4}")
+_ENDING_WORDS = re.compile(r"\b(?:end(?:s|ing)?|last)\b|xx|[*•]", re.I)
 
 
 def _reference(norm: str):
@@ -218,8 +219,12 @@ def _reference(norm: str):
             continue
         end = ref["end"]
         # an ending ("ending 1234", "last 4", "XX1234", "*1234") is never extended into a longer number
-        ending_form = re.search(r"end|last|xx|[*•]", norm[max(0, ref["start"] - 16):ref["end"]], re.I)
+        ending_form = _ENDING_WORDS.search(norm[max(0, ref["start"] - 16):ref["end"]])
         more = _MORE_GROUPS.match(norm, end) if len(digits) == 4 and not ending_form else None
+        # the groups are read whole or not at all: a match that stops before another digit or letter is a number of
+        # another shape, and a shorter card number would name the wrong ending
+        if more and re.match(r"[\w]|[ -]\d", norm[more.end():more.end() + 2]):
+            more = None
         if more and "*" not in ref["normalised"] and 12 <= len(digits) + len(re.sub(r"\D", "", more.group())) <= 19:
             digits += re.sub(r"\D", "", more.group())
             end = more.end()

@@ -738,7 +738,8 @@ def continuity_coverage(conn, case_id):
         if aid not in cache:
             spanless = AccountCoverage(uuid.UUID(aid), holder=account.get("holder"))
             try:
-                with Session(bind=conn) as db:
+                # a savepoint, so a failed read leaves the run's connection usable for every later query
+                with conn.begin_nested(), Session(bind=conn) as db:
                     group = expand_account_ids(db, uuid.UUID(str(case_id)), [uuid.UUID(aid)])
                     run = read_account_continuity(db, case_id=uuid.UUID(str(case_id)),
                                                   account_id=uuid.UUID(aid)) if len(group) <= 1 else None

@@ -123,3 +123,19 @@ def test_the_agent_tools_read_with_the_runs_case_and_never_the_models(world):
     assert "Read 3 of 3" in out["summary"]
     gone = tools["phone_messages"].invoke({"phones": ["C9"]})
     assert gone["data"]["not_in_case"] is True and gone["summary"].startswith("Not in this case.")
+
+
+def test_a_person_is_one_identity_or_the_tool_asks_which_and_nobody_is_dropped(world):
+    from tests.phone_streams_fixture import ensure_identity
+    with world["engine"].begin() as c:
+        # another identity whose value only contains "maria": neither it nor "Maria Lopez" is exactly "maria"
+        ensure_identity(c, world["case"], "app:synthchat:maria.l")
+    with _conn(world) as c:
+        # Zed is not in this case: the answer says so instead of answering for Maria alone
+        out = PT.messages(c, world["case"], people=["Maria Lopez", "Zed Elsewhere"])
+        assert out["not_in_case"] is True and "Zed Elsewhere" in out["reason"] and out["items"] == []
+        # an exact name wins over a name that only contains it
+        assert PT.messages(c, world["case"], people=["Maria Lopez", OWNER])["total_matching"] == 3
+        amb = PT.messages(c, world["case"], people=["maria"])
+        assert amb["available"] is False and amb["not_in_case"] is False and "say which one" in amb["reason"]
+        assert sorted(amb["candidates"]["maria"]) == sorted([ANA, "app:synthchat:maria.l"])

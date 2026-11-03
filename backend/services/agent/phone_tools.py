@@ -89,14 +89,10 @@ def _phone_ids(conn, case_id, phones):
     return ids, unknown
 
 
-def find_people(conn, case_id, query, limit=20) -> dict:
-    """Identities on the case's phones whose number, address or any phone's name for them matches ``query``
-    (folded as Search folds; three or more digits match a number's digits)."""
+def _people_hits(conn, case_id, q):
+    """Every identity matching ``q`` (no cap), its phone names, and whether the match is exact: a phone's name for it
+    or its value equal to ``q`` once folded, or the same number (seven or more digits, compared from the end)."""
     from services.phone import fold as phone_fold
-    from services.phone.readings import phone_labels
-    q = (query or "").strip()
-    if not q:
-        raise ValueError("Say whose name, number or address to look for.")
     folded = phone_fold.fold(q)
     digits = "".join(ch for ch in q if ch.isdigit())
     idents = conn.execute(text(
@@ -113,7 +109,25 @@ def find_people(conn, case_id, query, limit=20) -> dict:
             return True
         return len(digits) >= 3 and digits in "".join(ch for ch in (r.value_normalised or "") if ch.isdigit())
 
+    def exact(r):
+        hay = [r.value_display, r.identity_key] + [n.name for n in names.get(r.identity_id, [])]
+        if folded and any(folded == phone_fold.fold(h) for h in hay if h):
+            return True
+        own = "".join(ch for ch in (r.value_normalised or "") if ch.isdigit())
+        return len(digits) >= 7 and len(own) >= 7 and (own.endswith(digits) or digits.endswith(own))
+
     hits = [r for r in idents if hit(r)]
+    return hits, names, {r.identity_key for r in hits if exact(r)}
+
+
+def find_people(conn, case_id, query, limit=20) -> dict:
+    """Identities on the case's phones whose number, address or any phone's name for them matches ``query``
+    (folded as Search folds; three or more digits match a number's digits)."""
+    from services.phone.readings import phone_labels
+    q = (query or "").strip()
+    if not q:
+        raise ValueError("Say whose name, number or address to look for.")
+    hits, names, exact = _people_hits(conn, case_id, q)
     if not hits:
         return _not_in_case("find_people", case_id, "No one on the phones in this case matches %r." % q)
     counts = {k: int(n) for k, n in conn.execute(text(
@@ -125,7 +139,7 @@ def find_people(conn, case_id, query, limit=20) -> dict:
     items = [{"identity_key": r.identity_key, "kind": r.kind, "value": r.value_display,
               "names": [{"phone": labels.get(str(n.extraction_id)), "name": n.name}
                         for n in names.get(r.identity_id, []) if n.is_phone_name],
-              "events": counts.get(r.identity_key, 0)} for r in hits[:lim]]
+              "events": counts.get(r.identity_key, 0), "exact": r.identity_key in exact} for r in hits[:lim]]
     return _base("find_people", case_id, total_matching=len(hits), returned=len(items),
                  has_more=len(hits) > len(items), next_offset=None, items=items,
                  coverage="Searched every identity on the %d phone(s) in this case." % len(labels),
@@ -134,25 +148,43 @@ def find_people(conn, case_id, query, limit=20) -> dict:
 
 
 def _resolve_people(conn, case_id, people):
-    """Identity keys, numbers, addresses or names to identity keys in this case; ``(keys, unknown)``. A name or
-    number matching several identities takes all of them (stated in the result)."""
-    keys, unknown, notes = [], [], []
+    """Each person named (an identity key, number, address or name) to exactly one identity in this case:
+    ``(keys, problem)``. ``problem`` is ``None``, or a result to return as it is: "Not in this case." naming who was
+    not found, or, when a name fits several identities and none exactly, the candidates to choose from. Nobody is
+    dropped and no identity is added that was not asked for."""
+    keys, unknown, unclear = [], [], []
     for p in people or []:
         s = str(p).strip()
-        exact = conn.execute(text("SELECT identity_key FROM pv_identity WHERE case_id = :c AND identity_key = :k"),
-                             {"c": str(case_id), "k": s}).scalar()
-        if exact:
-            keys.append(exact)
+        if not s:
             continue
-        found = find_people(conn, case_id, s, limit=MAX_LIMIT)
-        if not found["available"]:
+        key = conn.execute(text("SELECT identity_key FROM pv_identity WHERE case_id = :c AND identity_key = :k"),
+                           {"c": str(case_id), "k": s}).scalar()
+        if key:
+            keys.append(key)
+            continue
+        hits, _, exact = _people_hits(conn, case_id, s)
+        pick = sorted(exact) if exact else [r.identity_key for r in hits]
+        if not pick:
             unknown.append(s)
-            continue
-        ks = [i["identity_key"] for i in found["items"]]
-        if len(ks) > 1:
-            notes.append("%r matched %d identities; all of them are used." % (s, len(ks)))
-        keys += ks
-    return list(dict.fromkeys(keys)), unknown, notes
+        elif len(pick) == 1:
+            keys.append(pick[0])
+        else:
+            unclear.append((s, pick))
+    if unknown:
+        return keys, "unknown", "No one on the phones in this case matches %s." % ", ".join(repr(u) for u in unknown)
+    if unclear:
+        return keys, "unclear", unclear
+    return list(dict.fromkeys(keys)), None, None
+
+
+def _people_problem(tool, case_id, kind, detail):
+    if kind == "unknown":
+        return _not_in_case(tool, case_id, detail)
+    return {"schema": _schema(tool), "case_id": str(case_id), "available": False, "not_in_case": False,
+            "reason": " ".join("%r fits %d people on the phones; say which one (by identity_key)." % (s, len(ks))
+                               for s, ks in detail),
+            "candidates": {s: ks[:MAX_LIMIT] for s, ks in detail}, "total_matching": 0, "returned": 0,
+            "has_more": False, "items": []}
 
 
 # ---- messages and calls -------------------------------------------------------------------------------------------
@@ -179,10 +211,10 @@ def messages(conn, case_id, *, people=(), mode="between", start=None, end=None, 
     from services.phone import streams
     from services.phone.filters import StreamFilter
     tool = "messages"
-    keys, unknown_people, notes = _resolve_people(conn, case_id, people)
-    if unknown_people and not keys:
-        return _not_in_case(tool, case_id, "No one on the phones in this case matches %s." % ", ".join(
-            repr(p) for p in unknown_people))
+    keys, problem, detail = _resolve_people(conn, case_id, people)
+    if problem:
+        return _people_problem(tool, case_id, problem, detail)
+    notes = []
     ext_ids, unknown_phones = _phone_ids(conn, case_id, phones)
     if unknown_phones:
         return _not_in_case(tool, case_id, "There is no phone %s in this case." % ", ".join(unknown_phones))
@@ -247,9 +279,10 @@ def contact_summary(conn, case_id, person) -> dict:
     """One person's messages and calls on every phone: totals by kind, the first and the last contact."""
     from services.phone import streams
     from services.phone.filters import StreamFilter
-    keys, unknown, notes = _resolve_people(conn, case_id, [person])
-    if not keys:
-        return _not_in_case("contact_summary", case_id, "No one on the phones in this case matches %r." % person)
+    keys, problem, detail = _resolve_people(conn, case_id, [person])
+    if problem:
+        return _people_problem("contact_summary", case_id, problem, detail)
+    notes = []
     f = StreamFilter.model_validate({"case_id": str(case_id), "participants": keys, "participant_mode": "any",
                                      "group_scope": "include_groups", "zone": {"mode": "case"}})
     idx = streams.index_comm_events(conn, f)

@@ -660,3 +660,11 @@ def test_a_person_whose_name_contains_a_model_name_is_a_person():
         assert INST.reviewed({"review": {"reviewed_by": name, "reviewed_on": "2026-11-03"}}), name
     for name in ("Claude", "claude-opus-5-5", "DeepSeek V3", "gpt-4o"):
         assert not INST.reviewed({"review": {"reviewed_by": name, "reviewed_on": "2026-11-03"}}), name
+
+
+@pytest.mark.parametrize("text_", ["Your card 4111 1111 1111 1234. Charged $20.00",
+                                   "Spending on card 4111 1111 1111 1234 $20.00",
+                                   "Card 4111-1111-1111-1234, charged $20.00"])
+def test_a_grouped_card_number_is_read_whole_before_punctuation_and_after_any_word(text_):
+    r = P.parse(text_, institution=None, phone_country="US", template=None)
+    assert r.account_digits == "4111111111111234" and MS._masked_ref(r) == "ending 1234"

@@ -11,7 +11,7 @@
 from alembic import op
 
 revision = "20261103_phone_analysis"
-down_revision = "20261103_phone_derived_texts"
+down_revision = "20261103_phone_derived_open_unique"
 branch_labels = None
 depends_on = None
 
