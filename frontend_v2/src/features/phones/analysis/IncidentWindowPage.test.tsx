@@ -5,6 +5,8 @@ import { describe, expect, it, vi } from "vitest"
 
 /** 05 section 16 (approach 13) and J-5c entries. Invented data only. */
 const pattern = vi.hoisted(() => ({ subjects: vi.fn() }))
+const fetchAPI = vi.hoisted(() => vi.fn().mockResolvedValue({ run: null, items: [] }))
+vi.mock("@/lib/api-client", () => ({ fetchAPI }))
 vi.mock("@/features/pattern/api", () => ({ patternAPI: pattern }))
 vi.mock("@/features/pattern/components/WindowPanel", () => ({
   WindowPanel: (p: { at: string; day?: string | null; range?: { start: string; end: string } | null; zone?: string }) => (
@@ -45,5 +47,21 @@ describe("Incident window (05 16, J-5c)", () => {
     fireEvent.change(screen.getByLabelText(/Moment/), { target: { value: "2023-05-01T10:00" } })
     fireEvent.click(screen.getByRole("button", { name: "Open the window" }))
     expect(await screen.findByText("Around the typed moment.")).toBeInTheDocument()
+  })
+
+  it("states approach 2's clock differences beside the times, or that none is known; no time is moved", async () => {
+    fetchAPI.mockResolvedValueOnce({ run: { id: "r1", finished_at: null, current: true }, items: [
+      { phones: ["C1", "C2"], family: "whatsapp", timestamp_class: "device_stamped", offset_s: 40, pairs: 12, words: "C2's clock reads 40 seconds ahead of C1's (spread 3 s, 12 pairs)." }] })
+    mount("/cases/c1/w?at=2023-05-01T10:00:00Z")
+    const region = await screen.findByRole("region", { name: "Clock differences between phones" })
+    expect(await screen.findByText("whatsapp: C2's clock reads 40 seconds ahead of C1's (spread 3 s, 12 pairs).")).toBeInTheDocument()
+    expect(region).toHaveTextContent("no time here is moved")
+    expect((await shown()).at).toBe("2023-05-01T10:00:00Z")
+  })
+
+  it("says no clock difference is known when Messages across phones has not run", async () => {
+    fetchAPI.mockResolvedValueOnce({ run: null, items: [] })
+    mount("/cases/c1/w?at=2023-05-01T10:00:00Z")
+    expect(await screen.findByText(/no difference between the phones' clocks is known; each time is shown as its phone recorded it/)).toBeInTheDocument()
   })
 })

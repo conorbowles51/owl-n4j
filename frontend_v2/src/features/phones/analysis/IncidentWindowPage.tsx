@@ -4,6 +4,7 @@ import { useParams, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { patternAPI } from "@/features/pattern/api"
 import { WindowPanel } from "@/features/pattern/components/WindowPanel"
+import { ClockOffsets } from "./ClockOffsets"
 
 /**
  * Approach 13, the incident window (05 section 16; 07 J-5): every phone in the case around one anchor, one lane group
@@ -49,6 +50,7 @@ export default function IncidentWindowPage() {
       <section data-part="results" aria-label="Results">
         {subjects.isLoading && <p className="text-sm">Finding the latest moment on the phones…</p>}
         {!anchor && !subjects.isLoading && <p className="text-sm">The case's phones hold no timed record yet. Choose a moment above.</p>}
+        {anchor && <ClockOffsets caseId={caseId} />}
         {anchor && <WindowPanel key={`${anchor}|${day}|${range?.end}|${zone}`} caseId={caseId} at={anchor} day={day} range={range} caseEvents={[]} zone={zone} exportable />}
       </section>
     </div>

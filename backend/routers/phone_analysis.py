@@ -180,6 +180,14 @@ def across_badges(body: AcrossBadgesBody, db: Session = Depends(get_db), user: U
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+@router.get("/clock-offsets")
+def clock_offsets(case_id: UUID = Query(...), db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Approach 2's clock offset readings per phone pair, from the latest completed run (05 sections 5.3.5 and 16)."""
+    from services.phone_analysis import across_badges as B
+    authorize_case(db, case_id, user, ("case", "view"))
+    return B.clock_offsets(db.connection(), case_id)
+
+
 @router.post("/results/{result_id}/decisions")
 def decide(result_id: UUID, body: DecisionBody, db: Session = Depends(get_db),
            user: User = Depends(get_current_db_user)):

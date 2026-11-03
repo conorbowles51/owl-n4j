@@ -53,6 +53,18 @@ def test_badges_say_also_on_the_other_phone_or_only_on_this_one_with_the_reasons
     (late,) = items[late_x]
     assert late["words"] == "Only on this phone, not on C2" and late["kind"] == "one_side_only"
     assert late["reasons"] and all(isinstance(r, str) for r in late["reasons"])
+    with engine.connect() as c:
+        offsets = B.clock_offsets(c, case)
+    assert offsets["run"]["id"] == run["id"] and offsets["items"]
+    assert all(o["phones"] == ["C1", "C2"] and o["words"] for o in offsets["items"])
+
+
+@needs_template
+def test_no_run_states_no_clock_offset(engine):
+    with engine.begin() as c:
+        case = make_case(c)
+    with engine.connect() as c:
+        assert B.clock_offsets(c, case) == {"run": None, "items": []}
 
 
 def test_more_than_the_limit_is_refused_with_the_count():

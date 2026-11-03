@@ -94,3 +94,19 @@ def badges(conn, case_id, record_uids) -> dict:
 def _run_out(conn, case_id, run) -> dict:
     return {"id": str(run.id), "finished_at": run.finished_at.isoformat() if run.finished_at else None,
             "current": _current(conn, case_id, run)}
+
+
+def clock_offsets(conn, case_id) -> dict:
+    """Approach 2's clock offset readings per phone pair and family, from the latest completed run, for the incident
+    window to state beside its times (05 sections 5.3.5 and 16). The offset is a reading about two phones' clocks;
+    it never moves a time."""
+    run = latest_run(conn, case_id)
+    if run is None:
+        return {"run": None, "items": []}
+    items = [{"phones": (r.measures or {}).get("phones"), "family": (r.measures or {}).get("family"),
+              "timestamp_class": r.strength, "offset_s": (r.measures or {}).get("offset_s"),
+              "pairs": (r.measures or {}).get("n"), "words": (r.measures or {}).get("words")}
+             for r in conn.execute(text(
+                 "SELECT strength, measures FROM phone_analysis_results WHERE run_id = :r AND kind = 'clock_offset' "
+                 "ORDER BY measures->>'phones', measures->>'family'"), {"r": run.id})]
+    return {"run": _run_out(conn, case_id, run), "items": items}
