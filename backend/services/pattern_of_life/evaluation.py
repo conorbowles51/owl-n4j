@@ -43,6 +43,17 @@ OUTCOME_WORDS = {
     "supported": "Records on the phone support this statement.",
     "mixed": "Records on the phone both support and undercut this statement.",
     "insufficient_data": "The phone does not hold enough for this time to test the statement.",
+    "no_record": "The phone holds no record of this kind for this time, for the reason stated: that is a finding "
+                 "about what was extracted, not about what happened.",
+}
+# no_record (agent-phones; report "Statement check with the money lane"): "insufficient data" (the phone holds some
+# of this time, too little to test) and "no record of something that should be there" are different findings. The
+# reasons are fixed codes; each says why the phone cannot hold the record.
+NO_RECORD_REASONS = {
+    "not_extracted": "The extraction holds no %s at all.",
+    "outside_coverage": "The time is outside what the phone's extraction covers (records run %s to %s).",
+    "after_extraction": "The time is after the phone was extracted.",
+    "not_selected": "The production did not select this time.",
 }
 GAP_WORDS = {"no_data": "Nothing recorded on this phone for this time.", "powered_off": "The phone was switched off.",
              "powered_off_inferred": "The phone appears to have been switched off.",
@@ -487,6 +498,52 @@ def outcome(kind, items, summary):
     return "supported", "%d supporting item%s and none undercutting" % (n_sup, "" if n_sup == 1 else "s")
 
 
+_NEEDS = {"inactive": ("activity records", "pol_activity_event"), "active": ("activity records", "pol_activity_event"),
+          "at_place": ("location records", "pol_place_observation"),
+          "not_at_place": ("location records", "pol_place_observation"),
+          "with_subject": ("location records", "pol_place_observation"),
+          "apart_from_subject": ("location records", "pol_place_observation"),
+          "contact": ("messages or calls", "pv_comm_event"), "no_contact": ("messages or calls", "pv_comm_event")}
+
+
+def no_record_reason(conn, claim, exts, items) -> tuple | None:
+    """``(code, words)`` when the subject's phones cannot hold the record the statement needs for its window, else
+    None. Only an ``insufficient_data`` outcome is turned into ``no_record``: a supporting or undercutting item means
+    the phone holds records for the time. Checked in order: no record of the kind on any subject phone; the whole
+    window before the first or after the last such record on every phone; every piece of the window after the
+    extraction or outside the production's selection."""
+    what, table = _NEEDS[claim["kind"]]
+    a, b = claim["window_start"], claim["window_end"]
+    has_kind = conn.execute(text("SELECT EXISTS (SELECT 1 FROM %s WHERE extraction_id = ANY(CAST(:e AS uuid[])))"
+                                 % table), {"e": list(exts)}).scalar()
+    if not has_kind:
+        return "not_extracted", NO_RECORD_REASONS["not_extracted"] % what
+    # the extraction's coverage: its first and last timed record of any kind, on every subject phone together
+    first, last = conn.execute(text("SELECT min(instant_utc), max(coalesce(end_utc, instant_utc)) FROM "
+                                    "pol_activity_event WHERE extraction_id = ANY(CAST(:e AS uuid[]))"),
+                               {"e": list(exts)}).first()
+    if first is not None and (b <= first or a > last):
+        return "outside_coverage", NO_RECORD_REASONS["outside_coverage"] % (first.date().isoformat(),
+                                                                             last.date().isoformat())
+    gaps = [it for it in items if it["role"] == "gap" and it["ref_kind"] == "window_piece"
+            and it["reason_code"] in GAP_STATES]
+    for code, states in (("after_extraction", {"after_extraction"}),
+                         ("not_selected", {"outside_selection", "not_selected"})):
+        for e in exts:
+            mine = sorted((g for g in gaps if g["extraction_id"] == str(e)), key=lambda g: g["at_utc"])
+            covered, at = True, a
+            for g in mine:
+                if g["reason_code"] not in states or g["at_utc"] > at:
+                    covered = False
+                    break
+                at = max(at, g["end_utc"])
+            if not mine or not covered or at < b:
+                break
+        else:
+            return code, NO_RECORD_REASONS[code]
+    return None
+
+
 def words_for(kind, out):
     w = OUTCOME_WORDS[out]
     if isinstance(w, dict):
@@ -533,6 +590,11 @@ def compute(conn, claim) -> dict:
     order = {"contradicting": 0, "supporting": 1, "gap": 2, "context": 3}
     items.sort(key=lambda it: (order[it["role"]], it["at_utc"] or a, it["ref_kind"], it["ref_id"]))
     out, basis = outcome(claim["kind"], items, summary)
+    if out == "insufficient_data":
+        why = no_record_reason(conn, claim, inp["subject_extractions"], items)
+        if why:
+            out, basis = "no_record", why[1]
+            summary = dict(summary, no_record_reason=why[0])
     summary = dict(summary, not_yet_checked=not_yet_checked(conn, claim, inp["subject_extractions"], a, b),
                    words=words_for(claim["kind"], out))
     return {"inputs": inp, "fingerprint": fingerprint(inp), "items": items, "outcome": out, "outcome_basis": basis,

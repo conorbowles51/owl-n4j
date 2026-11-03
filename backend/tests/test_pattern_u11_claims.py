@@ -186,7 +186,8 @@ def test_at_place_supported_near_and_contradicted_far(hooks):
             empty = confirmed(c, case, me, "at_place", subj, a + timedelta(days=3), b + timedelta(days=3),
                               place={"lat": LAT, "lon": LON, "radius_m": 50})
             ev = evaluation.evaluate(c, case, empty["id"], me.name)
-            assert ev["outcome"] == "insufficient_data"
+            # three days after every record on the phone: no record, outside the extraction's coverage (agent-phones)
+            assert ev["outcome"] == "no_record" and ev["summary"]["no_record_reason"] == "outside_coverage"
             assert any(i["reason_code"] == "no_location" for i in ev["items"] if i["role"] == "gap")
 
 
