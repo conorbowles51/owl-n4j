@@ -6,7 +6,10 @@ The one implementation (C11): spec 05's approach screens, spec 03's graph pair e
 A side is a person (a dossier: every phone identity linked to it, the ``reviewed`` level) or one identity (its exact
 identity key). Communication is counted by the Conversations query itself (``streams.Query``) with the two sides
 as ``between`` participants, so an edge's message, call and email counts equal Conversations' Between A and B under
-the same ``group_scope`` and copy setting (03 R-1, R-3). Events with no time are counted in ``no_time_count``.
+the same ``group_scope`` and copy setting (03 R-1, R-3). Each event is counted in one direction only, by the
+side that sent that copy (a forwarded message's original sender does not count it back the other way). Events with no
+time are counted in ``no_time_count``; with a window set they are left out and the count is ``None`` (not
+applicable).
 
 Money comes from the ledger the way the reviewed identity graph reads it: admitted, current rows (``ledger_status
 = 'admitted'``, ``superseded_by_id IS NULL``, so a corrected amount is the one used) whose reviewed payment
@@ -114,11 +117,17 @@ def communication(conn, case_id, a_keys, b_keys, *, from_instant=None, to_instan
     shown = "copy_rank = 1" if collapse_copies else "true"
     zone = _zone(conn, case_id)
     out = {"%s_%s" % (p, d): 0 for p in KIND_PREFIX.values() for d in ("ab", "ba")}
-    out.update({"first_instant": None, "last_instant": None, "phones": [], "no_time_count": 0})
+    # a window leaves out events with no time, so their count is not applicable then (None), not 0
+    windowed = from_instant is not None or to_instant is not None
+    out.update({"first_instant": None, "last_instant": None, "phones": [], "no_time_count": None if windowed else 0})
     phones, firsts, lasts, slices = set(), [], [], defaultdict(lambda: {"messages": 0, "calls": 0, "emails": 0})
     for d, sender in (("ab", 0), ("ba", 1)):
         q = _SidesQuery(conn, f, owners, a_keys, b_keys)
-        sent = q.party((q._sides[sender]), "s")
+        # each event goes one way only: to the side of its actual sender, or, when neither side sent this copy, to
+        # the side of its original sender (a forwarded message is not also counted back to its author)
+        a_sent = "(%s OR (NOT %s AND %s))" % (q.party(q._sides[0], "a"), q.party(q._sides[1], "a"),
+                                              q.party(q._sides[0], "s"))
+        sent = a_sent if sender == 0 else "NOT %s" % a_sent
         q.params["zone"] = zone
         bucket = ("date_trunc('%s', sort_instant AT TIME ZONE :zone)::date" % slice_by) if slice_by else "NULL::date"
         for r in conn.execute(text(
@@ -127,7 +136,8 @@ def communication(conn, case_id, a_keys, b_keys, *, from_instant=None, to_instan
                 "array_agg(DISTINCT extraction_id::text) AS phones FROM m WHERE %s GROUP BY 1, 2"
                 % (q.matched_sql([sent]), bucket, shown)), q.params):
             out["%s_%s" % (KIND_PREFIX[r.kind], d)] += int(r.n)
-            out["no_time_count"] += int(r.no_time)
+            if not windowed:
+                out["no_time_count"] += int(r.no_time)
             phones.update(r.phones)
             if r.first:
                 firsts.append(r.first)

@@ -262,3 +262,38 @@ class MoneyTests(DuplicateTestCase):
         assert [r["amount_minor"] for r in rows] == [100_00]
         last = LE._date_in_zone("2026-02-01T23:59:59Z", "UTC", end=True)
         assert len(LE.payments(self.db, self.case.id, a, b, to_date=last)["rows"]) == 2
+
+
+@needs_template
+def test_a_forwarded_message_is_counted_once_in_the_direction_of_its_actual_sender():
+    """The owner forwards to Ana a message Ana wrote: Ana is its original sender, the owner its sender. It is one
+    message between them, sent owner to Ana; the original sender does not make it also Ana to owner."""
+    from tests.phone_streams_fixture import at, phone
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            fwd = dict(kind="message", instant=at(2023, 3, 9, 9), body="synthetic forwarded", thread="t", app="WhatsApp",
+                       direction="outgoing", dup=None,
+                       parties=[(OWNER, "sender", True, None, None), (ANA, "recipient", False, None, None),
+                                (ANA, "original_sender", False, None, None)])
+            phone(c, case, label="C1", events=[_m(at(2023, 3, 2, 9), ANA, [OWNER]), fwd])
+        with engine.connect() as c:
+            comm = LE.edges(c, case, [{"identity_key": ANA}, {"identity_key": OWNER}])["edges"][0]["communication"]
+            assert (comm["messages_ab"], comm["messages_ba"]) == (1, 1)
+            assert LE.comm_total(comm, "messages") == _conversations(c, case, ANA, OWNER, "message", "direct", True) == 2
+
+
+@needs_template
+def test_no_time_count_is_not_applicable_when_a_window_is_set():
+    from tests.phone_streams_fixture import at, phone
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            phone(c, case, label="C1", events=[_m(at(2023, 3, 2, 9), ANA, [OWNER]), _m(None, ANA, [OWNER])])
+        with engine.connect() as c:
+            whole = LE.edges(c, case, [{"identity_key": ANA}, {"identity_key": OWNER}])["edges"][0]["communication"]
+            assert whole["no_time_count"] == 1 and whole["messages_ab"] == 2
+            win = LE.edges(c, case, [{"identity_key": ANA}, {"identity_key": OWNER}],
+                           from_instant="2023-03-01T00:00:00+00:00", to_instant="2023-04-01T00:00:00+00:00")
+            comm = win["edges"][0]["communication"]
+            assert comm["no_time_count"] is None and comm["messages_ab"] == 1

@@ -38,6 +38,8 @@ WINDOW_MAX = 1000
 FULL_LOAD_ROWS = 5000  # D-2, settled from 03 section 20.3: see 03 section 19
 SENDER_SQL = "(p.role IN ('sender','caller','author','original_sender') OR p.implied_role IN ('sender','caller'))"
 RECIPIENT_SQL = "(p.role IN ('recipient','cc','bcc','callee') OR p.implied_role IN ('recipient','callee'))"
+# the party that sent this copy (not the original author of a forwarded message): directions are counted by it
+ACTUAL_SENDER_SQL = "(p.role IN ('sender','caller','author') OR p.implied_role IN ('sender','caller'))"
 # A participant key that stands for the owner of each phone in scope (07 J-3 "Between A and B" with one person).
 PHONE_OWNER = "owner:this-phone"
 PARTY_KEY_SQL = ("coalesce(p.identity_key, CASE WHEN p.role = 'owner_implicit' OR p.is_phone_owner IS TRUE "
@@ -141,7 +143,7 @@ class Query:
             "LEFT JOIN unnest(CAST(:oe AS uuid[]), CAST(:ok AS text[])) AS ok(e, k) ON ok.e = ev.extraction_id")
 
     def party(self, keys, side=None):
-        cond = {"s": SENDER_SQL, "r": RECIPIENT_SQL, None: "true"}[side]
+        cond = {"s": SENDER_SQL, "r": RECIPIENT_SQL, "a": ACTUAL_SENDER_SQL, None: "true"}[side]
         keys = list(keys)
         match = "%s = ANY(CAST(%s AS text[]))" % (PARTY_KEY_SQL, self._p([k for k in keys if k != PHONE_OWNER]))
         if PHONE_OWNER in keys:  # each phone's own owner (07 J-3: Between A and B, B the owner of the phone)
