@@ -2178,6 +2178,14 @@ the reviewed path (plan 6.6; `account_identity.py`, `identity_graph.py:77-128`).
 Acceptance: an edge with 2 payments in USD and 1 in MXN shows two totals; a p4 reading never changes a total; a
 merge undone removes its contribution on recompute.
 
+**Measured for the approach screens (`cb-approaches`, live, read-only, 2026-11-03).** Wiring the edges into the
+approach screens needs a case with at least one reviewed phone-to-counterparty link (18, row 10). Of the 5 live
+cases with phones, the one with ledger rows (the synthetic training case, 65 admitted rows) has 0 phone identities
+under a reviewed person, and the one with reviewed phone persons (the synthetic phones-only case, 10) has no ledger.
+No case meets the condition, so the approach screens do not show link edges yet (do not build now). **Reverse if** a
+case holds a reviewed person with phone identities whose entity is named on an account's reviewed entity links; the
+edges are then read from `link_edges` as the graph screen reads them.
+
 ---
 
 ## 18. Build order, dependencies and measurement gates
