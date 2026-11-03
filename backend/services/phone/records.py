@@ -19,7 +19,7 @@ from services.phone import corrections, readings
 from services.phone import time_display as T
 from services.phone.labels import LabelContext
 
-SOURCE_ROW_ABSENT = "The production does not include the app database this record was read from."
+from services.phone.source_db import SOURCE_ROW_ABSENT  # noqa: F401 (the sentence other screens share)
 ABSENCE = {
     "no_reference": "This record does not refer to a file.",
     "missing": "The report refers to a file that is not in the production.",
@@ -150,6 +150,9 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
                       "hashes": {"stated_md5": a.declared_md5, "stated_sha256": a.declared_sha256,
                                  "computed_md5": a.disk_md5, "computed_sha256": a.disk_sha256},
                       "sizes": {"stated": a.declared_size, "on_disk": a.disk_size}, "absence": absence})
+    # where the report says this record was read from (05 section 17.2): never opened here, only stated
+    from services.phone import source_db
+    sources = source_db.record_sources(conn, ext, loc.document_index, loc.ordinal)
     corr = [{"field_path": c["field_path"], "value_index": c["value_index"], "original": c["machine_text"],
              "corrected": c["corrected_text"], "masked": c["masked"], "current": c["current"], "is_undo": c["is_undo"],
              "reason": c["reason"], "by": c["by"], "at": c["at"]}
@@ -174,7 +177,7 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
                    "original_text": t.original_text, "offset_present": bool(t.offset_present)}
                   for k, t in sorted(times.items(), key=lambda kv: (kv[0][0] != str(record_uid), kv[0][1], kv[0][2]))],
         "files": files, "files_absence": None if files else ABSENCE["no_reference"],
-        "source_row": {"available": False, "reason": SOURCE_ROW_ABSENT},
+        "source_row": source_db.source_row(sources), "sources": sources,
         "corrections": corr, "interpretation_level": loc.interpretation_level, "zone": zone,
         "readings": _open_readings(conn, case_id, ext, loc.model_type, label),
     }
