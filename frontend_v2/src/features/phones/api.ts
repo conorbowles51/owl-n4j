@@ -100,6 +100,14 @@ export async function getRecord(caseId: string, recordUid: string, zone?: string
   return RecordDetailSchema.parse(await fetchAPI(`/api/phones/records/${encodeURIComponent(recordUid)}?${q}`))
 }
 
+/** One sensitive value in full; the server logs who revealed it, when, and which record and field first (05 3.8). */
+export async function revealValue(caseId: string, recordUid: string, fieldPath: string, valueIndex: number) {
+  return fetchAPI<{ value: string; logged: boolean }>(`/api/phones/records/${encodeURIComponent(recordUid)}/reveal`, {
+    method: "POST",
+    body: { case_id: caseId, field_path: fieldPath, value_index: valueIndex },
+  })
+}
+
 export async function getSettings(caseId: string) {
   return fetchAPI<{ case_id: string; time_zone: string | null; effective: { name: string; basis: string; note: string | null }; updated_at: string | null; updated_by: string | null }>(
     `/api/phones/settings?case_id=${encodeURIComponent(caseId)}`,

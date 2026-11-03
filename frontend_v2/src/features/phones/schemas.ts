@@ -149,12 +149,15 @@ const ValueSchema = z.object({
   time: z
     .object({ original_text: z.string().nullable(), offset_present: z.boolean().nullable(), full: z.string(), instant: z.string().nullable() })
     .optional(),
+  /** a sensitive value shown masked until a person presses Reveal (05 section 3.8) */
+  masked: z.boolean().optional(),
 })
 export interface RecordFieldData {
   name: string | null
   kind: string
   data_type: string | null
   values: z.infer<typeof ValueSchema>[]
+  sensitive?: boolean
   attributes: Record<string, unknown>
   children: { record_uid: string; model_type: string; cellebrite_id: string | null; deleted_state: string | null; fields: RecordFieldData[] }[]
 }
@@ -164,6 +167,7 @@ const FieldSchema: z.ZodType<RecordFieldData> = z.lazy(() =>
     kind: z.string(),
     data_type: z.string().nullable(),
     values: z.array(ValueSchema),
+    sensitive: z.boolean().optional(),
     attributes: z.record(z.string(), z.unknown()),
     children: z.array(
       z.object({

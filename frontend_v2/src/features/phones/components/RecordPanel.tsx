@@ -1,9 +1,10 @@
+import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { CopyButton } from "@/components/ui/copy-button"
 import { htmlEscape } from "@/lib/copy-text"
-import { failureText, getRecord } from "../api"
+import { failureText, getRecord, revealValue } from "../api"
 import type { RecordDetail, RecordFieldData } from "../schemas"
 import { DockedPanel } from "../ui/DockedPanel"
 import { FILE_OUTCOME_BADGE } from "../lib/badges"
@@ -23,7 +24,50 @@ const LEVEL_WORDS: Record<string, string> = {
   captured_only: "Held, not yet read",
 }
 
-function FieldList({ fields, depth = 0 }: { fields: RecordFieldData[]; depth?: number }) {
+/** A masked sensitive value with its Reveal button; revealing is logged by the server before the value is sent. */
+function MaskedValue({ caseId, recordUid, field, index, masked }: { caseId?: string; recordUid: string; field: string; index: number; masked: string }) {
+  const [value, setValue] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  if (value !== null)
+    return (
+      <span>
+        <span className="whitespace-pre-wrap">{value}</span>{" "}
+        <span className="text-xs text-muted-foreground">(revealed; your reveal is recorded)</span>
+      </span>
+    )
+  return (
+    <span>
+      <span aria-label="Hidden sensitive value">{masked}</span>{" "}
+      {caseId && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-xs"
+          disabled={busy}
+          onClick={() => {
+            setBusy(true)
+            setError(null)
+            revealValue(caseId, recordUid, field, index)
+              .then((r) => setValue(r.value))
+              .catch((e) => setError(failureText(e, "The value could not be revealed.")))
+              .finally(() => setBusy(false))
+          }}
+        >
+          Reveal
+        </Button>
+      )}
+      <span className="block text-xs text-muted-foreground">Sensitive. Revealing it records your name and the time.</span>
+      {error && (
+        <span role="alert" className="block text-xs">
+          {error}
+        </span>
+      )}
+    </span>
+  )
+}
+
+function FieldList({ fields, depth = 0, recordUid, caseId }: { fields: RecordFieldData[]; depth?: number; recordUid: string; caseId?: string }) {
   return (
     <dl className="grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1" style={{ marginLeft: depth ? 12 : 0 }}>
       {fields.map((f, k) => (
@@ -41,6 +85,8 @@ function FieldList({ fields, depth = 0 }: { fields: RecordFieldData[]; depth?: n
                   <span>
                     {v.time.full} <span className="text-xs text-muted-foreground">(in the report: {v.time.original_text})</span>
                   </span>
+                ) : v.masked && f.name ? (
+                  <MaskedValue caseId={caseId} recordUid={recordUid} field={f.name} index={v.index} masked={v.text ?? ""} />
                 ) : (
                   <span className="whitespace-pre-wrap">{v.text}</span>
                 )}
@@ -52,7 +98,7 @@ function FieldList({ fields, depth = 0 }: { fields: RecordFieldData[]; depth?: n
                   {c.model_type}
                   {c.deleted_state && c.deleted_state !== "Intact" ? ` · ${c.deleted_state}` : ""}
                 </summary>
-                <FieldList fields={c.fields} depth={depth + 1} />
+                <FieldList fields={c.fields} depth={depth + 1} recordUid={c.record_uid} caseId={caseId} />
               </details>
             ))}
           </dd>
@@ -130,7 +176,7 @@ export function RecordDetailView({
         </section>
       )}
       <section aria-label="Fields">
-        <FieldList fields={d.fields} />
+        <FieldList fields={d.fields} recordUid={d.record_uid} caseId={caseId} />
       </section>
       {d.times.length > 0 && (
         <section aria-label="Times" className="text-xs">
