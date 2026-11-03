@@ -41,7 +41,8 @@ vi.mock("@/features/phones/components/StreamList", () => ({
     return <div data-testid="phone-list">{p.filterWords}</div>
   },
 }))
-import { PhoneLens, usePhoneLens } from "./PhoneLens"
+import { PhoneLens } from "./PhoneLens"
+import { usePhoneLens } from "./usePhoneLens"
 
 const wrap = (ui: React.ReactNode) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>)
 

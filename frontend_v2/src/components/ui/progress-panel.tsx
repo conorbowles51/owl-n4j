@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/cn"
+import { secondsWords, timeLeft, percentShown, stallState } from "./progress-time"
 
 /**
  * The shared waiting panel (07 4.7), for phone screens and any Loupe screen. Built from the Financial loading
@@ -15,10 +15,6 @@ import { cn } from "@/lib/cn"
  */
 
 export const SHOW_AFTER_MS = 300
-export const STALL_INTERACTIVE_MS = 3_000
-export const SLOW_INTERACTIVE_MS = 10_000
-export const STALL_BACKGROUND_MS = 30_000
-export const TICK_MS = 1_000
 
 export interface ProgressState {
   /** The step in words, e.g. "Counting matching messages on 3 phones". */
@@ -41,53 +37,9 @@ export interface ProgressState {
 
 const n = (v: number) => v.toLocaleString("en-US")
 
-export function secondsWords(ms: number): string {
-  const s = Math.max(1, Math.round(ms / 1000))
-  if (s < 90) return `${s} s`
-  const m = Math.round(s / 60)
-  return `${m} min`
-}
-
-/** Time left in words, or the first-run sentence. Never invented. */
-export function timeLeft(p: ProgressState, now: number): string {
-  const elapsed = now - p.startedAt
-  if (p.done !== undefined && p.total !== undefined && p.total > 0) {
-    if (p.done >= p.total) return "finishing"
-    if (p.done > 0 && elapsed > 0) return `about ${secondsWords(((p.total - p.done) * elapsed) / p.done)} left`
-    if (p.lastRateMsPerUnit) return `about ${secondsWords((p.total - p.done) * p.lastRateMsPerUnit)} left`
-  } else if (p.lastDurationMs && elapsed < p.lastDurationMs) {
-    return `about ${secondsWords(p.lastDurationMs - elapsed)} left (this took ${secondsWords(p.lastDurationMs)} last time)`
-  }
-  return "Working out time left (first run of this step)"
-}
-
-export function percentShown(p: ProgressState): number | null {
-  if (p.done === undefined || p.total === undefined || p.total <= 0) return null
-  const raw = Math.floor((p.done / p.total) * 100)
-  return p.drawn ? Math.min(100, raw) : Math.min(99, raw)
-}
-
 export type StallState = { kind: "moving" } | { kind: "still"; quietMs: number } | { kind: "slow"; quietMs: number }
 
-export function stallState(p: ProgressState, now: number, background: boolean, thresholdMs = STALL_BACKGROUND_MS): StallState {
-  const quietMs = now - p.movedAt
-  if (background) return quietMs >= thresholdMs ? { kind: "still", quietMs } : { kind: "moving" }
-  if (quietMs >= SLOW_INTERACTIVE_MS) return { kind: "slow", quietMs }
-  if (quietMs >= STALL_INTERACTIVE_MS) return { kind: "still", quietMs }
-  return { kind: "moving" }
-}
-
 const lower = (s: string) => s.charAt(0).toLowerCase() + s.slice(1)
-
-export function useTick(active: boolean, clock: () => number = () => performance.now()) {
-  const [now, setNow] = useState(clock)
-  useEffect(() => {
-    if (!active) return
-    const t = setInterval(() => setNow(clock()), TICK_MS)
-    return () => clearInterval(t)
-  }, [active, clock])
-  return now
-}
 
 export function ProgressPanel({
   progress,

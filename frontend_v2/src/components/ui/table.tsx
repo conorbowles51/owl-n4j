@@ -15,10 +15,14 @@ function Table({
   const container = React.useRef<HTMLDivElement>(null)
   const overflowing = useOverflowsSideways(container)
   // A table wider than its panel scrolls sideways; by keyboard only when its scroll area can take focus, so while
-  // it overflows the area is a named, focusable region (axe scrollable-region-focusable).
-  const name =
-    props["aria-label"] ??
-    (overflowing ? container.current?.querySelector("caption")?.textContent?.trim() || "Table" : undefined)
+  // it overflows the area is a named, focusable region (axe scrollable-region-focusable). The caption is read after
+  // the table's content or overflow changes (a ref is not read during render).
+  const [captionName, setCaptionName] = React.useState<string | undefined>(undefined)
+  React.useLayoutEffect(() => {
+    const next = overflowing ? container.current?.querySelector("caption")?.textContent?.trim() || "Table" : undefined
+    setCaptionName((prev) => (prev === next ? prev : next))
+  }, [overflowing, props.children])
+  const name = props["aria-label"] ?? captionName
   return (
     <div
       ref={container}

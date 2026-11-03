@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 vi.mock("maplibre-gl", () => ({ default: {} }))
 vi.mock("react-map-gl/maplibre", () => ({ default: () => null, Source: () => null, Layer: () => null, NavigationControl: () => null }))
-import { accuracyPixelsAtZoom20, METRES_PER_PIXEL_Z20 } from "./MapCanvas"
+import { accuracyPixelsAtZoom20, METRES_PER_PIXEL_Z20 } from "./map-accuracy"
 
 describe("phone accuracy circles (03 section 13.3)", () => {
   it("draw the reported accuracy: 512-pixel tiles and the latitude's scale", () => {

@@ -35,7 +35,8 @@ import { useLedgerTransactions } from "../hooks/use-ledger-transactions"
 import { StatementSourceButton } from "./StatementSourceButton"
 import { PaymentSet } from "./PaymentSet"
 import { Badge } from "@/components/ui/badge"
-import { CheckTag, MONEY, sourceTone } from "@/lib/data-colour"
+import { CheckTag, MONEY } from "@/lib/data-colour"
+import { sourceTone } from "@/lib/data-tone"
 
 export function AccountHistory({
   caseId,

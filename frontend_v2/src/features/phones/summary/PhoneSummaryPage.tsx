@@ -7,7 +7,7 @@ import { profileText } from "../lib/profile-text"
 import { failureText, getProfile } from "../api"
 import { labelText } from "../lib/labels"
 import { readingSpots } from "../lib/continue-reading"
-import { fmt } from "../ui/ResultCount"
+import { fmt } from "../ui/count-sentence"
 import { NamePhone } from "./NamePhone"
 import { SetOwner } from "./SetOwner"
 

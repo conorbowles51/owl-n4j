@@ -9,7 +9,7 @@ import { dispatchKey, resetKeymapForTest } from "@/lib/keymap"
 import { applySwitchesAtStart, isSwitchOn, setSwitch } from "@/lib/ui-switches"
 import { TRAINING } from "../fixtures"
 import PhonePrototypePage from "./PhonePrototypePage"
-import { readingsFor } from "./NeedsDecisionProto"
+import { readingsFor } from "./needs-decision-readings"
 import { topPeople } from "./proto-data"
 
 vi.mock("@/stores/app.store", () => ({ useAppStore: () => ({ sidebarExpanded: true, toggleSidebar: vi.fn() }) }))

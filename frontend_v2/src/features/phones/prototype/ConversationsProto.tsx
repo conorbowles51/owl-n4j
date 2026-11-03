@@ -1,12 +1,12 @@
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { appTone } from "@/lib/data-colour"
+import { appTone } from "@/lib/data-tone"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { register } from "@/lib/keymap"
 import { usePhoneSelection } from "@/stores/phone-selection.store"
 import { CASE_ZONE, messageView, stripDays, type FixtureCase, type FixtureMessage } from "../fixtures"
-import { dayWords } from "../ui/TimeStrip"
+import { dayWords } from "../ui/strip-words"
 import { participantsLine } from "../types"
 import { timeOfDay, zoneWords } from "../lib/time-words"
 import { AddToMenu } from "../ui/AddToMenu"
@@ -14,8 +14,9 @@ import { BadgeRow } from "../ui/OriginMark"
 import { DockedPanel } from "../ui/DockedPanel"
 import { PhoneChip } from "../ui/PhoneChip"
 import { RecordPanelContent } from "../ui/RecordPanel"
-import { fmt } from "../ui/ResultCount"
-import { EMPTY_SCOPE, ScopeBar, type Scope } from "../ui/ScopeBar"
+import { fmt } from "../ui/count-sentence"
+import { ScopeBar, type Scope } from "../ui/ScopeBar"
+import { EMPTY_SCOPE } from "../ui/scope"
 import { TimeStrip } from "../ui/TimeStrip"
 import type { CollectClient, CollectTarget } from "../collect.api"
 
@@ -75,6 +76,8 @@ export function ConversationsProto({ fx, client, targets }: { fx: FixtureCase; c
   const order = useMemo(() => messages.map((m) => m.id), [messages])
   const days = useMemo(() => items.flatMap((it, i) => (it.kind === "day" && it.date !== "none" ? [{ date: it.date, index: i }] : [])), [items])
 
+  // TanStack Virtual returns functions the React Compiler cannot memoise; it skips this component, as it must.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtual = useVirtualizer({ count: items.length, getScrollElement: () => listRef.current, estimateSize: (i) => (items[i].kind === "day" ? 32 : 64), overscan: 10 })
   const focusId = sel.focus && order.includes(sel.focus) ? sel.focus : order[0]
   const focused = messages.find((m) => m.id === focusId)

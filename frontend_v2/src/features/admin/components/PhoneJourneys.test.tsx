@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { JOURNEY_WORDS, funnelLine } from "./PhoneJourneys"
+import { JOURNEY_WORDS, funnelLine } from "./phone-journey-words"
 import FIELDS from "@/lib/ux-event-fields.json"
 
 describe("phone journeys on the Speed page", () => {

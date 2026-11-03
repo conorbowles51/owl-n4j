@@ -35,8 +35,9 @@ import { translateWords } from "@/features/phones/lib/translate-words"
 import { labelText } from "@/features/phones/lib/labels"
 import type { StreamRow, ThreadRow } from "@/features/phones/schemas"
 import { AddToMenu } from "@/features/phones/ui/AddToMenu"
-import { fmt } from "@/features/phones/ui/ResultCount"
-import { EMPTY_SCOPE, ScopeBar, scopeWords, type Scope } from "@/features/phones/ui/ScopeBar"
+import { fmt } from "@/features/phones/ui/count-sentence"
+import { ScopeBar, type Scope } from "@/features/phones/ui/ScopeBar"
+import { EMPTY_SCOPE, scopeWords } from "@/features/phones/ui/scope"
 import { useChatStore } from "@/features/chat/stores/chat.store"
 import { useUIStore } from "@/stores/ui.store"
 import { TimeStrip, type StripDay } from "@/features/phones/ui/TimeStrip"
@@ -121,7 +122,7 @@ export function ConversationsPage() {
   // opens whole: its frozen total and the list's total agree until a thread is picked.
   useEffect(() => {
     if (view.tab === "threads" && !view.thread && !view.record && !view.selection && threads.length) setView({ thread: threads[0].thread_key }, true)
-  }, [view.tab, view.thread, view.record, threads, setView])
+  }, [view.tab, view.thread, view.record, view.selection, threads, setView])
 
   // A link to one record (?record=) reads every message of the phones in scope with that record open beside it; a
   // saved selection (?selection=) reads its frozen records.

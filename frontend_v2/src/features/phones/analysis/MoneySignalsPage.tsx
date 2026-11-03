@@ -144,7 +144,7 @@ function ReadingRow({ caseId, r, onChanged }: { caseId: string; r: AnalysisResul
       </div>
       {r.kind === "money_reading" && (
         <p className="text-xs">
-          {OUTCOME_WORDS[m.outcome] || m.outcome}
+          {OUTCOME_WORDS[m.outcome ?? ""] || m.outcome}
           {m.reason && REASON_WORDS[m.reason] ? `. ${REASON_WORDS[m.reason]}` : "."}
           {m.institution && ` ${m.institution.name}.`}
           {m.account_ref && ` Account ${m.account_ref}.`}

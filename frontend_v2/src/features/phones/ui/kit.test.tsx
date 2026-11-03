@@ -6,9 +6,11 @@ import { dispatchKey, keyName, register, resetKeymapForTest } from "@/lib/keymap
 import { selectionSentence, usePhoneSelection } from "@/stores/phone-selection.store"
 import { GLOSSARY } from "../glossary"
 import { KeymapOverlay } from "./KeymapOverlay"
-import { BadgeRow, orderBadges, OriginMark, originWords } from "./OriginMark"
-import { phoneChipText } from "./PhoneChip"
-import { countSentence, ResultCount } from "./ResultCount"
+import { BadgeRow, OriginMark } from "./OriginMark"
+import { orderBadges, originWords } from "./origin-words"
+import { phoneChipText } from "./phone-chip-text"
+import { ResultCount } from "./ResultCount"
+import { countSentence } from "./count-sentence"
 
 const key = (k: string, extra: Partial<KeyboardEventInit> = {}) => new KeyboardEvent("keydown", { key: k, cancelable: true, ...extra })
 

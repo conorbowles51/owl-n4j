@@ -35,7 +35,11 @@ function memoryClient(store: Map<string, Set<string>>): CollectClient {
     async add(_case, target, links) {
       const have = store.get(target.id) ?? new Set<string>()
       let added = 0
-      for (const l of links) if (!have.has(l.target_id)) (have.add(l.target_id), added++)
+      for (const l of links) {
+        if (have.has(l.target_id)) continue
+        have.add(l.target_id)
+        added++
+      }
       store.set(target.id, have)
       return { added, skipped: links.length - added, refused: 0 }
     },

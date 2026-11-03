@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { ApiError } from "@/lib/api-client"
 import { dossiersAPI } from "@/features/dossiers/api"
-import { fmt } from "../ui/ResultCount"
+import { fmt } from "../ui/count-sentence"
 import { identitiesAPI, type IdentitySuggestion } from "./identities.api"
 
 /**

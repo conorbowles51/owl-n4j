@@ -1,10 +1,11 @@
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import type { FixtureCase } from "../fixtures"
-import { fmt } from "../ui/ResultCount"
+import { fmt } from "../ui/count-sentence"
 import { PhoneChip } from "../ui/PhoneChip"
 import { apps, monthBands, phoneMessages, topPeople } from "./proto-data"
-import { ShareBar, appTone } from "@/lib/data-colour"
+import { ShareBar } from "@/lib/data-colour"
+import { appTone } from "@/lib/data-tone"
 import { cn } from "@/lib/cn"
 
 /** Section groups (lx-style mock2 #18): a top rule and a small label, so related sections read as one group. */

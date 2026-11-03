@@ -1,8 +1,10 @@
 import { CheckCircle2, CircleAlert, Loader } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { timeLeft, type ProgressState } from "@/components/ui/progress-panel"
+import { type ProgressState } from "@/components/ui/progress-panel"
+import { timeLeft } from "@/components/ui/progress-time"
 import { cn } from "@/lib/cn"
+import { trayLabel } from "./job-tray-label"
 
 /**
  * The header job tray (07 4.7): every long job in words with time left, updated every second from the server's
@@ -20,17 +22,6 @@ export interface TrayJob {
   /** What is kept if it is cancelled, when it can be cancelled. */
   onCancel?: () => void
   cancelWords?: string
-}
-
-export function trayLabel(jobs: TrayJob[]): string {
-  const running = jobs.filter((j) => j.state === "running").length
-  const done = jobs.filter((j) => j.state === "done").length
-  const failed = jobs.filter((j) => j.state === "failed").length
-  const parts = [] as string[]
-  if (running) parts.push(`${running} running`)
-  if (done) parts.push(`${done} done`)
-  if (failed) parts.push(`${failed} stopped`)
-  return parts.length ? `Jobs (${parts.join(", ")})` : "Jobs (none)"
 }
 
 export function JobLine({ job, now }: { job: TrayJob; now: number }) {

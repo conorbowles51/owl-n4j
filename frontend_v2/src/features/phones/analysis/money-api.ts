@@ -1,4 +1,5 @@
 import { fetchAPI } from "@/lib/api-client"
+import type { AmountReading } from "./money-words"
 
 /** The phone analysis API (05 section 3.4) as approach 1, money signals, uses it. */
 
@@ -18,12 +19,31 @@ export interface Direction { code: string; detail: string; locators: string[] }
 
 export interface AnalysisDecision { decision: "confirmed" | "rejected"; reason: string; by: string; at: string }
 
+/**
+ * What a money reading or an account lead measured (the server's `measures`). Every field is optional: the two kinds
+ * carry different ones, and the server may add more.
+ */
+export interface MoneyMeasures extends AmountReading {
+  direction?: string | null
+  source?: string | null
+  phone_label?: string | null
+  event_instant?: string | null
+  device_zone?: string | null
+  institution?: { name: string } | null
+  account_ref?: string | null
+  outcome?: string | null
+  reason?: string | null
+  sentence?: string | null
+  status?: string | null
+  [key: string]: unknown
+}
+
 export interface AnalysisResult {
   id: string
   kind: "money_reading" | "account_lead"
   strength: string
   label: string
-  measures: Record<string, any>
+  measures: MoneyMeasures
   directions: { supports: Direction[]; undercuts: Direction[] }
   decision: "confirmed" | "rejected" | null
   decisions: AnalysisDecision[]

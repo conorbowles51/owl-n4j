@@ -65,6 +65,8 @@ export function PhoneTable<Row>({
   }, [rows, sort, columns])
   const order = useMemo(() => sorted.map(rowId), [sorted, rowId])
 
+  // TanStack Virtual returns functions the React Compiler cannot memoise; it skips this component, as it must.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtual = useVirtualizer({ count: sorted.length, getScrollElement: () => parent.current, estimateSize: () => ROW_PX, overscan: 8, scrollMargin: ROW_PX })
   const focusIndex = Math.max(0, selection.focus ? order.indexOf(selection.focus) : 0)
 

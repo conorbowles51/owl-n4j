@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite"
 import { Badge } from "../badge"
-import { CheckTag, DirectionMark, MONEY, ShareBar, SourceTag, appTone } from "@/lib/data-colour"
+import { CheckTag, DirectionMark, MONEY, ShareBar, SourceTag } from "@/lib/data-colour"
+import { appTone } from "@/lib/data-tone"
 import { BalanceMove } from "@/features/financial/components/AccountHistory"
 
 /**

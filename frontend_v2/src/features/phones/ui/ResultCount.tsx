@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { cn } from "@/lib/cn"
+import { fmt, countSentence } from "./count-sentence"
 
 /**
  * The one count wording (07 4.8): "Showing 1,204 of 1,260 messages", thousands separators, the reason and how to
@@ -19,15 +20,6 @@ export interface ResultCountProps {
   unconfirmed?: number
   soFar?: boolean
   className?: string
-}
-
-export const fmt = (n: number) => n.toLocaleString("en-US")
-
-export function countSentence({ shown, total, noun, singular, soFar }: Pick<ResultCountProps, "shown" | "total" | "noun" | "singular" | "soFar">): string {
-  const word = total === 1 ? (singular ?? noun.replace(/s$/, "")) : noun
-  const tail = soFar ? " (so far)" : ""
-  if (shown >= total) return `${fmt(total)} ${word}${tail}`
-  return `Showing ${fmt(shown)} of ${fmt(total)} ${word}${tail}`
 }
 
 export function ResultCount(props: ResultCountProps) {

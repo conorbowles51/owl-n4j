@@ -1,5 +1,6 @@
 import { useMemo, useState, type KeyboardEvent } from "react"
 import { cn } from "@/lib/cn"
+import { dayWords, stripSummary } from "./strip-words"
 
 /**
  * The time strip (07 J-4, 5): message density for the scope, one bar per day, under the stream. Resizable (48 px
@@ -16,19 +17,6 @@ export interface StripDay {
 export const STRIP_DEFAULT_PX = 48
 export const STRIP_MIN_PX = 32
 export const STRIP_MAX_PX = 240
-
-export function dayWords(date: string): string {
-  const d = new Date(`${date}T12:00:00Z`)
-  return d.toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
-}
-
-export function stripSummary(days: StripDay[], noun: string): string {
-  const withData = days.filter((d) => d.count !== null)
-  const total = withData.reduce((s, d) => s + (d.count ?? 0), 0)
-  const noData = days.length - withData.length
-  const quiet = withData.filter((d) => d.count === 0).length
-  return `${total.toLocaleString("en-US")} ${noun} over ${days.length} days; ${quiet} days with none; ${noData} days with no data`
-}
 
 export function TimeStrip({
   days,

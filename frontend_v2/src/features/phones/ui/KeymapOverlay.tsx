@@ -1,21 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { activeBindings, register, subscribeKeymap } from "@/lib/keymap"
-
-/** Human key names for the overlay. */
-export function keyLabel(key: string): string {
-  return key
-    .split(" ")
-    .map((part) =>
-      part
-        .replace("Mod+", "Ctrl/Cmd+")
-        .replace("ArrowDown", "Down arrow")
-        .replace("ArrowUp", "Up arrow")
-        .replace("Escape", "Esc")
-        .replace(/^ $/, "Space")
-    )
-    .join(" then ")
-}
+import { keyLabel } from "./key-label"
 
 let snapshot = activeBindings()
 let snapshotKey = JSON.stringify(snapshot)

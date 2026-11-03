@@ -9,7 +9,8 @@ import { AddToMenu } from "../AddToMenu"
 import { DockedPanel } from "../DockedPanel"
 import { PhoneTable } from "../PhoneTable"
 import { RecordPanelContent } from "../RecordPanel"
-import { EMPTY_SCOPE, ScopeBar, type Scope } from "../ScopeBar"
+import { ScopeBar, type Scope } from "../ScopeBar"
+import { EMPTY_SCOPE } from "../scope"
 import { TimeStrip } from "../TimeStrip"
 
 /** Phone kit: waiting, jobs, time strip, scope, table, record panel, Add to… and the guide, on synthetic phones. */

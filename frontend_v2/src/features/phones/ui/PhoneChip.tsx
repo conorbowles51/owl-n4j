@@ -1,5 +1,6 @@
 import { cn } from "@/lib/cn"
 import { phoneMark, SHAPE_PATHS } from "../lib/phone-palette"
+import { phoneChipText } from "./phone-chip-text"
 
 /**
  * A phone's chip (07 4.5, 4.11): its colour and marker shape, always with the label; the extraction date is added
@@ -14,15 +15,6 @@ export interface PhoneChipProps {
   collides?: boolean
   onRemove?: () => void
   className?: string
-}
-
-export function shortDate(iso: string): string {
-  const d = new Date(`${iso.slice(0, 10)}T12:00:00Z`)
-  return d.toLocaleDateString("en-US", { day: "numeric", month: "short", timeZone: "UTC" }).replace(/^(\w+) (\d+)$/, "$2 $1")
-}
-
-export function phoneChipText({ label, extractionDate, collides }: Pick<PhoneChipProps, "label" | "extractionDate" | "collides">) {
-  return collides && extractionDate ? `${label} · ${shortDate(extractionDate)}` : label
 }
 
 export function PhoneShape({ index, className }: { index: number; className?: string }) {
