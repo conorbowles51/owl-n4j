@@ -209,3 +209,54 @@ def test_an_identity_no_longer_seen_keeps_its_row_at_zero(hooks):
         with engine.connect() as c:
             assert _rows(c, "SELECT sighting_count, phone_count FROM phone_identities WHERE case_id = :c AND "
                             "identity_key = :k", c=case, k=ANA) == [(0, 0)]
+
+
+def _plan_nodes(node):
+    yield node
+    for child in node.get("Plans", []):
+        yield from _plan_nodes(child)
+
+
+@needs_template
+def test_a_rereading_reads_the_card_texts_first_whatever_the_statistics_say(hooks):
+    """A re-reading writes generation 2 uncommitted, so the statistics hold ~0 rows for it. The card query must
+    still start from the extraction's own card texts, not from every summary of the generation (a P14-sized phone:
+    1h44m and unfinished on that plan). The card statement is explained inside the pass, with the stats of gen 1."""
+    from sqlalchemy import event
+    write(str(hooks), CALL)
+    identities.install()
+    seen, plans = [], []
+
+    def explain_cards(conn, extraction_id, generation, the_plan):
+        if generation == 2:
+            sql, params = next((s, p) for s, p in reversed(seen) if "phone_record_summaries s" in s
+                               and "'Value'" in s)
+            plans.append(conn.exec_driver_sql("EXPLAIN (FORMAT JSON) " + sql, params).scalar()[0]["Plan"])
+        return {}
+
+    with fresh_engine() as engine:
+        event.listen(engine, "before_cursor_execute", lambda c, cur, s, p, ctx, many: seen.append((s, p)))
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            a = _phone_a(c, case)
+        assert sweep.interpret_one(engine, a)["generation"] == 1
+        with engine.begin() as c:
+            first = _rows(c, "SELECT identity_key, record_uid, card_record_uid, name_alongside FROM "
+                             "pv_identity_sighting WHERE extraction_id = :e AND context = 'listed_on_card' "
+                             "ORDER BY 1, 2", e=a)
+            c.execute(text("ANALYZE phone_texts; ANALYZE phone_record_summaries"))
+            c.execute(text("UPDATE phone_interpretation_state SET interpreter_version = 'old' WHERE "
+                           "extraction_id = :e"), {"e": a})
+        sweep.register_applier(explain_cards)
+        assert sweep.interpret_one(engine, a)["generation"] == 2
+        with engine.connect() as c:
+            second = _rows(c, "SELECT identity_key, record_uid, card_record_uid, name_alongside FROM "
+                              "pv_identity_sighting WHERE extraction_id = :e AND context = 'listed_on_card' "
+                              "ORDER BY 1, 2", e=a)
+    assert len(first) == 3 and second == first
+    nodes = list(_plan_nodes(plans[0]))
+    fence = [n for n in nodes if n.get("Subplan Name") == "CTE t"]
+    assert fence, "the card texts are not read first: %s" % [n["Node Type"] for n in nodes]
+    inside = {n.get("Relation Name") for n in _plan_nodes(fence[0]) if n.get("Relation Name")}
+    assert inside == {"phone_texts"}

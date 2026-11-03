@@ -70,6 +70,26 @@ def is_echo(name, raw=None):
     return False
 
 
+
+# Card entries of one generation. The extraction's own card texts are read first (MATERIALIZED) and only then joined to
+# summaries and the Category/Name/Source texts. During a re-reading the new generation is uncommitted, so the
+# statistics hold ~0 rows for it; without the fence the planner could start from every summary of the generation
+# and look up texts per summary (P14 re-reading in scratch: 1h44m and not finished, vs 249 s for the whole stage).
+CARD_QUERY = (
+    "WITH t AS MATERIALIZED (SELECT text_uid, record_uid, root_record_uid, field_path, effective_value "
+    "FROM phone_texts WHERE extraction_id = :e AND generation = :g AND model_type = ANY(CAST(:types AS text[])) AND "
+    "field_name = 'Value' AND case_id = :c) "
+    "SELECT t.text_uid, t.record_uid, t.root_record_uid, t.field_path, t.effective_value, cat.effective_value, "
+    "s.parent_record_uid, ps.model_type, nm.effective_value, src.effective_value "
+    "FROM t JOIN phone_record_summaries s ON s.record_uid = t.record_uid AND s.generation = :g "
+    "LEFT JOIN phone_record_summaries ps ON ps.record_uid = s.parent_record_uid AND ps.generation = :g "
+    "LEFT JOIN phone_texts cat ON cat.record_uid = t.record_uid AND cat.generation = :g AND "
+    "cat.field_name = 'Category' AND cat.value_index = 0 "
+    "LEFT JOIN phone_texts nm ON nm.record_uid = s.parent_record_uid AND nm.generation = :g AND "
+    "nm.field_name = 'Name' AND nm.value_index = 0 "
+    "LEFT JOIN phone_texts src ON src.record_uid = t.root_record_uid AND src.generation = :g AND "
+    "src.field_name = 'Source' AND src.value_index = 0")
+
 # ---- the pass ------------------------------------------------------------------------------------------------------
 
 def build(conn, extraction_id, generation, the_plan=None) -> dict:
@@ -96,19 +116,8 @@ def build(conn, extraction_id, generation, the_plan=None) -> dict:
 
     # cards, account fields and the header: classified here
     rows = []
-    for t_uid, rec, root, path, raw, category, card, card_type, card_name, source in conn.execute(text(
-            "SELECT t.text_uid, t.record_uid, t.root_record_uid, t.field_path, t.effective_value, cat.effective_value, "
-            "s.parent_record_uid, ps.model_type, nm.effective_value, src.effective_value "
-            "FROM phone_texts t JOIN phone_record_summaries s ON s.record_uid = t.record_uid AND s.generation = t.generation "
-            "LEFT JOIN phone_record_summaries ps ON ps.record_uid = s.parent_record_uid AND ps.generation = t.generation "
-            "LEFT JOIN phone_texts cat ON cat.record_uid = t.record_uid AND cat.generation = t.generation AND "
-            "cat.field_name = 'Category' AND cat.value_index = 0 "
-            "LEFT JOIN phone_texts nm ON nm.record_uid = s.parent_record_uid AND nm.generation = t.generation AND "
-            "nm.field_name = 'Name' AND nm.value_index = 0 "
-            "LEFT JOIN phone_texts src ON src.record_uid = t.root_record_uid AND src.generation = t.generation AND "
-            "src.field_name = 'Source' AND src.value_index = 0 "
-            "WHERE t.extraction_id = :e AND t.generation = :g AND t.model_type = ANY(CAST(:types AS text[])) AND "
-            "t.field_name = 'Value' AND t.case_id = :c"), dict(p, types=list(CARD_ENTRY_TYPES))):
+    for t_uid, rec, root, path, raw, category, card, card_type, card_name, source in conn.execute(
+            text(CARD_QUERY), dict(p, types=list(CARD_ENTRY_TYPES))):
         rows.append(("listed_on_card", t_uid, rec, root, path, raw, {"app": source, "category": category},
                      card, card_type, None if is_echo(card_name, raw) else card_name))
     for t_uid, rec, path, raw, source, mt in conn.execute(text(
