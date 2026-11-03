@@ -124,6 +124,53 @@ class RecordingTests(TrailBase):
         self.assertEqual(shown['uploaded_by'], self.f.user.name)
 
 
+class CaseDeletionTests(TrailBase):
+    """A deleted case leaves a row saying who deleted it, when, from where, and what it held (2026-11-03: a real
+    case was deleted through the app and only the server journal showed it)."""
+
+    def setUp(self):
+        super().setUp()
+        from postgres.models.case_membership import CaseMembership
+        from postgres.models.enums import CaseMembershipRole
+        from postgres.permissions import OWNER_PERMISSIONS
+        Base.metadata.create_all(self.f.db.connection(), tables=[CaseMembership.__table__])
+        self.f.db.add(CaseMembership(case_id=self.f.case.id, user_id=self.f.user.id,
+                                     membership_role=CaseMembershipRole.owner, permissions=OWNER_PERMISSIONS,
+                                     added_by_user_id=self.f.user.id))
+        self.f.db.commit()
+
+    def delete(self):
+        from postgres.models.case import Case
+        from services import case_service
+        with self.f.SessionLocal() as db:
+            user = db.merge(self.f.user)
+            case_service.delete_case(db, self.f.case.id, user)
+            self.assertIsNone(db.get(Case, self.f.case.id))
+
+    def test_deleting_a_case_records_who_when_and_what_it_held(self):
+        title = self.f.case.title
+        with self.f.SessionLocal() as db:
+            files = db.query(EvidenceFile).filter(EvidenceFile.case_id == self.f.case.id).count()
+        self.assertGreater(files, 0)
+        self.delete()
+        [event] = self.events('case_deleted')
+        self.assertEqual((event.user_email, event.case_id, event.source_address, event.session_ref),
+                         (self.f.user.email, self.f.case.id, '203.0.113.7', '0123456789abcdef'))
+        self.assertEqual(event.details['case_title'], title)
+        self.assertEqual(event.details['records_removed']['evidence_files'], files)
+        self.assertEqual(event.details['records_removed']['case_memberships'], 1)
+        self.assertIsNotNone(event.at)
+        self.assertEqual(activity_trail.ACTIONS['case_deleted'], 'Deleted a case')
+
+    def test_a_refused_delete_records_nothing(self):
+        from services import case_service
+        with self.f.SessionLocal() as db, patch.object(case_service, 'check_case_access',
+                side_effect=case_service.CaseAccessDenied('no')):
+            with self.assertRaises(case_service.CaseAccessDenied):
+                case_service.delete_case(db, self.f.case.id, self.f.user)
+        self.assertEqual(self.events('case_deleted'), [])
+
+
 class ProvenanceTests(TrailBase):
     def send(self, file_id):
         from routers.financial_statement_import import _record_send

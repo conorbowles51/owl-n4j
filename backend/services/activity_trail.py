@@ -45,6 +45,7 @@ ACTIONS = {
     'financial_send': 'Added files to Financial',
     'financial_auto_add': 'Added to Financial automatically',
     'phone_extraction_superseded': 'Replaced a phone report',
+    'case_deleted': 'Deleted a case',
 }
 
 _context = contextvars.ContextVar('loupe_activity_context', default=None)
