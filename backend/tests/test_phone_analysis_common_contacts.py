@@ -58,16 +58,18 @@ def test_common_contacts_from_both_sides(engine):
         card = _card(c, case, pa, X2)
     with engine.connect() as c:
         res, counts = C.analyse(c, case, {})
-    ab = [r for r in res if r["measures"]["phones"] == ["C1", "C2"]]
+    ab = [r for r in res if sorted(r["measures"]["phones"]) == ["C1", "C2"]]
     by = {r["measures"]["contact"]: r for r in ab}
     assert set(by) == {X, Z, X2}
     x = by[X]
+    sides = {x["measures"]["owner_a"]: "a", x["measures"]["owner_b"]: "b"}
     assert x["kind"] == "common_contact" and x["measures"]["a"]["total"] == 1 and x["measures"]["b"]["total"] == 1
     z = by[Z]
-    assert z["kind"] == "common_contact" and z["measures"]["b"]["seen_on_other_phone"] == 1
+    assert z["kind"] == "common_contact" and z["measures"][sides["C2"]]["seen_on_other_phone"] == 1
     assert z["measures"]["contact_owns_phone"] is True
     s = by[X2]
-    assert s["kind"] == "saved_no_contact" and s["measures"]["a"]["saved"] == 1 and s["measures"]["a"]["total"] == 0
+    assert s["kind"] == "saved_no_contact" and s["measures"][sides["C1"]]["saved"] == 1
+    assert s["measures"][sides["C1"]]["total"] == 0
     assert any(r["record_uid"] == card for r in s["records"])
     assert counts["owners"] == 3
 

@@ -9,6 +9,8 @@ export const ANALYSES = [
   { code: "typed_words", path: "phone-analyses/typed-words", title: "Typed words", what: "Keyboard learned words and autofill values that match names, numbers and accounts in the case, and whether they appear anywhere else on the phone." },
   { code: "intent", path: "phone-analyses/searches", title: "Searches and pages", what: "Searches and visited pages that match names, numbers and accounts in the case, with the time each records." },
   { code: "common_contacts", path: "phone-analyses/common-contacts", title: "Common contacts", what: "The people two phone owners are both in contact with, with the calls, messages and emails on each side." },
+  { code: "contact_matrix", path: "phone-analyses/who-contacts-whom", title: "Who contacts whom", what: "For each pair, the calls, messages and emails one sent to the other, in each direction, calls by whether they connected." },
+  { code: "number_switching", path: "phone-analyses/number-changes", title: "Possible number changes", what: "A number or account whose contact stops while another, in contact with mostly the same people, starts soon after." },
   { code: "awareness", path: "phone-analyses/groups", title: "Group admins and membership", what: "Admins of each group chat at extraction and the membership changes the phones record." },
 ]
 

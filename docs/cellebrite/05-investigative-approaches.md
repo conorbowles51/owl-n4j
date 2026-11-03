@@ -1875,7 +1875,11 @@ with communications between them; M-15a sets the default N.
 and 5,519 at N = 5 (owners included); 8 owners in contact with another owner over 9 owner pairs. M-15b: 3,193 message
 copies between owners on the phones; approach 2 matched 814 pairs of them as strong (1,628 copies, about half; the
 rest count once each and the result says how many). Gate: **pass** (8 owners with communications between them, 3
-needed).
+needed). **Built (`cb-approaches`, 05-S16b, `contact_matrix` version 15.1,
+screen "Who contacts whom").** One result per non-empty cell, in each direction; calls by recorded status with the
+connected minutes; approach 2's matched messages counted once and unmatched copies between owners stated; 16b.8 tests
+1 to 3 in `test_phone_analysis_contact_matrix.py`. The square grid view is not drawn: each cell is a row that sorts
+and opens to its records.
 
 ### 16b.7 Dependencies
 
@@ -1938,7 +1942,11 @@ days, threshold 0.5, at least 5 shared).** M-16a: 8,428 identities stop more tha
 message. M-16b: 1,118,315 candidate pairs; 3 at or above the threshold with 5 or more shared counterparts. M-16c (start
 times shuffled 20 times, fixed seed): 0 such pairs in every shuffle (mean 0.0, most 0). Gate: **pass** (3 against a
 base rate of 0); the defaults stand. Most candidate pairs share only the phone's owner (Jaccard 0.9 to 1.0 on
-single-counterpart sets: 267,536), which the 5-shared minimum removes.
+single-counterpart sets: 267,536), which the 5-shared minimum removes. **Built (`cb-approaches`, 05-S16c,
+`number_switching` version 16.1, screen "Possible number changes").** 16c.3 steps 1 to 4 with these defaults; a stop
+or start within the gap of the end or start of a phone's data is not counted (16c.8 test 2); nothing is joined; 16c.8
+tests 1 to 3 in `test_phone_analysis_number_switching.py`. The identity-link action of 03 section 10 is not offered
+from the row yet.
 
 ### 16c.7 Dependencies
 
@@ -2254,6 +2262,9 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | 19.S16a-b Common contacts cover the whole span; a narrower window is the Conversations filter the counts open | 16a.3 step 3 default; key dates never need a rerun | |
 | 19.S16a-c A common-contact result rests on the first and last communication of each side and the saved entries, with a pair anchor of its own | one record can be the first contact of two owner pairs | |
 | 19.S14b-a A phone analysis result, a kept result, a statement check and an incident window are exported by freezing their records as one selection, as a finding is; records that are not a message or call are counted in the dialog as not in the export, and a source with none is refused with that reason | the export draws communications; a silent drop would present a partial export as whole | the export draws other record kinds |
+| 19.S16b-a The from/to matrix population defaults to N = 1 | M-15a: 8,502 people at N = 1, 5,519 at N = 5; every cell opens to its records, so the smaller population only hides people | the screen cannot list a case's cells |
+| 19.S16b-b A record's sender is its sender or caller party (or the owner for an outgoing record naming none); every other party is a recipient; a record with neither is counted as "direction not recorded"; duplicate copies on one phone count once | 16b.3 step 2 | a reviewed mapping gives sender and recipients per app |
+| 19.S16c-a A stop within the gap of the end of a phone's data, or a start within the gap of its start, is not a stop or start | 16c.8 test 2; availability is read as the phone's first and last communication | 04's availability bands give finer starts and ends |
 | 19.S-ix The analyses are reached from one Phones sidebar entry, "Analyses", which also lists the approaches whose gate failed with the measured reason | one entry per approach would put ten links in the group; an absent analysis is stated, not silent | |
 | Deletion time is an interval to extraction start unless `DateDeleted` exists | `DateDeleted` 1 in corpus | a source of deletion times is found |
 | Media spread population restricted to attachment, camera-path and EXIF-camera files | X10 against X11 | |
