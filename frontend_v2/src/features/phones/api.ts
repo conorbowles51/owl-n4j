@@ -354,6 +354,42 @@ export async function getMediaIndex(filter: MediaFilter) {
 export async function getMediaWindow(filter: MediaFilter, offset: number, limit = 200) {
   return fetchAPI<{ items: MediaItem[]; offset: number; limit: number }>("/api/phones/media/window", { method: "POST", body: { filter, offset, limit }, read: true })
 }
+/** Media spread across phones, exact tier (05 section 11): the same file (equal MD5) on two or more phones. */
+export interface SpreadPhoneRef { extraction_id: string; label: string }
+export interface SpreadIndex {
+  case_id: string; case_phone_count: number; total_groups: number; total_copies: number; common_file_groups: number
+  sha256_disagreement_groups: number; by_phone: (SpreadPhoneRef & { groups: number })[]
+  by_pair: { a: SpreadPhoneRef; b: SpreadPhoneRef; groups: number }[]; population_words: string; clock_words: string
+}
+export interface SpreadTime { source: "message_time" | "file_modified" | "exif_capture"; source_words: string; field: string; instant: string | null; full: string; has_offset: boolean }
+export interface SpreadCopy {
+  file_uid: string; extraction_id: string; phone_label: string; filename: string; local_path: string | null; original_path: string | null
+  category: string | null; size: number | null; sha256: string | null; verification: string | null; verification_words: string; missing: boolean
+  included_because: string[]; times: SpreadTime[]; earliest: SpreadTime | null; roles: string[]
+  messages: { message_record_uid: string; kind: string | null; direction: string | null; role: string; instant: string | null; full: string; app: string | null; deleted: boolean; line: string | null }[]
+  note: string | null; camera: { make: string | null; model: string | null } | null; in_camera_folder: boolean
+  camera_original_candidate: boolean | null; camera_original_words: string | null
+  place: { latitude: string | null; longitude: string | null; combined: string | null; source: string; words: string } | null
+}
+export interface SpreadPhone {
+  extraction_id: string; phone_label: string; position: number | null; earliest: SpreadTime | null; roles: string[]
+  camera_original_candidate: boolean; copy_count: number; copies_shown: number; copies_words: string | null; copies: SpreadCopy[]
+}
+export interface SpreadGroup {
+  group_key: string; md5: string; phone_count: number; copy_count: number; phones_with_hash: number; case_phone_count: number
+  common_file: boolean; common_words: string | null; sha256_disagrees: boolean; sha256_words: string | null
+  category: string | null; filename: string; size: number | null; thumbnail_file_uid: string | null
+  clock_offset_unknown: boolean; clock_words: string; camera_original_candidates: number; phones: SpreadPhone[]; tier: "exact"
+}
+export interface SpreadFilter { phones?: string[]; common?: "all" | "hide" | "only" }
+export async function getMediaSpreadIndex(caseId: string) {
+  return fetchAPI<SpreadIndex>(`/api/phones/media-spread/index?case_id=${encodeURIComponent(caseId)}`)
+}
+export async function getMediaSpreadWindow(caseId: string, filter: SpreadFilter, offset: number, limit = 50) {
+  const q = new URLSearchParams({ case_id: caseId, common: filter.common ?? "all", offset: String(offset), limit: String(limit) })
+  for (const p of filter.phones ?? []) q.append("phones", p)
+  return fetchAPI<{ case_id: string; total: number; offset: number; limit: number; items: SpreadGroup[]; clock_words: string }>(`/api/phones/media-spread/window?${q.toString()}`)
+}
 /** Machine-generated text from a photo or audio (03 8.3, M-3): made by a model on the server, never by a person. */
 export interface DerivedText {
   id: string; file_uid: string; kind: "ocr" | "transcript"; state: "queued" | "running" | "done" | "failed"

@@ -316,6 +316,27 @@ def media_type_of(name):
     return PHONE_MEDIA_TYPES.get(ext) or mimetypes.guess_type(name)[0] or "application/octet-stream"
 
 
+@router.get("/media-spread/index")
+def phone_media_spread_index(case_id: UUID = Query(...), db: Session = Depends(get_db),
+                             user: User = Depends(get_current_db_user)):
+    """Media spread across phones, exact tier (05 section 11): true totals, by phone and by pair of phones."""
+    from services.phone import media_spread
+    authorize_case(db, case_id, user, ("case", "view"))
+    return media_spread.index(db.connection(), case_id)
+
+
+@router.get("/media-spread/window")
+def phone_media_spread_window(case_id: UUID = Query(...), phones: list[UUID] = Query(default_factory=list),
+                              common: Literal["all", "hide", "only"] = Query("all"), offset: int = Query(0, ge=0),
+                              limit: int = Query(50, ge=1, le=100), db: Session = Depends(get_db),
+                              user: User = Depends(get_current_db_user)):
+    """One page of spread groups with their copies; ``phones`` keeps groups every listed phone holds. The page
+    states the total under the filter."""
+    from services.phone import media_spread
+    authorize_case(db, case_id, user, ("case", "view"))
+    return media_spread.window(db.connection(), case_id, {"phones": phones, "common": common}, offset, limit)
+
+
 @router.get("/media/{file_uid}/content")
 def phone_media_content(file_uid: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
                         user: User = Depends(get_current_db_user), range_header: Optional[str] = Header(

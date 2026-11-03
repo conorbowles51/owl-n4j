@@ -313,7 +313,9 @@ export function DerivedTexts({ caseId, fileUid, category, filename = null }: { c
   )
 }
 
-function Detail({ caseId, fileUid, onClose }: { caseId: string; fileUid: string; onClose: () => void }) {
+/** The Media file panel: the file, its hashes and state, and every message that carried it. Also opened from Media
+ * spread. */
+export function Detail({ caseId, fileUid, onClose }: { caseId: string; fileUid: string; onClose: () => void }) {
   const d = useQuery({ queryKey: ["phone-media-detail", caseId, fileUid], queryFn: () => getMediaDetail(caseId, fileUid) })
   const file = useObjectUrl(caseId, fileUid, !!d.data && !d.data.missing)
   const x = d.data
@@ -404,7 +406,10 @@ export default function MediaPage() {
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-auto p-4">
-        <h1 className="text-lg font-semibold">Media</h1>
+        <div className="flex flex-wrap items-baseline gap-3">
+          <h1 className="text-lg font-semibold">Media</h1>
+          <Link className="text-sm underline" to={`/cases/${encodeURIComponent(caseId)}/phones/${encodeURIComponent(extraction)}/records/media/spread`}>Media spread: the same file on other phones</Link>
+        </div>
         {idx.data && (
           <p role="status" className="text-sm">
             {n(total)} {total === 1 ? "file" : "files"}{category || state ? ` match the filter (of ${n(all.data?.total ?? total)})` : ""}.
