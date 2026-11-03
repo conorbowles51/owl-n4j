@@ -12,6 +12,30 @@ export interface SubjectPhone {
   last: string | null
   projection_status: string
   event_count: number
+  /** The days the phone's activity covers, with stray far-off dates set apart and counted (04 decision 38). */
+  usual_span: UsualSpan | null
+}
+
+export interface UsualSpan {
+  first: string | null
+  last: string | null
+  set_apart: number
+  set_apart_first: string | null
+  set_apart_last: string | null
+}
+
+/** Every event of one counted group of a check (04 decision 37), paged. */
+export interface GroupEvents {
+  ordinal: number
+  stored_count: number
+  total: number
+  cursor: number
+  limit: number
+  returned: number
+  next_cursor: number | null
+  changed_since_check: boolean
+  items: { activity_event_id: number; at_utc: string; end_utc: string | null; record_uid: string | null; field_path: string | null
+    display: { type: string; field: string; meaning: string | null; source_app: string | null; activity_class: string; actor: string } }[]
 }
 
 export interface SubjectPerson {
@@ -265,6 +289,8 @@ export const patternAPI = {
     fetchAPI<{ total: number; items: { evaluation_id: string; stale: boolean; outcome: string }[] }>(`${base(caseId)}/claims/${id}/evaluations`),
   evaluation: (caseId: string, id: string, eid: string) =>
     fetchAPI<Evaluation>(`${base(caseId)}/claims/${id}/evaluations/${eid}`),
+  groupEvents: (caseId: string, id: string, eid: string, ordinal: number, cursor = 0) =>
+    fetchAPI<GroupEvents>(`${base(caseId)}/claims/${id}/evaluations/${eid}/items/${ordinal}/events?cursor=${cursor}`),
   dispute: (caseId: string, id: string, eid: string, ordinal: number, reason: string) =>
     fetchAPI<{ dispute_id: string }>(`${base(caseId)}/claims/${id}/evaluations/${eid}/items/${ordinal}/dispute`,
       { method: "POST", body: { reason } as never }),

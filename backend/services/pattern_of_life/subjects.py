@@ -6,9 +6,12 @@ request is made in; an extraction or dossier of another case is "not found".
 """
 from __future__ import annotations
 
+from datetime import datetime, time, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import text
+
+from services.pattern_of_life import activity
 
 
 class SubjectError(ValueError):
@@ -24,6 +27,47 @@ def _uuid(v):
         raise SubjectError(400, "The subject's id is not a valid id.")
 
 
+def _when(iso):
+    return datetime.fromisoformat(iso) if iso else None
+
+
+SET_APART_GAP_DAYS = 90
+SET_APART_SHARE = 0.01
+SET_APART_EVENTS = 20
+
+
+def usual_span(conn, extraction_id) -> dict:
+    """The days a phone's activity actually covers (04 decision 38). A run of days more than 90 days from the rest
+    holding under 1% of the phone's activity or fewer than 20 events is set apart, from either end (the smaller end
+    first), until none is left or one run remains: a stray date (a clock reset, a far-future reminder) must not decide
+    which day the views open on. Nothing is hidden: the events set apart are counted, and any date can be chosen."""
+    days = conn.execute(text(
+        "SELECT (hour_utc AT TIME ZONE 'UTC')::date, sum(interaction_strong + interaction_moderate + interaction_weak + "
+        "device_state + passive) FROM pol_hourly_rollup WHERE extraction_id = :e GROUP BY 1 HAVING "
+        "sum(interaction_strong + interaction_moderate + interaction_weak + device_state + passive) > 0 ORDER BY 1"),
+        {"e": extraction_id}).fetchall()
+    if not days:
+        return {"first": None, "last": None, "set_apart": 0, "set_apart_first": None, "set_apart_last": None}
+    runs = [[days[0]]]
+    for d in days[1:]:
+        if (d[0] - runs[-1][-1][0]).days > SET_APART_GAP_DAYS:
+            runs.append([])
+        runs[-1].append(d)
+    total = sum(int(n) for _, n in days)
+    size = lambda run: sum(int(n) for _, n in run)  # noqa: E731
+    small = lambda run: size(run) < SET_APART_EVENTS or size(run) < SET_APART_SHARE * total  # noqa: E731
+    while len(runs) > 1 and (small(runs[0]) or small(runs[-1])):
+        ends = [i for i in (0, -1) if small(runs[i])]
+        runs.pop(min(ends, key=lambda i: size(runs[i])))
+    first, last = runs[0][0][0], runs[-1][-1][0]
+    before, after = (conn.execute(text(
+        "SELECT count(*), min(instant_utc), max(instant_utc) FROM pol_activity_event WHERE extraction_id = :e AND " + w),
+        {"e": extraction_id, "t": datetime.combine(t, time(0), tzinfo=timezone.utc)}).one()
+        for w, t in (("instant_utc < :t", first), ("instant_utc >= :t", last + timedelta(days=1))))
+    return {"first": first, "last": last, "set_apart": int(before[0]) + int(after[0]),
+            "set_apart_first": before[1] or after[1], "set_apart_last": after[2] or before[2]}
+
+
 def extractions(conn, case_id) -> list:
     """Active extractions of the case with their label, zone, owner identity, families and projection status."""
     from services.phone import identities as I
@@ -31,13 +75,14 @@ def extractions(conn, case_id) -> list:
     labels = readings.phone_labels(conn, case_id)
     out = []
     for r in conn.execute(text(
-            "SELECT e.id, e.device_zone, s.status AS interp_status, p.status AS pol_status, p.event_count, p.built_at "
+            "SELECT e.id, e.device_zone, s.status AS interp_status, p.status AS pol_status, p.event_count, p.built_at, "
+            "p.families "
             "FROM phone_extractions e LEFT JOIN phone_interpretation_state s ON s.extraction_id = e.id "
             "LEFT JOIN pol_projection_state p ON p.extraction_id = e.id "
             "WHERE e.case_id = :c AND e.standing = 'active' ORDER BY e.created_at"), {"c": case_id}).mappings():
-        fams = [dict(f._mapping) for f in conn.execute(text(
-            "SELECT family, count(*) AS events, min(instant_utc) AS first, max(instant_utc) AS last FROM "
-            "pol_activity_event WHERE extraction_id = :e GROUP BY family ORDER BY family"), {"e": r["id"]})]
+        # kept on the projection state by the build; computed here for a projection built before it was kept
+        stored = r["families"] if r["families"] is not None else activity.families(conn, r["id"])
+        fams = [dict(f, first=_when(f["first"]), last=_when(f["last"])) for f in stored]
         owner = I.owner(conn, r["id"])
         keys = owner.get("owner_identity_keys") or []
         out.append({"kind": "extraction", "extraction_id": str(r["id"]), "label": labels.get(r["id"]) or
@@ -47,13 +92,27 @@ def extractions(conn, case_id) -> list:
                     "last": max((f["last"] for f in fams), default=None),
                     "projection_status": r["pol_status"] or ("waiting" if r["interp_status"] == "done" else
                                                              "not_interpreted"),
-                    "event_count": r["event_count"] or 0})
+                    "event_count": r["event_count"] or 0,
+                    "usual_span": usual_span(conn, r["id"]) if r["pol_status"] == "ready" else None})
+    return out
+
+
+def _owners(conn, case_id) -> list:
+    """Active extractions of the case with their owner identity only, in the order ``extractions`` gives them:
+    what ``dossiers`` needs, without the per-family event counts (an aggregate over every event of every phone, 5.5 s
+    of each request about a person on a 542,091-event phone)."""
+    from services.phone import identities as I
+    out = []
+    for (e,) in conn.execute(text("SELECT id FROM phone_extractions WHERE case_id = :c AND standing = 'active' "
+                                  "ORDER BY created_at"), {"c": case_id}):
+        keys = I.owner(conn, e).get("owner_identity_keys") or []
+        out.append({"extraction_id": str(e), "owner_identity_key": keys[0] if keys else None})
     return out
 
 
 def dossiers(conn, case_id, exts=None) -> list:
     """Persons (dossiers) with the extractions whose owner identity is linked to them."""
-    exts = extractions(conn, case_id) if exts is None else exts
+    exts = _owners(conn, case_id) if exts is None else exts
     by_key = {}
     for e in exts:
         if e["owner_identity_key"]:

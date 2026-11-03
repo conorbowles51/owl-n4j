@@ -15,6 +15,7 @@ from datetime import datetime, time, timedelta
 from sqlalchemy import text
 
 from services.pattern_of_life import availability
+from services.phone.labels import RECIPIENT_ROLES, SENDER_ROLES
 
 PASSIVE_LIMIT = 5000
 LANES = ("interaction", "device_state", "communications", "places", "money", "passive", "others")
@@ -74,10 +75,13 @@ def window(conn, extraction_ids, labels, a, b, *, include_passive=True, case_id=
         "SELECT ev.event_uid, ev.record_uid, ev.extraction_id, ev.kind, ev.direction, ev.sort_instant, ev.end_instant, "
         "ev.time_field, ev.app, ev.model_type, ev.status, ev.call_status, ev.deleted_state, "
         "(SELECT json_agg(json_build_object('name', p.name_in_record, 'identifier', p.identifier_raw, 'role', p.role, "
-        "'identity_key', p.identity_key) ORDER BY p.participation_uid) FROM pv_comm_party p WHERE p.event_uid = "
-        "ev.event_uid AND p.extraction_id = ev.extraction_id AND NOT coalesce(p.is_phone_owner, false)) AS parties "
+        "'identity_key', p.identity_key) ORDER BY CASE WHEN p.role = ANY(:sr) THEN 0 WHEN p.role = ANY(:rr) THEN 1 "
+        "ELSE 2 END, p.participation_uid) FROM pv_comm_party p WHERE p.event_uid = "
+        "ev.event_uid AND p.extraction_id = ev.extraction_id AND NOT coalesce(p.is_phone_owner, false) AND "
+        "p.role <> 'owner_implicit') AS parties "
         "FROM pv_comm_event ev WHERE ev.extraction_id = ANY(CAST(:e AS uuid[])) AND ev.sort_instant >= :a AND "
-        "ev.sort_instant < :b ORDER BY ev.sort_instant, ev.event_uid"), {"e": exts, "a": a, "b": b}).mappings()
+        "ev.sort_instant < :b ORDER BY ev.sort_instant, ev.event_uid"),
+        {"e": exts, "a": a, "b": b, "sr": list(SENDER_ROLES), "rr": list(RECIPIENT_ROLES)}).mappings()
     for r in comm:
         lanes["communications"].append({
             "ref_kind": "comm_event", "id": str(r["event_uid"]), "at": r["sort_instant"], "end": r["end_instant"],

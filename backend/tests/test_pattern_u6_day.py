@@ -51,6 +51,8 @@ def test_the_day_view_puts_every_item_in_its_lane_and_states_availability(hooks)
             assert it["record_uid"] and it["field"] == "StartTime" and it["phone"]
             msg = out["lanes"]["communications"][0]
             assert msg["parties"] and msg["parties"][0]["identifier"]
+            # the phone's own side, implied when the record names no owner, is not listed as the other party
+            assert all(p["role"] != "owner_implicit" for p in msg["parties"])
             w = client.get("/api/pattern/%s/window" % case, params={"at": (DAY + timedelta(hours=9)).isoformat(),
                                                                      "span": "1h", "zone": "UTC"}).json()
             assert w["phones_total"] == 1 and w["phones"][0]["totals"]["interaction"] == 1
@@ -100,3 +102,38 @@ def test_the_window_over_every_phone_uses_the_case_zone_and_says_on_what_basis(h
             assert out["zone"] == "America/New_York" and out["zone_basis"] == "case_setting"
             chosen = client.get("/api/pattern/%s/window" % case, params={"at": at, "span": "1h", "zone": "UTC"}).json()
             assert chosen["zone"] == "UTC" and chosen["zone_basis"] == "chosen"
+
+
+@needs_template
+def test_a_messages_other_parties_are_listed_senders_first_and_the_phones_own_side_is_not(hooks):
+    from tests.pattern_pg import api_client
+    from tests.phone_pg import fld, make_extraction, model, refs
+    from tests.test_pattern_u4_availability import _stamp
+    setup(hooks)
+    records, stamps = [], []
+    for n in range(5):  # five messages: each order of uuids is a fresh chance for the old ordering to differ
+        top, when = n * 3, DAY + timedelta(hours=9, minutes=n)
+        records += [(top, None, top, model("InstantMessage", [fld("TimeStamp", ("TimeStamp", when.isoformat())),
+                                                               refs("From", top + 1, kind="modelField"),
+                                                               refs("To", top + 2)])),
+                    (top + 1, top, top, model("Party", [fld("Identifier", ("String", "+1202555014%d" % n)),
+                                                        fld("Role", ("PartyRole", "From")),
+                                                        fld("IsPhoneOwner", ("Boolean", "False"))])),
+                    (top + 2, top, top, model("Party", [fld("Identifier", ("String", "+1202555015%d" % n)),
+                                                        fld("Role", ("PartyRole", "To")),
+                                                        fld("IsPhoneOwner", ("Boolean", "False"))]))]
+        stamps.append(_stamp(top, "TimeStamp", "InstantMessage", when))
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = make_extraction(c, case, records, timestamps=stamps, metadata={"MSISDN": "+12025550100"})
+        build(engine, ext)
+        with api_client(engine, case) as client:
+            out = client.get("/api/pattern/%s/day" % case, params={
+                "subject": json.dumps({"kind": "extraction", "extraction_id": str(ext)}),
+                "date": DAY.date().isoformat(), "zone": "UTC"}).json()
+        msgs = out["lanes"]["communications"]
+        assert len(msgs) == 5
+        for m in msgs:
+            assert [p["role"] for p in m["parties"]] == ["sender", "recipient"], m["parties"]

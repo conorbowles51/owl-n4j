@@ -90,3 +90,18 @@ export function zonedResult(local: string, zone: string): { instant: string | nu
 export function zoned(local: string, zone: string): string | null {
   return zonedResult(local, zone).instant
 }
+
+/** The last day a phone's activity covers (04 decision 38): the usual span's last day, else its last event's day. */
+export function usualLast(p: { last: string | null; usual_span?: { last: string | null } | null } | undefined): string | null {
+  return p?.usual_span?.last || (p?.last ? p.last.slice(0, 10) : null)
+}
+
+/** Words for the events a phone holds on dates set apart from the rest, or null when there are none. */
+export function setApartWords(label: string, span: { first: string | null; last: string | null; set_apart: number;
+  set_apart_first: string | null; set_apart_last: string | null } | null | undefined): string | null {
+  if (!span || !span.set_apart) return null
+  const n = span.set_apart
+  return `${label}: ${n.toLocaleString("en-US")} event${n === 1 ? "" : "s"} lie on dates set apart from the rest ` +
+    `(${(span.set_apart_first || "").slice(0, 10)} to ${(span.set_apart_last || "").slice(0, 10)}, UTC). ` +
+    `The views open on the usual span, ${span.first} to ${span.last}; any date can still be chosen.`
+}

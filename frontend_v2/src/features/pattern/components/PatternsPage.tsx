@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/ui/page-header"
 import { patternAPI, type Subject, type SubjectList, type TogetherResponse } from "../api"
 import { Lanes } from "./Lanes"
-import { errorWords, laneRowsOf } from "../lanes-lib"
+import { errorWords, laneRowsOf, setApartWords, usualLast } from "../lanes-lib"
 import { StatementCheckPanel } from "./StatementCheckPanel"
 import { KeepResult } from "./CollectBar"
 import { KeyDatesBar } from "./KeyDates"
@@ -40,10 +40,17 @@ function parseSubject(raw: string | null): Subject | null {
   return null
 }
 
+function phonesOf(list: SubjectList | undefined, s: Subject | null) {
+  if (!list || !s) return []
+  if (s.kind === "extraction") return list.extractions.filter((e) => e.extraction_id === s.extraction_id)
+  const ids = list.dossiers.find((d) => d.dossier_id === s.dossier_id)?.extraction_ids || []
+  return list.extractions.filter((e) => ids.includes(e.extraction_id))
+}
+
 function lastDay(list: SubjectList | undefined, s: Subject | null): string {
-  const phone = list?.extractions.find((e) => s?.kind === "extraction" && e.extraction_id === s.extraction_id)
-  const last = phone?.last || list?.extractions.map((e) => e.last).filter(Boolean).sort().pop()
-  return (last || new Date().toISOString()).slice(0, 10)
+  const mine = phonesOf(list, s)
+  const days = (mine.length ? mine : list?.extractions || []).map(usualLast).filter((d): d is string => !!d).sort()
+  return days.pop() || new Date().toISOString().slice(0, 10)
 }
 
 export function PatternsPage() {
@@ -81,6 +88,9 @@ export function PatternsPage() {
           </span>
         )}
       </div>
+      {phonesOf(subjects.data, subject).map((e) => setApartWords(e.label, e.usual_span)).filter(Boolean).map((w) => (
+        <p key={w} className="text-xs text-muted-foreground">{w}</p>
+      ))}
       <KeyDatesBar caseId={caseId} />
       <nav aria-label="Pattern views" className="flex flex-wrap gap-1">
         {VIEWS.map((v) => (
@@ -201,8 +211,8 @@ function TogetherView({ caseId, subject, list }: { caseId: string; subject: Subj
     setErr(null); setRes(null)
     const a = list.extractions.find((e) => subject.kind === "extraction" && e.extraction_id === subject.extraction_id)
     const b = list.extractions.find((e) => e.extraction_id === other)
-    const last = [a?.last, b?.last].filter(Boolean).sort()[0] || new Date().toISOString()
-    const end = new Date(last); const start = new Date(end.getTime() - 7 * 86400_000)
+    const lastDays = [usualLast(a), usualLast(b)].filter((d): d is string => !!d).sort()
+    const end = lastDays[0] ? new Date(`${lastDays[0]}T23:59:59Z`) : new Date(); const start = new Date(end.getTime() - 7 * 86400_000)
     setBusy("Comparing pairs of points…")
     try {
       let r = await patternAPI.together(caseId, subject, { kind: "extraction", extraction_id: other }, start.toISOString(), end.toISOString())

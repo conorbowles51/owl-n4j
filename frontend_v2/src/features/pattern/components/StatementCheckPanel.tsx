@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { phoneLinkHref } from "@/features/phones/phone-links"
-import { patternAPI, type Claim, type ClaimKind, type Evaluation, type EvaluationItem, type Subject } from "../api"
+import { patternAPI, type Claim, type ClaimKind, type Evaluation, type EvaluationItem, type GroupEvents, type Subject } from "../api"
 import { errorWords } from "../lanes-lib"
 import { CollectBar } from "./CollectBar"
 import { DraftPanel } from "./DraftPanel"
@@ -10,7 +10,8 @@ import { DraftPanel } from "./DraftPanel"
 /**
  * Statement check (04 section 9; 07 J-9). Claims are typed here or drafted by the model ("Drafted by <model>, not
  * confirmed" until a person confirms). A confirmed claim is checked; the result is in fixed wording with exact
- * counts, items grouped as supports, undercuts, gaps and context, every item reachable. "This item is wrong" marks
+ * counts, items grouped as supports, undercuts, gaps and context, every item reachable (200 shown at a time; a counted
+ * group of context events lists its events on request). "This item is wrong" marks
  * an item with a typed reason; the computed outcome never changes by hand. A stale result shows Check again.
  */
 const KIND_WORDS: Record<ClaimKind, string> = {
@@ -110,35 +111,86 @@ function EvaluationView({ caseId, claim, ev, onAgain, onDispute }: {
         <p className="flex items-center gap-2">The phones' reading or the statement changed since this check.
           <Button size="sm" onClick={onAgain}>Check again</Button></p>
       )}
-      {GROUPS.map((g) => {
-        const items = ev.items.filter((i) => i.role === g.role)
-        return (
-          <div key={g.role}>
-            <h4 className="font-medium">{g.title} ({items.length.toLocaleString()})</h4>
-            <ul className="flex flex-col gap-0.5">
-              {items.map((i) => {
-                const href = i.record_uid ? phoneLinkHref(caseId, { target_type: "phone_record", target_id: i.record_uid }) : null
-                return (
-                  <li key={i.ordinal} className="flex flex-wrap items-center gap-2">
-                    <span>{i.at_utc ? utc(i.at_utc) : ""}</span>
-                    <span>{i.explanation}</span>
-                    {i.strength && <span className="text-xs text-muted-foreground">{i.strength}</span>}
-                    {href && <a className="text-xs underline" href={href}>Open the record</a>}
-                    {i.disputed
-                      ? <span className="text-xs">Marked wrong by {i.disputed.actor_name}: {i.disputed.reason}</span>
-                      : <button className="text-xs underline" onClick={() => onDispute(i.ordinal)}>This item is wrong</button>}
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        )
-      })}
+      {GROUPS.map((g) => <RoleList key={g.role} caseId={caseId} claimId={claim.id} ev={ev} role={g.role} title={g.title}
+        onDispute={onDispute} />)}
       <h4 className="font-medium">What would contradict this?</h4>
       <ul>{(ev.summary.not_yet_checked || []).map((n) => <li key={n.code}>{n.words}</li>)}</ul>
       <p className="text-xs text-muted-foreground">Statement {claim.window_text ? `"${claim.window_text}" ` : ""}checked from {utc(ev.window.start)} to {utc(ev.window.end)}{ev.window.zone !== "UTC" ? ` (the statement's zone: ${ev.window.zone})` : ""}.</p>
       <CollectBar caseId={caseId} noun="statement check" origin="Added from the statement check"
         links={[{ target_type: "statement_check", target_id: ev.evaluation_id, label: `Statement check: ${claim.window_text || claim.kind}`, source_anchor: {} }]} />
+    </div>
+  )
+}
+
+const PAGE = 200
+
+/** One role's items, 200 at a time with the count shown, so a long list never hangs the page and every item stays
+ * reachable. A counted group of context events (04 decision 37) opens its own list of events. */
+export function RoleList({ caseId, claimId, ev, role, title, onDispute }: {
+  caseId: string; claimId: string; ev: Evaluation; role: EvaluationItem["role"]; title: string; onDispute: (ordinal: number) => void
+}) {
+  const [shown, setShown] = useState(PAGE)
+  const items = ev.items.filter((i) => i.role === role)
+  const total = items.length
+  return (
+    <div>
+      <h4 className="font-medium">{title} ({total.toLocaleString("en-US")})</h4>
+      <ul className="flex flex-col gap-0.5">
+        {items.slice(0, shown).map((i) => {
+          const href = i.record_uid ? phoneLinkHref(caseId, { target_type: "phone_record", target_id: i.record_uid }) : null
+          return (
+            <li key={i.ordinal} className="flex flex-col">
+              <div className="flex flex-wrap items-center gap-2">
+                <span>{i.at_utc ? utc(i.at_utc) : ""}</span>
+                <span>{i.explanation}</span>
+                {i.strength && <span className="text-xs text-muted-foreground">{i.strength}</span>}
+                {href && <a className="text-xs underline" href={href}>Open the record</a>}
+                {i.disputed
+                  ? <span className="text-xs">Marked wrong by {i.disputed.actor_name}: {i.disputed.reason}</span>
+                  : <button className="text-xs underline" onClick={() => onDispute(i.ordinal)}>This item is wrong</button>}
+              </div>
+              {i.ref_kind === "event_group" && <GroupEventsList caseId={caseId} claimId={claimId} evaluationId={ev.evaluation_id} item={i} />}
+            </li>
+          )
+        })}
+      </ul>
+      {total > shown && (
+        <p className="flex items-center gap-2 text-xs">Showing {shown.toLocaleString("en-US")} of {total.toLocaleString("en-US")}.
+          <button className="underline" onClick={() => setShown(shown + PAGE)}>Show {Math.min(PAGE, total - shown).toLocaleString("en-US")} more</button></p>
+      )}
+    </div>
+  )
+}
+
+function GroupEventsList({ caseId, claimId, evaluationId, item }: { caseId: string; claimId: string; evaluationId: string; item: EvaluationItem }) {
+  const [open, setOpen] = useState(false)
+  const [pages, setPages] = useState<GroupEvents[]>([])
+  const [err, setErr] = useState<string | null>(null)
+  const count = Number((item.display as { count?: number }).count || 0)
+  async function more(cursor: number) {
+    setErr(null)
+    try {
+      const page = await patternAPI.groupEvents(caseId, claimId, evaluationId, item.ordinal, cursor)
+      setPages((p) => [...p, page])
+    } catch (e) { setErr(errorWords(e)) }
+  }
+  const last = pages[pages.length - 1]
+  const rows = pages.flatMap((p) => p.items)
+  if (!open) return <button className="self-start text-xs underline" onClick={() => { setOpen(true); if (!pages.length) void more(0) }}>Show the {count.toLocaleString("en-US")} events</button>
+  return (
+    <div className="ml-4 flex flex-col gap-0.5 text-xs">
+      {err && <p role="alert" className="text-destructive">{err}</p>}
+      {last?.changed_since_check && <p>The phone's readings changed after this check: {last.total.toLocaleString("en-US")} events now, {last.stored_count.toLocaleString("en-US")} when checked.</p>}
+      <ul>
+        {rows.map((r) => {
+          const href = r.record_uid ? phoneLinkHref(caseId, { target_type: "phone_record", target_id: r.record_uid }) : null
+          return <li key={r.activity_event_id} className="flex flex-wrap gap-2"><span>{utc(r.at_utc)}</span><span>{r.display.type}, {r.display.field}</span>
+            {r.display.source_app && <span>{r.display.source_app}</span>}{href && <a className="underline" href={href}>Open the record</a>}</li>
+        })}
+      </ul>
+      {last && <p className="flex items-center gap-2">Showing {rows.length.toLocaleString("en-US")} of {last.total.toLocaleString("en-US")}.
+        {last.next_cursor !== null && <button className="underline" onClick={() => void more(last.next_cursor as number)}>Show more</button>}
+        <button className="underline" onClick={() => setOpen(false)}>Hide</button></p>}
     </div>
   )
 }

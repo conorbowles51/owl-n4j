@@ -13,7 +13,10 @@ from uuid import UUID
 from datetime import date as date_type
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from postgres.session import get_db
@@ -34,6 +37,34 @@ def _iso(v):
             v = v.replace(tzinfo=timezone.utc)
         return v.isoformat()
     return v
+
+
+class _ListJSON(JSONResponse):
+    """A large payload rendered directly, with FastAPI's own encoder only
+    for values json cannot write (dates, decimals), so the bytes match the default path. FastAPI's default walk of
+    a Day view's 80,000 values took 0.14 s of a 0.5 s target."""
+
+    def render(self, content) -> bytes:
+        return json.dumps(content, ensure_ascii=False, allow_nan=False, indent=None, separators=(",", ":"),
+                          default=self.fallback).encode("utf-8")
+
+    @staticmethod
+    def fallback(o):
+        return jsonable_encoder(o)
+
+
+class _WalkJSON(_ListJSON):
+    """The same bytes as ``_ListJSON(_jsonable(x))`` without the walk: json writes dicts, lists and tuples itself and
+    hands only the values it cannot write to the fallback, which converts them as ``_jsonable`` would (naive
+    datetimes as UTC). The walk took 0.2 s of a Day view on the busiest P14 day (04 section 11)."""
+
+    @staticmethod
+    def fallback(o):
+        if isinstance(o, datetime):
+            return _iso(o)
+        if isinstance(o, UUID):
+            return str(o)
+        return jsonable_encoder(o)
 
 
 def _jsonable(o):
@@ -143,7 +174,7 @@ def get_grid(subject: str = Query(...), start_date: str = Query(...), end_date: 
         out = grid.grid(conn, r["extraction_ids"], labels, a, b, zone, min_strength, cls, include_physical)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    return _jsonable(dict(out, subject=r["subject"]))
+    return _ListJSON(dict(out, subject=r["subject"]))  # datetimes and ids written by the renderer's fallback
 
 
 PLACE_PAGE = 1000
@@ -502,7 +533,7 @@ def post_claim_evaluate(claim_id: UUID, case_id: UUID = Depends(require_case_edi
     except claims.ClaimError as exc:
         raise _claim_error(exc)
     db.commit()
-    return _jsonable(out)
+    return _WalkJSON(out)
 
 
 @router.get("/{case_id}/claims/{claim_id}/evaluations")
@@ -524,7 +555,22 @@ def get_claim_evaluation(claim_id: UUID, evaluation_id: UUID, case_id: UUID = De
         raise _claim_error(exc)
     if str(out["claim_id"]) != str(claim_id):
         raise HTTPException(status_code=404, detail="That check is not of this statement.")
-    return _jsonable(out)
+    return _WalkJSON(out)
+
+
+@router.get("/{case_id}/claims/{claim_id}/evaluations/{evaluation_id}/items/{ordinal}/events")
+def get_item_group_events(claim_id: UUID, evaluation_id: UUID, ordinal: int, cursor: int = Query(0, ge=0),
+                          case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
+    """Every event of one context group of a check (04 decision 37), paged, with the count the check stored."""
+    from services.pattern_of_life import claims, evaluation
+    conn = db.connection()
+    try:
+        head = evaluation.read_head(conn, case_id, evaluation_id)
+        if str(head["claim_id"]) != str(claim_id):
+            raise HTTPException(status_code=404, detail="That check is not of this statement.")
+        return _jsonable(evaluation.group_events(conn, case_id, evaluation_id, ordinal, cursor))
+    except claims.ClaimError as exc:
+        raise _claim_error(exc)
 
 
 @router.post("/{case_id}/claims/{claim_id}/evaluations/{evaluation_id}/items/{ordinal}/dispute")
@@ -612,7 +658,12 @@ def post_claim_drafts(body: ClaimDraftRequest, background_tasks: BackgroundTasks
 # ---- Day view, the lanes window and every event (04 sections 8.1, 8.6, 10) ---------------------------------------
 
 def _labels(conn, case_id):
-    return {e["extraction_id"]: e["label"] for e in subjects.extractions(conn, case_id)}
+    """The active phones' labels, as /subjects gives them, without its per-family event counts (an aggregate over
+    every event of every phone: 4.1 s of a 4.6 s Day view on a 542,091-event phone)."""
+    from services.phone import readings
+    labels = readings.phone_labels(conn, case_id)
+    return {str(e): labels.get(e) or labels.get(str(e)) or "Phone" for (e,) in conn.execute(text(
+        "SELECT id FROM phone_extractions WHERE case_id = :c AND standing = 'active'"), {"c": case_id})}
 
 
 def _money_days(db, case_id, first_day, last_day, zone):
@@ -636,7 +687,7 @@ def get_day(subject: str = Query(...), date: str = Query(...), zone: str = Query
     out = day_view.window(conn, r["extraction_ids"], _labels(conn, case_id), a, b, include_passive=include_passive,
                           money_rows=money_rows)
     out["totals"]["money"] = money_total
-    return _jsonable(dict(out, subject=r["subject"], date=d, zone=zname, start=a, end=b))
+    return _WalkJSON(dict(out, subject=r["subject"], date=d, zone=zname, start=a, end=b))
 
 
 WINDOW_SPANS = {"1h": timedelta(hours=1), "6h": timedelta(hours=6), "24h": timedelta(hours=24)}
@@ -673,7 +724,7 @@ def get_window(at: str | None = Query(None), span: str = Query("1h"), start: str
         w = day_view.window(conn, [e], labels, a, b)
         phones.append(dict(w, extraction_id=e, label=labels.get(e)))
     money_rows, money_total = _money_days(db, case_id, a.astimezone(z).date(), b.astimezone(z).date(), z)
-    return _jsonable({"start": a, "end": b, "span": span, "zone": zname,
+    return _WalkJSON({"start": a, "end": b, "span": span, "zone": zname,
                       "zone_basis": cz["basis"] if cz else ("device_zone" if zone == "device" else "chosen"),
                       "zone_note": cz["note"] if cz else None, "phones": phones,
                       "phones_total": len(phones), "money": money_rows, "money_total": money_total})

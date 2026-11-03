@@ -5,8 +5,10 @@ with their interpretation generation and projection state, mapping versions, the
 the claim version) and their sha256; an evaluation whose inputs no longer match the current ones is ``stale`` (shown,
 never deleted), and **Check again** writes a new one beside it.
 
-Every item is stored and returned; there is no limit. Items within 30 minutes outside the window are ``context`` so
-an approximate time in the statement never hides a near miss. Items are ordered by time, then kind and id, so a
+Every item is stored and returned; there is no limit. Context events inside the window (recorded without use, a state
+change, not the user's own action, a time whose meaning is unknown) are one item per phone, hour and reason with the
+count, each event listed by ``group_events`` (04 decision 37). Items within 30 minutes outside the window are
+``context`` so an approximate time in the statement never hides a near miss. Items are ordered by time, then kind and id, so a
 re-run on unchanged inputs is identical.
 
 Bank payments are never items of a person's check: the ledger does not link accounts to phones or people (04
@@ -17,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 
@@ -112,13 +114,56 @@ def _item(role, ref_kind, ref_id, reason, explanation, *, strength=None, at=None
             "display": display or {}}
 
 
-def _events(conn, exts, a, b):
+_EVENT_COLUMNS = ("SELECT id, extraction_id, record_uid, record_type, time_field, field_path, instant_utc, end_utc, "
+                  "time_semantics, activity_class, actor, physical, attribution_flags, strength, source_app, "
+                  "offset_status")
+_CONTEXT_COLUMNS = ("SELECT extraction_id, instant_utc, end_utc, time_semantics, activity_class, actor, physical, "
+                    "strength, record_type")
+
+
+def _overlap(cols):
+    """Events overlapping [a - margin, b + margin): those starting inside it, and those starting earlier whose end
+    falls inside it (two index ranges; one overlap test read every earlier event of the phone, 04 section 11)."""
+    sel = cols + " FROM pol_activity_event_v WHERE extraction_id = ANY(CAST(:e AS uuid[])) AND "
+    return "(" + sel + "instant_utc >= :lo AND instant_utc < :hi UNION ALL " + sel + \
+        "instant_utc < :lo AND end_utc >= :lo) x"
+
+
+# An event inside the window that is neither the owner's use nor (for "inactive") the phone moving: context, kept
+# by count only (04 decision 37). Mirrors the tests in ``_activity``; the columns it reads are NOT NULL.
+_INSIDE = "x.instant_utc < :b AND coalesce(x.end_utc, x.instant_utc) >= :a"
+_CONTEXT = (_INSIDE + " AND NOT (x.actor = 'owner' AND x.activity_class = 'interaction' AND x.strength <> 'none') "
+            "AND NOT (CAST(:inactive AS boolean) AND x.physical)")
+
+
+_HOUR = "date_trunc('hour', x.instant_utc AT TIME ZONE 'UTC')"
+# why a context event neither undercuts nor supports: what its time means is unknown, or its class
+_REASON = ("CASE WHEN x.time_semantics = 'unknown' THEN 'time_meaning_unknown' WHEN x.activity_class IN "
+           "('device_state', 'passive') THEN x.activity_class ELSE 'not_owner_use' END")
+
+
+def _events(conn, exts, a, b, inactive):
+    """The events listed one by one: every overlapping event except the context ones."""
+    p = {"e": list(exts), "lo": a - MARGIN, "hi": b + MARGIN, "a": a, "b": b, "inactive": bool(inactive)}
     return [dict(r) for r in conn.execute(text(
-        "SELECT id, extraction_id, record_uid, record_type, time_field, field_path, instant_utc, end_utc, "
-        "time_semantics, activity_class, actor, physical, attribution_flags, strength, source_app, offset_status "
-        "FROM pol_activity_event_v WHERE extraction_id = ANY(CAST(:e AS uuid[])) AND instant_utc < :b AND "
-        "coalesce(end_utc, instant_utc) >= :a ORDER BY instant_utc, id"),
-        {"e": list(exts), "a": a - MARGIN, "b": b + MARGIN}).mappings()]
+        "SELECT * FROM " + _overlap(_EVENT_COLUMNS) + " WHERE NOT (" + _CONTEXT + ") ORDER BY instant_utc, id"),
+        p).mappings()]
+
+
+def _context_groups(conn, exts, a, b, inactive):
+    """The context events counted per phone, UTC hour, reason and record type."""
+    p = {"e": list(exts), "lo": a - MARGIN, "hi": b + MARGIN, "a": a, "b": b, "inactive": bool(inactive)}
+    groups = {}
+    for ext, hour, reason, rtype, n, first, last in conn.execute(text(
+            "SELECT x.extraction_id, " + _HOUR + ", " + _REASON + ", x.record_type, count(*), min(x.instant_utc), "
+            "max(x.instant_utc) FROM " + _overlap(_CONTEXT_COLUMNS) + " WHERE " + _CONTEXT +
+            " GROUP BY 1, 2, 3, 4"), p):
+        g = groups.setdefault((str(ext), hour.replace(tzinfo=timezone.utc), reason),
+                              {"count": 0, "first": first, "last": last, "types": {}})
+        g["count"] += n
+        g["first"], g["last"] = min(g["first"], first), max(g["last"], last)
+        g["types"][rtype] = g["types"].get(rtype, 0) + n
+    return groups
 
 
 def _in_window(start, end, a, b):
@@ -160,11 +205,17 @@ def _interaction_free_pieces(pieces, owner_int):
     return out
 
 
+CONTEXT_WORDS = {"device_state": "The screen or the phone's state changed; a notification can do this.",
+                 "passive": "Recorded by the phone without anyone using it.",
+                 "time_meaning_unknown": "What this time means is not established.",
+                 "not_owner_use": "Not shown to be the user's own action."}
+
+
 def _activity(conn, claim, a, b, exts, inactive):
     items = []
     tol = timedelta(minutes=int((claim.get("activity") or {}).get("tolerance_minutes", 0) or 0))
     owner_int = []
-    for ev in _events(conn, exts, a, b):
+    for ev in _events(conn, exts, a, b, inactive):
         disp, kw = _event_display(ev), {}
         kw = dict(at=ev["instant_utc"], end=ev["end_utc"], record_uid=ev["record_uid"], field_path=ev["field_path"],
                   extraction_id=ev["extraction_id"], display=disp)
@@ -187,14 +238,15 @@ def _activity(conn, claim, a, b, exts, inactive):
             items.append(_item("contradicting", "activity_event", ev["id"], "phone_moved", "The phone moved.",
                                strength="weak", **kw))
         else:
-            reason = {"device_state": "device_state", "passive": "passive"}.get(ev["activity_class"], "not_owner_use")
-            if ev["strength"] == "none":
-                reason = "time_meaning_unknown"
-            words = {"device_state": "The screen or the phone's state changed; a notification can do this.",
-                     "passive": "Recorded by the phone without anyone using it.",
-                     "time_meaning_unknown": "What this time means is not established.",
-                     "not_owner_use": "Not shown to be the user's own action."}[reason]
-            items.append(_item("context", "activity_event", ev["id"], reason, words, strength=ev["strength"], **kw))
+            raise AssertionError("a context event was listed one by one")  # _CONTEXT and these tests disagree
+    groups = _context_groups(conn, exts, a, b, inactive)
+    for (ext, hour, reason), g in sorted(groups.items(), key=lambda kv: (kv[0][1], kv[0][0], kv[0][2])):
+        items.append(_item("context", "event_group", "%s:%s:%s" % (ext, hour.isoformat(), reason), reason,
+                           "%s event%s in this hour. %s" % (format(g["count"], ","), "" if g["count"] == 1 else "s",
+                                                            CONTEXT_WORDS[reason]),
+                           at=g["first"], end=g["last"], extraction_id=ext,
+                           display={"count": g["count"], "hour_utc": hour.isoformat(),
+                                    "types": dict(sorted(g["types"].items()))}))
     gaps, pieces = _gap_items(conn, exts, a, b)
     items += gaps
     free = _interaction_free_pieces(pieces, owner_int)
@@ -321,7 +373,7 @@ def _contact(conn, claim, a, b, exts, no_contact):
     keys = _counterpart_keys(conn, claim)
     subject_keys = sorted(r[0] for r in conn.execute(text(
         "SELECT DISTINCT p.identity_key FROM pv_comm_party p WHERE p.extraction_id = ANY(CAST(:e AS uuid[])) AND "
-        "p.is_phone_owner"), {"e": list(exts)}))
+        "p.is_phone_owner AND p.identity_key IS NOT NULL"), {"e": list(exts)}))  # an unnamed owner names no one
     if not keys:
         raise EvaluationError("The other side has no identity in the case to look for.", 422, fields=["counterpart"])
     case_exts = sorted({r[0] for r in conn.execute(text(
@@ -498,15 +550,18 @@ def evaluate(conn, case_id, claim_id, requested_by) -> dict:
         {"i": eid, "c": case_id, "cl": claim_id, "v": claim["version"], "r": requested_by,
          "inp": json.dumps(res["inputs"], default=str), "f": res["fingerprint"], "o": res["outcome"],
          "ob": res["outcome_basis"], "s": json.dumps(res["summary"], default=str), "n": json.dumps(res["counts"])})
-    rows = [dict(it, evaluation_id=eid, ordinal=n, display=json.dumps(it["display"], default=str))
-            for n, it in enumerate(res["items"])]
-    for i in range(0, len(rows), 5000):
-        conn.execute(text(
-            "INSERT INTO pol_claim_evaluation_item (evaluation_id, ordinal, role, ref_kind, ref_id, strength, reason_code, "
-            "explanation, record_uid, field_path, extraction_id, at_utc, end_utc, display) VALUES (:evaluation_id, "
-            ":ordinal, :role, :ref_kind, :ref_id, :strength, :reason_code, :explanation, :record_uid, :field_path, "
-            ":extraction_id, :at_utc, :end_utc, CAST(:display AS jsonb))"), rows[i:i + 5000])
+    # every item is stored (a busy day gives tens of thousands of context items), so they go in by COPY
+    from services.phone import generic
+    w = generic.Writer(conn, {"pol_claim_evaluation_item": ITEM_COLUMNS})
+    for n, it in enumerate(res["items"]):
+        w.add("pol_claim_evaluation_item", dict(it, evaluation_id=eid, ordinal=n,
+                                                display=json.dumps(it["display"], default=str)))
+    w._flush()
     return read(conn, case_id, eid)
+
+
+ITEM_COLUMNS = ("evaluation_id", "ordinal", "role", "ref_kind", "ref_id", "strength", "reason_code", "explanation",
+                "record_uid", "field_path", "extraction_id", "at_utc", "end_utc", "display")
 
 
 def is_stale(conn, ev) -> bool:
@@ -542,6 +597,48 @@ def read(conn, case_id, evaluation_id) -> dict:
             "summary": ev["summary"], "counts": ev["counts"], "inputs": ev["inputs"],
             "inputs_fingerprint": ev["inputs_fingerprint"], "total_items": len(items), "items": items,
             "disputed_items": len(disputes)}
+
+
+GROUP_PAGE = 1000
+
+
+def group_events(conn, case_id, evaluation_id, ordinal, cursor=0) -> dict:
+    """The events of one context group (04 decision 37), from the current projection, paged; with the count the check
+    stored, so a group whose events changed since the check says so."""
+    ev = read_head(conn, case_id, evaluation_id)
+    it = conn.execute(text("SELECT ref_kind, ref_id, display FROM pol_claim_evaluation_item WHERE evaluation_id = :i "
+                           "AND ordinal = :o"), {"i": evaluation_id, "o": ordinal}).mappings().first()
+    if it is None or it["ref_kind"] != "event_group":
+        raise EvaluationError("That item is not a group of events in this check.", 404)
+    ext, reason = it["ref_id"].split(":", 1)[0], it["ref_id"].rsplit(":", 1)[1]
+    hour = datetime.fromisoformat(it["display"]["hour_utc"])
+    a, b = ev["window"]["start"], ev["window"]["end"]
+    # the same rule as _context_groups, narrowed to the group's phone, hour and reason
+    p = {"e": [ext], "lo": a - MARGIN, "hi": b + MARGIN, "a": a, "b": b, "inactive": ev["kind"] == "inactive",
+         "hour": hour.astimezone(timezone.utc).replace(tzinfo=None), "reason": reason}
+    where = " WHERE " + _CONTEXT + " AND " + _HOUR + " = :hour AND " + _REASON + " = :reason"
+    total = conn.execute(text("SELECT count(*) FROM " + _overlap(_CONTEXT_COLUMNS) + where), p).scalar_one()
+    page = [dict(r) for r in conn.execute(text(
+        "SELECT * FROM " + _overlap(_EVENT_COLUMNS) + where + " ORDER BY instant_utc, id "
+        "LIMIT :lim OFFSET :off"), dict(p, lim=GROUP_PAGE, off=max(int(cursor), 0))).mappings()]
+    nxt = cursor + len(page)
+    return {"ordinal": ordinal, "stored_count": it["display"]["count"], "total": total, "cursor": cursor,
+            "limit": GROUP_PAGE, "returned": len(page), "next_cursor": nxt if nxt < total else None,
+            "changed_since_check": total != it["display"]["count"],
+            "items": [{"activity_event_id": e["id"], "at_utc": e["instant_utc"], "end_utc": e["end_utc"],
+                       "record_uid": str(e["record_uid"]) if e["record_uid"] else None, "field_path": e["field_path"],
+                       "display": _event_display(e)} for e in page]}
+
+
+def read_head(conn, case_id, evaluation_id) -> dict:
+    """The evaluation's window and claim kind, without its items."""
+    ev = conn.execute(text("SELECT e.claim_id, c.kind, c.window_start, c.window_end FROM pol_claim_evaluation e JOIN "
+                           "pol_claim c ON c.id = e.claim_id WHERE e.id = :i AND e.case_id = :c"),
+                      {"i": evaluation_id, "c": case_id}).mappings().first()
+    if ev is None:
+        raise EvaluationError("That check is not in this case.", 404)
+    return {"claim_id": ev["claim_id"], "kind": ev["kind"],
+            "window": {"start": ev["window_start"], "end": ev["window_end"]}}
 
 
 def list_evaluations(conn, case_id, claim_id) -> dict:

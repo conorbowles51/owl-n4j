@@ -230,37 +230,46 @@ def bands(conn, extraction_id, start, end, kinds=None):
 def hour_states(conn, extraction_id, start, end) -> list:
     """[{hour_utc, state, counts, observed_minutes, observed_capable_minutes}] for every UTC hour in [start, end)."""
     start = start.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
-    roll = {r["hour_utc"]: dict(r) for r in conn.execute(text(
-        "SELECT * FROM pol_hourly_rollup WHERE extraction_id = :e AND hour_utc >= :a AND hour_utc < :b"),
-        {"e": extraction_id, "a": start, "b": end}).mappings()}
+    # the nine columns read below, as tuples (a Pattern grid reads 20,000 hours; whole rows as dicts cost 0.3 s)
+    roll = {r[0]: tuple(v or 0 for v in r[1:]) for r in conn.execute(text(
+        "SELECT hour_utc, interaction_strong, interaction_moderate, interaction_weak, device_state, passive, physical, "
+        "observed_minutes, observed_capable_minutes FROM pol_hourly_rollup WHERE extraction_id = :e AND hour_utc >= :a "
+        "AND hour_utc < :b"), {"e": extraction_id, "a": start, "b": end})}
+    empty = (0,) * 8
     whole = bands(conn, extraction_id, start, end, kinds=BAND_PRIORITY)
+    # the highest-priority band wholly covering each hour: each band marks the hours it covers (hour k spans
+    # start + k h to start + (k + 1) h), so the cost is the hours covered, not hours x bands (6.5 million band tests
+    # for a 670-day grid)
+    one = timedelta(hours=1)
+    n_hours = -((start - end) // one)
+    rank = {name: i for i, name in enumerate(BAND_PRIORITY)}
+    best = {}
+    for b in whole:
+        i = rank[b["band"]]
+        k0 = max(0, -((start - b["start_utc"]) // one))  # first hour starting at or after the band's start
+        k1 = min(n_hours, (b["end_utc"] - start) // one)  # hours ending at or before the band's end
+        for k in range(k0, k1):
+            if best.get(k, len(BAND_PRIORITY)) > i:
+                best[k] = i
     out = []
     h = start
+    k = 0
     while h < end:
-        nxt = h + timedelta(hours=1)
-        r = roll.get(h, {})
-        state = None
-        for name in BAND_PRIORITY:
-            if any(b["band"] == name and b["start_utc"] <= h and b["end_utc"] >= nxt for b in whole):
-                state = name
-                break
-        n_int = (r.get("interaction_strong") or 0) + (r.get("interaction_moderate") or 0) + \
-            (r.get("interaction_weak") or 0)
+        strong, moderate, weak, device_state, passive, physical, observed, capable = roll.get(h, empty)
+        state = BAND_PRIORITY[best[k]] if k in best else None
+        k += 1
         if state is None:
-            if n_int > 0:
+            if strong + moderate + weak > 0:
                 state = "interaction"
-            elif (r.get("observed_minutes") or 0) >= OBSERVED_HOUR_MINUTES:
+            elif observed >= OBSERVED_HOUR_MINUTES:
                 state = "data_no_interaction"
             else:
                 state = "no_data"
         out.append({"hour_utc": h, "state": state,
-                    "counts": {"strong": r.get("interaction_strong") or 0,
-                               "moderate": r.get("interaction_moderate") or 0, "weak": r.get("interaction_weak") or 0,
-                               "device_state": r.get("device_state") or 0, "passive": r.get("passive") or 0,
-                               "physical": r.get("physical") or 0},
-                    "observed_minutes": r.get("observed_minutes") or 0,
-                    "observed_capable_minutes": r.get("observed_capable_minutes") or 0})
-        h = nxt
+                    "counts": {"strong": strong, "moderate": moderate, "weak": weak, "device_state": device_state,
+                               "passive": passive, "physical": physical},
+                    "observed_minutes": observed, "observed_capable_minutes": capable})
+        h += one
     return out
 
 

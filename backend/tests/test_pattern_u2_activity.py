@@ -258,6 +258,22 @@ def test_a_new_mapping_version_reclassifies_without_reading_records_again(hooks)
             assert c.execute(text("SELECT count(*), sum(length(body::text)) FROM phone_records WHERE "
                                   "extraction_id = :e"), {"e": ext}).one() == records_before
             assert activity.stale(c) == []
+        # a new version that changes no result writes no event, and the event reads the new version (the view takes
+        # it from the projection state)
+        v3 = copy.deepcopy(v2)
+        v3["version"] = 3
+        write(str(hooks), v3)
+        loader.use_data_dir(str(hooks))
+        out = activity.project_stale(engine)
+        assert out[str(ext)]["changed"] == 0
+        with engine.connect() as c:
+            now = events(c, ext)[("DeviceEvent", "StartTime", 0)]
+            stored = c.execute(text("SELECT activity_mapping_version FROM pol_activity_event WHERE id = :i"),
+                               {"i": now.id}).scalar()
+            assert (now.activity_class, now.strength) == ("interaction", "strong")
+            assert str(now.activity_mapping_version) not in (str(after.activity_mapping_version), str(stored))
+            assert str(now.activity_mapping_version) == str(c.execute(text(
+                "SELECT activity_mapping_version FROM pol_projection_state WHERE extraction_id = :e"), {"e": ext}).scalar())
 
 
 # ---- U3: attribution flags ------------------------------------------------------------------------------------

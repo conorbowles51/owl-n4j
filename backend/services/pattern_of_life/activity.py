@@ -138,6 +138,11 @@ class RowIndex:
                 rows.append(rid)
         return flags, rows
 
+    def activity_versions(self) -> dict:
+        """{"<kind>/<name>/": version id} of the loaded activity-strength mappings: an event's version is the one for
+        its mapping row's prefix."""
+        return {prefix: str(m.id) for m, prefix, *_ in self.kinds["activity_strength"]}
+
     def signature(self, decisions_rev=""):
         return "|".join("%s=%s" % (k, self.versions.get(k)) for k in sorted(self.kinds)) + "|" + decisions_rev
 
@@ -327,7 +332,8 @@ def build(conn, extraction_id, mappings=None) -> dict:
     stats["judgement_calls"] = calls
     stats["seconds"] = round(time.monotonic() - started, 1)
     _state(conn, extraction_id, case_id, "ready", gen=gen, idx=idx, sig=signature(conn, extraction_id, idx),
-           facts_fields={k: sorted(v) for k, v in fields_used.items()}, counts=dict(stats))
+           facts_fields={k: sorted(v) for k, v in fields_used.items()}, counts=dict(stats),
+           fams=families(conn, extraction_id))
     return dict(stats, status="ready")
 
 
@@ -407,7 +413,9 @@ def reclassify(conn, extraction_id, mappings=None) -> dict:
         n += row.n
     if sets:
         changed = _apply_sets(conn, extraction_id, sets)
-    _counterparts(conn, extraction_id, st.case_id, st.generation)
+    # counterparts are not touched: they come from the generation's participations (``_counterparts``, run by the
+    # build), which a re-apply never changes; clearing and setting them again here took 12 to 15 s on P14 and left
+    # them as they were
     calls = _judgement_calls(conn, idx, extraction_id, st.case_id, st.generation)
     _state(conn, extraction_id, st.case_id, "ready", gen=st.generation, idx=idx,
            sig=signature(conn, extraction_id, idx), facts_fields=held,
@@ -426,7 +434,9 @@ def _inputs_key(alias=""):
 
 
 def _apply_sets(conn, extraction_id, sets) -> int:
-    """Write each input set's result to the events holding that set whose result differs; the number written."""
+    """Write each input set's result to the events holding that set whose result differs; the number written. The
+    mapping version is not written per event: the view reads it from the projection state (``activity_versions``),
+    so a new version alone moves no row."""
     conn.execute(text("DROP TABLE IF EXISTS pg_temp.pol_reclass"))
     conn.execute(text(
         "CREATE TEMP TABLE pol_reclass (k text PRIMARY KEY, ac varchar, cb varchar, cl varchar, ar varchar, av uuid, "
@@ -435,15 +445,12 @@ def _apply_sets(conn, extraction_id, sets) -> int:
                       ":fr, :vk)"), sets)
     return conn.execute(text(
         "UPDATE pol_activity_event e SET activity_class = x.ac, class_basis = x.cb, class_level = x.cl, "
-        "activity_mapping_row = x.ar, activity_mapping_version = x.av, actor = x.ac2, physical = x.ph, "
-        "attribution_flags = x.fl, attribution_mapping_rows = x.fr, value_key = x.vk, "
-        "counterpart_identity_id = CASE WHEN x.ac2 = 'counterpart' OR e.record_type <> 'Party' "
-        "THEN e.counterpart_identity_id ELSE NULL END "
+        "activity_mapping_row = x.ar, actor = x.ac2, physical = x.ph, "
+        "attribution_flags = x.fl, attribution_mapping_rows = x.fr, value_key = x.vk "
         "FROM pol_reclass x WHERE e.extraction_id = :e AND " + _inputs_key("e.") + " = x.k AND "
-        "(e.activity_class, e.class_basis, e.class_level, e.activity_mapping_row, "
-        "e.activity_mapping_version, e.actor, e.physical, e.attribution_flags, e.attribution_mapping_rows, "
-        "e.value_key) "
-        "IS DISTINCT FROM (x.ac, x.cb, x.cl, x.ar, x.av, x.ac2, x.ph, x.fl, x.fr, x.vk)"),
+        "(e.activity_class, e.class_basis, e.class_level, e.activity_mapping_row, e.actor, e.physical, "
+        "e.attribution_flags, e.attribution_mapping_rows, e.value_key) "
+        "IS DISTINCT FROM (x.ac, x.cb, x.cl, x.ar, x.ac2, x.ph, x.fl, x.fr, x.vk)"),
         {"e": extraction_id}).rowcount
 
 
@@ -536,7 +543,17 @@ def signature(conn, extraction_id, idx=None) -> str:
     return hashlib.sha256(idx.signature("|".join(mine)).encode()).hexdigest()
 
 
-def _state(conn, extraction_id, case_id, status, gen=None, idx=None, sig=None, facts_fields=None, counts=None):
+def families(conn, extraction_id) -> list:
+    """Per family: events, first and last instant (ISO), as /subjects lists them. Kept on the projection state at
+    build time: the aggregate reads every event of the phone (4.1 s on a 542,091-event phone)."""
+    return [{"family": f, "events": int(n), "first": a.isoformat() if a else None, "last": b.isoformat() if b else None}
+            for f, n, a, b in conn.execute(text(
+                "SELECT family, count(*), min(instant_utc), max(instant_utc) FROM pol_activity_event WHERE "
+                "extraction_id = :e GROUP BY family ORDER BY family"), {"e": extraction_id})]
+
+
+def _state(conn, extraction_id, case_id, status, gen=None, idx=None, sig=None, facts_fields=None, counts=None,
+           fams=None):
     if status == "building":
         conn.execute(text(
             "INSERT INTO pol_projection_state (extraction_id, case_id, status) VALUES (:e, :c, 'building') "
@@ -551,15 +568,21 @@ def _state(conn, extraction_id, case_id, status, gen=None, idx=None, sig=None, f
     conn.execute(text(
         "INSERT INTO pol_projection_state (extraction_id, case_id, interpretation_generation, activity_mapping_version, "
         "meaning_mapping_version, attribution_mapping_version, signature, facts_fields, built_at, event_count, counts, "
-        "status, error) VALUES (:e, :c, :g, :av, :mv, :tv, :sig, CAST(:ff AS jsonb), now(), :n, CAST(:cn AS jsonb), "
-        ":st, NULL) ON CONFLICT (extraction_id) DO UPDATE SET interpretation_generation = EXCLUDED.interpretation_generation, "
+        "status, error, families, activity_versions) VALUES (:e, :c, :g, :av, :mv, :tv, :sig, CAST(:ff AS jsonb), now(), "
+        ":n, CAST(:cn AS jsonb), :st, NULL, CAST(:fm AS jsonb), CAST(:avs AS jsonb)) ON CONFLICT (extraction_id) "
+        "DO UPDATE SET interpretation_generation = EXCLUDED.interpretation_generation, "
         "activity_mapping_version = EXCLUDED.activity_mapping_version, meaning_mapping_version = "
         "EXCLUDED.meaning_mapping_version, attribution_mapping_version = EXCLUDED.attribution_mapping_version, "
         "signature = EXCLUDED.signature, facts_fields = EXCLUDED.facts_fields, built_at = now(), "
-        "event_count = EXCLUDED.event_count, counts = EXCLUDED.counts, status = EXCLUDED.status, error = NULL"),
+        "event_count = EXCLUDED.event_count, counts = EXCLUDED.counts, status = EXCLUDED.status, error = NULL, "
+        "families = coalesce(EXCLUDED.families, pol_projection_state.families), "
+        "activity_versions = EXCLUDED.activity_versions"),
         {"e": extraction_id, "c": case_id, "g": gen, "av": idx.versions.get("activity_strength") if idx else None,
          "mv": meaning, "tv": idx.versions.get("attribution") if idx else None, "sig": sig,
-         "ff": json.dumps(facts_fields or {}), "n": n, "cn": json.dumps(counts or {}, default=str), "st": status})
+         "ff": json.dumps(facts_fields or {}), "n": n, "cn": json.dumps(counts or {}, default=str), "st": status,
+         "fm": json.dumps(fams) if fams is not None else None,
+         # each event's activity mapping version is read from here by the view (pol_activity_event_v)
+         "avs": json.dumps(idx.activity_versions()) if idx else None})
 
 
 def stale(conn) -> list:

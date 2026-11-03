@@ -12,6 +12,9 @@ observed days, 51 messages): it is reported as such and never as a quiet period 
 """
 from __future__ import annotations
 
+import gc
+import threading
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import text
@@ -68,8 +71,38 @@ def _matches(counts, min_strength, classes, include_physical):
     return n
 
 
+_gc_lock = threading.Lock()
+_gc_users = [0, False]  # grids building now; whether collection was on when the first began
+
+
+@contextmanager
+def _collection_paused():
+    """Cyclic garbage collection waits while a grid is built: a grid allocates tens of thousands of small dicts, and
+    the collections they trigger took 400 ms of a 900 ms grid over 874 days (04 section 11). Nothing is freed later
+    than the end of the grid; with grids building in several threads, collection resumes when the last one ends, and
+    only if it was on before."""
+    with _gc_lock:
+        if _gc_users[0] == 0:
+            _gc_users[1] = gc.isenabled()
+            gc.disable()
+        _gc_users[0] += 1
+    try:
+        yield
+    finally:
+        with _gc_lock:
+            _gc_users[0] -= 1
+            if _gc_users[0] == 0 and _gc_users[1]:
+                gc.enable()
+
+
 def grid(conn, extraction_ids, labels, start_date: date, end_date: date, zone_name="device", min_strength="moderate",
          classes=("interaction",), include_physical=False) -> dict:
+    with _collection_paused():
+        return _grid(conn, extraction_ids, labels, start_date, end_date, zone_name, min_strength, classes,
+                     include_physical)
+
+
+def _grid(conn, extraction_ids, labels, start_date, end_date, zone_name, min_strength, classes, include_physical):
     device_zone = None
     if extraction_ids:
         device_zone = conn.execute(text("SELECT device_zone FROM phone_extractions WHERE id = :e"),

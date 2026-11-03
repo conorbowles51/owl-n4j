@@ -279,3 +279,92 @@ def test_claims_over_http_and_attaching_items_to_a_finding(hooks):
             lst = client.get("%s/%s/evaluations" % (base, cl["id"])).json()
             assert lst["total"] == 1 and lst["items"][0]["stale"] is False
             assert client.get(base).json()["total"] == 1
+
+
+@needs_template
+def test_context_events_are_one_item_per_phone_hour_and_reason_and_each_is_listed(hooks):
+    """04 decision 37: recorded-without-use events say so (never "what this time means is not established", which
+    is for a time of unknown meaning), are kept as one counted item per phone, hour and reason, and every event of a
+    group is listed with the count the check stored."""
+    from tests.pattern_pg import api_client
+    setup(hooks)
+    night = DAY + timedelta(hours=23)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            p = night_phone()
+            p.every(night + timedelta(minutes=5), night + timedelta(hours=2), 10, p.device_event, "MotionState",
+                    "Stationary")
+            ext = p.make(c, case)
+        build(engine, ext)
+        with engine.begin() as c:
+            me = person(c, case)
+            cl = confirmed(c, case, me, "inactive", {"kind": "extraction", "extraction_id": str(ext)}, night,
+                           night + timedelta(hours=6))
+            ev = evaluation.evaluate(c, case, cl["id"], me.name)
+        ctx = [i for i in ev["items"] if i["role"] == "context"]
+        assert not [i for i in ctx if i["ref_kind"] == "activity_event" and i["reason_code"] != "near_window"]
+        passive = [i for i in ctx if i["ref_kind"] == "event_group" and i["reason_code"] == "passive"]
+        assert [i["display"]["count"] for i in passive] == [6, 6]  # 23:05 to 00:55, every 10 minutes
+        assert passive[0]["explanation"] == "6 events in this hour. Recorded by the phone without anyone using it."
+        assert not [i for i in ctx if i["reason_code"] == "time_meaning_unknown"]
+        assert [i["display"]["count"] for i in ctx if i["reason_code"] == "device_state"] == [3] * 6  # every 20 min
+        assert ev["outcome"] == "consistent"
+        with api_client(engine, case) as client:
+            url = "/api/pattern/%s/claims/%s/evaluations/%s/items/%d/events" % (case, cl["id"], ev["evaluation_id"],
+                                                                                passive[1]["ordinal"])
+            r = client.get(url)
+            assert r.status_code == 200, r.text
+            got = r.json()
+            assert (got["total"], got["stored_count"], got["returned"], got["changed_since_check"]) == (6, 6, 6, False)
+            assert got["next_cursor"] is None and all(i["record_uid"] for i in got["items"])
+            assert all(i["at_utc"].startswith((night + timedelta(hours=1)).date().isoformat()) for i in got["items"])
+            near = [i for i in ev["items"] if i["ref_kind"] != "event_group"][0]
+            assert client.get(url.rsplit("/items/", 1)[0] + "/items/%d/events" % near["ordinal"]).status_code == 404
+            other = "/api/pattern/%s/claims/%s/evaluations/%s/items/%d/events" % (case, uuid.uuid4(),
+                                                                                  ev["evaluation_id"], 0)
+            assert client.get(other).status_code == 404
+
+
+@needs_template
+def test_no_contact_runs_when_an_owner_party_has_no_identity(hooks):
+    """A phone holds owner parties with and without an identity key (P14 does); the check runs on both."""
+    from tests.phone_pg import fld, model, refs
+    from tests.test_pattern_u4_availability import _stamp
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            p = Phone()
+            p.incoming_message(DAY + timedelta(hours=10))
+            for n, ident in enumerate(("+12025550100", None)):  # outgoing: the owner named by number, then unnamed
+                top, when = p.o, DAY + timedelta(hours=11, minutes=n)
+                owner = [fld("Role", ("PartyRole", "From")), fld("IsPhoneOwner", ("Boolean", "True"))]
+                if ident:
+                    owner.insert(0, fld("Identifier", ("String", ident)))
+                p.records += [(top, None, top, model("InstantMessage", [
+                                  fld("TimeStamp", ("TimeStamp", when.isoformat())),
+                                  refs("From", top + 1, kind="modelField"), refs("To", top + 2)])),
+                              (top + 1, top, top, model("Party", owner)),
+                              (top + 2, top, top, model("Party", [fld("Identifier", ("String", "+12025550143")),
+                                                                  fld("Role", ("PartyRole", "To")),
+                                                                  fld("IsPhoneOwner", ("Boolean", "False"))]))]
+                p.stamps.append(_stamp(top, "TimeStamp", "InstantMessage", when))
+                p.o += 3
+            ext = p.make(c, case)
+        build(engine, ext)
+        with engine.begin() as c:
+            assert c.execute(text("SELECT count(*) FILTER (WHERE identity_key IS NULL), count(*) FILTER (WHERE "
+                                  "identity_key IS NOT NULL) FROM pv_comm_party WHERE extraction_id = :e AND "
+                                  "is_phone_owner"), {"e": ext}).one() == (1, 1)
+            me = person(c, case)
+            ident = c.execute(text("SELECT id FROM phone_identities WHERE case_id = :c AND value_normalised LIKE "
+                                   "'%2025550143%'"), {"c": case}).scalar_one()
+            cl = confirmed(c, case, me, "no_contact", {"kind": "extraction", "extraction_id": str(ext)},
+                           DAY + timedelta(hours=9), DAY + timedelta(hours=12),
+                           counterpart={"identity_ids": [str(ident)]})
+            ev = evaluation.evaluate(c, case, cl["id"], me.name)
+        assert ev["outcome"] in ("contradicted", "contradicted_weakly")
+        assert len([i for i in ev["items"] if i["role"] == "contradicting"]) == 3

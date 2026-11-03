@@ -91,18 +91,49 @@ def build():
 
 
 def reclassify():
+    """Re-applying mappings to P14: once unchanged, then a new activity mapping version (the shipped catalogue with its
+    version raised and one row changed, as the U2 test does), then back to the shipped one. The copy lives in a
+    private scratch folder and is removed."""
+    import shutil
+    import tempfile
     from services.pattern_of_life import activity
+    from services.phone.mappings import loader
     eng = engine()
-    t = time.monotonic()
-    with eng.begin() as c:
-        out = activity.reclassify(c, P14)
-    record("reclassify_P14", {"seconds": round(time.monotonic() - t, 1),
-                              "result": {k: v for k, v in (out or {}).items() if isinstance(v, (int, float, str))}})
+
+    def once(label):
+        loader.ensure_recorded(eng)
+        t = time.monotonic()
+        with eng.begin() as c:
+            out = activity.reclassify(c, P14)
+        record("reclassify_P14_%s" % label, {"seconds": round(time.monotonic() - t, 1), "result": {
+            k: v for k, v in (out or {}).items() if isinstance(v, (int, float, str))}})
+
+    src = os.path.join(os.getcwd(), "services", "phone", "mappings", "data")
+    once("unchanged")
+    scratch = tempfile.mkdtemp(prefix="pol-gatef-maps-")
+    try:
+        d = os.path.join(scratch, "data")
+        shutil.copytree(src, d)
+        path = os.path.join(d, "activity_strength", "catalogue.json")
+        v2 = json.load(open(path))
+        v2["version"] += 1
+        for r in v2["body"]["rows"]:
+            if r["row_id"] == "devev-display":
+                r["outputs"]["class"] = "interaction"
+        json.dump(v2, open(path, "w"))
+        loader.use_data_dir(d)
+        once("new_version")
+    finally:
+        loader.use_data_dir(src)
+        shutil.rmtree(scratch, ignore_errors=True)
+    once("shipped_again")
 
 
 def http():
     from datetime import timedelta
     from sqlalchemy import text
+    from routers.pattern_of_life import MAX_GRID_DAYS
+    from services.pattern_of_life import subjects
     from tests.pattern_pg import api_client
     eng = engine()
     with eng.begin() as c:
@@ -110,13 +141,21 @@ def http():
             "SELECT (hour_utc AT TIME ZONE 'UTC')::date AS d, sum(interaction_strong + interaction_moderate + "
             "interaction_weak + device_state + passive) AS n FROM pol_hourly_rollup WHERE extraction_id = :e "
             "GROUP BY 1 ORDER BY 2 DESC LIMIT 1"), {"e": P14}).first()
-        span = c.execute(text("SELECT min(instant_utc), max(instant_utc) FROM pol_activity_event WHERE extraction_id = :e"),
-                         {"e": P14}).first()
+        raw = c.execute(text("SELECT min(instant_utc), max(instant_utc) FROM pol_activity_event WHERE extraction_id = :e"),
+                        {"e": P14}).first()
+        # "full extraction span" is the phone's usual span (04 decision 38): stray far-off dates are set apart
+        usual = {name: subjects.usual_span(c, e) for name, e in (("P12", P12), ("P14", P14))}
+        # the counterpart most often on the other side that day, for "no contact with"
+        other = c.execute(text(
+            "SELECT counterpart_identity_id FROM pol_activity_event WHERE extraction_id = :e AND counterpart_identity_id "
+            "IS NOT NULL AND (instant_utc AT TIME ZONE 'UTC')::date = :d GROUP BY 1 ORDER BY count(*) DESC LIMIT 1"),
+            {"e": P14, "d": busiest[0]}).scalar()
         # a scratch person holding both phones (timing fixture only): a dossier linked to each phone's owner identity
         from services.phone import identities as I
+        dossier = c.execute(text("SELECT id FROM case_profiles WHERE case_id = :c AND display_name = 'Timing fixture'"),
+                            {"c": CASE}).scalar()
         keys = {e: (I.owner(c, e).get("owner_identity_keys") or []) for e in (P12, P14)}
-        dossier = None
-        if all(keys.values()):
+        if dossier is None and all(keys.values()):
             dossier = str(uuid.uuid4())
             uid = c.execute(text("SELECT owner_user_id FROM cases WHERE id = :c"), {"c": CASE}).scalar()
             c.execute(text("INSERT INTO case_profiles (id, case_id, profile_type, display_name, created_by_user_id) "
@@ -125,14 +164,18 @@ def http():
                 c.execute(text("INSERT INTO phone_identity_links (case_id, identity_id, dossier_id, decision_id) "
                                "SELECT :c, id, :d, :x FROM phone_identities WHERE identity_key = :k AND case_id = :c "
                                "ON CONFLICT DO NOTHING"), {"c": CASE, "d": dossier, "x": str(uuid.uuid4()), "k": k[0]})
-    record("fixture", {"busiest_day_events": int(busiest[1]), "span_days": (span[1] - span[0]).days + 1,
-                       "two_phone_person": bool(dossier)})
+    record("fixture", {"busiest_day_events": int(busiest[1]), "raw_span_days": (raw[1] - raw[0]).days + 1,
+                       "usual_span_days": {k: (u["last"] - u["first"]).days + 1 for k, u in usual.items()},
+                       "set_apart_events": {k: u["set_apart"] for k, u in usual.items()},
+                       "two_phone_person": bool(dossier), "no_contact_counterpart": bool(other)})
     day = busiest[0].isoformat()
     s14 = json.dumps({"kind": "extraction", "extraction_id": P14})
-    two = json.dumps({"kind": "dossier", "dossier_id": dossier}) if dossier else None
+    two = json.dumps({"kind": "dossier", "dossier_id": str(dossier)}) if dossier else None
 
     def timeit(client, method, url, n=20, **kw):
+        """n timed requests after one untimed one: the section 11 targets are for a warm cache."""
         xs, status = [], None
+        getattr(client, method)(url, **kw)
         for _ in range(n):
             t = time.monotonic()
             r = getattr(client, method)(url, **kw)
@@ -142,29 +185,46 @@ def http():
                 return {"status": r.status_code, "detail": r.text[:300]}
         return dict(pct(xs), status=status)
 
-    last = span[1].date()
+    def grid_range(first, last):
+        first = max(first, last - timedelta(days=MAX_GRID_DAYS - 1))
+        return first.isoformat(), last.isoformat(), (last - first).days + 1
+
     with api_client(eng, CASE) as client:
         B = "/api/pattern/%s" % CASE
         record("t_day_passive_collapsed", timeit(client, "get", B + "/day", params={
             "subject": s14, "date": day, "zone": "UTC", "include_passive": "false"}))
-        record("t_day_all_passive", timeit(client, "get", B + "/day", params={
-            "subject": s14, "date": day, "zone": "UTC", "include_passive": "true"}))
-        from routers.pattern_of_life import MAX_GRID_DAYS
-        first = max(span[0].date(), last - timedelta(days=MAX_GRID_DAYS - 1))
-        record("grid_range", {"days": (last - first).days + 1, "full_span_days": (span[1] - span[0]).days + 1,
-                              "max_grid_days": MAX_GRID_DAYS})
+        # "with all passive items": every passive item of the busiest day, page by page (Show all)
+        xs, cur, total = [], 0, None
+        while cur is not None:
+            t = time.monotonic()
+            r = client.get(B + "/events", params={"subject": s14, "start": "%sT00:00:00Z" % day,
+                                                  "end": "%sT00:00:00Z" % (busiest[0] + timedelta(days=1)).isoformat(),
+                                                  "classes": "passive", "cursor": cur})
+            xs.append(time.monotonic() - t)
+            if r.status_code != 200:
+                xs = None
+                record("t_day_all_passive_pages", {"status": r.status_code, "detail": r.text[:300]})
+                break
+            cur, total = r.json()["next_cursor"], r.json()["total"]
+        if xs:
+            record("t_day_all_passive_pages", dict(pct(xs), items=total))
+        g1 = grid_range(usual["P14"]["first"], usual["P14"]["last"])
+        g2 = grid_range(min(u["first"] for u in usual.values()), max(u["last"] for u in usual.values()))
+        record("grid_range", {"P14_days": g1[2], "person_days": g2[2], "max_grid_days": MAX_GRID_DAYS})
         record("t_grid_P14", timeit(client, "get", B + "/grid", n=10, params={
-            "subject": s14, "start_date": first.isoformat(), "end_date": last.isoformat(), "zone": "UTC"}))
+            "subject": s14, "start_date": g1[0], "end_date": g1[1], "zone": "UTC"}))
         if two:
             record("t_grid_person_2_phones", timeit(client, "get", B + "/grid", n=10, params={
-                "subject": two, "start_date": first.isoformat(), "end_date": last.isoformat(), "zone": "UTC"}))
+                "subject": two, "start_date": g2[0], "end_date": g2[1], "zone": "UTC"}))
+        record("t_subjects", timeit(client, "get", B + "/subjects", n=10))
         record("t_routine_P14", timeit(client, "get", B + "/routine", n=3, params={"subject": s14, "zone": "UTC"}))
         # statement check, 24 h on the busiest day, every kind except together, for the two-phone person
         subj = json.loads(two) if two else json.loads(s14)
         start = "%sT00:00:00Z" % day
         end = "%sT00:00:00Z" % (busiest[0] + timedelta(days=1)).isoformat()
-        kinds = {"inactive": {}, "active": {}, "no_contact": {"counterpart": {"text": "anyone"}},
-                 "at_place": {"place": {"lat": 0.0, "lon": 0.0, "radius_m": 500}}}
+        kinds = {"inactive": {}, "active": {}, "at_place": {"place": {"lat": 0.0, "lon": 0.0, "radius_m": 500}}}
+        if other:
+            kinds["no_contact"] = {"counterpart": {"identity_ids": [str(other)]}}
         checks = {}
         for kind, extra in kinds.items():
             r = client.post(B + "/claims", json=dict({"kind": kind, "subject": subj, "window_start": start,
@@ -179,19 +239,26 @@ def http():
                 if cr.status_code != 200:
                     checks[kind] = {"status": cr.status_code, "detail": cr.text[:200]}
                     continue
-            checks[kind] = timeit(client, "post", B + "/claims/%s/evaluate" % cl["id"], n=10)
+            res = timeit(client, "post", B + "/claims/%s/evaluate" % cl["id"], n=20)
+            last = client.get(B + "/claims/%s/evaluations" % cl["id"]).json()
+            res["items"] = (client.get(B + "/claims/%s/evaluations/%s" % (cl["id"], last["items"][0]["evaluation_id"]))
+                            .json().get("total_items") if last.get("items") else None)
+            checks[kind] = res
         record("t_statement_check_24h", {"subject": "person with 2 phones" if two else "P14", "kinds": checks})
+        ts, te = min(u["first"] for u in usual.values()), max(u["last"] for u in usual.values()) + timedelta(days=1)
         t = time.monotonic()
         r = client.post(B + "/together", json={"subjects": [{"kind": "extraction", "extraction_id": P12},
                                                             {"kind": "extraction", "extraction_id": P14}],
-                                               "start": span[0].isoformat(), "end": span[1].isoformat()})
+                                               "start": "%sT00:00:00Z" % ts.isoformat(),
+                                               "end": "%sT00:00:00Z" % te.isoformat()})
         out = r.json() if r.status_code in (200, 202) else {"status": r.status_code, "detail": r.text[:300]}
         rid = out.get("run_id") or out.get("id")
         while rid and out.get("status") not in ("done", "failed") and time.monotonic() - t < 1800:
             time.sleep(2)
             out = client.get(B + "/together/%s" % rid).json()
         record("t_together_P12_P14", {"seconds": round(time.monotonic() - t, 1), "status": out.get("status"),
-                                      "counts": out.get("counts")})
+                                      "span_days": (te - ts).days, "counts": out.get("counts"),
+                                      "detail": out.get("detail")})
 
 
 for st in STAGES:
