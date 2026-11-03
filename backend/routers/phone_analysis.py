@@ -44,6 +44,11 @@ class RunBody(BaseModel):
     parameters: Optional[dict] = None
 
 
+class KeepBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+
+
 class DecisionBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID
@@ -132,6 +137,21 @@ def result_detail(result_id: UUID, case_id: UUID = Query(...), db: Session = Dep
         return F.result_detail(db.connection(), case_id, result_id)
     except F.AnalysisError as exc:
         _fail(exc)
+
+
+@router.post("/results/{result_id}/keep")
+def keep(result_id: UUID, body: KeepBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Freeze one result as a kept phone analysis (``phone_analysis`` link target; 02 decision 50)."""
+    from services.phone_analysis import keep as K
+    _ready()
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        out = K.keep(db, body.case_id, result_id, user)
+    except F.AnalysisError as exc:
+        db.rollback()
+        _fail(exc)
+    db.commit()
+    return out
 
 
 @router.post("/results/{result_id}/decisions")

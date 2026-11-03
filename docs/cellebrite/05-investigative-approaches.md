@@ -866,7 +866,7 @@ five pairs device-stamped. The two C1 extractions share no match. Gate: **build*
 *Reverse if* a rerun with 02's computed owners instead of the report's owner flags gives under 100 strong matches
 and under 10 deleted on one side.
 
-**Built (`cb-approaches`, 05-S5, `message_reconciliation` version 2.1, screen "Messages across phones").** Keys
+**Built (`cb-approaches`, 05-S5, `message_reconciliation` version 2.2, screen "Messages across phones").** Keys
 K1 to K5, tiers, assignment with ties left out, clock offsets per pair, family and timestamp class (with drift),
 and the outcomes `both_sides`, `deleted_one_side` (recovered from the other copy), `one_side_only` with reasons
 `counterpart_extraction_ended` and `counterpart_app_no_data`, `ambiguous_pair` and `clock_offset`. Acceptance
@@ -2162,10 +2162,13 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | Selective clearing excludes explained deletions and uses per-app baselines | disappearing messages and decoder differences | |
 | 19.S5-a A phone's owner identities for K2 and K3 are 02's owner (a recorded decision, else the computed owner) plus the owner accounts 02 lists, each read through reviewed persons | 5.3.2 K2 says "02's owner identity, not the raw flag alone"; app messages name the owner by account, not by number | 02 merges owner accounts into the owner itself |
 | 19.S5-b A match whose copies differ Intact against Deleted or Trash is one result, kind `deleted_one_side`, naming the phone it is read from; the intact copy has the role `recovered_copy` | 5.3.6's `deleted_one_side` and `recovered_from_other_side` are the same condition seen from each side; two results would rest on the same two records | |
-| 19.S5-c Drift: Theil-Sen slope with Sen's distribution-free 95 percent interval, not 1,000 bootstrap resamples | the bootstrap costs 1,000 x n squared slopes, about 250 million at the measured 496 pairs, inside one run | a run time budget that allows it |
+| 19.S5-c Drift: Theil-Sen slope with Sen's distribution-free 95 percent interval, not 1,000 bootstrap resamples; above 2,000 readings a fixed-seed sample of 2,000 | the bootstrap costs 1,000 x n squared slopes, about 250 million at the measured 496 pairs, inside one run | a run time budget that allows it |
 | 19.S5-d "No data for that app in that period" is read from the other phone's own messages of that family (before its first or after its last) | 04 has no per-app band (as 19.S6-b) | 04 gains a per-app band |
 | 19.S5-e `one_side_only` is computed only for messages between the two phones' owners | a message to a third person is not expected on the other phone | |
 | 19.S5-f Copies of one message on one phone (02's duplicate group) count once | two copies of one message would tie for every match | |
+| 19.S5-h Two extractions of one device (an equal IMEI, serial or Android ID in the two report headers) are not compared, and a text-and-time match needs one sent and one received copy | 5.3.1 leaves them to approach 12; two copies of one device's own message would otherwise show as "on both phones" and as deleted on one | approach 12 classifies devices |
+| 19.S5-i The clock offset is read from distinctive bodies only (at least 10 characters, at most 3 times on each phone), one reading per message on each side; tau is at most the parameter's maximum (3,600 s) | repeated short bodies pair unrelated messages and pull the offset toward 0 | |
+| 19.S5-j The gate counts `deleted_one_side` of the strong tier only | a text-and-time match carries `identity_unreviewed` | |
 | 19.S5-g Not computed yet: the other phone's gap in that conversation (approach 3 holes) and leaving a group before the time | ChatActivity names a participant, not who left (19.S7-b) | a reviewed reading of who left |
 | 19.S6-a Hole threshold: a gap is compared with the 99th percentile of the conversation's other gaps (leave one out) | with fewer than 100 gaps the nearest-rank 99th percentile is the largest gap itself, so no gap could exceed it | a corpus run shows leave-one-out marking more than 5 percent of conversations with 20 or more messages |
 | 19.S6-b "Inside the availability band for app A" (6.3 step 4): a gap is a hole only when the phone holds messages of the same app in other conversations inside the gap | 04's observed bands come from observing streams only (device events, connectivity, places), never from messages, so there is no band per app; a gap in which the app recorded nothing on the phone is that app's no-data period, not a hole | 04 gains a per-app band |

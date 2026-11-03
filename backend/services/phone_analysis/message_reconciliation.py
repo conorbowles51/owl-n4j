@@ -44,7 +44,7 @@ from services.phone.fold import STYLED, _WS, _strip_format
 from services.phone_analysis import fields as FV
 
 CODE = "message_reconciliation"
-VERSION = "2.1"
+VERSION = "2.2"
 PARAMETERS = {
     "tau_s": {"type": "number", "default": 120, "min": 1, "max": 3600,
               "label": "Seconds two copies may differ after the clock offset"},
@@ -96,8 +96,16 @@ def mad_spread(values) -> float:
     return 1.4826 * statistics.median(abs(v - med) for v in values)
 
 
+DRIFT_MAX_READINGS = 2000
+
+
 def theil_sen(xs, ys):
-    """(slope, low, high): Theil-Sen slope and Sen's 95 percent interval (19.S5-c)."""
+    """(slope, low, high): Theil-Sen slope and Sen's 95 percent interval (19.S5-c). Above DRIFT_MAX_READINGS
+    readings a fixed-seed sample of that many is used, so the pairwise slopes stay under two million."""
+    if len(xs) > DRIFT_MAX_READINGS:
+        import random
+        keep = sorted(random.Random(0).sample(range(len(xs)), DRIFT_MAX_READINGS))
+        xs, ys = [xs[i] for i in keep], [ys[i] for i in keep]
     n = len(xs)
     slopes = sorted((ys[j] - ys[i]) / (xs[j] - xs[i]) for i in range(n) for j in range(i + 1, n) if xs[j] != xs[i])
     if not slopes:
@@ -211,6 +219,13 @@ def keys(mx, my, ox, oy) -> dict:
     return {"k2": k2, "k3": k3, "x_sent": x_sent, "y_sent": y_sent}
 
 
+def opposite(mx, my) -> bool:
+    """A sent copy against a received one. Two copies in the same known direction are one phone's message seen
+    twice (two extractions of one device), never a sender's and a recipient's copy."""
+    known = ("outgoing", "incoming")
+    return not (mx["direction"] in known and my["direction"] in known and mx["direction"] == my["direction"])
+
+
 def between_owners(m, own, other) -> bool:
     """19.S5-e: the message's sender is one owner and the other owner is a recipient or participant."""
     if _sent_by_owner(m, own):
@@ -241,20 +256,21 @@ def match_pair(px, py, ox, oy, params) -> dict:
                 py["occ"][my["key"]] <= MAX_OCCURRENCES
             if k["k2"] and k["k3"]:
                 tier = "matched_strong"
-            elif distinctive and (mx["sender"] is None or my["sender"] is None):
+            elif distinctive and (mx["sender"] is None or my["sender"] is None) and opposite(mx, my):
                 tier = "matched_content_time"
             else:
                 tier = None
             if tier or k["k3"]:
-                near.append((i, j, dt, tier, k["k3"]))
+                near.append((i, j, dt, tier, k["k3"] and distinctive))
     # 5.3.5: offsets per family and timestamp class from candidates with K3 (offset candidates and matches)
     offsets = {}
-    nearest = {}   # one offset reading per message: its nearest copy with K3
-    for i, j, dt, tier, k3 in near:
-        if k3 and (i not in nearest or abs(dt) < abs(nearest[i])):
-            nearest[i] = dt
+    # one offset reading per message and per copy: the nearest distinctive candidate with K3
+    nearest = {}
+    for i, j, dt, tier, k3d in sorted(near, key=lambda c: (abs(c[2]), c[0], c[1])):
+        if k3d and i not in nearest and j not in {v[0] for v in nearest.values()}:
+            nearest[i] = (j, dt)
     by_family = defaultdict(list)
-    for i, dt in sorted(nearest.items()):
+    for i, (j, dt) in sorted(nearest.items()):
         by_family[px["msgs"][i]["family"]].append((i, dt))
     for fam, items in by_family.items():
         dts = [dt for _, dt in items]
@@ -266,7 +282,7 @@ def match_pair(px, py, ox, oy, params) -> dict:
             entry["spread_s"] = mad_spread(dts)
             q = statistics.quantiles(dts, n=4) if n >= 2 else [dts[0]] * 3
             entry["iqr_s"] = [q[0], q[2]]
-            entry["tau_s"] = max(tau, 3 * entry["spread_s"])
+            entry["tau_s"] = min(max(tau, 3 * entry["spread_s"]), float(PARAMETERS["tau_s"]["max"]))
             xs = [px["msgs"][i]["t"].timestamp() / 86400.0 for i, _ in items]
             if n >= 20 and max(xs) - min(xs) >= 30:
                 ts = theil_sen(xs, dts)
@@ -296,7 +312,15 @@ def match_pair(px, py, ox, oy, params) -> dict:
             if c[1] in used_x or c[2] in used_y:
                 continue
             if xs[c[1]] > 1 or ys[c[2]] > 1:
-                ties = [d for d in group if d[1] == c[1] or d[2] == c[2]]
+                ties, seen_x, seen_y, grew = [c], {c[1]}, {c[2]}, True
+                while grew:   # the whole connected set of equal-score candidates
+                    grew = False
+                    for d in group:
+                        if d not in ties and (d[1] in seen_x or d[2] in seen_y):
+                            ties.append(d)
+                            seen_x.add(d[1])
+                            seen_y.add(d[2])
+                            grew = True
                 for d in ties:
                     used_x.add(d[1])
                     used_y.add(d[2])
@@ -307,6 +331,20 @@ def match_pair(px, py, ox, oy, params) -> dict:
             matched.append(c)
         k = g
     return {"matched": matched, "ambiguous": ambiguous, "offsets": offsets, "used_x": used_x, "used_y": used_y}
+
+
+DEVICE_ITEMS = ("IMEI", "Serial", "Factory number", "DeviceInfoAndroidID", "DeviceInfoSerial")
+
+
+def device_ids(conn, ext) -> set:
+    """The report header's device identifiers (name, normalised value)."""
+    items = identities.header_items(conn, ext)
+    return {(n, "".join(ch for ch in v if ch.isalnum()).casefold()) for n in DEVICE_ITEMS for v in items.get(n, ())
+            if v and v.strip()}
+
+
+def same_device(a, b) -> bool:
+    return bool(a & b)
 
 
 def candidate_pair(px, py, ox, oy) -> bool:
@@ -327,12 +365,14 @@ def _match_result(x, y, labels, px, py, ox, oy, c, offsets):
     score, i, j, tier, dt = c
     mx, my = px["msgs"][i], py["msgs"][j]
     o = offsets.get(mx["family"])
-    reviewed = all(ox.get(g, False) for g in ox) and all(oy.get(g, False) for g in oy)
+    sender = my["sender"] if mx["sender"] is None else mx["sender"]
+    reviewed = bool(sender) and str(sender).startswith("person:")   # K3's equality went through a reviewed person
     supports = [_d("attachment_equal" if mx["key"].startswith("m:") else "content_equal",
                    "The same attachment on both phones." if mx["key"].startswith("m:") else
                    "The same text on both phones."),
                 _d("time_agrees", "The two copies are %.0f seconds apart%s." % (
-                    abs(dt), " after the pair's clock offset" if o and o.get("offset_s") else ""))]
+                    score if o and o.get("offset_s") else abs(dt),
+                    " after the pair's clock offset" if o and o.get("offset_s") else ""))]
     undercuts = []
     if tier == "matched_strong":
         supports.append(_d("participants_agree", "Sender and recipient agree with the two phones' owners."))
@@ -353,6 +393,7 @@ def _match_result(x, y, labels, px, py, ox, oy, c, offsets):
                         "as sent from it."))
     deleted_one = mx["deleted"] != my["deleted"]
     measures = {"phones": [labels[x], labels[y]], "tier": tier, "family": mx["family"], "seconds_apart": dt,
+                "seconds_after_offset": score,
                 "offset_s": o["offset_s"] if o else 0.0, "timestamp_class": o["class"] if o else None,
                 "deleted": [mx["deleted"], my["deleted"]]}
     records = [_rec(x, mx["uid"], "copy"), _rec(y, my["uid"], "copy")]
@@ -385,7 +426,7 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
     labels = FV.active_phones(conn, case_id)
     people = _people(conn, case_id)
     exts = sorted(labels, key=lambda e: (labels[e], e))
-    data, owners, starts = {}, {}, {}
+    data, owners, starts, devices = {}, {}, {}, {}
     counts = Counter()
     out = []
     for n, ext in enumerate(exts):
@@ -397,6 +438,7 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
         owners[ext] = _owners(conn, ext, people)
         from services.pattern_of_life.availability import extraction_start
         starts[ext] = extraction_start(conn, ext)
+        devices[ext] = device_ids(conn, ext)
     pairs = list(combinations(exts, 2))
     for n, (x, y) in enumerate(pairs):
         if ctx is not None:
@@ -405,6 +447,9 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                 break
         px, py, ox, oy = data[x], data[y], owners[x], owners[y]
         counts["phone_pairs"] += 1
+        if same_device(devices[x], devices[y]):
+            counts["pairs_one_device"] += 1   # 5.3.1: two extractions of one device are approach 12's
+            continue
         if not candidate_pair(px, py, ox, oy):
             counts["pairs_no_shared_participants"] += 1
             continue
@@ -413,6 +458,8 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
         for c in res["matched"]:
             r = _match_result(x, y, labels, px, py, ox, oy, c, res["offsets"])
             counts[r["kind"]] += 1
+            if r["kind"] == "deleted_one_side" and c[3] == "matched_strong":
+                counts["deleted_one_side_strong"] += 1
             counts[c[3]] += 1
             out.append(r)
         for ties in res["ambiguous"]:

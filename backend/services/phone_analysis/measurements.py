@@ -138,7 +138,7 @@ def m2(conn, case_id):
     """M-2a to M-2d (05 5.6) over each pair of phones in the case: owner identities seen on the other phone, shared
     parties, message pairs with an equal body of at least 10 characters within 300 seconds (by app), their median gap,
     and pairs whose deleted states differ; m2.2 adds approach 2's tiers. Gate (5.6): build if at least 100 matched_strong
-    or 10 deleted_one_side."""
+    or 10 deleted_one_side of the strong tier."""
     phones = _phones(conn, case_id)
     ids = sorted(phones)
     pairs = []
@@ -169,10 +169,11 @@ def m2(conn, case_id):
                           "m2d_deleted_state_differs": d})
     from services.phone_analysis import message_reconciliation as R
     _, counts = R.analyse(conn, case_id, {k: v["default"] for k, v in R.PARAMETERS.items()})
-    strong, deleted_one = counts.get("matched_strong", 0), counts.get("deleted_one_side", 0)
+    strong, deleted_one = counts.get("matched_strong", 0), counts.get("deleted_one_side_strong", 0)
     result = {"pairs": pairs, "body_time_pairs": total, "deleted_state_differs": differing,
               "m2b_matched_strong": strong, "m2b_matched_content_time": counts.get("matched_content_time", 0),
-              "m2b_ambiguous": counts.get("ambiguous_pair", 0), "m2d_deleted_one_side": deleted_one,
+              "m2b_ambiguous": counts.get("ambiguous_pair", 0), "m2d_deleted_one_side": counts.get("deleted_one_side", 0),
+              "m2d_deleted_one_side_strong": deleted_one, "pairs_one_device": counts.get("pairs_one_device", 0),
               "m2_one_side_only": counts.get("one_side_only", 0), "candidate_pairs": counts.get("candidate_pairs", 0)}
     if len(ids) < 2:
         result["note"] = "not measurable: the case holds fewer than two phones"

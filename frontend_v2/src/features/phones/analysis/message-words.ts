@@ -23,8 +23,10 @@ export function messageWords(r: ApproachResult) {
   const m = r.measures as M
   const [x, y] = ((m.phones as string[]) || ["", ""])
   if (r.kind === "both_sides") {
-    const off = Number(m.offset_s ?? 0) ? ` after a clock offset of ${secs(m.offset_s)}` : ""
-    return { title: `Message on ${x} and ${y}`, line: `${secs(m.seconds_apart)} apart${off}. ${TIER_WORDS[r.strength] ?? ""}`.trim() }
+    const off = Number(m.offset_s ?? 0)
+      ? `${secs(m.seconds_apart)} apart; ${secs(m.seconds_after_offset)} once the clocks' offset of ${secs(m.offset_s)} is allowed for.`
+      : `${secs(m.seconds_apart)} apart.`
+    return { title: `Message on ${x} and ${y}`, line: `${off} ${TIER_WORDS[r.strength] ?? ""}`.trim() }
   }
   if (r.kind === "deleted_one_side") {
     const [dx] = (m.deleted as boolean[]) || [false, false]

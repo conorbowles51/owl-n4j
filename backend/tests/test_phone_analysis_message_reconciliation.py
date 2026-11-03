@@ -230,3 +230,89 @@ def test_measurement_m2_counts_the_tiers_against_the_gate(engine):
         version, result, gate = M.run(c, case, "message_reconciliation")
     assert version == "m2.2" and result["m2d_deleted_one_side"] == 10 and gate == "build"
     assert result["m2b_matched_strong"] == 10
+
+
+# ---- review findings on 2.1 (each fails on 2.1) ------------------------------------------------------------------
+
+def test_drift_samples_a_large_phone_instead_of_every_pairwise_slope():
+    n = R.DRIFT_MAX_READINGS + 500
+    slope, lo, hi = R.theil_sen([float(i) for i in range(n)], [3.0 * i for i in range(n)])
+    assert slope == 3.0 and lo <= 3.0 <= hi
+
+
+@needs_template
+def test_repeated_short_bodies_do_not_pull_the_offset(engine):
+    """Forty "ok" exchanges at equal times sat beside five distinctive pairs about 305 s apart; the offset is read
+    from the distinctive ones only."""
+    t = at(2023, 3, 1)
+    deltas = [290, 300, 305, 310, 320]
+    xs = [_msg(t + timedelta(hours=i), "distinct message %d" % i, X_OWNER, [Y_OWNER], X_OWNER) for i in range(5)]
+    ys = [_msg(t + timedelta(hours=i, seconds=d), "distinct message %d" % i, X_OWNER, [Y_OWNER], Y_OWNER)
+          for i, d in enumerate(deltas)]
+    xs += [_msg(t + timedelta(hours=6 + i), "ok", X_OWNER, [Y_OWNER], X_OWNER) for i in range(40)]
+    ys += [_msg(t + timedelta(hours=6 + i), "ok", X_OWNER, [Y_OWNER], Y_OWNER) for i in range(40)]
+    case, *_ = _pair(engine, xs, ys)
+    with engine.connect() as c:
+        res, _ = R.analyse(c, case, PARAMS)
+    (o,) = _of(res, "clock_offset")
+    assert o["measures"]["offset_s"] == 305 and o["measures"]["n"] == 5
+    shifted = [m for m in _of(res, "both_sides") if m["measures"]["seconds_apart"] == 300]
+    assert shifted and shifted[0]["measures"]["seconds_after_offset"] == 5
+    assert "5 seconds apart after the pair's clock offset" in shifted[0]["directions"]["supports"][1]["detail"]
+
+
+@needs_template
+def test_two_extractions_of_one_device_are_not_compared(engine):
+    """5.3.1: equal IMEI in both headers: the pair is left to approach 12. Without it, two copies in the same
+    direction are still never a sender's and a recipient's copy."""
+    import json as _json
+    t = at(2023, 3, 1)
+    body = "a distinct line of text"
+    copy = dict(kind="message", instant=t, body=body, app="WhatsApp", thread="t", direction="outgoing",
+                parties=[(None, "sender", True, None, None)])
+    for imei in (True, False):
+        with engine.begin() as c:
+            case = make_case(c)
+            a, _ = phone(c, case, label="C1", owner=X_OWNER, events=[copy])
+            b, _ = phone(c, case, label="C2", owner=X_OWNER, events=[dict(copy, instant=t + timedelta(seconds=1))])
+            if imei:
+                skel = ["project", {}, None, [["metadata", {}, None, [["item", {"name": "IMEI"}, "35 000000 000000 1",
+                                                                        None]]]]]
+                for e in (a, b):
+                    c.execute(text("UPDATE phone_extraction_documents SET skeleton = CAST(:s AS jsonb) WHERE "
+                                   "extraction_id = :e"), {"e": e, "s": _json.dumps(skel)})
+        with engine.connect() as c:
+            res, counts = R.analyse(c, case, PARAMS)
+        assert _of(res, "both_sides") == [] and _of(res, "deleted_one_side") == []
+        assert counts.get("pairs_one_device", 0) == (1 if imei else 0)
+
+
+@needs_template
+def test_a_chain_of_equal_ties_is_left_whole(engine):
+    """Equal-score candidates (x1,y1), (x1,y2), (x2,y2): one ambiguous set of three, and x2 is not reported as
+    missing from the other phone."""
+    t = at(2023, 3, 1, 9)
+    body = "same words in a chain"
+    case, *_ = _pair(engine, [_msg(t, body, X_OWNER, [Y_OWNER], X_OWNER),
+                              _msg(t + timedelta(seconds=60), body, X_OWNER, [Y_OWNER], X_OWNER)],
+                     [_msg(t - timedelta(seconds=30), body, X_OWNER, [Y_OWNER], Y_OWNER),
+                      _msg(t + timedelta(seconds=30), body, X_OWNER, [Y_OWNER], Y_OWNER)])
+    with engine.connect() as c:
+        res, _ = R.analyse(c, case, PARAMS)
+    (a,) = _of(res, "ambiguous_pair")
+    assert a["measures"]["candidates"] == 3 and len(a["records"]) == 4
+    assert _of(res, "both_sides") == [] and _of(res, "one_side_only") == []
+
+
+def test_reviewed_support_needs_the_matched_sender_to_be_a_reviewed_person():
+    t = at(2023, 3, 1)
+    base = {"key": "b:x", "family": "whatsapp", "t": t, "deleted": False, "direction": "outgoing",
+            "sender_owner": True, "recipients": frozenset({"phone:+2"}), "uid": "u"}
+    mx = dict(base, sender="phone:+1")
+    my = dict(base, sender="phone:+1", direction="incoming", uid="v")
+    px, py = {"msgs": [mx]}, {"msgs": [my]}
+    r = R._match_result("x", "y", {"x": "C1", "y": "C2"}, px, py, {"person:1": True}, {"person:2": True},
+                        (0.0, 0, 0, "matched_strong", 0.0), {})
+    codes = [d["code"] for d in r["directions"]["undercuts"]]
+    assert "identity_unreviewed" in codes
+    assert "reviewed_merge" not in [d["code"] for d in r["directions"]["supports"]]

@@ -49,3 +49,8 @@ it("routes a phone identity to the identity decision and offers Significant only
   expect(["graph_entity", "phone_identity", "phone_extraction"].every(significantOfferedForLink)).toBe(true)
   expect(["phone_record", "phone_file", "phone_thread", "phone_selection", "phone_analysis"].some(significantOfferedForLink)).toBe(false)
 })
+
+it("opens a kept approach result on its analysis screen", () => {
+  expect(phoneLinkHref("c1", { target_type: "phone_analysis", target_id: "pa_9", source_anchor: { kind: "analysis_result", approach: "message_reconciliation" } }))
+    .toBe("/cases/c1/phone-analyses/messages?kept=pa_9")
+})

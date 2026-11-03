@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -7,7 +7,7 @@ import { instantWords } from "@/features/phones/lib/time-words"
 import { CollectBar } from "@/features/pattern/components/CollectBar"
 import { patternAPI } from "@/features/pattern/api"
 import type { AnalysisRun } from "./money-api"
-import type { AnalysisClient, ApproachResult } from "./analysis-api"
+import type { AnalysisClient, ApproachResult, KeptResult } from "./analysis-api"
 import { anchorWords } from "./anchor-words"
 
 /**
@@ -110,6 +110,43 @@ function Behind({ caseId, client, queryKey, result, label, origin }: { caseId: s
   )
 }
 
+/** "Keep this result": freeze it on the server, then offer Add to… for the kept result (02 decision 50). */
+function KeepThis({ p, r }: { p: ApproachLayoutProps; r: ApproachResult }) {
+  const [kept, setKept] = useState<KeptResult | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const keep = useMutation({ mutationFn: () => p.client.keep(p.caseId, r.id), onSuccess: setKept, onError: (e) => setErr(String((e as Error).message || e)) })
+  if (!kept) {
+    return (
+      <div className="flex items-center gap-2 text-xs">
+        <Button size="sm" variant="outline" disabled={keep.isPending} onClick={() => keep.mutate()}>{keep.isPending ? "Keeping…" : "Keep this result"}</Button>
+        {err && <span role="alert" className="text-destructive">{err}</span>}
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-1 text-xs">
+      <p>Kept: {kept.label}, {kept.record_count.toLocaleString("en-US")} records behind it.</p>
+      <CollectBar caseId={p.caseId} noun="result" origin={p.origin}
+        links={[{ target_type: "phone_analysis", target_id: kept.id, label: kept.label, source_anchor: { kind: "analysis_result", approach: p.client.approach } }]} />
+    </div>
+  )
+}
+
+/** A kept result opened from Workspace or a dossier: what was kept, by whom, and whether the readings moved since. */
+function KeptPanel({ caseId, id }: { caseId: string; id: string }) {
+  const q = useQuery({ queryKey: ["phone-analysis-kept", caseId, id], queryFn: () => patternAPI.snapshot(caseId, id), enabled: !!caseId && !!id })
+  if (q.isLoading) return <p className="text-sm">Opening the kept result…</p>
+  if (q.isError || !q.data) return <p role="alert" className="text-sm text-destructive">The kept result was not found in this case.</p>
+  const s = q.data
+  return (
+    <section aria-label="Kept result" className="rounded border p-2 text-sm">
+      <p className="font-medium">Kept result: {s.label}</p>
+      <p className="text-xs">{s.record_count.toLocaleString("en-US")} records behind it{s.created_by_name ? `, kept by ${s.created_by_name}` : ""}{s.created_at ? ` ${instantWords(s.created_at, "UTC")}` : ""}. The results below are the latest run.</p>
+      {s.stale_words && <p className="text-xs">{s.stale_words}</p>}
+    </section>
+  )
+}
+
 function Row({ p, r, anchors, onChanged }: { p: ApproachLayoutProps; r: ApproachResult; anchors: { label: string; instant: string }[]; onChanged: () => void }) {
   const [open, setOpen] = useState(false)
   const w = p.words(r)
@@ -135,6 +172,7 @@ function Row({ p, r, anchors, onChanged }: { p: ApproachLayoutProps; r: Approach
             <ul className="list-disc pl-4 text-xs" aria-label="What weakens it">{r.directions.undercuts.map((d, i) => <li key={i}>{d.detail}</li>)}</ul>
           )}
           <Behind caseId={p.caseId} client={p.client} queryKey={p.queryKey} result={r} label={p.collectLabel(r)} origin={p.origin} />
+          <KeepThis p={p} r={r} />
           <Decide caseId={p.caseId} client={p.client} result={r} onDone={onChanged} />
         </div>
       )}
@@ -148,6 +186,8 @@ export function ApproachLayout(p: ApproachLayoutProps) {
   const [run, setRun] = useState<AnalysisRun | null>(null)
   const [kind, setKind] = useState<string>(p.tabs[0]?.kind ?? "")
   const [offset, setOffset] = useState(0)
+  const [search] = useSearchParams()
+  const kept = search.get("kept")
   const runs = useQuery({ queryKey: [queryKey, "runs", caseId], queryFn: () => client.runs(caseId), enabled: !!caseId })
   const coverage = useQuery({ queryKey: [queryKey, "coverage", caseId], queryFn: () => client.coverage(caseId), enabled: !!caseId })
   const keyDates = useQuery({ queryKey: ["pattern-key-dates", caseId, "date"], queryFn: () => patternAPI.keyDates(caseId, "date"), enabled: !!caseId })
@@ -182,6 +222,7 @@ export function ApproachLayout(p: ApproachLayoutProps) {
       <div data-part="run"><RunControl caseId={caseId} run={run} client={client} onRequested={setRun} /></div>
       <p data-part="coverage" className="text-sm">{done?.coverage?.sentence || coverage.data?.sentence}</p>
       {p.extra}
+      {kept && <KeptPanel caseId={caseId} id={kept} />}
       <section data-part="results" aria-label="Results" className="space-y-2">
         <div className="flex flex-wrap gap-2" role="tablist">
           {p.tabs.map((t) => (

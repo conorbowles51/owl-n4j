@@ -15,3 +15,13 @@ def install() -> None:
 
 
 BUILT = ["money_signals", "message_reconciliation", "deletion_timeline", "relationships", "awareness", "device_users"]
+
+# The screen titles, for words outside the screens (a kept result's label).
+TITLES = {
+    "money_signals": "Money on the phones",
+    "message_reconciliation": "Messages across phones",
+    "deletion_timeline": "Deleted and hidden",
+    "relationships": "Relationships over time",
+    "awareness": "Group admins and membership",
+    "device_users": "Who used which phone",
+}

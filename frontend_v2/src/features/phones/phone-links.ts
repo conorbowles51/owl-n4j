@@ -1,4 +1,5 @@
 import { isPhoneLinkType, type PhoneLinkType } from "@/generated/link-types"
+import { ANALYSES } from "./analysis/analyses-list"
 
 /**
  * How a phone link opens and reads in Workspace, Notebook and dossier views (07 section 6.4 item 11).
@@ -40,8 +41,12 @@ export function phoneLinkHref(caseId: string, link: PhoneLinkLike): string | nul
         ? `${base}/phones/${encodeURIComponent(extraction)}/records/conversations?thread=${id}`
         : `${base}/phones?thread=${id}`
     // saved analyses and statement checks belong to the Patterns screen (04), the route that exists
-    case "phone_analysis":
+    case "phone_analysis": {
+      // a kept approach result opens its analysis screen (02 decision 50); a kept pattern view opens Patterns
+      const screen = field(link, "kind") === "analysis_result" ? ANALYSES.find((a) => a.code === field(link, "approach")) : undefined
+      if (screen) return `${base}/${screen.path}?kept=${id}`
       return `${base}/phone-patterns?analysis=${encodeURIComponent(field(link, "kind") ?? "results")}&snapshot=${id}`
+    }
     case "statement_check":
       return `${base}/phone-patterns?check=${id}`
     case "phone_identity":
