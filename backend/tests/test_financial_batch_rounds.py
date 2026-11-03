@@ -52,14 +52,15 @@ def test_every_round_the_worker_loop_ran_is_in_a_group():
 
 def test_the_host_sweeps_keep_the_workers_timing():
     names = [step.__name__ for _, _, _, steps, _ in batch_rounds.HOST_SWEEPS for step in steps]
-    assert names == ['_run_reaper', '_payment_categories']
+    assert names == ['_run_reaper', '_payment_categories', '_case_briefs']
     first = {name: delay for name, _, delay, _, _ in batch_rounds.HOST_SWEEPS}
-    assert first == dict(run_reaper=0, payment_categories=60)
+    assert first == dict(run_reaper=0, payment_categories=60, case_briefs=120)
     import config
+    from services.agent import briefs
     from services.financial import payment_categories
     every = {name: interval() for name, interval, _, _, _ in batch_rounds.HOST_SWEEPS}
     assert every == dict(run_reaper=config.FINANCIAL_RUN_REAP_INTERVAL_SECONDS,
-                         payment_categories=payment_categories.SWEEP_SECONDS)
+                         payment_categories=payment_categories.SWEEP_SECONDS, case_briefs=briefs.SWEEP_SECONDS)
 
 
 def test_the_web_workers_no_longer_start_the_host_sweeps():
@@ -73,15 +74,17 @@ def test_the_web_workers_no_longer_start_the_host_sweeps():
 
 def test_the_host_sweep_steps_call_the_sweeps(monkeypatch):
     from datetime import timedelta
+    from services.agent import briefs
     from services.financial import payment_categories, run_reaper
     seen = []
     monkeypatch.setattr(payment_categories, 'sweep_once', lambda: seen.append('categories') or {})
+    monkeypatch.setattr(briefs, 'sweep_once', lambda factory: seen.append(('briefs', factory)) or [])
     monkeypatch.setattr(run_reaper, 'reap_stale_runs', lambda older_than: seen.append(older_than) or [])
     import config
     for _, _, _, steps, _ in batch_rounds.HOST_SWEEPS:
         for step in steps:
             step('factory', lambda p: p)
-    assert seen == [timedelta(hours=config.FINANCIAL_RUN_STALE_AFTER_HOURS), 'categories']
+    assert seen == [timedelta(hours=config.FINANCIAL_RUN_STALE_AFTER_HOURS), 'categories', ('briefs', 'factory')]
 
 
 @pytest.mark.parametrize('hours, seconds', [(0, 300), (-1, 300), (6, 0)])

@@ -32,6 +32,7 @@ import {
 } from "../hooks/use-workspace"
 import { DossierSourceViewer, type DossierSource } from "@/features/dossiers/components/DossierSourceViewer"
 import { CaseContextSection } from "./CaseContextSection"
+import { CaseBriefPanel } from "./CaseBriefPanel"
 
 interface CanonicalWorkspaceOverviewProps {
   caseId: string
@@ -350,6 +351,8 @@ export function CanonicalWorkspaceOverview({
           />
         </section>
       </div>
+
+      <CaseBriefPanel caseId={caseId} canEdit={canEdit} />
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,.8fr)]">
         <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">

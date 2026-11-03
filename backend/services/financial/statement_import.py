@@ -1257,6 +1257,9 @@ def confirm_statement_import(*, session_factory, case_id, evidence_file_id, requ
     if not (isinstance(receipt, dict) and receipt.get('outcome') == 'duplicate_ignored'):
         from services.financial.graph_followup import request_follow_up
         request_follow_up(case_id)
+        # A dated "what changed" brief of the case, once it is quiet (services.agent.briefs; never raises).
+        from services.agent.briefs import request_brief
+        request_brief(case_id, 'import')
     lap('graph_request')
     from services.financial.import_batches import refresh_file_readiness
     with session_factory() as session:

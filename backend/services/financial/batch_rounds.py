@@ -18,8 +18,9 @@ The ledger graph follow-ups (graph_followup) run here too, in a thread of their 
 worker ran its own drift scan and its own projection of the same case (one d5b330d1 snapshot: about 49 CPU-s and
 3.5 GB transient memory per worker). The workers hand their requests over as files.
 
-Two host-wide sweeps run here too, in a third thread (HOST_SWEEPS): closing abandoned ingestion runs (run_reaper)
-and giving uncategorised payments a category (payment_categories). In the workers both ran in each worker: the
+Three host-wide sweeps run here too, in a third thread (HOST_SWEEPS): closing abandoned ingestion runs (run_reaper),
+giving uncategorised payments a category (payment_categories) and writing dated case briefs (case_briefs, under a
+database lock as well). In the workers the first two ran in each worker: the
 category sweep asked the model about the same new payments once per worker (journal 2026-10-28 05:58-06:08: both
 workers, the same case, 10 s apart). Their own thread keeps a model call of several minutes from holding back the
 batch rounds. The loops that keep per-worker state stay in the workers: the upload chunk cache, the platform-update
@@ -130,6 +131,17 @@ def _payment_categories(factory, resolve_path):
     sweep_once()
 
 
+def _case_briefs(factory, resolve_path):
+    # Dated "what changed" briefs: after an import once the case is quiet, on any ledger change, and nightly.
+    from services.agent.briefs import sweep_once
+    sweep_once(factory)
+
+
+def _case_briefs_seconds():
+    from services.agent.briefs import SWEEP_SECONDS
+    return SWEEP_SECONDS
+
+
 def _run_reaper_seconds():
     from config import FINANCIAL_RUN_REAP_INTERVAL_SECONDS
     # A non-positive setting is refused by _run_reaper (logged); it is not retried every pause.
@@ -170,6 +182,8 @@ HOST_SWEEPS = (
      'Sweep for abandoned financial ingestion runs failed'),
     ('payment_categories', _payment_categories_seconds, 60, (_payment_categories,),
      'Category sweep failed'),
+    ('case_briefs', _case_briefs_seconds, 120, (_case_briefs,),
+     'Case brief sweep failed; it will retry'),
 )
 
 

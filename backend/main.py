@@ -319,6 +319,8 @@ from routers.phones import router as phones_router
 app.include_router(phones_router)
 from routers.phone_analysis import router as phone_analysis_router
 app.include_router(phone_analysis_router)
+from routers.case_briefs import router as case_briefs_router
+app.include_router(case_briefs_router)
 from routers.search import router as search_router
 app.include_router(search_router)
 from routers.pattern_of_life import router as pattern_of_life_router

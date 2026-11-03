@@ -108,6 +108,9 @@ vi.mock("./CaseContextSection", () => ({
 }))
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock("./CaseBriefPanel", () => ({
+  CaseBriefPanel: ({ caseId }: { caseId: string }) => <div data-testid="case-brief-panel">{caseId}</div>,
+}))
 vi.mock("./HowThisWasFound", () => ({
   HowThisWasFound: ({ entryId }: { entryId: string }) => <div data-testid="how-this-was-found">{entryId}</div>,
 }))
