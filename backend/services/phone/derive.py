@@ -340,7 +340,8 @@ def run_pending(engine, limit=1) -> list:
                          pa=json.dumps(got.get("parameters") or {})))
             done.append({"id": str(job.id), "state": "done"})
         except Exception as e:  # noqa: BLE001
-            if isinstance(e, (DeriveError, LookupError)):
+            from services.phone.archive_member import MemberDamaged
+            if isinstance(e, (DeriveError, LookupError, MemberDamaged)):
                 words = str(e)
             elif isinstance(e, subprocess.TimeoutExpired):
                 words = "Reading this file took too long and was stopped. The original is unchanged."

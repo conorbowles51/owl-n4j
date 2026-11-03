@@ -198,6 +198,7 @@ def _prepare_files(
     skipped_external = 0
     skipped_phone_reports = 0
     skipped_phone_texts = 0
+    skipped_in_archive = 0
     missing_on_disk = 0
 
     for file_id in file_ids:
@@ -223,6 +224,10 @@ def _prepare_files(
             # external-processing decision (07 section 6.4 item 4).
             skipped_external += 1
             continue
+        if phone_files.is_member_locator(ef.stored_path):
+            # Kept inside an uploaded archive and read there in place (cb-media item F): there is no path to send.
+            skipped_in_archive += 1
+            continue
         if ef.status == "processed" and not force_reprocess:
             skipped_processing += 1
             continue
@@ -239,10 +244,14 @@ def _prepare_files(
             message += f"; {skipped_phone_reports} phone report(s) are read automatically when uploaded"
         if skipped_phone_texts:
             message += f"; {skipped_phone_texts} phone conversation text(s) are written from the phone's records"
+        if skipped_in_archive:
+            message += (f"; {skipped_in_archive} phone file(s) are kept inside an uploaded archive and read there, "
+                        "so they are not sent for processing")
         return {
             "job_ids": [],
             "file_count": 0,
-            "skipped_count": skipped_processing + skipped_external + skipped_phone_reports + skipped_phone_texts,
+            "skipped_count": (skipped_processing + skipped_external + skipped_phone_reports + skipped_phone_texts
+                              + skipped_in_archive),
             "skipped_phone_files": skipped_external,
             "message": message,
         }
@@ -330,7 +339,7 @@ def _prepare_files(
         )
     valid_ids = [str(ef.id) for ef in valid_files]  # read before the commit expires the rows
     db.commit()
-    skipped = skipped_processing + skipped_external + skipped_phone_reports + skipped_phone_texts
+    skipped = skipped_processing + skipped_external + skipped_phone_reports + skipped_phone_texts + skipped_in_archive
     return file_tuples, per_file_metadata, valid_files, valid_ids, skipped, missing_on_disk
 
 

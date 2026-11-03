@@ -9,9 +9,11 @@ else; a phone item is never passed unchecked.
 mapping versions beside it.
 
 A ``phone_file`` id is the file's ``file_uid`` (02 section 1.2). Its metadata gives the facts
-``services.phone_files.ensure_phone_file_evidence`` needs. ``stored_path`` is given only when the file is on disk in
-a folder upload; a file inside a zip or UFDR has no path of its own (containers are read in place, 01 D6), so
-``stored_path`` is None and registering it as evidence is refused with that reason.
+``services.phone_files.ensure_phone_file_evidence`` needs. ``stored_path`` is the file's path when it is on disk in
+a folder upload. A file inside a zip or UFDR has no path of its own (containers are read in place, 01 D6), so its
+``stored_path`` is the locator ``phone-file:<file_uid>`` (``phone_files.member_locator``): its bytes are served from
+the archive by the phone file reader (``services.phone.media.content``), never opened as a path (cb-media item F).
+A file absent from the production has no ``stored_path`` and is refused as evidence with that reason.
 """
 from __future__ import annotations
 
@@ -83,6 +85,9 @@ def resolve_file(db, case_id, target_id):
         folder = db.execute(_FOLDER_ROOT, {"ext": row.extraction_id}).first()
         if folder is not None:
             stored_path = str(_data_root() / str(case) / folder.stored_path / folder.root_path / row.disk_relpath)
+        else:
+            from services import phone_files
+            stored_path = phone_files.member_locator(ident)
     return link_types.PhoneTarget(
         label=name, mapping_versions=_versions(row.capture_code_version),
         metadata={"original_filename": name, "stored_path": stored_path, "size": row.disk_size,

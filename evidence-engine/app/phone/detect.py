@@ -107,6 +107,12 @@ class ZipSource:
     def info(self, relpath):
         return self._info[relpath]
 
+    def location(self, relpath):
+        """(local header offset, compressed size, compression method, CRC-32) of a member: enough to read it
+        later by seeking straight to it, without the archive's directory (cb-media item F)."""
+        i = self._info[relpath]
+        return i.header_offset, i.compress_size, i.compress_type, i.CRC
+
     def open(self, relpath):
         return self.zf.open(self._info[relpath])
 

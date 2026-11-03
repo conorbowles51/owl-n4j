@@ -153,7 +153,7 @@ def content(conn, case_id, file_uid):
         raise ContentRefused("This file is %s MB, too large to show here. Download the original instead."
                              % "{:,}".format(int(r.disk_size) // (1024 * 1024)))
     conts = conn.execute(text(
-        "SELECT c.container_kind, c.stored_path, l.root_path FROM phone_extraction_container_links l JOIN "
+        "SELECT c.id, c.container_kind, c.stored_path, l.root_path FROM phone_extraction_container_links l JOIN "
         "phone_extraction_containers c ON c.id = l.container_id WHERE l.extraction_id = :e AND c.case_id = :c "
         "ORDER BY l.linked_at, c.id"), {"e": r.extraction_id, "c": str(case_id)}).fetchall()
     if not conts:
@@ -165,7 +165,7 @@ def content(conn, case_id, file_uid):
     refusals = []
     for c in conts:
         try:
-            size, opener = _in_container(c, case_root, r.disk_relpath)
+            size, opener = _in_container(conn, c, case_root, r.extraction_id, r.disk_relpath)
         except ContentRefused as exc:
             refusals.append(str(exc))
             continue
@@ -205,7 +205,7 @@ def thumbnail(conn, case_id, file_uid, edge=THUMB_EDGE):
         return None
 
 
-def _in_container(c, case_root, disk_relpath):
+def _in_container(conn, c, case_root, extraction_id, disk_relpath):
     """(size, opener) of one file in one container, or ContentRefused with the reason."""
     import posixpath
     import zipfile
@@ -221,6 +221,19 @@ def _in_container(c, case_root, disk_relpath):
         zpath = (case_root / c.stored_path).resolve()
         if not str(zpath).startswith(str(case_root) + "/") or not zpath.is_file():
             raise ContentRefused("The container holding this file is not on disk.")
+        # straight to the member by its recorded position in this archive (cb-media item F); the directory lookup
+        # below stays for entries recorded before positions were, or a method read only by zipfile
+        from services.phone import archive_member as AM
+        pos = conn.execute(text(
+            "SELECT header_offset, compressed_size, compress_type, crc32, size_bytes FROM phone_container_entries "
+            "WHERE extraction_id = :e AND relpath = :r AND container_id = :k"),
+            {"e": extraction_id, "r": disk_relpath, "k": c.id}).first()
+        if pos is not None and pos.header_offset is not None:
+            args = (zpath, pos.header_offset, pos.compressed_size, pos.compress_type, pos.crc32, pos.size_bytes)
+            probe = AM.open_at(*args)
+            if probe is not None:
+                probe.close()
+                return pos.size_bytes, lambda: AM.open_at(*args)
         with zipfile.ZipFile(zpath) as z:
             try:
                 info = z.getinfo(rel)

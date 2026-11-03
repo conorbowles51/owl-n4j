@@ -64,7 +64,8 @@ phone_files = Table(
 phone_container_entries = Table(
     "phone_container_entries", metadata, Column("extraction_id", Uuid, primary_key=True),
     Column("relpath", Text, primary_key=True), Column("size_bytes", BigInteger), Column("sha256", String(64)),
-    Column("md5", String(32)))
+    Column("md5", String(32)), Column("container_id", Uuid), Column("header_offset", BigInteger),
+    Column("compressed_size", BigInteger), Column("compress_type", SmallInteger), Column("crc32", BigInteger))
 
 phone_file_references = Table(
     "phone_file_references", metadata, *_doc_cols(), Column("record_ordinal", Integer, primary_key=True),

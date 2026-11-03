@@ -31,6 +31,19 @@ ExternalProcessingCheck = Callable[[Session, uuid.UUID, EvidenceFile], bool]
 _external_processing_check: ExternalProcessingCheck | None = None
 
 
+MEMBER_PREFIX = "phone-file:"
+
+
+def member_locator(file_uid) -> str:
+    """The ``stored_path`` of a phone file kept inside an uploaded archive: not a path on disk. Its bytes are read
+    through ``services.phone.media.content`` (cb-media item F)."""
+    return MEMBER_PREFIX + str(file_uid)
+
+
+def is_member_locator(stored_path) -> bool:
+    return str(stored_path or "").startswith(MEMBER_PREFIX)
+
+
 def register_external_processing_check(check: ExternalProcessingCheck | None) -> None:
     global _external_processing_check
     _external_processing_check = check

@@ -2289,6 +2289,11 @@ def get_evidence_file(
                 raise HTTPException(status_code=404, detail="This conversation's text is not written yet")
             return PlainTextResponse(text_row.content or "", headers={"Content-Disposition": "inline"})
 
+        # A phone file is served by the phone file reader: from its folder upload, or straight from the uploaded
+        # archive that keeps it (cb-media item F); a file inside an archive has no path of its own.
+        if record.source_type == "phone_file":
+            return _phone_file_response(db, record)
+
         # Primary path: serve from backend disk
         filename = record.original_filename or "file"
         stored_path = record.stored_path
@@ -2308,6 +2313,35 @@ def get_evidence_file(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _phone_file_response(db: Session, record):
+    from urllib.parse import quote
+
+    from fastapi.responses import StreamingResponse
+    from services.phone import media as phone_media
+
+    try:
+        _name, size, opener = phone_media.content(db.connection(), record.case_id, record.source_ref)
+    except phone_media.ContentRefused as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    filename = record.original_filename or "file"
+    handle = opener()
+
+    def chunks():
+        try:
+            while True:
+                block = handle.read(1 << 20)
+                if not block:
+                    break
+                yield block
+        finally:
+            handle.close()
+
+    content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return StreamingResponse(chunks(), media_type=content_type, headers={
+        "Content-Length": str(size), "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": "inline; filename*=UTF-8''%s" % quote(filename)})
 
 
 def _load_pymupdf():

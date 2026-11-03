@@ -43,9 +43,11 @@ def test_a_file_in_a_folder_upload_resolves_to_its_path_on_disk(monkeypatch):
     assert target.mapping_versions == {"capture_code_version": "phone-capture-1"}
 
 
-def test_a_file_inside_a_zip_has_no_stored_path_and_a_missing_file_none():
+def test_a_file_inside_a_zip_resolves_to_its_member_locator_and_a_missing_file_none():
+    """cb-media item F: before, a zip-kept file had no stored_path and could not be used as evidence."""
     db = FakeDb(file_row=file_row(), folder_row=None)
-    assert resolvers.resolve_file(db, uuid4(), str(uuid4())).metadata["stored_path"] is None
+    uid = uuid4()
+    assert resolvers.resolve_file(db, uuid4(), str(uid)).metadata["stored_path"] == "phone-file:%s" % uid
     absent = FakeDb(file_row=file_row(disk_relpath=None, disk_size=None, disk_sha256=None, outcome="missing"),
                     folder_row=SimpleNamespace(stored_path="p", root_path=""))
     assert resolvers.resolve_file(absent, uuid4(), str(uuid4())).metadata["stored_path"] is None

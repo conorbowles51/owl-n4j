@@ -168,6 +168,12 @@ class PhoneContainerEntry(Base):
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     md5: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # where the member sits in the archive it was listed from (NULL for a folder upload); cb-media item F
+    container_id: Mapped[uuid.UUID | None] = mapped_column(_uuid(), nullable=True)
+    header_offset: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    compressed_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    compress_type: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    crc32: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 
 class PhoneFileReference(Base):

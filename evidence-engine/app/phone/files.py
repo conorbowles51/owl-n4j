@@ -58,18 +58,58 @@ def list_entries(conn, ctx, reporter=None) -> dict:
         if sub is None or sub == detect.V1_REPORT:
             continue
         m = members.get(rel)
-        rows.append((ext, sub, size, m[1] if m else None, m[2] if m else None))
+        loc = _location(source, rel)
+        rows.append((ext, sub, size, m[1] if m else None, m[2] if m else None,
+                     ctx.get("container_id") if loc else None, *(loc or (None, None, None, None))))
+    kept = True
     with conn.transaction():
         with conn.cursor() as cur:
             cur.execute("SELECT count(*) FROM phone_container_entries WHERE extraction_id = %s", (ext,))
             if cur.fetchone()[0] != len(rows):
+                kept = False
                 cur.execute("DELETE FROM phone_container_entries WHERE extraction_id = %s", (ext,))
-                with cur.copy("COPY phone_container_entries (extraction_id, relpath, size_bytes, sha256, md5) "
-                              "FROM STDIN") as cp:
+                with cur.copy("COPY phone_container_entries (extraction_id, relpath, size_bytes, sha256, md5, "
+                              "container_id, header_offset, compressed_size, compress_type, crc32) FROM STDIN") as cp:
                     for r in rows:
                         cp.write_row(r)
     ctx["entries"] = {r[1]: r[2] for r in rows}
-    return {"entries": len(rows)}
+    out = {"entries": len(rows)}
+    if kept and any(r[6] is not None for r in rows):  # rows kept from an earlier run may lack the offsets
+        out["offsets_recorded"] = record_member_offsets(conn, ext, ctx.get("container_id"), source, root)
+    return out
+
+
+def _location(source, rel):
+    """(header offset, compressed size, method, CRC) for an archive member; None for a folder."""
+    loc = getattr(source, "location", None)
+    return loc(rel) if loc is not None else None
+
+
+def record_member_offsets(conn, extraction_id, container_id, source, root) -> int:
+    """Fill the archive position of every entry of one extraction that lacks it, from ``source`` (the archive
+    ``container_id`` names). Idempotent; rows that already have a position are left alone. Returns rows filled.
+    The capture calls it through ``list_entries``; it is also how entries written before positions were recorded
+    are filled (``app.phone.backfill_offsets``)."""
+    if getattr(source, "location", None) is None:
+        return 0
+    updates = []
+    for rel, _size in source.entries():
+        if detect.skip_rule(rel) is not None:
+            continue
+        sub = _under_root(rel, root)
+        if sub is None or sub == detect.V1_REPORT:
+            continue
+        updates.append((container_id, *source.location(rel), extraction_id, sub))
+    done = 0
+    with conn.transaction():
+        with conn.cursor() as cur:
+            for i in range(0, len(updates), 2000):
+                cur.executemany(
+                    "UPDATE phone_container_entries SET container_id = %s, header_offset = %s, compressed_size = %s, "
+                    "compress_type = %s, crc32 = %s WHERE extraction_id = %s AND relpath = %s AND "
+                    "header_offset IS NULL", updates[i:i + 2000])
+                done += cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+    return done
 
 
 def outcome_for(local_path, declared_size, declared_md5, declared_sha256, disk):
