@@ -439,3 +439,23 @@ def test_the_shipped_directory_loads_and_no_drafted_entry_is_used():
     for e in d["entries"]:
         if not INST.reviewed(e):
             assert INST.Directory(d).by_package((e.get("app_packages") or ["none"])[0]) is None, e["institution_id"]
+
+
+def test_the_measurements_run_on_a_case_count_only_and_record_their_gate():
+    from services.phone_analysis import measurements as M
+    with fresh_engine() as engine:
+        case, ext, acct, row, old, new = _alert_case(engine)
+        with engine.begin() as c:
+            out = {code: M.record(c, "case", case, code, "t@x.test") for code in sorted(M.MEASURES)}
+        assert set(out) == {"money_signals", "message_reconciliation", "deletion_timeline", "awareness", "device_users",
+                            "other_devices", "typed_words", "media_spread", "intent", "plans", "relationships",
+                            "extraction_comparison", "incident_window"}
+        m1 = out["money_signals"]["result"]
+        assert m1["m1c_binding"] == {"bound": 3} and m1["m1d_outcome"]["corroborated"] == 2
+        assert m1["m1a"][next(iter(m1["m1a"]))]["in_reviewed_directory"] == 1
+        assert out["money_signals"]["gate"] == "do_not_build"  # 3 bound readings < 20 and no lead without statement
+        assert out["message_reconciliation"]["gate"] == "inconclusive"  # one phone: not measurable
+        blob = json.dumps(out, default=str)
+        assert "Purchase" not in blob and "CORNER CAFE" not in blob  # counts only, never content
+        with engine.connect() as c:
+            assert len(M.rows(c, case)) == 13
