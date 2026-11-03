@@ -84,12 +84,17 @@ def open_calls_behind(index, rows):
     if index is None:
         return dict(available=False, open_calls=None, payments_with_open_calls=None, payments=len(rows),
                     sentence="Judgement calls could not be read; do not say this figure rests on none.")
-    by_id = {item["id"]: item for item in index["judgements"]}
+    if "_status" not in index:  # built once per index, not once per group
+        index["_status"] = {item["id"]: item["status"] for item in index["judgements"]}
+    status = index["_status"]
     calls, touched = set(), 0
     for r in rows:
         ids = [*index["transactions"].get(str(r["id"]), []),
                *index["documents"].get(str(r.get("source_document_id") or ""), [])]
-        open_ids = {i for i in ids if by_id.get(i, {}).get("status") == "open"}
+        for mirror in r.get("_mirror_rows") or ():
+            ids += [*index["transactions"].get(str(mirror["id"]), []),
+                    *index["documents"].get(str(mirror.get("source_document_id") or ""), [])]
+        open_ids = {i for i in ids if status.get(i) == "open"}
         calls |= open_ids
         touched += bool(open_ids)
     n = len(calls)
@@ -134,10 +139,14 @@ def get_money_between(session, *, case_id, party_a, party_b, start_date=None, en
         return _unavailable(MONEY_SCHEMA, case_id, str(exc))
     except MB.MoneyBetweenError as exc:
         raise LedgerReadingError(str(exc)) from exc
-    docs = _source_documents(session, case_id, [r["id"] for r in out["rows"]])
+    mirrors = [r["mirrored_by"]["id"] for r in out["rows"] if r.get("mirrored_by")]
+    docs = _source_documents(session, case_id, [r["id"] for r in out["rows"]] + mirrors)
     rows = [dict(r, source_document_id=docs.get(r["id"]), financial_href=payment_href(case_id, r["id"]))
             for r in out["rows"]]
-    behind = open_calls_behind(judgement_index(session, case_id), rows)
+    # a payment seen on both statements is one payment; the calls on its mirror row count too
+    behind = open_calls_behind(judgement_index(session, case_id), [
+        dict(r, _mirror_rows=[{"id": r["mirrored_by"]["id"], "source_document_id": docs.get(r["mirrored_by"]["id"])}]
+             if r.get("mirrored_by") else []) for r in rows])
     return _paged(MONEY_SCHEMA, case_id, rows, offset, limit, out["revision"], a=out["a"], b=out["b"],
                   start_date=out["from_date"], end_date=out["to_date"], totals=out["totals"],
                   payments_by_class=out["payments_by_class"], shared_accounts=out["shared_accounts"],
@@ -178,6 +187,22 @@ def _in_case(session, case_id, kind, ident) -> bool:
     return row is not None and row.case_id == case_id
 
 
+MAX_CHAIN = 50
+
+
+def correction_chain(session, case_id, payment_id) -> list:
+    """The payment and every earlier version it corrects (newest first): a correction's decision and its calls are
+    recorded against the row it replaced, so a reader of the current row reads the whole chain."""
+    from postgres.models.financial import FinancialTransaction
+    chain, seen, current = [], set(), session.get(FinancialTransaction, payment_id)
+    while current is not None and current.case_id == case_id and current.id not in seen and len(chain) < MAX_CHAIN:
+        seen.add(current.id)
+        chain.append(current.id)
+        previous = ((current.provenance or {}).get("correction") or {}).get("previous_transaction_id")
+        current = session.get(FinancialTransaction, _uuid(previous)) if previous else None
+    return chain
+
+
 def get_judgement_calls(session, *, case_id, subject=None, status=None, rule=None, offset=0, limit=25):
     """The case's judgement calls (``judgements.search``, the Judgement calls screen's own read), filtered by
     subject, status and rule; each with its sentence, page, file, who made it and whether a person resolved it."""
@@ -191,7 +216,7 @@ def get_judgement_calls(session, *, case_id, subject=None, status=None, rule=Non
         return _unavailable(JUDGEMENT_SCHEMA, case_id, NOT_IN_CASE)
     query = dict(statuses=[status] if status else (), rule_ids=[rule] if rule else (), offset=offset, limit=limit)
     if kind == "payment":
-        query["subject_ids"] = [ident]
+        query["subject_ids"] = correction_chain(session, case_id, ident)
     elif kind == "statement":
         query["source_document_id"] = ident
     elif kind == "period":
@@ -249,16 +274,20 @@ def get_decisions(session, *, case_id, subject, offset=0, limit=25):
         raise LedgerReadingError("Name the subject as payment:<id>, statement:<id>, period:<id> or account:<id>.")
     if not _in_case(session, case_id, kind, ident):
         return _unavailable(DECISION_SCHEMA, case_id, NOT_IN_CASE)
-    events = list(session.scalars(select(AdjudicationEvent).where(
+    subjects = correction_chain(session, case_id, ident) if kind == "payment" else [ident]
+    order = {sid: n for n, sid in enumerate(reversed(subjects))}  # oldest version first
+    events = sorted(session.scalars(select(AdjudicationEvent).where(
         AdjudicationEvent.case_id == case_id, AdjudicationEvent.subject_type == DECISION_SUBJECT[kind],
-        AdjudicationEvent.subject_id == ident).order_by(AdjudicationEvent.subject_sequence)))
+        AdjudicationEvent.subject_id.in_(subjects))),
+        key=lambda e: (order.get(e.subject_id, 0), e.subject_sequence))
     href = payment_href(case_id, ident) if kind == "payment" else (
         accounts_href(case_id) if kind == "account" else judgements_href(case_id))
     items = [dict(id=str(e.id), sequence=e.subject_sequence, decision=e.decision, reason=e.reason,
                   reason_kind=e.reason_kind, before=e.before, after=e.after, actor=e.actor_name,
                   actor_origin=e.actor_origin, made_by=_made_by(e.actor_origin, e.actor_name),
                   recorded_at=e.created_at.isoformat() if e.created_at else None,
-                  citation=dict(href=href, subject=subject)) for e in events]
+                  on_row="this version" if e.subject_id == ident else "an earlier version this payment corrects",
+                  subject_row_id=str(e.subject_id), citation=dict(href=href, subject=subject)) for e in events]
     return _paged(DECISION_SCHEMA, case_id, items, offset, limit,
                   _revision([[i["id"], i["sequence"]] for i in items]),
                   model_drafted=sum(i["made_by"]["kind"] == "model" for i in items))
@@ -395,7 +424,7 @@ TIMELINE_SOURCES = {"transaction": "ledger payment", "money_trail": "money trail
                     "phone_record": "phone record"}
 
 
-def timeline_additions(session, *, case_id, start_date=None, end_date=None):
+def timeline_additions(session, *, case_id, start_date=None, end_date=None, event_types=None, left_out=None):
     """Every event an investigator added to the case Timeline (``timeline_entries.list_entries``: ledger payments,
     money trails, findings, phone records), resolved to its current reading, labelled by source, oldest first."""
     from services.timeline_entries import list_entries
@@ -409,8 +438,17 @@ def timeline_additions(session, *, case_id, start_date=None, end_date=None):
             break
         offset += 2000
     out = []
+    types = {str(t).casefold() for t in event_types or ()}
+    skipped = {"undated_outside_window": 0, "other_types": 0}
     for e in events:
         d = e.get("date")
+        if types and str(e.get("type") or "").casefold() not in types:
+            skipped["other_types"] += 1
+            continue
+        if (start or end) and not d:
+            # an undated addition cannot be placed in a window: counted, never shown as inside it
+            skipped["undated_outside_window"] += 1
+            continue
         if d and ((start and d < start.isoformat()) or (end and d > end.isoformat())):
             continue
         source = e.get("source") or {}
@@ -425,4 +463,6 @@ def timeline_additions(session, *, case_id, start_date=None, end_date=None):
                         date_basis=source.get("date_basis"),
                         citation=dict(href=href or "/cases/%s/timeline" % case_id)))
     out.sort(key=lambda x: (x["date"] or "9999", x["time"] or "", x["key"] or ""))
+    if left_out is not None:
+        left_out.update(skipped)
     return out

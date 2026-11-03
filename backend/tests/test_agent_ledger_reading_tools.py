@@ -156,6 +156,28 @@ class LedgerReadingToolTests(DuplicateTestCase):
         assert data['items'][1]['actor_origin']['kind'] == 'model'
         assert 'not a person' in data['items'][1]['made_by']['label']
 
+    def test_a_corrected_payment_reads_the_decisions_and_calls_recorded_on_the_row_it_replaced(self):
+        """Review finding: a correction's decision and its calls are recorded on the replaced row; the agent only
+        holds the current row's id, so reading that id alone answered 0 decisions for every corrected payment."""
+        from services.financial.decisions import Actor, record
+        from services.financial.model_work import model_origin
+        old = self.row(100_00)
+        new = self.row(120_00)
+        new.provenance = {**(new.provenance or {}), 'correction': {'previous_transaction_id': str(old.id)}}
+        drafted = Actor(name=self.actor.name, email=self.actor.email, user_id=self.actor.user_id,
+                        origin=model_origin(for_name=self.actor.name, model='Claude'))
+        record(self.db, case_id=self.case.id, subject=old, subject_type=AdjudicationSubject.transaction,
+               decision=AdjudicationDecision.correct_transaction, reason='Amount misread', actor=drafted,
+               before={'replacement_id': None}, after={'replacement_id': str(new.id)})
+        old.superseded_by_id = new.id
+        self.db.commit()
+        self.judgement(old)
+        data = self.call('get_decisions', subject='payment:%s' % new.id)['data']
+        assert data['total'] == 1 and data['model_drafted'] == 1
+        assert data['items'][0]['on_row'] == 'an earlier version this payment corrects'
+        calls = self.call('get_judgement_calls', subject='payment:%s' % new.id)['data']
+        assert calls['total'] == 1
+
     def test_get_statement_continuity_reads_the_run_and_its_coverage(self):
         from services.financial.periods import PeriodBounds
         doc2 = self.make_document()

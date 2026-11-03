@@ -1980,13 +1980,15 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         else:
             try:
                 from services.agent.ledger_reading_tools import timeline_additions
+                left_out = {}
                 with (context.ledger_session_factory or _financial_session)() as db:
                     items = timeline_additions(db, case_id=uuid.UUID(context.case_id), start_date=start_date,
-                                               end_date=end_date)
+                                               end_date=end_date, event_types=event_types, left_out=left_out)
                 chunk = items[additions_offset:additions_offset + limit]
                 nxt = additions_offset + limit if additions_offset + limit < len(items) else None
                 additions = {"available": True, "total": len(items), "returned": len(chunk),
-                             "offset": additions_offset, "next_offset": nxt, "items": chunk}
+                             "offset": additions_offset, "next_offset": nxt, "items": chunk,
+                             "left_out": left_out}
             except Exception:  # noqa: BLE001 - the graph events still answer; the additions say they were not read
                 logger.exception("Timeline additions could not be read for case %s", context.case_id)
                 additions = {"available": False, "reason": "Investigator Timeline additions could not be read; do "
