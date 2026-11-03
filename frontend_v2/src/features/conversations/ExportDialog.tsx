@@ -3,7 +3,7 @@ import { useState } from "react"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { createExport, describeExport, downloadExport, failureText, getExport, type StreamFilter } from "@/features/phones/api"
+import { createExport, describeExport, downloadExport, failureText, getExport, type ExportSource, type StreamFilter } from "@/features/phones/api"
 import { MachineTextPrompt } from "@/features/phones/media/MachineTextPrompt"
 
 const fmt = (n: number) => n.toLocaleString("en-US")
@@ -18,7 +18,7 @@ const rsmfMissing = (counts: Record<string, unknown>) =>
 export function ExportDialog(props: {
   caseId: string; filter: StreamFilter; words: string; open: boolean; onOpenChange: (v: boolean) => void
   /** "finding": the frozen phone records of a finding, theory or note (07 XF-7); `note` says what is not in it */
-  source?: "stream" | "finding"; note?: string | null
+  source?: ExportSource; note?: string | null
 }) {
   const { caseId, filter, words, open, onOpenChange, source = "stream", note } = props
   const [title, setTitle] = useState(words)

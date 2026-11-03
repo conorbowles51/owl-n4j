@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest"
 const client = vi.hoisted(() => ({
   runs: vi.fn(), request: vi.fn(), run: vi.fn(), cancel: vi.fn(), coverage: vi.fn(), results: vi.fn(), detail: vi.fn(), decide: vi.fn(),
 }))
-vi.mock("./analysis-api", () => ({ analysisAPI: () => client }))
+vi.mock("./analysis-api", () => ({ analysisAPI: () => client, keptResults: vi.fn().mockResolvedValue({ total: 0, offset: 0, limit: 50, items: [] }) }))
 vi.mock("@/features/pattern/api", () => ({ patternAPI: { keyDates: vi.fn().mockResolvedValue({ total: 0, items: [] }) } }))
 vi.mock("@/features/pattern/components/CollectBar", () => ({ CollectBar: () => <div>Add to…</div> }))
 

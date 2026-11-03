@@ -123,26 +123,32 @@ def freeze_entry(db, case_id, entry_id, user) -> dict:
     if not g["records"]:
         raise EntryExportError(sentence(g) or "This entry has no messages or calls from the phones to export.")
     entry = g["entry"]
-    case = str(entry.case_id)
+    words = "The phone records of %s “%s”" % (entry.entry_type, (entry.title or "Untitled").strip())
+    sid, filter_body, events = store_selection(db, str(entry.case_id), g["records"], words, user)
+    db.commit()
+    return {"selection_id": str(sid), "filter": filter_body, "collected": len(g["records"]),
+            "events": events, "words": words, "sentence": sentence(g)}
+
+
+def store_selection(db, case, records, words, user) -> tuple:
+    """Freeze ``records`` (record uids) as one ``phone_selection`` of the case, every copy kept, with the mapping
+    versions of the phones they come from: ``(selection_id, filter, events)``. The caller commits."""
     conn = db.connection()
     rows = conn.execute(text(
         "SELECT count(DISTINCT event_uid) AS events, array_agg(DISTINCT extraction_id::text) AS phones FROM "
         "pv_comm_event WHERE case_id = CAST(:c AS uuid) AND record_uid::text = ANY(:r)"),
-        {"c": case, "r": g["records"]}).one()
+        {"c": case, "r": list(records)}).one()
     phones = sorted(rows.phones or [])
     versions = [dict(r._mapping) for r in conn.execute(text(
         "SELECT st.extraction_id::text AS extraction_id, st.generation, st.mapping_set_id::text AS mapping_set_id, "
         "st.interpreter_version FROM phone_interpretation_state st WHERE st.extraction_id::text = ANY(:p) "
         "ORDER BY 1"), {"p": phones})]
     sid = uuid.uuid4()
-    words = "The phone records of %s “%s”" % (entry.entry_type, (entry.title or "Untitled").strip())
     filter_body = {"case_id": case, "selection": str(sid), "collapse_copies": False}
     conn.execute(text(
         "INSERT INTO phone_selections (id, case_id, filter, words, record_uids, record_count, event_count, "
         "mapping_versions, created_by_user_id) VALUES (:i, :c, CAST(:f AS jsonb), :w, :r, :n, :e, CAST(:v AS jsonb), "
-        ":u)"), {"i": sid, "c": case, "f": json.dumps(filter_body), "w": words, "r": g["records"],
-                 "n": len(g["records"]), "e": int(rows.events), "v": json.dumps({"phones": versions}),
+        ":u)"), {"i": sid, "c": case, "f": json.dumps(filter_body), "w": words, "r": list(records),
+                 "n": len(records), "e": int(rows.events), "v": json.dumps({"phones": versions}),
                  "u": getattr(user, "id", None)})
-    db.commit()
-    return {"selection_id": str(sid), "filter": filter_body, "collected": len(g["records"]),
-            "events": int(rows.events), "words": words, "sentence": sentence(g)}
+    return sid, filter_body, int(rows.events)

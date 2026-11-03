@@ -1460,6 +1460,30 @@ class EntryExportBody(BaseModel):
     entry_id: UUID
 
 
+class SourceExportBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    source: Literal["analysis_result", "statement_check", "incident_window"]
+    ref: dict = Field(default_factory=dict)
+
+
+@router.post("/exports/source")
+def prepare_source_export(body: SourceExportBody, db: Session = Depends(get_db),
+                          user: User = Depends(get_current_db_user)):
+    """The records behind an analysis result, a statement check or an incident window frozen as one selection for the
+    export dialog (07 J-14b): the filter, the count frozen (the export's total), and what is not in the export."""
+    from services.phone import source_export
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    try:
+        return source_export.freeze_source(db, body.case_id, body.source, body.ref, user)
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    except source_export.SourceExportError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.post("/exports/entry")
 def prepare_entry_export(body: EntryExportBody, db: Session = Depends(get_db),
                          user: User = Depends(get_current_db_user)):

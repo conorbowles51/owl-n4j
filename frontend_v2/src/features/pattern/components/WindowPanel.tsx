@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { SourceExport } from "@/features/phones/analysis/SourceExport"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { phoneLinkHref } from "@/features/phones/phone-links"
@@ -37,7 +38,7 @@ export interface CaseEventLike {
 
 export const DATE_ONLY_WORDS = "This payment has a date but no time. Showing the whole day."
 
-export function WindowPanel({ caseId, at, day, range, caseEvents, zone = "case", onClose }: {
+export function WindowPanel({ caseId, at, day, range, caseEvents, zone = "case", onClose, exportable = false }: {
   caseId: string
   /** The moment the window is around; for a date-only anchor, the start of its day. */
   at: string
@@ -45,6 +46,8 @@ export function WindowPanel({ caseId, at, day, range, caseEvents, zone = "case",
   day?: string | null
   /** A window with its own start and end (a statement's window); the span choices then do not apply. */
   range?: { start: string; end: string } | null
+  /** Offer the export of every message and call in the window as shown (07 J-14b, incident window source). */
+  exportable?: boolean
   caseEvents: CaseEventLike[]
   zone?: string
   onClose?: () => void
@@ -101,6 +104,7 @@ export function WindowPanel({ caseId, at, day, range, caseEvents, zone = "case",
         <span className="flex items-center gap-1">
           {/* a whole day's moment is its start in the window's zone (the server's midnight), never midnight UTC */}
           {(!day || q.data) && <SaveMoment caseId={caseId} at={day ? (q.data as { start: string }).start : at} zone={q.data?.zone || "UTC"} />}
+          {exportable && q.data && <SourceExport caseId={caseId} source="incident_window" refBody={{ start: q.data.start, end: q.data.end }} label="Export the messages and calls…" />}
           {onClose && <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>}
         </span>
       </div>

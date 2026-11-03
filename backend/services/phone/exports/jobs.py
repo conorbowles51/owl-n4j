@@ -6,8 +6,9 @@ export keeps its choices and says what failed with a reference id; nothing is ha
 under a temporary name and moved into place only when complete).
 
 Built: the PDF and the RSMF file of a stream (a conversation, a person or a pair, any Conversations filter), and of a
-finding, theory or note (source ``finding``: the frozen selection of its phone records, services.phone.entry_export).
-The other sources (timeline lens, collection, dossier, and the cb-approaches sources) answer that they are not built
+finding, theory or note (source ``finding``: the frozen selection of its phone records, services.phone.entry_export),
+and of an analysis result, a statement check or an incident window (the frozen selection of their records,
+services.phone.source_export). The other sources (timeline lens, collection, dossier) answer that they are not built
 yet rather than producing something partial.
 """
 from __future__ import annotations
@@ -30,7 +31,7 @@ from services.phone.filters import StreamFilter, snapshot
 
 log = logging.getLogger(__name__)
 BUILT_FORMATS = ("pdf", "rsmf")
-BUILT_SOURCES = ("stream", "finding")
+BUILT_SOURCES = ("stream", "finding", "analysis_result", "statement_check", "incident_window")
 # a finding, theory or note is exported as the frozen selection of its phone records (services.phone.entry_export)
 STALE_RENDER_SECONDS = 2 * 3600  # a render claimed this long ago by a worker that died is queued again
 MAX_ATTEMPTS = 2  # a render that stopped this many times is failed with a reason, never claimed forever
@@ -159,8 +160,8 @@ def create(conn, *, case_id, user_id, fmt, source, filter_body, options) -> dict
     if source not in BUILT_SOURCES:
         raise ExportError("Exporting a %s is not built yet." % source.replace("_", " "))
     f = _filter(case_id, filter_body)
-    if source == "finding" and not f.selection:
-        raise ExportError("A finding is exported through the selection of its phone records.")
+    if source != "stream" and not f.selection:
+        raise ExportError("A %s is exported through the selection of its phone records." % source.replace("_", " "))
     export_id = uuid.uuid4()
     conn.execute(text(
         "INSERT INTO phone_exports (export_id, case_id, created_by, format, source, filter, options, snapshot) "

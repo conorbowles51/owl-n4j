@@ -47,3 +47,11 @@ export function analysisAPI(approach: string) {
 }
 
 export type AnalysisClient = ReturnType<typeof analysisAPI>
+
+/** A kept analysis result as listed on the analyses page. */
+export interface KeptItem { id: string; label: string; approach: string | null; record_count: number; created_by_name: string | null; created_at: string | null }
+
+/** The case's kept analysis results, newest first; `total` is the full count. */
+export function keptResults(caseId: string, offset = 0) {
+  return fetchAPI<{ total: number; offset: number; limit: number; items: KeptItem[] }>(`${BASE}/kept?${q({ case_id: caseId, offset, limit: 50 })}`)
+}

@@ -10,6 +10,7 @@ import type { AnalysisRun } from "./money-api"
 import type { AnalysisClient, ApproachResult, KeptResult } from "./analysis-api"
 import { anchorWords } from "./anchor-words"
 import { recordsWords } from "./count-words"
+import { SourceExport } from "./SourceExport"
 
 /**
  * The shared results layout of every approach (05 section 3.9; 07 section 5; test AP-1), in this order: what it does,
@@ -176,6 +177,7 @@ function Row({ p, r, anchors, onChanged }: { p: ApproachLayoutProps; r: Approach
           )}
           <Behind caseId={p.caseId} client={p.client} queryKey={p.queryKey} result={r} label={p.collectLabel(r)} origin={p.origin} />
           <KeepThis p={p} r={r} />
+          <SourceExport caseId={p.caseId} source="analysis_result" refBody={{ result_id: r.id }} label="Export the messages and calls behind it…" />
           <Decide caseId={p.caseId} client={p.client} result={r} onDone={onChanged} />
         </div>
       )}

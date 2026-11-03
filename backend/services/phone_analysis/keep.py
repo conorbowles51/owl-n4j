@@ -55,3 +55,26 @@ def keep_label(r) -> str:
     phones = m.get("phones") or ([m["phone_label"]] if m.get("phone_label") else [])
     return "%s: %s%s (%s)" % (TITLES.get(r["approach"], r["approach"]), r["kind"].replace("_", " "),
                               (", " + " and ".join(phones)) if phones else "", F.LEAD_LABEL)
+
+
+def list_kept(conn, case_id, limit=50, offset=0) -> dict:
+    """The case's kept analysis results, newest first, with the full count."""
+    total = int(conn.execute(text("SELECT count(*) FROM pol_analysis_snapshot WHERE case_id = :c AND kind = :k"),
+                             {"c": str(case_id), "k": KIND}).scalar() or 0)
+    items = [{"id": r.id, "label": r.label, "approach": (r.snapshot or {}).get("subject", {}).get("approach"),
+              "record_count": int(r.record_count or 0), "created_by_name": r.created_by_name,
+              "created_at": r.created_at.isoformat() if r.created_at else None}
+             for r in conn.execute(text(
+                 "SELECT id, label, snapshot, record_count, created_by_name, created_at FROM pol_analysis_snapshot WHERE "
+                 "case_id = :c AND kind = :k ORDER BY created_at DESC, id LIMIT :l OFFSET :o"),
+                 {"c": str(case_id), "k": KIND, "l": int(limit), "o": int(offset)})]
+    return {"total": total, "offset": offset, "limit": limit, "items": items}
+
+
+def kept_records(conn, case_id, kept_id) -> tuple:
+    """(record ids, label) of a kept result, as frozen."""
+    r = conn.execute(text("SELECT label, snapshot FROM pol_analysis_snapshot WHERE id = :i AND case_id = :c AND kind = "
+                          ":k"), {"i": str(kept_id), "c": str(case_id), "k": KIND}).first()
+    if r is None:
+        raise LookupError("That kept result is not in this case.")
+    return [str(x) for x in (r.snapshot or {}).get("record_ids") or []], r.label

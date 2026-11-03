@@ -233,7 +233,8 @@ export type ExportState = z.infer<typeof ExportStateSchema>
 export async function describeExport(caseId: string, filter: StreamFilter) {
   return ExportFactsSchema.parse(await fetchAPI("/api/phones/exports/describe", { method: "POST", body: { case_id: caseId, filter }, read: true }))
 }
-export async function createExport(caseId: string, filter: StreamFilter, options: Record<string, unknown>, format: "pdf" | "rsmf" = "pdf", source: "stream" | "finding" = "stream") {
+export type ExportSource = "stream" | "finding" | "analysis_result" | "statement_check" | "incident_window"
+export async function createExport(caseId: string, filter: StreamFilter, options: Record<string, unknown>, format: "pdf" | "rsmf" = "pdf", source: ExportSource = "stream") {
   return fetchAPI<{ export_id: string }>("/api/phones/exports", { method: "POST", body: { case_id: caseId, format, source, filter, options } })
 }
 /** A finding, theory or note's phone records frozen as one selection to export (07 XF-7, CO-12): the export's total
@@ -241,6 +242,12 @@ export async function createExport(caseId: string, filter: StreamFilter, options
 export async function prepareEntryExport(caseId: string, entryId: string) {
   return fetchAPI<{ selection_id: string; filter: StreamFilter; collected: number; events: number; words: string; sentence: string | null }>(
     "/api/phones/exports/entry", { method: "POST", body: { case_id: caseId, entry_id: entryId } })
+}
+/** The records behind an analysis result (or a kept one), a statement check or an incident window frozen as one
+ * selection to export (07 J-14b); `sentence` says what behind it is not a message or call and so not in the export. */
+export async function prepareSourceExport(caseId: string, source: "analysis_result" | "statement_check" | "incident_window", ref: Record<string, unknown>) {
+  return fetchAPI<{ selection_id: string; filter: StreamFilter; collected: number; events: number; words: string; sentence: string | null }>(
+    "/api/phones/exports/source", { method: "POST", body: { case_id: caseId, source, ref } })
 }
 export async function getExport(caseId: string, exportId: string) {
   return ExportStateSchema.parse(await fetchAPI(`/api/phones/exports/${encodeURIComponent(exportId)}?case_id=${encodeURIComponent(caseId)}`))

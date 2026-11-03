@@ -154,6 +154,15 @@ def keep(result_id: UUID, body: KeepBody, db: Session = Depends(get_db), user: U
     return out
 
 
+@router.get("/kept")
+def kept(case_id: UUID = Query(...), limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0),
+         db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The case's kept analysis results, newest first, with the full count."""
+    from services.phone_analysis import keep as K
+    authorize_case(db, case_id, user, ("case", "view"))
+    return K.list_kept(db.connection(), case_id, limit, offset)
+
+
 @router.post("/results/{result_id}/decisions")
 def decide(result_id: UUID, body: DecisionBody, db: Session = Depends(get_db),
            user: User = Depends(get_current_db_user)):
