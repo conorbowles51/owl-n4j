@@ -343,6 +343,21 @@ class RunRecordTests(RunRecordFixture):
         self.assertEqual(run.prompt_version_label, "v2 · x · bbbbbbbb")
         self.assertIn("did not finish", run.record_summary["basis"])
 
+    def test_withheld_phone_material_and_significant_scope_are_listed_out_of_scope(self):
+        from services.agent import run_record_export as rx
+        record = {"case_layer": "significant", "items": [], "unrun_tool_calls": [], "tool_calls_used": 1,
+                  "tool_budget": 28, "for_user": {}, "run_id": "r", "case_id": "c", "status": "completed",
+                  "provider": "p", "model_id": "m", "summary": {}, "calls": [{
+                      "sequence": 1, "name": "phone_messages", "category": "phones", "available": True,
+                      "withheld": {"count": 12, "what": "Messages on the victim's phone",
+                                   "reason": "No external-processing decision", "reason_code":
+                                   "external_processing_not_allowed", "decision_id": None},
+                      "tool_not_returned": 0, "model_not_shown": 0, "items_not_listed": 0, "items_without_id": 0}]}
+        st = rx.not_examined_rows(record, material={}, phone_types=[])
+        whats = [r["what"] for r in st["scope"]]
+        self.assertEqual(whats, ["Everything outside the Significant layer", "Messages on the victim's phone (12)"])
+        self.assertIn("external_processing_not_allowed", st["scope"][1]["decision"])
+
     def test_case_material_not_held_is_not_listed_as_unsearched(self):
         from services.agent import run_record_export as rx
         result = self.run_agent([lambda o: ("get_financial_transactions", {"limit": 5})], lambda o: "ok")
