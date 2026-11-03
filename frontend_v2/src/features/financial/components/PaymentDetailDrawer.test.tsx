@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { MemoryRouter } from "react-router-dom"
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 import { RowJudgements } from "../hooks/use-judgement-rows"
@@ -132,4 +133,30 @@ it("lays the payment out as header, judgement calls, who, category, source and l
   expect(screen.getByRole("button", { name: "Add investigation note" })).toBeTruthy()
   fireEvent.click(screen.getByRole("button", { name: "File history and technical details" }))
   expect(screen.getByText("Source custody records")).toBeVisible()
+})
+
+it("shows a phone reading linked to this payment under Linked, as a link only (05 section 4.4)", async () => {
+  const caseId = "d9945277-6c80-4a39-82c7-93a95d420384"
+  const tx = "c1c3e69f-9ef2-43f7-9c1e-f499e66681ee"
+  const record = "5f0c2a1e-1111-4111-8111-222222222222"
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) =>
+    String(url).includes("/money/ledger-links")
+      ? new Response(JSON.stringify({ links: { [tx]: [{ phone_label: "Phone 1", source: "notification", instant: "2023-11-08T10:00:00+00:00",
+          record_uid: record, outcome: "corroborated", result_id: "r1", proof_class: "p4" }] } }))
+      : new Response(JSON.stringify({ ...citation, case_id: caseId, transaction_id: tx, transaction: { ...citation.transaction, key: tx, case_id: caseId } })))
+  render(
+    <MemoryRouter>
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <LedgerSourceDialog caseId={caseId} transactionId={tx} onClose={vi.fn()} onAdjudicate={vi.fn()} inline />
+      </QueryClientProvider>
+    </MemoryRouter>
+  )
+  const linked = await screen.findByRole("region", { name: "Linked" })
+  const mention = await within(linked).findByTestId("phone-mentions")
+  expect(mention.textContent).toContain("Also recorded on phone Phone 1: notification")
+  expect(mention.textContent).toContain("A reading from the phone, not a statement.")
+  expect(within(mention).getByRole("link", { name: "Open the phone record" }).getAttribute("href")).toBe(`/cases/${caseId}/records/${record}`)
+  expect(fetch.mock.calls.some(([u, init]) => String(u).includes("/money/ledger-links") && String(init?.body).includes(tx))).toBe(true)
+  // the payment itself is unchanged: still the statement's class and reading
+  expect(within(screen.getByRole("region", { name: "Payment details" })).getByText("Investigator reviewed")).toBeTruthy()
 })
