@@ -40,7 +40,7 @@ from services.phone import ids
 from services.phone_analysis import fields as FV
 
 CODE = "deletion_timeline"
-VERSION = "3.1"
+VERSION = "3.2"
 PARAMETERS = {
     "clearing_min_messages": {"default": 20, "min": 5, "max": 1000},
     "clearing_q": {"default": 0.05, "min": 0.001, "max": 0.2},

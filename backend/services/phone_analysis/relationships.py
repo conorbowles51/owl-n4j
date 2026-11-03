@@ -31,7 +31,7 @@ from sqlalchemy import text
 from services.phone_analysis import fields as FV
 
 CODE = "relationships"
-VERSION = "11.1"
+VERSION = "11.2"
 PARAMETERS = {
     "min_communications": {"default": 1, "min": 1, "max": 1000},
     "min_segment_weeks": {"default": 2, "min": 1, "max": 26},

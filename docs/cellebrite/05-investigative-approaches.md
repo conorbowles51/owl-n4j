@@ -975,7 +975,7 @@ A-C8 alone meets the first half on one phone; server measurement decides.
 events: 1 each on P02, P07, P13. Conversations with at least 20 messages and a deletion (M-3e): 0 to 68 per
 phone (P10 68, P14 48). Gate **pass**: build.
 
-**Built (`cb-approaches`, 05-S6, `deletion_timeline` version 3.1, screen "Deleted and hidden").** Measure m3.2
+**Built (`cb-approaches`, 05-S6, `deletion_timeline` version 3.2, screen "Deleted and hidden").** Measure m3.2
 replaces m3.1: m3.1 read `Label` and `DeletionReason` from the text table, which holds String fields only, so M-3b and
 M-3c were always 0 on every case; m3.2 reads named sets and TimeSpans from the captured record body and adds M-3d
 (referenced messages absent) and holes from the approach's own functions. The gate stands on the A3 server result
@@ -1153,7 +1153,7 @@ least 14 days of overlapping interaction data (most: P08 and P10, 729). Gate: co
 complementary use **pass**. `cb-approaches` builds the complementary-use part (8.3 steps 1, 3 and 5: shared markers,
 complementary use, signs of more than one user) and not the co-location statistic or "use while apart" (steps 2 and
 4 rest on co-placed bins). Reverse if a case yields a pair with at least 200 co-placed bins. **Built (05-S8, `device_users`
-version 5.1-use, screen "Who used which phone").** Tests 8.8.3 and 8.8.4 pass; 8.8.1 and 8.8.2 belong to the
+version 5.2-use, screen "Who used which phone").** Tests 8.8.3 and 8.8.4 pass; 8.8.1 and 8.8.2 belong to the
 co-location part, which is not built.
 
 ### 8.7 Dependencies
@@ -1535,7 +1535,7 @@ identities and are measured by `cb-approaches`.
 identities with at least 20 communications on C3 and 37 on C9, both phones of the 10-report case. With M-11a's six
 phones with created times in that case, the gate **passes**: build. M-11c (identities named differently on two
 phones) needs two phones of one case in Loupe; none of the live cases with a real phone holds two, so it is counted
-on the synthetic cases when the approach runs and is not a gate input. **Built (`cb-approaches`, 05-S9, `relationships` version 11.1, screen
+on the synthetic cases when the approach runs and is not a gate input. **Built (`cb-approaches`, 05-S9, `relationships` version 11.2, screen
 "Relationships over time").** Measure m11.2 adds M-11a's created times per phone and M-11c.
 
 ### 14.7 Dependencies

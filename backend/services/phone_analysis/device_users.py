@@ -38,7 +38,7 @@ from sqlalchemy import text
 from services.phone_analysis import fields as FV
 
 CODE = "device_users"
-VERSION = "5.1-use"
+VERSION = "5.2-use"
 PARAMETERS = {
     "min_days": {"default": 14, "min": 1, "max": 365},
     "bin_minutes": {"default": 15, "choices": [15]},
