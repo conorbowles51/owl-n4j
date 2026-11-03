@@ -179,6 +179,11 @@ beforeEach(() => {
           })
       return json(dossier)
     }
+    if (/\/dossier-1\/links\/[^/]+$/.test(url) && method === "DELETE") {
+      const id = url.split("/").pop()
+      dossier.links = dossier.links!.filter((link) => link.id !== id)
+      return json({ dossier_id: "dossier-1", removed: 1 })
+    }
     if (url.endsWith("/interviews/interview-1") && method === "PATCH") {
       const interview = dossier.interviews![0]
       Object.assign(interview, body, {
@@ -321,6 +326,32 @@ describe("Connected dossier workflows", () => {
         (request) => request.method === "PUT" && request.url.endsWith("/links")
       )
     ).toBe(false)
+  })
+
+  it("unlinks a phone message from the dossier through its link, leaving the other links", async () => {
+    dossier.links!.push({
+      id: "phone-link",
+      target_type: "phone_record",
+      target_id: "record-1",
+      label: "Synthetic sender -> Owner of C1",
+      source_anchor: {},
+    })
+    const user = userEvent.setup()
+    renderDossier()
+    await user.click(
+      await screen.findByRole("button", { name: "Unlink Synthetic sender -> Owner of C1" })
+    )
+    const confirm = screen.getByRole("dialog", { name: "Unlink this item?" })
+    expect(confirm).toHaveTextContent("The item itself and other dossier links stay unchanged.")
+    await user.click(within(confirm).getByRole("button", { name: "Unlink" }))
+    await waitFor(() =>
+      expect(screen.queryByText("Synthetic sender -> Owner of C1")).not.toBeInTheDocument()
+    )
+    expect(
+      requests.filter((r) => r.method === "DELETE").map((r) => r.url)
+    ).toEqual(["/api/dossiers/dossier-1/links/phone-link"])
+    expect(screen.getAllByRole("button", { name: "statement.pdf" })[0]).toBeVisible()
+    expect(screen.getByRole("button", { name: "Witness follow-up" })).toBeVisible()
   })
 
   it("keeps a failed brief save and unsaved writing through tab changes", async () => {

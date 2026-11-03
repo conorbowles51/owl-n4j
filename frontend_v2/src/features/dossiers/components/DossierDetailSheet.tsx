@@ -540,6 +540,13 @@ export function DossierDetailSheet({
     dossierId ?? "",
     (id: string) => dossiersAPI.removeEvidence(dossierId!, id)
   )
+  const removeOtherLink = useDossierMutation(
+    caseId,
+    dossierId ?? "",
+    (linkId: string) => dossiersAPI.removeLink(dossierId!, linkId)
+  )
+  const unlinking = removeEvidence.isPending || removeOtherLink.isPending
+  const unlinkingEvidence = removeLink?.target_type === "evidence"
   const [viewerDoc, setViewerDoc] = useState<{
     evidenceId: string
     url: string
@@ -974,11 +981,11 @@ export function DossierDetailSheet({
                               {link.label || link.target_id}
                             </span>
                           )}
-                          {canEdit && link.target_type === "evidence" && (
+                          {canEdit && (
                             <Button
                               variant="ghost"
                               size="icon"
-                              aria-label={`Unlink ${link.label || "evidence"}`}
+                              aria-label={`Unlink ${link.label || (link.target_type === "evidence" ? "evidence" : "this item")}`}
                               onClick={() => setRemoveLink(link)}
                             >
                               <Trash2 className="size-3.5" />
@@ -1417,39 +1424,41 @@ export function DossierDetailSheet({
       <Dialog
         open={Boolean(removeLink)}
         onOpenChange={(value) => {
-          if (!value && !removeEvidence.isPending) setRemoveLink(null)
+          if (!value && !unlinking) setRemoveLink(null)
         }}
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Unlink evidence?</DialogTitle>
+            <DialogTitle>{unlinkingEvidence ? "Unlink evidence?" : "Unlink this item?"}</DialogTitle>
             <DialogDescription>
-              Remove {removeLink?.label || "this file"} from this dossier. The
-              original evidence file and other dossier links stay unchanged.
+              {unlinkingEvidence
+                ? `Remove ${removeLink?.label || "this file"} from this dossier. The original evidence file and other dossier links stay unchanged.`
+                : `Remove ${removeLink?.label || "this item"} from this dossier. The item itself and other dossier links stay unchanged.`}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button
               variant="ghost"
-              disabled={removeEvidence.isPending}
+              disabled={unlinking}
               onClick={() => setRemoveLink(null)}
             >
               Cancel
             </Button>
             <Button
-              disabled={removeEvidence.isPending}
+              disabled={unlinking}
               onClick={async () => {
                 if (!removeLink) return
                 try {
-                  await removeEvidence.mutateAsync(removeLink.target_id)
+                  if (unlinkingEvidence) await removeEvidence.mutateAsync(removeLink.target_id)
+                  else await removeOtherLink.mutateAsync(removeLink.id)
                   setRemoveLink(null)
-                  toast.success("Evidence unlinked")
+                  toast.success(unlinkingEvidence ? "Evidence unlinked" : "Unlinked from this dossier")
                 } catch {
-                  toast.error("Could not unlink evidence. Try again.")
+                  toast.error(unlinkingEvidence ? "Could not unlink evidence. Try again." : "Could not unlink this item. Try again.")
                 }
               }}
             >
-              {removeEvidence.isPending ? "Unlinking…" : "Unlink evidence"}
+              {unlinking ? "Unlinking…" : unlinkingEvidence ? "Unlink evidence" : "Unlink"}
             </Button>
           </DialogFooter>
         </DialogContent>

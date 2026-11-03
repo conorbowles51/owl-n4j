@@ -212,6 +212,12 @@ export const dossiersAPI = {
       method: "POST",
       body: { evidence_file_ids: evidenceFileIds },
     }),
+  /** Removes one link (a phone message, a note, any item) from the dossier; the item itself is unchanged. */
+  removeLink: (id: string, linkId: string) =>
+    fetchAPI<{ dossier_id: string; removed: number }>(
+      `/api/dossiers/${encodeURIComponent(id)}/links/${encodeURIComponent(linkId)}`,
+      { method: "DELETE" }
+    ),
   removeEvidence: (id: string, evidenceFileId: string) =>
     fetchAPI<Dossier>(
       `/api/dossiers/${encodeURIComponent(id)}/evidence/${encodeURIComponent(evidenceFileId)}`,
