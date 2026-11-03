@@ -7,7 +7,7 @@ parameters, mapping versions, record ids, summary counts) and linked as ``phone_
 from alembic import op
 
 revision = "20261103_phone_result_snapshots"
-down_revision = "20261103_assessment_agent_message"
+down_revision = "20261103_agent_run_record"
 branch_labels = None
 depends_on = None
 
