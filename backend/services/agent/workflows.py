@@ -103,6 +103,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
               optional=True),
             S("get_analysis_results", "approach 3 (deletion_timeline): anything removed afterwards", ("phones",),
               optional=True),
+            # Approach 13 (incident window) is a screen over the Day view's lanes; get_day_activity reads them.
             S("get_timeline_events", "the case timeline around the anchor", (), optional=True),
         ),
         proposals=(("propose_timeline_addition", "the last human-initiated event and the last device event, each "
@@ -292,8 +293,9 @@ WORKFLOWS: tuple[Workflow, ...] = (
         steps=(
             S("get_together_apart", "whether the claimants' phones were together before the accident", ("phones",)),
             S("get_contact_and_money_between", "contact and money between the claimants", ("phones",)),
-            S("search_case", "planning messages across the phones (approach 2's deleted-on-one-side copies are not "
-                             "an agent tool yet)", ("phones",)),
+            S("search_case", "planning messages across the phones", ("phones",)),
+            S("get_analysis_results", "approach 2 (message_reconciliation): messages present on one handset and "
+                                      "deleted on another", ("phones",), optional=True),
             S("get_money_between", "payments from an organiser to the claimants after the payout", ("ledger",)),
             S("search_documents", "the claim files", ("documents",), optional=True),
         ),

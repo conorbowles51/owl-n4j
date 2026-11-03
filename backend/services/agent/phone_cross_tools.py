@@ -1279,7 +1279,7 @@ class StatementArgs(_Page):
 
 
 class AnalysisArgs(_Page):
-    approach: Literal["deletion_timeline", "relationships", "awareness", "device_users"]
+    approach: Literal["message_reconciliation", "deletion_timeline", "relationships", "awareness", "device_users"]
     kind: str | None = None
     phone: str | None = None
     start: str | None = None
@@ -1346,7 +1346,8 @@ TOOLS = [
      "contradicted_weakly, consistent, supported, mixed, insufficient_data, or no_record with its reason. Every "
      "item cited."),
     ("get_analysis_results", "analysis_results", AnalysisArgs,
-     "Results of a phone analysis's last run: deletion_timeline, relationships, awareness or device_users, with "
+     "Results of a phone analysis's last run: message_reconciliation (messages across phones: copies matched, "
+     "deleted on one side), deletion_timeline, relationships, awareness or device_users, with "
      "exact totals and records cited."),
     ("draft_control_claim", "control_claim", ControlArgs,
      "Draft 'P had the means to operate account A from t1 to t2' as two evidenced links (account to phone: codes, "

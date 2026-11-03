@@ -146,3 +146,9 @@ def test_prompt_version_fingerprints_every_workflow_plan():
     from services.agent.run_record import prompt_version_source
     src = prompt_version_source()
     assert set(src["prompts"]["workflows"]) == set(W.BY_ID)
+
+
+def test_scenario_9_reads_messages_across_phones():
+    from services.agent.phone_cross_tools import AnalysisArgs
+    assert AnalysisArgs(approach="message_reconciliation").approach == "message_reconciliation"
+    assert ("get_analysis_results" in [s.tool for s in W.get("staged-accident").steps])

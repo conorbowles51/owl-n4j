@@ -182,3 +182,10 @@ def test_significant_every_workflow_tool_question_is_refused_with_the_boundary(w
 
 def test_unknown_uuid_is_not_a_known_record():
     assert uuid.UUID(QUESTIONS[28][4]["claim_id"]).int == 0
+
+
+def test_messages_across_phones_is_readable_by_the_agent(world):
+    """Scenario 9 lists approach 2 (messages across phones). The agent tool names it (it refused it before)."""
+    out = _tools(world, significant=False)["get_analysis_results"].invoke({"approach": "message_reconciliation"})
+    assert out.get("status") != "error", out.get("summary")
+    assert out["data"]["total_matching"] == 0 and "message_reconciliation has not been run" in str(out["summary"])
