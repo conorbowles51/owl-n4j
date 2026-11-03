@@ -220,6 +220,43 @@ def phone_media_window(body: MediaWindowBody, db: Session = Depends(get_db), use
                         body.offset, body.limit)
 
 
+@router.get("/media/{file_uid}/content")
+def phone_media_content(file_uid: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                        user: User = Depends(get_current_db_user)):
+    """One phone file's bytes, read in place from its container (03 8.3 viewer). Nothing is fetched elsewhere."""
+    import mimetypes
+
+    from fastapi.responses import StreamingResponse
+    from services.phone import media
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        name, size, opener = media.content(db.connection(), case_id, file_uid)
+    except media.ContentRefused as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    fh = opener()
+
+    def chunks():
+        try:
+            while True:
+                block = fh.read(1024 * 1024)
+                if not block:
+                    break
+                yield block
+        finally:
+            fh.close()
+    from urllib.parse import quote
+    kind = mimetypes.guess_type(name)[0] or "application/octet-stream"
+    # evidence never runs in the app's origin: only passive types are shown inline, and nothing may script
+    inline = (kind.startswith(("image/", "audio/", "video/")) and kind != "image/svg+xml") or kind in (
+        "application/pdf", "text/plain")
+    if not inline:
+        kind = "application/octet-stream"
+    return StreamingResponse(chunks(), media_type=kind, headers={
+        "Content-Length": str(size), "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; img-src 'self'; media-src 'self'; sandbox",
+        "Content-Disposition": "%s; filename*=UTF-8''%s" % ("inline" if inline else "attachment", quote(name))})
+
+
 @router.get("/media/{file_uid}")
 def phone_media_detail(file_uid: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
                        user: User = Depends(get_current_db_user)):

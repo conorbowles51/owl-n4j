@@ -125,3 +125,70 @@ def detail(conn, case_id, file_uid) -> dict | None:
             "missing": r["verification"] == "missing", "missing_words": MISSING_WORDS if r["verification"] ==
             "missing" else None, "deleted_state": r["deleted_state"], "is_carved": bool(r["is_carved"]),
             "messages": links, "message_count": int(r["messages"])}
+
+
+CONTENT_MAX_BYTES = 200 * 1024 * 1024  # a file larger than this is not served inline; the viewer says so
+
+
+class ContentRefused(LookupError):
+    pass
+
+
+def content(conn, case_id, file_uid):
+    """(filename, size, opener) for one phone file's bytes, read in place from its container (01 D6): a folder
+    upload from disk under the case's data root, a zip by its member. A file absent from the production, or
+    larger than ``CONTENT_MAX_BYTES``, is refused with words."""
+    import posixpath
+    import zipfile
+    from pathlib import Path
+
+    from config import EVIDENCE_DATA_ROOT
+    r = conn.execute(text(
+        "SELECT f.extraction_id, f.local_path, f.disk_relpath, f.disk_size, f.verification FROM pv_file f WHERE "
+        "f.case_id = :c AND f.file_uid::text = :u"), {"c": str(case_id), "u": str(file_uid)}).first()
+    if r is None:
+        raise ContentRefused("This file is not in this case.")
+    if r.verification == "missing" or not r.disk_relpath:
+        raise ContentRefused(MISSING_WORDS)
+    if r.disk_size and r.disk_size > CONTENT_MAX_BYTES:
+        raise ContentRefused("This file is %s MB, too large to show here. Download the original instead."
+                             % "{:,}".format(int(r.disk_size) // (1024 * 1024)))
+    c = conn.execute(text(
+        "SELECT c.container_kind, c.stored_path, l.root_path FROM phone_extraction_container_links l JOIN "
+        "phone_extraction_containers c ON c.id = l.container_id WHERE l.extraction_id = :e AND c.case_id = :c "
+        "ORDER BY l.linked_at LIMIT 1"), {"e": r.extraction_id, "c": str(case_id)}).first()
+    if c is None:
+        raise ContentRefused("The container holding this file is not recorded.")
+    case_root = (Path(EVIDENCE_DATA_ROOT) / str(case_id)).resolve()
+    name = posixpath.basename((r.local_path or "").replace("\\", "/")) or "file"
+    rel = posixpath.normpath(posixpath.join(c.root_path or "", r.disk_relpath)).lstrip("/")
+    if rel.startswith(".."):
+        raise ContentRefused("The file's place in its container is not valid.")
+    if c.container_kind == "folder":
+        path = (case_root / c.stored_path / rel).resolve()
+        if not str(path).startswith(str(case_root) + "/") or not path.is_file():
+            raise ContentRefused(MISSING_WORDS)
+        return name, path.stat().st_size, lambda: open(path, "rb")
+    if c.container_kind in ("zip", "ufdr"):  # a UFDR is a zip
+        zpath = (case_root / c.stored_path).resolve()
+        if not str(zpath).startswith(str(case_root) + "/") or not zpath.is_file():
+            raise ContentRefused("The container holding this file is not on disk.")
+        with zipfile.ZipFile(zpath) as z:
+            try:
+                info = z.getinfo(rel)
+            except KeyError:
+                raise ContentRefused(MISSING_WORDS) from None
+        size = info.file_size
+
+        def opener():
+            z = zipfile.ZipFile(zpath)
+            member = z.open(info)
+            close = member.close
+
+            def closing():
+                close()
+                z.close()
+            member.close = closing
+            return member
+        return name, size, opener
+    raise ContentRefused("Files in a %s container are not shown yet." % c.container_kind)

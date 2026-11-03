@@ -82,3 +82,26 @@ def test_m2_a_file_absent_from_the_production_is_counted_and_says_so_not_a_broke
     item = w["items"][0]
     assert item["missing"] and item["thumbnail_url"] is None
     assert item["verification_words"] == d["missing_words"] == "The report refers to a file that is not in the production."
+
+
+def test_a_folder_file_is_read_in_place_and_a_missing_one_is_refused_in_words(world, tmp_path, monkeypatch):
+    from services.phone import media
+    engine, case, _, ext = world
+    monkeypatch.setattr("config.EVIDENCE_DATA_ROOT", str(tmp_path))
+    (tmp_path / str(case) / "up" / "root" / "chats").mkdir(parents=True)
+    (tmp_path / str(case) / "up" / "root" / "chats" / "synthetic-a.jpg").write_bytes(b"synthetic bytes")
+    with engine.begin() as c:
+        c.execute(text("UPDATE phone_files SET disk_relpath = 'chats/synthetic-a.jpg', disk_size = 15 WHERE file_uid = :f"),
+                  {"f": LINKED})
+        cid = c.execute(text("SELECT first_container_id FROM phone_extractions WHERE id = :e"), {"e": ext}).scalar()
+        c.execute(text("UPDATE phone_extraction_containers SET container_kind = 'folder', stored_path = 'up' WHERE id = :i"),
+                  {"i": cid})
+        c.execute(text("DELETE FROM phone_extraction_container_links WHERE extraction_id = :e"), {"e": ext})
+        c.execute(text("INSERT INTO phone_extraction_container_links (extraction_id, container_id, root_path) VALUES "
+                       "(:e, :i, 'root')"), {"e": ext, "i": cid})
+    with engine.connect() as c:
+        name, size, opener = media.content(c, case, LINKED)
+        with opener() as fh:
+            assert fh.read() == b"synthetic bytes" and name == "synthetic-a.jpg" and size == 15
+        with pytest.raises(media.ContentRefused, match="not in the production"):
+            media.content(c, case, MISSING)
