@@ -1674,6 +1674,13 @@ pair. M-12b: 4 equal content markers over 23 record types, overall Jaccard 0.000
 two C1 reports are not shown to be one device, and no other case supplies two extractions of one device.
 Natural keys are needed (record ids do not overlap).
 
+**Built on a synthetic pair (`cb-approaches`, 05-S15, `extraction_comparison` version 12.1, screen "Two extractions
+of one phone").** Built by Neil's brief although the corpus gate failed: the identity check (15.3 step 1, with the
+contradiction rule), natural keys (19.S15-a), the five diff kinds and the attribution of step 5, on every pair of a
+case's extractions; 15.8 tests 1 to 4 in `test_phone_analysis_extraction_comparison.py`. On the live cases no pair is
+shown to be one device, so the screen gives identity checks only. `diff_counts` gives the per-pair counts J-16 reads.
+The A-C8 control (M-12d) waits for the second C8 export, which is only on the Mac.
+
 ### 15.7 Dependencies
 
 01 (metadata capture, extraction info), 02 (registry, natural-key mappings), 03 (Extraction profile).
@@ -2265,6 +2272,8 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | 19.S16b-a The from/to matrix population defaults to N = 1 | M-15a: 8,502 people at N = 1, 5,519 at N = 5; every cell opens to its records, so the smaller population only hides people | the screen cannot list a case's cells |
 | 19.S16b-b A record's sender is its sender or caller party (or the owner for an outgoing record naming none); every other party is a recipient; a record with neither is counted as "direction not recorded"; duplicate copies on one phone count once | 16b.3 step 2 | a reviewed mapping gives sender and recipients per app |
 | 19.S16c-a A stop within the gap of the end of a phone's data, or a start within the gap of its start, is not a stop or start | 16c.8 test 2; availability is read as the phone's first and last communication | 04's availability bands give finer starts and ends |
+| 19.S15-a Extraction comparison keys: a message or email is its kind, app, sender identity, time and body digest; a call its kind, other party, time, direction and duration; any other top-level record its type and sorted non-volatile text fields; equal keys pair in order of time | 15.3 step 3; record ids do not overlap across extractions (M-12c: 0 of 9,910) | 02's reviewed mappings give a natural key per type |
+| 19.S15-b Earlier and later are read from each report's extraction start time, else the time it was added | the header carries the start on the measured reports | |
 | 19.S-ix The analyses are reached from one Phones sidebar entry, "Analyses", which also lists the approaches whose gate failed with the measured reason | one entry per approach would put ten links in the group; an absent analysis is stated, not silent | |
 | Deletion time is an interval to extraction start unless `DateDeleted` exists | `DateDeleted` 1 in corpus | a source of deletion times is found |
 | Media spread population restricted to attachment, camera-path and EXIF-camera files | X10 against X11 | |

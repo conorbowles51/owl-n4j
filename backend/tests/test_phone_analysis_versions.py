@@ -26,6 +26,7 @@ RECORDED = {
     "reparse_comparison": ("17.3-1", "b27a8eff1720fac7"),
     "contact_matrix": ("15.1", "49cad534aa52a2bf"),
     "number_switching": ("16.1", "2189f1b2740ec40b"),
+    "extraction_comparison": ("12.1", "919fdb03776732f1"),
 }
 
 
