@@ -1564,7 +1564,8 @@ TOOLS = [
 # ---- payment links ---------------------------------------------------------------------------------------------------
 # Every item that names a ledger row by txn:// also carries the Financial page path the ledger tools give
 # (financial_href), so the answer links a payment the way the live screens open it. Decision (agent-phones,
-# 2026-11-03): reverse when txn:// opens the Financial page on live (agent-citations), then the prompt cites txn://.
+# 2026-11-03): reversed by agent-citations, whose release opens txn:// on the Financial page; the prompt cites txn://
+# and financial_href stays for older readers (the citation check reads both).
 
 def _with_hrefs(case_id, obj):
     if isinstance(obj, dict):
