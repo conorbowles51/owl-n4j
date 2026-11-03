@@ -19,6 +19,9 @@ export const HitSchema = z.object({
   label: z.string().optional(),
   /** Machine text's one origin mark (07 4.6): machine-generated and not yet confirmed, confirmed, or corrected. */
   origin: z.object({ state: z.string(), words: z.string().nullable(), confirmed: z.boolean() }).optional(),
+  /** A machine translation (05 17.5): the language it was translated from, and the start of its original. */
+  translated_from: z.string().nullable().optional(),
+  original: z.object({ text: z.string(), clipped: z.boolean(), chars: z.number() }).optional(),
   open: z.object({ screen: z.string(), params: z.record(z.string(), z.unknown()) }),
 })
 export type SearchHit = z.infer<typeof HitSchema>

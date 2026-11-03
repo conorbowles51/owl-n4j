@@ -4,10 +4,11 @@ import { Link, useParams, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { recordPath } from "@/lib/record-links"
 import { useCollectTargets } from "../collect-targets"
+import { translationKey } from "../lib/translation-key"
 import { BatchReading } from "./BatchReading"
 import { MachineTextPrompt } from "./MachineTextPrompt"
 import { useObjectUrl } from "./use-object-url"
-import { acceptDerivedText, confirmDerivedText, correctDerivedText, getDerivedTexts, getMediaDetail, getMediaIndex, getMediaWindow, requestDerivedText, type DerivedText, type MediaFilter, type MediaItem } from "../api"
+import { acceptDerivedText, confirmDerivedText, correctDerivedText, getDerivedTexts, getMediaDetail, getMediaIndex, getMediaWindow, getTranslations, requestDerivedText, translateDerivedText, type DerivedText, type MediaFilter, type MediaItem } from "../api"
 
 const n = (v: number) => v.toLocaleString("en-US")
 const WINDOW = 200
@@ -179,6 +180,63 @@ function MachineBody({ x }: { x: DerivedText }) {
   )
 }
 
+/** A machine translation of a finished transcript or image text (05 17.5), under the text it was made from: each
+ * transcript segment keeps its time. Made by a local model; nothing is sent anywhere. */
+function DerivedTranslation({ caseId, x }: { caseId: string; x: DerivedText }) {
+  const qc = useQueryClient()
+  const key = translationKey(caseId, x.id)
+  const q = useQuery({
+    queryKey: key,
+    queryFn: async () => (await getTranslations(caseId, "derived_text", [x.id]))[x.id] ?? null,
+    refetchInterval: (query) => (query.state.data?.state === "queued" || query.state.data?.state === "running" ? 3000 : false),
+  })
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  if (!(x.effective_text ?? x.text)) return null
+  const t = q.data
+  const ask = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      qc.setQueryData(key, await translateDerivedText(caseId, x.id))
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "The translation could not be asked for.")
+    } finally {
+      setBusy(false)
+    }
+  }
+  const what = x.kind === "transcript" ? "transcript" : "text"
+  return (
+    <div className="flex flex-col gap-1" aria-label="Machine translation">
+      {t?.state === "queued" && <p role="status">Waiting to be translated on this server.</p>}
+      {t?.state === "running" && <p role="status">Being translated now.</p>}
+      {t?.state === "failed" && <p role="alert">{t.error}</p>}
+      {t?.state === "done" && t.outcome === "translated" && (
+        <div className="flex flex-col gap-0.5 border-l-2 pl-2">
+          {t.stale && <p className="font-medium">{t.stale_words}</p>}
+          <p className="font-medium">Machine translation from {t.detected_language_name ?? "another language"}</p>
+          <p className="italic text-muted-foreground">{t.label}</p>
+          {t.segments.some((g) => g.start != null) ? (
+            <ol className="flex flex-col gap-0.5">
+              {t.segments.map((g, i) => <li key={i}><span className="font-mono text-muted-foreground">{fmtSeconds(g.start ?? 0)}</span> {g.text}</li>)}
+            </ol>
+          ) : (
+            <p className="whitespace-pre-wrap">{t.text}</p>
+          )}
+          {t.language_words && <p className="text-muted-foreground">{t.language_words}</p>}
+        </div>
+      )}
+      {t?.state === "done" && t.outcome !== "translated" && <p className="text-muted-foreground">{t.outcome_words} {t.language_words}</p>}
+      {error && <p role="alert">{error}</p>}
+      {!q.isLoading && (!t || t.state === "failed" || t.stale) && (
+        <Button size="sm" variant="outline" className="self-start" disabled={busy} onClick={() => void ask()}>
+          {t?.stale ? `Translate the corrected ${what}` : `Translate this ${what}`}
+        </Button>
+      )}
+    </div>
+  )
+}
+
 /** CO-18 and M-7: machine text used in a dossier assessment. An unconfirmed text is shown with its original first
  * (confirm it, or keep it marked); the assessment is stored as AI-assisted, "Read by <model>, accepted by <name>". */
 function UseInAssessment({ caseId, x, filename, onSaved }: { caseId: string; x: DerivedText; filename: string | null; onSaved: () => Promise<unknown> }) {
@@ -303,6 +361,7 @@ export function DerivedTexts({ caseId, fileUid, category, filename = null }: { c
               )}
               {x.provider_words && <p className="text-muted-foreground">{x.provider_words}</p>}
               <MadeBy x={x} />
+              <DerivedTranslation caseId={caseId} x={x} />
               <Review caseId={caseId} x={x} onSaved={() => client.invalidateQueries({ queryKey: ["phone-media-derived", caseId, fileUid] })} />
               {x.text || x.corrected_text ? <UseInAssessment caseId={caseId} x={x} filename={filename} onSaved={() => client.invalidateQueries({ queryKey: ["phone-media-derived", caseId, fileUid] })} /> : null}
             </>

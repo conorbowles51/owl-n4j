@@ -38,6 +38,34 @@ export const AttachmentSchema = z.object({
   mechanism: z.string(),
 })
 
+/** A machine translation of a message or a machine text (05 17.5): made on the server, beside the original, never
+ * replacing it. `stale`: made from an earlier text of the original, corrected since. */
+export const TranslationSchema = z.object({
+  id: z.string(),
+  source_type: z.enum(["message", "derived_text"]),
+  source_key: z.string(),
+  state: z.enum(["queued", "running", "done", "failed"]),
+  outcome: z.enum(["translated", "already_english", "unsure"]).nullable(),
+  text: z.string().nullable(),
+  segments: z.array(z.object({ start: z.number().nullable().optional(), end: z.number().nullable().optional(), source: z.string(), text: z.string() })),
+  error: z.string().nullable(),
+  detected_language: z.string().nullable(),
+  detected_language_name: z.string().nullable(),
+  detected_confidence: z.number().nullable(),
+  model: z.string().nullable(),
+  model_id: z.string().nullable(),
+  model_version: z.string().nullable(),
+  weights_sha256: z.string().nullable(),
+  label: z.string().nullable(),
+  language_words: z.string().nullable(),
+  outcome_words: z.string().nullable(),
+  provider_words: z.string().nullable(),
+  stale: z.boolean(),
+  stale_words: z.string().nullable(),
+  machine_generated: z.literal(true),
+})
+export type Translation = z.infer<typeof TranslationSchema>
+
 export const StreamRowSchema = z.object({
   event_uid: z.string(),
   record_uid: z.string(),
@@ -61,6 +89,7 @@ export const StreamRowSchema = z.object({
   owner_read: z.object({ date_read: z.string().nullable(), date_played: z.string().nullable() }),
   interpretation_level: z.string(),
   line: z.string(),
+  translation: TranslationSchema.nullable().optional(),
 })
 export type StreamRow = z.infer<typeof StreamRowSchema>
 

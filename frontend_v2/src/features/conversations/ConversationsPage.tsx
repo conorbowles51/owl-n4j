@@ -15,11 +15,13 @@ import {
   getThreads,
   markNotACopy,
   markReviewed,
+  translateThread,
   undoReviewed,
   type ThreadSort,
   streamLocate,
 } from "@/features/phones/api"
 import { liveCollectClient, undoCollect, type CollectLink, type CollectResult, type CollectTarget } from "@/features/phones/collect.api"
+import { MessageTranslation } from "@/features/phones/components/MessageTranslation"
 import { PhoneRecordPanel } from "@/features/phones/components/RecordPanel"
 import { StreamList } from "@/features/phones/components/StreamList"
 import { useCollectTargets, useUsedIn } from "@/features/phones/hooks/use-collect"
@@ -29,6 +31,7 @@ import { PersonScope } from "./PersonScope"
 import { useThreadMatches } from "./use-thread-matches"
 import { viewFromSearch, viewToFilter, viewToSearch, type ConversationView } from "@/features/phones/lib/filter-url"
 import { rememberSpot } from "@/features/phones/lib/continue-reading"
+import { translateWords } from "@/features/phones/lib/translate-words"
 import { labelText } from "@/features/phones/lib/labels"
 import type { StreamRow, ThreadRow } from "@/features/phones/schemas"
 import { AddToMenu } from "@/features/phones/ui/AddToMenu"
@@ -236,6 +239,16 @@ export function ConversationsPage() {
   )
 
   // ---- review marks ----------------------------------------------------------------------------------------------
+  // 05 17.5: every message with text in this conversation is translated on the server, one translation each
+  const [translateNote, setTranslateNote] = useState<{ thread: string; text: string } | null>(null)
+  const translate = useMutation({
+    mutationFn: (thread: string) => translateThread(caseId, thread),
+    onSuccess: (c, thread) => {
+      setTranslateNote({ thread, text: translateWords(c) })
+      void qc.invalidateQueries({ queryKey: ["phone-translation", caseId] })
+    },
+    onError: (e, thread) => setTranslateNote({ thread, text: failureText(e, e instanceof Error && e.message ? e.message : "The translation could not be asked for.") }),
+  })
   const [reviewNote, setReviewNote] = useState<{ thread: string; text: string } | null>(null)
   // A second m before the first answer would store two marks; the key waits for the answer (review of 03-3).
   const reviewBusy = useRef(false)
@@ -527,6 +540,11 @@ export function ConversationsPage() {
                 Export…
               </Button>
               {view.thread && (
+                <Button size="sm" variant="outline" disabled={translate.isPending} onClick={() => translate.mutate(view.thread!)}>
+                  Translate this conversation
+                </Button>
+              )}
+              {view.thread && (
                 <Button size="sm" variant="outline" disabled={review.isPending} onClick={() => review.mutate({ thread: view.thread!, undo: false })}>
                   Mark reviewed <kbd className="ml-1 text-xs text-muted-foreground">m</kbd>
                 </Button>
@@ -552,6 +570,11 @@ export function ConversationsPage() {
                 <button type="button" className="underline underline-offset-2" disabled={restoreCopy.isPending} onClick={() => restoreCopy.mutate(copyNote)}>
                   Undo
                 </button>
+              </p>
+            )}
+            {translateNote && translateNote.thread === view.thread && (
+              <p role="status" className="w-full text-xs" data-testid="translate-note">
+                {translateNote.text}
               </p>
             )}
             {undoNote && (
@@ -614,6 +637,8 @@ export function ConversationsPage() {
               onFocusRow={setFocused}
               onSelectionChange={onSelectionChange}
               rowExtra={(row) => (
+                <>
+                <MessageTranslation caseId={caseId} row={row} />
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   {usedIn[row.record_uid] && <span className="text-muted-foreground">{usedIn[row.record_uid]}</span>}
                   {row.copies.count > 1 && !view.everyCopy && (
@@ -625,6 +650,7 @@ export function ConversationsPage() {
                     </>
                   )}
                 </div>
+                </>
               )}
             />
           ) : (

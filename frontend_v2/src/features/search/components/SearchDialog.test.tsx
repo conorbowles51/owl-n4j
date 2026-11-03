@@ -8,7 +8,7 @@ import type { SearchResult } from "../api"
 const api = vi.hoisted(() => ({ searchCase: vi.fn() }))
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
 
-import { SearchDialog } from "./SearchDialog"
+import { HitLine, SearchDialog } from "./SearchDialog"
 
 const hit = (over: Record<string, unknown>) => ({ kind: "message", title: "C3 WhatsApp message", snippet: { before: "Meet ", match: "Jose", after: " at the dock" }, record_uid: "r1", evidence_file_id: null, open: { screen: "conversations", params: { phone: "e1", thread: "chat:e1:t", event: "v1", q: "jose" } }, ...over })
 
@@ -137,5 +137,23 @@ describe("Search dialog", () => {
     page()
     await openAndType("jose")
     expect(await screen.findByRole("alert")).toHaveTextContent("C9 is still being read. Results will be incomplete until it finishes.")
+  })
+})
+
+describe("HitLine for a machine translation (05 17.5)", () => {
+  it("shows the translation's match, its label, and cites the original", () => {
+    render(
+      <HitLine
+        hit={{
+          kind: "machine_translation", title: "C1 machine translation of a message", snippet: { before: "Bring the ", match: "blue package", after: "." },
+          record_uid: "r1", evidence_file_id: null, machine_generated: true, translated_from: "Spanish",
+          label: "Machine translation (local, opus-mt-es-en c96e2c5, transformers 5.3.0), not checked by a person. The original is above.",
+          original: { text: "Trae el paquete azul.", clipped: false, chars: 21 }, open: { screen: "conversations", params: {} },
+        }}
+      />,
+    )
+    expect(screen.getByText("blue package")).toBeInTheDocument()
+    expect(screen.getByTestId("hit-original")).toHaveTextContent("Original (Spanish): Trae el paquete azul.")
+    expect(screen.getByText(/^Machine translation \(local, opus-mt-es-en/)).toBeInTheDocument()
   })
 })

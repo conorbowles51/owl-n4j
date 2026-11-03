@@ -218,6 +218,13 @@ export function HitLine({ hit }: { hit: SearchHit }) {
           {s.after}
         </span>
       )}
+      {hit.original && (
+        // a machine translation cites its original, which is what the evidence says (05 17.5)
+        <span className="line-clamp-2 text-xs" data-testid="hit-original">
+          Original{hit.translated_from ? ` (${hit.translated_from})` : ""}: {hit.original.text}
+          {hit.original.clipped ? ` … (${hit.original.chars.toLocaleString("en-US")} characters in all)` : ""}
+        </span>
+      )}
       {hit.origin?.words ? (
         <span className="text-xs italic text-muted-foreground">{hit.origin.words}</span>
       ) : hit.machine_generated && hit.label ? (

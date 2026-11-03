@@ -9,6 +9,7 @@ import {
   StreamIndexSchema,
   StreamWindowSchema,
   ThreadListSchema,
+  TranslationSchema,
   type RecordDetail,
   type ThreadList,
   type StreamIndex,
@@ -445,6 +446,25 @@ export async function getDerivedTexts(caseId: string, fileUid: string) {
 }
 export async function requestDerivedText(caseId: string, fileUid: string, kind: "ocr" | "transcript") {
   return fetchAPI<DerivedText>(`/api/phones/media/${encodeURIComponent(fileUid)}/derive`, { method: "POST", body: { case_id: caseId, kind } })
+}
+/** Machine translation on this server (05 17.5): one message, one machine text, or every message of a conversation. */
+export async function translateMessage(caseId: string, eventUid: string) {
+  return TranslationSchema.parse(await fetchAPI(`/api/phones/messages/${encodeURIComponent(eventUid)}/translate`, { method: "POST", body: { case_id: caseId } }))
+}
+export async function translateDerivedText(caseId: string, derivedId: string) {
+  return TranslationSchema.parse(await fetchAPI(`/api/phones/media/derived/${encodeURIComponent(derivedId)}/translate`, { method: "POST", body: { case_id: caseId } }))
+}
+export interface ThreadTranslateCounts {
+  in_conversation: number
+  queued: number
+  left_out: { no_text: number; already_translated: number; already_waiting: number }
+}
+export async function translateThread(caseId: string, threadKey: string) {
+  return fetchAPI<ThreadTranslateCounts>("/api/phones/threads/translate", { method: "POST", body: { case_id: caseId, thread_key: threadKey } })
+}
+const TranslationsSchema = z.object({ items: z.record(z.string(), TranslationSchema) })
+export async function getTranslations(caseId: string, sourceType: "message" | "derived_text", keys: string[]) {
+  return TranslationsSchema.parse(await fetchAPI("/api/phones/translations", { method: "POST", body: { case_id: caseId, source_type: sourceType, keys }, read: true })).items
 }
 export async function getMediaDetail(caseId: string, fileUid: string) {
   return fetchAPI<MediaDetail>(`/api/phones/media/${encodeURIComponent(fileUid)}?case_id=${encodeURIComponent(caseId)}`)

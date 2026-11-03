@@ -20,6 +20,7 @@ const api = vi.hoisted(() => ({
   getLinkedIdentities: vi.fn(),
   streamIndex: vi.fn(),
   getSelection: vi.fn(),
+  translateThread: vi.fn(),
 }))
 vi.mock("@/features/phones/api", async (orig) => ({ ...(await orig<object>()), ...api }))
 vi.mock("@/features/cases/hooks/use-cases", () => ({ useCase: () => ({ data: { title: "Synthetic case" } }) }))
@@ -170,6 +171,17 @@ describe("Conversations", () => {
     await waitFor(() => expect(api.markReviewed).toHaveBeenCalledWith("case-1", "t1", expect.any(Object)))
     fireEvent.click(await screen.findByRole("button", { name: "Undo" }))
     await waitFor(() => expect(api.undoReviewed).toHaveBeenCalledWith("case-1", "t1"))
+  })
+
+  it("Translate this conversation queues its messages on the server and states the counts, left out by reason (05 17.5)", async () => {
+    api.translateThread.mockResolvedValue({ in_conversation: 3, queued: 2, left_out: { no_text: 1, already_translated: 0, already_waiting: 0 } })
+    page()
+    await waitFor(() => expect(seen.search).toContain("thread=t1"))
+    fireEvent.click(await screen.findByRole("button", { name: "Translate this conversation" }))
+    await waitFor(() => expect(api.translateThread).toHaveBeenCalledWith("case-1", "t1"))
+    expect(await screen.findByTestId("translate-note")).toHaveTextContent(
+      "2 messages of 3 queued for translation on this server; nothing is sent anywhere. Left out: 1 with no text.",
+    )
   })
 
   it("quick-find narrows the threads and says how many are shown", async () => {
