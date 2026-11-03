@@ -65,6 +65,24 @@ describe("MessageTranslation (05 17.5)", () => {
     expect(screen.getByRole("button", { name: "Translate the corrected text" })).toBeInTheDocument()
   })
 
+  it("after a correction re-reads the message, the new body shows its translation as made from an earlier text, not as current", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = (r: StreamRow) => (
+      <QueryClientProvider client={client}>
+        <p>{r.body}</p>
+        <MessageTranslation caseId="c" row={r} />
+      </QueryClientProvider>
+    )
+    const { rerender } = render(view(row({ translation: done })))
+    expect(screen.getByText("Bring the synthetic package.")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Translate the corrected text" })).not.toBeInTheDocument()
+    // the same message (same event) re-read with the corrected body: the server marks its translation stale
+    const stale = { ...done, stale: true, stale_words: "Made from an earlier text: the original has been corrected since." }
+    rerender(view(row({ body: "Trae el paquete verde.", translation: stale })))
+    expect(screen.getByText("Made from an earlier text: the original has been corrected since.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Translate the corrected text" })).toBeInTheDocument()
+  })
+
   it("states a refusal in the server's words and shows nothing for a message with no text", () => {
     const { container } = show(row({ body: null }))
     expect(container.querySelector("[data-testid=message-translation]")).toBeNull()

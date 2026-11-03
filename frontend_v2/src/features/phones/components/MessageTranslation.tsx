@@ -15,7 +15,7 @@ const waiting = (t: Translation | null | undefined) => t?.state === "queued" || 
  */
 export function MessageTranslation({ caseId, row }: { caseId: string; row: StreamRow }) {
   const qc = useQueryClient()
-  const key = translationKey(caseId, row.event_uid)
+  const key = translationKey(caseId, row.event_uid, row.body)
   const q = useQuery({
     queryKey: key,
     queryFn: async () => (await getTranslations(caseId, "message", [row.event_uid]))[row.event_uid] ?? null,

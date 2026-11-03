@@ -184,7 +184,7 @@ function MachineBody({ x }: { x: DerivedText }) {
  * transcript segment keeps its time. Made by a local model; nothing is sent anywhere. */
 function DerivedTranslation({ caseId, x }: { caseId: string; x: DerivedText }) {
   const qc = useQueryClient()
-  const key = translationKey(caseId, x.id)
+  const key = translationKey(caseId, x.id, x.effective_text ?? x.corrected_text ?? x.text)
   const q = useQuery({
     queryKey: key,
     queryFn: async () => (await getTranslations(caseId, "derived_text", [x.id]))[x.id] ?? null,
