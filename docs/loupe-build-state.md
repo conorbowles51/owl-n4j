@@ -141,8 +141,6 @@ Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for read
   Draft with AI stops at Workspace AI's own rule (the case has no active case mandate) and says so; the model path
   is verified by unit tests only. Synthetic dossier "Synthetic witness (cb-pol test)" and finding "Synthetic
   finding (cb-pol test)" exist in 4aa79795 for these checks.
-- **Open follow-up (mine):** a grid frozen with strong-only plus device state, or with physical events, lists fewer
-  records than the grid counts (not reachable from the page today).
 - **Key dates and hidden device lanes (f9008e04, review fix e74130da):** `key_dates.py` + `pol_key_date` (a
   Workspace note tagged "key date"/"case term" with a marker row, one transaction, deferred FK); Patterns key
   dates bar, "Save this moment as a key date" in the window, key dates as Timeline starts. Typed times are read
