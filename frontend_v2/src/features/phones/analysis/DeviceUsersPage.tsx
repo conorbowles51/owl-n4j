@@ -1,0 +1,55 @@
+import { useMemo } from "react"
+import { useParams } from "react-router-dom"
+import { analysisAPI, type ApproachResult } from "./analysis-api"
+import { ApproachLayout } from "./ApproachLayout"
+
+/**
+ * Approach 5, who used which phone: the complementary-use part (05 section 8.3 steps 1, 3 and 5), in the shared layout
+ * (05 3.9). Where two phones were together is not offered: its gate failed (05 8.6). The screen gives numbers, never
+ * who used a phone.
+ */
+export const WHAT_IT_DOES =
+  "For each pair of phones: the phone numbers, SIM cards, accounts and WiFi networks they have in common, and, over the days both were in use, how often each was used while the other was not. For each phone: signs that more than one person used it. It does not say who used either phone."
+
+export const NOT_BUILT = "Whether two phones were in the same place is not offered here: no two phones in the measured cases were placed in the same quarter hour often enough to compare."
+
+export const TABS = [
+  { kind: "shared_markers", label: "In common" },
+  { kind: "complementary_use", label: "Used in turn" },
+  { kind: "more_than_one_user", label: "Signs of more than one user" },
+]
+
+const KIND_WORDS: Record<string, string> = {
+  owner_number: "owner phone numbers", iccid: "SIM card numbers", imsi: "SIM subscriber numbers",
+  account: "account usernames on one service", saved_login: "saved-login accounts on one service", wifi_bssid: "WiFi access points",
+}
+const STRENGTH_WORDS: Record<string, string> = { strong: "strong", medium: "medium", weak: "weak (families and workplaces share networks)" }
+
+type M = Record<string, unknown>
+const n = (v: unknown) => Number(v ?? 0).toLocaleString("en-US")
+
+export function deviceWords(r: ApproachResult) {
+  const m = r.measures as M
+  const pair = ((m.phones as string[]) || []).join(" and ")
+  if (r.kind === "shared_markers") {
+    const kinds = Object.entries((m.by_kind || {}) as Record<string, number>).map(([k, c]) => `${c} ${KIND_WORDS[k] || k}`)
+    return { title: `${pair} have ${kinds.join(", ")} in common`, line: `Strongest kind: ${STRENGTH_WORDS[r.strength] || r.strength}. The values are compared on the server and not shown here; open the records to see them.` }
+  }
+  if (r.kind === "complementary_use") {
+    const [x, y] = (m.phones as string[]) || ["", ""]
+    return { title: `${pair}: ${n(m.days)} days with use on both`,
+      line: `Quarter hours with both in use ${n(m.both)}, only ${x} ${n(m.only_x)}, only ${y} ${n(m.only_y)}, neither ${n(m.neither)}. Phi ${m.phi ?? "not computed"}; ${m.switches_per_day ?? 0} switches a day from one phone to the other within an hour. From ${m.first_day} to ${m.last_day}.` }
+  }
+  return { title: `Signs of more than one user on ${m.phone_label}`, line: `${((m.signs as string[]) || []).join("; ")}. Listed, not scored.` }
+}
+
+export default function DeviceUsersPage() {
+  const { id: caseId = "" } = useParams()
+  const client = useMemo(() => analysisAPI("device_users"), [])
+  return (
+    <ApproachLayout caseId={caseId} title="Who used which phone" whatItDoes={WHAT_IT_DOES} client={client}
+      queryKey="phone-device-users" tabs={TABS} words={deviceWords} origin="phone-device-users" testId="device-user-result"
+      collectLabel={(r) => deviceWords(r).title} emptyWords="Nothing of this kind for the phones in this case."
+      extra={<p className="text-sm text-muted-foreground">{NOT_BUILT}</p>} />
+  )
+}

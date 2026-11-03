@@ -62,8 +62,7 @@ def test_group_admins_and_membership_changes_with_and_without_time(engine):
 
 @needs_template
 def test_runs_through_the_framework(engine):
-    from services.phone_analysis import approaches
-    approaches.install()
+    F.register(A)
     with engine.begin() as c:
         case = make_case(c)
         ext, _ = phone(c, case, events=[])

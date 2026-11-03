@@ -197,9 +197,7 @@ def test_wipe_is_shown_and_never_bounds_an_interval(engine):
 def test_runs_through_the_framework_and_states_no_state_of_mind(engine):
     """Registered, run end to end; results carry the lead label; no result words state a state of mind (05 3.5);
     total is the full count under the filter."""
-    from services.phone_analysis import approaches
-    approaches.install()
-    assert "deletion_timeline" in F.APPROACHES
+    F.register(D)
     with engine.begin() as c:
         case = make_case(c)
         phone(c, case, events=[_m(at(2023, 3, 2, 9) + timedelta(minutes=i), ANA, "m%d" % i,

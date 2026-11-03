@@ -84,8 +84,7 @@ def test_two_phones_name_one_person_differently(engine):
 def test_runs_through_the_framework_with_unique_keys_and_the_lead_label(engine):
     """A group message with two people gives two relationship results resting on the same message; their keys
     differ (the person is part of the locator), so the run completes."""
-    from services.phone_analysis import approaches
-    approaches.install()
+    F.register(R)
     msg = dict(kind="message", instant=at(2023, 3, 1), body="to both", thread="g", direction="outgoing",
                parties=[(OWNER, "sender", True, None, None), (ANA, "recipient", False, None, None),
                         (BEN, "recipient", False, None, None)])

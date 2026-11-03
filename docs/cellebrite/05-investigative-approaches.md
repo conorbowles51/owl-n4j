@@ -1152,7 +1152,9 @@ bin; M-5b: one pair has a strong marker (P04 and P06: 2 owner E.164 numbers in c
 least 14 days of overlapping interaction data (most: P08 and P10, 729). Gate: co-location **fail** (43 < 200);
 complementary use **pass**. `cb-approaches` builds the complementary-use part (8.3 steps 1, 3 and 5: shared markers,
 complementary use, signs of more than one user) and not the co-location statistic or "use while apart" (steps 2 and
-4 rest on co-placed bins). Reverse if a case yields a pair with at least 200 co-placed bins.
+4 rest on co-placed bins). Reverse if a case yields a pair with at least 200 co-placed bins. **Built (05-S8, `device_users`
+version 5.1-use, screen "Who used which phone").** Tests 8.8.3 and 8.8.4 pass; 8.8.1 and 8.8.2 belong to the
+co-location part, which is not built.
 
 ### 8.7 Dependencies
 
@@ -2153,6 +2155,9 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | 19.S7-a A chat is a group when its ChatType is Group, or, where the report gives none, when it lists more than two participants | ChatType exists on 4 of 14 reports (A3 section 9) | a reviewed mapping gives the chat type per app |
 | 19.S7-b The party on a ChatActivity is shown as "participant named", never as who made the change | actor or subject is not established (section 20) | a reviewed mapping establishes it per app |
 | 19.S7-c A group chat with no admin flag and no recorded change gives no result; the run counts every group | nothing to show for it; its existence is in the count | |
+| 19.S8-a "Bins where both phones have data" (8.3 step 3) are the bins of days on which both phones hold at least one owner interaction event | 04's availability bands come from observing streams only and the live reference phones hold none, so a band test would drop every bin; this is the day rule M-5c measured | 04's bands cover the phones of a case |
+| 19.S8-b A pair is listed for complementary use when it shares at least `min_days` such days (default 14, the gate's own figure) | fewer days give rates that move with a single day | |
+| 19.S8-c Marker strength: same owner number, ICCID or IMSI strong; same account username or saved-login account on one service medium; same WiFi BSSID weak. Values are compared as salted-free SHA-256 digests inside the backend and never returned; the result gives counts by kind and the records on each side | 8.3 step 1; identifiers stay in the records, where the record panel shows them | |
 | 19.S-ix The analyses are reached from one Phones sidebar entry, "Analyses", which also lists the approaches whose gate failed with the measured reason | one entry per approach would put ten links in the group; an absent analysis is stated, not silent | |
 | Deletion time is an interval to extraction start unless `DateDeleted` exists | `DateDeleted` 1 in corpus | a source of deletion times is found |
 | Media spread population restricted to attachment, camera-path and EXIF-camera files | X10 against X11 | |
