@@ -1,0 +1,9 @@
+[Unit]
+Description=Hourly check that the newest database dump is under 25 h old
+
+[Timer]
+OnCalendar=*-*-* *:45:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

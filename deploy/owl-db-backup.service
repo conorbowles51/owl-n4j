@@ -1,0 +1,20 @@
+# Nightly dump of the live database with retention (deploy/db-backup.sh dump).
+# Install: cp deploy/owl-db-backup.service deploy/owl-db-backup.timer deploy/owl-db-backup-check.service \
+#             deploy/owl-db-backup-check.timer /etc/systemd/system/ && systemctl daemon-reload \
+#          && systemctl enable --now owl-db-backup.timer owl-db-backup-check.timer
+# Way back: systemctl disable --now owl-db-backup.timer owl-db-backup-check.timer (the dumps stay on disk).
+[Unit]
+Description=Loupe nightly database dump (owl_db) with retention
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Environment=BACKUP_DIR=/mnt/owl-data/backups/scheduled
+# Leave the BACKUP_ALERT_CMD line out on a box without the job fleet; the unit then fails visibly instead.
+Environment=BACKUP_ALERT_CMD=/mnt/owl-data/fin-wt/headless/db-backup-alert.sh
+ExecStart=/bin/bash /home/conorbowles51/app-v3/owl-n4j/deploy/db-backup.sh dump
+Nice=15
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=2h

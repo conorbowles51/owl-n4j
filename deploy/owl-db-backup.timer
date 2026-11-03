@@ -1,0 +1,13 @@
+# 01:30 UTC: the quietest hour on the live site that is not a batch-release hour (00:00, 03:00, ...) or the
+# 00:00 dpkg/logrotate run. Measured from the nginx logs, 20 Oct - 3 Nov 2026: 218 requests in the 01:00 hour
+# over 14 days, against 1,018-3,245 in the busiest hours. Persistent: a run missed while the box was off runs at boot.
+[Unit]
+Description=Loupe nightly database dump
+
+[Timer]
+OnCalendar=*-*-* 01:30:00 UTC
+Persistent=true
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target

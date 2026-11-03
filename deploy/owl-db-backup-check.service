@@ -1,0 +1,12 @@
+# Fails, and runs BACKUP_ALERT_CMD, when the newest nightly dump is 25 h old or more or does not read back.
+[Unit]
+Description=Loupe database dump freshness check (newest dump under 25 h old)
+After=docker.service
+
+[Service]
+Type=oneshot
+Environment=BACKUP_DIR=/mnt/owl-data/backups/scheduled
+Environment=BACKUP_ALERT_CMD=/mnt/owl-data/fin-wt/headless/db-backup-alert.sh
+ExecStart=/bin/bash /home/conorbowles51/app-v3/owl-n4j/deploy/db-backup.sh check
+Nice=15
+IOSchedulingClass=idle
