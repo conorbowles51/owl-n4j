@@ -101,8 +101,8 @@ export function AgentRunRecordPanel({ runId }: { runId: string }) {
                 </dd>
                 <dt>Items returned</dt>
                 <dd className="text-foreground" data-testid="run-record-items">
-                  {n(s.items_returned)}: {n(s.items_opened)} read further, {n(s.items_cited)} cited,{" "}
-                  {n(s.items_in_artifact)} used in an artifact, {n(s.items_not_examined)} not examined
+                  {n(s.items_returned)}: {n(s.items_opened)} read further, {n(s.items_cited)} cited by link,{" "}
+                  {n(s.items_in_artifact)} used in an artifact, {n(s.items_not_examined)} none of these
                 </dd>
                 <dt>Clipped</dt>
                 <dd className="text-foreground" data-testid="run-record-clipped">

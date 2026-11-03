@@ -239,6 +239,7 @@ class RunRecordTests(RunRecordFixture):
         strategy = rx.render_csv("strategy", rx.build_statement(self.fx.db, run, "strategy"))
         self.assertIn("get_financial_transactions", strategy)
         self.assertIn("not deterministic", strategy)
+        self.assertIn("describes in words without its identifier", strategy)
         self.assertIn("v1 · 2026-11-03 · aaaaaaaa", strategy)
         statement = rx.not_examined_rows(rx.load_record(self.fx.db, run), material={}, phone_types=[])
         self.assertEqual(statement["counts"]["hits_not_opened"], 1)

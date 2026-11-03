@@ -34,7 +34,7 @@ it("opens the stored run record with its counts and offers both exports in CSV a
   await waitFor(() => expect(screen.getByTestId("run-record-calls")).toHaveTextContent(
     "3 of 28; 1 more asked for but stopped by the budget"))
   expect(screen.getByTestId("run-record-items")).toHaveTextContent(
-    "12: 2 read further, 3 cited, 1 used in an artifact, 7 not examined")
+    "12: 2 read further, 3 cited by link, 1 used in an artifact, 7 none of these")
   expect(screen.getByTestId("run-record-clipped")).toHaveTextContent("40 matching items on pages not read")
   expect(screen.getByText("v1 · 2026-11-03 · aaaaaaaa")).toBeInTheDocument()
   expect(screen.getByText(/not deterministic/)).toBeInTheDocument()

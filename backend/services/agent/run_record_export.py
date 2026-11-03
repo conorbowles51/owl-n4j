@@ -28,6 +28,10 @@ from services.agent.run_record import CATEGORY_LABELS, NOT_DETERMINISTIC, catego
 RecordExportKind = Literal["strategy", "not_examined"]
 RecordExportFormat = Literal["csv", "pdf"]
 UNREAD_PHONE_LEVELS = ("generic", "suspended")
+ITEM_RULE = ("Counted by code from what the run did. Read further: a later tool call named the item. Cited: the "
+             "answer names the item's identifier or link (a payment link or txn://, rec://, a doc:// page). Used: an "
+             "artifact the run kept names it. An item the answer describes in words without its identifier or link "
+             "is not counted as cited, so it is listed here as not examined.")
 
 
 def _iso(value) -> str | None:
@@ -168,6 +172,7 @@ def _header_rows(record: dict[str, Any]) -> list[tuple[str, str]]:
          else "Whole case"),
         ("Question", record.get("question") or ""),
         ("Reproducibility", NOT_DETERMINISTIC),
+        ("How items are counted", ITEM_RULE),
     ] + ([("Basis of this record", record["summary"]["basis"])] if (record.get("summary") or {}).get("basis") else [])
 
 
