@@ -34,6 +34,9 @@ NOT_DETERMINISTIC = (
     "and search terms and give a different answer. This record states what this run did; it is not a promise "
     "of what a re-run would do.")
 PAGE_TOOL = "read_tool_result_page"
+# The lists of a result that are its returned items (not its totals, notes or judgement calls).
+ITEM_LISTS = ("items", "entities", "rows", "chunks", "events", "paths", "locations", "nodes", "results",
+              "transactions", "sample_entities", "matches", "leads", "records")
 CONTINUATION_ARGS = ("offset", "expected_revision", "expected_ledger_revision", "limit")
 TERM_ARGS = ("query", "search", "text", "terms", "keywords", "people", "person", "names", "entity_key",
              "entity_keys", "node_keys", "source_key", "target_key", "identity_key", "identity_keys", "record_uid",
@@ -48,6 +51,11 @@ CATEGORY_BY_TOOL = {
     "get_financial_transactions": "ledger", "analyze_financial_transactions": "ledger",
     "get_financial_coverage": "ledger",
     "get_casework": "casework", "get_dossier": "casework",
+    # agent-phones cross tools (phone_cross_tools.TOOLS): phones read as the screens read them, joined to money.
+    "search_case": "case_search", "get_person_phones": "phones", "get_day_activity": "phones",
+    "get_together_apart": "phones", "get_routine_deviations": "phones", "get_phone_map_summary": "phones",
+    "get_contact_and_money_between": "phones", "get_money_signal_matches": "phones",
+    "get_money_signal_leads": "phones", "evaluate_statement": "phones",
 }
 CATEGORY_LABELS = {
     "graph": "Case graph (people, organisations, accounts, events)",
@@ -57,6 +65,7 @@ CATEGORY_LABELS = {
     "timeline": "Timeline events",
     "map": "Map locations",
     "casework": "Casework notes, findings and dossiers",
+    "case_search": "Case-wide search (every kind of record)",
 }
 
 
@@ -221,6 +230,11 @@ def item_ref(item: Any, *, data: dict[str, Any], list_key: str):
         return "phone_record", uid, ["rec://" + uid], label or (item.get("kind") or "phone record")
     if item.get("identity_key"):
         return "phone_identity", str(item["identity_key"]), [], label or str(item["identity_key"])
+    for key in ("txn", "transaction_id", "payment_id"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            tid = value[len("txn://"):] if value.startswith("txn://") else value
+            return "payment", tid, ["txn://" + tid], label
     if list_key == "chunks" or isinstance(item.get("metadata"), dict) and item["metadata"].get("doc_name"):
         return _doc_ref(item)
     if view in ("transactions", "excluded") and item.get("key"):
@@ -329,6 +343,9 @@ def call_facts(name: str | None, args: dict[str, Any] | None, output: dict[str, 
         "list_lengths": lengths,
         "items": listed,
         "items_not_listed": max(0, len(items) - len(listed)),
+        # Returned entries the record cannot follow (no identifier): counted and stated, never silently absent.
+        "items_without_id": sum(max(0, n - sum(1 for i in items if i["path"] == ["data", key]))
+                                for key, n in lengths.items() if key in ITEM_LISTS),
         "result_id": output.get("result_id"),
     })
 
@@ -506,7 +523,8 @@ def apply_facts(record, facts: dict[str, Any]) -> None:
     record.model_paging = facts.get("model_paging") or None
     record.record_facts = {k: facts.get(k) for k in ("schema", "category", "available", "reason", "reason_code",
                                                      "not_in_case", "withheld", "exclusions", "list_lengths",
-                                                     "items_not_listed", "offset", "result_id")}
+                                                     "items_not_listed", "items_without_id", "offset",
+                                                     "result_id")}
 
 
 # --------------------------------------------------------------------------------------------- earlier runs

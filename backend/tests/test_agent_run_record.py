@@ -265,6 +265,16 @@ class RunRecordTests(RunRecordFixture):
             ("Statement March.pdf#p2", True, False, False),
             ("Statement March.pdf#p3", False, False, True)])
 
+    def test_rows_without_an_identifier_are_counted_not_dropped(self):
+        data = {"rows": [{"name": "a", "total": 3}, {"key": "entity-0001", "name": "b"}], "count": 2,
+                "totals": [{"currency": "EUR"}]}
+        facts = run_record.call_facts("run_readonly_cypher", {"query": "MATCH (n) RETURN n"}, {"data": data}, {})
+        self.assertEqual((len(facts["items"]), facts["items_without_id"], facts["returned"]), (1, 1, 2))
+        self.assertEqual(run_record.category_of("get_contact_and_money_between"), "phones")
+        cross = run_record.call_facts("get_money_signal_matches", {}, {"data": {"items": [
+            {"txn": "txn://abc123-def", "outcome": "matched"}], "total_matching": 1, "returned": 1}}, {})
+        self.assertEqual([(i["kind"], i["ref"]) for i in cross["items"]], [("payment", "abc123-def")])
+
     def test_a_reference_is_not_credited_by_a_longer_one_it_starts(self):
         self.assertFalse(run_record._mentions("see doc://f.pdf/12 and [f.pdf, p.12]", "doc://f.pdf/1"))
         self.assertFalse(run_record._mentions("see [f.pdf, p.12]", "f.pdf, p.1"))

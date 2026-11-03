@@ -115,6 +115,7 @@ def load_record(db, run) -> dict[str, Any]:
             "reason_code": facts.get("reason_code"), "not_in_case": facts.get("not_in_case"),
             "withheld": facts.get("withheld"), "exclusions": facts.get("exclusions"),
             "items_not_listed": facts.get("items_not_listed") or 0,
+            "items_without_id": facts.get("items_without_id") or 0,
             "recorded": call.record_facts is not None,
         })
     metadata = run.extra_metadata or {}
@@ -235,6 +236,11 @@ def not_examined_rows(record: dict[str, Any], *, material: dict[str, dict[str, A
             clipped.append({"#": c["sequence"], "tool": c["name"], "clipped by": "record listing limit",
                             "items": c["items_not_listed"],
                             "detail": "Returned items beyond the record's listing limit; counted, not listed."})
+        if c.get("items_without_id"):
+            clipped.append({"#": c["sequence"], "tool": c["name"], "clipped by": "not itemised",
+                            "items": c["items_without_id"],
+                            "detail": "Returned entries with no identifier the record can follow (rows of a "
+                                      "custom query, groups, summaries): whether each was used is not known."})
     for call in record.get("unrun_tool_calls") or []:
         clipped.append({"#": "", "tool": call.get("name"), "clipped by": "tool budget",
                         "items": "", "detail": "Asked for but not run (%s of %s tool calls used): %s" % (
@@ -263,6 +269,7 @@ def not_examined_rows(record: dict[str, Any], *, material: dict[str, dict[str, A
                        "tool_paging_items": sum(c.get("tool_not_returned") or 0 for c in record["calls"]),
                        "model_paging_items": sum(c.get("model_not_shown") or 0 for c in record["calls"]),
                        "budget_unrun_calls": len(record.get("unrun_tool_calls") or []),
+                       "items_without_id": sum(c.get("items_without_id") or 0 for c in record["calls"]),
                        "out_of_scope": len(scope), "unread_phone_types": len(phone_types)}}
 
 
