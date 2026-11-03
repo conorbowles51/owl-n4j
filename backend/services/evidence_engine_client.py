@@ -312,3 +312,15 @@ async def source_database(case_id: str, extraction_id: str, document_index: int,
         return {"refused": response.json().get("detail") or "The database could not be opened."}
     response.raise_for_status()
     return response.json()
+
+
+async def request_reparse(case_id: str, extraction_id: str, os_family: str, requested_by: str) -> Dict[str, Any]:
+    """Queue (or return the open) re-parse run of one phone with the tool pinned for its OS (05 section 17.3).
+    A refusal (no tool for this OS, none installed) comes back as ``{"refused": "<words>"}``."""
+    client = _get_client()
+    response = await client.post(f"/cases/{case_id}/phone/extractions/{extraction_id}/reparse",
+                                 json={"os_family": os_family, "requested_by": requested_by})
+    if response.status_code in (404, 409):
+        return {"refused": response.json().get("detail") or "The re-parse could not be queued."}
+    response.raise_for_status()
+    return response.json()

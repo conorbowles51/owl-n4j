@@ -136,6 +136,8 @@ def source_row(sources: list) -> dict:
         named = [s for s in ok if s["table_name"] and s["offset"] not in (None, "")]
         first = (named or ok)[0]
         return {"available": True, "row_named": bool(named), "reason": None if named else NO_ROW_NAMED,
+                "source_index": next(i for i, s in enumerate(sources) if s is first),
+                "original_path": first["file"]["original_path"],
                 "file_uid": first["file"]["file_uid"], "table_name": first["table_name"], "offset": first["offset"],
                 "verified_database_files": len({s["file"]["file_uid"] for s in ok})}
     if db:

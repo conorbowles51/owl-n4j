@@ -82,6 +82,7 @@ def test_a_record_with_a_node_to_a_verified_database_resolves_with_table_and_off
     assert s[0]["file"]["is_database"] and s[0]["file"]["original_path"] == "/data/synthetic-0.db"
     row = source_db.source_row(s)
     assert row["available"] and row["row_named"] and row["table_name"] == "messages" and row["offset"] == "12"
+    assert row["source_index"] == 0 and row["original_path"] == "/data/synthetic-0.db"
 
 
 @needs_template

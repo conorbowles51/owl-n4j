@@ -1,0 +1,24 @@
+{
+  "version": "1",
+  "status": "applied_unconfirmed",
+  "origin": "ai_draft",
+  "review": {"reviewed_by": null, "reviewed_on": null,
+             "basis": "Column names read from each pinned tool's LAVA output: ALEAPP v2026.4.5 SMS and call log on a synthetic tree (tests/reparse); the rest from the tools' artefact sources at the pinned commits, checked against the first real run's LAVA schema (CB-STAGEJ-STATUS)."},
+  "kinds": ["sms", "call", "contact", "whatsapp_message", "web_history"],
+  "tools": {
+    "aleapp": {
+      "get_sms_mms": {"kind": "sms", "app": "SMS", "roles": {"instant": ["date"], "party": ["address"], "body": ["body"], "direction": ["type"]}},
+      "get_calllog": {"kind": "call", "app": "Phone", "roles": {"instant": ["call_date"], "party": ["partner"], "direction": ["raw_call_type_as_stored"], "duration": ["duration_in_secs"]}},
+      "contacts": {"kind": "contact", "app": "Contacts", "roles": {"name": ["display_name", "name"], "identifiers": ["phone_number", "number", "email_address", "email"], "account": ["account_name", "account"]}},
+      "get_whatsapp_messages": {"kind": "whatsapp_message", "app": "WhatsApp", "roles": {"instant": ["message_timestamp", "timestamp", "sent_timestamp", "message_sent_timestamp"], "party": ["sender_id", "sender", "from_me_sender", "jid"], "chat": ["conversation_name", "chat", "conversation"], "body": ["message", "text", "message_text"], "direction": ["direction", "from_me"]}},
+      "get_chrome": {"kind": "web_history", "app": "Chrome", "roles": {"instant": ["last_visit_time", "last_visit_date"], "url": ["url"], "title": ["title"]}}
+    },
+    "ileapp": {
+      "sms": {"kind": "sms", "app": "SMS", "roles": {"instant": ["message_timestamp", "date", "timestamp"], "party": ["contact_id", "handle", "chat_contact_id", "address"], "body": ["message", "text", "body"], "direction": ["sent", "is_from_me", "direction"], "service": ["service"]}},
+      "callHistory": {"kind": "call", "app": "Phone", "roles": {"instant": ["start_time", "timestamp", "date"], "party": ["phone_number", "address", "number"], "direction": ["call_direction", "direction", "originated"], "duration": ["duration", "call_duration"]}},
+      "addressBook": {"kind": "contact", "app": "Contacts", "roles": {"name": ["full_name", "name", "first_name"], "identifiers": ["phone_numbers", "phone_number", "email_addresses", "email"], "account": ["account", "storage_place"]}},
+      "whatsAppMessages": {"kind": "whatsapp_message", "app": "WhatsApp", "roles": {"instant": ["timestamp", "message_timestamp", "sent_timestamp"], "party": ["sender_id", "sender", "from"], "chat": ["chat", "chat_name", "conversation"], "body": ["message", "text"], "direction": ["direction", "from_me"]}},
+      "chromeWebHistory": {"kind": "web_history", "app": "Chrome", "roles": {"instant": ["last_visit_time", "last_visit_date"], "url": ["url"], "title": ["title"]}}
+    }
+  }
+}

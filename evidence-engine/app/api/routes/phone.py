@@ -231,3 +231,42 @@ async def source_database(case_id: str, extraction_id: uuid.UUID, document_index
 def source_db_refused():
     from app.phone.source_db import Refused
     return Refused
+
+
+class ReparseRequest(BaseModel):
+    os_family: str
+    requested_by: str
+
+
+@router.post("/cases/{case_id}/phone/extractions/{extraction_id}/reparse", status_code=202)
+async def request_reparse(case_id: str, extraction_id: uuid.UUID, body: ReparseRequest, request: Request):
+    """05 section 17.3: queue a re-parse of one phone with the tool pinned for its OS. A run already queued or
+    running for the phone is returned (and queued again if its queue entry was lost), never doubled."""
+    from app.pipeline.reparse import job as reparse_job
+    from app.pipeline.reparse.leapp_runner import RunRefused
+    from app.phone.store import connect
+
+    def go():
+        conn = connect(settings.database_url)
+        try:
+            owner = conn.execute("SELECT case_id FROM phone_extractions WHERE id = %s", (str(extraction_id),)).fetchone()
+            if owner is None or str(owner[0]) != str(case_id):
+                return None
+            open_run = conn.execute(
+                "SELECT id, tool, tool_version FROM phone_reparse_runs WHERE extraction_id = %s AND status IN "
+                "('queued', 'running') ORDER BY created_at DESC LIMIT 1", (str(extraction_id),)).fetchone()
+            if open_run:
+                return {"id": str(open_run[0]), "tool": open_run[1], "version": open_run[2], "existing": True}
+            return dict(reparse_job.create_run(conn, case_id, extraction_id, body.os_family, body.requested_by),
+                        existing=False)
+        finally:
+            conn.close()
+    try:
+        run = await asyncio.to_thread(go)
+    except RunRefused as exc:
+        raise HTTPException(409, str(exc)) from None
+    if run is None:
+        raise HTTPException(404, "This phone is not in this case.")
+    await request.app.state.arq_pool.enqueue_job("process_phone_reparse", run["id"], case_id,
+                                                 _queue_name=PHONE_CAPTURE_QUEUE, _job_id="phone-reparse:" + run["id"])
+    return run

@@ -1619,6 +1619,73 @@ async def record_source_database(record_uid: UUID, case_id: UUID = Query(...), s
     return dict(base, refused=None, view=out)
 
 
+class ReparseBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    extraction_id: UUID
+
+
+def _os_family(os_text) -> Optional[str]:
+    t = (os_text or "").casefold()
+    if "android" in t:
+        return "Android"
+    if t.startswith("ios") or " ios" in t or "iphone" in t:
+        return "iOS"
+    return None
+
+
+@router.get("/reparse/runs")
+def reparse_runs(case_id: UUID = Query(...), db: Session = Depends(get_db),
+                 user: User = Depends(get_current_db_user)):
+    """05 section 17.3: each active phone with its operating system and its re-parse runs, newest first."""
+    from sqlalchemy import text
+    authorize_case(db, case_id, user, ("case", "view"))
+    conn = db.connection()
+    labels = readings.phone_labels(conn, case_id)
+    phones = []
+    for (ext,) in conn.execute(text("SELECT id::text FROM phone_extractions WHERE case_id = :c AND standing = 'active' "
+                                    "ORDER BY created_at"), {"c": str(case_id)}):
+        os_text = phone_records._device(conn, ext).get("os")
+        runs = [dict(r._mapping) for r in conn.execute(text(
+            "SELECT id::text, tool, tool_version, tool_commit, tool_licence, status, tree, exit_code, stopped, seconds, "
+            "peak_rss_mb, artefact_counts, error, requested_by, created_at, started_at, finished_at FROM "
+            "phone_reparse_runs WHERE extraction_id = :e ORDER BY created_at DESC LIMIT 20"), {"e": ext})]
+        for r in runs:
+            for k in ("created_at", "started_at", "finished_at"):
+                r[k] = r[k].isoformat() if r[k] else None
+        phones.append({"extraction_id": ext, "label": labels.get(ext, "A phone"), "os": os_text,
+                       "os_family": _os_family(os_text), "runs": runs})
+    return {"phones": phones, "total": len(phones)}
+
+
+@router.post("/reparse", status_code=202)
+async def request_reparse(body: ReparseBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Queue an independent re-parse of one phone (05 section 17.3). The tool's rows are stored apart from the
+    report's records and are compared by the analysis "Read again by an independent tool"."""
+    from starlette.concurrency import run_in_threadpool
+
+    from services import evidence_engine_client as engine
+
+    from sqlalchemy import text
+
+    def resolve():
+        authorize_case(db, body.case_id, user, ("case", "edit"))
+        conn = db.connection()
+        ok = conn.execute(text("SELECT 1 FROM phone_extractions WHERE id = :e AND case_id = :c AND standing = 'active'"),
+                          {"e": str(body.extraction_id), "c": str(body.case_id)}).first()
+        return ok, _os_family(phone_records._device(conn, str(body.extraction_id)).get("os")) if ok else None
+    ok, family = await run_in_threadpool(resolve)
+    if not ok:
+        raise HTTPException(status_code=404, detail="This phone is not in this case.")
+    if family is None:
+        raise HTTPException(status_code=409, detail="The report does not say which operating system this phone ran, "
+                                                    "so no re-parse tool can be chosen.")
+    out = await engine.request_reparse(str(body.case_id), str(body.extraction_id), family, _actor(user).email)
+    if "refused" in out:
+        raise HTTPException(status_code=409, detail=out["refused"])
+    return out
+
+
 class RevealBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID

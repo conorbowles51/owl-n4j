@@ -14,7 +14,8 @@ def install() -> None:
     _done["installed"] = True
 
 
-BUILT = ["money_signals", "message_reconciliation", "deletion_timeline", "relationships", "awareness", "device_users"]
+BUILT = ["money_signals", "message_reconciliation", "deletion_timeline", "relationships", "awareness", "device_users",
+         "reparse_comparison"]
 
 # The screen titles, for words outside the screens (a kept result's label).
 TITLES = {
@@ -24,4 +25,5 @@ TITLES = {
     "relationships": "Relationships over time",
     "awareness": "Group admins and membership",
     "device_users": "Who used which phone",
+    "reparse_comparison": "Read again by an independent tool",
 }

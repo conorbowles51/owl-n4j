@@ -14,6 +14,12 @@ ENV PYTHONPATH=/app:/backend
 COPY evidence-engine/pyproject.toml .
 RUN pip install --no-cache-dir .
 
+# 05 section 17.3: ALEAPP and iLEAPP (MIT) pinned by release and git commit, each in its own venv under /opt/leapp.
+# Only the re-parse runner calls them, as a child with no network; they are never on the engine's own path.
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+COPY evidence-engine/leapp/ /opt/leapp/
+RUN sh /opt/leapp/install.sh /opt/leapp/pins.json
+
 COPY evidence-engine/alembic.ini .
 COPY evidence-engine/alembic/ alembic/
 COPY evidence-engine/app/ app/

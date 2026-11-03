@@ -8,6 +8,7 @@ import { failureText, getRecord, revealValue } from "../api"
 import type { RecordDetail, RecordFieldData } from "../schemas"
 import { DockedPanel } from "../ui/DockedPanel"
 import { FILE_OUTCOME_BADGE } from "../lib/badges"
+import { SourceDatabasePanel } from "./SourceDatabasePanel"
 
 /**
  * The record behind a line (03 section 3.6): the phone, record type, record id and report with its SHA-256; the
@@ -246,7 +247,25 @@ export function RecordDetailView({
           </div>
         ))}
       </section>
-      <p className="text-xs">{d.source_row.available ? "Open source row" : d.source_row.reason}</p>
+      <SourceDatabasePanel caseId={caseId} detail={d} />
+      {(d.reparse ?? []).length > 0 && (
+        <section aria-label="Read again by an independent tool" className="space-y-1 rounded border p-2 text-xs">
+          <h3 className="font-semibold">Read again by an independent tool</h3>
+          {(d.reparse ?? []).map((r, k) => (
+            <div key={k} data-testid="reparse-reading">
+              <p className="font-medium">
+                {r.read_by ?? "Read by the tool"}{r.reparse?.artefact ? ` (${r.reparse.artefact}, row ${r.reparse.row_index})` : ""}:{" "}
+                {r.kind === "present_in_both" ? "the same as the report" : r.kind === "time_differs" ? `a different time, ${r.difference_hours} hours from the report's` : "different content from the report's"}
+              </p>
+              {r.reparse?.instant && <p>Time: {r.reparse.instant} (as the tool wrote it: {r.reparse.original ?? "not given"})</p>}
+              {Object.entries(r.reparse?.shown ?? {}).filter(([, v]) => v !== null && v !== "").map(([k2, v]) => (
+                <p key={k2} className="break-all">{k2}: {String(v)}</p>
+              ))}
+              <p className="text-muted-foreground">This is the tool's reading, shown beside the report's record; it does not change the record.</p>
+            </div>
+          ))}
+        </section>
+      )}
       <div className="flex flex-wrap gap-2">
         <CopyButton rows={1} noun="record" label="Copy record as text" build={() => ({ text: d.as_text, html: `<pre>${htmlEscape(d.as_text)}</pre>` })} />
         <CopyButton rows={1} noun="record id" label="Copy record id" build={() => ({ text: d.cellebrite_id ?? d.record_uid })} />

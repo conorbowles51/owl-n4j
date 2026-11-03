@@ -152,6 +152,7 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
                       "sizes": {"stated": a.declared_size, "on_disk": a.disk_size}, "absence": absence})
     # where the report says this record was read from (05 section 17.2): never opened here, only stated
     from services.phone import source_db
+    from services.phone_analysis import reparse_comparison
     sources = source_db.record_sources(conn, ext, loc.document_index, loc.ordinal)
     corr = [{"field_path": c["field_path"], "value_index": c["value_index"], "original": c["machine_text"],
              "corrected": c["corrected_text"], "masked": c["masked"], "current": c["current"], "is_undo": c["is_undo"],
@@ -178,6 +179,8 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
                   for k, t in sorted(times.items(), key=lambda kv: (kv[0][0] != str(record_uid), kv[0][1], kv[0][2]))],
         "files": files, "files_absence": None if files else ABSENCE["no_reference"],
         "source_row": source_db.source_row(sources), "sources": sources,
+        # 05 section 17.3: the same record as an independent tool read it, beside the report's, never merged
+        "reparse": reparse_comparison.reparse_for_record(conn, case_id, record_uid),
         "corrections": corr, "interpretation_level": loc.interpretation_level, "zone": zone,
         "readings": _open_readings(conn, case_id, ext, loc.model_type, label),
     }

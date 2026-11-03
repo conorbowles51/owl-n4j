@@ -99,7 +99,10 @@ try {
     if (seen.some((s) => s.stage === "finished")) break
     if (process.env.LIVE_DEBUG) console.log(`${secs()} s debug cards=${await card.count()} groups=${await page.getByRole("group").count()}`)
     // the card's running step line holds counts only; print it when it changes, at most every 30 s
-    const line = await card.locator('[aria-live="polite"]').first().textContent({ timeout: 1000 }).catch(() => "")
+    // before the card exists, the upload panel's own line (hashing or sending counts) is the running line
+    const line = (await card.count())
+      ? await card.locator('[aria-live="polite"]').first().textContent({ timeout: 1000 }).catch(() => "")
+      : await page.getByText(watch[0][1]).or(page.getByText(watch[1][1])).first().textContent({ timeout: 1000 }).catch(() => "")
     if (line && line !== last && /\d/.test(line)) {
       last = line
       if (!seen.length || Number(secs()) - (seen.at(-1).printed || 0) >= 30) {

@@ -5,6 +5,8 @@ import {
   ProfileSchema,
   PhonesSchema,
   RecordDetailSchema,
+  SourceDatabaseSchema,
+  type SourceDatabase,
   ReviewSchema,
   StreamIndexSchema,
   StreamWindowSchema,
@@ -99,6 +101,13 @@ export async function getRecord(caseId: string, recordUid: string, zone?: string
   const q = new URLSearchParams({ case_id: caseId })
   if (zone) q.set("zone", zone)
   return RecordDetailSchema.parse(await fetchAPI(`/api/phones/records/${encodeURIComponent(recordUid)}?${q}`))
+}
+
+/** 05 section 17.2: the app database the report names as this record's source, read-only; ``browse`` pages a table. */
+export async function getSourceDatabase(caseId: string, recordUid: string, source: number, browse?: string, page = 1): Promise<SourceDatabase> {
+  const q = new URLSearchParams({ case_id: caseId, source: String(source), page: String(page) })
+  if (browse) q.set("browse", browse)
+  return SourceDatabaseSchema.parse(await fetchAPI(`/api/phones/records/${encodeURIComponent(recordUid)}/source-database?${q}`))
 }
 
 /** One sensitive value in full; the server logs who revealed it, when, and which record and field first (05 3.8). */

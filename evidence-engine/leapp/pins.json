@@ -1,0 +1,6 @@
+{
+  "aleapp": {"repo": "https://github.com/abrignoni/ALEAPP", "version": "v2026.4.5",
+             "commit": "7a8dc905283b868bcc4767be8bea470e1a231ea2", "licence": "MIT", "entry": "aleapp.py", "os": "Android"},
+  "ileapp": {"repo": "https://github.com/abrignoni/iLEAPP", "version": "v2026.4.6",
+             "commit": "f036613cc96e030d87ff0427f5fe08a411edcd2a", "licence": "MIT", "entry": "ileapp.py", "os": "iOS"}
+}

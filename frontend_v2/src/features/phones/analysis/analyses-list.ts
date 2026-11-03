@@ -5,6 +5,7 @@ export const ANALYSES = [
   { code: "deletion_timeline", path: "phone-analyses/deletions", title: "Deleted and hidden", what: "What was deleted or made unreadable, when it can be placed, and conversations that lost more than the rest." },
   { code: "relationships", path: "phone-analyses/relationships", title: "Relationships over time", what: "For each person on each phone: when contact began and ended, how each phone names them, and where contact rose or fell." },
   { code: "device_users", path: "phone-analyses/two-phones", title: "Who used which phone", what: "Numbers, SIMs, accounts and networks two phones share, how often each was used while the other was not, and signs of more than one user." },
+  { code: "reparse_comparison", path: "phone-analyses/read-again", title: "Read again by an independent tool", what: "Each phone read again by an open-source tool from the production's verified files, compared with the report: totals, records only one side has, and times or content that differ." },
   { code: "awareness", path: "phone-analyses/groups", title: "Group admins and membership", what: "Admins of each group chat at extraction and the membership changes the phones record." },
 ]
 

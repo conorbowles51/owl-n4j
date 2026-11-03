@@ -80,6 +80,23 @@ async def process_phone_capture(ctx: dict, job_id: str, case_id: str) -> None:
     logger.info("Completed phone capture job %s", job_id)
 
 
+async def process_phone_reparse(ctx: dict, run_id: str, case_id: str) -> None:
+    """05 section 17.3: one re-parse run (pinned ALEAPP or iLEAPP), on the phone queue, one at a time."""
+    import asyncio
+
+    from app.phone import paths
+    from app.phone.store import connect
+    from app.pipeline.reparse import job as reparse_job
+
+    def go():
+        conn = connect(settings.database_url)
+        try:
+            return reparse_job.execute(conn, run_id, str(paths.data_root() / str(case_id)), settings.storage_path)
+        finally:
+            conn.close()
+    logger.info("Re-parse run %s for case %s: %s", run_id, case_id, await asyncio.to_thread(go))
+
+
 class WorkerSettings:
     functions = [process_file, process_batch, process_merge]
     cron_jobs = [
@@ -117,7 +134,7 @@ class PhoneCaptureWorkerSettings:
     """Phone extractions get their own slot so a long read never blocks statements or documents."""
     from app.services.processing_queues import PHONE_CAPTURE_QUEUE as queue_name
     from app.phone.recovery import recover_waiting_phone_jobs
-    functions = [process_phone_capture]
+    functions = [process_phone_capture, process_phone_reparse]
     cron_jobs = [cron(recover_waiting_phone_jobs, minute=set(range(0, 60)), run_at_startup=True)]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     max_jobs = 1

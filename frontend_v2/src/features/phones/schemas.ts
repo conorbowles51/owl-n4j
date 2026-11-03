@@ -263,7 +263,28 @@ export const RecordDetailSchema = z.object({
     }),
   ),
   files_absence: z.string().nullable(),
-  source_row: z.object({ available: z.boolean(), reason: z.string() }),
+  // 05 section 17.3: the same record as an independent tool read it (newest comparison), beside the report's
+  reparse: z.array(z.object({
+    kind: z.string(), read_by: z.string().nullable(), artefact: z.string().nullable().optional(),
+    reparse: z.object({
+      instant: z.string().nullable().optional(), original: z.string().nullable().optional(),
+      shown: z.record(z.string(), z.unknown()).optional(), artefact: z.string().optional(), row_index: z.number().optional(),
+    }).nullable().optional(),
+    difference_hours: z.number().nullable().optional(), compared: z.string().nullable().optional(),
+  })).optional(),
+  // 05 section 17.2: where the report says this record was read from (the record panel's source line)
+  source_row: z.object({
+    available: z.boolean(),
+    reason: z.string().nullable(),
+    row_named: z.boolean().optional(),
+    source_index: z.number().optional(),
+    original_path: z.string().nullable().optional(),
+    table_name: z.string().nullable().optional(),
+    offset: z.string().nullable().optional(),
+    files: z.array(z.object({
+      file_uid: z.string(), original_path: z.string().nullable(), state: z.string(), state_words: z.string(),
+    })).optional(),
+  }),
   corrections: z.array(
     z.object({
       field_path: z.string(),
@@ -367,3 +388,45 @@ export const ProfileSchema = z.object({
   links: z.object({ conversations: z.string(), review: z.string() }),
 })
 export type Profile = z.infer<typeof ProfileSchema>
+
+/** A raw database value: integers stay integers; a blob is its length and a hex preview, never decoded. */
+const RawValueSchema = z.union([
+  z.number(), z.string(), z.null(), z.boolean(),
+  z.object({ blob_bytes: z.number(), hex_preview: z.string(), preview_complete: z.boolean() }),
+])
+
+/** 05 section 17.2: an app database named as a record's source, read from a read-only copy. */
+export const SourceDatabaseSchema = z.object({
+  record_uid: z.string(),
+  read_by: z.string(),
+  refused: z.string().nullable(),
+  source: z.object({
+    mechanism: z.string(),
+    table_name: z.string().nullable(),
+    offset: z.string().nullable(),
+    state: z.string(),
+    file: z.object({ original_path: z.string().nullable(), sha256: z.string().nullable() }).passthrough().nullable(),
+  }).passthrough(),
+  view: z.object({
+    open_mode: z.string(),
+    tables: z.array(z.object({
+      name: z.string(), type: z.string(), schema: z.string().nullable(), row_count: z.number().nullable(),
+      count_note: z.string().nullable(),
+    })),
+    named_row: z.object({
+      found: z.boolean(), reason: z.string().optional(), rowid: z.number().optional(),
+      columns: z.array(z.string()).optional(), values: z.array(RawValueSchema).optional(),
+    }).nullable(),
+    page: z.object({
+      table: z.string(), total: z.number(), page: z.number(), page_rows: z.number(), columns: z.array(z.string()),
+      rows: z.array(z.array(RawValueSchema)),
+    }).optional(),
+    copy: z.object({
+      sha256: z.string(), size: z.number(),
+      siblings: z.array(z.object({ suffix: z.string(), sha256: z.string(), size: z.number() })),
+    }).passthrough(),
+    opened_by: z.object({ module: z.string(), version: z.string(), sqlite: z.string() }),
+  }).passthrough().nullable(),
+})
+export type SourceDatabase = z.infer<typeof SourceDatabaseSchema>
+export type RawValue = z.infer<typeof RawValueSchema>
