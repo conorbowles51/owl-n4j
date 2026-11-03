@@ -7,7 +7,7 @@ import { failureText, StaleSnapshotError } from "../api"
 import type { UseStream } from "../hooks/use-stream"
 import { WINDOW_FAILED } from "../hooks/use-stream"
 import { rowsHtml, rowsText } from "../lib/copy-rows"
-import { LONG_BODY, plural, STALE_COPY, totalWords, undatedWords } from "../lib/stream-words"
+import { LONG_BODY, plural, STALE_COPY, totalWords, undatedSentence, undatedWords } from "../lib/stream-words"
 import { matchRanges } from "@/features/search/lib/fold"
 import type { StreamRow } from "../schemas"
 import { Arrow, ParticipantLabel } from "./ParticipantLabel"
@@ -315,6 +315,11 @@ export function StreamList({
         <span data-testid="stream-total" className="font-medium">
           {stream.index ? totalWords(stream, noun) : ""}
         </span>
+        {!!stream.index?.no_time_count && (
+          <span data-testid="stream-undated" className="text-muted-foreground">
+            {undatedSentence(stream.index.no_time_count, noun, stream.index.no_time_position ?? "last")}
+          </span>
+        )}
         {stream.index?.zone.note && <span className="text-muted-foreground">{stream.index.zone.note}</span>}
         {selectionCount > 0 && (
           <>

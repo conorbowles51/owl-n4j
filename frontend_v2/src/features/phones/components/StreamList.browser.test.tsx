@@ -277,3 +277,10 @@ it("a day picked with no messages focuses the next day that has some, else the l
   view.rerender(ui({ day: "2023-02-01", seq: 3 }))  // after the last day: the last one
   await waitFor(() => expect(focused.at(-1)).toBe("e10"), { timeout: 10_000 })
 })
+
+it("the undated messages are counted beside the total, not only at the far end of the list (07 J-4)", async () => {
+  serve(index(4_000, 2_000, { no_time_count: 3, counts: { events: 4_003, records: 4_003, collapsed_copies: 0, no_time: 3 } }))
+  mount()
+  await screen.findByText("4,003 messages")
+  expect(screen.getByTestId("stream-undated")).toHaveTextContent("3 messages have no time and are listed at the end.")
+})

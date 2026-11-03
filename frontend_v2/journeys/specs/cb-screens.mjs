@@ -95,7 +95,7 @@ export default [
       await ctx.see(page.getByRole("region", { name: "Around this time" }), 1500)
     }, { limitMs: 1500 })
     await ctx.step("messages with no time are listed at the end and counted", async () => {
-      await ctx.see(page.getByText(/[\d,]+ messages have no time and are listed at the end\./))
+      await ctx.see(page.getByText(/[\d,]+ messages? (have|has) no time and (are|is) listed at the end\./)) // "1 message has"
     })
   }),
 
@@ -177,7 +177,8 @@ export default [
       await ctx.press("Space")
       await ctx.press("c")
       await ctx.press("d")
-      await ctx.click(page.getByRole("option").first())
+      // the dossiers offered (the role list above them is a select with its own options)
+      await ctx.click(page.getByRole("dialog").getByRole("listbox").getByRole("option").first())
       await ctx.see(page.getByText(/^Added \d+ messages? to .+\./))
       await ctx.see(page.getByRole("button", { name: "Undo" }))
     }, { limitMs: 5000 })
@@ -195,7 +196,12 @@ export default [
     })
     await ctx.step("m marks the thread reviewed and the count moves", async () => {
       // a thread with no review mark yet (the J-13b thread keeps its carried, partly reviewed mark)
-      await ctx.click(page.getByRole("listbox", { name: /Threads/ }).getByRole("option").filter({ hasText: "Not yet reviewed" }).first())
+      const options = page.getByRole("listbox", { name: /Threads/ }).getByRole("option")
+      const i = (await options.evaluateAll((els) => els.map((e) => (e.textContent || "").includes("Not yet reviewed")))).indexOf(true)
+      if (i < 0) throw new StepFailed("coverage", "no thread is left to review")
+      await ctx.click(options.nth(i))
+      // the open thread follows the address, which updates a moment after the click: m acts once it is selected
+      await ctx.see(options.nth(i).and(page.locator("[aria-selected=true]")))
       const before = await ctx.countIn(page.getByText(/Not yet reviewed/), "of")
       await ctx.press("m")
       let after = before

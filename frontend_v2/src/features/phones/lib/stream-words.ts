@@ -21,5 +21,11 @@ export function totalWords(stream: UseStream, noun: { one: string; many: string 
 
 /** The undated group's header (03 C-3 and 07 J-4): "No time recorded. 6 messages have no time and are listed at the end." */
 export function undatedWords(n: number, noun: { one: string; many: string }, position: "first" | "last"): string {
-  return `No time recorded. ${plural(n, noun)} ${n === 1 ? "has" : "have"} no time and ${n === 1 ? "is" : "are"} listed at the ${position === "first" ? "start" : "end"}.`
+  return `No time recorded. ${undatedSentence(n, noun, position)}`
+}
+
+/** "6 messages have no time and are listed at the end.": also beside the list's total, so the undated messages are
+ * counted where the reader starts, not only at the far end of the list (07 J-4). */
+export function undatedSentence(n: number, noun: { one: string; many: string }, position: "first" | "last"): string {
+  return `${plural(n, noun)} ${n === 1 ? "has" : "have"} no time and ${n === 1 ? "is" : "are"} listed at the ${position === "first" ? "start" : "end"}.`
 }

@@ -72,8 +72,13 @@ export async function addInParts(
   return out
 }
 
+/** The noun for a count: "1 message", "2 messages" ("records (messages and their attachments)" -> "record (...)"). */
+export function countNoun(n: number, noun: string): string {
+  return n === 1 ? noun.replace(/^(\w+?)s\b/, "$1") : noun
+}
+
 export function resultSentence(r: CollectResult, noun: string, target: CollectTarget): string {
-  const s = [`Added ${r.added.toLocaleString("en-US")} ${noun} to ${target.label}.`]
+  const s = [`Added ${r.added.toLocaleString("en-US")} ${countNoun(r.added, noun)} to ${target.label}.`]
   if (r.skipped) s.push(`${r.skipped.toLocaleString("en-US")} ${r.skipped === 1 ? "was" : "were"} already there.`)
   if (r.refused) s.push(`${r.refused.toLocaleString("en-US")} could not be added${r.refusedReason ? `: ${r.refusedReason}` : ""}.`)
   return s.join(" ")

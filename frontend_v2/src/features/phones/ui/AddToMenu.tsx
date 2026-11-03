@@ -10,6 +10,7 @@ import {
   addInParts,
   partsNeeded,
   PART_SIZE,
+  countNoun,
   resultSentence,
   type CollectClient,
   type CollectLink,
@@ -79,7 +80,6 @@ export function AddToMenu({
 }) {
   const [open, setOpen] = useState(false)
   const [kind, setKind] = useState<TargetKind | null>(null)
-  const [target, setTarget] = useState<CollectTarget | null>(null)
   const [relationship, setRelationship] = useState<Relationship>("unclassified")
   const [role, setRole] = useState<DossierRole>("link")
   const [confirmBig, setConfirmBig] = useState(false)
@@ -92,7 +92,6 @@ export function AddToMenu({
   const start = (k: TargetKind, byKey: boolean) => {
     if (disabledReason) return
     setKind(k)
-    setTarget(null)
     setReply(null)
     setError(null)
     setConfirmBig(byKey && count > CONFIRM_OVER)
@@ -107,8 +106,8 @@ export function AddToMenu({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keys, disabledReason, count])
 
-  const send = async () => {
-    if (!target) return
+  const send = async (target: CollectTarget) => {
+    if (confirmBig || progress) return
     const t0 = performance.now()
     setProgress({ done: 0, total: count, startedAt: t0, movedAt: t0 })
     try {
@@ -148,7 +147,7 @@ export function AddToMenu({
       <Dialog open={open} onOpenChange={(v) => !progress && setOpen(v)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add {count.toLocaleString("en-US")} {noun} to…</DialogTitle>
+            <DialogTitle>Add {count.toLocaleString("en-US")} {countNoun(count, noun)} to…</DialogTitle>
             <DialogDescription>Each keeps a link back to its record. Nothing is copied out of the phone.</DialogDescription>
           </DialogHeader>
           {confirmBig && (
@@ -163,25 +162,11 @@ export function AddToMenu({
           )}
           <div role="group" aria-label="Where to add" className="flex flex-wrap gap-1">
             {KIND_KEYS.map((k) => (
-              <Button key={k.kind} size="sm" variant={kind === k.kind ? "secondary" : "outline"} aria-pressed={kind === k.kind} onClick={() => (setKind(k.kind), setTarget(null))}>
+              <Button key={k.kind} size="sm" variant={kind === k.kind ? "secondary" : "outline"} aria-pressed={kind === k.kind} onClick={() => setKind(k.kind)}>
                 {k.words} <kbd className="ml-1 text-xs text-muted-foreground">{k.key}</kbd>
               </Button>
             ))}
           </div>
-          {kind && (
-            <fieldset className="flex flex-col gap-1 text-sm">
-              <legend className="mb-1 font-medium">{KIND_KEYS.find((k) => k.kind === kind)!.words}</legend>
-              {ordered.length === 0 && <p>No {KIND_KEYS.find((k) => k.kind === kind)!.words.toLowerCase()} in this case yet. Create one from Workspace or Dossiers first.</p>}
-              {ordered.map((t) => (
-                <label key={t.id} className="flex items-center gap-2">
-                  <input type="radio" name="add-target" checked={target?.id === t.id} onChange={() => setTarget(t)} />
-                  {t.label}
-                  {t.linkedPerson && <span className="text-xs text-muted-foreground">(linked person)</span>}
-                  {t.recent && !t.linkedPerson && <span className="text-xs text-muted-foreground">(recent)</span>}
-                </label>
-              ))}
-            </fieldset>
-          )}
           {(kind === "finding" || kind === "note") && (
             <label className="flex items-center gap-2 text-sm">
               How it relates
@@ -206,6 +191,38 @@ export function AddToMenu({
               </select>
             </label>
           )}
+          {kind && (
+            <div className="flex flex-col gap-1 text-sm">
+              <p className="font-medium">{KIND_KEYS.find((k) => k.kind === kind)!.words}</p>
+              {ordered.length === 0 && <p>No {KIND_KEYS.find((k) => k.kind === kind)!.words.toLowerCase()} in this case yet. Create one from Workspace or Dossiers first.</p>}
+              {ordered.length > 0 && (
+                // choosing a target adds to it (07 J-12: one item in 3 actions); the reply offers Undo
+                <div role="listbox" aria-label={`Choose where to add: ${KIND_KEYS.find((k) => k.kind === kind)!.words}`} className="flex flex-col gap-0.5">
+                  {ordered.map((t) => (
+                    <div
+                      key={t.id}
+                      role="option"
+                      aria-selected={false}
+                      aria-disabled={confirmBig || !!progress}
+                      tabIndex={0}
+                      className="flex cursor-pointer items-center gap-2 rounded px-1.5 py-1 hover:bg-muted aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
+                      onClick={() => void send(t)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault()
+                          void send(t)
+                        }
+                      }}
+                    >
+                      {t.label}
+                      {t.linkedPerson && <span className="text-xs text-muted-foreground">(linked person)</span>}
+                      {t.recent && !t.linkedPerson && <span className="text-xs text-muted-foreground">(recent)</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {count > PART_SIZE && (
             <p className="text-sm">
               Links are added {PART_SIZE.toLocaleString("en-US")} at a time; {count.toLocaleString("en-US")} selected. Adding in {partsNeeded(count)} parts. Nothing is cut.
@@ -225,9 +242,6 @@ export function AddToMenu({
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)} disabled={!!progress}>
               Cancel
-            </Button>
-            <Button onClick={() => void send()} disabled={!target || confirmBig || !!progress}>
-              Add {count.toLocaleString("en-US")} {noun}
             </Button>
           </DialogFooter>
         </DialogContent>
