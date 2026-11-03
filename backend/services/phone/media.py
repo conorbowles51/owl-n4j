@@ -175,6 +175,7 @@ def content(conn, case_id, file_uid):
 
 THUMB_EDGE = 256            # the grid tile is 112 px tall; 256 keeps it sharp on a 2x screen
 THUMB_PASS_BYTES = 48 * 1024  # a file this small is sent as it is: a preview would not be smaller
+THUMB_READ_MAX_BYTES = 25 * 1024 * 1024  # a larger file is not read into memory for a preview; it streams as before
 
 
 def thumbnail(conn, case_id, file_uid, edge=THUMB_EDGE):
@@ -185,7 +186,7 @@ def thumbnail(conn, case_id, file_uid, edge=THUMB_EDGE):
     import io
 
     _name, size, opener = content(conn, case_id, file_uid)
-    if size <= THUMB_PASS_BYTES:
+    if size <= THUMB_PASS_BYTES or size > THUMB_READ_MAX_BYTES:
         return None
     try:
         from PIL import Image, ImageOps
