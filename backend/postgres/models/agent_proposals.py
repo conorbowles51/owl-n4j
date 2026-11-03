@@ -8,10 +8,10 @@ screen enables its confirm button only after one was. Rows are added, never chan
 ``calculation``; the result is computed from them on every read and is never stored.
 """
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import JSON, CheckConstraint, Date, DateTime, ForeignKey, Index, String, func
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from postgres.base import Base
@@ -45,6 +45,11 @@ class ProceedsCalculation(Base):
                                                nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    # The period the turnover covers, and the ledger categories counted as cash deposits beside it.
+    period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
+    deposit_categories: Mapped[list] = mapped_column(JSONB().with_variant(JSON(), 'sqlite'), nullable=False,
+                                                     default=list)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     created_by_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

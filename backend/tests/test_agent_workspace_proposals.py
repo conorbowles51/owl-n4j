@@ -5,6 +5,7 @@ first is recorded; a lead card names the institution and a four-digit ending, ci
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import date
 
@@ -205,3 +206,54 @@ def test_accepting_a_lead_card_needs_a_deadline_and_makes_a_finding_and_a_task(d
     assert "1,500.00" in entry.body and "4,000" not in entry.body  # each alert listed, never a sum
     link = db.scalars(select(CaseTaskLink)).one()
     assert (link.target_type, link.target_id) == ("entry", str(entry.id))
+
+
+# -- red cell (D) -------------------------------------------------------------------------------------------------
+
+def test_the_red_cell_leaves_out_the_framing_and_records_alternatives_as_proposals(db, monkeypatch):
+    from services.agent import red_cell
+    case, owner, statement = db.info["case"], db.info["owner"], db.info["statement"]
+    theory = WorkspaceEntry(case_id=case.id, entry_type="theory", title="Maria Lopez laundered the cash",
+                            body="Maria Lopez moved the deposits to Juan Ortega.", tags=[], lifecycle_state="proposed",
+                            review_state="accepted", author_user_id=owner.id, author_email=owner.email,
+                            author_name=owner.name, updated_by_user_id=owner.id, updated_by_email=owner.email,
+                            updated_by_name=owner.name)
+    db.add(theory)
+    db.commit()
+    facts = [dict(cite=f"doc://{statement.id}/2", text="Maria Lopez deposited 9,500 in cash on 3 March."),
+             dict(cite=f"doc://{statement.id}/3", text="A transfer of 9,000 went to Juan Ortega on 4 March.")]
+    monkeypatch.setattr(red_cell, "_facts", lambda s, c, t: [dict(f, fact_id=f"F{i}") for i, f in
+                                                              enumerate(facts, 1)])
+    seen = {}
+
+    def reader(prompt):
+        seen["prompt"] = prompt
+        return json.dumps({"alternatives": [
+            {"title": "Repayment of a family loan", "explanation": "The transfer repays a loan.", "facts": ["F2"],
+             "would_tell_apart": "A loan agreement or earlier transfers the other way."},
+            {"title": "Business takings banked", "explanation": "Cash from a market stall.", "facts": ["F1"]},
+            {"title": "No facts cited", "explanation": "x", "facts": ["F9"]}]})
+    out = red_cell.sweep(db, case_id=case.id, theory_id=theory.id, requested_by=owner, reader=reader,
+                         model=("anthropic", "claude-opus-4-8"), agent_model=("deepseek", "deepseek-v4-pro"))
+    prompt = seen["prompt"]
+    assert "laundered" not in prompt and "Maria Lopez" not in prompt and "Juan Ortega" not in prompt
+    assert "Person A" in prompt and "Person B" in prompt
+    assert (out["returned"], out["recorded"], len(out["refused"])) == (3, 2, 1)
+    item = out["proposals"][0]
+    assert (item["output_type"], item["review_status"]) == ("alternative_explanation", "pending_review")
+    origin = db.get(WorkspaceAIOutput, uuid.UUID(item["id"])).model_metadata["origin"]["red_cell"]
+    assert origin["framing_removed"] is True and origin["agent_model_id"] == "deepseek-v4-pro"
+    done = W.accept(db, case_id=case.id, output_id=item["id"], reviewer=owner)
+    entry = db.get(WorkspaceEntry, uuid.UUID(done["accepted_targets"][0]["target_id"]))
+    assert (entry.entry_type, entry.lifecycle_state, "red-cell" in entry.tags) == ("theory", "proposed", True)
+    kinds = {k["kind"]: k for k in proposals.precision(db, case.id)["kinds"]}
+    assert (kinds["alternative_explanation"]["accepted"], kinds["alternative_explanation"]["open"]) == (1, 1)
+
+
+def test_the_red_cell_never_runs_on_the_agents_own_model():
+    from services.agent.red_cell import choose_model
+    assert choose_model("deepseek", "deepseek-v4-pro", lambda p: p == "deepseek") == ("deepseek", "deepseek-v4-flash",
+                                                                                     True)
+    assert choose_model("deepseek", "deepseek-v4-pro", lambda p: p in ("deepseek", "openai"))[:2] == ("openai",
+                                                                                                    "gpt-5.6-sol")
+    assert choose_model("openai", "gpt-5.6-sol", lambda p: p == "openai") is None

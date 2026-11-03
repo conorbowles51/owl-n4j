@@ -74,6 +74,16 @@ class LinkProposalArgs(BaseModel):
     citations: list[str] = Field(..., min_length=1, max_length=20)
 
 
+class AssumptionProposalArgs(BaseModel):
+    calculation_id: str
+    key: Literal['messages', 'share_deals', 'deals_per_message', 'price_per_deal']
+    low: str = Field(..., description='Lowest defensible value (a share in percent; a price in the currency).')
+    high: str = Field(..., description='Highest defensible value.')
+    source: str = Field(..., min_length=1, max_length=600, description='Where the value comes from: a txn://, doc:// '
+                                                                       'or rec:// source, or a named reference.')
+    why: str = Field(..., min_length=1, max_length=1200)
+
+
 def make_proposal_tools(context) -> list[StructuredTool]:
     from services.agent.proposals import ProposalError, agent_origin
 
@@ -149,6 +159,20 @@ def make_proposal_tools(context) -> list[StructuredTool]:
             target_id=args.target_id, relationship=args.relationship, why=args.why, citations=args.citations,
             origin=o, requested_by_user_id=(context.proposer or {}).get('for_user_id')))
 
+    def propose_assumption(**kw):
+        args = AssumptionProposalArgs(**kw)
+        from services.financial import proceeds as PR
+
+        def work(session, o):
+            try:
+                out = PR.propose_assumption(session, case_id=context.case_id, calculation_id=args.calculation_id,
+                                            key=args.key, low=args.low, high=args.high, source=args.source,
+                                            why=args.why, origin=o)
+            except PR.ProceedsError as exc:
+                raise ProposalError(str(exc), exc.status_code) from exc
+            return dict(id=out['id'], calculation=out['title'], label=out['label'])
+        return call('propose_assumption', 'the proceeds calculation', work)
+
     rule = (' Records a proposal only: nothing changes until a person accepts it after opening a cited source. Use '
             'it when the user asks you to propose, draft or suggest work, never to answer a question.')
     return [
@@ -172,4 +196,9 @@ def make_proposal_tools(context) -> list[StructuredTool]:
             func=propose_link, name='propose_link', args_schema=LinkProposalArgs,
             description='Propose linking a source to a Workspace entry as supporting, contradicting or context.'
                         + rule),
+        StructuredTool.from_function(
+            func=propose_assumption, name='propose_assumption', args_schema=AssumptionProposalArgs,
+            description=('Propose one assumption of a proceeds calculation (volume, share that are deals, deals per '
+                         'message, price per deal) with its source. The calculator does the arithmetic; never compute '
+                         'a turnover yourself.' + rule)),
     ]

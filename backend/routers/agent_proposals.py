@@ -82,3 +82,16 @@ def reject_agent_proposal(case_id: UUID, output_id: UUID, body: Reject, db: Sess
     from services.agent.workspace_proposals import reject
     return _call(db, lambda: reject(db, case_id=case_id, output_id=output_id, reviewer=current_user,
                                     reason=body.reason))
+
+
+class RedCell(BaseModel):
+    theory_id: UUID
+
+
+@router.post("/{case_id}/proposals/red-cell", dependencies=[Depends(require_case_edit)])
+def run_red_cell(case_id: UUID, body: RedCell, db: Session = Depends(get_db),
+                 current_user: User = Depends(get_current_db_user)):
+    """An "away from the suspect" sweep of one theory on a model other than the case agent's. Each explanation it
+    finds is a proposal pending review; nothing else changes."""
+    from services.agent.red_cell import sweep
+    return _call(db, lambda: sweep(db, case_id=case_id, theory_id=body.theory_id, requested_by=current_user))

@@ -261,3 +261,82 @@ def reject_proposal(judgement_id: UUID, body: Reject, case_id: UUID = Query(...)
     except Exception:  # noqa: BLE001 - the inbox is refreshed by its periodic script too
         logger.exception('Appending rejected proposal %s to the lessons inbox failed', judgement_id)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Proceeds calculations (services.financial.proceeds): every assumption a judgement call a person sets.
+# ---------------------------------------------------------------------------
+
+class ProceedsCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    currency: str = Field(..., min_length=3, max_length=3)
+    period_start: str | None = None
+    period_end: str | None = None
+    deposit_categories: list[str] = Field(default_factory=list, max_length=50)
+
+
+class AssumptionSet(BaseModel):
+    low: str = Field(..., min_length=1, max_length=40)
+    high: str = Field(..., min_length=1, max_length=40)
+    source: str = Field(..., min_length=1, max_length=600)
+    reason: str = Field(default='', max_length=2000)
+
+
+def _proceeds_call(db, fn):
+    from services.financial.proceeds import ProceedsError
+    try:
+        return fn()
+    except ProceedsError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+def _day(value):
+    from datetime import date
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail='Give dates as YYYY-MM-DD.') from exc
+
+
+@router.get("/proceeds/list")
+def proceeds_list(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.proceeds import list_calculations
+    return list_calculations(db, case_id=case_id)
+
+
+@router.get("/proceeds/{calculation_id}")
+def proceeds_view(calculation_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.proceeds import view
+    return _proceeds_call(db, lambda: view(db, case_id=case_id, calculation_id=calculation_id))
+
+
+@router.post("/proceeds")
+def proceeds_create(body: ProceedsCreate, case_id: UUID = Query(...), current_user=Depends(get_current_db_user),
+                    db: Session = Depends(get_db)):
+    from services.financial.proceeds import create
+    return _proceeds_call(db, lambda: create(db, case_id=case_id, title=body.title, currency=body.currency,
+                                             actor=_actor(current_user), period_start=_day(body.period_start),
+                                             period_end=_day(body.period_end),
+                                             deposit_categories=body.deposit_categories))
+
+
+@router.post("/proceeds/{calculation_id}/assumptions/{key}")
+@records('proceeds_assumption', 'change', subject_type='calculation', subject=lambda c: c['kw'].get('calculation_id'),
+         field=lambda c: str(c['kw'].get('key') or ''))
+def proceeds_set_assumption(calculation_id: UUID, key: str, body: AssumptionSet, case_id: UUID = Query(...),
+                            current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.proceeds import set_assumption
+    return _proceeds_call(db, lambda: set_assumption(db, case_id=case_id, calculation_id=calculation_id, key=key,
+                                                     low=body.low, high=body.high, source=body.source,
+                                                     reason=body.reason, actor=_actor(current_user)))
+
+
+@router.post("/proceeds/{calculation_id}/assumptions/{key}/{judgement_id}/confirm")
+def proceeds_confirm_assumption(calculation_id: UUID, key: str, judgement_id: UUID, case_id: UUID = Query(...),
+                                current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.proceeds import confirm_assumption
+    return _proceeds_call(db, lambda: confirm_assumption(db, case_id=case_id, calculation_id=calculation_id,
+                                                         judgement_id=judgement_id, actor=_actor(current_user)))
