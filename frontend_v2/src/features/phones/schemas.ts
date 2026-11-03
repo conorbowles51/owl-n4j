@@ -62,6 +62,8 @@ export const TranslationSchema = z.object({
   provider_words: z.string().nullable(),
   stale: z.boolean(),
   stale_words: z.string().nullable(),
+  /** A finished result that asking again would make afresh (an "unsure" made under another confidence setting). */
+  asks_again: z.boolean().optional(),
   machine_generated: z.literal(true),
 })
 export type Translation = z.infer<typeof TranslationSchema>

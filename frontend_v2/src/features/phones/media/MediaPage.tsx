@@ -229,9 +229,9 @@ function DerivedTranslation({ caseId, x }: { caseId: string; x: DerivedText }) {
       )}
       {t?.state === "done" && t.outcome !== "translated" && <p className="text-muted-foreground">{t.outcome_words} {t.language_words}</p>}
       {error && <p role="alert">{error}</p>}
-      {!q.isLoading && (!t || t.state === "failed" || t.stale) && (
+      {!q.isLoading && (!t || t.state === "failed" || t.stale || t.asks_again) && (
         <Button size="sm" variant="outline" className="self-start" disabled={busy} onClick={() => void ask()}>
-          {t?.stale ? `Translate the corrected ${what}` : `Translate this ${what}`}
+          {t?.stale ? `Translate the corrected ${what}` : t?.asks_again ? `Try translating this ${what} again` : `Translate this ${what}`}
         </Button>
       )}
     </div>

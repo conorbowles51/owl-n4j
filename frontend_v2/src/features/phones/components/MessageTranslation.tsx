@@ -39,7 +39,7 @@ export function MessageTranslation({ caseId, row }: { caseId: string; row: Strea
       setBusy(false)
     }
   }
-  const again = !t || t.state === "failed" || t.stale
+  const again = !t || t.state === "failed" || t.stale || t.asks_again
   return (
     <div className="flex flex-col gap-0.5 text-xs" data-testid="message-translation">
       {t?.state === "queued" && <p role="status">Waiting to be translated on this server.</p>}
@@ -61,7 +61,7 @@ export function MessageTranslation({ caseId, row }: { caseId: string; row: Strea
       {error && <p role="alert">{error}</p>}
       {again && (
         <Button size="sm" variant="link" className="h-auto self-start p-0 text-xs" disabled={busy} onClick={(e) => (e.stopPropagation(), void ask())}>
-          {t?.stale ? "Translate the corrected text" : t?.state === "failed" ? "Try translating again" : "Translate"}
+          {t?.stale ? "Translate the corrected text" : t?.state === "failed" || t?.asks_again ? "Try translating again" : "Translate"}
         </Button>
       )}
     </div>

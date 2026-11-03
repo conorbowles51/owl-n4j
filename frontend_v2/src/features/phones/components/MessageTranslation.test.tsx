@@ -90,4 +90,12 @@ describe("MessageTranslation (05 17.5)", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("No Spanish to English translation model is installed on this server.")
     expect(screen.getByRole("button", { name: "Try translating again" })).toBeInTheDocument()
   })
+
+  it("offers to try again on a not-recognised result made under another setting, and not on a current one", () => {
+    const unsure = { ...base, state: "done" as const, outcome: "unsure" as const, outcome_words: "Language not recognised with confidence; not translated." }
+    show(row({ translation: { ...unsure, asks_again: false } }))
+    expect(screen.queryByRole("button")).not.toBeInTheDocument()
+    show(row({ event_uid: "ev3", translation: { ...unsure, source_key: "ev3", asks_again: true } }))
+    expect(screen.getByRole("button", { name: "Try translating again" })).toBeInTheDocument()
+  })
 })

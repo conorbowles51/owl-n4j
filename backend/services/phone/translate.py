@@ -206,7 +206,8 @@ def request_thread(conn, case_id, thread_key, user_id=None) -> dict:
 
 def out(r, current_sha=None) -> dict:
     """One translation as the screens show it. ``current_sha``: the SHA-256 of the source text in effect now; a
-    finished translation of a different text is marked stale with words."""
+    finished translation of a different text is marked stale with words; a finished result that would not be given
+    again (an "unsure" made under another confidence setting) is marked ``asks_again``, so the screens offer to ask."""
     d = dict(r._mapping)
     done = d["state"] == "done"
     stale = bool(done and current_sha is not None and d.get("source_sha256") != current_sha)
@@ -220,7 +221,8 @@ def out(r, current_sha=None) -> dict:
          "provider": d.get("provider"), "parameters": d.get("parameters"), "source_sha256": d.get("source_sha256"),
          "created_at": d["created_at"].isoformat() if d.get("created_at") else None,
          "finished_at": d["finished_at"].isoformat() if d.get("finished_at") else None,
-         "machine_generated": True, "stale": stale, "stale_words": STALE_WORDS if stale else None}
+         "machine_generated": True, "stale": stale, "stale_words": STALE_WORDS if stale else None,
+         "asks_again": bool(done and not reusable(d.get("outcome"), d.get("parameters")))}
     o["provider_words"] = derive.provider_words(d.get("provider")) if done else None
     o["outcome_words"] = OUTCOME_WORDS.get(d.get("outcome")) if done else None
     o["label"] = label(d.get("model"), d.get("model_version")) if done and d.get("outcome") == "translated" else None

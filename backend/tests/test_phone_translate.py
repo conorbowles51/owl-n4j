@@ -557,10 +557,12 @@ def test_an_unsure_result_made_under_the_old_setting_is_identified_again_when_as
     first = _request(world, ev)
     translate.run_pending(world["engine"])
     assert _translations(world, [ev])[ev]["outcome"] == "unsure"
+    assert _translations(world, [ev])[ev]["asks_again"] is False
     assert _request(world, ev)["id"] == first["id"]  # same setting: the same result
     with world["engine"].begin() as c:
         c.execute(text("UPDATE phone_translations SET parameters = jsonb_set(parameters, '{min_confidence}', '0.5') "
                        "WHERE id = :i"), {"i": first["id"]})
+    assert _translations(world, [ev])[ev]["asks_again"] is True
     child.lang[ES] = ("es", "Spanish", 0.41)
     again = _request(world, ev)
     assert again["id"] != first["id"]
