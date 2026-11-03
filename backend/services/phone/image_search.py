@@ -13,8 +13,8 @@ Rules carried here:
   are (a) linked to a message by a resolved, unambiguous attachment reference, or (b) in a camera or screenshot
   folder (``CAMERA_DIRS``, matched on the file's original ``path`` attribute or its local path), or (c) whose
   metadata names a camera make or model (``EXIF_CAMERA_ITEMS``). (b) and (c) are the camera files. The predicate
-  is ``POPULATION_SQL``, the one place it is written; it is the predicate of approach 8 (05 section 11.3 step 1),
-  which is not on this branch. Videos are not indexed: no frame is taken from a video in this build.
+  is ``POPULATION_SQL``, built from approach 8's predicate in ``media_spread`` (05 section 11.3 step 1). Videos are
+  not indexed: no frame is taken from a video in this build.
 - **One embedding per content.** Vectors are stored per (case, SHA-256 of the bytes, model weights). A file whose
   bytes were already embedded (another copy on any phone of the case) is linked to that vector and not embedded
   again ("reused"). The hash is the file's verified ``disk_sha256`` when present, else computed while reading.
@@ -48,6 +48,7 @@ from pathlib import Path
 from sqlalchemy import text
 
 from services.phone import derive
+from services.phone import media_spread as S
 from services.phone import image_search_models as M
 
 log = logging.getLogger(__name__)
@@ -56,22 +57,10 @@ NO_MODEL = "The image search model is not installed on this server. Nothing was 
 NO_PROGRAM = "The image search program is not installed on this server. Nothing was sent anywhere."
 POINTER_WORDS = "a result points to an image, it does not describe it."
 
-# Reviewed list of camera and screenshot folders, as approach 8 uses it (05 11.3 step 1 (b)): a whole path
-# component, either case: Android ``DCIM/Camera``, iOS ``DCIM/100APPLE``, ``Pictures/Screenshots``.
-CAMERA_DIRS = ("dcim", "camera", "screenshots")
-CAMERA_RE = r"(^|/)(%s)(/|$)" % "|".join(CAMERA_DIRS)
-EXIF_CAMERA_ITEMS = ("EXIFCameraMaker", "EXIFCameraModel")
-
-# the one statement of the population; ``c`` is media._CARRIED (resolved, unambiguous attachment links) and ``pf``
-# the captured file row with its report body
-POPULATION_SQL = (
-    "(c.file_uid IS NOT NULL "
-    "OR lower(replace(coalesce(pf.body -> 1 ->> 'path', ''), '\\', '/')) ~ :cam "
-    "OR lower(replace(coalesce(f.local_path, ''), '\\', '/')) ~ :cam "
-    "OR EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(pf.body -> 3) = 'array' THEN pf.body -> 3 "
-    "ELSE '[]'::jsonb END) m, jsonb_array_elements(CASE WHEN jsonb_typeof(m -> 3) = 'array' THEN m -> 3 ELSE "
-    "'[]'::jsonb END) it WHERE m ->> 0 = 'metadata' AND it ->> 0 = 'item' AND it -> 1 ->> 'name' = ANY(:exif_cam) "
-    "AND coalesce(it ->> 2, '') <> ''))")
+# Approach 8's population (05 11.3 step 1), one statement in media_spread: carried by a message (``c`` is
+# media._CARRIED: resolved, unambiguous attachment links), in a camera or screenshot folder, or EXIF names a camera
+CAMERA_DIRS, CAMERA_RE, EXIF_CAMERA_ITEMS = S.CAMERA_DIRS, S.CAMERA_RE, S.EXIF_CAMERA_ITEMS
+POPULATION_SQL = "(c.file_uid IS NOT NULL OR %s OR %s)" % (S.CAMERA_PATH_SQL, S.EXIF_CAMERA_SQL)
 IMAGE_SQL = "coalesce(f.category, '') = 'Image'"
 PRESENT_SQL = "(f.disk_relpath IS NOT NULL AND coalesce(f.verification, '') <> 'missing')"
 PERMANENT = ("heic", "not_image", "unreadable", "too_large", "empty")

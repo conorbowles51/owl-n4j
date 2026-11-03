@@ -365,7 +365,14 @@ def draw(engine, export_id, claimed=None) -> dict:
         contains.insert(-1, "%s machine-generated %s (transcripts or text read from images) %s printed under %s; %s not yet confirmed by a person, and each says so." % (
                                 "{:,}".format(n), "text" if n == 1 else "texts", "is" if n == 1 else "are",
                                 "its attachment" if n == 1 else "their attachments", "{:,}".format(u) + (" is" if u == 1 else " are")))
-    if translations["total"]:
+    if translations["total"] and fmt == "rsmf":
+        # RSMF carries the original messages only; the translations are named so their absence is not silent
+        n = translations["total"]
+        contains.insert(-1, "%s machine %s made on this server %s kept in Loupe for these messages; an RSMF file "
+                            "carries the originals only, so %s not in this file." % (
+                                "{:,}".format(n), "translation" if n == 1 else "translations",
+                                "is" if n == 1 else "are", "it is" if n == 1 else "they are"))
+    elif translations["total"]:
         n = translations["total"]
         contains.insert(-1, "%s machine %s made on this server %s printed under %s original%s, each labelled and "
                             "not checked by a person.%s" % (

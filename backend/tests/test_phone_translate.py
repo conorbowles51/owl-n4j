@@ -425,6 +425,25 @@ def test_the_export_prints_the_translation_under_the_original_with_its_label_and
     assert (state["counts"]["machine_translations"], state["counts"]["machine_translations_stale"]) == (1, 0)
 
 
+def test_an_rsmf_file_says_the_translations_are_not_in_it_and_never_that_they_are_printed(world, monkeypatch):
+    """RSMF carries the original messages only: its cover names the translations kept in Loupe and says they are not
+    in the file, never the PDF's "printed under its original"."""
+    import email
+
+    from services.phone import translate
+    from services.phone.exports.rsmf import SMTP
+    from tests.test_phone_exports_rsmf import _rsmf_export
+    FakeChild(monkeypatch)
+    _request(world, world["evs"][0]["event_uid"])
+    translate.run_pending(world["engine"])
+    state, data, _ = _rsmf_export(world)
+    body = " ".join(email.message_from_bytes(data, policy=SMTP).get_body(("plain",)).get_content().split())
+    assert ("1 machine translation made on this server is kept in Loupe for these messages; an RSMF file carries the "
+            "originals only, so it is not in this file.") in body
+    assert "printed under" not in body and " ".join(ES_EN) not in body
+    assert state["counts"]["machine_translations"] == 1
+
+
 def test_the_export_says_a_transcript_translation_made_from_an_earlier_text_is_of_a_transcript(
         world, monkeypatch, models):
     pytest.importorskip("weasyprint")

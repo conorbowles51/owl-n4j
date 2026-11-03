@@ -86,6 +86,16 @@ POPULATION_WORDS = ("Only files sent or received in a message, in a camera or sc
 EARLIEST_SHIFT, LATEST_SHIFT = timedelta(hours=14), timedelta(hours=12)
 
 
+# The camera-folder and EXIF-camera parts of the population (11.3 step 1 (b) and (c)), written once and used by
+# image search too (17.6). ``f`` is the pv_file row, ``pf`` its phone_files row; parameters :cam and :exif_cam.
+CAMERA_PATH_SQL = ("(lower(replace(coalesce(pf.body -> 1 ->> 'path', ''), '\\', '/')) ~ :cam "
+                   "OR lower(replace(coalesce(f.local_path, ''), '\\', '/')) ~ :cam)")
+EXIF_CAMERA_SQL = ("EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(pf.body -> 3) = 'array' "
+                   "THEN pf.body -> 3 ELSE '[]'::jsonb END) m, jsonb_array_elements(CASE WHEN jsonb_typeof(m -> 3) = "
+                   "'array' THEN m -> 3 ELSE '[]'::jsonb END) it WHERE m ->> 0 = 'metadata' AND it ->> 0 = 'item' AND "
+                   "it -> 1 ->> 'name' = ANY(:exif_cam) AND coalesce(it ->> 2, '') <> '')")
+
+
 def _sql(only_md5: bool) -> str:
     """The population and its exact groups. ``member``: every population copy in a group spanning 2+ phones;
     ``grp``: one row per group. With ``only_md5`` the files are limited to the hashes in ``:only`` (a group is
@@ -106,14 +116,8 @@ WITH f AS (
 ), pop AS (
   SELECT f.*, h.phones_with_hash, pf.document_index, pf.ordinal, pf.body -> 1 ->> 'path' AS original_path,
          (k.file_uid IS NOT NULL) AS by_attachment,
-         (lower(replace(coalesce(pf.body -> 1 ->> 'path', ''), '\\', '/')) ~ :cam
-          OR lower(replace(coalesce(f.local_path, ''), '\\', '/')) ~ :cam) AS by_camera_path,
-         EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(pf.body -> 3) = 'array'
-                                                         THEN pf.body -> 3 ELSE '[]'::jsonb END) m,
-                               jsonb_array_elements(CASE WHEN jsonb_typeof(m -> 3) = 'array'
-                                                         THEN m -> 3 ELSE '[]'::jsonb END) it
-                  WHERE m ->> 0 = 'metadata' AND it ->> 0 = 'item' AND it -> 1 ->> 'name' = ANY(:exif_cam)
-                    AND coalesce(it ->> 2, '') <> '') AS by_exif
+         %(camera_path)s AS by_camera_path,
+         %(exif_camera)s AS by_exif
     FROM f JOIN held h ON h.md5 = f.md5
     JOIN phone_files pf ON pf.file_uid = f.file_uid
     LEFT JOIN linked k ON k.file_uid = f.file_uid
@@ -126,7 +130,8 @@ WITH f AS (
          max(phones_with_hash) * 2 > :case_phones AS common
     FROM member GROUP BY md5 HAVING count(DISTINCT extraction_id) >= 2
 )
-""" % {"only": "AND lower(v.md5) = ANY(:only)" if only_md5 else ""}
+""" % {"only": "AND lower(v.md5) = ANY(:only)" if only_md5 else "", "camera_path": CAMERA_PATH_SQL,
+       "exif_camera": EXIF_CAMERA_SQL}
 
 
 def _params(conn, case_id, **extra) -> dict:
