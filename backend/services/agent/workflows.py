@@ -41,7 +41,7 @@ SCHEMA = "loupe.agent.workflows/1"
 DATA_KINDS = {
     "ledger": "ledger rows (payments read from statements)",
     "phones": "phone extractions",
-    "documents": "evidence documents (not phone files)",
+    "documents": "evidence documents other than statements and phone files",
     "dossiers": "people dossiers",
     "timeline": "case timeline entries",
 }
@@ -128,7 +128,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
             S("get_financial_coverage", "the accounts and periods the ledger holds", ("ledger",)),
             S("get_statement_continuity", "missing months on held accounts (connection 2)", ("ledger",)),
             S("get_account_mentions", "transfers to the subject's own accounts held elsewhere", ("ledger",)),
-            S("analyze_financial_transactions", "verified income against verified spending, by month and category",
+            S("analyze_financial_transactions", "verified income against verified spending, by month and category (population=verified)",
               ("ledger",)),
             S("search_documents", "the declaration or statement of means, if the case holds it", ("documents",),
               optional=True),
@@ -273,7 +273,7 @@ WORKFLOWS: tuple[Workflow, ...] = (
             S("get_together_apart", "attribution of the line to people over periods", ("phones",), optional=True),
             S("get_day_activity", "deal conversations and flare texts per day (no grid tool: one day per call)",
               ("phones",)),
-            S("analyze_financial_transactions", "cash deposits and money transfers per period", ("ledger",)),
+            S("analyze_financial_transactions", "cash deposits and money transfers per period (population=verified)", ("ledger",)),
             S("propose_assumption", "each assumption (price per deal, share of messages that are deals, deals per "
                                     "message) with its source", ()),
         ),
@@ -525,8 +525,9 @@ def case_counts(conn, case_id) -> dict[str, int]:
         "ledger": "SELECT count(*) FROM financial_transactions WHERE case_id = :c",
         "financial_sources": "SELECT count(*) FROM financial_source_documents WHERE case_id = :c",
         "phones": "SELECT count(*) FROM phone_extractions WHERE case_id = :c AND standing <> 'superseded'",
-        "documents": "SELECT count(*) FROM evidence_files WHERE case_id = :c AND cellebrite_file_id IS NULL "
-                     "AND cellebrite_report_key IS NULL",
+        "documents": "SELECT count(*) FROM evidence_files e WHERE e.case_id = :c AND e.cellebrite_file_id IS NULL "
+                     "AND e.cellebrite_report_key IS NULL AND NOT EXISTS (SELECT 1 FROM financial_source_documents f "
+                     "WHERE f.case_id = e.case_id AND f.evidence_file_id = e.id)",
         "dossiers": "SELECT count(*) FROM case_profiles WHERE case_id = :c",
         "timeline": "SELECT count(*) FROM timeline_entries WHERE case_id = :c",
     }

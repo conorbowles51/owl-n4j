@@ -76,3 +76,24 @@ decided one payment and whether a model drafted it; the dates one account's stat
 (saved, in the run, left out); the investigator's Timeline additions; money out of one account with the open calls
 it rests on; summed graph money marked not a total; decisions on a record of the verification case; judgement calls
 of the verification case.
+## Workflow questions, tool layer, 2026-11-03 (`tool-layer-workflows-2026-11-03.jsonl`)
+
+30 questions, 3 for each of the ten guided workflows (`backend/services/agent/workflows.py`), written by hand in
+`backend/tests/test_agent_workflow_evaluation.py` on the cross set's synthetic case. Each question is asked of a tool
+its workflow lists, or of the workflow's readiness on the case's measured counts (ledger 5 rows, 2 phones, 0
+documents other than the statement, 4 dossiers, 0 timeline entries). They cover the last record on a day and whether
+it was the owner's action, the alert that times a card payment, phone-evidenced accounts the records lack, the
+periods held, verified spending by month (the p3 row left out), money in one month, a control claim, the
+conversation around a payment (two windows) and a leg with none, a together-and-apart test refused because no phone
+owner is linked on People, a card line, one day's money and calls, every outgoing payment, a purpose reading drafted
+and one refused, an analysis not yet run, casework with none, a claim not in this case, a month with a payment and no
+statement, and six readiness answers (three ready, two not possible for want of documents, insider trading not
+possible because trades are not modelled).
+
+| Setting | Questions | Known answer stated | Exactly the known records cited | Extra check |
+|---|---|---|---|---|
+| All data | 30 | 30 | 30 | 30 |
+| Significant (tool questions) | 24 refused with the boundary, no records | | | |
+
+On 96640bde (before the workflows): 24 of 30. The 24 tool questions use tools already released and answer the same;
+the 6 readiness questions have no answer, because no workflow catalogue existed.

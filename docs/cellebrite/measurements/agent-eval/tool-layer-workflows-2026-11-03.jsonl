@@ -1,0 +1,54 @@
+{"id": "WF01", "workflow": "last-proof-of-life", "setting": "all data", "question": "What is the last record on Sam's phone on 20 March, and was Sam acting?", "tool": "get_day_activity", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 1, "stated": 1}
+{"id": "WF02", "workflow": "last-proof-of-life", "setting": "all data", "question": "Which card payment has a phone alert that gives its time?", "tool": "get_money_signal_matches", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 1, "stated": 1}
+{"id": "WF03", "workflow": "last-proof-of-life", "setting": "all data", "question": "Can the last-proof-of-life workflow run on this case?", "tool": "readiness", "total_ok": true, "cited_ok": true, "check_ok": true, "known": [], "stated": []}
+{"id": "WF04", "workflow": "hidden-assets", "setting": "all data", "question": "Which accounts does the phone show that the financial records do not hold?", "tool": "get_money_signal_leads", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 2, "stated": 2}
+{"id": "WF05", "workflow": "hidden-assets", "setting": "all data", "question": "Which accounts and periods do the financial records hold?", "tool": "get_financial_coverage", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 1, "stated": 1}
+{"id": "WF06", "workflow": "hidden-assets", "setting": "all data", "question": "Verified spending by month?", "tool": "analyze_financial_transactions", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 2, "stated": 2}
+{"id": "WF07", "workflow": "carer-abuse", "setting": "all data", "question": "Money from Sam to Ana in April 2023?", "tool": "get_contact_and_money_between", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 1, "stated": 1}
+{"id": "WF08", "workflow": "carer-abuse", "setting": "all data", "question": "Who had the means to operate the account ending 1234 in March 2023: Sam?", "tool": "draft_control_claim", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 4, "stated": 4}
+{"id": "WF09", "workflow": "carer-abuse", "setting": "all data", "question": "What was said around the USD 500.00 transfer?", "tool": "get_payment_conversation", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 2, "stated": 2}
+{"id": "WF10", "workflow": "procurement-kickbacks", "setting": "all data", "question": "Can the procurement workflow run on this case?", "tool": "readiness", "total_ok": true, "cited_ok": true, "check_ok": true, "known": ["the case holds no evidence documents other than statements and phone files"], "stated": ["the case holds no evidence documents other than statements and phone files"]}
+{"id": "WF11", "workflow": "procurement-kickbacks", "setting": "all data", "question": "Were Sam's and Ana's phones together in March 2023?", "tool": "get_together_apart", "total_ok": true, "cited_ok": true, "check_ok": true, "known": "refused", "stated": "refused"}
+{"id": "WF12", "workflow": "procurement-kickbacks", "setting": "all data", "question": "Was the USD 70.00 leg to Ana discussed?", "tool": "get_payment_conversation", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 0, "stated": 0}
+{"id": "WF13", "workflow": "expense-fraud", "setting": "all data", "question": "Which card line matches the car purchase claim?", "tool": "get_financial_transactions", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 1, "stated": 1}
+{"id": "WF14", "workflow": "expense-fraud", "setting": "all data", "question": "What does Sam's day of 14 March show in money?", "tool": "get_day_activity", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 1, "stated": 1}
+{"id": "WF15", "workflow": "expense-fraud", "setting": "all data", "question": "Can the expense workflow run on this case?", "tool": "readiness", "total_ok": true, "cited_ok": true, "check_ok": true, "known": ["the case holds no evidence documents other than statements and phone files"], "stated": ["the case holds no evidence documents other than statements and phone files"]}
+{"id": "WF16", "workflow": "insider-trading", "setting": "all data", "question": "Can the insider-trading workflow run on this case?", "tool": "readiness", "total_ok": true, "cited_ok": true, "check_ok": true, "known": ["Brokerage trades: the ledger holds payments, not instrument and quantity rows, so a trade's execution time and instrument cannot be read."], "stated": ["Brokerage trades: the ledger holds payments, not instrument and quantity rows, so a trade's execution time and instrument cannot be read."]}
+{"id": "WF17", "workflow": "insider-trading", "setting": "all data", "question": "Which calls did Sam make on 17 March?", "tool": "get_day_activity", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 1, "stated": 1}
+{"id": "WF18", "workflow": "insider-trading", "setting": "all data", "question": "The messages a week either side of the USD 500.00 payment?", "tool": "get_payment_conversation", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 3, "stated": 3}
+{"id": "WF19", "workflow": "payment-scam-victim", "setting": "all data", "question": "Every outgoing payment from Sam's account?", "tool": "get_financial_transactions", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 5, "stated": 5}
+{"id": "WF20", "workflow": "payment-scam-victim", "setting": "all data", "question": "Record what Sam was told before the USD 500.00 payment", "tool": "draft_payment_purpose", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 1, "stated": 1}
+{"id": "WF21", "workflow": "payment-scam-victim", "setting": "all data", "question": "Record a pairing quoting a message from outside the window", "tool": "draft_payment_purpose", "total_ok": true, "cited_ok": true, "check_ok": true, "known": "refused", "stated": "refused"}
+{"id": "WF22", "workflow": "drug-proceeds", "setting": "all data", "question": "Who used which phone over which periods?", "tool": "get_analysis_results", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 0, "stated": 0}
+{"id": "WF23", "workflow": "drug-proceeds", "setting": "all data", "question": "Verified money out in April 2023?", "tool": "analyze_financial_transactions", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 1, "stated": 1}
+{"id": "WF24", "workflow": "drug-proceeds", "setting": "all data", "question": "Can the proceeds workflow run on this case?", "tool": "readiness", "total_ok": true, "cited_ok": true, "check_ok": true, "known": [], "stated": []}
+{"id": "WF25", "workflow": "staged-accident", "setting": "all data", "question": "Can the staged-accident workflow run on this case?", "tool": "readiness", "total_ok": true, "cited_ok": true, "check_ok": true, "known": [], "stated": []}
+{"id": "WF26", "workflow": "staged-accident", "setting": "all data", "question": "Did Sam and Ben talk, and did money move?", "tool": "get_contact_and_money_between", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 1, "stated": 1}
+{"id": "WF27", "workflow": "staged-accident", "setting": "all data", "question": "Did money move between Ana and Ben?", "tool": "get_contact_and_money_between", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 0, "stated": 0}
+{"id": "WF28", "workflow": "defence-review", "setting": "all data", "question": "What notes, findings and theories does the case hold?", "tool": "get_casework", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 0, "stated": 0}
+{"id": "WF29", "workflow": "defence-review", "setting": "all data", "question": "Check a claim that is not in this case", "tool": "evaluate_statement", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 0, "stated": 0}
+{"id": "WF30", "workflow": "defence-review", "setting": "all data", "question": "Does a statement cover April 2023, where a payment sits?", "tool": "get_financial_coverage", "total_ok": true, "cited_ok": true, "check_ok": true, "known": 0, "stated": 0}
+{"id": "WF01", "workflow": "last-proof-of-life", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF02", "workflow": "last-proof-of-life", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF04", "workflow": "hidden-assets", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF05", "workflow": "hidden-assets", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF06", "workflow": "hidden-assets", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF07", "workflow": "carer-abuse", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF08", "workflow": "carer-abuse", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF09", "workflow": "carer-abuse", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF11", "workflow": "procurement-kickbacks", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF12", "workflow": "procurement-kickbacks", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF13", "workflow": "expense-fraud", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF14", "workflow": "expense-fraud", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF17", "workflow": "insider-trading", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF18", "workflow": "insider-trading", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF19", "workflow": "payment-scam-victim", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF20", "workflow": "payment-scam-victim", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF21", "workflow": "payment-scam-victim", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF22", "workflow": "drug-proceeds", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF23", "workflow": "drug-proceeds", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF26", "workflow": "staged-accident", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF27", "workflow": "staged-accident", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF28", "workflow": "defence-review", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF29", "workflow": "defence-review", "setting": "significant", "refused": true, "no_records": true}
+{"id": "WF30", "workflow": "defence-review", "setting": "significant", "refused": true, "no_records": true}
