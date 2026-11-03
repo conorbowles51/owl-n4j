@@ -1808,6 +1808,12 @@ M-14a: per case, per pair of owner identities, the number of identities with at 
 both sides; M-14b: the share of those that rest on an unreviewed identity join. Gate: **build** if at least
 one case has a pair of owners with 3 or more common contacts.
 
+**Corpus result (`cb-approaches`, `measurements/scripts/m14_16.py` over the a2 extracts of the 10-report case,
+2026-11-03, `measurements/a2/m14-16-10-report.json`).** Messages only (the extracts hold no calls or emails), so
+counts are a lower bound. 10 phones, 8 owners (phones sharing an owner identity are one owner), 28 owner pairs: 21
+have 3 or more common contacts, the most 36. M-14b: 1.0, by construction: the corpus joins identities by equal
+normalised identifier only, never by a reviewed decision. Gate: **pass** (21 pairs with 3 or more).
+
 ### 16a.7 Dependencies
 
 02 (identities, dossier links, owners), approach 3 (deletion caveats).
@@ -1860,6 +1866,12 @@ unmatched copies of one message on two phones count twice and the result says ho
 M-15a: per case, the number of identities in the population at N = 1 and N = 5; M-15b: the share of
 message pairs counted on two phones that approach 2 matches. Gate: **build** if a case has at least 3 owners
 with communications between them; M-15a sets the default N.
+
+**Corpus result (`cb-approaches`, `m14_16.py`, 10-report case, messages only).** M-15a: 8,502 identities at N = 1
+and 5,519 at N = 5 (owners included); 8 owners in contact with another owner over 9 owner pairs. M-15b: 3,193 message
+copies between owners on the phones; approach 2 matched 814 pairs of them as strong (1,628 copies, about half; the
+rest count once each and the result says how many). Gate: **pass** (8 owners with communications between them, 3
+needed).
 
 ### 16b.7 Dependencies
 
@@ -1916,6 +1928,13 @@ gap; M-16b: for those, the distribution of Jaccard similarity with identities st
 M-16c: the same on shuffled start times, as a base rate. Gate: **build** only if M-16b has pairs above the
 threshold at a rate clearly above M-16c; M-16b and M-16c set the defaults. *Reverse if* the base rate equals
 the observed rate.
+
+**Corpus result (`cb-approaches`, `m14_16.py`, 10-report case, messages only, defaults gap 14 days, window 90
+days, threshold 0.5, at least 5 shared).** M-16a: 8,428 identities stop more than 14 days before the case's last
+message. M-16b: 1,118,315 candidate pairs; 3 at or above the threshold with 5 or more shared counterparts. M-16c (start
+times shuffled 20 times, fixed seed): 0 such pairs in every shuffle (mean 0.0, most 0). Gate: **pass** (3 against a
+base rate of 0); the defaults stand. Most candidate pairs share only the phone's owner (Jaccard 0.9 to 1.0 on
+single-counterpart sets: 267,536), which the 5-shared minimum removes.
 
 ### 16c.7 Dependencies
 

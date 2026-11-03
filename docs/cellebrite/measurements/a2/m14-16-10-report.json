@@ -1,0 +1,60 @@
+{
+ "edges": 1571075,
+ "m14a_common_contacts_per_owner_pair": {
+  "distribution": {
+   "1": 4,
+   "2": 3,
+   "3": 3,
+   "4": 2,
+   "5": 2,
+   "6": 3,
+   "7": 2,
+   "8": 2,
+   "9": 2,
+   "14": 1,
+   "16": 1,
+   "17": 1,
+   "20": 2
+  },
+  "max": 36,
+  "pairs": 28
+ },
+ "m14a_pairs_with_3_or_more": 21,
+ "m14b_share_unreviewed": 1.0,
+ "m15a_owner_pairs_in_contact": 9,
+ "m15a_owners_in_contact": 8,
+ "m15a_population": {
+  "N1": 8502,
+  "N5": 5519
+ },
+ "m15b_matched_strong": 814,
+ "m15b_owner_to_owner_message_copies": 3193,
+ "m16a_stopped_identities": 8428,
+ "m16b_above_threshold": 3,
+ "m16b_candidate_pairs": 1118315,
+ "m16b_jaccard_hist": {
+  "0.0": 527607,
+  "0.1": 1697,
+  "0.2": 18329,
+  "0.3": 167754,
+  "0.4": 35,
+  "0.5": 134934,
+  "0.6": 422,
+  "0.7": 1,
+  "0.8": 0,
+  "0.9": 267536
+ },
+ "m16c_above_threshold_max": 0,
+ "m16c_above_threshold_mean": 0.0,
+ "m16c_candidate_pairs_mean": 1118184.2,
+ "m16c_shuffles": 20,
+ "messages": 226935,
+ "owners": 8,
+ "parameters": {
+  "gap_days": 14,
+  "min_shared": 5,
+  "threshold": 0.5,
+  "window_days": 90
+ },
+ "phones": 10
+}

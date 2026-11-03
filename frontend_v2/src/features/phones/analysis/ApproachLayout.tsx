@@ -9,6 +9,7 @@ import { patternAPI } from "@/features/pattern/api"
 import type { AnalysisRun } from "./money-api"
 import type { AnalysisClient, ApproachResult, KeptResult } from "./analysis-api"
 import { anchorWords } from "./anchor-words"
+import { recordsWords } from "./count-words"
 
 /**
  * The shared results layout of every approach (05 section 3.9; 07 section 5; test AP-1), in this order: what it does,
@@ -36,6 +37,8 @@ export interface ApproachLayoutProps {
   extra?: ReactNode
   /** Where a result opens beside its records (for example Conversations filtered to the person). */
   openLink?: (r: ApproachResult) => { to: string; label: string } | null
+  /** Words for a result against one key date, where the approach's time means something narrower than a period. */
+  anchorRelation?: (r: ApproachResult, anchorIso: string, anchorLabel: string) => string | null
 }
 
 function RunControl({ caseId, run, client, onRequested }: { caseId: string; run: AnalysisRun | null; client: AnalysisClient; onRequested: (r: AnalysisRun) => void }) {
@@ -125,7 +128,7 @@ function KeepThis({ p, r }: { p: ApproachLayoutProps; r: ApproachResult }) {
   }
   return (
     <div className="space-y-1 text-xs">
-      <p>Kept: {kept.label}, {kept.record_count.toLocaleString("en-US")} records behind it.</p>
+      <p>Kept: {kept.label}, {recordsWords(kept.record_count)} behind it.</p>
       <CollectBar caseId={p.caseId} noun="result" origin={p.origin}
         links={[{ target_type: "phone_analysis", target_id: kept.id, label: kept.label, source_anchor: { kind: "analysis_result", approach: p.client.approach } }]} />
     </div>
@@ -141,7 +144,7 @@ function KeptPanel({ caseId, id }: { caseId: string; id: string }) {
   return (
     <section aria-label="Kept result" className="rounded border p-2 text-sm">
       <p className="font-medium">Kept result: {s.label}</p>
-      <p className="text-xs">{s.record_count.toLocaleString("en-US")} records behind it{s.created_by_name ? `, kept by ${s.created_by_name}` : ""}{s.created_at ? ` ${instantWords(s.created_at, "UTC")}` : ""}. The results below are the latest run.</p>
+      <p className="text-xs">{recordsWords(s.record_count)} behind it{s.created_by_name ? `, kept by ${s.created_by_name}` : ""}{s.created_at ? ` ${instantWords(s.created_at, "UTC")}` : ""}. The results below are the latest run.</p>
       {s.stale_words && <p className="text-xs">{s.stale_words}</p>}
     </section>
   )
@@ -151,7 +154,7 @@ function Row({ p, r, anchors, onChanged }: { p: ApproachLayoutProps; r: Approach
   const [open, setOpen] = useState(false)
   const w = p.words(r)
   const open2 = p.openLink?.(r) ?? null
-  const rel = anchors.map((a) => anchorWords(r.period_start, r.period_end, a.instant, a.label)).filter(Boolean) as string[]
+  const rel = anchors.map((a) => p.anchorRelation ? p.anchorRelation(r, a.instant, a.label) : anchorWords(r.period_start, r.period_end, a.instant, a.label)).filter(Boolean) as string[]
   return (
     <li className="rounded border p-2 text-sm" data-testid={p.testId}>
       <div className="flex flex-wrap items-baseline gap-2">

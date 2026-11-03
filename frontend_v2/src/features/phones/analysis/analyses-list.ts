@@ -6,6 +6,8 @@ export const ANALYSES = [
   { code: "relationships", path: "phone-analyses/relationships", title: "Relationships over time", what: "For each person on each phone: when contact began and ended, how each phone names them, and where contact rose or fell." },
   { code: "device_users", path: "phone-analyses/two-phones", title: "Who used which phone", what: "Numbers, SIMs, accounts and networks two phones share, how often each was used while the other was not, and signs of more than one user." },
   { code: "reparse_comparison", path: "phone-analyses/read-again", title: "Read again by an independent tool", what: "Each phone read again by an open-source tool from the production's verified files, compared with the report: totals, records only one side has, and times or content that differ." },
+  { code: "typed_words", path: "phone-analyses/typed-words", title: "Typed words", what: "Keyboard learned words and autofill values that match names, numbers and accounts in the case, and whether they appear anywhere else on the phone." },
+  { code: "intent", path: "phone-analyses/searches", title: "Searches and pages", what: "Searches and visited pages that match names, numbers and accounts in the case, with the time each records." },
   { code: "awareness", path: "phone-analyses/groups", title: "Group admins and membership", what: "Admins of each group chat at extraction and the membership changes the phones record." },
 ]
 

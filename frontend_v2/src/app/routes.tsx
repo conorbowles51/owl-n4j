@@ -45,6 +45,8 @@ const ReparsePage = lazy(() => import("@/features/phones/analysis/ReparsePage"))
 const IncidentWindowPage = lazy(() => import("@/features/phones/analysis/IncidentWindowPage"))
 const MessagesAcrossPhonesPage = lazy(() => import("@/features/phones/analysis/MessagesAcrossPhonesPage"))
 const GroupRolesPage = lazy(() => import("@/features/phones/analysis/GroupRolesPage"))
+const TypedWordsPage = lazy(() => import("@/features/phones/analysis/TypedWordsPage"))
+const IntentPage = lazy(() => import("@/features/phones/analysis/IntentPage"))
 const AnalysesPage = lazy(() => import("@/features/phones/analysis/AnalysesPage"))
 const PatternsPage = lazy(() =>
   import("@/features/pattern/components/PatternsPage").then((m) => ({ default: m.PatternsPage }))
@@ -205,6 +207,8 @@ export function AppRoutes() {
             <Route path="phone-analyses/deletions" element={<LazyPage><DeletionTimelinePage /></LazyPage>} />
             <Route path="phone-analyses/relationships" element={<LazyPage><RelationshipsPage /></LazyPage>} />
             <Route path="phone-analyses/groups" element={<LazyPage><GroupRolesPage /></LazyPage>} />
+            <Route path="phone-analyses/typed-words" element={<LazyPage><TypedWordsPage /></LazyPage>} />
+            <Route path="phone-analyses/searches" element={<LazyPage><IntentPage /></LazyPage>} />
             <Route path="phone-analyses/two-phones" element={<LazyPage><DeviceUsersPage /></LazyPage>} />
             <Route path="phone-analyses/read-again" element={<LazyPage><ReparsePage /></LazyPage>} />
             <Route path="phone-analyses/messages" element={<LazyPage><MessagesAcrossPhonesPage /></LazyPage>} />
