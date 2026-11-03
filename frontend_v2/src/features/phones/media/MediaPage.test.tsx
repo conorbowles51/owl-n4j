@@ -77,8 +77,14 @@ describe("Media (03 section 8)", () => {
   it("a visible tile asks for the server's small preview; opening the file asks for the original", async () => {
     const seen = vi.fn()
     vi.stubGlobal("IntersectionObserver", class {
-      constructor(private cb: (e: { isIntersecting: boolean }[]) => void) {}
-      observe() { seen(); this.cb([{ isIntersecting: true }]) }
+      cb: (e: { isIntersecting: boolean }[]) => void
+      constructor(cb: (e: { isIntersecting: boolean }[]) => void) {
+        this.cb = cb
+      }
+      observe() {
+        seen()
+        this.cb([{ isIntersecting: true }])
+      }
       disconnect() {}
     })
     api.mediaObjectUrl.mockClear()
