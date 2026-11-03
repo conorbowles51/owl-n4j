@@ -181,15 +181,20 @@ export function ConversationsPage() {
 
   // ---- Add to… ---------------------------------------------------------------------------------------------------
   const targets = useCollectTargets(caseId)
-  const visibleUids = useMemo(() => {
+  // the first 400 rows' marks, asked for once those rows have all arrived (a list arrives in many windows)
+  const marked = useMemo(() => {
     const out: string[] = []
-    for (let i = 0; i < stream.count && out.length < 400; i++) {
+    let complete = stream.status === "ready"
+    for (let i = 0, rowsSeen = 0; i < stream.count && rowsSeen < 400; i++) {
       const it = stream.item(i)
-      if (it.type === "row" && it.row) out.push(it.row.record_uid)
+      if (it.type !== "row") continue
+      rowsSeen++
+      if (it.row) out.push(it.row.record_uid)
+      else if (it.state === "loading") complete = false
     }
-    return out
+    return { ids: out, complete }
   }, [stream])
-  const { usedIn, refresh: refreshUsedIn } = useUsedIn(caseId, visibleUids)
+  const { usedIn, refresh: refreshUsedIn } = useUsedIn(caseId, marked.ids, marked.complete)
   const filterWords = current ? `${current.title} on ${current.phone.label}` : view.people.length ? "Messages with the chosen people" : "Conversations"
   const freeze = useQuery({
     queryKey: ["phone-selection", streamFilter, selection.all],

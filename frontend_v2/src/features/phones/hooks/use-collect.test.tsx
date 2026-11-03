@@ -15,18 +15,31 @@ vi.mock("@/lib/api-client", async (orig) => ({
 import { useUsedIn } from "./use-collect"
 
 describe("useUsedIn (07 section 6.2)", () => {
-  it("one load of a list whose rows arrive in 10 growths asks for the marks once, for every shown row", async () => {
+  const setup = () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-    const { result, rerender } = renderHook(({ ids }) => useUsedIn("c", ids), { wrapper, initialProps: { ids: [] as string[] } })
+    net.urls = []
+    return renderHook(({ ids, complete }) => useUsedIn("c", ids, complete), { wrapper, initialProps: { ids: [] as string[], complete: false } })
+  }
+  const asked = () => net.urls.filter((u) => u.includes("/collections"))
+
+  it("one load of a list whose rows arrive in 10 windows asks for the marks once, when the rows are all there", async () => {
+    const { result, rerender } = setup()
     for (let n = 1; n <= 10; n++) {
-      rerender({ ids: Array.from({ length: n }, (_, i) => `r${i}`) })
-      await new Promise((r) => setTimeout(r, 20)) // windows land a few ms apart
+      rerender({ ids: Array.from({ length: n }, (_, i) => `r${i}`), complete: n === 10 })
+      await new Promise((r) => setTimeout(r, 400)) // live windows land a few hundred ms apart
     }
     await waitFor(() => expect(result.current.usedIn.r3).toBe("In 1 dossier"))
+    expect(asked()).toHaveLength(1)
+    expect([...asked()[0].matchAll(/target_ids\[\]=/g)]).toHaveLength(10)
+  })
+
+  it("rows still loading that stop changing are asked for after a wait, so a window that never arrives holds back nothing", async () => {
+    const { result, rerender } = setup()
+    rerender({ ids: ["r1", "r3"], complete: false })
     await new Promise((r) => setTimeout(r, 300))
-    const asked = net.urls.filter((u) => u.includes("/collections"))
-    expect(asked).toHaveLength(1)
-    expect([...asked[0].matchAll(/target_ids\[\]=/g)]).toHaveLength(10)
+    expect(asked()).toHaveLength(0)
+    await waitFor(() => expect(result.current.usedIn.r3).toBe("In 1 dossier"), { timeout: 3000 })
+    expect(asked()).toHaveLength(1)
   })
 })

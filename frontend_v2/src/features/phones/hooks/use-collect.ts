@@ -35,21 +35,22 @@ export function useCollectTargets(caseId: string | undefined) {
   })
 }
 
-/** How long the shown rows must stay the same before their marks are asked for: a list loads its windows one after
- * another (10 growths on one load of a 9-row thread), and each growth asked again. */
-export const USED_IN_SETTLE_MS = 150
+/** How long rows that are still loading may keep changing before their marks are asked for anyway (a window that
+ * never arrives must not hold back the marks of the rows that did). */
+export const USED_IN_WAIT_MS = 1500
 
 /** "In 2 dossiers and 1 finding" for each record shown (07 section 6.2), 200 ids per request as the server allows.
- * Asked once the shown rows have settled, so one load of a list makes one request. */
-export function useUsedIn(caseId: string | undefined, recordUids: string[]) {
+ * Asked once the shown rows are all loaded (``complete``), so one load of a list makes one request however many
+ * windows it arrives in; while rows are still loading, asked only if they stop changing for USED_IN_WAIT_MS. */
+export function useUsedIn(caseId: string | undefined, recordUids: string[], complete = true) {
   const qc = useQueryClient()
   const joined = recordUids.slice().sort().join(",")
-  const [settled, setSettled] = useState(joined)
+  const [settled, setSettled] = useState(complete ? joined : "")
   useEffect(() => {
     if (joined === settled) return
-    const t = setTimeout(() => setSettled(joined), USED_IN_SETTLE_MS)
+    const t = setTimeout(() => setSettled(joined), complete ? 0 : USED_IN_WAIT_MS)
     return () => clearTimeout(t)
-  }, [joined, settled])
+  }, [joined, settled, complete])
   const ids = settled ? settled.split(",") : []
   const key = ["used-in", caseId, settled]
   const q = useQuery({
