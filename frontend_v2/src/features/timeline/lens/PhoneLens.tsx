@@ -78,11 +78,14 @@ const SPANS = [
   { id: "all", label: "All", days: 0 },
 ] as const
 
+/** The server's limit for daily lanes (timeline_lens.DAY_BUCKET_MAX_DAYS). */
+const DAY_BUCKET_MAX_DAYS = 3700
+
 function addDays(iso: string, d: number) {
   return new Date(new Date(iso).getTime() + d * 86400000).toISOString()
 }
 
-/** Lanes mode (03 section 9.6): counts per lane per hour or day from the server, "No data" drawn apart from "No
+/** Lanes mode (03 section 9.6): counts per lane per hour, day or week from the server, "No data" drawn apart from "No
  * matching entries", and a bucket's rows shown in the same phone list below. */
 function LensLanes({ caseId, caseName, filter, snapshot, firstDay, lastDay, filterWords }: {
   caseId: string; caseName: string; filter: LensFilter; snapshot: string; firstDay: string; lastDay: string; filterWords: string
@@ -94,12 +97,14 @@ function LensLanes({ caseId, caseName, filter, snapshot, firstDay, lastDay, filt
   const allEnd = addDays(`${lastDay}T00:00:00Z`, 2)
   const start = span === "all" ? addDays(`${firstDay}T00:00:00Z`, -1) : anchor
   const end = span === "all" ? allEnd : addDays(anchor, spanDays)
-  const bucket = new Date(end).getTime() - new Date(start).getTime() <= 2 * 86400000 ? "hour" : "day"
+  const spanMs = new Date(end).getTime() - new Date(start).getTime()
+  // daily lanes stop at ten years on the server, so a longer "All" span (a calendar entry years ahead) is drawn in weeks
+  const bucket = spanMs <= 2 * 86400000 ? "hour" : spanMs <= DAY_BUCKET_MAX_DAYS * 86400000 ? "day" : "week"
   const q = useQuery({
     queryKey: ["timeline-lens-buckets", filter, snapshot, start, end, bucket],
     queryFn: () => lensBuckets(filter, snapshot, start, end, bucket),
   })
-  const step = bucket === "hour" ? 3600000 : 86400000
+  const step = bucket === "hour" ? 3600000 : bucket === "day" ? 86400000 : 7 * 86400000
   const rows: LaneRow[] = (q.data?.lanes ?? []).map((l) => {
     const total = l.buckets.reduce((a, b) => a + b.count, 0)
     return {

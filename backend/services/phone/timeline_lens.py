@@ -50,6 +50,8 @@ ACTIVITY_CLASSES = ("interaction", "device_state", "passive", "unknown")
 CLASS_WORDS = {"interaction": "Someone using the phone", "device_state": "Device state", "passive": "Passive records",
                "unknown": "Class not known"}
 WINDOW_MAX = 1000
+DAY_BUCKET_MAX_DAYS = 3700    # the screen asks for weeks beyond this (an "All" span over ten years)
+WEEK_BUCKET_MAX_DAYS = 36600
 CASE_EVENTS_LANE = {"key": "case_events", "label": "Case events"}
 
 
@@ -372,8 +374,8 @@ def _no_data_hours(conn, ext, start, end) -> set:
 
 
 def buckets(conn, f: TimelineLensFilter, *, snapshot_token, start: datetime, end: datetime,
-            bucket: Literal["hour", "day"]) -> dict:
-    """Counts per lane per hour or day in the display zone. A phone lane's bucket is ``no_data`` when the phone holds
+            bucket: Literal["hour", "day", "week"]) -> dict:
+    """Counts per lane per hour, day or week (weeks start on Monday) in the display zone. A phone lane's bucket is ``no_data`` when the phone holds
     no data for the whole bucket (04 hour states), which the screen draws as a hatched band, never as zero."""
     if snapshot(conn, f) != snapshot_token:
         raise streams.StaleSnapshot()
@@ -381,15 +383,19 @@ def buckets(conn, f: TimelineLensFilter, *, snapshot_token, start: datetime, end
         raise ValueError("The end of the span must be after its start.")
     if bucket == "hour" and end - start > timedelta(days=7):
         raise ValueError("Hourly lanes cover at most 7 days; choose days for a longer span.")
-    if bucket == "day" and end - start > timedelta(days=3700):
-        raise ValueError("Daily lanes cover at most ten years.")
+    if bucket == "day" and end - start > timedelta(days=DAY_BUCKET_MAX_DAYS):
+        raise ValueError("Daily lanes cover at most ten years; choose weeks for a longer span.")
+    if bucket == "week" and end - start > timedelta(days=WEEK_BUCKET_MAX_DAYS):
+        raise ValueError("Weekly lanes cover at most a hundred years.")
     zone = streams.resolve_zone(conn, f)
     zn = "UTC" if T.is_utc(zone["name"]) else zone["name"]
     tz = T.tz(zone["name"])
-    step = timedelta(hours=1) if bucket == "hour" else timedelta(days=1)
+    step = {"hour": timedelta(hours=1), "day": timedelta(days=1), "week": timedelta(days=7)}[bucket]
     first = start.astimezone(tz).replace(minute=0, second=0, microsecond=0, tzinfo=None)
-    if bucket == "day":
+    if bucket in ("day", "week"):
         first = first.replace(hour=0)
+    if bucket == "week":  # date_trunc('week') starts weeks on Monday
+        first = first - timedelta(days=first.weekday())
     walls = []
     w = first
     while w.replace(tzinfo=tz) < end:
@@ -423,12 +429,13 @@ def buckets(conn, f: TimelineLensFilter, *, snapshot_token, start: datetime, end
             s = wall.replace(tzinfo=tz).astimezone(timezone.utc)
             e = (wall + step).replace(tzinfo=tz).astimezone(timezone.utc)
             n = counts.get(k, {}).get(wall, 0)
-            hours = []
-            h = s.replace(minute=0, second=0, microsecond=0)
-            while h < e:
-                hours.append(h)
-                h += timedelta(hours=1)
-            no_data = bool(gaps) and n == 0 and all(h in gaps for h in hours)
+            no_data = False
+            if gaps and n == 0:  # every hour of the bucket in a no-data period
+                h = s.replace(minute=0, second=0, microsecond=0)
+                no_data = True
+                while h < e and no_data:
+                    no_data = h in gaps
+                    h += timedelta(hours=1)
             bs.append({"start": s.isoformat(), "wall": wall.isoformat(), "count": n, "no_data": no_data})
         out.append({"key": k, "label": labels.get(k, k), "buckets": bs})
     return {"case_id": f.case_id, "bucket": bucket, "zone": zone["name"], "lanes": out,

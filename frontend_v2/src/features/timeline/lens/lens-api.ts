@@ -29,7 +29,7 @@ export type LensIndex = z.infer<typeof LensIndexSchema>
 
 export const BucketsSchema = z.object({
   case_id: z.string(),
-  bucket: z.enum(["hour", "day"]),
+  bucket: z.enum(["hour", "day", "week"]),
   zone: z.string(),
   lanes: z.array(z.object({ key: z.string(), label: z.string(), buckets: z.array(z.object({ start: z.string(), wall: z.string(), count: z.number(), no_data: z.boolean() })) })),
   no_data_words: z.string(),
@@ -54,7 +54,7 @@ export async function lensWindow(filter: LensFilter, snapshot: string, day: stri
   return StreamWindowSchema.parse(await stale(fetchAPI("/api/phones/timeline/window", { method: "POST", body: { filter, snapshot, day, offset, limit }, read: true })))
 }
 
-export async function lensBuckets(filter: LensFilter, snapshot: string, start: string, end: string, bucket: "hour" | "day"): Promise<LensBuckets> {
+export async function lensBuckets(filter: LensFilter, snapshot: string, start: string, end: string, bucket: "hour" | "day" | "week"): Promise<LensBuckets> {
   return BucketsSchema.parse(await stale(fetchAPI("/api/phones/timeline/buckets", { method: "POST", body: { filter, snapshot, start, end, bucket }, read: true })))
 }
 

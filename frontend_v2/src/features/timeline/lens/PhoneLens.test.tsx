@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { rowText } from "@/features/phones/lib/copy-rows"
 import type { StreamRow } from "@/features/phones/schemas"
 
-const net = vi.hoisted(() => ({ calls: [] as { url: string; body: Record<string, unknown> }[], total: 6, hidden: 4 }))
+const net = vi.hoisted(() => ({ calls: [] as { url: string; body: Record<string, unknown> }[], total: 6, hidden: 4, lastDay: null as string | null }))
 vi.mock("@/lib/api-client", async (orig) => ({
   ...(await orig<object>()),
   fetchAPI: vi.fn(async (url: string, opts: { body: Record<string, unknown> }) => {
@@ -14,7 +14,8 @@ vi.mock("@/lib/api-client", async (orig) => ({
       const shown = kinds.includes("device")
       return {
         case_id: "c", snapshot: "s1", complete: true, limits: [], counts: { events: net.total, entries: net.total },
-        items: [{ day: "2023-03-14", count: net.total, offsets: "UTC", header: "Tuesday, March 14, 2023", zone_label: "UTC" }],
+        items: [{ day: "2023-03-14", count: net.total, offsets: "UTC", header: "Tuesday, March 14, 2023", zone_label: "UTC" },
+          ...(net.lastDay ? [{ day: net.lastDay, count: 1, offsets: "UTC", header: net.lastDay, zone_label: "UTC" }] : [])],
         no_time_count: 0, no_time_position: "last", zone: { name: "UTC", label: "UTC", basis: "utc_default", mode: "case", note: null },
         full_load_rows: 5000, sort: "oldest_first", total: net.total, lanes: [{ key: "p1", label: "C1", count: net.total }],
         hidden: shown ? { count: 0, by_kind: {}, words: null } : { count: net.hidden, by_kind: { device: net.hidden }, words: `${net.hidden} device events and sensor readings hidden.` },
@@ -47,6 +48,7 @@ const wrap = (ui: React.ReactNode) => render(<QueryClientProvider client={new Qu
 beforeEach(() => {
   net.calls = []
   net.total = 6
+  net.lastDay = null
   lists.filters = []
   localStorage.clear()
 })
@@ -84,6 +86,18 @@ describe("Timeline phone lens (03 section 9)", () => {
     expect(await screen.findByTestId("phone-list")).toHaveTextContent("one day from the lanes")
     // the bucket's rows come through the lens with the bucket's span and nothing undated
     await waitFor(() => expect(net.calls.some((c) => c.url.endsWith("/timeline/index") && c.body.from_instant === "2023-03-14T00:00:00+00:00" && c.body.include_no_time === false)).toBe(true))
+  })
+
+  it("an All span over ten years asks for weekly lanes, which the server answers, not daily lanes it refuses", async () => {
+    net.lastDay = "2036-11-30"
+    wrap(<PhoneLens caseId="c" caseName="Synthetic case" />)
+    await screen.findByText("6 phone entries")
+    fireEvent.click(screen.getByRole("button", { name: "Lanes" }))
+    await screen.findByRole("region", { name: "Lane: C1" })
+    const asked = net.calls.filter((c) => c.url.endsWith("/timeline/buckets")).map((c) => c.body.bucket)
+    expect(asked).toEqual(["week"])
+    fireEvent.click(screen.getByRole("button", { name: "Month" }))
+    await waitFor(() => expect(net.calls.filter((c) => c.url.endsWith("/timeline/buckets")).at(-1)!.body.bucket).toBe("day"))
   })
 
   it("copies a lens record row and a message row through the one copy format", () => {

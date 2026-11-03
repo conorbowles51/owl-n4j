@@ -186,3 +186,44 @@ def test_lane_buckets_are_whole_days_in_the_display_zone_and_equal_the_days_list
         assert sum(days.values()) == 3
         # no hourly rollup built for this phone: no day is claimed to have no data
         assert not any(b["no_data"] for b in out["lanes"][0]["buckets"])
+
+
+def test_an_all_span_over_ten_years_is_drawn_in_weeks_not_refused():
+    """A phone whose entries run from 2017 to a calendar entry in 2036 (a live case has one) gives an "All" span of
+    about 7,000 days. Daily lanes stop at ten years, so the screen asks for weeks; weekly lanes start on Monday in the
+    display zone and count every entry once."""
+    from services.phone import timeline_lens
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            ext, _ = phone(c, case, device_zone="America/New_York", events=[
+                _msg(at(2017, 8, 30, 18), ANA, [OWNER]),
+                _msg(at(2017, 8, 31, 18), OWNER, [ANA]),
+                _msg(at(2022, 12, 5, 1), BEN, [OWNER], thread="u")])   # 8 PM on Sunday 4 December in New York
+            _entry(c, case, ext, 100, "CalendarEntry", at(2036, 11, 30, 23))
+        with engine.connect() as c:
+            f = timeline_lens.TimelineLensFilter.model_validate({"case_id": str(case),
+                                                                 "lens_kinds": list(timeline_lens.KIND_WORDS)})
+            idx = timeline_lens.index(c, f)
+            start, end = datetime(2017, 8, 29, tzinfo=timezone.utc), datetime(2036, 12, 2, tzinfo=timezone.utc)
+            with pytest.raises(ValueError, match="at most ten years"):
+                timeline_lens.buckets(c, f, snapshot_token=idx["snapshot"], start=start, end=end, bucket="day")
+            out = timeline_lens.buckets(c, f, snapshot_token=idx["snapshot"], start=start, end=end, bucket="week")
+            with pytest.raises(ValueError, match="at most a hundred years"):
+                timeline_lens.buckets(c, f, snapshot_token=idx["snapshot"], start=start,
+                                      end=start + timedelta(days=36601), bucket="week")
+    assert out["bucket"] == "week"
+    [lane] = out["lanes"]
+    walls = [b["wall"] for b in lane["buckets"]]
+    assert all(datetime.fromisoformat(w).weekday() == 0 and w.endswith("T00:00:00") for w in walls)
+    assert walls == sorted(walls) and len(walls) == len(set(walls))
+    counts = {b["wall"][:10]: b["count"] for b in lane["buckets"] if b["count"]}
+    assert counts == {"2017-08-28": 2, "2022-11-28": 1, "2036-11-24": 1}
+    assert sum(counts.values()) == idx["total"] == 4
+
+
+def test_the_week_bucket_is_accepted_by_the_lanes_route():
+    from routers.phones import LensBucketsBody
+    body = LensBucketsBody.model_validate({"filter": {}, "snapshot": "s", "start": "2017-08-29T00:00:00Z",
+                                           "end": "2036-12-02T00:00:00Z", "bucket": "week"})
+    assert body.bucket == "week"

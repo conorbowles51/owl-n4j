@@ -858,7 +858,7 @@ class LensBucketsBody(BaseModel):
     snapshot: str = Field(min_length=1, max_length=64)
     start: datetime
     end: datetime
-    bucket: Literal["hour", "day"] = "day"
+    bucket: Literal["hour", "day", "week"] = "day"
 
 
 @router.post("/timeline/buckets")
