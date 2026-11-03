@@ -280,3 +280,67 @@ def test_one_deletion_against_a_zero_baseline_is_not_selective_clearing(engine):
     assert [(s["measures"]["phone_label"], s["measures"]["thread_key"].rsplit(":", 1)[-1]) for s in sel] == [
         ("C2", "all")]
     assert sel[0]["measures"]["baseline_share"] == 0.006
+
+
+# ---- 19.S6-c: holes confirmed by the counterpart phone (approach 2's matches) ------------------------------------
+
+X_OWN, Y_OWN, Z_OWN = "phone:+12025550100", "phone:+12025550111", "phone:+12025550122"
+
+
+def _between(day, body, sender, owner, deleted="Intact", thread="xy"):
+    other = Y_OWN if sender == X_OWN else X_OWN
+    return dict(kind="message", instant=at(2023, 1, day, 12), body=body, app="WhatsApp", thread=thread,
+                deleted_state=deleted, direction="outgoing" if sender == owner else "incoming",
+                parties=[(sender, "sender", sender == owner, None, None), (other, "recipient", other == owner, None,
+                                                                            None)])
+
+
+def _counterpart_case(engine, y_in_gap):
+    shared = [(1, "first synthetic note here", X_OWN), (2, "second synthetic note here", Y_OWN),
+              (3, "third synthetic note here", X_OWN), (30, "thirtieth synthetic note", Y_OWN),
+              (31, "thirty first synthetic note", X_OWN)]
+    gap = [(10, "tenth day synthetic note", Y_OWN), (15, "fifteenth day synthetic note", Y_OWN)]
+    x_events = [_between(d, b, s, X_OWN) for d, b, s in shared]
+    x_events.append(_between(10, "tenth day synthetic note", Y_OWN, X_OWN, deleted="Deleted"))  # deleted on X
+    x_events += [dict(kind="message", instant=at(2023, 1, d, 9), body="other chat %d" % d, app="WhatsApp",
+                      thread="other", direction="incoming",
+                      parties=[(Z_OWN, "sender", False, None, None), (X_OWN, "recipient", True, None, None)])
+                 for d in (12, 14)]   # the app records on X during the gap (19.S6-b)
+    y_events = [_between(d, b, s, Y_OWN, thread="yx") for d, b, s in shared]
+    if y_in_gap:
+        y_events += [_between(d, b, s, Y_OWN, thread="yx") for d, b, s in gap]
+    with engine.begin() as c:
+        case = make_case(c)
+        x, _ = phone(c, case, label="C1", owner=X_OWN, events=x_events)
+        phone(c, case, label="C2", owner=Y_OWN, events=y_events)
+    return case, str(x)
+
+
+@needs_template
+def test_hole_confirmed_by_counterpart_cites_the_other_phones_messages_in_the_gap(engine):
+    case, x = _counterpart_case(engine, y_in_gap=True)
+    with engine.connect() as c:
+        res, counts = D.analyse(c, case, PARAMS)
+    holes = [r for r in res if r["kind"] in ("hole", "hole_confirmed_by_counterpart") and
+             r["measures"]["phone_label"] == "C1"]
+    assert [r["kind"] for r in holes] == ["hole_confirmed_by_counterpart"]
+    h = holes[0]
+    assert h["strength"] == "confirmed_by_counterpart"
+    assert h["measures"]["counterpart_messages_in_gap"] == 2 and h["measures"]["counterpart_phones"] == ["C2"]
+    assert h["measures"]["counterpart_absent_here"] == 1 and h["measures"]["counterpart_deleted_here"] == 1
+    sup = [d for d in h["directions"]["supports"] if d["code"] == "counterpart_copy_in_gap"]
+    assert len(sup) == 1 and len(sup[0]["locators"]) == 2
+    # the result rests on the same two bounding records as an unconfirmed hole: a decision carries over
+    assert [r["role"] for r in h["records"]] == ["before_gap", "after_gap"]
+    assert counts["holes_confirmed_by_counterpart"] == 1
+    assert D.VERSION == "3.3"
+
+
+@needs_template
+def test_hole_without_a_counterpart_copy_stays_unconfirmed(engine):
+    case, x = _counterpart_case(engine, y_in_gap=False)
+    with engine.connect() as c:
+        res, _ = D.analyse(c, case, PARAMS)
+    holes = [r for r in res if r["kind"] in ("hole", "hole_confirmed_by_counterpart") and
+             r["measures"]["phone_label"] == "C1"]
+    assert [(r["kind"], r["strength"]) for r in holes] == [("hole", "unconfirmed")]

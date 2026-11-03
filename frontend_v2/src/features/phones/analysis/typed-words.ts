@@ -11,6 +11,7 @@ export const TERM_WORDS: Record<string, string> = {
   phone_number: "a phone number in the case",
   account_ending: "an account ending in the financial records",
   financial_name: "an account holder or counterparty in the financial records",
+  investigator_term: "a case term or a keyword list term",
 }
 
 type M = Record<string, unknown>

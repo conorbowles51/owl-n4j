@@ -1,4 +1,5 @@
 import { CaseworkHistory } from "./CaseworkHistory"
+import { TheoryKeywordLists } from "@/features/search/components/KeywordListsPage"
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { PhoneLinkDetail } from "@/features/phones/PhoneLinkDetail"
@@ -443,6 +444,10 @@ export function CaseworkDetailSheet({
                       </p>
                     </section>
                   )}
+
+                {entry.entry_type === "theory" && !entry.deleted_at ? (
+                  <TheoryKeywordLists caseId={caseId} theoryId={entry.id} />
+                ) : null}
 
                 {entry.entry_type === "theory" && !entry.deleted_at ? (
                   <WorkspaceAIPanel

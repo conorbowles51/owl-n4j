@@ -30,7 +30,7 @@ from services.phone_analysis import fields as FV
 from services.phone_analysis import vocabulary as V
 
 CODE = "intent"
-VERSION = "9.1"
+VERSION = "9.2"  # 9.2: the vocabulary takes investigator terms (case terms and keyword lists)
 PARAMETERS: dict = {}
 KINDS = ("search_hit", "page_hit")
 SUPPORTS = ("vocabulary_match", "searched_at", "last_visited")

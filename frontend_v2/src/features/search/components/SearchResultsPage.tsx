@@ -16,8 +16,10 @@ export function SearchResultsPage() {
   const q = params.get("q") ?? ""
   const group = params.get("group") ?? "documents"
   const exact = params.get("exact") === "1"
+  // a keyword list's total opens the hits of one phone (03 section 11.2)
+  const phones = (params.get("phones") ?? "").split(",").filter(Boolean)
   const res = useQuery({
-    queryKey: ["case-search-group", caseId, q, group, exact],
+    queryKey: ["case-search-group", caseId, q, group, exact, phones.join(",")],
     enabled: !!caseId && !!q,
     retry: false,
     queryFn: async ({ signal }) => {
@@ -27,7 +29,7 @@ export function SearchResultsPage() {
       let note: string | undefined
       let limits: string[] = []
       do {
-        const page = await searchGroup(caseId, q, group, cursor, exact, signal)
+        const page = await searchGroup(caseId, q, group, cursor, exact, signal, phones)
         items.push(...page.items)
         total = page.total
         note = page.note
@@ -50,6 +52,7 @@ export function SearchResultsPage() {
           <p role="status" className="text-sm">
             {res.data.total.toLocaleString("en-US")} {res.data.total === 1 ? "match" : "matches"}
             {exact ? ", exact characters" : ""}
+            {phones.length ? `, on ${phones.length === 1 ? "one phone" : `${phones.length} phones`}` : ""}
           </p>
           {res.data.limits.map((m) => (
             <p key={m} role="alert" className="text-xs">

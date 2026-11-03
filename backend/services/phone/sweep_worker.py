@@ -45,6 +45,8 @@ def main() -> int:
     thread_text.install()  # conversations as searchable text (9.7)
     from services.search import document_folds
     document_folds.install()  # documents folded for Loupe-wide search, 20 s per pass (03 section 11.3)
+    from services.search import keyword_lists
+    keyword_lists.install()  # saved keyword lists run again on every phone whose reading changed (03 section 11.2)
     from services.phone.exports import jobs as exports
     exports.install()  # queued phone exports are drawn after each pass, one at a time (03 section 12.2)
     from services.phone import derive

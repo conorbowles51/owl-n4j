@@ -8,15 +8,21 @@ Terms and their kinds:
 - ``financial_name``: tokens of account holders and of counterparties on the effective ledger rows (the corrected
   value is the one read: ``money_signals._ledger``).
 
+- ``investigator_term``: the terms an investigator adds (10.3 step 1, 12.3 step 1): the case's case terms
+  (Workspace notes tagged ``case term``) and the terms of its saved keyword lists
+  (``services.search.keyword_lists.investigator_terms``).
+
 Not included yet, and stated on every result and measurement that uses the vocabulary (``NOT_INCLUDED``): Loupe's
-case entities (their names live in the graph), ledger amounts in the phone's locale forms, addresses and place
-names, and terms an investigator adds. Leaving them out can only lower the counts.
+case entities (their names live in the graph), ledger amounts in the phone's locale forms, and addresses and place
+names. Leaving them out can only lower the counts.
 
 Matching (10.3 step 2), decided in 19.S10-a: the 03 search fold, then word tokens (letters and digits) of at least
 4 characters, not all digits, equal to a name term; a run of digits equal to an account ending or ending with one
 (a full account number typed); a run of at least 7 digits that an identity's number ends with, or that ends with an
 identity's number (with or without the country code). A 4 to 6 digit run is never a phone-number hit: on C3 any 4
-digits in a web address matched some number (3,523 distinct matches in 5,866 addresses). Values never leave this
+digits in a web address matched some number (3,523 distinct matches in 5,866 addresses). An investigator term (19.S10-c) matches
+when its folded words occur in the folded value as whole words, in order (``cash drop`` matches "Cash-drop at 5" but
+``cash`` does not match "cashew"), so a phrase is matched as one term; a term under 3 letters is not used. Values never leave this
 module; callers get kinds, counts and record ids.
 """
 from __future__ import annotations
@@ -31,12 +37,14 @@ MIN_TOKEN = 4
 MIN_PHONE_RUN = 7
 _WORD = re.compile(r"\w+")
 _DIGITS = re.compile(r"\d{4,}")
-KINDS = ("contact_name", "phone_number", "account_ending", "financial_name")
+KINDS = ("contact_name", "phone_number", "account_ending", "financial_name", "investigator_term")
 KIND_WORDS = {"contact_name": "a name the phones hold for a contact",
               "phone_number": "a phone number in the case",
               "account_ending": "an account ending in the financial records",
-              "financial_name": "an account holder or counterparty in the financial records"}
-NOT_INCLUDED = ("Loupe case entities", "ledger amounts", "addresses and place names", "investigator-added terms")
+              "financial_name": "an account holder or counterparty in the financial records",
+              "investigator_term": "a term an investigator added to the case"}
+NOT_INCLUDED = ("Loupe case entities", "ledger amounts", "addresses and place names")
+MIN_TERM = 3
 
 
 def name_tokens(value) -> set:
@@ -72,7 +80,24 @@ def build(conn, case_id, ledger=True) -> dict:
         for rows in entries.values():
             for e in rows:
                 add(e["counterparty"], "financial_name")
-    return {"names": names, "numbers": numbers, "endings": endings}
+    return {"names": names, "numbers": numbers, "endings": endings, "terms": investigator_terms(conn, case_id)}
+
+
+def investigator_terms(conn, case_id) -> list:
+    """The case's investigator terms, folded, each at least 3 letters, distinct, in a stable order."""
+    from services.search.keyword_lists import investigator_terms as read
+    out = set()
+    for t in read(conn, case_id):
+        f = " ".join(fold(t).split())
+        if len(f.replace(" ", "")) >= MIN_TERM:
+            out.add(f)
+    return sorted(out)
+
+
+def terms_revision(conn, case_id) -> str:
+    """What a run's investigator terms were, for the input manifest: a new or removed term makes a new run."""
+    import hashlib
+    return hashlib.sha256("\n".join(investigator_terms(conn, case_id)).encode()).hexdigest()
 
 
 def _phone_hit(run, numbers) -> bool:
@@ -83,9 +108,15 @@ def matches(value, vocab) -> list:
     """``[(kind, token)]`` for every distinct vocabulary term the value matches (the token is the matched text of
     the value, for the elsewhere search; it never leaves the backend)."""
     out = []
-    for t in sorted(set(_WORD.findall(fold(value or "")))):
+    folded = fold(value or "")
+    for t in sorted(set(_WORD.findall(folded))):
         for kind in sorted(vocab["names"].get(t, ())):
             out.append((kind, t))
+    if vocab.get("terms"):
+        padded = " %s " % " ".join(folded.split())
+        for term in vocab["terms"]:
+            if " %s " % term in padded:
+                out.append(("investigator_term", term))
     for run in sorted(set(_DIGITS.findall(value or ""))):
         if any(run.endswith(e) for e in vocab["endings"]):
             out.append(("account_ending", run))

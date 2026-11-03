@@ -1,10 +1,10 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { failureText } from "@/features/phones/api"
-import { searchCase, type SearchGroup, type SearchHit } from "../api"
+import { saveKeywordList, searchCase, splitTerms, type SearchGroup, type SearchHit } from "../api"
 import { GROUP_KINDS, GROUP_NAMES, rememberQuery, recentQueries } from "../lib/search-words"
 import { conversationsWithText, hitPath } from "../lib/open-hit"
 
@@ -130,6 +130,8 @@ export function SearchDialog({ caseId }: { caseId: string }) {
             />
           </CommandList>
         </Command>
+        {/* outside the command list, so typing and Enter here never move or open a hit */}
+        <SaveKeywordList caseId={caseId} q={q} exact={exact} onOpenLists={() => go(`/cases/${encodeURIComponent(caseId)}/keyword-lists`)} />
       </DialogContent>
     </Dialog>
   )
@@ -231,5 +233,75 @@ export function HitLine({ hit }: { hit: SearchHit }) {
         <span className="text-xs italic text-muted-foreground">{hit.label}</span>
       ) : null}
     </span>
+  )
+}
+
+/**
+ * Save the search as a keyword list (03 section 11.2; 07 J-6 "Saves"): a name and its terms, one per line, the
+ * search's words first. The list runs on every phone in the case, including phones added later.
+ */
+export function SaveKeywordList({ caseId, q, exact, onOpenLists }: { caseId: string; q: string; exact: boolean; onOpenLists: () => void }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState("")
+  const [terms, setTerms] = useState("")
+  const save = useMutation({
+    mutationFn: () => saveKeywordList(caseId, name.trim(), splitTerms(terms), exact),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["keyword-lists", caseId] }),
+  })
+  const start = () => {
+    setName(q)
+    setTerms(q)
+    save.reset()
+    setOpen(true)
+  }
+  return (
+    <div className="border-t px-3 py-2 text-xs">
+      {!open ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <button type="button" className="underline disabled:no-underline disabled:opacity-60" disabled={!q} onClick={start}>
+            Save as keyword list
+          </button>
+          <button type="button" className="underline" onClick={onOpenLists}>
+            Keyword lists
+          </button>
+        </div>
+      ) : save.isSuccess ? (
+        <p role="status">
+          Saved &ldquo;{save.data.name}&rdquo; with {save.data.terms.length} {save.data.terms.length === 1 ? "term" : "terms"}. It runs on every phone in
+          the case within a minute, and again when a phone is added or read again.{" "}
+          <button type="button" className="underline" onClick={onOpenLists}>
+            Open keyword lists
+          </button>
+        </p>
+      ) : (
+        <form
+          className="flex flex-col gap-1.5"
+          onSubmit={(e) => {
+            e.preventDefault()
+            save.mutate()
+          }}
+        >
+          <label className="flex flex-col gap-0.5">
+            Name
+            <input className="rounded border px-1.5 py-1 text-sm" value={name} maxLength={240} onChange={(e) => setName(e.target.value)} aria-label="Keyword list name" />
+          </label>
+          <label className="flex flex-col gap-0.5">
+            Terms, one per line
+            <textarea className="rounded border px-1.5 py-1 text-sm" rows={3} value={terms} onChange={(e) => setTerms(e.target.value)} aria-label="Keyword list terms" />
+          </label>
+          {exact && <p>The terms match exact characters, as this search does.</p>}
+          {save.isError && <p role="alert">{failureText(save.error, "The keyword list could not be saved.")}</p>}
+          <div className="flex gap-2">
+            <button type="submit" className="rounded border px-2 py-1" disabled={save.isPending || !name.trim() || !splitTerms(terms).length}>
+              {save.isPending ? "Saving" : "Save list"}
+            </button>
+            <button type="button" className="px-2 py-1" onClick={() => setOpen(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
   )
 }

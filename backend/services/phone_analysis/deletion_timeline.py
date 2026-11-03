@@ -24,8 +24,14 @@ Decisions taken here (05 section 19, rows 19.S6-a to 19.S6-c):
   phone holds messages of the same app in other conversations inside the gap (the app was recording); a gap during
   which the app recorded nothing at all on the phone is that app's no-data period, not a hole. Reverse if 04 gains a
   per-app band.
-- 19.S6-c, ``hole_confirmed_by_counterpart`` needs approach 2's matches; approach 2 is not built (its gate is
-  measured in 05 5.6), so holes are reported unconfirmed and the code is not emitted. Reverse when approach 2 ships.
+- 19.S6-c, ``hole_confirmed_by_counterpart`` (6.3 step 4) rests on approach 2's matching (``message_reconciliation``,
+  run here with its default parameters over the same phones): a conversation on phone P is linked to a conversation
+  on phone Q when at least one message of each is a strong match (``matched_strong``, as the approach 2 gate counts,
+  19.S5-j) of the other. A hole in P's conversation is confirmed when Q holds, in a linked conversation, a message
+  inside the gap whose copy on P is missing or deleted. The counterpart messages are cited in the support's locators
+  (up to 20, the full count in ``measures``); the result rests on the same two bounding records as an unconfirmed
+  hole, so a person's decision on it carries over. Reverse if a reviewed sample shows strong links joining
+  conversations that are not the same.
 """
 from __future__ import annotations
 
@@ -40,17 +46,18 @@ from services.phone import ids
 from services.phone_analysis import fields as FV
 
 CODE = "deletion_timeline"
-VERSION = "3.2"
+VERSION = "3.3"  # 3.3: holes confirmed by the counterpart phone (19.S6-c)
 PARAMETERS = {
     "clearing_min_messages": {"default": 20, "min": 5, "max": 1000},
     "clearing_q": {"default": 0.05, "min": 0.001, "max": 0.2},
     "hole_min_days": {"default": 7, "min": 1, "max": 365},
 }
-KINDS = ("deleted_record", "referenced_message_absent", "selective_clearing", "hole", "concealment_app",
+KINDS = ("deleted_record", "referenced_message_absent", "selective_clearing", "hole", "hole_confirmed_by_counterpart",
+         "concealment_app",
          "app_removed", "wipe", "power_off", "scrambled_messages")
 SUPPORTS = ("deleted_state_recorded", "date_deleted_recorded", "deletion_reason_recorded", "reference_on_phone",
             "binomial_significant", "bounded_by_intact", "app_recording_in_gap", "category_recorded",
-            "event_recorded")
+            "event_recorded", "counterpart_copy_in_gap")
 UNDERCUTS = ("bounded_by_extraction_only", "auto_delete_setting", "view_once", "carving_partial",
              "decoder_differs_by_app", "selective_extraction", "no_data_period", "deleted_or_carved",
              "reference_id_local", "wipe_scope_unknown", "explained_excluded", "time_not_recorded",
@@ -217,7 +224,7 @@ def _rec(ext, uid, role, field_path=None):
     return {"extraction_id": ext, "record_uid": uid, "field_path": field_path, "role": role}
 
 
-def analyse_phone(conn, ext, label, params, counts) -> list:
+def analyse_phone(conn, ext, label, params, counts, counterpart=None) -> list:
     out = []
     start = _extraction_start(conn, ext)
     msgs = _messages(conn, ext)
@@ -372,16 +379,34 @@ def analyse_phone(conn, ext, label, params, counts) -> list:
             if not elsewhere:
                 counts["gaps_without_app_data"] += 1
                 continue
-            counts["holes"] += 1
+            copies = [c for c in (counterpart or {}).get((ext, key[1]), ()) if a < c["t"] < b]
+            measures = {"phone_label": label, "app": key[0], "thread_key": key[1], "gap_start": a, "gap_end": b,
+                        "gap_days": round((b - a).total_seconds() / 86400, 2),
+                        "app_messages_elsewhere_in_gap": elsewhere}
+            supports = [_d("bounded_by_intact", "Intact messages sit on both sides of the gap.",
+                           [uid_at[a], uid_at[b]]),
+                        _d("app_recording_in_gap", "The same app holds %d messages in other conversations on this "
+                           "phone during the gap." % elsewhere)]
+            if copies:
+                counts["holes_confirmed_by_counterpart"] += 1
+                names = sorted({c["phone_label"] for c in copies})
+                absent = sum(1 for c in copies if not c["deleted_here"])
+                measures.update(counterpart_messages_in_gap=len(copies), counterpart_phones=names,
+                                counterpart_absent_here=absent, counterpart_deleted_here=len(copies) - absent,
+                                counterpart_linked=min(len(copies), COUNTERPART_LINKS))
+                supports.append(_d("counterpart_copy_in_gap", "%s %s %d %s of this conversation inside the gap: %d "
+                                   "not on this phone, %d deleted here.%s" % (
+                                       " and ".join(names), "holds" if len(names) == 1 else "hold", len(copies),
+                                       "message" if len(copies) == 1 else "messages", absent, len(copies) - absent,
+                                       "" if len(copies) <= COUNTERPART_LINKS else " %d of them are linked."
+                                       % COUNTERPART_LINKS), [c["uid"] for c in copies[:COUNTERPART_LINKS]]))
+            else:
+                counts["holes"] += 1
             out.append({
-                "kind": "hole", "strength": "unconfirmed",
-                "measures": {"phone_label": label, "app": key[0], "thread_key": key[1], "gap_start": a, "gap_end": b,
-                             "gap_days": round((b - a).total_seconds() / 86400, 2),
-                             "app_messages_elsewhere_in_gap": elsewhere},
-                "directions": {"supports": [_d("bounded_by_intact", "Intact messages sit on both sides of the gap.",
-                                               [uid_at[a], uid_at[b]]),
-                                            _d("app_recording_in_gap", "The same app holds %d messages in other "
-                                               "conversations on this phone during the gap." % elsewhere)],
+                "kind": "hole_confirmed_by_counterpart" if copies else "hole",
+                "strength": "confirmed_by_counterpart" if copies else "unconfirmed",
+                "measures": measures,
+                "directions": {"supports": supports,
                                "undercuts": [_d("no_data_period", "A quiet period in a conversation is not by itself "
                                                 "a deletion; no message has to have existed.")]},
                 "period_start": a, "period_end": b,
@@ -460,17 +485,76 @@ def analyse_phone(conn, ext, label, params, counts) -> list:
     return out
 
 
+COUNTERPART_LINKS = 20
+
+
+def counterpart_copies(conn, case_id, phones) -> dict:
+    """``{(extraction_id, thread_key): [{"t", "uid", "extraction_id", "phone_label", "deleted_here"}]}``: for each
+    conversation, the messages another phone holds in a conversation linked to it by approach 2's strong matches
+    whose copy on this phone is missing or deleted (19.S6-c), in time order."""
+    from itertools import combinations
+
+    from services.phone_analysis import message_reconciliation as R
+    if len(phones) < 2:
+        return {}
+    params = {k: v["default"] for k, v in R.PARAMETERS.items()}
+    people = R._people(conn, case_id)
+    data = {e: R.load_phone(conn, e, people) for e in phones}
+    owners = {e: R._owners(conn, e, people) for e in phones}
+    devices = {e: R.device_ids(conn, e) for e in phones}
+    out = defaultdict(list)
+    for x, y in combinations(sorted(phones), 2):
+        px, py = data[x], data[y]
+        if R.same_device(devices[x], devices[y]) or not R.candidate_pair(px, py, owners[x], owners[y]):
+            continue
+        res = R.match_pair(px, py, owners[x], owners[y], params)
+        links = defaultdict(set)   # (side, thread) -> threads on the other side
+        copy_of = ({}, {})         # message index on one side -> its matched index on the other
+        tied = (set(), set())      # messages with two equally close copies: neither side is said to lack them
+        for ties in res["ambiguous"]:
+            for c in ties:
+                tied[0].add(c[1])
+                tied[1].add(c[2])
+        for c in res["matched"]:
+            i, j = c[1], c[2]
+            copy_of[0][i], copy_of[1][j] = j, i
+            if c[3] == "matched_strong" and px["msgs"][i]["thread"] and py["msgs"][j]["thread"]:
+                links[(0, px["msgs"][i]["thread"])].add(py["msgs"][j]["thread"])
+                links[(1, py["msgs"][j]["thread"])].add(px["msgs"][i]["thread"])
+        for side, (here, there, ph, pt) in enumerate(((x, y, px, py), (y, x, py, px))):
+            theirs = copy_of[1 - side]    # there-index -> here-index
+            by_thread = defaultdict(list)
+            for k, m in enumerate(pt["msgs"]):
+                by_thread[m["thread"]].append(k)
+            for (s_, thread), others in links.items():
+                if s_ != side:
+                    continue
+                for th in sorted(others, key=str):
+                    for k in by_thread.get(th, ()):
+                        m = pt["msgs"][k]
+                        if m["deleted"] or k in tied[1 - side]:
+                            continue
+                        h = theirs.get(k)
+                        if h is None or ph["msgs"][h]["deleted"]:
+                            out[(here, thread)].append({"t": m["t"], "uid": m["uid"], "extraction_id": there,
+                                                        "phone_label": phones[there], "deleted_here": h is not None})
+    for v in out.values():
+        v.sort(key=lambda c: (c["t"], c["uid"]))
+    return dict(out)
+
+
 def analyse(conn, case_id, params, ctx=None) -> tuple:
     counts = defaultdict(int)
     counts["by_explanation"] = defaultdict(int)
     phones = FV.active_phones(conn, case_id)
+    counterpart = counterpart_copies(conn, case_id, phones)
     results = []
     for i, (ext, label) in enumerate(phones.items()):
         if ctx is not None:
             ctx.progress(i, len(phones), label)
             if ctx.cancelled():
                 break
-        results.extend(analyse_phone(conn, ext, label, params, counts))
+        results.extend(analyse_phone(conn, ext, label, params, counts, counterpart))
     if ctx is not None:
         ctx.progress(len(phones), len(phones))
     counts["by_explanation"] = dict(counts["by_explanation"])

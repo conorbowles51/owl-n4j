@@ -178,7 +178,7 @@ def load_phone(conn, ext, people) -> dict:
         msgs.append({"uid": r["uid"], "key": key, "short": bool(body) and len(body) < MIN_BODY,
                      "family": family(r["app"], types.get(r["uid"])), "t": r["sort_instant"],
                      "deleted": r["deleted_state"] in DELETED, "direction": r["direction"],
-                     "sender": p["sender"], "sender_owner": p["sender_owner"],
+                     "sender": p["sender"], "sender_owner": p["sender_owner"], "thread": r["thread_key"],
                      "recipients": frozenset(p["recipients"] | threads.get(r["thread_key"], set()))})
     occ = Counter(m["key"] for m in msgs)
     fam_range = {}

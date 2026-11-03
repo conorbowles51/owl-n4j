@@ -12,7 +12,7 @@ export const WHAT_IT_DOES =
   "For each phone: the keyboard's learned words and the autofill values that match names, phone numbers, account endings, account holders or counterparties already in the case, and whether the same word occurs in the phone's messages, emails, notes, searches or calendar. It does not show who typed a word or when a learned word was typed."
 
 export const NOT_INCLUDED =
-  "Not compared yet: names of people and companies added to the case by hand, amounts from the financial records, addresses and places, and words you add yourself."
+  "Also compared: the case terms and the terms of the case's keyword lists. Not compared yet: names of people and companies added to the case by hand, amounts from the financial records, and addresses and places."
 
 export default function TypedWordsPage() {
   const { id: caseId = "" } = useParams()

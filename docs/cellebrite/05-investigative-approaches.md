@@ -950,6 +950,7 @@ for, and how these sit against key dates set by the investigator.
      the phone's data-availability band for app A (04). Holes with a counterpart copy inside them (approach
      2) are `hole_confirmed_by_counterpart`.
    - Result kinds: `selective_clearing` when BH-significant with n_c ≥ 20; `hole`; `hole_confirmed_by_counterpart`.
+     Built in `deletion_timeline` 3.3 (19.S6-c).
    - Explained deletions (step 2) are excluded from `deleted_c` and reported alongside. Reasoning: a
      conversation with disappearing messages on would otherwise always score as selectively cleared.
 5. **Concealment context.** Install, purchase or deletion dates of apps in the concealment-capable categories,
@@ -1308,7 +1309,9 @@ included, so the counts are a lower bound. The C9 phones: 639 learned words and 
 hits, 0 not found elsewhere. Gate: **pass** (37, 10 needed). **Built (`cb-approaches`, 05-S10, `typed_words`
 version 7.1, screen "Typed words").** 10.3 steps 1 to 4 with the vocabulary above (`vocabulary.py`); 10.8 tests 1 to 3
 in `test_phone_analysis_typed_intent.py`. Results carry the kind of term matched and the masked value; the value is
-seen through the record's Reveal, which is logged (3.8). Not built yet: the vocabulary parts listed as not included.
+seen through the record's Reveal, which is logged (3.8). Investigator-added terms (the case terms and the case's
+keyword-list terms, 19.S10-c) are built in `typed_words` 7.2 (`cb-keywords`). Not built yet: Loupe case entities,
+ledger amounts, and addresses and place names.
 
 ### 10.7 Dependencies
 
@@ -1457,7 +1460,8 @@ distinct terms, 17 of them matching fewer than 3 records (specific terms, 20 hit
 counted as a phone-number hit, 5,866 C3 addresses matched 3,523 distinct numbers. Gate: **pass** (399 and 57, 10
 needed; 20 on specific terms). **Built (`cb-approaches`, 05-S12, `intent` version 9.1, screen "Searches and
 pages").** 12.3 steps 1 to 3 with the vocabulary of 10.3; 12.8 tests 1 and 2 in `test_phone_analysis_typed_intent.py`
-(server) and `TypedIntentPages.test.tsx` (screen). Investigator-added terms are not built yet.
+(server) and `TypedIntentPages.test.tsx` (screen). Investigator-added terms are built in `intent` 9.2
+(`cb-keywords`, 19.S10-c).
 
 ### 12.7 Dependencies
 
@@ -2251,7 +2255,8 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | 19.S5-g Not computed yet: the other phone's gap in that conversation (approach 3 holes) and leaving a group before the time | ChatActivity names a participant, not who left (19.S7-b) | a reviewed reading of who left |
 | 19.S6-a Hole threshold: a gap is compared with the 99th percentile of the conversation's other gaps (leave one out) | with fewer than 100 gaps the nearest-rank 99th percentile is the largest gap itself, so no gap could exceed it | a corpus run shows leave-one-out marking more than 5 percent of conversations with 20 or more messages |
 | 19.S6-b "Inside the availability band for app A" (6.3 step 4): a gap is a hole only when the phone holds messages of the same app in other conversations inside the gap | 04's observed bands come from observing streams only (device events, connectivity, places), never from messages, so there is no band per app; a gap in which the app recorded nothing on the phone is that app's no-data period, not a hole | 04 gains a per-app band |
-| 19.S6-c `hole_confirmed_by_counterpart` is not emitted | it needs approach 2's matches, and approach 2 is not built (5.6) | approach 2 ships |
+| 19.S6-c `hole_confirmed_by_counterpart` is emitted from approach 2's matching (`deletion_timeline` 3.3): a conversation is linked to one on another phone when a message of each is a `matched_strong` copy of the other; a hole is confirmed when the other phone holds, in a linked conversation, an intact message inside the gap whose copy here is missing or deleted (ties left out). The other phone's messages are cited in the support (up to 20, the count stated); the result rests on the same two bounding records as an unconfirmed hole, so a decision carries over. Measured read-only (2026-11-03): live, 0 confirmed of 117 holes on 5 cases (the 3 reference cases hold one phone each; the 2 synthetic cases' phones share no matched message); server corpus 10-report case (a2 extracts, conversation read as platform and chat participants), 1 confirmed of 1,950 holes, 5 phone pairs sharing strongly matched conversations; the 3-phone case has no a2 extract | approach 2 shipped (2.3); strong matches only, as its gate (19.S5-j) | a reviewed sample shows strong links joining conversations that are not the same |
+| 19.S10-c Investigator terms (the case's case terms and keyword-list terms, kind `investigator_term`) match when their folded words occur in the folded value as whole words, in order; a term under 3 letters is not used. `typed_words` 7.2 and `intent` 9.2 read them, and the run's input revision includes them, so a kept result stays tied to the run it came from. Measured read-only on the 5 live cases with phones (2026-11-03): with no investigator term, hits identical before and after for both approaches (typed 0/37/37/3/0, intent 0/57/57/399/0, equal digests) | a phrase typed into a search or page title is one term; whole words keep `cash` from matching `cashew` | reviews show phrase hits split across records are missed |
 | 19.S6-d Named-set, TimeSpan and Boolean fields are read from the captured record body (`phone_analysis/fields.py`), never from the text table | the text table holds String fields only (measured on C3: no `Label`, `DeletionReason`, `EventType` or `Categories` rows) | 02 adds those values to a read view |
 | 19.S6-e Key dates are placed beside results by the screen at display time, not stored in results | a key date added later must show without a rerun, and a result's key stays equal across runs | |
 | 19.S6-f When the app's other conversations hold no unexplained deletion, the selective-clearing baseline is 3 divided by their message count (the 95 percent upper bound for zero events), never 0. Context results (concealment app, wipe, power off) rest on the field that makes them | a baseline of 0 makes any one deletion score p = 0; the upper bound keeps a fully cleared conversation significant while one deletion in 20 is not | a reviewed per-app deletion rate replaces the phone baseline |

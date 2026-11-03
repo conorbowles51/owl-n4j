@@ -5,6 +5,7 @@ export const TABS = [
   { kind: "deleted_record", label: "Deleted records" },
   { kind: "selective_clearing", label: "Conversations with more deleted" },
   { kind: "hole", label: "Gaps in a conversation" },
+  { kind: "hole_confirmed_by_counterpart", label: "Gaps the other phone fills" },
   { kind: "referenced_message_absent", label: "Replies to messages not on the phone" },
   { kind: "concealment_app", label: "Hiding and location apps" },
   { kind: "app_removed", label: "Apps removed" },
@@ -47,6 +48,9 @@ export function deletionWords(r: ApproachResult) {
     case "hole":
       return { title: `${m.gap_days} days with no message in one ${m.app || "app"} conversation on ${phone}`,
         line: `From ${at(m.gap_start)} to ${at(m.gap_end)}. The same app recorded ${m.app_messages_elsewhere_in_gap} messages in other conversations meanwhile. A quiet period is not by itself a deletion.` }
+    case "hole_confirmed_by_counterpart":
+      return { title: `${m.gap_days} days with no message in one ${m.app || "app"} conversation on ${phone}, while ${(m.counterpart_phones as string[]).join(" and ")} holds messages of it`,
+        line: `From ${at(m.gap_start)} to ${at(m.gap_end)}. ${(m.counterpart_phones as string[]).join(" and ")} holds ${m.counterpart_messages_in_gap} messages of this conversation inside the gap: ${m.counterpart_absent_here} not on ${phone}, ${m.counterpart_deleted_here} deleted on ${phone}.` }
     case "referenced_message_absent":
       return { title: `A reply on ${phone} refers to a message the phone does not hold`,
         line: m.reply_instant ? `Reply sent ${at(m.reply_instant)}.` : "The reply has no time." }

@@ -28,7 +28,7 @@ from services.phone_analysis import fields as FV
 from services.phone_analysis import vocabulary as V
 
 CODE = "typed_words"
-VERSION = "7.1"
+VERSION = "7.2"  # 7.2: the vocabulary takes investigator terms (case terms and keyword lists)
 PARAMETERS: dict = {}
 KINDS = ("typed_not_in_extraction", "typed_and_present")
 SUPPORTS = ("vocabulary_match", "not_in_extraction", "present_elsewhere", "time_recorded")
@@ -50,7 +50,8 @@ def _d(code, detail, locators=()):
 
 def input_manifest(conn, case_id) -> dict:
     from services.phone_analysis.money_signals import ledger_revision
-    return {"ledger": ledger_revision(conn, case_id), "identities": conn.execute(text(
+    return {"ledger": ledger_revision(conn, case_id), "investigator_terms": V.terms_revision(conn, case_id),
+            "identities": conn.execute(text(
         "SELECT md5(coalesce(string_agg(x, ',' ORDER BY x), '')) FROM (SELECT DISTINCT name AS x FROM pv_identity_name "
         "WHERE case_id = :c UNION SELECT DISTINCT value_normalised FROM pv_identity WHERE case_id = :c) s"),
         {"c": str(case_id)}).scalar()}
@@ -87,6 +88,7 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
     counts["vocabulary_names"] = len(vocab["names"])
     counts["vocabulary_numbers"] = len(vocab["numbers"])
     counts["vocabulary_endings"] = len(vocab["endings"])
+    counts["vocabulary_terms"] = len(vocab["terms"])
     phones = FV.active_phones(conn, case_id)
     out = []
     for i, (ext, label) in enumerate(phones.items()):

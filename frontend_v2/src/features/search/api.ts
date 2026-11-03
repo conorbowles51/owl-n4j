@@ -55,8 +55,73 @@ export async function searchCase(caseId: string, q: string, exact = false, signa
   return SearchSchema.parse(await fetchAPI(`/api/search?${p}`, { signal }))
 }
 
-export async function searchGroup(caseId: string, q: string, group: string, cursor: string | null, exact = false, signal?: AbortSignal) {
+export async function searchGroup(caseId: string, q: string, group: string, cursor: string | null, exact = false, signal?: AbortSignal, phones?: string[]) {
   const p = new URLSearchParams({ case_id: caseId, q, group, exact: String(exact), limit: "200" })
   if (cursor) p.set("cursor", cursor)
+  if (phones?.length) p.set("phones", phones.join(","))
   return GroupPageSchema.parse(await fetchAPI(`/api/search/group?${p}`, { signal }))
+}
+
+/** Saved keyword lists (03 section 11.2; 07 J-6, section 14): a search saved as named terms that runs on every phone
+ * of the case, including phones added later. Totals per phone, term and group are the search's own totals. */
+const RunPhoneSchema = z.object({
+  extraction_id: z.string(),
+  phone_label: z.string(),
+  total: z.number(),
+  terms: z.record(z.string(), z.record(z.string(), z.number())),
+})
+export const KeywordListSchema = z.object({
+  entry_id: z.string(),
+  name: z.string(),
+  terms: z.array(z.string()),
+  exact: z.boolean(),
+  created_by: z.string().nullable(),
+  created_at: z.string().nullable(),
+  last_run_at: z.string().nullable(),
+  state: z.enum(["not_run", "current", "rerun_due", "failed"]),
+  error: z.string().nullable(),
+  theories: z.array(z.object({ id: z.string(), title: z.string().nullable() })),
+  summary: z.string(),
+  run: z
+    .object({
+      phones: z.array(RunPhoneSchema),
+      terms: z.record(z.string(), z.number()),
+      total: z.number(),
+      ran_at: z.string(),
+      groups: z.array(z.string()),
+      group_words: z.record(z.string(), z.string()),
+      not_counted: z.array(z.object({ extraction_id: z.string(), phone_label: z.string(), state: z.string().nullable(), message: z.string() })),
+    })
+    .nullable(),
+})
+export type KeywordList = z.infer<typeof KeywordListSchema>
+const KeywordListsSchema = z.object({ total: z.number(), items: z.array(KeywordListSchema) })
+
+export async function listKeywordLists(caseId: string, theory?: string): Promise<z.infer<typeof KeywordListsSchema>> {
+  const p = new URLSearchParams({ case_id: caseId })
+  if (theory) p.set("theory", theory)
+  return KeywordListsSchema.parse(await fetchAPI(`/api/search/keyword-lists?${p}`))
+}
+
+export async function saveKeywordList(caseId: string, name: string, terms: string[], exact: boolean): Promise<KeywordList> {
+  return KeywordListSchema.parse(
+    await fetchAPI(`/api/search/keyword-lists`, { method: "POST", body: { case_id: caseId, name, terms, exact } }),
+  )
+}
+
+export async function attachKeywordList(caseId: string, entryId: string, theoryId: string): Promise<KeywordList> {
+  return KeywordListSchema.parse(
+    await fetchAPI(`/api/search/keyword-lists/${encodeURIComponent(entryId)}/theories`, {
+      method: "POST",
+      body: { case_id: caseId, theory_id: theoryId },
+    }),
+  )
+}
+
+/** The terms typed in the save box: one per line, or separated by commas. */
+export function splitTerms(typed: string): string[] {
+  return typed
+    .split(/[\n,]/)
+    .map((t) => t.trim())
+    .filter(Boolean)
 }

@@ -116,3 +116,65 @@ def test_intent_times_and_common_terms(engine):
     assert by[a]["measures"]["matched_in"] == ["address"]
     assert any(d["code"] == "address_only" for d in by[a]["directions"]["undercuts"])
     assert counts["distinct_terms"] == 2
+
+
+def test_investigator_terms_match_whole_words_in_order():
+    """19.S10-c: an investigator term matches its folded words as whole words, in order; nothing else changes."""
+    vocab = dict(VOCAB, terms=["cash drop", "harbour"])
+    assert V.matches("Cash-drop at 5", vocab) == [("investigator_term", "cash drop")]
+    assert V.matches("cashew drop", vocab) == []
+    assert V.matches("drop cash", vocab) == []
+    assert V.matches("HARBOUR", vocab) == [("investigator_term", "harbour")]
+    assert V.matches("Zorvath harbour", vocab) == [("contact_name", "zorvath"), ("investigator_term", "harbour")]
+    # with no investigator terms the matches are what they were
+    for value in ("Zorvath!", "acct 99994821", "5550147", "cash drop"):
+        assert V.matches(value, dict(VOCAB, terms=[])) == V.matches(value, VOCAB)
+    assert "investigator-added terms" not in V.NOT_INCLUDED and "investigator_term" in V.KINDS
+
+
+@needs_template
+def test_investigator_terms_from_case_terms_and_keyword_lists_reach_typed_words_and_intent(engine):
+    """05 10.3 step 1 and 12.3 step 1: the case's case terms and keyword-list terms are vocabulary of kind
+    investigator_term; a run with none gives the same hits as before, and adding one adds its hits and a new
+    input revision (a kept result stays tied to the run it came from)."""
+    from sqlalchemy.orm import Session
+
+    from postgres.models.user import User
+    from services.pattern_of_life import key_dates
+    from services.phone_analysis import framework as FW
+    from services.search import keyword_lists as K
+    with engine.begin() as c:
+        case = make_case(c)
+        ext, _ = phone(c, case, contacts={"phone:+12025550199": "Velmora Ashgrove"},
+                       events=[{"instant": at(2023, 1, 5, 10), "direction": "outgoing", "body": "see velmora soon"}])
+        w = record(c, case, ext, 700, "DictionaryWord", texts=[("Word", "brimstead")])
+        w2 = record(c, case, ext, 701, "DictionaryWord", texts=[("Word", "velmora")])
+        s = record(c, case, ext, 702, "SearchedItem", texts=[("Value", "night ferry to brimstead")])
+        for u in (w, w2):
+            _sensitive(c, u)
+    with engine.connect() as c:
+        before_t, _ = T.analyse(c, case, {})
+        before_i, _ = I.analyse(c, case, {})
+        rev0 = FW.sha256(FW.input_manifest(c, case, T))
+    assert {r["records"][0]["record_uid"] for r in before_t} == {w2}
+    assert before_i == []
+    with Session(engine) as db:
+        uid, email = db.execute(text("SELECT u.id, u.email FROM cases k JOIN users u ON u.id = k.owner_user_id "
+                                     "WHERE k.id = :c"), {"c": case}).one()
+        user = User(id=uid, email=email, name="synthetic")
+        key_dates.create(db, case, user, kind="term", label="Place", term="Brimstead")
+        K.create(db, case, user, name="Travel", terms=["night ferry"])
+    with engine.connect() as c:
+        after_t, counts = T.analyse(c, case, {})
+        after_i, _ = I.analyse(c, case, {})
+        rev1 = FW.sha256(FW.input_manifest(c, case, T))
+    by = {r["records"][0]["record_uid"]: r for r in after_t}
+    assert set(by) == {w, w2}
+    assert by[w]["measures"]["term_kinds"] == ["investigator_term"]
+    assert by[w]["kind"] == "typed_and_present" and by[w]["measures"]["elsewhere_records"] == 1  # the search holds it
+    assert "brimstead" not in json.dumps(after_t, default=str).lower()  # 10.8.3: no matched term in a result
+    assert counts["vocabulary_terms"] == 2
+    assert [r["records"][0]["record_uid"] for r in after_i] == [s]
+    assert after_i[0]["measures"]["term_kinds"] == ["investigator_term"] and after_i[0]["measures"]["terms_matched"] == 2
+    assert rev0 != rev1
+    assert T.VERSION == "7.2" and I.VERSION == "9.2"

@@ -87,9 +87,9 @@ describe("Deleted and hidden (AP-1, 05 6.8)", () => {
   })
 
   it("no tab or row wording states a state of mind or uses an em dash (05 3.5)", () => {
-    const kinds = ["deleted_record", "selective_clearing", "hole", "referenced_message_absent", "concealment_app", "app_removed", "wipe", "power_off", "scrambled_messages"]
+    const kinds = ["deleted_record", "selective_clearing", "hole", "hole_confirmed_by_counterpart", "referenced_message_absent", "concealment_app", "app_removed", "wipe", "power_off", "scrambled_messages"]
     expect(TABS.map((t) => t.kind)).toEqual(kinds)
-    const words = kinds.map((k) => deletionWords({ ...DELETED, kind: k, measures: { ...DELETED.measures, categories: ["FakeGPS"], instant: "2023-01-01T00:00:00Z", messages: 3, deleted: 2, share: 0.5, baseline_share: 0.02, p: 0.001, q: 0.01, gap_days: 30, gap_start: "2023-01-01T00:00:00Z", gap_end: "2023-01-31T00:00:00Z", app_messages_elsewhere_in_gap: 4, removed: "2023-02-01T00:00:00Z" } }))
+    const words = kinds.map((k) => deletionWords({ ...DELETED, kind: k, measures: { ...DELETED.measures, categories: ["FakeGPS"], instant: "2023-01-01T00:00:00Z", messages: 3, deleted: 2, share: 0.5, baseline_share: 0.02, p: 0.001, q: 0.01, gap_days: 30, gap_start: "2023-01-01T00:00:00Z", gap_end: "2023-01-31T00:00:00Z", app_messages_elsewhere_in_gap: 4, removed: "2023-02-01T00:00:00Z", counterpart_phones: ["C2"], counterpart_messages_in_gap: 2, counterpart_absent_here: 1, counterpart_deleted_here: 1 } }))
     const text = JSON.stringify(words) + WHAT_IT_DOES + JSON.stringify(TABS)
     expect(text).not.toMatch(/—/)
     expect(text.toLowerCase()).not.toMatch(/intend|wanted to|tried to|knew|deliberat|in order to hide/)
