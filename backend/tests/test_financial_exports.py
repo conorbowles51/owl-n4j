@@ -73,6 +73,7 @@ ALIASED_EXPORTS = {
     "correction_fields": "payment_correction_fields",
     "overview_totals": "summarise_overview",
     "overview_panels": "summarise_overview_panels",
+    "money_between": "money_between_parties",
     "correction_verification": "verify_correction",
     "counterparty_parties": "list_counterparty_parties",
     "ledger_source": "read_ledger_source",

@@ -2366,3 +2366,6 @@ from services.financial.queue_selection import selection_file_ids
 __all__ += ["selection_file_ids"]
 from services.financial.forgotten_batches import close_forgotten_batch
 __all__ += ["close_forgotten_batch"]
+# One answer for money between two parties (agent-ledger B); aliased so the submodule stays the package attribute.
+from services.financial.money_between import money_between as money_between_parties
+__all__ += ["money_between_parties"]
