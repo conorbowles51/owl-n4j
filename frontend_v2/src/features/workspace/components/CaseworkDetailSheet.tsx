@@ -65,6 +65,7 @@ import {
 } from "../hooks/use-casework"
 import { useCurrentCaseworkLinks } from "../hooks/use-current-casework-links"
 import { CaseworkEditor } from "./CaseworkEditor"
+import { EntryPhoneExport } from "./EntryPhoneExport"
 import { RelationshipBadge, ReviewBadge } from "./CaseworkBadges"
 import { WorkspaceAIPanel } from "@/features/workspace-ai/components/WorkspaceAIPanel"
 
@@ -459,6 +460,9 @@ export function CaseworkDetailSheet({
                         Relationship assessments apply only to this entry.
                       </p>
                     </div>
+                    {entry.links.some((link) => ["phone_record", "phone_selection", "phone_thread"].includes(link.target_type)) && (
+                      <EntryPhoneExport caseId={caseId} entryId={entry.id} />
+                    )}
                     <div className="divide-y divide-border">
                       {entry.links.map((link) => {
                         const anchor = anchorLabel(link.source_anchor)

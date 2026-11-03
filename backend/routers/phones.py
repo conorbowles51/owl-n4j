@@ -1454,6 +1454,30 @@ class SelectionBody(BaseModel):
     words: str = Field(min_length=1, max_length=2000)
 
 
+class EntryExportBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    entry_id: UUID
+
+
+@router.post("/exports/entry")
+def prepare_entry_export(body: EntryExportBody, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_db_user)):
+    """A finding, theory or note's phone records frozen as one selection for the export dialog (07 XF-7, CO-12): the
+    filter to draw, the collected count (the export's total) and what of the entry is not in the export. Needs view
+    access, as an export does."""
+    from services.phone import entry_export
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    try:
+        return entry_export.freeze_entry(db, body.case_id, body.entry_id, user)
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    except entry_export.EntryExportError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.post("/selections")
 def freeze_selection(body: SelectionBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
     """Freeze every record the filter matches now as one ``phone_selection`` (07 section 6.1), for Add to… on a whole

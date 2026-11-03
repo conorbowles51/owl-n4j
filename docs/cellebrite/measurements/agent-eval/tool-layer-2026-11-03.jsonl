@@ -1,0 +1,72 @@
+{"id": "Q01", "setting": "all data", "question": "How many messages and calls involve Maria Lopez?", "total_ok": true, "cited_ok": true, "known_total": 8, "stated_total": 8}
+{"id": "Q02", "setting": "all data", "question": "Messages and calls with Maria Lopez on C3 only?", "total_ok": true, "cited_ok": true, "known_total": 6, "stated_total": 6}
+{"id": "Q03", "setting": "all data", "question": "Messages and calls with Maria Lopez on C4 only?", "total_ok": true, "cited_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "Q04", "setting": "all data", "question": "Calls with Maria Lopez?", "total_ok": true, "cited_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "Q05", "setting": "all data", "question": "Messages (not calls) with Maria Lopez?", "total_ok": true, "cited_ok": true, "known_total": 7, "stated_total": 7}
+{"id": "Q06", "setting": "all data", "question": "Messages involving Maria Lopez with include_groups (no change for involving)?", "total_ok": true, "cited_ok": true, "known_total": 8, "stated_total": 8}
+{"id": "Q07", "setting": "all data", "question": "What did Maria Lopez and the phone say on 1 March 2023?", "total_ok": true, "cited_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "Q08", "setting": "all data", "question": "Activity with Maria Lopez from 2 to 4 March 2023?", "total_ok": true, "cited_ok": true, "known_total": 3, "stated_total": 3}
+{"id": "Q09", "setting": "all data", "question": "Anything with Maria Lopez after 7 March 2023?", "total_ok": true, "cited_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "Q10", "setting": "all data", "question": "Anything with Maria Lopez before 2 March 2023?", "total_ok": true, "cited_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "Q11", "setting": "all data", "question": "How many messages and calls involve Ben Synthetic?", "total_ok": true, "cited_ok": true, "known_total": 3, "stated_total": 3}
+{"id": "Q12", "setting": "all data", "question": "Messages with Ben Synthetic mentioning the invoice?", "total_ok": true, "cited_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "Q13", "setting": "all data", "question": "Which messages mention the dock?", "total_ok": true, "cited_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "Q14", "setting": "all data", "question": "Which messages say 'last word'?", "total_ok": true, "cited_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "Q15", "setting": "all data", "question": "Which messages mention a submarine?", "total_ok": true, "cited_ok": true, "known_total": 0, "stated_total": 0}
+{"id": "Q16", "setting": "all data", "question": "Everything on C4?", "total_ok": true, "cited_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "Q17", "setting": "all data", "question": "Everything on C3?", "total_ok": true, "cited_ok": true, "known_total": 9, "stated_total": 9}
+{"id": "Q18", "setting": "all data", "question": "Everything on every phone?", "total_ok": true, "cited_ok": true, "known_total": 11, "stated_total": 11}
+{"id": "Q19", "setting": "all data", "question": "Every call on the phones?", "total_ok": true, "cited_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "Q20", "setting": "all data", "question": "Everything on 3 March 2023?", "total_ok": true, "cited_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "Q21", "setting": "all data", "question": "Messages between Maria Lopez and Ben Synthetic?", "total_ok": true, "cited_ok": true, "known_total": 0, "stated_total": 0}
+{"id": "Q22", "setting": "all data", "question": "First 3 of everything, oldest first?", "total_ok": true, "cited_ok": true, "known_total": 11, "stated_total": 11}
+{"id": "Q23", "setting": "all data", "question": "Everything from the fourth onwards (offset 3, 3 rows)?", "total_ok": true, "cited_ok": true, "known_total": 11, "stated_total": 11}
+{"id": "Q24", "setting": "all data", "question": "Messages involving Cal Group?", "total_ok": true, "cited_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "Q25", "setting": "all data", "question": "Messages between Cal Group and Maria Lopez, direct only?", "total_ok": true, "cited_ok": true, "known_total": 0, "stated_total": 0}
+{"id": "Q25b", "setting": "all data", "question": "Messages between Cal Group and Maria Lopez, group chats included?", "total_ok": true, "cited_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "Q26", "setting": "all data", "question": "Messages with +1 202 555 0143 (by number)?", "total_ok": true, "cited_ok": true, "known_total": 8, "stated_total": 8}
+{"id": "Q27", "setting": "all data", "question": "Contact summary for Maria Lopez: how many in total (groups included)?", "total_ok": true, "cited_ok": true, "known_total": 8, "stated_total": 8}
+{"id": "Q28", "setting": "all data", "question": "Contact summary for Ben Synthetic?", "total_ok": true, "cited_ok": true, "known_total": 3, "stated_total": 3}
+{"id": "Q29", "setting": "all data", "question": "Who is +1 202 555 0188?", "total_ok": true, "cited_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "Q30", "setting": "all data", "question": "Read record e9 in full", "total_ok": true, "cited_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "Q31", "setting": "all data", "question": "Which phones are in this case?", "total_ok": true, "cited_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "Q32", "setting": "all data", "question": "Everything on C9?", "total_ok": true, "cited_ok": true, "known_total": "not_in_case", "stated_total": "not_in_case"}
+{"id": "Q33", "setting": "all data", "question": "Messages with Zed Elsewhere?", "total_ok": true, "cited_ok": true, "known_total": "not_in_case", "stated_total": "not_in_case"}
+{"id": "Q34", "setting": "all data", "question": "Read record z0 (another case's)", "total_ok": true, "cited_ok": true, "known_total": "not_in_case", "stated_total": "not_in_case"}
+{"id": "Q35", "setting": "all data", "question": "Who is +1 202 555 0199 (only in another case)?", "total_ok": true, "cited_ok": true, "known_total": "not_in_case", "stated_total": "not_in_case"}
+{"id": "Q01", "setting": "significant", "question": "How many messages and calls involve Maria Lopez?", "refused": true, "no_records": true}
+{"id": "Q02", "setting": "significant", "question": "Messages and calls with Maria Lopez on C3 only?", "refused": true, "no_records": true}
+{"id": "Q03", "setting": "significant", "question": "Messages and calls with Maria Lopez on C4 only?", "refused": true, "no_records": true}
+{"id": "Q04", "setting": "significant", "question": "Calls with Maria Lopez?", "refused": true, "no_records": true}
+{"id": "Q05", "setting": "significant", "question": "Messages (not calls) with Maria Lopez?", "refused": true, "no_records": true}
+{"id": "Q06", "setting": "significant", "question": "Messages involving Maria Lopez with include_groups (no change for involving)?", "refused": true, "no_records": true}
+{"id": "Q07", "setting": "significant", "question": "What did Maria Lopez and the phone say on 1 March 2023?", "refused": true, "no_records": true}
+{"id": "Q08", "setting": "significant", "question": "Activity with Maria Lopez from 2 to 4 March 2023?", "refused": true, "no_records": true}
+{"id": "Q09", "setting": "significant", "question": "Anything with Maria Lopez after 7 March 2023?", "refused": true, "no_records": true}
+{"id": "Q10", "setting": "significant", "question": "Anything with Maria Lopez before 2 March 2023?", "refused": true, "no_records": true}
+{"id": "Q11", "setting": "significant", "question": "How many messages and calls involve Ben Synthetic?", "refused": true, "no_records": true}
+{"id": "Q12", "setting": "significant", "question": "Messages with Ben Synthetic mentioning the invoice?", "refused": true, "no_records": true}
+{"id": "Q13", "setting": "significant", "question": "Which messages mention the dock?", "refused": true, "no_records": true}
+{"id": "Q14", "setting": "significant", "question": "Which messages say 'last word'?", "refused": true, "no_records": true}
+{"id": "Q15", "setting": "significant", "question": "Which messages mention a submarine?", "refused": true, "no_records": true}
+{"id": "Q16", "setting": "significant", "question": "Everything on C4?", "refused": true, "no_records": true}
+{"id": "Q17", "setting": "significant", "question": "Everything on C3?", "refused": true, "no_records": true}
+{"id": "Q18", "setting": "significant", "question": "Everything on every phone?", "refused": true, "no_records": true}
+{"id": "Q19", "setting": "significant", "question": "Every call on the phones?", "refused": true, "no_records": true}
+{"id": "Q20", "setting": "significant", "question": "Everything on 3 March 2023?", "refused": true, "no_records": true}
+{"id": "Q21", "setting": "significant", "question": "Messages between Maria Lopez and Ben Synthetic?", "refused": true, "no_records": true}
+{"id": "Q22", "setting": "significant", "question": "First 3 of everything, oldest first?", "refused": true, "no_records": true}
+{"id": "Q23", "setting": "significant", "question": "Everything from the fourth onwards (offset 3, 3 rows)?", "refused": true, "no_records": true}
+{"id": "Q24", "setting": "significant", "question": "Messages involving Cal Group?", "refused": true, "no_records": true}
+{"id": "Q25", "setting": "significant", "question": "Messages between Cal Group and Maria Lopez, direct only?", "refused": true, "no_records": true}
+{"id": "Q25b", "setting": "significant", "question": "Messages between Cal Group and Maria Lopez, group chats included?", "refused": true, "no_records": true}
+{"id": "Q26", "setting": "significant", "question": "Messages with +1 202 555 0143 (by number)?", "refused": true, "no_records": true}
+{"id": "Q27", "setting": "significant", "question": "Contact summary for Maria Lopez: how many in total (groups included)?", "refused": true, "no_records": true}
+{"id": "Q28", "setting": "significant", "question": "Contact summary for Ben Synthetic?", "refused": true, "no_records": true}
+{"id": "Q29", "setting": "significant", "question": "Who is +1 202 555 0188?", "refused": true, "no_records": true}
+{"id": "Q30", "setting": "significant", "question": "Read record e9 in full", "refused": true, "no_records": true}
+{"id": "Q31", "setting": "significant", "question": "Which phones are in this case?", "refused": true, "no_records": true}
+{"id": "Q32", "setting": "significant", "question": "Everything on C9?", "refused": true, "no_records": true}
+{"id": "Q33", "setting": "significant", "question": "Messages with Zed Elsewhere?", "refused": true, "no_records": true}
+{"id": "Q34", "setting": "significant", "question": "Read record z0 (another case's)", "refused": true, "no_records": true}
+{"id": "Q35", "setting": "significant", "question": "Who is +1 202 555 0199 (only in another case)?", "refused": true, "no_records": true}

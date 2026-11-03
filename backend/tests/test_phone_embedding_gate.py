@@ -164,3 +164,56 @@ def test_co10_theory_analysis_reads_a_linked_message_in_full_and_cites_its_recor
             assert "existing_supports" in cited[0]["retrieval_roles"]
             assert retrieval["linked_evidence_ids"]
             db.rollback()
+
+
+def test_xf7_search_hit_to_finding_to_export_and_theory_analysis_with_the_same_records():
+    """07 XF-7 (and CO-12): Search hits added to a finding (the Add to… batch path) export with the collected count as
+    the export's total; a theory holding them is read by Workspace AI with every record cited; nothing of another
+    case or another entry comes in, and links that are not messages are named as not exported."""
+    from sqlalchemy.orm import Session
+    from postgres.models.user import User
+    from postgres.models.workspace_entry import WorkspaceEntry
+    from services import workspace_ai_service as W
+    from services import workspace_entry_service as entries
+    from services.phone import entry_export
+    from services.phone.exports import jobs
+    from services.phone import resolvers
+    from services.search import search as S
+    resolvers.register()
+    with fresh_engine() as engine:
+        case, ext = _build(engine)
+        with Session(engine) as db:
+            hits = S.search(db.connection(), case, "cargo", groups=("messages",))["groups"][0]
+            uids = [h["record_uid"] for h in hits["items"]]
+            assert len(uids) == 2
+            owner = db.get(User, db.execute(text("SELECT owner_user_id FROM cases WHERE id = :c"),
+                                            {"c": case}).scalar())
+            made = {}
+            for kind in ("finding", "theory"):
+                eid = uuid.UUID(entries.create_entry(db, case_id=case, current_user=owner, entry_type=kind,
+                                                     title="Cargo on Friday", body="The cargo left on Friday.")["id"])
+                links = [{"target_type": "phone_record", "target_id": u, "target_label": "hit",
+                          "relationship": "supports", "source_anchor": {"origin": "search"}} for u in uids]
+                links.append({"target_type": "phone_identity", "target_id": ANA, "target_label": "Ana",
+                              "relationship": "context", "source_anchor": {}})
+                r = entries.batch_add_entry_links(db, case_id=case, entry_id=eid, current_user=owner, links=links,
+                                                  rationale="Added from Search")
+                assert r["added"] == 3
+                made[kind] = eid
+            out = entry_export.freeze_entry(db, case, made["finding"], owner)
+            assert out["collected"] == 2 and out["sentence"] == "Not in this export: 1 person on the phones."
+            facts = jobs.describe(db.connection(), case, out["filter"])
+            assert facts["total"] == out["collected"] == facts["messages"]
+            created = jobs.create(db.connection(), case_id=case, user_id=owner.id, fmt="pdf", source="finding",
+                                  filter_body=out["filter"], options={"title": "Cargo"})
+            assert created["export_id"]
+            with pytest.raises(jobs.ExportError):
+                jobs.create(db.connection(), case_id=case, user_id=owner.id, fmt="pdf", source="finding",
+                            filter_body={"case_id": str(case)}, options={})
+            with pytest.raises(LookupError):
+                entry_export.freeze_entry(db, uuid.uuid4(), made["finding"], owner)
+            theory = db.get(WorkspaceEntry, made["theory"])
+            sources, _ = W._theory_sources(db, case_id=case, theory=theory)
+            cited = {u for s in sources for u in (s.get("source_anchor") or {}).get("record_uids") or []}
+            assert set(uids) <= cited          # both linked messages share one window; each is cited by its record
+            db.rollback()

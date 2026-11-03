@@ -224,8 +224,14 @@ export type ExportState = z.infer<typeof ExportStateSchema>
 export async function describeExport(caseId: string, filter: StreamFilter) {
   return ExportFactsSchema.parse(await fetchAPI("/api/phones/exports/describe", { method: "POST", body: { case_id: caseId, filter }, read: true }))
 }
-export async function createExport(caseId: string, filter: StreamFilter, options: Record<string, unknown>, format: "pdf" | "rsmf" = "pdf") {
-  return fetchAPI<{ export_id: string }>("/api/phones/exports", { method: "POST", body: { case_id: caseId, format, source: "stream", filter, options } })
+export async function createExport(caseId: string, filter: StreamFilter, options: Record<string, unknown>, format: "pdf" | "rsmf" = "pdf", source: "stream" | "finding" = "stream") {
+  return fetchAPI<{ export_id: string }>("/api/phones/exports", { method: "POST", body: { case_id: caseId, format, source, filter, options } })
+}
+/** A finding, theory or note's phone records frozen as one selection to export (07 XF-7, CO-12): the export's total
+ * is `collected`; `sentence` names what of the entry is not in the export. */
+export async function prepareEntryExport(caseId: string, entryId: string) {
+  return fetchAPI<{ selection_id: string; filter: StreamFilter; collected: number; events: number; words: string; sentence: string | null }>(
+    "/api/phones/exports/entry", { method: "POST", body: { case_id: caseId, entry_id: entryId } })
 }
 export async function getExport(caseId: string, exportId: string) {
   return ExportStateSchema.parse(await fetchAPI(`/api/phones/exports/${encodeURIComponent(exportId)}?case_id=${encodeURIComponent(caseId)}`))

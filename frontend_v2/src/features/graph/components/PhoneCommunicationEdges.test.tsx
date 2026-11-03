@@ -1,10 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom"
 import { describe, expect, it, vi } from "vitest"
 
 /** 07 J-3 (J-3b, Graph start): a communication edge opens Conversations Between A and B with the same count. */
-const api = vi.hoisted(() => ({ getLinkEdges: vi.fn() }))
+const api = vi.hoisted(() => ({ getLinkEdges: vi.fn(), getSettings: vi.fn(), freezeSelection: vi.fn(), getFinancialPresence: vi.fn(async () => ({ has_financial_evidence: true })) }))
 vi.mock("@/features/phones/api", async (orig) => ({ ...(await orig<object>()), ...api }))
 
 import { PhoneCommunicationEdges } from "./PhoneCommunicationEdges"
@@ -59,5 +59,31 @@ describe("communication edges on the Graph", () => {
       </QueryClientProvider></MemoryRouter>,
     )
     expect(container.textContent).toBe("")
+  })
+})
+
+/** CO-1 cell "Graph edges" (07 6.5): Add to… on chosen pairs keeps each pair's Conversations scope, only on request. */
+describe("adding pairs from the Graph", () => {
+  it("keeps a chosen pair as the selection its edge opens, then offers Add to…; nothing is kept on a tick", async () => {
+    api.getLinkEdges.mockResolvedValue({ edges: [] })
+    api.getSettings.mockResolvedValue({ case_id: "case-1", time_zone: null, effective: { name: "UTC", basis: "", note: null }, updated_at: null, updated_by: null })
+    api.freezeSelection.mockResolvedValue({ id: "sel-1", record_count: 5, event_count: 4, words: "Messages and calls between +1 202-555-0143 and @synthetic_ben" })
+    render(
+      <MemoryRouter><QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <PhoneCommunicationEdges caseId="case-1" nodes={nodes} edges={edges} />
+      </QueryClientProvider></MemoryRouter>,
+    )
+    expect(api.getSettings).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("checkbox", { name: "Choose +1 202-555-0143 and @synthetic_ben to add" }))
+    expect(api.freezeSelection).not.toHaveBeenCalled()
+    const keep = await screen.findByRole("button", { name: "Add this pair's messages to…" })
+    await waitFor(() => expect(keep).not.toBeDisabled())
+    fireEvent.click(keep)
+    await waitFor(() => expect(api.freezeSelection).toHaveBeenCalledTimes(1))
+    const [filter, words] = api.freezeSelection.mock.calls[0]
+    expect(filter).toMatchObject({ case_id: "case-1", participants: [A, B], participant_mode: "between", group_scope: "direct" })
+    expect(filter.collapse_copies).toBeUndefined()   // copies collapsed, as the edge counts them
+    expect(words).toBe("Messages and calls between +1 202-555-0143 and @synthetic_ben")
+    expect(await screen.findByRole("button", { name: /Add to/ })).toBeInTheDocument()
   })
 })

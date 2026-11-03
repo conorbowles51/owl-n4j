@@ -227,7 +227,9 @@ class PhoneMessagesArgs(BaseModel):
     phones: list[str] = Field(default_factory=list, description="Phone labels such as C5; empty for every phone.")
     kinds: list[Literal["message", "call", "email"]] = Field(default_factory=list)
     search: str | None = Field(None, description="Words the message must contain (folded as Search folds).")
-    include_groups: bool = Field(False, description="Count group chats the people share as well.")
+    include_groups: bool = Field(False, description=(
+        "With mode between: count the group chats the people share as well (direct messages only otherwise). "
+        "Mode any always includes group messages the people are party to."))
     offset: int = Field(0, ge=0)
     limit: int = Field(40, ge=1, le=100)
 

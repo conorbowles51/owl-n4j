@@ -15,8 +15,12 @@ const rsmfMissing = (counts: Record<string, unknown>) =>
  * Export for counsel (03 section 12.2, 07 J-14): the scope in words with true totals, the reading state, then the
  * PDF drawn as a job with its progress, a failure that keeps the choices with a reference, and the finished file.
  */
-export function ExportDialog(props: { caseId: string; filter: StreamFilter; words: string; open: boolean; onOpenChange: (v: boolean) => void }) {
-  const { caseId, filter, words, open, onOpenChange } = props
+export function ExportDialog(props: {
+  caseId: string; filter: StreamFilter; words: string; open: boolean; onOpenChange: (v: boolean) => void
+  /** "finding": the frozen phone records of a finding, theory or note (07 XF-7); `note` says what is not in it */
+  source?: "stream" | "finding"; note?: string | null
+}) {
+  const { caseId, filter, words, open, onOpenChange, source = "stream", note } = props
   const [title, setTitle] = useState(words)
   const [exportId, setExportId] = useState<string | null>(null)
   const [format, setFormat] = useState<"pdf" | "rsmf">("pdf")
@@ -24,7 +28,7 @@ export function ExportDialog(props: { caseId: string; filter: StreamFilter; word
   const [machineSettled, setMachineSettled] = useState(false)
   const facts = useQuery({ queryKey: ["export-facts", caseId, filter], queryFn: () => describeExport(caseId, filter), enabled: open, retry: false })
   const start = useMutation({
-    mutationFn: () => createExport(caseId, filter, { title: title.trim() || words, words }, format),
+    mutationFn: () => createExport(caseId, filter, { title: title.trim() || words, words }, format, source),
     onSuccess: (r) => setExportId(r.export_id),
   })
   const job = useQuery({
@@ -56,6 +60,7 @@ export function ExportDialog(props: { caseId: string; filter: StreamFilter; word
               All {kinds}
               {words ? `, ${words}` : ""}, on {plural(f.phones, "phone", "phones")}, times in {f.zone}. {f.left_out}
             </p>
+            {note && <p>{note}</p>}
             {f.unconfirmed > 0 ? (
               <p>
                 {fmt(f.unconfirmed)} of these {fmt(f.total)} rows rely on readings not yet confirmed by a person.{" "}

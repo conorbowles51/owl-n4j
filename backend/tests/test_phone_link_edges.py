@@ -343,3 +343,28 @@ def test_sa4_in_a_phones_only_case_edges_carry_no_money_words_and_say_once_what_
     assert p == {"has_financial_evidence": False, "source_documents": 0, "ledger_rows": 0, "phones": 1,
                  "phone_sentence": money_presence.NO_FINANCIAL_RECORDS,
                  "financial_sentence": money_presence.NO_FINANCIAL_EVIDENCE}
+
+
+@needs_template
+def test_co1_graph_edge_cell_kept_pair_holds_the_edge_count_and_opens_back_to_those_records():
+    """CO-1 cell "Graph edges" (07 6.5): Add to… on a pair keeps the filter the edge opens in Conversations (Between A
+    and B, direct, copies collapsed, as frontend filter-url builds it from the pair's link) as a saved selection; its
+    event count is the edge's count and its records are those Conversations lists for it."""
+    from sqlalchemy.orm import Session
+    from services.phone import selections, streams as S
+    from services.phone.filters import StreamFilter
+    with fresh_engine() as engine:
+        case = _setup(engine)
+        with Session(engine) as db:
+            conn = db.connection()
+            comm = LE.edges(conn, case, [{"identity_key": ANA}, {"identity_key": OWNER}])["edges"][0]["communication"]
+            edge_total = sum(LE.comm_total(comm, p) for p in LE.KIND_PREFIX.values())
+            f = StreamFilter.model_validate({
+                "case_id": str(case), "zone": {"mode": "case", "phone": None}, "participants": [ANA, OWNER],
+                "participant_mode": "between", "group_scope": "direct", "names": {"mode": "phone"}})
+            kept = selections.freeze(db, f, None, "Messages and calls between Ana and the owner")
+            assert kept["event_count"] == edge_total == 4      # 2 messages (a copy collapsed) and 2 calls
+            assert kept["event_count"] == S.shown_count(db.connection(), f)
+            again = selections.describe(db, case, kept["id"])
+            assert again["event_count"] == edge_total and again["record_count"] == kept["record_count"] == 5
+            assert selections.describe(db, uuid.uuid4(), kept["id"]) is None   # never opens in another case

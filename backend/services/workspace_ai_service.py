@@ -174,7 +174,10 @@ def _phone_thread_chunks(file: EvidenceFile, document, *, interview_id, preferre
         start, end = bounds[lo][0], bounds[hi][1]
         hit = by_line.get(centre) or next((by_line[i] for i in range(lo, hi + 1) if i in by_line), {})
         anchor = {"kind": "phone_record", "record_uid": str(hit.get("record_uid")) if hit.get("record_uid") else None,
-                  "extraction_id": hit.get("extraction_id"), "field_path": "Body", "start_char": start, "end_char": end}
+                  "extraction_id": hit.get("extraction_id"), "field_path": "Body", "start_char": start, "end_char": end,
+                  # every message in the window is cited by its record, not only the one it is centred on (XF-7)
+                  "record_uids": list(dict.fromkeys(str(by_line[i]["record_uid"]) for i in range(lo, hi + 1)
+                                                    if i in by_line))}
         text = content[start:end].strip()
         if text:
             chunks.append(_source_record(file, text=text, anchor=anchor, interview_id=interview_id,
