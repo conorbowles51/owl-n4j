@@ -175,6 +175,7 @@ export function CypherPanel({ caseId, className }: CypherPanelProps) {
             <EmptyState title="No results" description="Query returned no data" className="py-6" />
           ) : (
             <DataTable
+              label="Query results"
               columns={columns}
               data={result.rows}
               getRowKey={(row) => JSON.stringify(row)}

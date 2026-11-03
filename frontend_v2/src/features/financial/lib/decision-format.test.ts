@@ -185,6 +185,21 @@ describe("readDecision", () => {
     expect(reading.effect).toMatch(/nothing about the evidence changed/i)
   })
 
+  it("reads a machine-text correction and confirmation from a phone", () => {
+    // The phone review writes these against `phone_derived_text` (03 8.3).
+    // A build that did not know them showed each as unrecognised on the
+    // decisions page, and a correction must say the machine text is kept.
+    expect(readDecisionSubject("phone_derived_text").value).toBe(
+      "phone_derived_text"
+    )
+    const corrected = readDecision("correct_machine_text")
+    expect(corrected.value).toBe("correct_machine_text")
+    expect(corrected.description).toMatch(/machine text stays visible/i)
+    expect(readDecision("confirm_machine_text").value).toBe(
+      "confirm_machine_text"
+    )
+  })
+
   it("refuses to guess at a decision it does not recognise", () => {
     const reading = readDecision("withdraw_document")
     expect(reading.value).toBeNull()

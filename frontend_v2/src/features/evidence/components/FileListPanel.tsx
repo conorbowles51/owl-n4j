@@ -349,6 +349,7 @@ export function FileListPanel({
           </div>
         ) : (
           <Table
+            aria-label="Evidence files"
             className="table-fixed"
             style={{
               width: nameWidth === null ? "100%" : nameWidth + 624,

@@ -93,7 +93,7 @@ export const DECISION_ORDER_IS_NOT_SEQUENCE =
  * ------------------------------------------------------------------ */
 
 /**
- * The five kinds of thing a decision can be about.
+ * The kinds of thing a decision can be about.
  *
  * `evidence_file` is the one that names nothing financial, and it is why the
  * table dropped its `financial_` prefix: a file can be sent away from this
@@ -138,6 +138,10 @@ const SUBJECT_COPY: Record<AdjudicationSubject, TermCopy> = {
   phone_analysis_result: {
     label: "Phone analysis result",
     description: "One result of an analysis of the phones, such as money a phone records, confirmed or rejected by a person. Not part of the financial ledger.",
+  },
+  phone_derived_text: {
+    label: "Machine text from a phone",
+    description: "Text a machine made from a phone file, such as a transcript of a voice note or text read from an image, corrected or confirmed by a person. Not part of the financial ledger.",
   },
 }
 
@@ -351,6 +355,16 @@ const DECISION_COPY: Record<AdjudicationDecision, TermCopy> = {
     description:
       "A mark saying a statement check item is wrong was withdrawn. The mark and its reason stay in the history.",
   },
+  correct_machine_text: {
+    label: "Machine text corrected",
+    description:
+      "A person corrected text a machine made from a phone file, such as a transcript or text read from an image, with a reason. The machine text stays visible beside it, and only the corrected text is searched.",
+  },
+  confirm_machine_text: {
+    label: "Machine text confirmed",
+    description:
+      "A person confirmed text a machine made from a phone file after it was shown to them. The text is unchanged and is marked as checked by that person.",
+  },
   admit_financial_document: {
     label: "Sent out for text processing",
     description:
@@ -412,6 +426,8 @@ const DECISION_VARIANT: Record<AdjudicationDecision, BadgeVariant> = {
   remove_transaction_place: "slate",
   dispute_check_item: "amber",
   withdraw_check_item_dispute: "slate",
+  correct_machine_text: "info",
+  confirm_machine_text: "info",
   admit_financial_document: "danger",
 }
 
@@ -471,6 +487,8 @@ const CHANGED_STORED_STATE: Record<AdjudicationDecision, boolean> = {
   remove_transaction_place: true,
   dispute_check_item: false,
   withdraw_check_item_dispute: false,
+  correct_machine_text: true,
+  confirm_machine_text: true,
   admit_financial_document: false,
 }
 

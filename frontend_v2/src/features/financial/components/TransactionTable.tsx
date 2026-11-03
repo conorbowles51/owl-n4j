@@ -182,7 +182,7 @@ export function TransactionTable({
       <p className="px-2 py-1 text-[12px] text-muted-foreground">
         Click a heading to sort; Shift-click adds a second sort. Shift-click rows to select a range.
       </p>
-      <Table>
+      <Table aria-label="Transactions">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             {editable && (

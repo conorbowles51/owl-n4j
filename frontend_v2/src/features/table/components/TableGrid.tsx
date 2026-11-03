@@ -282,7 +282,7 @@ export function TableGrid({
 
   return (
     <div ref={containerRef} className="flex-1 overflow-auto">
-      <Table>
+      <Table aria-label="Entities">
         <TableHeader className="sticky top-0 z-10 bg-card">
           <TableRow className="hover:bg-transparent">
             {visibleColumns.map((col) =>

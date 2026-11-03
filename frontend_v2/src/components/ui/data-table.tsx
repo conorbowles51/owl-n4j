@@ -27,6 +27,8 @@ interface DataTableProps<T> {
   getRowKey: (row: T) => string
   /** Row density (lx-style F): "dense" for tables to compare. */
   density?: "comfortable" | "dense"
+  /** What the table holds, in words: its name for a screen reader and for its scroll region when it overflows. */
+  label: string
 }
 
 function DataTable<T>({
@@ -37,10 +39,11 @@ function DataTable<T>({
   emptyMessage = "No data",
   getRowKey,
   density = "comfortable",
+  label,
 }: DataTableProps<T>) {
   return (
     <div className={cn("overflow-auto rounded-lg border border-border bg-card", className)}>
-      <Table density={density}>
+      <Table aria-label={label} density={density}>
         <TableHeader>
           <TableRow className="bg-muted/35 hover:bg-muted/35">
             {columns.map((col) => (

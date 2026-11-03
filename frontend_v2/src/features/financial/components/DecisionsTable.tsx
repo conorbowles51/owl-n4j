@@ -196,7 +196,7 @@ const COLUMN_COUNT = 4
 export function DecisionsTable({ decisions }: { decisions: DecisionRecord[] }) {
   return (
     <div className="space-y-2">
-      <Table data-testid="decisions-table" className="table-fixed min-w-[720px]">
+      <Table aria-label="Decisions" data-testid="decisions-table" className="table-fixed min-w-[720px]">
         <TableHeader>
           <TableRow>
             <TableHead className="w-1/2">Decision</TableHead>

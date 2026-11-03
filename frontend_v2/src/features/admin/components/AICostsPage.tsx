@@ -353,7 +353,7 @@ export function AICostsPage() {
             </CardHeader>
             <CardContent className="flex flex-1 flex-col gap-4">
               <div className="rounded-lg border">
-                <Table>
+                <Table aria-label="AI cost ledger">
                   <TableHeader>
                     <TableRow>
                       <TableHead>When</TableHead>

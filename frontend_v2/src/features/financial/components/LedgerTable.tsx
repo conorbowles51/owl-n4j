@@ -646,7 +646,10 @@ export function LedgerTable({
     (onSource ? 1 : 0)
 
   return (
-    <Table data-testid="ledger-table">
+    <Table
+      aria-label={showQuarantineGrounds ? "Quarantined rows" : "Ledger rows"}
+      data-testid="ledger-table"
+    >
       <TableHeader>
         <TableRow>
           <TableHead>Date</TableHead>

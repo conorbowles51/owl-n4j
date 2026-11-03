@@ -43,6 +43,7 @@ export default meta;
 export const Default = {
   render: () => (
     <DataTable
+      label="People"
       columns={columns}
       data={data}
       getRowKey={(row) => row.id}

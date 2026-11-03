@@ -1521,7 +1521,7 @@ function FileListPanel({ caseId }: { caseId: string }) {
         ) : files.length === 0 ? (
           <EmptyState title="No files found" description="Run scan or adjust filters." className="py-10" />
         ) : (
-          <Table>
+          <Table aria-label="Triage files">
             <TableHeader>
               <TableRow>
                 <TableHead>File</TableHead>

@@ -188,7 +188,7 @@ const COLUMN_COUNT = 6
 export function IngestionRunsTable({ runs }: { runs: IngestionRun[] }) {
   return (
     <div className="space-y-2">
-      <Table data-testid="runs-table">
+      <Table aria-label="Ingestion runs" data-testid="runs-table">
         <TableHeader>
           <TableRow>
             <TableHead>Attempt</TableHead>
