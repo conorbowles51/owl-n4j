@@ -208,3 +208,18 @@ describe("getEventInstant (the window's anchor)", () => {
     expect(getEventInstant({ date: "2023-11-08T14:30:00", time: null })).toBeNull()
   })
 })
+
+import { toWindowEvent } from "./timeline-utils"
+
+describe("toWindowEvent (the window's view of a Timeline event)", () => {
+  it("treats a ledger row as a payment whether it is read from the ledger or projected from it", () => {
+    const projected = { key: "k1", name: "Transfer To Wren Pennywhistle", type: "FinancialTransaction", date: "2023-11-08", time: null,
+      amount: "390.02", summary: null, notes: null } as unknown as TimelineEvent
+    expect(toWindowEvent(projected)).toEqual({ key: "k1", name: "Transfer To Wren Pennywhistle", type: "FinancialTransaction",
+      at: null, date: "2023-11-08", payment: true })
+    const ledger = { ...projected, key: "k2", type: "Payment", source: { kind: "transaction", id: "t", date_basis: "transaction", label: "", state: "current" } } as TimelineEvent
+    expect(toWindowEvent(ledger).payment).toBe(true)
+    const meeting = { ...projected, key: "k3", type: "Meeting", date: "2023-11-08T14:30:00Z" } as TimelineEvent
+    expect(toWindowEvent(meeting)).toMatchObject({ at: "2023-11-08T14:30:00.000Z", payment: false })
+  })
+})

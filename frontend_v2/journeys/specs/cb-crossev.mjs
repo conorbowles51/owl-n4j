@@ -14,9 +14,8 @@ export default [
     const { page } = ctx
     await ctx.open(ctx.cases.training, "/timeline")
     await ctx.step("a payment opens the window and says it has a date but no time", async () => {
-      // select a payment on the Timeline (its card opens the payment; close it and open the window from the bar)
-      await ctx.click(page.getByRole("button", { name: /FinancialTransaction/ }).first())
-      await page.keyboard.press("Escape")
+      // select a payment's card on the Timeline (an event card, not the type filter), then open the window from the bar
+      await ctx.click(page.locator("article[role=button]").filter({ hasText: "FinancialTransaction" }).first())
       await ctx.see(page.getByText(/^The day of ".+", \d{4}-\d{2}-\d{2}$/))
       await ctx.click(page.getByRole("button", { name: "Open the window around this" }).first())
       await ctx.see(page.getByRole("region", { name: /Lane: Money/ }))

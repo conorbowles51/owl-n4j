@@ -403,3 +403,14 @@ export function getEventInstant(event: Pick<TimelineEvent, "date" | "time">): st
   }
   return null
 }
+
+/** What the window around a moment needs of a Timeline event: its instant, its day, and whether it is a payment
+ * (a ledger row, read from the ledger or projected from it as a FinancialTransaction item), which has a date and no
+ * time, so its window is its whole day. */
+export function toWindowEvent(e: TimelineEvent) {
+  return {
+    key: e.key, name: e.name, type: e.type, at: getEventInstant(e),
+    date: e.date ? getEventDateKey(e) : null,
+    payment: e.source?.kind === "transaction" || e.type === "FinancialTransaction",
+  }
+}
