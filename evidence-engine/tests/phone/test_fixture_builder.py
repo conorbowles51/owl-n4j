@@ -226,3 +226,23 @@ class RealScale(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_a_newer_report_of_c1_keeps_every_record_and_adds_three_later_messages(tmp_path):
+    """07 J-13b: the Replace fixture. The newer C1 report is the original, record for record, plus 3 messages in
+    its busiest thread dated after the original extraction, which moves 10 days later."""
+    import json
+    fb.main(["phones-only", str(tmp_path / "a")])
+    fb.main(["c1-later", str(tmp_path / "b")])
+    a = json.loads((tmp_path / "a" / "ui-fixture.json").read_text())
+    b = json.loads((tmp_path / "b" / "ui-fixture.json").read_text())
+    old_threads = [t for t in a["threads"] if t["phone"] == "C1"]
+    new_threads = b["threads"]
+    assert [t["id"] for t in old_threads] == [t["id"] for t in new_threads]
+    assert new_threads[0]["count"] == old_threads[0]["count"] + 3 and new_threads[1:] == old_threads[1:]
+    old_msgs = [json.dumps(m, sort_keys=True) for m in a["messages"] if m.get("phone", "C1") == "C1"]
+    new_msgs = [json.dumps(m, sort_keys=True) for m in b["messages"]]
+    assert len(new_msgs) == len(old_msgs) + 3 and set(old_msgs) <= set(new_msgs)
+    old_c1 = next(p for p in a["phones"] if p["label"] == "C1")
+    assert b["phones"][0]["extraction_date"] > old_c1["extraction_date"]
+    assert b["phones"][0]["period_end"] == old_c1["period_end"]

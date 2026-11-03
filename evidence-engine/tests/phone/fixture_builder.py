@@ -99,6 +99,10 @@ class PhoneSpec:
     gap: tuple[int, int] | None = (70, 84)  # days with no data (powered off), kept apart from quiet
     contacts: list[str] = field(default_factory=list)  # person keys this phone talks to
     seed: int = 1
+    # a newer report of the same phone (07 J-13b Replace): every record of the original, plus ``later_messages``
+    # in the busiest thread dated in the ``later_days`` after the original extraction, which moves that much later
+    later_days: int = 0
+    later_messages: int = 0
 
 
 @dataclass
@@ -255,6 +259,7 @@ class PhoneBuild:
         self.enums = self.cat.get("enums", {})
         end = dt.datetime.combine(spec.extraction_date, dt.time(9, 30))
         self.end = end
+        self.reported_end = end + dt.timedelta(days=spec.later_days)
         self.start = end - dt.timedelta(days=spec.period_days)
         self.files: list[dict] = []
         self.ui_threads: list[dict] = []
@@ -327,8 +332,13 @@ class PhoneBuild:
         chat = Model(self, "Chat", False)
         chat.f("Source", "String", app).f("Id", "String", self.ids.guid())
         times = sorted(self.instant() for _ in range(size))
+        later = []
+        if c == 0 and self.spec.later_messages:  # drawn apart, so every other record stays exactly as it was
+            lr = random.Random(self.spec.seed * 31 + 1)
+            span = max(1, self.spec.later_days * 86400 - 3600)
+            later = sorted(self.end + dt.timedelta(seconds=60 + lr.randrange(span)) for _ in range(self.spec.later_messages))
         if times:
-            chat.t("StartTime", times[0]).t("LastActivity", times[-1])
+            chat.t("StartTime", times[0]).t("LastActivity", (later or times)[-1])
         chat.f("ChatType", "ChatType", "Group" if group else "OneOnOne")
         if group:
             chat.f("Name", "String", f"Group {c} (synthetic)")
@@ -341,6 +351,14 @@ class PhoneBuild:
         if c == 0:
             for j in range(max(1, size // 50)):
                 msgs.append(self.message(thread_id, app, members, None, len(times) + j))
+        if later:
+            kept = (self.rng, self.ids)
+            self.rng, self.ids = random.Random(self.spec.seed * 31 + 2), Ids(self.spec.seed * 31 + 3)
+            try:
+                for j, t in enumerate(later):
+                    msgs.append(self.message(thread_id, app, members, t, len(msgs) + j))
+            finally:
+                self.rng, self.ids = kept
         chat.nest("multiModelField", "Messages", msgs)
         self.ui_threads.append({"id": thread_id, "phone": self.spec.label, "app": app, "group": group,
                                 "participants": [p.key for p in members], "count": len(msgs)})
@@ -520,7 +538,7 @@ class PhoneBuild:
         spec = self.spec
         own = self.owner()
         device = [("DeviceInfoSelectedManufacturer", "Synthetic"), ("DeviceInfoSelectedDeviceName", f"Phone {spec.label}"),
-                  ("DeviceInfoOSType", "Android"), ("DeviceInfoExtractionStartDateTime", self.end.strftime("%m/%d/%Y %I:%M:%S %p +00:00"))]
+                  ("DeviceInfoOSType", "Android"), ("DeviceInfoExtractionStartDateTime", self.reported_end.strftime("%m/%d/%Y %I:%M:%S %p +00:00"))]
         if own:
             device.append(("MSISDN", own.numbers[0]))
         with open(out / "Report.xml", "w", encoding="utf-8", newline="\n") as fh:
@@ -559,7 +577,7 @@ class PhoneBuild:
         return {
             "label": spec.label, "like": spec.like, "scale": spec.scale, "owner": spec.owner,
             "owner_number_in_report": bool(own), "zone": spec.zone,
-            "extraction_date": spec.extraction_date.isoformat(), "period_start": ts(self.start),
+            "extraction_date": self.reported_end.date().isoformat(), "period_start": ts(self.start),
             "period_end": ts(self.end), "no_data_days": list(spec.gap) if spec.gap else None,
             "top_level": dict(sorted(self.count.top.items())), "nested": dict(sorted(self.count.nested.items())),
             "facts": dict(sorted(self.count.facts.items())), "files": len(self.files),
@@ -902,13 +920,18 @@ def protected_ufdr(out: Path, kind: str, seed: int = 7) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("shape", choices=["phones-only", "training", "phone"])
+    ap.add_argument("shape", choices=["phones-only", "training", "phone", "c1-later"])
     ap.add_argument("out", type=Path)
     ap.add_argument("--scale", type=float, default=0.02)
     ap.add_argument("--like", default="P06")
     a = ap.parse_args(argv)
     if a.shape == "phones-only":
         case = phones_only_case(a.scale)
+    elif a.shape == "c1-later":  # a newer report of the phones-only C1: the same records and 3 later messages
+        case = phones_only_case(a.scale)
+        c1 = case.phones[0]
+        c1.later_days, c1.later_messages = 10, 3
+        case.phones = [c1]
     elif a.shape == "training":
         case = training_case()
     else:
