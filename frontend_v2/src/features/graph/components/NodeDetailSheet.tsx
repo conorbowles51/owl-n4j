@@ -15,7 +15,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
-import { DocumentViewer } from "@/components/ui/document-viewer"
+import { CitationLink, CitationProvider } from "@/components/citations/citations"
+import { docHrefByName, parseCitation } from "@/lib/citations"
 import { MarkdownSummary } from "@/components/ui/markdown-summary"
 import { collectSummarySources } from "@/lib/summary-sources"
 import { SummarySources } from "./SummarySources"
@@ -39,7 +40,6 @@ import {
   CONFIDENCE_TIER_LABELS,
   CONFIDENCE_TIER_BADGE_VARIANTS,
 } from "@/lib/location-confidence"
-import { evidenceAPI } from "@/features/evidence/api"
 import type { GraphData } from "@/types/graph.types"
 import { SignificantEntityButton } from "@/features/significant/components/SignificantEntityButton"
 import {
@@ -106,12 +106,6 @@ export function NodeDetailSheet({
   const [showAllFacts, setShowAllFacts] = useState(false)
   const [showAllInsights, setShowAllInsights] = useState(false)
   const [showRejectedInsights, setShowRejectedInsights] = useState(false)
-  const [viewerDoc, setViewerDoc] = useState<{
-    evidenceId: string
-    url: string
-    name: string
-    page?: number
-  } | null>(null)
   const [bulkRemoveOpen, setBulkRemoveOpen] = useState(false)
 
   const nodeQueryKey = ["graph", "node", firstKey, caseId]
@@ -160,25 +154,6 @@ export function NodeDetailSheet({
       toast.error("Failed to reject insight")
     },
   })
-
-  const openDocument = async (fileName: string, page?: number) => {
-    try {
-      const result = await evidenceAPI.findByFilename(fileName, caseId)
-      if (!result.found || !result.evidence_id) {
-        toast.error("Source file not found")
-        return
-      }
-      const url = evidenceAPI.getFileUrl(result.evidence_id)
-      setViewerDoc({
-        evidenceId: result.evidence_id,
-        url,
-        name: fileName,
-        page,
-      })
-    } catch {
-      toast.error("Failed to load source file")
-    }
-  }
 
   const selectedKeys = Array.from(selectedNodeKeys)
   const newSignificantKeys = selectedKeys.filter(
@@ -314,6 +289,7 @@ export function NodeDetailSheet({
   ]
 
   return (
+    <CitationProvider caseId={caseId}>
     <div className="flex h-full flex-col overflow-hidden border-l border-border bg-card">
       {/* Header */}
       <div className="flex items-start justify-between border-b border-border px-4 py-3">
@@ -566,15 +542,14 @@ export function NodeDetailSheet({
                       <div className="min-w-0 flex-1">
                         <p className="text-xs break-words">{fact.text}</p>
                         {fact.source_doc && (
-                          <button
+                          // a fact names its file by name: a name several files share opens a choice, never a guess
+                          <CitationLink
+                            citation={parseCitation(docHrefByName(fact.source_doc, fact.page))!}
                             className="mt-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:underline transition-colors text-left"
-                            onClick={() =>
-                              openDocument(fact.source_doc!, fact.page)
-                            }
                           >
                             Source: {fact.source_doc}
                             {fact.page != null && ` p.${fact.page}`}
-                          </button>
+                          </CitationLink>
                         )}
                       </div>
                     </div>
@@ -748,18 +723,7 @@ export function NodeDetailSheet({
           </>
         )}
       </ScrollArea>
-
-      <DocumentViewer
-        caseId={caseId}
-        evidenceId={viewerDoc?.evidenceId}
-        open={!!viewerDoc}
-        onOpenChange={(open) => {
-          if (!open) setViewerDoc(null)
-        }}
-        documentUrl={viewerDoc?.url}
-        documentName={viewerDoc?.name}
-        initialPage={viewerDoc?.page}
-      />
     </div>
+    </CitationProvider>
   )
 }
