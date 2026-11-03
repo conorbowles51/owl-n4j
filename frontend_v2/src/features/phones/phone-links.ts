@@ -120,5 +120,11 @@ export function isPhoneIdentityNode(nodeType: string | undefined): boolean {
 /** Where "Add to Dossiers" on a phone identity goes: the identity decision (link_phone_identity), never a new
  * dossier keyed on the graph node. */
 export function phoneIdentityDecisionHref(caseId: string, identityKey: string): string {
-  return `/cases/${encodeURIComponent(caseId)}/phone-review?decision=link_phone_identity&identity=${encodeURIComponent(identityKey)}`
+  return `/cases/${encodeURIComponent(caseId)}/phone-review?decision=link_phone_identity&identity=${encodeURIComponent(identityKeyOfNode(identityKey))}`
+}
+
+/** The graph keys a phone identity's node "phone-identity:<identity key>" (02 section 9.3); the decision and every
+ * phone API take the identity key itself. A key without the prefix is returned unchanged. */
+export function identityKeyOfNode(key: string): string {
+  return key.startsWith("phone-identity:") ? key.slice("phone-identity:".length) : key
 }
