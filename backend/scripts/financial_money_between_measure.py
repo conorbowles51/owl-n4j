@@ -27,20 +27,21 @@ def _key(currency, direction):
     return '%s:%s' % (currency, direction)
 
 
-def tool_rows(session, case_id, holder, population):
-    from services.agent.financial_ledger_tools import read_financial_ledger
-    items, offset, revision = [], 0, None
-    while True:
-        page = read_financial_ledger(session, case_id=case_id, account_ids=[holder],
-                                     population=population, view='transactions', offset=offset, limit=100,
-                                     expected_revision=revision)
-        if not page['available']:
-            return None, page['reason']
-        revision = page['revision']
-        items.extend(page['items'])
-        if not page['has_more']:
-            return items, None
-        offset = page['next_offset']
+def tool_rows(session, case_id, holder, population, _cache={}):
+    """The rows the agent ledger tool counts for this account family: the ledger summary it reads, with its own
+    population rule (working: included or excluded only for proof class; verified: included). One summary read
+    per account family, shared by both populations."""
+    from services.financial.ledger_summary import ledger_summary
+    key = (str(case_id), holder)
+    if key not in _cache:
+        _cache.clear()
+        _cache[key] = ledger_summary(session, case_id=case_id, account_ids=[holder], capture_readings=True)
+    ledger = _cache[key]
+    if not ledger['available']:
+        return None, ledger['reason']
+    if population == 'working':
+        return [r['row'] for r in ledger['readings'] if r['exclusion_reason'] in (None, 'proof_class_not_included')], None
+    return [r['row'] for r in ledger['readings'] if r['included']], None
 
 
 def group_of(row):

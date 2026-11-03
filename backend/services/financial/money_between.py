@@ -72,6 +72,21 @@ def _parties(session, case_id):
     return {p["id"]: p for p in payment_party_choices(session, case_id=case_id, known_parties=known).values()}
 
 
+def _linked_party(session, case_id, party_id):
+    """A party named by a current row's reviewed payment link in this case (``{"id", "name"}``), or None."""
+    from sqlalchemy import or_, select
+    from postgres.models.financial import FinancialTransaction as T
+    labelled = T.metadata_['investigation_labels']['counterparty_link']
+    reviewed = T.provenance['reviewed_counterparty']
+    row = session.execute(select(labelled, reviewed).where(
+        T.case_id == case_id, T.superseded_by_id.is_(None),
+        or_(labelled['id'].as_string() == party_id, reviewed['id'].as_string() == party_id)).limit(1)).first()
+    if row is None:
+        return None
+    link = next((x for x in row if isinstance(x, dict) and x.get('id') == party_id and x.get('kind') == 'party'), None)
+    return None if link is None else {"id": party_id, "name": link.get("label") or "Party " + party_id[:8]}
+
+
 def resolve_side(session, case_id, spec, *, parties=None) -> dict:
     """``{"subject", "label", "parties": set, "accounts": set}``; ``NotInCase`` when the side is not in this case."""
     from postgres.models.financial import FinancialAccount
@@ -79,7 +94,7 @@ def resolve_side(session, case_id, spec, *, parties=None) -> dict:
     spec = parse_side(spec)
     if spec["kind"] == "party":
         parties = _parties(session, case_id) if parties is None else parties
-        party = parties.get(spec["id"])
+        party = parties.get(spec["id"]) or _linked_party(session, case_id, spec["id"])
         if party is None:
             raise NotInCase("That person or business is not in this case.")
         from services.financial.account_selection import holder_account_ids

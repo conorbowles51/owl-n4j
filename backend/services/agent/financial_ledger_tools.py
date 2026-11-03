@@ -42,6 +42,13 @@ LIMITATION = (
 )
 
 
+COUNTERPARTY_GROUPING = (
+    'Counterparty groups are by label, not identity, unless group_basis is reviewed_identity: a label group '
+    '(exact_displayed_label) gathers the payments on the selected accounts that show that name, whoever it is; '
+    'it is not money between two parties. Each group covers the selected accounts\' own statements only. For money '
+    'between two parties use get_money_between, which reads both sides by reviewed identity.')
+
+
 class FinancialLedgerToolError(LedgerSummaryError):
     """Invalid input or inconsistent saved scope, without a partial result."""
 
@@ -94,7 +101,8 @@ def _currency_exponent(value):
         return None
 
 
-def _totals(readings, group_by=None):
+def _totals(readings, group_by=None, behind=None):
+    """``behind``: given a group's readings, the open judgement calls its figure rests on (agent-ledger E)."""
     groups = {}
     for reading in readings:
         row = reading['row']
@@ -122,6 +130,7 @@ def _totals(readings, group_by=None):
         if group_by == 'counterparty':
             entry['group_label'] = label
             entry['group_basis'] = 'reviewed_identity' if link else 'exact_displayed_label'
+        entry.setdefault('_readings', []).append(reading)
         entry['transaction_count'] += 1
         entry[row['direction'] + 's_minor'] += int(row['amount_minor'])
         entry['account_ids'].add(row.get('canonical_account_id') or row['account_id'])
@@ -140,6 +149,9 @@ def _totals(readings, group_by=None):
             # the ordinary account/date/category filters; no giant ID list.
             entry[field.replace('_ids', '_count')] = len(entry.pop(field))
         entry['bank_count'] = len(entry.pop('banks'))
+        grouped = entry.pop('_readings')
+        if behind is not None:
+            entry['open_judgement_calls'] = behind(grouped)
         result.append(entry)
     return result
 
@@ -546,7 +558,14 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
     eligible = lambda reading: (reading['exclusion_reason'] in (None, 'proof_class_not_included')
         if population == 'working' else reading['included'])
     matching = [by_id[key] for key in captured_view['row_ids'] if eligible(by_id[key])]
-    totals = _totals(matching)
+    # How many open judgement calls each figure rests on (agent-ledger E), from the read that marks the ledger rows.
+    from services.agent.ledger_reading_tools import open_calls_behind
+    calls_index = _judgement_index(session, case_id) if view in ('transactions', 'groups') else None
+
+    def behind(readings):
+        return open_calls_behind(calls_index, [dict(id=r['row']['key'], source_document_id=r['row']['source_document_id'])
+                                               for r in readings])
+    totals = _totals(matching, behind=behind if view in ('transactions', 'groups') else None)
     scoped = working if population == 'working' else ledger
     matched_accounts = {r['row'].get('canonical_account_id') or r['row']['account_id'] for r in matching}
     matched_banks = {bank_key(r['row']['account_institution']) for r in matching if r['row'].get('account_institution')}
@@ -574,7 +593,7 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
     if view in ('transactions', 'excluded'):
         correctors = _correctors(session, case_id, ledger['readings'])
         originals = _originals(session, case_id, ledger['readings'], by_id)
-        judgements = _judgement_index(session, case_id)
+        judgements = calls_index if view == 'transactions' else _judgement_index(session, case_id)
         if judgements is not None:
             judgements['by_id'] = {item['id']: item for item in judgements['judgements']}
 
@@ -591,7 +610,7 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
             provenance=_row_provenance(reading, judgements, by_id, load_row, correctors),
             financial_href=f'/cases/{case_id}/financial?view=transactions&payment={row["key"]}')
     if view == 'groups':
-        items = _totals(matching, group_by)
+        items = _totals(matching, group_by, behind=behind)
     elif view == 'coverage':
         # One period per page item also bounds a single account with thousands
         # of periods; no hidden nested directory bypasses the page limit.
@@ -626,4 +645,6 @@ def read_financial_ledger(session, *, case_id, account_ids=None, account_holders
         has_more=offset+limit < total, next_offset=offset+limit if offset+limit < total else None,
         items=items[offset:offset+limit], totals=totals, coverage=scope_coverage,
         judgement_calls=_page_judgements(judgements, items[offset:offset+limit]),
+        open_judgement_calls=behind(matching) if view in ('transactions', 'groups') else None,
+        **({'grouping_basis': COUNTERPARTY_GROUPING} if view == 'groups' and group_by == 'counterparty' else {}),
         applied=False, limitation=LIMITATION)

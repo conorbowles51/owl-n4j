@@ -3,6 +3,7 @@ from __future__ import annotations
 import functools
 import uuid
 import logging
+import re
 from contextlib import contextmanager
 from datetime import date
 from dataclasses import dataclass, field
@@ -33,6 +34,17 @@ MAX_CHART_SERIES = 8
 MAX_CHART_CELL_CHARS = 600
 ChartType = Literal["bar", "stacked_bar", "line", "area", "pie", "donut", "scatter"]
 logger = logging.getLogger(__name__)
+# agent-ledger B: graph money is navigation, never a total between two parties (services.financial.money_between).
+GRAPH_MONEY_NOTE = ("Navigation, not a total: graph money (TRANSFERRED_TO, FinancialTransaction amounts) draws every "
+                    "admitted class including p3 and knows no reviewed identity. Never sum it as money between two "
+                    "parties; use get_money_between.")
+_GRAPH_MONEY = re.compile(r"(?i)(TRANSFERRED_TO|FinancialTransaction|amount|SENT_PAYMENT|RECEIVED_PAYMENT)")
+_AGGREGATE = re.compile(r"(?i)\b(sum|avg|count)\s*\(")
+
+
+def graph_money_query(query: str) -> bool:
+    """A Cypher that reads graph money and aggregates it (a sum, average or count over amounts or payments)."""
+    return bool(_GRAPH_MONEY.search(query or "") and _AGGREGATE.search(query or ""))
 
 
 @contextmanager
@@ -161,6 +173,46 @@ class TimelineArgs(BaseModel):
     event_types: list[str] | None = None
     start_date: str | None = None
     end_date: str | None = None
+    limit: int = Field(25, ge=1, le=100)
+    cursor: str | None = Field(None, description="next_cursor from the previous page of graph events.")
+    additions_offset: int = Field(0, ge=0, description="additions.next_offset from the previous page of investigator additions.")
+
+
+class MoneyBetweenArgs(BaseModel):
+    party_a: str = Field(..., description="party:<id>, account:<id> or entity:<key>; a counterparty group key "
+                         "identity:party:<id> from analyze_financial_transactions also works. Never a printed name.")
+    party_b: str = Field(..., description="The other side, in the same form.")
+    start_date: date | None = None
+    end_date: date | None = None
+    offset: int = Field(0, ge=0)
+    limit: int = Field(25, ge=1, le=100)
+
+
+class JudgementCallsArgs(BaseModel):
+    subject: str | None = Field(None, description="payment:<id>, statement:<source_document_id>, period:<id> or "
+                                "account:<id>; omit for the whole case.")
+    status: Literal["open", "confirmed", "corrected"] | None = None
+    rule: str | None = Field(None, description="A rule_id, from an earlier result.")
+    offset: int = Field(0, ge=0)
+    limit: int = Field(25, ge=1, le=100)
+
+
+class DecisionsArgs(BaseModel):
+    subject: str = Field(..., description="payment:<id>, statement:<source_document_id>, period:<id> or account:<id>.")
+    offset: int = Field(0, ge=0)
+    limit: int = Field(25, ge=1, le=100)
+
+
+class StatementContinuityArgs(BaseModel):
+    account: str = Field(..., description="An account id (from get_financial_coverage), optionally account:<id>.")
+    offset: int = Field(0, ge=0)
+    limit: int = Field(50, ge=1, le=100)
+
+
+class AccountMentionsArgs(BaseModel):
+    search: str = Field("", max_length=200)
+    show: Literal["missing", "all"] = "missing"
+    offset: int = Field(0, ge=0)
     limit: int = Field(25, ge=1, le=100)
 
 
@@ -1883,12 +1935,17 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         repaired = repair_common_cypher(query)
         used_repair = repaired != query.strip()
         rows = run_readonly_cypher(repaired, case_id=context.case_id, params=params, limit=limit)
+        data = {"rows": rows, "count": len(rows), "query": repaired, "repaired": used_repair}
+        money = graph_money_query(repaired)
+        if money:
+            data["money_basis"] = GRAPH_MONEY_NOTE
         return context.result(
             "run_readonly_cypher",
-            {"rows": rows, "count": len(rows), "query": repaired, "repaired": used_repair},
+            data,
             summary=(
                 f"Read-only Cypher returned {len(rows)} row(s)"
                 + (" after applying a safe syntax repair." if used_repair else ".")
+                + (" " + GRAPH_MONEY_NOTE if money else "")
             ),
         )
 
@@ -1897,6 +1954,8 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         start_date: str | None = None,
         end_date: str | None = None,
         limit: int = 25,
+        cursor: str | None = None,
+        additions_offset: int = 0,
     ) -> dict[str, Any]:
         page = timeline_service.get_timeline_page(
             event_types=event_types,
@@ -1904,20 +1963,73 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             end_date=end_date,
             case_id=context.case_id,
             limit=limit,
+            cursor=cursor,
             entity_keys=(
                 sorted(context.allowed_entity_keys)
                 if context.allowed_entity_keys is not None
                 else None
             ),
         )
+        page = {**page, "events": [{**e, "source": "graph event"} for e in page.get("events") or []]}
+        # Investigator additions (timeline_entries: ledger payments, money trails, findings, phone records),
+        # labelled by source, with their own total and page (agent-ledger D).
+        additions = None
+        if context.significant_scope:
+            additions = {"available": False, "reason": "Investigator Timeline additions are case-wide; they are not "
+                         "read inside an entity-limited scope."}
+        else:
+            try:
+                from services.agent.ledger_reading_tools import timeline_additions
+                with (context.ledger_session_factory or _financial_session)() as db:
+                    items = timeline_additions(db, case_id=uuid.UUID(context.case_id), start_date=start_date,
+                                               end_date=end_date)
+                chunk = items[additions_offset:additions_offset + limit]
+                nxt = additions_offset + limit if additions_offset + limit < len(items) else None
+                additions = {"available": True, "total": len(items), "returned": len(chunk),
+                             "offset": additions_offset, "next_offset": nxt, "items": chunk}
+            except Exception:  # noqa: BLE001 - the graph events still answer; the additions say they were not read
+                logger.exception("Timeline additions could not be read for case %s", context.case_id)
+                additions = {"available": False, "reason": "Investigator Timeline additions could not be read; do "
+                             "not treat the timeline as having none."}
+        page["investigator_additions"] = additions
         note = None if context.significant_scope else phone_note()
         if note:
             page = {**page, "phone_note": note}
+        added = (f" Investigator additions: {additions['returned']} of {additions['total']}."
+                 if additions.get("available") else f" {additions['reason']}")
         return context.result(
             "get_timeline_events",
             page,
-            summary=f"Loaded {page.get('count', 0)} timeline event(s)." + (f" {note}" if note else ""),
+            summary=f"Loaded {page.get('count', 0)} of {page.get('total', page.get('count', 0))} graph timeline "
+                    f"event(s).{added}" + (f" {note}" if note else ""),
         )
+
+    def read_ledger_extra(tool_name: str, func_name: str, **kwargs) -> dict[str, Any]:
+        """The agent-ledger readers (services.agent.ledger_reading_tools): case from the run, read-only session."""
+        if context.significant_scope:
+            return scope_error(tool_name, "Financial analysis")
+        from services.agent import ledger_reading_tools as LR
+        try:
+            with (context.ledger_session_factory or _financial_session)() as db:
+                data = getattr(LR, func_name)(db, case_id=uuid.UUID(context.case_id), **kwargs)
+        except ValueError as exc:
+            return context.result(tool_name, {"available": False, "reason": str(exc)},
+                                  summary="That could not be read. No partial result was returned.",
+                                  status="error", error=str(exc))
+        except Exception:
+            logger.exception("Agent ledger reader %s failed for case %s", func_name, context.case_id)
+            return context.result(tool_name, {"available": False, "reason": "This ledger record is temporarily "
+                                  "unavailable. Retry; no partial result was returned."},
+                                  summary="Unavailable; no partial result was returned.", status="error",
+                                  error="The ledger could not be read.")
+        if not data.get("available"):
+            return context.result(tool_name, data, summary=str(data.get("reason")), status="error",
+                                  error=str(data.get("reason")))
+        summary = f"Read {data['returned']} of {data['total']}."
+        behind = data.get("open_judgement_calls")
+        if behind:
+            summary += " " + behind["sentence"]
+        return context.result(tool_name, data, summary=summary)
 
     def read_ledger(tool_name: str, *, view: str, **kwargs) -> dict[str, Any]:
         if context.significant_scope:
@@ -1990,6 +2102,7 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             return context.result("get_financial_transactions",
                 {**data, "transactions": transactions, "returned": len(transactions),
                  "dataset_source": "graph_intelligence", "complete_imported_ledger": False,
+                 "money_basis": GRAPH_MONEY_NOTE,
                  "limitation": "Contextual graph records only; not a complete imported transaction analysis."},
                 summary=f"Loaded {len(transactions)} contextual financial intelligence records, separately from imported payments.")
         if entity_keys:
@@ -2647,8 +2760,53 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         wrap(
             get_timeline_events,
             name="get_timeline_events",
-            description="Retrieve chronological events from the current case.",
+            description=("Retrieve chronological events from the current case: graph events (source 'graph event', "
+                "paged by next_cursor, with total) and the investigator's own Timeline additions (ledger payments, "
+                "money trails, findings, phone records; source 'investigator addition: ...', paged by "
+                "additions.next_offset, with total)."),
             args_schema=TimelineArgs,
+        ),
+        wrap(
+            lambda **kw: read_ledger_extra("get_money_between", "get_money_between", **kw),
+            name="get_money_between",
+            description=("How much money moved between two parties, A to B and B to A: the one function the Graph "
+                "pair edge also uses. p0 to p2 summed per currency, p3 stated beside and never added in, phone "
+                "readings of money counted never summed; parties by reviewed identity (party:<id>, account:<id>, "
+                "entity:<key>), never by printed name. Says how many open judgement calls the figure rests on. "
+                "Use this, never summed graph TRANSFERRED_TO amounts, for any total between two parties."),
+            args_schema=MoneyBetweenArgs,
+        ),
+        wrap(
+            lambda **kw: read_ledger_extra("get_judgement_calls", "get_judgement_calls", **kw),
+            name="get_judgement_calls",
+            description=("The case's judgement calls (machine judgements a person confirms or corrects), filtered by "
+                "subject, status (open, confirmed, corrected) and rule; each with its sentence, file and page, who "
+                "made it and how it was resolved. An open call means no person has confirmed it."),
+            args_schema=JudgementCallsArgs,
+        ),
+        wrap(
+            lambda **kw: read_ledger_extra("get_decisions", "get_decisions", **kw),
+            name="get_decisions",
+            description=("The recorded decisions on one payment, statement, period or account, oldest first: what "
+                "changed, the reason, who decided and, when a model drafted it, the model (made_by.kind = model)."),
+            args_schema=DecisionsArgs,
+        ),
+        wrap(
+            lambda **kw: read_ledger_extra("get_statement_continuity", "get_statement_continuity", **kw),
+            name="get_statement_continuity",
+            description=("One account's statement run: each period with its opening and closing, the seams between "
+                "them, and the coverage it supports (covered from and to, gaps with no statement, breaks where "
+                "balances do not meet, overlaps, periods whose arithmetic did not close). Use before saying a "
+                "payment is absent."),
+            args_schema=StatementContinuityArgs,
+        ),
+        wrap(
+            lambda **kw: read_ledger_extra("get_account_mentions", "get_account_mentions", **kw),
+            name="get_account_mentions",
+            description=("Account numbers printed in payment descriptions and counterparties, each with how many "
+                "payments mention it and whether a statement for a matching account is in the case "
+                "(show=missing: only those with none)."),
+            args_schema=AccountMentionsArgs,
         ),
         wrap(
             get_financial_transactions,

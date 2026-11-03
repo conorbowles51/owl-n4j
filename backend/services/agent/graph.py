@@ -107,6 +107,11 @@ _INTERNAL_TOOL_MARKERS = (
     "get_financial_transactions",
     "analyze_financial_transactions",
     "get_financial_coverage",
+    "get_money_between",
+    "get_judgement_calls",
+    "get_decisions",
+    "get_statement_continuity",
+    "get_account_mentions",
     "build_graph_artifact",
     "build_table_artifact",
     "build_table_artifact_from_rows",
@@ -173,6 +178,10 @@ _FINANCIAL_ANALYSIS_PROMPT = """Financial investigation:
 - A name for a payment's sender or recipient comes only from its from_name/to_name, with that field's provenance. Never name a party from words in the printed description (counterparty_raw): quote the printed text as printed, and if you read anything into it, say it is your own reading of the description, not a name the statement gives.
 - Every ledger row carries provenance. provenance.origin is "processor" (printed on the statement and read by the processor), "model" (saved by a model for a person: a model reading, not a person's entry) or "person" (entered or reviewed and saved by a person); provenance.confirmation says whether a person has confirmed it. When an answer relies on a row that a model saved, that no person has confirmed, that carries a name a model read (provenance.model_read_names), or that has open judgement calls, say so beside the figure in plain words, e.g. "saved by Claude for <name>, not confirmed by a person" or "1 open judgement call: <rule_label> (<strength>)". The page's judgement_calls give each call's sentence. If provenance.judgement_calls.available is false, say the judgement calls could not be checked; never present such a row as having none.
 - A corrected row (provenance.correction) is used at its corrected value; state the original value beside it when it matters to the answer. Never add a p4 row (proof_class or source_proof_class "p4") into any total, and never add excluded rows (included_in_totals false) into totals; use the tools' totals.
+- Money between two parties comes only from get_money_between (the Graph screen's pair edge uses the same function): quote its p0 to p2 totals per currency, state its p3 figure beside them as not verified and never added in, and give phone readings of money as a count, never a sum. Name parties by the ids the tools return (party:<id>, account:<id>, or an identity:party:<id> group key), never by a printed name. Graph TRANSFERRED_TO relationships and graph transaction amounts are navigation, not a total: never sum them.
+- A counterparty group from analyze_financial_transactions with group_basis "exact_displayed_label" gathers payments by the name shown on the row, not by a reviewed identity: call it "payments labelled <name>", never money between two parties.
+- When a result gives open_judgement_calls (or a figure's rows carry open judgement calls), say beside the figure how many open judgement calls it rests on, e.g. "this rests on 3 open judgement calls no person has confirmed". Use get_judgement_calls to give their sentences and get_decisions for who decided a record and whether a model drafted it (made_by.kind "model": drafted by a model, not a person's own decision).
+- Before saying a payment did not happen or a month is missing, read get_statement_continuity for the account: a gap means no saved statement covers those days, which is not an absence of payments. get_account_mentions lists account numbers printed on payments with no statement in the case.
 - Link each ledger row you cite to the path in its financial_href field, e.g. [12 Mar payment to Acme](/cases/<case id>/financial?view=transactions&payment=<payment id>) copied from that field; never write the word financial_href as text or as a link, and never build a payment link yourself. Cite the statement it was read from as a document link with source.filename and the row's locator page: [filename, p.N](doc://<filename>/N), or [filename](doc://<filename>) when the row has no page.
 - Separate observed facts from hypotheses and investigative leads. Unusual amounts, repeated counterparties or timing patterns alone do not establish wrongdoing. Do not infer ownership, beneficiary identity, intent, or criminal conduct beyond the returned evidence.
 - If financial access is unavailable or the run is restricted to the Significant layer, explain the coverage boundary. Do not bypass that boundary through graph queries or another case's data.
@@ -200,7 +209,8 @@ _FINAL_ANSWER_SYSTEM_PROMPT = (
     "Retain returned source citations and distinguish observed facts from hypotheses. Never name a sender or recipient from words in a printed description; quote it, and call any reading of it your own. Artifact CSV contains only artifact rows and displayed fields; do not call it the complete raw ledger. "
     "When a figure relies on a ledger row a model saved, that no person has confirmed, that carries a name a model read, "
     "or that has open judgement calls, "
-    "say so beside it in plain words; use a corrected row's corrected value and give its original value; never add p4 or "
+    "say so beside it in plain words, with the number of open judgement calls a total rests on; money between two parties "
+    "comes only from get_money_between and graph TRANSFERRED_TO amounts are never summed; use a corrected row's corrected value and give its original value; never add p4 or "
     "excluded rows into a total. Keep ledger-row links (the path in each row's financial_href) and document links "
     "(doc://filename/page) as Markdown links; never write the word financial_href in the answer. If any tool result was shown in part (_paging) and not read in full, say the answer covers "
     "<returned> of <total> for that result."
@@ -313,6 +323,21 @@ def activity_for_tool_call(name: str | None, args: dict[str, Any] | None, call_i
         else:
             title = "Read imported payments"
             detail = "I'm checking saved payment rows and their sources within the selected financial scope."
+    elif safe_name == "get_money_between":
+        title = "Read the money between two parties"
+        detail = "I'm reading payments between the two parties by reviewed identity, per currency, with unverified ones stated apart."
+    elif safe_name == "get_judgement_calls":
+        title = "Read judgement calls"
+        detail = "I'm checking which machine judgements a person has confirmed and which are still open."
+    elif safe_name == "get_decisions":
+        title = "Read recorded decisions"
+        detail = "I'm checking who decided what on this record, and whether a model drafted it."
+    elif safe_name == "get_statement_continuity":
+        title = "Checked statement continuity"
+        detail = "I'm checking which dates the account's statements cover and where there are gaps or breaks."
+    elif safe_name == "get_account_mentions":
+        title = "Read account numbers on payments"
+        detail = "I'm checking account numbers printed on payments and whether their statements are in the case."
     elif safe_name == "analyze_financial_transactions":
         title = "Analysed imported payments"
         detail = "I'm calculating across all matching payments, keeping currencies and bank/card accounts separate."
@@ -545,6 +570,8 @@ Common labels: Person, Organization, Account, Transaction, Communication, Event,
 Common relationship types include SENT_PAYMENT, RECEIVED_PAYMENT, VIA_ACCOUNT, HELD_BY, HELD_AT_BANK,
 COMMUNICATED_WITH, PARTICIPATED_IN, WORKS_FOR, ASSOCIATED_WITH, BENEFICIAL_OWNER_OF, TRANSFERRED_TO.
 Actual labels and fields vary by case, so inspect the schema when field choice matters.
+TRANSFERRED_TO and graph transaction amounts are navigation, never a total: never sum them. For money between two
+parties use get_money_between; for any other money total use the ledger tools.
 """
 
 
