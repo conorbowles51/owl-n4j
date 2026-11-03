@@ -47,7 +47,8 @@ export default [
     const { page } = ctx
     await ctx.open(ctx.cases.phonesOnly, "/workspace")
     await ctx.step("the sidebar opens Phone patterns", async () => {
-      await ctx.click(page.getByRole("link", { name: "Phone patterns" }).first())
+      // the link sits in the Phones group as "Patterns" since 03 D-18 (8b9e5c10); the journey and its target are unchanged
+      await ctx.click(page.getByRole("link", { name: /^(Phone patterns|Patterns)$/ }).first())
       await ctx.see(page.getByRole("navigation", { name: "Pattern views" }), 5000)
     })
     await ctx.step("each view opens and keeps the subject", async () => {
