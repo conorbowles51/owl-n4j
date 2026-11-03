@@ -605,3 +605,58 @@ def test_a_reviewer_is_a_person_with_a_date_and_never_a_model_by_any_product_nam
     assert not INST.reviewed({"review": {"reviewed_by": "Ai Tanaka"}})
     for name in ("ChatGPT", "Gemini 2", "Claude3", "GitHub Copilot", "Llama reviewer", "Mistral"):
         assert not INST.reviewed({"review": {"reviewed_by": name, "reviewed_on": "2026-11-03"}}), name
+
+
+# ---- second review: merged accounts, period changes, dates after an ending, reviewers ------------------------------
+
+def test_an_account_merged_with_another_never_turns_an_absence_into_a_contradiction():
+    """The alert binds A by its ending; A is merged with B and the payment is on B's statement. A's own rows lack
+    it, so a contradiction would be false: the absence stays unresolved."""
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            L = Ledger(c, case)
+            a = L.account("Synthetic Bank", "XXXX1234", statement=False)
+            b = L.account("Synthetic Bank", "XXXX9876", statement=False)
+            for acct in (a, b):
+                for p in (JAN, FEB, MAR):
+                    L.period(acct, *p, 100000, 100000)
+            pid = c.execute(text("SELECT id FROM financial_statement_periods WHERE account_id = :b AND period_start = "
+                                 ":s"), {"b": b, "s": FEB[0]}).scalar_one()
+            L.txn(b, 5000, date(2024, 2, 12), period=pid)
+            c.execute(text("UPDATE financial_accounts SET metadata = CAST(:m AS jsonb) WHERE id = :b"),
+                      {"m": json.dumps({"canonical_account_id": str(a)}), "b": b})
+        p = Phone()
+        p.notification("test.synthbank.mobile", "Synthetic Bank: Purchase of $50.00 on card ending 1234",
+                       when=datetime(2024, 2, 10, 15, tzinfo=timezone.utc))
+        p.make(engine, case)
+        m = _reading(_run(engine, case)[1])["measures"]
+        assert m["outcome"] != "contradicted", m
+
+
+def test_a_statement_period_that_stops_reconciling_makes_the_run_read_again():
+    with fresh_engine() as engine:
+        case = _run_case(engine, [(*JAN, 100000, 90000), (*FEB, 90000, 80000), (*MAR, 80000, 70000)])
+        with engine.connect() as c:
+            before = MS.ledger_revision(c, case)
+        with engine.begin() as c:
+            c.execute(text("UPDATE financial_statement_periods SET reconciliation_status = 'unbalanced' WHERE "
+                           "case_id = :c AND period_start = :s"), {"c": str(case), "s": FEB[0]})
+        with engine.connect() as c:
+            assert MS.ledger_revision(c, case) != before
+        m = _reading(_run(engine, case)[1])["measures"]
+        assert m["outcome"] == "unresolved" and m["reason"] == "records_incomplete"
+
+
+@pytest.mark.parametrize("text_", ["Card ending 1234 12/05 $25.00", "Acct ending in 1234 2025-11-02 purchase $40.00",
+                                   "Card x1234 2024 purchase $9.00"])
+def test_a_date_or_year_after_an_ending_is_never_read_into_the_account(text_):
+    r = P.parse(text_, institution=None, phone_country="US", template=None)
+    assert r.account_digits == "1234"
+
+
+def test_a_person_whose_name_contains_a_model_name_is_a_person():
+    for name in ("Claude Smith", "Claudette Ng", "Sam Bot"):
+        assert INST.reviewed({"review": {"reviewed_by": name, "reviewed_on": "2026-11-03"}}), name
+    for name in ("Claude", "claude-opus-5-5", "DeepSeek V3", "gpt-4o"):
+        assert not INST.reviewed({"review": {"reviewed_by": name, "reviewed_on": "2026-11-03"}}), name

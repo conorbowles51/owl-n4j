@@ -27,9 +27,25 @@ from dataclasses import dataclass, field
 from sqlalchemy import text
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-# a reviewer who is a model: product names anywhere in the name ("ChatGPT", "Claude3"), the generic words whole
-MODEL_NAMES = re.compile(r"(claude|gpt|openai|deepseek|anthropic|gemini|copilot|llama|mistral|grok)|"
-                         r"\b(llm|model|assistant|bot|chatbot)\b", re.I)
+# a reviewer who is a model: a name made only of model or vendor words ("ChatGPT", "Claude 3", "GitHub Copilot",
+# "Llama reviewer"); a person's name that contains one ("Claude Smith", "Ai Tanaka") is a person
+_PRODUCTS = re.compile(r"(chatgpt|gpt[\w.-]*|claude[\w.-]*|openai|deepseek[\w.-]*|anthropic|gemini[\w.-]*|copilot|"
+                       r"llama[\w.-]*|mistral[\w.-]*|grok[\w.-]*|llm|chatbot|bot|assistant|model)$", re.I)
+_FILLER = re.compile(r"(\d[\w.]*|v\d[\w.]*|ai|github|microsoft|google|meta|xai|the|by|reviewer|review|pro|flash|"
+                     r"opus|sonnet|haiku|fable|turbo|mini|large|small|instruct|chat)$", re.I)
+
+
+class _ModelNames:
+    """``search(name)``: truthy when the name is a model's, not a person's."""
+
+    @staticmethod
+    def search(name):
+        words = re.findall(r"[\w.-]+", name or "")
+        return bool(words) and any(_PRODUCTS.match(w) for w in words) and \
+            all(_PRODUCTS.match(w) or _FILLER.match(w) for w in words)
+
+
+MODEL_NAMES = _ModelNames()
 KINDS = ("bank", "card_issuer", "payment_app", "remittance", "exchange", "crypto_exchange", "lender")
 CHANNELS = ("app_package", "web_domain", "sms_sender", "email_domain")
 _override = {"entries": None}

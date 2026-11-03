@@ -536,6 +536,8 @@ class PhoneBuild:
         for mtype in self.cat["model_types"]:
             if mtype not in NESTED_ONLY and mtype not in BUILT:
                 model_types[mtype] = self.generic(mtype)
+        # the report id is drawn here, before any bank alert, so a phone with alerts keeps the id it had without them
+        project_id = self.ids.guid()
         if self.alert_rows:
             # written last, so every other record keeps the ids and content it had before alerts existed
             model_types.setdefault("Notification", [])
@@ -551,7 +553,7 @@ class PhoneBuild:
         with open(out / "Report.xml", "w", encoding="utf-8", newline="\n") as fh:
             w = fh.write
             w('<?xml version="1.0" encoding="utf-8"?>\n')
-            w(f'<project id="{self.ids.guid()}" name="Synthetic {spec.label}" reportVersion="{REPORT_VERSION}" '
+            w(f'<project id="{project_id}" name="Synthetic {spec.label}" reportVersion="{REPORT_VERSION}" '
               f'containsGarbage="False" extractionType="FileSystem" NodeCount="{len(self.files)}" '
               f'ModelCount="{top}" xmlns="{NS}">\n')
             w(f'  <sourceExtractions>\n    <extractionInfo id="0" name="File System" isCustomName="False" '

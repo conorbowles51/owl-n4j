@@ -28,6 +28,8 @@ Decisions (recorded in 05 section 19):
 """
 from __future__ import annotations
 
+import logging
+
 import re
 import uuid
 from collections import defaultdict
@@ -38,6 +40,7 @@ from sqlalchemy import text
 from services.phone_analysis import institutions as INST
 from services.phone_analysis import money_parse as P
 
+log = logging.getLogger(__name__)
 CODE = "money_signals"
 VERSION = "1a.1"
 PARAMETERS = {
@@ -79,7 +82,8 @@ _last = {"counts": {}}
 # ---- inputs --------------------------------------------------------------------------------------------------------
 
 def ledger_revision(conn, case_id) -> str:
-    """A digest of what the run reads from the financial records: effective rows, accounts and statement periods."""
+    """A digest of what the run reads from the financial records: effective rows, accounts (merges are in their
+    metadata) and statement periods with their dates, balances and reconciliation, which 1b coverage reads."""
     return conn.execute(text(
         "SELECT md5(coalesce((SELECT string_agg(t.id::text || ':' || t.ledger_status || ':' || coalesce("
         "t.superseded_by_id::text, '') || ':' || t.amount_minor || t.currency || t.direction || t.proof_class || ':' || "
@@ -90,7 +94,10 @@ def ledger_revision(conn, case_id) -> str:
         "s.case_id = :c), '') || '|' || coalesce((SELECT string_agg(a.id::text "
         "|| ':' || coalesce(a.institution_name, '') || ':' || coalesce(a.identifier_as_printed, '') || ':' || coalesce("
         "a.holder_name, '') || ':' || coalesce(a.metadata::text, ''), ',' ORDER BY a.id) FROM financial_accounts a WHERE "
-        "a.case_id = :c), '') || '|' || coalesce((SELECT string_agg(p.id::text, ',' ORDER BY p.id) FROM "
+        "a.case_id = :c), '') || '|' || coalesce((SELECT string_agg(p.id::text || ':' || p.account_id::text || ':' || "
+        "coalesce(p.reconciliation_status, '') || ':' || coalesce(p.period_start::text, '') || ':' || coalesce("
+        "p.period_end::text, '') || ':' || coalesce(p.opening_balance_minor::text, '') || ':' || coalesce("
+        "p.closing_balance_minor::text, '') || ':' || p.source_document_id::text, ',' ORDER BY p.id) FROM "
         "financial_statement_periods p WHERE p.case_id = :c), ''))"), {"c": str(case_id)}).scalar()
 
 
@@ -466,7 +473,9 @@ def reading_result(item, binding, per_account, accounts) -> dict:
     if outcome == "unresolved":
         reason = next((p["unresolved_reason"] for p in per_account if p["unresolved_reason"]), None)
     elif outcome == "contradicted":
-        reason = per_account[0]["contradiction"]
+        kinds = {p["contradiction"] for p in per_account}
+        # a payment that differs in amount is the more specific finding, whatever order the accounts come in
+        reason = "amount_differs" if "amount_differs" in kinds else sorted(k for k in kinds if k)[0]
     elif outcome == "several_candidates":
         reason = "several_payments_match"
     elif outcome == "not_tested":
@@ -715,8 +724,11 @@ def continuity_coverage(conn, case_id):
     """Phase 1b (05 4.3.5 step 3; 05-S4): ``coverage_for(account, claim)`` reading the account's statement run
     (``continuity.read_account_continuity``) into ``correlation.coverage_from_continuity``, with every period whose
     arithmetic did not close (reconciliation status other than balanced) passed as unverified. An account with no
-    statement period covers nothing, so an absence there stays unresolved."""
+    statement period covers nothing, so an absence there stays unresolved. Nor does an account merged with others
+    (account consolidation): its run reads every member's statements while the rows weighed are its own, so an
+    absence there is never called a contradiction; a merge that cannot be read is treated the same way."""
     from sqlalchemy.orm import Session
+    from services.financial.account_consolidation import expand_account_ids
     from services.financial.continuity import read_account_continuity
     from services.financial.correlation import AccountCoverage, Coverage, coverage_from_continuity
     cache = {}
@@ -724,8 +736,18 @@ def continuity_coverage(conn, case_id):
     def coverage_for(account, claim):
         aid = account["id"]
         if aid not in cache:
-            with Session(bind=conn) as db:
-                run = read_account_continuity(db, case_id=uuid.UUID(str(case_id)), account_id=uuid.UUID(aid))
+            spanless = AccountCoverage(uuid.UUID(aid), holder=account.get("holder"))
+            try:
+                with Session(bind=conn) as db:
+                    group = expand_account_ids(db, uuid.UUID(str(case_id)), [uuid.UUID(aid)])
+                    run = read_account_continuity(db, case_id=uuid.UUID(str(case_id)),
+                                                  account_id=uuid.UUID(aid)) if len(group) <= 1 else None
+            except Exception:  # noqa: BLE001 - a merge chain that cannot be read covers nothing (never contradicts)
+                log.warning("money signals: statement run of account %s not read; absences stay unresolved", aid)
+                run = None
+            if run is None:
+                cache[aid] = spanless
+                return Coverage([cache[aid]])
             unverified = [(r.period_start, r.period_end) for r in conn.execute(text(
                 "SELECT p.period_start, p.period_end FROM financial_statement_periods p WHERE p.case_id = :c AND "
                 "p.account_id = :a AND p.period_start IS NOT NULL AND p.period_end IS NOT NULL AND "

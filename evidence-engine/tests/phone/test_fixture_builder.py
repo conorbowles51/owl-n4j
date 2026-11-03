@@ -95,6 +95,20 @@ class BuilderShapes(unittest.TestCase):
             self.assertIn((amount, way, f"{m}/{d}/{y}"), by_text)
         self.assertEqual(self.tr["phones"][0]["facts"]["bank_alerts"], len(alerts))
         self.assertNotIn("Synthetic Community Bank:", (self.tr_dir / "C6" / "Report.xml").read_text())
+        # every other line of C5 is what it was without alerts, the report id included
+        import dataclasses
+        plain = fb.training_case()
+        plain.phones[0] = dataclasses.replace(plain.phones[0], bank_alerts=False)
+        with tempfile.TemporaryDirectory(prefix="cbux-fx5-") as out:
+            fb.build_case(plain, Path(out))
+            before = (Path(out) / "C5" / "Report.xml").read_text().splitlines()
+        after = xml.splitlines()
+        removed = [ln for ln in before if ln not in set(after)]
+        self.assertEqual(len(removed), 1)  # the header line: its model count grows by the alerts
+        self.assertIn('ModelCount="%d"' % (int(re.search(r'ModelCount="(\d+)"', removed[0]).group(1)) + len(alerts)),
+                      after[1])
+        self.assertEqual(re.search(r'<project id="([^"]+)"', removed[0]).group(1),
+                         re.search(r'<project id="([^"]+)"', after[1]).group(1))
 
     def test_training_ledger_is_also_monthly_single_page_pdf_statements_with_every_row(self):
         """The ledger goes through Loupe's real Financial intake, which reads PDF statements (item I)."""
