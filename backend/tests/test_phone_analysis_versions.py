@@ -15,6 +15,7 @@ from services.phone_analysis.approaches import BUILT
 
 RECORDED = {
     "money_signals": ("1a.1", "436c0c7ca42533a7"),
+    "message_reconciliation": ("2.1", "3461c6bd5a8b80cb"),
     "deletion_timeline": ("3.2", "3899f38f95baea84"),
     "relationships": ("11.2", "d2415dadbd83d048"),
     "awareness": ("4.1-groups", "9cedd74c445622e5"),

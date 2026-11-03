@@ -133,11 +133,12 @@ def m1(conn, case_id):
     return result, ("build" if bound >= 20 or strong_leads >= 1 else "do_not_build")
 
 
-@measure("message_reconciliation", "m2.1")
+@measure("message_reconciliation", "m2.2")
 def m2(conn, case_id):
     """M-2a to M-2d (05 5.6) over each pair of phones in the case: owner identities seen on the other phone, shared
     parties, message pairs with an equal body of at least 10 characters within 300 seconds (by app), their median gap,
-    and pairs whose deleted states differ. Gate: build if at least 100 such pairs in total or 10 differing."""
+    and pairs whose deleted states differ; m2.2 adds approach 2's tiers. Gate (5.6): build if at least 100 matched_strong
+    or 10 deleted_one_side."""
     phones = _phones(conn, case_id)
     ids = sorted(phones)
     pairs = []
@@ -166,12 +167,17 @@ def m2(conn, case_id):
                           "m2b_body_time_pairs_by_app": {r[0] or "unknown": int(r[1]) for r in rows},
                           "m2c_median_gap_seconds": {r[0] or "unknown": float(r[2]) for r in rows if r[2] is not None},
                           "m2d_deleted_state_differs": d})
+    from services.phone_analysis import message_reconciliation as R
+    _, counts = R.analyse(conn, case_id, {k: v["default"] for k, v in R.PARAMETERS.items()})
+    strong, deleted_one = counts.get("matched_strong", 0), counts.get("deleted_one_side", 0)
     result = {"pairs": pairs, "body_time_pairs": total, "deleted_state_differs": differing,
-              "not_counted": {"tiers": "matched_strong needs approach 2's tiers (not built)"}}
+              "m2b_matched_strong": strong, "m2b_matched_content_time": counts.get("matched_content_time", 0),
+              "m2b_ambiguous": counts.get("ambiguous_pair", 0), "m2d_deleted_one_side": deleted_one,
+              "m2_one_side_only": counts.get("one_side_only", 0), "candidate_pairs": counts.get("candidate_pairs", 0)}
     if len(ids) < 2:
         result["note"] = "not measurable: the case holds fewer than two phones"
         return result, "inconclusive"
-    return result, ("build" if total >= 100 or differing >= 10 else "inconclusive")
+    return result, ("build" if strong >= 100 or deleted_one >= 10 else "inconclusive")
 
 
 @measure("deletion_timeline", "m3.2")

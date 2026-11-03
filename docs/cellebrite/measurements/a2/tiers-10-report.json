@@ -1,0 +1,455 @@
+{
+ "candidate_pairs": 38,
+ "case": "10-report case",
+ "pairs": [
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P02",
+    "P03"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {
+    "ambiguous_pair": 20,
+    "matched_strong": 5
+   },
+   "pair": [
+    "P02",
+    "P04"
+   ],
+   "timestamp_class": {
+    "matched_strong": {
+     "device_stamped": 5
+    }
+   }
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P02",
+    "P05"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P02",
+    "P06"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P02",
+    "P07"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P02",
+    "P08"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {
+    "matched_strong": 26
+   },
+   "pair": [
+    "P02",
+    "P09"
+   ],
+   "timestamp_class": {
+    "matched_strong": {
+     "server_stamped": 26
+    }
+   }
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P02",
+    "P10"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": false,
+   "pair": [
+    "P02",
+    "P11"
+   ]
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P03",
+    "P04"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P03",
+    "P05"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P03",
+    "P06"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P03",
+    "P07"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {
+    "deleted_one_side:matched_strong": 43,
+    "matched_strong": 43
+   },
+   "pair": [
+    "P03",
+    "P08"
+   ],
+   "timestamp_class": {
+    "matched_strong": {
+     "device_stamped": 43
+    }
+   }
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P03",
+    "P09"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P03",
+    "P10"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": false,
+   "pair": [
+    "P03",
+    "P11"
+   ]
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P04",
+    "P05"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P04",
+    "P06"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P04",
+    "P07"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {
+    "matched_strong": 496
+   },
+   "pair": [
+    "P04",
+    "P08"
+   ],
+   "timestamp_class": {
+    "matched_strong": {
+     "device_stamped": 496
+    }
+   }
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P04",
+    "P09"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P04",
+    "P10"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": false,
+   "pair": [
+    "P04",
+    "P11"
+   ]
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P05",
+    "P06"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P05",
+    "P07"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {
+    "deleted_one_side:matched_strong": 143,
+    "matched_strong": 163
+   },
+   "pair": [
+    "P05",
+    "P08"
+   ],
+   "timestamp_class": {
+    "matched_strong": {
+     "device_stamped": 163
+    }
+   }
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P05",
+    "P09"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P05",
+    "P10"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": false,
+   "pair": [
+    "P05",
+    "P11"
+   ]
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P06",
+    "P07"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {
+    "matched_strong": 81
+   },
+   "pair": [
+    "P06",
+    "P08"
+   ],
+   "timestamp_class": {
+    "matched_strong": {
+     "device_stamped": 81
+    }
+   }
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P06",
+    "P09"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P06",
+    "P10"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": false,
+   "pair": [
+    "P06",
+    "P11"
+   ]
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P07",
+    "P08"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P07",
+    "P09"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P07",
+    "P10"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P07",
+    "P11"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P08",
+    "P09"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P08",
+    "P10"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": false,
+   "pair": [
+    "P08",
+    "P11"
+   ]
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P09",
+    "P10"
+   ],
+   "timestamp_class": {}
+  },
+  {
+   "candidate": false,
+   "pair": [
+    "P09",
+    "P11"
+   ]
+  },
+  {
+   "candidate": true,
+   "counts": {},
+   "pair": [
+    "P10",
+    "P11"
+   ],
+   "timestamp_class": {}
+  }
+ ],
+ "phone_pairs": 45,
+ "reports": [
+  "P02",
+  "P03",
+  "P04",
+  "P05",
+  "P06",
+  "P07",
+  "P08",
+  "P09",
+  "P10",
+  "P11"
+ ],
+ "totals": {
+  "ambiguous_pair": 20,
+  "deleted_one_side:matched_strong": 186,
+  "matched_strong": 814
+ },
+ "what": "05 M-2b/M-2d by tier (a2_tiers.py); counts only; offset 0, tau 120 s (lower bound)"
+}

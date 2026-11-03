@@ -41,6 +41,7 @@ const MoneySignalsPage = lazy(() => import("@/features/phones/analysis/MoneySign
 const DeletionTimelinePage = lazy(() => import("@/features/phones/analysis/DeletionTimelinePage"))
 const RelationshipsPage = lazy(() => import("@/features/phones/analysis/RelationshipsPage"))
 const DeviceUsersPage = lazy(() => import("@/features/phones/analysis/DeviceUsersPage"))
+const MessagesAcrossPhonesPage = lazy(() => import("@/features/phones/analysis/MessagesAcrossPhonesPage"))
 const GroupRolesPage = lazy(() => import("@/features/phones/analysis/GroupRolesPage"))
 const AnalysesPage = lazy(() => import("@/features/phones/analysis/AnalysesPage"))
 const PatternsPage = lazy(() =>
@@ -203,6 +204,7 @@ export function AppRoutes() {
             <Route path="phone-analyses/relationships" element={<LazyPage><RelationshipsPage /></LazyPage>} />
             <Route path="phone-analyses/groups" element={<LazyPage><GroupRolesPage /></LazyPage>} />
             <Route path="phone-analyses/two-phones" element={<LazyPage><DeviceUsersPage /></LazyPage>} />
+            <Route path="phone-analyses/messages" element={<LazyPage><MessagesAcrossPhonesPage /></LazyPage>} />
             <Route path="phone-analyses" element={<LazyPage><AnalysesPage /></LazyPage>} />
             <Route path="profiles" element={<Navigate to="../dossiers" replace />} />
             <Route path="dossiers" element={<LazyPage><DossiersPage /></LazyPage>} />

@@ -855,6 +855,24 @@ training (1 pair) M-2a 1 owner identity seen on the other phone and 6 shared par
 M-2d 0; phones-only (3 pairs) shared parties 6 to 8, M-2b 0, M-2d 0. The A3 server figures above (494 and 82; 571)
 stand as the volume evidence; the gate stays **changed** until approach 2's tiers exist.
 
+**Tiered server result (`cb-approaches`, 2026-11-03, `measurements/scripts/a2_tiers.py`, counts in
+`measurements/a2/tiers-10-report.json`):** the 10 reports read one at a time with the keys of 5.3.2 (owner
+identities from header MSISDN values and parties the report flags as the phone owner; clock offset 0 and τ 120 s,
+so device-stamped pairs further apart are not counted and the figures are a lower bound). 38 of the 45 phone pairs
+are candidates (5.3.1). M-2b: **814 `matched_strong`** over 6 phone pairs (A-C2 and A-C6 496, A-C5 and A-C6 163,
+A-C6 and A-C3 81, A-C1a and A-C6 43, A-C8 and A-C9 26, A-C8 and A-C2 5); 20 `ambiguous_pair`. M-2d: **186
+`deleted_one_side`** (A-C5 and A-C6 143, A-C1a and A-C6 43). M-2c: A-C8 and A-C9 all server-stamped; the other
+five pairs device-stamped. The two C1 extractions share no match. Gate: **build** (814 of 100 needed; 186 of 10).
+*Reverse if* a rerun with 02's computed owners instead of the report's owner flags gives under 100 strong matches
+and under 10 deleted on one side.
+
+**Built (`cb-approaches`, 05-S5, `message_reconciliation` version 2.1, screen "Messages across phones").** Keys
+K1 to K5, tiers, assignment with ties left out, clock offsets per pair, family and timestamp class (with drift),
+and the outcomes `both_sides`, `deleted_one_side` (recovered from the other copy), `one_side_only` with reasons
+`counterpart_extraction_ended` and `counterpart_app_no_data`, `ambiguous_pair` and `clock_offset`. Acceptance
+tests 5.8.1 to 5.8.9 pass. Measure m2.2 counts the tiers in Loupe. The per-message badge in Conversations (5.4)
+is not built yet.
+
 ### 5.7 Dependencies
 
 01, 02 (owner identity, identifier registry, message view, platform family normalisation), 04 (availability
@@ -2142,6 +2160,13 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | App-message matches split into server-stamped and device-stamped for clock offsets | X7: 18 of 18 exactly zero | measurement shows app times are device times for a source |
 | Distinct-body rule (≥ 10 chars, ≤ 3 occurrences) unless all keys agree | X3 ratio of common to distinct bodies | precision review of matches |
 | Selective clearing excludes explained deletions and uses per-app baselines | disappearing messages and decoder differences | |
+| 19.S5-a A phone's owner identities for K2 and K3 are 02's owner (a recorded decision, else the computed owner) plus the owner accounts 02 lists, each read through reviewed persons | 5.3.2 K2 says "02's owner identity, not the raw flag alone"; app messages name the owner by account, not by number | 02 merges owner accounts into the owner itself |
+| 19.S5-b A match whose copies differ Intact against Deleted or Trash is one result, kind `deleted_one_side`, naming the phone it is read from; the intact copy has the role `recovered_copy` | 5.3.6's `deleted_one_side` and `recovered_from_other_side` are the same condition seen from each side; two results would rest on the same two records | |
+| 19.S5-c Drift: Theil-Sen slope with Sen's distribution-free 95 percent interval, not 1,000 bootstrap resamples | the bootstrap costs 1,000 x n squared slopes, about 250 million at the measured 496 pairs, inside one run | a run time budget that allows it |
+| 19.S5-d "No data for that app in that period" is read from the other phone's own messages of that family (before its first or after its last) | 04 has no per-app band (as 19.S6-b) | 04 gains a per-app band |
+| 19.S5-e `one_side_only` is computed only for messages between the two phones' owners | a message to a third person is not expected on the other phone | |
+| 19.S5-f Copies of one message on one phone (02's duplicate group) count once | two copies of one message would tie for every match | |
+| 19.S5-g Not computed yet: the other phone's gap in that conversation (approach 3 holes) and leaving a group before the time | ChatActivity names a participant, not who left (19.S7-b) | a reviewed reading of who left |
 | 19.S6-a Hole threshold: a gap is compared with the 99th percentile of the conversation's other gaps (leave one out) | with fewer than 100 gaps the nearest-rank 99th percentile is the largest gap itself, so no gap could exceed it | a corpus run shows leave-one-out marking more than 5 percent of conversations with 20 or more messages |
 | 19.S6-b "Inside the availability band for app A" (6.3 step 4): a gap is a hole only when the phone holds messages of the same app in other conversations inside the gap | 04's observed bands come from observing streams only (device events, connectivity, places), never from messages, so there is no band per app; a gap in which the app recorded nothing on the phone is that app's no-data period, not a hole | 04 gains a per-app band |
 | 19.S6-c `hole_confirmed_by_counterpart` is not emitted | it needs approach 2's matches, and approach 2 is not built (5.6) | approach 2 ships |
