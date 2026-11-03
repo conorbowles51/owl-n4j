@@ -1956,6 +1956,21 @@ Gate: **build** OCR and transcription when 03 Media exists; measurement M-17.4: 
 type and total duration, images in screenshot paths; build transcription first if total voice-note duration in a
 case exceeds one hour.
 
+**Server result (cb-media, `measurements/m17_4-media.json`, script `scripts/m17_4_media.py`).** Audio files on disk
+are typed by their first bytes and timed by ffprobe. Voice-note audio (files in a voice-note path) totals 31.57 hours
+in the 1-phone case (1,629 files), 32.51 hours in the 10-report case (12,742 files on 10 phones) and 22.26 hours in
+the 3-phone case (7,579 files). All audio totals 44.45, 49.44 and 33.78 hours. Ogg is the largest type on most phones;
+AMR holds 29.73 hours on the 1-phone case's phone, and CAF and MP4 are common on the phones that have them. 1,065
+audio files on the 10-report case have no duration ffprobe can read (812 of them on P06, all with bytes that name no
+type) and 494 are not on disk (424 on P10). Images in screenshot paths: 2,783, 701 and 198. Gate: transcription
+first (every case exceeds one hour).
+
+**Speed (cb-media item B, measured 3 Nov on this server):** Whisper `base` (openai-whisper 20250625, MIT; torch 2.11,
+BSD-3) through the production child (`derive._transcribe`, 2 threads, nice 15, load average 6.3) transcribed 10
+corpus voice notes (4 Ogg, 4 AMR, 2 MP4; 5.6 to 179 s each, 481.6 s in all) in 163.8 s: a real-time factor of
+0.34, with about 5 to 6 s of model loading per file. At that rate one worker would take about 11 hours for the
+10-report case's voice notes (computed from the measured rate, **estimate, not measured** end to end).
+
 ### 17.5 Translation
 
 Per message or transcript segment: local language identification, then local machine translation, stored as a

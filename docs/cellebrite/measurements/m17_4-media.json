@@ -1,0 +1,358 @@
+{
+ "measurement": "M-17.4",
+ "script": "measurements/scripts/m17_4_media.py",
+ "date": "2026-11-03",
+ "per_phone": {
+  "P01": {
+   "case": "1-phone case",
+   "counts": {
+    "audio on disk": 4255,
+    "audio | amr": 1424,
+    "audio | mp3-or-adts": 2079,
+    "audio | mp4": 29,
+    "audio | ogg": 723,
+    "images in screenshot paths": 2783,
+    "voice-path audio on disk": 1629
+   },
+   "hours": {
+    "all audio": 44.45,
+    "audio | amr": 29.73,
+    "audio | mp3-or-adts": 2.31,
+    "audio | mp4": 1.94,
+    "audio | ogg": 10.47,
+    "voice-path audio": 31.57
+   },
+   "elapsed_s": 446.2
+  },
+  "P02": {
+   "case": "10-report case",
+   "counts": {
+    "audio no duration": 3,
+    "audio not on disk": 28,
+    "audio on disk": 478,
+    "audio | amr": 1,
+    "audio | mp3-or-adts": 25,
+    "audio | mp4": 37,
+    "audio | ogg": 382,
+    "audio | unrecognised": 3,
+    "audio | wav": 30,
+    "images in screenshot paths": 47,
+    "voice-path audio on disk": 236
+   },
+   "hours": {
+    "all audio": 1.51,
+    "audio | amr": 0.0,
+    "audio | mp3-or-adts": 0.18,
+    "audio | mp4": 0.39,
+    "audio | ogg": 0.79,
+    "audio | wav": 0.15,
+    "voice-path audio": 0.92
+   },
+   "elapsed_s": 54.0
+  },
+  "P03": {
+   "case": "10-report case",
+   "counts": {
+    "audio on disk": 14,
+    "audio | ogg": 14,
+    "voice-path audio on disk": 14
+   },
+   "hours": {
+    "all audio": 0.07,
+    "audio | ogg": 0.07,
+    "voice-path audio": 0.07
+   },
+   "elapsed_s": 23.8
+  },
+  "P04": {
+   "case": "10-report case",
+   "counts": {
+    "audio no duration": 170,
+    "audio on disk": 5433,
+    "audio | aiff": 395,
+    "audio | amr": 4,
+    "audio | caf": 2660,
+    "audio | mp3-or-adts": 113,
+    "audio | mp4": 1985,
+    "audio | ogg": 6,
+    "audio | unrecognised": 161,
+    "audio | wav": 109,
+    "images in screenshot paths": 4,
+    "voice-path audio on disk": 1647
+   },
+   "hours": {
+    "all audio": 13.27,
+    "audio | aiff": 0.07,
+    "audio | amr": 0.03,
+    "audio | caf": 9.73,
+    "audio | mp3-or-adts": 0.06,
+    "audio | mp4": 3.29,
+    "audio | ogg": 0.03,
+    "audio | wav": 0.06,
+    "voice-path audio": 2.33
+   },
+   "elapsed_s": 647.8
+  },
+  "P05": {
+   "case": "10-report case",
+   "counts": {
+    "audio no duration": 10,
+    "audio not on disk": 3,
+    "audio on disk": 1253,
+    "audio | amr": 9,
+    "audio | mp3-or-adts": 339,
+    "audio | mp4": 28,
+    "audio | ogg": 809,
+    "audio | unrecognised": 13,
+    "audio | wav": 55,
+    "images in screenshot paths": 486,
+    "voice-path audio on disk": 176
+   },
+   "hours": {
+    "all audio": 2.55,
+    "audio | amr": 0.01,
+    "audio | mp3-or-adts": 1.02,
+    "audio | mp4": 0.42,
+    "audio | ogg": 1.02,
+    "audio | unrecognised": 0.07,
+    "audio | wav": 0.02,
+    "voice-path audio": 1.2
+   },
+   "elapsed_s": 149.4
+  },
+  "P06": {
+   "case": "10-report case",
+   "counts": {
+    "audio no duration": 812,
+    "audio not on disk": 21,
+    "audio on disk": 812,
+    "audio | unrecognised": 812,
+    "images in screenshot paths": 63,
+    "voice-path audio on disk": 652
+   },
+   "hours": {},
+   "elapsed_s": 68.3
+  },
+  "P07": {
+   "case": "10-report case",
+   "counts": {
+    "audio no duration": 50,
+    "audio not on disk": 1,
+    "audio on disk": 1039,
+    "audio | amr": 9,
+    "audio | mp3-or-adts": 19,
+    "audio | mp4": 87,
+    "audio | ogg": 868,
+    "audio | unrecognised": 7,
+    "audio | wav": 49,
+    "images in screenshot paths": 12,
+    "voice-path audio on disk": 488
+   },
+   "hours": {
+    "all audio": 5.52,
+    "audio | amr": 0.06,
+    "audio | mp3-or-adts": 0.11,
+    "audio | mp4": 0.38,
+    "audio | ogg": 4.8,
+    "audio | wav": 0.17,
+    "voice-path audio": 3.78
+   },
+   "elapsed_s": 103.1
+  },
+  "P08": {
+   "case": "10-report case",
+   "counts": {
+    "audio no duration": 8,
+    "audio not on disk": 1,
+    "audio on disk": 8752,
+    "audio | amr": 25,
+    "audio | amr-wb": 5,
+    "audio | mp3-or-adts": 25,
+    "audio | mp4": 3,
+    "audio | ogg": 8685,
+    "audio | unrecognised": 5,
+    "audio | wav": 4,
+    "images in screenshot paths": 82,
+    "voice-path audio on disk": 8575
+   },
+   "hours": {
+    "all audio": 22.47,
+    "audio | amr": 0.06,
+    "audio | amr-wb": 0.01,
+    "audio | mp3-or-adts": 0.24,
+    "audio | mp4": 0.07,
+    "audio | ogg": 22.08,
+    "audio | wav": 0.01,
+    "voice-path audio": 22.06
+   },
+   "elapsed_s": 846.8
+  },
+  "P09": {
+   "case": "10-report case",
+   "counts": {
+    "audio no duration": 8,
+    "audio not on disk": 16,
+    "audio on disk": 808,
+    "audio | amr": 5,
+    "audio | mp3-or-adts": 16,
+    "audio | ogg": 762,
+    "audio | unrecognised": 8,
+    "audio | wav": 17,
+    "images in screenshot paths": 7,
+    "voice-path audio on disk": 619
+   },
+   "hours": {
+    "all audio": 2.26,
+    "audio | amr": 0.04,
+    "audio | mp3-or-adts": 0.11,
+    "audio | ogg": 2.1,
+    "audio | wav": 0.02,
+    "voice-path audio": 1.9
+   },
+   "elapsed_s": 68.1
+  },
+  "P10": {
+   "case": "10-report case",
+   "counts": {
+    "audio not on disk": 424
+   },
+   "hours": {},
+   "elapsed_s": 15.0
+  },
+  "P11": {
+   "case": "10-report case",
+   "counts": {
+    "audio no duration": 4,
+    "audio on disk": 1448,
+    "audio | aiff": 172,
+    "audio | caf": 472,
+    "audio | mp3-or-adts": 43,
+    "audio | mp4": 633,
+    "audio | unrecognised": 1,
+    "audio | wav": 127,
+    "voice-path audio on disk": 335
+   },
+   "hours": {
+    "all audio": 1.79,
+    "audio | aiff": 0.01,
+    "audio | caf": 0.34,
+    "audio | mp3-or-adts": 0.13,
+    "audio | mp4": 1.26,
+    "audio | wav": 0.06,
+    "voice-path audio": 0.25
+   },
+   "elapsed_s": 195.1
+  },
+  "P12": {
+   "case": "3-phone case",
+   "counts": {
+    "audio no duration": 1,
+    "audio not on disk": 1,
+    "audio on disk": 164,
+    "audio | mp3-or-adts": 6,
+    "audio | mp4": 8,
+    "audio | ogg": 148,
+    "audio | unrecognised": 1,
+    "audio | wav": 1,
+    "images in screenshot paths": 168,
+    "voice-path audio on disk": 148
+   },
+   "hours": {
+    "all audio": 0.86,
+    "audio | mp3-or-adts": 0.04,
+    "audio | mp4": 0.13,
+    "audio | ogg": 0.68,
+    "audio | wav": 0.0,
+    "voice-path audio": 0.68
+   },
+   "elapsed_s": 17.5
+  },
+  "P13": {
+   "case": "3-phone case",
+   "counts": {
+    "audio no duration": 38,
+    "audio on disk": 2867,
+    "audio | aiff": 192,
+    "audio | amr": 38,
+    "audio | caf": 1025,
+    "audio | mp3-or-adts": 436,
+    "audio | mp4": 843,
+    "audio | ogg": 144,
+    "audio | unrecognised": 30,
+    "audio | wav": 159,
+    "images in screenshot paths": 27,
+    "voice-path audio on disk": 906
+   },
+   "hours": {
+    "all audio": 6.35,
+    "audio | aiff": 0.01,
+    "audio | amr": 0.34,
+    "audio | caf": 0.87,
+    "audio | mp3-or-adts": 1.63,
+    "audio | mp4": 2.75,
+    "audio | ogg": 0.67,
+    "audio | wav": 0.07,
+    "voice-path audio": 1.07
+   },
+   "elapsed_s": 320.5
+  },
+  "P14": {
+   "case": "3-phone case",
+   "counts": {
+    "audio no duration": 10,
+    "audio on disk": 7789,
+    "audio | aiff": 66,
+    "audio | caf": 867,
+    "audio | mp3-or-adts": 146,
+    "audio | mp4": 636,
+    "audio | ogg": 5909,
+    "audio | wav": 165,
+    "images in screenshot paths": 3,
+    "voice-path audio on disk": 6525
+   },
+   "hours": {
+    "all audio": 26.57,
+    "audio | aiff": 0.0,
+    "audio | caf": 0.83,
+    "audio | mp3-or-adts": 0.39,
+    "audio | mp4": 5.25,
+    "audio | ogg": 20.01,
+    "audio | wav": 0.09,
+    "voice-path audio": 20.51
+   },
+   "elapsed_s": 871.1
+  }
+ },
+ "per_case": {
+  "1-phone case": {
+   "phones": 1,
+   "audio on disk": 4255,
+   "voice-path audio on disk": 1629,
+   "all audio hours": 44.45,
+   "voice-path hours": 31.57,
+   "audio no duration": 0,
+   "audio not on disk": 0,
+   "images in screenshot paths": 2783
+  },
+  "10-report case": {
+   "phones": 10,
+   "audio on disk": 20037,
+   "voice-path audio on disk": 12742,
+   "all audio hours": 49.44,
+   "voice-path hours": 32.51,
+   "audio no duration": 1065,
+   "audio not on disk": 494,
+   "images in screenshot paths": 701
+  },
+  "3-phone case": {
+   "phones": 3,
+   "audio on disk": 10820,
+   "voice-path audio on disk": 7579,
+   "all audio hours": 33.78,
+   "voice-path hours": 22.26,
+   "audio no duration": 49,
+   "audio not on disk": 1,
+   "images in screenshot paths": 198
+  }
+ }
+}
