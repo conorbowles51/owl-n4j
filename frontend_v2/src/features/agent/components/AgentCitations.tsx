@@ -38,6 +38,7 @@ export function CitationCheckLine({ check }: { check: AgentCitationCheck }) {
   const parts = [
     missing ? `${plural(missing, "is", "are")} not in this case and ${missing === 1 ? "is" : "are"} marked` : null,
     ambiguous ? `${plural(ambiguous, "names a file", "name files")} several files share; choose one when opening` : null,
+    check.other_case ? `${plural(check.other_case, "payment opens", "payments open")} in ${check.other_case === 1 ? "its" : "their"} own case` : null,
     check.page_not_given ? `${plural(check.page_not_given, "document citation gives", "document citations give")} no page` : null,
   ].filter(Boolean)
   return (

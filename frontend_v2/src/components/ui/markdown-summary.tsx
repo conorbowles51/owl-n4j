@@ -2,7 +2,7 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
 import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { parseDocumentCitation } from "@/lib/summary-sources"
-import { parseCitation } from "@/lib/citations"
+import { appPath, parseCitation } from "@/lib/citations"
 import { CitationLink, CitationScope, WithCitations } from "@/components/citations/citations"
 
 interface MarkdownSummaryProps {
@@ -68,7 +68,7 @@ export function MarkdownSummary({
       if (other) return <CitationLink citation={other}>{children}</CitationLink>
       return (
         <a
-          href={href}
+          href={appPath(href) ?? href}
           target="_blank"
           rel="noopener noreferrer"
           className="text-amber-500 hover:text-amber-400 underline underline-offset-2"

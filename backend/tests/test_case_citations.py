@@ -91,9 +91,10 @@ class CaseCheckTests(LedgerToolFixture):
         self.assertEqual(result[f"txn://{row.id}"].page, 7)
         self.assertEqual(result[f"txn://{row.id}"].evidence_file_id, str(document.evidence_file_id))
         self.assertEqual(result[old].status, "ok")
-        self.assertEqual(result[wrong_case].status, "not_in_case")
+        # a link that names another case opens in that case (all-cases answers); it is not looked up here
+        self.assertEqual(result[wrong_case].status, "other_case")
         check = C.check_text(self.db, self.case.id, text)
-        self.assertEqual((check["total"], check["ok"], check["not_in_case"]), (4, 2, 2))
+        self.assertEqual((check["total"], check["ok"], check["not_in_case"], check["other_case"]), (4, 2, 1, 1))
 
     def test_txn_of_another_case_is_not_in_this_case(self):
         _, _, rows = self.source(rows=1)
@@ -131,6 +132,30 @@ class CaseCheckTests(LedgerToolFixture):
         self.assertEqual((check["total"], check["ok"], check["not_in_case"]), (3, 2, 1))
         self.assertEqual(check["problems"][0]["href"], f"txn://{missing}")
         self.assertEqual(check["problems"][0]["reason"], C.NOT_IN_CASE)
+
+
+class OtherCaseAndHostTests(LedgerToolFixture):
+    def test_a_payment_link_carrying_another_case_opens_there_and_is_counted_apart(self):
+        _, _, rows = self.source(rows=1)
+        other = f"/cases/{self.other_case.id}/financial?view=transactions&payment={rows[0].id}"
+        text = f"[3 Apr]({other}) (case: Other)"
+        [resolution] = C.resolve_citations(self.db, self.case.id, C.citations_in(text))
+        self.assertEqual((resolution.status, resolution.detail["case_id"]), ("other_case", str(self.other_case.id)))
+        check = C.check_text(self.db, self.case.id, text)
+        self.assertEqual((check["other_case"], check["not_in_case"], check["problems"]), (1, 0, []))
+        # kept as written: the link names its case
+        self.assertEqual(C.canonicalize(self.db, self.case.id, text), text)
+
+    def test_a_loupe_link_with_an_invented_host_becomes_the_in_app_path(self):
+        _, _, rows = self.source(rows=1)
+        base = f"cases/{self.case.id}/financial"
+        text = (f"[See payment](https://example.com/{base}?view=transactions&payment={rows[0].id}) and "
+                f"[the account](https://{base}?view=statements&account={self.account.id}) and [web](https://example.com/x)")
+        out = C.canonicalize(self.db, self.case.id, text)
+        self.assertIn(f"[See payment](txn://{rows[0].id})", out)
+        self.assertIn(f"[the account](/{base}?view=statements&account={self.account.id})", out)
+        self.assertIn("[web](https://example.com/x)", out)
+        self.assertEqual(C.app_path("https://example.com/about"), None)
 
 
 class ChatSourceListTests(unittest.TestCase):

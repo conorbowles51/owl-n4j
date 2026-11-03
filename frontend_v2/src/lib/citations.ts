@@ -12,6 +12,17 @@ const UUID_TEXT = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 const UUID = new RegExp(`^${UUID_TEXT}$`)
 const FINANCIAL_PATH = new RegExp(`^(?:https?://[^/]+)?/cases/(${UUID_TEXT})/financial\\?(\\S*)$`)
 const PAYMENT_PARAM = new RegExp(`(?:^|&)payment=(${UUID_TEXT})(?:&|$)`)
+// an app path written with a host: https://<any host>/cases/<id>/..., or https://cases/<id>/... (host dropped)
+const APP_URL = new RegExp(`^https?://(?:[^/\\s]+/)*?(cases/${UUID_TEXT}(?:[/?#]\\S*)?)$`)
+
+/**
+ * The in-app path of a link a model wrote with a host, e.g. https://example.com/cases/<id>/financial?... or
+ * https://cases/<id>/...: Loupe's own pages are never on another host, so the path is what was meant. Null otherwise.
+ */
+export function appPath(href: string | undefined | null): string | null {
+  const match = APP_URL.exec((href ?? "").trim())
+  return match ? `/${match[1]}` : null
+}
 
 export type Citation =
   | {
@@ -66,7 +77,7 @@ export function parseCitation(href: string | undefined | null): Citation | null 
     if (UUID.test(target)) return { scheme: "doc", href, target: target.toLowerCase(), byName: false, page, legacy }
     return { scheme: "doc", href, target, byName: true, page, legacy }
   }
-  const path = FINANCIAL_PATH.exec(href)
+  const path = FINANCIAL_PATH.exec(appPath(href) ?? href)
   if (path) {
     const payment = PAYMENT_PARAM.exec(path[2])
     if (payment)
@@ -80,7 +91,7 @@ export function isCitationHref(href: string) {
   return parseCitation(href) !== null
 }
 
-const LINK = /\]\(\s*<?((?:doc|txn|rec|evidence):\/\/[^)>\s]*|(?:https?:\/\/[^/\s)]+)?\/cases\/[^)\s>]*)>?(?:\s+"[^"]*")?\s*\)/g
+const LINK = /\]\(\s*<?((?:doc|txn|rec|evidence):\/\/[^)>\s]*|(?:https?:\/\/[^)\s>]*?)?\/?cases\/[^)\s>]*)>?(?:\s+"[^"]*")?\s*\)/g
 const DEFINITION = /^\s*\[[^\]]+\]:\s*<?((?:doc|txn|rec|evidence):\/\/\S+?)>?\s*$/gm
 
 /** Every citation href in Markdown text, in order, once each (inline links and reference definitions). */

@@ -1,7 +1,7 @@
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import type { Components } from "react-markdown"
-import { parseCitation } from "@/lib/citations"
+import { appPath, parseCitation } from "@/lib/citations"
 import { CitationLink, CitationScope, WithCitations } from "@/components/citations/citations"
 
 interface MarkdownProps {
@@ -12,7 +12,7 @@ interface MarkdownProps {
 /** Markdown with citations (doc://, txn://, rec://, and the older forms) checked against the case and opened by the
  * enclosing CitationProvider (one is made from the route's case when none encloses it). */
 export function Markdown({ content, className }: MarkdownProps) {
-  const markdownUrlTransform = (url: string) => (parseCitation(url) ? url : defaultUrlTransform(url))
+  const markdownUrlTransform = (url: string) => (parseCitation(url) ? url : defaultUrlTransform(appPath(url) ?? url))
 
   const components: Components = {
     h1: ({ children }) => (
@@ -40,9 +40,10 @@ export function Markdown({ content, className }: MarkdownProps) {
     a: ({ href, children }) => {
       const citation = parseCitation(href)
       if (citation) return <CitationLink citation={citation}>{children}</CitationLink>
+      // a Loupe page the model wrote with an invented host opens the page itself
       return (
         <a
-          href={href}
+          href={appPath(href) ?? href}
           target="_blank"
           rel="noopener noreferrer"
           className="text-blue-500 underline hover:text-blue-600"

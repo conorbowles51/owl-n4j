@@ -55,7 +55,7 @@ class CitationEvaluation(LedgerToolFixture):
 
     def _score(self, question, hrefs, expected):
         """``expected[href]`` is the known object: ("txn", id, page) / ("doc", file id, page or None) /
-        ("ambiguous", {file ids}) / ("not_in_case",)."""
+        ("ambiguous", {file ids}) / ("not_in_case",) / ("other_case",)."""
         resolved = {r.href: r for r in C.resolve_citations(self.db, self.case.id,
                                                            [C.parse_citation(h) for h in hrefs])}
         right, misses = 0, []
@@ -70,7 +70,7 @@ class CitationEvaluation(LedgerToolFixture):
                 ok = r and r.status == "ambiguous" and {c["evidence_file_id"] for c in r.candidates} == {
                     str(i) for i in want[1]}
             else:
-                ok = r and r.status == "not_in_case"
+                ok = r and r.status == want[0]
             right += bool(ok)
             if not ok:
                 misses.append(href)
@@ -114,14 +114,16 @@ class CitationEvaluation(LedgerToolFixture):
         self._score("Answer with filename citations and an old payment link", list(older), older)
         wrong = {f"txn://{self.foreign_row.id}": ("not_in_case",), f"doc://{self.foreign_doc.evidence_file_id}/1": ("not_in_case",),
                  f"txn://{uuid.uuid4()}": ("not_in_case",), "doc://Invented.pdf/9": ("not_in_case",),
-                 f"/cases/{self.other_case.id}/financial?view=transactions&payment={self.foreign_row.id}": ("not_in_case",)}
+}
+        # a payment link that carries another case (an all-cases answer) opens in that case, never looked up here
+        wrong[f"/cases/{self.other_case.id}/financial?view=transactions&payment={self.foreign_row.id}"] = ("other_case",)
         self._score("Answer citing another case's statement and invented objects", list(wrong), wrong)
         # the stored answer: names pinned to file ids, the check counts what it marks
         answer, check = __import__("services.agent.storage", fromlist=["x"]).checked_answer(
             self.db, case_id=self.case.id, answer=" ".join(f"[c]({h})" for h in [*older, *wrong]))
         self.assertIn(f"(doc://{self.memo.id}/3)", answer)
         # "[c](evidence://Board memo.pdf)" holds a space, so in answer text it is not a link (both parsers agree)
-        self.assertEqual((check["total"], check["not_in_case"], check["ambiguous"]), (8, 5, 1))
+        self.assertEqual((check["total"], check["not_in_case"], check["ambiguous"], check["other_case"]), (8, 4, 1, 1))
 
         total = sum(q["citations"] for q in self.table)
         right = sum(q["right"] for q in self.table)

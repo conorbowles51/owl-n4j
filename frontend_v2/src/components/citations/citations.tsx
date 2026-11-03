@@ -73,7 +73,7 @@ export function CitationProvider({
     if (citation.scheme === "doc" && resolution.evidence_file_id)
       showDocument(resolution, resolution.evidence_file_id)
     else if (citation.scheme === "txn")
-      window.open(paymentPath(caseId, citation.target), "_blank", "noopener")
+      window.open(paymentPath(citation.legacy && citation.linkedCaseId ? citation.linkedCaseId : caseId, citation.target), "_blank", "noopener")
     else if (citation.scheme === "rec") {
       if (recordPanel) setRecord(citation.target)
       else window.open(recordPath(caseId, citation.target, citation.field), "_blank", "noopener")
@@ -183,8 +183,27 @@ export function CitationLink({
   const opener = useContext(OpenerContext)
   const resolutions = useContext(ResolutionContext)
   const resolution = resolutions?.get(citation.href)
-  if (resolution?.status === "not_in_case" || (citation.scheme === "txn" && citation.legacy && opener &&
-      citation.linkedCaseId && citation.linkedCaseId !== opener.caseId.toLowerCase()))
+  // A payment link that carries another case (an all-cases answer) opens in that case, whose own access check applies.
+  const ownCase =
+    citation.scheme === "txn" && citation.legacy && citation.linkedCaseId &&
+    (resolution?.status === "other_case" || (opener && citation.linkedCaseId !== opener.caseId.toLowerCase()))
+      ? citation.linkedCaseId
+      : null
+  if (ownCase && citation.scheme === "txn")
+    return (
+      <a
+        href={paymentPath(ownCase, citation.target)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={className}
+        title={title ?? "Opens this payment in its own case"}
+        data-citation-scheme="txn"
+        data-citation-status="other_case"
+      >
+        {label ?? children}
+      </a>
+    )
+  if (resolution?.status === "not_in_case")
     return (
       <span className="text-muted-foreground" title={resolution?.reason ?? "Not in this case."} data-citation-status="not_in_case">
         {label ?? children}{" "}

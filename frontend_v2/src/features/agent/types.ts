@@ -75,6 +75,7 @@ export interface AgentCitationCheck {
   ok?: number
   not_in_case?: number
   ambiguous?: number
+  other_case?: number
   page_not_given?: number
   by_scheme?: Record<string, number>
   problems?: Array<{ href: string; scheme: string; status: string; reason?: string }>

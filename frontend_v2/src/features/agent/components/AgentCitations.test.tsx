@@ -132,3 +132,24 @@ it("says under an answer how many citations were checked and how many are not in
     "5 citations checked against this case: 3 open; 1 is not in this case and is marked; 1 names a file several files share; choose one when opening; 2 document citations give no page."
   )
 })
+
+it("opens a payment of another case in its own case, never as 'not in this case' (all-cases answers)", async () => {
+  const OTHER_CASE = "5a1b7f6d-2c9e-4b6f-8d7a-0e8f3b4c5d66"
+  const href = `/cases/${OTHER_CASE}/financial?view=transactions&payment=${TXN}`
+  resolutions.items = [{ href, scheme: "txn", status: "other_case", transaction_id: TXN, page_given: false, legacy: true }]
+  answer(`Paid from the other case: [3 Apr](${href}) (case: Other).`)
+  const link = await screen.findByRole("link", { name: "3 Apr" })
+  expect(link.getAttribute("href")).toBe(`/cases/${OTHER_CASE}/financial?view=transactions&payment=${TXN}`)
+  expect(link.getAttribute("title")).toBe("Opens this payment in its own case")
+  expect(screen.queryByText("not in this case")).toBeNull()
+})
+
+it("opens a Loupe link the model wrote with an invented host as the page itself", async () => {
+  const hosted = `https://example.com/cases/${CASE}/financial?view=transactions&payment=${TXN}`
+  resolutions.items = [ok(hosted, { scheme: "txn", transaction_id: TXN, legacy: true })]
+  answer(`[See payment](${hosted}) and [the account](https://cases/${CASE}/financial?view=statements&account=${FILE}).`)
+  expect((await screen.findByRole("link", { name: "See payment" })).getAttribute("href")).toBe(
+    `/cases/${CASE}/financial?view=transactions&payment=${TXN}`)
+  expect(screen.getByRole("link", { name: "the account" }).getAttribute("href")).toBe(
+    `/cases/${CASE}/financial?view=statements&account=${FILE}`)
+})

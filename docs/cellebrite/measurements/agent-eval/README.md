@@ -141,7 +141,8 @@ payment in another case). Each question takes its citations from the layer the m
 tool's `cite` and `statement_cite`, the payments search group, a document passage's `cite`) or from a fixed answer in
 older or wrong forms, and each citation is resolved the way the answer check and the renderer resolve it. A citation
 is right when it opens the known object: the payment with its statement file and page, the file at the known page
-(or "page not given" when there is none), the choice of exactly the files that share a name, or "not in this case".
+(or "page not given" when there is none), the choice of exactly the files that share a name, "not in this case", or,
+for a payment link that names another case (an all-cases answer), that case.
 
 | Questions | Citations | Right |
 |---|---|---|

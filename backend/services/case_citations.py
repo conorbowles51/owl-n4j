@@ -26,11 +26,15 @@ from urllib.parse import quote, unquote
 UUID_TEXT = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 _UUID = re.compile(rf"^{UUID_TEXT}$")
 # A Markdown link target: ](target) or ](<target>); the target may carry an optional "title".
-_LINK = re.compile(r"\]\(\s*<?((?:doc|txn|rec|evidence)://[^)>\s]*|(?:https?://[^/\s)]+)?/cases/[^)\s>]*)>?(?:\s+\"[^\"]*\")?\s*\)")
+_LINK = re.compile(r"\]\(\s*<?((?:doc|txn|rec|evidence)://[^)>\s]*|(?:https?://[^)\s>]*?)?/?cases/[^)\s>]*)>?(?:\s+\"[^\"]*\")?\s*\)")
+# a Loupe page written with a host: https://<any host>/cases/<id>/... or https://cases/<id>/... (the host dropped)
+_APP_URL = re.compile(rf"^https?://(?:[^/\s]+/)*?(cases/{UUID_TEXT}(?:[/?#]\S*)?)$")
+_HOSTED_LINK = re.compile(r"(\]\(\s*<?)(https?://[^)\s>]+)")
 _FINANCIAL_PATH = re.compile(rf"^(?:https?://[^/]+)?/cases/({UUID_TEXT})/financial\?(\S*)$")
 _PAYMENT_PARAM = re.compile(rf"(?:^|&)payment=({UUID_TEXT})(?:&|$)")
 
 NOT_IN_CASE = "Not in this case."
+OTHER_CASE = "A payment of another case: it opens in that case, where that case's own access applies."
 PAGE_NOT_GIVEN = "Page not given."
 SCHEMES = ("doc", "txn", "rec")
 
@@ -93,12 +97,19 @@ def parse_citation(href: str | None) -> Citation | None:
         if _UUID.match(target):
             return Citation(href, "doc", target.lower(), page=page, legacy=legacy)
         return Citation(href, "doc", target, by_name=True, page=page, legacy=legacy)
-    match = _FINANCIAL_PATH.match(href)
+    match = _FINANCIAL_PATH.match(app_path(href) or href)
     if match:
         payment = _PAYMENT_PARAM.search(match.group(2))
         if payment:
             return Citation(href, "txn", payment.group(1).lower(), legacy=True, linked_case_id=match.group(1).lower())
     return None
+
+
+def app_path(href: str | None) -> str | None:
+    """The in-app path of a link a model wrote with a host (``https://example.com/cases/<id>/...`` or
+    ``https://cases/<id>/...``): Loupe's own pages are never on another host. None otherwise."""
+    match = _APP_URL.match((href or "").strip())
+    return "/" + match.group(1) if match else None
 
 
 def citations_in(text: str | None) -> list[Citation]:
@@ -261,7 +272,11 @@ def resolve_citations(session, case_id, citations: Iterable[Citation]) -> list[R
         elif c.scheme == "txn":
             row = txns.get(c.target)
             r.transaction_id = c.target
-            if row is None or (c.linked_case_id and c.linked_case_id != str(case_uuid)):
+            if c.linked_case_id and c.linked_case_id != str(case_uuid):
+                # a link that names its own case (an all-cases answer): never looked up here, opened in that case
+                r.status, r.reason = "other_case", OTHER_CASE
+                r.detail = {"case_id": c.linked_case_id}
+            elif row is None:
                 r.status, r.reason = "not_in_case", NOT_IN_CASE
             else:
                 r.page, r.page_given = row["page"], row["page"] is not None
@@ -280,7 +295,7 @@ def resolve_citations(session, case_id, citations: Iterable[Citation]) -> list[R
 def check_text(session, case_id, text: str | None) -> dict[str, Any]:
     """The answer check: every citation in ``text`` against the case. Counts and the citations that failed."""
     resolutions = resolve_citations(session, case_id, citations_in(text))
-    counts = {"total": len(resolutions), "ok": 0, "not_in_case": 0, "ambiguous": 0}
+    counts = {"total": len(resolutions), "ok": 0, "not_in_case": 0, "ambiguous": 0, "other_case": 0}
     for r in resolutions:
         counts[r.status] += 1
     by_scheme: dict[str, int] = {}
@@ -288,15 +303,16 @@ def check_text(session, case_id, text: str | None) -> dict[str, Any]:
         by_scheme[r.scheme] = by_scheme.get(r.scheme, 0) + 1
     return {**counts, "by_scheme": by_scheme, "page_not_given": sum(
         1 for r in resolutions if r.scheme == "doc" and r.status == "ok" and not r.page_given),
-            "problems": [r.to_json() for r in resolutions if r.status != "ok"]}
+            "problems": [r.to_json() for r in resolutions if r.status in ("not_in_case", "ambiguous")]}
 
 
 def canonicalize(session, case_id, text: str | None) -> str:
     """Rewrite citations to their stable form before an answer is stored: a file named once in the case becomes its
     id (a later upload with the same name cannot make the citation ambiguous), and a Financial page payment link
-    becomes ``txn://``. A name several files share, and anything not in the case, stays as written for the check to
-    mark. Page numbers are never added or changed."""
-    text = text or ""
+    becomes ``txn://``. A link to a Loupe page written with a host (``https://example.com/cases/...``) becomes the
+    in-app path. A name several files share, anything not in the case, and a payment link that carries another case
+    stay as written for the check to mark. Page numbers are never added or changed."""
+    text = _strip_link_hosts(text or "")
     citations = citations_in(text)
     wanted = [c for c in citations if (c.scheme == "doc" and c.by_name and not c.legacy) or
               (c.scheme == "txn" and c.legacy)]
@@ -317,6 +333,14 @@ def canonicalize(session, case_id, text: str | None) -> str:
         new = rewrite.get(match.group(1))
         return match.group(0).replace(match.group(1), new, 1) if new else match.group(0)
     return _LINK.sub(replace, text)
+
+
+def _strip_link_hosts(text: str) -> str:
+    """A link to a Loupe page written with an invented host becomes the in-app path."""
+    def strip(match: re.Match) -> str:
+        path = app_path(match.group(2))
+        return match.group(1) + path if path else match.group(0)
+    return _HOSTED_LINK.sub(strip, text)
 
 
 def encode_filename_links(text: str | None) -> str:

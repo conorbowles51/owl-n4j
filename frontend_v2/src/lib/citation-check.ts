@@ -4,7 +4,8 @@ import { fetchAPI } from "@/lib/api-client"
 export interface CitationResolution {
   href: string
   scheme: "doc" | "txn" | "rec"
-  status: "ok" | "not_in_case" | "ambiguous"
+  /** other_case: a payment link that carries another case; it opens in that case */
+  status: "ok" | "not_in_case" | "ambiguous" | "other_case"
   reason?: string
   page?: number
   page_given: boolean
