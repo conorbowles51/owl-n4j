@@ -700,3 +700,22 @@ def test_the_real_child_ranks_the_red_square_first_with_the_pinned_model(tmp_pat
                 assert np.allclose(q["vector"], one["vector"], atol=1e-5)
     finally:
         server._idle()
+
+
+def test_the_model_child_is_given_room_for_the_cuda_build_of_torch_and_still_capped(monkeypatch):
+    """On this server the CUDA build of torch reserves about 3.2 GB of address space on import and the vision model
+    then peaked at 6.43 GB (32 photos) and 6.82 GB (a description); a 6 GB cap left every image unindexed. The child
+    gets its own cap above that peak, applies it before loading anything, and the other children's setting does not
+    reach it."""
+    from services.phone import image_search
+    monkeypatch.setenv("LOUPE_PHONE_DERIVE_MEMORY_MB", "6144")
+    env = image_search._child_env()
+    assert int(env["LOUPE_PHONE_IMAGE_MEMORY_MB"]) >= 7 * 1024 + 512
+    assert "LOUPE_PHONE_DERIVE_MEMORY_MB" not in env
+    head = image_search._CHILD.split("import torch")[0]
+    assert '"LOUPE_PHONE_IMAGE_MEMORY_MB"' in head and "LOUPE_PHONE_DERIVE_MEMORY_MB" not in head and "RLIMIT_AS" in head
+    probe = head + "\nimport resource as R\nprint(R.getrlimit(R.RLIMIT_AS)[0] // (1024 * 1024))\n"
+    r = subprocess.run([sys.executable, "-I", "-c", probe], input='{"mode": "text"}\n', capture_output=True,
+                       text=True, timeout=60, env=env)
+    assert r.returncode == 0, r.stderr[-300:]
+    assert int(r.stdout.strip().splitlines()[-1]) == int(env["LOUPE_PHONE_IMAGE_MEMORY_MB"])

@@ -97,6 +97,11 @@ RESULTS_MAX = 200
 COPIES_PER_RESULT = 20
 DRAFT_EDGE = 448              # a JPEG is decoded at a reduced scale no smaller than this before the 224 px resize
 THREADS = 2
+# The child's address-space cap. The backend's torch is the CUDA build, which reserves about 3.2 GB of address space
+# on import (resident 0.5 GB); loading the 1.5 GB vision model on top peaked at 6.43 GB for 32 photos and 6.82 GB for
+# a description (measured 3 Nov on this server, resident 1.1 and 1.4 GB), over the 6 GB the other children are given,
+# so the model could not be mapped. This cap is half as much again as the larger peak.
+MEMORY_MB = int(os.environ.get("LOUPE_PHONE_IMAGE_MEMORY_MB", "10240"))
 # the kept-warm text child: starting it loads the libraries and the text model (about 31 s measured under load), one
 # description then takes 1 to 2 s; past these deadlines the child is killed and the person told in words
 READY_TIMEOUT_SECONDS = 180
@@ -315,7 +320,7 @@ def cancel(conn, case_id, job_id) -> dict:
 # standard input closes, so a search does not pay the libraries' load time (about 30 s on this server) each time.
 _CHILD = derive.GUARD + r'''
 import json, os, resource, sys
-mb = int(os.environ.get("LOUPE_PHONE_DERIVE_MEMORY_MB", "6144"))
+mb = int(os.environ.get("LOUPE_PHONE_IMAGE_MEMORY_MB", "10240"))
 resource.setrlimit(resource.RLIMIT_AS, (mb * 1024 * 1024, mb * 1024 * 1024))
 from importlib import metadata
 req = json.loads(sys.stdin.readline())
@@ -369,9 +374,10 @@ print(json.dumps(out))
 
 
 def _child_env() -> dict:
-    env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "LOUPE_PHONE_DERIVE_MEMORY_MB")}
+    env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME")}
     env.update({"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1", "HF_DATASETS_OFFLINE": "1",
-                "HF_HUB_DISABLE_TELEMETRY": "1", "OMP_NUM_THREADS": str(THREADS), "TOKENIZERS_PARALLELISM": "false"})
+                "HF_HUB_DISABLE_TELEMETRY": "1", "OMP_NUM_THREADS": str(THREADS), "TOKENIZERS_PARALLELISM": "false",
+                "LOUPE_PHONE_IMAGE_MEMORY_MB": str(MEMORY_MB)})
     return env
 
 
