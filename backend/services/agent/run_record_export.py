@@ -111,7 +111,8 @@ def load_record(db, run) -> dict[str, Any]:
             "phone_generation": call.phone_generation, "model_paging": call.model_paging or [],
             "model_not_shown": call.model_not_shown, "tool_not_returned": call.tool_not_returned,
             "continuation_of": call.continuation_of, "schema": facts.get("schema"),
-            "available": facts.get("available", call.status != "error"), "reason": facts.get("reason"),
+            "available": bool(facts.get("available", True)) and call.status != "error",
+            "reason": facts.get("reason") or call.error,
             "reason_code": facts.get("reason_code"), "not_in_case": facts.get("not_in_case"),
             "withheld": facts.get("withheld"), "exclusions": facts.get("exclusions"),
             "items_not_listed": facts.get("items_not_listed") or 0,
@@ -209,7 +210,7 @@ def not_examined_rows(record: dict[str, Any], *, material: dict[str, dict[str, A
     searched = {c["category"] for c in record["calls"] if c["category"] and c["available"]}
     categories = []
     for key, label in CATEGORY_LABELS.items():
-        if key in searched:
+        if key in searched or key == "case_search":  # case-wide search is a way of searching, not material
             continue
         held = material.get(key) or {}
         count = held.get("count")

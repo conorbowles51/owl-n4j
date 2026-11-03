@@ -252,6 +252,17 @@ def item_ref(item: Any, *, data: dict[str, Any], list_key: str):
                 " · ".join(str(item.get(k)) for k in ("holder", "bank") if item.get(k))) if ref else None
     if view == "incomplete" and item.get("id"):
         return "incomplete_record", str(item["id"]), [], label
+    if isinstance(item.get("rec"), str) and item["rec"].startswith("rec://"):
+        uid = item["rec"][len("rec://"):]
+        return "phone_record", uid, [item["rec"]], label or (item.get("kind") or "phone record")
+    if item.get("evidence_file_id") and (item.get("title") or item.get("filename")):
+        # A document page from the case-wide search: one page of one file, named as the doc links name it.
+        name, page, file_id = item.get("title") or item.get("filename"), item.get("page"), item["evidence_file_id"]
+        if page not in (None, ""):
+            return "document", "%s#p%s" % (name, page), [
+                "%s, p.%s" % (name, page), "doc://%s/%s" % (quote(str(name), safe=""), page),
+                "doc://%s/%s" % (file_id, page)], "%s, p.%s" % (name, page)
+        return "document", str(name), ["doc://%s" % quote(str(name), safe=""), "doc://%s" % file_id], str(name)
     for key in ("key", "entity_key", "node_key"):
         if isinstance(item.get(key), str) and item[key].strip():
             return "entity", item[key], [], label
@@ -315,7 +326,8 @@ def call_facts(name: str | None, args: dict[str, Any] | None, output: dict[str, 
     model_next = [note["next_page"] for note in paging if isinstance(note.get("next_page"), dict)]
     if model_next:
         next_page["model"] = model_next
-    available = output.get("status") != "error" and d.get("available") is not False
+    # A call that raised (status set by the runner) or returned an error searched nothing.
+    available = output.get("status") != "error" and d.get("available") is not False and not d.get("error")
     coverage = d.get("coverage") if isinstance(d.get("coverage"), dict) else {}
     exclusions = None
     if coverage.get("exclusions") or coverage.get("excluded_scope_rows") or coverage.get("incomplete_records"):
@@ -335,7 +347,7 @@ def call_facts(name: str | None, args: dict[str, Any] | None, output: dict[str, 
         "search_terms": search_terms(name, args),
         "model_paging": paging,
         "available": available,
-        "reason": None if available else (d.get("reason") or output.get("error")),
+        "reason": None if available else (d.get("reason") or output.get("error") or d.get("error")),
         "reason_code": d.get("reason_code"),
         "not_in_case": bool(d.get("not_in_case")),
         "withheld": d.get("withheld"),
@@ -543,7 +555,8 @@ def backfill_run(db, run) -> dict[str, Any] | None:
     if run.record_summary is not None:
         return None
     calls = db.query(AgentToolCall).filter(AgentToolCall.run_id == run.id).order_by(AgentToolCall.sequence_number).all()
-    if run.prompt_version is not None or any(call.record_facts is not None for call in calls):
+    # Made with the run record: it has a prompt version, or its label says the version could not be read then.
+    if run.prompt_version is not None or (run.prompt_version_label or "").startswith("not recorded:"):
         # Made with the run record but never finished (the process ended): its calls were stored whole as they
         # ran and are kept as they are; only the summary is added, saying what is not known.
         run.tool_calls_used = len(calls)
@@ -584,13 +597,19 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--backfill", action="store_true", required=True)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--rebuild", action="store_true",
+                        help="recompute the records already rebuilt from previews (after a change to the rules)")
     args = parser.parse_args(argv)
-    from postgres.models.agent import AgentRun
+    from postgres.models.agent import AgentRun, AgentRunItem
     from postgres.session import _get_session_local
 
     done = skipped = items = 0
     with _get_session_local()() as db:
         for run in db.query(AgentRun).order_by(AgentRun.started_at).all():
+            basis = (run.record_summary or {}).get("basis") or ""
+            if args.rebuild and run.prompt_version is None and basis.startswith(PREVIEW_BASIS[:60]):
+                db.query(AgentRunItem).filter(AgentRunItem.run_id == run.id).delete(synchronize_session=False)
+                run.record_summary = None
             summary = backfill_run(db, run)
             if summary is None:
                 skipped += 1

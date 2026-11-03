@@ -275,6 +275,25 @@ class RunRecordTests(RunRecordFixture):
             {"txn": "txn://abc123-def", "outcome": "matched"}], "total_matching": 1, "returned": 1}}, {})
         self.assertEqual([(i["kind"], i["ref"]) for i in cross["items"]], [("payment", "abc123-def")])
 
+    def test_a_failed_search_is_not_counted_as_searched_and_is_listed_as_refused(self):
+        # Live 2026-11-03, run e3a4a15d: search_documents raised a provider 429; the record said documents searched.
+        facts = run_record.call_facts("search_documents", {"query": "rent"},
+                                      {"summary": "failed", "data": {"error": "Error code: 429"}}, {})
+        self.assertFalse(facts["available"])
+        self.assertIn("429", facts["reason"])
+
+    def test_case_search_document_and_phone_hits_are_followed(self):
+        data = {"schema": "loupe.agent.phone_search_case/1", "items": [
+            {"kind": "document", "title": "Stmt.pdf", "page": 3, "evidence_file_id": "51d805b9", "record_uid": None},
+            {"kind": "message", "rec": "rec://0fca69af-2ac1", "record_uid": None}], "total_matching": 2, "returned": 2}
+        facts = run_record.call_facts("search_case", {"query": "rent"}, {"data": data}, {})
+        self.assertEqual([(i["kind"], i["ref"]) for i in facts["items"]],
+                         [("document", "Stmt.pdf#p3"), ("phone_record", "0fca69af-2ac1")])
+        self.assertEqual(facts["items_without_id"], 0)
+        rows = run_record.examine([{"name": "search_case", "arguments": {}, "record": facts}],
+                                  answer="See [Stmt.pdf, p.3](doc://51d805b9/3).", artifacts=[])["items"]
+        self.assertTrue(rows[0]["cited"])
+
     def test_a_reference_is_not_credited_by_a_longer_one_it_starts(self):
         self.assertFalse(run_record._mentions("see doc://f.pdf/12 and [f.pdf, p.12]", "doc://f.pdf/1"))
         self.assertFalse(run_record._mentions("see [f.pdf, p.12]", "f.pdf, p.1"))
@@ -301,6 +320,13 @@ class RunRecordTests(RunRecordFixture):
         self.assertEqual(run.for_user_email, user.email)
         self.assertEqual(run.prompt_version_label, "not recorded (run made before the run record)")
         self.assertIsNone(run_record.backfill_run(db, run))
+        # --rebuild recomputes a preview-built record through the same path, and only those.
+        db.commit()
+        with patch("postgres.session._get_session_local", return_value=self.fx.SessionLocal):
+            run_record.main(["--backfill", "--rebuild", "--apply"])
+        db.expire_all()
+        self.assertEqual(db.query(AgentRunItem).filter_by(run_id=run.id).count(), 2)
+        self.assertIn("first 25 items", db.get(AgentRun, run.id).record_summary["basis"])
 
     def test_backfill_keeps_the_calls_a_killed_run_stored_as_it_ran(self):
         result = self.run_agent([lambda o: ("get_financial_transactions", {"limit": 2})], lambda o: "ok")
