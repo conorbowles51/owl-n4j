@@ -1319,8 +1319,24 @@ P14 carries 595,975 TimeStamp values in total (CAT sum over its catalogue) and t
 | Routine for P14 | ≤ 30 s |
 | Cell reference import, worldwide file | ≤ 15 min, streaming |
 
-Measured by `backend/tests/test_pattern_performance.py`, which runs only when the corpus environment
-variable is set and records results in the build state, never failing the normal suite on timing alone.
+Measured by `docs/cellebrite/measurements/scripts/pol_gate_f_corpus.py` on P12 and P14 of the 3-phone case in a
+scratch database, as decision 41 sets out; it writes counts and timings only.
+
+Measured on 2026-11-03 (scratch database, P12 and P14, `nice 15` and idle-class I/O on the shared server, load
+average 3 to 7 unless stated):
+
+| Operation | Measured | Target |
+|---|---|---|
+| Full projection build for P14 | 258.9 s (load 4), 291.8 s (load 7), 320.5 s (load 10 to 13), 328.3 s (load 3 to 7), 369.2 s (load 7 to 12); peak memory 292 to 294 MB; 161 s of it is the build's own processor time, the rest waits on the shared database | memory met; time met in 2 of 5 runs |
+| Re-applying a new activity mapping version to P14 | 40.9 s (17,832 events change); the same mapping again 40.0 s; no change 33.1 s | met |
+| Day view, P14, busiest day (43,859 events), passive collapsed | p95 389 ms (n 20) | met |
+| Day view with all passive items (Show all, 41 pages, 40,169 items) | p95 253 ms a page | met |
+| Pattern grid, P14, usual span (831 days) | p95 1,140 ms (n 10) | met |
+| Pattern grid, person with 2 phones (874 days) | p95 1,429 ms (n 10) | met |
+| Statement check, 24 h, person with 2 phones | inactive p95 1,309 ms (5,001 items), active 1,345 ms (4,998 items), no contact 1,208 ms (184 items), at a place 97 ms (4 items); n 20 each | met |
+| Together, P12 and P14, 874 days | 24.6 s, done (P12 has 12 position observations, P14 12,922; 0 pairs) | met |
+| Routine for P14 | 945 ms | met |
+| Cell reference import, worldwide file | not measured: no cell reference file is held | not measured |
 
 ---
 
@@ -1692,6 +1708,46 @@ Each is a decision with its reasoning and what would reverse it.
     Whichever of the two jobs finishes second wires the link and carries J-10c. Until then Places over time and
     Together list their results in full with totals. *Reverse if* the Case Map layer cannot take these
     parameters; Patterns then embeds that layer's component instead.
+
+37. **Context events in a statement check are counted per phone, hour and reason (9.5).** Undercutting,
+    supporting, gap and near-window items are one item per record. Events inside the window that bear on neither
+    side (recorded without use, a screen or state change, not shown to be the user's own action, a time whose
+    meaning is not established) are one item per phone, UTC hour and reason, with the count and the record types;
+    "Show the N events" lists every one of them, paged, with the count the check stored, and says so when the
+    phone's readings have changed since. The database counts the groups; only the events listed one by one are read
+    into the check. A 24-hour check on P14's busiest day for the two-phone person holds 5,001 items this way; one
+    item per context event made it 47,626 items and 15 to 25 s. A counted group names no record, so attaching it carries
+    it by the check's own link. The reason "What this time means is not established" is given only to a time whose
+    meaning is unknown; a recorded-without-use event says so. *Reverse if* a context event has to be cited on its
+    own from the stored check.
+
+38. **A phone's usual span (10).** The views open on the last day of the phone's usual span, not on its last
+    event. The usual span is its days of activity with any run of days more than 90 days from the rest that holds
+    under 1% of the phone's activity or fewer than 20 events set apart, from either end, smaller end first, until
+    none is left or one run remains. The Patterns page states how many events are set apart and their earliest and
+    latest dates; any date can still be chosen. P14's last event is in 2057 and its usual span ends on 23 October
+    2024, with 1,129 events set apart (1953 to 2057). "Full extraction span" in section 11 is the usual span.
+    *Reverse if* the extraction's own capture date is recorded for every phone; the span then ends there.
+
+39. **An event's activity mapping version comes from its projection.** The projection state records the version
+    of each activity mapping it applied, by the mapping's `<kind>/<name>/` row prefix, and `pol_activity_event_v`
+    gives each event the version for its mapping row from there. A new mapping version then rewrites only the
+    events whose class, actor, flags or value move (17,832 of P14's 542,091 for a one-row change). Rewriting every
+    event takes 60 to 81 s on its own, more than the 60 s target. *Reverse if* an event must keep the version that
+    first classified it after a re-apply that left its result unchanged.
+
+40. **A Pattern grid pauses cyclic garbage collection while it is built.** A grid over 874 days builds 20,976
+    hourly entries, each a few small dictionaries, and the collections they trigger took 400 ms of 900 ms. Collection resumes when the
+    last grid being built ends, and only if it was on before; nothing else changes. *Reverse if* the grid stops
+    building per-hour objects (for example a columnar response), which removes the cause.
+
+41. **How the section 11 targets are measured.** "Day view with all passive items" is each page of Show all
+    (1,000 items a page): the Day view itself shows passive items as counts per hour above 5,000 items, so that
+    page is the request a person waits on. "Full extraction span" is the usual span (decision 38), capped at the
+    grid's 1,500 days. Each timed request follows one untimed request of the same kind (the targets are for a warm
+    cache). Timings run on the scratch database under `nice 15` and idle-class I/O on the shared server, with the
+    server's load average stated, so they are upper bounds for the live server. *Reverse if* the live server's own timings differ in
+    kind; they then replace these.
 
 ## 15. Not yet established
 
