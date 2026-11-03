@@ -30,8 +30,11 @@ KINDS = {"ocr": "Read text in this image", "transcript": "Transcribe this audio"
 OCR_CATEGORIES = {"Image"}
 TRANSCRIPT_CATEGORIES = {"Audio", "Video"}
 MAX_ATTEMPTS = 2
-STALE_SECONDS = 3 * 3600
 TIMEOUT_SECONDS = {"ocr": 300, "transcript": 3 * 3600}
+# a running reading whose worker stopped (restart, crash) is taken up again once its kind's time limit has passed
+# with a margin: an image after 15 minutes, not after the three hours a transcript may take
+STALE_MARGIN_SECONDS = 600
+STALE_SECONDS = {k: v + STALE_MARGIN_SECONDS for k, v in TIMEOUT_SECONDS.items()}
 IDLE_SECONDS = 5
 NO_MODEL = ("The transcription model is not installed on this server, so this audio cannot be transcribed here. "
             "Nothing was sent anywhere.")
@@ -81,16 +84,18 @@ def request(conn, case_id, file_uid, kind, user_id=None) -> dict:
     if f.verification == "missing":
         from services.phone.media import MISSING_WORDS
         raise DeriveError(MISSING_WORDS)
-    open_ = conn.execute(text("SELECT * FROM phone_derived_texts WHERE case_id = :c AND file_uid = :u AND kind = :k "
-                              "AND state IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1"),
-                         {"c": str(case_id), "u": str(file_uid), "k": kind}).first()
-    if open_ is not None:
-        return _out(open_)
+    # one open reading per file and kind (unique partial index): a second request at the same moment inserts
+    # nothing and gets the reading already open
     r = conn.execute(text(
         "INSERT INTO phone_derived_texts (id, case_id, extraction_id, file_uid, kind, created_by_user_id) VALUES "
-        "(:i, :c, :e, :u, :k, :by) RETURNING *"),
+        "(:i, :c, :e, :u, :k, :by) ON CONFLICT (case_id, file_uid, kind) WHERE state IN ('queued', 'running') "
+        "DO NOTHING RETURNING *"),
         {"i": uuid.uuid4(), "c": str(case_id), "e": f.extraction_id, "u": str(file_uid), "k": kind,
          "by": str(user_id) if user_id else None}).first()
+    if r is None:
+        r = conn.execute(text("SELECT * FROM phone_derived_texts WHERE case_id = :c AND file_uid = :u AND kind = :k "
+                              "AND state IN ('queued', 'running') ORDER BY created_at LIMIT 1"),
+                         {"c": str(case_id), "u": str(file_uid), "k": kind}).first()
     return _out(r)
 
 
@@ -190,8 +195,9 @@ def _claim(engine):
         with engine.begin() as c:
             r = c.execute(text(
                 "SELECT id, state, attempts FROM phone_derived_texts WHERE state = 'queued' OR (state = 'running' AND "
-                "started_at < now() - make_interval(secs => :s)) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1"),
-                {"s": STALE_SECONDS}).one_or_none()
+                "started_at < now() - make_interval(secs => CASE kind WHEN 'ocr' THEN :so ELSE :st END)) "
+                "ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1"),
+                {"so": STALE_SECONDS["ocr"], "st": STALE_SECONDS["transcript"]}).one_or_none()
             if r is None:
                 return None
             if r.state == "running" and r.attempts >= MAX_ATTEMPTS:

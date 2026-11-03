@@ -119,3 +119,52 @@ def test_m3_the_reading_process_refuses_every_outbound_connection():
         "    try:\n        f()\n    except OSError as e:\n        print(e)\n")
     out = subprocess.run([sys.executable, "-I", "-c", probe], capture_output=True, text=True, timeout=30)
     assert out.stdout.count("outbound connections are refused while reading evidence") == 2
+
+
+def test_two_requests_at_the_same_moment_make_one_reading(world):
+    """Two people (or a double click) ask for the same file's text at once: the second request waits for the first
+    to commit and gets the same reading back, never a second open one (unique partial index on the open states)."""
+    import threading
+    from services.phone import derive
+    engine, case, _, _ = world
+    with engine.begin() as c:
+        c.execute(text("UPDATE phone_files SET tags = 'Image' WHERE file_uid = :f"), {"f": LINKED})
+    got = {}
+    with engine.connect() as a:
+        tx = a.begin()
+        got["a"] = derive.request(a, case, LINKED, "ocr")
+
+        def second():
+            with engine.begin() as b:
+                got["b"] = derive.request(b, case, LINKED, "ocr")
+        t = threading.Thread(target=second)
+        t.start()
+        t.join(1.5)  # blocked on the first request's uncommitted row (new), or already done with a second (old)
+        tx.commit()
+    t.join(10)
+    with engine.connect() as c:
+        n = c.execute(text("SELECT count(*) FROM phone_derived_texts WHERE file_uid = :f AND state IN ('queued', "
+                           "'running')"), {"f": LINKED}).scalar()
+    assert n == 1 and got["b"]["id"] == got["a"]["id"]
+
+
+def test_a_stopped_image_reading_is_taken_up_after_its_own_time_limit_not_the_transcripts():
+    """An image reading is stopped after 5 minutes, a transcript after 3 hours; a reading whose worker stopped is
+    taken up again after its own kind's limit (plus a margin), so an image waits 15 minutes, not 3 hours 10."""
+    from services.phone import derive
+    assert derive.STALE_SECONDS["ocr"] == derive.TIMEOUT_SECONDS["ocr"] + derive.STALE_MARGIN_SECONDS == 900
+    assert derive.STALE_SECONDS["transcript"] == 3 * 3600 + 600
+
+
+def test_a_stopped_image_reading_is_claimed_again_and_a_transcript_of_the_same_age_is_not(world):
+    from services.phone import derive
+    engine, case, _, ext = world
+    with engine.begin() as c:
+        for uid, kind in ((LINKED, "ocr"), (LOOSE, "transcript")):
+            c.execute(text(
+                "INSERT INTO phone_derived_texts (id, case_id, extraction_id, file_uid, kind, state, attempts, "
+                "started_at) VALUES (gen_random_uuid(), :c, :e, :u, :k, 'running', 1, now() - interval '20 minutes')"),
+                {"c": case, "e": ext, "u": uid, "k": kind})
+    job = derive._claim(engine)
+    assert job is not None and job.kind == "ocr" and str(job.file_uid) == LINKED
+    assert derive._claim(engine) is None  # the transcript started 20 minutes ago is still within its 3 hours
