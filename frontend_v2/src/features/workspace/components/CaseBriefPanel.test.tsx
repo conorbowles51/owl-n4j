@@ -81,6 +81,35 @@ describe("What changed brief", () => {
     await vi.waitFor(() => expect(mocks.fetchAPI).toHaveBeenCalledWith("/api/case-briefs/run", { method: "POST", body: { case_id: "case-1" } }))
   })
 
+  it("shows a brief being prepared only while the server holds the request, then says the check found no change", async () => {
+    mocks.fetchAPI.mockReset()
+    let pending = true
+    mocks.fetchAPI.mockImplementation(() => Promise.resolve({ brief: brief({ checked_at: "2026-11-03T22:30:00Z" }), requested_at: pending ? "2026-11-03T22:29:00Z" : null }))
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><CaseBriefPanel caseId="case-1" canEdit /></QueryClientProvider>)
+    expect(await screen.findByText("New brief being prepared")).toBeInTheDocument()
+    pending = false
+    await client.invalidateQueries({ queryKey: ["case-brief", "case-1"] })
+    await vi.waitFor(() => expect(screen.queryByText("New brief being prepared")).not.toBeInTheDocument())
+    expect(screen.getByText(/nothing shown here has changed since this brief was written/)).toBeInTheDocument()
+  })
+
+  it("after Check now, the badge goes once the server has handled the request (live 3 Nov: it stayed for good)", async () => {
+    mocks.fetchAPI.mockReset()
+    mocks.fetchAPI.mockImplementation((url: string) => {
+      if (url.endsWith("/run")) return Promise.resolve({ requested: true })
+      return Promise.resolve({ brief: brief(), requested_at: null })
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={client}><CaseBriefPanel caseId="case-1" canEdit /></QueryClientProvider>)
+    await screen.findByText("Current")
+    fireEvent.click(screen.getByRole("button", { name: /Check now/ }))
+    await vi.waitFor(() => expect(mocks.fetchAPI).toHaveBeenCalledWith("/api/case-briefs/run", expect.anything()))
+    await client.invalidateQueries({ queryKey: ["case-brief", "case-1"] })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByText("New brief being prepared")).not.toBeInTheDocument()
+  })
+
   it("has no Check now button for a viewer", async () => {
     mocks.fetchAPI.mockResolvedValue({ brief: brief(), requested_at: null })
     show(false)

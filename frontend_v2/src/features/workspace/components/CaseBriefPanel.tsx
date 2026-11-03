@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertTriangle, CheckCircle2, History, Loader2, RefreshCw } from "lucide-react"
-import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
@@ -103,15 +102,15 @@ function money(minor: string | undefined, currency: string) {
 
 export function CaseBriefPanel({ caseId, canEdit }: { caseId: string; canEdit: boolean }) {
   const qc = useQueryClient()
-  const [asked, setAsked] = useState(false)
   const latest = useQuery({
     queryKey: ["case-brief", caseId],
     queryFn: () => fetchAPI<LatestResponse>(`/api/case-briefs/latest?case_id=${encodeURIComponent(caseId)}`),
-    refetchInterval: (q) => (q.state.data?.requested_at || asked ? 20_000 : false),
+    // poll only while the server holds a request for this case (it is removed once the brief is written or checked)
+    refetchInterval: (q) => (q.state.data?.requested_at ? 15_000 : false),
   })
   const run = useMutation({
     mutationFn: () => fetchAPI<{ requested: boolean }>("/api/case-briefs/run", { method: "POST", body: { case_id: caseId } }),
-    onSuccess: () => { setAsked(true); void qc.invalidateQueries({ queryKey: ["case-brief", caseId] }) },
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["case-brief", caseId] }) },
   })
 
   const header = (
@@ -135,7 +134,7 @@ export function CaseBriefPanel({ caseId, canEdit }: { caseId: string; canEdit: b
     return <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm" aria-labelledby="case-brief-heading">{header}<p className="px-4 py-4 text-xs text-status-error">The brief could not be loaded: {latest.error instanceof Error ? latest.error.message : "unknown error"}.</p></section>
   }
   const brief = latest.data?.brief
-  const pending = latest.data?.requested_at || asked
+  const pending = Boolean(latest.data?.requested_at)
   if (!brief) {
     return (
       <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm" aria-labelledby="case-brief-heading">
@@ -164,6 +163,9 @@ export function CaseBriefPanel({ caseId, canEdit }: { caseId: string; canEdit: b
           )}
           {pending ? <Badge variant="outline"><Loader2 className="size-3 animate-spin" /> New brief being prepared</Badge> : null}
         </div>
+        {!pending && brief.checked_at > brief.created_at ? (
+          <p className="text-xs text-muted-foreground">Checked again {fmt(brief.checked_at)}: nothing shown here has changed since this brief was written.</p>
+        ) : null}
         {brief.out_of_date && brief.out_of_date_sentence ? (
           <p className="rounded-md border border-status-warning/50 bg-status-warning-soft px-3 py-2 text-xs text-status-warning">{brief.out_of_date_sentence}</p>
         ) : null}
