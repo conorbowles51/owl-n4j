@@ -402,6 +402,7 @@ def edges(conn, case_id, subjects: list, *, from_instant=None, to_instant=None, 
     session = Session(bind=conn)
     limits = []
     from services.phone import money_presence
+    from services.financial.money_between import money_between
     financial = money_presence.has_financial_evidence(conn, case_id)
     try:
         fin = financial_sides(session, case_id, [s["entity_key"] for s in sides])
@@ -413,14 +414,17 @@ def edges(conn, case_id, subjects: list, *, from_instant=None, to_instant=None, 
                 comm = communication(conn, case_id, a["keys"], b["keys"], from_instant=from_instant,
                                      to_instant=to_instant, group_scope=group_scope, collapse_copies=collapse_copies,
                                      slice_by=slice_by, ctx=ctx)
-                pay = payments(session, case_id, fin.get(a["entity_key"], empty), fin.get(b["entity_key"], empty),
-                               from_date=_date_in_zone(from_instant, zone), to_date=_date_in_zone(to_instant, zone, end=True))
+                # the money half is the one money-between function (services.financial.money_between)
+                pay = money_between(session, case_id, None, None,
+                                    sides=(fin.get(a["entity_key"], empty), fin.get(b["entity_key"], empty)),
+                                    from_date=_date_in_zone(from_instant, zone),
+                                    to_date=_date_in_zone(to_instant, zone, end=True))
                 if pay["shared_accounts"]:
                     limits.append({"code": "shared_account", "pair": [a["subject"], b["subject"]],
                                    "count": pay["shared_accounts"],
                                    "message": "%s held by both sides are left out of the money between them."
                                               % _plural(pay["shared_accounts"], "account")})
-                money = money_totals(pay["rows"])
+                money = pay["totals"]
                 slices = []
                 if slice_by:
                     cs = comm["_slices"]
@@ -461,8 +465,11 @@ def edge_records(conn, case_id, a: dict, b: dict, kind: str, *, from_instant=Non
             zone = _zone(conn, case_id)
             fin = financial_sides(session, case_id, [sa["entity_key"], sb["entity_key"]])
             empty = {"parties": set(), "accounts": set()}
-            rows = payments(session, case_id, fin.get(sa["entity_key"], empty), fin.get(sb["entity_key"], empty),
-                            from_date=_date_in_zone(from_instant, zone), to_date=_date_in_zone(to_instant, zone, end=True))["rows"]
+            from services.financial.money_between import money_between
+            rows = money_between(session, case_id, None, None,
+                                 sides=(fin.get(sa["entity_key"], empty), fin.get(sb["entity_key"], empty)),
+                                 from_date=_date_in_zone(from_instant, zone),
+                                 to_date=_date_in_zone(to_instant, zone, end=True))["rows"]
         finally:
             session.close()
         rows = [r for r in rows if r["proof_class"] in SUMMED + STATED]
