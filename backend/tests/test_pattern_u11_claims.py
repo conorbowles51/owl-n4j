@@ -279,6 +279,14 @@ def test_claims_over_http_and_attaching_items_to_a_finding(hooks):
             lst = client.get("%s/%s/evaluations" % (base, cl["id"])).json()
             assert lst["total"] == 1 and lst["items"][0]["stale"] is False
             assert client.get(base).json()["total"] == 1
+            # a saved statement_check link holds only the check's id: it opens that check with its statement's subject
+            got = client.get("/api/pattern/%s/checks/%s" % (case, ev["evaluation_id"]))
+            assert got.status_code == 200, got.text
+            got = got.json()
+            assert got["evaluation_id"] == ev["evaluation_id"] and got["claim_id"] == cl["id"]
+            assert got["subject"] == subj and got["claim"]["window_text"] == "asleep from eleven"
+            assert got["total_items"] == ev["total_items"]
+            assert client.get("/api/pattern/%s/checks/%s" % (case, uuid.uuid4())).status_code == 404
 
 
 @needs_template

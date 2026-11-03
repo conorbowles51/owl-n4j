@@ -190,6 +190,7 @@ export interface Evaluation {
   evaluation_id: string
   claim_id: string
   claim_version: number
+  evaluated_at?: string
   outcome: string
   outcome_basis: string
   outcome_words: string
@@ -232,8 +233,18 @@ export interface Snapshot {
   record_count: number
   stale: boolean
   stale_words: string | null
-  snapshot: { summary_counts: Record<string, number>; window: { start: string; end: string; zone: string } }
+  snapshot: {
+    summary_counts: Record<string, number>
+    window: { start: string; end: string; zone: string }
+    subject?: Subject | { kind: "case" }
+    parameters?: Record<string, unknown>
+  }
+  created_by_name?: string | null
+  created_at?: string
 }
+
+/** A saved statement check opened by its id alone (GET /checks/{id}): the check as it ran, with its statement. */
+export type SavedCheck = Evaluation & { claim: Claim; subject: Subject }
 
 export interface SnapshotRequest {
   kind: Snapshot["kind"]
@@ -298,6 +309,9 @@ export const patternAPI = {
     fetchAPI<{ total: number; items: KeyDate[] }>(`${base(caseId)}/key-dates${kind ? `?kind=${kind}` : ""}`),
   createKeyDate: (caseId: string, body: { kind: "date" | "term"; label: string; instant?: string; zone?: string; term?: string }) =>
     fetchAPI<KeyDate>(`${base(caseId)}/key-dates`, { method: "POST", body: body as never }),
+  snapshot: (caseId: string, id: string) => fetchAPI<Snapshot>(`${base(caseId)}/snapshots/${encodeURIComponent(id)}`),
+  check: (caseId: string, evaluationId: string) =>
+    fetchAPI<SavedCheck>(`${base(caseId)}/checks/${encodeURIComponent(evaluationId)}`),
   freeze: (caseId: string, body: SnapshotRequest) =>
     fetchAPI<Snapshot>(`${base(caseId)}/snapshots`, { method: "POST", body: body as never }),
   addToInterview: (dossierId: string, interviewId: string, item: { target_type: string; target_id: string }) =>

@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { phoneLinkHref } from "@/features/phones/phone-links"
-import { patternAPI, type Claim, type ClaimKind, type Evaluation, type EvaluationItem, type GroupEvents, type Subject } from "../api"
+import { patternAPI, type Claim, type ClaimKind, type Evaluation, type EvaluationItem, type GroupEvents, type SavedCheck, type Subject } from "../api"
 import { errorWords } from "../lanes-lib"
 import { CollectBar } from "./CollectBar"
 import { DraftPanel } from "./DraftPanel"
@@ -32,12 +32,16 @@ function same(a: Subject, b: Subject) {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
-export function StatementCheckPanel({ caseId, subject }: { caseId: string; subject: Subject }) {
+export function StatementCheckPanel({ caseId, subject, saved }: { caseId: string; subject: Subject; saved?: SavedCheck }) {
   const qc = useQueryClient()
   const claims = useQuery({ queryKey: ["pattern-claims", caseId], queryFn: () => patternAPI.claims(caseId) })
   const mine = (claims.data?.items || []).filter((c) => c.status !== "withdrawn" && same(c.subject, subject))
-  const [current, setCurrent] = useState<string | null>(null)
-  const claim = mine.find((c) => c.id === current) || mine.filter((c) => c.status === "confirmed").pop() || mine[mine.length - 1]
+  // a saved statement_check link opens that check of that statement, as it ran (even if the statement was withdrawn
+  // since); choosing another statement goes back to the latest check as usual
+  const [current, setCurrent] = useState<string | null>(saved?.claim_id ?? null)
+  const claim = mine.find((c) => c.id === current) || (saved && current === saved.claim_id ? saved.claim : undefined)
+    || mine.filter((c) => c.status === "confirmed").pop() || mine[mine.length - 1]
+  const savedShown = useRef(false)
   const [ev, setEv] = useState<Evaluation | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -45,6 +49,11 @@ export function StatementCheckPanel({ caseId, subject }: { caseId: string; subje
   useEffect(() => {
     let live = true
     setEv(null)
+    if (saved && !savedShown.current && claim?.id === saved.claim_id) {
+      savedShown.current = true
+      setEv(saved)
+      return
+    }
     if (!claim || claim.status !== "confirmed") return
     patternAPI.evaluations(caseId, claim.id).then(async (list) => {
       const last = list.items[list.items.length - 1]
@@ -86,6 +95,12 @@ export function StatementCheckPanel({ caseId, subject }: { caseId: string; subje
       {busy && <p aria-live="polite">{busy}</p>}
       {err && <p role="alert" className="text-destructive">{err}</p>}
       {claim && claim.status === "confirmed" && !ev && !err && <p className="text-muted-foreground">Checking the statement…</p>}
+      {saved && ev?.evaluation_id === saved.evaluation_id && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Opened from a saved link: this is the check as it ran{saved.evaluated_at ? ` at ${utc(saved.evaluated_at)}` : ""}
+          {saved.claim.status === "withdrawn" ? ". The statement has been withdrawn since." : "."}
+        </p>
+      )}
       {ev && claim && <EvaluationView key={ev.evaluation_id} caseId={caseId} claim={claim} ev={ev}
         onAgain={() => act("Checking again…", async () => setEv(await patternAPI.evaluate(caseId, claim.id)))}
         onDispute={(o) => {

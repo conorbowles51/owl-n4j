@@ -3,9 +3,9 @@ import { useParams, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/ui/page-header"
-import { patternAPI, type Subject, type SubjectList, type TogetherResponse } from "../api"
+import { patternAPI, type Snapshot, type Subject, type SubjectList, type TogetherResponse } from "../api"
 import { Lanes } from "./Lanes"
-import { errorWords, laneRowsOf, setApartWords, usualLast } from "../lanes-lib"
+import { errorWords, laneRowsOf, setApartWords, snapshotView, usualLast } from "../lanes-lib"
 import { StatementCheckPanel } from "./StatementCheckPanel"
 import { KeepResult } from "./CollectBar"
 import { KeyDatesBar } from "./KeyDates"
@@ -53,15 +53,32 @@ function lastDay(list: SubjectList | undefined, s: Subject | null): string {
   return days.pop() || new Date().toISOString().slice(0, 10)
 }
 
+function snapshotSubject(s: Snapshot | undefined): Subject | null {
+  const subj = s?.snapshot.subject
+  return subj && (subj.kind === "extraction" || subj.kind === "dossier") ? subj : null
+}
+
 export function PatternsPage() {
   const { id: caseId = "" } = useParams()
   const [params, setParams] = useSearchParams()
   const subjects = useQuery({ queryKey: ["pattern-subjects", caseId], queryFn: () => patternAPI.subjects(caseId) })
+  // Saved links (lx-collect phone-links.ts): ?check=<evaluation id> opens that statement check; ?analysis=<kind>&
+  // snapshot=<id> opens that frozen result. The subject and view come from what was saved unless the address names them.
+  const checkId = params.get("check")
+  const snapshotId = params.get("snapshot")
+  const savedCheck = useQuery({ queryKey: ["pattern-saved-check", caseId, checkId], queryFn: () => patternAPI.check(caseId, checkId!),
+    enabled: !!caseId && !!checkId, retry: false })
+  const savedSnap = useQuery({ queryKey: ["pattern-snapshot", caseId, snapshotId], queryFn: () => patternAPI.snapshot(caseId, snapshotId!),
+    enabled: !!caseId && !!snapshotId, retry: false })
+  const snapOpen = savedSnap.data ? snapshotView(savedSnap.data) : null
   // The subject and view live in state first and are mirrored to the address, so a view chosen straight after a
   // subject can never write the address from a copy that predates the subject (POL-1).
   const [picked, setPicked] = useState(() => ({ view: params.get("view"), subject: params.get("subject") }))
-  const view = (VIEWS.find((v) => v.id === picked.view)?.id || "day") as ViewId
-  const chosen = parseSubject(picked.subject)
+  const view = (VIEWS.find((v) => v.id === picked.view)?.id || (checkId ? "check" : snapOpen?.view) || "day") as ViewId
+  const chosen = parseSubject(picked.subject) || (checkId ? savedCheck.data?.subject : null) || snapshotSubject(savedSnap.data)
+  const opening = (!!checkId && savedCheck.isLoading) || (!!snapshotId && savedSnap.isLoading)
+  const last = (s: Subject | null) => (snapOpen && s && snapshotSubject(savedSnap.data) && subjectKey(s) === subjectKey(snapshotSubject(savedSnap.data)!)
+    ? snapOpen.last : lastDay(subjects.data, s))
   const subject: Subject | null = chosen || (subjects.data?.extractions[0]
     ? { kind: "extraction", extraction_id: subjects.data.extractions[0].extraction_id } : null)
   const set = (k: "view" | "subject", v: string) => {
@@ -99,13 +116,50 @@ export function PatternsPage() {
         ))}
       </nav>
       {subjects.isError && <p role="alert" className="text-sm text-destructive">{errorWords(subjects.error)}</p>}
+      {opening && <p className="text-sm text-muted-foreground">Opening the saved {checkId ? "statement check" : "result"}…</p>}
+      {checkId && savedCheck.isError && (
+        <p role="alert" className="text-sm text-destructive">The saved statement check could not be opened: {errorWords(savedCheck.error)}</p>
+      )}
+      {snapshotId && savedSnap.isError && (
+        <p role="alert" className="text-sm text-destructive">The saved result could not be opened: {errorWords(savedSnap.error)}</p>
+      )}
+      {savedSnap.data && <SavedResult snap={savedSnap.data} last={snapOpen!.last} />}
       {subjects.data && !subject && <p className="text-sm">This case has no phones to show yet.</p>}
-      {subject && view === "day" && <DayView caseId={caseId} subject={subject} initial={lastDay(subjects.data, subject)} />}
-      {subject && view === "grid" && <GridView caseId={caseId} subject={subject} last={lastDay(subjects.data, subject)} />}
-      {subject && view === "places" && <PlacesView caseId={caseId} subject={subject} last={lastDay(subjects.data, subject)} />}
-      {subject && view === "together" && subjects.data && <TogetherView caseId={caseId} subject={subject} list={subjects.data} />}
-      {subject && view === "check" && <StatementCheckPanel caseId={caseId} subject={subject} />}
+      {!opening && subject && view === "day" && <DayView key={subjectKey(subject)} caseId={caseId} subject={subject} initial={last(subject)} />}
+      {!opening && subject && view === "grid" && <GridView caseId={caseId} subject={subject} last={last(subject)} />}
+      {!opening && subject && view === "places" && <PlacesView caseId={caseId} subject={subject} last={last(subject)} />}
+      {!opening && subject && view === "together" && subjects.data && <TogetherView caseId={caseId} subject={subject} list={subjects.data} />}
+      {!opening && subject && view === "check" && <StatementCheckPanel caseId={caseId} subject={subject}
+        saved={savedCheck.data && subjectKey(savedCheck.data.subject) === subjectKey(subject) ? savedCheck.data : undefined} />}
     </div>
+  )
+}
+
+const SNAP_KIND_WORDS: Record<Snapshot["kind"], string> = {
+  day: "Day view", window: "Window", grid: "Pattern grid", places: "Places over time",
+}
+
+function utcText(t: string) {
+  return `${new Date(t).toISOString().replace("T", " ").slice(0, 16)} UTC`
+}
+
+/** A frozen result opened from a saved link: what was kept, exactly as it was, apart from the live view below it. */
+export function SavedResult({ snap, last }: { snap: Snapshot; last: string }) {
+  const counts = Object.entries(snap.snapshot.summary_counts || {})
+  return (
+    <section aria-label="Saved result" className="flex flex-col gap-1 rounded border p-3 text-sm">
+      <p className="font-medium">Saved result: {snap.label}</p>
+      <p className="text-xs text-muted-foreground">
+        {SNAP_KIND_WORDS[snap.kind]}, {utcText(snap.snapshot.window.start)} to {utcText(snap.snapshot.window.end)} (times
+        shown in {snap.snapshot.window.zone}). {snap.record_count.toLocaleString()} records kept
+        {snap.created_by_name ? `, saved by ${snap.created_by_name}` : ""}{snap.created_at ? ` on ${utcText(snap.created_at)}` : ""}.
+      </p>
+      {counts.length > 0 && (
+        <p className="text-xs">{counts.map(([k, n]) => `${k.replace(/_/g, " ")}: ${n.toLocaleString()}`).join("; ")}</p>
+      )}
+      {snap.stale_words && <p className="text-xs text-amber-700 dark:text-amber-400">{snap.stale_words}</p>}
+      <p className="text-xs text-muted-foreground">The saved result does not change. Below is the same view as the phones read now, ending on {last}.</p>
+    </section>
   )
 }
 

@@ -1,6 +1,6 @@
 import { ApiError } from "@/lib/api-client"
 import { phoneLinkHref } from "@/features/phones/phone-links"
-import type { DayResponse, KeyDate, LaneItem } from "./api"
+import type { DayResponse, KeyDate, LaneItem, Snapshot } from "./api"
 import type { LaneBand, LaneRow } from "./components/Lanes"
 
 /** Helpers shared by the Patterns screen, the window panel and the statement check (kept apart from components). */
@@ -104,4 +104,22 @@ export function setApartWords(label: string, span: { first: string | null; last:
   return `${label}: ${n.toLocaleString("en-US")} event${n === 1 ? "" : "s"} lie on dates set apart from the rest ` +
     `(${(span.set_apart_first || "").slice(0, 10)} to ${(span.set_apart_last || "").slice(0, 10)}, UTC). ` +
     `The views open on the usual span, ${span.first} to ${span.last}; any date can still be chosen.`
+}
+
+/** The local date (YYYY-MM-DD) of an instant in an IANA zone; UTC when the zone is not one the browser knows. */
+export function dateIn(t: string, zone: string) {
+  try {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(t))
+  } catch {
+    return new Date(t).toISOString().slice(0, 10)
+  }
+}
+
+/** The view a frozen result opens on, and the last day it covers (in its zone). A window covers the whole case and
+ * has no single subject, so it opens on the Day view of its last day. */
+export function snapshotView(s: Snapshot): { view: "day" | "grid" | "places"; last: string } {
+  const w = s.snapshot.window
+  const last = dateIn(new Date(new Date(w.end).getTime() - 1).toISOString(), w.zone)
+  const view: "day" | "grid" | "places" = s.kind === "grid" ? "grid" : s.kind === "places" ? "places" : "day"
+  return { view, last }
 }

@@ -558,6 +558,22 @@ def get_claim_evaluation(claim_id: UUID, evaluation_id: UUID, case_id: UUID = De
     return _WalkJSON(out)
 
 
+@router.get("/{case_id}/checks/{evaluation_id}")
+def get_check(evaluation_id: UUID, case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
+    """A saved ``statement_check`` link holds only the check's id; this opens that check as it was run, with the
+    statement it checked and its subject, so the Patterns screen can show it (04 section 9.6)."""
+    from services.pattern_of_life import claims, evaluation
+    conn = db.connection()
+    try:
+        out = evaluation.read(conn, case_id, evaluation_id)
+        claim = claims.get(conn, case_id, out["claim_id"])
+    except claims.ClaimError as exc:
+        raise _claim_error(exc)
+    out["claim"] = claim
+    out["subject"] = claim["subject"]
+    return _WalkJSON(out)
+
+
 @router.get("/{case_id}/claims/{claim_id}/evaluations/{evaluation_id}/items/{ordinal}/events")
 def get_item_group_events(claim_id: UUID, evaluation_id: UUID, ordinal: int, cursor: int = Query(0, ge=0),
                           case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
