@@ -494,7 +494,7 @@ def test_timeline_lens_routes_index_window_and_buckets(api):
     snap = idx.json()["snapshot"]
     day = idx.json()["items"][0]["day"]
     w = cl.post("/api/phones/timeline/window", json={"filter": {"case_id": api["case"]}, "snapshot": snap, "day": day})
-    assert w.status_code == 200 and w.json()["items"][0]["comm"]["kind"] == "message"
+    assert w.status_code == 200 and w.json()["items"][0]["kind"] == "message"
     b = cl.post("/api/phones/timeline/buckets", json={"filter": {"case_id": api["case"]}, "snapshot": snap,
                                                       "start": "2023-03-13T00:00:00Z", "end": "2023-03-17T00:00:00Z"})
     assert b.status_code == 200 and sum(x["count"] for x in b.json()["lanes"][0]["buckets"]) == 2

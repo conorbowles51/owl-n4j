@@ -417,11 +417,11 @@ export function StreamList({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     <span>
-                      {row.phone.label} · {row.app ?? "app not recorded"}
+                      {row.kind === "record" ? row.phone.label : `${row.phone.label} · ${row.app ?? "app not recorded"}`}
                     </span>
                     <StateBadges badges={rowBadges(row)} />
                   </div>
-                  <div className="text-sm">
+                  {row.kind !== "record" && <div className="text-sm">
                     <ParticipantLabel label={row.from} />
                     <Arrow />
                     {row.to.length ? (
@@ -434,7 +434,7 @@ export function StreamList({
                     ) : (
                       <span className="text-muted-foreground">(recipient not recorded)</span>
                     )}
-                  </div>
+                  </div>}
                   {row.kind === "call" && <p>{row.call?.words}</p>}
                   {row.subject && <p className="font-semibold">{row.subject}</p>}
                   {row.body && (

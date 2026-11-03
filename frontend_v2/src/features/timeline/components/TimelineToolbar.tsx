@@ -13,6 +13,8 @@ interface TimelineToolbarProps {
   onToggleFilterSidebar: () => void
   activeFilterCount: number
   onExport: () => void
+  /** The Phones lens switch, shown only on a case with phones (03 section 9.5). */
+  extra?: React.ReactNode
 }
 
 type DatePreset = "all" | "30d" | "90d" | "1yr" | "custom"
@@ -29,6 +31,7 @@ export const TimelineToolbar = forwardRef<HTMLInputElement, TimelineToolbarProps
       onToggleFilterSidebar,
       activeFilterCount,
       onExport,
+      extra,
     },
     searchInputRef
   ) {
@@ -144,6 +147,7 @@ export const TimelineToolbar = forwardRef<HTMLInputElement, TimelineToolbarProps
             : `${filteredCount} of ${totalCount} events`}
         </span>
 
+        {extra}
         <Button variant="primary" size="sm" onClick={onExport}>
           <Download className="size-3.5" />
           Export

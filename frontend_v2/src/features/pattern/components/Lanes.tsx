@@ -23,6 +23,8 @@ export interface LaneMark {
   detail?: string
   tone?: "strong" | "moderate" | "weak" | "none" | "case" | "money"
   href?: string | null
+  /** Opens the mark's entries (the Timeline lens shows a bucket's rows in the list below the lanes, 03 9.6). */
+  onClick?: () => void
 }
 
 export interface LaneRow {
@@ -124,6 +126,7 @@ export function Lanes({ start, end, zone, zoneBasis, rows, span, onSpan, header 
               const left = pct(m.at, s, width)
               const cls = `absolute top-1 h-6 w-1.5 rounded ${TONE_CLASS[m.tone || "none"]}`
               const title = `${fmt(m.at)} · ${m.label}${m.detail ? ` · ${m.detail}` : ""}`
+              if (m.onClick) return <button key={m.key} type="button" onClick={m.onClick} className={cls} style={{ left: `${left}%` }} title={title} aria-label={title} />
               return m.href
                 ? <a key={m.key} href={m.href} className={cls} style={{ left: `${left}%` }} title={title} aria-label={title} />
                 : <span key={m.key} className={cls} style={{ left: `${left}%` }} title={title} />

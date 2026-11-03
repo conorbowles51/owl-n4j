@@ -19,6 +19,8 @@ interface UseTimelineDataParams {
 
 interface UseTimelineDataResult {
   events: TimelineEvent[]
+  /** Events with no usable date, listed in their own group (03 section 15.6). */
+  undatedEvents: TimelineEvent[]
   eventTypes: string[]
   entities: DerivedEntity[]
   dateRange: DateRange
@@ -132,13 +134,13 @@ export function useTimelineData({
   const events = useMemo(() => {
     const rawEvents = eventsQuery.data?.events ?? []
     const valid = rawEvents.filter((e) => isValidDate(e.date))
-    if (valid.length < rawEvents.length) {
-      console.warn(
-        `Timeline: skipped ${rawEvents.length - valid.length} event(s) with invalid dates`
-      )
-    }
     return [...valid].sort(compareTimelineEvents)
   }, [eventsQuery.data?.events])
+  // Events with no usable date are listed in their own "No time recorded" group, never dropped (03 section 15.6).
+  const undatedEvents = useMemo(
+    () => (eventsQuery.data?.events ?? []).filter((e) => !isValidDate(e.date)),
+    [eventsQuery.data?.events]
+  )
 
   const eventTypes = useMemo(() => {
     const counts: Record<string, number> = {}
@@ -155,6 +157,7 @@ export function useTimelineData({
 
   return {
     events,
+    undatedEvents,
     eventTypes,
     entities,
     dateRange,

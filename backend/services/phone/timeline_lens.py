@@ -272,12 +272,14 @@ def index(conn, f: TimelineLensFilter) -> dict:
     order = sorted(days, reverse=f.sort == "newest_first")
     labels = _lane_labels(conn, f, list(lanes))
     total = sum(lanes.values())
-    out = streams.envelope(conn, f, counts={"entries": total, "communications": comm, "other": total - comm,
-                                            "no_time": no_time})
+    out = streams.envelope(conn, f, counts={"entries": total, "events": total, "communications": comm,
+                                            "other": total - comm, "no_time": no_time})
     out.update({
         "snapshot": snapshot(conn, f),
         "items": [{"day": d.isoformat(), "count": days[d]["count"], "by_lane": days[d]["by_lane"],
-                   "header": T.format_day_header(d), "zone_label": T.zone_label(d, zone["name"])} for d in order],
+                   "offsets": T.day_offsets(d, zone["name"]), "header": T.format_day_header(d),
+                   "zone_label": T.zone_label(d, zone["name"])} for d in order],
+        "no_time_position": "first" if f.sort == "newest_first" else "last", "sort": f.sort,
         "no_time_count": no_time, "total": total,
         "lanes": sorted(({"key": k, "label": labels.get(k, k), "count": n} for k, n in lanes.items()),
                         key=lambda x: (x["label"] or "", x["key"])),
@@ -318,11 +320,10 @@ def window(conn, f: TimelineLensFilter, *, snapshot_token, day, offset=0, limit=
         found = conn.execute(text("WITH m AS (%s) SELECT * FROM m WHERE event_uid = ANY(CAST(:ids AS uuid[]))"
                                   % q.matched_sql()), q.params).fetchall()
         for r, built in zip(found, streams.build_rows(conn, ctx, found, zone["name"], sf)):
-            rows[str(r.event_uid)] = {"comm": built, "record_uid": built["record_uid"], "phone": built["phone"],
-                                      "model_type": None, "field_path": None, "field_meaning": None,
-                                      "time": built["time"], "summary": built["body"] or built["subject"] or
-                                      (built["call"] or {}).get("words"), "flags": built["flags"],
-                                      "activity_class": "interaction", "kind": built["kind"]}
+            rows[str(r.event_uid)] = dict(built, model_type=None, field_path=None, field_meaning=None,
+                                          activity_class="interaction",
+                                          lens_kind="calls" if built["kind"] in ("call", "voicemail") else
+                                          "emails" if built["kind"] == "email" else "messages")
     if other_ids:
         from services.phone import readings
         names = readings.phone_labels(conn, f.case_id)
@@ -330,22 +331,29 @@ def window(conn, f: TimelineLensFilter, *, snapshot_token, day, offset=0, limit=
                 "SELECT t.*, %s AS lens_kind FROM pv_timeline_entry t WHERE t.case_id = :c AND t.entry_uid = "
                 "ANY(CAST(:ids AS uuid[]))" % _kind_sql()), {"c": f.case_id, "ids": other_ids}):
             ext = str(r.extraction_id)
+            # the StreamRow shape (03 4.5), so the one phone list shows, badges and copies it like a message
             rows[str(r.entry_uid)] = {
-                "comm": None, "record_uid": str(r.record_uid), "phone": {"extraction_id": ext,
-                                                                         "label": names.get(ext, "A phone")},
-                "model_type": r.model_type, "field_path": r.field_path, "field_meaning": r.field_meaning,
+                "event_uid": str(r.entry_uid), "record_uid": str(r.record_uid), "kind": "record",
+                "phone": {"extraction_id": ext, "label": names.get(ext, "A phone")}, "app": None, "thread": None,
+                "direction": "none",
                 "time": T.time_block(r.instant, zone["name"], offset_present=r.instant is not None,
                                      time_field=r.field_path),
-                "summary": r.summary, "flags": ["deleted"] if r.deleted_state else [],
-                "activity_class": r.activity_class or "unknown", "kind": r.lens_kind,
-                "interpretation_level": r.interpretation_level}
+                "from": None, "to": [], "body": r.summary,
+                "subject": "%s: %s" % (KIND_WORDS.get(r.lens_kind, "Record"), r.model_type),
+                "call": None, "attachments": [], "flags": ["deleted"] if r.deleted_state else [],
+                "copies": {"count": 1, "record_uids": [str(r.record_uid)], "apps": []},
+                "owner_read": {"date_read": None, "date_played": None},
+                "interpretation_level": r.interpretation_level or "generic", "line": "",
+                "model_type": r.model_type, "field_path": r.field_path, "field_meaning": r.field_meaning,
+                "activity_class": r.activity_class or "unknown", "lens_kind": r.lens_kind}
     labels = _lane_labels(conn, f, sorted({r.lane for r in page}))
     items = []
     for r in page:
         x = rows.get(str(r.uid))
         if x is None:
             continue
-        items.append(dict(x, entry_uid=str(r.uid), source=r.src, lane_key=r.lane, lane_label=labels.get(r.lane)))
+        items.append(dict(x, entry_uid=str(r.uid), event_uid=str(r.uid), source=r.src, lane_key=r.lane,
+                          lane_label=labels.get(r.lane)))
     return streams.envelope(conn, f, items=items)
 
 

@@ -15,6 +15,7 @@ import type { StreamRow } from "../schemas"
 function what(row: StreamRow): string {
   if (row.kind === "call") return row.call?.words ?? "Call"
   if (row.kind === "email" && row.subject) return row.body ? `${row.subject}\n${row.body}` : row.subject
+  if (row.kind === "record") return row.body ? `${row.subject ?? "Record"}: ${row.body}` : row.subject ?? "Record"
   return row.body ?? ""
 }
 
@@ -29,7 +30,8 @@ function extras(row: StreamRow): string[] {
 export function rowText(row: StreamRow): string {
   const body = what(row)
   const [first, ...rest] = body.split("\n")
-  const head = [row.time.full, row.phone.label, row.app ?? "app not recorded", row.line, first].join(" | ")
+  // a Timeline lens record (a location, a web visit) has no app or parties: its kind stands in their place
+  const head = (row.kind === "record" ? [row.time.full, row.phone.label, first] : [row.time.full, row.phone.label, row.app ?? "app not recorded", row.line, first]).join(" | ")
   const tail = rest.map((l) => `  ${l}`)
   const ex = extras(row)
   return [head + (ex.length ? ` ${ex.join(" ")}` : ""), ...tail].join("\n")
@@ -45,7 +47,7 @@ export function rowsText(rows: StreamRow[], caseName: string, filterWords: strin
 
 export function rowsHtml(rows: StreamRow[], caseName: string, filterWords: string, zoneName: string): string {
   const cells = (r: StreamRow) =>
-    [r.time.full, r.phone.label, r.app ?? "app not recorded", r.line, what(r), extras(r).join(" ")]
+    [r.time.full, r.phone.label, r.kind === "record" ? "" : r.app ?? "app not recorded", r.line, what(r), extras(r).join(" ")]
       .map((c) => `<td>${htmlEscape(c).replace(/\n/g, "<br>")}</td>`)
       .join("")
   return (

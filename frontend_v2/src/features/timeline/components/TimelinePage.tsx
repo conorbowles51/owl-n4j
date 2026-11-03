@@ -35,6 +35,11 @@ import { TimelineToolbar } from "./TimelineToolbar"
 import { TimelineExportDialog } from "./TimelineExportDialog"
 import type { TimelineExportSource } from "../lib/timeline-export"
 import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
+import { useQuery } from "@tanstack/react-query"
+import { getPhones } from "@/features/phones/api"
+import { useCase } from "@/features/cases/hooks/use-cases"
+import { PhoneLens, PhoneLensToggle, usePhoneLens } from "../lens/PhoneLens"
+import { UndatedEvents } from "./UndatedEvents"
 import { SignificantEmptyState } from "@/features/significant/components/SignificantEmptyState"
 
 export function TimelinePage() {
@@ -52,8 +57,14 @@ export function TimelinePage() {
       ? location.state.financialReturnTo
       : `/cases/${caseId}/financial?view=transactions`
   const caseLayer = useCaseLayer(caseId)
-  const { events, eventTypes, entities, isLoading, dataKey, error, retry } =
+  const { events, undatedEvents, eventTypes, entities, isLoading, dataKey, error, retry } =
     useTimelineData({ caseId })
+  // The phone lens (03 section 9): shown only on a case with phones; off, the page is the existing Timeline (T-5).
+  const phonesQ = useQuery({ queryKey: ["phones", caseId], queryFn: () => getPhones(caseId!), enabled: !!caseId })
+  const phoneCount = phonesQ.data?.total ?? 0
+  const caseName = useCase(caseId ?? "").data?.title ?? "This case"
+  const lens = usePhoneLens(caseId ?? "", events.length > 0, !isLoading && phoneCount > 0)
+  const lensToggle = phoneCount > 0 ? <PhoneLensToggle on={lens.on} onChange={lens.setOn} phones={phoneCount} /> : undefined
 
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [exportOpen, setExportOpen] = useState(false)
@@ -304,6 +315,20 @@ export function TimelinePage() {
   const windowBar = caseId ? <TimelineWindowBar caseId={caseId} events={windowEvents} selectedKey={requestedKey} /> : null
 
   if (events.length === 0) {
+    if (caseId && phoneCount > 0 && caseLayer !== "significant") {
+      return (
+        <div className="flex h-full flex-col">
+          {windowBar}
+          <div className="flex items-center justify-end gap-2 border-b px-4 py-1.5">{lensToggle}</div>
+          {lens.on ? (
+            <PhoneLens caseId={caseId} caseName={caseName} note={lens.note} />
+          ) : (
+            <EmptyState icon={Clock} title="No timeline events" description="This case's phone entries are hidden. Turn on Phones to show them." />
+          )}
+          {undatedEvents.length > 0 && <UndatedEvents events={undatedEvents} />}
+        </div>
+      )
+    }
     if (windowBar && caseLayer !== "significant") {
       return (
         <div className="flex h-full flex-col">
@@ -330,6 +355,22 @@ export function TimelinePage() {
       />
     )
   }
+
+  const eventStream = (
+    <EventStream
+      items={items}
+      totalCount={totalCount}
+      selectedEventKey={selectedEventKey}
+      multiSelectedKeys={multiSelectedKeys}
+      searchTerm={searchTerm}
+      selectedEntityKeys={selectedEntityKeys}
+      scrollToEventKey={scrollToEventKey}
+      onSelectEvent={handleSelectEvent}
+      onMultiSelectEvent={handleMultiSelectEvent}
+      onClearScrollTarget={clearScrollTarget}
+      onClearFilters={handleClearAll}
+    />
+  )
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -378,6 +419,7 @@ export function TimelinePage() {
         onToggleFilterSidebar={handleToggleFilters}
         activeFilterCount={activeFilterCount}
         onExport={() => openExportDialog(null)}
+        extra={lensToggle}
       />
 
       {/* 2-panel layout: filter sidebar + event stream */}
@@ -399,19 +441,19 @@ export function TimelinePage() {
 
         {/* Center: event stream */}
         <ResizablePanel defaultSize="80" minSize="30">
-          <EventStream
-            items={items}
-            totalCount={totalCount}
-            selectedEventKey={selectedEventKey}
-            multiSelectedKeys={multiSelectedKeys}
-            searchTerm={searchTerm}
-            selectedEntityKeys={selectedEntityKeys}
-            scrollToEventKey={scrollToEventKey}
-            onSelectEvent={handleSelectEvent}
-            onMultiSelectEvent={handleMultiSelectEvent}
-            onClearScrollTarget={clearScrollTarget}
-            onClearFilters={handleClearAll}
-          />
+          {lens.on || undatedEvents.length > 0 ? (
+            <div className="flex h-full min-h-0 flex-col">
+              <div className="min-h-0 flex-1 overflow-hidden">{eventStream}</div>
+              {undatedEvents.length > 0 && <UndatedEvents events={undatedEvents} />}
+              {lens.on && caseId && (
+                <div className="flex min-h-0 flex-1 flex-col border-t">
+                  <PhoneLens caseId={caseId} caseName={caseName} note={lens.note} />
+                </div>
+              )}
+            </div>
+          ) : (
+            eventStream
+          )}
         </ResizablePanel>
       </ResizablePanelGroup>
 

@@ -41,7 +41,8 @@ export const AttachmentSchema = z.object({
 export const StreamRowSchema = z.object({
   event_uid: z.string(),
   record_uid: z.string(),
-  kind: z.enum(["message", "call", "email", "voicemail", "chat_activity"]),
+  /** "record": a non-communication entry on the Timeline lens (a location, a web visit...), 03 section 9.3. */
+  kind: z.enum(["message", "call", "email", "voicemail", "chat_activity", "record"]),
   phone: z.object({ extraction_id: z.string(), label: z.string() }),
   app: z.string().nullable(),
   thread: z.object({ thread_key: z.string(), title: z.string().nullable() }).nullable(),

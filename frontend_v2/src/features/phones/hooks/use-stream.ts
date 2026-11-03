@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react"
 import { failureText, StaleSnapshotError, streamIndex, streamLocate, streamWindow, type StreamFilter } from "../api"
-import type { StreamIndex, StreamRow } from "../schemas"
+import type { StreamIndex, StreamRow, StreamWindow } from "../schemas"
 
 /**
  * Index then windows (03 section 3.1; D-1):
@@ -86,7 +86,16 @@ export interface UseStream {
   setFocused: (eventUid: string | null) => void
 }
 
-export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: (position: number) => void } = {}): UseStream {
+/** Where the index and windows come from: Conversations' streams by default; the Timeline lens passes its own
+ * (03 section 9.3) so the same list, copy and badges serve both. */
+export interface StreamSource {
+  index: (f: StreamFilter) => Promise<StreamIndex>
+  window: (f: StreamFilter, snapshot: string, day: string | null, offset: number, limit: number) => Promise<StreamWindow>
+  locate: (f: StreamFilter, snapshot: string, eventUid: string) => Promise<{ day: string | null; offset: number }>
+}
+const STREAMS: StreamSource = { index: (f) => streamIndex(f), window: (f, s, d, o, l) => streamWindow(f, s, d, o, l), locate: streamLocate }
+
+export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: (position: number) => void; source?: StreamSource } = {}): UseStream {
   const [index, setIndex] = useState<StreamIndex | null>(null)
   const [status, setStatus] = useState<UseStream["status"]>("idle")
   const [error, setError] = useState<string | null>(null)
@@ -106,10 +115,12 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
   const filterRef = useRef(filter)
   const fetchRef = useRef<((seg: number, start: number) => Promise<void>) | null>(null)
   const restoreRef = useRef(deps.onStaleRestore)
+  const sourceRef = useRef(deps.source ?? STREAMS)
   // Kept in step before the load effect below runs (effects run in order).
   useLayoutEffect(() => {
     filterRef.current = filter
     restoreRef.current = deps.onStaleRestore
+    sourceRef.current = deps.source ?? STREAMS
   })
 
   const loadIndex = useCallback(async (stale: boolean) => {
@@ -122,7 +133,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
     setStatus("loading")
     setError(null)
     try {
-      const idx = await streamIndex(f)
+      const idx = await sourceRef.current.index(f)
       if (gen !== generation.current) return
       indexLoading.current = false
       setIndex(idx)
@@ -132,7 +143,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
         const uid = focused.current
         if (uid) {
           try {
-            const loc = await streamLocate(f, idx.snapshot, uid)
+            const loc = await sourceRef.current.locate(f, idx.snapshot, uid)
             const segs = buildSegments(idx)
             const seg = segs.find((s) => s.day === loc.day)
             if (seg && restoreRef.current) restoreRef.current(seg.start + 1 + loc.offset)
@@ -177,7 +188,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
       bump()
       const s = buildSegments(idx)[seg]
       try {
-        const w = await streamWindow(f, idx.snapshot, s.day, start, Math.min(windowSize, s.count - start))
+        const w = await sourceRef.current.window(f, idx.snapshot, s.day, start, Math.min(windowSize, s.count - start))
         if (gen !== generation.current) return
         rows.current.set(key, w.items)
         wins.current.set(key, { state: "loaded", tries })
@@ -297,7 +308,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
           if (!got) {
             let w
             try {
-              w = await streamWindow(f, idx.snapshot, segs[si].day, start, Math.min(windowSize, segs[si].count - start))
+              w = await sourceRef.current.window(f, idx.snapshot, segs[si].day, start, Math.min(windowSize, segs[si].count - start))
             } catch (e) {
               if (e instanceof StaleSnapshotError) void loadIndex(true)
               throw e

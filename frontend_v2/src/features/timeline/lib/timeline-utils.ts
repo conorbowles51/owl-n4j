@@ -1,3 +1,4 @@
+import { formatFull, formatRowTime } from "@/lib/evidence-time"
 import type { TimelineEvent } from "../api"
 import type { EntityType } from "@/lib/theme"
 
@@ -370,4 +371,18 @@ export function buildDensityHistogram(
   }
 
   return buckets
+}
+
+/**
+ * The time an existing event shows (03 section 15.6): an event that carries a full instant (a date with a time and a
+ * zone or offset) shows 12-hour time in UTC with the zone named; one that carries only a date and HH:MM keeps its
+ * text, marked "time as entered"; otherwise "No time".
+ */
+export function displayEventTime(event: Pick<TimelineEvent, "date" | "time">): { text: string; title: string | null } {
+  const date = event.date ?? ""
+  if (/T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/.test(date) && !Number.isNaN(Date.parse(date))) {
+    return { text: `${formatRowTime(date, "UTC")} UTC`, title: formatFull(date, "UTC") }
+  }
+  const t = getEventTimeValue(event)
+  return t ? { text: t, title: "Time as entered" } : { text: "No time", title: null }
 }

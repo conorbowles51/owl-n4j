@@ -186,3 +186,13 @@ describe("compareTimelineEvents on a large Timeline", () => {
     expect(constructed).toBeLessThan(events.length * 3)
   })
 })
+
+describe("displayEventTime (03 section 15.6)", () => {
+  it("shows a full instant as 12-hour time with its zone, keeps a bare HH:MM as entered, and says No time otherwise", async () => {
+    const { displayEventTime } = await import("./timeline-utils")
+    expect(displayEventTime({ date: "2023-03-14T19:07:12Z", time: null })).toEqual({ text: "7:07 PM UTC", title: "Tue, Mar 14, 2023, 7:07:12 PM UTC" })
+    expect(displayEventTime({ date: "2023-03-14T15:07:12-04:00", time: null }).text).toBe("7:07 PM UTC")
+    expect(displayEventTime({ date: "2023-03-14", time: "14:30" })).toEqual({ text: "14:30", title: "Time as entered" })
+    expect(displayEventTime({ date: "2023-03-14", time: null })).toEqual({ text: "No time", title: null })
+  })
+})

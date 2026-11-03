@@ -5,7 +5,7 @@ import { NodeBadge } from "@/components/ui/node-badge"
 import { markdownToPlainText } from "@/lib/markdown-text"
 import { getEventTypeColor, hasAmount } from "../api"
 import type { TimelineEvent } from "../api"
-import { formatEventTime, getEventTimeValue } from "../lib/timeline-utils"
+import { displayEventTime, getEventTimeValue } from "../lib/timeline-utils"
 import { CheckTag, DirectionMark, MONEY } from "@/lib/data-colour"
 
 interface EventCardProps {
@@ -55,7 +55,8 @@ export const EventCard = memo(function EventCard({
   const direction = event.direction === "credit" ? "in" : event.direction === "debit" ? "out" : null
   const active = isSelected || isMultiSelected
   const summaryText = event.summary ? markdownToPlainText(event.summary) : null
-  const timeLabel = formatEventTime(event)
+  const shownTime = displayEventTime(event)
+  const timeLabel = shownTime.text
   const hasTime = Boolean(getEventTimeValue(event))
 
   const handleClick = useCallback(
@@ -130,6 +131,7 @@ export const EventCard = memo(function EventCard({
               "font-mono text-xs font-semibold leading-none tabular-nums",
               hasTime ? "text-foreground" : "text-muted-foreground"
             )}
+            title={shownTime.title ?? undefined}
           >
             {timeLabel}
           </span>

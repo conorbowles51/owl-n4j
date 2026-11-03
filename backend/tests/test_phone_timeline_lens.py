@@ -101,7 +101,8 @@ def test_the_window_merges_both_sources_by_time_with_day_header_and_12_hour_time
         day = timeline_lens.window(c, f, snapshot_token=idx["snapshot"], day="2023-03-14", limit=1000)["items"]
         undated = timeline_lens.window(c, f, snapshot_token=idx["snapshot"], day=None)["items"]
     assert [x["source"] for x in day] == ["comm", "other", "comm"]
-    assert day[0]["comm"]["body"] == "synthetic" and day[1]["model_type"] == "Location"
+    assert day[0]["body"] == "synthetic" and day[0]["kind"] == "message" and day[1]["model_type"] == "Location"
+    assert day[1]["kind"] == "record" and day[1]["subject"] == "Locations: Location" and day[1]["to"] == []
     assert day[0]["time"]["row"] == "8:00 AM"  # 12:00 UTC in New York, 12-hour (T-3)
     assert [d["count"] for d in idx["items"]] == [3, 1] and len(undated) == idx["no_time_count"] == 1
     assert {x["lane_key"] for x in day} == {world["ext"]} and day[0]["lane_label"]

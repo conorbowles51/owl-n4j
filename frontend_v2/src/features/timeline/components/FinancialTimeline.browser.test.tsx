@@ -34,6 +34,11 @@ vi.mock(
     useFinancialAccess: () => ({ canEdit: true }),
   })
 )
+const phoneFixture = vi.hoisted(() => ({ total: 0 }))
+vi.mock("@/features/phones/api", async (original) => ({
+  ...(await original<typeof import("@/features/phones/api")>()),
+  getPhones: async () => ({ case_id: "case", phones: [], total: phoneFixture.total, case_zone: { name: "UTC", basis: "utc_default", note: null } }),
+}))
 vi.mock("@/features/financial/components/SourceCustodyPanel", () => ({
   SourceCustodyPanel: () => null,
 }))
@@ -112,10 +117,17 @@ const fixtureEvent = (body: Body): TimelineEvent => {
 beforeEach(() => {
   saved = []
   calls = []
+  phoneFixture.total = 0
+  localStorage.removeItem("loupe.timeline.phones.case")
   failSave = false
   useFinancialDraftStore.setState({ drafts: {} })
   useTimelineStore.getState().clearAllFilters([])
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    if (url.includes("/api/phones/timeline/index"))
+      return { case_id: "case", snapshot: "s1", complete: true, limits: [], counts: { events: 0, entries: 0 }, items: [], no_time_count: 0,
+        no_time_position: "last", zone: { name: "UTC", label: "UTC", basis: "utc_default", mode: "case", note: null }, full_load_rows: 5000,
+        sort: "oldest_first", total: 0, lanes: [], hidden: { count: 0, by_kind: {}, words: null }, kinds: [], comm_filter_applies: true,
+        other_filter_applies: true } as never
     if (url.includes("/api/timeline/entries")) {
       const body = options?.body as Body
       if (!body)
@@ -507,3 +519,33 @@ it("on a desktop the Timeline filters stay a column beside the events, with no s
   expect(focusButtons()).toHaveLength(1)
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
 })
+
+it("turning the phone lens off restores the existing Timeline page exactly (03 T-5)", async () => {
+  await page.viewport(1440, 1000)
+  phoneFixture.total = 1
+  saved = [fixtureEvent({ source_kind: "transaction", source_ids: ["payment"] })]
+  const { container } = render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter initialEntries={["/cases/case/timeline"]}>
+        <div className="h-screen bg-background text-foreground">
+          <Routes>
+            <Route path="/cases/:id/timeline" element={<TimelinePage />} />
+          </Routes>
+        </div>
+      </MemoryRouter>
+    </QueryClientProvider>
+  )
+  expect(await screen.findByText("Supplier transfer")).toBeVisible()
+  // the case has other events, so the lens is off at first use
+  const toggle = await screen.findByRole("button", { name: "Phones (1)" })
+  expect(toggle).toHaveAttribute("aria-pressed", "false")
+  await new Promise((r) => setTimeout(r, 300))
+  const before = container.innerHTML
+  expect(screen.queryByRole("region", { name: "Phone entries" })).toBeNull()
+  fireEvent.click(toggle)
+  expect(await screen.findByRole("region", { name: "Phone entries" })).toBeVisible()
+  fireEvent.click(screen.getByRole("button", { name: "Phones (1)" }))
+  await waitFor(() => expect(screen.queryByRole("region", { name: "Phone entries" })).toBeNull())
+  expect(container.innerHTML).toBe(before)
+})
+
