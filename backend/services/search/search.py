@@ -8,6 +8,9 @@ that is mostly digits also finds identities whose digits contain it (S-3). Queri
 identifiers only (11.6). Snippets are cut from the original text, and the match inside a snippet is the original
 characters, found through the folded-to-original map (S-5).
 
+``payments`` is the case's ledger rows by description, counterparty or amount, with money totals per currency
+(services/search/payments.py); each hit cites its row by ``txn://``.
+
 ``machine_text`` is text read from phone photos and audio on request (OCR and transcripts, 03 8.3), and machine
 translations of messages and transcripts (05 17.5): its own group, always labelled machine-generated with the model
 that made it, a translation citing its original. Media nobody asked to read is not searched, and the response says
@@ -26,7 +29,7 @@ from services.phone import time_display as T
 from services.phone.derive import IN_USE_ORDER
 from services.search import document_folds
 
-GROUPS = ("messages", "calls", "emails", "people", "records", "documents", "machine_text")
+GROUPS = ("messages", "calls", "emails", "people", "records", "documents", "machine_text", "payments")
 COMM_KINDS = {"messages": ["message", "chat_activity"], "calls": ["call", "voicemail"], "emails": ["email"]}
 FIRST = 20
 MAX_PAGE = 200
@@ -420,6 +423,13 @@ def _group(conn, case_id, group, q, exact, phones, start, end, offset, limit, ct
         total, items = (0, []) if short else _machine(conn, case_id, q, exact, phones, offset, limit, ctx)
     elif group == "documents":
         total, items, unprepared = (0, [], None) if short else _documents(conn, case_id, q, exact, offset, limit)
+    elif group == "payments":
+        from services.search.payments import NOT_SEARCHED as PAYMENTS_NOT_SEARCHED, search_payments
+        total, items, totals = (0, [], None) if short else search_payments(conn, case_id, q, offset=offset,
+                                                                              limit=limit)
+        out = {"group": group, "total": total, "items": items, "totals": totals, "searched": PAYMENTS_NOT_SEARCHED,
+               "next_cursor": str(offset + len(items)) if offset + len(items) < total else None}
+        return out
     else:
         raise SearchError("No search group called %s." % group)
     out = {"group": group, "total": total, "items": items,
@@ -492,5 +502,6 @@ def _score(g, q, exact):
     fq = F.fold(q, exact=exact)
     if g["group"] == "people" and F.fold(top["title"], exact=exact) == fq:
         return 3.0
-    base = {"messages": 2.0, "people": 1.5, "emails": 1.4, "calls": 1.2, "documents": 1.1, "records": 1.0, "machine_text": 0.9}
+    base = {"messages": 2.0, "people": 1.5, "emails": 1.4, "calls": 1.2, "documents": 1.1, "records": 1.0, "machine_text": 0.9,
+            "payments": 1.05}
     return base.get(g["group"], 1.0)

@@ -113,6 +113,25 @@ describe("Search dialog", () => {
     await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/cases/case-1/conversations?q=jose&kinds=message%2Cchat_activity"))
   })
 
+  it("a payments group shows its totals per currency, verified apart from p3, and a hit opens that payment", async () => {
+    const pop = (credits: string, debits: string, cc: number, dc: number) => ({ credits_minor: credits, debits_minor: debits, credit_count: cc, debit_count: dc })
+    api.searchCase.mockResolvedValue(result({ query: "acme", folded_query: "acme", groups: [{
+      group: "payments", total: 3, next_cursor: null, score: 1.05,
+      searched: "Names Loupe suggests for a payment are not searched.",
+      totals: { currencies: [{ currency: "USD", verified: pop("0", "0", 0, 0), p3: pop("123456", "1000", 2, 1) }], counted_rows: 3, not_counted_rows: 0 },
+      items: [hit({ kind: "payment", title: "Wire to ACME", record_uid: null, transaction_id: "t-1", cite: "txn://t-1",
+        date: "2024-03-12", amount_minor: "123456", currency: "USD", direction: "credit", from_name: "ACME", to_name: "Synthetic Co",
+        included_in_totals: true, snippet: { before: "Wire to ", match: "ACME", after: "" }, open: { screen: "payment", params: { transaction_id: "t-1" } } })],
+    }] }))
+    page()
+    await openAndType("acme")
+    expect(await screen.findByText("Payments (3)")).toBeInTheDocument()
+    expect(screen.getByTestId("payment-totals").textContent).toContain("USD: verified in USD 0.00 (0), out USD 0.00 (0) · read from statements, not verified: in USD 1,234.56 (2), out USD 10.00 (1)")
+    expect(screen.getByText("Names Loupe suggests for a payment are not searched.")).toBeInTheDocument()
+    fireEvent.click(await screen.findByRole("option", { name: /In USD 1,234.56/ }))
+    await waitFor(() => expect(screen.getByTestId("where").textContent).toBe("/cases/case-1/financial?view=transactions&payment=t-1"))
+  })
+
   it("a short query says text needs 3 letters, and Exact characters is sent", async () => {
     api.searchCase.mockResolvedValue(result({ query: "jo", short: "Type at least 3 letters.", groups: [] }))
     page()

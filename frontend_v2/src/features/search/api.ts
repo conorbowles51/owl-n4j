@@ -23,9 +23,32 @@ export const HitSchema = lazySchema(() => z.object({
   /** A machine translation (05 17.5): the language it was translated from, and the start of its original. */
   translated_from: z.string().nullable().optional(),
   original: z.object({ text: z.string(), clipped: z.boolean(), chars: z.number() }).optional(),
+  /** A ledger row (the payments group): its citation, amount and parties as the ledger shows them now. */
+  transaction_id: z.string().optional(),
+  cite: z.string().optional(),
+  date: z.string().nullable().optional(),
+  amount_minor: z.string().optional(),
+  currency: z.string().optional(),
+  direction: z.string().optional(),
+  from_name: z.string().nullable().optional(),
+  to_name: z.string().nullable().optional(),
+  account_label: z.string().nullable().optional(),
+  included_in_totals: z.boolean().optional(),
   open: z.object({ screen: z.string(), params: z.record(z.string(), z.unknown()) }),
 }))
 export type SearchHit = z.infer<typeof HitSchema>
+const PopulationSchema = lazySchema(() => z.object({
+  credits_minor: z.string(),
+  debits_minor: z.string(),
+  credit_count: z.number(),
+  debit_count: z.number(),
+}))
+export const PaymentTotalsSchema = lazySchema(() => z.object({
+  currencies: z.array(z.object({ currency: z.string(), verified: PopulationSchema, p3: PopulationSchema })),
+  counted_rows: z.number(),
+  not_counted_rows: z.number(),
+}))
+export type PaymentTotals = z.infer<typeof PaymentTotalsSchema>
 export const GroupSchema = lazySchema(() => z.object({
   group: z.string(),
   total: z.number(),
@@ -33,6 +56,10 @@ export const GroupSchema = lazySchema(() => z.object({
   next_cursor: z.string().nullable(),
   note: z.string().optional(),
   score: z.number().optional(),
+  /** payments: money of every matching row per currency, verified (p0 to p2) and p3 stated apart, never added */
+  totals: PaymentTotalsSchema.nullable().optional(),
+  /** payments: what the group searches and what it does not */
+  searched: z.string().optional(),
 }))
 export type SearchGroup = z.infer<typeof GroupSchema>
 /** A phone still being read or only partly read: totals that count from it are not whole (03 3.8). */

@@ -1,8 +1,9 @@
 import { recordPath } from "@/lib/record-links"
+import { paymentPath } from "@/lib/citations"
 import type { SearchHit } from "../api"
 
 /** Where a search hit opens (03 section 11.2): messages in their whole thread with the record beside it, people
- * in Conversations' people tab, other records in the record panel, documents in the viewer at the page, machine-generated text beside its photo or audio on the Media screen. */
+ * in Conversations' people tab, other records in the record panel, documents in the viewer at the page, machine-generated text beside its photo or audio on the Media screen, a payment on the Financial page. */
 export function hitPath(caseId: string, hit: SearchHit): string {
   const c = `/cases/${encodeURIComponent(caseId)}`
   const p = hit.open.params as Record<string, string | number | null | undefined>
@@ -26,6 +27,9 @@ export function hitPath(caseId: string, hit: SearchHit): string {
       return recordPath(caseId, String(p.record_uid))
     case "media":
       return `${c}/phones/${enc(p.extraction_id)}/records/media?file=${enc(p.file_uid)}`
+    case "payment":
+      // the Financial page on this payment: its details open at its statement page
+      return paymentPath(caseId, String(p.transaction_id))
     case "document":
       return `${c}/evidence?file=${enc(p.evidence_file_id)}${p.page ? `&page=${enc(p.page)}` : ""}`
     default:

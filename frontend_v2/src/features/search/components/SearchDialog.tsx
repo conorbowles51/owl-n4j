@@ -4,7 +4,8 @@ import { useLocation, useNavigate } from "react-router-dom"
 import { Command, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { failureText } from "@/features/phones/api"
-import { saveKeywordList, searchCase, splitTerms, type SearchGroup, type SearchHit } from "../api"
+import { saveKeywordList, searchCase, splitTerms, type PaymentTotals, type SearchGroup, type SearchHit } from "../api"
+import { formatLedgerAmount } from "@/features/financial/lib/ledger-format"
 import { GROUP_KINDS, GROUP_NAMES, rememberQuery, recentQueries } from "../lib/search-words"
 import { conversationsWithText, hitPath } from "../lib/open-hit"
 
@@ -99,7 +100,7 @@ export function SearchDialog({ caseId }: { caseId: string }) {
       <DialogContent className="overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="sr-only">
           <DialogTitle>Search this case</DialogTitle>
-          <DialogDescription>Search messages, calls, emails, people, phone records and documents</DialogDescription>
+          <DialogDescription>Search messages, calls, emails, people, phone records, documents and payments</DialogDescription>
         </DialogHeader>
         <Command shouldFilter={false} value={value} onValueChange={setValue} className="[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:text-muted-foreground [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-2">
           <CommandInput ref={inputRef} placeholder="Search words, names, numbers or accounts" value={typed} onValueChange={setTyped} aria-label="Search this case" />
@@ -184,6 +185,7 @@ function SearchBody(props: {
       {shown.map((g) => (
         <CommandGroup key={g.group} heading={`${GROUP_NAMES[g.group] ?? g.group} (${g.total.toLocaleString("en-US")})`}>
           {g.note && <p className="px-2 pb-1 text-xs">{g.note}</p>}
+          {g.totals && <PaymentTotalsLine totals={g.totals} />}
           {g.items.map((h, i) => (
             <CommandItem key={itemValue(g, h, i)} value={itemValue(g, h, i)} onSelect={() => props.onOpen(h)}>
               <HitLine hit={h} />
@@ -198,6 +200,9 @@ function SearchBody(props: {
       ))}
       <div className="border-t px-4 py-2 text-xs text-muted-foreground">
         {empty.length > 0 && <p>No matches in: {empty.join(", ")}.</p>}
+        {data.groups.filter((g) => g.searched).map((g) => (
+          <p key={`searched:${g.group}`}>{g.searched}</p>
+        ))}
         {data.not_searched.map((n) => (
           <p key={n.group}>{n.reason}</p>
         ))}
@@ -206,7 +211,50 @@ function SearchBody(props: {
   )
 }
 
+function money(minor: string, currency: string) {
+  const amount = formatLedgerAmount(minor, currency)
+  return `${amount.currency} ${amount.text}`
+}
+
+/** The money of every matching payment, per currency: verified rows and rows read but not verified, never added. */
+export function PaymentTotalsLine({ totals }: { totals: PaymentTotals }) {
+  return (
+    <div className="px-2 pb-1 text-xs" data-testid="payment-totals">
+      {totals.currencies.map((c) => (
+        <p key={c.currency}>
+          {c.currency}: verified in {money(c.verified.credits_minor, c.currency)} ({c.verified.credit_count}), out{" "}
+          {money(c.verified.debits_minor, c.currency)} ({c.verified.debit_count})
+          {c.p3.credit_count + c.p3.debit_count > 0 &&
+            ` · read from statements, not verified: in ${money(c.p3.credits_minor, c.currency)} (${c.p3.credit_count}), out ${money(c.p3.debits_minor, c.currency)} (${c.p3.debit_count})`}
+        </p>
+      ))}
+      {totals.not_counted_rows > 0 && (
+        <p className="text-muted-foreground">
+          {totals.not_counted_rows.toLocaleString("en-US")} matching {totals.not_counted_rows === 1 ? "payment is" : "payments are"} outside the ledger&apos;s totals and not added.
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function HitLine({ hit }: { hit: SearchHit }) {
+  if (hit.kind === "payment" && hit.amount_minor && hit.currency)
+    return (
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="truncate text-xs text-muted-foreground">
+          {[hit.date ?? "No date", `${hit.direction === "credit" ? "In" : "Out"} ${money(hit.amount_minor, hit.currency)}`,
+            [hit.from_name, hit.to_name].filter(Boolean).join(" to "), hit.account_label,
+            hit.included_in_totals === false ? "outside totals" : null].filter(Boolean).join(" · ")}
+        </span>
+        {hit.snippet && (
+          <span className="line-clamp-2 text-sm">
+            {hit.snippet.before}
+            <mark className="rounded-sm bg-status-review-soft px-0.5">{hit.snippet.match}</mark>
+            {hit.snippet.after}
+          </span>
+        )}
+      </span>
+    )
   const s = hit.snippet
   return (
     <span className="flex min-w-0 flex-col gap-0.5">

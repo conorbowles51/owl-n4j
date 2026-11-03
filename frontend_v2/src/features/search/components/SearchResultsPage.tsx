@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { failureText } from "@/features/phones/api"
-import { searchGroup, type SearchHit } from "../api"
+import { searchGroup, type SearchGroup, type SearchHit } from "../api"
 import { hitPath } from "../lib/open-hit"
 import { GROUP_NAMES } from "../lib/search-words"
-import { HitLine } from "./SearchDialog"
+import { HitLine, PaymentTotalsLine } from "./SearchDialog"
 
 /**
  * Every hit of one search group (03 section 11.4), read 200 at a time until the group's total is reached, in the
@@ -28,15 +28,19 @@ export function SearchResultsPage() {
       let total = 0
       let note: string | undefined
       let limits: string[] = []
+      let totals: SearchGroup["totals"] = null
+      let searched: string | undefined
       do {
         const page = await searchGroup(caseId, q, group, cursor, exact, signal, phones)
         items.push(...page.items)
         total = page.total
         note = page.note
+        totals = totals ?? page.totals ?? null
+        searched = page.searched
         limits = page.limits.map((l) => l.message)
         cursor = page.next_cursor
       } while (cursor)
-      return { items, total, note, limits }
+      return { items, total, note, limits, totals, searched }
     },
   })
   const name = GROUP_NAMES[group] ?? group
@@ -60,6 +64,8 @@ export function SearchResultsPage() {
             </p>
           ))}
           {res.data.note && <p className="text-xs">{res.data.note}</p>}
+          {res.data.totals && <PaymentTotalsLine totals={res.data.totals} />}
+          {res.data.searched && <p className="text-xs text-muted-foreground">{res.data.searched}</p>}
           <ul className="flex flex-col divide-y rounded border">
             {res.data.items.map((h, i) => (
               <li key={`${i}-${h.record_uid ?? h.evidence_file_id ?? h.identity_key ?? h.title}`} className="p-2">
