@@ -1833,14 +1833,25 @@ Each with its reason and what would reverse it.
     identity stage, gave 104 ms before and 198 ms during. Observation alone, outside a pass, gives a p95 of 158 to
     178 ms against a 100 to 161 ms baseline, and pacing its reads does not lower it (168 to 210 ms), so its reads
     are not paced. On P14 (967,543 records), first reading, pace 1.0, quiet box: 1,772 s, 9,324 MB of WAL, probe p95
-    52 ms before and 113 ms over the pass (observe 103, generic 91, mappings 104, identities 171). That is more than
-    half again, so the default pace is 2.0 (`sweep_worker.DEFAULT_PACE`; `LOUPE_PHONE_SWEEP_PACE` overrides). A second
-    reading of P14 at pace 2.0 took 3,855 s and 18,930 MB of WAL (the new generation and the purge of the old), with
-    probe p95 377 ms against a 350 ms baseline; the box's load fell during that run, so it is not shown that 2.0
-    keeps the rise under half (**estimate, not measured**). The dedicated phone worker of plan 6.1 shares the same
-    database, which is the resource the probe measures, so the backend code is not moved into the engine's
-    container. *Reverse if* a pass at 2.0 on a quiet box, probing another case, still raises the p95 by more than
-    half; then the pace rises again, measured.
+    52 ms before and 113 ms over the pass (observe 103, generic 91, mappings 104, identities 171).
+    The default pace is 4.0 (`sweep_worker.DEFAULT_PACE`; `LOUPE_PHONE_SWEEP_PACE` overrides), measured on first
+    readings of a copy of P14 in a scratch database holding the six live phones, with the probe
+    (`scripts/phone_sweep_timing.py`) reading only a phone of another case (C9) and the samples split by the host's
+    CPU pressure, because the box's other load moves the probe as much as the pass does. Over samples taken below
+    5% CPU pressure, at pace 2.0 (4,325 s, 7,531 MB of WAL) the probe's p95 goes from 52.7 ms before to 80.4 ms while
+    the phone is written (+53%), and its timeline query alone from 12.0 ms (11.9 ms after the pass) to 33.9 ms; at
+    pace 4.0 the probe's p95 is 27.5 ms while the phone is written against 26.3 ms with the pass stopped in the same
+    database (+5%; the timeline query 16.5 to 17.7 ms). Writing P14's rows takes 9,030 s at 4.0 against 3,487 s at
+    2.0. The probe's query plans are the same before, during and after each pass and no probe query reads a block
+    from outside the buffer cache, in the pass or in observation alone (observation streams 1,172 MB of records
+    through a 1 GB cache); the probe's rise during observation follows the host's CPU pressure (P14, observation
+    alone: p95 18 to 50 ms at 10 to 15% CPU pressure). A probe that also counts the phone being read measures its
+    own work as well: at that phone's second generation the count alone cost 254 ms at p50 before the pass, and
+    1,103 ms at p95 during observation. The dedicated phone worker of plan 6.1 shares the same database, which is
+    the resource the probe measures, so the backend code is not moved into the engine's container. *Reverse if* a
+    phone read at 4.0 keeps people waiting for its reading where a faster pace, measured with the same probe below
+    5% CPU pressure, keeps the rise under half (3.0 is not measured); or a pass at 4.0 raises the probe's p95 by
+    more than half on such samples, and the pace rises again, measured.
 
 47. **Coverage is a function, not a view** (7.1; `services/phone/coverage.py`). The levels depend on the loaded
     mapping set, which lives in the process, and on case decisions, so `pv_coverage` cannot be plain SQL; the

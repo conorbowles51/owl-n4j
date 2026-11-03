@@ -165,7 +165,7 @@ Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for read
 
 ## 2 November: phone interpretation, stages C and D done (cb-interpret)
 
-Live `5893ad9c` (pace 2.0, P14 measured, gates C to D and D to E/F recorded in 06 section 8). Released today in order:
+Live `5893ad9c` (phone sweep pace now 4.0 per 02 decision 46, P14 measured, gates C to D and D to E/F recorded in 06 section 8). Released today in order:
 `5dc7fecc` (graph layer, thread documents, corrections, resolvers, external processing, feed lines, AI source
 places), `8685db5f` (Needs a decision opens on the first open reading), `bed2d4bf` (a conversation hit opens as text
 and names its record), `5893ad9c`. J-8a passes on live, signed in over http. Status for readers:

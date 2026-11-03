@@ -25,7 +25,8 @@ EXIT_ALREADY_RUNNING = 3
 LOCK_KEY = "phone_interpretation_worker"
 BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 RETRY_SECONDS = 60
-DEFAULT_PACE = 2.0  # pause twice as long as each write took (02 decision 46: at 1.0 P14 more than doubled a probe's p95)
+DEFAULT_PACE = 4.0  # pause four times as long as each write took (02 decision 46: at 2.0 writing P14 raised another
+# case's probe p95 by 53%, at 4.0 by 5%, on samples below 5% host CPU pressure)
 STOP_GRACE_SECONDS = 8  # inside the backend's 10 s budget for background tasks (process_shutdown)
 
 
