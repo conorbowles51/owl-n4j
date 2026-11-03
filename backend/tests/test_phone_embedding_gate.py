@@ -56,7 +56,7 @@ def no_embedding(monkeypatch):
 
 def test_terms_drop_common_words_and_keep_numbers_and_phrases():
     ts = chat_retrieval.terms('What did they say about the "red van" and the harbour, call +1 (202) 555-0143?')
-    assert ts[:2] == ["red van", "12025550143"]
+    assert ts[:2] == ["red van", "202 555 0143"]  # a number as the thread lines write it, folded
     assert "harbour" in ts and "the" not in ts and "what" not in ts
 
 
@@ -69,6 +69,7 @@ def test_chat_reads_phone_text_lexically_in_full_with_record_links_and_embeds_no
         with engine.connect() as c:
             found = chat_retrieval.windows(c, case, "What was said about the cargo at the harbour?")
             assert chat_retrieval.windows(c, other, "What was said about the cargo at the harbour?") == []
+            assert chat_retrieval.windows(c, case, "What did (202) 555-0143 write?"), "a number typed another way"
             uids = {str(r[0]) for r in c.execute(text("SELECT record_uid FROM pv_comm_event WHERE extraction_id = :e"),
                                                  {"e": ext})}
         assert found, "the harbour messages are found"

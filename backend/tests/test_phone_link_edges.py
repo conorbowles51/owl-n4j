@@ -192,7 +192,7 @@ class MoneyTests(DuplicateTestCase):
         self.row(100_00, day=date(2026, 1, 15))
         self.row(200_00, day=date(2026, 2, 15))
         a, b = self.sides()
-        jan = LE.payments(self.db, self.case.id, a, b, from_date=date(2026, 1, 1), to_date=date(2026, 2, 1))["rows"]
+        jan = LE.payments(self.db, self.case.id, a, b, from_date=date(2026, 1, 1), to_date=date(2026, 1, 31))["rows"]
         assert [r["amount_minor"] for r in jan] == [100_00]
         # the same rows with the sides given the other way round: A's debits to B are paid from the second side
         ba = LE.payments(self.db, self.case.id, b, a)["rows"]
@@ -230,3 +230,35 @@ class MoneyTests(DuplicateTestCase):
         assert LE.financial_sides(self.db, self.case.id, ['ent-a'])['ent-a'] == {
             'parties': {holder}, 'accounts': {str(self.account.id)}}
         assert LE.financial_sides(self.db, self.case.id, [None]) == {}
+
+    def test_one_payment_on_both_sides_statements_is_one_payment(self):
+        account_b = self._account(self.case.id, identity_key="gb-other-99887766")
+        self.db.add(account_b)
+        self.db.commit()
+        party_a = str(uuid.uuid4())
+        self.row(500_00, day=date(2026, 1, 15))                                  # A's debit, linked to B
+        credit = self.add_row(self.period, self.doc, amount=500_00, direction=TransactionDirection.credit,
+                              account=account_b)                                 # B's credit, linked to A
+        credit.currency, credit.ordering_date = "USD", date(2026, 1, 16)
+        credit.metadata_ = {"investigation_labels": {"counterparty_link": {"kind": "party", "id": party_a,
+                                                                            "label": "Synthetic A"}}}
+        self.row(70_00, day=date(2026, 1, 20))                                   # a second payment, one side only
+        self.db.commit()
+        a = {"parties": {party_a}, "accounts": {str(self.account.id)}}
+        b = {"parties": {self.party_b}, "accounts": {str(account_b.id)}}
+        rows = LE.payments(self.db, self.case.id, a, b)["rows"]
+        assert sorted(r["amount_minor"] for r in rows) == [70_00, 500_00]
+        kept = [r for r in rows if r["amount_minor"] == 500_00][0]
+        assert kept["direction"] == "ab" and kept["mirrored_by"]["id"] == str(credit.id)
+        usd = LE.money_totals(rows)[0]
+        assert (usd["paid_ab_minor"], usd["payments_ab"]) == (570_00, 2)
+
+    def test_a_window_ending_at_midnight_closes_the_day_before(self):
+        self.row(100_00, day=date(2026, 1, 31))
+        self.row(200_00, day=date(2026, 2, 1))
+        a, b = self.sides()
+        end = LE._date_in_zone("2026-02-01T00:00:00Z", "UTC", end=True)
+        rows = LE.payments(self.db, self.case.id, a, b, from_date=date(2026, 1, 1), to_date=end)["rows"]
+        assert [r["amount_minor"] for r in rows] == [100_00]
+        last = LE._date_in_zone("2026-02-01T23:59:59Z", "UTC", end=True)
+        assert len(LE.payments(self.db, self.case.id, a, b, to_date=last)["rows"]) == 2

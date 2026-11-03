@@ -169,7 +169,9 @@ def financial_sides(session, case_id, entity_keys) -> dict:
 
 
 def _within(d, from_date, to_date):
-    return (from_date is None or d >= from_date) and (to_date is None or d < to_date)
+    """Inclusive at both ends, as the communication window is (``sort_instant <= to_instant``): the dates are the
+    calendar days, in the case zone, of the window's first and last instants."""
+    return (from_date is None or d >= from_date) and (to_date is None or d <= to_date)
 
 
 def payments(session, case_id, side_a: dict, side_b: dict, *, from_date=None, to_date=None) -> dict:
@@ -214,8 +216,41 @@ def payments(session, case_id, side_a: dict, side_b: dict, *, from_date=None, to
             continue
         rows.append({"id": str(r.id), "ref_id": r.ref_id, "account_id": account, "direction": towards,
                      "amount_minor": int(r.amount_minor), "currency": r.currency, "proof_class": str(r.proof_class),
-                     "ordering_date": r.ordering_date.isoformat(), "ordering_date_source": r.ordering_date_source})
-    return {"rows": rows, "shared_accounts": len(shared)}
+                     "ordering_date": r.ordering_date.isoformat(), "ordering_date_source": r.ordering_date_source,
+                     "_debit": r.direction == "debit", "_side": "a" if account in side_a["accounts"] else "b"})
+    return {"rows": collapse_mirrored(rows), "shared_accounts": len(shared)}
+
+
+def collapse_mirrored(rows) -> list:
+    """One payment seen on both sides' statements (a debit in the payer's account, the credit in the payee's) is
+    one payment: the ledger's own mirror rule (``flow.collapse_mirrors``: same parties, amount and currency, different
+    accounts, dates within its settlement window). The kept row names its mirror; its class is the stronger of the
+    two."""
+    from services.financial.flow import FlowRow, Party, collapse_mirrors
+    from services.financial.money import Money
+    from postgres.models.enums import ProofClass, TransactionDirection
+    sides = {"a": Party(key="side:a"), "b": Party(key="side:b")}
+    flow_rows = [FlowRow(transaction_id=uuid.UUID(r["id"]), account_id=uuid.UUID(r["account_id"]),
+                         ordering_date=date.fromisoformat(r["ordering_date"]),
+                         amount=Money(minor_units=r["amount_minor"], currency=r["currency"]),
+                         direction=TransactionDirection.debit if r["_debit"] else TransactionDirection.credit,
+                         proof_class=ProofClass(r["proof_class"]), holder=sides[r["_side"]],
+                         counterparty=sides["b" if r["_side"] == "a" else "a"]) for r in rows]
+    _, pairs = collapse_mirrors(flow_rows)
+    by_id = {r["id"]: r for r in rows}
+    dropped = set()
+    for p in pairs:
+        kept, mirror = by_id[str(p.debit_id)], by_id[str(p.credit_id)]
+        kept["mirrored_by"] = {"id": mirror["id"], "ref_id": mirror["ref_id"], "account_id": mirror["account_id"],
+                               "ordering_date": mirror["ordering_date"]}
+        kept["proof_class"] = p.proof_class.value
+        dropped.add(mirror["id"])
+    out = []
+    for r in rows:
+        if r["id"] in dropped:
+            continue
+        out.append({k: v for k, v in r.items() if not k.startswith("_")})
+    return out
 
 
 def money_totals(rows) -> list:
@@ -301,13 +336,19 @@ def money_mentioned(conn, case_id, a_keys, b_keys, *, from_instant=None, to_inst
 
 # ---- edges ------------------------------------------------------------------------------------------------------
 
-def _date_in_zone(instant, zone):
+def _date_in_zone(instant, zone, end=False):
+    """The calendar day of ``instant`` in the case zone. For the end of a window, an instant at local midnight
+    closes the day before (a window to 1 July 00:00 holds no payment dated 1 July)."""
     if instant is None:
         return None
+    from datetime import timedelta
     from zoneinfo import ZoneInfo
     if isinstance(instant, str):
         instant = datetime.fromisoformat(instant.replace("Z", "+00:00"))
-    return instant.astimezone(ZoneInfo(zone)).date()
+    local = instant.astimezone(ZoneInfo(zone))
+    if end and (local.hour, local.minute, local.second, local.microsecond) == (0, 0, 0, 0):
+        return local.date() - timedelta(days=1)
+    return local.date()
 
 
 def _slice_start(d: date, slice_by: str) -> date:
@@ -354,7 +395,7 @@ def edges(conn, case_id, subjects: list, *, from_instant=None, to_instant=None, 
                                      to_instant=to_instant, group_scope=group_scope, collapse_copies=collapse_copies,
                                      slice_by=slice_by, ctx=ctx)
                 pay = payments(session, case_id, fin.get(a["entity_key"], empty), fin.get(b["entity_key"], empty),
-                               from_date=_date_in_zone(from_instant, zone), to_date=_date_in_zone(to_instant, zone))
+                               from_date=_date_in_zone(from_instant, zone), to_date=_date_in_zone(to_instant, zone, end=True))
                 if pay["shared_accounts"]:
                     limits.append({"code": "shared_account", "pair": [a["subject"], b["subject"]],
                                    "count": pay["shared_accounts"],
@@ -401,7 +442,7 @@ def edge_records(conn, case_id, a: dict, b: dict, kind: str, *, from_instant=Non
             fin = financial_sides(session, case_id, [sa["entity_key"], sb["entity_key"]])
             empty = {"parties": set(), "accounts": set()}
             rows = payments(session, case_id, fin.get(sa["entity_key"], empty), fin.get(sb["entity_key"], empty),
-                            from_date=_date_in_zone(from_instant, zone), to_date=_date_in_zone(to_instant, zone))["rows"]
+                            from_date=_date_in_zone(from_instant, zone), to_date=_date_in_zone(to_instant, zone, end=True))["rows"]
         finally:
             session.close()
         rows = [r for r in rows if r["proof_class"] in SUMMED + STATED]

@@ -538,8 +538,15 @@ def _theory_sources(
         if file.id in contradict_ids:
             roles.add("contradicting_candidate")
         chunks = _transcript_chunks(file, interview_id=None, preferred_anchor=None)
+        spans: set = set()
         for anchor in phone_anchors.get(file.id) or [None]:
-            chunks.extend(_document_chunks(file, interview_id=None, preferred_anchor=anchor, terms=terms))
+            for chunk in _document_chunks(file, interview_id=None, preferred_anchor=anchor, terms=terms):
+                # two linked messages in one window are read once
+                span = (chunk["source_anchor"].get("start_char"), chunk["source_anchor"].get("end_char"))
+                if span in spans:
+                    continue
+                spans.add(span)
+                chunks.append(chunk)
         for chunk in chunks:
             chunk["retrieval_roles"] = sorted(roles)
         raw.extend(chunks)

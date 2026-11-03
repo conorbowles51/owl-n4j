@@ -43,7 +43,15 @@ def terms(question: str) -> list:
     for d in DIGITS.findall(rest):
         digits = re.sub(r"\D", "", d)
         if len(digits) >= 4:
-            out.append(digits)
+            # thread lines write a number as its phone shows it ("+1 202-555-0143"), folded to "1 202 555 0143":
+            # search the national part as written there, else the digits as typed
+            from services.phone import numbers
+            e164, display, valid, _ = numbers.parse(d.strip(), "US")
+            if valid and display:
+                national = F.fold(display).split(" ", 1)
+                out.append(national[1] if len(national) == 2 else national[0])
+            else:
+                out.append(F.fold(d.strip()))
     rest = DIGITS.sub(" ", rest)
     words = [F.fold(w) for w in WORD.findall(rest)]
     words = [w for w in words if w and w not in STOP]

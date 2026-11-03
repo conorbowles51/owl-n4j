@@ -109,7 +109,8 @@ def financial_identifier_dossiers(session, case_id) -> list:
     from sqlalchemy import select
     from postgres.models.case_profile import CaseProfile
     for d, key in session.execute(select(CaseProfile.id, CaseProfile.canonical_entity_key).where(
-            CaseProfile.case_id == case_id, CaseProfile.canonical_entity_key.is_not(None))):
+            CaseProfile.case_id == case_id, CaseProfile.canonical_entity_key.is_not(None),
+            CaseProfile.archived_at.is_(None))):
         dossiers[key].add(str(d))
     out = set()
     for account in state["accounts"]:
