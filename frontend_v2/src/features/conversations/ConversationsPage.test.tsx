@@ -148,6 +148,10 @@ describe("Conversations", () => {
     const line = await screen.findByTestId("saved-selection")
     await waitFor(() => expect(line.textContent).toContain("Synthetic selection"))
     expect(line.closest("header")?.textContent).toContain("Conversations")
+    await threadOptions()
+    expect(seen.search).not.toContain("thread=")
+    expect(streamFilters.at(-1)).toMatchObject({ selection: "s1" })
+    expect((streamFilters.at(-1) as { threads?: string[] }).threads ?? []).toEqual([])
   })
 
   it("opens the first thread on arrival so the keys act at once (D-38), in the URL", async () => {

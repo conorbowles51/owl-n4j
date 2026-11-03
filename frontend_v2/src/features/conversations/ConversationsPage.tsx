@@ -112,13 +112,15 @@ export function ConversationsPage() {
   })
   const threads = useMemo(() => threadsQ.data?.items ?? [], [threadsQ.data])
 
-  // D-38: the first thread opens on arrival, so j, r, m and c act at once (07 J-8b, J-12, J-13).
+  // D-38: the first thread opens on arrival, so j, r, m and c act at once (07 J-8b, J-12, J-13). A saved selection
+  // opens whole: its frozen total and the list's total agree until a thread is picked.
   useEffect(() => {
-    if (view.tab === "threads" && !view.thread && !view.record && threads.length) setView({ thread: threads[0].thread_key }, true)
+    if (view.tab === "threads" && !view.thread && !view.record && !view.selection && threads.length) setView({ thread: threads[0].thread_key }, true)
   }, [view.tab, view.thread, view.record, threads, setView])
 
-  // A link to one record (?record=) reads every message of the phones in scope with that record open beside it.
-  const ready = view.tab === "threads" ? !!view.thread || !!view.record : view.people.length > 0
+  // A link to one record (?record=) reads every message of the phones in scope with that record open beside it; a
+  // saved selection (?selection=) reads its frozen records.
+  const ready = view.tab === "threads" ? !!view.thread || !!view.record || !!view.selection : view.people.length > 0
   const streamFilter = useMemo(() => (ready && settingsQ.isSuccess ? viewToFilter(caseId, view, zoneName, true) : null), [ready, settingsQ.isSuccess, caseId, view, zoneName])
   const stream = useStream(streamFilter)
 
