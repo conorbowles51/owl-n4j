@@ -8,7 +8,7 @@ import, removed when the brief is written.
 from alembic import op
 
 revision = "20261103_case_briefs"
-down_revision = "20261103_merge_audio_review"
+down_revision = "20261103_phone_reparse"
 branch_labels = None
 depends_on = None
 
