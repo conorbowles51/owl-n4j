@@ -166,15 +166,17 @@ def _zone_date(instant, zone):
     return instant.astimezone(timezone.utc).date(), False
 
 
-def read_signals(conn, case_id) -> list:
-    """Every signal record of the case's active phones: ``{record_uid, extraction_id, model_type, instant, deleted,
+def read_signals(conn, case_id, record_uids=None) -> list:
+    """Every signal record of the case's active phones (or only ``record_uids``, for a reader that already knows
+    which records it wants): ``{record_uid, extraction_id, model_type, instant, deleted,
     fields: {field_path: value}, sensitive: {field_path: value}, sender, url}``. Sensitive values are read only for
     S8 ending comparison and never leave this module unmasked."""
     rows = {}
     for r in conn.execute(text(
             "SELECT r.record_uid, r.extraction_id, r.model_type, r.first_instant, r.deleted_state FROM pv_record r WHERE "
-            "r.case_id = :c AND r.model_type = ANY(:t) AND r.parent_record_uid IS NULL"),
-            {"c": str(case_id), "t": list(TYPES)}):
+            "r.case_id = :c AND r.model_type = ANY(:t) AND r.parent_record_uid IS NULL" + (
+                " AND r.record_uid = ANY(CAST(:u AS uuid[]))" if record_uids is not None else "")),
+            {"c": str(case_id), "t": list(TYPES), "u": [str(u) for u in record_uids or []]}):
         rows[str(r.record_uid)] = {"record_uid": str(r.record_uid), "extraction_id": str(r.extraction_id),
                                    "model_type": r.model_type, "instant": r.first_instant, "deleted": r.deleted_state,
                                    "fields": {}, "sensitive": {}, "sender": None, "url": None}
@@ -182,7 +184,8 @@ def read_signals(conn, case_id) -> list:
         return []
     for r in conn.execute(text(
             "SELECT record_uid, field_path, value, is_sensitive FROM pv_text WHERE case_id = :c AND model_type = ANY(:t) "
-            "AND value_index = 0"), {"c": str(case_id), "t": list(TYPES)}):
+            "AND value_index = 0" + (" AND record_uid = ANY(CAST(:u AS uuid[]))" if record_uids is not None else "")),
+            {"c": str(case_id), "t": list(TYPES), "u": [str(u) for u in record_uids or []]}):
         x = rows.get(str(r.record_uid))
         if x is None:
             continue

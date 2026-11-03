@@ -514,8 +514,9 @@ def no_record_reason(conn, claim, exts, items) -> tuple | None:
     extraction or outside the production's selection."""
     what, table = _NEEDS[claim["kind"]]
     a, b = claim["window_start"], claim["window_end"]
-    has_kind = conn.execute(text("SELECT EXISTS (SELECT 1 FROM %s WHERE extraction_id = ANY(CAST(:e AS uuid[])))"
-                                 % table), {"e": list(exts)}).scalar()
+    only = " AND kind IN ('message', 'call', 'email')" if table == "pv_comm_event" else ""
+    has_kind = conn.execute(text("SELECT EXISTS (SELECT 1 FROM %s WHERE extraction_id = ANY(CAST(:e AS uuid[]))%s)"
+                                 % (table, only)), {"e": list(exts)}).scalar()
     if not has_kind:
         return "not_extracted", NO_RECORD_REASONS["not_extracted"] % what
     # the extraction's coverage: its first and last timed record of any kind, on every subject phone together

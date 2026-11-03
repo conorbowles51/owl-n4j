@@ -200,7 +200,7 @@ def _money_case(engine, with_period=True):
                   {"d": dossier_id, "c": case})
     p = Phone()
     p.notification("test.synthbank.mobile", "Synthetic Bank: Purchase of $12.50 on card ending 1234")
-    p.notification("test.synthbank.mobile", "Synthetic Bank: your one-time code is 482913. Do not share it.",
+    p.notification("test.synthbank.mobile", "Synthetic Bank: your one-time code is 482 913. Do not share it.",
                    when=WHEN - timedelta(minutes=2))
     p.simple("InstalledApplication", Identifier="test.twodollar.app", Name="Two Dollar")
     ext = p.make(engine, case)
@@ -252,7 +252,7 @@ def test_a_control_claim_is_two_evidenced_links_a_model_draft_and_never_a_holder
             assert "never a finding that the person is the account holder" in out["not_a_holder_finding"]
             assert kinds == ["alert", "code"]
             code = next(s for s in out["items"] if s["kind"] == "code")
-            assert "482913" not in str(out) and "••••••" in code["quote"]
+            assert "482" not in str(out) and "913" not in str(out) and "••• •••" in code["quote"]
             assert all(s["correlated_group"].startswith("handset") for s in out["items"]
                        if s["link"] == "account_to_device")
             person = [s for s in out["items"] if s["link"] == "device_to_person"]

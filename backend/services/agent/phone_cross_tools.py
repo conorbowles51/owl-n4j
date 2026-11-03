@@ -321,13 +321,17 @@ def together_apart(conn, case_id, start, end, *, person_a=None, phone_a=None, pe
             raise ValueError("Give a start and an end, the end after the start.")
         if b - a > timedelta(days=3660):
             raise ValueError("The range is longer than ten years; choose a shorter one.")
-        est = colocation.estimate_pairs(conn, ra["extraction_ids"], rb["extraction_ids"], a, b)
+        if not 0 < float(window_minutes) <= 60:
+            raise ValueError("The pairing window is up to 60 minutes here; a wider one runs on the Patterns screen.")
+        # the hourly estimate pairs observations within an hour; a wider window pairs proportionally more
+        est = colocation.estimate_pairs(conn, ra["extraction_ids"], rb["extraction_ids"], a, b) * \
+            max(1.0, 2 * float(window_minutes) / 60)
         if est > cap:
             return _base(tool, case_id, available=False, total_matching=0, returned=0, has_more=False,
                          next_offset=None, items=[], estimated_pairs=est,
                          reason="About %s pairs to compare (estimate from hourly counts): too many to compute here. "
                                 "Narrow the window, or run Together on the Patterns screen, which runs it in the "
-                                "background and keeps every pair." % format(est, ","))
+                                "background and keeps every pair." % format(int(est), ","))
         params = {"window_s": float(window_minutes) * 60, "include_synced": bool(include_synced)}
         pairs, counts, eps = colocation.compute(conn, str(case_id), ra["extraction_ids"], rb["extraction_ids"], a, b,
                                                 params)
@@ -499,13 +503,14 @@ def money_signal_matches(conn, case_id, *, outcome=None, offset=0, limit=DEFAULT
 
 
 def _lead_alert_days(conn, case_id, run_id, record_uids):
-    """The days (UTC) of the transactional alerts behind a lead, from the same run's money readings."""
+    """The days of the transactional alerts behind a lead, in the phone's own zone as approach 1 dates them (the
+    statement's days are the bank's local days), from the same run's money readings."""
     if not record_uids:
         return []
     return sorted({str(r[0])[:10] for r in conn.execute(text(
-        "SELECT r.measures ->> 'event_instant' FROM phone_analysis_results r JOIN phone_analysis_result_records x ON "
+        "SELECT r.measures ->> 'event_date' FROM phone_analysis_results r JOIN phone_analysis_result_records x ON "
         "x.result_id = r.id WHERE r.run_id = :run AND r.case_id = :c AND r.kind = 'money_reading' AND x.record_uid = "
-        "ANY(CAST(:u AS uuid[])) AND r.measures ->> 'event_instant' IS NOT NULL"),
+        "ANY(CAST(:u AS uuid[])) AND r.measures ->> 'event_date' IS NOT NULL"),
         {"run": run_id, "c": str(case_id), "u": list(record_uids)})})
 
 
@@ -580,7 +585,7 @@ def money_signal_leads(conn, case_id, *, offset=0, limit=DEFAULT_LIMIT) -> dict:
                        "never totalled. A lead card the agent writes is a draft a person edits.")
 
 
-def statement_check(conn, case_id, claim_id) -> dict:
+def statement_check(conn, case_id, claim_id, offset=0, limit=MAX_LIMIT) -> dict:
     """04 9's check of a statement a person confirmed, computed now and not stored (Check on the Patterns screen
     stores it). Outcomes: contradicted, contradicted_weakly, consistent, supported, mixed, insufficient_data, or
     no_record with its reason."""
@@ -613,17 +618,17 @@ def statement_check(conn, case_id, claim_id) -> dict:
         items.append(x)
     order = {"contradicting": 0, "supporting": 1, "gap": 2, "context": 3}
     items.sort(key=lambda x: order[x["role"]])
+    page, off, nxt = _page(items, offset, limit)
     return _base(tool, case_id, claim={"id": str(cid), "kind": claim["kind"], "window_start": _iso(claim["window_start"]),
                                        "window_end": _iso(claim["window_end"]), "text": claim.get("window_text")},
                  outcome=res["outcome"], outcome_basis=res["outcome_basis"], words=res["summary"]["words"],
                  no_record_reason=res["summary"].get("no_record_reason"), counts=res["counts"],
                  not_yet_checked=res["summary"]["not_yet_checked"], total_matching=len(items),
-                 returned=min(len(items), MAX_LIMIT), has_more=len(items) > MAX_LIMIT,
-                 next_offset=MAX_LIMIT if len(items) > MAX_LIMIT else None, items=items[:MAX_LIMIT],
+                 returned=len(page), has_more=nxt is not None, next_offset=nxt, offset=off, items=page,
                  coverage="Checked the statement now: %s (%s); %d items." % (res["outcome"], res["outcome_basis"],
                                                                            len(items)),
-                 limitation=("Only the first %d of %d items are here (undercutting first); every item is on the "
-                             "Patterns screen's check." % (MAX_LIMIT, len(items))) if len(items) > MAX_LIMIT else None,
+                 limitation=("Only %d of %d items are here (undercutting first); read on with offset %d." % (
+                     len(page), len(items), nxt)) if nxt is not None else None,
                  note="Computed by the check's own rule; the outcome is never the model's. Not stored: Check on the "
                       "Patterns screen keeps it.")
 
@@ -684,7 +689,8 @@ def analysis_results(conn, case_id, approach, *, kind=None, phone=None, start=No
 # ---- connection 3: who had the means to operate an account ----------------------------------------------------------
 
 OTP_SQL = r"(one[- ]?time|passcode|pass code|verification code|security code|confirmation code|\motp\M|\mcode\M)"
-OTP_DIGITS = __import__("re").compile(r"(?<!\d)\d{4,8}(?!\d)")
+# a code of 4 to 8 digits, whole or split in two by a space or a dash ("482913", "482 913", "482-913")
+OTP_DIGITS = __import__("re").compile(r"(?<!\d)(?:\d{4,8}|\d{3,4}[ -]\d{3,4})(?!\d)")
 INTERACTION_LEAD = timedelta(minutes=5)
 
 
@@ -717,7 +723,8 @@ def _ending(printed):
 
 
 def _mask_codes(s):
-    return OTP_DIGITS.sub(lambda m: "•" * len(m.group(0)), s or "")
+    """Every digit masked: a code can be split ("482 913", "482-913"), so no run of digits is left readable."""
+    return "".join("•" if ch.isdigit() else ch for ch in (s or ""))
 
 
 def _alert_strands(conn, case_id, acct_id, exts, a, b):
@@ -765,7 +772,7 @@ def _code_strands(conn, case_id, institution, exts, a, b):
     if not rows:
         return []
     uids = {str(r.record_uid): r for r in rows}
-    sigs = {s["record_uid"]: s for s in MS.read_signals(conn, case_id) if s["record_uid"] in uids}
+    sigs = {s["record_uid"]: s for s in MS.read_signals(conn, case_id, record_uids=list(uids))}
     directory = INST.for_case(conn, case_id)
     phones = MS._phone_context(conn, case_id)
     out = []
@@ -778,7 +785,10 @@ def _code_strands(conn, case_id, institution, exts, a, b):
             continue
         out.append({"kind": "code", "phone": (phones.get(sig["extraction_id"]) or {}).get("label"),
                     "at": _iso(sig["instant"]), "rec": _rec(uid), "extraction_id": sig["extraction_id"],
-                    "quote": _mask_codes(body)[:300], "strength": "supporting",
+                    "quote": _mask_codes(body)[:300], "quote_clipped": len(body) > 300,
+                    "quote_words": "Digits masked%s; read the record by its rec:// link." % (
+                        ", and cut at 300 characters" if len(body) > 300 else ""),
+                    "strength": "supporting",
                     "words": "A one-time code from %s arrived on the phone: whoever held it could complete a login "
                              "or payment that needed it" % match.display_name})
     return out
@@ -1036,6 +1046,12 @@ def payment_conversation(conn, case_id, payment, *, person_a=None, person_b=None
                "day": (t.transaction_date or t.posted_date or t.ordering_date).isoformat(),
                "description": t.description, "counterparty_printed": t.counterparty_raw, "reference": t.bank_reference,
                "superseded": bool(t.superseded_by_id), "ledger_status": t.ledger_status}
+        if t.superseded_by_id or t.ledger_status != "admitted":
+            return _base(tool, case_id, available=False, payment=row, total_matching=0, returned=0, has_more=False,
+                         next_offset=None, items=[],
+                         reason=("This row was corrected; its correction is txn://%s. Ask about that row." %
+                                 t.superseded_by_id) if t.superseded_by_id else
+                         "This row is not admitted to the ledger (%s), so it is not between anyone." % t.ledger_status)
         pair, why = _payment_parties(conn, case_id, t, person_a, person_b)
         if pair is None:
             return _base(tool, case_id, available=False, payment=row, total_matching=0, returned=0, has_more=False,
@@ -1228,7 +1244,7 @@ class TogetherArgs(_Page):
     phone_a: str | None = None
     person_b: str | None = None
     phone_b: str | None = None
-    window_minutes: float = Field(5, gt=0, le=1440)
+    window_minutes: float = Field(5, gt=0, le=60)
     include_synced: bool = False
 
 
@@ -1257,8 +1273,9 @@ class MatchesArgs(_Page):
     outcome: Literal["corroborated", "near_amount", "several_candidates"] | None = None
 
 
-class StatementArgs(BaseModel):
+class StatementArgs(_Page):
     claim_id: str = Field(..., description="The id of a statement a person confirmed on the Patterns screen.")
+    limit: int = Field(MAX_LIMIT, ge=1, le=MAX_LIMIT)
 
 
 class AnalysisArgs(_Page):
