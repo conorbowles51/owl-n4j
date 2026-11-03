@@ -37,6 +37,8 @@ from services.agent.phone_tools import (DEFAULT_LIMIT, MAX_LIMIT, NOT_IN_CASE, _
 PLACE_LABEL = "investigative location, not cell-site opinion"
 MODEL_DRAFT = "model drafted, not confirmed"
 CARD_NOT_PERSON = "A card payment places a card, not a person, at a terminal."
+# pairs the agent computes in its own request (the Patterns screen runs larger ones in the background and keeps them)
+AGENT_PAIRS = 200_000
 
 
 def _txn(tid):
@@ -309,7 +311,7 @@ def together_apart(conn, case_id, start, end, *, person_a=None, phone_a=None, pe
     stored: the counts, the episodes (together, tight or broad, and apart) and the compared pairs."""
     from services.pattern_of_life import colocation
     tool = "together_apart"
-    cap = colocation.BACKGROUND_PAIRS
+    cap = AGENT_PAIRS
 
     def run():
         ra = _subject(conn, case_id, person_a, phone_a, "first person")
@@ -991,11 +993,16 @@ def _payment_parties(conn, case_id, t, person_a=None, person_b=None):
         ds = conn.execute(text("SELECT id::text AS id, display_name, canonical_entity_key FROM case_profiles WHERE "
                                "case_id = :c AND archived_at IS NULL AND canonical_entity_key IS NOT NULL ORDER BY "
                                "display_name, id"), {"c": str(case_id)}).fetchall()
-        cands = [(x, y) for i, x in enumerate(ds) for y in ds[i + 1:]]
+        cands = [tuple(ds)]  # every person once; pairs are formed from the account's holders below
     with Session(bind=conn) as session:
         sides = link_edges.financial_sides(session, case_id, list({d.canonical_entity_key for p in cands for d in p
                                                                    if d.canonical_entity_key}))
         empty = {"parties": set(), "accounts": set()}
+        if not (person_a and person_b):
+            # only the people holding the payment's account can be its first side: one comparison per other person
+            people = {d.id: d for p in cands for d in p}.values()
+            holders = [d for d in people if t.account_id in sides.get(d.canonical_entity_key, empty)["accounts"]]
+            cands = [(h, o) for h in holders for o in people if o.id != h.id]
         for x, y in cands:
             if t.account_id not in (sides.get(x.canonical_entity_key, empty)["accounts"] |
                                     sides.get(y.canonical_entity_key, empty)["accounts"]):
