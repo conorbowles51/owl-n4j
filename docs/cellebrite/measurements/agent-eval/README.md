@@ -36,3 +36,6 @@ The one miss: asked a second time about @alder_brackley and @orrin_ravensworth, 
 direct messages and 2 calls", counting the same people's other identities; their two app identities hold 3 (the
 first answer said 3). Two further runs are left out: the measuring script left the page before they finished, and
 they hold no answer. Answers took 26 to 105 s.
+
+After the instructions kept to the identities a question names (release abb17d87), the same question asked
+twice more answered 3 both times, each citing 3 records.
