@@ -552,3 +552,30 @@ def test_a_replace_that_adds_messages_makes_a_reviewed_thread_partly_reviewed(ap
             "FROM phone_threads WHERE thread_key = :r"), {"d": "chat:%s:twin" % new_ext, "r": renamed})
     tl, rows = listed()
     assert rows[renamed]["review"] is None
+
+
+def test_a_saved_selection_link_opens_its_frozen_records_and_says_what_it_is(api):
+    """lx-collect's saved phone_selection links (/phones?selection=<id>) open Conversations on the frozen records:
+    the stream filter's selection reads exactly the records frozen, later messages are not added, and the selection
+    describes itself; another case's selection is not found."""
+    from tests.phone_streams_fixture import phone as add_phone
+    c, case = api["client"], api["case"]
+    with api["engine"].begin() as conn:
+        ext2, evs2 = add_phone(conn, case, label="C4", events=[msg(at(2023, 4, 1, 12), ANA, [OWNER], body="one"),
+                                                               msg(at(2023, 4, 2), OWNER, [ANA], body="two")])
+    got = c.post("/api/phones/selections", json={"filter": {"case_id": case, "phones": [str(ext2)]},
+                                                 "words": "Everything on C4"}).json()
+    with api["engine"].begin() as conn:  # a message read later is not in the frozen selection
+        conn.execute(text("UPDATE phone_comm_events SET extraction_id = :e WHERE event_uid = :u"),
+                     {"e": ext2, "u": api["evs"][0]["event_uid"]})
+    idx = c.post("/api/phones/streams/index", json={"case_id": case, "selection": got["id"]}).json()
+    assert idx["counts"]["events"] == 2
+    whole = c.post("/api/phones/streams/index", json={"case_id": case, "phones": [str(ext2)]}).json()
+    assert whole["counts"]["events"] == 3
+    d = c.get("/api/phones/selections/%s" % got["id"], params={"case_id": case})
+    assert d.status_code == 200 and d.json()["words"] == "Everything on C4" and d.json()["event_count"] == 2
+    assert d.json()["replaced"] is None
+    assert c.get("/api/phones/selections/%s" % got["id"], params={"case_id": api["other_case"]}).status_code in (403, 404)
+    assert c.get("/api/phones/selections/not-an-id", params={"case_id": case}).status_code == 404
+    bad = c.post("/api/phones/streams/index", json={"case_id": case, "selection": "not-an-id"})
+    assert bad.status_code == 422

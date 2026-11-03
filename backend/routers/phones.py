@@ -934,6 +934,21 @@ def freeze_selection(body: SelectionBody, db: Session = Depends(get_db), user: U
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+@router.get("/selections/{selection_id}")
+def get_selection(selection_id: str, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                  user: User = Depends(get_current_db_user)):
+    """A saved selection's sentence and counts, for the screen a saved link opens (07 6.1)."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    from services.phone import selections
+    try:
+        out = selections.describe(db, case_id, selection_id)
+    except (ValueError, TypeError):
+        out = None
+    if out is None:
+        raise HTTPException(status_code=404, detail="This selection is not in this case.")
+    return out
+
+
 class ReviewMarkBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID

@@ -39,13 +39,15 @@ export interface ConversationView {
   hl: string
   hlExact: boolean
   at: string | null
+  /** A saved selection opened from a link: only its frozen records. */
+  selection: string | null
 }
 
 export const DEFAULT_VIEW: ConversationView = {
   tab: "threads", thread: null, record: null, people: [], mode: "involving", expand: false, phones: [], from: null,
   to: null, kinds: [], apps: [], directions: [], deleted: null, unreadable: null, attachment: null, text: "",
   exact: false, everyCopy: false, allChannels: false, sort: "oldest_first", threadSort: "recent", zone: "case",
-  names: "phone", hl: "", hlExact: false, at: null,
+  names: "phone", hl: "", hlExact: false, at: null, selection: null,
 }
 
 const list = (q: URLSearchParams, k: string) => (q.get(k) ? q.get(k)!.split(",").filter(Boolean) : [])
@@ -84,6 +86,7 @@ export function viewFromSearch(search: string, fixedPhone?: string | null): Conv
     hl: q.get("hl") ?? "",
     hlExact: q.get("hlexact") === "1",
     at: q.get("at"),
+    selection: q.get("selection"),
   }
 }
 
@@ -118,6 +121,7 @@ export function viewToSearch(v: ConversationView, fixedPhone?: string | null): s
   set("hl", v.hl.trim())
   set("hlexact", v.hlExact ? "1" : null)
   set("at", v.at)
+  set("selection", v.selection)
   return q.toString()
 }
 
@@ -138,6 +142,7 @@ export const PHONE_OWNER = "owner:this-phone"
 export function viewToFilter(caseId: string, v: ConversationView, zoneName: string, withThread = true): StreamFilter {
   const f: StreamFilter = { case_id: caseId, zone: { mode: v.zone, phone: v.zone === "phone" && v.phones.length === 1 ? v.phones[0] : null } }
   if (v.phones.length) f.phones = v.phones
+  if (v.selection) f.selection = v.selection
   if (withThread && v.thread && v.tab === "threads") f.threads = [v.thread]
   // Between A and B: B is the second person, or with one person the owner of each phone (07 J-3)
   const between = v.mode === "between" && (v.people.length === 2 || v.people.length === 1)

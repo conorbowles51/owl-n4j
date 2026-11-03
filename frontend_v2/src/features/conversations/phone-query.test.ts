@@ -9,6 +9,7 @@ describe("phone addresses from links (07 4.13, lx-collect)", () => {
   })
   it("leaves the phone list in place for anything else", () => {
     expect(phoneQueryTarget("c1", "")).toBeNull()
-    expect(phoneQueryTarget("c1", "?file=f1")).toBeNull()
+    expect(phoneQueryTarget("c1", "?file=f1")).toBeNull() // the Phones page looks up the file's phone first
+    expect(phoneQueryTarget("c1", "?selection=s1")).toBe("/cases/c1/conversations?selection=s1")
   })
 })

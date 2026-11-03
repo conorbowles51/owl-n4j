@@ -8,6 +8,7 @@ import { installKeymap, register } from "@/lib/keymap"
 import {
   failureText,
   freezeSelection,
+  getSelection,
   getParticipants,
   getPhones,
   getSettings,
@@ -87,6 +88,13 @@ export function ConversationsPage() {
   )
 
   const caseQ = useCase(caseId)
+  const savedQ = useQuery({
+    queryKey: ["phone-selection", caseId, view.selection],
+    queryFn: () => getSelection(caseId, view.selection!),
+    enabled: !!caseId && !!view.selection,
+    staleTime: Infinity,
+    retry: false,
+  })
   const phonesQ = useQuery({ queryKey: ["phones", caseId], queryFn: () => getPhones(caseId), enabled: !!caseId })
   const settingsQ = useQuery({ queryKey: ["phone-settings", caseId], queryFn: () => getSettings(caseId), enabled: !!caseId })
   const zoneName = settingsQ.data?.effective.name ?? "UTC"
@@ -342,6 +350,19 @@ export function ConversationsPage() {
     return (
       <div className="p-6">
         <h1 className="text-lg font-semibold">Conversations</h1>
+        {view.selection && (
+          // a saved link to a whole result opens on its frozen records, said as such (07 6.1)
+          <p role="status" className="w-full text-sm" data-testid="saved-selection">
+            {savedQ.isLoading && "Opening the saved selection"}
+            {savedQ.isError && failureText(savedQ.error, "This saved selection could not be opened.")}
+            {savedQ.data &&
+              `Showing a saved selection: ${savedQ.data.words}. ${fmt(savedQ.data.event_count)} ${savedQ.data.event_count === 1 ? "message" : "messages"} as frozen${savedQ.data.created_at ? ` on ${new Date(savedQ.data.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}` : ""}; later messages are not added.`}{" "}
+            {savedQ.data?.replaced && <span className="text-status-review">{savedQ.data.replaced}.</span>}{" "}
+            <button type="button" className="underline underline-offset-2" onClick={() => setView({ selection: null })}>
+              Show every message
+            </button>
+          </p>
+        )}
         <p className="mt-2 text-sm">This case has no phone yet. Add a phone report from Evidence to read its conversations here.</p>
       </div>
     )

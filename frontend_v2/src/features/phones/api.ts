@@ -38,6 +38,8 @@ export interface StreamFilter {
   names?: { mode: "phone" | "case" }
   zone?: { mode: "phone" | "case" | "utc"; phone?: string | null }
   sort?: "oldest_first" | "newest_first"
+  /** A frozen phone selection's id: only its records (a saved link to a whole result, 07 6.1). */
+  selection?: string
 }
 
 /** A window asked for under a snapshot the server no longer holds (3.1 rule 3). */
@@ -146,6 +148,17 @@ export async function markNotACopy(caseId: string, recordUid: string, reason: st
 }
 
 /** Freeze every record the filter matches now as one phone selection, for Add to… on a whole result (07 6.1). */
+export interface SavedSelection {
+  id: string
+  words: string
+  record_count: number
+  event_count: number
+  created_at: string | null
+  replaced: string | null
+}
+export async function getSelection(caseId: string, id: string) {
+  return fetchAPI<SavedSelection>(`/api/phones/selections/${encodeURIComponent(id)}?case_id=${encodeURIComponent(caseId)}`)
+}
 export async function freezeSelection(filter: StreamFilter, words: string) {
   return fetchAPI<{ id: string; record_count: number; event_count: number; words: string }>("/api/phones/selections", {
     method: "POST",

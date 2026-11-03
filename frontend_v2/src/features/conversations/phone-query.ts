@@ -8,5 +8,7 @@ export function phoneQueryTarget(caseId: string, search: string): string | null 
   if (record) return `${base}?record=${encodeURIComponent(record)}`
   const identity = q.get("identity")
   if (identity) return `${base}?tab=people&people=${encodeURIComponent(identity)}`
+  const selection = q.get("selection")
+  if (selection) return `${base}?selection=${encodeURIComponent(selection)}`
   return null
 }

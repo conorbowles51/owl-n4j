@@ -83,6 +83,8 @@ class StreamFilter(BaseModel):
     names: Names = Field(default_factory=Names)
     zone: Zone = Field(default_factory=Zone)
     sort: Literal["oldest_first", "newest_first"] = "oldest_first"
+    # a frozen phone selection (07 6.1): only its records, as frozen (a saved link to a whole result opens this)
+    selection: Optional[str] = None
 
     @field_validator("case_id")
     @classmethod
@@ -101,6 +103,17 @@ class StreamFilter(BaseModel):
             return [str(uuid.UUID(p)) for p in v]
         except (ValueError, AttributeError, TypeError):
             raise ValueError("phones holds something that is not a phone id")
+
+    @field_validator("selection")
+    @classmethod
+    def _selection_uuid(cls, v):
+        import uuid
+        if v is None:
+            return v
+        try:
+            return str(uuid.UUID(v))
+        except (ValueError, AttributeError, TypeError):
+            raise ValueError("selection is not a selection id")
 
     @field_validator("from_instant", "to_instant")
     @classmethod

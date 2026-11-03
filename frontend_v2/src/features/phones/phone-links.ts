@@ -39,10 +39,11 @@ export function phoneLinkHref(caseId: string, link: PhoneLinkLike): string | nul
       return extraction
         ? `${base}/phones/${encodeURIComponent(extraction)}/records/conversations?thread=${id}`
         : `${base}/phones?thread=${id}`
+    // saved analyses and statement checks belong to the Patterns screen (04), the route that exists
     case "phone_analysis":
-      return `${base}/phone-analyses/${encodeURIComponent(field(link, "kind") ?? "results")}?snapshot=${id}`
+      return `${base}/phone-patterns?analysis=${encodeURIComponent(field(link, "kind") ?? "results")}&snapshot=${id}`
     case "statement_check":
-      return `${base}/phone-analyses/statement-check?check=${id}`
+      return `${base}/phone-patterns?check=${id}`
     case "phone_identity":
       return `${base}/phones?identity=${id}`
     case "phone_file":

@@ -15,7 +15,8 @@ it("opens every phone link type at its phone route, and nothing for other types 
   expect(phoneLinkHref("c1", { target_type: "phone_record", target_id: "r1" })).toBe("/cases/c1/phones?record=r1")
   expect(phoneLinkHref("c1", { target_type: "phone_extraction", target_id: "e1" })).toBe("/cases/c1/phones/e1")
   expect(phoneLinkHref("c1", { target_type: "phone_analysis", target_id: "pa_1", source_anchor: { kind: "co_location" } }))
-    .toBe("/cases/c1/phone-analyses/co_location?snapshot=pa_1")
+    .toBe("/cases/c1/phone-patterns?analysis=co_location&snapshot=pa_1")
+  expect(phoneLinkHref("c1", { target_type: "statement_check", target_id: "sc1" })).toBe("/cases/c1/phone-patterns?check=sc1")
   for (const type of ["phone_file", "phone_thread", "phone_identity", "phone_selection", "phone_view", "statement_check"]) {
     expect(phoneLinkHref("c1", { target_type: type, target_id: "x" })).toMatch(/^\/cases\/c1\/phone/)
   }

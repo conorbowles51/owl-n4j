@@ -6,9 +6,10 @@ describe("Conversations view in the URL (03 6.4)", () => {
     const v = { ...DEFAULT_VIEW, thread: "chat:x:1", people: ["phone:+12025550143", "phone:+12025550188"], mode: "between" as const,
       phones: ["p1"], from: "2023-03-01", to: "2023-03-31", kinds: ["message"], apps: ["WhatsApp"], deleted: true,
       text: "café", everyCopy: true, allChannels: true, sort: "newest_first" as const, threadSort: "volume" as const,
-      hl: "jose", hlExact: true, at: "v2" }
+      hl: "jose", hlExact: true, at: "v2", selection: "sel-1" }
     const s = viewToSearch(v)
     expect(viewFromSearch(s)).toEqual(v)
+    expect(viewToFilter("c", v, "UTC").selection).toBe("sel-1") // a saved selection link opens its frozen records
     expect(viewToSearch(DEFAULT_VIEW)).toBe("")
   })
 

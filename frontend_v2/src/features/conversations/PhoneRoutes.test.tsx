@@ -4,13 +4,36 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { describe, expect, it, vi } from "vitest"
 import { PhonesIndexPage } from "./PhoneRoutes"
 
-const mocks = vi.hoisted(() => ({ phones: vi.fn() }))
-vi.mock("@/features/phones/api", () => ({ getPhones: mocks.phones, getRecord: vi.fn(), failureText: (_e: unknown, w: string) => w }))
+const mocks = vi.hoisted(() => ({ phones: vi.fn(), media: vi.fn() }))
+vi.mock("@/features/phones/api", () => ({ getPhones: mocks.phones, getRecord: vi.fn(), getMediaDetail: mocks.media, failureText: (_e: unknown, w: string) => w }))
 vi.mock("@/features/phones/components/ComparePhones", () => ({ ComparePhones: () => null }))
 
 const phone = (id: string, label: string, standing: string) => ({
   extraction_id: id, label, standing, device: { manufacturer: null, model: null },
   counts: { messages: 1, calls: 0, locations: 0 },
+})
+
+function show(path: string) {
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="/cases/:id/phones" element={<PhonesIndexPage />} />
+          <Route path="/cases/:id/phones/:extraction/records/media" element={<p>media page</p>} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
+describe("saved phone_file links (lx-collect)", () => {
+  it("open the file on its phone's Media screen", async () => {
+    mocks.phones.mockResolvedValue({ phones: [], total: 0 })
+    mocks.media.mockResolvedValue({ file_uid: "f1", extraction_id: "x1" })
+    show("/cases/case-1/phones?file=f1")
+    expect(await screen.findByText("media page")).toBeInTheDocument()
+    expect(mocks.media).toHaveBeenCalledWith("case-1", "f1")
+  })
 })
 
 describe("Phones list after a Replace (07 J-13b, 01 10.7)", () => {

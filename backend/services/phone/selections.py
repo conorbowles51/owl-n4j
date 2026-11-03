@@ -51,6 +51,28 @@ def freeze(db, f: StreamFilter, user, words: str) -> dict:
     return {"id": str(sid), "record_count": len(records), "event_count": events, "words": words.strip()}
 
 
+def describe(db, case_id, selection_id) -> dict | None:
+    """What a saved selection link opens on (07 6.1): its sentence and counts, and the reason when it covers a
+    report that has since been replaced (its records are then not all on the reports the case stands on)."""
+    try:
+        uuid.UUID(str(selection_id))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    try:
+        target = resolve(db, case_id, selection_id)
+        replaced = None
+    except link_types.LinkTargetError as exc:
+        target, replaced = None, str(exc)
+    row = db.execute(text(
+        "SELECT words, record_count, event_count, created_at FROM phone_selections WHERE id = CAST(:i AS uuid) AND "
+        "case_id = CAST(:c AS uuid)"), {"i": str(selection_id), "c": str(case_id)}).first()
+    if row is None or (target is None and replaced is None):
+        return None
+    return {"id": str(selection_id), "words": row.words, "record_count": int(row.record_count),
+            "event_count": int(row.event_count), "created_at": row.created_at.isoformat() if row.created_at else None,
+            "replaced": replaced}
+
+
 def resolve(db, case_id, target_id):
     try:
         sid, case = uuid.UUID(str(target_id)), uuid.UUID(str(case_id))

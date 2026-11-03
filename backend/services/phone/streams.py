@@ -179,6 +179,10 @@ class Query:
                 parts.append("(ev.thread_key IS NULL AND ev.extraction_id::text = ANY(CAST(%s AS text[])))"
                              % self._p(loose))
             w.append("(%s)" % " OR ".join(parts))
+        if f.selection:  # the records frozen in a selection of this case, read once and hash-joined
+            w.append("ev.record_uid IN (SELECT CAST(unnest(s.record_uids) AS uuid) FROM phone_selections s WHERE "
+                     "s.id = CAST(%s AS uuid) AND s.case_id = CAST(%s AS uuid))" % (self._p(f.selection),
+                                                                                    self._p(f.case_id)))
         if f.apps:
             w.append("ev.app = ANY(CAST(%s AS text[]))" % self._p(f.apps))
         if f.kinds:
