@@ -152,3 +152,22 @@ def test_scenario_9_reads_messages_across_phones():
     from services.agent.phone_cross_tools import AnalysisArgs
     assert AnalysisArgs(approach="message_reconciliation").approach == "message_reconciliation"
     assert ("get_analysis_results" in [s.tool for s in W.get("staged-accident").steps])
+
+
+def test_phone_evidence_rows_are_not_documents_and_a_failed_count_is_unknown(tmp_path):
+    engine = create_engine("sqlite:///%s" % (tmp_path / "d.db"))
+    case = uuid.uuid4()
+    with engine.begin() as conn:
+        conn.execute(text("CREATE TABLE evidence_files (id text, case_id text, cellebrite_file_id text, "
+                          "cellebrite_report_key text, source_type text)"))
+        conn.execute(text("CREATE TABLE financial_source_documents (case_id text, evidence_file_id text)"))
+        rows = [("a", "phone_extraction"), ("b", "phone_file"), ("c", "phone_text"), ("d", "cellebrite"),
+                ("e", None), ("f", "upload"), ("s", None)]
+        for i, st in rows:
+            conn.execute(text("INSERT INTO evidence_files VALUES (:i, :c, NULL, NULL, :s)"), {"i": i, "c": str(case),
+                                                                                             "s": st})
+        conn.execute(text("INSERT INTO financial_source_documents VALUES (:c, 's')"), {"c": str(case)})
+    with engine.connect() as conn:
+        assert W.case_counts(conn, case)["documents"] == 2  # e and f; the statement s and four phone rows left out
+    r = W.assess(W.get("expense-fraud"), dict(ALL, documents=None), W.registered_tool_names())
+    assert r["status"] == "unknown" and "could not be counted" in r["reasons"][0]

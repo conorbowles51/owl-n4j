@@ -19,6 +19,7 @@ function statusWords(workflow: AgentWorkflow): { label: string; tone: string } {
   if (r.status === "ready") return { label: `Ready: all ${toolSteps} steps can run`, tone: "text-emerald-700 dark:text-emerald-300" }
   if (r.status === "partial")
     return { label: `Partly: ${r.steps_that_run} of ${toolSteps} steps can run`, tone: "text-amber-700 dark:text-amber-300" }
+  if (r.status === "unknown") return { label: "Could not be checked just now", tone: "text-muted-foreground" }
   return { label: "Not possible on this case", tone: "text-muted-foreground" }
 }
 
@@ -36,7 +37,7 @@ function WorkflowRow({
   const slots = useMemo(() => workflowSlots(workflow.starting_question), [workflow.starting_question])
   const r = workflow.readiness
   const status = statusWords(workflow)
-  const blocked = r?.status === "not_possible"
+  const blocked = r?.status === "not_possible" || r?.status === "unknown"
   const question = fillWorkflowQuestion(workflow.starting_question, values)
   const unfilled = slots.some((slot) => !values[slot]?.trim())
   const notRun = r ? r.steps.filter((s) => !s.runs && !s.by_person) : []

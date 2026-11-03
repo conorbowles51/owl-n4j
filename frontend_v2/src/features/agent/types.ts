@@ -240,7 +240,7 @@ export interface AgentWorkflowReadiness {
   id: string
   number: number
   title: string
-  status: "ready" | "partial" | "not_possible"
+  status: "ready" | "partial" | "not_possible" | "unknown"
   reasons: string[]
   tools_missing: string[]
   steps_that_run: number

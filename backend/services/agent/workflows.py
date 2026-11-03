@@ -519,7 +519,7 @@ def render_block(w: Workflow, tools: Iterable[str] | None = None) -> str:
     return "\n".join(lines)
 
 
-def case_counts(conn, case_id) -> dict[str, int]:
+def case_counts(conn, case_id) -> dict[str, int | None]:
     """The case's own counts of each data kind, read-only. A missing table counts 0 (a test schema)."""
     from sqlalchemy import text
     from sqlalchemy.exc import DBAPIError
@@ -528,25 +528,39 @@ def case_counts(conn, case_id) -> dict[str, int]:
         "financial_sources": "SELECT count(*) FROM financial_source_documents WHERE case_id = :c",
         "phones": "SELECT count(*) FROM phone_extractions WHERE case_id = :c AND standing <> 'superseded'",
         "documents": "SELECT count(*) FROM evidence_files e WHERE e.case_id = :c AND e.cellebrite_file_id IS NULL "
-                     "AND e.cellebrite_report_key IS NULL AND NOT EXISTS (SELECT 1 FROM financial_source_documents f "
+                     "AND e.cellebrite_report_key IS NULL AND (e.source_type IS NULL OR e.source_type NOT IN ('phone_extraction', "
+                     "'phone_file', 'phone_text', 'cellebrite')) AND NOT EXISTS (SELECT 1 FROM financial_source_documents f "
                      "WHERE f.case_id = e.case_id AND f.evidence_file_id = e.id)",
         "dossiers": "SELECT count(*) FROM case_profiles WHERE case_id = :c",
         "timeline": "SELECT count(*) FROM timeline_entries WHERE case_id = :c",
     }
-    out: dict[str, int] = {}
+    out: dict[str, int | None] = {}
     for kind, sql in queries.items():
         try:
             with conn.begin_nested():
                 out[kind] = int(conn.execute(text(sql), {"c": str(case_id)}).scalar() or 0)
-        except DBAPIError:
-            out[kind] = 0
+        except DBAPIError as exc:
+            # A missing table (a test schema) counts 0; any other failure is None, "could not be counted", never
+            # shown as "the case holds none".
+            missing = "does not exist" in str(getattr(exc, "orig", exc)) or "no such table" in str(exc)
+            if not missing:
+                logger.warning("Workflow readiness could not count %s for case %s: %s", kind, case_id, exc)
+            out[kind] = 0 if missing else None
     return out
 
 
 def assess(w: Workflow, counts: dict[str, int], tools: Iterable[str] | None = None) -> dict[str, Any]:
-    """Whether ``w`` can run on a case with ``counts``: ready, partial (optional steps or tools missing), or
-    not_possible (a needed kind is absent, too few phones, or the data is not modelled). Counts, not guesses."""
+    """Whether ``w`` can run on a case with ``counts``: ready (every step runs); partial (a workflow need is met but
+    some step cannot run, for want of its data or its tool, and is reported as not examined); not_possible (a kind
+    the workflow needs is absent, too few phones, or the data is not modelled); unknown (a count failed). Counts,
+    not guesses."""
     have = frozenset(tools) if tools is not None else registered_tool_names()
+    uncounted = sorted(k for k in set(w.needs) | {k for s in w.steps for k in s.needs} if counts.get(k, 0) is None)
+    if uncounted:
+        return {"id": w.id, "number": w.number, "title": w.title, "status": "unknown",
+                "reasons": ["the case's %s could not be counted just now; try again" % DATA_KINDS.get(k, k)
+                            for k in uncounted],
+                "tools_missing": [], "steps_that_run": 0, "steps": []}
     missing_data = [k for k in w.needs if not counts.get(k)]
     if w.min_phones and counts.get("phones", 0) < w.min_phones and "phones" not in missing_data:
         missing_data.append("phones")
@@ -567,10 +581,9 @@ def assess(w: Workflow, counts: dict[str, int], tools: Iterable[str] | None = No
             reasons.append("the case holds no %s" % DATA_KINDS.get(k, k))
     if w.not_modelled:
         reasons.append(w.not_modelled)
-    required_steps_blocked = [s["tool"] for s in steps if not s["optional"] and not s["runs"] and not s["by_person"]]
     if missing_data or w.not_modelled:
         status = "not_possible"
-    elif required_steps_blocked or tools_missing or any(not s["runs"] for s in steps if not s["by_person"]):
+    elif tools_missing or any(not s["runs"] for s in steps if not s["by_person"]):
         status = "partial"
     else:
         status = "ready"

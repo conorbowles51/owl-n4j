@@ -560,7 +560,8 @@ export function AgentPage() {
   const [activityTrail, setActivityTrail] = useState<AgentActivityItem[]>([])
   const [showWorkflows, setShowWorkflows] = useState(false)
   // The guided workflow this thread was started with: its follow-ups (a clarification answer, "continue" after the
-  // tool budget) keep the plan. Cleared by a new thread or opening another thread.
+  // tool budget) keep the plan. Cleared only by a new thread or by picking another thread (the reload after a run
+  // finishes keeps it).
   const [threadWorkflowId, setThreadWorkflowId] = useState<string | null>(null)
   const [input, setInput] = useState("")
   const [mandateOverride, setMandateOverride] = useState("")
@@ -666,7 +667,6 @@ export function AgentPage() {
         workspaceAPI.listMandateVersions(caseId),
       ])
       setActiveThreadId(thread.id)
-      setThreadWorkflowId(null)
       setMessages(thread.messages.map(storedToClientMessage).filter(Boolean) as AgentClientMessage[])
       setArtifacts(thread.artifacts)
       setToolTrace([])
@@ -749,7 +749,8 @@ export function AgentPage() {
   const sendMessage = async (overridePrompt?: string, workflowId?: string) => {
     const prompt = (overridePrompt ?? input).trim()
     if (!prompt || !caseId || isLoading) return
-    const runWorkflowId = workflowId ?? threadWorkflowId ?? undefined
+    // The Significant layer reads no phones or ledger, so no workflow plan is sent there.
+    const runWorkflowId = caseLayer === "significant" ? undefined : (workflowId ?? threadWorkflowId ?? undefined)
     if (workflowId) setThreadWorkflowId(workflowId)
 
     const optimisticId = `local_${Date.now()}`
@@ -980,7 +981,10 @@ export function AgentPage() {
                 <button
                   key={thread.id}
                   type="button"
-                  onClick={() => loadThread(thread.id)}
+                  onClick={() => {
+                    if (thread.id !== activeThreadId) setThreadWorkflowId(null)
+                    loadThread(thread.id)
+                  }}
                   className={cn(
                     "w-full rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-muted",
                     activeThreadId === thread.id && "bg-muted text-foreground"
