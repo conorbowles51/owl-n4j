@@ -1,3 +1,21 @@
+## 3 November: source database view and independent re-parse, stage J (cb-stagej), in progress
+
+- **Live (da4c03f9, 21:09 UTC):** record view source panel (05 17.2): states in words (verified, absent, MD5
+  mismatch, zero bytes, unresolved, row not named); "Open source row" opens a read-only copy through the engine
+  (`evidence-engine/app/phone/source_db.py`: copy with WAL/journal siblings, `mode=ro&immutable=1`, or `mode=ro` when a
+  non-empty WAL holds rows, authorizer denying every write, 5 s statement limit, 500-row pages). Backend resolver
+  `backend/services/phone/source_db.py`. Re-parse (05 17.3): ALEAPP v2026.4.5 / iLEAPP v2026.4.6 at pinned commits in
+  the engine image under `/opt/leapp`; runner `evidence-engine/app/pipeline/reparse/`; tables `phone_reparse_runs`,
+  `phone_reparse_rows` (migration `20261103_phone_reparse`); approach `reparse_comparison`; page phone analyses "Read
+  again by an independent tool".
+- **Pushed after it:** run records hold LAVA column names per artefact; refusal shown as an alert; upload page
+  refuses a file over 8 GB before hashing (a 9.8 GB ZIP was hashed 18 min and then refused with 422).
+- **Upload limit, fact:** an upload group member is capped at 8 GiB (`evidence_upload_groups.py` Member.size, 01 4.1),
+  so reference reports over 8 GiB go as folders, not ZIPs.
+- **Not yet done:** item A counts on the seven reports (loading in progress, P12 first), C open-time measurement,
+  E runs on P12/P11, F comparisons, D signed-in check with screenshots, STATUS. Progress:
+  `headless/cb-stagej-progress.md`.
+
 ## 3 November: phone media, stage I (cb-media): local OCR, transcription, translation, image search, media spread
 
 **Live:** 0d22ce55 holds all of stage I: A to F, M-5 to M-7, CO-18, the exact tier of C, translation, image search
