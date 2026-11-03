@@ -276,6 +276,80 @@ def test_a_new_mapping_version_reclassifies_without_reading_records_again(hooks)
                 "SELECT activity_mapping_version FROM pol_projection_state WHERE extraction_id = :e"), {"e": ext}).scalar())
 
 
+@needs_template
+def test_a_new_owner_decision_re_resolves_the_counterparts(hooks):
+    """A person's set_phone_owner decision after the build changes who the other person is: the projection is
+    re-applied and the counterparts resolved against the decided owner, not left as built."""
+    setup(hooks)
+    saved = identities._hooks["owner_decision"]
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = phone(c, case, [message(0, other_reads=True)])
+        run(engine, ext)
+        with engine.connect() as c:
+            ev = events(c, ext)
+            assert ev[("InstantMessage", "TimeStamp", 0)].counterpart_identity_id is not None
+            assert activity.stale(c) == []
+        try:  # the person says the phone is OTHER's: OTHER is no longer anyone's counterpart on it
+            identities.register_owner_decision(lambda conn, e: {"identity_keys": ["phone:" + OTHER],
+                                                                "decision_id": "d1", "by": "A Person"}
+                                               if str(e) == str(ext) else None)
+            with engine.connect() as c:
+                assert dict(activity.stale(c)).get(ext) == "reclassify"
+            out = activity.project_stale(engine)
+            assert out[str(ext)]["status"] == "ready" and out[str(ext)]["counterparts_resolved"] is True
+            with engine.connect() as c:
+                ev = events(c, ext)
+                assert ev[("InstantMessage", "TimeStamp", 0)].counterpart_identity_id is None
+                assert ev[("Party", "DateRead", 2)].counterpart_identity_id is None
+                assert activity.stale(c) == []
+            with engine.begin() as c:  # the same owner again: nothing to resolve
+                assert activity.reclassify(c, ext)["counterparts_resolved"] is False
+        finally:
+            identities._hooks["owner_decision"] = saved
+        with engine.connect() as c:  # the decision withdrawn: back to the computed owner and the built counterparts
+            assert dict(activity.stale(c)).get(ext) == "reclassify"
+        activity.project_stale(engine)
+        with engine.connect() as c:
+            ev = events(c, ext)
+            ident = c.execute(text("SELECT identity_key FROM phone_identities WHERE id = :i"),
+                              {"i": ev[("InstantMessage", "TimeStamp", 0)].counterpart_identity_id}).scalar()
+            assert ident == "phone:" + OTHER
+
+
+@needs_template
+def test_an_event_that_no_longer_matches_a_row_shows_no_mapping_version(hooks):
+    """A re-apply under which an event matches no activity row shows no row and no version, never the version of
+    the row it matched before."""
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = phone(c, case, [device_event(0, "DisplayOnOff", "On")])
+        run(engine, ext)
+        with engine.connect() as c:
+            before = events(c, ext)[("DeviceEvent", "StartTime", 0)]
+            assert before.activity_mapping_row == "activity_strength/catalogue/devev-display"
+            assert before.activity_mapping_version is not None
+        path = os.path.join(str(hooks), "activity_strength", "catalogue.json")
+        v2 = copy.deepcopy(json.load(open(path)))
+        v2["version"] = 2
+        v2["body"]["rows"] = [r for r in v2["body"]["rows"] if r["row_id"] != "devev-display"]
+        write(str(hooks), v2)
+        loader.use_data_dir(str(hooks))
+        out = activity.project_stale(engine)
+        assert out[str(ext)]["status"] == "ready" and "fallback" not in out[str(ext)]
+        assert out[str(ext)]["changed"] == 1
+        with engine.connect() as c:
+            after = events(c, ext)[("DeviceEvent", "StartTime", 0)]
+            assert after.id == before.id
+            assert after.activity_mapping_row is None
+            assert after.activity_mapping_version is None
+
+
 # ---- U3: attribution flags ------------------------------------------------------------------------------------
 
 @needs_template

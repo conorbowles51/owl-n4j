@@ -351,8 +351,7 @@ def _instant(r, zone):
 def _counterparts(conn, extraction_id, case_id, gen) -> dict:
     """The other person's identity on each event: a Party's own identity for read, played and delivered times; the
     first party not on the phone's own side for a communication (02 section 8; 3.1 actor ``counterpart``)."""
-    from services.phone import identities as I
-    owners = [k for k in (I.owner(conn, extraction_id).get("owner_identity_keys") or []) if k]
+    owners = owner_keys(conn, extraction_id)
     n_party = conn.execute(text(
         "UPDATE pol_activity_event ev SET counterpart_identity_id = c.id FROM ("
         " SELECT DISTINCT ON (p.party_record_uid) p.party_record_uid AS uid, i.id FROM phone_participations p "
@@ -371,7 +370,23 @@ def _counterparts(conn, extraction_id, case_id, gen) -> dict:
         " ORDER BY p.record_uid, p.ordinal) c "
         "WHERE ev.extraction_id = :e AND ev.record_type <> 'Party' AND ev.record_uid = c.uid"),
         {"c": case_id, "e": extraction_id, "g": gen, "owners": owners}).rowcount
-    return {"counterpart:party": n_party, "counterpart:communication": n_comm}
+    return {"counterpart:party": n_party, "counterpart:communication": n_comm, "counterpart_owner_keys": owners}
+
+
+def owner_keys(conn, extraction_id) -> list:
+    """The phone's owner identity keys as counterparts are resolved against: a person's ``set_phone_owner``
+    decision when there is one, else the computed owner (``identities.owner``)."""
+    from services.phone import identities as I
+    return sorted(k for k in (I.owner(conn, extraction_id).get("owner_identity_keys") or []) if k)
+
+
+def _recounterpart(conn, extraction_id, case_id, gen) -> dict:
+    """Clear and resolve the counterparts again (a re-apply after the owner changed): a party who was excluded as
+    the owner may now be the other person, and the new owner is no longer anyone's counterpart."""
+    cleared = conn.execute(text(
+        "UPDATE pol_activity_event SET counterpart_identity_id = NULL WHERE extraction_id = :e AND "
+        "counterpart_identity_id IS NOT NULL"), {"e": extraction_id}).rowcount
+    return dict(_counterparts(conn, extraction_id, case_id, gen), **{"counterpart:cleared": cleared})
 
 
 # ---- re-classification without re-reading records -----------------------------------------------------------------
@@ -413,15 +428,24 @@ def reclassify(conn, extraction_id, mappings=None) -> dict:
         n += row.n
     if sets:
         changed = _apply_sets(conn, extraction_id, sets)
-    # counterparts are not touched: they come from the generation's participations (``_counterparts``, run by the
-    # build), which a re-apply never changes; clearing and setting them again here took 12 to 15 s on P14 and left
-    # them as they were
+    # counterparts come from the generation's participations, which a re-apply never changes, and from the phone's
+    # owner, which a person's set_phone_owner decision does (it is in the signature). They are resolved again only
+    # when the owner differs from the one they were resolved against (clearing and setting them took 12 to 15 s on
+    # P14); a projection that does not record that owner is resolved once.
+    before = conn.execute(text("SELECT counts -> 'counterpart_owner_keys' FROM pol_projection_state WHERE "
+                               "extraction_id = :e"), {"e": extraction_id}).scalar()
+    owners = owner_keys(conn, extraction_id)
+    counts = {"reclassified": n, "changed": changed}
+    if before != owners:
+        counts.update(_recounterpart(conn, extraction_id, st.case_id, st.generation))
+    else:
+        counts["counterpart_owner_keys"] = owners
     calls = _judgement_calls(conn, idx, extraction_id, st.case_id, st.generation)
+    counts.update(judgement_calls=calls, seconds=round(time.monotonic() - started, 1))
     _state(conn, extraction_id, st.case_id, "ready", gen=st.generation, idx=idx,
-           sig=signature(conn, extraction_id, idx), facts_fields=held,
-           counts={"reclassified": n, "changed": changed, "judgement_calls": calls,
-                   "seconds": round(time.monotonic() - started, 1)})
-    return {"status": "ready", "reclassified": n, "changed": changed, "judgement_calls": calls}
+           sig=signature(conn, extraction_id, idx), facts_fields=held, counts=counts)
+    return {"status": "ready", "reclassified": n, "changed": changed, "judgement_calls": calls,
+            "counterparts_resolved": before != owners}
 
 
 # the inputs classify_event reads from a stored event, as one unambiguous key (nulls stay distinct from values)
@@ -446,6 +470,8 @@ def _apply_sets(conn, extraction_id, sets) -> int:
     return conn.execute(text(
         "UPDATE pol_activity_event e SET activity_class = x.ac, class_basis = x.cb, class_level = x.cl, "
         "activity_mapping_row = x.ar, actor = x.ac2, physical = x.ph, "
+        # an event that now matches no activity row has no mapping version (the view would otherwise show the stored one)
+        "activity_mapping_version = CASE WHEN x.ar IS NULL THEN NULL ELSE e.activity_mapping_version END, "
         "attribution_flags = x.fl, attribution_mapping_rows = x.fr, value_key = x.vk "
         "FROM pol_reclass x WHERE e.extraction_id = :e AND " + _inputs_key("e.") + " = x.k AND "
         "(e.activity_class, e.class_basis, e.class_level, e.activity_mapping_row, e.actor, e.physical, "
@@ -533,14 +559,16 @@ def _summary(kind, r):
 # ---- state and staleness -----------------------------------------------------------------------------------------
 
 def signature(conn, extraction_id, idx=None) -> str:
-    """What the projection depends on beyond the generation: activity and attribution versions and the decisions
-    on their rows."""
+    """What the projection depends on beyond the generation: activity and attribution versions, the decisions on
+    their rows, and the phone's owner."""
     idx = idx or RowIndex(conn, extraction_id)
     from services.phone.mappings import apply
     d = apply.reading_decisions(conn, extraction_id)
     mine = sorted("%s:%s:%s" % (k[0], k[1], v.get("decision_id")) for k, v in d.items()
                   if str(k[0]).startswith(("activity_strength/", "attribution/")))
-    return hashlib.sha256(idx.signature("|".join(mine)).encode()).hexdigest()
+    # the owner decides who the counterpart is (``_counterparts``): a set_phone_owner decision re-applies
+    owners = "owners=" + ",".join(owner_keys(conn, extraction_id))
+    return hashlib.sha256(idx.signature("|".join(mine + [owners])).encode()).hexdigest()
 
 
 def families(conn, extraction_id) -> list:
