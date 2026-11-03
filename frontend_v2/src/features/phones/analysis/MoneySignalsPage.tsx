@@ -20,6 +20,8 @@ const OUTCOME_WORDS: Record<string, string> = {
   near_amount: "Matches a payment once a small difference in amount is allowed",
   unresolved: "No matching payment found in the financial records",
   not_tested: "Not checked against the financial records",
+  several_candidates: "Several payments could be this one",
+  contradicted: "The financial records cover these dates in full and hold no such payment",
 }
 const REASON_WORDS: Record<string, string> = {
   no_anchor: "The message names no bank and no account, so there is nothing to check it against.",
@@ -28,6 +30,10 @@ const REASON_WORDS: Record<string, string> = {
   amount_or_currency_missing: "The amount or currency could not be read for certain.",
   outside_coverage: "The statements in the case do not cover these dates.",
   candidate_inconclusive: "A payment could be this one, and the records will not say.",
+  event_time_missing: "The phone recorded no time for it, so there is no date to check.",
+  several_payments_match: "None is linked; each is listed below for you to open.",
+  no_transaction: "An alert can be for a payment that never went through.",
+  amount_differs: "A payment on the same day differs in amount.",
 }
 const STRENGTH_WORDS: Record<string, string> = {
   institution_template: "From a known bank, in its usual wording",
@@ -112,6 +118,7 @@ function Behind({ caseId, result }: { caseId: string; result: AnalysisResult }) 
   const recs = q.data.records
   const phone = recs.filter((r) => r.record_uid)
   const ledger = recs.filter((r) => r.ledger_transaction_id)
+  const candidates = ledger.some((r) => r.role === "ledger_candidate")
   return (
     <div className="space-y-1 text-xs" aria-label="Records behind it">
       {phone.map((r) => (
@@ -119,9 +126,10 @@ function Behind({ caseId, result }: { caseId: string; result: AnalysisResult }) 
           <Link className="underline" to={`/cases/${caseId}/records/${r.record_uid}`}>Open the phone record</Link>
         </div>
       ))}
+      {candidates && <p>Payments that could be this one. None is linked to it.</p>}
       {ledger.map((r) => (
         <div key={r.ledger_transaction_id!}>
-          <Link className="underline" to={`/cases/${caseId}/financial?payment=${r.ledger_transaction_id}`}>Open payment {r.ledger_ref_id}</Link>
+          <Link className="underline" to={`/cases/${caseId}/financial?payment=${r.ledger_transaction_id}`}>{r.role === "ledger_candidate" ? "Open possible payment" : "Open payment"} {r.ledger_ref_id}</Link>
         </div>
       ))}
       <CollectBar caseId={caseId} noun="record" origin="phone-money"

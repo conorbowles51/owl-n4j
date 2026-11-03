@@ -44,6 +44,9 @@ PARAMETERS = {
     "days_before": {"default": 1, "min": 0, "max": 7},
     "days_after": {"default": 7, "min": 0, "max": 31},
     "near_amount_pass": {"default": True, "choices": [True, False]},
+    # 1b (05 4.3.5 step 3): an absence is weighed against the bound account's statement run, so a reading can be
+    # contradicted where the run spans the window with no gap, break or unreconciled period; 1a never contradicts
+    "phase": {"default": "1b", "choices": ["1a", "1b"]},
 }
 KINDS = ("money_reading", "account_lead")
 SUPPORTS = ("template_match", "reviewed_institution", "exact_amount", "bound_one_account", "corroborated",
@@ -51,7 +54,9 @@ SUPPORTS = ("template_match", "reviewed_institution", "exact_amount", "bound_one
 UNDERCUTS = ("authorization_may_not_post", "alert_amount_may_exclude_fees", "binding_by_ending_only",
              "institution_from_sender_only", "currency_unknown", "ambiguous_separator", "country_unknown",
              "direction_unknown", "synced_attribution", "selective_extraction", "notification_retention",
-             "identity_unreviewed", "institution_alias")
+             "identity_unreviewed", "institution_alias", "several_amounts", "balance_mentioned", "payment_due_notice",
+             "other_side_account", "several_candidates", "binding_ambiguous", "event_time_missing",
+             "device_zone_unknown")
 DIRECTION_CODES = SUPPORTS + UNDERCUTS
 CLAIM_NS = uuid.UUID("5d0c6a1e-27b9-4f6e-a0c3-1f8e2b9d4c71")
 CLASS_RANK = {"transactional": 3, "account": 2, "presence": 1}
@@ -66,7 +71,8 @@ SIGNALS = [
     {"code": "cards", "label": "Card records", "types": ("CreditCard", "Autofill")},
 ]
 TYPES = tuple(t for s in SIGNALS for t in s["types"])
-AUTOFILL_KEY = re.compile(r"(?i)card|account|acct|iban")
+# an autofill key naming a card or account number, never its expiry, name, email, type or code
+AUTOFILL_KEY = re.compile(r"(?i)^(?:cc|card|credit[_ -]?card|account|acct|iban)[_ -]?(?:number|num|no)?$")
 _last = {"counts": {}}
 
 
@@ -79,7 +85,9 @@ def ledger_revision(conn, case_id) -> str:
         "t.superseded_by_id::text, '') || ':' || t.amount_minor || t.currency || t.direction || t.proof_class || ':' || "
         "coalesce(t.value_date::text, '') || coalesce(t.transaction_date::text, '') || coalesce(t.posted_date::text, '') "
         "|| coalesce(t.effective_date::text, '') || t.ordering_date || coalesce(t.counterparty_raw, ''), ',' ORDER BY "
-        "t.id) FROM financial_transactions t WHERE t.case_id = :c), '') || '|' || coalesce((SELECT string_agg(a.id::text "
+        "t.id) FROM financial_transactions t WHERE t.case_id = :c), '') || '|' || coalesce((SELECT string_agg(s.id::text "
+        "|| ':' || s.status || ':' || s.proof_class, ',' ORDER BY s.id) FROM financial_source_documents s WHERE "
+        "s.case_id = :c), '') || '|' || coalesce((SELECT string_agg(a.id::text "
         "|| ':' || coalesce(a.institution_name, '') || ':' || coalesce(a.identifier_as_printed, '') || ':' || coalesce("
         "a.holder_name, '') || ':' || coalesce(a.metadata::text, ''), ',' ORDER BY a.id) FROM financial_accounts a WHERE "
         "a.case_id = :c), '') || '|' || coalesce((SELECT string_agg(p.id::text, ',' ORDER BY p.id) FROM "
@@ -139,15 +147,16 @@ def _phone_context(conn, case_id) -> dict:
 
 
 def _zone_date(instant, zone):
+    """(calendar date in the device zone, zone known). An unknown zone reads in UTC and says so."""
     if instant is None:
-        return None
+        return None, bool(zone)
     if zone:
         try:
             from zoneinfo import ZoneInfo
-            return instant.astimezone(ZoneInfo(zone)).date()
-        except Exception:  # noqa: BLE001 - an unknown zone name reads in UTC, flagged by the caller
+            return instant.astimezone(ZoneInfo(zone)).date(), True
+        except Exception:  # noqa: BLE001 - an unknown zone name reads in UTC, flagged
             pass
-    return instant.astimezone(timezone.utc).date()
+    return instant.astimezone(timezone.utc).date(), False
 
 
 def read_signals(conn, case_id) -> list:
@@ -176,7 +185,8 @@ def read_signals(conn, case_id) -> list:
         else:
             x["fields"][r.field_path] = r.value
     for r in conn.execute(text(
-            "SELECT p.parent_record_uid, x.value FROM pv_text x JOIN pv_record p ON p.record_uid = x.record_uid WHERE "
+            "SELECT p.parent_record_uid, x.value FROM pv_text x JOIN pv_record p ON p.record_uid = x.record_uid JOIN "
+            "pv_record m ON m.record_uid = p.parent_record_uid AND m.model_type IN ('InstantMessage', 'Email') WHERE "
             "x.case_id = :c AND x.model_type = 'Party' AND x.field_path ~ '^From\\[\\d+\\]\\.Identifier$' AND "
             "x.value_index = 0"), {"c": str(case_id)}):
         x = rows.get(str(r.parent_record_uid))
@@ -217,8 +227,9 @@ def _ledger(conn, case_id):
     for t in conn.execute(text(
             "SELECT t.id, t.ref_id, t.account_id, t.amount_minor, t.currency, t.direction, t.proof_class, t.value_date, "
             "t.transaction_date, t.posted_date, t.effective_date, t.provenance ->> 'date_basis' AS date_basis, "
-            "t.counterparty_raw, t.description FROM financial_transactions t JOIN financial_source_documents s ON s.id = "
-            "t.source_document_id JOIN financial_accounts a ON a.id = t.account_id WHERE t.case_id = :c AND s.case_id = "
+            "t.counterparty_raw, t.description, p.reconciliation_status FROM financial_transactions t JOIN "
+            "financial_source_documents s ON s.id = t.source_document_id JOIN financial_accounts a ON a.id = t.account_id "
+            "LEFT JOIN financial_statement_periods p ON p.id = t.statement_period_id WHERE t.case_id = :c AND s.case_id = "
             ":c AND a.case_id = :c AND t.ledger_status = 'admitted' AND t.superseded_by_id IS NULL AND s.status = "
             "'admitted' AND t.proof_class = ANY(:k) AND s.proof_class = ANY(:k) ORDER BY t.id"),
             {"c": str(case_id), "k": classes}):
@@ -230,7 +241,8 @@ def _ledger(conn, case_id):
         entries[str(t.account_id)].append({"id": str(t.id), "ref_id": t.ref_id, "amount_minor": int(t.amount_minor),
                                            "currency": t.currency, "direction": t.direction,
                                            "proof_class": t.proof_class, "date": getattr(t, basis), "basis": basis,
-                                           "counterparty": t.counterparty_raw, "description": t.description})
+                                           "counterparty": t.counterparty_raw, "description": t.description,
+                                           "reconciled": t.reconciliation_status == "balanced"})
     return accounts, entries, skipped
 
 
@@ -268,15 +280,25 @@ def _signal_code(sig, match):
     return "S9"
 
 
+def _is_owner(sender, owners) -> bool:
+    """The sender is one of the phone's own numbers: the whole national number compared, never a tail."""
+    digits = re.sub(r"\D", "", sender or "")
+    if len(digits) < 7 or "@" in (sender or ""):
+        return False
+    for k in owners:
+        own = re.sub(r"\D", "", k)
+        if own == digits or (min(len(own), len(digits)) >= 10 and (own.endswith(digits) or digits.endswith(own))):
+            return True
+    return False
+
+
 def readings(signals, directory, phones) -> list:
     out = []
     for sig in signals:
         if sig["model_type"] not in ("Notification", "InstantMessage", "Email"):
             continue
         phone = phones.get(sig["extraction_id"]) or {}
-        if sig["model_type"] == "InstantMessage" and sig["sender"] and \
-                any(k.endswith(re.sub(r"\D", "", sig["sender"])) for k in phone.get("owners", ())
-                    if re.sub(r"\D", "", sig["sender"])):
+        if sig["model_type"] == "InstantMessage" and _is_owner(sig["sender"], phone.get("owners", ())):
             continue  # the phone's own outgoing message
         match = _institution_for(sig, directory, phone.get("country"))
         tmpl = _template(match, {"Notification": "notification", "InstantMessage": "sms", "Email": "email"}
@@ -295,6 +317,11 @@ def readings(signals, directory, phones) -> list:
         flags = list(reading.flags)
         if match is not None and match.country_unknown:
             flags.append("country_unknown")
+        event_date, zone_known = _zone_date(sig["instant"], phone.get("zone"))
+        if sig["instant"] is None:
+            flags.append("event_time_missing")
+        elif not zone_known:
+            flags.append("device_zone_unknown")
         strength = ("unattributed" if match is None else
                     "institution_template" if tmpl is not None and reading.currency and reading.direction and
                     reading.amount_minor is not None else "institution_generic")
@@ -303,7 +330,7 @@ def readings(signals, directory, phones) -> list:
         out.append({"signal": _signal_code(sig, match), "sig": sig, "match": match, "reading": reading,
                     "field_path": field_path, "quote": sig["fields"][field_path], "flags": flags,
                     "strength": strength, "event_instant": sig["instant"],
-                    "event_date": _zone_date(sig["instant"], phone.get("zone")), "phone": phone})
+                    "event_date": event_date, "phone": phone})
     return out
 
 
@@ -328,7 +355,7 @@ def bind(reading_item, accounts) -> dict:
         cands = at_institution
     by_ending = False
     if r.account_digits:
-        ending = (r.account_digits, True)
+        ending = (r.account_digits, bool(r.account_partial))
         cands = [a for a in cands if any(account_match(ending, account_identity(i)) for i in a["identifiers"])]
         by_ending = True
     if len(cands) == 1:
@@ -364,14 +391,15 @@ def claim_for(item, account, case_source_id):
                  locator=locator)
 
 
-def _entries(rows, account):
+def _entries(rows, account, use_reconciled=False):
     from postgres.models.enums import ProofClass, TransactionDirection
     from services.financial.correlation import LedgerEntry
     from services.financial.money import Money
     return [LedgerEntry(transaction_id=uuid.UUID(e["id"]), account_id=uuid.UUID(account["id"]), ordering_date=e["date"],
                         amount=Money(e["amount_minor"], e["currency"]), direction=TransactionDirection(e["direction"]),
                         proof_class=ProofClass(e["proof_class"]), holder=account.get("holder"),
-                        counterparty=e["counterparty"], description=e["description"], reconciled=False)
+                        counterparty=e["counterparty"], description=e["description"],
+                        reconciled=bool(e.get("reconciled")) if use_reconciled else False)
             for e in rows]
 
 
@@ -380,7 +408,9 @@ def correlate_item(item, account, rows, case_source_id, near_amount_pass, covera
     from services.financial.correlation import (AccountCoverage, Coverage, DEFAULT_MATERIALITY, Materiality,
                                                 Outcome, correlate)
     claim = claim_for(item, account, case_source_id)
-    entries = _entries(rows, account)
+    # rows outside the claim's dates can only be excluded on date: they are not weighed (speed on large ledgers)
+    rows = [e for e in rows if claim.dates.earliest <= e["date"] <= claim.dates.latest]
+    entries = _entries(rows, account, use_reconciled=coverage_for is not None)
     cov = coverage_for(account, claim) if coverage_for else \
         Coverage([AccountCoverage(uuid.UUID(account["id"]), holder=account.get("holder"))])
     result = correlate(claim, entries, coverage=cov, materiality=Materiality(basis_points=0, floor_major_units=0))
@@ -407,7 +437,8 @@ def correlate_item(item, account, rows, case_source_id, near_amount_pass, covera
 
 
 def _masked_ref(r):
-    return ("ending %s" % r.account_digits) if r.account_digits else None
+    """Shown as its last four digits only, whatever the text printed (05 4.3.7 step 4)."""
+    return ("ending %s" % r.account_digits[-4:]) if r.account_digits else None
 
 
 def _direction(code, detail, locators=()):
@@ -417,17 +448,30 @@ def _direction(code, detail, locators=()):
 def reading_result(item, binding, per_account, accounts) -> dict:
     r, sig, match = item["reading"], item["sig"], item["match"]
     corroborated = [p for p in per_account if p["outcome"] == "corroborated"]
-    if corroborated:
+    matching_rows = sorted({t for p in corroborated for t in p["matches"]})
+    if len(matching_rows) > 1:
+        # several payments (on one account or across the accounts it could be on) answer it: none is linked, all are
+        # listed as candidates (05 4.3.4: tested against each, merged into none)
+        outcome = "several_candidates"
+    elif corroborated:
         outcome = "near_amount" if all(p["pass"] == "near_amount" for p in corroborated) else "corroborated"
+    elif binding["outcome"] in ("bound", "ambiguous") and per_account and \
+            all(p["outcome"] == "contradicted" for p in per_account):
+        outcome = "contradicted"  # every account it could be on has a complete, reconciled run with no such payment
     elif binding["outcome"] in ("bound", "ambiguous") and per_account:
         outcome = "unresolved"
     else:
         outcome = "not_tested"
     reason = None
     if outcome == "unresolved":
-        reason = per_account[0]["unresolved_reason"]
+        reason = next((p["unresolved_reason"] for p in per_account if p["unresolved_reason"]), None)
+    elif outcome == "contradicted":
+        reason = per_account[0]["contradiction"]
+    elif outcome == "several_candidates":
+        reason = "several_payments_match"
     elif outcome == "not_tested":
-        reason = ("amount_or_currency_missing" if not r.testable and binding["outcome"] in ("bound", "ambiguous")
+        reason = ("event_time_missing" if item["event_date"] is None and binding["outcome"] in ("bound", "ambiguous")
+                  else "amount_or_currency_missing" if not r.testable and binding["outcome"] in ("bound", "ambiguous")
                   else binding["outcome"])
     supports, undercuts = [], []
     loc = ["rec://%s#%s" % (sig["record_uid"], item["field_path"])]
@@ -440,14 +484,17 @@ def reading_result(item, binding, per_account, accounts) -> dict:
                                     % match.display_name))
     if binding["outcome"] == "bound":
         supports.append(_direction("bound_one_account", "One account in the financial records fits."))
-    if corroborated:
-        lag = None
-        matched_ids = [t for p in corroborated for t in p["matches"]]
-        supports.append(_direction("corroborated", "A ledger row agrees on amount, currency and date.",
-                                   ["ledger:%s" % t for t in matched_ids]))
+    if binding["outcome"] == "ambiguous":
+        undercuts.append(_direction("binding_ambiguous", "More than one account in the financial records fits."))
+    if outcome == "several_candidates":
+        undercuts.append(_direction("several_candidates", "%d payments could be this one; none is linked."
+                                    % len(matching_rows), ["ledger:%s" % t for t in matching_rows]))
+    if outcome in ("corroborated", "near_amount"):
+        supports.append(_direction("corroborated", "A payment in the financial records agrees on amount, currency "
+                                   "and date.", ["ledger:%s" % t for t in matching_rows]))
         if outcome == "corroborated":
             supports.append(_direction("exact_amount", "The amount is the same to the cent."))
-    else:
+    if outcome not in ("corroborated", "near_amount"):
         undercuts.append(_direction("authorization_may_not_post", "An alert can describe a payment that was declined, "
                                     "reversed or never settled."))
         if item["signal"] in ("S1", "S2", "S3"):
@@ -463,13 +510,22 @@ def reading_result(item, binding, per_account, accounts) -> dict:
             undercuts.append(_direction(f, {"currency_unknown": "The currency is not stated.",
                                             "ambiguous_separator": "The amount could be read two ways.",
                                             "country_unknown": "The phone's country is not known.",
-                                            "direction_unknown": "Money in or out is not stated."}.get(f, f)))
+                                            "direction_unknown": "Money in or out is not stated.",
+                                            "several_amounts": "The text states more than one amount; the first "
+                                                               "payment amount was read.",
+                                            "balance_mentioned": "The text also states a balance or limit.",
+                                            "payment_due_notice": "The text reads as a reminder that a payment is "
+                                                                  "due, not a payment.",
+                                            "other_side_account": "The account named is the other side's.",
+                                            "event_time_missing": "The phone recorded no time for it.",
+                                            "device_zone_unknown": "The phone's time zone is not known; the day is "
+                                                                   "read in UTC."}.get(f, f)))
     if sig["model_type"] == "Notification":
         undercuts.append(_direction("notification_retention", "A phone keeps notifications for a short time; no "
                                     "alert in a period does not mean no payment."))
     lags = []
     matched_rows = []
-    for p in corroborated:
+    for p in (corroborated if outcome in ("corroborated", "near_amount") else []):
         for c in p["candidates"]:
             if c["transaction_id"] in p["matches"]:
                 lags.append((date.fromisoformat(c["date"]) - item["event_date"]).days)
@@ -479,6 +535,9 @@ def reading_result(item, binding, per_account, accounts) -> dict:
                 "role": "evidence"}]
     records += [{"extraction_id": None, "record_uid": None, "field_path": None,
                  "ledger_transaction_id": m["transaction_id"], "role": "ledger_match"} for m in matched_rows]
+    if outcome == "several_candidates":
+        records += [{"extraction_id": None, "record_uid": None, "field_path": None, "ledger_transaction_id": t,
+                     "role": "ledger_candidate"} for t in matching_rows]
     return {
         "kind": "money_reading", "strength": item["strength"],
         "measures": {
@@ -513,8 +572,9 @@ def _evidence(signals, directory, phones, reading_items):
     """``[(institution match or None, ending or None, class, signal, record)]`` (4.3.7)."""
     out = []
     for item in reading_items:
-        if item["signal"] in ("S1", "S2", "S3") and (item["match"] or item["reading"].account_digits):
-            out.append((item["match"], item["reading"].account_digits, "transactional", item["signal"], item["sig"]))
+        digits = item["reading"].account_digits
+        if item["signal"] in ("S1", "S2", "S3") and (item["match"] or digits):
+            out.append((item["match"], digits[-4:] if digits else None, "transactional", item["signal"], item["sig"]))
     for sig in signals:
         mt, f = sig["model_type"], sig["fields"]
         match, ending, klass, code = None, None, None, None
@@ -534,9 +594,11 @@ def _evidence(signals, directory, phones, reading_items):
             digits = re.sub(r"\D", "", sig["sensitive"].get("CreditCardNumber") or "")
             ending = digits[-4:] if len(digits) >= 4 else None
             klass, code = "account", "S8"
-        elif mt == "Autofill" and AUTOFILL_KEY.search(f.get("Key") or ""):
-            digits = re.sub(r"\D", "", sig["sensitive"].get("Value") or "")
-            ending = digits[-4:] if len(digits) >= 4 else None
+        elif mt == "Autofill" and AUTOFILL_KEY.search((f.get("Key") or "").strip()):
+            value = sig["sensitive"].get("Value") or ""
+            digits = re.sub(r"\D", "", value)
+            # a card or account number: 8 to 34 digits and nothing but digits, spaces and dashes
+            ending = digits[-4:] if 8 <= len(digits) <= 34 and re.fullmatch(r"[\d\s-]+", value.strip()) else None
             klass, code = "account", "S8"
         if klass and (match is not None or ending):
             out.append((match, ending, klass, code, sig))
@@ -649,8 +711,38 @@ def _source_id(conn, case_id, extraction_id):
     return v if v is not None else uuid.UUID(str(extraction_id))
 
 
+def continuity_coverage(conn, case_id):
+    """Phase 1b (05 4.3.5 step 3; 05-S4): ``coverage_for(account, claim)`` reading the account's statement run
+    (``continuity.read_account_continuity``) into ``correlation.coverage_from_continuity``, with every period whose
+    arithmetic did not close (reconciliation status other than balanced) passed as unverified. An account with no
+    statement period covers nothing, so an absence there stays unresolved."""
+    from sqlalchemy.orm import Session
+    from services.financial.continuity import read_account_continuity
+    from services.financial.correlation import AccountCoverage, Coverage, coverage_from_continuity
+    cache = {}
+
+    def coverage_for(account, claim):
+        aid = account["id"]
+        if aid not in cache:
+            with Session(bind=conn) as db:
+                run = read_account_continuity(db, case_id=uuid.UUID(str(case_id)), account_id=uuid.UUID(aid))
+            unverified = [(r.period_start, r.period_end) for r in conn.execute(text(
+                "SELECT p.period_start, p.period_end FROM financial_statement_periods p WHERE p.case_id = :c AND "
+                "p.account_id = :a AND p.period_start IS NOT NULL AND p.period_end IS NOT NULL AND "
+                "p.reconciliation_status <> 'balanced'"), {"c": str(case_id), "a": aid})]
+            if run.account_id is None or not run.periods:
+                cache[aid] = AccountCoverage(uuid.UUID(aid), holder=account.get("holder"))
+            else:
+                cache[aid] = coverage_from_continuity(run, holder=account.get("holder"), unverified=unverified)
+        return Coverage([cache[aid]])
+    return coverage_for
+
+
 def analyse(conn, case_id, params, ctx=None, coverage_for=None) -> tuple:
-    """(results, counts). ``coverage_for(account, claim)``: phase 1b supplies coverage; 1a passes none."""
+    """(results, counts). ``coverage_for(account, claim)``: phase 1b supplies coverage from the statement run; 1a
+    passes none (an absence is never a contradiction)."""
+    if coverage_for is None and params.get("phase", "1b") == "1b":
+        coverage_for = continuity_coverage(conn, case_id)
     directory = INST.for_case(conn, case_id)
     phones = _phone_context(conn, case_id)
     signals = read_signals(conn, case_id)
@@ -722,7 +814,9 @@ def phone_links(conn, case_id, transaction_ids) -> dict:
             "phone_analysis_result_records x JOIN phone_analysis_results res ON res.id = x.result_id JOIN "
             "phone_analysis_runs run ON run.id = res.run_id AND run.status = 'completed' AND run.approach = :a JOIN "
             "phone_analysis_result_records ev ON ev.result_id = res.id AND ev.role = 'evidence' JOIN phone_extractions e "
-            "ON e.id = ev.extraction_id AND e.standing = 'active' WHERE res.case_id = :c AND x.role = 'ledger_match' AND "
+            "ON e.id = ev.extraction_id AND e.standing = 'active' JOIN financial_transactions t ON t.id = x.ledger_transaction_id "
+            "AND t.case_id = :c AND t.ledger_status = 'admitted' AND t.superseded_by_id IS NULL WHERE res.case_id = :c AND "
+            "x.role = 'ledger_match' AND "
             "x.ledger_transaction_id = ANY(CAST(:t AS uuid[])) ORDER BY res.period_start, res.id"),
             {"a": CODE, "c": str(case_id), "t": ids}):
         m = r.measures or {}
@@ -730,5 +824,5 @@ def phone_links(conn, case_id, transaction_ids) -> dict:
             "phone_label": m.get("phone_label"), "source": m.get("source"), "instant": m.get("event_instant"),
             "record_uid": str(r.record_uid), "link": "rec://%s#%s" % (r.record_uid, r.field_path),
             "url": "/cases/%s/records/%s" % (case_id, r.record_uid), "result_id": str(r.id),
-            "outcome": m.get("outcome"), "proof_class": "p4"})
+            "outcome": m.get("outcome"), "proof_class": "p4", "device_zone": m.get("device_zone")})
     return dict(out)

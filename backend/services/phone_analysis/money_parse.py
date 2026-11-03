@@ -34,13 +34,24 @@ CREDIT_CUES = ("deposit", "deposited", "received", "credited", "refund", "refund
 SYMBOLS = {"€": ("EUR",), "£": ("GBP",), "₹": ("INR",), "₱": ("PHP",), "₦": ("NGN",), "₩": ("KRW",), "₪": ("ILS",),
            "US$": ("USD",), "C$": ("CAD",), "CA$": ("CAD",), "A$": ("AUD",), "AU$": ("AUD",), "MX$": ("MXN",),
            "NZ$": ("NZD",), "HK$": ("HKD",), "S$": ("SGD",), "R$": ("BRL",),
-           "$": ("USD", "CAD", "AUD", "MXN", "NZD", "HKD", "SGD", "ARS", "CLP", "COP"), "¥": ("JPY", "CNY")}
+           "$": ("USD", "CAD", "AUD", "MXN", "NZD", "HKD", "SGD", "ARS", "CLP", "COP"), "¥": ("JPY", "CNY"),
+           "Rs.": ("INR", "PKR", "LKR", "NPR"), "Rs": ("INR", "PKR", "LKR", "NPR"), "₨": ("INR", "PKR", "LKR", "NPR")}
 _SYM = "|".join(re.escape(s) for s in sorted(SYMBOLS, key=len, reverse=True))
-_NUM = r"\d{1,3}(?:[.,\u00a0 '’]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,3})?"
+# a group is exactly three digits (never followed by a fourth); a number never continues a word, a mask or a date
+_NUM = r"(?:\d{1,3}(?:[.,'’ ]\d{3}(?!\d))+(?:[.,]\d{1,2}(?!\d))?|\d+(?:[.,]\d{1,3}(?!\d))?)(?![0-9A-Za-z])"
+_NUM_POST = r"(?<![\w*•/.,-])" + _NUM
 _CODE = r"[A-Z]{3}"
-AMOUNT = re.compile(
-    r"(?:(?P<pre_sym>%s)\s?(?P<n1>%s)|(?P<pre_code>\b%s)\s?(?P<n2>%s)|(?P<n3>%s)\s?(?P<post_sym>%s)|(?P<n4>%s)\s?"
-    r"(?P<post_code>%s\b))" % (_SYM, _NUM, _CODE, _NUM, _NUM, _SYM, _NUM, _CODE))
+# a symbol or code before the number is searched first, on its own: in "A/c XX1234 INR 500.00" the code belongs to
+# the number after it, never to the account digits before it
+AMOUNT_PRE = re.compile(r"(?:(?P<pre_sym>%s)\s?(?P<n1>%s)|(?P<pre_code>\b%s)\s?(?P<n2>%s))" % (_SYM, _NUM, _CODE, _NUM))
+AMOUNT_POST = re.compile(r"(?:(?P<n3>%s)\s?(?P<post_sym>%s)|(?P<n4>%s)\s?(?P<post_code>%s\b))" % (_NUM_POST, _SYM,
+                                                                                                    _NUM_POST, _CODE))
+BALANCE_BEFORE = re.compile(r"(?i)(?:balance|bal\.?|avail(?:able)?|limit|credit line)\W{0,3}(?:is|of|:)?\W{0,3}$")
+DUE_NOTICE = re.compile(r"(?i)\b(?:is due|due on|due date|minimum payment|payment reminder|statement is ready)\b")
+# "debited from your A/c", "credited to card": the owner's own account, not the other side's
+OWN_SIDE = re.compile(r"(?i)\b(?:debited|credited|withdrawn|charged|deducted|drawn)\s+(?:to|from)\W{1,3}(?:your\s)?"
+                      r"(?:a/c|acct\.?|account|card)?\W{0,3}$")
+COUNTERPARTY_REF = re.compile(r"(?i)\b(?:to|from|beneficiary|payee)\W{1,3}(?:your\s)?(?:a/c|acct\.?|account|card)?\W{0,3}$")
 ENDING = re.compile(r"(?i)\b(?:ending(?:\s+in)?|ends\s+in|last\s+(?:4|four)(?:\s+digits)?)\s*:?\s*[x*•]*(?P<e>\d{4})\b"
                     r"|(?<![A-Za-z0-9])[x*•]{1,12}\s?(?P<d>\d{4})\b")
 STATED_DATE = re.compile(r"\b(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}(?:/\d{2,4})?|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|"
@@ -98,8 +109,11 @@ def _span(offsets, s, e):
     return offsets[s], offsets[e - 1] + 1 if e > s else offsets[s]
 
 
-def amount_minor(number: str, currency: str | None, decimal_separator: str | None):
-    """(minor units or None, flag or None)."""
+def amount_minor(number: str, currency: str | None, decimal_separator: str | None, group_separator=None):
+    """(minor units or None, flag or None). A space between digit groups is read as grouping only when the
+    institution says it groups with a space ("$40 711 Store" is not forty thousand)."""
+    if " " in number and group_separator != " ":
+        return None, "ambiguous_separator"
     digits_only = re.sub(r"[\u00a0 '’]", "", number)
     seps = [(m.start(), m.group()) for m in re.finditer(r"[.,]", digits_only)]
     exponent = None
@@ -144,13 +158,13 @@ def amount_minor(number: str, currency: str | None, decimal_separator: str | Non
 
 
 def _currency(m, text, institution) -> tuple:
-    code = m.group("pre_code") or m.group("post_code")
+    code = _g(m, "pre_code") or _g(m, "post_code")
     if code:
         try:
             return get_currency(code).code, None
         except UnknownCurrencyError:
             return None, "currency_unknown"
-    sym = m.group("pre_sym") or m.group("post_sym")
+    sym = _g(m, "pre_sym") or _g(m, "post_sym")
     options = SYMBOLS.get(sym, ())
     if len(options) == 1:
         return options[0], None
@@ -160,9 +174,13 @@ def _currency(m, text, institution) -> tuple:
     return None, "currency_unknown"
 
 
+def _g(m, name):
+    return m.groupdict().get(name)
+
+
 def _is_amount(m, text) -> bool:
-    if m.group("pre_code") or m.group("post_code"):
-        code = m.group("pre_code") or m.group("post_code")
+    if _g(m, "pre_code") or _g(m, "post_code"):
+        code = _g(m, "pre_code") or _g(m, "post_code")
         try:
             get_currency(code)
         except UnknownCurrencyError:
@@ -184,16 +202,31 @@ def _direction(lower: str, template: dict | None):
     return None
 
 
+_MORE_GROUPS = re.compile(r"(?:[ -]\d{2,6}){1,4}(?![\w])")
+
+
 def _reference(norm: str):
+    """(printed, digits, partial, span, counterparty): the account or card the text names. A number printed in groups
+    ("4111 1111 1111 1234") is read whole. A reference after "to" or "from" is the other side's account
+    (``counterparty``), never the phone owner's, so it never binds."""
     from services.financial.account_mentions import mentions
     for ref in mentions(norm):
         digits = re.sub(r"\D", "", ref["normalised"])
-        if len(digits) >= 4:
-            return ref["printed"], digits, bool(ref["partial"]) or len(digits) <= 4, (ref["start"], ref["end"])
+        if len(digits) < 4:
+            continue
+        end = ref["end"]
+        more = _MORE_GROUPS.match(norm, end)
+        if more and "*" not in ref["normalised"]:
+            digits += re.sub(r"\D", "", more.group())
+            end = more.end()
+        before = norm[max(0, ref["start"] - 30):ref["start"]]
+        other = bool(COUNTERPARTY_REF.search(before)) and not OWN_SIDE.search(before)
+        return norm[ref["start"]:end].strip(), digits, bool(ref["partial"]) or len(digits) <= 4, \
+            (ref["start"], end), other
     m = ENDING.search(norm)
     if m:
         d = m.group("d") or m.group("e")
-        return m.group().strip(), d, True, (m.start(), m.end())
+        return m.group().strip(), d, True, (m.start(), m.end()), False
     return None
 
 
@@ -202,31 +235,49 @@ def parse(text: str, *, institution: dict | None = None, phone_country: str | No
     """``institution``: a directory entry (its ``currencies`` and ``decimal_separator``); ``template``: the entry's
     template for this channel when the entry is reviewed, else ``None`` (``template = generic``)."""
     norm, offsets = normalise(text)
-    found = [m for m in AMOUNT.finditer(norm) if _is_amount(m, norm)]
+    pre = [m for m in AMOUNT_PRE.finditer(norm) if _is_amount(m, norm)]
+    taken = [(m.start(), m.end()) for m in pre]
+    post = [m for m in AMOUNT_POST.finditer(norm) if _is_amount(m, norm) and
+            not any(a < m.end() and m.start() < b for a, b in taken)]
+    found = sorted(pre + post, key=lambda m: m.start())
     if not found:
         return None
-    m = found[0]
     flags = []
-    if len(found) > 1:
+    # a balance or limit is not the payment: the first amount not introduced as one is read
+    plain = [m for m in found if not BALANCE_BEFORE.search(norm[max(0, m.start() - 30):m.start()])]
+    if len(plain) < len(found):
+        flags.append("balance_mentioned")
+    m = (plain or found)[0]
+    if len({x.group() for x in found}) > 1:
         flags.append("several_amounts")
-    number = next(m.group(g) for g in ("n1", "n2", "n3", "n4") if m.group(g))
+    number = next(_g(m, g) for g in ("n1", "n2", "n3", "n4") if _g(m, g))
     currency, cflag = _currency(m, norm, institution)
     if cflag:
         flags.append(cflag)
-    minor, aflag = amount_minor(number, currency, (institution or {}).get("decimal_separator"))
+    minor, aflag = amount_minor(number, currency, (institution or {}).get("decimal_separator"),
+                                (institution or {}).get("group_separator"))
     if aflag:
         flags.append(aflag)
     lower = norm.casefold()
     direction = _direction(lower, template)
+    if DUE_NOTICE.search(norm):
+        direction = None  # "your credit card payment is due": a reminder, not a payment
+        flags.append("payment_due_notice")
     if direction is None:
         flags.append("direction_unknown")
     spans = [(*_span(offsets, m.start(), m.end()), "amount")]
     ref = _reference(norm)
-    account_ref = digits = None
+    account_ref = digits = counterparty_ref = None
     partial = False
     if ref:
-        account_ref, digits, partial, (rs, re_) = ref
-        spans.append((*_span(offsets, rs, re_), "account_ref"))
+        printed, refdigits, refpartial, (rs, re_), other = ref
+        if other:
+            counterparty_ref = refdigits[-4:]
+            flags.append("other_side_account")
+            spans.append((*_span(offsets, rs, re_), "counterparty_account"))
+        else:
+            account_ref, digits, partial = printed, refdigits, refpartial
+            spans.append((*_span(offsets, rs, re_), "account_ref"))
     counterparty = None
     pattern = (template or {}).get("counterparty_pattern")
     if pattern:
@@ -235,6 +286,8 @@ def parse(text: str, *, institution: dict | None = None, phone_country: str | No
             counterparty = cm.group("payee").strip()
             spans.append((*_span(offsets, cm.start("payee"), cm.end("payee")), "counterparty"))
     sd = STATED_DATE.search(norm)
+    if counterparty_ref and not counterparty:
+        counterparty = "account ending %s" % counterparty_ref
     return MoneyReading(amount_minor=minor, currency=currency, direction=direction, account_ref=account_ref,
                         account_digits=digits, account_partial=partial, counterparty_text=counterparty,
                         stated_date=sd.group() if sd else None, template=(template or {}).get("name") or (

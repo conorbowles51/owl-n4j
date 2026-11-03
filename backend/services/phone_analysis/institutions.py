@@ -27,7 +27,9 @@ from dataclasses import dataclass, field
 from sqlalchemy import text
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-MODEL_NAMES = re.compile(r"\b(claude|gpt|openai|deepseek|anthropic|llm|model|ai|assistant|bot)\b", re.I)
+# a reviewer who is a model: product names anywhere in the name ("ChatGPT", "Claude3"), the generic words whole
+MODEL_NAMES = re.compile(r"(claude|gpt|openai|deepseek|anthropic|gemini|copilot|llama|mistral|grok)|"
+                         r"\b(llm|model|assistant|bot|chatbot)\b", re.I)
 KINDS = ("bank", "card_issuer", "payment_app", "remittance", "exchange", "crypto_exchange", "lender")
 CHANNELS = ("app_package", "web_domain", "sms_sender", "email_domain")
 _override = {"entries": None}
@@ -52,7 +54,7 @@ class Match:
 def reviewed(entry: dict) -> bool:
     r = entry.get("review") or {}
     who = (r.get("reviewed_by") or "").strip()
-    return bool(who) and bool(r.get("reviewed_on")) and not MODEL_NAMES.search(who)
+    return bool(who) and bool(r.get("reviewed_on") or r.get("reviewed_at")) and not MODEL_NAMES.search(who)
 
 
 def _validate(entry: dict, where: str) -> dict:

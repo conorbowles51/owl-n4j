@@ -81,6 +81,21 @@ describe("Money on the phones (AP-1)", () => {
     await waitFor(() => expect(api.moneyAPI.decide).toHaveBeenCalledWith("c1", "res-1", "rejected", "Not this card"))
   })
 
+  it("lists several possible payments without linking any of them", async () => {
+    page()
+    const several = { ...READING, measures: { ...READING.measures, outcome: "several_candidates", reason: "several_payments_match" } }
+    api.moneyAPI.results.mockResolvedValue({ total: 1, offset: 0, limit: 100, items: [several] })
+    api.moneyAPI.detail.mockResolvedValue({ ...several, records: [
+      { record_uid: "rec-1", extraction_id: "e1", field_path: "Body", ledger_transaction_id: null, ledger_ref_id: null, role: "evidence" },
+      { record_uid: null, extraction_id: null, field_path: null, ledger_transaction_id: "tx-1", ledger_ref_id: "T-1", role: "ledger_candidate" },
+      { record_uid: null, extraction_id: null, field_path: null, ledger_transaction_id: "tx-2", ledger_ref_id: "T-2", role: "ledger_candidate" }] })
+    expect(await screen.findByText(/Several payments could be this one/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /USD 12.50 out/ }))
+    expect(await screen.findByText("Payments that could be this one. None is linked to it.")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Open possible payment T-2" })).toHaveAttribute("href", "/cases/c1/financial?payment=tx-2")
+    expect(screen.queryByRole("link", { name: /^Open payment/ })).toBeNull()
+  })
+
   it("writes amounts from integer minor units by the currency's exponent, and the text as written when unknown", () => {
     expect(amountWords({ amount_minor: 123456, currency: "USD" })).toBe("USD 1,234.56")
     expect(amountWords({ amount_minor: 1500, currency: "JPY" })).toBe("JPY 1,500")

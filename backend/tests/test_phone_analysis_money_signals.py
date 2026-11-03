@@ -134,7 +134,18 @@ class Ledger:
                            {"i": uuid.uuid4(), "c": self.case, "d": self.doc, "a": aid, "r": self.run})
         return aid
 
-    def txn(self, account, amount_minor, day, direction="debit"):
+    def period(self, account, start, end, opening, closing, status="balanced"):
+        pid = uuid.uuid4()
+        self.c.execute(text("INSERT INTO financial_statement_periods (id, case_id, source_document_id, account_id, "
+                            "ingestion_run_id, currency, period_start, period_end, opening_balance_minor, "
+                            "closing_balance_minor, opening_balance_source, closing_balance_source, period_start_source, "
+                            "period_end_source, reconciliation_status) VALUES (:i, :c, :d, :a, :r, 'USD', :s, :e, :o, :cl, "
+                            "'printed', 'printed', 'printed', 'printed', :st)"),
+                       {"i": pid, "c": self.case, "d": self.doc, "a": account, "r": self.run, "s": start, "e": end,
+                        "o": opening, "cl": closing, "st": status})
+        return pid
+
+    def txn(self, account, amount_minor, day, direction="debit", period=None):
         self.row += 1
         tid = uuid.uuid4()
         self.c.execute(text(
@@ -145,6 +156,9 @@ class Ledger:
             "'{}', '{}', now(), now())"),
             {"i": tid, "c": self.case, "a": account, "d": self.doc, "r": self.run, "ref": "T-%d" % self.row,
              "n": self.row, "amt": amount_minor, "dir": direction, "td": day, "h": uuid.uuid4().hex})
+        if period is not None:
+            self.c.execute(text("UPDATE financial_transactions SET statement_period_id = :p WHERE id = :i"),
+                           {"p": period, "i": tid})
         return tid
 
     def supersede(self, old, new):
@@ -197,7 +211,7 @@ def _alert_case(engine):
 def test_1_2_6_9_a_reviewed_alert_binds_by_ending_corroborates_and_never_changes_the_ledger():
     with fresh_engine() as engine:
         case, ext, acct, row, old, new = _alert_case(engine)
-        run_id, items = _run(engine, case)
+        run_id, items = _run(engine, case, {"phase": "1a"})
         # 1: one reading, strength institution_template, a p4 claim, bound to the one account ending 1234
         r = _reading(items, amount=1250)
         m = r["measures"]
@@ -459,3 +473,135 @@ def test_the_measurements_run_on_a_case_count_only_and_record_their_gate():
         assert "Purchase" not in blob and "CORNER CAFE" not in blob  # counts only, never content
         with engine.connect() as c:
             assert len(M.rows(c, case)) == 13
+
+
+
+# ---- 05-S4, phase 1b: coverage from the statement run ----------------------------------------------------------------
+
+def _run_case(engine, periods, rows=(), alert="Synthetic Bank: Purchase of $50.00 on card ending 1234",
+              when=datetime(2024, 2, 10, 15, tzinfo=timezone.utc)):
+    with engine.begin() as c:
+        case = make_case(c)
+        L = Ledger(c, case)
+        acct = L.account("Synthetic Bank", "XXXX1234", statement=False)
+        pids = [L.period(acct, *p) for p in periods]
+        for amount, day in rows:
+            L.txn(acct, amount, day, period=pids[0] if pids else None)
+    p = Phone()
+    p.notification("test.synthbank.mobile", alert, when=when)
+    p.make(engine, case)
+    return case
+
+
+JAN, FEB, MAR = (date(2024, 1, 1), date(2024, 1, 31)), (date(2024, 2, 1), date(2024, 2, 29)), \
+    (date(2024, 3, 1), date(2024, 3, 31))
+
+
+def test_1b_a_complete_reconciled_run_without_the_payment_contradicts_and_says_why_it_may_not_post():
+    with fresh_engine() as engine:
+        case = _run_case(engine, [(*JAN, 100000, 90000), (*FEB, 90000, 80000), (*MAR, 80000, 70000)])
+        _, items = _run(engine, case)
+        r = _reading(items)
+        assert r["measures"]["outcome"] == "contradicted" and r["measures"]["reason"] == "no_transaction"
+        assert "authorization_may_not_post" in [d["code"] for d in r["directions"]["undercuts"]]
+        assert r["measures"]["proof_class"] == "p4"
+        _, items_1a = _run(engine, case, {"phase": "1a"})
+        assert _reading(items_1a)["measures"]["outcome"] == "unresolved"  # 1a never contradicts
+
+
+def test_1b_a_gap_or_an_unreconciled_period_in_the_window_leaves_it_unresolved():
+    with fresh_engine() as engine:
+        gap = _run_case(engine, [(*JAN, 100000, 90000), (*MAR, 80000, 70000)])
+        m = _reading(_run(engine, gap)[1])["measures"]
+        assert m["outcome"] == "unresolved" and m["reason"] in ("records_incomplete", "outside_coverage")
+        unbalanced = _run_case(engine, [(*JAN, 100000, 90000), (*FEB, 90000, 80000, "unbalanced"),
+                                        (*MAR, 80000, 70000)])
+        m = _reading(_run(engine, unbalanced)[1])["measures"]
+        assert m["outcome"] == "unresolved" and m["reason"] == "records_incomplete"
+
+
+def test_1b_a_payment_in_a_reconciled_period_corroborates_without_the_unverified_note():
+    with fresh_engine() as engine:
+        case = _run_case(engine, [(*FEB, 90000, 85000)], rows=[(5000, date(2024, 2, 12))])
+        m = _reading(_run(engine, case)[1])["measures"]
+        assert m["outcome"] == "corroborated"
+        assert all("does not reconcile" not in n for p in m["per_account"] for n in p["notes"])
+
+
+# ---- review cases: several candidates, effective links, no time, parser shapes, reviewers ---------------------------
+
+def test_two_payments_that_could_both_be_the_alert_link_neither_and_are_listed_as_candidates():
+    with fresh_engine() as engine:
+        case = _run_case(engine, [(*FEB, 90000, 80000)], rows=[(5000, date(2024, 2, 11)), (5000, date(2024, 2, 12))])
+        _, items = _run(engine, case)
+        r = _reading(items)
+        assert r["measures"]["outcome"] == "several_candidates"
+        assert r["measures"]["reason"] == "several_payments_match"
+        codes = [d["code"] for d in r["directions"]["undercuts"]]
+        assert "several_candidates" in codes
+        assert not any(d["code"] in ("corroborated", "exact_amount") for d in r["directions"]["supports"])
+        with engine.connect() as c:
+            roles = [x.role for x in c.execute(text(
+                "SELECT x.role FROM phone_analysis_result_records x WHERE x.result_id = :r AND "
+                "x.ledger_transaction_id IS NOT NULL"), {"r": r["id"]})]
+            assert sorted(roles) == ["ledger_candidate", "ledger_candidate"]
+            ids = [str(t) for (t,) in c.execute(text("SELECT id FROM financial_transactions WHERE case_id = :c"),
+                                                {"c": str(case)})]
+            assert not any(MS.phone_links(c, case, ids).values())
+
+
+def test_a_link_to_a_payment_that_was_later_superseded_is_not_shown_on_the_ledger():
+    with fresh_engine() as engine:
+        case = _run_case(engine, [(*FEB, 90000, 85000)], rows=[(5000, date(2024, 2, 12)), (7000, date(2024, 2, 25))])
+        _, items = _run(engine, case)
+        assert _reading(items)["measures"]["outcome"] == "corroborated"
+        with engine.begin() as c:
+            match, other = [str(t) for (t,) in c.execute(text(
+                "SELECT id FROM financial_transactions WHERE case_id = :c ORDER BY amount_minor"), {"c": str(case)})]
+            links = MS.phone_links(c, case, [match])
+            assert len(links[match]) == 1 and "device_zone" in links[match][0]
+            c.execute(text("UPDATE financial_transactions SET ledger_status = 'superseded', superseded_by_id = :n "
+                           "WHERE id = :o"), {"n": other, "o": match})
+            assert not MS.phone_links(c, case, [match]).get(match)
+
+
+def test_an_alert_with_no_time_on_the_phone_is_not_checked_and_says_why():
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            L = Ledger(c, case)
+            acct = L.account("Synthetic Bank", "XXXX1234")
+            L.txn(acct, 5000, date(2024, 2, 12))
+        p = Phone()
+        p.simple("Notification", ServiceIdentifier="test.synthbank.mobile",
+                 Body="Synthetic Bank: Purchase of $50.00 on card ending 1234")
+        p.make(engine, case)
+        m = _reading(_run(engine, case)[1])["measures"]
+        assert m["outcome"] == "not_tested" and m["reason"] == "event_time_missing"
+
+
+@pytest.mark.parametrize("text_, amount, currency, digits, flags", [
+    ("A/c XX1234 INR 500.00 debited", 50000, "INR", "1234", set()),
+    ("Purchase of $50.00 on card ending 1234. Available balance $1,200.00", 5000, None, "1234",
+     {"balance_mentioned", "several_amounts"}),
+    ("Your payment of $75.00 is due on 03/12", 7500, None, None, {"payment_due_notice", "direction_unknown"}),
+    ("You sent $20.00 to account ending 5678", 2000, None, None, {"other_side_account"}),
+    ("Purchase of $1 234.50 at SHOP", None, None, None, {"ambiguous_separator"}),
+])
+def test_parser_shapes_from_the_review(text_, amount, currency, digits, flags):
+    r = P.parse(text_, institution=None, phone_country="US", template=None)
+    assert (r.amount_minor, r.currency, r.account_digits) == (amount, currency, digits)
+    assert flags <= set(r.flags)
+
+
+def test_a_grouped_card_number_is_read_whole_and_shown_as_its_last_four():
+    r = P.parse("Card 4111 1111 1111 1234 charged $5.00", institution=None, phone_country="US", template=None)
+    assert r.account_digits == "4111111111111234" and r.amount_minor == 500
+    assert MS._masked_ref(r) == "ending 1234"
+
+
+def test_a_reviewer_is_a_person_with_a_date_and_never_a_model_by_any_product_name():
+    assert INST.reviewed({"review": {"reviewed_by": "Ai Tanaka", "reviewed_at": "2026-11-03T10:00:00Z"}})
+    assert not INST.reviewed({"review": {"reviewed_by": "Ai Tanaka"}})
+    for name in ("ChatGPT", "Gemini 2", "Claude3", "GitHub Copilot", "Llama reviewer", "Mistral"):
+        assert not INST.reviewed({"review": {"reviewed_by": name, "reviewed_on": "2026-11-03"}}), name
