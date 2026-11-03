@@ -174,7 +174,7 @@ class GeoService:
                 WHERE n.case_id = $case_id
                   {scope_filter}
                   AND (n.latitude IS NULL OR n.longitude IS NULL)
-                  AND n.geocoding_status IN ['ambiguous', 'unverified', 'failed']
+                  AND n.geocoding_status IN ['ambiguous', 'unverified', 'failed', 'not_run']
                   AND NONE(
                     field IN coalesce(n.manual_fields, [])
                     WHERE field IN ['latitude', 'longitude', 'location_name', 'location_formatted']

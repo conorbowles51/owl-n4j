@@ -2360,7 +2360,7 @@ def geocode_node(
     user: dict = Depends(get_current_user),
 ):
     """Geocode a single entity address, optionally applying it to the node."""
-    from services.geo_rescan_service import geocode_with_cache
+    from services.geo_rescan_service import geocode_with_cache, geocoding_not_run_reason
 
     if not body.address.strip():
         raise HTTPException(status_code=400, detail="Address cannot be empty")
@@ -2368,6 +2368,10 @@ def geocode_node(
     try:
         result = geocode_with_cache(body.address)
         if not result:
+            # An address already looked up is still placed from the cache; a new one is not sent off this server.
+            not_run = geocoding_not_run_reason()
+            if not_run:
+                return {"success": False, "error": not_run, "not_run": True, "address": body.address}
             return {"success": False, "error": "Could not geocode address", "address": body.address}
 
         if apply:

@@ -49,3 +49,4 @@ include = ["app", "app.*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["no_geocoder_here: runs with no geocoder held on this server (tests/test_geocoding.py)"]

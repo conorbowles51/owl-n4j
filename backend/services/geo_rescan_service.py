@@ -7,14 +7,16 @@ and writes the coordinates back to the matching entities in Neo4j
 (or creates LOCATED_AT relationships from events/entities to locations).
 """
 
+import ipaddress
 import json
+import os
 import threading
 import time
 import hashlib
 import urllib.request
 import urllib.error
 from typing import Dict, List, Optional, Tuple
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from services.llm_service import LLMService
 from services.neo4j_service import neo4j_service
@@ -25,8 +27,36 @@ from postgres.session import get_background_session
 # Nominatim geocoding for persisted location entities.
 # ---------------------------------------------------------------------------
 
-NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+# Addresses from evidence are never sent to a service outside this server (an outside geocoder learns every place a
+# case names). Lookups run only against a Nominatim held on this server, named by GEOCODER_SEARCH_URL (for example
+# http://localhost:8080/search); unset, or naming an outside host, nothing is sent and the address is not placed.
+# Results already in the geocoding cache are still used: reading them sends nothing.
+NOMINATIM_URL = os.environ.get("GEOCODER_SEARCH_URL", "").strip()
 USER_AGENT = "InvestigationConsole/1.0"
+NOT_RUN_MESSAGE = "Address not placed: geocoding is not run on this server."
+
+
+def held_on_this_server(url: str) -> bool:
+    """Whether a service address is on this server or its private network (loopback, a private address, or a
+    one-word container name), never a public host."""
+    try:
+        host = (urlsplit(url).hostname or "").strip().lower()
+    except ValueError:
+        return False
+    if not host:
+        return False
+    if host == "localhost" or "." not in host and ":" not in host:
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private
+
+
+def geocoding_not_run_reason() -> Optional[str]:
+    """None when lookups may be sent (to a geocoder on this server); otherwise what to tell the person."""
+    return None if held_on_this_server(NOMINATIM_URL) else NOT_RUN_MESSAGE
 _last_request_time = 0.0
 # Nominatim allows one request a second. Geocoding route handlers run in FastAPI's thread pool, so the spacing is
 # kept under a lock (held through the wait), not by the event loop running them one at a time.
@@ -111,6 +141,9 @@ def geocode_with_cache(location: str) -> Optional[Dict]:
     cached, cached_result = _get_cached_geocode(cache_key)
     if cached:
         return cached_result
+    if geocoding_not_run_reason():
+        # Nothing is sent and nothing is cached: a geocoder held on this server later still gets the question.
+        return None
 
     _rate_limit()
     encoded = quote(location.strip())
@@ -408,6 +441,7 @@ def rescan_case_locations(
         "locations_geocoded": len(geocoded),
         "locations_failed_geocode": len(failed_geocode),
         "failed_places": failed_geocode[:20],
+        "geocoding_not_run": geocoding_not_run_reason(),
         "entities_updated": entities_updated,
         "location_nodes_created": location_nodes_created,
         "relationships_created": relationships_created,

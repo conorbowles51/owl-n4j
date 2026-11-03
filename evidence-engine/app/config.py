@@ -108,7 +108,9 @@ class Settings(BaseSettings):
 
     # Geocoding
     geocoding_provider: str = "nominatim"
-    geocoding_nominatim_url: str = "https://nominatim.openstreetmap.org/search"
+    # Addresses from evidence are never sent off this server: only a Nominatim held on this server or its private
+    # network is asked (app/services/geocoding.py held_on_this_server). Unset: nothing is sent, addresses not placed.
+    geocoding_nominatim_url: str = ""
     geocoding_user_agent: str = "InvestigationConsole/1.0"
     geocoding_timeout_seconds: float = 10.0
 

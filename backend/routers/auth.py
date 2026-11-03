@@ -131,6 +131,16 @@ def logout(response: Response, token: str | None = Depends(_extract_token), db: 
     return {"status": "ok"}
 
 
+@router.get("/check", status_code=status.HTTP_204_NO_CONTENT)
+async def check(user: dict = Depends(get_current_user)) -> Response:
+    """Whether the request is signed in: 204 or 401, no body and no database read.
+
+    nginx asks this before serving each base-map file (/basemap/: tiles, fonts, sprites), so the map held on this
+    server is behind the same sign-in as the app.
+    """
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/me", response_model=MeResponse)
 def me(
     response: Response,

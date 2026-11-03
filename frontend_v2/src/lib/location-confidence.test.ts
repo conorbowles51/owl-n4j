@@ -89,3 +89,11 @@ describe("reviewReason", () => {
     )
   })
 })
+
+describe("addresses not looked up on this server", () => {
+  it("are listed for review with the plain reason", async () => {
+    const { needsReview: nr, reviewReason: rr } = await import("./location-confidence")
+    expect(nr({ geocoding_status: "not_run" })).toBe(true)
+    expect(rr({ geocoding_status: "not_run" })).toBe("Address not placed: geocoding is not run on this server")
+  })
+})

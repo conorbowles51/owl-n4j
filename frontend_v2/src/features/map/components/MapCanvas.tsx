@@ -33,6 +33,7 @@ import {
 import { getVisibleLocations } from "../lib/visible-locations"
 import { boundsToClosedRing, viewBox, type LngLatPoint } from "../lib/geometry"
 import { EntityPopup } from "./EntityPopup"
+import { BasemapNote } from "./BasemapNote"
 import type { MapRef, MapLayerMouseEvent } from "react-map-gl/maplibre"
 import type { PhoneMapItem } from "@/features/phones/api"
 import { accuracyPixelsAtZoom20 } from "./map-accuracy"
@@ -88,7 +89,7 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo }: MapCanvasPro
   const mapRef = useRef<MapRef>(null)
   const boxDragRef = useRef<BoxDragState | null>(null)
   const secondaryPanRef = useRef<SecondaryPanState | null>(null)
-  const { styleUrl } = useMapTheme()
+  const { mapStyle, transformRequest, onMapError, onMapView, basemapNote } = useMapTheme()
   const { bounds } = useMapAnalysis(locations)
 
   // Hover state for popup
@@ -504,7 +505,9 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo }: MapCanvasPro
     <Map
       ref={mapRef}
       mapLib={maplibregl}
-      mapStyle={styleUrl}
+      mapStyle={mapStyle}
+      transformRequest={transformRequest}
+      onError={onMapError}
       style={{ width: "100%", height: "100%" }}
       dragPan={!drawMode}
       dragRotate={!drawMode}
@@ -524,9 +527,11 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo }: MapCanvasPro
           map.fitBounds([[w, s], [ea === w ? ea + 0.01 : ea, n === s ? n + 0.01 : n]], { padding: 60, maxZoom: 15, duration: 0 })
         }
         onView?.(viewBox(map.getBounds()), map.getZoom())
+        onMapView(map.getCenter().lng, map.getCenter().lat)
       }}
       onMoveEnd={(e) => {
         onView?.(viewBox(e.target.getBounds()), e.target.getZoom())
+        onMapView(e.target.getCenter().lng, e.target.getCenter().lat)
       }}
       attributionControl={{ compact: true }}
       interactiveLayerIds={drawMode ? [] : LOCATION_INTERACTIVE_LAYER_IDS}
@@ -622,7 +627,7 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo }: MapCanvasPro
             "circle-radius": ["interpolate", ["linear"], ["get", "count"], 1, 10, 1000, 24],
             "circle-color": "#2563eb", "circle-opacity": 0.6,
           }} />
-          <Layer id="phone-cluster-count" type="symbol" filter={["==", ["get", "kind"], "cluster"]} layout={{ "text-field": ["get", "label"], "text-size": 11 }} paint={{ "text-color": "#fff" }} />
+          <Layer id="phone-cluster-count" type="symbol" filter={["==", ["get", "kind"], "cluster"]} layout={{ "text-field": ["get", "label"], "text-font": ["Noto Sans Regular"], "text-size": 11 }} paint={{ "text-color": "#fff" }} />
         </Source>
       )}
 
@@ -646,6 +651,8 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo }: MapCanvasPro
           onMouseLeave={startHide}
         />
       )}
+
+      {basemapNote && <BasemapNote text={basemapNote} />}
     </Map>
   )
 }

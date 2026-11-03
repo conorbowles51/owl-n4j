@@ -78,13 +78,13 @@ export function getConfidenceTier(input: LocationConfidenceInput): ConfidenceTie
 
 /**
  * Whether a location belongs in the needs-review queue: low-confidence
- * geocodes plus anything flagged ambiguous/unverified/failed at ingestion. Manually
+ * geocodes plus anything flagged ambiguous/unverified/failed/not run at ingestion. Manually
  * placed locations never need review.
  */
 export function needsReview(input: LocationConfidenceInput): boolean {
   if (isManuallyPlaced(input)) return false
   const status = input.geocoding_status?.toLowerCase()
-  if (status === "ambiguous" || status === "unverified" || status === "failed") {
+  if (status === "ambiguous" || status === "unverified" || status === "failed" || status === "not_run") {
     return true
   }
   return getConfidenceTier(input) === "low"
@@ -96,5 +96,7 @@ export function reviewReason(input: LocationConfidenceInput): string {
   if (status === "ambiguous") return "Ambiguous at ingestion"
   if (status === "unverified") return "Unverified at ingestion"
   if (status === "failed") return "Geocoding failed"
+  // nothing was sent: addresses from evidence are never looked up by a service outside this server
+  if (status === "not_run") return "Address not placed: geocoding is not run on this server"
   return "Low geocoding confidence"
 }

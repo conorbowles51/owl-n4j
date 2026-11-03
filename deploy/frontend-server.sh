@@ -10,6 +10,8 @@
 FRONTEND_UNIT="${FRONTEND_UNIT:-owl-frontend-v2}"
 FRONTEND_NGINX_TEMPLATE="${PROJECT_DIR}/deploy/nginx-loupe-frontend.conf"
 FRONTEND_NGINX_AVAILABLE="${FRONTEND_NGINX_AVAILABLE:-/etc/nginx/sites-available/loupe-frontend}"
+# The base map held on this server (deploy/refresh-basemap.sh keeps "current" in it pointing at the newest copy).
+LOUPE_BASEMAP_DIR="${LOUPE_BASEMAP_DIR:-$(cd "${PROJECT_DIR}/.." && pwd)/loupe-basemap/current}"
 
 frontend_server_wanted() {
     local wanted
@@ -28,7 +30,8 @@ frontend_nginx_render() {
     [ -n "${target}" ] || target="http://0.0.0.0:${API_PORT:-8002}"
     target="${target#http://}"; target="${target%%/*}"
     sed -e "s|@PORT@|${FRONTEND_PORT}|g" -e "s|@RELEASES@|${FRONTEND_RELEASES}|g" \
-        -e "s|@API_HOST@|${target}|g" -e "s|@API@|${target}|g" "${FRONTEND_NGINX_TEMPLATE}"
+        -e "s|@API_HOST@|${target}|g" -e "s|@API@|${target}|g" -e "s|@BASEMAP@|${LOUPE_BASEMAP_DIR}|g" \
+        "${FRONTEND_NGINX_TEMPLATE}"
 }
 
 # The server in use is up (the health check's unit test).

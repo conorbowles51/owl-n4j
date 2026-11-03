@@ -6,8 +6,17 @@ from app.services.geocoding import (
     GeocodingService,
     _candidate_match_confidence,
     build_geocode_request,
+    held_on_this_server,
     normalize_geocode_query,
 )
+from app.config import settings
+
+
+@pytest.fixture(autouse=True)
+def geocoder_on_this_server(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
+    """The lookup tests run as if a Nominatim were held on this server; the no-geocoder tests opt out."""
+    if "no_geocoder_here" not in request.keywords:
+        monkeypatch.setattr(settings, "geocoding_nominatim_url", "http://localhost:8080/search")
 
 
 class FakeGeocodingService(GeocodingService):
@@ -622,3 +631,50 @@ async def test_structured_geocode_uses_versioned_match_cache_key(
     await service.geocode(request)
 
     assert seen_cache_keys == ["match-v4|the wolseley|exact_address||||"]
+
+
+def test_only_a_geocoder_on_this_server_counts() -> None:
+    assert held_on_this_server("http://localhost:8080/search")
+    assert held_on_this_server("http://127.0.0.1:8080/search")
+    assert held_on_this_server("http://nominatim:8080/search")
+    assert held_on_this_server("http://10.128.0.4:8080/search")
+    assert not held_on_this_server("https://nominatim.openstreetmap.org/search")
+    assert not held_on_this_server("http://8.8.8.8/search")
+    assert not held_on_this_server("")
+
+
+@pytest.mark.no_geocoder_here
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", ["", "https://nominatim.openstreetmap.org/search"])
+async def test_no_address_is_sent_off_this_server(monkeypatch: pytest.MonkeyPatch, url: str) -> None:
+    monkeypatch.setattr(settings, "geocoding_nominatim_url", url)
+
+    class RefusedClient:
+        def __init__(self, *args, **kwargs) -> None:
+            raise AssertionError("an address was about to be sent to " + url)
+
+    monkeypatch.setattr(geocoding_module.httpx, "AsyncClient", RefusedClient)
+    service = FakeGeocodingService(GeocodeResult(provider="nominatim", normalized_query="x", original_query="x", status="success"))
+    service._fetch_from_provider = GeocodingService._fetch_from_provider.__get__(service)
+
+    result = await service.geocode("1600 Pennsylvania Ave NW, Washington DC")
+
+    assert result.status == geocoding_module.NOT_RUN_STATUS
+    assert result.latitude is None
+    assert service.cache == {}, "a lookup never made is not cached as failed"
+
+
+@pytest.mark.no_geocoder_here
+@pytest.mark.asyncio
+async def test_an_address_looked_up_before_is_still_placed_from_the_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "geocoding_nominatim_url", "")
+    service = FakeGeocodingService(GeocodeResult(provider="nominatim", normalized_query="x", original_query="x", status="failed"))
+    service.cache[("nominatim", "london")] = GeocodeResult(
+        provider="nominatim", normalized_query="london", original_query="London", status="success",
+        latitude=51.5, longitude=-0.12, confidence="high",
+    )
+
+    result = await service.geocode("London")
+
+    assert (result.status, result.latitude) == ("success", 51.5)
+    assert service.provider_calls == 0

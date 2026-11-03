@@ -43,7 +43,7 @@ class GeoServiceReviewQueueTests(unittest.TestCase):
             result = GeoService().get_locations_needing_review("case-1")
 
         self.assertEqual(captured["params"], {"case_id": "case-1"})
-        self.assertIn("['ambiguous', 'unverified', 'failed']", captured["query"])
+        self.assertIn("['ambiguous', 'unverified', 'failed', 'not_run']", captured["query"])
         self.assertIn("coalesce(n.manual_fields, [])", captured["query"])
         self.assertIn("'latitude'", captured["query"])
         self.assertIn("'longitude'", captured["query"])

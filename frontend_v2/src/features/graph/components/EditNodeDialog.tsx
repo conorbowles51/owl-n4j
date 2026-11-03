@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select"
 import { cn } from "@/lib/cn"
 import { useMapTheme } from "@/features/map/hooks/use-map-theme"
+import { BasemapNote } from "@/features/map/components/BasemapNote"
 import type { GraphEditPropertySchema } from "../api"
 import { graphAPI } from "../api"
 import { useGraphEditSchema, useNodeDetails } from "../hooks/use-node-details"
@@ -135,7 +136,7 @@ function LocationPicker({
   onChange: (next: Coordinates) => void
   className?: string
 }) {
-  const { styleUrl } = useMapTheme()
+  const { mapStyle, transformRequest, onMapError, onMapView, basemapNote } = useMapTheme()
   const center = coordinates ?? { latitude: 20, longitude: 0 }
 
   return (
@@ -143,7 +144,11 @@ function LocationPicker({
       <MapLibreMap
         key={`${center.latitude}:${center.longitude}`}
         mapLib={maplibregl}
-        mapStyle={styleUrl}
+        mapStyle={mapStyle}
+        transformRequest={transformRequest}
+        onError={onMapError}
+        onLoad={(event) => onMapView(event.target.getCenter().lng, event.target.getCenter().lat)}
+        onMoveEnd={(event) => onMapView(event.target.getCenter().lng, event.target.getCenter().lat)}
         initialViewState={{
           latitude: center.latitude,
           longitude: center.longitude,
@@ -173,6 +178,7 @@ function LocationPicker({
             <MapPin className="size-7 fill-amber-500 text-amber-700 drop-shadow" />
           </Marker>
         )}
+        {basemapNote && <BasemapNote text={basemapNote} />}
       </MapLibreMap>
     </div>
   )

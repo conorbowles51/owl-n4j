@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import re
 import time
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from sqlalchemy import func, select
@@ -325,6 +327,30 @@ def build_geocode_request(
     return None
 
 
+# The status an address gets when no geocoder on this server is configured: nothing was sent, nothing is cached
+# (a geocoder held on this server later still gets the question), and the address is not placed.
+NOT_RUN_STATUS = "not_run"
+NOT_RUN_MESSAGE = "Address not placed: geocoding is not run on this server."
+
+
+def held_on_this_server(url: str) -> bool:
+    """Whether a service address is on this server or its private network (loopback, a private address, or a
+    one-word container name), never a public host such as nominatim.openstreetmap.org."""
+    try:
+        host = (urlsplit(url or "").hostname or "").strip().lower()
+    except ValueError:
+        return False
+    if not host:
+        return False
+    if host == "localhost" or ("." not in host and ":" not in host):
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private
+
+
 class GeocodingService:
     def __init__(self) -> None:
         self._memoized_results: dict[tuple[str, str], GeocodeResult] = {}
@@ -359,6 +385,16 @@ class GeocodingService:
         if cached is not None:
             self._memoized_results[memo_key] = cached
             return cached
+
+        if not held_on_this_server(settings.geocoding_nominatim_url):
+            result = GeocodeResult(
+                provider=self.provider,
+                normalized_query=normalized_query,
+                original_query=original_query,
+                status=NOT_RUN_STATUS,
+            )
+            self._memoized_results[memo_key] = result
+            return result
 
         if request is None:
             result = await self._fetch_from_provider(original_query, normalized_query)
