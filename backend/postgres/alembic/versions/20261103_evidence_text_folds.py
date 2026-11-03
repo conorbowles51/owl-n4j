@@ -12,7 +12,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "20261103_evidence_text_folds"
-down_revision = "20261103_phone_selections"
+down_revision = "20261103_pol_event_end_index"
 branch_labels = None
 depends_on = None
 
