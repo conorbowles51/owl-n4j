@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { instantWords } from "@/features/phones/lib/time-words"
 import { CollectBar } from "@/features/pattern/components/CollectBar"
-import { moneyAPI, type AnalysisResult, type AnalysisRun } from "./money-api"
+import { moneyAPI, type AnalysisDecisionKind, type AnalysisResult, type AnalysisRun } from "./money-api"
+import { DECISION_WORDS } from "./decision-words"
 import { amountWords } from "./money-words"
 
 /**
@@ -76,24 +77,25 @@ function Decide({ caseId, result, onDone }: { caseId: string; result: AnalysisRe
   const [reason, setReason] = useState("")
   const [err, setErr] = useState<string | null>(null)
   const m = useMutation({
-    mutationFn: (d: "confirmed" | "rejected") => moneyAPI.decide(caseId, result.id, d, reason.trim()),
+    mutationFn: (d: AnalysisDecisionKind) => moneyAPI.decide(caseId, result.id, d, reason.trim()),
     onSuccess: () => { setReason(""); onDone() },
     onError: (e) => setErr(String((e as Error).message || e)),
   })
-  function go(d: "confirmed" | "rejected") {
+  function go(d: AnalysisDecisionKind) {
     if (!reason.trim()) { setErr("Say why, in your own words."); return }
     setErr(null)
     m.mutate(d)
   }
   return (
-    <div className="mt-2 space-y-1" aria-label="Confirm or reject">
+    <div className="mt-2 space-y-1" aria-label="Confirm, reject or not pursued">
       {result.decisions.map((d, i) => (
-        <p key={i} className="text-xs">{d.decision === "confirmed" ? "Confirmed" : "Rejected"} by {d.by}: {d.reason}</p>
+        <p key={i} className="text-xs">{DECISION_WORDS[d.decision] ?? d.decision} by {d.by}: {d.reason}</p>
       ))}
       <Textarea aria-label="Reason" value={reason} onChange={(e) => setReason(e.target.value)} className="h-14 text-xs" placeholder="Why" />
       <div className="flex gap-2">
         <Button size="sm" variant="outline" onClick={() => go("confirmed")}>Confirm</Button>
         <Button size="sm" variant="outline" onClick={() => go("rejected")}>Reject</Button>
+        <Button size="sm" variant="outline" onClick={() => go("not_pursued")} title="The lead may be right; it is not being followed, for the reason given">Not pursued</Button>
       </div>
       {err && <p role="alert" className="text-xs text-destructive">{err}</p>}
     </div>
@@ -140,7 +142,7 @@ function ReadingRow({ caseId, r, onChanged }: { caseId: string; r: AnalysisResul
         <button className="font-medium underline-offset-2 hover:underline" onClick={() => setOpen(!open)} aria-expanded={open}>{title}</button>
         {r.kind === "money_reading" && <span className="text-xs text-muted-foreground">{m.source} on {m.phone_label}, {when}. From the phone, not a statement.</span>}
         <span className="text-xs">{STRENGTH_WORDS[r.strength] || r.strength}</span>
-        {r.decision && <span className="text-xs">{r.decision === "confirmed" ? "Confirmed" : "Rejected"}</span>}
+        {r.decision && <span className="text-xs">{DECISION_WORDS[r.decision] ?? r.decision}</span>}
       </div>
       {r.kind === "money_reading" && (
         <p className="text-xs">

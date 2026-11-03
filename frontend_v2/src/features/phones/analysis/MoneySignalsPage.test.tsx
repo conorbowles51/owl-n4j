@@ -82,6 +82,23 @@ describe("Money on the phones (AP-1)", () => {
     await waitFor(() => expect(api.moneyAPI.decide).toHaveBeenCalledWith("c1", "res-1", "rejected", "Not this card"))
   })
 
+  it("records a lead as not pursued with a reason and shows it in the result's decision history (07 section 14)", async () => {
+    page()
+    api.moneyAPI.decide.mockClear()
+    fireEvent.click(await screen.findByRole("button", { name: /USD 12.50 out/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Not pursued" }))
+    expect(await screen.findByRole("alert")).toHaveTextContent("Say why, in your own words.")
+    expect(api.moneyAPI.decide).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "Family transfer, outside this enquiry" } })
+    const decided = { ...READING, decision: "not_pursued", decisions: [
+      { decision: "not_pursued", reason: "Family transfer, outside this enquiry", by: "Synthetic Reviewer", at: "2026-11-03T22:00:00Z" }] }
+    api.moneyAPI.decide.mockResolvedValue(decided)
+    api.moneyAPI.results.mockResolvedValue({ total: 1, offset: 0, limit: 100, items: [decided] })
+    fireEvent.click(screen.getByRole("button", { name: "Not pursued" }))
+    await waitFor(() => expect(api.moneyAPI.decide).toHaveBeenCalledWith("c1", "res-1", "not_pursued", "Family transfer, outside this enquiry"))
+    expect(await screen.findByText("Not pursued by Synthetic Reviewer: Family transfer, outside this enquiry")).toBeInTheDocument()
+  })
+
   it("lists several possible payments without linking any of them", async () => {
     page()
     const several = { ...READING, measures: { ...READING.measures, outcome: "several_candidates", reason: "several_payments_match" } }

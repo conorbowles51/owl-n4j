@@ -17,7 +17,10 @@ export interface AnalysisRun {
 
 export interface Direction { code: string; detail: string; locators: string[] }
 
-export interface AnalysisDecision { decision: "confirmed" | "rejected"; reason: string; by: string; at: string }
+/** A person's decision on a result. "not_pursued" is a decision not to act (07 section 14): the lead may be right and
+ * is not being followed, for the reason given; it says nothing about whether the result is correct. */
+export type AnalysisDecisionKind = "confirmed" | "rejected" | "not_pursued"
+export interface AnalysisDecision { decision: AnalysisDecisionKind; reason: string; by: string; at: string }
 
 /**
  * What a money reading or an account lead measured (the server's `measures`). Every field is optional: the two kinds
@@ -45,7 +48,7 @@ export interface AnalysisResult {
   label: string
   measures: MoneyMeasures
   directions: { supports: Direction[]; undercuts: Direction[] }
-  decision: "confirmed" | "rejected" | null
+  decision: AnalysisDecisionKind | null
   decisions: AnalysisDecision[]
   period_start: string | null
 }
@@ -86,7 +89,7 @@ export const moneyAPI = {
     fetchAPI<ResultPage>(`${BASE}/runs/${runId}/results?${q({ case_id: caseId, kind, strength, offset, limit })}`),
   detail: (caseId: string, resultId: string) =>
     fetchAPI<AnalysisResult & { records: ResultRecord[] }>(`${BASE}/results/${resultId}?${q({ case_id: caseId })}`),
-  decide: (caseId: string, resultId: string, decision: "confirmed" | "rejected", reason: string) =>
+  decide: (caseId: string, resultId: string, decision: AnalysisDecisionKind, reason: string) =>
     fetchAPI<AnalysisResult>(`${BASE}/results/${resultId}/decisions`, { method: "POST", body: { case_id: caseId, decision, reason } }),
   ledgerLinks: (caseId: string, transactionIds: string[]) =>
     fetchAPI<{ links: Record<string, PhoneLink[]> }>(`${BASE}/money/ledger-links`, { method: "POST", body: { case_id: caseId, transaction_ids: transactionIds }, read: true }),

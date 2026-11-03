@@ -335,6 +335,11 @@ const DECISION_COPY: Record<AdjudicationDecision, TermCopy> = {
     description:
       "A person rejected one result of a phone analysis, with a reason. It stays visible as rejected.",
   },
+  not_pursue_phone_result: {
+    label: "Phone analysis lead not pursued",
+    description:
+      "A person decided not to follow one result of a phone analysis, with a reason. This says nothing about whether the result is right; the result and the data it came from are unchanged.",
+  },
   attach_transaction_place: {
     label: "Place attached to a payment",
     description:
@@ -422,6 +427,7 @@ const DECISION_VARIANT: Record<AdjudicationDecision, BadgeVariant> = {
   correct_phone_reading: "info",
   confirm_phone_result: "info",
   reject_phone_result: "slate",
+  not_pursue_phone_result: "slate",
   attach_transaction_place: "info",
   remove_transaction_place: "slate",
   dispute_check_item: "amber",
@@ -483,6 +489,7 @@ const CHANGED_STORED_STATE: Record<AdjudicationDecision, boolean> = {
   correct_phone_reading: true,
   confirm_phone_result: true,
   reject_phone_result: true,
+  not_pursue_phone_result: true,
   attach_transaction_place: true,
   remove_transaction_place: true,
   dispute_check_item: false,

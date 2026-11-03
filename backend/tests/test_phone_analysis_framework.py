@@ -186,6 +186,48 @@ def test_decisions_carry_over_by_result_key_and_never_change_a_computed_field():
                 F.decide(db, case, first["id"], "rejected", "changed my mind", actor)
 
 
+def test_a_lead_can_be_marked_not_pursued_with_a_reason_and_it_stays_in_its_decision_history():
+    """07 section 14: a decision not to act is logged ("Not pursued: reason") in the case decision ledger under the
+    person's name, kept in the result's history with the confirm and reject decisions, and changes no computed
+    field."""
+    with fresh_engine() as engine:
+        case, actor = _case(engine)
+        with engine.begin() as c:
+            run, _ = F.request_run(c, case, "common_contacts", None, actor.email)
+        F.execute(engine, run["id"])
+        with engine.connect() as c:
+            first = F.results(c, case, run["id"])["items"][0]
+        with Session(engine) as db:
+            with pytest.raises(F.AnalysisError):
+                F.decide(db, case, first["id"], "not_pursued", " ", actor)  # no reason, no decision
+            with pytest.raises(F.AnalysisError):
+                F.decide(db, case, first["id"], "ignored", "a reason", actor)
+            out = F.decide(db, case, first["id"], "not_pursued", "Both numbers belong to the same family", actor)
+            db.commit()
+        assert out["decision"] == "not_pursued"
+        assert out["strength"] == first["strength"] and out["measures"] == first["measures"]
+        assert [(d["decision"], d["reason"], d["by"]) for d in out["decisions"]] == [
+            ("not_pursued", "Both numbers belong to the same family", actor.name)]
+        with Session(engine) as db:
+            later = F.decide(db, case, first["id"], "confirmed", "Followed up after the interview", actor)
+            db.commit()
+        assert [d["decision"] for d in later["decisions"]] == ["not_pursued", "confirmed"]
+        assert later["decision"] == "confirmed"
+        with engine.connect() as c:
+            rows = c.execute(text("SELECT decision, reason, actor_name FROM adjudications WHERE case_id = :c AND "
+                                  "subject_type = 'phone_analysis_result' ORDER BY subject_sequence"),
+                             {"c": case}).all()
+        assert [r.decision for r in rows] == ["not_pursue_phone_result", "confirm_phone_result"]
+        assert rows[0].reason == "Both numbers belong to the same family" and rows[0].actor_name == actor.name
+
+
+def test_the_decision_body_accepts_not_pursued():
+    from routers.phone_analysis import DecisionBody
+    body = DecisionBody(case_id=uuid.uuid4(), decision="not_pursued", reason="Out of scope for this enquiry")
+    assert body.decision == "not_pursued"
+    assert set(F.DECISIONS) == {"confirmed", "rejected", "not_pursued"}
+
+
 def test_the_coverage_sentence_names_the_phones_that_carry_the_signal():
     cov = {"phones": {"a": {"label": "B-C1", "signals": {"n": {"carries_signal": True}}},
                       "b": {"label": "B-C2", "signals": {"n": {"carries_signal": True}}},

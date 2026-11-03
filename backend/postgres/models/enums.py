@@ -273,6 +273,10 @@ class AdjudicationDecision(str, Enum):
     # 05 section 3.7, on the subject 05's results table adds.
     confirm_phone_result = "confirm_phone_result"
     reject_phone_result = "reject_phone_result"
+    # 07 section 14, decision log including decisions not to act: the lead may be right, and a person records with a
+    # typed reason that it is not being followed. It says nothing about whether the result is correct and changes no
+    # computed field; a later confirm or reject on the same result is the next entry in its history.
+    not_pursue_phone_result = "not_pursue_phone_result"
     # 04 section 8.5: a person attaches a place (point and radius) to a transaction; the ledger has no place column.
     # Reversed by ``remove_transaction_place``; attaching again over a place replaces it (before holds the old one).
     attach_transaction_place = "attach_transaction_place"

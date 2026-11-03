@@ -1,6 +1,6 @@
 import { fetchAPI } from "@/lib/api-client"
 import type { Snapshot } from "@/features/pattern/api"
-import type { AnalysisDecision, AnalysisRun, Direction, ResultRecord } from "./money-api"
+import type { AnalysisDecision, AnalysisDecisionKind, AnalysisRun, Direction, ResultRecord } from "./money-api"
 
 /** The phone analysis API (05 section 3.4) for any approach. Approach 1 keeps its own wrapper in money-api. */
 
@@ -11,7 +11,7 @@ export interface ApproachResult {
   label: string
   measures: Record<string, unknown>
   directions: { supports: Direction[]; undercuts: Direction[] }
-  decision: "confirmed" | "rejected" | null
+  decision: AnalysisDecisionKind | null
   decisions: AnalysisDecision[]
   period_start: string | null
   period_end: string | null
@@ -41,7 +41,7 @@ export function analysisAPI(approach: string) {
       fetchAPI<ApproachResult & { records: ResultRecord[] }>(`${BASE}/results/${resultId}?${q({ case_id: caseId })}`),
     keep: (caseId: string, resultId: string) =>
       fetchAPI<KeptResult>(`${BASE}/results/${resultId}/keep`, { method: "POST", body: { case_id: caseId } }),
-    decide: (caseId: string, resultId: string, decision: "confirmed" | "rejected", reason: string) =>
+    decide: (caseId: string, resultId: string, decision: AnalysisDecisionKind, reason: string) =>
       fetchAPI<ApproachResult>(`${BASE}/results/${resultId}/decisions`, { method: "POST", body: { case_id: caseId, decision, reason } }),
   }
 }

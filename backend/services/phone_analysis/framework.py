@@ -519,21 +519,29 @@ def _decisions_for(conn, case_id, keyed) -> dict:
             "ORDER BY subject_id, subject_sequence"), {"c": str(case_id), "ids": list(ids)}):
         key = ids[str(d.subject_id)]
         out.setdefault(key, []).append({
-            "decision": "confirmed" if d.decision == "confirm_phone_result" else "rejected", "reason": d.reason,
+            "decision": _DECISION_OUT[d.decision], "reason": d.reason,
             "by": d.actor_name, "at": d.created_at.isoformat(),
             "reading": (d.after or {}).get("reading")})
     return out
 
 
+# The ledger decision behind each word the API and the screen use. "not_pursued" is a decision not to act (07 section
+# 14): the lead may be right and is not being followed, for the reason given; it says nothing about correctness.
+_DECISION_LEDGER = {"confirmed": "confirm_phone_result", "rejected": "reject_phone_result",
+                    "not_pursued": "not_pursue_phone_result"}
+_DECISION_OUT = {v: k for k, v in _DECISION_LEDGER.items()}
+DECISIONS = tuple(_DECISION_LEDGER)
+
+
 def decide(db, case_id, result_id, decision, reason, actor) -> dict:
-    """3.7: confirm or reject with a typed reason, through the case decision ledger. Never changes a computed field.
-    A decision on a result of a superseded run is refused (409); the current run's result with the same key carries
-    the earlier decisions."""
+    """3.7: confirm, reject or mark not pursued, with a typed reason, through the case decision ledger. Never changes
+    a computed field. A decision on a result of a superseded run is refused (409); the current run's result with the
+    same key carries the earlier decisions."""
     from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
     from postgres.models.phone_analysis import PhoneAnalysisResultSubject
     from services.financial import decisions as D
-    if decision not in ("confirmed", "rejected"):
-        raise AnalysisError("A decision is confirmed or rejected.")
+    if decision not in _DECISION_LEDGER:
+        raise AnalysisError("A decision is confirmed, rejected or not pursued.")
     if not reason or not reason.strip():
         raise AnalysisError("Say why, in your own words.")
     conn = db.connection()
@@ -553,8 +561,7 @@ def decide(db, case_id, result_id, decision, reason, actor) -> dict:
     subject = db.get(PhoneAnalysisResultSubject, sid)
     D.record(db, case_id=uuid.UUID(str(case_id)), subject=subject,
              subject_type=AdjudicationSubject.phone_analysis_result,
-             decision=(AdjudicationDecision.confirm_phone_result if decision == "confirmed"
-                       else AdjudicationDecision.reject_phone_result),
+             decision=AdjudicationDecision(_DECISION_LEDGER[decision]),
              reason=reason.strip(), actor=actor, before=None,
              after={"decision": decision, "result_id": str(r.id),
                     "reading": {"kind": r.kind, "strength": r.strength, "measures": r.measures}})

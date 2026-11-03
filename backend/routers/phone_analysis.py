@@ -52,7 +52,7 @@ class KeepBody(BaseModel):
 class DecisionBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID
-    decision: Literal["confirmed", "rejected"]
+    decision: Literal["confirmed", "rejected", "not_pursued"]
     reason: str = Field(min_length=1, max_length=4000)
 
 
