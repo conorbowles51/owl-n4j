@@ -9,8 +9,9 @@ ledger and are never its source.
 
 Suggestions (8.7) never rest on names alone: R5 ``name_support`` only adds to another reason. Weights: R1
 ``same_card`` 0.6 on one phone, 0.8 on two or more; R2 ``owner_accounts`` 0.7; R3 ``dossier_contact`` 0.9; R5 adds
-0.1. Score = 1 - product(1 - w); listed at 0.5 or more, highest first, ties by identity key. R4
-``financial_identifier`` lands with the financial identifier kinds (02-U11). A pair with a recorded rejection is not
+0.1; R4 ``financial_identifier`` 0.8 (a reviewed account identifier of kind ``phone_number`` or ``email``, 02-U11,
+whose account's holder is linked to a dossier). Score = 1 - product(1 - w); listed at 0.5 or more, highest first,
+ties by identity key. A pair with a recorded rejection is not
 suggested again; a WhatsApp group is never a person.
 """
 from __future__ import annotations
@@ -26,7 +27,8 @@ from services.phone import fold as F
 from services.phone import identifiers
 
 SUGGESTION_NS = uuid.UUID("2f7a9c41-0d6b-4e3a-9a52-8c1e7b3d5f60")
-WEIGHTS = {"same_card": (0.6, 0.8), "owner_accounts": 0.7, "dossier_contact": 0.9, "name_support": 0.1}
+WEIGHTS = {"same_card": (0.6, 0.8), "owner_accounts": 0.7, "dossier_contact": 0.9, "financial_identifier": 0.8,
+           "name_support": 0.1}
 THRESHOLD = 0.5
 CHANGED = ("Someone else changed this person while you were reviewing. Their change is shown below. Your choice was "
            "not saved. Choose again.")
@@ -96,6 +98,36 @@ def _score(reasons):
         w = r["weight"]
         p *= (1 - w)
     return round(1 - p, 2)
+
+
+def financial_identifier_dossiers(session, case_id) -> list:
+    """``[(identity_key, dossier_id, account_id)]`` for every reviewed account identifier of kind ``phone_number`` or
+    ``email`` whose account has a holder party with a reviewed entity link to a dossier's canonical entity (8.9)."""
+    from services.financial.account_identity import CONTACT_KINDS, identity_state, normalised_contact
+    state = identity_state(session, case_id)
+    dossiers = defaultdict(set)
+    from sqlalchemy import select
+    from postgres.models.case_profile import CaseProfile
+    for d, key in session.execute(select(CaseProfile.id, CaseProfile.canonical_entity_key).where(
+            CaseProfile.case_id == case_id, CaseProfile.canonical_entity_key.is_not(None))):
+        dossiers[key].add(str(d))
+    out = set()
+    for account in state["accounts"]:
+        review = account.get("identity_review") or {}
+        holders = {r["party"]["id"] for r in account.get("relationships") or [] if r.get("role") == "holder"}
+        targets = {d for link in review.get("entity_links") or [] if link.get("party_id") in holders
+                   for d in dossiers.get(link.get("entity_key"), ())}
+        if not targets:
+            continue
+        for ident in review.get("identifiers") or []:
+            if ident.get("kind") not in CONTACT_KINDS:
+                continue
+            v = normalised_contact(ident["kind"], ident.get("value"))
+            if v is None:
+                continue
+            key = ("phone:" if ident["kind"] == "phone_number" else "email:") + v
+            out.update((key, d, account["id"]) for d in targets)
+    return sorted(out)
 
 
 def compute_suggestions(conn, case_id) -> dict:
@@ -184,6 +216,19 @@ def compute_suggestions(conn, case_id) -> dict:
         if i and linked.get(i) != d and (i, d) not in rejected:
             found[((i,), d)].append({"reason": "dossier_contact", "weight": WEIGHTS["dossier_contact"], "records": [],
                                      "record_count": 1, "phones": []})
+
+    # R4: a reviewed financial identifier of kind phone_number or email (02-U11), on an account whose holder party
+    # is linked to a dossier (8.9: the account's reviewed entity link names the dossier's canonical entity)
+    session = Session(bind=conn)
+    try:
+        held = financial_identifier_dossiers(session, case_id)
+    finally:
+        session.close()
+    for key, d, account_id in held:
+        i = by_value.get(key)
+        if i and linked.get(i) != d and (i, d) not in rejected:
+            found[((i,), d)].append({"reason": "financial_identifier", "weight": WEIGHTS["financial_identifier"],
+                                     "records": [], "record_count": 1, "phones": [], "account_id": account_id})
     if found:
         for d, name in conn.execute(text("SELECT id::text, display_name FROM case_profiles WHERE case_id = :c"),
                                     {"c": case_id}):

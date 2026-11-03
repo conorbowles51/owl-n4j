@@ -21,7 +21,8 @@ from services.financial.money import get_currency, MoneyError
 
 class Identifier(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    kind: Literal['account_number', 'clabe', 'iban', 'customer_number', 'contract_number', 'holder_tax_id']
+    kind: Literal['account_number', 'clabe', 'iban', 'customer_number', 'contract_number', 'holder_tax_id',
+                  'phone_number', 'email']
     value: str = Field(min_length=1, max_length=128)
 
     @model_validator(mode='after')
@@ -29,6 +30,10 @@ class Identifier(BaseModel):
         token = compact(self.value)
         if not token or '*' in token or '•' in token:
             raise ValueError('Use a complete identifier; masked references remain investigation leads.')
+        if self.kind == 'phone_number' and normalised_contact('phone_number', self.value) is None:
+            raise ValueError('Enter a complete phone number. A number outside the US starts with + and its country code.')
+        if self.kind == 'email' and normalised_contact('email', self.value) is None:
+            raise ValueError('Enter a complete email address.')
         if self.kind == 'clabe' and not re.fullmatch(r'\d{18}', token):
             raise ValueError('A CLABE must contain 18 digits. Preserve leading zeros.')
         if self.kind == 'iban' and not re.fullmatch(r'[A-Z]{2}\d{2}[A-Z0-9]{11,30}', token):
@@ -63,7 +68,7 @@ class IdentityRequest(BaseModel):
     def coherent(self):
         if not self.reason.strip() or self.basis.id or self.basis.effective_from or self.basis.effective_to:
             raise ValueError('Explain the account identity decision. Ownership and effective dates are reviewed separately.')
-        if len({(p.kind, compact(p.value)) for p in self.identifiers}) != len(self.identifiers):
+        if len({(p.kind, identifier_token(p.kind, p.value)) for p in self.identifiers}) != len(self.identifiers):
             raise ValueError('Enter each identifier once.')
         if len({p.party_id for p in self.entity_links}) != len(self.entity_links):
             raise ValueError('Connect each reviewed person or business to one case entity.')
@@ -74,6 +79,24 @@ class IdentityRequest(BaseModel):
 
 def compact(value):
     return re.sub(r'[\s.\-]', '', value or '').upper()
+
+
+CONTACT_KINDS = ('phone_number', 'email')
+
+
+def normalised_contact(kind, value):
+    """A payment service's phone or email account reference (Zelle and the like), normalised as phone identities
+    are (docs/cellebrite/02 sections 8.2 and 8.9): a number must be valid, read under US unless written with +; an
+    email must pass rule E1. ``compact`` is wrong for both (it uppercases and keeps parentheses). None if invalid."""
+    from services.phone.identifiers import classify
+    found = classify(value, region='US')
+    wanted = {'phone_number': 'phone', 'email': 'email'}.get(kind)
+    return found.value_normalised if found is not None and found.kind == wanted else None
+
+
+def identifier_token(kind, value):
+    """The comparison key of one identifier: the normalised value for phone and email kinds, ``compact`` otherwise."""
+    return normalised_contact(kind, value) if kind in CONTACT_KINDS else compact(value)
 
 
 def identity_state(session, case_id):
@@ -97,6 +120,10 @@ def reviewed_identifiers(account):
 
 
 def matches_identifier(account, kind, value):
+    if kind in CONTACT_KINDS:
+        token = normalised_contact(kind, value)
+        return token is not None and any(p['kind'] == kind and normalised_contact(kind, p['value']) == token
+                                         for p in reviewed_identifiers(account))
     token = compact(value)
     allowed = {'iban': {'iban'}, 'clabe': {'clabe'}, 'account': {'account_number', 'clabe'}, 'account_number': {'account_number'}}.get(kind, set())
     # A printed statement's main account reference is not automatically a CLABE.

@@ -24,6 +24,8 @@ const kinds = {
   customer_number: "Customer number",
   contract_number: "Contract number",
   holder_tax_id: "Holder tax ID",
+  phone_number: "Phone number (payment service)",
+  email: "Email (payment service)",
 }
 type Identifier = { kind: keyof typeof kinds; value: string }
 type EntityLink = { party_id: string; entity_key: string }
