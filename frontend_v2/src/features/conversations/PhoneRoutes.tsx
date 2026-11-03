@@ -20,6 +20,9 @@ export function PhonesIndexPage() {
   const [comparing, setComparing] = useState(false)
   if (target) return <Navigate to={target} replace />
   const q = new URLSearchParams(location.search)
+  // a report retired by Replace stays readable but is listed apart, so two reports of one phone never share a name
+  const active = (phones.data?.phones ?? []).filter((p) => p.standing !== "superseded")
+  const replaced = (phones.data?.phones ?? []).filter((p) => p.standing === "superseded")
   const unsupported = ["file", "selection", "view"].find((k) => q.get(k))
   return (
     <div className="flex flex-col gap-3 p-6">
@@ -32,16 +35,16 @@ export function PhonesIndexPage() {
       {phones.isLoading && <p className="text-sm">Loading the phones</p>}
       {phones.isError && <p role="alert">{failureText(phones.error, "The phones could not be loaded.")}</p>}
       {phones.data && phones.data.phones.length === 0 && <p className="text-sm">This case has no phone yet.</p>}
-      {(phones.data?.phones.length ?? 0) >= 2 && (
+      {active.length >= 2 && (
         <div>
           <Button size="sm" variant="outline" aria-expanded={comparing} onClick={() => setComparing((v) => !v)}>
             Compare phones
           </Button>
         </div>
       )}
-      {comparing && phones.data && <ComparePhones caseId={caseId} phones={phones.data.phones} />}
+      {comparing && phones.data && <ComparePhones caseId={caseId} phones={active} />}
       <ul className="flex flex-col gap-1">
-        {(phones.data?.phones ?? []).map((p) => (
+        {active.map((p) => (
           <li key={p.extraction_id}>
             <Link className="underline underline-offset-2" to={`/cases/${caseId}/phones/${p.extraction_id}`}>
               {p.label}
@@ -54,6 +57,21 @@ export function PhonesIndexPage() {
           </li>
         ))}
       </ul>
+      {replaced.length > 0 && (
+        <section aria-label="Replaced reports" className="flex flex-col gap-1 text-sm">
+          <h2 className="font-medium">Replaced reports</h2>
+          <p className="text-muted-foreground">Retired by a newer report of the same phone. Their records stay readable and are not counted.</p>
+          <ul className="flex flex-col gap-1">
+            {replaced.map((p) => (
+              <li key={p.extraction_id}>
+                <Link className="underline underline-offset-2" to={`/cases/${caseId}/phones/${p.extraction_id}`}>
+                  Replaced report: {p.label}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   )
 }

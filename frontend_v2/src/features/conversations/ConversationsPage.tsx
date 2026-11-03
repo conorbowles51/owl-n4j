@@ -470,7 +470,7 @@ export function ConversationsPage() {
                 view={view}
                 filter={streamFilter}
                 names={scope.people.map((p) => p.label)}
-                phonesTotal={phones.length}
+                phonesTotal={phones.filter((p) => p.standing !== "superseded").length}
                 counts={stream.index?.counts}
                 setView={setView}
               />
