@@ -68,6 +68,11 @@ class ChatSource(BaseModel):
     filename: str
     excerpt: Optional[str] = None
     page: Optional[int] = None
+    # a phone message source (02 section 9.9): the record it cites and the link that opens it
+    evidence_file_id: Optional[str] = None
+    record_uid: Optional[str] = None
+    source_anchor: Optional[Dict[str, Any]] = None
+    url: Optional[str] = None
 
 
 class ChatCost(BaseModel):

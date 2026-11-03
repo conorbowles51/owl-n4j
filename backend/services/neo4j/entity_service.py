@@ -262,6 +262,10 @@ class EntityService:
             if not vector_db:
                 return
 
+            if str(entity.get("type") or "").startswith("Phone"):
+                # Phone graph nodes carry phone names and numbers: not embedded by a third-party service without the
+                # case's decision (docs/cellebrite/02 section 9.8). They are found by name and number search instead.
+                return
             props = entity.get("properties") or {}
             text_parts = [
                 str(props.get("name") or entity.get("name") or entity.get("key") or ""),

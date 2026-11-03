@@ -1899,6 +1899,10 @@ Only include candidates with score >= 5."""
                 debug_log=debug_log,
                 strict_doc_scope=strict_entity_scope,
             )
+        if case_id and not strict_entity_scope and (question_type != "structural" or not cypher_context):
+            # Phone text is not embedded (02 section 9.8): it is found by the folded search, read in full.
+            phone_windows = self._phone_windows(question, case_id, debug_log)
+            chunk_results = list(chunk_results) + phone_windows
         chunk_search_info = debug_log.get("chunk_search") or {}
         doc_scoped_count = sum(1 for c in chunk_results if c.get("_doc_scoped"))
         _add_stage(
@@ -2345,15 +2349,33 @@ Only include candidates with score >= 5."""
     # Source helpers
     # =====================
 
+    def _phone_windows(self, question: str, case_id: str, debug_log: Optional[Dict] = None) -> List[Dict[str, Any]]:
+        """Up to 8 phone message windows found lexically for the question's terms (02 section 9.8)."""
+        try:
+            from postgres.session import _get_engine
+            from services.phone import chat_retrieval
+            with _get_engine().connect() as conn:
+                found = chat_retrieval.windows(conn, case_id, question)
+        except Exception as exc:  # the answer goes on without phone text, and the debug log says why
+            if debug_log is not None:
+                debug_log["phone_text_search"] = {"enabled": True, "error": str(exc)[:300]}
+            return []
+        if debug_log is not None:
+            debug_log["phone_text_search"] = {"enabled": True, "windows": len(found),
+                                              "terms": chat_retrieval.terms(question)}
+        return found
+
     def _build_sources(self, chunk_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """At most 5 sources, one per (file, record): two messages from one thread are two sources (02 9.9)."""
         sources: List[Dict[str, Any]] = []
-        seen: set[str] = set()
+        seen: set = set()
         for chunk in chunk_results:
             metadata = chunk.get("metadata", {}) or {}
             filename = metadata.get("filename") or metadata.get("doc_name") or chunk.get("id")
-            if not filename or filename in seen:
+            record_uid = metadata.get("record_uid")
+            if not filename or (str(filename), record_uid) in seen:
                 continue
-            seen.add(str(filename))
+            seen.add((str(filename), record_uid))
             excerpt = (chunk.get("text") or "").strip()
             if len(excerpt) > 240:
                 excerpt = excerpt[:237] + "..."
@@ -2362,6 +2384,13 @@ Only include candidates with score >= 5."""
                 source_payload["excerpt"] = excerpt
             if metadata.get("page_start") not in (None, "", -1, "-1"):
                 source_payload["page"] = metadata.get("page_start")
+            if record_uid:
+                source_payload.update({
+                    "evidence_file_id": metadata.get("evidence_file_id"), "record_uid": record_uid,
+                    "url": metadata.get("url") or "rec://%s" % record_uid,
+                    "source_anchor": {"kind": "phone_record", "record_uid": record_uid,
+                                      "extraction_id": metadata.get("extraction_id"), "field_path": "Body",
+                                      "start_char": metadata.get("start_char"), "end_char": metadata.get("end_char")}})
             sources.append(source_payload)
             if len(sources) >= 5:
                 break

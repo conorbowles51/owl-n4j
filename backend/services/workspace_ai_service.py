@@ -114,6 +114,9 @@ def _load_target(
 
 
 def _source_url(case_id: uuid.UUID, evidence_id: uuid.UUID, anchor: dict[str, Any]) -> str:
+    if anchor.get("kind") == "phone_record" and anchor.get("record_uid"):
+        # a phone message cites its record: the record page of spec 03 (rec:// in chat), not a place in a file
+        return f"/cases/{case_id}/records/{anchor['record_uid']}"
     params: dict[str, str] = {"file": str(evidence_id)}
     if anchor.get("page"):
         params["page"] = str(anchor["page"])
@@ -130,15 +133,70 @@ def _clean_excerpt(text: str, limit: int = 420) -> str:
     return " ".join(text.split())[:limit]
 
 
+PHONE_WINDOW_CHARACTERS = 3500
+
+
+def _phone_thread_chunks(file: EvidenceFile, document, *, interview_id, preferred_anchor, terms) -> list[dict[str, Any]]:
+    """A phone thread document (02 section 9.9): the lines naming the preferred record, else the lines holding the
+    theory terms, each grouped with its neighbours up to 3,500 characters; at most 6. Each cites its record."""
+    from services.phone import chat_retrieval
+    content = document.content
+    bounds = chat_retrieval._line_bounds(content)
+    locs = sorted((l for l in (document.source_locations or []) if isinstance(l, dict) and l.get("kind") == "phone_record"
+                   and l.get("field_path") == "Body" and l.get("record_uid")), key=lambda l: int(l.get("start_char") or 0))
+    import bisect
+    starts = [b[0] for b in bounds]
+
+    def line_of(pos):
+        return max(0, bisect.bisect_right(starts, pos) - 1)
+
+    wanted = (preferred_anchor or {}).get("record_uid")
+    centres: list[int] = []
+    if wanted:
+        centres = [line_of(int(l["start_char"])) for l in locs if str(l["record_uid"]) == str(wanted)]
+    if not centres and terms:
+        lowered = content.casefold()
+        for term in terms:
+            at = lowered.find(term.casefold())
+            while at >= 0 and len(centres) < 60:
+                centres.append(line_of(at))
+                at = lowered.find(term.casefold(), at + len(term))
+        centres = sorted(set(centres))
+    if not centres:
+        centres = [0]
+    chunks, taken = [], []
+    by_line = {line_of(int(l["start_char"])): l for l in locs}
+    for centre in centres:
+        if any(lo <= centre <= hi for lo, hi in taken):
+            continue
+        lo, hi = chat_retrieval._window(bounds, centre, PHONE_WINDOW_CHARACTERS)
+        taken.append((lo, hi))
+        start, end = bounds[lo][0], bounds[hi][1]
+        hit = by_line.get(centre) or next((by_line[i] for i in range(lo, hi + 1) if i in by_line), {})
+        anchor = {"kind": "phone_record", "record_uid": str(hit.get("record_uid")) if hit.get("record_uid") else None,
+                  "extraction_id": hit.get("extraction_id"), "field_path": "Body", "start_char": start, "end_char": end}
+        text = content[start:end].strip()
+        if text:
+            chunks.append(_source_record(file, text=text, anchor=anchor, interview_id=interview_id,
+                                         content_hash=document.content_sha256))
+        if len(chunks) == 6:
+            break
+    return chunks
+
+
 def _document_chunks(
     file: EvidenceFile,
     *,
     interview_id: uuid.UUID | None,
     preferred_anchor: dict[str, Any] | None,
+    terms: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     document = file.document_text
     if document is None or not document.content.strip():
         return []
+    if getattr(file, "source_type", None) == "phone_text":
+        return _phone_thread_chunks(file, document, interview_id=interview_id, preferred_anchor=preferred_anchor,
+                                    terms=terms)
     content = document.content
     locations = [item for item in (document.source_locations or []) if isinstance(item, dict)]
     preferred_page = (preferred_anchor or {}).get("page")
@@ -373,6 +431,18 @@ def _interview_sources(
     return sources
 
 
+def _thread_documents_for_record(db: Session, case_id: uuid.UUID, record_uid: str) -> list[uuid.UUID]:
+    """The case's thread documents holding a line that cites ``record_uid`` (no other case is read)."""
+    if db.get_bind().dialect.name != "postgresql":
+        return []
+    from sqlalchemy import text as sql
+    rows = db.execute(sql(
+        "SELECT f.id FROM evidence_files f JOIN evidence_document_texts t ON t.evidence_file_id = f.id WHERE "
+        "f.case_id = :c AND f.source_type = 'phone_text' AND t.source_locations @> CAST(:loc AS jsonb) ORDER BY f.id"),
+        {"c": str(case_id), "loc": json.dumps([{"record_uid": str(record_uid)}])}).scalars().all()
+    return [uuid.UUID(str(r)) for r in rows]
+
+
 def _theory_terms(theory: WorkspaceEntry) -> list[str]:
     words = re.findall(r"[A-Za-z0-9][A-Za-z0-9_-]{3,}", f"{theory.title or ''} {theory.body}")
     ignored = {"that", "this", "with", "from", "have", "were", "their", "about", "would", "could", "there"}
@@ -442,6 +512,16 @@ def _theory_sources(
             continue
         linked_ids.append(evidence_id)
         link_roles[evidence_id].add(f"existing_{link.relationship_type}")
+    # Phone records linked to the theory are read in full through their thread documents (02 9.8, 9.9; 07 7.1).
+    phone_anchors: dict[uuid.UUID, list[dict[str, Any]]] = defaultdict(list)
+    for link in db.scalars(select(WorkspaceEntryLink).where(
+            WorkspaceEntryLink.entry_id == theory.id, WorkspaceEntryLink.case_id == case_id,
+            WorkspaceEntryLink.target_type == "phone_record")).all():
+        for evidence_id in _thread_documents_for_record(db, case_id, link.target_id):
+            if evidence_id not in linked_ids:
+                linked_ids.append(evidence_id)
+            link_roles[evidence_id].add(f"existing_{link.relationship_type}")
+            phone_anchors[evidence_id].append({"kind": "phone_record", "record_uid": str(link.target_id)})
     terms = _theory_terms(theory)
     support_ids = _candidate_document_ids(db, case_id=case_id, terms=terms, mode="supporting")
     contradict_ids = _candidate_document_ids(db, case_id=case_id, terms=terms, mode="contradicting")
@@ -458,7 +538,8 @@ def _theory_sources(
         if file.id in contradict_ids:
             roles.add("contradicting_candidate")
         chunks = _transcript_chunks(file, interview_id=None, preferred_anchor=None)
-        chunks.extend(_document_chunks(file, interview_id=None, preferred_anchor=None))
+        for anchor in phone_anchors.get(file.id) or [None]:
+            chunks.extend(_document_chunks(file, interview_id=None, preferred_anchor=anchor, terms=terms))
         for chunk in chunks:
             chunk["retrieval_roles"] = sorted(roles)
         raw.extend(chunks)
