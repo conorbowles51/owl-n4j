@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { phoneLinkHref } from "@/features/phones/phone-links"
 import { patternAPI, type Claim, type ClaimKind, type Evaluation, type EvaluationItem, type GroupEvents, type SavedCheck, type Subject } from "../api"
@@ -132,6 +133,7 @@ function EvaluationView({ caseId, claim, ev, onAgain, onDispute }: {
       <h4 className="font-medium">What would contradict this?</h4>
       <ul>{(ev.summary.not_yet_checked || []).map((n) => <li key={n.code}>{n.words}</li>)}</ul>
       <p className="text-xs text-muted-foreground">Statement {claim.window_text ? `"${claim.window_text}" ` : ""}checked from {utc(ev.window.start)} to {utc(ev.window.end)}{ev.window.zone !== "UTC" ? ` (the statement's zone: ${ev.window.zone})` : ""}.</p>
+      <p className="text-xs"><Link className="underline" to={`/cases/${encodeURIComponent(caseId)}/phone-analyses/incident-window?${new URLSearchParams({ start: ev.window.start, end: ev.window.end, zone: ev.window.zone, label: `the statement ${claim.window_text ? `"${claim.window_text}"` : "window"}` }).toString()}`}>Open the incident window for this statement</Link></p>
       <CollectBar caseId={caseId} noun="statement check" origin="Added from the statement check"
         links={[{ target_type: "statement_check", target_id: ev.evaluation_id, label: `Statement check: ${claim.window_text || claim.kind}`, source_anchor: {} }]} />
     </div>

@@ -284,6 +284,9 @@ export const patternAPI = {
     fetchAPI<DayResponse>(`${base(caseId)}/day?subject=${subj(s)}&date=${date}&zone=${encodeURIComponent(zone)}`),
   window: (caseId: string, at: string, span: string, zone = "device") =>
     fetchAPI<WindowResponse>(`${base(caseId)}/window?at=${encodeURIComponent(at)}&span=${span}&zone=${encodeURIComponent(zone)}`),
+  /** A window with its own start and end (a statement's window, 05 16.3). */
+  windowCustom: (caseId: string, start: string, end: string, zone = "case") =>
+    fetchAPI<WindowResponse>(`${base(caseId)}/window?span=custom&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&zone=${encodeURIComponent(zone)}`),
   /** The whole calendar day, in the zone, around an anchor with a date and no time (07 J-5). */
   windowDay: (caseId: string, day: string, zone = "case") =>
     fetchAPI<WindowResponse>(`${base(caseId)}/window?span=day&day=${encodeURIComponent(day)}&zone=${encodeURIComponent(zone)}`),

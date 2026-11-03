@@ -37,20 +37,23 @@ export interface CaseEventLike {
 
 export const DATE_ONLY_WORDS = "This payment has a date but no time. Showing the whole day."
 
-export function WindowPanel({ caseId, at, day, caseEvents, zone = "case", onClose }: {
+export function WindowPanel({ caseId, at, day, range, caseEvents, zone = "case", onClose }: {
   caseId: string
   /** The moment the window is around; for a date-only anchor, the start of its day. */
   at: string
   /** A date-only anchor (YYYY-MM-DD): the window is that whole day in the zone, never a time of day. */
   day?: string | null
+  /** A window with its own start and end (a statement's window); the span choices then do not apply. */
+  range?: { start: string; end: string } | null
   caseEvents: CaseEventLike[]
   zone?: string
   onClose?: () => void
 }) {
   const [span, setSpan] = useState("1h")
   const presence = useFinancialPresence(caseId)
-  const q = useQuery({ queryKey: ["pattern-window", caseId, day ? `day:${day}` : at, day ? "day" : span, zone],
-    queryFn: () => day ? patternAPI.windowDay(caseId, day, zone) : patternAPI.window(caseId, at, span, zone) })
+  const q = useQuery({ queryKey: ["pattern-window", caseId, range ? `range:${range.start}:${range.end}` : day ? `day:${day}` : at, range ? "custom" : day ? "day" : span, zone],
+    queryFn: () => range ? patternAPI.windowCustom(caseId, range.start, range.end, zone)
+      : day ? patternAPI.windowDay(caseId, day, zone) : patternAPI.window(caseId, at, span, zone) })
   let rows: LaneRow[] = []
   if (q.data) {
     const a = new Date(q.data.start).getTime()
@@ -94,7 +97,7 @@ export function WindowPanel({ caseId, at, day, caseEvents, zone = "case", onClos
   return (
     <section aria-label="Window around this moment" className="rounded border bg-card p-3">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-medium">{day ? `The whole of ${day}` : Number.isFinite(Date.parse(at)) ? `Around ${new Date(at).toISOString().replace("T", " ").slice(0, 16)} UTC` : `Around ${at}`}</h3>
+        <h3 className="text-sm font-medium">{range ? `From ${range.start.replace("T", " ").slice(0, 16)} to ${range.end.replace("T", " ").slice(0, 16)} UTC` : day ? `The whole of ${day}` : Number.isFinite(Date.parse(at)) ? `Around ${new Date(at).toISOString().replace("T", " ").slice(0, 16)} UTC` : `Around ${at}`}</h3>
         <span className="flex items-center gap-1">
           {/* a whole day's moment is its start in the window's zone (the server's midnight), never midnight UTC */}
           {(!day || q.data) && <SaveMoment caseId={caseId} at={day ? (q.data as { start: string }).start : at} zone={q.data?.zone || "UTC"} />}
@@ -106,7 +109,7 @@ export function WindowPanel({ caseId, at, day, caseEvents, zone = "case", onClos
       {day && <p className="text-sm" data-testid="date-only-anchor">{DATE_ONLY_WORDS}</p>}
       {q.data?.zone_note && <p className="text-xs text-muted-foreground">{q.data.zone_note}</p>}
       {q.data && <Lanes start={q.data.start} end={q.data.end} zone={q.data.zone} zoneBasis={q.data.zone_basis} rows={rows}
-        span={day ? undefined : span} onSpan={day ? undefined : setSpan}
+        span={day || range ? undefined : span} onSpan={day || range ? undefined : setSpan}
         header={<KeepResult caseId={caseId} origin="Added from the window around a moment"
           request={{ kind: "window", start: q.data.start, end: q.data.end, zone: q.data.zone }} />} />}
     </section>

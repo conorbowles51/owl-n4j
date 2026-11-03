@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { useLocation, useNavigate, useParams } from "react-router-dom"
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useCase } from "@/features/cases/hooks/use-cases"
@@ -576,6 +576,13 @@ export function ConversationsPage() {
               <Button size="sm" variant="outline" disabled={!focused?.time.instant} onClick={() => focused && setAround(focused)}>
                 Around this time <kbd className="ml-1 text-xs text-muted-foreground">a</kbd>
               </Button>
+              {focused?.time.instant && (
+                <Button size="sm" variant="outline" asChild>
+                  <Link to={`/cases/${encodeURIComponent(caseId)}/phone-analyses/incident-window?${new URLSearchParams({ at: focused.time.instant, label: "the selected message or call" }).toString()}`}>
+                    Open the window around this
+                  </Link>
+                </Button>
+              )}
               <Button size="sm" variant="outline" disabled={!streamFilter || selection.rows.length === 0} onClick={askAboutThese}
                 title={selection.rows.length === 0 ? "Select messages to ask about them" : undefined}>
                 {selection.rows.length === 0 ? "Select messages to ask about them" : "Ask about these messages"}

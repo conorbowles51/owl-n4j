@@ -1239,6 +1239,10 @@ inventory is generic interpretation plus a view and is built with 03 regardless.
 saved-login accounts 325), 376 weak; 3-phone case 0 strong, 464 medium, 144 weak. Header ICCID, IMSI and
 MSISDN are shared by no pair. Gate: cross-phone list **fail** (2 < 5).
 
+**Do not build** the cross-phone list (`cb-approaches`, 2026-11-03): 2 strong shared keys against 5 needed; the
+per-phone inventory stays generic interpretation. Approach 5's shared markers (05-S8) list the same strong keys per
+phone pair. *Reverse if* a case reaches 5 strong keys shared by two or more phones (measure m6.1 on that case).
+
 ### 9.7 Dependencies
 
 02, 04 (places from BSSID), 03 (views).
@@ -1492,6 +1496,10 @@ otherwise these types remain generic interpretation only. Calendar location (3 v
 **Server result (stage A3, `measurements/a3/README.md` section 9):** calendar entries with a location: 3 (P06); check-ins: 9 on P02, P13 and P14, none with a nested place
 record; notes 0 to 13. Gate **fail** (3 placed items < 20).
 
+**Do not build** the comparison (`cb-approaches`, 2026-11-03): 3 placed items against 20 needed; calendar entries,
+check-ins and notes stay generic interpretation. *Reverse if* a case holds 20 placed items on phones that also
+carry location (measure m10.1 on that case).
+
 ### 13.7 Dependencies
 
 04 (places, day view), approach 1 parser, approach 7 vocabulary.
@@ -1718,6 +1726,12 @@ items; ±24 h passes the 5,000-item lane limit on the busiest phone, so that lan
 of items. ±2 h, ±6 h and ±24 h stay one click away. *Reverse if* the same measure on three anchors an investigator
 chooses shows phones with nothing at ±1 h that ±2 h would show; the script takes the anchors as arguments
 (`measure <scratch> <out> <epoch seconds> ...`).
+
+**Built (`cb-approaches`, 05-S16, screen "Incident window").** The 04 window view (shared Lanes, availability per
+phone, the money lane) on its own screen with a typed moment, opened from a statement (its own start, end and zone),
+a selected message or call in Conversations, and, as before, a key date and the Timeline. With no moment chosen it
+opens around the latest moment on the case's phones and says so. Default ±1 h (16.6). Approach 2's offsets are not
+drawn beside the times yet.
 
 ### 16.7 Dependencies
 
