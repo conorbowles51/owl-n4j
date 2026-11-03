@@ -350,6 +350,15 @@ export function ConversationsPage() {
     return (
       <div className="p-6">
         <h1 className="text-lg font-semibold">Conversations</h1>
+        <p className="mt-2 text-sm">This case has no phone yet. Add a phone report from Evidence to read its conversations here.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <header className="flex flex-wrap items-baseline gap-3 border-b px-4 py-2">
+        <h1 className="text-lg font-semibold">Conversations</h1>
         {view.selection && (
           // a saved link to a whole result opens on its frozen records, said as such (07 6.1)
           <p role="status" className="w-full text-sm" data-testid="saved-selection">
@@ -363,15 +372,6 @@ export function ConversationsPage() {
             </button>
           </p>
         )}
-        <p className="mt-2 text-sm">This case has no phone yet. Add a phone report from Evidence to read its conversations here.</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="flex flex-wrap items-baseline gap-3 border-b px-4 py-2">
-        <h1 className="text-lg font-semibold">Conversations</h1>
         {counts && (
           <p className="text-sm" data-testid="not-reviewed">
             Not yet reviewed: {fmt(counts.not_reviewed ?? 0)} of {fmt(counts.threads ?? 0)} threads

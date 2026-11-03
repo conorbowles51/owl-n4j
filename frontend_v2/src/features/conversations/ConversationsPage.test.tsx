@@ -19,6 +19,7 @@ const api = vi.hoisted(() => ({
   streamLocate: vi.fn(),
   getLinkedIdentities: vi.fn(),
   streamIndex: vi.fn(),
+  getSelection: vi.fn(),
 }))
 vi.mock("@/features/phones/api", async (orig) => ({ ...(await orig<object>()), ...api }))
 vi.mock("@/features/cases/hooks/use-cases", () => ({ useCase: () => ({ data: { title: "Synthetic case" } }) }))
@@ -139,6 +140,14 @@ describe("Conversations", () => {
     expect(streamFilters.some((f) => JSON.stringify((f as { participants?: string[] } | null)?.participants) === JSON.stringify(["phone:Synthetic A", "owner:this-phone"]))).toBe(true)
     fireEvent.click(within(scope).getByRole("button", { name: "All channels" }))
     await waitFor(() => expect(seen.search).toContain("channels=all"))
+  })
+
+  it("says in the page header when a saved selection is shown, with its frozen totals", async () => {
+    api.getSelection.mockResolvedValue({ id: "s1", words: "Synthetic selection", record_count: 3, event_count: 2, created_at: null, replaced: null })
+    page("/cases/case-1/conversations?selection=s1")
+    const line = await screen.findByTestId("saved-selection")
+    await waitFor(() => expect(line.textContent).toContain("Synthetic selection"))
+    expect(line.closest("header")?.textContent).toContain("Conversations")
   })
 
   it("opens the first thread on arrival so the keys act at once (D-38), in the URL", async () => {
