@@ -1,8 +1,8 @@
 ## 3 November: phone media, stage I (cb-media): local OCR, transcription, translation, image search, media spread
 
-**Live:** d2e425db holds A to F, M-5 to M-7, CO-18 and the exact tier of C; the release after it adds translation,
-image search and the phone summary's Media link (full suites on bc768e48: unittest 8,058 OK, pytest 2,417 passed with
-the two quarantined docx failures).
+**Live:** 4607f590 holds A to F, M-5 to M-7, CO-18, the exact tier of C, translation, image search and the phone
+summary's Media link (full suites on bc768e48: unittest 8,058 OK, pytest 2,417 passed with the two quarantined docx
+failures); the release after it translates any text whose top language has a model.
 
 - **Media entry point (05-S12).** `evidence-engine/app/pipeline/phone_media.py` sniffs a file's kind from its bytes
   (the name is used only when the bytes name nothing) and holds the provider policy (local only) and model identity.
@@ -37,8 +37,10 @@ the two quarantined docx failures).
   counts; search scores in chunks with a running top list (25.5 MB peak on 35,000 vectors). Model:
   `python -m services.phone.image_search_models` (installed in `~conorbowles51/.cache/loupe-image`).
 
-**Standing decisions.** Job tray on the Media toolbar (reverse: a global header exists). Language confidence
-threshold 0.5 is a chosen setting, not measured (reverse: a measured false-translation rate). Perceptual tier not
+**Standing decisions.** Job tray on the Media toolbar (reverse: a global header exists). A text is translated
+when its top language has a model, whatever lingua's relative confidence, which is stated on the translation:
+on 999 live Spanish bodies a 0.5 threshold refused 615, the runner-up being Portuguese, Catalan or Italian (reverse:
+a measured false-translation rate on case text). Perceptual tier not
 built (reverse: a case with 20+ image pairs with MD5 on both sides of which a quarter differ).
 
 **Test templates (server).** PostgreSQL `cbs-pgtest` on 127.0.0.1:55444: `loupe_tpl_cbm12` is at

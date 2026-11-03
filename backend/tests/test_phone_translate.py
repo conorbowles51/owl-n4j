@@ -80,14 +80,14 @@ def world(tmp_path, monkeypatch, models):
 
 class FakeChild:
     """Answers like the child: language by a table, translation of the pieces only when the model was offered."""
-    LANG = {ES: ("es", "Spanish", 0.93), EN: ("en", "English", 0.97), UNSURE: ("en", "English", 0.31),
+    LANG = {ES: ("es", "Spanish", 0.93), EN: ("en", "English", 0.97), UNSURE: (None, None, 0.0),
             PT: ("pt", "Portuguese", 0.88), "\n".join(s["text"] for s in YO_SEG): ("yo", "Yoruba", 0.99)}
     WORDS = {"Nos vemos mañana en la plaza sintética.": ES_EN[0], "Trae el paquete azul.": ES_EN[1],
              "Ẹ kú àárọ̀ sintetiki.": "Good morning synthetic.", "Mo máa wá lọ́la.": "I will come tomorrow."}
 
     def __init__(self, monkeypatch, fail=False):
         from services.phone import translate
-        self.calls, self.fail = [], fail
+        self.calls, self.fail, self.lang = [], fail, dict(self.LANG)
         real = subprocess.run
 
         def run(argv, *a, **k):
@@ -103,9 +103,9 @@ class FakeChild:
     def answer(self, req):
         out = []
         for item in req["items"]:
-            iso, name, conf = self.LANG.get(item["detect"], ("es", "Spanish", 0.9))
+            iso, name, conf = self.lang.get(item["detect"], ("es", "Spanish", 0.9))
             a = {"detector_version": "2.1.1", "language": iso, "language_name": name, "confidence": conf}
-            if iso in req["models"] and conf >= req["min_confidence"] and iso != "en":
+            if iso in req["models"] and conf >= req["min_confidence"] and iso != "en":  # as the child
                 a.update(pieces=[self.WORDS.get(p, "[en] " + p) for p in item["pieces"]],
                          transformers_version="5.3.0", torch_version="2.11.0")
             out.append(a)
@@ -167,7 +167,7 @@ def test_a_spanish_message_is_translated_beside_the_original_with_the_model_and_
     assert got["label"] == ("Machine translation (local, opus-mt-es-en c96e2c5, transformers 5.3.0), not checked by "
                             "a person. The original is above.")
     assert got["language_words"] == "Language identified by lingua 2.1.1 as Spanish (confidence 93%)."
-    assert got["parameters"]["num_beams"] == 4 and got["parameters"]["min_confidence"] == 0.5
+    assert got["parameters"]["num_beams"] == 4 and got["parameters"]["min_confidence"] == 0.0
     # the text went to the child on its standard input, not its command line, with the offline switches set
     [call] = child.calls
     assert ES not in " ".join(call["argv"]) and call["input"]["items"][0]["detect"] == ES
@@ -200,7 +200,22 @@ def test_english_and_unsure_text_is_not_translated_and_says_so(world, monkeypatc
     assert got[en]["outcome_words"] == "Already in English; not translated."
     assert got[unsure]["outcome"] == "unsure" and got[unsure]["text"] is None
     assert got[unsure]["outcome_words"] == "Language not recognised with confidence; not translated."
-    assert got[unsure]["language_words"] == "Language identified by lingua 2.1.1 as English (confidence 31%)."
+    assert got[unsure]["language_words"] is None
+
+
+def test_spanish_identified_with_a_shared_confidence_is_translated_and_the_confidence_is_stated(world, monkeypatch):
+    """On live bodies Spanish shares lingua's relative confidence with Portuguese, Catalan and Italian: 615 of 999
+    Spanish bodies scored under 0.5 (3 Nov). Such a text is translated, and its label says how sure the
+    identification was; before, it was refused as "unsure"."""
+    from services.phone import translate
+    child = FakeChild(monkeypatch)
+    child.lang[ES] = ("es", "Spanish", 0.41)
+    ev = world["evs"][0]["event_uid"]
+    _request(world, ev)
+    assert [d["state"] for d in translate.run_pending(world["engine"])] == ["done"]
+    got = _translations(world, [ev])[ev]
+    assert got["outcome"] == "translated" and got["text"] == " ".join(ES_EN)
+    assert got["language_words"] == "Language identified by lingua 2.1.1 as Spanish (confidence 41%)."
 
 
 def test_a_language_with_no_model_here_is_refused_in_words_and_nothing_is_downloaded(world, monkeypatch, models):
@@ -530,3 +545,28 @@ def test_the_real_child_translates_spanish_with_the_pinned_model_and_no_connecti
     assert len(got["segments"]) == 2 and all(s["text"] for s in got["segments"])
     assert "tomorrow" in got["text"].lower() and "blue" in got["text"].lower()
     assert translate.translate_text({"text": EN, "sha256": "x", "segments": None})["outcome"] == "already_english"
+
+
+def test_an_unsure_result_made_under_the_old_setting_is_identified_again_when_asked(world, monkeypatch):
+    """A text left "unsure" under the 0.5 setting is identified again under the setting in force; an "unsure" made
+    under the current setting is given again, as any finished result of the same text is."""
+    from services.phone import translate
+    child = FakeChild(monkeypatch)
+    ev = world["evs"][0]["event_uid"]
+    child.lang[ES] = (None, None, 0.0)
+    first = _request(world, ev)
+    translate.run_pending(world["engine"])
+    assert _translations(world, [ev])[ev]["outcome"] == "unsure"
+    assert _request(world, ev)["id"] == first["id"]  # same setting: the same result
+    with world["engine"].begin() as c:
+        c.execute(text("UPDATE phone_translations SET parameters = jsonb_set(parameters, '{min_confidence}', '0.5') "
+                       "WHERE id = :i"), {"i": first["id"]})
+    child.lang[ES] = ("es", "Spanish", 0.41)
+    again = _request(world, ev)
+    assert again["id"] != first["id"]
+    translate.run_pending(world["engine"])
+    got = _translations(world, [ev])[ev]
+    assert got["id"] == again["id"] and got["outcome"] == "translated"
+    with world["engine"].begin() as c:
+        counts = translate.request_thread(c, world["case"], world["thread"])
+    assert counts["left_out"]["already_translated"] >= 1

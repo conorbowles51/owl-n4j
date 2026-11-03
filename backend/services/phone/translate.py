@@ -8,8 +8,8 @@ SHA-256 of its weights, the detector and its version, the parameters, and the SH
 The original is always shown first, the translation under it with ``label()``.
 
 - Text identified as English is not translated: "Already in English".
-- Text whose language is not identified with confidence (``MIN_CONFIDENCE``) is not translated: "Language not
-  recognised with confidence; not translated". No translation is invented.
+- Text in which no language is identified is not translated: "Language not recognised with confidence; not
+  translated". Otherwise the top language is used, and its confidence is stated with the translation. No translation is invented.
 - A translation whose source text has changed since (the message or transcript was corrected) is shown as made
   from an earlier text, never as current, and is not searched.
 
@@ -38,7 +38,11 @@ log = logging.getLogger(__name__)
 
 TARGET = "en"
 SOURCE_TYPES = ("message", "derived_text")
-MIN_CONFIDENCE = 0.5
+# lingua's relative confidence is shared among close languages: on live message bodies (3 Nov, 3,956 of 25+
+# characters) Spanish was the top language of 999 and reached 0.5 on only 384, the runner-up being Portuguese,
+# Catalan or Italian. A translation states the language identified and its confidence, so a text whose top language
+# has a model is translated whatever that confidence; only a text in which no language is identified is "unsure".
+MIN_CONFIDENCE = 0.0
 MAX_ATTEMPTS = 2
 TIMEOUT_SECONDS = {"message": 1800, "derived_text": 3600}
 STALE_SECONDS = {k: v + derive.STALE_MARGIN_SECONDS for k, v in TIMEOUT_SECONDS.items()}
@@ -151,7 +155,7 @@ def request(conn, case_id, source_type, source_key, user_id=None) -> dict:
         raise TranslateError(NO_TEXT if source_type == "message" else "No text was found here, so there is nothing "
                              "to translate.")
     done = _current_done(conn, case_id, source_type, source_key)
-    if done is not None and done.source_sha256 == src["sha256"]:
+    if done is not None and done.source_sha256 == src["sha256"] and reusable(done.outcome, done.parameters):
         return out(done, src["sha256"])
     r = _insert(conn, case_id, source_type, source_key, src["extraction_id"], user_id)
     if r is None:
@@ -159,13 +163,20 @@ def request(conn, case_id, source_type, source_key, user_id=None) -> dict:
     return out(r, src["sha256"])
 
 
+def reusable(outcome, parameters) -> bool:
+    """A finished result is given again for the same text, except an "unsure" one made under another confidence
+    setting: the text is identified again under the setting in force."""
+    return outcome != "unsure" or (parameters or {}).get("min_confidence") == MIN_CONFIDENCE
+
+
 def request_thread(conn, case_id, thread_key, user_id=None) -> dict:
     """Queue every message with text in one conversation, one row each. Returns true counts: queued, and left out by
     reason (already translated, already waiting, no text)."""
     rows = conn.execute(text(
-        "SELECT ev.event_uid, ev.extraction_id, ev.body, d.source_sha256 AS done_sha, o.id AS open_id FROM "
+        "SELECT ev.event_uid, ev.extraction_id, ev.body, d.source_sha256 AS done_sha, d.outcome AS done_outcome, "
+        "d.parameters AS done_parameters, o.id AS open_id FROM "
         "pv_comm_event ev "
-        "LEFT JOIN LATERAL (SELECT t.source_sha256 FROM phone_translations t WHERE t.case_id = ev.case_id AND "
+        "LEFT JOIN LATERAL (SELECT t.source_sha256, t.outcome, t.parameters FROM phone_translations t WHERE t.case_id = ev.case_id AND "
         "t.source_type = 'message' AND t.source_key = ev.event_uid AND t.state = 'done' ORDER BY t.finished_at DESC, "
         "t.id LIMIT 1) d ON true "
         "LEFT JOIN phone_translations o ON o.case_id = ev.case_id AND o.source_type = 'message' AND o.source_key = "
@@ -182,7 +193,7 @@ def request_thread(conn, case_id, thread_key, user_id=None) -> dict:
             counts["left_out"]["no_text"] += 1
         elif r.open_id is not None:
             counts["left_out"]["already_waiting"] += 1
-        elif r.done_sha == sha256_text(body):
+        elif r.done_sha == sha256_text(body) and reusable(r.done_outcome, r.done_parameters):
             counts["left_out"]["already_translated"] += 1
         elif _insert(conn, case_id, "message", r.event_uid, r.extraction_id, user_id) is not None:
             counts["queued"] += 1
