@@ -31,7 +31,8 @@ def _snap(**over):
         "references": {"g1": {"reference": "ending 9999", "kind": "account", "status": "no_statement_found",
                               "payments": 2}},
         "phone": {"phones": 0},
-        "judgements": {"open": 2, "confirmed": 0, "corrected": 0, "open_by_rule": {"r.date": 2}},
+        "judgements": {"open": 2, "confirmed": 0, "corrected": 0, "open_by_rule": {"r.date": 2}, "total": 2,
+                       "by_rule": {"r.date": 2}},
         "conclusions": {"items": {"entry:e1": {"kind": "hypothesis", "id": "e1", "title": "Rent paid from A",
                                                "state": "proposed", "rows": ["t1"]}},
                         "rows": {"t1": {"status": "admitted", "replaced_by": None, "amount_minor": "400",
@@ -105,10 +106,19 @@ def test_totals_before_and_after_carry_both_revisions():
 
 
 def test_judgement_calls_added_and_resolved_are_counted_per_rule():
-    after = _snap(judgements={"open": 3, "confirmed": 1, "corrected": 0, "open_by_rule": {"r.date": 1, "r.amount": 2}})
+    after = _snap(judgements={"open": 3, "confirmed": 1, "corrected": 0, "open_by_rule": {"r.date": 1, "r.amount": 2},
+                              "total": 4, "by_rule": {"r.date": 2, "r.amount": 2}})
     j = B.diff(_snap(), after)["judgement_calls"]
     assert j["added_open"] == 2 and j["added_by_rule"] == {"r.amount": 2} and j["resolved"] == 1
     assert j["open_before"] == 2 and j["open"] == 3
+
+
+def test_calls_added_and_resolved_under_one_rule_are_not_netted():
+    """3 added and 3 resolved under the same rule: 3 added, 3 resolved (a net count would say 0 added)."""
+    after = _snap(judgements={"open": 2, "confirmed": 2, "corrected": 1, "open_by_rule": {"r.date": 2}, "total": 5,
+                              "by_rule": {"r.date": 5}})
+    j = B.diff(_snap(), after)["judgement_calls"]
+    assert j["added_open"] == 3 and j["resolved"] == 3
 
 
 def test_a_conclusion_whose_cited_row_was_corrected_is_named():
@@ -131,24 +141,36 @@ def test_a_first_brief_closes_nothing_and_states_the_starting_point():
     c = B.diff(None, _snap())
     assert c["first"] and c["something_changed"]
     assert c["leads_closed"]["count"] == 0 and c["leads_opened"]["count"] == 0
-    assert c["open_leads"] == {"missing_periods": 1, "missing_days": 29, "missing_accounts": 1, "phone_leads": 0}
+    assert c["open_leads"] == {"accounts_not_read": 0, "missing_periods": 1, "missing_days": 29,
+                            "missing_accounts": 1, "phone_leads": 0}
     assert c["totals"]["currencies"][0]["after"]["credits_minor"] == "1000"
     assert c["totals"]["currencies"][0]["population"] == "working" and c["totals"]["changed"] == 0
 
 
 def test_phone_leads_close_and_unresolved_readings_become_decided():
+    """Readings are counted by outcome: a corroborated reading's result key changes when it gains its ledger match."""
     before = _snap(phone={"phones": 1, "run_id": "x", "leads": {"k1": {"status": "no_statement_found",
                                                                       "account_ref": "ending 0100",
                                                                       "institution": "Synthetic Bank"}},
-                          "readings": {"m1": {"outcome": "unresolved"}, "m2": {"outcome": "unresolved"}}})
+                          "outcomes": {"unresolved": 2, "corroborated": 5}})
     after = _snap(phone={"phones": 1, "run_id": "y", "leads": {"k1": {"status": "possible_statement",
                                                                      "account_ref": "ending 0100",
                                                                      "institution": "Synthetic Bank"}},
-                         "readings": {"m1": {"outcome": "corroborated"}, "m2": {"outcome": "contradicted"}}})
+                         "outcomes": {"corroborated": 6, "contradicted": 1}})
     c = B.diff(before, after)
     assert [l["kind"] for l in c["leads_closed"]["items"]] == ["phone_lead"]
-    assert c["newly_testable"]["phone_readings_decided"]["count"] == 2
-    assert c["newly_testable"]["phone_readings_contradicted"] == 1
+    assert "may now be covered" in c["leads_closed"]["items"][0]["sentence"]
+    t = c["newly_testable"]
+    assert t["phone_unresolved_change"] == -2 and t["phone_corroborated_change"] == 1
+    assert t["phone_contradicted_change"] == 1
+
+
+def test_an_earlier_unread_account_or_total_is_never_a_baseline():
+    before = _snap(accounts={"a1": {"read": False}}, totals={"available": False, "reason": "x", "verified": {},
+                                                             "working": {}})
+    c = B.diff(before, _snap())
+    assert c["newly_testable"]["days"] == 0 and c["leads_opened"]["count"] == 0
+    assert c["totals"]["before_unavailable"] and c["totals"]["changed"] == 0
 
 
 def test_long_sections_state_what_is_not_shown():

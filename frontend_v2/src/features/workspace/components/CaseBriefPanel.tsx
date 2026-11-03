@@ -34,18 +34,22 @@ export interface CaseBrief {
     something_changed: boolean
     leads_closed: Clipped<Sentence>
     leads_opened: Clipped<Sentence>
-    open_leads: { missing_periods: number; missing_days: number; missing_accounts: number; phone_leads: number }
+    open_leads: { accounts_not_read: number; missing_periods: number; missing_days: number; missing_accounts: number; phone_leads: number }
     newly_testable: {
       spans: Clipped<Sentence & { days: number }>
       days: number
-      phone_readings_decided: Clipped<{ result_key: string; outcome: string }>
-      phone_readings_contradicted: number
+      phone_outcomes_before: Record<string, number> | null
+      phone_outcomes_after: Record<string, number>
+      phone_unresolved_change: number
+      phone_contradicted_change: number
+      phone_corroborated_change: number
     }
     totals: {
       before_revision: string | null
       after_revision: string
       available: boolean
       reason: string | null
+      before_unavailable?: boolean
       basis: string
       verified_rows: number | null
       working_rows: number | null
@@ -163,6 +167,11 @@ export function CaseBriefPanel({ caseId, canEdit }: { caseId: string; canEdit: b
         {brief.out_of_date && brief.out_of_date_sentence ? (
           <p className="rounded-md border border-status-warning/50 bg-status-warning-soft px-3 py-2 text-xs text-status-warning">{brief.out_of_date_sentence}</p>
         ) : null}
+        {cov.not_read.length ? (
+          <p className="rounded-md border border-status-warning/50 bg-status-warning-soft px-3 py-2 text-xs text-status-warning">
+            This brief is incomplete. Not read: {cov.not_read.join("; ")}.
+          </p>
+        ) : null}
         {c.first ? (
           <p className="text-xs">This is the first brief for this case: it records the starting point. Later briefs compare against it.</p>
         ) : null}
@@ -182,15 +191,15 @@ export function CaseBriefPanel({ caseId, canEdit }: { caseId: string; canEdit: b
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          Open now: {plural(c.open_leads.missing_periods, "missing statement period")} ({plural(c.open_leads.missing_days, "day")}), {plural(c.open_leads.missing_accounts, "account")} named in payments with no statement in the case{cov.phones ? `, ${plural(c.open_leads.phone_leads, "phone account lead")}` : ""}.
+          Open now{c.open_leads.accounts_not_read ? ` (${plural(c.open_leads.accounts_not_read, "account")} could not be read and ${c.open_leads.accounts_not_read === 1 ? "is" : "are"} not counted)` : ""}: {plural(c.open_leads.missing_periods, "missing statement period")} ({plural(c.open_leads.missing_days, "day")}), {plural(c.open_leads.missing_accounts, "account")} named in payments with no statement in the case{cov.phones ? `, ${plural(c.open_leads.phone_leads, "phone account lead")}` : ""}.
         </p>
 
         <List
           title={`Now testable (${plural(c.newly_testable.days, "newly covered day")})`}
           items={[
             ...c.newly_testable.spans.items.map((s) => s.sentence),
-            ...(c.newly_testable.phone_readings_decided.count
-              ? [`${plural(c.newly_testable.phone_readings_decided.count, "phone money reading")} that could not be decided before now can be: ${c.newly_testable.phone_readings_contradicted} found no matching payment.`]
+            ...(c.newly_testable.phone_unresolved_change < 0
+              ? [`Phone money readings that cannot yet be decided: ${c.newly_testable.phone_outcomes_before?.unresolved ?? 0} → ${c.newly_testable.phone_outcomes_after.unresolved ?? 0}. With a matching payment: ${c.newly_testable.phone_outcomes_before?.corroborated ?? 0} → ${c.newly_testable.phone_outcomes_after.corroborated ?? 0}. With no matching payment in a covered period: ${c.newly_testable.phone_outcomes_before?.contradicted ?? 0} → ${c.newly_testable.phone_outcomes_after.contradicted ?? 0}.`]
               : []),
           ]}
           notShown={c.newly_testable.spans.not_shown}
@@ -199,6 +208,9 @@ export function CaseBriefPanel({ caseId, canEdit }: { caseId: string; canEdit: b
 
         <div>
           <h3 className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Totals</h3>
+          {c.totals.before_unavailable ? (
+            <p className="mt-1.5 text-xs text-status-warning">The previous brief could not calculate totals, so no before figures are shown.</p>
+          ) : null}
           {!c.totals.available ? (
             <p className="mt-1.5 text-xs text-status-warning">Verified totals were not calculated: {c.totals.reason}</p>
           ) : totals.length ? (
@@ -249,7 +261,7 @@ export function CaseBriefPanel({ caseId, canEdit }: { caseId: string; canEdit: b
             Read {plural(cov.statements_admitted, "statement")}, {cov.accounts_read} of {plural(cov.accounts, "account")}, {plural(cov.ledger_rows_working ?? 0, "payment")} ({(cov.ledger_rows_verified ?? 0).toLocaleString()} verified){cov.phones ? `, ${plural(cov.phones, "phone")}` : ""} and {plural(cov.conclusions, "conclusion")}.
             Questions re-run: {cov.questions.join("; ")}.
           </p>
-          {cov.not_read.length ? <p className="mt-1 text-status-warning">Not read: {cov.not_read.join("; ")}.</p> : <p className="mt-1">Nothing was left unread.</p>}
+          {cov.not_read.length ? null : <p className="mt-1">Nothing was left unread.</p>}
           <p className="mt-1">Took {brief.cost.seconds.toFixed(1)} s of database work; no AI model was used ({brief.cost.model_calls} calls). Written after: {brief.trigger.replace(/_/g, " ")}.</p>
         </details>
       </div>

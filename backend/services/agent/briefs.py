@@ -182,7 +182,7 @@ def _phone(conn, case_id) -> dict:
     if not has:
         return {"phones": 0}
     run = conn.execute(text(
-        "SELECT id, finished_at, input_revision FROM phone_analysis_runs WHERE case_id = :c AND approach = "
+        "SELECT id, finished_at, input_revision, parameters FROM phone_analysis_runs WHERE case_id = :c AND approach = "
         "'money_signals' AND status = 'completed' ORDER BY finished_at DESC NULLS LAST, created_at DESC LIMIT 1"),
         {"c": str(case_id)}).first()
     queued = conn.execute(text(
@@ -190,7 +190,7 @@ def _phone(conn, case_id) -> dict:
         "('queued', 'running')"), {"c": str(case_id)}).scalar() or 0
     out = {"phones": int(has), "run_id": str(run.id) if run else None,
            "run_finished_at": _iso(run.finished_at) if run else None, "runs_pending": int(queued),
-           "leads": {}, "readings": {}}
+           "parameters": run.parameters if run else None, "leads": {}, "outcomes": {}}
     if run is None:
         return out
     for r in conn.execute(text(
@@ -203,7 +203,9 @@ def _phone(conn, case_id) -> dict:
                                           "institution": inst.get("name"), "first_seen": m.get("first_seen"),
                                           "last_seen": m.get("last_seen")}
         else:
-            out["readings"][r.result_key] = {"outcome": m.get("outcome"), "account_ref": m.get("account_ref")}
+            # counted by outcome: a reading's result key changes when it gains its ledger match, so keys do not follow it
+            o = m.get("outcome") or "none"
+            out["outcomes"][o] = out["outcomes"].get(o, 0) + 1
     return out
 
 
@@ -214,8 +216,13 @@ def _judgements(conn, case_id) -> dict:
     by = {}
     for r in rows:
         by.setdefault(r.status, {})[r.rule_id] = int(r.n)
+    all_by_rule = {}
+    for st in by.values():
+        for rule, n in st.items():
+            all_by_rule[rule] = all_by_rule.get(rule, 0) + n
     return {"open": sum(by.get("open", {}).values()), "confirmed": sum(by.get("confirmed", {}).values()),
-            "corrected": sum(by.get("corrected", {}).values()), "open_by_rule": by.get("open", {})}
+            "corrected": sum(by.get("corrected", {}).values()), "open_by_rule": by.get("open", {}),
+            "total": sum(all_by_rule.values()), "by_rule": all_by_rule}
 
 
 def _row_fingerprints(conn, case_id, ids) -> dict:
@@ -290,7 +297,8 @@ def _importing(conn, case_id) -> int:
 
 
 def evidence_stamp(conn, case_id) -> dict:
-    """When the case's evidence last changed: statements saved, files added, phones loaded, ledger rows written.
+    """When the case's evidence last changed: statements saved, files added, phones loaded, ledger rows, periods and
+    accounts written, judgement calls, casework and assessments changed.
     Cheap (indexed max per table); compared with the brief's own stamp to say "out of date"."""
     r = conn.execute(text(
         "SELECT (SELECT max(created_at) FROM financial_source_documents WHERE case_id = :c) st, "
@@ -299,9 +307,14 @@ def evidence_stamp(conn, case_id) -> dict:
         "(SELECT max(created_at) FROM evidence_files WHERE case_id = :c) ef, "
         "(SELECT max(created_at) FROM phone_extractions WHERE case_id = :c) ph, "
         "(SELECT max(greatest(created_at, coalesce(resolved_at, created_at))) FROM financial_judgements WHERE "
-        "case_id = :c) jc"), {"c": str(case_id)}).first()
+        "case_id = :c) jc, "
+        "(SELECT max(updated_at) FROM financial_statement_periods WHERE case_id = :c) sp, "
+        "(SELECT max(updated_at) FROM financial_accounts WHERE case_id = :c) ac, "
+        "(SELECT max(updated_at) FROM workspace_entries WHERE case_id = :c) we, "
+        "(SELECT max(updated_at) FROM dossier_assessments WHERE case_id = :c) da"), {"c": str(case_id)}).first()
     parts = {"statements": r.st, "statement_changes": r.stu, "ledger_rows": r.lr, "files": r.ef, "phones": r.ph,
-             "judgement_calls": r.jc}
+             "judgement_calls": r.jc, "statement_periods": r.sp, "accounts": r.ac, "casework": r.we,
+             "assessments": r.da}
     newest = max((v for v in parts.values() if v is not None), default=None)
     return {"newest": _iso(newest), "parts": {k: _iso(v) for k, v in parts.items()}}
 
@@ -319,7 +332,7 @@ def input_revision(conn, case_id) -> tuple:
         "status = 'completed'"), {"c": str(case_id)}).scalar()
     w = conn.execute(text(
         "SELECT (SELECT count(*) || ':' || coalesce(max(updated_at)::text, '') FROM workspace_entries WHERE case_id = "
-        ":c), (SELECT count(*) || ':' || coalesce(max(updated_at)::text, '') FROM workspace_entry_links WHERE "
+        ":c AND entry_type IN ('theory', 'finding')), (SELECT count(*) || ':' || coalesce(max(updated_at)::text, '') FROM workspace_entry_links WHERE "
         "case_id = :c), (SELECT count(*) || ':' || coalesce(max(updated_at)::text, '') FROM dossier_assessments "
         "WHERE case_id = :c)"), {"c": str(case_id)}).first()
     digest = hashlib.sha256(canonical({"ledger": ledger, "judgements": [str(x) for x in j], "phone_run": _iso(run),
@@ -407,7 +420,7 @@ def diff(prev: dict | None, cur: dict) -> dict:
                                "days_still_missing": sum(_days(a, b) for a, b in left),
                                "sentence": "Statements now cover %d of the %d missing days for %s between %s and %s."
                                % (covered, g[2], acc["label"], g[0], g[1])})
-        if not first:
+        if not first and not (aid in p_acc and not before.get("read")):
             for key, g in new_gaps.items():
                 # a gap inside an earlier gap is what is left of it after a statement landed in it: not a new lead
                 if key not in old_gaps and not any(o[0] <= g[0] and g[1] <= o[1] for o in old_gaps.values()):
@@ -436,12 +449,14 @@ def diff(prev: dict | None, cur: dict) -> dict:
         if now and now.get("status") == "possible_statement":
             closed.append({"kind": "phone_lead", "reference": lead.get("account_ref"),
                            "institution": lead.get("institution"),
-                           "sentence": "Phone alerts for %s%s now have a matching statement in the case."
+                           "sentence": "Phone alerts for %s%s may now be covered: an account in the case that could be "
+                           "theirs now has a statement."
                            % (lead.get("account_ref") or "an account",
                               " at %s" % lead["institution"] if lead.get("institution") else "")})
     out["leads_closed"] = _clip(closed)
     out["leads_opened"] = _clip(opened)
     out["open_leads"] = {
+        "accounts_not_read": sum(1 for a in c_acc.values() if not a.get("read")),
         "missing_periods": sum(len(a.get("gaps") or []) for a in c_acc.values() if a.get("read")),
         "missing_days": sum(g[2] for a in c_acc.values() if a.get("read") for g in a.get("gaps") or []),
         "missing_accounts": sum(1 for r in c_ref.values() if r["status"] == "no_statement_found"),
@@ -453,8 +468,10 @@ def diff(prev: dict | None, cur: dict) -> dict:
     for aid, acc in c_acc.items():
         if not acc.get("read"):
             continue
-        before = p_acc.get(aid) or {}
-        old_spans = (before.get("covered") or []) if before.get("read") else []
+        before = p_acc.get(aid)
+        if before is not None and not before.get("read"):
+            continue  # the earlier brief could not read this account: nothing to compare against
+        old_spans = (before or {}).get("covered") or []
         for a, b in acc.get("covered") or []:
             if not (a and b):
                 continue
@@ -464,25 +481,28 @@ def diff(prev: dict | None, cur: dict) -> dict:
                                  "sentence": "%s is now covered by statements from %s to %s: a payment claimed in "
                                  "those days can now be checked against the ledger, and its absence means something."
                                  % (acc["label"], x, y)})
-    decided = []
-    for key, r in (c_ph.get("readings") or {}).items():
-        old = (p_ph.get("readings") or {}).get(key)
-        if old and old.get("outcome") == "unresolved" and r.get("outcome") in ("corroborated", "contradicted"):
-            decided.append({"result_key": key, "outcome": r["outcome"], "reference": r.get("account_ref")})
+    po, co = (p_ph.get("outcomes") or {}), (c_ph.get("outcomes") or {})
+    compare_phone = not first and bool(p_ph.get("run_id")) and bool(c_ph.get("run_id"))
     out["newly_testable"] = {"spans": _clip([] if first else testable),
                              "days": 0 if first else sum(t["days"] for t in testable),
-                             "phone_readings_decided": _clip(decided),
-                             "phone_readings_contradicted": sum(1 for d in decided if d["outcome"] == "contradicted")}
+                             "phone_outcomes_before": po if compare_phone else None, "phone_outcomes_after": co,
+                             "phone_unresolved_change": (co.get("unresolved", 0) - po.get("unresolved", 0))
+                             if compare_phone else 0,
+                             "phone_contradicted_change": (co.get("contradicted", 0) - po.get("contradicted", 0))
+                             if compare_phone else 0,
+                             "phone_corroborated_change": (co.get("corroborated", 0) - po.get("corroborated", 0))
+                             if compare_phone else 0}
 
     # Totals per currency, before and after, each with its ledger revision: verified and working, never mixed
     pt, ct = (prev.get("totals") or {}), (cur.get("totals") or {})
+    before_unread = not first and not pt.get("available")
     totals = []
     for population in ("verified", "working"):
         before_all, after_all = pt.get(population) or {}, ct.get(population) or {}
         for code in sorted(set(before_all) | set(after_all)):
             b, a = before_all.get(code), after_all.get(code)
             totals.append({"population": population, "currency": code, "before": None if first else b, "after": a,
-                           "changed": first or b != a,
+                           "changed": (first or b != a) and not before_unread,
                            "credits_change_minor": str(int((a or {}).get("credits_minor", 0)) -
                                                        int((b or {}).get("credits_minor", 0))),
                            "debits_change_minor": str(int((a or {}).get("debits_minor", 0)) -
@@ -492,13 +512,15 @@ def diff(prev: dict | None, cur: dict) -> dict:
                      "available": bool(ct.get("available")), "reason": ct.get("reason"), "basis": TOTALS_NOTE,
                      "verified_rows": ct.get("verified_rows"), "working_rows": ct.get("working_rows"),
                      "outside_verified_rows": ct.get("outside_verified_rows"),
+                     "before_unavailable": before_unread,
                      "currencies": totals, "changed": 0 if first else sum(1 for t in totals if t["changed"])}
 
     # Judgement calls added and resolved (counts per rule)
     pj, cj = prev.get("judgements") or {}, cur.get("judgements") or {}
+    # calls are added, never deleted: added = new rows per rule, whatever their status now
     added = {}
-    for rule, n in (cj.get("open_by_rule") or {}).items():
-        d = n - (pj.get("open_by_rule") or {}).get(rule, 0)
+    for rule, n in (cj.get("by_rule") or {}).items():
+        d = n - (pj.get("by_rule") or {}).get(rule, 0)
         if d > 0:
             added[rule] = d
     out["judgement_calls"] = {
@@ -533,7 +555,7 @@ def diff(prev: dict | None, cur: dict) -> dict:
                           "rows_cited": len(c_rows)}
     out["something_changed"] = bool(first or closed or opened or out["totals"]["changed"] or
                                     out["judgement_calls"]["added_open"] or out["judgement_calls"]["resolved"] or
-                                    changed or testable or decided or
+                                    changed or testable or out["newly_testable"]["phone_unresolved_change"] or
                                     prev.get("ledger_revision") != cur.get("ledger_revision"))
     return out
 
@@ -620,10 +642,12 @@ def build(session, case_id, trigger: str, *, force_new: bool = False) -> dict:
             "model_calls": 0, "model_tokens": 0}
     now = _now()
     if prev is not None and not changes["something_changed"] and not force_new:
-        session.execute(text("UPDATE case_briefs SET checked_at = :n, coverage = CAST(:cov AS jsonb), "
-                             "evidence_stamp = CAST(:s AS jsonb), cost = CAST(:cost AS jsonb) WHERE id = :i"),
-                        {"n": now, "cov": canonical(cov), "s": canonical(stamp), "cost": canonical(
-                            {**cost, "last_check": trigger}), "i": prev.id})
+        # nothing a section shows changed: the brief stands, stamped as checked against these inputs (its coverage
+        # and changes stay those of the read that made it; the check's own cost is kept beside its build cost)
+        session.execute(text("UPDATE case_briefs SET checked_at = :n, input_revision = :r, evidence_stamp = "
+                             "CAST(:s AS jsonb), cost = cost || CAST(:cost AS jsonb) WHERE id = :i"),
+                        {"n": now, "r": cur["input_revision"], "s": canonical(stamp),
+                         "cost": canonical({"last_check": {**cost, "trigger": trigger}}), "i": prev.id})
         session.commit()
         return {"brief": _out(_latest_row(session.connection(), case_id)), "created": False}
     bid = uuid.uuid4()
@@ -672,19 +696,25 @@ def request_brief(case_id, reason: str = "import") -> None:
         log.exception("Brief request for case %s could not be recorded", case_id)
 
 
-def _request_phone_rerun(session, case_id) -> None:
-    """On a case with phones, ask for the money-signals run on the new ledger (it supersedes the old; the framework
-    returns the existing run when nothing it reads changed). Its completion changes the input revision, so the next
-    scan writes a brief that reads it."""
+def _request_phone_rerun(session, case_id, ledger_changed: bool) -> None:
+    """On a case with phones whose ledger changed since the last brief, ask for the money-signals run on the new
+    ledger with the settings of the case's current run (a person's chosen settings are kept; the framework returns
+    the existing run when nothing it reads changed). Its completion changes the input revision, so the next scan
+    writes a brief that reads it."""
+    if not ledger_changed:
+        return
     conn = session.connection()
     if not conn.execute(text("SELECT 1 FROM phone_extractions WHERE case_id = :c AND standing = 'active' LIMIT 1"),
                         {"c": str(case_id)}).first():
         return
+    params = conn.execute(text(
+        "SELECT parameters FROM phone_analysis_runs WHERE case_id = :c AND approach = 'money_signals' AND status = "
+        "'completed' ORDER BY finished_at DESC NULLS LAST, created_at DESC LIMIT 1"), {"c": str(case_id)}).scalar()
     try:
         from services.phone_analysis import approaches, framework as F
         approaches.install()
         with session.begin_nested():
-            F.request_run(conn, case_id, "money_signals", None, "case-briefs")
+            F.request_run(conn, case_id, "money_signals", params, "case-briefs")
         session.commit()
     except Exception:  # noqa: BLE001 - the brief still runs on the current phone run, and says which
         log.warning("briefs: money-signals re-run for case %s not requested", case_id, exc_info=True)
@@ -710,7 +740,8 @@ def due_cases(conn, now=None, *, scan=False, nightly=False) -> list:
             cid = str(r.id)
             if cid in out:
                 continue
-            if nightly and (r.checked_at is None or r.checked_at.date() < now.date()):
+            if nightly and (r.checked_at is None or r.checked_at.astimezone(timezone.utc).date() <
+                            now.astimezone(timezone.utc).date()):
                 out[cid] = "nightly"
                 continue
             if scan and (r.input_revision is None or input_revision(conn, cid)[1] != r.input_revision):
@@ -718,8 +749,14 @@ def due_cases(conn, now=None, *, scan=False, nightly=False) -> list:
     return sorted(out.items())
 
 
+SWEEP_BUDGET_SECONDS = 180    # one round stops starting new cases after this; the rest are due next round
+FAILURE_BACKOFF_SECONDS = 3600
+_failed = {}                  # case id -> monotonic time of its last failure (in this process)
+
+
 def sweep_once(factory=None, now=None, *, scan=None, nightly=None) -> list:
-    """One round: under a database advisory lock (one sweep per database), build each due case's brief. Returns
+    """One round: under a database advisory lock held on a connection of its own (one sweep per database), build each
+    due case's brief, within a time budget. A case whose brief failed waits an hour before the next try. Returns
     [(case_id, created, seconds)]."""
     if factory is None:
         from postgres.session import _get_background_session_local
@@ -729,33 +766,50 @@ def sweep_once(factory=None, now=None, *, scan=None, nightly=None) -> list:
     if scan is None:
         scan = mono - _last["scan"] >= SCAN_SECONDS
     if nightly is None:
-        nightly = now.hour >= NIGHTLY_HOUR_UTC
+        nightly = now.astimezone(timezone.utc).hour >= NIGHTLY_HOUR_UTC
     done = []
-    with factory() as lock_session:
-        if lock_session.get_bind().dialect.name != "postgresql":
+    with factory() as probe:
+        engine = probe.get_bind()
+    if engine.dialect.name != "postgresql":
+        return done
+    # the lock lives on this one connection for the whole round, and is released on it
+    with engine.connect() as lock:
+        if not lock.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": LOCK_KEY}).scalar():
+            lock.rollback()
             return done
-        if not lock_session.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": LOCK_KEY}).scalar():
-            return done
+        lock.commit()
         try:
-            due = due_cases(lock_session.connection(), now, scan=scan, nightly=nightly)
-            lock_session.commit()
+            with factory() as s:
+                due = due_cases(s.connection(), now, scan=scan, nightly=nightly)
+                s.rollback()
             if scan:
                 _last["scan"] = mono
             for case_id, trigger in due:
+                if time.monotonic() - mono > SWEEP_BUDGET_SECONDS:
+                    break
+                if time.monotonic() - _failed.get(case_id, -1e12) < FAILURE_BACKOFF_SECONDS:
+                    continue
                 with factory() as s:
                     try:
-                        _request_phone_rerun(s, case_id)
+                        # one consistent view of the case for the whole read (an import committing meanwhile is
+                        # read by the next brief, not half by this one)
+                        s.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+                        before = s.execute(text("SELECT ledger_revision FROM case_briefs WHERE case_id = :c ORDER BY "
+                                                "created_at DESC, id DESC LIMIT 1"), {"c": case_id}).scalar()
                         result = build(s, case_id, trigger)
                         s.execute(text("DELETE FROM case_brief_requests WHERE case_id = :c AND last_requested_at <= "
                                        ":n"), {"c": case_id, "n": now})
                         s.commit()
+                        _failed.pop(case_id, None)
                         done.append((case_id, result["created"], result["brief"]["cost"]["seconds"]))
+                        _request_phone_rerun(s, case_id, before != result["brief"]["ledger_revision"])
                     except Exception:  # noqa: BLE001 - one case's failure never stops the others
                         s.rollback()
-                        log.exception("Brief for case %s failed; it will be tried again", case_id)
+                        _failed[case_id] = time.monotonic()
+                        log.exception("Brief for case %s failed; it will be tried again in an hour", case_id)
         finally:
-            lock_session.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": LOCK_KEY})
-            lock_session.commit()
+            lock.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": LOCK_KEY})
+            lock.commit()
     if done:
         log.info("Case briefs: %s", ", ".join("%s %s %.1fs" % (c[:8], "new" if n else "checked", t)
                                              for c, n, t in done))

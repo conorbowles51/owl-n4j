@@ -16,9 +16,9 @@ function brief(over: Partial<CaseBrief> = {}): CaseBrief {
       first: false, something_changed: true,
       leads_closed: clipped([{ sentence: "Statements now cover 29 of the 29 missing days for Bank ending 0100 between 2024-01-31 and 2024-03-01." }]),
       leads_opened: clipped([], 0),
-      open_leads: { missing_periods: 2, missing_days: 61, missing_accounts: 1, phone_leads: 0 },
+      open_leads: { accounts_not_read: 0, missing_periods: 2, missing_days: 61, missing_accounts: 1, phone_leads: 0 },
       newly_testable: { spans: clipped([{ sentence: "Bank ending 0100 is now covered by statements from 2024-02-01 to 2024-02-29.", days: 29 }], 3), days: 29,
-        phone_readings_decided: clipped([]), phone_readings_contradicted: 0 },
+        phone_outcomes_before: null, phone_outcomes_after: {}, phone_unresolved_change: 0, phone_contradicted_change: 0, phone_corroborated_change: 0 },
       totals: { before_revision: "11111111aaaa", after_revision: "22222222bbbb", available: true, reason: null,
         basis: "Verified totals count only payments from statements whose own arithmetic proves them.",
         verified_rows: 0, working_rows: 5, outside_verified_rows: 5,
@@ -57,6 +57,12 @@ describe("What changed brief", () => {
     expect(screen.getByText(/Hypothesis “Rent” cites 1 ledger row/)).toBeInTheDocument()
     expect(screen.getByText(/no AI model was used/)).toBeInTheDocument()
     expect(mocks.fetchAPI).toHaveBeenCalledWith("/api/case-briefs/latest?case_id=case-1")
+  })
+
+  it("says plainly when a brief could not read something", async () => {
+    mocks.fetchAPI.mockResolvedValue({ brief: brief({ coverage: { ...brief().coverage, not_read: ["1 account whose statement run could not be read"] } }), requested_at: null })
+    show()
+    expect(await screen.findByText(/This brief is incomplete. Not read: 1 account whose statement run could not be read/)).toBeInTheDocument()
   })
 
   it("says a brief older than its newest evidence is out of date", async () => {
