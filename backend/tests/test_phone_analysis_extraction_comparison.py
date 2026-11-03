@@ -100,3 +100,33 @@ def test_runs_through_the_framework(engine):
     assert F.execute(engine, uuid.UUID(run["id"]))["status"] == "completed"
     with engine.connect() as c:
         assert F.results(c, case, run["id"], kind="state_changed")["total"] == 1
+
+
+@needs_template
+def test_compare_phones_counts_equal_approach_12_counts_for_one_device(engine):
+    """15.8 test 5 (07 J-16): on a synthetic pair shown to be one device, Compare phones' "on both", "only on one"
+    and "only on the other" equal this approach's present_in_both, only_in_earlier and only_in_later; a pair not
+    shown to be one device keeps Compare phones' own keys."""
+    from services.phone import compare as C
+    with engine.begin() as c:
+        case = make_case(c)
+        e1, _ = phone(c, case, label="C1", events=[msg(at(2023, 1, 2, 9), "kept"), msg(at(2023, 1, 3, 9), "later deleted"),
+                                                   msg(at(2023, 1, 4, 9), "gone"),
+                                                   msg(at(2023, 1, 5, 9), "a message whose time moved")])
+        e2, _ = phone(c, case, label="C1 again", events=[msg(at(2023, 1, 2, 9), "kept"),
+                                                         msg(at(2023, 1, 3, 9), "later deleted", "Deleted"),
+                                                         msg(at(2023, 3, 1, 9), "new"),
+                                                         msg(at(2023, 1, 5, 9, 1), "a message whose time moved")])
+        e3, _ = phone(c, case, label="C9", events=[msg(at(2023, 1, 2, 9), "kept")])
+        _header(c, e1, {"IMEI": "352099001761481"})
+        _header(c, e2, {"IMEI": "35-209900-176148-1"})
+    with engine.connect() as c:
+        dc = E.diff_counts(c, case, str(e1), str(e2))
+        cp = C.compare(c, case, e1, e2)
+        other = C.compare(c, case, e1, e3)
+    m = cp["kinds"]["message"]
+    assert cp["basis"] == "approach_12" and cp["key"] == C.SAME_DEVICE_WORDS
+    assert (m["both"], m["only_a"], m["only_b"]) == (dc["present_in_both"], dc["only_in_earlier"], dc["only_in_later"])
+    # a time that moved a minute is not the equal key, though Compare phones' own 2-minute window would pair it
+    assert (m["both"], m["only_a"], m["only_b"]) == (2, 2, 2)
+    assert other["basis"] == "record_keys" and other["key"] == C.KEY_WORDS
