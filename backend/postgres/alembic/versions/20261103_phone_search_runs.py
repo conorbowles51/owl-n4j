@@ -8,7 +8,7 @@ hand; a case's rows go with the case.
 from alembic import op
 
 revision = "20261103_phone_search_runs"
-down_revision = "20261103_case_briefs"
+down_revision = "20261103_phone_result_not_pursued"
 branch_labels = None
 depends_on = None
 
