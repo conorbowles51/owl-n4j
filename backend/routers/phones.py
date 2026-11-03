@@ -105,7 +105,9 @@ def export_file(export_id: UUID, case_id: UUID = Query(...), db: Session = Depen
     r = jobs.file_of(db.connection(), case_id, export_id)
     if r is None or not r.storage_path or not os.path.exists(r.storage_path):
         raise HTTPException(status_code=404, detail="That export has no finished file.")
-    return FileResponse(r.storage_path, media_type="application/pdf", filename=r.filename,
+    # an RSMF file is an RFC 5322 message (Relativity's RSMF specification)
+    media = "message/rfc822" if (r.filename or "").endswith(".rsmf") else "application/pdf"
+    return FileResponse(r.storage_path, media_type=media, filename=r.filename,
                         headers={"X-Content-SHA256": r.sha256 or ""})
 
 

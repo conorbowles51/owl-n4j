@@ -218,8 +218,8 @@ export type ExportState = z.infer<typeof ExportStateSchema>
 export async function describeExport(caseId: string, filter: StreamFilter) {
   return ExportFactsSchema.parse(await fetchAPI("/api/phones/exports/describe", { method: "POST", body: { case_id: caseId, filter }, read: true }))
 }
-export async function createExport(caseId: string, filter: StreamFilter, options: Record<string, unknown>) {
-  return fetchAPI<{ export_id: string }>("/api/phones/exports", { method: "POST", body: { case_id: caseId, format: "pdf", source: "stream", filter, options } })
+export async function createExport(caseId: string, filter: StreamFilter, options: Record<string, unknown>, format: "pdf" | "rsmf" = "pdf") {
+  return fetchAPI<{ export_id: string }>("/api/phones/exports", { method: "POST", body: { case_id: caseId, format, source: "stream", filter, options } })
 }
 export async function getExport(caseId: string, exportId: string) {
   return ExportStateSchema.parse(await fetchAPI(`/api/phones/exports/${encodeURIComponent(exportId)}?case_id=${encodeURIComponent(caseId)}`))

@@ -7,6 +7,8 @@ import { createExport, describeExport, downloadExport, failureText, getExport, t
 
 const fmt = (n: number) => n.toLocaleString("en-US")
 const plural = (n: number, one: string, many: string) => `${fmt(n)} ${n === 1 ? one : many}`
+const rsmfMissing = (counts: Record<string, unknown>) =>
+  Number((counts.rsmf as { attachments_not_included?: number } | undefined)?.attachments_not_included ?? 0)
 
 /**
  * Export for counsel (03 section 12.2, 07 J-14): the scope in words with true totals, the reading state, then the
@@ -16,9 +18,11 @@ export function ExportDialog(props: { caseId: string; filter: StreamFilter; word
   const { caseId, filter, words, open, onOpenChange } = props
   const [title, setTitle] = useState(words)
   const [exportId, setExportId] = useState<string | null>(null)
+  const [format, setFormat] = useState<"pdf" | "rsmf">("pdf")
+  const noun = format === "rsmf" ? "RSMF file" : "PDF"
   const facts = useQuery({ queryKey: ["export-facts", caseId, filter], queryFn: () => describeExport(caseId, filter), enabled: open, retry: false })
   const start = useMutation({
-    mutationFn: () => createExport(caseId, filter, { title: title.trim() || words, words }),
+    mutationFn: () => createExport(caseId, filter, { title: title.trim() || words, words }, format),
     onSuccess: (r) => setExportId(r.export_id),
   })
   const job = useQuery({
@@ -27,7 +31,7 @@ export function ExportDialog(props: { caseId: string; filter: StreamFilter; word
     enabled: !!exportId,
     refetchInterval: (q) => (q.state.data && (q.state.data.state === "done" || q.state.data.state === "failed") ? false : 2000),
   })
-  const save = useMutation({ mutationFn: () => downloadExport(caseId, exportId!, job.data?.file?.filename || "phone-messages.pdf") })
+  const save = useMutation({ mutationFn: () => downloadExport(caseId, exportId!, job.data?.file?.filename || `phone-messages.${format}`) })
   const f = facts.data
   const kinds = f ? [plural(f.messages, "message", "messages"), ...(f.calls ? [plural(f.calls, "call", "calls")] : []), ...(f.other ? [plural(f.other, "other record", "other records")] : [])].join(" and ") : ""
   const running = job.data && (job.data.state === "queued" || job.data.state === "rendering")
@@ -36,7 +40,11 @@ export function ExportDialog(props: { caseId: string; filter: StreamFilter; word
       <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Export for counsel</DialogTitle>
-          <DialogDescription>A PDF of exactly this list: every message complete, times as on screen. A character no bundled font can draw prints as [U+...] and is listed at the end.</DialogDescription>
+          <DialogDescription>
+            {format === "pdf"
+              ? "A PDF of exactly this list: every message complete, times as on screen. A character no bundled font can draw prints as [U+...] and is listed at the end."
+              : "One RSMF file of exactly this list for a review platform such as Relativity: the whole period in one conversation file, every message and attachment, times in UTC."}
+          </DialogDescription>
         </DialogHeader>
         {facts.isLoading && <p role="status" className="text-sm">Counting what the export holds</p>}
         {facts.isError && <p role="alert" className="text-sm">{failureText(facts.error, "What the export holds could not be counted.")}</p>}
@@ -61,22 +69,32 @@ export function ExportDialog(props: { caseId: string; filter: StreamFilter; word
                 {l.message}
               </p>
             ))}
+            <fieldset className="flex gap-3 text-xs" disabled={!!exportId && !!running}>
+              <legend className="sr-only">Format</legend>
+              <label className="flex items-center gap-1">
+                <input type="radio" name="export-format" checked={format === "pdf"} onChange={() => { setFormat("pdf"); setExportId(null) }} /> PDF
+              </label>
+              <label className="flex items-center gap-1">
+                <input type="radio" name="export-format" checked={format === "rsmf"} onChange={() => { setFormat("rsmf"); setExportId(null) }} /> RSMF for a review platform
+              </label>
+            </fieldset>
             <label className="flex flex-col gap-0.5 text-xs">
-              <span className="font-medium">Title on the cover</span>
+              <span className="font-medium">{format === "pdf" ? "Title on the cover" : "Title"}</span>
               <input className="rounded border bg-background px-2 py-1 text-sm" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
             </label>
           </div>
         )}
         {running && (
           <p role="status" className="text-sm">
-            {job.data!.state === "queued" ? "Waiting to draw the PDF" : `Drawing the PDF: ${Math.round(job.data!.progress * 100)}% done`}
+            {job.data!.state === "queued" ? `Waiting to make the ${noun}` : `Making the ${noun}: ${Math.round(job.data!.progress * 100)}% done`}
           </p>
         )}
         {job.data?.state === "failed" && <p role="alert" className="text-sm">{job.data.error}</p>}
         {start.isError && <p role="alert" className="text-sm">{failureText(start.error, "The export could not be started.")}</p>}
         {job.data?.state === "done" && (
           <p role="status" className="text-sm">
-            The PDF is ready: {plural(Number(job.data.counts.total ?? 0), "row", "rows")}
+            The {noun} is ready: {plural(Number(job.data.counts.total ?? 0), "row", "rows")}
+            {rsmfMissing(job.data.counts) > 0 ? `, ${plural(rsmfMissing(job.data.counts), "attachment", "attachments")} listed without the file; each says why` : ""}
             {Number(job.data.counts.missing_characters ?? 0) > 0 ? `, ${plural(Number(job.data.counts.missing_characters), "character", "characters")} printed as [U+...]` : ""}. SHA-256 {job.data.file?.sha256}
           </p>
         )}
@@ -84,11 +102,11 @@ export function ExportDialog(props: { caseId: string; filter: StreamFilter; word
         <DialogFooter>
           {job.data?.state === "done" ? (
             <Button onClick={() => save.mutate()} disabled={save.isPending}>
-              Save the PDF
+              Save the {noun}
             </Button>
           ) : (
             <Button onClick={() => start.mutate()} disabled={!f || start.isPending || !!running}>
-              {job.data?.state === "failed" ? "Try again" : "Export PDF"}
+              {job.data?.state === "failed" ? "Try again" : format === "pdf" ? "Export PDF" : "Export RSMF"}
             </Button>
           )}
         </DialogFooter>

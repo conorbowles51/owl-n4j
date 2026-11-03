@@ -137,8 +137,8 @@ def test_e7_no_list_is_cut(world):
 def test_unbuilt_formats_and_sources_are_refused_in_words_and_another_case_sees_nothing(world):
     from services.phone.exports import jobs
     with world["engine"].begin() as c:
-        with pytest.raises(jobs.ExportError, match="RSMF export is not built yet"):
-            jobs.create(c, case_id=world["case"], user_id=world["user"], fmt="rsmf", source="stream",
+        with pytest.raises(jobs.ExportError, match="An export is a PDF or an RSMF file"):
+            jobs.create(c, case_id=world["case"], user_id=world["user"], fmt="docx", source="stream",
                         filter_body={}, options={})
         with pytest.raises(jobs.ExportError, match="not built yet"):
             jobs.create(c, case_id=world["case"], user_id=world["user"], fmt="pdf", source="dossier",
