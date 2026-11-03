@@ -470,3 +470,28 @@ export async function mediaObjectUrl(caseId: string, fileUid: string, signal?: A
   }
   return { url: URL.createObjectURL(await response.blob()), type: response.headers.get("Content-Type") ?? "" }
 }
+
+/** One side of a communication edge: a person (dossier) or one phone identity (02 section 11.2). */
+export type EdgeSubject = { identity_key: string } | { dossier_id: string }
+
+export interface LinkEdgeCommunication {
+  messages_ab: number; messages_ba: number; calls_ab: number; calls_ba: number; emails_ab: number; emails_ba: number
+  first_instant: string | null; last_instant: string | null; phones: string[]; no_time_count: number | null
+}
+
+export interface LinkEdge {
+  a: { label: string; identity_key?: string; dossier_id?: string }
+  b: { label: string; identity_key?: string; dossier_id?: string }
+  communication: LinkEdgeCommunication
+  label: string
+}
+
+/** Combined edges between subjects, counted as Conversations counts Between A and B (direct, copies collapsed by
+ * default), so an edge's count equals the list it opens. */
+export async function getLinkEdges(caseId: string, subjects: EdgeSubject[], opts: { groupScope?: "direct" | "include_groups"; collapseCopies?: boolean } = {}) {
+  return fetchAPI<{ edges: LinkEdge[] }>("/api/phones/link-analysis/edges", {
+    method: "POST",
+    body: { case_id: caseId, subjects, group_scope: opts.groupScope ?? "direct", collapse_copies: opts.collapseCopies ?? true },
+    read: true,
+  })
+}
