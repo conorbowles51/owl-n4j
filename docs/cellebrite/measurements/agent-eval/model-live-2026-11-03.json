@@ -1,0 +1,120 @@
+[
+ {
+  "case": "d9945277",
+  "pair": "@corin_greywell ~ @yarrow_fallowby",
+  "at": "2026-11-03T16:04:58.911245Z",
+  "cited": 34,
+  "model": null,
+  "head": "Between the two Telegram handles **@corin_greywell** and **@yarrow_fallowby**, there are **34 direct messages and 0 calls** (34 total records). All 34 are messa"
+ },
+ {
+  "case": "d9945277",
+  "pair": "@corin_greywell ~ @yarrow_juniper",
+  "at": "2026-11-03T16:04:20.934594Z",
+  "cited": 10,
+  "model": null,
+  "head": "**Total direct messages and calls between @corin_greywell and @yarrow_juniper: 10 messages, 0 calls (10 total records).**\n\nCoverage: read 10 of 10 messages/call"
+ },
+ {
+  "case": "d9945277",
+  "pair": "@corin_greywell ~ @yarrow_fallowby",
+  "at": "2026-11-03T15:58:41.712790Z",
+  "cited": 34,
+  "model": null,
+  "head": "## Total: 34 direct messages, 0 calls\n\nBetween **@corin_greywell** and **@yarrow_fallowby** (their Telegram app identities), there are **34 direct messages and "
+ },
+ {
+  "case": "d9945277",
+  "pair": "@corin_greywell ~ @yarrow_juniper",
+  "at": "2026-11-03T15:56:54.380935Z",
+  "cited": 10,
+  "model": null,
+  "head": "## Direct messages and calls between @corin_greywell and @yarrow_juniper\n\n**Total: 10 direct messages, 0 calls.**\n\nAll 10 records rely on phone-system readings "
+ },
+ {
+  "case": "d9945277",
+  "pair": "@corin_greywell ~ @yarrow_juniper",
+  "at": "2026-11-03T15:53:00.922542Z",
+  "cited": 10,
+  "model": null,
+  "head": "Between **@corin_greywell** and **@yarrow_juniper** (their Telegram app identities), there are **10 direct messages and 0 calls** — a total of **10 records**.\n\n"
+ },
+ {
+  "case": "d9945277",
+  "pair": "@corin_greywell ~ @yarrow_fallowby",
+  "cited": 0,
+  "model": null,
+  "head": ""
+ },
+ {
+  "case": "d9945277",
+  "pair": "@corin_greywell ~ @yarrow_juniper",
+  "cited": 0,
+  "model": null,
+  "head": ""
+ },
+ {
+  "case": "4aa79795",
+  "pair": "@jory_pennywhistle ~ @zeno_oakhurst",
+  "at": "2026-11-03T16:03:20.146756Z",
+  "cited": 12,
+  "model": null,
+  "head": "Between `@jory_pennywhistle` and `@zeno_oakhurst` (their Telegram app identities), there are **12 direct messages and 0 calls**, for **12 total** direct communi"
+ },
+ {
+  "case": "4aa79795",
+  "pair": "@corin_brackley ~ @zeno_oakhurst",
+  "at": "2026-11-03T16:02:01.396969Z",
+  "cited": 50,
+  "model": null,
+  "head": "**Total direct messages and calls between @corin_brackley and @zeno_oakhurst: 50** (50 messages, 0 calls).\n\nAll records are on phone C3 (Zeno Oakhurst's phone),"
+ },
+ {
+  "case": "4aa79795",
+  "pair": "@cassia_stillwater ~ @orrin_ravensworth",
+  "at": "2026-11-03T16:01:10.722479Z",
+  "cited": 11,
+  "model": null,
+  "head": "**Total contacts between @cassia_stillwater and @orrin_ravensworth: 11 direct messages and 0 calls.**\n\nAll 11 records are direct messages; there were no calls. "
+ },
+ {
+  "case": "4aa79795",
+  "pair": "@alder_brackley ~ @orrin_ravensworth",
+  "at": "2026-11-03T16:00:11.254459Z",
+  "cited": 5,
+  "model": null,
+  "head": "## Direct Messages and Calls: @alder_brackley ↔ @orrin_ravensworth\n\n**Total: 5 records** — 3 direct messages and 2 calls.\n\nAll five came from phone **C1 (report"
+ },
+ {
+  "case": "4aa79795",
+  "pair": "@jory_pennywhistle ~ @zeno_oakhurst",
+  "at": "2026-11-03T15:56:08.498723Z",
+  "cited": 12,
+  "model": null,
+  "head": "There are **12 direct messages and 0 calls** between `@jory_pennywhistle` and `@zeno_oakhurst`, all found on phone C3 (times in UTC).\n\nCoverage: read 12 of 12 m"
+ },
+ {
+  "case": "4aa79795",
+  "pair": "@corin_brackley ~ @zeno_oakhurst",
+  "at": "2026-11-03T15:54:57.737004Z",
+  "cited": 50,
+  "model": null,
+  "head": "Between the Telegram identities **@corin_brackley** and **@zeno_oakhurst**, there are **50 direct messages and 0 calls**.\n\nCoverage: \"Read 50 of 50 messages and"
+ },
+ {
+  "case": "4aa79795",
+  "pair": "@cassia_stillwater ~ @orrin_ravensworth",
+  "at": "2026-11-03T15:54:28.070526Z",
+  "cited": 11,
+  "model": null,
+  "head": "There are **11 direct messages and 0 calls** between `@cassia_stillwater` and `@orrin_ravensworth`.\n\nAll 11 records (times in UTC), each relying on readings not"
+ },
+ {
+  "case": "4aa79795",
+  "pair": "@alder_brackley ~ @orrin_ravensworth",
+  "at": "2026-11-03T15:54:01.598626Z",
+  "cited": 3,
+  "model": null,
+  "head": "Between `@alder_brackley` and `@orrin_ravensworth` (their Telegram app identities), there are **3 direct messages and 0 calls** — a total of **3 records**.\n\nAll"
+ }
+]

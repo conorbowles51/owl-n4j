@@ -19,6 +19,20 @@ person, number and record that exist only in another case ("Not in this case").
 Involving a person counts the group messages that person is party to, as Conversations does; "include group chats"
 changes only Between. The phone_messages tool description says so.
 
-## Model answers
+## Model answers on live, 2026-11-03 (`model-live-2026-11-03.json`)
 
-Measured on live in the synthetic training case through the agent screen, signed in: see the cb-crossev status.
+The live agent (DeepSeek V4 Pro, as routed in Settings) was asked, signed in over plain http on release ca28a9ef,
+"Using the phone tools, how many direct messages and calls are there between A and B? State the total and cite every
+record with its rec:// link." for 6 pairs of app identities in the two synthetic cases (2 in the training case, 4 in
+the phones-only case), each pair asked two or three times. The known answer is the pair's count on the Graph, which
+equals Conversations Between A and B. Each answer's citations are counted from the stored answer text (distinct
+rec:// ids).
+
+| Complete answers | Known total stated | Records cited equal the total stated |
+|---|---|---|
+| 13 | 12 | 13 |
+
+The one miss: asked a second time about @alder_brackley and @orrin_ravensworth, the agent answered "5 records: 3
+direct messages and 2 calls", counting the same people's other identities; their two app identities hold 3 (the
+first answer said 3). Two further runs are left out: the measuring script left the page before they finished, and
+they hold no answer. Answers took 26 to 105 s.
