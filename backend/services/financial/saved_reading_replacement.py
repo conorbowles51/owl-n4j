@@ -1020,6 +1020,8 @@ def refresh_descriptions(*, session_factory, case_id, document_id, from_images=F
             applied.append(dict(change, replacement_id=str(replacement.id)))
         session.flush()
         reconcile_period(session, period)
+        from services.financial.brokerage_ledger import after_cash_rows_changed
+        after_cash_rows_changed(session, document.id)  # trades follow the replaced rows (lx-brokerage)
         admission = refresh_saved_assessment(session, document, period)
         if (admission.get('status') != before_admission.get('status')
                 or bool(admission.get('can_import')) != bool(before_admission.get('can_import'))):

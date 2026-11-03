@@ -1629,6 +1629,10 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 # The processor's judgement calls in this statement (fin-judgements): shown, never held; never raises.
                 from services.financial.judgements import record_saved
                 record_saved(session, document, period=period, transactions=transactions, file=file)
+                # The replaced reading's trades and holdings are set aside with it (lx-brokerage).
+                from services.financial.brokerage_ledger import after_cash_rows_changed
+                for prior in (replacing, shell):
+                    after_cash_rows_changed(session, getattr(prior, 'id', None))
                 lap('reconcile')
                 _commit_statement(session)
                 lap('commit')

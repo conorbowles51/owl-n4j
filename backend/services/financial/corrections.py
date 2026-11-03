@@ -120,6 +120,9 @@ def correct_transaction(session, *, case_id, transaction_id, amount_minor, direc
         document.metadata_ = {**(document.metadata_ or {}), "admissibility_reservations": reservations}
         reclassify_after_reconciliation(session, document, document_reconciliation(session, document), reservations=reservations)
         session.flush()
+        # The corrected row's trade follows it; a person's trade corrections carry while their value reads the same.
+        from services.financial.brokerage_ledger import after_cash_rows_changed
+        after_cash_rows_changed(session, document.id)
         if document.proof_class != preview["verification"]["proposed_proof_class"]:
             raise CorrectionPreviewError("Verification changed during recording; nothing was committed.", 409)
         if (document.metadata_ or {}).get('statement_import_original') and (document.metadata_ or {}).get('statement_import_request'):

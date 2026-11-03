@@ -807,3 +807,40 @@ def undo_account_consolidation(body: UndoConsolidationRequest, case_id: UUID = Q
         return undo_consolidation(db, case_id=case_id, request=body, actor=actor_from_user(current_user))
     except (AccountPartyError, ActorError) as exc:
         raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+
+
+class SecurityRowCorrection(BaseModel):
+    field: str = Field(min_length=1, max_length=64)
+    value: Optional[str] = Field(default=None, max_length=128)
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+class SecurityRowConfirmation(BaseModel):
+    reason: str = Field(default='', max_length=4000)
+
+
+@router.post('/security-rows/{row_id}/correct')
+@records('security_row', 'change')
+def correct_security_row(row_id: UUID, body: SecurityRowCorrection, case_id: UUID = Query(...),
+                         db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    """A person corrects one value of a trade or holding; the value as read stays visible beside it."""
+    from services.financial.brokerage_ledger import SecurityRowError, correct_row
+    try:
+        return correct_row(db, case_id=case_id, row_id=row_id, field=body.field, value=body.value,
+                           reason=body.reason, actor=actor_from_user(current_user))
+    except (SecurityRowError, ActorError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc
+
+
+@router.post('/security-rows/{row_id}/confirm')
+@records('security_row', 'change')
+def confirm_security_row(row_id: UUID, body: SecurityRowConfirmation, case_id: UUID = Query(...),
+                         db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
+    """A person confirms a trade or holding reading (a model's reading is shown as the model's until then)."""
+    from services.financial.brokerage_ledger import SecurityRowError, confirm_row
+    try:
+        return confirm_row(db, case_id=case_id, row_id=row_id, reason=body.reason, actor=actor_from_user(current_user))
+    except (SecurityRowError, ActorError) as exc:
+        db.rollback()
+        raise HTTPException(status_code=getattr(exc, 'status_code', 422), detail=str(exc)) from exc

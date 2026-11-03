@@ -207,6 +207,19 @@ class JudgementCallsArgs(BaseModel):
     limit: int = Field(25, ge=1, le=100)
 
 
+class TradesArgs(BaseModel):
+    kind: Literal["trade", "holding"] = Field("trade", description="trade: each security bought, sold or lent "
+                                              "(repo); holding: each printed position at a date.")
+    instrument: str | None = Field(None, description="Part of the instrument as printed (issuer and series), e.g. "
+                                   "BONDESF or CETES 251002.")
+    account_id: str | None = None
+    side: Literal["buy", "sell", "repo", "repo_start", "repo_maturity", "other"] | None = None
+    date_from: str | None = Field(None, description="YYYY-MM-DD; trade date, else settlement, else as-of date.")
+    date_to: str | None = None
+    offset: int = Field(0, ge=0)
+    limit: int = Field(25, ge=1, le=100)
+
+
 class DecisionsArgs(BaseModel):
     subject: str = Field(..., description="payment:<id>, statement:<source_document_id>, period:<id> or account:<id>.")
     offset: int = Field(0, ge=0)
@@ -2031,9 +2044,11 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         if context.significant_scope:
             return scope_error(tool_name, "Financial analysis")
         from services.agent import ledger_reading_tools as LR
+        from services.agent import brokerage_tools as BT
         try:
             with (context.ledger_session_factory or _financial_session)() as db:
-                data = getattr(LR, func_name)(db, case_id=uuid.UUID(context.case_id), **kwargs)
+                reader = getattr(LR, func_name, None) or getattr(BT, func_name)
+                data = reader(db, case_id=uuid.UUID(context.case_id), **kwargs)
         except ValueError as exc:
             return context.result(tool_name, {"available": False, "reason": str(exc)},
                                   summary="That could not be read. No partial result was returned.",
@@ -2797,6 +2812,17 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "entity:<key>), never by printed name. Says how many open judgement calls the figure rests on. "
                 "Use this, never summed graph TRANSFERRED_TO amounts, for any total between two parties."),
             args_schema=MoneyBetweenArgs,
+        ),
+        wrap(
+            lambda **kw: read_ledger_extra("get_trades", "get_trades", **kw),
+            name="get_trades",
+            description=("Trades and holdings read from the case's brokerage statements: instrument as printed "
+                "(issuer and series; ISIN only when printed), quantity, price, trade date (the printed operation "
+                "day) and settlement date, commission, premium, tax and net, each cited to the printed line with "
+                "its cash leg in the money ledger. Totals per instrument are computed here. No time of execution "
+                "is printed: set a trade against calls and messages by date, never by a time it does not carry. "
+                "origin.kind 'model' means a model read it and no person has confirmed it; say so."),
+            args_schema=TradesArgs,
         ),
         wrap(
             lambda **kw: read_ledger_extra("get_judgement_calls", "get_judgement_calls", **kw),

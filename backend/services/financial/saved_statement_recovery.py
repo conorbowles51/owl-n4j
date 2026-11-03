@@ -372,6 +372,9 @@ def save_recovery(session, *, case_id, source_id, request, actor):
         result = dict(source_document_id=str(source_id), sections=sections, replacements=replacements, applied=True)
         document.status = 'superseded'
         document.quarantine_reason = None
+        from services.financial.brokerage_ledger import after_cash_rows_changed
+        for document_id in [document.id] + [section['source_document_id'] for section in sections]:
+            after_cash_rows_changed(session, document_id)  # trades follow the recovered rows (lx-brokerage)
         document.metadata_ = {**document.metadata_, 'statement_recovery_receipt': dict(
             request=payload, result=result, preview=preview, saved_at=now.isoformat(),
             saved_by=dict(user_id=str(actor.user_id), name=actor.name, **origin_field(actor)))}

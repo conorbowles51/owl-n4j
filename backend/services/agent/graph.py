@@ -110,6 +110,7 @@ _INTERNAL_TOOL_MARKERS = (
     "get_financial_coverage",
     "get_money_between",
     "get_judgement_calls",
+    "get_trades",
     "get_decisions",
     "get_statement_continuity",
     "get_account_mentions",
@@ -182,6 +183,7 @@ _FINANCIAL_ANALYSIS_PROMPT = """Financial investigation:
 - Money between two parties comes only from get_money_between, or get_contact_and_money_between when the parties are people on the phones: both read the one money-between function the Graph screen's pair edge uses. Use get_money_between for ledger parties and accounts. Quote its p0 to p2 totals per currency, state its p3 figure beside them as not verified and never added in, and give phone readings of money as a count, never a sum. Name parties by the ids the tools return (party:<id>, account:<id>, or an identity:party:<id> group key), never by a printed name. Graph TRANSFERRED_TO relationships and graph transaction amounts are navigation, not a total: never sum them.
 - A counterparty group from analyze_financial_transactions with group_basis "exact_displayed_label" gathers payments by the name shown on the row, not by a reviewed identity: call it "payments labelled <name>", never money between two parties.
 - When a result gives open_judgement_calls (or a figure's rows carry open judgement calls), say beside the figure how many open judgement calls it rests on, e.g. "this rests on 3 open judgement calls no person has confirmed". Use get_judgement_calls to give their sentences and get_decisions for who decided a record and whether a model drafted it (made_by.kind "model": drafted by a model, not a person's own decision).
+- For securities (bought, sold, lent by repo, or held), use get_trades: it gives the instrument as printed, quantity, price, trade and settlement dates and the cash leg, each cited. A trade date is a day, never a time: no execution time is printed, so never state that an order was placed during a call; say it was placed on the same day and cite both. Say when a trade was read by a model and not confirmed (origin.kind "model").
 - Before saying a payment did not happen or a month is missing, read get_statement_continuity for the account: a gap means no saved statement covers those days, which is not an absence of payments. get_account_mentions lists account numbers printed on payments with no statement in the case.
 - Link each ledger row you cite to the path in its financial_href field, e.g. [12 Mar payment to Acme](/cases/<case id>/financial?view=transactions&payment=<payment id>) copied from that field; never write the word financial_href as text or as a link, and never build a payment link yourself. Cite the statement it was read from as a document link with source.filename and the row's locator page: [filename, p.N](doc://<filename>/N), or [filename](doc://<filename>) when the row has no page.
 - Separate observed facts from hypotheses and investigative leads. Unusual amounts, repeated counterparties or timing patterns alone do not establish wrongdoing. Do not infer ownership, beneficiary identity, intent, or criminal conduct beyond the returned evidence.
@@ -339,6 +341,9 @@ def activity_for_tool_call(name: str | None, args: dict[str, Any] | None, call_i
     elif safe_name == "get_money_between":
         title = "Read the money between two parties"
         detail = "I'm reading payments between the two parties by reviewed identity, per currency, with unverified ones stated apart."
+    elif safe_name == "get_trades":
+        title = "Read trades and holdings"
+        detail = "I'm reading securities bought, sold and held from the brokerage statements, each with its printed line."
     elif safe_name == "get_judgement_calls":
         title = "Read judgement calls"
         detail = "I'm checking which machine judgements a person has confirmed and which are still open."

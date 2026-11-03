@@ -750,4 +750,7 @@ def record_transactions(
             actor = Actor(name=confirmed['name'], email=confirmed['email'], user_id=uuid.UUID(confirmed['user_id']) if confirmed.get('user_id') not in (None, 'None') else None,
                           origin=origin_of(confirmed))
             record_link(session, row=row, link=link, actor=actor, reason='Counterparty selected while reviewing the source payment.')
+    # A brokerage statement's trades and holdings follow its cash rows (lx-brokerage); never a cash write.
+    from services.financial.brokerage_ledger import after_cash_rows_changed
+    after_cash_rows_changed(session, document.id)
     return rows

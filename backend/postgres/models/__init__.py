@@ -150,8 +150,10 @@ from postgres.models.evidence_upload import EvidenceUploadSession, EvidenceUploa
 from postgres.models.activity_event import ActivityEvent
 __all__ += ["EvidenceUploadSession"]
 from postgres.models.financial_money_trails import FinancialMoneyTrail
+from postgres.models.financial_securities import FinancialSecurityRow
 from postgres.models.financial_judgements import FinancialJudgement
 __all__ += ["FinancialMoneyTrail"]
+__all__ += ["FinancialSecurityRow"]
 from postgres.models.financial_recovery import FinancialRecoveryRelease, FinancialRecoveryRun, FinancialRecoveryItem
 __all__ += ['FinancialRecoveryRelease', 'FinancialRecoveryRun', 'FinancialRecoveryItem']
 from postgres.models.financial_payment_category import FinancialPaymentCategory, FinancialCategoryModelCache, FinancialCategoryRule

@@ -138,6 +138,8 @@ class AdjudicationSubject(str, Enum):
     phone_analysis_result = "phone_analysis_result"
     # 03 8.3: a machine-generated text (a transcript or text read from an image) a person corrects or confirms.
     phone_derived_text = "phone_derived_text"
+    # A trade or holding read from a brokerage statement (financial_security_rows): corrected or confirmed.
+    security_row = "security_row"
 
 
 class AdjudicationReasonKind(str, Enum):
@@ -270,6 +272,10 @@ class AdjudicationDecision(str, Enum):
     # A reading of the system (a mapping rule) confirmed or corrected on one phone in one case (02 sections 6.8, 6.10).
     confirm_phone_reading = "confirm_phone_reading"
     correct_phone_reading = "correct_phone_reading"
+    # A person corrects a value of a trade or holding read from a brokerage statement (the value as read stays
+    # visible), or confirms a reading (a model's reading is shown as the model's until confirmed).
+    correct_security_row = "correct_security_row"
+    confirm_security_row = "confirm_security_row"
     # 05 section 3.7, on the subject 05's results table adds.
     confirm_phone_result = "confirm_phone_result"
     reject_phone_result = "reject_phone_result"

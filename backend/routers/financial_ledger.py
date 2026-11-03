@@ -1708,3 +1708,18 @@ def get_account_consolidations(case_id: UUID = Query(...), db: Session = Depends
         return consolidation_state(db, case_id)
     except AccountPartyError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get('/security-rows')
+def get_security_rows(case_id: UUID = Query(...), kind: str = Query('trade'), instrument: Optional[str] = Query(None),
+                      account_id: Optional[UUID] = Query(None), side: Optional[str] = Query(None),
+                      date_from: Optional[date] = Query(None), date_to: Optional[date] = Query(None),
+                      sort: str = Query('date'), page: int = Query(1, ge=1),
+                      page_size: int = Query(50, ge=1, le=200), db: Session = Depends(get_db)):
+    """Trades and holdings read from the case's brokerage statements (lx-brokerage), one page with the total."""
+    from services.financial.brokerage_ledger import SecurityRowError, query_rows
+    try:
+        return query_rows(db, case_id=case_id, row_kind=kind, instrument=instrument, account_id=account_id, side=side,
+                          date_from=date_from, date_to=date_to, sort=sort, page=page, page_size=page_size)
+    except SecurityRowError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
