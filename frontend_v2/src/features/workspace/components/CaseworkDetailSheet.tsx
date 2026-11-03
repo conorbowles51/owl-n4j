@@ -3,6 +3,8 @@ import { TheoryKeywordLists } from "@/features/search/components/KeywordListsPag
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { PhoneLinkDetail } from "@/features/phones/PhoneLinkDetail"
+import { ReplacedLinkNote } from "@/features/phones/ReplacedLinkNote"
+import { useReplacedLinks } from "@/features/phones/replaced-links"
 import { isPhoneLinkType, phoneLinkHref, phoneLinkSummary } from "@/features/phones/phone-links"
 import {
   ArchiveRestore,
@@ -124,6 +126,7 @@ export function CaseworkDetailSheet({
     useState<FindingSignificance | null>(null)
   const entryQuery = useCaseworkEntry(caseId, entryId ?? undefined, true)
   const entry = entryQuery.data
+  const replaced = useReplacedLinks(caseId, entry?.links)
   const lifecycleMutation = useChangeCaseworkLifecycle(caseId)
   const conversionMutation = useConvertTheory(caseId)
   const deleteMutation = useDeleteCaseworkEntry(caseId)
@@ -477,8 +480,8 @@ export function CaseworkDetailSheet({
                       {entry.links.map((link) => {
                         const anchor = anchorLabel(link.source_anchor)
                         return (
+                          <div key={link.id}>
                           <button
-                            key={link.id}
                             type="button"
                             disabled={
                               !(
@@ -524,6 +527,10 @@ export function CaseworkDetailSheet({
                               </span>
                             </span>
                           </button>
+                          {link.target_type === "phone_record" && (
+                            <ReplacedLinkNote caseId={caseId} state={replaced[link.target_id]} />
+                          )}
+                          </div>
                         )
                       })}
                     </div>

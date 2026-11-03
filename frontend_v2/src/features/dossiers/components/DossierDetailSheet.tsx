@@ -22,6 +22,8 @@ import {
 import { toast } from "sonner"
 import { useNavigate } from "react-router-dom"
 import { PhoneLinkDetail } from "@/features/phones/PhoneLinkDetail"
+import { ReplacedLinkNote } from "@/features/phones/ReplacedLinkNote"
+import { useReplacedLinks } from "@/features/phones/replaced-links"
 import { isPhoneLinkType, phoneLinkHref, phoneLinkSummary } from "@/features/phones/phone-links"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -514,6 +516,7 @@ export function DossierDetailSheet({
 }) {
   const query = useDossier(dossierId)
   const dossier = query.data
+  const replaced = useReplacedLinks(caseId, [...(dossier?.links ?? []), ...(dossier?.assessments ?? []).flatMap((a) => a.supporting_links ?? [])])
   const [briefDirty, setBriefDirty] = useState(false)
   const [discardOpen, setDiscardOpen] = useState(false)
   const [mediaOpen, setMediaOpen] = useState(false)
@@ -583,15 +586,17 @@ export function DossierDetailSheet({
       setLinkedDossierId(link.target_id)
   }
   const renderSourceLink = (link: DossierLink) => (
-    <button
-      type="button"
-      key={link.id}
-      className="min-h-10 break-all text-left text-xs text-amber-600 underline underline-offset-2 hover:text-amber-700 dark:text-amber-400"
-      onClick={() => openLinkedItem(link)}
-    >
-      {link.label || (isPhoneLinkType(link.target_type) ? phoneLinkSummary(link).kind : "Open source evidence")}
-      {isPhoneLinkType(link.target_type) && <PhoneLinkDetail link={link} />}
-    </button>
+    <span key={link.id} className="inline-flex flex-col">
+      <button
+        type="button"
+        className="min-h-10 break-all text-left text-xs text-amber-600 underline underline-offset-2 hover:text-amber-700 dark:text-amber-400"
+        onClick={() => openLinkedItem(link)}
+      >
+        {link.label || (isPhoneLinkType(link.target_type) ? phoneLinkSummary(link).kind : "Open source evidence")}
+        {isPhoneLinkType(link.target_type) && <PhoneLinkDetail link={link} />}
+      </button>
+      {link.target_type === "phone_record" && <ReplacedLinkNote caseId={caseId} state={replaced[link.target_id]} />}
+    </span>
   )
   const openDocument = async (filename: string, page?: number) => {
     try {
@@ -981,6 +986,7 @@ export function DossierDetailSheet({
                           ) : (
                             <span className="min-w-0 flex-1 break-all text-xs">
                               {link.label || link.target_id}
+                              {link.target_type === "phone_record" && <ReplacedLinkNote caseId={caseId} state={replaced[link.target_id]} />}
                             </span>
                           )}
                           {canEdit && (

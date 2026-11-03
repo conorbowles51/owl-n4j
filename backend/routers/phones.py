@@ -129,6 +129,23 @@ def compare_phones(case_id: UUID = Query(...), a: UUID = Query(...), b: UUID = Q
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+class ReplacedLinksBody(BaseModel):
+    case_id: UUID
+    record_uids: list[str] = Field(default_factory=list)
+
+
+@router.post("/records/replacements")
+def replaced_links(body: ReplacedLinksBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """For linked phone records: whether each is on a replaced report, and the record with the equal natural key in
+    the report that replaced it, or why none is offered (07 CO-9a and CO-9b). A read, so POST carries the list."""
+    from services.phone import replaced_links as R
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    try:
+        return {"items": R.replacements(db.connection(), body.case_id, body.record_uids)}
+    except R.TooMany as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.get("/financial-presence")
 def financial_presence(case_id: UUID = Query(...), db: Session = Depends(get_db),
                        user: User = Depends(get_current_db_user)):
