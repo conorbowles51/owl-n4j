@@ -36,9 +36,51 @@ def _split(url):
     return base, name
 
 
+_TEMPLATE_CHECKED = set()
+
+
+def alembic_heads():
+    """The alembic head revision(s) of this checkout."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cfg = Config(os.path.join(here, "alembic.ini"))
+    cfg.set_main_option("script_location", os.path.join(here, "postgres", "alembic"))
+    return set(ScriptDirectory.from_config(cfg).get_heads())
+
+
+def template_behind_reason(current, heads):
+    """None when the template is at the head; otherwise the words a failing test shows."""
+    if set(current) == set(heads):
+        return None
+    return ("The test template database is at %s but this checkout's alembic head is %s; upgrade it with "
+            "DATABASE_URL=<template url> python -m alembic upgrade head (in backend/), then rerun"
+            % (", ".join(sorted(current)) or "no revision", ", ".join(sorted(heads))))
+
+
+def check_template_at_head(url=None):
+    """Fail (not skip) when the template is behind or ahead of the head, so a stale template reads as that and not
+    as an UndefinedColumn in whichever test touches the newest column. Checked once per template per run."""
+    from sqlalchemy import create_engine, text
+    url = sa_url(url or TEMPLATE_URL)
+    if url in _TEMPLATE_CHECKED:
+        return
+    engine = create_engine(url)
+    try:
+        with engine.connect() as c:
+            current = {r[0] for r in c.execute(text("SELECT version_num FROM alembic_version"))}
+    finally:
+        engine.dispose()
+    reason = template_behind_reason(current, alembic_heads())
+    if reason:
+        pytest.fail(reason, pytrace=False)
+    _TEMPLATE_CHECKED.add(url)
+
+
 @contextmanager
 def fresh_engine():
     from sqlalchemy import create_engine, text
+    check_template_at_head()
     base, template = _split(sa_url(TEMPLATE_URL))
     name = "phone_t_%s" % uuid.uuid4().hex[:12]
     admin = create_engine(base + "/postgres", isolation_level="AUTOCOMMIT")

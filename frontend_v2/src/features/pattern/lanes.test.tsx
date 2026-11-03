@@ -52,6 +52,24 @@ describe("the shared Lanes component (04 section 8.6, 07 J-5)", () => {
     ])
   })
 
+  it("shades a not-observed hour that holds records apart from No data, in the lane and in its legend (followups m110312500118802)", () => {
+    const hours = [
+      { hour_utc: "2023-11-08T09:00:00Z", state: "no_data", words: "No data" },
+      { hour_utc: "2023-11-08T10:00:00Z", state: "no_data", has_records: true, words: "No continuous recording; records this hour" },
+      { hour_utc: "2023-11-08T11:00:00Z", state: "no_data", words: "No data" },
+    ]
+    const bands = bandsFromHours(hours)
+    expect(bands.map((b) => [b.start, !!b.hasRecords])).toEqual([
+      ["2023-11-08T09:00:00.000Z", false], ["2023-11-08T10:00:00.000Z", true], ["2023-11-08T11:00:00.000Z", false]])
+    render(<Lanes start="2023-11-08T09:00:00Z" end="2023-11-08T12:00:00Z" zone="UTC" rows={[{ id: "p", label: "Phone 1", bands, marks: [] }]} />)
+    const lane = screen.getByRole("region", { name: "Lane: Phone 1" })
+    const noData = lane.querySelector('[title="No data"]')!
+    const withRecords = lane.querySelector('[title="No continuous recording; records this hour"]')!
+    expect(withRecords.className).not.toEqual(noData.className)
+    const swatch = (words: string) => screen.getByText(words).querySelector("[data-legend-swatch]")!
+    expect(swatch("No continuous recording; records this hour").className).not.toEqual(swatch("No data").className)
+  })
+
   it("is one component: defined once, used by the Timeline window, the Day view and the phone lens (03 T-1)", () => {
     const defining = Object.entries(sources).filter(([, src]) => /export function Lanes\(/.test(src)).map(([p]) => p)
     expect(defining).toEqual(["/src/features/pattern/components/Lanes.tsx"])

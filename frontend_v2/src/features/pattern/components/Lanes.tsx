@@ -14,6 +14,8 @@ export interface LaneBand {
   end: string
   state: string
   words: string
+  /** The hours hold records of the phone; a not-observed band is then shaded apart from "No data". */
+  hasRecords?: boolean
 }
 
 export interface LaneMark {
@@ -56,6 +58,13 @@ const BAND_CLASS: Record<string, string> = {
   powered_off: "bg-zinc-300 dark:bg-zinc-700",
   powered_off_inferred: "bg-zinc-200 dark:bg-zinc-800",
   after_extraction: "bg-amber-100 dark:bg-amber-950",
+}
+/** A not-observed hour that holds records: not continuous recording, but not "No data" either. */
+const RECORDS_NOT_OBSERVED_CLASS = "bg-teal-50 dark:bg-teal-950/60"
+
+function bandClass(b: Pick<LaneBand, "state" | "hasRecords">) {
+  if (b.hasRecords && b.state === "no_data") return RECORDS_NOT_OBSERVED_CLASS
+  return BAND_CLASS[b.state] || "bg-muted/40"
 }
 const TONE_CLASS: Record<string, string> = {
   strong: "bg-emerald-700", moderate: "bg-emerald-500", weak: "bg-emerald-300", none: "bg-zinc-400",
@@ -121,7 +130,8 @@ export function Lanes({ start, end, zone, zoneBasis, rows, span, onSpan, header 
           )}
           <div className="relative h-8 w-full overflow-hidden rounded bg-background">
             {(row.bands || []).map((b, i) => (
-              <div key={i} className={`absolute top-0 h-full ${BAND_CLASS[b.state] || "bg-muted/40"}`} title={b.words}
+              <div key={i} className={`absolute top-0 h-full ${bandClass(b)}`} title={b.words} data-band-state={b.state}
+                data-band-records={b.hasRecords ? "yes" : undefined}
                 style={{ left: `${pct(b.start, s, width)}%`, width: `${Math.max(0.2, pct(b.end, s, width) - pct(b.start, s, width))}%` }} />
             ))}
             {row.marks.map((m) => {
@@ -136,7 +146,12 @@ export function Lanes({ start, end, zone, zoneBasis, rows, span, onSpan, header 
           </div>
           {row.bands && row.bands.length > 0 && (
             <p className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-              {Array.from(new Set(row.bands.map((b) => b.words))).map((w) => <span key={w}>{w}</span>)}
+              {Array.from(new Map(row.bands.map((b) => [b.words, b])).values()).map((b) => (
+                <span key={b.words} className="inline-flex items-center gap-1">
+                  <span aria-hidden="true" data-legend-swatch className={`inline-block h-2.5 w-2.5 rounded-sm border ${bandClass(b)}`} />
+                  {b.words}
+                </span>
+              ))}
             </p>
           )}
         </div>

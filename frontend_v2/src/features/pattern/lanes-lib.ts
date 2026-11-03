@@ -15,14 +15,16 @@ export function errorWords(e: unknown) {
 }
 
 /** Hour states of one phone as bands, merged where neighbours share a state. */
-export function bandsFromHours(hours: { hour_utc: string; state: string; words: string }[]): LaneBand[] {
+export function bandsFromHours(hours: { hour_utc: string; state: string; words: string; has_records?: boolean }[]): LaneBand[] {
   const out: LaneBand[] = []
   for (const h of hours) {
     const end = new Date(new Date(h.hour_utc).getTime() + 3600_000).toISOString()
     const last = out[out.length - 1]
-    // one band per state and words: a not-observed hour holding records reads apart from "No data"
-    if (last && last.state === h.state && last.words === h.words && last.end === new Date(h.hour_utc).toISOString()) last.end = end
-    else out.push({ start: new Date(h.hour_utc).toISOString(), end, state: h.state, words: h.words })
+    const hasRecords = !!h.has_records
+    // one band per state, words and records: a not-observed hour holding records reads and shades apart from "No data"
+    if (last && last.state === h.state && last.words === h.words && !!last.hasRecords === hasRecords
+      && last.end === new Date(h.hour_utc).toISOString()) last.end = end
+    else out.push({ start: new Date(h.hour_utc).toISOString(), end, state: h.state, words: h.words, ...(hasRecords ? { hasRecords } : {}) })
   }
   return out
 }
