@@ -109,6 +109,31 @@ def judgement_index(session, case_id):
     return _judgement_index(session, case_id)
 
 
+# ---- amounts ------------------------------------------------------------------------------------------------------
+
+def formatted(amount_minor, currency) -> dict:
+    """``{"amount": "MXN 21,000.00", "currency_exponent": 2}`` beside a minor-unit figure, so a model never reads
+    minor units as whole units (measured live: MXN 2,100,000 centavos was answered as MXN 2,100,000.00)."""
+    from services.financial.money import MoneyError, get_currency
+    from services.phone.link_edges import format_minor
+    try:
+        return dict(amount=format_minor(int(amount_minor), currency), currency_exponent=get_currency(currency).exponent)
+    except (MoneyError, AttributeError, TypeError, ValueError):
+        return dict(amount=None, currency_exponent=None)
+
+
+def _formatted_totals(totals):
+    out = []
+    for t in totals:
+        p3 = t["p3"]
+        out.append(dict(t, paid_ab=formatted(t["paid_ab_minor"], t["currency"])["amount"],
+                        paid_ba=formatted(t["paid_ba_minor"], t["currency"])["amount"],
+                        currency_exponent=formatted(0, t["currency"])["currency_exponent"],
+                        p3=dict(p3, paid_ab=formatted(p3["paid_ab_minor"], t["currency"])["amount"],
+                                paid_ba=formatted(p3["paid_ba_minor"], t["currency"])["amount"])))
+    return out
+
+
 # ---- money between two parties (B) ------------------------------------------------------------------------------
 
 MONEY_SCHEMA = "loupe.agent.money_between/1"
@@ -141,14 +166,16 @@ def get_money_between(session, *, case_id, party_a, party_b, start_date=None, en
         raise LedgerReadingError(str(exc)) from exc
     mirrors = [r["mirrored_by"]["id"] for r in out["rows"] if r.get("mirrored_by")]
     docs = _source_documents(session, case_id, [r["id"] for r in out["rows"]] + mirrors)
-    rows = [dict(r, source_document_id=docs.get(r["id"]), financial_href=payment_href(case_id, r["id"]))
-            for r in out["rows"]]
+    rows = [dict(r, source_document_id=docs.get(r["id"]), financial_href=payment_href(case_id, r["id"]),
+                 **formatted(r["amount_minor"], r["currency"])) for r in out["rows"]]
     # a payment seen on both statements is one payment; the calls on its mirror row count too
     behind = open_calls_behind(judgement_index(session, case_id), [
         dict(r, _mirror_rows=[{"id": r["mirrored_by"]["id"], "source_document_id": docs.get(r["mirrored_by"]["id"])}]
              if r.get("mirrored_by") else []) for r in rows])
     return _paged(MONEY_SCHEMA, case_id, rows, offset, limit, out["revision"], a=out["a"], b=out["b"],
-                  start_date=out["from_date"], end_date=out["to_date"], totals=out["totals"],
+                  start_date=out["from_date"], end_date=out["to_date"], totals=_formatted_totals(out["totals"]),
+                  amounts="Every *_minor figure is in the currency's minor units (currency_exponent decimals); quote the "
+                          "formatted amount beside it, never the minor-unit integer as a whole amount.",
                   payments_by_class=out["payments_by_class"], shared_accounts=out["shared_accounts"],
                   phone_money_mentions=out["p4"], date_basis=out["date_basis"], basis=out["basis"],
                   graph=out["graph"], limits=out["limits"], open_judgement_calls=behind)
@@ -299,7 +326,8 @@ CONTINUITY_SCHEMA = "loupe.agent.statement_continuity/1"
 
 
 def _money(m):
-    return None if m is None else dict(amount_minor=str(m.minor_units), currency=m.currency)
+    return None if m is None else dict(amount_minor=str(m.minor_units), currency=m.currency,
+                                       **formatted(m.minor_units, m.currency))
 
 
 def get_statement_continuity(session, *, case_id, account, offset=0, limit=50):

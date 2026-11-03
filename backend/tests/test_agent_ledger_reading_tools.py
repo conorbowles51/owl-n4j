@@ -82,6 +82,10 @@ class LedgerReadingToolTests(DuplicateTestCase):
         usd = data['totals'][0]
         assert (usd['paid_ab_minor'], usd['paid_ba_minor'], usd['p3']['paid_ab_minor']) == (100_00, 25_00, 40_00)
         assert data['total'] == 3 and data['returned'] == 3 and data['next_offset'] is None
+        # measured live: 2,100,000 minor units were answered as MXN 2,100,000.00; the amount now comes formatted
+        assert (usd['paid_ab'], usd['paid_ba'], usd['p3']['paid_ab'], usd['currency_exponent']) == (
+            'USD 100.00', 'USD 25.00', 'USD 40.00', 2)
+        assert {i['amount'] for i in data['items']} == {'USD 100.00', 'USD 40.00', 'USD 25.00'}
         assert data['open_judgement_calls']['open_calls'] == 1
         assert data['open_judgement_calls']['payments_with_open_calls'] == 1
         assert '1 open judgement call' in out['summary']
@@ -191,6 +195,7 @@ class LedgerReadingToolTests(DuplicateTestCase):
         assert cov['covered_from'] == '2026-01-01' and cov['covered_to'] == '2026-03-31'
         assert cov['gaps'] == [['2026-02-01', '2026-02-28']]
         assert '1 gap' in data['sentence']
+        assert data['items'][0]['opening']['amount'] == 'GBP 100.00'
         doc3 = self.make_document()
         undated = self.make_period(doc3, bounds=PeriodBounds.printed(date(2026, 5, 1), date(2026, 5, 31)))
         undated.period_start = undated.period_end = None
