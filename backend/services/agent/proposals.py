@@ -107,13 +107,13 @@ def _uuid(value) -> Optional[uuid.UUID]:
 
 def check_citations(session, case_id, citations: Iterable[str]) -> list[dict]:
     """[{citation, scheme, status: 'valid'|'not_in_case'|'invalid', label}] for each citation, checked against the
-    case. Uses the agent-citations checker when it is present (``services.case_citations``); otherwise checks
-    ``txn://`` and ``doc://`` against the case's own rows and refuses what it cannot check."""
-    out = []
+    case. Uses the agent-citations checker when it is present (``services.case_citations.resolve_citations``);
+    otherwise checks ``txn://``, ``doc://`` and ``rec://`` against the case's own rows."""
     try:
         from services import case_citations  # type: ignore
     except ImportError:  # agent-citations not yet merged: the local check below is the whole check
         case_citations = None
+    out = []
     for raw in citations:
         text = str(raw or '').strip()
         match = CITATION.match(text)
@@ -121,17 +121,34 @@ def check_citations(session, case_id, citations: Iterable[str]) -> list[dict]:
             out.append(dict(citation=text, scheme='', status='invalid', label='Not a source link.'))
             continue
         scheme, rest = match.group(1), match.group(2)
-        if case_citations is not None and hasattr(case_citations, 'resolve_one'):
+        local = _local_check(session, case_id, scheme, rest, text)
+        if local['status'] == 'valid' and case_citations is not None and hasattr(case_citations, 'resolve_citations'):
+            # Both checks must pass: the shared checker also refuses an ambiguous or foreign link.
             try:
-                resolved = case_citations.resolve_one(session, case_id, text)
-                ok = resolved.get('status') in ('valid', 'ok', 'resolved')
-                out.append(dict(citation=text, scheme=scheme, status='valid' if ok else 'not_in_case',
-                                label=resolved.get('label') or (None if ok else NOT_IN_CASE)))
-                continue
-            except Exception:  # noqa: BLE001 - fall back to the local check
+                parsed = case_citations.parse_citation(text)
+                resolved = case_citations.resolve_citations(session, case_id, [parsed])[0] if parsed else None
+                if resolved is None or resolved.status != 'ok':
+                    local = dict(citation=text, scheme=scheme, status='not_in_case',
+                                 label=getattr(resolved, 'reason', None) or NOT_IN_CASE)
+            except Exception:  # noqa: BLE001 - the local check stands
                 log.exception('Citation check through case_citations failed for %s', text)
-        out.append(_local_check(session, case_id, scheme, rest, text))
+        out.append(local)
     return out
+
+
+def _record_in_case(session, case_id, uid) -> bool:
+    """A phone record of the case (pv_record, as the agent-citations checker reads it)."""
+    from sqlalchemy import inspect, text as sql
+    conn = session.connection()
+    if not inspect(conn).has_table('pv_record'):
+        return False
+    if conn.dialect.name == 'postgresql':
+        row = session.execute(sql('SELECT 1 FROM pv_record WHERE case_id = :c AND record_uid = CAST(:u AS uuid) '
+                                  'LIMIT 1'), dict(c=str(case_id), u=str(uid))).first()
+    else:
+        row = session.execute(sql('SELECT 1 FROM pv_record WHERE case_id = :c AND lower(record_uid) = :u LIMIT 1'),
+                              dict(c=str(case_id), u=str(uid).lower())).first()
+    return row is not None
 
 
 def _local_check(session, case_id, scheme, rest, text):
@@ -152,7 +169,11 @@ def _local_check(session, case_id, scheme, rest, text):
             return dict(citation=text, scheme=scheme, status='invalid', label='The page is not a number.')
         return dict(citation=text, scheme=scheme, status='valid',
                     label=(file.original_filename or 'File') + (f', page {page}' if page else ''))
-    # rec:// is checked by the agent-citations checker; without it the record cannot be checked here.
+    if scheme == 'rec':
+        uid = rest.partition('#')[0]
+        if _uuid(uid) is None or not _record_in_case(session, _uuid(case_id), _uuid(uid)):
+            return dict(citation=text, scheme=scheme, status='not_in_case', label=NOT_IN_CASE)
+        return dict(citation=text, scheme=scheme, status='valid', label='Phone record')
     return dict(citation=text, scheme=scheme, status='not_in_case', label=NOT_IN_CASE)
 
 

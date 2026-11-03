@@ -170,7 +170,10 @@ def make_proposal_tools(context) -> list[StructuredTool]:
                                             why=args.why, origin=o)
             except PR.ProceedsError as exc:
                 raise ProposalError(str(exc), exc.status_code) from exc
-            return dict(id=out['id'], calculation=out['title'], label=out['label'])
+            row = next(r for r in out['assumptions'] if r['key'] == args.key)
+            mine = row['proposed'][-1] if row['proposed'] else {}
+            return dict(id=mine.get('id'), calculation_id=out['id'], calculation=out['title'], label=out['label'],
+                        status=mine.get('status'), used_in_result=False)
         return call('propose_assumption', 'the proceeds calculation', work)
 
     rule = (' Records a proposal only: nothing changes until a person accepts it after opening a cited source. Use '

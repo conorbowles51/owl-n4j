@@ -257,3 +257,17 @@ def test_the_red_cell_never_runs_on_the_agents_own_model():
     assert choose_model("deepseek", "deepseek-v4-pro", lambda p: p in ("deepseek", "openai"))[:2] == ("openai",
                                                                                                     "gpt-5.6-sol")
     assert choose_model("openai", "gpt-5.6-sol", lambda p: p == "openai") is None
+
+
+def test_a_phone_record_citation_is_checked_against_the_case(db):
+    """rec:// is checked locally against the case's phone records, so lead cards can cite their alerts."""
+    from sqlalchemy import text
+    case = db.info["case"]
+    mine, theirs = uuid.uuid4(), uuid.uuid4()
+    db.execute(text("CREATE TABLE IF NOT EXISTS pv_record (case_id TEXT, record_uid TEXT)"))
+    db.execute(text("INSERT INTO pv_record VALUES (:c, :u)"), dict(c=str(case.id), u=str(mine)))
+    db.execute(text("INSERT INTO pv_record VALUES (:c, :u)"), dict(c=str(uuid.uuid4()), u=str(theirs)))
+    out = proposals.check_citations(db, case.id, [f"rec://{mine}", f"rec://{mine}#body", f"rec://{theirs}",
+                                                  "rec://not-a-uid"])
+    assert [o["status"] for o in out] == ["valid", "valid", "not_in_case", "not_in_case"]
+    assert out[2]["label"] == out[3]["label"] == "Not in this case."
