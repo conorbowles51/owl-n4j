@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { expect, it, vi } from "vitest"
-import { AgentWorkflowPicker, fillWorkflowQuestion, workflowSlots } from "./AgentWorkflowPicker"
+import { AgentWorkflowPicker } from "./AgentWorkflowPicker"
+import { fillWorkflowQuestion, workflowSlots } from "../workflow-question"
 import { agentAPI } from "../api"
 import type { AgentWorkflow, AgentWorkflowCatalogue } from "../types"
 

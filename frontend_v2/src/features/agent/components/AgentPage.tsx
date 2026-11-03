@@ -559,6 +559,9 @@ export function AgentPage() {
   const [toolTrace, setToolTrace] = useState<AgentToolTraceItem[]>([])
   const [activityTrail, setActivityTrail] = useState<AgentActivityItem[]>([])
   const [showWorkflows, setShowWorkflows] = useState(false)
+  // The guided workflow this thread was started with: its follow-ups (a clarification answer, "continue" after the
+  // tool budget) keep the plan. Cleared by a new thread or opening another thread.
+  const [threadWorkflowId, setThreadWorkflowId] = useState<string | null>(null)
   const [input, setInput] = useState("")
   const [mandateOverride, setMandateOverride] = useState("")
   const [mandateUsage, setMandateUsage] = useState<AgentMandateUsage | null>(null)
@@ -663,6 +666,7 @@ export function AgentPage() {
         workspaceAPI.listMandateVersions(caseId),
       ])
       setActiveThreadId(thread.id)
+      setThreadWorkflowId(null)
       setMessages(thread.messages.map(storedToClientMessage).filter(Boolean) as AgentClientMessage[])
       setArtifacts(thread.artifacts)
       setToolTrace([])
@@ -730,6 +734,7 @@ export function AgentPage() {
 
   const startNewThread = () => {
     setActiveThreadId(null)
+    setThreadWorkflowId(null)
     setMessages([])
     setArtifacts([])
     setToolTrace([])
@@ -744,6 +749,8 @@ export function AgentPage() {
   const sendMessage = async (overridePrompt?: string, workflowId?: string) => {
     const prompt = (overridePrompt ?? input).trim()
     if (!prompt || !caseId || isLoading) return
+    const runWorkflowId = workflowId ?? threadWorkflowId ?? undefined
+    if (workflowId) setThreadWorkflowId(workflowId)
 
     const optimisticId = `local_${Date.now()}`
     const requestMandateOverride = mandateOverride.trim()
@@ -766,7 +773,7 @@ export function AgentPage() {
           threadId: activeThreadId,
           caseLayer,
           mandateOverride: requestMandateOverride ? { perspective: requestMandateOverride } : undefined,
-          workflowId,
+          workflowId: runWorkflowId,
         },
         (event) => {
           if (event.type === "run_started") {

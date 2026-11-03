@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { agentAPI } from "../api"
 import type { AgentWorkflow, AgentWorkflowCatalogue } from "../types"
+import { SLOTS, fillWorkflowQuestion, workflowSlots } from "../workflow-question"
 
 const COUNT_WORDS: Record<string, string> = {
   ledger: "ledger rows",
@@ -9,25 +10,6 @@ const COUNT_WORDS: Record<string, string> = {
   documents: "documents (other than statements)",
   dossiers: "people",
   timeline: "timeline entries",
-}
-
-const SLOTS: Record<string, string> = {
-  person: "Person",
-  other: "Other person",
-  date: "Date",
-}
-
-/** The {person}, {other} and {date} slots a starting question asks for, in order. */
-export function workflowSlots(question: string): string[] {
-  const found: string[] = []
-  for (const match of question.matchAll(/\{(person|other|date)\}/g)) {
-    if (!found.includes(match[1])) found.push(match[1])
-  }
-  return found
-}
-
-export function fillWorkflowQuestion(question: string, values: Record<string, string>): string {
-  return question.replace(/\{(person|other|date)\}/g, (_, key: string) => values[key]?.trim() || `[${SLOTS[key]}]`)
 }
 
 function statusWords(workflow: AgentWorkflow): { label: string; tone: string } {
