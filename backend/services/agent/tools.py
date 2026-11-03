@@ -212,6 +212,54 @@ class MapArgs(BaseModel):
     offset: int = Field(0, ge=0)
 
 
+class PhoneFindPeopleArgs(BaseModel):
+    query: str = Field(..., description="A name, phone number, email or app id to look for on the case's phones.")
+    limit: int = Field(20, ge=1, le=100)
+
+
+class PhoneMessagesArgs(BaseModel):
+    people: list[str] = Field(default_factory=list, description=(
+        "Identity keys from phone_find_people, or names, numbers or addresses. Empty for everyone."))
+    mode: Literal["between", "any"] = Field("between", description=(
+        "between: only messages and calls among these people; any: involving any of them."))
+    start: str | None = Field(None, description="First day (YYYY-MM-DD) or instant (ISO 8601), inclusive.")
+    end: str | None = Field(None, description="Last day (YYYY-MM-DD, inclusive) or instant (ISO 8601).")
+    phones: list[str] = Field(default_factory=list, description="Phone labels such as C5; empty for every phone.")
+    kinds: list[Literal["message", "call", "email"]] = Field(default_factory=list)
+    search: str | None = Field(None, description="Words the message must contain (folded as Search folds).")
+    include_groups: bool = Field(False, description="Count group chats the people share as well.")
+    offset: int = Field(0, ge=0)
+    limit: int = Field(40, ge=1, le=100)
+
+
+class PhonePersonArgs(BaseModel):
+    person: str = Field(..., description="An identity key, name, number or address.")
+
+
+class PhonePlacesArgs(BaseModel):
+    start: str | None = None
+    end: str | None = None
+    phones: list[str] = Field(default_factory=list)
+    offset: int = Field(0, ge=0)
+    limit: int = Field(40, ge=1, le=100)
+
+
+class PhoneMoneyArgs(BaseModel):
+    outcome: Literal["corroborated", "near_amount", "several_candidates", "contradicted", "unresolved",
+                     "not_tested"] | None = None
+    offset: int = Field(0, ge=0)
+    limit: int = Field(40, ge=1, le=100)
+
+
+class PhonePageArgs(BaseModel):
+    offset: int = Field(0, ge=0)
+    limit: int = Field(40, ge=1, le=100)
+
+
+class PhoneRecordArgs(BaseModel):
+    record: str = Field(..., description="A record id or rec:// link from a phone tool result.")
+
+
 class ResultPageArgs(BaseModel):
     result_id: str = Field(..., description="The result_id named in a _paging note.")
     path: list[str | int] = Field(..., description="The path named in the _paging note, e.g. [\"data\", \"rows\"].")
@@ -1884,6 +1932,29 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
     def get_financial_coverage(**kwargs) -> dict[str, Any]:
         return read_ledger("get_financial_coverage", view="coverage", **kwargs)
 
+    def read_phones(tool_name: str, func_name: str, **kwargs) -> dict[str, Any]:
+        """Read-only phone tools (07 section 7.1). The case id is the run's, never the model's."""
+        if context.significant_scope:
+            return scope_error(tool_name, "Phone analysis")
+        from services.agent import phone_tools
+        try:
+            with (context.ledger_session_factory or _financial_session)() as db:
+                data = getattr(phone_tools, func_name)(db.connection(), uuid.UUID(context.case_id), **kwargs)
+        except ValueError as exc:
+            return context.result(tool_name, {"available": False, "reason": str(exc)},
+                summary=str(exc), status="error", error=str(exc))
+        except Exception:
+            logger.exception("Agent phone read failed for case %s", context.case_id)
+            return context.result(tool_name, {"available": False,
+                "reason": "The phones could not be read just now. Retry; nothing partial was returned."},
+                summary="The phones could not be read; no partial result was returned.", status="error",
+                error="The phone records could not be read.")
+        if data.get("available") is False:
+            return context.result(tool_name, data, summary=str(data.get("reason")))
+        summary = " ".join(x for x in (data.get("coverage"), data.get("limitation"), data.get("unconfirmed_sentence"),
+                                       data.get("group_sentence")) if x)
+        return context.result(tool_name, data, summary=summary or "Read the phones.")
+
     def read_tool_result_page(result_id: str, path: list[str | int], offset: int) -> dict[str, Any]:
         from services.agent.model_payloads import MAX_MESSAGE_CHARS, page_for_model
         view = context.model_views.get(result_id)
@@ -2459,6 +2530,65 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "plus payment, source, period and excluded/incomplete-record counts. Page through items with next_offset and revision. "
                 "Coverage describes recorded evidence; it does not prove every statement or payment has been supplied or extracted."),
             args_schema=FinancialPageArgs,
+        ),
+        wrap(
+            lambda **kw: read_phones("phone_find_people", "find_people", **kw),
+            name="phone_find_people",
+            description=("Find people on this case's phones by name, number, email or app id: each identity with "
+                "every phone's name for it and how many messages and calls it has. Says 'Not in this case' when "
+                "nothing on this case's phones matches."),
+            args_schema=PhoneFindPeopleArgs,
+        ),
+        wrap(
+            lambda **kw: read_phones("phone_messages", "messages", **kw),
+            name="phone_messages",
+            description=("Read messages and calls on this case's phones in full, as the Conversations screen lists "
+                "them: between people, involving anyone, in a window (activity around a date), on some phones, or "
+                "containing words (record search). States total_matching, has_more and next_offset; every row has "
+                "a rec:// link to cite and says when it rests on a reading not yet confirmed. Cite every claim "
+                "with its rec:// link and state the coverage sentence."),
+            args_schema=PhoneMessagesArgs,
+        ),
+        wrap(
+            lambda **kw: read_phones("phone_contact_summary", "contact_summary", **kw),
+            name="phone_contact_summary",
+            description=("One person's messages and calls across every phone in this case: totals by kind and the "
+                "first and last contact, each with its rec:// link."),
+            args_schema=PhonePersonArgs,
+        ),
+        wrap(
+            lambda **kw: read_phones("phone_coverage", "coverage", **kw),
+            name="phone_coverage",
+            description=("The phones in this case: owner, the period each covers, what each holds, deleted messages "
+                "and calls, and any phone not fully read. Use it to say what the phones can and cannot show."),
+            args_schema=EmptyArgs,
+        ),
+        wrap(
+            lambda **kw: read_phones("phone_places", "places", **kw),
+            name="phone_places",
+            description=("Location points recorded on this case's phones in a window, with accuracy as reported and "
+                "rec:// links. Points are where a phone recorded itself, not proof a person was there."),
+            args_schema=PhonePlacesArgs,
+        ),
+        wrap(
+            lambda **kw: read_phones("phone_money_readings", "money_readings", **kw),
+            name="phone_money_readings",
+            description=("Money the phones record (bank alerts, bank texts and emails) from the last run of Money on "
+                "the phones, each with how it compares with the ledger and the payment it links to. A reading from "
+                "a phone is never a statement."),
+            args_schema=PhoneMoneyArgs,
+        ),
+        wrap(
+            lambda **kw: read_phones("phone_colocation_results", "colocation_results", **kw),
+            name="phone_colocation_results",
+            description="Together-and-apart runs already made in this case, with their subjects, windows and pairs.",
+            args_schema=PhonePageArgs,
+        ),
+        wrap(
+            lambda **kw: read_phones("phone_record", "record", **kw),
+            name="phone_record",
+            description="One phone record in full, every field, by its record id or rec:// link.",
+            args_schema=PhoneRecordArgs,
         ),
         wrap(
             get_map_locations,
