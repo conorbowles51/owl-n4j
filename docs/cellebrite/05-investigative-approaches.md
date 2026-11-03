@@ -1531,7 +1531,8 @@ identities and are measured by `cb-approaches`.
 identities with at least 20 communications on C3 and 37 on C9, both phones of the 10-report case. With M-11a's six
 phones with created times in that case, the gate **passes**: build. M-11c (identities named differently on two
 phones) needs two phones of one case in Loupe; none of the live cases with a real phone holds two, so it is counted
-on the synthetic cases when the approach runs and is not a gate input.
+on the synthetic cases when the approach runs and is not a gate input. **Built (`cb-approaches`, 05-S9, `relationships` version 11.1, screen
+"Relationships over time").** Measure m11.2 adds M-11a's created times per phone and M-11c.
 
 ### 14.7 Dependencies
 
@@ -2142,6 +2143,11 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | 19.S6-c `hole_confirmed_by_counterpart` is not emitted | it needs approach 2's matches, and approach 2 is not built (5.6) | approach 2 ships |
 | 19.S6-d Named-set, TimeSpan and Boolean fields are read from the captured record body (`phone_analysis/fields.py`), never from the text table | the text table holds String fields only (measured on C3: no `Label`, `DeletionReason`, `EventType` or `Categories` rows) | 02 adds those values to a read view |
 | 19.S6-e Key dates are placed beside results by the screen at display time, not stored in results | a key date added later must show without a rerun, and a result's key stays equal across runs | |
+| 19.S9-a A relationship result rests on the phone's contact cards for the person and its first and last communication, not on every message; its counts open Conversations filtered to the person | one result record per message would write a row per message (186,787 on P08) for a list Conversations already gives by filter | a result must be exported with every record behind it in one step |
+| 19.S9-b Weekly counts run from the person's first communication on the phone to the phone's last communication of any kind; a changepoint needs at least 2 weeks either side (parameter) | contact that stops while the phone carries on shows as weeks of zero; a single quiet week is not a change | a corpus run shows changepoints that only mark the phone's own data starting or stopping |
+| 19.S9-c PELT with a Poisson cost and a BIC penalty of 2 x ln(weeks) per changepoint | 14.3 step 2; a changepoint adds a location and a new rate | |
+| 19.S9-d "No contact after D" (14.3 step 2) is 04's statement check; the screen links to it | 04 already gathers the supporting and contradicting records and the data gaps for a claim | 04's check cannot take a person and a date |
+| 19.S9-e A person is a reviewed person (02) when one exists, else one identity; identities joined only by equal value carry `identity_unreviewed` | 17.7 | |
 | Deletion time is an interval to extraction start unless `DateDeleted` exists | `DateDeleted` 1 in corpus | a source of deletion times is found |
 | Media spread population restricted to attachment, camera-path and EXIF-camera files | X10 against X11 | |
 | Approach code in `backend/services/phone_analysis/`; media and re-parse in the engine | backend 3.10 versus tool requirements 3.11+ | 01/02 fix another root |

@@ -81,6 +81,7 @@ function getPhonesNav(caseId: string): NavItem[] {
     { label: "Patterns", icon: Clock, to: `/cases/${caseId}/phone-patterns` },
     { label: "Money on the phones", icon: Banknote, to: `/cases/${caseId}/phone-money` },
     { label: "Deleted and hidden", icon: Trash2, to: `/cases/${caseId}/phone-analyses/deletions` },
+    { label: "Relationships over time", icon: Users, to: `/cases/${caseId}/phone-analyses/relationships` },
     { label: "Needs a decision", icon: ShieldCheck, to: `/cases/${caseId}/phone-review` },
   ]
 }

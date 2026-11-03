@@ -318,19 +318,25 @@ def m10(conn, case_id):
              "not_counted": {"m10b": "placed check-ins need approach 10's place join"}}, "inconclusive")
 
 
-@measure("relationships", "m11.1")
+@measure("relationships", "m11.2")
 def m11(conn, case_id):
-    """M-11a, M-11b (05 14.6): contacts per phone; identities with 20 or more communications on a phone. Gate: build
-    if 3 phones have contacts and 10 identities have 20 communications."""
+    """M-11a to M-11c (05 14.6): contacts and contacts with a saved time per phone; identities with 20 or more
+    communications on a phone; people named differently on two phones. Gate: build if 3 phones have created times and
+    10 identities have 20 communications."""
+    from services.phone_analysis import relationships as R
     contacts = _type_counts(conn, case_id, ("Contact",))
+    created = _per_phone(conn, case_id, "SELECT t.extraction_id, count(DISTINCT t.record_uid) FROM pv_time t JOIN "
+                         "pv_record r ON r.record_uid = t.record_uid WHERE t.case_id = :c AND r.model_type = 'Contact' "
+                         "AND t.field_path = 'TimeCreated' AND t.instant IS NOT NULL GROUP BY 1")
     busy = int(conn.execute(text(
         "SELECT count(*) FROM (SELECT p.extraction_id, p.identity_key FROM pv_comm_party p WHERE p.case_id = :c AND "
         "p.identity_key IS NOT NULL AND NOT p.is_phone_owner GROUP BY 1, 2 HAVING count(DISTINCT p.event_uid) >= 20) s"),
         {"c": case_id}).scalar() or 0)
-    with_contacts = sum(1 for v in contacts.values() if v["Contact"])
-    return ({"m11a_contacts": contacts, "m11b_identities_20_plus": busy,
-             "not_counted": {"m11a_created_times": "contact created times per phone need 04's time meanings"}},
-            "build" if with_contacts >= 3 and busy >= 10 else "inconclusive")
+    _, counts = R.analyse(conn, case_id, {k: v["default"] for k, v in R.PARAMETERS.items()})
+    with_created = sum(1 for v in created.values() if v)
+    return ({"m11a_contacts": contacts, "m11a_created_times": created, "m11b_identities_20_plus": busy,
+             "m11c_named_differently": counts.get("named_differently", 0)},
+            "build" if with_created >= 3 and busy >= 10 else "inconclusive")
 
 
 @measure("extraction_comparison", "m12.1")

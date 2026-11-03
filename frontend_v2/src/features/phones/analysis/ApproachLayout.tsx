@@ -34,6 +34,8 @@ export interface ApproachLayoutProps {
   /** Words for a direction code; the server's detail is used when absent. */
   emptyWords?: string
   extra?: ReactNode
+  /** Where a result opens beside its records (for example Conversations filtered to the person). */
+  openLink?: (r: ApproachResult) => { to: string; label: string } | null
 }
 
 function RunControl({ caseId, run, client, onRequested }: { caseId: string; run: AnalysisRun | null; client: AnalysisClient; onRequested: (r: AnalysisRun) => void }) {
@@ -111,6 +113,7 @@ function Behind({ caseId, client, queryKey, result, label, origin }: { caseId: s
 function Row({ p, r, anchors, onChanged }: { p: ApproachLayoutProps; r: ApproachResult; anchors: { label: string; instant: string }[]; onChanged: () => void }) {
   const [open, setOpen] = useState(false)
   const w = p.words(r)
+  const open2 = p.openLink?.(r) ?? null
   const rel = anchors.map((a) => anchorWords(r.period_start, r.period_end, a.instant, a.label)).filter(Boolean) as string[]
   return (
     <li className="rounded border p-2 text-sm" data-testid={p.testId}>
@@ -121,6 +124,7 @@ function Row({ p, r, anchors, onChanged }: { p: ApproachLayoutProps; r: Approach
         {r.decision && <span className="text-xs">{r.decision === "confirmed" ? "Confirmed" : "Rejected"}</span>}
       </div>
       {w.line && <p className="text-xs">{w.line}</p>}
+      {open2 && <Link className="text-xs underline" to={open2.to}>{open2.label}</Link>}
       {rel.length > 0 && <p className="text-xs" aria-label="Against key dates">{rel.join(". ")}.</p>}
       {open && (
         <div className="mt-2 space-y-2">

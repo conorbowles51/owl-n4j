@@ -39,6 +39,7 @@ const PhonePrototypePage = lazy(() => import("@/features/phones/prototype/PhoneP
 const PhoneGuidePage = lazy(() => import("@/features/phones/PhoneGuidePage"))
 const MoneySignalsPage = lazy(() => import("@/features/phones/analysis/MoneySignalsPage"))
 const DeletionTimelinePage = lazy(() => import("@/features/phones/analysis/DeletionTimelinePage"))
+const RelationshipsPage = lazy(() => import("@/features/phones/analysis/RelationshipsPage"))
 const PatternsPage = lazy(() =>
   import("@/features/pattern/components/PatternsPage").then((m) => ({ default: m.PatternsPage }))
 )
@@ -196,6 +197,7 @@ export function AppRoutes() {
             <Route path="phone-patterns" element={<LazyPage><PatternsPage /></LazyPage>} />
             <Route path="phone-money" element={<LazyPage><MoneySignalsPage /></LazyPage>} />
             <Route path="phone-analyses/deletions" element={<LazyPage><DeletionTimelinePage /></LazyPage>} />
+            <Route path="phone-analyses/relationships" element={<LazyPage><RelationshipsPage /></LazyPage>} />
             <Route path="profiles" element={<Navigate to="../dossiers" replace />} />
             <Route path="dossiers" element={<LazyPage><DossiersPage /></LazyPage>} />
             <Route path="evidence" element={<EvidenceExplorer />} />
