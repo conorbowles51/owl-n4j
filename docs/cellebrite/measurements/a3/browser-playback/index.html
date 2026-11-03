@@ -1,0 +1,27 @@
+<!doctype html><meta charset="utf-8"><body><script>
+const MIME = {ogg:'audio/ogg', m4a:'audio/mp4', mp3:'audio/mpeg', caf:'audio/x-caf', aiff:'audio/aiff', wav:'audio/wav',
+  amr:'audio/amr', mp4:'video/mp4', '3gp':'video/3gpp', webm:'video/webm', ts:'video/mp2t'};
+window.probe = async (name) => {
+  const ext = name.split('.').pop(), mime = MIME[ext], isVideo = mime.startsWith('video/');
+  const el = document.createElement(isVideo ? 'video' : 'audio'); el.muted = true; el.preload = 'auto';
+  document.body.appendChild(el);
+  const out = {name, mime, canPlayType: el.canPlayType(mime) || '""'};
+  const ev = await new Promise(res => {
+    const t = setTimeout(() => res('timeout'), 8000);
+    el.addEventListener('loadeddata', () => { clearTimeout(t); res('loadeddata'); });
+    el.addEventListener('error', () => { clearTimeout(t); res('error ' + (el.error && el.error.code) + ' ' + (el.error && el.error.message || '')); });
+    el.src = name;
+  });
+  out.load = ev;
+  if (ev === 'loadeddata') {
+    try { await el.play(); } catch (e) { out.playError = String(e); }
+    await new Promise(r => setTimeout(r, 1500));
+    out.currentTime = +el.currentTime.toFixed(2); out.duration = +(el.duration || 0).toFixed(2);
+    if (isVideo) { out.videoWidth = el.videoWidth; }
+    // seek: needs ranges
+    el.currentTime = 2.0; await new Promise(r => setTimeout(r, 800)); out.afterSeek = +el.currentTime.toFixed(2);
+  }
+  el.pause(); el.remove();
+  return out;
+};
+</script>

@@ -103,7 +103,7 @@ Largest groups: Ogg Opus audio 16,980; AAC-only MP4 7,543 tagged Video and 3,861
 4,191; MP4 AV1 3,264; MP3 3,066; MP4 HEVC 2,140; CAF AAC 1,907; CAF PCM 1,729; AMR-NB 1,515; Ogg Vorbis
 1,465; MP4 AAC with HEVC 1,242; WebM VP9 471; AIFF PCM 815; MPEG-TS H.264 262; MP4 or 3GP with H.263 79. Unrecognised by
 ffprobe (no streams): 3,950 video and 1,080 audio. Not on disk: 562 video, 495 audio. Full list:
-`summary.json` `d7_media`. Which of these each browser plays is tested by `cb-media` (stage I).
+`summary.json` `d7_media`. Which of these each browser plays: `browser-playback/README.md`.
 
 ## 8. 04 M1 to M12 (04 section 13)
 
