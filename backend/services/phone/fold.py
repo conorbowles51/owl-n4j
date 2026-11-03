@@ -145,15 +145,21 @@ def _ascii_tables():
 _ASCII = _ascii_tables()
 _SLOW_CHAR = re.compile("[^\\x00-\\x7f]|%s" % _ASCII[2].pattern if _ASCII and _ASCII[2] else "[^\\x00-\\x7f]")
 _ASCII_WS = re.compile("[ \\t\\n\\r\\x0b\\x0c]")
+_UWS = re.compile(r"\s")  # a cut is only ever made at one of these, and only where steps 1 and 2 keep it whitespace
+_DROP_DEL = {i: None for i in range(128) if _ASCII and _ASCII[0][i] == ""}  # deletes the characters that fold to nothing
+SLOW_SHARE = 64  # a piece with more than one slow character in this many goes through the steps whole
 
 
 def _cut_after(text, b):
     """The first index at or after ``b`` whose character is whitespace after steps 1 and 2: no token of step 3
     crosses it, so the text can be folded either side of it separately."""
-    n = len(text)
-    while b < n and not _styled(text[b]).isspace():
-        b += 1
-    return b
+    while True:
+        m = _UWS.search(text, b)
+        if m is None:
+            return len(text)
+        if _styled(m.group()).isspace():
+            return m.start()
+        b = m.end()
 
 
 def iter_fold_with_map(text, exact=False, chunk=None):
@@ -181,6 +187,8 @@ def iter_fold_with_map(text, exact=False, chunk=None):
             _slow(seg, a, exact, st, out, starts)
         elif seg.isascii() and not (_ASCII[2] and _ASCII[2].search(seg)):
             _fast(seg, a, exact, st, out, starts)
+        elif (len(seg) - len(seg.translate(_DROP_DEL).encode("ascii", "ignore"))) * SLOW_SHARE > len(seg):
+            _slow(seg, a, exact, st, out, starts)  # mostly accented, non-Latin or dropped characters
         else:
             # words with a character outside the table go through the steps; the rest through the table. A word
             # here runs between ASCII whitespace, so it holds whole tokens of step 3.
@@ -252,19 +260,22 @@ def _slow(seg, a, exact, st, out, starts):
                 i = j
         for k, sty in enumerate(styled):
             pieces.append((a + k, _rest(sty)))
+    emitted, pending = st
+    put, at = out.append, starts.append
     for i, piece in pieces:
         for c in piece:
             if not exact and c.isspace():
-                if st[0] and st[1] is None:
-                    st[1] = i  # leading and repeated whitespace collapse into one space
+                if emitted and pending is None:
+                    pending = i  # leading and repeated whitespace collapse into one space
                 continue
-            if st[1] is not None:
-                out.append(" ")
-                starts.append(st[1])
-                st[1] = None
-            out.append(c)
-            starts.append(i)
-            st[0] = True
+            if pending is not None:
+                put(" ")
+                at(pending)
+                pending = None
+            put(c)
+            at(i)
+            emitted = True
+    st[0], st[1] = emitted, pending
 
 
 def pack_map(starts):
