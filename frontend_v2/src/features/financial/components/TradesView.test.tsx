@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 import { afterEach, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
-import { TradesView, formatMinor } from "./TradesView"
+import { TradesView } from "./TradesView"
 
 vi.mock("@/lib/api-client", async (original) => ({
   ...(await original<typeof import("@/lib/api-client")>()),
@@ -71,12 +71,6 @@ function view() {
   )
 }
 
-it("formats minor units without floating point", () => {
-  expect(formatMinor(102979554, "MXN")).toBe("1,029,795.54 MXN")
-  expect(formatMinor(1)).toBe("0.01")
-  expect(formatMinor(null)).toBe("–")
-})
-
 it("shows each trade with its instrument, quantity, dates, model label, source page and cash line, and the true count", async () => {
   vi.mocked(fetchAPI).mockImplementation(async (url) => {
     expect(String(url)).toContain(`case_id=${caseId}`)
@@ -89,6 +83,8 @@ it("shows each trade with its instrument, quantity, dates, model label, source p
   expect(screen.getByText(/2 not shown: their cash line is no longer in the money ledger/)).toBeTruthy()
   expect(screen.getByText("10,153")).toBeTruthy()
   expect(screen.getByText("2025-03-31")).toBeTruthy()
+  // Minor units scaled by the currency's exponent, exactly (never by floating point).
+  expect(screen.getByText("1,029,795.54 MXN")).toBeTruthy()
   expect(screen.getByText("Read by Claude · not confirmed")).toBeTruthy()
   expect(screen.getByText(/no time of execution/)).toBeTruthy()
   const source = screen.getByRole("link", { name: /statement.pdf, page 3/ })

@@ -10,6 +10,7 @@ import {
   type SecurityRow,
   type SecurityRowKind,
 } from "../hooks/use-security-rows"
+import { formatLedgerAmount } from "../lib/ledger-format"
 
 // Trades and holdings read from the case's brokerage statements. Each row cites its printed line; a trade
 // links to its cash leg in the money ledger. A model's reading says so until a person confirms it; a corrected
@@ -34,13 +35,11 @@ const CORRECTABLE: [string, string][] = [
   ["net_minor", "Net (minor units)"],
 ]
 
-export function formatMinor(value: number | null | undefined, currency?: string | null) {
+function formatMinor(value: number | null | undefined, currency?: string | null) {
   if (value === null || value === undefined) return "–"
-  const sign = value < 0 ? "-" : ""
-  const abs = Math.abs(value)
-  const whole = Math.floor(abs / 100).toLocaleString("en-US")
-  const cents = String(abs % 100).padStart(2, "0")
-  return `${sign}${whole}.${cents}${currency ? ` ${currency}` : ""}`
+  if (!currency) return `${value} (minor units, no currency)`
+  const amount = formatLedgerAmount(value, currency)
+  return amount.scaled ? `${amount.text} ${amount.currency}` : `${amount.text} ${amount.currency} (minor units)`
 }
 
 function formatQuantity(value: string | null) {
