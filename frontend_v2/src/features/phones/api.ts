@@ -374,6 +374,30 @@ export interface DerivedText {
 export async function correctDerivedText(caseId: string, derivedId: string, text: string, reason: string) {
   return fetchAPI<{ id: string; decision_id: string }>(`/api/phones/media/derived/${encodeURIComponent(derivedId)}/correct`, { method: "POST", body: { case_id: caseId, text, reason } })
 }
+/** Batch reading of a Media scope (07 5 Media, M-5): true counts by state, from the server. */
+export interface DeriveBatchFacts {
+  kind: "ocr" | "transcript"; in_scope: number; eligible: number; noun: string
+  left_out: { already_read: number; not_in_production: number; empty_placeholder: number }
+}
+export interface DeriveBatch {
+  id: string; kind: "ocr" | "transcript"; scope_words: string | null; total: number; done: number; failed: number
+  queued: number; running: number; cancelled: boolean; cancelled_count: number; state: "running" | "done" | "cancelled"
+  created_at: string; first_started_at: string | null; last_finished_at: string | null; noun: string
+  left_out: { already_read?: number; not_in_production?: number; empty_placeholder?: number }
+}
+const batchFilter = (f: MediaFilter) => { const { case_id: _drop, ...rest } = f; void _drop; return rest }
+export async function describeDeriveBatch(filter: MediaFilter, kind: "ocr" | "transcript") {
+  return fetchAPI<DeriveBatchFacts>("/api/phones/media/derive-batches/describe", { method: "POST", body: { case_id: filter.case_id, kind, filter: batchFilter(filter) }, read: true })
+}
+export async function createDeriveBatch(filter: MediaFilter, kind: "ocr" | "transcript", scopeWords: string) {
+  return fetchAPI<DeriveBatch>("/api/phones/media/derive-batches", { method: "POST", body: { case_id: filter.case_id, kind, filter: batchFilter(filter), scope_words: scopeWords } })
+}
+export async function getDeriveBatches(caseId: string) {
+  return fetchAPI<{ case_id: string; items: DeriveBatch[] }>(`/api/phones/media/derive-batches?case_id=${encodeURIComponent(caseId)}`)
+}
+export async function cancelDeriveBatch(caseId: string, batchId: string) {
+  return fetchAPI<DeriveBatch>(`/api/phones/media/derive-batches/${encodeURIComponent(batchId)}/cancel?case_id=${encodeURIComponent(caseId)}`, { method: "POST" })
+}
 export async function acceptDerivedText(caseId: string, derivedId: string, dossierId: string, category: string) {
   return fetchAPI<{ id: string; read_by: string | null }>(`/api/phones/media/derived/${encodeURIComponent(derivedId)}/accept-into-assessment`, { method: "POST", body: { case_id: caseId, dossier_id: dossierId, category } })
 }

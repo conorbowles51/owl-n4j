@@ -15,6 +15,8 @@ const api = vi.hoisted(() => ({
   requestDerivedText: vi.fn().mockResolvedValue({ id: "d1", state: "queued" }),
   correctDerivedText: vi.fn().mockResolvedValue({ id: "d1", decision_id: "x" }),
   confirmDerivedText: vi.fn().mockResolvedValue({ id: "d1", decision_id: "y" }),
+  describeDeriveBatch: vi.fn().mockResolvedValue({ kind: "transcript", in_scope: 0, eligible: 0, noun: "voice notes and videos", left_out: { already_read: 0, not_in_production: 0, empty_placeholder: 0 } }),
+  getDeriveBatches: vi.fn().mockResolvedValue({ case_id: "c", items: [] }),
   acceptDerivedText: vi.fn().mockResolvedValue({ id: "a1", read_by: "Read by Whisper base 20250625, accepted by Synthetic Reviewer" }),
 }))
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))

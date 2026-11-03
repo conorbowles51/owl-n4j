@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { recordPath } from "@/lib/record-links"
 import { useCollectTargets } from "../collect-targets"
+import { BatchReading } from "./BatchReading"
 import { MachineTextPrompt } from "./MachineTextPrompt"
 import { useObjectUrl } from "./use-object-url"
 import { acceptDerivedText, confirmDerivedText, correctDerivedText, getDerivedTexts, getMediaDetail, getMediaIndex, getMediaWindow, requestDerivedText, type DerivedText, type MediaFilter, type MediaItem } from "../api"
@@ -430,6 +431,7 @@ export default function MediaPage() {
           </label>
         </div>
         {pages.isError && <p role="alert" className="text-sm">The files could not be loaded.</p>}
+        <BatchReading caseId={caseId} filter={filter} scopeWords={[category && `${category === NONE ? "uncategorised" : category} files`, state && `${state === NONE ? "unchecked" : state} files`].filter(Boolean).join(", ") || "this phone"} />
         <ul aria-label="Files" className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2">
           {items.map((it) => (
             <li key={it.file_uid}>

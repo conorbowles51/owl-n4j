@@ -482,6 +482,71 @@ def phone_media_derived_accept(derived_id: UUID, body: AcceptBody, db: Session =
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+class BatchBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    kind: Literal["ocr", "transcript"]
+    filter: dict = Field(default_factory=dict)
+    scope_words: str = Field(default="", max_length=500)
+
+
+def _batch_scope(case_id, body_filter):
+    scope = dict(body_filter or {})
+    scope.pop("case_id", None)
+    return scope
+
+
+@router.post("/media/derive-batches/describe")
+def phone_media_batch_describe(body: BatchBody, db: Session = Depends(get_db),
+                               user: User = Depends(get_current_db_user)):
+    """How many files a batch reading of this Media scope would read, and what it leaves out and why (M-5)."""
+    from services.phone import derive_batch
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    try:
+        return derive_batch.describe(db.connection(), body.case_id, body.kind, _batch_scope(body.case_id, body.filter))
+    except derive_batch.BatchError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/media/derive-batches", status_code=201)
+def phone_media_batch_create(body: BatchBody, db: Session = Depends(get_db),
+                             user: User = Depends(get_current_db_user)):
+    """Queue a reading of every eligible file of one kind in a Media scope, on this server (M-5)."""
+    from services.phone import derive_batch
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        out = derive_batch.create(db.connection(), case_id=body.case_id, kind=body.kind,
+                                  scope=_batch_scope(body.case_id, body.filter), scope_words=body.scope_words or None,
+                                  user_id=user.id)
+    except derive_batch.BatchError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    db.commit()
+    return out
+
+
+@router.get("/media/derive-batches")
+def phone_media_batch_status(case_id: UUID = Query(...), db: Session = Depends(get_db),
+                             user: User = Depends(get_current_db_user)):
+    """This case's batch readings with true counts by state, newest first (the job tray polls this every second)."""
+    from services.phone import derive_batch
+    authorize_case(db, case_id, user, ("case", "view"))
+    return {"case_id": str(case_id), "items": derive_batch.status(db.connection(), case_id)}
+
+
+@router.post("/media/derive-batches/{batch_id}/cancel")
+def phone_media_batch_cancel(batch_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                             user: User = Depends(get_current_db_user)):
+    """Stop a batch: readings not yet started are removed; every finished reading is kept."""
+    from services.phone import derive_batch
+    authorize_case(db, case_id, user, ("case", "edit"))
+    try:
+        out = derive_batch.cancel(db.connection(), case_id, batch_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    db.commit()
+    return out
+
+
 @router.get("/media/{file_uid}/derived")
 def phone_media_derived(file_uid: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
                         user: User = Depends(get_current_db_user)):

@@ -344,7 +344,8 @@ def _claim(engine):
             r = c.execute(text(
                 "SELECT id, state, attempts FROM phone_derived_texts WHERE state = 'queued' OR (state = 'running' AND "
                 "started_at < now() - make_interval(secs => CASE kind WHEN 'ocr' THEN :so ELSE :st END)) "
-                "ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1"),
+                # a reading a person asked for is drawn before batch readings (M-5)
+                "ORDER BY (batch_id IS NOT NULL), created_at FOR UPDATE SKIP LOCKED LIMIT 1"),
                 {"so": STALE_SECONDS["ocr"], "st": STALE_SECONDS["transcript"]}).one_or_none()
             if r is None:
                 return None
