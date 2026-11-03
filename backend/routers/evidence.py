@@ -2220,7 +2220,9 @@ async def delete_evidence_file(
                 logger.warning(f"ChromaDB cleanup error: {e}")
 
             # 4. Delete physical file from backend disk, unless another evidence row still uses the same file
-            if stored_path and EvidenceDBStorage.stored_paths_in_use(db, [stored_path], [db_record.id]):
+            if stored_path and EvidenceDBStorage.keeps_file_on_delete(db_record.source_type):
+                result_info["file_kept_production"] = True
+            elif stored_path and EvidenceDBStorage.stored_paths_in_use(db, [stored_path], [db_record.id]):
                 result_info["file_kept_shared"] = True
             elif stored_path:
                 file_path = _resolve_stored_path(stored_path) or Path(stored_path)

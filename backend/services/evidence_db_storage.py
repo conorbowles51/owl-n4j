@@ -201,14 +201,18 @@ class EvidenceDBStorage:
         Returns list of stored_path strings for disk cleanup.
         """
         stored_paths: List[str] = []
+        kept: set = set()
 
         def _collect_paths(fid: uuid.UUID) -> None:
-            # Collect files in this folder
+            # Collect files in this folder. A phone production's own file is never returned for removal.
             files = db.scalars(
                 select(EvidenceFile).where(EvidenceFile.folder_id == fid)
             ).all()
             for f in files:
-                stored_paths.append(f.stored_path)
+                if EvidenceDBStorage.keeps_file_on_delete(f.source_type):
+                    kept.add(f.stored_path)
+                else:
+                    stored_paths.append(f.stored_path)
 
             # Recurse into subfolders
             children = db.scalars(
@@ -224,7 +228,7 @@ class EvidenceDBStorage:
             db.delete(folder)
             db.flush()
 
-        return stored_paths
+        return [p for p in stored_paths if p not in kept]
 
     @staticmethod
     def _lock_case(db, case_id):
@@ -691,6 +695,15 @@ class EvidenceDBStorage:
             db.delete(ef)
             db.flush()
         return ef
+
+    # Rows whose stored_path is a phone production itself (the uploaded report, a file inside an uploaded report
+    # folder) or a pseudo path (phone-text://). The production is the evidence: removing the row from Evidence never
+    # removes that file from disk; the phone and its other rows still read from it.
+    PRODUCTION_SOURCE_TYPES = frozenset({"phone_extraction", "phone_file", "phone_text", "cellebrite"})
+
+    @staticmethod
+    def keeps_file_on_delete(source_type: Optional[str]) -> bool:
+        return source_type in EvidenceDBStorage.PRODUCTION_SOURCE_TYPES
 
     @staticmethod
     def stored_paths_in_use(db: Session, paths: Iterable[Optional[str]],

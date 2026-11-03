@@ -130,3 +130,40 @@ def test_a_folder_delete_keeps_a_file_still_used_by_a_row_outside_the_folder(wor
     assert path.exists() and not own.exists()
     db.expire_all()
     assert db.get(EvidenceFile, evidence_id) is not None
+
+
+@pytest.mark.parametrize("source_type", ["phone_file", "phone_extraction"])
+def test_a_delete_never_removes_a_phone_production_file(world, source_type):
+    # A phone file added as evidence from a folder upload stores the file's own path inside the uploaded phone
+    # production, and a phone report row stores the uploaded report itself (live 3 Nov: 8 report folders, 4 zips).
+    # Removing the row from Evidence must leave the production on disk: the phone still reads from it.
+    db, case_id, evidence_id, path, loop_sql, watching = world
+    db.get(EvidenceFile, evidence_id).source_type = source_type
+    db.commit()
+    result = _delete(db, case_id, evidence_id, watching, AsyncMock())
+    assert result["file_deleted"] is False and result["file_kept_production"] is True
+    assert path.exists()
+    db.expire_all()
+    assert db.get(EvidenceFile, evidence_id) is None
+
+
+def test_a_folder_delete_never_removes_a_phone_production_file(world, tmp_path):
+    from routers import evidence_folders
+    db, case_id, evidence_id, path, loop_sql, watching = world
+    folder = EvidenceFolder(case_id=case_id, name="Dossier media")
+    db.add(folder)
+    db.flush()
+    phone = tmp_path / "IMG_0001.jpg"
+    phone.write_bytes(b"\xff\xd8 phone")
+    own = tmp_path / "own.pdf"
+    own.write_bytes(b"%PDF own")
+    db.add_all([EvidenceFile(case_id=case_id, folder_id=folder.id, original_filename=phone.name,
+                             stored_path=str(phone), sha256="c" * 64, status="processed", source_type="phone_file"),
+                EvidenceFile(case_id=case_id, folder_id=folder.id, original_filename=own.name,
+                             stored_path=str(own), sha256="b" * 64, status="processed")])
+    db.commit()
+    with patch.object(evidence_folders, "_check_case_access"):
+        result = evidence_folders.delete_folder(str(folder.id), case_id=str(case_id),
+                                                current_user=SimpleNamespace(email="a@example.test"), db=db)
+    assert result["deleted_files"] == 1
+    assert phone.exists() and not own.exists()
