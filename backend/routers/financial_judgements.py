@@ -180,3 +180,84 @@ def reopen_judgement(judgement_id: UUID, case_id: UUID = Query(...),
     except judgements.JudgementError as exc:
         db.rollback()
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+# ---------------------------------------------------------------------------
+# The case agent's proposals (services.agent.proposals): accept, reject, open a cited source, precision trend.
+# ---------------------------------------------------------------------------
+
+class Accept(BaseModel):
+    reason: str = Field(default='', max_length=2000)
+    # 'ui': the screen, whose accept button enables only after a cited source was opened. Anything else is 'api'.
+    via: str = Field(default='api', max_length=8)
+
+
+class Reject(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=4000)
+
+
+class Opened(BaseModel):
+    citation: str = Field(..., min_length=1, max_length=600)
+
+
+def _proposal_call(fn):
+    from services.agent.proposals import ProposalError
+    try:
+        return fn()
+    except (ProposalError, judgements.JudgementError) as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get("/proposals/precision")
+def proposal_precision(case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """Per proposal kind, what people did with the case agent's proposals (accepted / corrected / rejected) per week,
+    and how many confirmations were made after a cited source was opened. This case and every case."""
+    from services.agent.proposals import precision
+    return dict(case=precision(db, case_id), all_cases=precision(db, None))
+
+
+@router.post("/{judgement_id}/opened")
+def proposal_source_opened(judgement_id: UUID, body: Opened, case_id: UUID = Query(...),
+                           current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.agent.proposals import record_open
+    return _proposal_call(lambda: record_open(db, case_id=case_id, proposal_type='judgement',
+                                              proposal_id=judgement_id, citation=body.citation, user=current_user))
+
+
+@router.post("/{judgement_id}/accept")
+@records('agent_proposal_accept', 'confirm', subject_type='judgement',
+         field=lambda c: str((c['result'] or {}).get('rule_id') or '') if isinstance(c['result'], dict) else '')
+def accept_proposal(judgement_id: UUID, body: Accept | None = None, case_id: UUID = Query(...),
+                    current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.agent import proposals
+    body = body or Accept()
+
+    def run():
+        try:
+            return proposals.confirm(db, case_id=case_id, judgement_id=judgement_id, actor=_actor(current_user),
+                                     user=current_user, reason=body.reason, via=body.via)
+        except Exception:
+            db.rollback()
+            raise
+    return _proposal_call(run)
+
+
+@router.post("/{judgement_id}/reject")
+def reject_proposal(judgement_id: UUID, body: Reject, case_id: UUID = Query(...),
+                    current_user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.agent import proposals
+
+    def run():
+        try:
+            return proposals.reject(db, case_id=case_id, judgement_id=judgement_id, actor=_actor(current_user),
+                                    user=current_user, reason=body.reason)
+        except Exception:
+            db.rollback()
+            raise
+    result = _proposal_call(run)
+    try:
+        from services.manual_changes import record_judgement_correction
+        record_judgement_correction(db, result, committed=True, actor=current_user)
+    except Exception:  # noqa: BLE001 - the inbox is refreshed by its periodic script too
+        logger.exception('Appending rejected proposal %s to the lessons inbox failed', judgement_id)
+    return result

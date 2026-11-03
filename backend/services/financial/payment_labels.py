@@ -48,8 +48,10 @@ class PaymentLabelsRequest(BaseModel):
         return value
 
 
-def update_payment_labels(session, *, case_id, request, actor, commit=True, reason=None):
-    """``reason``: why the value was set (where it was read), kept in the label history and shown with the label."""
+def update_payment_labels(session, *, case_id, request, actor, commit=True, reason=None, proposed_by=None):
+    """``reason``: why the value was set (where it was read), kept in the label history and shown with the label.
+    ``proposed_by``: {origin, judgement_id} when a person accepted a case agent's proposal (services.agent.proposals);
+    kept in the label history so the record shows a model proposed what the person accepted."""
     changes = request.model_dump(exclude_unset=True, exclude={'transactions', 'add_to_library', 'named_from', 'same_as'})
     if request.named_from == 'statement':
         reason = reason or 'Named from the statement.'
@@ -131,6 +133,7 @@ def update_payment_labels(session, *, case_id, request, actor, commit=True, reas
                 **({'via': 'statement'} if request.named_from == 'statement' else {}),
                 **({'same_as': str(request.same_as)} if request.same_as is not None else {}),
                 **({'origin': dict(actor.origin)} if model else {}),
+                **({'proposed_by': dict(proposed_by)} if proposed_by else {}),
                 previous_label_sources={key: effective['label_sources'].get(key, {}) for key in row_changes})]
             row.metadata_ = metadata
         if commit:

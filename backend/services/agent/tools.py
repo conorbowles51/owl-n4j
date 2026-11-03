@@ -76,6 +76,9 @@ class AgentToolContext:
     model_views: dict[str, Any] = field(default_factory=dict)
     # Characters the next tool message may use (the runner sets it from the run's context budget).
     page_budget_chars: int | None = None
+    # Who the run is for and which model runs it (services.agent.proposal_tools): a proposal records it as the
+    # model's work for that person. None: the run cannot propose.
+    proposer: dict[str, Any] | None = None
 
     @property
     def significant_scope(self) -> bool:
@@ -1665,6 +1668,11 @@ def _shortest_path_graph(case_id: str, node_keys: list[str], max_depth: int) -> 
     return _dedupe_graph({"nodes": nodes, "links": links})
 
 
+def _proposal_tools(context: AgentToolContext) -> list[StructuredTool]:
+    from services.agent.proposal_tools import make_proposal_tools
+    return make_proposal_tools(context)
+
+
 def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
     def scoped_graph(graph: dict[str, Any]) -> dict[str, Any]:
         if context.allowed_entity_keys is None:
@@ -2987,4 +2995,4 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "doc:// for files). Says 'Not in this case' when no dossier in this case matches."),
             args_schema=DossierArgs,
         ),
-    ]
+    ] + _proposal_tools(context)

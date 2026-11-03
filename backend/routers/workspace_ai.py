@@ -64,7 +64,7 @@ class WorkspaceAIOutputResponse(BaseModel):
     model_metadata: dict[str, Any]
     error_message: str | None = None
     rejection_reason: str | None = None
-    mandate_version_id: str
+    mandate_version_id: str | None = None
     mandate_version_number: int | None = None
     requested_by_user_id: str | None = None
     requested_by_name: str | None = None

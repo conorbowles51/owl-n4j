@@ -39,11 +39,12 @@ class WorkspaceAIOutput(Base, TimestampMixin):
     __tablename__ = "workspace_ai_outputs"
     __table_args__ = (
         CheckConstraint(
-            "target_type IN ('dossier', 'theory')",
+            "target_type IN ('dossier', 'theory', 'case')",
             name="ck_workspace_ai_outputs_target_type",
         ),
         CheckConstraint(
-            "output_type IN ('statement_summary', 'statement_comparison', 'theory_analysis', 'statement_claims')",
+            "output_type IN ('statement_summary', 'statement_comparison', 'theory_analysis', 'statement_claims', "
+            "'entry_draft', 'lead_card', 'timeline_addition', 'link_proposal', 'alternative_explanation')",
             name="ck_workspace_ai_outputs_output_type",
         ),
         CheckConstraint(
@@ -144,10 +145,11 @@ class WorkspaceAIOutput(Base, TimestampMixin):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    mandate_version_id: Mapped[uuid.UUID] = mapped_column(
+    # Required for mandate-scoped generations (create_output); an agent proposal records it when the case has one.
+    mandate_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("case_mandate_versions.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(

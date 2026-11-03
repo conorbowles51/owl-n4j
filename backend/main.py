@@ -41,6 +41,7 @@ from routers import (
     workspace_overview_router,
     workspace_entries_router,
     workspace_ai_router,
+    agent_proposals_router,
     users_router,
     setup_router,
     cost_ledger_router,
@@ -284,6 +285,7 @@ app.include_router(workspace_overview_router)
 app.include_router(workspace_router)
 app.include_router(workspace_entries_router)
 app.include_router(workspace_ai_router)
+app.include_router(agent_proposals_router)
 app.include_router(users_router)
 app.include_router(setup_router)
 app.include_router(cost_ledger_router)

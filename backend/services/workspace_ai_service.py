@@ -1100,6 +1100,9 @@ def accept_output(
     reviewer: User,
 ) -> dict[str, Any]:
     item = _load_output(db, case_id=case_id, output_id=output_id)
+    if item.target_type == "case":
+        # A case agent's draft is accepted from the proposal, which records what the person opened first.
+        raise WorkspaceAIConflict("This is a proposal by the case agent: accept it from the proposal")
     if item.review_status == "accepted":
         return serialize_output(item)
     if item.review_status == "rejected":
@@ -1196,6 +1199,8 @@ def reject_output(
     reason: str | None,
 ) -> dict[str, Any]:
     item = _load_output(db, case_id=case_id, output_id=output_id)
+    if item.target_type == "case":
+        raise WorkspaceAIConflict("This is a proposal by the case agent: reject it from the proposal")
     if item.review_status == "accepted":
         raise WorkspaceAIConflict("Accepted output cannot be rejected")
     if item.job_status != "completed":
@@ -1233,7 +1238,7 @@ def serialize_output(item: WorkspaceAIOutput) -> dict[str, Any]:
         "model_metadata": dict(item.model_metadata or {}),
         "error_message": item.error_message,
         "rejection_reason": item.rejection_reason,
-        "mandate_version_id": str(item.mandate_version_id),
+        "mandate_version_id": str(item.mandate_version_id) if item.mandate_version_id else None,
         "mandate_version_number": mandate.version_number if mandate else None,
         "requested_by_user_id": str(item.requested_by_user_id) if item.requested_by_user_id else None,
         "requested_by_name": requester.name if requester else None,

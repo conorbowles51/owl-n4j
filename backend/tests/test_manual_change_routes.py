@@ -21,7 +21,7 @@ SKIP_VALUES = {'preview', 'check'}
 
 # Every kind the inventory (docs/manual-change-feed.md) lists as recorded by a route decorator.
 ROUTE_KINDS = {
-    'candidate_review', 'quarantine', 'release', 'file_admit', 'transaction_correction', 'duplicate_decision',
+    'candidate_review', 'agent_proposal_accept', 'quarantine', 'release', 'file_admit', 'transaction_correction', 'duplicate_decision',
     'duplicate_keep_copy', 'reader_replacement_restore', 'candidate_finalize', 'account_party', 'counterparty_party',
     'model_attempt_abandon', 'payment_label_change', 'payment_label_confirm', 'payment_label_remove',
     'category_apply_like', 'category_rule_save', 'category_rule_retire', 'payment_edit', 'account_identity',

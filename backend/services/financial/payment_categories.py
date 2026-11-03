@@ -180,6 +180,9 @@ def record_person_choice(session, row, category, actor):
             why=None, set_by=getattr(actor, 'email', None) or getattr(actor, 'name', None))
     if before and before[1] == 'model' and before[0] != category:
         _correct_model_judgement(session, row, before[0], category, actor)
+    # An open category proposal by the case agent is settled by the person's choice (services.agent.proposals).
+    from services.agent.proposals import on_person_category
+    on_person_category(session, row, category, actor)
 
 
 def _correct_model_judgement(session, row, before, after, actor):

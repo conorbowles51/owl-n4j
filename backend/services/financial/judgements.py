@@ -98,6 +98,13 @@ RULES = {
                                  'fin-provenance (statement details)', 'inferred'),
     'model.statement_details': ("Statement's account number or bank changed by Claude for a person; not confirmed",
                                 'fin-provenance (statement details)', 'inferred'),
+    # The case agent's proposals (services.agent.proposals): a model's proposal, never "proved"; nothing changes
+    # until a person accepts it.
+    'proposal.missing_month': ('Missing statement month proposed by the case agent', 'agent-proposals A', 'inferred'),
+    'proposal.category': ('Payment category proposed by the case agent', 'agent-proposals A', 'inferred'),
+    'proposal.counterparty': ('Other side of a payment proposed by the case agent', 'agent-proposals A', 'inferred'),
+    # A proceeds calculation's assumptions (services.financial.proceeds): each one a named person sets with a source.
+    'assumption.proceeds': ('Proceeds assumption set by a person, with its source', 'agent-proposals E', 'inferred'),
 }
 
 # Field basis written by a reading rule -> rule id. Only bases that choose a value the page does not print outright
@@ -180,6 +187,8 @@ CATEGORIES = {
     'copies': 'Copies, duplicates and replacements',
     'payment_category': 'Category suggested by the model',
     'model_work': 'Saved or changed by Claude, not yet confirmed by a person',
+    'agent_proposal': 'Proposed by the case agent, for a person to decide',
+    'assumption': 'Assumption of a calculation, set by a person',
 }
 _CATEGORY_RULES = {
     'hand_entry': ('agent.page_entry', 'agent.correction'),
@@ -197,6 +206,8 @@ _CATEGORY_RULES = {
     'currency_account': ('L4.currency_from_name', 'autofill.currency_account', 'autofill.currency_case',
                          'autofill.detail', 'L30c.contract_refile', 'agent.refile', 'agent.currency_refile'),
     'payment_category': ('category.model',),
+    'agent_proposal': ('proposal.missing_month', 'proposal.category', 'proposal.counterparty'),
+    'assumption': ('assumption.proceeds',),
     'holder': ('holder.printed_on_statement',),
     'model_work': ('model.statement_save', 'model.statement_account', 'model.statement_balances',
                    'model.statement_details'),
@@ -271,10 +282,14 @@ RULE_PRIORITY = {
     'L22.vanished_key': (2, 'an earlier reading was retired in favour of the saved one'),
     'erica.receipt_settled': (2, 'a deposit receipt was left out as already recorded'),
     'model.statement_account': (2, "the statement's account, holder or currency was changed by Claude, not confirmed"),
+    'proposal.missing_month': (2, 'can change which statements the case is missing for an account'),
+    'proposal.counterparty': (2, 'can change who the other side of a payment is'),
+    'assumption.proceeds': (1, 'can change an estimated amount of money'),
     # 3 · description only
     'category.model': (3, "a payment's category was suggested by the model"),
     'model.statement_details': (3, "only the statement's printed account number, CLABE or bank name was changed by "
                                    "Claude; the statement stays on its account"),
+    'proposal.category': (3, "can change only a payment's category"),
 }
 
 
@@ -977,14 +992,30 @@ def as_dict(row, *, file_id=None, filename=None, extra=None):
                resolved_at=row.resolved_at.isoformat() if row.resolved_at else None,
                resolution_reason=row.resolution_reason,
                adjudication_id=str(row.adjudication_id) if row.adjudication_id else None,
-               created_at=row.created_at.isoformat() if row.created_at else None)
+               created_at=row.created_at.isoformat() if row.created_at else None,
+               proposal=_proposal_view(row.rule_id, evidence))
     out.update(extra or {})
     return out
 
 
-ORIGIN_ORDER = {'agent': 0, 'processor': 1}
+def _proposal_view(rule_id, evidence):
+    """What a screen shows of a case agent's proposal: the kind, the value, why, its sources, who proposed it and
+    what the person opened before answering. None for any other call."""
+    if not str(rule_id).startswith('proposal.'):
+        return None
+    proposal = evidence.get('proposal') or {}
+    origin = proposal.get('origin') or {}
+    return dict(kind=proposal.get('kind'), value=proposal.get('value'), why=proposal.get('why'),
+                citations=list(proposal.get('citations') or []),
+                citation_labels={c.get('citation'): c.get('label') for c in proposal.get('citation_check') or []},
+                model=origin.get('model'), model_id=origin.get('model_id'), run_id=origin.get('run_id'),
+                for_name=(origin.get('for') or {}).get('name'), review=evidence.get('review'),
+                applied=evidence.get('applied'))
+
+
+ORIGIN_ORDER = {'agent': 0, 'person': 1, 'processor': 2}
 STRENGTH_ORDER = {'inferred': 0, 'proved': 1}
-STATUS_ORDER = {'open': 0, 'corrected': 1, 'confirmed': 2}
+STATUS_ORDER = {'open': 0, 'corrected': 1, 'rejected': 2, 'confirmed': 3}
 
 
 def _current(query):
@@ -1248,6 +1279,9 @@ def confirm(session, *, case_id, judgement_id, actor, reason=''):
     """'Looks right': one click, no reason needed. The reinforcement signal for the rule."""
     _require_person(actor)
     row = _get(session, case_id, judgement_id)
+    if row.rule_id.startswith('proposal.'):
+        # Accepting a proposal applies it and records what the person opened first (services.agent.proposals).
+        raise JudgementError('This is a proposal by the case agent: accept it from the proposal.', 409)
     if row.status == 'corrected':
         raise JudgementError('This judgement call was already corrected.', 409)
     row.status, row.resolved_by, row.resolved_by_email = 'confirmed', actor.name, actor.email
@@ -1285,6 +1319,10 @@ def correct(session, *, case_id, judgement_id, actor, reason, adjudication_id=No
     if linked is not None:
         row.evidence = dict(row.evidence or {}, correction=dict(decision=linked.decision, before=linked.before,
                                                                 after=linked.after))
+    if row.rule_id.startswith('proposal.'):
+        # What the person opened before correcting the case agent's proposal (services.agent.proposals).
+        from services.agent.proposals import review_facts
+        row.evidence = dict(row.evidence or {}, review=review_facts(session, 'judgement', row.id, actor))
     session.commit()
     return as_dict(row)
 
@@ -1524,14 +1562,22 @@ def export_csv(page):
     writer = csv.writer(out, lineterminator='\r\n')
     writer.writerow(EXPORT_COLUMNS)
     strengths = {'inferred': 'Inferred', 'proved': 'Checked guess'}
-    statuses = {'open': 'Not yet checked', 'confirmed': 'Looks right', 'corrected': 'Corrected'}
+    statuses = {'open': 'Not yet checked', 'confirmed': 'Looks right', 'corrected': 'Corrected',
+                'rejected': 'Rejected'}
     for item in page['items']:
         amount = item.get('payment_amount_minor')
+        if str(item['rule_id']).startswith('proposal.'):
+            strength, maker = 'Proposal (inferred)', 'Case agent (model), for a person to decide'
+        elif item['origin'] == 'person':
+            strength, maker = strengths.get(item['strength']), item.get('resolved_by') or 'A person'
+        elif item['origin'] == 'agent':
+            strength, maker = 'Hand entry', 'Processing agent (by hand)'
+        else:
+            strength, maker = strengths.get(item['strength']), 'Processor'
         writer.writerow([cell(v) for v in (
             f"{item['priority']} {item['priority_label']}", item.get('priority_reason'), statuses.get(item['status']),
             item['category_label'], item['rule_label'],
-            'Hand entry' if item['origin'] == 'agent' else strengths.get(item['strength']),
-            'Processing agent (by hand)' if item['origin'] == 'agent' else 'Processor', item.get('filename'),
+            strength, maker, item.get('filename'),
             item.get('page'), item.get('account_label'), item.get('period_start'), item.get('period_end'),
             item.get('payment_description'), money(int(amount)) if amount is not None else '', item['summary'],
             item.get('resolved_by'), item.get('resolution_reason'), item['rule_id'])])

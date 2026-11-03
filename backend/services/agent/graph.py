@@ -644,6 +644,7 @@ class AgentGraphRunner:
         available_artifacts: list[dict[str, Any]] | None = None,
         allowed_entity_keys: list[str] | None = None,
         mandate_context_block: str = "",
+        proposer: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         available_artifact_context = _format_available_artifacts(available_artifacts)
         tool_context = AgentToolContext(
@@ -651,6 +652,7 @@ class AgentGraphRunner:
             artifact_preference=artifact_preference,
             allowed_entity_keys=(set(allowed_entity_keys) if allowed_entity_keys is not None else None),
             artifact_store=_artifact_store_from_available(available_artifacts),
+            proposer=proposer,
         )
         tools = make_agent_tools(tool_context)
         tools_by_name = {tool.name: tool for tool in tools}
@@ -835,6 +837,7 @@ class AgentGraphRunner:
         should_cancel: Callable[[], bool] | None = None,
         allowed_entity_keys: list[str] | None = None,
         mandate_context_block: str = "",
+        proposer: dict[str, Any] | None = None,
     ):
         available_artifact_context = _format_available_artifacts(available_artifacts)
         tool_context = AgentToolContext(
@@ -842,6 +845,7 @@ class AgentGraphRunner:
             artifact_preference=artifact_preference,
             allowed_entity_keys=(set(allowed_entity_keys) if allowed_entity_keys is not None else None),
             artifact_store=_artifact_store_from_available(available_artifacts),
+            proposer=proposer,
         )
         tools = make_agent_tools(tool_context)
         tools_by_name = {tool.name: tool for tool in tools}

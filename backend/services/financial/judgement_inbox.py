@@ -41,7 +41,8 @@ def _statement(session, item):
     from postgres.models.financial import FinancialSourceDocument
     if not item.get('source_document_id'):
         return ''
-    doc = session.get(FinancialSourceDocument, item['source_document_id'])
+    import uuid
+    doc = session.get(FinancialSourceDocument, uuid.UUID(str(item['source_document_id'])))
     file = session.get(EvidenceFile, doc.evidence_file_id) if doc is not None and doc.evidence_file_id else None
     return getattr(file, 'original_filename', '') or ''
 
@@ -59,7 +60,7 @@ def _ids(text):
 
 
 def append_correction(session, item, statement=None):
-    if item.get('status') != 'corrected':
+    if item.get('status') not in ('corrected', 'rejected'):  # a rejected agent proposal is a lesson too
         return False
     if str(item['id']) in _ids(_known()):
         return False
@@ -84,7 +85,7 @@ def missing(session):
     """Ids of corrections in the database with no line in the inbox (an append that failed and was not caught up)."""
     from postgres.models.financial_judgements import FinancialJudgement as J
     known = _ids(_known())
-    return [str(i) for i in session.scalars(select(J.id).where(J.status == 'corrected').order_by(J.resolved_at))
+    return [str(i) for i in session.scalars(select(J.id).where(J.status.in_(('corrected', 'rejected'))).order_by(J.resolved_at))
             if str(i) not in known]
 
 
@@ -93,7 +94,7 @@ def sync(session):
     from postgres.models.financial_judgements import FinancialJudgement as J
     from services.financial.judgements import as_dict
     added = 0
-    for row in session.scalars(select(J).where(J.status == 'corrected').order_by(J.resolved_at)):
+    for row in session.scalars(select(J).where(J.status.in_(('corrected', 'rejected'))).order_by(J.resolved_at)):
         added += append_correction(session, as_dict(row))
     return added
 

@@ -46,6 +46,19 @@ logger = logging.getLogger(__name__)
 
 
 class AgentService:
+    @staticmethod
+    def _proposer(db, user, request, provider, model, run, thread):
+        """Who the run is for and which model runs it, for the proposal tools (the agent's only write). A person
+        who can only view the case gets none: a proposal is a write, so it needs case edit."""
+        try:
+            check_case_access(db, request.case_id, user, required_permission=("case", "edit"))
+            can_propose = True
+        except Exception:  # noqa: BLE001 - view-only: the run reads, it does not propose
+            can_propose = False
+        return dict(for_name=user.name or user.email, for_user_id=str(user.id), for_email=user.email,
+                    model=getattr(model, "name", None) or model.id, model_id=model.id, provider=provider,
+                    run_id=str(run.id), thread_id=str(thread.id), can_propose=can_propose)
+
     def stream_message(
         self,
         *,
@@ -160,6 +173,7 @@ class AgentService:
                 should_cancel=lambda: is_cancelled(run_id),
                 allowed_entity_keys=allowed_entity_keys,
                 mandate_context_block=mandate_context.block,
+                proposer=self._proposer(db, user, request, provider, model, run, thread),
             ):
                 if event.get("type") == "final":
                     final_result = event.get("result") or {}
@@ -442,6 +456,7 @@ class AgentService:
                 ),
                 allowed_entity_keys=allowed_entity_keys,
                 mandate_context_block=mandate_context.block,
+                proposer=self._proposer(db, user, request, provider, model, run, thread),
             )
             runner_clarification = self._clarification_from_runner(
                 result.get("clarification"),

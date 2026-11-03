@@ -13,10 +13,13 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from postgres.base import Base
 
-JUDGEMENT_SUBJECTS = ('transaction', 'statement_period', 'source_document', 'account', 'evidence_file')
+# 'calculation': a proceeds calculation (proceeds_calculations); each of its assumptions is its own call.
+JUDGEMENT_SUBJECTS = ('transaction', 'statement_period', 'source_document', 'account', 'evidence_file', 'calculation')
 JUDGEMENT_STRENGTHS = ('proved', 'inferred')
-JUDGEMENT_STATUSES = ('open', 'confirmed', 'corrected')
-JUDGEMENT_ORIGINS = ('processor', 'agent')
+# 'rejected': a proposal a person found wrong where there is nothing to change (agent proposals).
+JUDGEMENT_STATUSES = ('open', 'confirmed', 'corrected', 'rejected')
+# 'person': a value a named person set with its source (a proceeds assumption).
+JUDGEMENT_ORIGINS = ('processor', 'agent', 'person')
 
 
 def _json():
