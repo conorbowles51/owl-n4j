@@ -485,3 +485,20 @@ def test_media_derive_routes_queue_a_reading_and_refuse_in_words(api):
     assert bad.status_code == 422 and "only from photos" in bad.json()["detail"]
     gone = cl.post("/api/phones/media/%s/derive" % uid, json={"case_id": api["other_case"], "kind": "ocr"})
     assert gone.status_code in (403, 404)  # refused either way: no access to that case, or no such file
+
+
+def test_timeline_lens_routes_index_window_and_buckets(api):
+    cl = api["client"]
+    idx = cl.post("/api/phones/timeline/index", json={"case_id": api["case"]})
+    assert idx.status_code == 200 and idx.json()["total"] == 3 and idx.json()["no_time_count"] == 1
+    snap = idx.json()["snapshot"]
+    day = idx.json()["items"][0]["day"]
+    w = cl.post("/api/phones/timeline/window", json={"filter": {"case_id": api["case"]}, "snapshot": snap, "day": day})
+    assert w.status_code == 200 and w.json()["items"][0]["comm"]["kind"] == "message"
+    b = cl.post("/api/phones/timeline/buckets", json={"filter": {"case_id": api["case"]}, "snapshot": snap,
+                                                      "start": "2023-03-13T00:00:00Z", "end": "2023-03-17T00:00:00Z"})
+    assert b.status_code == 200 and sum(x["count"] for x in b.json()["lanes"][0]["buckets"]) == 2
+    stale = cl.post("/api/phones/timeline/window", json={"filter": {"case_id": api["case"]}, "snapshot": "x", "day": day})
+    assert stale.status_code == 409
+    bad = cl.post("/api/phones/timeline/index", json={"case_id": api["case"], "lens_kinds": ["nonsense"]})
+    assert bad.status_code == 422

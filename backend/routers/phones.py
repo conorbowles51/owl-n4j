@@ -6,6 +6,7 @@ and the readings queue (02 sections 6.8, 6.10): anyone who can view the case; de
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from typing import Literal, Optional
 from uuid import UUID
 
@@ -809,6 +810,75 @@ def stream_locate(body: LocateBody, db: Session = Depends(get_db), user: User = 
         raise HTTPException(status_code=409, detail="stale_snapshot")
     except streams.NotInCase:
         raise HTTPException(status_code=404, detail="This message is not in the current list.")
+
+
+def _lens_filter(body: dict, db, user):
+    from services.phone.timeline_lens import TimelineLensFilter
+    try:
+        f = TimelineLensFilter.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=[{"loc": e["loc"], "msg": e["msg"]} for e in exc.errors()])
+    authorize_case(db, UUID(f.case_id), user, ("case", "view"))
+    return f
+
+
+@router.post("/timeline/index")
+def timeline_lens_index(body: dict, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """03 section 9.3: the phone lens's exact total, per-day counts by lane, the no-time count, the lanes and the
+    hidden device and sensor count (T-7)."""
+    from services.phone import timeline_lens
+    f = _lens_filter(body, db, user)
+    try:
+        return timeline_lens.index(db.connection(), f)
+    except Exception as exc:  # noqa: BLE001
+        raise _failure("The phone entries could not be loaded.", exc)
+
+
+class LensWindowBody(WindowBody):
+    pass
+
+
+@router.post("/timeline/window")
+def timeline_lens_window(body: LensWindowBody, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_db_user)):
+    from services.phone import timeline_lens
+    f = _lens_filter(body.filter, db, user)
+    try:
+        return timeline_lens.window(db.connection(), f, snapshot_token=body.snapshot, day=body.day,
+                                    offset=body.offset, limit=body.limit)
+    except streams.StaleSnapshot:
+        raise HTTPException(status_code=409, detail="stale_snapshot")
+    except Exception as exc:  # noqa: BLE001
+        raise _failure("The phone entries could not be loaded.", exc)
+
+
+class LensBucketsBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filter: dict
+    snapshot: str = Field(min_length=1, max_length=64)
+    start: datetime
+    end: datetime
+    bucket: Literal["hour", "day"] = "day"
+
+
+@router.post("/timeline/buckets")
+def timeline_lens_buckets(body: LensBucketsBody, db: Session = Depends(get_db),
+                          user: User = Depends(get_current_db_user)):
+    """03 section 9.6: counts per lane per hour or day for the Lanes view; a phone's periods with no data are marked
+    (T-6)."""
+    from services.phone import timeline_lens
+    f = _lens_filter(body.filter, db, user)
+    if body.start.tzinfo is None or body.end.tzinfo is None:
+        raise HTTPException(status_code=422, detail="The span needs times with a zone.")
+    try:
+        return timeline_lens.buckets(db.connection(), f, snapshot_token=body.snapshot, start=body.start,
+                                     end=body.end, bucket=body.bucket)
+    except streams.StaleSnapshot:
+        raise HTTPException(status_code=409, detail="stale_snapshot")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise _failure("The lanes could not be loaded.", exc)
 
 
 @router.post("/conversations/threads")
