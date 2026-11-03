@@ -6,6 +6,8 @@ export interface ChatSource {
   filename: string
   excerpt?: string
   page?: number
+  /** doc://<evidence file id>[/<page>] when the passage carries its file id (backend services/case_citations.py) */
+  cite?: string
 }
 
 export interface ChatCost {

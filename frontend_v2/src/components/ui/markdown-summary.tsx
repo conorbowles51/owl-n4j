@@ -2,10 +2,14 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
 import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { parseDocumentCitation } from "@/lib/summary-sources"
+import { parseCitation } from "@/lib/citations"
+import { CitationLink, CitationScope, WithCitations } from "@/components/citations/citations"
 
 interface MarkdownSummaryProps {
   content: string
   sourceNumbers?: ReadonlyMap<string, number>
+  /** Only for a summary of one open file: its citations open that file here. Otherwise every citation opens
+   * through the enclosing CitationProvider, checked against the case. */
   onOpenFile?: (filename: string, page?: number) => void
 }
 
@@ -18,10 +22,7 @@ export function MarkdownSummary({
   onOpenFile,
   sourceNumbers,
 }: MarkdownSummaryProps) {
-  const markdownUrlTransform = (url: string) => {
-    if (url.startsWith("evidence://") || url.startsWith("doc://")) return url
-    return defaultUrlTransform(url)
-  }
+  const markdownUrlTransform = (url: string) => (parseCitation(url) ? url : defaultUrlTransform(url))
 
   const components: Components = {
     a: ({ href, children }) => {
@@ -32,26 +33,39 @@ export function MarkdownSummary({
           sourceNumber === undefined ? undefined : `S${sourceNumber}`
         const pageLabel =
           citation.page === undefined ? "" : `, p.${citation.page}`
+        const className = label
+          ? "inline-flex cursor-pointer whitespace-nowrap rounded-sm px-0.5 text-[11px] font-medium tabular-nums text-amber-600 hover:bg-amber-500/10 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:text-amber-400"
+          : "cursor-pointer text-amber-500 underline underline-offset-2 hover:text-amber-400"
+        const shownName = citation.evidenceFileId ? undefined : citation.filename
+        if (!onOpenFile)
+          return (
+            <CitationLink
+              citation={parseCitation(href)!}
+              className={className}
+              label={label ? `[${label}${pageLabel}]` : undefined}
+              title={label && shownName ? `${shownName}${pageLabel}` : undefined}
+            >
+              {children}
+            </CitationLink>
+          )
         return (
           <button
             type="button"
-            className={
-              label
-                ? "inline-flex cursor-pointer whitespace-nowrap rounded-sm px-0.5 text-[11px] font-medium tabular-nums text-amber-600 hover:bg-amber-500/10 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:text-amber-400"
-                : "cursor-pointer text-amber-500 underline underline-offset-2 hover:text-amber-400"
-            }
+            className={className}
             title={label ? `${citation.filename}${pageLabel}` : undefined}
             aria-label={
               label
                 ? `Open source ${label}: ${citation.filename}${pageLabel}`
                 : undefined
             }
-            onClick={() => onOpenFile?.(citation.filename, citation.page)}
+            onClick={() => onOpenFile(citation.filename, citation.page)}
           >
             {label ? `[${label}${pageLabel}]` : children}
           </button>
         )
       }
+      const other = parseCitation(href)
+      if (other) return <CitationLink citation={other}>{children}</CitationLink>
       return (
         <a
           href={href}
@@ -148,14 +162,18 @@ export function MarkdownSummary({
   }
 
   return (
-    <div className="prose-evidence">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={components}
-        urlTransform={markdownUrlTransform}
-      >
-        {content}
-      </ReactMarkdown>
-    </div>
+    <WithCitations>
+      <CitationScope content={content}>
+        <div className="prose-evidence">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={components}
+            urlTransform={markdownUrlTransform}
+          >
+            {content}
+          </ReactMarkdown>
+        </div>
+      </CitationScope>
+    </WithCitations>
   )
 }

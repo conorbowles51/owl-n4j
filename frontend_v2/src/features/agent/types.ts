@@ -67,12 +67,26 @@ export interface AgentModelInfo {
   server: string
 }
 
+/** Every citation of an answer checked against the case (backend services/case_citations.check_text). */
+export interface AgentCitationCheck {
+  available?: boolean
+  reason?: string
+  total?: number
+  ok?: number
+  not_in_case?: number
+  ambiguous?: number
+  page_not_given?: number
+  by_scheme?: Record<string, number>
+  problems?: Array<{ href: string; scheme: string; status: string; reason?: string }>
+}
+
 export interface AgentMessageResponse {
   thread_id: string
   run_id: string
   user_message_id?: string | null
   assistant_message_id?: string | null
   answer: string
+  citation_check?: AgentCitationCheck | null
   artifacts: AgentArtifact[]
   tool_trace: AgentToolTraceItem[]
   model_info: AgentModelInfo
@@ -184,6 +198,7 @@ export interface AgentStoredMessage {
   model_id?: string | null
   artifact_ids: string[]
   tool_trace_summary: Array<Record<string, unknown>>
+  citation_check?: AgentCitationCheck | null
   clarification?: AgentClarification | null
   created_at: string
 }
@@ -199,6 +214,7 @@ export interface AgentClientMessage {
   content: string
   clarification?: AgentClarification | null
   toolTraceSummary?: AgentToolTraceItem[]
+  citationCheck?: AgentCitationCheck | null
   pending?: boolean
   createdAt?: string
   /** The run that produced this answer (its run record opens from the answer). */

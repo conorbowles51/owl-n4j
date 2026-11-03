@@ -43,7 +43,7 @@ export interface ChatResponse {
   conversation_id?: string | null
   message_id: string
   answer: string
-  sources: { filename: string; excerpt?: string; page?: number }[]
+  sources: { filename: string; excerpt?: string; page?: number; cite?: string }[]
   cost?: ChatCost | null
   model_info: ChatModelInfo
   result_graph?: ResultGraph

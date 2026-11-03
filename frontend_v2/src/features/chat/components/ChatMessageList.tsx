@@ -2,18 +2,17 @@ import { useRef, useEffect } from "react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ChatMessage } from "./ChatMessage"
+import { WithCitations } from "@/components/citations/citations"
 import type { ChatMessageData } from "../types"
 
 interface ChatMessageListProps {
   messages: ChatMessageData[]
   isStreaming: boolean
-  onDocumentClick?: (filename: string, page?: number) => void
 }
 
 export function ChatMessageList({
   messages,
   isStreaming,
-  onDocumentClick,
 }: ChatMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -22,14 +21,11 @@ export function ChatMessageList({
   }, [messages])
 
   return (
+    <WithCitations>
     <ScrollArea className="h-full">
       <div className="mx-auto max-w-3xl space-y-4 p-4">
         {messages.map((msg, i) => (
-          <ChatMessage
-            key={i}
-            message={msg}
-            onDocumentClick={onDocumentClick}
-          />
+          <ChatMessage key={i} message={msg} />
         ))}
         {isStreaming && (
           <div className="space-y-2 rounded-lg bg-muted/30 p-4">
@@ -41,5 +37,6 @@ export function ChatMessageList({
         <div ref={bottomRef} />
       </div>
     </ScrollArea>
+    </WithCitations>
   )
 }

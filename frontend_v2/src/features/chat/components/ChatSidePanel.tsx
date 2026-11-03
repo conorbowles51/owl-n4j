@@ -1,9 +1,7 @@
 import { useRef, useEffect, useState, type KeyboardEvent } from "react"
 import { useLocation } from "react-router-dom"
 import { Send, Bot, MessageSquare, Plus } from "lucide-react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { DocumentViewer } from "@/components/ui/document-viewer"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import { ChatMessage } from "./ChatMessage"
@@ -12,7 +10,6 @@ import { useChat } from "../hooks/use-chat"
 import { useConversations } from "../hooks/use-conversations"
 import { useChatStore } from "../stores/chat.store"
 import { useGraphStore } from "@/stores/graph.store"
-import { evidenceAPI } from "@/features/evidence/api"
 import { ActiveAIModel } from "@/features/settings/components/ActiveAIModel"
 import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 import { PinnedRecords } from "@/features/phones/components/PinnedRecords"
@@ -28,12 +25,6 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
   const caseLayer = useCaseLayer(caseId)
   const [contextMode, setContextMode] = useState<ContextMode>("full")
   const [input, setInput] = useState("")
-  const [viewerDoc, setViewerDoc] = useState<{
-    evidenceId: string
-    url: string
-    name: string
-    page?: number
-  } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -108,25 +99,6 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
       handleSend()
-    }
-  }
-
-  const openDocument = async (filename: string, page?: number) => {
-    try {
-      const result = await evidenceAPI.findByFilename(filename, caseId)
-      if (!result.found || !result.evidence_id) {
-        toast.error("Source file not found")
-        return
-      }
-
-      setViewerDoc({
-        evidenceId: result.evidence_id,
-        url: evidenceAPI.getFileUrl(result.evidence_id),
-        name: filename,
-        page,
-      })
-    } catch {
-      toast.error("Failed to load source file")
     }
   }
 
@@ -217,7 +189,6 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
                 <ChatMessage
                   key={i}
                   message={msg}
-                  onDocumentClick={openDocument}
                 />
               ))}
               {isLoading && (
@@ -283,17 +254,6 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
         </div>
       </div>
 
-      <DocumentViewer
-        caseId={caseId}
-        evidenceId={viewerDoc?.evidenceId}
-        open={!!viewerDoc}
-        onOpenChange={(open) => {
-          if (!open) setViewerDoc(null)
-        }}
-        documentUrl={viewerDoc?.url}
-        documentName={viewerDoc?.name}
-        initialPage={viewerDoc?.page}
-      />
     </div>
   )
 }

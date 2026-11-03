@@ -605,23 +605,6 @@ export function DossierDetailSheet({
       {link.target_type === "phone_record" && <ReplacedLinkNote caseId={caseId} state={replaced[link.target_id]} />}
     </span>
   )
-  const openDocument = async (filename: string, page?: number) => {
-    try {
-      const result = await evidenceAPI.findByFilename(filename, caseId)
-      if (!result.found || !result.evidence_id) {
-        toast.error("Source file not found")
-        return
-      }
-      setViewerDoc({
-        evidenceId: result.evidence_id,
-        url: evidenceAPI.getFileUrl(result.evidence_id),
-        name: filename,
-        page,
-      })
-    } catch {
-      toast.error("Failed to load source file")
-    }
-  }
   const queryClient = useQueryClient()
   const refresh = () => {
     void query.refetch()
@@ -860,7 +843,6 @@ export function DossierDetailSheet({
                         </div>
                         <MarkdownSummary
                           content={item.content}
-                          onOpenFile={openDocument}
                         />
                         <div className="flex flex-wrap gap-x-3">
                           {item.supporting_links.map(renderSourceLink)}
@@ -923,7 +905,6 @@ export function DossierDetailSheet({
                         dossier.canonical_identity.summary ||
                         "No graph summary available."
                       }
-                      onOpenFile={openDocument}
                     />
                     {Array.isArray(dossier.canonical_identity.verified_facts) &&
                     dossier.canonical_identity.verified_facts.length ? (

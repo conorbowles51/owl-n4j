@@ -9,7 +9,7 @@ function inCase(content: string) {
   return render(
     <MemoryRouter initialEntries={["/cases/case-1/chat"]}>
       <Routes>
-        <Route path="/cases/:id/chat" element={<Markdown content={content} onOpenDocument={() => {}} />} />
+        <Route path="/cases/:id/chat" element={<Markdown content={content} />} />
       </Routes>
     </MemoryRouter>,
   )

@@ -14,14 +14,20 @@ import { Badge } from "@/components/ui/badge"
 import { CostBadge } from "@/components/ui/cost-badge"
 import { cn } from "@/lib/cn"
 import { Markdown } from "@/components/ui/markdown"
+import { CitationLink, CitationScope } from "@/components/citations/citations"
+import { docHrefByName, parseCitation } from "@/lib/citations"
 import type { ChatMessageData } from "../types"
 
 interface ChatMessageProps {
   message: ChatMessageData
-  onDocumentClick?: (filename: string, page?: number) => void
 }
 
-export function ChatMessage({ message, onDocumentClick }: ChatMessageProps) {
+/** A source's citation: by evidence file id when the answer gave one, else by name (a shared name offers a choice). */
+function sourceHref(source: { filename: string; page?: number; cite?: string }) {
+  return source.cite && parseCitation(source.cite) ? source.cite : docHrefByName(source.filename, source.page)
+}
+
+export function ChatMessage({ message }: ChatMessageProps) {
   const [copied, setCopied] = useState(false)
   const [showSources, setShowSources] = useState(false)
   const isUser = message.role === "user"
@@ -83,7 +89,6 @@ export function ChatMessage({ message, onDocumentClick }: ChatMessageProps) {
             <Markdown
               content={message.content}
               className="mt-1 text-sm leading-relaxed"
-              onOpenDocument={onDocumentClick}
             />
           )}
 
@@ -112,10 +117,11 @@ export function ChatMessage({ message, onDocumentClick }: ChatMessageProps) {
               </button>
               {showSources && (
                 <div className="mt-1 space-y-1">
+                  <CitationScope content={message.sources.map((src) => `[s](${sourceHref(src)})`).join(" ")}>
                   {message.sources.map((src, i) => (
-                    <button
+                    <CitationLink
                       key={i}
-                      onClick={() => onDocumentClick?.(src.filename, src.page)}
+                      citation={parseCitation(sourceHref(src))!}
                       className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-muted"
                     >
                       <FileText className="size-3 text-amber-500" />
@@ -123,8 +129,9 @@ export function ChatMessage({ message, onDocumentClick }: ChatMessageProps) {
                         {src.filename}
                         {src.page ? ` p.${src.page}` : ""}
                       </span>
-                    </button>
+                    </CitationLink>
                   ))}
+                  </CitationScope>
                 </div>
               )}
             </div>

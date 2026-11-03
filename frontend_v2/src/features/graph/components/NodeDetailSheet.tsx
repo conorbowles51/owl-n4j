@@ -494,7 +494,6 @@ export function NodeDetailSheet({
                 <MarkdownSummary
                   content={summaryCitations.content}
                   sourceNumbers={summaryCitations.numbers}
-                  onOpenFile={openDocument}
                 />
               </div>
             </div>
@@ -745,10 +744,7 @@ export function NodeDetailSheet({
         {summaryCitations.sources.length > 0 && (
           <>
             <Separator />
-            <SummarySources
-              sources={summaryCitations.sources}
-              onOpenFile={openDocument}
-            />
+            <SummarySources sources={summaryCitations.sources} />
           </>
         )}
       </ScrollArea>

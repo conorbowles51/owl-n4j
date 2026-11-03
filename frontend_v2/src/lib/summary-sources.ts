@@ -2,40 +2,31 @@ import { unified } from "unified"
 import remarkParse from "remark-parse"
 import remarkGfm from "remark-gfm"
 import type { Nodes, RootContent } from "mdast"
+import { parseCitation } from "@/lib/citations"
 
 export interface DocumentCitation {
+  /** the filename for a citation by name; the evidence file id for doc://<id> */
   filename: string
   page?: number
+  evidenceFileId?: string
 }
 
 export interface SummarySource {
   number: number
   filename: string
   pages: number[]
+  evidenceFileId?: string
 }
 
+/** A document citation (doc:// or the older evidence://), read by the one citation parser (lib/citations). */
 export function parseDocumentCitation(
   href: string | undefined
 ): DocumentCitation | null {
-  if (!href?.startsWith("evidence://") && !href?.startsWith("doc://"))
-    return null
-  const isDocument = href.startsWith("doc://")
-  let filename = href.slice(isDocument ? 6 : 11)
-  let page: number | undefined
-  if (isDocument) {
-    const pageSuffix = /\/(\d+)$/.exec(filename)
-    if (pageSuffix) {
-      filename = filename.slice(0, pageSuffix.index)
-      const value = Number(pageSuffix[1])
-      if (Number.isSafeInteger(value) && value > 0) page = value
-    }
-  }
-  try {
-    filename = decodeURIComponent(filename)
-  } catch {
-    // Older summaries can contain literal percent signs in unencoded filenames.
-  }
-  return filename.trim() ? { filename, page } : null
+  const citation = parseCitation(href)
+  if (!citation || citation.scheme !== "doc") return null
+  return citation.byName
+    ? { filename: citation.target, page: citation.page }
+    : { filename: citation.target, page: citation.page, evidenceFileId: citation.target }
 }
 
 const parser = unified().use(remarkParse).use(remarkGfm)
@@ -138,8 +129,10 @@ export function collectSummarySources(content: string) {
       if (!source) {
         source = {
           number: sources.length + 1,
-          filename: citation.filename,
+          // a citation by id names its file in the link text
+          filename: citation.evidenceFileId ? headingText(child).trim() || "Source file" : citation.filename,
           pages: [],
+          ...(citation.evidenceFileId ? { evidenceFileId: citation.evidenceFileId } : {}),
         }
         sources.push(source)
         byFilename.set(citation.filename, source)
@@ -163,6 +156,6 @@ export function collectSummarySources(content: string) {
   return {
     content: displayContent,
     sources,
-    numbers: new Map(sources.map((source) => [source.filename, source.number])),
+    numbers: new Map(sources.map((source) => [source.evidenceFileId ?? source.filename, source.number])),
   }
 }

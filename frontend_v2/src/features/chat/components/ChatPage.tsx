@@ -1,20 +1,17 @@
 import { useState } from "react"
 import { useParams } from "react-router-dom"
 import { MessageSquare } from "lucide-react"
-import { toast } from "sonner"
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable"
 import { EmptyState } from "@/components/ui/empty-state"
-import { DocumentViewer } from "@/components/ui/document-viewer"
 import { ChatMessageList } from "./ChatMessageList"
 import { ChatInput } from "./ChatInput"
 import { ChatHeader } from "./ChatHeader"
 import { ConversationSidebar } from "./ConversationSidebar"
 import { ResultGraphPanel } from "./ResultGraphPanel"
-import { evidenceAPI } from "@/features/evidence/api"
 import { useChat } from "../hooks/use-chat"
 import { useChatContext } from "../hooks/use-chat-context"
 import { useChatStore } from "../stores/chat.store"
@@ -26,12 +23,6 @@ import type { ChatScope } from "../types"
 
 export function ChatPage() {
   const { id: caseId } = useParams()
-  const [viewerDoc, setViewerDoc] = useState<{
-    evidenceId: string
-    url: string
-    name: string
-    page?: number
-  } | null>(null)
   const chat = useChat(caseId!)
   const caseContext = useCaseContext(caseId!)
   const [mandateOverride, setMandateOverride] = useState("")
@@ -62,25 +53,6 @@ export function ChatPage() {
       temporary ? { perspective: temporary } : undefined,
     )
     if (temporary) setMandateOverride("")
-  }
-
-  const openDocument = async (filename: string, page?: number) => {
-    try {
-      const result = await evidenceAPI.findByFilename(filename, caseId!)
-      if (!result.found || !result.evidence_id) {
-        toast.error("Source file not found")
-        return
-      }
-
-      setViewerDoc({
-        evidenceId: result.evidence_id,
-        url: evidenceAPI.getFileUrl(result.evidence_id),
-        name: filename,
-        page,
-      })
-    } catch {
-      toast.error("Failed to load source file")
-    }
   }
 
   return (
@@ -125,7 +97,6 @@ export function ChatPage() {
                 <ChatMessageList
                   messages={chat.messages}
                   isStreaming={chat.isLoading}
-                  onDocumentClick={openDocument}
                 />
               )}
             </div>
@@ -163,17 +134,6 @@ export function ChatPage() {
       {/* Collapsed rail when result graph is hidden */}
       {!resultGraphPanelOpen && <ResultGraphPanel />}
 
-      <DocumentViewer
-        caseId={caseId}
-        evidenceId={viewerDoc?.evidenceId}
-        open={!!viewerDoc}
-        onOpenChange={(open) => {
-          if (!open) setViewerDoc(null)
-        }}
-        documentUrl={viewerDoc?.url}
-        documentName={viewerDoc?.name}
-        initialPage={viewerDoc?.page}
-      />
     </div>
   )
 }

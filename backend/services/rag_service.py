@@ -2614,6 +2614,10 @@ Only include candidates with score >= 5."""
                 source_payload["excerpt"] = excerpt
             if metadata.get("page_start") not in (None, "", -1, "-1"):
                 source_payload["page"] = metadata.get("page_start")
+            from services.case_citations import chunk_cite
+            cite = chunk_cite({**metadata, "filename": str(filename)})
+            if cite and not record_uid:
+                source_payload["cite"] = cite
             if record_uid:
                 source_payload.update({
                     "evidence_file_id": metadata.get("evidence_file_id"), "record_uid": record_uid,

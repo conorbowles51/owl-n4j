@@ -60,7 +60,7 @@ import {
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { AgentCitationProvider, AgentMarkdown } from "./AgentCitations"
+import { AgentCitationProvider, AgentMarkdown, CitationCheckLine } from "./AgentCitations"
 import { AgentArtifactNotes } from "./AgentArtifactNotes"
 import { AcceptAnswerIntoAssessment } from "./AcceptAnswerIntoAssessment"
 import { AgentRunRecordPanel } from "./AgentRunRecordPanel"
@@ -280,6 +280,7 @@ function storedToClientMessage(message: AgentStoredMessage): AgentClientMessage 
     content: message.content,
     clarification: message.clarification ?? null,
     toolTraceSummary: normalizeStoredToolTrace(message.tool_trace_summary),
+    citationCheck: message.citation_check ?? null,
     createdAt: message.created_at,
     runId: message.run_id ?? null,
   }
@@ -906,6 +907,7 @@ export function AgentPage() {
                 content: response.answer,
                 clarification: response.clarification ?? null,
                 toolTraceSummary: response.tool_trace,
+                citationCheck: response.citation_check ?? null,
                 createdAt: response.created_at,
                 runId: response.run_id,
               },
@@ -1314,6 +1316,7 @@ function MessageBubble({
             className="max-w-none leading-6 [overflow-wrap:anywhere]"
           />
         ) : null}
+        {!hideMessageBodyForPanel && message.citationCheck && <CitationCheckLine check={message.citationCheck} />}
         {showClarificationPanel && message.clarification && onClarificationAnswer && (
           <div className={cn("max-w-3xl", !hideMessageBodyForPanel && "mt-3")}>
             <ClarificationPanel
