@@ -39,6 +39,8 @@ STALE_SECONDS = {k: v + STALE_MARGIN_SECONDS for k, v in TIMEOUT_SECONDS.items()
 IDLE_SECONDS = 5
 NO_MODEL = ("The transcription model is not installed on this server, so this audio cannot be transcribed here. "
             "Nothing was sent anywhere.")
+EMPTY = ("This file is an empty placeholder in the production (it holds no bytes), so there is nothing to read. "
+         "Nothing was sent anywhere.")
 NO_OCR = "The text reader (Tesseract) is not installed on this server. Nothing was sent anywhere."
 STOPPED = "Reading this file stopped twice; it may be too large or damaged. The original is unchanged."
 
@@ -121,6 +123,8 @@ def request(conn, case_id, file_uid, kind, user_id=None) -> dict:
     if f.verification == "missing":
         from services.phone.media import MISSING_WORDS
         raise DeriveError(MISSING_WORDS)
+    if f.verification == "empty_placeholder":
+        raise DeriveError(EMPTY)
     # one open reading per file and kind (unique partial index): a second request at the same moment inserts
     # nothing and gets the reading already open
     r = conn.execute(text(
@@ -182,21 +186,21 @@ def _tesseract_version():
 def _ocr(path):
     version = _tesseract_version()
     pm = phone_media()
-    tessdata = pm.tessdata_dir()
-    if version is None or tessdata is None:
-        raise DeriveError(NO_OCR)
     langs = tesseract_languages()
-    try:
-        ident = pm.tesseract_identity(version, tessdata, langs)
-    except FileNotFoundError:
+    if version is None:
+        raise DeriveError(NO_OCR)
+    tessdata = pm.tessdata_dir(langs)
+    if tessdata is None:
         raise DeriveError("The text reader has no language data for %s on this server. Nothing was sent anywhere."
-                          % langs) from None
+                          % langs)
+    ident = pm.tesseract_identity(version, tessdata, langs)
     import resource
 
     def cap():
         mb = int(os.environ.get("LOUPE_PHONE_DERIVE_MEMORY_MB", "6144"))
         resource.setrlimit(resource.RLIMIT_AS, (mb * 1024 * 1024, mb * 1024 * 1024))
-    r = subprocess.run(["tesseract", str(path), "stdout", "-l", langs], capture_output=True, text=True,
+    r = subprocess.run(["tesseract", str(path), "stdout", "--tessdata-dir", str(tessdata), "-l", langs],
+                       capture_output=True, text=True,
                        timeout=TIMEOUT_SECONDS["ocr"], preexec_fn=cap, env={"PATH": os.environ.get("PATH", ""),
                                                                             "OMP_THREAD_LIMIT": "1"})
     if r.returncode != 0:
@@ -256,9 +260,13 @@ def read_file(conn, case_id, file_uid, kind) -> dict:
                 dst.write(chunk)
         found = pm.kind_of(raw, name)
         _check_kind(kind, found)
-        path = raw.rename(raw.with_suffix(found.suffix)) if found.suffix else raw
+        wanted = ("image",) if kind == "ocr" else ("audio", "video")
+        use_suffix = found.suffix and (found.container != "by-name" or found.kind in wanted)
+        path = raw.rename(raw.with_suffix(found.suffix)) if use_suffix else raw
         got = _ocr(path) if kind == "ocr" else _transcribe(path)
-        got.update(input_sha256=h.hexdigest(), sniffed_container=found.container)
+        # what the bytes said; a guess from the name is not recorded as the file's kind
+        got.update(input_sha256=h.hexdigest(),
+                   sniffed_container="unrecognised" if found.container == "by-name" else found.container)
         if kind == "transcript":
             got["duration_seconds"] = _duration(path)
         return got
@@ -273,7 +281,11 @@ HEIF = ("This photo is stored as HEIC, which the text reader on this server cann
 
 
 def _check_kind(kind, found):
-    what = "no known format" if not found.recognised else "a %s file" % found.container.upper()
+    """Refuse only when the bytes positively name another kind. Bytes that name nothing go to the reader, which
+    decides (Tesseract opens JPEG 2000 and PNM; ffmpeg opens WMA, FLV, MTS and more than this sniffer names)."""
+    if not found.recognised or found.container == "by-name":
+        return  # only the bytes can refuse; a name is a guess
+    what = "a %s file" % found.container.upper()
     if kind == "ocr":
         if found.kind != "image":
             raise DeriveError(NOT_IMAGE % what)

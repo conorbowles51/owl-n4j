@@ -250,13 +250,49 @@ def test_s12_a_transcript_records_model_id_version_weights_hash_input_hash_and_d
 def test_s12_an_uncategorised_file_may_be_asked_for_and_its_bytes_decide(world, tmp_path, monkeypatch):
     from services.phone import derive
     engine, case, _, _ = world
-    _place(world, tmp_path, monkeypatch, LINKED, "chats/blob", b"plain words", "Uncategorized")
-    with engine.begin() as c:  # and the report gives it no name with an extension either
-        c.execute(text("UPDATE phone_files SET local_path = 'files/Uncategorized/blob' WHERE file_uid = :f"),
-                  {"f": LINKED})
+    _place(world, tmp_path, monkeypatch, LINKED, "chats/blob", OGG, "Uncategorized")
     with engine.begin() as c:
         req = derive.request(c, case, LINKED, "ocr")
     assert derive.run_pending(engine) == [{"id": req["id"], "state": "failed"}]
     with engine.connect() as c:
         [got] = derive.list_for(c, case, LINKED)
-    assert got["error"] == derive.NOT_IMAGE % "no known format"
+    assert got["error"] == derive.NOT_IMAGE % "a OGG file"
+
+
+def test_s12_bytes_that_name_nothing_still_reach_the_reader(world, tmp_path, monkeypatch):
+    """A WMA or FLV voice note (formats ffmpeg reads but the sniffer does not name) is still transcribed."""
+    from services.phone import derive
+    engine, case, _, _ = world
+    weights = tmp_path / "base.pt"
+    weights.write_bytes(b"synthetic weights")
+    monkeypatch.setenv("LOUPE_WHISPER_MODEL_PATH", str(weights))
+    wma = b"\x30\x26\xb2\x75\x8e\x66\xcf\x11" + b"\x00" * 64  # an ASF header
+    _place(world, tmp_path, monkeypatch, LINKED, "chats/note.wma", wma, "Audio")
+    real_run = subprocess.run
+
+    def fake_run(argv, *a, **k):
+        if argv[:2] == [sys.executable, "-I"]:
+            out = {"text": "invented", "segments": [], "language": "en", "package_version": "20250625"}
+            return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(out), stderr="")
+        return real_run(argv, *a, **k)
+
+    monkeypatch.setattr(derive.subprocess, "run", fake_run)
+    with engine.begin() as c:
+        req = derive.request(c, case, LINKED, "transcript")
+    assert derive.run_pending(engine) == [{"id": req["id"], "state": "done"}]
+    with engine.connect() as c:
+        [got] = derive.list_for(c, case, LINKED)
+    assert got["sniffed_container"] == "unrecognised" and got["text"] == "invented"
+
+
+def test_s12_an_empty_placeholder_is_refused_in_words_before_any_work(world):
+    """C3's 817 audio files are 0-byte placeholders (M-17.4); asking for one says so instead of failing later."""
+    from services.phone import derive
+    engine, case, _, _ = world
+    with engine.begin() as c:
+        c.execute(text("UPDATE phone_files SET tags = 'Audio', outcome = 'empty_placeholder' WHERE file_uid = :f"),
+                  {"f": LINKED})
+        with pytest.raises(derive.DeriveError) as e:
+            derive.request(c, case, LINKED, "transcript")
+        assert str(e.value) == derive.EMPTY
+        assert c.execute(text("SELECT count(*) FROM phone_derived_texts")).scalar() == 0

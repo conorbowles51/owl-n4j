@@ -125,7 +125,9 @@ const fmtSeconds = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s %
  * label under the original. Nothing is sent anywhere. */
 export function DerivedTexts({ caseId, fileUid, category }: { caseId: string; fileUid: string; category: string | null }) {
   const client = useQueryClient()
-  const kind = category === "Image" ? "ocr" : category === "Audio" || category === "Video" ? "transcript" : null
+  // A file the report left uncategorised may be read either way; its contents decide (05 17.4 point 1).
+  const uncategorised = !category || category === "Uncategorized"
+  const kinds: ("ocr" | "transcript")[] = category === "Image" ? ["ocr"] : category === "Audio" || category === "Video" ? ["transcript"] : uncategorised ? ["ocr", "transcript"] : []
   const q = useQuery({
     queryKey: ["phone-media-derived", caseId, fileUid],
     queryFn: () => getDerivedTexts(caseId, fileUid),
@@ -135,8 +137,7 @@ export function DerivedTexts({ caseId, fileUid, category }: { caseId: string; fi
   const [busy, setBusy] = useState(false)
   const items = q.data?.items ?? []
   const waiting = items.some((x) => x.state === "queued" || x.state === "running")
-  const ask = async () => {
-    if (!kind) return
+  const ask = async (kind: "ocr" | "transcript") => {
     setBusy(true)
     setError(null)
     try {
@@ -148,15 +149,16 @@ export function DerivedTexts({ caseId, fileUid, category }: { caseId: string; fi
       setBusy(false)
     }
   }
-  if (!kind && !items.length) return null
+  if (!kinds.length && !items.length) return null
   return (
     <section aria-label="Machine-generated text" className="flex flex-col gap-1">
       <h3 className="font-medium">Machine-generated text</h3>
-      {kind && (
-        <Button size="sm" variant="outline" onClick={ask} disabled={busy || waiting} className="self-start">
+      {uncategorised && kinds.length > 0 && <p className="text-muted-foreground">The report does not say what kind of file this is; its contents decide which reading works.</p>}
+      {kinds.map((kind) => (
+        <Button key={kind} size="sm" variant="outline" onClick={() => ask(kind)} disabled={busy || waiting} className="self-start">
           {kind === "ocr" ? "Read text in this image" : "Transcribe this audio"}
         </Button>
-      )}
+      ))}
       <p className="text-muted-foreground">Made by a model on this server; nothing is sent anywhere. A person has not checked it.</p>
       {error && <p role="alert">{error}</p>}
       {items.map((x) => (

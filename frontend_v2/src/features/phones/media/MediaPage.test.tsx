@@ -15,7 +15,7 @@ const api = vi.hoisted(() => ({
   requestDerivedText: vi.fn().mockResolvedValue({ id: "d1", state: "queued" }),
 }))
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
-import MediaPage from "./MediaPage"
+import MediaPage, { DerivedTexts } from "./MediaPage"
 
 describe("Media (03 section 8)", () => {
   it("states the total, shows a missing file as the sentence, and opens a file with the messages that carried it (M-1, M-2, M-4)", async () => {
@@ -61,6 +61,19 @@ describe("Media (03 section 8)", () => {
     expect(within(derived).getByText("tesseract/eng (5.5.0)")).toBeInTheDocument()
     expect(within(derived).getByText("a".repeat(64))).toBeInTheDocument()
     expect(within(derived).getByText("b".repeat(64))).toBeInTheDocument()
+  })
+
+  it("offers both readings for a file the report left uncategorised, and says its contents decide (05 17.4)", async () => {
+    api.getDerivedTexts.mockResolvedValue({ file_uid: "f9", items: [] })
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <DerivedTexts caseId="c" fileUid="f9" category="Uncategorized" />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText("The report does not say what kind of file this is; its contents decide which reading works.")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Transcribe this audio" }))
+    expect(api.requestDerivedText).toHaveBeenCalledWith("c", "f9", "transcript")
+    expect(screen.getByRole("button", { name: "Read text in this image" })).toBeInTheDocument()
   })
 
   it("filters to files with no category or no check by sending an empty value, not All", async () => {

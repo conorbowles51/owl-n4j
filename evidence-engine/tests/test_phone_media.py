@@ -36,6 +36,7 @@ HEADERS = {
     "mp3-frame": (b"\xff\xfb\x90\x64\x00", "audio", ".mp3"),
     "aac-adts": (b"\xff\xf1\x50\x80\x02\x1f\xfc", "audio", ".aac"),
     "pdf": (b"%PDF-1.7\n", "pdf", ".pdf"),
+    "bmp": (b"BM\x36\x00\x0c\x00\x00\x00\x00\x00\x36\x00\x00\x00\x28\x00\x00\x00", "image", ".bmp"),
 }
 
 
@@ -47,7 +48,9 @@ def test_kind_comes_from_the_first_bytes(name):
 
 
 def test_bytes_that_name_nothing_are_unrecognised_and_the_name_is_the_fallback(tmp_path):
-    for junk in (b"", b"\x00\xff\x10binary", b"plain words in a text file", b"PK\x03\x04zip"):
+    for junk in (b"", b"\x00\xff\x10binary", b"plain words in a text file", b"PK\x03\x04zip",
+                 b"\xff\xfeh\x00i\x00", b"\xfe\xff\x00h\x00i", b"\xef\xbb\xbfhello",  # text with a byte-order mark
+                 b"BM is how these notes begin", b"\xff\xff\xff\xff", b"\xff\xfb\xf0\x00"):  # reserved MPEG values
         assert pm.sniff_bytes(junk) == pm.UNRECOGNISED
     f = tmp_path / "voice.opus"
     f.write_bytes(b"\x00" * 32)
@@ -81,6 +84,7 @@ def test_model_identity_carries_the_weights_hash(tmp_path):
                      "weights_sha256": hashlib.sha256(weights.read_bytes()).hexdigest(), "provider": "local"}
     weights.write_bytes(b"other weights")  # a changed file is hashed again, never served from the cache
     assert pm.whisper_identity(weights, "20250625")["weights_sha256"] == hashlib.sha256(b"other weights").hexdigest()
+    assert pm.tessdata_dir("zz-not-a-language") is None
     tess = tmp_path / "tessdata"
     tess.mkdir()
     (tess / "eng.traineddata").write_bytes(b"eng data")
@@ -125,6 +129,8 @@ def dispatched(monkeypatch):
     ("mov", "clip.mov", "video"),
     ("mp4-audio", "clip.mp4", "audio"),     # an audio-only MP4 goes to audio, not to frame reading
     ("png", "screenshot.jpg", "image"),
+    ("mp4", "recording.m4a", "audio"),       # an .m4a with a generic MP4 brand stays audio
+    ("3gp", "voice.m4a", "audio"),
 ])
 async def test_engine_dispatches_media_by_its_bytes(tmp_path: Path, dispatched, header, name, expected):
     f = tmp_path / name
@@ -139,6 +145,10 @@ async def test_engine_keeps_the_extension_when_the_bytes_say_nothing(tmp_path: P
     f.write_bytes(b"\x00" * 64)
     await extract_text(str(f), f.name)
     assert dispatched == ["image"]
+    t = tmp_path / "subtitles.srt"
+    t.write_bytes(b"\xff\xfe1\x00\n\x00")  # UTF-16 text with an unknown extension is never sent to transcription
+    with pytest.raises(ValueError, match=r"Unsupported file type: \.srt"):
+        await extract_text(str(t), t.name)
     g = tmp_path / "payload.bin"
     g.write_bytes(b"\x00\xff\x10binary")
     with pytest.raises(ValueError, match=r"Unsupported file type: \.bin"):

@@ -1200,6 +1200,8 @@ def _sniffed_media_kind(file_path: str, ext: str) -> str | None:
         sniffed = phone_media.sniff_path(file_path)
     except OSError:
         sniffed = phone_media.UNRECOGNISED
+    if sniffed.container in ("mp4", "3gp") and ext in AUDIO_EXTENSIONS:
+        return "audio"  # an MP4 brand names the box format, not whether a picture is inside; an .m4a stays audio
     if sniffed.kind in ("image", "video", "audio"):
         return sniffed.kind
     if ext in IMAGE_EXTENSIONS:

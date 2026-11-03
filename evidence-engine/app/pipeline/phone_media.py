@@ -57,7 +57,10 @@ def sniff_bytes(head: bytes) -> Sniffed:
         return Sniffed("image", "gif", ".gif")
     if h[:4] == b"RIFF" and h[8:12] == b"WEBP":
         return Sniffed("image", "webp", ".webp")
-    if h[:2] == b"BM" and len(h) >= 14:
+    if h[:2] in (b"\xff\xfe", b"\xfe\xff") or h[:3] == b"\xef\xbb\xbf":
+        return UNRECOGNISED  # a UTF-16 or UTF-8 byte-order mark: text, never audio (FF FE also fits MPEG frame sync)
+    if h[:2] == b"BM" and len(h) >= 18 and h[6:10] == b"\x00\x00\x00\x00" and \
+            int.from_bytes(h[14:18], "little") in (12, 40, 52, 56, 64, 108, 124):
         return Sniffed("image", "bmp", ".bmp")
     if h[:4] in (b"II*\x00", b"MM\x00*"):
         return Sniffed("image", "tiff", ".tif")
@@ -94,12 +97,21 @@ def sniff_bytes(head: bytes) -> Sniffed:
         return Sniffed("audio", "mp3", ".mp3")
     if len(h) >= 2 and h[0] == 0xFF and (h[1] & 0xF6) == 0xF0:
         return Sniffed("audio", "aac", ".aac")       # ADTS: sync 0xFFF, layer 00
-    if len(h) >= 2 and h[0] == 0xFF and (h[1] & 0xE0) == 0xE0 and (h[1] & 0x06) != 0:
-        return Sniffed("audio", "mp3", ".mp3")       # MPEG audio frame sync, layer I-III
+    if _mpeg_audio_frame(h):
+        return Sniffed("audio", "mp3", ".mp3")
     if h[:4] == b"\x00\x00\x01\xba" or h[:4] == b"\x00\x00\x01\xb3":
         return Sniffed("video", "mpeg", ".mpg")
     # MPEG-TS (a 0x47 byte every 188) needs more than HEAD_BYTES to tell apart from text; ffprobe decides it.
     return UNRECOGNISED
+
+
+def _mpeg_audio_frame(h: bytes) -> bool:
+    """An MPEG audio frame header: 11 sync bits, then no reserved version, layer, bitrate or sample-rate value."""
+    if len(h) < 3 or h[0] != 0xFF or (h[1] & 0xE0) != 0xE0:
+        return False
+    version, layer = (h[1] >> 3) & 3, (h[1] >> 1) & 3
+    bitrate, rate = h[2] >> 4, (h[2] >> 2) & 3
+    return version != 1 and layer != 0 and bitrate != 0xF and rate != 3
 
 
 def sniff_path(path) -> Sniffed:
@@ -184,12 +196,13 @@ def tesseract_identity(version: str | None, tessdata_dir, languages: str) -> dic
             "weights_sha256": h.hexdigest(), "provider": LOCAL}
 
 
-def tessdata_dir() -> str | None:
-    """Where Tesseract's language data is, as Tesseract itself would find it."""
+def tessdata_dir(languages: str = "eng") -> str | None:
+    """A folder holding the language data for every language asked for. The caller passes it to Tesseract
+    (``--tessdata-dir``), so the hashed files are the files read."""
     env = os.environ.get("TESSDATA_PREFIX")
     candidates = ([env, os.path.join(env, "tessdata")] if env else []) + [
         "/usr/share/tesseract-ocr/5/tessdata", "/usr/share/tesseract-ocr/4.00/tessdata", "/usr/share/tessdata"]
     for c in candidates:
-        if c and Path(c, "eng.traineddata").is_file():
+        if c and all(Path(c, "%s.traineddata" % lang).is_file() for lang in languages.split("+")):
             return c
     return None
