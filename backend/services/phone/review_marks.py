@@ -52,6 +52,71 @@ def marks(conn, case_id) -> dict:
         anchor = r.source_anchor if isinstance(r.source_anchor, dict) else {}
         if anchor.get("reviewed_at"):
             out[r.target_id] = anchor
+    if out:
+        for key, anchor in _carried(conn, case_id, out).items():
+            out.setdefault(key, anchor)  # a mark made on the newer report's thread is its own and wins
+    return out
+
+
+_SIGNATURE = "t.app, t.thread_kind, t.chat_type, t.title_in_record, t.party_identity_keys"
+
+
+def _signature(r) -> tuple:
+    return (r.app, r.thread_kind, r.chat_type, r.title_in_record, tuple(sorted(r.party_identity_keys or ())))
+
+
+def _threads(conn, ext):
+    return conn.execute(text(
+        "SELECT t.thread_key, " + _SIGNATURE + " FROM phone_threads t JOIN phone_interpretation_state st ON "
+        "st.extraction_id = t.extraction_id AND st.generation = t.generation WHERE t.extraction_id = :e"),
+        {"e": ext}).fetchall()
+
+
+def _carried(conn, case_id, marked: dict) -> dict:
+    """Marks on threads of a replaced report, carried to the same thread in the report that replaced it (J-13b).
+
+    A thread key holds its report's extraction id (02 decision 45), so after a Replace the same conversation has a
+    new key. It is found by the key with the newer report's id put in (the rest of most keys is a hash of the
+    thread's own values), or else by app, kind, chat type, title and the people in it, when exactly one thread on
+    each side has them. A thread that cannot be matched one to one keeps no mark: a review is never claimed for a
+    thread nobody reviewed. The carried mark keeps the count at review time, so messages the newer report adds show
+    as "added since"."""
+    rows = conn.execute(text(
+        "SELECT t.thread_key, t.extraction_id, " + _SIGNATURE + " FROM phone_threads t JOIN "
+        "phone_interpretation_state st ON st.extraction_id = t.extraction_id AND st.generation = t.generation JOIN "
+        "phone_extractions e ON e.id = t.extraction_id WHERE t.case_id = :c AND e.standing <> 'active' AND "
+        "t.thread_key = ANY(:k)"), {"c": str(case_id), "k": list(marked)}).fetchall()
+    if not rows:
+        return {}
+    newer_of = {str(r.supersedes_id): str(r.id) for r in conn.execute(text(
+        "SELECT id, supersedes_id FROM phone_extractions WHERE case_id = :c AND supersedes_id IS NOT NULL"),
+        {"c": str(case_id)})}
+    active = {str(r[0]) for r in conn.execute(text(
+        "SELECT id FROM phone_extractions WHERE case_id = :c AND standing = 'active'"), {"c": str(case_id)})}
+    out, cache = {}, {}
+
+    def threads(ext):
+        if ext not in cache:
+            ts = _threads(conn, ext)
+            cache[ext] = ({t.thread_key for t in ts}, ts)
+        return cache[ext]
+
+    for r in rows:
+        key, ext, sig, seen = r.thread_key, str(r.extraction_id), _signature(r), set()
+        while key is not None and ext in newer_of and ext not in seen:  # a chain of Replaces, to the active report
+            seen.add(ext)
+            new_ext = newer_of[ext]
+            new_keys, new_ts = threads(new_ext)
+            direct = key.replace(ext, new_ext) if ext in key else None
+            if direct in new_keys:
+                key = direct
+            else:
+                same_old = [t for t in threads(ext)[1] if _signature(t) == sig]
+                same_new = [t.thread_key for t in new_ts if _signature(t) == sig]
+                key = same_new[0] if len(same_old) == 1 and len(same_new) == 1 else None
+            ext = new_ext
+        if key is not None and key != r.thread_key and ext in active:
+            out[key] = dict(marked[r.thread_key], carried_from=r.thread_key)
     return out
 
 
@@ -141,6 +206,11 @@ def undo(db, case_id, thread_key: str, user) -> dict | None:
     row = tid and conn.execute(text(
         "SELECT id, source_anchor FROM case_task_links WHERE task_id = :t AND target_type = 'phone_thread' AND "
         "target_id = :k"), {"t": tid, "k": thread_key}).first()
+    if not row and tid:  # a mark carried from the replaced report's thread is undone where it was made
+        origin = (marks(conn, case_id).get(thread_key) or {}).get("carried_from")
+        row = origin and conn.execute(text(
+            "SELECT id, source_anchor FROM case_task_links WHERE task_id = :t AND target_type = 'phone_thread' AND "
+            "target_id = :k"), {"t": tid, "k": origin}).first()
     if not row:
         raise ReviewMarkError("This conversation has no review mark.")
     old = row.source_anchor if isinstance(row.source_anchor, dict) else {}

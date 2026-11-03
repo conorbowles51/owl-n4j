@@ -502,3 +502,53 @@ def test_timeline_lens_routes_index_window_and_buckets(api):
     assert stale.status_code == 409
     bad = cl.post("/api/phones/timeline/index", json={"case_id": api["case"], "lens_kinds": ["nonsense"]})
     assert bad.status_code == 422
+
+
+def test_a_replace_that_adds_messages_makes_a_reviewed_thread_partly_reviewed(api):
+    """07 J-13b with a real Replace: the newer report has its own extraction id, so the same conversation has a new
+    thread key. The mark follows it (by key, or by app, kind, chat type, title and people when one to one), keeps the
+    count at review time, and the added message shows as "1 added since". An ambiguous match carries nothing."""
+    c, case, engine = api["client"], api["case"], api["engine"]
+    old_key = next(t["thread_key"] for t in c.post("/api/phones/conversations/threads", json={"case_id": case})
+                   .json()["items"] if t["event_count"] == 2)
+    assert c.post("/api/phones/conversations/review", json={"case_id": case, "thread_key": old_key}).status_code == 200
+    with engine.begin() as conn:
+        new_ext, _ = phone(conn, uuid.UUID(case), device_zone="America/New_York",
+                           events=[msg(at(2023, 3, 14, 19, 7, 12), ANA, [OWNER], thread="t"),
+                                   msg(at(2023, 3, 15, 3, 30), OWNER, [ANA], thread="t"),
+                                   msg(at(2023, 3, 16, 9, 0), ANA, [OWNER], thread="t")])
+        conn.execute(text("UPDATE phone_extractions SET standing = 'superseded', superseded_at = now() WHERE id = :o"),
+                     {"o": api["ext"]})
+        conn.execute(text("UPDATE phone_extractions SET supersedes_id = :o WHERE id = :n"),
+                     {"o": api["ext"], "n": new_ext})
+    new_key = "chat:%s:t" % new_ext
+
+    def listed():
+        tl = c.post("/api/phones/conversations/threads", json={"case_id": case}).json()
+        return tl, {t["thread_key"]: t for t in tl["items"]}
+
+    tl, rows = listed()
+    assert old_key not in rows and rows[new_key]["review"]["added_since"] == 1
+    assert "(2 messages); 1 added since" in rows[new_key]["review"]["words"]
+    assert tl["counts"]["partly_reviewed"] == 1 and tl["counts"]["reviewed"] == 0
+
+    renamed = "chat:%s:renamed" % new_ext  # a chat key built from a record id: matched by its people instead
+    with engine.begin() as conn:
+        for table in ("phone_threads", "phone_comm_events"):
+            conn.execute(text("UPDATE %s SET thread_key = :r WHERE thread_key = :k" % table), {"r": renamed, "k": new_key})
+    tl, rows = listed()
+    assert rows[renamed]["review"]["added_since"] == 1
+
+    assert c.post("/api/phones/conversations/review/undo", json={"case_id": case, "thread_key": renamed}).status_code == 200
+    tl, rows = listed()
+    assert rows[renamed]["review"] is None  # undone where it was made
+    c.post("/api/phones/conversations/review", json={"case_id": case, "thread_key": old_key})
+
+    with engine.begin() as conn:  # a second thread in the newer report with the same people: no one-to-one match
+        conn.execute(text(
+            "INSERT INTO phone_threads (case_id, extraction_id, interpretation_level, generation, thread_key, app, "
+            "thread_kind, chat_type, title_in_record, party_identity_keys, event_count) SELECT case_id, extraction_id, "
+            "interpretation_level, generation, :d, app, thread_kind, chat_type, title_in_record, party_identity_keys, 1 "
+            "FROM phone_threads WHERE thread_key = :r"), {"d": "chat:%s:twin" % new_ext, "r": renamed})
+    tl, rows = listed()
+    assert rows[renamed]["review"] is None
