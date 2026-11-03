@@ -226,6 +226,8 @@ class LedgerProposalTests(_Fixture):
         self.assertEqual(row.status, 'corrected')
         self.assertEqual(row.evidence['correction'], dict(before='Travel', after='Rent'))
         self.assertIn(item['id'], inbox.read_text())
+        # The lesson reads proposed -> chosen (old code: the ledger's earlier category -> chosen)
+        self.assertIn('| Travel -> Rent |', inbox.read_text())
 
     def test_reject_needs_a_reason_and_is_a_lesson(self):
         item = self._category()

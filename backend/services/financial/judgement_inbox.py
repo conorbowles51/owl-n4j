@@ -28,6 +28,10 @@ def line(item, statement=''):
     ev = item.get('evidence') or {}
     corr = ev.get('correction') or {}
     before = ev.get('before') if ev.get('before') is not None else (corr.get('before') or ev.get('chosen') or '')
+    if str(item.get('rule_id') or '').startswith('proposal.') and corr.get('before') is not None:
+        # A case agent's proposal: the lesson is what it proposed against what the person chose, not the value the
+        # ledger held when it was proposed.
+        before = corr['before']
     after = corr.get('after') if corr.get('after') is not None else ''
     link = (f"/cases/{item['case_id']}/financial?document={item.get('source_document_id') or ''}"
             f"&judgement={item['id']}")

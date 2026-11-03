@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
+  assumptionInput,
+  assumptionText,
   confirmAssumption,
   createProceeds,
   getProceeds,
@@ -24,8 +26,9 @@ function unitText(a: Pick<ProceedsAssumption, "kind" | "unit">, currency: string
 function AssumptionRow({ caseId, calc, a, canEdit }: { caseId: string; calc: ProceedsView; a: ProceedsAssumption; canEdit: boolean }) {
   const client = useQueryClient()
   const [editing, setEditing] = useState(false)
-  const [low, setLow] = useState(a.low || "")
-  const [high, setHigh] = useState(a.high || "")
+  const [low, setLow] = useState(assumptionInput(a.kind, a.low, calc.currency))
+  const [high, setHigh] = useState(assumptionInput(a.kind, a.high, calc.currency))
+  const show = (raw: unknown) => assumptionText(a.kind, raw, calc.currency)
   const [source, setSource] = useState(a.source || "")
   const [reason, setReason] = useState("")
   const [history, setHistory] = useState(false)
@@ -48,7 +51,7 @@ function AssumptionRow({ caseId, calc, a, canEdit }: { caseId: string; calc: Pro
         <span className="font-semibold">{a.label}</span>
         {a.current ? (
           <span>
-            {a.low === a.high ? a.low : `${a.low} to ${a.high}`} {unit}
+            {a.low === a.high ? show(a.low) : `${show(a.low)} to ${show(a.high)}`}{a.kind === "money" ? "" : ` ${unit}`}
           </span>
         ) : (
           <span className="text-muted-foreground">Not set</span>
@@ -63,7 +66,7 @@ function AssumptionRow({ caseId, calc, a, canEdit }: { caseId: string; calc: Pro
         const ev = (p.evidence || {}) as Record<string, unknown>
         return (
           <div key={p.id} className="rounded bg-[#f1eefb] p-2 text-[13px] dark:bg-[#2a2147]" data-testid="proceeds-proposed">
-            Proposed by the case agent: {String(ev.low)} to {String(ev.high)} {unit} · source: {String(ev.source || "")}
+            Proposed by the case agent: {show(ev.low)} to {show(ev.high)}{a.kind === "money" ? "" : ` ${unit}`} · source: {String(ev.source || "")}
             {p.summary ? ` · ${p.summary}` : ""}
             {canEdit && (
               <Button size="sm" variant="outline" className="ml-2" disabled={confirm.isPending} onClick={() => confirm.mutate(p.id)}>
@@ -126,7 +129,7 @@ function AssumptionRow({ caseId, calc, a, canEdit }: { caseId: string; calc: Pro
                 const ev = (h.evidence || {}) as Record<string, unknown>
                 return (
                   <li key={h.id}>
-                    {String(ev.low)} to {String(ev.high)} {unit} · {String(ev.source || "")} · {h.resolution_reason || ""}
+                    {show(ev.low)} to {show(ev.high)}{a.kind === "money" ? "" : ` ${unit}`} · {String(ev.source || "")} · {h.resolution_reason || ""}
                   </li>
                 )
               })}

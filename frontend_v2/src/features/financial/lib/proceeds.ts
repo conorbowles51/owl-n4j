@@ -92,3 +92,27 @@ export function proceedsMoney(minor: number, currency: string) {
     return `${minor} (minor units) ${currency}`
   }
 }
+
+function currencyDigits(currency: string) {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).resolvedOptions().maximumFractionDigits ?? 2
+  } catch {
+    return 2
+  }
+}
+
+/** An assumption's stored value as a person types it: a price is stored in minor units, entered in the currency. */
+export function assumptionInput(kind: string, raw: unknown, currency: string) {
+  if (raw == null || raw === "") return ""
+  if (kind !== "money") return String(raw)
+  const value = Number(raw) / 10 ** currencyDigits(currency)
+  return Number.isFinite(value) ? String(value) : String(raw)
+}
+
+/** An assumption's stored value for reading: a price in its currency, anything else as stored. */
+export function assumptionText(kind: string, raw: unknown, currency: string) {
+  if (raw == null || raw === "") return ""
+  if (kind !== "money") return String(raw)
+  const minor = Number(raw)
+  return Number.isFinite(minor) ? proceedsMoney(minor, currency) : String(raw)
+}
