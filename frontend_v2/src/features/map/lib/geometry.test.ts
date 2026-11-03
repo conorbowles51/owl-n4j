@@ -5,6 +5,7 @@ import {
   pointInAnyShape,
   pointInPolygon,
   type LngLatPoint,
+  viewBox,
 } from "./geometry"
 
 describe("geometry", () => {
@@ -79,5 +80,17 @@ describe("geometry", () => {
         [1, 2],
       ])
     })
+  })
+})
+
+describe("viewBox", () => {
+  const b = (w: number, s: number, e: number, n: number) => ({ getWest: () => w, getSouth: () => s, getEast: () => e, getNorth: () => n })
+  it("clamps the zoom-0 first view to a box the phone points request accepts", () => {
+    // maplibre's first view of a 1200 px wide map at zoom 0 reaches about 420 degrees across and past the poles
+    expect(viewBox(b(-421.9, -88, 421.9, 88))).toEqual([-180, -88, 180, 88])
+    expect(viewBox(b(-10, -95, 20, 95))).toEqual([-10, -90, 20, 90])
+  })
+  it("leaves a view inside the world unchanged", () => {
+    expect(viewBox(b(-77.1, 38.8, -76.9, 39))).toEqual([-77.1, 38.8, -76.9, 39])
   })
 })

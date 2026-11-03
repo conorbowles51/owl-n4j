@@ -32,6 +32,8 @@ import { getVisibleLocations } from "../lib/visible-locations"
 interface MapToolbarProps {
   caseId: string
   locations: MapLocation[]
+  /** Phone positions the phone layer draws (only when the layer is on); counted beside the case's locations. */
+  phonePositions?: number | null
 }
 
 function FilterCheckmark({ checked }: { checked: boolean }) {
@@ -49,7 +51,7 @@ function FilterCheckmark({ checked }: { checked: boolean }) {
   )
 }
 
-export function MapToolbar({ caseId, locations }: MapToolbarProps) {
+export function MapToolbar({ caseId, locations, phonePositions }: MapToolbarProps) {
   const [areasOpen, setAreasOpen] = useState(false)
   const showHeatmap = useMapStore((s) => s.showHeatmap)
   const toggleHeatmap = useMapStore((s) => s.toggleHeatmap)
@@ -446,7 +448,9 @@ export function MapToolbar({ caseId, locations }: MapToolbarProps) {
 
         {/* Count */}
         <span className="text-[10px] text-muted-foreground">
-          {locations.length} location{locations.length !== 1 ? "s" : ""}
+          {locations.length.toLocaleString("en-US")} location{locations.length !== 1 ? "s" : ""}
+          {phonePositions != null &&
+            ` · ${phonePositions.toLocaleString("en-US")} phone position${phonePositions !== 1 ? "s" : ""}`}
         </span>
       </div>
 

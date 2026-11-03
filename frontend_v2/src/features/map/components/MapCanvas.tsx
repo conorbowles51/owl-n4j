@@ -31,7 +31,7 @@ import {
   proximityOutlineLayer,
 } from "../lib/map-styles"
 import { getVisibleLocations } from "../lib/visible-locations"
-import { boundsToClosedRing, type LngLatPoint } from "../lib/geometry"
+import { boundsToClosedRing, viewBox, type LngLatPoint } from "../lib/geometry"
 import { EntityPopup } from "./EntityPopup"
 import type { MapRef, MapLayerMouseEvent } from "react-map-gl/maplibre"
 import type { PhoneMapItem } from "@/features/phones/api"
@@ -522,12 +522,10 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo }: MapCanvasPro
           const [w, s, ea, n] = fitTo
           map.fitBounds([[w, s], [ea === w ? ea + 0.01 : ea, n === s ? n + 0.01 : n]], { padding: 60, maxZoom: 15, duration: 0 })
         }
-        const b = map.getBounds()
-        onView?.([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()], map.getZoom())
+        onView?.(viewBox(map.getBounds()), map.getZoom())
       }}
       onMoveEnd={(e) => {
-        const b = e.target.getBounds()
-        onView?.([Math.max(-180, b.getWest()), Math.max(-90, b.getSouth()), Math.min(180, b.getEast()), Math.min(90, b.getNorth())], e.target.getZoom())
+        onView?.(viewBox(e.target.getBounds()), e.target.getZoom())
       }}
       attributionControl={false}
       interactiveLayerIds={drawMode ? [] : LOCATION_INTERACTIVE_LAYER_IDS}

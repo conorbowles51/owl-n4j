@@ -98,3 +98,21 @@ describe("MapToolbar rescan control (DKT-692)", () => {
     expect(screen.queryByText(/rescan/i)).not.toBeInTheDocument()
   })
 })
+
+describe("MapToolbar count with the phone layer", () => {
+  it("counts the phone positions the layer draws beside the case's locations, never a bare 0 locations", () => {
+    const queryClient = new QueryClient()
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <MapToolbar caseId="case-1" locations={[]} phonePositions={1234} />
+      </QueryClientProvider>
+    )
+    expect(screen.getByText("0 locations · 1,234 phone positions")).toBeInTheDocument()
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <MapToolbar caseId="case-1" locations={[]} phonePositions={null} />
+      </QueryClientProvider>
+    )
+    expect(screen.getByText("0 locations")).toBeInTheDocument()
+  })
+})

@@ -76,3 +76,12 @@ export function pointInAnyShape(point: LngLatPoint, shapes: ShapeLike[]) {
   if (shapes.length === 0) return true
   return shapes.some((shape) => pointInPolygon(point, shape.coordinates))
 }
+
+/**
+ * The map's view as a longitude and latitude box the server accepts ([west, south, east, north], each inside
+ * -180..180 and -90..90). A zoomed-out view (the first view is the whole world at zoom 0) reaches past them.
+ */
+export function viewBox(b: { getWest(): number; getSouth(): number; getEast(): number; getNorth(): number }): number[] {
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+  return [clamp(b.getWest(), -180, 180), clamp(b.getSouth(), -90, 90), clamp(b.getEast(), -180, 180), clamp(b.getNorth(), -90, 90)]
+}
