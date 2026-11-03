@@ -120,7 +120,8 @@ describe("scope bar (07 4.5)", () => {
     expect(screen.getByTestId("result-count")).toHaveTextContent("2,236 messages and calls41 not yet confirmed")
     fireEvent.click(screen.getByRole("button", { name: "Remove Avery Ashdown" }))
     expect(change.mock.calls[0][0].people).toEqual([{ key: "p2", label: "Blair Corwood" }])
-    expect(screen.getByRole("status")).toHaveTextContent("Showing your last selection")
+    expect(screen.getByText(/Showing your last selection/).closest("[role=status]")).not.toBeNull()
+    expect(screen.getByTestId("result-count")).toHaveAttribute("role", "status") // the count is announced (07 J-2)
   })
 })
 

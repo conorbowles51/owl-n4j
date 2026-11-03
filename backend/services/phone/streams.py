@@ -210,10 +210,14 @@ class Query:
                 cond = "t.value_folded LIKE %s" % self._p("%" + q.replace("\\", "\\\\").replace("%", "\\%")
                                                            .replace("_", "\\_") + "%")
             if q:
-                w.append("EXISTS (SELECT 1 FROM phone_texts t WHERE t.extraction_id = ev.extraction_id AND "
-                         "t.generation = ev.generation AND (t.record_uid = ev.record_uid OR t.record_uid IN (SELECT "
-                         "s.record_uid FROM phone_record_summaries s WHERE s.parent_record_uid = ev.record_uid AND "
-                         "s.generation = ev.generation)) AND %s)" % cond)
+                # the record's own text, or a child record's text (an attachment's name): two index lookups per
+                # event; as one OR the child lookup ran once per event and text pair (1,050 ms -> 66 ms measured on
+                # the synthetic phones, same counts)
+                w.append("(EXISTS (SELECT 1 FROM phone_texts t WHERE t.extraction_id = ev.extraction_id AND "
+                         "t.generation = ev.generation AND t.record_uid = ev.record_uid AND %s) OR EXISTS (SELECT 1 "
+                         "FROM phone_record_summaries s JOIN phone_texts t ON t.record_uid = s.record_uid WHERE "
+                         "s.parent_record_uid = ev.record_uid AND s.generation = ev.generation AND t.extraction_id = "
+                         "ev.extraction_id AND t.generation = ev.generation AND %s))" % (cond, cond))
         self._participants()
 
     def _flags(self):
@@ -487,7 +491,9 @@ def build_rows(conn, ctx: L.LabelContext, rows, zone: str, f: StreamFilter) -> l
             "phone_interpretation_state st ON st.extraction_id = s.extraction_id AND st.generation = s.generation) s "
             "ON s.record_uid = a.record_uid AND s.record_uid <> ALL(:u) AND s.parent_record_uid = ANY(:u) "
             "LEFT JOIN pv_file f ON f.file_uid = a.file_uid "
-            "WHERE a.record_uid = ANY(:u) OR a.record_uid IN (SELECT s2.record_uid FROM phone_record_summaries s2 JOIN "
+            # one IN list of the rows and their child records: as an OR, Postgres read every record summary
+            "WHERE a.record_uid IN (SELECT unnest(CAST(:u AS uuid[])) UNION ALL SELECT s2.record_uid FROM "
+            "phone_record_summaries s2 JOIN "
             "phone_interpretation_state st2 ON st2.extraction_id = s2.extraction_id AND st2.generation = s2.generation "
             "WHERE s2.parent_record_uid = ANY(:u))"), {"u": uids}):
         path = a.local_path or a.reference_text or ""

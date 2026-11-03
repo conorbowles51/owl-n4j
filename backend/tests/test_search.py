@@ -192,3 +192,14 @@ def test_search_is_not_presented_as_whole_while_a_phone_is_still_being_read(worl
     assert unread == [{"group": "unread_files", "reason": "1 file has no text read yet (still waiting, failed, or not "
                                                           "a document) and is not searched."}]
     assert other["complete"] is True and other["limits"] == []  # another case's phone does not count
+
+
+def test_a_hit_found_outside_its_body_reads_its_record_text_through_the_index():
+    """A call or a message matched by an attachment name has no body snippet, so its record's text is read once per
+    hit. That read must use the record_uid index: as an OR it read every phone text of every case (245 ms per hit
+    on live, 1 s for one search group)."""
+    with fresh_engine() as engine, engine.begin() as c:
+        c.execute(text("SET LOCAL enable_seqscan = off"))
+        plan = "\n".join(r[0] for r in c.execute(text("EXPLAIN " + S.RECORD_TEXT_SQL), {"u": uuid.uuid4()}))
+    assert "Seq Scan on phone_texts" not in plan, plan
+    assert "ix_phone_texts_record" in plan

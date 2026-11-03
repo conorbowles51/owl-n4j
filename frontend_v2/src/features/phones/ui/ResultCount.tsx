@@ -33,7 +33,7 @@ export function countSentence({ shown, total, noun, singular, soFar }: Pick<Resu
 export function ResultCount(props: ResultCountProps) {
   const { reason, rest, unconfirmed, className } = props
   return (
-    <p className={cn("flex flex-wrap items-baseline gap-x-2 text-sm text-foreground", className)} data-testid="result-count" aria-live="polite">
+    <p role="status" className={cn("flex flex-wrap items-baseline gap-x-2 text-sm text-foreground", className)} data-testid="result-count" aria-live="polite">
       <span className="font-medium">{countSentence(props)}</span>
       {props.shown < props.total && reason && <span className="text-muted-foreground">{reason}.</span>}
       {props.shown < props.total && rest}

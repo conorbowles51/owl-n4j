@@ -117,11 +117,15 @@ def _comm(conn, case_id, group, q, exact, phones, start, end, offset, limit, ctx
     return total, out
 
 
+# a record's own text and its child records' text, each read through the record_uid index (an OR of the two made
+# Postgres read every phone text of every case, about 245 ms per hit on live)
+RECORD_TEXT_SQL = ("SELECT t.value FROM pv_text t WHERE t.record_uid = :u UNION ALL SELECT t.value FROM pv_text t "
+                   "JOIN pv_record s ON s.record_uid = t.record_uid WHERE s.parent_record_uid = :u")
+
+
 def _record_text(conn, record_uid, q, exact):
     fq = F.fold(q, exact=exact)
-    for (v,) in conn.execute(text(
-            "SELECT t.value FROM pv_text t WHERE t.record_uid = :u OR t.record_uid IN (SELECT s.record_uid FROM "
-            "pv_record s WHERE s.parent_record_uid = :u)"), {"u": record_uid}):
+    for (v,) in conn.execute(text(RECORD_TEXT_SQL), {"u": record_uid}):
         if v and fq in F.fold(v, exact=exact):
             return v
     return None

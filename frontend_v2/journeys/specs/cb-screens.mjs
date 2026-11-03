@@ -11,7 +11,8 @@ async function openPhone(ctx, label = "C1") {
 }
 
 async function conversations(ctx) {
-  await ctx.click(ctx.page.getByRole("link", { name: "Conversations" }))
+  // the summary's own Conversations button (the sidebar and two summary sections also link there)
+  await ctx.click(ctx.page.getByRole("main").locator("header").getByRole("link", { name: "Conversations" }))
   await ctx.see(ctx.page.getByRole("heading", { name: /Conversations/ }))
 }
 
@@ -23,7 +24,7 @@ export default [
     await ctx.open(ctx.cases.phonesOnly, "")
     await ctx.step("ready card names what is still running and opens the summary", async () => {
       await ctx.see(page.getByText(/Conversations are ready\./), 600000)
-      await ctx.click(page.getByRole("link", { name: "Open the phone summary" }))
+      await ctx.click(page.getByRole("link", { name: "Open the phone summary" }).first()) // one ready card per phone
       await ctx.see(page.getByText(/^Read in full: [\d,]+ records,/))
     })
   }),
@@ -40,7 +41,8 @@ export default [
     })
     await ctx.step("every top-person number equals its linked screen", async () => {
       const link = page.getByRole("region", { name: "Top people" }).getByRole("link").first()
-      const shown = Number((await link.innerText()).replace(/[^\d]/g, ""))
+      // the link names the person (a number may be their name) and then the count
+      const shown = Number(((await link.innerText()).match(/([\d,]+) messages and calls/)?.[1] ?? "").replace(/,/g, ""))
       await ctx.click(link)
       const total = await ctx.countIn(page.getByRole("status"), "messages")
       if (total !== shown) throw new StepFailed("count", `summary ${shown} vs screen ${total}`)
