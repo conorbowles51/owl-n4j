@@ -94,6 +94,7 @@ if [ -z "${BBOX}${MAXZOOM}" ]; then
     # (curl 92), and curl's own --retry restarts from the offset its run began at, rewriting what it already had.
     # Each pass here resumes from the file's real end.
     for attempt in $(seq 1 200); do
+        [ "$(stat -c %s "${part}" 2>/dev/null || echo 0)" = "${SIZE}" ] && break
         low curl -fsS -L --http1.1 -C - --speed-limit 1000000 --speed-time 60 -o "${part}" "${SOURCE}" && break
         say "download interrupted at $(stat -c %s "${part}") bytes (attempt ${attempt}); resuming"
         sleep 5
@@ -128,7 +129,7 @@ mv "${part}" "${target}.new/world.pmtiles"
     echo "maxzoom=${MAXZOOM:-all}"
     echo "assets=protomaps/basemaps-assets@${ASSETS_COMMIT}"
     echo "fetched_at=$(date -u +%FT%TZ)"
-    "${PMTILES}" show "${target}.new/world.pmtiles" 2>/dev/null | grep -E "^(min|max)zoom|^bounds|^tile type|^tile compression" || true
+    "${PMTILES}" show "${target}.new/world.pmtiles" 2>/dev/null | grep -E "^(min|max) zoom|^bounds|^tile type|^tile compression" || true
 } > "${target}.new/BUILD.txt"
 chown -R "${APP_OWNER}" "${target}.new"
 find "${target}.new" -type d -exec chmod 755 {} +
