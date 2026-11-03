@@ -45,6 +45,13 @@ def _png(kind, fmt="PNG"):
     return out.getvalue()
 
 
+def _png_size(width, height):
+    from PIL import Image
+    out = io.BytesIO()
+    Image.new("RGB", (width, height), "green").save(out, "PNG")
+    return out.getvalue()
+
+
 RED, BLUE, INVOICE = _png("red"), _png("blue", "JPEG"), _png("invoice")
 HEIC = b"\x00\x00\x00\x18ftypheic\x00\x00\x00\x00mif1heic" + b"\x00" * 64
 PDF = b"%PDF-1.4\n% synthetic\n" + b"0" * 64
@@ -62,7 +69,7 @@ def _unit(v):
 
 
 class FakeChild:
-    """Answers like the child: a vector per image it can "open" (the synthetic pictures), "unreadable" otherwise."""
+    """Answers like the child: a vector per image it can "open" (the synthetic pictures), "cannot_open" otherwise."""
 
     def __init__(self, monkeypatch, fail=False):
         from services.phone import image_search
@@ -88,7 +95,7 @@ class FakeChild:
         res = []
         for p in req["images"]:
             v = VEC.get(sha(open(p, "rb").read()))
-            res.append({"vector": _unit(v)} if v else {"reason": "unreadable", "detail": "synthetic"})
+            res.append({"vector": _unit(v)} if v else {"reason": "cannot_open", "detail": "synthetic"})
         return dict(out, pillow_version="12.1.1", results=res)
 
 
@@ -273,17 +280,17 @@ def test_indexing_embeds_each_content_once_links_every_copy_and_states_each_fail
     assert (rows[f["photo.heic"]].state, rows[f["photo.heic"]].reason) == ("failed", "heic")
     assert rows[f["photo.heic"]].error == "Stored as HEIC, which the image library on this server cannot open."
     assert rows[f["not-a-picture.jpg"]].reason == "not_image" and "a PDF file" in rows[f["not-a-picture.jpg"]].error
-    assert rows[f["damaged.jpg"]].reason == "unreadable"
+    assert rows[f["damaged.jpg"]].reason == "cannot_open"
     with world.engine.connect() as c:
         [s] = image_search.status(c, world.case)
     assert (s["total"], s["done"], s["embedded"], s["reused"], s["failed"], s["state"]) == (7, 4, 3, 1, 3, "done")
-    assert s["failed_by_reason"] == {"heic": 1, "not_image": 1, "unreadable": 1}
+    assert s["failed_by_reason"] == {"heic": 1, "not_image": 1, "cannot_open": 1}
     assert s["first_started_at"] and s["last_finished_at"]
     # after: nothing left to index; the three that could not be opened are counted by reason and not retried
     d = _describe(world)
     assert (d["eligible"], d["indexed"], d["indexed_contents"]) == (0, 4, 3)
     assert d["left_out"]["could_not_open"] == 3
-    assert d["left_out"]["could_not_open_by_reason"] == {"heic": 1, "not_image": 1, "unreadable": 1}
+    assert d["left_out"]["could_not_open_by_reason"] == {"heic": 1, "not_image": 1, "cannot_open": 1}
     with world.engine.begin() as c, pytest.raises(image_search.ImageSearchError, match="nothing was queued"):
         image_search.create(c, case_id=world.case, user_id=None)
     assert seen == []
@@ -418,7 +425,7 @@ def test_the_could_not_open_reasons_add_up_to_their_total(world, monkeypatch):
                   {"f": world.files["photo.heic"]})
     d = _describe(world)
     assert d["left_out"]["could_not_open"] == 2 and d["left_out"]["not_in_production"] == 2
-    assert d["left_out"]["could_not_open_by_reason"] == {"not_image": 1, "unreadable": 1}
+    assert d["left_out"]["could_not_open_by_reason"] == {"not_image": 1, "cannot_open": 1}
 
 
 def test_two_index_requests_at_the_same_moment_make_one_job_and_the_second_is_told_why(world):
@@ -677,12 +684,14 @@ def test_the_real_child_ranks_the_red_square_first_with_the_pinned_model(tmp_pat
     from services.phone import image_search_models as M
     monkeypatch.setenv("LOUPE_IMAGE_QUERY_IDLE_SECONDS", "60")
     paths = []
-    for name, data in (("red", RED), ("blue", BLUE), ("invoice", INVOICE), ("damaged", DAMAGED)):
+    for name, data in (("red", RED), ("blue", BLUE), ("invoice", INVOICE), ("damaged", DAMAGED),
+                       ("one-high", _png_size(5, 1)), ("three-high", _png_size(7, 3)), ("one-wide", _png_size(1, 3))):
         (tmp_path / name).write_bytes(data)
         paths.append(str(tmp_path / name))
     got = image_search.run_child({"mode": "image", "images": paths, "draft": image_search.DRAFT_EDGE}, 900)
-    assert [("vector" in r) for r in got["results"]] == [True, True, True, False]
-    assert got["results"][3]["reason"] == "unreadable"
+    # a picture 1 or 3 pixels high or wide is read as height x width x 3, not refused as channels-first
+    assert [("vector" in r) for r in got["results"]] == [True, True, True, False, True, True, True], got["results"]
+    assert got["results"][3]["reason"] == "cannot_open"
     mat = np.asarray([r["vector"] for r in got["results"][:3]], dtype="<f4")
     assert mat.shape == (3, 768) and np.allclose(np.linalg.norm(mat, axis=1), 1, atol=1e-4)
     ident = image_search.identity()
@@ -719,3 +728,39 @@ def test_the_model_child_is_given_room_for_the_cuda_build_of_torch_and_still_cap
                        text=True, timeout=60, env=env)
     assert r.returncode == 0, r.stderr[-300:]
     assert int(r.stdout.strip().splitlines()[-1]) == int(env["LOUPE_PHONE_IMAGE_MEMORY_MB"])
+
+
+def test_a_model_failure_is_logged_and_offered_again_and_an_old_unreadable_is_offered_again(world, monkeypatch, caplog):
+    """A picture the library opened but the model failed on is "model_error", which another attempt may change; a
+    file left out as "unreadable" before 3 Nov (when that code also covered model failures) is offered again too.
+    The library's own refusal ("cannot_open") is still not retried."""
+    from services.phone import image_search
+    child = FakeChild(monkeypatch)
+    answer = child.answer
+
+    def model_fails_on_blue(req):
+        out = answer(req)
+        for p, r in zip(req["images"], out.get("results", [])):
+            if open(p, "rb").read() == BLUE:
+                r.clear(); r.update(reason="model_error", detail="ValueError: synthetic")
+        return out
+    child.answer = model_fails_on_blue
+    _create(world)
+    with caplog.at_level("WARNING", logger="services.phone.image_search"):
+        _drain(world)
+    f = world.files
+    with world.engine.connect() as c:
+        rows = {r.file_uid: r for r in c.execute(text(
+            "SELECT file_uid::text, state, reason, error FROM phone_image_index_items WHERE case_id = :c"),
+            {"c": world.case})}
+    assert (rows[f["blue.jpg"]].reason, rows[f["blue.jpg"]].error) == (
+        "model_error", "The image search model could not read this picture. The original is unchanged.")
+    assert any("ValueError: synthetic" in m for m in caplog.messages)
+    d = _describe(world)
+    assert d["eligible"] == 1 and d["left_out"]["could_not_open_by_reason"] == {"heic": 1, "not_image": 1,
+                                                                              "cannot_open": 1}
+    with world.engine.begin() as c:
+        c.execute(text("UPDATE phone_image_index_items SET reason = 'unreadable' WHERE case_id = :c AND file_uid = :u"),
+                  {"c": world.case, "u": f["damaged.jpg"]})
+    d = _describe(world)
+    assert d["eligible"] == 2 and d["left_out"]["could_not_open_by_reason"] == {"heic": 1, "not_image": 1}

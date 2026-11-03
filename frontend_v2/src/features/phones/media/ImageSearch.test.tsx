@@ -113,9 +113,9 @@ describe("Image search by description (05 17.6)", () => {
   it("words the coverage and a finished job with failures", () => {
     expect(coverageWords(facts({ indexed: 4, indexed_contents: 3, eligible: 2, waiting: 1 }) as never)).toBe("4 files are indexed (3 distinct pictures); 3 images are not indexed yet; 4 images cannot be indexed; 1 image is outside the search (not sent or received, not from a camera).")
     expect(imageLeftOutWords(facts({ left_out: { not_in_population: 0, not_in_production: 0, empty_placeholder: 0, could_not_open: 0, could_not_open_by_reason: {} } }) as never)).toBe("")
-    const done = indexJob(job({ state: "done", done: 5, failed: 2, queued: 0, failed_by_reason: { heic: 1, unreadable: 1 } }) as never)
+    const done = indexJob(job({ state: "done", done: 4, failed: 3, queued: 0, failed_by_reason: { heic: 1, cannot_open: 1, model_error: 1 } }) as never)
     expect(done.state).toBe("done")
-    expect(done.title).toBe("Indexing 7 images for search by description: 2 could not be indexed (1 stored as HEIC, which this server cannot open, 1 damaged or in a format this server cannot open)")
+    expect(done.title).toBe("Indexing 7 images for search by description: 3 could not be indexed (1 stored as HEIC, which this server cannot open, 1 damaged or in a format this server cannot open, 1 not read by the image search model)")
     const stopped = indexJob(job({ state: "cancelled", cancelled: true, done: 2, cancelled_count: 5, queued: 0 }) as never)
     expect(stopped.state).toBe("failed")
     expect(stopped.title).toBe("Indexing 7 images for search by description: stopped by request after 2 of 7; 5 not started were removed; indexed images are kept")

@@ -68,12 +68,17 @@ CAMERA_DIRS, CAMERA_RE, EXIF_CAMERA_ITEMS = S.CAMERA_DIRS, S.CAMERA_RE, S.EXIF_C
 POPULATION_SQL = "(c.file_uid IS NOT NULL OR %s OR %s)" % (S.CAMERA_PATH_SQL, S.EXIF_CAMERA_SQL)
 IMAGE_SQL = "coalesce(f.category, '') = 'Image'"
 PRESENT_SQL = "(f.disk_relpath IS NOT NULL AND coalesce(f.verification, '') <> 'missing')"
-PERMANENT = ("heic", "not_image", "unreadable", "too_large", "empty")
+# "unreadable" is no longer given: until 3 Nov it also covered a picture the model failed on after the library had
+# opened it (a picture 1 or 3 pixels high was taken for one in channels-first order), so a file left out with it is
+# offered again; "cannot_open" is the library's refusal, and "model_error" the model's, which another attempt may change.
+PERMANENT = ("heic", "not_image", "cannot_open", "too_large", "empty")
 
 REASON_WORDS = {
     "heic": "Stored as HEIC, which the image library on this server cannot open.",
     "not_image": "Its contents are not a picture (its first bytes name %s).",
-    "unreadable": "The image library could not open it: it may be damaged, or in a format the library does not read.",
+    "cannot_open": "The image library could not open it: it may be damaged, or in a format the library does not read.",
+    "unreadable": "It could not be read by the image library or the image search model.",
+    "model_error": "The image search model could not read this picture. The original is unchanged.",
     "too_large": "Too large to open safely (more pixels than the image library allows).",
     "empty": "The file holds no bytes.",
     "not_in_production": "The file could not be read from the production.",
@@ -360,14 +365,21 @@ else:
                 im.draft("RGB", (req["draft"], req["draft"]))
                 im = ImageOps.exif_transpose(im)
                 im = im.convert("RGB")
-                px = proc(images=[im], return_tensors="pt")
+        except Image.DecompressionBombError as e:
+            results.append({"reason": "too_large", "detail": str(e)[:200]})
+            continue
+        except Exception as e:
+            results.append({"reason": "cannot_open", "detail": ("%s: %s" % (type(e).__name__, e))[:200]})
+            continue
+        try:
+            # an RGB picture is height x width x 3: said, not guessed from the shape (a picture 1 or 3 pixels high
+            # was otherwise taken as channels-first and refused)
+            px = proc(images=[im], input_data_format="channels_last", return_tensors="pt")
             with torch.inference_mode():
                 v = torch.nn.functional.normalize(model(**px).pooler_output, dim=-1)[0]
             results.append({"vector": [float(x) for x in v]})
-        except Image.DecompressionBombError as e:
-            results.append({"reason": "too_large", "detail": str(e)[:200]})
         except Exception as e:
-            results.append({"reason": "unreadable", "detail": ("%s: %s" % (type(e).__name__, e))[:200]})
+            results.append({"reason": "model_error", "detail": ("%s: %s" % (type(e).__name__, e))[:200]})
     out["results"] = results
 print(json.dumps(out))
 '''
@@ -559,7 +571,10 @@ def run_pending(engine, limit=BATCH) -> list:
         for job, path, sha, container in work:
             res = by_sha[sha]
             if "vector" not in res:
-                out.append(_fail(engine, job, res.get("reason") or "unreadable"))
+                reason = res.get("reason") if res.get("reason") in REASON_WORDS else "model_error"
+                if reason == "model_error":
+                    log.warning("image search model failed on item %s: %s", job.id, str(res.get("detail"))[:200])
+                out.append(_fail(engine, job, reason))
             elif sha in made:
                 out.append(_done(engine, job, sha, ident, "reused", container))
             else:

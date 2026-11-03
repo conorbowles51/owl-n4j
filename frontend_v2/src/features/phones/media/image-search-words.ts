@@ -8,7 +8,9 @@ const pl = (v: number, one: string, many: string) => `${n(v)} ${v === 1 ? one : 
 export const REASON_WORDS: Record<string, string> = {
   heic: "stored as HEIC, which this server cannot open",
   not_image: "not a picture",
-  unreadable: "damaged or in a format this server cannot open",
+  cannot_open: "damaged or in a format this server cannot open",
+  unreadable: "not read by the image library or the model",
+  model_error: "not read by the image search model",
   too_large: "too large to open",
   empty: "no bytes",
   not_in_production: "not readable from the production",
