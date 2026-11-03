@@ -29,6 +29,7 @@ from app.services.openai_client import (
     transcribe_audio,
 )
 from app.utils.text_sanitize import sanitize_json, sanitize_text
+from app.pipeline import phone_media
 
 logger = logging.getLogger(__name__)
 
@@ -1184,6 +1185,32 @@ def get_transcription_segments(doc: ExtractedDocument) -> list[dict[str, Any]]:
     return sanitized if isinstance(sanitized, list) else []
 
 
+_KNOWN_NON_MEDIA_EXTENSIONS = {
+    ".pdf", ".docx", ".doc", ".xlsx", ".xls", ".csv", ".html", ".htm", ".md", ".markdown", ".eml",
+} | PLAIN_TEXT_EXTENSIONS
+
+
+def _sniffed_media_kind(file_path: str, ext: str) -> str | None:
+    """Image, video or audio, from the file's first bytes ahead of its name (05 section 17.4 point 1: phone files
+    often have no extension, or one this table does not know, such as .opus, .amr or .caf). Files with a known
+    document or text extension never reach here. When the bytes say nothing, the extension decides as before."""
+    if ext in _KNOWN_NON_MEDIA_EXTENSIONS:
+        return None
+    try:
+        sniffed = phone_media.sniff_path(file_path)
+    except OSError:
+        sniffed = phone_media.UNRECOGNISED
+    if sniffed.kind in ("image", "video", "audio"):
+        return sniffed.kind
+    if ext in IMAGE_EXTENSIONS:
+        return "image"
+    if ext in VIDEO_EXTENSIONS:
+        return "video"
+    if ext in AUDIO_EXTENSIONS:
+        return "audio"
+    return None
+
+
 @checkpointed("pipeline/extract_text.py:extract_text:v2")
 async def extract_text(
     file_path: str,
@@ -1232,11 +1259,11 @@ async def extract_text(
     elif ext == ".eml":
         await asyncio.to_thread(_validate_text_input_size, file_path)
         doc = await asyncio.to_thread(_extract_eml, file_path)
-    elif ext in IMAGE_EXTENSIONS:
+    elif (media := _sniffed_media_kind(file_path, ext)) == "image":
         doc = await _extract_image(file_path, file_name)
-    elif ext in VIDEO_EXTENSIONS:
+    elif media == "video":
         doc = await _extract_video(file_path, file_name)
-    elif ext in AUDIO_EXTENSIONS:
+    elif media == "audio":
         doc = await _extract_audio(file_path, progress_callback=progress_callback)
     elif ext in PLAIN_TEXT_EXTENSIONS:
         await asyncio.to_thread(_validate_text_input_size, file_path)

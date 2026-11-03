@@ -353,6 +353,10 @@ export interface DerivedText {
   text: string | null; model: string | null; model_version: string | null
   segments: { start: number; end: number; text: string }[]; error: string | null
   created_at: string | null; finished_at: string | null; machine_generated: true; label: string | null
+  /** What made it (05 17.4): null on texts made before this was recorded. */
+  model_id?: string | null; weights_sha256?: string | null; input_sha256?: string | null
+  parameters?: Record<string, unknown> | null; provider?: string | null; provider_words?: string | null
+  language?: string | null; duration_seconds?: number | null; sniffed_container?: string | null
 }
 export async function getDerivedTexts(caseId: string, fileUid: string) {
   return fetchAPI<{ file_uid: string; items: DerivedText[] }>(`/api/phones/media/${encodeURIComponent(fileUid)}/derived?case_id=${encodeURIComponent(caseId)}`)

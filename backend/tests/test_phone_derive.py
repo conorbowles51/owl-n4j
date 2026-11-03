@@ -6,6 +6,7 @@ template and the tesseract program.
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import subprocess
 import sys
@@ -20,6 +21,7 @@ from tests.test_phone_mappings import hooks  # noqa: F401 (fixture)
 
 pytestmark = needs_template
 FONT = Path(__file__).resolve().parents[1] / "assets" / "fonts" / "NotoSans-Regular.ttf"
+OGG = b"OggS\x00\x02" + b"\x00" * 20 + b"OpusHead" + b"\x00" * 64  # an Ogg Opus header (synthetic)
 
 
 def _place(world, tmp_path, monkeypatch, uid, relpath, data, category):
@@ -83,7 +85,7 @@ def test_m3_a_photos_text_is_read_labelled_searchable_and_the_original_is_unchan
 def test_m3_audio_is_refused_in_words_when_no_model_is_on_this_server(world, tmp_path, monkeypatch):
     from services.phone import derive
     engine, case, _, _ = world
-    _place(world, tmp_path, monkeypatch, LINKED, "chats/synthetic-a.jpg", b"\0" * 64, "Audio")
+    _place(world, tmp_path, monkeypatch, LINKED, "chats/synthetic-a", OGG, "Audio")
     monkeypatch.setenv("LOUPE_WHISPER_MODEL_PATH", str(tmp_path / "absent" / "base.pt"))
     with engine.begin() as c:
         req = derive.request(c, case, LINKED, "transcript")
@@ -168,3 +170,93 @@ def test_a_stopped_image_reading_is_claimed_again_and_a_transcript_of_the_same_a
     job = derive._claim(engine)
     assert job is not None and job.kind == "ocr" and str(job.file_uid) == LINKED
     assert derive._claim(engine) is None  # the transcript started 20 minutes ago is still within its 3 hours
+
+
+# ---- 05-S12 (05 section 17.4): kind from the bytes, local only, and exactly what made the text ---------------------
+
+@pytest.mark.skipif(shutil.which("tesseract") is None, reason="tesseract is not installed")
+def test_s12_a_photo_with_no_extension_is_read_by_its_bytes_and_names_what_read_it(world, tmp_path, monkeypatch):
+    from services.phone import derive
+    engine, case, _, _ = world
+    data = _image()
+    _place(world, tmp_path, monkeypatch, LINKED, "chats/IMG_0001", data, "Image")  # C3 and C9 files carry no extension
+    with engine.begin() as c:
+        req = derive.request(c, case, LINKED, "ocr")
+    assert derive.run_pending(engine) == [{"id": req["id"], "state": "done"}]
+    with engine.connect() as c:
+        [got] = derive.list_for(c, case, LINKED)
+    pm = derive.phone_media()
+    tessdata = pm.tessdata_dir()
+    assert "HARBOUR" in got["text"].upper()
+    assert got["sniffed_container"] == "jpeg" and got["input_sha256"] == hashlib.sha256(data).hexdigest()
+    assert got["model_id"] == "tesseract/eng" and got["provider"] == "local"
+    assert got["weights_sha256"] == pm.tesseract_identity(got["model_version"], tessdata, "eng")["weights_sha256"]
+    assert got["parameters"]["languages"] == "eng"
+    assert got["provider_words"] == "Made on this server. Nothing was sent to any outside service."
+
+
+def test_s12_a_file_whose_bytes_are_not_a_picture_is_refused_in_words(world, tmp_path, monkeypatch):
+    from services.phone import derive
+    engine, case, _, _ = world
+    _place(world, tmp_path, monkeypatch, LINKED, "chats/photo.jpg", OGG, "Image")
+    with engine.begin() as c:
+        req = derive.request(c, case, LINKED, "ocr")
+    assert derive.run_pending(engine) == [{"id": req["id"], "state": "failed"}]
+    with engine.connect() as c:
+        [got] = derive.list_for(c, case, LINKED)
+    assert got["error"] == derive.NOT_IMAGE % "a OGG file" and got["text"] is None
+
+
+def test_s12_a_transcript_records_model_id_version_weights_hash_input_hash_and_duration(world, tmp_path, monkeypatch):
+    """The child is replaced by a stand-in that answers like Whisper; everything the parent records is real."""
+    from services.phone import derive
+    engine, case, _, _ = world
+    weights = tmp_path / "models" / "base.pt"
+    weights.parent.mkdir()
+    weights.write_bytes(b"synthetic weights " * 4096)
+    monkeypatch.setenv("LOUPE_WHISPER_MODEL_PATH", str(weights))
+    _place(world, tmp_path, monkeypatch, LINKED, "chats/PTT-0001", OGG, "Audio")  # no extension
+    real_run = subprocess.run
+    calls = []
+
+    def fake_run(argv, *a, **k):
+        if argv[:2] == [sys.executable, "-I"]:
+            calls.append(argv)
+            out = {"text": "invented words", "segments": [{"start": 0.0, "end": 1.5, "text": "invented words"}],
+                   "language": "en", "package_version": "20250625"}
+            return subprocess.CompletedProcess(argv, 0, stdout=json.dumps(out), stderr="")
+        if argv[0] == "ffprobe":
+            return subprocess.CompletedProcess(argv, 0, stdout='{"format": {"duration": "1.500"}}', stderr="")
+        return real_run(argv, *a, **k)
+
+    monkeypatch.setattr(derive.subprocess, "run", fake_run)
+    with engine.begin() as c:
+        req = derive.request(c, case, LINKED, "transcript")
+    assert derive.run_pending(engine) == [{"id": req["id"], "state": "done"}]
+    with engine.connect() as c:
+        [got] = derive.list_for(c, case, LINKED)
+    assert calls and calls[0][-2].endswith(".ogg")  # the copy is named by its bytes, not its (absent) extension
+    assert got["model"] == "Whisper" and got["model_id"] == "openai-whisper/base"
+    assert got["model_version"] == "base 20250625"
+    assert got["weights_sha256"] == hashlib.sha256(weights.read_bytes()).hexdigest()
+    assert got["input_sha256"] == hashlib.sha256(OGG).hexdigest() and got["sniffed_container"] == "ogg"
+    assert got["duration_seconds"] == 1.5 and got["language"] == "en" and got["provider"] == "local"
+    assert got["parameters"] == {"device": "cpu", "fp16": False, "task": "transcribe",
+                                 "language": "detected by the model", "threads": 2}
+    assert got["segments"] == [{"start": 0.0, "end": 1.5, "text": "invented words"}]
+    assert got["label"].startswith("Machine-generated by Whisper base 20250625 on ")
+
+
+def test_s12_an_uncategorised_file_may_be_asked_for_and_its_bytes_decide(world, tmp_path, monkeypatch):
+    from services.phone import derive
+    engine, case, _, _ = world
+    _place(world, tmp_path, monkeypatch, LINKED, "chats/blob", b"plain words", "Uncategorized")
+    with engine.begin() as c:  # and the report gives it no name with an extension either
+        c.execute(text("UPDATE phone_files SET local_path = 'files/Uncategorized/blob' WHERE file_uid = :f"),
+                  {"f": LINKED})
+    with engine.begin() as c:
+        req = derive.request(c, case, LINKED, "ocr")
+    assert derive.run_pending(engine) == [{"id": req["id"], "state": "failed"}]
+    with engine.connect() as c:
+        [got] = derive.list_for(c, case, LINKED)
+    assert got["error"] == derive.NOT_IMAGE % "no known format"

@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 
 KINDS = {"ocr": "Read text in this image", "transcript": "Transcribe this audio"}
 OCR_CATEGORIES = {"Image"}
+UNCATEGORISED = {"", "Uncategorized"}
 TRANSCRIPT_CATEGORIES = {"Audio", "Video"}
 MAX_ATTEMPTS = 2
 TIMEOUT_SECONDS = {"ocr": 300, "transcript": 3 * 3600}
@@ -46,8 +47,37 @@ class DeriveError(ValueError):
     pass
 
 
+_PHONE_MEDIA = Path(__file__).resolve().parents[3] / "evidence-engine" / "app" / "pipeline" / "phone_media.py"
+
+
+def phone_media():
+    """The phone media entry point (05-S12, ``evidence-engine/app/pipeline/phone_media.py``): sniffing, the provider
+    policy and model identity. Loaded by path because the backend and the engine are separate packages; it is
+    standard library only."""
+    mod = sys.modules.get("loupe_phone_media")
+    if mod is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("loupe_phone_media", _PHONE_MEDIA)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["loupe_phone_media"] = mod
+        spec.loader.exec_module(mod)
+    return mod
+
+
+def tesseract_languages() -> str:
+    return os.environ.get("LOUPE_TESSERACT_LANG") or "eng"
+
+
 def whisper_model_path() -> Path:
     return Path(os.environ.get("LOUPE_WHISPER_MODEL_PATH") or Path.home() / ".cache" / "whisper" / "base.pt")
+
+
+def provider_words(provider):
+    """The setting the output was made under, shown on every output (05 17.4 point 3). Rows made before the
+    provider was recorded say so rather than claim one."""
+    if provider is None:
+        return "Where this was made was not recorded."
+    return phone_media().PROVIDER_WORDS.get(provider, "Made by %s." % provider)
 
 
 def label(model, version, finished_at) -> str:
@@ -63,7 +93,12 @@ def _out(r) -> dict:
            "segments": d["segments"] or [], "error": d["error"],
            "created_at": d["created_at"].isoformat() if d["created_at"] else None,
            "finished_at": d["finished_at"].isoformat() if d["finished_at"] else None,
-           "machine_generated": True}
+           "machine_generated": True,
+           "model_id": d.get("model_id"), "weights_sha256": d.get("weights_sha256"),
+           "input_sha256": d.get("input_sha256"), "parameters": d.get("parameters"),
+           "provider": d.get("provider"), "language": d.get("language"),
+           "duration_seconds": d.get("duration_seconds"), "sniffed_container": d.get("sniffed_container")}
+    out["provider_words"] = provider_words(d.get("provider"))
     out["label"] = label(d["model"], d["model_version"], d["finished_at"]) if d["state"] == "done" else None
     return out
 
@@ -78,7 +113,9 @@ def request(conn, case_id, file_uid, kind, user_id=None) -> dict:
     if f is None:
         raise LookupError("This file is not in this case.")
     allowed = OCR_CATEGORIES if kind == "ocr" else TRANSCRIPT_CATEGORIES
-    if (f.category or "") not in allowed:
+    # The report's category decides, except for a file it left uncategorised: then the file's bytes decide when it
+    # is read (05 17.4 point 1).
+    if (f.category or "") not in allowed and (f.category or "") not in UNCATEGORISED:
         raise DeriveError("Text can be read only from photos, and transcripts made only from audio or video."
                           if kind == "ocr" else "Only audio or video can be transcribed.")
     if f.verification == "missing":
@@ -129,7 +166,7 @@ if kind == "transcript":
            for s in r.get("segments", [])]
     v = getattr(whisper, "__version__", "")
     print(json.dumps({"text": (r.get("text") or "").strip(), "segments": seg, "language": r.get("language"),
-                      "model": "Whisper", "version": ("base " + v).strip()}))
+                      "package_version": v}))
 '''
 
 
@@ -144,19 +181,29 @@ def _tesseract_version():
 
 def _ocr(path):
     version = _tesseract_version()
-    if version is None:
+    pm = phone_media()
+    tessdata = pm.tessdata_dir()
+    if version is None or tessdata is None:
         raise DeriveError(NO_OCR)
+    langs = tesseract_languages()
+    try:
+        ident = pm.tesseract_identity(version, tessdata, langs)
+    except FileNotFoundError:
+        raise DeriveError("The text reader has no language data for %s on this server. Nothing was sent anywhere."
+                          % langs) from None
     import resource
 
     def cap():
         mb = int(os.environ.get("LOUPE_PHONE_DERIVE_MEMORY_MB", "6144"))
         resource.setrlimit(resource.RLIMIT_AS, (mb * 1024 * 1024, mb * 1024 * 1024))
-    r = subprocess.run(["tesseract", str(path), "stdout"], capture_output=True, text=True,
+    r = subprocess.run(["tesseract", str(path), "stdout", "-l", langs], capture_output=True, text=True,
                        timeout=TIMEOUT_SECONDS["ocr"], preexec_fn=cap, env={"PATH": os.environ.get("PATH", ""),
                                                                             "OMP_THREAD_LIMIT": "1"})
     if r.returncode != 0:
         raise DeriveError("The text reader could not read this image. The original is unchanged.")
-    return {"text": r.stdout.strip(), "segments": [], "model": "Tesseract", "version": version}
+    return dict(ident, text=r.stdout.strip(), segments=[], version=ident["model_version"],
+                parameters={"languages": langs, "page_segmentation": "automatic (tesseract default 3)",
+                            "engine": "tesseract default", "threads": 1})
 
 
 def _transcribe(path):
@@ -171,23 +218,69 @@ def _transcribe(path):
         if "No module named 'whisper'" in (r.stderr or ""):
             raise DeriveError(NO_MODEL)
         raise DeriveError("This audio could not be transcribed. The original is unchanged.")
-    return json.loads(r.stdout.strip().splitlines()[-1])
+    got = json.loads(r.stdout.strip().splitlines()[-1])
+    ident = phone_media().whisper_identity(model, got.get("package_version"))
+    return dict(got, **ident, version=ident["model_version"],
+                parameters={"device": "cpu", "fp16": False, "task": "transcribe", "language": "detected by the model",
+                            "threads": int(env["OMP_NUM_THREADS"])})
+
+
+def _duration(path):
+    try:
+        r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)],
+                           capture_output=True, text=True, timeout=60)
+        d = (json.loads(r.stdout or "{}").get("format") or {}).get("duration")
+        return float(d) if d not in (None, "N/A") else None
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
 
 
 def read_file(conn, case_id, file_uid, kind) -> dict:
-    """Copy the file's bytes to a private temporary file, read it in a child process, delete the copy."""
+    """Copy the file's bytes to a private temporary file (hashing them on the way), decide what the file is from
+    its first bytes, read it in a child process, delete the copy."""
+    import hashlib
+
     from services.phone import media
+    pm = phone_media()
+    pm.provider_for(kind)  # local only; a third-party provider would need a recorded case setting (05 17.4 point 3)
     name, _size, opener = media.content(conn, case_id, file_uid)
-    suffix = Path(name).suffix[:10]
     with tempfile.TemporaryDirectory(prefix="loupe-derive-") as d:
-        path = Path(d) / ("file" + suffix)
-        with opener() as src, open(path, "wb") as dst:
+        raw = Path(d) / "file"
+        h = hashlib.sha256()
+        with opener() as src, open(raw, "wb") as dst:
             while True:
                 chunk = src.read(1 << 20)
                 if not chunk:
                     break
+                h.update(chunk)
                 dst.write(chunk)
-        return _ocr(path) if kind == "ocr" else _transcribe(path)
+        found = pm.kind_of(raw, name)
+        _check_kind(kind, found)
+        path = raw.rename(raw.with_suffix(found.suffix)) if found.suffix else raw
+        got = _ocr(path) if kind == "ocr" else _transcribe(path)
+        got.update(input_sha256=h.hexdigest(), sniffed_container=found.container)
+        if kind == "transcript":
+            got["duration_seconds"] = _duration(path)
+        return got
+
+
+NOT_IMAGE = ("This file's contents are not a picture the text reader can open (its first bytes name %s). "
+             "Nothing was read; the original is unchanged.")
+NOT_AUDIO = ("This file's contents are not audio or video (its first bytes name %s). Nothing was transcribed; the "
+             "original is unchanged.")
+HEIF = ("This photo is stored as HEIC, which the text reader on this server cannot open. Nothing was read; the "
+        "original is unchanged.")
+
+
+def _check_kind(kind, found):
+    what = "no known format" if not found.recognised else "a %s file" % found.container.upper()
+    if kind == "ocr":
+        if found.kind != "image":
+            raise DeriveError(NOT_IMAGE % what)
+        if found.container == "heif":
+            raise DeriveError(HEIF)
+    elif found.kind not in ("audio", "video"):
+        raise DeriveError(NOT_AUDIO % what)
 
 
 def _claim(engine):
@@ -224,10 +317,15 @@ def run_pending(engine, limit=1) -> list:
             with engine.begin() as c:
                 c.execute(text(
                     "UPDATE phone_derived_texts SET state = 'done', text = :x, text_folded = :f, model = :m, "
-                    "model_version = :v, segments = CAST(:s AS jsonb), finished_at = now() WHERE id = :i AND "
+                    "model_version = :v, segments = CAST(:s AS jsonb), model_id = :mi, weights_sha256 = :w, "
+                    "input_sha256 = :ih, provider = :pr, sniffed_container = :sc, language = :lg, "
+                    "duration_seconds = :du, parameters = CAST(:pa AS jsonb), finished_at = now() WHERE id = :i AND "
                     "state = 'running' AND started_at = :t"),
                     dict(guard, x=body, f=F.fold(body), m=got["model"], v=got["version"],
-                         s=json.dumps(got.get("segments") or [])))
+                         s=json.dumps(got.get("segments") or []), mi=got.get("model_id"),
+                         w=got.get("weights_sha256"), ih=got.get("input_sha256"), pr=got.get("provider"),
+                         sc=got.get("sniffed_container"), lg=got.get("language"), du=got.get("duration_seconds"),
+                         pa=json.dumps(got.get("parameters") or {})))
             done.append({"id": str(job.id), "state": "done"})
         except Exception as e:  # noqa: BLE001
             if isinstance(e, (DeriveError, LookupError)):

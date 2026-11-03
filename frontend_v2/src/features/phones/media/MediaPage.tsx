@@ -1,9 +1,9 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useRef, useState } from "react"
+import { Fragment, useEffect, useRef, useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { recordPath } from "@/lib/record-links"
-import { getDerivedTexts, getMediaDetail, getMediaIndex, getMediaWindow, mediaObjectUrl, requestDerivedText, type MediaFilter, type MediaItem } from "../api"
+import { getDerivedTexts, getMediaDetail, getMediaIndex, getMediaWindow, mediaObjectUrl, requestDerivedText, type DerivedText, type MediaFilter, type MediaItem } from "../api"
 
 const n = (v: number) => v.toLocaleString("en-US")
 const WINDOW = 200
@@ -97,6 +97,28 @@ function Thumb({ caseId, item, blur }: { caseId: string; item: MediaItem; blur: 
   )
 }
 
+/** Exactly what made a machine text (05 17.4): model id, version, the weights' hash and the input's hash, in
+ * full. Older texts that did not record it say so. */
+function MadeBy({ x }: { x: DerivedText }) {
+  if (!x.model_id) return <p className="text-xs text-muted-foreground">The model's exact weights were not recorded for this text.</p>
+  const rows: [string, string][] = [
+    ["Model", `${x.model_id} (${x.model_version ?? "version not recorded"})`],
+    ["Weights SHA-256", x.weights_sha256 ?? "not recorded"],
+    ["File read (SHA-256)", x.input_sha256 ?? "not recorded"],
+  ]
+  if (x.sniffed_container) rows.push(["File kind, from its contents", x.sniffed_container])
+  if (x.language) rows.push(["Language detected", x.language])
+  if (x.parameters) rows.push(["Settings", Object.entries(x.parameters).map(([k, v]) => `${k}: ${String(v)}`).join("; ")])
+  return (
+    <details className="text-xs text-muted-foreground">
+      <summary className="cursor-pointer">What made this text</summary>
+      <dl className="grid grid-cols-[max-content_1fr] gap-x-2 gap-y-0.5">
+        {rows.map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd className="break-all font-mono">{v}</dd></Fragment>)}
+      </dl>
+    </details>
+  )
+}
+
 const fmtSeconds = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`
 
 /** Machine-generated text (03 8.3, M-3): asked for here, made by a model on the server, always shown with its
@@ -145,6 +167,8 @@ export function DerivedTexts({ caseId, fileUid, category }: { caseId: string; fi
           {x.state === "done" && (
             <>
               <p className="italic text-muted-foreground">{x.label}</p>
+              {x.provider_words && <p className="text-muted-foreground">{x.provider_words}</p>}
+              <MadeBy x={x} />
               {x.segments.length ? (
                 <ol className="flex flex-col gap-0.5">
                   {x.segments.map((s, i) => <li key={i}><span className="font-mono text-muted-foreground">{fmtSeconds(s.start)}</span> {s.text}</li>)}
