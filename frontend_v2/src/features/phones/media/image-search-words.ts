@@ -38,7 +38,7 @@ export function imageLeftOutWords(f: ImageIndexFacts): string {
 export function coverageWords(f: ImageIndexFacts): string {
   const notYet = f.eligible + f.waiting
   const unable = f.left_out.not_in_production + f.left_out.empty_placeholder + f.left_out.could_not_open
-  const parts = [`${pl(f.indexed, "image is", "images are")} indexed`]
+  const parts = [`${pl(f.indexed, "file is", "files are")} indexed (${pl(f.indexed_contents, "distinct picture", "distinct pictures")})`]
   if (notYet) parts.push(`${pl(notYet, "image is", "images are")} not indexed yet`)
   if (unable) parts.push(`${pl(unable, "image", "images")} cannot be indexed`)
   if (f.left_out.not_in_population) parts.push(`${pl(f.left_out.not_in_population, "image is", "images are")} outside the search (not sent or received, not from a camera)`)

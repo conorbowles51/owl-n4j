@@ -25,7 +25,7 @@ const job = (over: object) => ({ id: "j1", total: 7, done: 0, embedded: 0, reuse
 const LABEL = "Machine-ranked by siglip2-base-patch16-224 75de2d5; a result points to an image, it does not describe it."
 const found = {
   query: "a red square", label: LABEL, model: "siglip2-base-patch16-224", model_id: "m", revision_short: "75de2d5", provider_words: "Made on this server.",
-  scored: 30, shown: 2, coverage: facts({ eligible: 0, indexed: 30 }), truncated_query: false, truncated_words: null,
+  scored: 30, scored_files: 34, shown: 2, coverage: facts({ eligible: 0, indexed: 30 }), truncated_query: false, truncated_words: null,
   results: [
     { rank: 1, content_sha256: "a".repeat(64), copy_count: 2, phones: ["C1", "C2"], copies: [
       { file_uid: "f1", extraction_id: "e1", phone_label: "C1", filename: "red.png", category: "Image", message_count: 1 },
@@ -77,7 +77,7 @@ describe("Image search by description (05 17.6)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Find" }))
     await waitFor(() => expect(api.searchImages).toHaveBeenCalledWith("c", "a red square", 24))
     expect(await screen.findByText(LABEL)).toBeInTheDocument()
-    expect(screen.getByText('Showing the 2 highest ranked of 30 indexed images for "a red square".')).toBeInTheDocument()
+    expect(screen.getByText('Showing the 2 highest ranked of 30 distinct pictures (34 indexed files) for "a red square".')).toBeInTheDocument()
     const list = screen.getByRole("list", { name: "Images found" })
     const items = within(list).getAllByRole("listitem").filter((li) => li.parentElement === list)
     expect(items).toHaveLength(2)
@@ -90,10 +90,28 @@ describe("Image search by description (05 17.6)", () => {
     expect(onOpen).toHaveBeenCalledWith("f2")
     fireEvent.click(screen.getByRole("button", { name: "Show 24 more" }))
     await waitFor(() => expect(api.searchImages).toHaveBeenLastCalledWith("c", "a red square", 48))
+    // asking the same again ranks afresh (more images may have been indexed since), never a remembered ranking
+    await waitFor(() => expect(screen.getByRole("button", { name: "Find" })).toBeEnabled())
+    const calls = api.searchImages.mock.calls.length
+    fireEvent.click(screen.getByRole("button", { name: "Find" }))
+    await waitFor(() => expect(api.searchImages.mock.calls.length).toBe(calls + 1))
+    expect(api.searchImages).toHaveBeenLastCalledWith("c", "a red square", 24)
+  })
+
+  it("counts again when an indexing job ends", async () => {
+    api.describeImageIndex.mockReset().mockResolvedValue(facts())
+    api.getImageIndexJobs.mockReset()
+      .mockResolvedValueOnce({ case_id: "c", items: [job({ done: 6, running: 1, queued: 0 })] })
+      .mockResolvedValue({ case_id: "c", items: [job({ state: "done", done: 7, running: 0, queued: 0 })] })
+    renderIt()
+    await screen.findByRole("button", { name: "Jobs (1 running)" })
+    const before = api.describeImageIndex.mock.calls.length
+    await screen.findByRole("button", { name: "Jobs (1 done)" }, { timeout: 3000 })
+    await waitFor(() => expect(api.describeImageIndex.mock.calls.length).toBeGreaterThan(before))
   })
 
   it("words the coverage and a finished job with failures", () => {
-    expect(coverageWords(facts({ indexed: 4, eligible: 2, waiting: 1 }) as never)).toBe("4 images are indexed; 3 images are not indexed yet; 4 images cannot be indexed; 1 image is outside the search (not sent or received, not from a camera).")
+    expect(coverageWords(facts({ indexed: 4, indexed_contents: 3, eligible: 2, waiting: 1 }) as never)).toBe("4 files are indexed (3 distinct pictures); 3 images are not indexed yet; 4 images cannot be indexed; 1 image is outside the search (not sent or received, not from a camera).")
     expect(imageLeftOutWords(facts({ left_out: { not_in_population: 0, not_in_production: 0, empty_placeholder: 0, could_not_open: 0, could_not_open_by_reason: {} } }) as never)).toBe("")
     const done = indexJob(job({ state: "done", done: 5, failed: 2, queued: 0, failed_by_reason: { heic: 1, unreadable: 1 } }) as never)
     expect(done.state).toBe("done")

@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { JobTray } from "@/components/ui/job-tray"
 import { cancelImageIndex, createImageIndex, describeImageIndex, getImageIndexJobs, searchImages, type ImageSearchResults } from "../api"
@@ -31,8 +31,8 @@ export function ImageSearch({ caseId, blur, onOpen }: { caseId: string; blur: bo
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState("")
-  const [asked, setAsked] = useState<{ query: string; limit: number } | null>(null)
-  const facts = useQuery({ queryKey: ["image-index-facts", caseId], queryFn: () => describeImageIndex(caseId), enabled: !!caseId })
+  // ``n`` changes on every Find, so asking again ranks the images indexed by then, never a remembered ranking
+  const [asked, setAsked] = useState<{ query: string; limit: number; n: number } | null>(null)
   const jobs = useQuery({
     queryKey: ["image-index-jobs", caseId],
     queryFn: () => getImageIndexJobs(caseId),
@@ -40,13 +40,20 @@ export function ImageSearch({ caseId, blur, onOpen }: { caseId: string; blur: bo
     refetchInterval: (q) => (q.state.data?.items.some((j) => j.state === "running") ? 1000 : false),
   })
   const running = jobs.data?.items.some((j) => j.state === "running") ?? false
+  // the counts follow the indexing: every few seconds while a job runs, and once more when it ends
+  const facts = useQuery({ queryKey: ["image-index-facts", caseId], queryFn: () => describeImageIndex(caseId), enabled: !!caseId, refetchInterval: running ? 5000 : false })
+  const wasRunning = useRef(false)
+  useEffect(() => {
+    if (wasRunning.current && !running) void client.invalidateQueries({ queryKey: ["image-index-facts", caseId] })
+    wasRunning.current = running
+  }, [running, client, caseId])
   useEffect(() => {
     if (!running) return
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [running])
   const results = useQuery({
-    queryKey: ["image-search", caseId, asked?.query, asked?.limit],
+    queryKey: ["image-search", caseId, asked?.query, asked?.limit, asked?.n],
     queryFn: () => searchImages(caseId, asked?.query ?? "", asked?.limit ?? PAGE),
     enabled: !!caseId && !!asked,
     placeholderData: (prev) => prev,
@@ -94,7 +101,7 @@ export function ImageSearch({ caseId, blur, onOpen }: { caseId: string; blur: bo
         )}
         {tray.length > 0 && <JobTray jobs={tray} now={now} />}
       </div>
-      <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (q) setAsked({ query: q, limit: PAGE }) }}>
+      <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (q) setAsked({ query: q, limit: PAGE, n: (asked?.n ?? 0) + 1 }) }}>
         <label className="flex flex-col gap-0.5">Find images by description
           <input className="w-80 rounded border bg-background px-1 py-0.5" value={draft} maxLength={300} onChange={(e) => setDraft(e.target.value)} placeholder="for example: a handwritten note" />
         </label>
@@ -108,7 +115,7 @@ export function ImageSearch({ caseId, blur, onOpen }: { caseId: string; blur: bo
         <div className="flex flex-col gap-1">
           <p className="italic text-muted-foreground">{r.label}</p>
           <p role="status">
-            {r.scored === 0 ? "No image in this case is indexed yet, so nothing was ranked." : `Showing the ${n(r.shown)} highest ranked of ${n(r.scored)} indexed ${r.scored === 1 ? "image" : "images"} for "${r.query}".`}
+            {r.scored === 0 ? "No image in this case is indexed yet, so nothing was ranked." : `Showing the ${n(r.shown)} highest ranked of ${n(r.scored)} distinct ${r.scored === 1 ? "picture" : "pictures"} (${n(r.scored_files)} indexed ${r.scored_files === 1 ? "file" : "files"}) for "${r.query}".`}
             {r.truncated_words ? ` ${r.truncated_words}` : ""}
           </p>
           <ol aria-label="Images found" className="flex flex-col gap-2">
@@ -135,7 +142,7 @@ export function ImageSearch({ caseId, blur, onOpen }: { caseId: string; blur: bo
             })}
           </ol>
           {r.shown < r.scored && (
-            <Button size="sm" variant="outline" className="self-start" disabled={results.isFetching || asked.limit >= 200} onClick={() => setAsked({ query: asked.query, limit: Math.min(200, asked.limit + PAGE) })}>
+            <Button size="sm" variant="outline" className="self-start" disabled={results.isFetching || asked.limit >= 200} onClick={() => setAsked({ ...asked, limit: Math.min(200, asked.limit + PAGE) })}>
               {asked.limit >= 200 ? "At most 200 are shown; refine the description" : `Show ${n(Math.min(PAGE, r.scored - r.shown, 200 - asked.limit))} more`}
             </Button>
           )}

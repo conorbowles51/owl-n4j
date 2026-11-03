@@ -462,7 +462,8 @@ export interface ImageIndexJob {
 export interface ImageSearchCopy { file_uid: string; extraction_id: string; phone_label: string; filename: string; category: string | null; message_count: number }
 export interface ImageSearchResults {
   query: string; label: string; model: string; model_id: string; revision_short: string; provider_words: string
-  scored: number; shown: number; coverage: ImageIndexFacts; truncated_query: boolean; truncated_words?: string | null
+  /** distinct pictures ranked, and the indexed files holding them (the same files as the coverage count) */
+  scored: number; scored_files: number; shown: number; coverage: ImageIndexFacts; truncated_query: boolean; truncated_words?: string | null
   results: { rank: number; content_sha256: string; copy_count: number; copies: ImageSearchCopy[]; phones: string[] }[]
 }
 export async function describeImageIndex(caseId: string) {
