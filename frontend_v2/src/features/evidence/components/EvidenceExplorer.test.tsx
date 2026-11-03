@@ -57,6 +57,7 @@ vi.mock("./DeleteFolderDialog", () => ({
       </div>
     ) : null,
 }))
+vi.mock("./DeletedEvidenceDialog", () => ({ DeletedEvidenceDialog: () => null }))
 vi.mock("./DeleteEvidenceDialog", () => ({
   DeleteEvidenceDialog: ({ onConfirm }: { onConfirm: (exclusive: boolean) => void }) => (
     <button onClick={() => onConfirm(false)}>Confirm delete</button>
