@@ -18,7 +18,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "20261103_agent_proposals"
-down_revision = "20261103_assessment_agent_message"
+down_revision = "20261103_merge_audio_review"
 branch_labels = None
 depends_on = None
 
