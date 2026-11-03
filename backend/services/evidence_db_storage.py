@@ -687,13 +687,28 @@ class EvidenceDBStorage:
         ).all())
 
     @staticmethod
-    def find_by_filename(
-        db: Session, filename: str, case_id: Optional[uuid.UUID] = None
-    ) -> Optional[EvidenceFile]:
-        q = select(EvidenceFile).where(EvidenceFile.original_filename == filename)
-        if case_id:
-            q = q.where(EvidenceFile.case_id == case_id)
-        return db.scalars(q.limit(1)).first()
+    def find_all_by_filename(db: Session, filename: str, case_id: uuid.UUID) -> List[EvidenceFile]:
+        """Every visible file of the case with this name, oldest first (internal copies and phone thread documents
+        are not separate files)."""
+        from services.financial.source_lineage import visible_evidence_condition
+        return list(db.scalars(select(EvidenceFile).where(
+            EvidenceFile.case_id == case_id, EvidenceFile.original_filename == filename,
+            visible_evidence_condition()).order_by(EvidenceFile.created_at, EvidenceFile.id)).all())
+
+    @staticmethod
+    def find_by_filename(db: Session, filename: str, case_id: uuid.UUID) -> Optional[EvidenceFile]:
+        """The file of the case with this name when exactly one visible file has it; None when none or several do.
+
+        A name shared by several files never picks one: callers that can show a choice use find_all_by_filename."""
+        found = EvidenceDBStorage.find_all_by_filename(db, filename, case_id)
+        return found[0] if len(found) == 1 else None
+
+    @staticmethod
+    def filename_candidates(files: Iterable[EvidenceFile]) -> List[dict]:
+        """What a person needs to choose between same-named files."""
+        return [dict(evidence_file_id=str(f.id), filename=f.original_filename,
+                     uploaded_at=f.created_at.isoformat() if f.created_at else None, size=int(f.size or 0),
+                     sha256_prefix=(f.sha256 or "")[:12]) for f in files]
 
     @staticmethod
     def delete_record(db: Session, file_id: uuid.UUID) -> Optional[EvidenceFile]:

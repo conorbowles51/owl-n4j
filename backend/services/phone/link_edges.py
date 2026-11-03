@@ -196,6 +196,10 @@ def payments(session, case_id, side_a: dict, side_b: dict, *, from_date=None, to
     if not accounts:
         return {"rows": [], "shared_accounts": 0}
     rows = []
+    # The window is in the query (inclusive at both ends, as _within is), so a one-day lookup reads that day's rows,
+    # not every row of the holders' accounts.
+    window = ([FinancialTransaction.ordering_date >= from_date] if from_date is not None else []) + (
+        [FinancialTransaction.ordering_date <= to_date] if to_date is not None else [])
     for r in session.execute(select(
             FinancialTransaction.id, FinancialTransaction.ref_id, FinancialTransaction.account_id,
             FinancialTransaction.direction, FinancialTransaction.amount_minor, FinancialTransaction.currency,
@@ -208,7 +212,7 @@ def payments(session, case_id, side_a: dict, side_b: dict, *, from_date=None, to
             FinancialTransaction.proof_class.in_(sorted(c.value for c in LEDGER_CLASSES)),
             FinancialTransaction.account_id.in_([uuid.UUID(a) for a in accounts]),
             or_(FinancialTransaction.metadata_['investigation_labels']['counterparty_link'].isnot(None),
-                FinancialTransaction.provenance['reviewed_counterparty'].isnot(None)))
+                FinancialTransaction.provenance['reviewed_counterparty'].isnot(None)), *window)
             .order_by(FinancialTransaction.ordering_date, FinancialTransaction.id)):
         account = str(r.account_id)
         if account in shared or not _within(r.ordering_date, from_date, to_date):

@@ -2,6 +2,7 @@
 Backfill Router - endpoints for backfilling document embeddings.
 """
 
+import uuid
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel
@@ -215,26 +216,30 @@ def extract_text_from_file(file_path: Path) -> Optional[str]:
         raise Exception(f"Text extraction failed for {file_path.name} ({suffix}): {str(e)}")
 
 
-def find_evidence_file(doc_name: str) -> Optional[Path]:
-    """Find the evidence file corresponding to a document name."""
+def find_evidence_file(doc_name: str, case_id: Optional[str]) -> Optional[Path]:
+    """The file on disk for a document of a case: the one visible evidence file of that case with this name.
+
+    Never another case's file, and never a guess between same-named files: a name several files of the case share,
+    or a document without a case, finds nothing (the caller reports it as not found)."""
+    try:
+        case_uuid = uuid.UUID(str(case_id))
+    except (TypeError, ValueError):
+        return None
     with get_background_session() as db:
-        evidence = EvidenceDBStorage.find_by_filename(db, doc_name)
-        if evidence and evidence.stored_path:
-            stored_path = Path(evidence.stored_path)
+        found = EvidenceDBStorage.find_all_by_filename(db, doc_name, case_uuid)
+        if len(found) > 1:
+            return None
+        if found and found[0].stored_path:
+            stored_path = Path(found[0].stored_path)
             if stored_path.exists():
                 return stored_path
-    
-    # Also try direct search in evidence root directory
-    for case_dir in EVIDENCE_ROOT_DIR.iterdir():
-        if case_dir.is_dir():
-            potential_file = case_dir / doc_name
-            if potential_file.exists():
-                return potential_file
-            
-            for file_path in case_dir.rglob(doc_name):
-                if file_path.is_file():
-                    return file_path
-    
+
+    # A file in the case's own folder that has no evidence row: only when exactly one file there has the name.
+    case_dir = EVIDENCE_ROOT_DIR / str(case_uuid)
+    if case_dir.is_dir():
+        matches = [p for p in case_dir.rglob(doc_name) if p.is_file()]
+        if len(matches) == 1:
+            return matches[0]
     return None
 
 
@@ -402,13 +407,13 @@ def backfill_documents_for_user(
                     log_callback("warning", f"Could not verify existing embedding for {doc_name}, will process: {str(e)}")
         
         # Find the file
-        file_path = find_evidence_file(doc_name)
+        file_path = find_evidence_file(doc_name, doc_case_id)
         if not file_path:
             stats["file_not_found"] += 1
             error_msg = f"{doc_name} (document ID: {doc_id})"
             stats["file_not_found_errors"].append(error_msg)
             if log_callback:
-                log_callback("warning", f"File not found for document: {doc_name} (ID: {doc_id})")
+                log_callback("warning", f"File not found for document: {doc_name} (ID: {doc_id}); none, or several, of the case's files have this name")
             continue
         
         # Extract text

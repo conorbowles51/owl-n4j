@@ -182,7 +182,7 @@ def backfill_document_summaries(
         log("info", f"\n[{i}/{stats['total']}] Processing: {doc_name}")
 
         # Find the original file on disk
-        file_path = find_evidence_file(doc_name)
+        file_path = find_evidence_file(doc_name, doc_case_id)
         if not file_path:
             log("warning", f"  File not found on disk for: {doc_name}")
             stats["file_not_found"] += 1

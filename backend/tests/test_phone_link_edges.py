@@ -188,6 +188,20 @@ class MoneyTests(DuplicateTestCase):
         a, b = self.sides()
         assert [r["amount_minor"] for r in LE.payments(self.db, self.case.id, a, b)["rows"]] == [120_00]
 
+    def test_rows_outside_the_window_are_not_read(self):
+        # followups m110319051530312: the agent's one-day payment lookup read every row of the holders' accounts
+        self.row(100_00, day=date(2026, 1, 15))
+        self.row(200_00, day=date(2026, 2, 15))
+        self.row(300_00, day=date(2026, 3, 15))
+        a, b = self.sides()
+        seen = []
+        real = LE._within
+        from unittest.mock import patch
+        with patch.object(LE, "_within", lambda d, f, t: seen.append(d) or real(d, f, t)):
+            rows = LE.payments(self.db, self.case.id, a, b, from_date=date(2026, 2, 15), to_date=date(2026, 2, 15))
+        assert [r["amount_minor"] for r in rows["rows"]] == [200_00]
+        assert seen == [date(2026, 2, 15)]
+
     def test_the_window_is_the_ordering_date_and_reversed_sides_reverse_direction(self):
         self.row(100_00, day=date(2026, 1, 15))
         self.row(200_00, day=date(2026, 2, 15))

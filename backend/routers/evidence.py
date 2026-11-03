@@ -2724,67 +2724,77 @@ def list_wiretap_processed(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/by-filename/{filename}")
-def get_evidence_by_filename(
-    filename: str,
-    case_id: str = Query(..., description="Case ID"),
-    user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Find evidence by original filename and return file info.
-
-    This endpoint helps the frontend locate evidence IDs from document names
-    stored in entity citations.
-    """
+def _evidence_by_name(db: Session, current_user: User, filename: str, case_id: str, evidence_file_id: Optional[str]):
+    """The one file a name (or name + id) points at in a case the user can see. A name several visible files share is
+    a 409 with the candidates, never a guess; a missing name is None."""
     from services.evidence_db_storage import EvidenceDBStorage
     from uuid import UUID
 
     try:
         case_uuid = UUID(case_id)
-        record = EvidenceDBStorage.find_by_filename(db, filename, case_id=case_uuid)
-        if record:
-            return {
-                "found": True,
-                "evidence_id": str(record.id),
-                "case_id": str(record.case_id),
-                "original_filename": record.original_filename,
-                "stored_path": record.stored_path,
-                "summary": record.summary,
-            }
+    except ValueError:
+        raise HTTPException(status_code=400, detail="case_id is not a case id")
+    _check_engine_jobs_access(db, case_id, current_user)
+    found = EvidenceDBStorage.find_all_by_filename(db, filename, case_uuid)
+    if evidence_file_id:
+        found = [f for f in found if str(f.id) == str(evidence_file_id)]
+    if len(found) > 1:
+        raise HTTPException(status_code=409, detail={
+            "reason": f"{len(found)} files in this case are called {filename}; choose one.",
+            "candidates": EvidenceDBStorage.filename_candidates(found)})
+    return found[0] if found else None
 
-        return {"found": False, "message": f"No evidence file found with name: {filename}"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/by-filename/{filename}")
+def get_evidence_by_filename(
+    filename: str,
+    case_id: str = Query(..., description="Case ID"),
+    evidence_file_id: Optional[str] = Query(None, description="Which file, when several share the name"),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Find evidence by original filename and return file info.
+
+    This endpoint helps the frontend locate evidence IDs from document names stored in entity citations. A name
+    shared by several visible files of the case answers 409 with the candidates.
+    """
+    record = _evidence_by_name(db, current_user, filename, case_id, evidence_file_id)
+    if record:
+        return {
+            "found": True,
+            "evidence_id": str(record.id),
+            "case_id": str(record.case_id),
+            "original_filename": record.original_filename,
+            "stored_path": record.stored_path,
+            "summary": record.summary,
+        }
+    return {"found": False, "message": f"No evidence file found with name: {filename}"}
 
 
 @router.get("/summary/{filename}")
 def get_document_summary(
     filename: str,
     case_id: str = Query(..., description="Case ID"),
-    user: dict = Depends(get_current_user),
+    evidence_file_id: Optional[str] = Query(None, description="Which file, when several share the name"),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
     Get the AI-generated summary for a document.
 
-    Returns the summary stored on the EvidenceFile record in Postgres.
+    Returns the summary stored on the EvidenceFile record in Postgres. A name shared by several visible files of
+    the case answers 409 with the candidates.
     """
-    from services.evidence_db_storage import EvidenceDBStorage
-    from uuid import UUID
-
-    try:
-        case_uuid = UUID(case_id)
-        record = EvidenceDBStorage.find_by_filename(db, filename, case_id=case_uuid)
-        summary = record.summary if record else None
-        return {
-            "filename": filename,
-            "case_id": case_id,
-            "summary": summary,
-            "has_summary": summary is not None,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    record = _evidence_by_name(db, current_user, filename, case_id, evidence_file_id)
+    summary = record.summary if record else None
+    return {
+        "filename": filename,
+        "case_id": case_id,
+        "evidence_file_id": str(record.id) if record else None,
+        "summary": summary,
+        "has_summary": summary is not None,
+    }
 
 
 @router.get("/folder-summary/{folder_name}")
