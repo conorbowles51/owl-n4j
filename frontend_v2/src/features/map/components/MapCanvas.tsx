@@ -528,7 +528,7 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo }: MapCanvasPro
       onMoveEnd={(e) => {
         onView?.(viewBox(e.target.getBounds()), e.target.getZoom())
       }}
-      attributionControl={false}
+      attributionControl={{ compact: true }}
       interactiveLayerIds={drawMode ? [] : LOCATION_INTERACTIVE_LAYER_IDS}
     >
       <NavigationControl

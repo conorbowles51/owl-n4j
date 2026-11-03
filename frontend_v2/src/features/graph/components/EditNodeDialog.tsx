@@ -150,7 +150,7 @@ function LocationPicker({
           zoom: coordinates ? 13 : 1.4,
         }}
         style={{ width: "100%", height: "100%" }}
-        attributionControl={false}
+        attributionControl={{ compact: true }}
         onClick={(event) =>
           onChange({
             latitude: event.lngLat.lat,
