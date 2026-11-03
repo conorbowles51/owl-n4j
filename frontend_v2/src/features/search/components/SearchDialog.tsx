@@ -38,19 +38,17 @@ export function SearchDialog({ caseId }: { caseId: string }) {
   }, [location.key, location.state])
 
   const inputRef = useRef<HTMLInputElement>(null)
-  const openRef = useRef(open)
-  openRef.current = open
   useEffect(() => {
     // Ctrl+K opens search; pressed again while it is open, it selects the words typed so a new search can start
     // (Escape closes). Closing on the second press lost the box under the person's hands (07 J-6).
     const toggle = () => {
-      if (!openRef.current) return setOpen(true)
+      if (!open) return setOpen(true)
       inputRef.current?.focus()
       inputRef.current?.select()
     }
     document.addEventListener("owl:toggle-command-palette", toggle)
     return () => document.removeEventListener("owl:toggle-command-palette", toggle)
-  }, [])
+  }, [open])
   useEffect(() => {
     const t = window.setTimeout(() => setQ(typed.trim()), 250)
     return () => window.clearTimeout(t)
