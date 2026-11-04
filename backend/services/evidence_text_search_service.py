@@ -240,7 +240,8 @@ def search_case_text(
     return result
 
 
-def matching_documents(db: Session, *, case_id: UUID, query: str) -> list[tuple[UUID, str, int]]:
+def matching_documents(db: Session, *, case_id: UUID, query: str,
+                       evidence_ids: list[UUID] | None = None) -> list[tuple[UUID, str, int]]:
     """(id, file name, literal occurrences) of every case document whose text holds ``query``, counted in the
     database: no document text is loaded (on live BNB2, 3,239 texts / 58.6 M characters: 4 s for a term held by
     2,358 documents, against 80 s loading them)."""
@@ -252,7 +253,8 @@ def matching_documents(db: Session, *, case_id: UUID, query: str) -> list[tuple[
     return [(row[0], row[1], int(row[2] or 0)) for row in db.execute(
         select(EvidenceFile.id, EvidenceFile.original_filename, occurrences)
         .join(EvidenceDocumentText, EvidenceDocumentText.evidence_file_id == EvidenceFile.id)
-        .where(EvidenceFile.case_id == case_id, lowered.like(like_pattern, escape="\\"))
+        .where(EvidenceFile.case_id == case_id, lowered.like(like_pattern, escape="\\"),
+               *([EvidenceFile.id.in_(list(evidence_ids))] if evidence_ids is not None else []))
     ).all()]
 
 

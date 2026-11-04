@@ -25,6 +25,7 @@ import os
 import re
 import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterable
 from uuid import UUID
@@ -116,6 +117,7 @@ def word_search_documents(
     offset: int = 0,
     snippet_context: int = 300,
     max_matches_per_document: int = 3,
+    evidence_ids: list[UUID] | None = None,
 ) -> dict[str, Any]:
     """The case's documents holding the query's words, ranked and paged by document with totals.
 
@@ -126,7 +128,8 @@ def word_search_documents(
     searches, not_searched = _searches(query)
     documents: dict[Any, dict[str, Any]] = {}
     for kind, value in searches:
-        for evidence_id, name, count in matching_documents(db, case_id=case_uuid, query=value):
+        for evidence_id, name, count in matching_documents(db, case_id=case_uuid, query=value,
+                                                           evidence_ids=evidence_ids):
             entry = documents.setdefault(evidence_id, {"evidence_id": evidence_id, "filename": name,
                                                        "phrase_matched": False, "terms": [], "total_matches": 0})
             if kind == "phrase":
@@ -215,18 +218,22 @@ def word_hit_chunks(found: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def word_search_entity_keys(question: str, *, case_id: str, limit: int,
-                            search_nodes: Callable[..., list[dict[str, Any]]] | None = None) -> list[str]:
-    """Entity keys found by the existing graph name search (``graph_service.search_nodes``) for each term."""
+                            search_nodes: Callable[..., list[dict[str, Any]]] | None = None) -> tuple[list[str], int]:
+    """(entity keys, how many matched in all) by the existing graph name search (``graph_service.search_nodes``),
+    run for each term and the phrase; keys holding more of the terms (and the phrase) come first."""
     if search_nodes is None:
         from services.neo4j.graph_service import graph_service
         search_nodes = graph_service.search_nodes
-    keys: list[str] = []
-    for kind, value in _searches(question)[0]:
-        for row in search_nodes(value, limit=limit, case_id=case_id) or []:
+    score: dict[str, list[int]] = {}
+    for position, (kind, value) in enumerate(_searches(question)[0]):
+        for rank, row in enumerate(search_nodes(value, limit=limit, case_id=case_id) or []):
             key = row.get("key")
-            if key and key not in keys:
-                keys.append(key)
-    return keys
+            if not key:
+                continue
+            entry = score.setdefault(key, [0, 0, position, rank])
+            entry[0 if kind == "phrase" else 1] += 1
+    ordered = sorted(score, key=lambda k: (-score[k][0], -score[k][1], score[k][2], score[k][3]))
+    return ordered[:limit], len(ordered)
 
 
 # ------------------------------------------------------------------------------------------------- vector gaps
@@ -235,9 +242,9 @@ _gap_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _gap_lock = threading.Lock()
 
 
-def _searchable_vector_refs(collection, case_id: str) -> tuple[set[str], set[str]]:
-    ids: set[str] = set()
-    names: set[str] = set()
+def _searchable_vector_refs(collection, case_id: str) -> list[tuple[set[str], str | None]]:
+    """(ids, file name) of every searchable chunk of the case."""
+    refs: list[tuple[set[str], str | None]] = []
     offset = 0
     while True:
         res = collection.get(where={"case_id": case_id}, include=["metadatas"], limit=5000, offset=offset)
@@ -248,14 +255,11 @@ def _searchable_vector_refs(collection, case_id: str) -> tuple[set[str], set[str
             meta = meta or {}
             if meta.get("ingestion_state") not in (None, "", "active"):
                 continue  # staged drafts and retired revisions are not searched
-            for key in ("evidence_file_id", "doc_id"):
-                if meta.get(key):
-                    ids.add(str(meta[key]))
-            for key in ("doc_name", "file_name", "filename"):
-                if meta.get(key):
-                    names.add(str(meta[key]))
+            ids = {str(meta[k]) for k in ("evidence_file_id", "doc_id") if meta.get(k)}
+            name = next((str(meta[k]) for k in ("doc_name", "file_name", "filename") if meta.get(k)), None)
+            refs.append((ids, name))
         offset += len(got)
-    return ids, names
+    return refs
 
 
 def vector_gap(case_id: str, *, db=None, collection=None, fresh: bool = False) -> dict[str, Any] | None:
@@ -291,13 +295,20 @@ def vector_gap(case_id: str, *, db=None, collection=None, fresh: bool = False) -
                 files = rows(session)
         else:
             files = rows(db)
-        ids, names = _searchable_vector_refs(collection, case_id)
+        refs = _searchable_vector_refs(collection, case_id)
+        file_ids = {str(fid) for fid, _ in files}
+        ids = set().union(*(r for r, _ in refs)) if refs else set()
+        # A chunk names its file by id; only an older chunk whose ids are none of this case's files (a graph
+        # document id) is matched by file name, so a repeated name never hides a document with no vector.
+        names = {name for r, name in refs if name and not (r & file_ids)}
         missing = [str(fid) for fid, name in files if str(fid) not in ids and str(name) not in names]
         gap = {"documents_with_text": len(files), "documents_with_vector": len(files) - len(missing),
                "documents_without_vector": len(missing), "missing_evidence_file_ids": missing,
                "measured_at": _now().isoformat()}
     except Exception:
         logger.exception("Meaning-search vector gap could not be measured for case %s", case_id)
+        with _gap_lock:
+            _gap_cache[case_id] = (time.monotonic(), None)  # not re-scanned on every request
         return None
     with _gap_lock:
         _gap_cache[case_id] = (time.monotonic(), gap)
@@ -464,6 +475,30 @@ def _gap_cases(session) -> list[str]:
         .group_by(EvidenceFile.case_id).order_by(func.count())).all()]
 
 
+@contextmanager
+def _backfill_lock():
+    """One gap backfill at a time across workers: a session-level advisory lock on a dedicated autocommit
+    connection held for the whole run (never a pooled session, whose connection can change or time out)."""
+    from sqlalchemy import text
+    from postgres.session import _get_background_engine
+    engine = _get_background_engine()
+    if engine.dialect.name != "postgresql":
+        yield True
+        return
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        got = bool(conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": BACKFILL_LOCK_KEY}).scalar())
+        try:
+            yield got
+        finally:
+            if got:
+                conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": BACKFILL_LOCK_KEY})
+
+
+@contextmanager
+def _no_lock():
+    yield True
+
+
 def run_gap_backfill(*, case_ids: Iterable[str] | None = None, backfill: Callable | None = None,
                      gap: Callable | None = None, session_factory: Callable | None = None,
                      log: Callable[[str, str], None] | None = None, lock: bool = True) -> dict[str, Any]:
@@ -478,44 +513,43 @@ def run_gap_backfill(*, case_ids: Iterable[str] | None = None, backfill: Callabl
     log = log or _system_log
     factory = session_factory or _session_factory
     summary: dict[str, Any] = {"cases": 0, "documents_embedded": 0, "chunks": 0, "stopped": None}
-    with factory() as db:
-        if lock and db.get_bind().dialect.name == "postgresql":
-            if not db.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": BACKFILL_LOCK_KEY}).scalar():
-                summary["stopped"] = "another gap backfill is running"
-                return summary
-        try:
-            cases = list(case_ids) if case_ids is not None else _gap_cases(db)
-            log("info", "Meaning-search gap backfill started over %d case(s)" % len(cases))
-            for case_id in cases:
-                found = gap(case_id, fresh=True)
-                missing = (found or {}).get("missing_evidence_file_ids") or []
-                if not missing:
-                    continue
-                summary["cases"] += 1
-                log("info", "Case %s: %d document(s) with text and no meaning-search vector" % (case_id, len(missing)))
-                result = backfill(case_id=case_id, evidence_file_ids=missing, prefer_stored_text=True,
-                                  stop_on_failure=True, pause_seconds=BACKFILL_PAUSE_SECONDS,
-                                  log_callback=log)
-                stats = result.get("stats") or {}
-                summary["documents_embedded"] += int(stats.get("processed") or 0)
-                summary["chunks"] += int(stats.get("total_chunks_created") or 0)
-                with _gap_lock:
-                    _gap_cache.pop(str(case_id), None)
-                if result.get("stopped"):
-                    summary["stopped"] = result["stopped"]
-                    break
-            if summary["stopped"] is None:
+    with (_backfill_lock() if lock else _no_lock()) as got:
+        if not got:
+            summary["stopped"] = "another gap backfill is running"
+            return summary
+        if case_ids is not None:
+            cases = list(case_ids)
+        else:
+            with factory() as db:
+                cases = _gap_cases(db)
+        log("info", "Meaning-search gap backfill started over %d case(s)" % len(cases))
+        for case_id in cases:
+            found = gap(case_id, fresh=True)
+            missing = (found or {}).get("missing_evidence_file_ids") or []
+            if not missing:
+                continue
+            summary["cases"] += 1
+            log("info", "Case %s: %d document(s) with text and no meaning-search vector" % (case_id, len(missing)))
+            result = backfill(case_id=case_id, evidence_file_ids=missing, prefer_stored_text=True,
+                              stop_on_failure=True, pause_seconds=BACKFILL_PAUSE_SECONDS, log_callback=log)
+            stats = result.get("stats") or {}
+            summary["documents_embedded"] += int(stats.get("processed") or 0)
+            summary["chunks"] += int(stats.get("total_chunks_created") or 0)
+            with _gap_lock:
+                _gap_cache.pop(str(case_id), None)
+            if result.get("stopped"):
+                summary["stopped"] = result["stopped"]
+                break
+        if summary["stopped"] is None:
+            with factory() as db:
                 db.execute(text("UPDATE service_health_states SET backfill_pending = false, updated_at = :now "
                                 "WHERE service = :service"), {"service": SERVICE, "now": _now()})
                 db.commit()
-            log("info" if summary["stopped"] is None else "warning",
-                "Meaning-search gap backfill %s: %d document(s), %d chunk(s) embedded in %d case(s)%s" % (
-                    "finished" if summary["stopped"] is None else "stopped", summary["documents_embedded"],
-                    summary["chunks"], summary["cases"],
-                    "" if summary["stopped"] is None else "; stopped: %s" % summary["stopped"]))
-        finally:
-            if lock and db.get_bind().dialect.name == "postgresql":
-                db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": BACKFILL_LOCK_KEY})
+        log("info" if summary["stopped"] is None else "warning",
+            "Meaning-search gap backfill %s: %d document(s), %d chunk(s) embedded in %d case(s)%s" % (
+                "finished" if summary["stopped"] is None else "stopped", summary["documents_embedded"],
+                summary["chunks"], summary["cases"],
+                "" if summary["stopped"] is None else "; stopped: %s" % summary["stopped"]))
     return summary
 
 

@@ -225,6 +225,45 @@ class ChatFallbackTests(Fixture):
         self.assertIn("Entities were found by name instead of by meaning: 1 matched.", debug["search_notes"])
 
 
+class ReviewFindingTests(Fixture):
+    def test_a_repeated_file_name_never_hides_a_document_with_no_vector(self):
+        with self.Session() as db:
+            twin = self._doc(db, "tender-award.pdf", "a second file with the same name")
+            db.commit()
+        tender_id = str(self.tender.id)
+
+        class Collection:
+            def get(self, where, include, limit, offset):
+                if offset:
+                    return {"ids": [], "metadatas": []}
+                return {"ids": ["c1"], "metadatas": [{"case_id": where["case_id"], "evidence_file_id": tender_id,
+                                                     "doc_name": "tender-award.pdf"}]}
+
+        with self.Session() as db:
+            gap = meaning_search.vector_gap(str(self.case_id), db=db, collection=Collection(), fresh=True)
+        self.assertIn(str(twin.id), gap["missing_evidence_file_ids"])
+        self.assertNotIn(tender_id, gap["missing_evidence_file_ids"])
+
+    def test_chat_scope_searches_the_selected_documents_themselves(self):
+        import services.rag_service as rag
+        debug = {}
+        with patch.object(rag, "CHUNK_SEARCH_TOP_K", 1), patch(
+                "postgres.session.get_background_session", self.session):
+            chunks = rag.RAGService.__new__(rag.RAGService)._retrieve_chunks_by_words(
+                "Northgate tender", str(self.case_id), doc_keys=[rag._document_key("receipt-0412.pdf")],
+                debug_log=debug, strict_doc_scope=True, failure=("quota", QUOTA_REASON))
+        # case-wide, the receipt ranks second and a top-1 cut would drop it; the scope is searched itself
+        self.assertEqual({c["metadata"]["doc_name"] for c in chunks}, {"receipt-0412.pdf"})
+
+    def test_entity_keys_rank_by_terms_held_and_report_the_total(self):
+        rows = {"northgate": [{"key": "a"}, {"key": "b"}], "depot": [{"key": "b"}, {"key": "c"}]}
+        keys, total = meaning_search.word_search_entity_keys(
+            "Northgate depot", case_id="c", limit=2,
+            search_nodes=lambda term, limit, case_id: rows.get(term.lower(), []))
+        self.assertEqual(keys[0], "b")  # holds both terms
+        self.assertEqual(total, 3)
+
+
 class HealthTests(Fixture):
     def test_down_since_the_first_failure_and_recovery_starts_the_backfill(self):
         started = []

@@ -667,11 +667,44 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         code, reason = failure
         if not case_id:
             return []
+        if strict_doc_scope and not doc_keys:
+            if debug_log is not None:
+                debug_log["chunk_search"] = {"enabled": True, "source": "word", "strict_scope": True,
+                                             "total_results": 0, "filtered_results": 0, "meaning_error": reason,
+                                             "reason": "No source documents are linked to the scoped entities"}
+            return []
         try:
+            from uuid import UUID
+            from sqlalchemy import select
+            from postgres.models.evidence import EvidenceFile
             from postgres.session import get_background_session
             with get_background_session() as db:
-                found = meaning_search.word_search_documents(
-                    db, case_id=case_id, query=question, limit=CHUNK_SEARCH_TOP_K, offset=0, snippet_context=600)
+                scoped_ids = None
+                if doc_keys:
+                    wanted = set(doc_keys)
+                    scoped_ids = [fid for fid, name in db.execute(
+                        select(EvidenceFile.id, EvidenceFile.original_filename)
+                        .where(EvidenceFile.case_id == UUID(str(case_id)))).all()
+                        if _document_key(name or "") in wanted]
+                if strict_doc_scope:
+                    found = meaning_search.word_search_documents(
+                        db, case_id=case_id, query=question, limit=CHUNK_SEARCH_TOP_K, offset=0,
+                        snippet_context=600, evidence_ids=scoped_ids)
+                else:
+                    found = meaning_search.word_search_documents(
+                        db, case_id=case_id, query=question, limit=CHUNK_SEARCH_TOP_K, offset=0,
+                        snippet_context=600)
+                    if scoped_ids:
+                        # The selected documents are searched on their own first, so a case-wide cut never
+                        # drops them (as the meaning search's doc-scoped phase does).
+                        scoped = meaning_search.word_search_documents(
+                            db, case_id=case_id, query=question, limit=CHUNK_SEARCH_TOP_K, offset=0,
+                            snippet_context=600, evidence_ids=scoped_ids)
+                        seen = {d["evidence_file_id"] for d in scoped["documents"]}
+                        for d in scoped["documents"]:
+                            d["_doc_scoped"] = True
+                        found["documents"] = scoped["documents"] + [
+                            d for d in found["documents"] if d["evidence_file_id"] not in seen]
         except Exception as exc:
             note = ("Meaning search unavailable (%s), and the word search could not run either (%s); no document "
                     "text was searched for this answer." % (reason, type(exc).__name__))
@@ -681,18 +714,11 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                                              "meaning_error": reason}
                 debug_log.setdefault("search_notes", []).append(note)
             return []
-        if doc_keys and strict_doc_scope:
-            wanted = set(doc_keys)
-            found["documents"] = [d for d in found["documents"]
-                                  if _document_key(d["filename"]) in wanted]
-        elif strict_doc_scope:
-            found["documents"] = []
-        chunks = meaning_search.word_hit_chunks(found)
-        if doc_keys and not strict_doc_scope:
-            wanted = set(doc_keys)
-            for chunk in chunks:
-                chunk["_doc_scoped"] = _document_key(chunk["metadata"].get("doc_name") or "") in wanted
-            chunks.sort(key=lambda c: not c.get("_doc_scoped"))
+        chunks = []
+        for doc in found["documents"]:
+            for chunk in meaning_search.word_hit_chunks({"documents": [doc]}):
+                chunk["_doc_scoped"] = bool(doc.get("_doc_scoped") or strict_doc_scope)
+                chunks.append(chunk)
         note = meaning_search.fallback_note(reason, searchable_documents=found["searchable_documents"],
                                             case_documents=found["case_documents"])
         print(f"[RAG] {note} {found['total_documents']} document(s) matched; {len(chunks)} hit(s) used")
@@ -964,16 +990,18 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         code, reason = meaning_search.describe_failure(exc)
         if not case_id:
             return []
-        keys = meaning_search.word_search_entity_keys(question, case_id=case_id, limit=top_k)
+        keys, matched = meaning_search.word_search_entity_keys(question, case_id=case_id, limit=top_k)
         if allowed_entity_keys is not None:
             allowed = set(allowed_entity_keys)
             keys = [k for k in keys if k in allowed]
-        keys = keys[:top_k]
         entities = self._get_entity_nodes_from_neo4j(keys, case_id=case_id) if keys else []
         for entity in entities:
             entity["distance"] = 1.0
             entity["_name_match"] = True
         note = "Entities were found by name instead of by meaning: %d matched." % len(entities)
+        if matched > len(keys) and allowed_entity_keys is None:
+            note = ("Entities were found by name instead of by meaning: %d matched the words; the %d holding "
+                    "most of them were used." % (matched, len(entities)))
         if debug_log is not None:
             debug_log["entity_search"] = {"enabled": True, "source": "name", "meaning_error": reason,
                                           "meaning_error_code": code, "vector_results": 0,
