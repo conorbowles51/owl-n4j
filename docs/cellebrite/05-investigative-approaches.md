@@ -1131,19 +1131,26 @@ versus device times (approach 2).
 ### 7.6 Measurement first
 
 M-4a: per phone, share of incoming messages with an owner `DateRead`, with `DatePlayed`; M-4b: one-to-one
-conversations with at least 10 reply pairs; M-4c: groups with admin flags and with timed ChatActivity. Gate:
-**build** read-and-latency if at least 5 phones have owner read times on at least 20 percent of incoming
-messages; **build** group roles if at least 50 timed ChatActivity records exist in a case.
+conversations with at least 10 reply pairs; M-4c: groups with admin flags and with timed ChatActivity.
 
-**Server result (stage A3, `measurements/a3/P*.json` `s05_m4a`, `s05_m4c`; read by `cb-approaches` 3 Nov).** M-4a:
-owner read times on at least 20 percent of incoming messages on 2 phones (P03 457 of 867, P04 2,471 of 4,797);
-next P07 872 of 4,619 (18.9 percent); 0 to 2.2 percent elsewhere (P05, P06, P08, P09, P12 none). M-4c: timed
-ChatActivity 277 on P14 (3-phone case) and 25 on P04 (10-report case). Live reference phones (m4.1, read-only): C3 0
-of 1,702 and C9 0 of 2,013 incoming with an owner read time. Gate: read-and-latency **fail** (2 phones < 5);
-group roles **pass** (277 >= 50 in the 3-phone case). Reverse if a case adds phones with read times on 20 percent of
-incoming messages until 5 phones meet it. **Built (`cb-approaches`, 05-S7, `awareness` version 4.1-groups, screen "Group admins and
-membership"):** step 5 only; steps 1 to 4 (read and play events, reply latency, read without reply, unread) are
-**not built** on these numbers, and the screen says so.
+The plan's figures (owner read times on at least 20 percent of incoming messages on 5 phones; 50 timed ChatActivity
+records in a case) are rules of thumb: no measured error rate stands behind them. They decide nothing. Every step of
+7.3 runs on every phone, and each result of steps 1 to 4 carries a strength (strong, moderate, weak or faint) from a
+stated rule with its reasons (decision 19.S7-f).
+
+**Server corpus (stage A3, `measurements/a3/P*.json` `s05_m4a`, `s05_m4c`).** M-4a: owner read times on at least 20
+percent of incoming messages on 2 phones (P03 457 of 867, P04 2,471 of 4,797); P07 872 of 4,619 (18.9 percent); 0 to
+2.2 percent elsewhere (P05, P06, P08, P09, P12 none). M-4c: timed ChatActivity 277 on P14 (3-phone case) and 25 on
+P04 (10-report case).
+
+**Live (read-only, `headless/fv-scripts/cbga-measure-a.sql`).** 11 active phones in 5 cases. Owner read or play times
+on incoming messages: 0 on every phone (the reference phones C3 0 of 1,702 and C9 0 of 2,013; the synthetic phones
+none). Incoming messages marked unread at extraction: 7 on C9 (in each of its two cases), 5 on C3.
+
+**Built (`awareness` version 4.2-aware, screen "Reading, replies and group roles").** Steps 1 to 5. The screen states
+what the results rest on with true counts: phones with owner read times, timed incoming messages, messages marked
+unread, timed one-to-one messages, and how many phones meet the plan's figure, labelled as a rule of thumb. Tests
+7.8.1 to 7.8.4 pass.
 
 ### 7.7 Dependencies
 
@@ -1220,19 +1227,24 @@ mostly negligible but stated.
 ### 8.6 Measurement first
 
 M-5a: per phone pair, bins where both are placed; M-5b: pairs with any strong marker; M-5c: pairs with at
-least 7 days of overlapping interaction data. Gate: **build** co-location only if some pair has at least 200
-co-placed bins; **build** complementary use if some pair has at least 14 days of overlapping interaction
-data. Locally only A-C2 and B-C1 have location volume, and they are in different cases, so the local gate is
-not met; server measurement on the 10-report case decides.
+least 7 days of overlapping interaction data. The plan's figures (200 co-placed bins for a pair; 14 days of
+overlapping interaction data) are rules of thumb: no measured error rate stands behind them. The 200 decides nothing:
+steps 2 and 4 run on every pair with at least one co-placed bin, each result graded strong, moderate, weak or faint by
+a stated rule with its reasons (decision 19.S8-g). Complementary use lists pairs with at least `min_days` such days
+(19.S8-b).
 
-**Server result (stage A3, `measurements/a3/README.md` section 9):** M-5a: the most co-placed 15-minute bins for any pair is 43 (P03 and P04), and no pair shares a BSSID in a
-bin; M-5b: one pair has a strong marker (P04 and P06: 2 owner E.164 numbers in common); M-5c: 43 pairs have at
-least 14 days of overlapping interaction data (most: P08 and P10, 729). Gate: co-location **fail** (43 < 200);
-complementary use **pass**. `cb-approaches` builds the complementary-use part (8.3 steps 1, 3 and 5: shared markers,
-complementary use, signs of more than one user) and not the co-location statistic or "use while apart" (steps 2 and
-4 rest on co-placed bins). Reverse if a case yields a pair with at least 200 co-placed bins. **Built (05-S8, `device_users`
-version 5.2-use, screen "Who used which phone").** Tests 8.8.3 and 8.8.4 pass; 8.8.1 and 8.8.2 belong to the
-co-location part, which is not built.
+**Server corpus (stage A3, `measurements/a3/README.md` section 9):** M-5a: the most co-placed 15-minute bins for any
+pair is 43 (P03 and P04), and no pair shares a BSSID in a bin; M-5b: one pair has a strong marker (P04 and P06: 2 owner
+E.164 numbers in common); M-5c: 43 pairs have at least 14 days of overlapping interaction data (most: P08 and P10,
+729).
+
+**Live (read-only, `headless/fv-scripts/cbga-measure-a.sql`).** 13 phone pairs in 2 cases (the synthetic cases; each
+reference case holds one phone). Co-placed presence bins: 0 on every pair; 5 or 6 presence observations per synthetic
+phone, 2 on C9, 0 on C3.
+
+**Built (`device_users` version 5.3-together, screen "Who used which phone").** Steps 1 to 5. The screen states what
+together and apart rest on with true counts: phones placed, observations, co-placed quarter hours over how many pairs
+and the most for one pair, beside the plan's 200 labelled as a rule of thumb. Tests 8.8.1 to 8.8.4 pass.
 
 ### 8.7 Dependencies
 
@@ -2353,11 +2365,16 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | 19.S7-a A chat is a group when its ChatType is Group, or, where the report gives none, when it lists more than two participants | ChatType exists on 4 of 14 reports (A3 section 9) | a reviewed mapping gives the chat type per app |
 | 19.S7-b The party on a ChatActivity is shown as "participant named", never as who made the change | actor or subject is not established (section 20) | a reviewed mapping establishes it per app |
 | 19.S7-c A group chat with no admin flag and no recorded change gives no result; the run counts every group | nothing to show for it; its existence is in the count | |
+| 19.S7-d A conversation is one-to-one when its ChatType is OneOnOne or, with no ChatType, when it is a chat or text thread naming at most two parties; steps 2 and 3 run on those only, and group messages with an owner read time are counted in the coverage notes | a reply in a group is not established; the converse of 19.S7-a | 19.S7-a is reversed |
+| 19.S7-e The owner's read time on an incoming message is a date_read or date_played on a party the projection marks as the phone owner; messages with no time or no direction are left out of steps 2 and 3 and counted | 7.3 step 1: the time belongs to the Party record it sits on (02 5.3) | 02 maps read times to another party per app |
+| 19.S7-f Strength of steps 1 to 4: substantiation from the count behind the result (some 3, well 10; 10 is the reply pairs per conversation M-4b counts), fit from the records' interpretation level (reviewed or applied mapping 2, generic 1, none 0); strong when both are 2, moderate when both are at least 1, weak when either is, faint otherwise. A result is never dropped for its level | one scale across the app (strong, moderate, weak, faint); the counts are rules of thumb | a measured error rate gives other counts |
 | 19.S8-a "Bins where both phones have data" (8.3 step 3) are the bins of days on which both phones hold at least one owner interaction event | 04's availability bands come from observing streams only and the live reference phones hold none, so a band test would drop every bin; this is the day rule M-5c measured | 04's bands cover the phones of a case |
 | 19.S8-b A pair is listed for complementary use when it shares at least `min_days` such days (default 14, the gate's own figure) | fewer days give rates that move with a single day | |
 | 19.S8-c Marker strength: same owner number, ICCID or IMSI strong; same account username or saved-login account on one service medium; same WiFi BSSID weak. Values are compared as SHA-256 digests inside the backend and never returned; the result gives counts by kind and the records on each side | 8.3 step 1; identifiers stay in the records, where the record panel shows them | |
 | 19.S8-d Every shared-markers result carries its own pair locator on each phone | a phone's one SIM record can be the only record behind two pairs (its other sides hold the value in the report header only), and two results on the same records cannot be stored | |
 | 19.S8-e Owner numbers are read from the current-generation owner candidates. The indicator "owner phone numbers" counts header (tier 1) numbers; the shared-number marker uses the numbers 02 computes the owner from (tier 1, else tier 2's top) | tier 2 numbers are inferred from account fields and owner parties, so several are expected on one phone used by one person | 02 changes how it computes the owner |
+| 19.S8-f For steps 2 and 4 an observation is in the bin of its start time (the M-5a rule). Within a bin every observation of X is compared with every observation of Y by 04's verdict with its window set to the bin; the bin is together when some pair is compatible and none separated, apart when some pair is separated and none compatible, else indeterminate (conflicts counted). A bin where both report the same BSSID is together | 8.3 step 2 and 04 8.4, the one implementation (C10) | 04 defines a per-bin verdict |
+| 19.S8-g Strength of steps 2 and 4: substantiation from the decided bins (co-location: some 20, well 200, the plan's figure; use while apart: some 3, well 10), fit from the radii (2 when no decided bin rests on an assumed radius, 1 when some do, 0 when all do or none is decided); the level rule of 19.S7-f. Every pair with a co-placed bin is listed | one scale across the app; the counts are rules of thumb | a measured error rate for assumed radii |
 | 19.S10-a Typed and searched text matches the vocabulary by word tokens of 4 or more characters (not all digits) for names, a digit run equal to or ending with an account ending, and a run of 7 or more digits for phone numbers | 10.3 step 2 allows 4-digit runs for every number; on C3 any 4 digits in a web address matched some phone number (3,523 distinct matches in 5,866 addresses) | a measured sample shows 4 to 6 digit typed numbers that are real hits |
 | 19.S10-b A typed hit is `typed_not_in_extraction` when no matched term occurs in the phone's messages, emails, notes, searches or calendar (10.3 step 3), else `typed_and_present` with up to 20 of those records linked and the full count stated | the elsewhere search counts every record; 20 links keep a result readable, and the count says how many there are | |
 | 19.S12-a A search or page whose every matched term matches 3 or more records of the case has strength `common_term` (a business or site name), the others `specific_term`; nothing is dropped | on C3, 29 terms gave 399 hits, 20 of them on terms matching fewer than 3 records | reviews show common-term hits confirmed as often as specific ones |
