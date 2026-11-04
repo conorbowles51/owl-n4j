@@ -36,4 +36,21 @@ def test_thread_header_counts_and_the_thread_scoped_media_grid_agree(world):  # 
     assert got["words"] == ("4 attachments referenced, 1 not in the report, 1 only in the production's folders, "
                             "1 named in the report but not in the production")
     assert grid["total"] == got["files"] and grid["missing"] == 1
+    # every file on the thread-scoped grid was carried by one of its messages; none is "carried by no message"
+    assert grid["no_message_count"] == 0
     assert sorted(i["file_uid"] for i in items) == sorted([LINKED, MISSING])
+
+
+def test_a_batch_reading_offered_on_the_thread_scoped_grid_takes_the_thread_scope(world):  # noqa: F811
+    """The Media grid opened from a thread asks what a batch reading of its scope would read; the batch scope must
+    take every key of the Media filter (it refuses unknown keys), and count only the thread's files."""
+    from routers.phones import BatchBody, BatchScope, MediaFilter
+    from services.phone import derive_batch
+    assert set(MediaFilter.model_fields) - {"case_id"} <= set(BatchScope.model_fields)
+    engine, case, _, ext = world
+    body = BatchBody.model_validate({"case_id": str(case), "kind": "ocr", "filter": {"thread_key": "synthetic-thread"}})
+    assert body.filter.thread_key == "synthetic-thread"
+    with engine.connect() as c:
+        whole = derive_batch.describe(c, case, "ocr", {})["in_scope"]
+        none = derive_batch.describe(c, case, "ocr", {"thread_key": "no-such-thread"})["in_scope"]
+    assert none == 0 and whole >= none

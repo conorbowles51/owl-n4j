@@ -718,6 +718,7 @@ class BatchScope(BaseModel):
     categories: list[str] = Field(default_factory=list)
     verification: list[str] = Field(default_factory=list)
     linked_to_message: Optional[bool] = None
+    thread_key: Optional[str] = Field(None, max_length=512)  # Media opened from a thread's Attachments (N)
 
 
 class BatchBody(BaseModel):
