@@ -1,3 +1,22 @@
+## 4 November: saved keyword lists, investigator terms, gaps the other phone fills (cb-keywords), live b1e75bf7
+
+- **Keyword lists (03 11.2, D-44; 07 J-6, section 14).** "Save as keyword list" in the search dialog saves the
+  search as a Workspace note tagged `keyword list` plus a `phone_keyword_lists` row
+  (`backend/services/search/keyword_lists.py`, migration `20261103_phone_keyword_lists`). The phone worker's
+  after-pass step `run_stale` runs a list again when its terms or any phone of the case changed and keeps exact
+  totals per phone, term and group, counted by `search._group` one phone at a time. Page `/cases/:id/keyword-lists`;
+  each total opens `/search?q&group&phones=` (the results page now takes `phones`). A theory takes a list through
+  the Workspace entry link (`POST /api/search/keyword-lists/{id}/theories`); the theory sheet shows its lists.
+  `for_coverage()` feeds cb-review's J-13 summary (`review_share.keyword_lists`).
+- **Investigator terms (05 10.3, 12.3; 19.S10-c).** `vocabulary.py` reads case terms and keyword-list terms as kind
+  `investigator_term` (whole folded words in order). `typed_words` 7.2, `intent` 9.2, input revision includes the terms.
+- **19.S6-c.** `deletion_timeline` 3.3 emits `hole_confirmed_by_counterpart` from approach 2's strong matches
+  (`counterpart_copies`); `message_reconciliation.load_phone` messages now carry `thread`.
+- Measured: live, no investigator terms, typed/intent/deletion hits identical before and after on all 5 cases with
+  phones; training case with one test list: intent 0 to 25. Live live-check: list ran 30 s after saving (54 on 3
+  phones), a synthetic phone added (S1, 413 records) brought it to 56 on 4 phones, 40 of 40 totals equal search.
+- Test db for PG tests: container `cbk-pgtest` was removed at the end of the run; rebuild per TEST-BASELINE.
+
 ## 3 November: investigative approaches, stage H (cb-approaches)
 
 **Live:** LIVE_SHA. Each approach was measured with `phone_analysis.measurements` on the reference cases before it was
