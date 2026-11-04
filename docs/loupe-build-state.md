@@ -1,3 +1,25 @@
+## 4 November: shared devices, plans against location and near-identical pictures, no count gate (cb-gated-spread)
+
+- **Devices and accounts across phones (05 9, approach 6).** `backend/services/phone_analysis/other_devices.py`
+  (approach code `other_devices`, version 6.1): every key two or more phones share (BSSID, Bluetooth address and
+  name, SSID, web service domain, and approach 5's owner number, ICCID, IMSI, account and saved login via
+  `device_users.markers`), graded strong / moderate / weak / faint with reasons `{match, substantiation}`; per phone
+  an inventory, services without an app (not compared on a phone with no app records, stated) and remote sessions.
+  Screen `/cases/:id/phone-analyses/devices-accounts`.
+- **Plans and check-ins against location (05 13, approach 10).** `plans.py` (version 10.2): every calendar entry,
+  check-in and note; repeats expanded (`occurrences`, start always included); a phone-placed item (04's `planned` /
+  `declared` observations) compared with presence observations in its window. Text places are not geocoded.
+  Screen `/cases/:id/phone-analyses/plans`.
+- **Near-identical pictures (05 11.3 step 3).** `perceptual_hash.py` hashes population pictures (pHash + dHash,
+  Pillow) of cases with 2+ phones in the derive after-pass (`derive._loop`), table `phone_file_perceptual_hashes`
+  (migration `20261104_phone_perceptual_hash`). `media_spread.perceptual` grades cross-phone pairs by Hamming
+  distance; route `GET /api/phones/media-spread/perceptual`; section on Media spread. Exact tier unchanged.
+- **Thin-data line.** `StrengthLine.tsx` / `NearIdentical.tsx`: true counts by strength, the old count rule named,
+  levels labelled rules of thumb. **Agent:** `get_analysis_results` (other_devices, plans, strength filter,
+  `by_strength`), `get_near_identical_pictures`; eval `tests/test_agent_spread_evaluation.py` 8/8 (0/8 before).
+- Test DB recipe used: a `postgres:16` container, template at head via `DATABASE_URL=<tpl> python -m alembic upgrade
+  head` from `backend/`, then `LOUPE_TEST_PHONE_PG_TEMPLATE_URL=<tpl>`.
+
 ## 4 November: Bluetooth sightings and SIM country codes in Together (cb-coloc-rest)
 
 - **Own Bluetooth identity.** Each phone's Bluetooth address (`Bluetooth MAC Address`,
