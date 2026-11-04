@@ -62,8 +62,20 @@
   `20261104_proposal_events`), event written before the state changes. Decisions 02 section 14 items 58 to 60.
 - **Backlog** (3.4): the phone summary's "What Loupe reads" lists the flags in `mapping_needed` that touch the phone
   (`registry.mapping_backlog`, profile key `mapping_backlog`).
-- Live 4 Nov: 501 flags (500 open, all in the set `DecodingSourceOptions`; 1 acknowledged), 0 proposals. AI mapping
-  drafts (6.8 step 2) are not built: they wait on the local-model decision.
+- Live 4 Nov: 501 flags (500 open, all in the set `DecodingSourceOptions`; 1 acknowledged), 0 proposals.
+
+## 4 November: AI mapping drafts on DeepSeek (cb-mapdrafts, 02 6.8 step 2)
+
+- **Built** (7a5b1e53 backend; admin page in the commit after it): `POST /api/phones/registry/mapping-drafts
+  {"type_name"}` (admin) drafts a mapping from the registry's structure only on the `phone_mapping_draft` workload
+  (`deepseek-v4-pro`, thinking at max; `LLMExecutionContext.call(reasoning_effort=)`). Record type: `type` mapping;
+  named set: `attribution` rows. Runs in the background (`phone_mapping_draft_runs`, migration
+  `20261104_mapping_draft_runs`); valid answer: `ai_draft` proposal in `draft`; invalid: kept `rejected` with the
+  reason; no answer: run `failed`. Cost recorded (`cost_records`, AI assistant). Export basis "Drafted by <model> ·
+  not reviewed". The applier reads neither proposals nor draft runs (test). Decisions 02 section 14 items 61 to 63.
+- Admin > Phone registry: "Draft a mapping for <name>" on flags waiting for a mapping; AI drafts tab.
+- Live registry finding (sent to followups): the set `DecodingSourceOptions` holds 499 synthetic test values, the
+  source of the 500 open flags; a draft of that set is fed them until the set is cleaned.
 
 ## 4 November: reading, replies, together and apart, built and graded (cb-gated-aware)
 

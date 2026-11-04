@@ -787,8 +787,20 @@ For each extraction and each reviewed `type` mapping whose `applies_to` occurs i
    **Built (cb-registry-admin, 765bd03e):** `GET /api/phones/registry/proposals?state=&origin=` (paged, total and
    per-state counts; case, original reading beside the correction, deciding person),
    `POST /registry/proposals/{id}/reject {reason}` and `GET /registry/proposals/{id}/export` (admin only).
-   State changes go to `phone_mapping_proposal_events`, written before the state changes. The AI draft endpoint
-   (step 2) is not built: it waits on the local-model decision.
+   State changes go to `phone_mapping_proposal_events`, written before the state changes.
+   **Built (cb-mapdrafts, 7a5b1e53 and the admin page commit after it):** step 2 runs on the `phone_mapping_draft`
+   workload of the model policy (DeepSeek `deepseek-v4-pro`, thinking at max, decision 61), not a local model.
+   `POST /api/phones/registry/mapping-drafts {"type_name"}` answers 202 with a run
+   (`phone_mapping_draft_runs`: state, model, seconds, tokens, cost); `GET /registry/mapping-drafts` lists runs
+   and what can be drafted; `GET /registry/mapping-drafts/{id}` reads one. A record type is drafted as a `type`
+   mapping, a named set as `attribution` rows over the fields that carry it (decision 62). The input is the
+   `phone_schema_*` rows of that type or set and the shipped file of that kind, nothing else (a test records every
+   statement). The answer is checked with the loader's models and static row checks and against the registry
+   (`mapping_drafts.type_body_problems`, `attribution_problems`, `loader.registry_problems`): valid, an `ai_draft`
+   proposal in `draft`; invalid or not JSON, the same proposal `rejected` with the reason as its event (decision
+   63); no answer, the run is `failed` with the reason. The exported file says "Drafted by <model> · not reviewed"
+   in `review.basis`. Admin > Phone registry: "Draft a mapping for <name>" on a flag waiting for a mapping, and an
+   AI drafts tab (pick a type or list, runs with model, time and cost, the reason a draft was refused).
 
 **Case review (the Needs a decision page, readings group; 07 section 5).**
 
@@ -1945,6 +1957,22 @@ Each with its reason and what would reverse it.
     `DecodingSourceOptions` (499 new values and its overflow; longest value 40 characters, none holding a run of
     five or more digits). *Reverse if* a set is found to carry case values (for
     example an identifier typed as a named set): then that set's values are hidden and the set is flagged.
+61. **AI mapping drafts run on DeepSeek, not a local model** (6.8 step 2; Neil, 2026-11-04: "We're using deep seek
+    everywhere possible in the platform. Deepseek at max performance."). The input is registry structure only (type,
+    field and child-type names, kinds, value types, named-set values with counts), less than Neil already allows to
+    go out (phone text, 3 Nov). Workload `phone_mapping_draft`, default `deepseek-v4-pro` with thinking at
+    `reasoning_effort: max`; the AI settings page switches it like any workload. *Reverse if* Neil rules registry
+    structure must stay on the box: the endpoint stays and the workload points at a local model when one exists.
+62. **What a draft can propose: `type` for a record type, `attribution` for a named set.** A named set's values say
+    who or what recorded a record (`DecodingSourceOptions` on `UserMapping`, 04 section 4.3), which is what
+    attribution rows express; the other kinds are written by the specs that own them (04 for activity strength and
+    timestamp meaning, 05 for natural keys and platform families, this file for sensitive fields). A set shows the
+    model its 100 most observed values and states the total. *Reverse if* a reviewer wants drafts of another kind:
+    add its prompt and validator beside these two.
+63. **An invalid model answer is kept as a rejected proposal, with the reason as its event** (actor "Loupe
+    (automatic check of the model's answer)"); a non-JSON answer is kept as text and cannot be downloaded. The admin
+    sees what the model said and why it was refused; nothing is dropped. *Reverse if* rejected drafts crowd the
+    list: filter `ai_draft` + `rejected` out by default, never delete them.
 
 ## 15. Not yet established
 

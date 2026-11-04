@@ -134,4 +134,88 @@ describe("PhoneRegistryPage", () => {
     await waitFor(() => expect(calls.some((c) => c.url === "/api/phones/registry/proposals/p1/reject")).toBe(true))
     expect(calls.find((c) => c.url.endsWith("/reject"))!.opts).toMatchObject({ method: "POST", body: { reason: "right for every case" } })
   })
+
+  it("offers Draft a mapping on a flag waiting for a mapping and sends the set it is about", async () => {
+    const waiting: FlagPage = {
+      ...flags,
+      flags: [{ ...flags.flags[0], id: 8, state: "mapping_needed" }],
+    }
+    vi.mocked(fetchAPI).mockImplementation(async (url: string, opts?: unknown) => {
+      calls.push({ url, opts: opts as { method?: string; body?: unknown } })
+      if (url.startsWith("/api/phones/registry/flags?")) return waiting
+      if (url === "/api/phones/registry/mapping-drafts") return { id: "r1", status: "queued" }
+      return { ok: true }
+    })
+    renderPage()
+    const row = await screen.findByTestId("flag-8")
+    fireEvent.click(within(row).getByRole("button", { name: "Draft a mapping for ZzSet" }))
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/phones/registry/mapping-drafts")).toBe(true))
+    expect(calls.find((c) => c.url === "/api/phones/registry/mapping-drafts")!.opts)
+      .toMatchObject({ method: "POST", body: { type_name: "ZzSet" } })
+    expect(await within(row).findByText(/arrives in Proposals/)).toBeTruthy()
+  })
+
+  it("shows an open flag without a draft button (only a flag waiting for a mapping is drafted)", async () => {
+    renderPage()
+    const row = await screen.findByTestId("flag-7")
+    expect(within(row).queryByRole("button", { name: /Draft a mapping/ })).toBeNull()
+  })
+
+  it("names the model on an AI draft proposal and says it is not reviewed", async () => {
+    const ai: ProposalPage = {
+      ...proposals,
+      proposals: [{ ...proposals.proposals[0], id: "p2", origin: "ai_draft", model: "deepseek-v4-pro", case: null,
+        rule_id: null, original: null, correction: null, correction_label: null, decided_by: null }],
+    }
+    vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
+      if (url.startsWith("/api/phones/registry/flags?")) return flags
+      if (url.startsWith("/api/phones/registry/proposals?")) return ai
+      return { ok: true }
+    })
+    renderPage()
+    fireEvent.mouseDown(await screen.findByRole("tab", { name: "Proposals" }), { button: 0 })
+    const row = await screen.findByTestId("proposal-p2")
+    expect(within(row).getByText("AI draft")).toBeTruthy()
+    expect(within(row).getByText("Drafted by deepseek-v4-pro; not reviewed")).toBeTruthy()
+    expect(within(row).getByRole("button", { name: "Download file" })).toBeTruthy()
+    expect(within(row).getByRole("button", { name: "Reject" })).toBeTruthy()
+  })
+
+  it("AI drafts: picks a type, starts a draft, and lists runs with model, time, cost and the reason a draft failed", async () => {
+    const page = {
+      total: 2,
+      runs: [
+        { id: "r1", kind: "type", name: "Call", status: "drafted", provider: "deepseek", model: "deepseek-v4-pro",
+          input_summary: {}, proposal_id: "p9", error: null, seconds: 134, prompt_tokens: 1, completion_tokens: 2,
+          cost_usd: 0.0123, requested_by: "Admin Person", created_at: "2026-11-04T10:00:00Z", finished_at: null },
+        { id: "r2", kind: "attribution", name: "ZzSet", status: "invalid", provider: "deepseek",
+          model: "deepseek-v4-pro", input_summary: {}, proposal_id: "p10", error: "Zz is not a value of ZzSet",
+          seconds: 40, prompt_tokens: 1, completion_tokens: 2, cost_usd: null, requested_by: "Admin Person",
+          created_at: "2026-11-04T10:00:00Z", finished_at: null },
+      ],
+      draftable: { types: [{ name: "Call", kind: "type", records_observed: 5341 }],
+        named_sets: [{ name: "ZzSet", kind: "attribution", records_observed: 3 }], total: 2 },
+    }
+    vi.mocked(fetchAPI).mockImplementation(async (url: string, opts?: unknown) => {
+      calls.push({ url, opts: opts as { method?: string; body?: unknown } })
+      if (url.startsWith("/api/phones/registry/flags?")) return flags
+      if (url.startsWith("/api/phones/registry/mapping-drafts?")) return page
+      if (url === "/api/phones/registry/mapping-drafts") return { id: "r3", status: "queued" }
+      return { ok: true }
+    })
+    renderPage()
+    fireEvent.mouseDown(await screen.findByRole("tab", { name: "AI drafts" }), { button: 0 })
+    const r1 = await screen.findByTestId("draft-r1")
+    expect(within(r1).getByText("deepseek-v4-pro · 2 min 14 s · $0.0123")).toBeTruthy()
+    expect(within(r1).getByText("Drafted: waiting in Proposals")).toBeTruthy()
+    const r2 = screen.getByTestId("draft-r2")
+    expect(within(r2).getByText("Zz is not a value of ZzSet")).toBeTruthy()
+    expect(screen.getByText("Latest 2 of 2 drafts")).toBeTruthy()
+    expect(screen.getByText(/never sees a case/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText("Record type or list"), { target: { value: "Call" } })
+    fireEvent.click(screen.getByRole("button", { name: "Draft a mapping" }))
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/phones/registry/mapping-drafts")).toBe(true))
+    expect(calls.find((c) => c.url === "/api/phones/registry/mapping-drafts")!.opts)
+      .toMatchObject({ method: "POST", body: { type_name: "Call" } })
+  })
 })

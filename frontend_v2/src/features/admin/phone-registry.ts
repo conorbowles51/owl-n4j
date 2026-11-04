@@ -74,6 +74,72 @@ export interface ProposalPage {
   proposals: MappingProposal[]
 }
 
+export type DraftStatus = "queued" | "running" | "drafted" | "invalid" | "failed"
+
+/** One AI draft run (02 6.8 step 2): the model's answer becomes an `ai_draft` proposal, `draft` when it is a valid
+ * mapping and `rejected` with the reason when not; a run with no answer is `failed` with the reason. */
+export interface DraftRun {
+  id: string
+  kind: string
+  name: string
+  status: DraftStatus
+  provider: string | null
+  model: string | null
+  input_summary: Record<string, unknown>
+  proposal_id: string | null
+  error: string | null
+  seconds: number | null
+  prompt_tokens: number | null
+  completion_tokens: number | null
+  cost_usd: number | null
+  requested_by: string | null
+  created_at: string
+  finished_at: string | null
+}
+
+export interface Draftable {
+  name: string
+  kind: "type" | "attribution"
+  records_observed: number
+}
+
+export interface DraftRunPage {
+  total: number
+  runs: DraftRun[]
+  draftable: { types: Draftable[]; named_sets: Draftable[]; total: number }
+}
+
+export const DRAFT_STATUS_WORDS: Record<DraftStatus, string> = {
+  queued: "Waiting to start",
+  running: "The model is drafting",
+  drafted: "Drafted: waiting in Proposals",
+  invalid: "Not a valid mapping: kept in Proposals as rejected",
+  failed: "No draft: the model did not answer",
+}
+
+export function draftRunning(runs: DraftRun[] | undefined): boolean {
+  return !!runs?.some((r) => r.status === "queued" || r.status === "running")
+}
+
+/** "deepseek-v4-pro · 2 min 14 s · $0.0123": who drafted it, how long it took and what it cost. */
+export function draftRunFacts(r: Pick<DraftRun, "model" | "seconds" | "cost_usd">): string {
+  const parts: string[] = []
+  if (r.model) parts.push(r.model)
+  if (r.seconds != null) {
+    const m = Math.floor(r.seconds / 60)
+    const sec = Math.round(r.seconds - m * 60)
+    parts.push(m ? m + " min " + sec + " s" : sec + " s")
+  }
+  if (r.cost_usd != null) parts.push("$" + r.cost_usd.toFixed(4))
+  return parts.join(" · ")
+}
+
+/** What a flag would be drafted for: a named set's flag drafts the set, any other the record type. */
+export function draftTargetForFlag(flag: Pick<RegistryFlag, "subject">): string | null {
+  const s = flag.subject ?? {}
+  return s.set || s.type || null
+}
+
 /** Retry a failed read up to 3 times, but never a refusal: a non-admin sees the admin-only message at once. */
 export function retryUnlessRefused(failures: number, err: unknown): boolean {
   if (err instanceof ApiError && (err.status === 401 || err.status === 403)) return false
@@ -192,6 +258,9 @@ export const registryApi = {
       method: "POST",
       body: { reason },
     }),
+  draftRuns: () => fetchAPI<DraftRunPage>("/api/phones/registry/mapping-drafts?limit=20"),
+  startDraft: (typeName: string) =>
+    fetchAPI<DraftRun>("/api/phones/registry/mapping-drafts", { method: "POST", body: { type_name: typeName } }),
   exportFile: (id: string) => fetchAPI<Record<string, unknown>>(`/api/phones/registry/proposals/${id}/export`),
 }
 

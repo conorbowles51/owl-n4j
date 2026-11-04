@@ -6,6 +6,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ApiError } from "@/lib/api-client"
 import {
+  DRAFT_STATUS_WORDS,
+  draftRunFacts,
+  draftRunning,
+  draftTargetForFlag,
   FLAG_PAGE,
   FLAG_STATE_WORDS,
   ORIGIN_WORDS,
@@ -80,9 +84,33 @@ function ReasonForm(props: { label: string; busy: boolean; error?: string | null
   )
 }
 
+/** "Draft a mapping": asks the AI drafts model for a mapping of one registry type or named set. The draft runs in
+ * the background (minutes) and arrives in Proposals; the AI drafts tab shows its progress. */
+export function DraftButton({ name, label = "Draft a mapping" }: { name: string; label?: string }) {
+  const qc = useQueryClient()
+  const m = useMutation({
+    mutationFn: () => registryApi.startDraft(name),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin", "phone-registry", "drafts"] }),
+  })
+  return (
+    <div className="flex flex-col gap-1">
+      <Button size="sm" variant="outline" disabled={m.isPending || m.isSuccess} onClick={() => m.mutate()}>
+        {label}
+      </Button>
+      {m.isSuccess && (
+        <span className="text-muted-foreground">
+          Drafting {name}: it takes a few minutes and arrives in Proposals. Progress is in AI drafts.
+        </span>
+      )}
+      {m.error && <span className="text-destructive">{errorWords(m.error)}</span>}
+    </div>
+  )
+}
+
 function FlagRow({ flag }: { flag: RegistryFlag }) {
   const qc = useQueryClient()
   const [action, setAction] = useState<FlagAction | null>(null)
+  const target = flag.state === "mapping_needed" ? draftTargetForFlag(flag) : null
   const m = useMutation({
     mutationFn: (v: { to: FlagAction["to"]; reason: string }) => registryApi.transition(flag.id, v.to, v.reason),
     onSuccess: () => {
@@ -133,6 +161,11 @@ function FlagRow({ flag }: { flag: RegistryFlag }) {
             </Button>
           ))}
         </div>
+        {target && (
+          <div className="mt-1">
+            <DraftButton name={target} label={`Draft a mapping for ${target}`} />
+          </div>
+        )}
         {action && (
           <ReasonForm
             key={action.to}
@@ -365,6 +398,94 @@ function ProposalsTab() {
   )
 }
 
+/** AI drafts (02 6.8 step 2): pick a record type or a named set, ask the model for a mapping, and follow its runs.
+ * The model sees the registry's structure only (names, kinds, value types, listed values, counts), never a case. */
+export function DraftsTab() {
+  const [pick, setPick] = useState("")
+  const q = useQuery({
+    queryKey: ["admin", "phone-registry", "drafts"],
+    queryFn: () => registryApi.draftRuns(),
+    retry: retryUnlessRefused,
+    refetchInterval: (query) => (draftRunning(query.state.data?.runs) ? 5000 : false),
+  })
+  if (q.error) return <p className="text-sm text-destructive">{errorWords(q.error)}</p>
+  const data = q.data
+  if (!data) return <p className="text-sm text-muted-foreground">Loading the AI drafts…</p>
+  const options = [...data.draftable.types, ...data.draftable.named_sets]
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs text-muted-foreground">
+        The model is shown the registry only: record types, field names, kinds of value, listed values and how often
+        each was seen. It never sees a case or anything a phone recorded. Its draft waits in Proposals, marked as not
+        reviewed, until a person downloads, checks and commits it.
+      </p>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="flex flex-col text-xs">
+          Record type or list ({data.draftable.total.toLocaleString()})
+          <select
+            aria-label="Record type or list"
+            className="mt-1 rounded border border-border bg-background px-2 py-1 text-sm"
+            value={pick}
+            onChange={(e) => setPick(e.target.value)}
+          >
+            <option value="">Choose…</option>
+            <optgroup label="Record types">
+              {data.draftable.types.map((t) => (
+                <option key={"t-" + t.name} value={t.name}>
+                  {t.name} ({t.records_observed.toLocaleString()} records seen)
+                </option>
+              ))}
+            </optgroup>
+            <optgroup label="Lists of values">
+              {data.draftable.named_sets.map((t) => (
+                <option key={"s-" + t.name} value={t.name}>
+                  {t.name} ({t.records_observed.toLocaleString()} values seen)
+                </option>
+              ))}
+            </optgroup>
+          </select>
+        </label>
+        {pick && options.some((o) => o.name === pick) && <DraftButton key={pick} name={pick} />}
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {data.total === 0
+          ? "No drafts yet."
+          : `Latest ${data.runs.length.toLocaleString()} of ${data.total.toLocaleString()} drafts`}
+      </div>
+      {data.runs.length > 0 && (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-xs text-muted-foreground">
+              <th className="py-1 pr-3">Draft of</th>
+              <th className="py-1 pr-3">State</th>
+              <th className="py-1 pr-3">Model, time and cost</th>
+              <th className="py-1">Asked by</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.runs.map((r) => (
+              <tr key={r.id} className="border-b border-border align-top text-xs" data-testid={`draft-${r.id}`}>
+                <td className="py-2 pr-3">
+                  <div className="font-medium">{r.name}</div>
+                  <div className="text-muted-foreground">{r.kind} mapping</div>
+                </td>
+                <td className="py-2 pr-3">
+                  <div>{DRAFT_STATUS_WORDS[r.status] ?? r.status}</div>
+                  {r.error && <div className="text-muted-foreground">{r.error}</div>}
+                </td>
+                <td className="py-2 pr-3">{draftRunFacts(r) || "Not yet known"}</td>
+                <td className="py-2">
+                  {r.requested_by ?? ""}, {when(r.created_at)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
 /** Phone registry (02 sections 3.4 and 6.8): what new phone reports contained that Loupe had not seen, and the
  * corrections made in cases that propose a change for every case. Admins only; the registry is global. */
 export function PhoneRegistryPage() {
@@ -381,12 +502,16 @@ export function PhoneRegistryPage() {
         <TabsList>
           <TabsTrigger value="flags">Flags</TabsTrigger>
           <TabsTrigger value="proposals">Proposals</TabsTrigger>
+          <TabsTrigger value="drafts">AI drafts</TabsTrigger>
         </TabsList>
         <TabsContent value="flags">
           <FlagsTab />
         </TabsContent>
         <TabsContent value="proposals">
           <ProposalsTab />
+        </TabsContent>
+        <TabsContent value="drafts">
+          <DraftsTab />
         </TabsContent>
       </Tabs>
     </div>

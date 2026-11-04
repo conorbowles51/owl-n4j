@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { flagActions, flagSubjectWords, rangeWords, readingWords } from "./phone-registry"
+import { draftRunFacts, draftRunning, draftTargetForFlag, flagActions, flagSubjectWords, rangeWords, readingWords } from "./phone-registry"
 
 describe("phone registry words", () => {
   it("offers the 02 3.4 transitions a person may make, never mapped", () => {
@@ -27,6 +27,16 @@ describe("phone registry words", () => {
     expect(flagSubjectWords({ flag_kind: "new_value_type", subject: { type: "Call", field: "Duration" },
       detail: { previous: ["TimeSpan"], now: "Int32" } })).toBe("Call · Duration (was TimeSpan, now Int32)")
     expect(flagSubjectWords({ flag_kind: "set_overflow", subject: { set: "Big", value: null }, detail: {} })).toBe("Big")
+  })
+
+  it("drafts a flag's named set, else its record type, and states a run's model, time and cost", () => {
+    expect(draftTargetForFlag({ subject: { set: "DecodingSourceOptions", value: "x" } })).toBe("DecodingSourceOptions")
+    expect(draftTargetForFlag({ subject: { type: "Call", field: "Zz" } })).toBe("Call")
+    expect(draftTargetForFlag({ subject: {} })).toBeNull()
+    expect(draftRunFacts({ model: "deepseek-v4-pro", seconds: 59.6, cost_usd: 0.5 })).toBe("deepseek-v4-pro · 60 s · $0.5000")
+    expect(draftRunFacts({ model: null, seconds: null, cost_usd: null })).toBe("")
+    expect(draftRunning([{ status: "drafted" }, { status: "running" }] as never)).toBe(true)
+    expect(draftRunning([{ status: "failed" }] as never)).toBe(false)
   })
 
   it("reads a reading as words", () => {
