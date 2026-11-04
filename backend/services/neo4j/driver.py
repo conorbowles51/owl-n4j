@@ -277,11 +277,11 @@ class Neo4jDriver:
             # DETACH, in batches: a node can also hold a relationship without the case id (a plain DELETE then
             # fails part-way), and the largest live case has 35,694 nodes.
             session.run(
-                "MATCH ()-[r {case_id: $case_id}]->() CALL { WITH r DELETE r } IN TRANSACTIONS OF 5000 ROWS",
+                "MATCH ()-[r {case_id: $case_id}]->() CALL (r) { DELETE r } IN TRANSACTIONS OF 5000 ROWS",
                 case_id=case_id,
             ).consume()
             session.run(
-                "MATCH (n {case_id: $case_id}) CALL { WITH n DETACH DELETE n } IN TRANSACTIONS OF 1000 ROWS",
+                "MATCH (n {case_id: $case_id}) CALL (n) { DETACH DELETE n } IN TRANSACTIONS OF 1000 ROWS",
                 case_id=case_id,
             ).consume()
 
