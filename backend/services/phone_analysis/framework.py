@@ -135,6 +135,10 @@ def _run_out(r) -> dict:
     for k in ("created_at", "started_at", "finished_at"):
         d[k] = d[k].isoformat() if d.get(k) else None
     d.pop("cancel_requested", None)
+    words = getattr(APPROACHES.get(d.get("approach")), "counts_words", None)  # read from counts, so old runs have it
+    left_out = words(d.get("counts") or {}) if words else ""
+    if left_out:
+        d["left_out_words"] = "Counted, not listed: %s." % left_out
     return d
 
 

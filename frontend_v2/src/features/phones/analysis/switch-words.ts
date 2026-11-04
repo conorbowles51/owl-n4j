@@ -18,13 +18,3 @@ export function switchWords(r: ApproachResult) {
     line: `${m.level ? `${m.level[0].toUpperCase()}${m.level.slice(1)}: ${(m.strength_reasons?.match || []).join("; ")}. ` : ""}${m.shared} shared counterparts (${m.first_counterparts} before, ${m.second_counterparts} after; similarity ${m.similarity}). Last contact of the first ${instantWords(m.last_of_first, "UTC")}; first of the second ${instantWords(m.first_of_second, "UTC")}.${markers.length ? ` Also: ${markers.join("; ")}.` : ""} Nothing is joined; joining them is your decision on the people.`,
   }
 }
-
-/** The pairs the run counted but does not list, with their reason (Neil 2026-11-04: nothing hidden by a cutoff). */
-export function switchLeftOutWords(counts: Record<string, unknown> | null | undefined) {
-  const n = (k: string) => Number(counts?.[k] || 0)
-  const pairs = (v: number, verb: string) => `${v.toLocaleString("en-US")} more ${v === 1 ? `pair ${verb}s` : `pairs ${verb}`}`
-  const parts: string[] = []
-  if (n("share_only_owners")) parts.push(`${pairs(n("share_only_owners"), "share")} only a phone's owner (every number on a phone does)`)
-  if (n("share_nothing")) parts.push(`${pairs(n("share_nothing"), "share")} no counterpart`)
-  return parts.length ? `Counted, not listed: ${parts.join("; ")}.` : ""
-}

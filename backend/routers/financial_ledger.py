@@ -1439,7 +1439,7 @@ def get_ledger_transfer_candidates(case_id: UUID = Query(...), start_date: Optio
         tolerance_days: int = Query(3, ge=0, le=7), db: Session = Depends(get_db)):
     try:
         captured = capture_ledger_scope(db.get_bind(), case_id=case_id, start_date=start_date, end_date=end_date)
-        return ledger_transfer_candidates(captured, population=population, tolerance_days=tolerance_days)
+        return ledger_transfer_candidates(captured, population=population, tolerance_days=tolerance_days, grade=True)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:

@@ -1190,6 +1190,15 @@ def _payment_parties(conn, case_id, t, person_a=None, person_b=None):
                   "The ledger does not show this payment between those two people.")
 
 
+def _count_between(conn, case_id, sa, sb) -> int:
+    """Messages, calls and emails between two sides at any time, counted as ``edge_records`` counts them; the
+    communication half of ``link_edges.edges``, without its money."""
+    from services.phone import link_edges
+    a, b = (link_edges.resolve_side(conn, case_id, s) for s in (sa, sb))
+    c = link_edges.communication(conn, case_id, a["keys"], b["keys"])
+    return sum(link_edges.comm_total(c, p) for p in ("messages", "calls", "emails"))
+
+
 def payment_conversation(conn, case_id, payment, *, person_a=None, person_b=None, hours=2, days=None, offset=0,
                          limit=DEFAULT_LIMIT) -> dict:
     """Connection 4: the payment row (``txn://``), the two people it is between, and every message, call and email
@@ -1262,8 +1271,7 @@ def payment_conversation(conn, case_id, payment, *, person_a=None, person_b=None
                     window={"start": a.isoformat(), "end": b.isoformat(), "widened_by": str(widen)},
                     anchor=anchor, totals=totals, phone_alerts=links, outcomes=list(PURPOSE_OUTCOMES))
         if not found:
-            ever = link_edges.edges(conn, case_id, [sa, sb])["edges"][0]["communication"]
-            n_ever = sum(link_edges.comm_total(ever, p) for p in ("messages", "calls", "emails"))
+            n_ever = _count_between(conn, case_id, sa, sb)
             span = conn.execute(text("SELECT min(sort_instant), max(sort_instant) FROM pv_comm_event WHERE case_id = :c"),
                                 {"c": str(case_id)}).first()
             if not n_ever:
@@ -1293,9 +1301,7 @@ def payment_conversation(conn, case_id, payment, *, person_a=None, person_b=None
                 body = None
             items.append(dict(it, rec=_rec(it["record_uid"]), text=body))
         # the window is a stated search bound (lx-matchgrades): what it leaves out is counted, not hidden
-        ever = link_edges.edges(conn, case_id, [sa, sb])["edges"][0]["communication"]
-        n_ever = sum(link_edges.comm_total(ever, p) for p in ("messages", "calls", "emails"))
-        outside = max(0, n_ever - len(found))
+        outside = max(0, _count_between(conn, case_id, sa, sb) - len(found))
         return _base(tool, case_id, **base, outcome=None, total_matching=len(found), returned=len(items),
                      has_more=nxt is not None, next_offset=nxt, offset=offset_, items=items,
                      outside_window=outside,

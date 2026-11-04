@@ -80,4 +80,19 @@ def test_a_pair_under_the_defaults_is_listed_as_faint_and_owner_only_pairs_are_c
     assert (Z, Y) not in by_pair
     assert counts["share_only_owners"] >= 1
     assert "only a phone's owner" in N.counts_words(counts)
+
     assert all(r["measures"]["level"] in ("strong", "moderate") for r in res if r["kind"] == "switch_candidate")
+
+
+def test_the_left_out_sentence_is_the_servers_and_reaches_every_stored_run():
+    from types import SimpleNamespace
+    from services.phone_analysis import framework as F
+    F.APPROACHES[N.CODE] = N
+    def run(counts):
+        return F._run_out(SimpleNamespace(_mapping={
+            "id": "1", "case_id": "2", "created_at": None, "started_at": None, "finished_at": None,
+            "approach": N.CODE, "counts": counts}))
+    assert run({"share_only_owners": 44278, "share_nothing": 1})["left_out_words"] == (
+        "Counted, not listed: 44,278 more pairs share only a phone's owner (every number on a phone does); "
+        "1 more pair shares no counterpart.")
+    assert "left_out_words" not in run({})

@@ -17,7 +17,8 @@ MAX_TRANSFER_ROWS = 500
 MAX_TRANSFER_PAIRS = 1000
 
 
-def ledger_transfer_candidates(export, *, population='working', tolerance_days=3):
+def ledger_transfer_candidates(export, *, population='working', tolerance_days=3, grade=False):
+    """``grade`` adds every possible pair on the strength scale (the workbench's list); ``graded`` is None without it."""
     if population not in ('working', 'verified') or type(tolerance_days) is not int or not 0 <= tolerance_days <= 7:
         raise LedgerSummaryError('Choose working or verified readings and a date tolerance from 0 to 7 days.')
     from services.financial.ledger_snapshot import view_capture
@@ -66,19 +67,21 @@ def ledger_transfer_candidates(export, *, population='working', tolerance_days=3
                                                counterparty_raw=other or None,
                                                holder_name=row.get('account_holder') or None))
     linked = link_composite(observations, tolerance_days=tolerance_days)
-    # Every possible pair in the scope, graded on the app's one scale, whatever the tolerance chosen above: the
-    # candidates the tolerance admits stay the ones a scenario can select; the graded list hides nothing.
-    holders = {}
-    for row in rows:
-        holders.setdefault(row.get('canonical_account_id') or row['account_id'], row.get('account_holder') or '')
-    from services.financial.payment_party_matches import _related_holders
-    graded = graded_transfer_pairs(graded_observations, per_row=None, same_holder=lambda d, c: bool(
-        holders.get(str(d.account_id)) and holders.get(str(c.account_id))
-        and _related_holders(holders[str(d.account_id)], holders[str(c.account_id)])))
-    selectable = {(str(l.left_id), str(l.right_id)) for l in linked.links} | {(str(l.right_id), str(l.left_id)) for l in linked.links}
-    for p in graded['pairs']:
-        p['within_tolerance'] = (p['debit_id'], p['credit_id']) in selectable
-    graded['left_out_words'] = graded_left_out_words(graded['left_out'])
+    graded = None
+    if grade:
+        # Every possible pair in the scope, graded on the app's one scale, whatever the tolerance chosen above: the
+        # candidates the tolerance admits stay the ones a scenario can select; the graded list hides nothing.
+        holders = {}
+        for row in rows:
+            holders.setdefault(row.get('canonical_account_id') or row['account_id'], row.get('account_holder') or '')
+        from services.financial.payment_party_matches import _related_holders
+        graded = graded_transfer_pairs(graded_observations, per_row=None, same_holder=lambda d, c: bool(
+            holders.get(str(d.account_id)) and holders.get(str(c.account_id))
+            and _related_holders(holders[str(d.account_id)], holders[str(c.account_id)])))
+        selectable = {(str(l.left_id), str(l.right_id)) for l in linked.links} | {(str(l.right_id), str(l.left_id)) for l in linked.links}
+        for p in graded['pairs']:
+            p['within_tolerance'] = (p['debit_id'], p['credit_id']) in selectable
+        graded['left_out_words'] = graded_left_out_words(graded['left_out'])
     by_id = {row['key']: row for row in rows}
     pairs = []
     for link in linked.links:

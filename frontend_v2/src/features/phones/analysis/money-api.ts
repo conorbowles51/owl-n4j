@@ -10,6 +10,7 @@ export interface AnalysisRun {
   progress: { read?: number; total?: number } | null
   coverage: { sentence?: string } | null
   counts: Record<string, unknown> | null
+  left_out_words?: string
   error: string | null
   created_at: string | null
   finished_at: string | null

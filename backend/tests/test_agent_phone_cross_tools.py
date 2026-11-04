@@ -139,6 +139,14 @@ def test_the_conversation_around_a_payment_is_the_day_plus_two_hours_between_the
     assert out["outside_window"] == 1 and "1 more between them are outside it" in out["coverage"]
 
 
+def test_the_count_outside_the_window_reads_no_money(world):
+    from unittest.mock import patch
+    from services.phone import link_edges
+    with world["engine"].connect() as c, patch.object(link_edges, "edges", side_effect=AssertionError("reads money")):
+        out = X.payment_conversation(c, world["case"], "txn://%s" % world["paid"])
+    assert out["outside_window"] == 1
+
+
 def test_no_conversation_in_the_window_is_decided_by_the_records_with_its_reason(world):
     with world["engine"].connect() as c:
         out = X.payment_conversation(c, world["case"], world["quiet"])

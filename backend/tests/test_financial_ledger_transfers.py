@@ -137,7 +137,7 @@ class LedgerTransferTests(_test_financial_ledger_summary.LedgerSummaryTests):
         credit.ordering_date += timedelta(days=15)
         credit.posted_date = credit.value_date = credit.effective_date = None
         self.db.commit()
-        export = self.capture(); result = ledger_transfer_candidates(export, tolerance_days=7)
+        export = self.capture(); result = ledger_transfer_candidates(export, tolerance_days=7, grade=True)
         self.assertEqual(result['candidates'], [])
         graded = result['graded']
         self.assertEqual(len(graded['pairs']), 1)
@@ -149,8 +149,19 @@ class LedgerTransferTests(_test_financial_ledger_summary.LedgerSummaryTests):
         with self.assertRaises(LedgerSummaryError):
             evaluate_transfer_scenario(export, {**self.request(export, debit, credit), 'tolerance_days': 7})
 
+    def test_grading_runs_only_when_asked_and_changes_no_candidate(self):
+        from unittest.mock import patch
+        import services.financial.ledger_transfers as LT
+        self.pair(); export = self.capture()
+        with patch.object(LT, 'graded_transfer_pairs', wraps=LT.graded_transfer_pairs) as grading:
+            plain = ledger_transfer_candidates(export)
+            self.assertEqual(grading.call_count, 0)
+            asked = ledger_transfer_candidates(export, grade=True)
+            self.assertEqual(grading.call_count, 1)
+        self.assertIsNone(plain['graded'])
+        self.assertEqual(plain['candidates'], asked['candidates'])
     def test_graded_list_holds_the_selectable_pair_too(self):
-        debit, credit = self.pair(); result = ledger_transfer_candidates(self.capture())
+        debit, credit = self.pair(); result = ledger_transfer_candidates(self.capture(), grade=True)
         self.assertEqual(len(result['candidates']), 1)
         self.assertEqual([(p['debit_id'], p['credit_id'], p['within_tolerance']) for p in result['graded']['pairs']],
                          [(str(debit.id), str(credit.id), True)])
