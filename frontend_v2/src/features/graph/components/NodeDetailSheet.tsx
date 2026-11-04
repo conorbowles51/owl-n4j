@@ -1,6 +1,7 @@
 import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { AccountOwnershipReview } from "@/features/financial/components/AccountOwnershipReview"
 import { useMemo, useState } from "react"
+import { aiItemsLine, orderInsights, summariseAiItems } from "../lib/ai-items"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { useNavigate } from "react-router-dom"
@@ -103,6 +104,8 @@ export function NodeDetailSheet({
   const [factsExpanded, setFactsExpanded] = useState(true)
   const [insightsExpanded, setInsightsExpanded] = useState(true)
   const [showAllFacts, setShowAllFacts] = useState(false)
+  const [showAllInsights, setShowAllInsights] = useState(false)
+  const [showRejectedInsights, setShowRejectedInsights] = useState(false)
   const [viewerDoc, setViewerDoc] = useState<{
     evidenceId: string
     url: string
@@ -302,6 +305,13 @@ export function NodeDetailSheet({
   const properties = detail.properties ?? {}
   const managedIdentity = properties.financial_identity_managed === true
   const visibleFacts = showAllFacts ? facts : facts.slice(0, 5)
+  const aiSummary = summariseAiItems(facts, insights)
+  const orderedInsights = orderInsights(insights)
+  const reviewableInsights = [...orderedInsights.open, ...orderedInsights.confirmed]
+  const visibleInsights = [
+    ...(showAllInsights ? reviewableInsights : reviewableInsights.slice(0, 5)),
+    ...(showRejectedInsights ? orderedInsights.rejected : []),
+  ]
 
   return (
     <div className="flex h-full flex-col overflow-hidden border-l border-border bg-card">
@@ -507,7 +517,13 @@ export function NodeDetailSheet({
           </>
         )}
 
-        {/* Verified Facts */}
+        {(facts.length > 0 || insights.length > 0) && (
+          <p className="px-4 pt-3 text-[11px] text-muted-foreground" data-testid="ai-items-summary">
+            {aiItemsLine(aiSummary)}
+          </p>
+        )}
+
+        {/* Source-grounded facts (AI-extracted from the evidence; a person can pin them) */}
         {facts.length > 0 && (
           <>
             <div className="px-4 py-3">
@@ -520,7 +536,8 @@ export function NodeDetailSheet({
                 ) : (
                   <ChevronRight className="size-3" />
                 )}
-                Verified Facts
+                Source-grounded facts
+                <span className="ml-1 normal-case tracking-normal font-normal">· AI-extracted</span>
                 <Badge variant="slate" className="ml-auto text-[10px]">
                   {facts.length}
                 </Badge>
@@ -602,7 +619,7 @@ export function NodeDetailSheet({
               </button>
               {insightsExpanded && (
                 <div className="space-y-2">
-                  {insights.map((insight, i) => (
+                  {visibleInsights.map(({ insight, index: i }) => (
                     <div
                       key={i}
                       className={`rounded-md border p-2 ${
@@ -659,6 +676,16 @@ export function NodeDetailSheet({
                       )}
                     </div>
                   ))}
+                  {reviewableInsights.length > 5 && (
+                    <Button variant="ghost" size="sm" className="text-xs" onClick={() => setShowAllInsights(!showAllInsights)}>
+                      {showAllInsights ? "Show fewer" : `Show ${reviewableInsights.length - 5} more`}
+                    </Button>
+                  )}
+                  {orderedInsights.rejected.length > 0 && (
+                    <Button variant="ghost" size="sm" className="text-xs" onClick={() => setShowRejectedInsights(!showRejectedInsights)}>
+                      {showRejectedInsights ? "Hide rejected" : `Show ${orderedInsights.rejected.length} rejected`}
+                    </Button>
+                  )}
                 </div>
               )}
             </div>

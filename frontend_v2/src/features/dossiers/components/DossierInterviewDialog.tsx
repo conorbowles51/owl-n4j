@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { dossiersAPI, type Dossier, type DossierInterview } from "../api"
+import { buildParticipants, splitParticipants } from "../interview-participants"
 import { useDossierMutation } from "../hooks"
 import {
   datePrecision,
@@ -36,13 +37,11 @@ export function DossierInterviewDialog({
     datePrecision(initialDate)
   )
   const [date, setDate] = useState(localInterviewTime(initialDate))
+  const initialPeople = splitParticipants(interview?.participants)
   const [participants, setParticipants] = useState(
-    interview?.participants
-      .map((person) =>
-        typeof person === "string" ? person : String(person.name ?? "")
-      )
-      .join(", ") ?? dossier.display_name
+    interview ? initialPeople.names.join(", ") : dossier.display_name
   )
+  const [interviewedBy, setInterviewedBy] = useState(initialPeople.interviewedBy)
   const [notes, setNotes] = useState(interview?.working_notes ?? "")
   const [error, setError] = useState("")
   // Evidence files are edited here; phone records, analyses and statement checks attached elsewhere are kept
@@ -81,10 +80,7 @@ export function DossierInterviewDialog({
             : date
       const input = {
         date_value: value,
-        participants: participants
-          .split(",")
-          .map((name) => name.trim())
-          .filter(Boolean),
+        participants: buildParticipants(participants, interviewedBy, interview?.participants),
         working_notes: notes || null,
         status: interview?.status ?? "completed",
         evidence_links: sources.map((item) =>
@@ -192,6 +188,16 @@ export function DossierInterviewDialog({
               disabled={mutation.isPending}
               onChange={(event) => setParticipants(event.target.value)}
               placeholder="Comma-separated names"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="interview-interviewed-by">Interviewed by</Label>
+            <Input
+              id="interview-interviewed-by"
+              value={interviewedBy}
+              disabled={mutation.isPending}
+              onChange={(event) => setInterviewedBy(event.target.value)}
+              placeholder="e.g. county police, deposition, trial testimony, our investigator"
             />
           </div>
           <div className="grid gap-2">

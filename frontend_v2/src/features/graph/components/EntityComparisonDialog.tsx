@@ -180,7 +180,7 @@ function EntityColumn({ detail }: { detail: any }) {
               ) : (
                 <ChevronRight className="size-3" />
               )}
-              Verified Facts
+              Source-grounded facts · AI-extracted
               <Badge variant="slate" className="ml-auto text-[10px]">
                 {facts.length}
               </Badge>

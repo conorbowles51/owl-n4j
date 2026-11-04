@@ -76,6 +76,7 @@ import {
   type DossierLink,
   type DossierInterview,
 } from "../api"
+import { splitParticipants } from "../interview-participants"
 import { dossierKeys, useDossier, useDossierMutation } from "../hooks"
 import { useQueryClient } from "@tanstack/react-query"
 import { RemovedFromDossier } from "./RemovedFromDossier"
@@ -1201,24 +1202,19 @@ export function DossierDetailSheet({
                             item.date_value ?? item.interview_date
                           )}
                         </span>
-                        {item.participants.length ? (
+                        {splitParticipants(item.participants).names.length ? (
                           <p className="text-xs text-muted-foreground sm:ml-auto">
                             <UserRound className="mr-1 inline size-3" />{" "}
-                            {item.participants
-                              .map((p) =>
-                                typeof p === "string"
-                                  ? p
-                                  : String(p.name ?? "Participant")
-                              )
-                              .join(", ")}
+                            {splitParticipants(item.participants).names.join(", ")}
                           </p>
                         ) : null}
                       </div>
-                      {item.working_notes ? (
-                        <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed">
-                          {item.working_notes}
+                      {splitParticipants(item.participants).interviewedBy ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Interviewed by: {splitParticipants(item.participants).interviewedBy}
                         </p>
                       ) : null}
+                      {item.working_notes ? <InterviewNotes text={item.working_notes} /> : null}
                       {item.evidence_links.length ? (
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
                           {item.evidence_links.map((link) => !link.evidence_file_id ? (
@@ -1496,5 +1492,21 @@ export function DossierDetailSheet({
         </DialogContent>
       </Dialog>
     </Sheet>
+  )
+}
+
+/** Long working notes stay collapsed to three lines so the interview list stays readable (FEAT-010 compact view). */
+function InterviewNotes({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  const long = text.length > 280 || text.split("\n").length > 3
+  return (
+    <div className="mt-2">
+      <p className={`whitespace-pre-wrap text-xs leading-relaxed ${open || !long ? "" : "line-clamp-3"}`}>{text}</p>
+      {long ? (
+        <button type="button" className="mt-1 text-[11px] text-muted-foreground underline" onClick={() => setOpen(!open)}>
+          {open ? "Show less" : "Show full notes"}
+        </button>
+      ) : null}
+    </div>
   )
 }
