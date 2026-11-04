@@ -143,7 +143,22 @@ export interface GridResponse {
   [k: string]: unknown
 }
 
+export interface TogetherItemRow {
+  ordinal: number
+  verdict: string
+  basis: string
+  at_utc: string
+  distance_m: number | null
+  a_lat: number | null
+  a_lon: number | null
+  b_lat: number | null
+  b_lon: number | null
+}
+
 export interface TogetherResponse {
+  items?: TogetherItemRow[]
+  next_cursor?: number | null
+  label?: string
   id?: string
   run_id?: string
   status: string
@@ -216,6 +231,10 @@ export interface PlaceObservation {
   record_uid: string | null
   kind: string
   source_kind: string
+  lat: number
+  lon: number
+  presence_basis?: string | null
+  attribution_flags?: string[]
   radius_m: number | null
   radius_basis: string
   start_utc: string
@@ -233,6 +252,52 @@ export interface PlacesResponse {
   towers_not_placed: { words: string; reason: string; mcc_inferred?: boolean; mcc_words?: string | null }[]
   mcc_inferred_words?: string
   reverse_geocoding: { enabled: boolean; reason: string }
+  label?: string
+}
+
+export interface RoutinePlaceRow {
+  cluster_id: number
+  lat: number
+  lon: number
+  radius_m: number
+  stay_count: number
+  day_count: number
+  routine: boolean
+  label: string | null
+  place_id: string | null
+  label_by: string | null
+  first_utc: string
+  last_utc: string
+}
+
+export interface RoutineResponse {
+  parameters: Record<string, unknown>
+  zone: string
+  places: RoutinePlaceRow[]
+  routine_places: number[]
+  presence_days: number
+  observations_used: number
+  stays_total: number
+  label: string
+}
+
+export interface DeviationResponse {
+  threshold: number | null
+  days_scored: number
+  flagged: { date: string; score_bits: number; expectation: string; hours: { hour: number; place: number | "elsewhere" }[] }[]
+  label: string
+}
+
+export interface ManualPlace {
+  id: string
+  lat: number
+  lon: number
+  radius_m: number
+  reason: string
+  decision_id: string
+  removed_decision_id: string | null
+  actor_name: string | null
+  created_at: string
 }
 
 export interface Snapshot {
@@ -298,6 +363,22 @@ export const patternAPI = {
   places: (caseId: string, s: Subject, start: string, end: string, cursor = 0) =>
     fetchAPI<PlacesResponse>(
       `${base(caseId)}/places?subject=${subj(s)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&cursor=${cursor}`),
+  routine: (caseId: string, s: Subject, zone = "device") =>
+    fetchAPI<RoutineResponse>(`${base(caseId)}/routine?subject=${subj(s)}&zone=${encodeURIComponent(zone)}`),
+  deviations: (caseId: string, s: Subject, zone = "device") =>
+    fetchAPI<DeviationResponse>(`${base(caseId)}/routine/deviations?subject=${subj(s)}&zone=${encodeURIComponent(zone)}`),
+  namePlace: (caseId: string, s: Subject, cluster_id: number, label: string, reason: string, zone = "device") =>
+    fetchAPI<{ place_id: string; decision_id: string; label: string | null; previous_label: string | null }>(
+      `${base(caseId)}/routine/places/name`,
+      { method: "POST", body: { subject: JSON.stringify(s), cluster_id, label, reason, zone } as never }),
+  manualPlaces: (caseId: string, transactionId: string) =>
+    fetchAPI<{ total: number; items: ManualPlace[] }>(`${base(caseId)}/places/manual/${encodeURIComponent(transactionId)}`),
+  attachPlace: (caseId: string, transactionId: string, lat: number, lon: number, radius_m: number, reason: string) =>
+    fetchAPI<{ place_id: string; decision_id: string }>(`${base(caseId)}/places/manual`, { method: "POST",
+      body: { target: { kind: "transaction", transaction_id: transactionId }, lat, lon, radius_m, reason } as never }),
+  removePlace: (caseId: string, transactionId: string, reason: string) =>
+    fetchAPI<{ decision_id: string }>(`${base(caseId)}/places/manual/remove`, { method: "POST",
+      body: { target: { kind: "transaction", transaction_id: transactionId }, reason } as never }),
   together: (caseId: string, a: Subject, b: Subject, start: string, end: string) =>
     fetchAPI<TogetherResponse>(`${base(caseId)}/together`, { method: "POST", body: { subjects: [a, b], start, end } as never }),
   togetherRun: (caseId: string, runId: string, cursor = 0) =>

@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useMemo, useState } from "react"
 import { useParams, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/ui/page-header"
-import { evidenceWords, towerMccWords } from "../together-words"
-import { patternAPI, type Snapshot, type Subject, type SubjectList, type TogetherResponse } from "../api"
+import { patternAPI, type Snapshot, type Subject, type SubjectList } from "../api"
 import { Lanes } from "./Lanes"
 import { errorWords, laneRowsOf, setApartWords, snapshotView, usualLast } from "../lanes-lib"
 import { StatementCheckPanel } from "./StatementCheckPanel"
 import { KeepResult } from "./CollectBar"
 import { KeyDatesBar } from "./KeyDates"
 import { TextPlaces } from "./TextPlaces"
+import { PlacesView, TogetherView } from "./PlacesViews"
+
+export { PlacesView }
 
 /**
  * The Patterns screen (04 section 8.6): Day view, Pattern grid, Places over time, Together and Statement check, with
@@ -25,10 +27,6 @@ export const VIEWS = [
   { id: "check", label: "Check a statement" },
 ] as const
 type ViewId = (typeof VIEWS)[number]["id"]
-
-function nextDay(d: string) {
-  const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString()
-}
 
 function subjectKey(s: Subject) {
   return s.kind === "extraction" ? `e:${s.extraction_id}` : `d:${s.dossier_id}`
@@ -224,92 +222,6 @@ function GridView({ caseId, subject, last }: { caseId: string; subject: Subject;
           <h3 className="font-medium">Nights that break it ({(q.data.breaks || []).length.toLocaleString()})</h3>
           <ul>{(q.data.breaks || []).map((b) => <li key={b.date}>{b.date}</li>)}</ul>
           <h3 className="font-medium">Not observed ({(q.data.not_observed || []).length.toLocaleString()})</h3>
-        </>
-      )}
-    </section>
-  )
-}
-
-export function PlacesView({ caseId, subject, last }: { caseId: string; subject: Subject; last: string }) {
-  const end = `${last}T23:59:59Z`
-  const startD = new Date(`${last}T00:00:00Z`); startD.setUTCDate(startD.getUTCDate() - 6)
-  const q = useQuery({ queryKey: ["pattern-places", caseId, subjectKey(subject), last], queryFn: () => patternAPI.places(caseId, subject, startD.toISOString(), end) })
-  return (
-    <section aria-label="Places over time" className="flex flex-col gap-2 text-sm">
-      {q.isError && <p role="alert" className="text-destructive">{errorWords(q.error)}</p>}
-      {q.data && (
-        <>
-          <p>Showing {q.data.returned.toLocaleString()} of {q.data.total.toLocaleString()} positioned records, {startD.toISOString().slice(0, 10)} to {last}.
-            {q.data.towers_not_placed.length > 0 ? ` ${q.data.towers_not_placed.length.toLocaleString()} cell tower sightings cannot be placed: ${q.data.towers_not_placed[0].words}` : ""}
-            {towerMccWords(q.data.towers_not_placed, q.data.mcc_inferred_words) ? ` ${towerMccWords(q.data.towers_not_placed, q.data.mcc_inferred_words)}` : ""}</p>
-          <KeepResult caseId={caseId} origin="Added from Phone patterns, Places over time"
-            request={{ kind: "places", subject: JSON.stringify(subject), start: startD.toISOString(), end: nextDay(last), zone: "UTC" }} />
-          {q.data.next_cursor !== null && <span> The list shows the first {q.data.returned.toLocaleString()}; the rest are on later pages.</span>}
-          <table className="text-xs"><thead><tr><th className="text-left">Time</th><th className="text-left">Source</th><th className="text-left">Radius</th></tr></thead>
-            <tbody>{q.data.observations.map((o) => (
-              <tr key={o.id}><td>{o.start_utc}</td><td>{o.source_kind}{o.attribution_flags?.includes("mcc_inferred") ? " (country code from the SIM card)" : ""}</td><td>{o.radius_m ? `${Math.round(o.radius_m)} m` : "Accuracy not recorded"}</td></tr>))}</tbody>
-          </table>
-        </>
-      )}
-    </section>
-  )
-}
-
-function TogetherView({ caseId, subject, list }: { caseId: string; subject: Subject; list: SubjectList }) {
-  const others = list.extractions.filter((e) => !(subject.kind === "extraction" && e.extraction_id === subject.extraction_id))
-  const [other, setOther] = useState(others[0]?.extraction_id || "")
-  const [res, setRes] = useState<TogetherResponse | null>(null)
-  const [busy, setBusy] = useState<string | null>(null)
-  const [err, setErr] = useState<string | null>(null)
-  // Opening Together starts the comparison with the first other phone; progress shows while it runs (J-10b).
-  const started = useRef("")
-  useEffect(() => {
-    const key = `${subjectKey(subject)}|${other}`
-    if (!other || started.current === key) return
-    started.current = key
-    void run()
-  })
-  async function run() {
-    setErr(null); setRes(null)
-    const a = list.extractions.find((e) => subject.kind === "extraction" && e.extraction_id === subject.extraction_id)
-    const b = list.extractions.find((e) => e.extraction_id === other)
-    const lastDays = [usualLast(a), usualLast(b)].filter((d): d is string => !!d).sort()
-    const end = lastDays[0] ? new Date(`${lastDays[0]}T23:59:59Z`) : new Date(); const start = new Date(end.getTime() - 7 * 86400_000)
-    setBusy("Comparing pairs of points…")
-    try {
-      let r = await patternAPI.together(caseId, subject, { kind: "extraction", extraction_id: other }, start.toISOString(), end.toISOString())
-      const runId = r.run_id
-      if (runId && r.status !== "done") {
-        setBusy(`Comparing ${(r.estimated_pairs || 0).toLocaleString()} pairs of points…`)
-        for (let i = 0; i < 120 && r.status !== "done"; i++) {
-          await new Promise((ok) => setTimeout(ok, 1000))
-          r = await patternAPI.togetherRun(caseId, runId)
-        }
-        if (r.status !== "done") throw new Error("Still comparing after two minutes. The run continues; open Together again to see it.")
-      }
-      setRes(r)
-    } catch (e) { setErr(errorWords(e)) } finally { setBusy(null) }
-  }
-  const c = res?.counts || {}
-  return (
-    <section aria-label="Together" className="flex flex-col gap-2 text-sm">
-      <div className="flex items-center gap-2">
-        <label htmlFor="together-other">Compare with</label>
-        <select id="together-other" className="rounded border bg-background px-2 py-1" value={other} onChange={(e) => setOther(e.target.value)}>
-          {others.map((e) => <option key={e.extraction_id} value={e.extraction_id}>{e.label}</option>)}
-        </select>
-        <Button size="sm" onClick={run} disabled={!other || !!busy}>Compare the last week</Button>
-      </div>
-      {others.length === 0 && <p>Together needs a second phone in the case.</p>}
-      {busy && <p aria-live="polite">{busy}</p>}
-      {err && <p role="alert" className="text-destructive">{err}</p>}
-      {res && (
-        <>
-          <p>{(res.total ?? c.pairs ?? 0).toLocaleString()} pairs compared: {(c.compatible || 0).toLocaleString()} compatible, {(c.separated || 0).toLocaleString()} separated, {(c.undetermined || 0).toLocaleString()} undetermined.
-            A position with no accuracy uses an assumed radius of 1,000 m and is marked. A broad overlap is never called together.</p>
-          {evidenceWords(c).length > 0 && <ul aria-label="Kinds of evidence">{evidenceWords(c).map((w) => <li key={w}>{w}</li>)}</ul>}
-          <h3 className="font-medium">Episodes ({(res.episodes || []).length.toLocaleString()})</h3>
-          <ul>{(res.episodes || []).map((e, i) => <li key={i}>{e.kind === "together" ? `compatible (${e.breadth})` : "separated"}: {e.start} to {e.end}, {e.items.toLocaleString()} pairs</li>)}</ul>
         </>
       )}
     </section>

@@ -9,6 +9,7 @@ import { DocumentViewer } from "@/components/ui/document-viewer"
 import { evidenceAPI } from "@/features/evidence/api"
 import { PhoneMentions } from "./PhoneMentions"
 import { PaymentPhoneActivity } from "./PaymentPhoneActivity"
+import { PaymentPlace } from "@/features/pattern/components/PaymentPlace"
 
 interface TransactionDetailPanelProps {
   caseId?: string
@@ -219,6 +220,7 @@ export function TransactionDetailPanel({
 
         <PhoneMentions caseId={caseId} transactionId={transaction.key} />
         <PaymentPhoneActivity caseId={caseId} transactionId={transaction.key} />
+        <PaymentPlace caseId={caseId} transactionId={transaction.key} />
 
         {/* Purpose */}
         <div>

@@ -493,6 +493,7 @@ export function LedgerSourceDialog({
                 <DrawerSection title="Linked">
                   <PhoneMentions caseId={caseId} transactionId={transactionId} />
                   <PaymentPhoneActivity caseId={caseId} transactionId={transactionId} />
+                  <PaymentPlace caseId={caseId} transactionId={transactionId} />
                   <MoneyTrailReview
                     caseId={caseId}
                     transactionIds={[transactionId]}
@@ -642,6 +643,7 @@ import { AccountOwnershipReview } from "./AccountOwnershipReview"
 import { MoneyTrailReview } from "./MoneyTrailReview"
 import { PhoneMentions } from "./PhoneMentions"
 import { PaymentPhoneActivity } from "./PaymentPhoneActivity"
+import { PaymentPlace } from "@/features/pattern/components/PaymentPlace"
 
 /** Dark header of the payment: amount, direction, date, account and how far the reading can be relied on. */
 function PaymentHeader({
