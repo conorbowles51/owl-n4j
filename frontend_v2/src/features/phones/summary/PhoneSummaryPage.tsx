@@ -12,6 +12,8 @@ import { NamePhone } from "./NamePhone"
 import { SetOwner } from "./SetOwner"
 import { HeldDifference } from "./HeldDifference"
 import { ExportHistory, ExportProfile, SinceYouLastLooked } from "./SummaryExtras"
+import { flagKindWords, flagSubjectWords, type FlagSubject } from "@/features/admin/phone-registry"
+import type { Profile } from "../schemas"
 
 /**
  * Phone summary (03 section 7; 07 J-2, J-11, J-15): the verdict, what needs a decision, the triage block (coverage
@@ -331,6 +333,7 @@ export function PhoneSummaryPage() {
             ))}
           </tbody>
         </table>
+        <MappingBacklog backlog={p.mapping_backlog} />
       </Section>
       <Section name="When there is data">
         <ul className="text-xs">
@@ -348,3 +351,26 @@ export function PhoneSummaryPage() {
 }
 
 export default PhoneSummaryPage
+
+/** The mapping backlog for this phone (02 section 3.4): what an administrator marked as waiting for a mapping. Every
+ * item is listed with the total; until a mapping is loaded these are kept and searchable but read generically. */
+export function MappingBacklog({ backlog }: { backlog: Profile["mapping_backlog"] }) {
+  if (!backlog) return null
+  if (backlog.total === 0)
+    return <p className="mt-2 text-xs text-muted-foreground">Nothing on this phone is waiting for a mapping.</p>
+  return (
+    <div className="mt-2 text-xs" data-testid="mapping-backlog">
+      <p>
+        Waiting for a mapping ({backlog.total.toLocaleString()}): kept and searchable, read generically until a
+        mapping is added.
+      </p>
+      <ul className="list-disc pl-4">
+        {backlog.items.map((b) => (
+          <li key={b.flag_id}>
+            {flagKindWords(b.flag_kind)}: {flagSubjectWords({ flag_kind: b.flag_kind, subject: b.subject as FlagSubject, detail: {} })}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}

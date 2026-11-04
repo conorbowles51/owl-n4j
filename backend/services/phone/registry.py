@@ -459,3 +459,103 @@ def list_flags(conn, state=None) -> list:
         sql += " WHERE state = :s"
         params["s"] = state
     return [dict(r._mapping) for r in conn.execute(text(sql + " ORDER BY id"), params)]
+
+
+FLAG_STATES = ("open", "acknowledged", "mapping_needed", "mapped", "dismissed")
+FLAG_PAGE_MAX = 200
+
+
+def _flag_subject(r) -> dict:
+    """What a flag is about, from the registry row it points at (structure only, 3.1)."""
+    d = r.detail or {}
+    t = r.registry_table
+    if t == "types":
+        return {"type": d.get("type")}
+    if t == "fields":
+        return {"type": d.get("type") or r.f_type, "field": d.get("field") or r.f_field,
+                "kind": d.get("kind") or r.f_kind, "value_type": d.get("value_type") or r.f_value_type}
+    if t == "nesting":
+        return {"type": d.get("parent") or r.n_parent, "field": d.get("field") or r.n_field,
+                "child": d.get("child") or r.n_child}
+    if t == "set_values":
+        return {"set": d.get("set") or r.s_set, "value": r.s_value if r.flag_kind == "new_set_value" else None}
+    if t == "attributes":
+        return {"element": d.get("element") or r.a_element, "attribute": d.get("attribute") or r.a_attribute}
+    return {}
+
+
+def list_flags_page(conn, state=None, limit=100, offset=0) -> dict:
+    """One page of flags in id order, the total for the state filter, the count per state, and for each flag what
+    it is about, the raising phone (its case and label, for the link) and its last event."""
+    from services.phone.readings import phone_labels
+    limit = max(1, min(int(limit), FLAG_PAGE_MAX))
+    offset = max(0, int(offset))
+    params = {"lim": limit, "off": offset}
+    w = ""
+    if state:
+        w = " WHERE fl.state = :s"
+        params["s"] = state
+    total = conn.execute(text("SELECT count(*) FROM phone_schema_flags fl" + w), params).scalar()
+    counts = {s: 0 for s in FLAG_STATES}
+    for s, n in conn.execute(text("SELECT state, count(*) FROM phone_schema_flags GROUP BY 1")):
+        counts[s] = int(n)
+    rows = conn.execute(text(
+        "SELECT fl.id, fl.flag_kind, fl.registry_table, fl.registry_id, fl.raised_by_extraction_id, fl.severity, "
+        "fl.state, fl.detail, fl.raised_at, f.type_name AS f_type, f.field_name AS f_field, "
+        "f.field_kind AS f_kind, f.value_type AS f_value_type, n.parent_type AS n_parent, n.field_name AS n_field, "
+        "n.child_type AS n_child, sv.set_name AS s_set, sv.value AS s_value, at.element AS a_element, "
+        "at.attribute AS a_attribute, x.case_id AS ext_case_id, c.title AS case_title, "
+        "ev.to_state AS last_to, ev.reason AS last_reason, ev.actor_name AS last_actor, ev.created_at AS last_at "
+        "FROM phone_schema_flags fl "
+        "LEFT JOIN phone_schema_fields f ON fl.registry_table = 'fields' AND f.id = fl.registry_id "
+        "LEFT JOIN phone_schema_nesting n ON fl.registry_table = 'nesting' AND n.id = fl.registry_id "
+        "LEFT JOIN phone_schema_set_values sv ON fl.registry_table = 'set_values' AND sv.id = fl.registry_id "
+        "LEFT JOIN phone_schema_attributes at ON fl.registry_table = 'attributes' AND at.id = fl.registry_id "
+        "LEFT JOIN phone_extractions x ON x.id = fl.raised_by_extraction_id "
+        "LEFT JOIN cases c ON c.id = x.case_id "
+        "LEFT JOIN LATERAL (SELECT to_state, reason, actor_name, created_at FROM phone_schema_flag_events e "
+        "WHERE e.flag_id = fl.id ORDER BY e.id DESC LIMIT 1) ev ON true" + w +
+        " ORDER BY fl.id LIMIT :lim OFFSET :off"), params).fetchall()
+    labels = {}
+    out = []
+    for r in rows:
+        raised = None
+        if r.raised_by_extraction_id is not None and r.ext_case_id is not None:
+            cid = str(r.ext_case_id)
+            if cid not in labels:
+                labels[cid] = phone_labels(conn, cid)
+            eid = str(r.raised_by_extraction_id)
+            raised = {"extraction_id": eid, "case_id": cid, "case_title": r.case_title,
+                      "label": labels[cid].get(eid), "link": "/cases/%s/phones/%s" % (cid, eid)}
+        elif r.raised_by_extraction_id is not None:
+            raised = {"extraction_id": str(r.raised_by_extraction_id), "case_id": None, "case_title": None,
+                      "label": None, "link": None}
+        out.append({"id": r.id, "flag_kind": r.flag_kind, "registry_table": r.registry_table,
+                    "registry_id": r.registry_id, "severity": r.severity, "state": r.state,
+                    "detail": r.detail, "raised_at": r.raised_at.isoformat(), "subject": _flag_subject(r),
+                    "raised_by_extraction_id": str(r.raised_by_extraction_id) if r.raised_by_extraction_id else None,
+                    "raised_by": raised,
+                    "last_event": ({"to": r.last_to, "reason": r.last_reason, "by": r.last_actor,
+                                    "at": r.last_at.isoformat()} if r.last_to else None)})
+    return {"total": int(total), "limit": limit, "offset": offset, "counts": counts, "flags": out}
+
+
+def mapping_backlog(conn, extraction_id) -> dict:
+    """Flags in ``mapping_needed`` that touch this phone (raised by it, or on a registry row it was observed to
+    hold): the backlog 3.4 says the coverage map shows. Bounded by the registry's size; every item is returned."""
+    rows = conn.execute(text(
+        "SELECT DISTINCT fl.id, fl.flag_kind, fl.registry_table, fl.detail, f.type_name AS f_type, "
+        "f.field_name AS f_field, f.field_kind AS f_kind, f.value_type AS f_value_type, n.parent_type AS n_parent, "
+        "n.field_name AS n_field, n.child_type AS n_child, sv.set_name AS s_set, sv.value AS s_value, "
+        "at.element AS a_element, at.attribute AS a_attribute "
+        "FROM phone_schema_flags fl "
+        "LEFT JOIN phone_schema_observations o ON o.extraction_id = :e AND o.registry_table = fl.registry_table "
+        "AND o.registry_id = fl.registry_id "
+        "LEFT JOIN phone_schema_fields f ON fl.registry_table = 'fields' AND f.id = fl.registry_id "
+        "LEFT JOIN phone_schema_nesting n ON fl.registry_table = 'nesting' AND n.id = fl.registry_id "
+        "LEFT JOIN phone_schema_set_values sv ON fl.registry_table = 'set_values' AND sv.id = fl.registry_id "
+        "LEFT JOIN phone_schema_attributes at ON fl.registry_table = 'attributes' AND at.id = fl.registry_id "
+        "WHERE fl.state = 'mapping_needed' AND (fl.raised_by_extraction_id = :e OR o.extraction_id IS NOT NULL) "
+        "ORDER BY fl.id"), {"e": str(extraction_id)}).fetchall()
+    items = [{"flag_id": r.id, "flag_kind": r.flag_kind, "subject": _flag_subject(r)} for r in rows]
+    return {"total": len(items), "items": items}

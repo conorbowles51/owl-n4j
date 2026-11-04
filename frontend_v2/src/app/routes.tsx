@@ -149,6 +149,11 @@ const AICostsPage = lazy(() =>
     default: m.AICostsPage,
   }))
 )
+const PhoneRegistryPage = lazy(() =>
+  import("@/features/admin/components/PhoneRegistryPage").then((m) => ({
+    default: m.PhoneRegistryPage,
+  }))
+)
 const PlatformUpdatesPage = lazy(() =>
   import("@/features/admin/components/PlatformUpdatesPage").then((m) => ({
     default: m.PlatformUpdatesPage,
@@ -242,6 +247,7 @@ export function AppRoutes() {
             <Route path="speed" element={<LazyPage><SpeedPage /></LazyPage>} />
             <Route path="tasks" element={<LazyPage><BackgroundTasksPage /></LazyPage>} />
             <Route path="updates" element={<LazyPage><PlatformUpdatesPage /></LazyPage>} />
+            <Route path="phone-registry" element={<LazyPage><PhoneRegistryPage /></LazyPage>} />
             <Route path="usage" element={<Navigate to="/admin/ai-costs" replace />} />
           </Route>
 

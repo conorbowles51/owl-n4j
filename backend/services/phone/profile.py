@@ -119,7 +119,7 @@ def held_sentence(held) -> str:
 
 
 def profile(conn, case_id, extraction_id) -> dict:
-    from services.phone import coverage, identities, records, readings
+    from services.phone import coverage, identities, records, readings, registry
     ext = str(extraction_id)
     x = conn.execute(text("SELECT * FROM pv_extraction WHERE case_id = :c AND extraction_id::text = :e"),
                      {"c": case_id, "e": ext}).first()
@@ -319,6 +319,7 @@ def profile(conn, case_id, extraction_id) -> dict:
                   "link": "%s/phones/%s/records/media" % (base, ext)},
         "deleted": {"comm_events": int(comm_deleted), "link": "%s?deleted=only" % conv, "by_type": deleted},
         "coverage": coverage_rows,
+        "mapping_backlog": registry.mapping_backlog(conn, ext),
         "data_periods": periods,
         "months": month_rows,
         "busiest_weeks": week_rows,

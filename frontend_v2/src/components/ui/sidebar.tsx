@@ -106,6 +106,7 @@ const adminNav: NavItem[] = [
   { label: "Activity", icon: History, to: "/admin/activity" },
   { label: "Speed", icon: Gauge, to: "/admin/speed" },
   { label: "Profiles", icon: Sliders, to: "/admin/profiles" },
+  { label: "Phone registry", icon: Smartphone, to: "/admin/phone-registry" },
 ]
 
 const settingsItem: NavItem = {

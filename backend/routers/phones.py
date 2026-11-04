@@ -879,13 +879,12 @@ def phone_media_detail(file_uid: UUID, case_id: UUID = Query(...), db: Session =
 
 
 @router.get("/registry/flags")
-def list_registry_flags(state: Optional[FlagState] = None, db: Session = Depends(get_db),
+def list_registry_flags(state: Optional[FlagState] = None, limit: int = Query(100, ge=1, le=200),
+                        offset: int = Query(0, ge=0), db: Session = Depends(get_db),
                         _: User = Depends(require_admin)):
-    flags = registry.list_flags(db, state)
-    return {"total": len(flags), "flags": [dict(f, raised_at=f["raised_at"].isoformat(),
-                                                raised_by_extraction_id=(str(f["raised_by_extraction_id"])
-                                                                         if f["raised_by_extraction_id"] else None))
-                                           for f in flags]}
+    """One page of the registry review queue (3.4): ``total`` is the full count for the state on every page and
+    ``counts`` holds every state's count, so a page is never shown as the whole list."""
+    return registry.list_flags_page(db.connection(), state, limit, offset)
 
 
 @router.post("/registry/flags/{flag_id}/transition")
@@ -899,6 +898,58 @@ def transition_registry_flag(flag_id: int, body: FlagTransition, db: Session = D
         raise HTTPException(status_code=409 if "cannot become" in str(exc) else 422, detail=str(exc))
     db.commit()
     return out
+
+
+ProposalState = Literal["draft", "rejected", "exported"]
+ProposalOrigin = Literal["ai_draft", "case_correction"]
+
+
+class ProposalReject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+@router.get("/registry/proposals")
+def list_mapping_proposals(state: Optional[ProposalState] = None, origin: Optional[ProposalOrigin] = None,
+                           limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0),
+                           db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """Mapping proposals waiting for an admin (02 6.8 step 5): case corrections beside their original reading, the
+    person who decided, and the case. Paged; ``total`` on every page."""
+    from services.phone import proposals
+    return proposals.list_proposals(db.connection(), state, origin, limit, offset)
+
+
+@router.post("/registry/proposals/{proposal_id}/reject")
+def reject_mapping_proposal(proposal_id: UUID, body: ProposalReject, db: Session = Depends(get_db),
+                            user: User = Depends(require_admin)):
+    """Reject with a reason; the event is written before the state changes. No mapping or registry row changes."""
+    from services.phone import proposals
+    try:
+        out = proposals.reject(db.connection(), proposal_id, body.reason, actor_name=user.name,
+                               actor_email=user.email, actor_user_id=user.id)
+    except proposals.ProposalRefused as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    db.commit()
+    return out
+
+
+@router.get("/registry/proposals/{proposal_id}/export")
+def export_mapping_proposal(proposal_id: UUID, db: Session = Depends(get_db), user: User = Depends(require_admin)):
+    """The mapping file a person edits, reviews and commits (02 6.8 steps 2 and 3), ``status: draft`` so it is never
+    applied as downloaded. The first download records ``exported`` (event first)."""
+    from fastapi import Response
+    from services.phone import proposals
+    try:
+        out = proposals.export(db.connection(), proposal_id, actor_name=user.name, actor_email=user.email,
+                               actor_user_id=user.id)
+    except proposals.ProposalRefused as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    db.commit()
+    return Response(content=out["text"], media_type="application/json",
+                    headers={"Content-Disposition": 'attachment; filename="%s"' % out["filename"],
+                             "X-Mapping-Path": out["path"]})
 
 
 @router.get("/{extraction_id}/coverage")
