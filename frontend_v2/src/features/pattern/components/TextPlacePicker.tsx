@@ -1,5 +1,5 @@
-import { useMemo } from "react"
-import Map, { Layer, NavigationControl, Source } from "react-map-gl/maplibre"
+import { useEffect, useMemo, useRef } from "react"
+import Map, { Layer, NavigationControl, Source, type MapRef } from "react-map-gl/maplibre"
 import "maplibre-gl/dist/maplibre-gl.css"
 import type { Feature, FeatureCollection, Point, Polygon } from "geojson"
 import { useMapTheme } from "@/features/map/hooks/use-map-theme"
@@ -21,6 +21,20 @@ export default function TextPlacePicker({ point, radiusM, suggestions, onPick, h
   height?: number
 }) {
   const { mapStyle, transformRequest, onMapError, onMapView, basemapNote } = useMapTheme()
+  const mapRef = useRef<MapRef>(null)
+  // the map follows the point (a click, a suggestion chosen, coordinates typed): zoomed in far enough to see the
+  // radius, and never moved when the point is already in view at that zoom
+  useEffect(() => {
+    const m = mapRef.current
+    if (!m || !point) return
+    const inView = m.getBounds()?.contains([point.lon, point.lat])
+    if (inView && m.getZoom() >= 11) return
+    m.flyTo({ center: [point.lon, point.lat], zoom: Math.max(m.getZoom(), radiusM > 5000 ? 10 : 13), duration: 600 })
+  }, [point?.lat, point?.lon]) // eslint-disable-line react-hooks/exhaustive-deps
+  const dot = useMemo<FeatureCollection<Point>>(() => ({
+    type: "FeatureCollection",
+    features: point ? [{ type: "Feature", properties: {}, geometry: { type: "Point", coordinates: [point.lon, point.lat] } }] : [],
+  }), [point])
   const area = useMemo<FeatureCollection<Polygon>>(() => ({
     type: "FeatureCollection",
     features: point && radiusM > 0 ? [circlePolygon(point.lat, point.lon, radiusM)] : [],
@@ -39,6 +53,7 @@ export default function TextPlacePicker({ point, radiusM, suggestions, onPick, h
     <figure className="flex flex-col gap-1" aria-label="Place on map">
       <div className="relative overflow-hidden rounded border" style={{ height }}>
         <Map
+          ref={mapRef}
           initialViewState={initial}
           mapStyle={mapStyle}
           transformRequest={transformRequest}
@@ -61,6 +76,11 @@ export default function TextPlacePicker({ point, radiusM, suggestions, onPick, h
           <Source id="tp-area" type="geojson" data={area}>
             <Layer id="tp-area-fill" type="fill" paint={{ "fill-color": "#7c3aed", "fill-opacity": 0.15 }} />
             <Layer id="tp-area-line" type="line" paint={{ "line-color": "#7c3aed", "line-width": 2 }} />
+          </Source>
+          <Source id="tp-point" type="geojson" data={dot}>
+            <Layer id="tp-point" type="circle" paint={{
+              "circle-radius": 5, "circle-color": "#7c3aed", "circle-stroke-color": "#ffffff", "circle-stroke-width": 2,
+            }} />
           </Source>
           {basemapNote && <BasemapNote text={basemapNote} />}
         </Map>
