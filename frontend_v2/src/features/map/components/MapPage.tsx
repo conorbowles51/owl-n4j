@@ -4,7 +4,8 @@ import { getPhoneMapPoints, getPhoneMapSummary } from "@/features/phones/api"
 import { PhoneLayerPanel } from "./PhoneLayer"
 import { useParams } from "react-router-dom"
 import { MapPin } from "lucide-react"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { Button } from "@/components/ui/button"
+import { LoadProgress } from "@/features/financial/components/LoadProgress"
 import { EmptyState } from "@/components/ui/empty-state"
 import { useMapData, useMapReviewQueue } from "../hooks/use-map-data"
 import { useProximityAnalysis } from "../hooks/use-proximity-analysis"
@@ -24,9 +25,14 @@ import { SignificantEmptyState } from "@/features/significant/components/Signifi
 export function MapPage() {
   const { id: caseId } = useParams()
   const caseLayer = useCaseLayer(caseId)
-  const { data: locations, isLoading } = useMapData(caseId)
-  const { data: reviewQueue, isLoading: isReviewQueueLoading } =
-    useMapReviewQueue(caseId)
+  const locationsQuery = useMapData(caseId)
+  const { data: locations, isLoading } = locationsQuery
+  const {
+    data: reviewQueue,
+    isLoading: isReviewQueueLoading,
+    isError: isReviewQueueError,
+    refetch: refetchReviewQueue,
+  } = useMapReviewQueue(caseId)
   const safeLocations = locations ?? []
   const reviewQueueCount = (reviewQueue ?? []).filter(needsReview).length
 
@@ -56,9 +62,37 @@ export function MapPage() {
   }, [selectedNodeKeys, expandGraphPanelTo])
 
   if (isLoading || phones.summary.isLoading || (safeLocations.length === 0 && isReviewQueueLoading)) {
+    // The page-speed standard's panel (step in words, true counts, time left, slow and failed parts named), not a
+    // bare spinner: the located entities of a large case take 0.7-0.8 s on the server and arrive as 1.8 MB.
     return (
-      <div className="flex h-full items-center justify-center">
-        <LoadingSpinner size="lg" />
+      <div className="flex h-full items-start justify-center pt-6">
+        <div className="w-full max-w-2xl">
+          <LoadProgress caseId={caseId} page="case/map" />
+        </div>
+      </div>
+    )
+  }
+
+  // A read that failed is named with a retry; it is never shown as "No location data".
+  const failed = [
+    locationsQuery.isError && !locations ? "the case's located entities" : null,
+    phones.summary.isError && !phones.summary.data ? "the phones' positions" : null,
+    isReviewQueueError && !reviewQueue ? "the locations needing review" : null,
+  ].filter((part): part is string => part !== null)
+  const retryFailed = () => {
+    if (locationsQuery.isError) void locationsQuery.refetch()
+    if (phones.summary.isError) void phones.summary.refetch()
+    if (isReviewQueueError) void refetchReviewQueue()
+  }
+  if (failed.length && !safeLocations.length && !phones.summary.data?.positioned) {
+    return (
+      <div className="flex h-full items-start justify-center pt-6">
+        <div role="alert" className="w-full max-w-2xl space-y-2 rounded-md border border-border bg-card p-4 text-sm" data-testid="map-load-failed">
+          <p>The map could not load {failed.join(" and ")}. Nothing is shown rather than an empty map.</p>
+          <Button variant="outline" onClick={retryFailed}>
+            Try again
+          </Button>
+        </div>
       </div>
     )
   }
@@ -85,6 +119,14 @@ export function MapPage() {
 
   return (
     <div className="flex h-full flex-col bg-canvas">
+      {failed.length > 0 && (
+        <div role="alert" className="flex items-center gap-3 border-b border-border bg-card px-3 py-2 text-sm" data-testid="map-part-failed">
+          <span>The map could not load {failed.join(" and ")}; what is shown does not include them.</span>
+          <Button size="sm" variant="outline" onClick={retryFailed}>
+            Try again
+          </Button>
+        </div>
+      )}
       <MapToolbar caseId={caseId!} locations={safeLocations} phonePositions={phones.on ? phones.summary.data?.positioned ?? null : null} />
 
       <div className="relative flex-1">
