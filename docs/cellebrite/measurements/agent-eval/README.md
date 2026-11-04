@@ -133,6 +133,7 @@ near-identical pictures, and the strong ones with the counts by strength.
 |---|---|---|---|
 | before (origin 9395ef45, `tool-layer-spread-before-2026-11-04.jsonl`) | 0 of 8 | not measured: the tool refused the approach names | the analysis tool did not accept other_devices or plans (neither approach existed) and there was no picture tool |
 | after (cb-gated-spread) | 8 of 8 | 8 of 8 | |
+
 ## Citations, tool layer, 2026-11-03 (`citations-tool-layer-2026-11-03.jsonl`)
 
 `backend/tests/test_agent_citation_evaluation.py`: 8 questions on a synthetic case (two statements on two accounts,
