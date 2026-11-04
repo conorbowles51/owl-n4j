@@ -325,6 +325,23 @@ def test_attribution_rows_for_a_named_set_are_checked_against_its_values():
 
 
 @needs_template
+def test_a_run_whose_server_restarted_is_closed_as_failed_with_the_reason_and_a_new_draft_may_start():
+    from services.phone import mapping_drafts as md
+    with fresh_engine() as engine, engine.begin() as c:
+        from services.phone import registry
+        registry.apply_seed(c)
+        old = md.create_run(c, "Call", actor_name="Admin Person")
+        c.execute(text("UPDATE phone_mapping_draft_runs SET status = 'running', created_at = now() - interval "
+                       "'25 minutes' WHERE id = :i"), {"i": old})
+        fresh = md.create_run(c, "Call", actor_name="Admin Person")  # the stale one does not block it
+        r = md.read_run(c, old)
+        assert r["status"] == "failed" and "server restarted" in r["error"]
+        assert md.read_run(c, fresh)["status"] == "queued"
+        with pytest.raises(md.DraftRefused):
+            md.create_run(c, "Call", actor_name="Admin Person")
+
+
+@needs_template
 def test_draft_endpoints_are_admin_only_and_a_second_draft_of_one_name_waits():
     from fastapi import FastAPI
     from fastapi.testclient import TestClient

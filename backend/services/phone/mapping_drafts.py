@@ -423,10 +423,23 @@ def requirements_for(conn, kind, name, body) -> list:
 
 # ---- runs ------------------------------------------------------------------------------------------------------
 
+STALE_MINUTES = 20  # the model call is bounded at 15 minutes (TIMEOUT_SECONDS)
+
+
+def close_stale(conn) -> int:
+    """A run still queued or running long after the model call's bound lost its thread (the server restarted, as
+    every release does). It is closed as failed with that reason, so the page never shows it drafting forever."""
+    return conn.execute(text(
+        "UPDATE phone_mapping_draft_runs SET status = 'failed', finished_at = now(), error = 'Stopped without an "
+        "answer: the server restarted while the model was drafting. Start the draft again.' WHERE status IN "
+        "('queued', 'running') AND created_at < now() - make_interval(mins => :m)"), {"m": STALE_MINUTES}).rowcount
+
+
 def create_run(conn, name, *, actor_name, actor_email=None, actor_user_id=None) -> uuid.UUID:
     kind = subject_kind(conn, name)
+    close_stale(conn)
     busy = conn.execute(text("SELECT id FROM phone_mapping_draft_runs WHERE name = :n AND status IN ('queued', "
-                             "'running') AND created_at > now() - interval '30 minutes'"), {"n": name}).scalar()
+                             "'running')"), {"n": name}).scalar()
     if busy:
         raise DraftRefused("A draft for %s is already running (%s)." % (name, busy), 409)
     rid = uuid.uuid4()

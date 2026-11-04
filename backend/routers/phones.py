@@ -976,6 +976,9 @@ def list_mapping_drafts(limit: int = Query(20, ge=1, le=100), db: Session = Depe
     set). Admin only: the registry is global."""
     from services.phone import mapping_drafts
     conn = db.connection()
+    if mapping_drafts.close_stale(conn):
+        db.commit()
+        conn = db.connection()
     return dict(mapping_drafts.list_runs(conn, limit), draftable=mapping_drafts.draftable(conn))
 
 
