@@ -44,6 +44,8 @@ def test_the_day_view_puts_every_item_in_its_lane_and_states_availability(hooks)
             assert t["interaction"] == 1 and t["device_state"] == 12 and t["communications"] == 1
             assert t["places"] == 1 and t["money"] == 0
             assert out["truncated"] is False and out["passive_as_hourly_counts"] is False
+            assert out["flag_words"]["affiliation_unknown"] == "Not known whether this device recorded it."
+            assert out["flag_words"]["wearable"] == "Recorded by a paired wearable."
             assert len(out["availability"][0]["hours"]) == 24
             words = {h["words"] for h in out["availability"][0]["hours"]}
             assert "No data" in words

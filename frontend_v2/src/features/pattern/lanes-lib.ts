@@ -48,7 +48,7 @@ export function laneRowsOf(caseId: string, d: DayResponse | (DayResponse & { lab
       hiddenAs: k === "passive" ? ["record made without use", "records made without use"] as [string, string] : undefined,
       note: k === "passive" && d.passive_as_hourly_counts ? d.limit_words || undefined : undefined,
       marks: items.map((i) => ({ key: `${i.ref_kind}:${i.id}`, at: i.at, end: i.end, label: itemLabel(i),
-        detail: [i.strength && `strength ${i.strength}`, i.actor && `actor ${i.actor}`, i.source_app, i.phone, ...(i.flags || [])].filter(Boolean).join(" · "),
+        detail: [i.strength && `strength ${i.strength}`, i.actor && `actor ${i.actor}`, i.source_app, i.phone, ...(i.flags || []).map((f) => d.flag_words?.[f] || f)].filter(Boolean).join(" · "),
         tone: (i.strength as never) || "none", href: href(i) })),
     })
   }

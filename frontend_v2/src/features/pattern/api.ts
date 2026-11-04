@@ -104,6 +104,7 @@ export interface DayWindow {
   availability: { extraction_id: string; phone: string | null; hours: HourState[] }[]
   totals: Record<string, number>
   lane_words: Record<string, string>
+  flag_words?: Record<string, string>
   truncated: boolean
   passive_as_hourly_counts: boolean
   passive_hours: { hour_utc: string; count: number }[] | null

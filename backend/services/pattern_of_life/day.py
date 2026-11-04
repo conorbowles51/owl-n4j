@@ -14,7 +14,7 @@ from datetime import datetime, time, timedelta
 
 from sqlalchemy import text
 
-from services.pattern_of_life import availability
+from services.pattern_of_life import attribution, availability
 from services.phone.labels import RECIPIENT_ROLES, SENDER_ROLES
 
 PASSIVE_LIMIT = 5000
@@ -117,7 +117,7 @@ def window(conn, extraction_ids, labels, a, b, *, include_passive=True, case_id=
     if passive_hours is not None:
         totals["passive"] = sum(h["count"] for h in passive_hours)
     out = {"lanes": {k: lanes[k] for k in LANES}, "availability": avail, "totals": totals,
-           "lane_words": LANE_WORDS, "truncated": False, "passive_as_hourly_counts": passive_as_counts,
+           "lane_words": LANE_WORDS, "flag_words": attribution.UI_COPY, "truncated": False, "passive_as_hourly_counts": passive_as_counts,
            "passive_hours": passive_hours, "limit_words": None}
     if passive_as_counts:
         out["limit_words"] = ("More than %s items in this window: recorded-without-use items are shown as counts per "
