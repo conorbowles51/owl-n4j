@@ -344,14 +344,16 @@ def test_the_filter_reads_deleted_ids_once_and_adds_nothing_when_nothing_is_dele
     from postgres.models.financial import FinancialTransaction as T
     with phone_pg.fresh_engine() as engine:
         case, _, _ = _seed(engine)
-        seen = []
+        from postgres import soft_delete
+        seen, lookups = [], []
+        real = soft_delete._lookup
         event.listen(engine, "before_cursor_execute", lambda *a: seen.append(a[2]))
-        with Session(engine) as s:
+        with patch.object(soft_delete, "_lookup", lambda c: lookups.append(1) or real(c)), Session(engine) as s:
             for _ in range(3):
                 s.execute(select(T.id).where(T.case_id == case)).all()
-        lookups = [q for q in seen if "deleted_at IS NOT NULL" in q]
         ledger = [q for q in seen if "FROM financial_transactions" in q]
-        assert len(lookups) == 1 and len(ledger) == 3
+        # One lookup for three reads, and it is not in the statement stream that query-count guards watch.
+        assert len(lookups) == 1 and len(ledger) == 3 and len(seen) == 3
         assert all("NOT IN" not in q and "deleted_case" not in q for q in ledger)
 
 

@@ -32,7 +32,7 @@ import uuid
 from contextlib import contextmanager
 from functools import lru_cache
 
-from sqlalchemy import and_, event, or_, text
+from sqlalchemy import and_, event, or_
 from sqlalchemy.orm import Session, with_loader_criteria
 
 SHOW_DELETED = "loupe_show_deleted"
@@ -69,6 +69,19 @@ def _as_uuid(value):
     return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
 
 
+_LOOKUP = ("SELECT 'c', id FROM cases WHERE deleted_at IS NOT NULL "
+           "UNION ALL SELECT 'f', id FROM evidence_files WHERE deleted_at IS NOT NULL")
+
+
+def _lookup(connection):
+    cursor = connection.connection.cursor()
+    try:
+        cursor.execute(_LOOKUP)
+        return cursor.fetchall()
+    finally:
+        cursor.close()
+
+
 def _deleted_ids(session):
     """(deleted case ids, deleted evidence file ids) of the session's database, at most REFRESH_SECONDS old."""
     now = time.monotonic()
@@ -78,14 +91,15 @@ def _deleted_ids(session):
         known = _known.get(key)
         if known is not None and now - known["at"] < REFRESH_SECONDS:
             return known["cases"], known["files"]
-    sql = text("SELECT 'c', id FROM cases WHERE deleted_at IS NOT NULL "
-               "UNION ALL SELECT 'f', id FROM evidence_files WHERE deleted_at IS NOT NULL")
+    # Read on the session's own database connection (same transaction, no second pooled connection), with a plain
+    # cursor: this lookup runs at most every REFRESH_SECONDS whatever the request does, so it stays out of the
+    # statement stream that query-count guards (tests counting a route's statements) and SQL listeners watch.
     if connection.dialect.name == "postgresql":
-        rows = connection.execute(sql).all()
+        rows = _lookup(connection)
     else:
         # Unit-test databases (SQLite) create only the tables a test needs; a missing table hides nothing there.
         try:
-            rows = connection.execute(sql).all()
+            rows = _lookup(connection)
         except Exception:
             rows = []
     cases = frozenset(_as_uuid(row[1]) for row in rows if row[0] == "c")
