@@ -6,8 +6,9 @@ the host. Each purge is logged and leaves an audit row (``case_purged`` / ``evid
 
 What a purge removes is exactly what the delete removed before Deleted items existed:
 - a case: services/case_service.py ``purge_case`` (ChromaDB chunks and entities, then the case row and its cascade);
-- an evidence file: its hidden graph and chunks are put back first, then services/evidence_casebin.py
-  ``remove_for_good`` runs the old delete, then the evidence engine's copy and the row go.
+- an evidence file: its hidden graph is put back first (a hidden node whose key a later upload made again is removed
+  instead), then services/evidence_casebin.py ``remove_for_good`` runs the old delete on exactly the Document,
+  entities and chunks the delete recorded, then the evidence engine's copy and the row go.
 
 ``now`` can be given (tests use it as the clock); nothing reads the clock elsewhere.
 """
@@ -44,11 +45,17 @@ def purge_due(session_factory, *, now=None, engine_delete=None) -> dict:
     cutoff = due_cutoff(now)
     out = {"cases": [], "files": [], "skipped": None, "cutoff": cutoff.isoformat()}
     with session_factory() as db:
-        locked = db.execute(text(f"SELECT pg_try_advisory_lock({_LOCK})")).scalar() \
-            if db.get_bind().dialect.name == "postgresql" else True
-        if not locked:
-            out["skipped"] = "another process is purging"
-            return out
+        # The advisory lock belongs to one database connection, and the session hands its connection back to the
+        # pool at every commit, so the lock is taken and released on a connection of its own.
+        engine = db.get_bind()
+        lock = engine.connect() if engine.dialect.name == "postgresql" else None
+        if lock is not None:
+            locked = lock.execute(text(f"SELECT pg_try_advisory_lock({_LOCK})")).scalar()
+            lock.commit()
+            if not locked:
+                lock.close()
+                out["skipped"] = "another process is purging"
+                return out
         try:
             with soft_delete.showing_deleted(db):
                 case_ids = [c for (c,) in db.query(Case.id).filter(Case.deleted_at.is_not(None),
@@ -76,9 +83,12 @@ def purge_due(session_factory, *, now=None, engine_delete=None) -> dict:
                     logger.exception("Deleted items: purge of evidence file %s failed; it stays in Deleted items",
                                      file_id)
         finally:
-            if db.get_bind().dialect.name == "postgresql":
-                db.execute(text(f"SELECT pg_advisory_unlock({_LOCK})"))
-                db.commit()
+            if lock is not None:
+                try:
+                    lock.execute(text(f"SELECT pg_advisory_unlock({_LOCK})"))
+                    lock.commit()
+                finally:
+                    lock.close()
     return out
 
 
@@ -95,16 +105,21 @@ def purge_file(db, file_id, *, engine_delete=None, graph_session=None, vector_db
         own = graph_session is None
         gs = graph_session or evidence_casebin._graph_session()
         try:
-            evidence_casebin.restore_graph(gs, case_id=str(record.case_id), file_id=record.id)
+            graph = evidence_casebin.purge_graph(gs, case_id=str(record.case_id), file_id=record.id)
         finally:
             if own:
                 gs.close()
-        vdb = vector_db if vector_db is not None else evidence_casebin._vector_db()
-        if vdb is not None:
-            evidence_casebin.restore_chunks(vdb, state.get("chunk_states") or {})
+        # Only what the delete recorded is removed, by its own keys and chunk ids, never by filename: a file of the
+        # same name uploaded while this one waited keeps its Document, entities and chunks.
+        removed = set(graph["removed_keys"])
+        doc_key = state.get("doc_key")
+        known = dict(doc_key=None if doc_key in removed else doc_key,
+                     exclusive_entities=[e for e in state.get("exclusive_entities") or [] if e.get("key") not in removed],
+                     chunk_ids=sorted(state.get("chunk_states") or {}))
         job_id, info = evidence_casebin.remove_for_good(
             db, record, deleted_by_email=state.get("deleted_by_email"),
-            delete_exclusive_entities=state.get("delete_exclusive_entities", True))
+            delete_exclusive_entities=state.get("delete_exclusive_entities", True), known=known)
+        info["hidden_copies_removed"] = sorted(removed)
         if job_id:
             try:
                 (engine_delete or _engine_delete)(str(record.case_id), job_id)

@@ -4,9 +4,11 @@ A case or evidence file deleted through the app is kept for 30 days (``deleted_a
 (services/casebin.py). While it waits, every ORM SELECT on every session hides:
 
 - the case itself (``cases.deleted_at IS NULL``, always current), and every row of any table with a foreign key to
-  ``cases.id`` that points at a deleted case (statements, ledger rows, accounts, parties, phone records, notes, ...);
+  ``cases.id`` that points at a deleted case and is not ON DELETE SET NULL (statements, ledger rows, accounts,
+  parties, phone records, notes, ...);
 - the evidence file itself (``evidence_files.deleted_at IS NULL``, always current), and every row of any table with a
-  foreign key to ``evidence_files.id`` that points at a deleted file (document texts, transcripts, claims, ...).
+  foreign key to ``evidence_files.id`` that points at a deleted file and is not ON DELETE SET NULL (document texts,
+  transcripts, claims, ...). A SET NULL row outlives the old delete too, so it stays visible.
 
 One filter for every table, worked out from the foreign keys, so a table added later is covered without anyone
 remembering to add it. ``check_case_access`` reads the case row itself, so every route treats a deleted case as not
@@ -110,6 +112,11 @@ def _shape(mapper_cls):
         if getattr(column, "table", None) is not local:
             continue
         for fk in column.foreign_keys:
+            # A row that goes with its case or file when that is removed is hidden with it (CASCADE; RESTRICT and NO
+            # ACTION rows block the removal). A SET NULL link outlives the removal, so its row stays visible: e.g. a
+            # live file whose duplicate_of_id points at a deleted file in another case, or a cost record.
+            if (fk.ondelete or "").upper() in ("SET NULL", "SET DEFAULT"):
+                continue
             if fk.column.name == "id" and fk.column.table is cases:
                 to_cases.append((attribute.key, column.nullable))
             elif fk.column.name == "id" and fk.column.table is files:

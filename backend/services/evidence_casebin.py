@@ -128,6 +128,23 @@ def restore_graph(graph_session, *, case_id: str, file_id) -> dict:
     return graph_session.execute_write(work)
 
 
+def purge_graph(graph_session, *, case_id: str, file_id) -> dict:
+    """Before a purge: put back what hide_graph hid for this file, except a hidden node whose key exists again in the
+    case (a later upload made it, e.g. a corrected file under the same name). That one is the deleted file's own copy:
+    it is removed with its relationships, and the live node is never touched. Returns
+    {"removed_keys": [...], "nodes": restored nodes, "relationships": restored relationships}."""
+    fid = str(file_id)
+
+    def work(tx):
+        return [row["key"] for row in tx.run(
+            "MATCH (h:DeletedItem {casebin_file_id: $fid}) WHERE EXISTS { MATCH (live {case_id: $case_id}) "
+            "WHERE live.key = h.key } WITH h, h.key AS key DETACH DELETE h RETURN key", fid=fid, case_id=case_id)]
+
+    removed = sorted(set(graph_session.execute_write(work)))
+    back = restore_graph(graph_session, case_id=case_id, file_id=file_id)
+    return dict(removed_keys=removed, nodes=back["nodes"], relationships=back["relationships"])
+
+
 def find_document_key(graph_session, filename: str, case_id: str):
     """The file's Document node, found as the delete always found it (services/neo4j/document_service.py)."""
     row = graph_session.run("MATCH (d:Document {case_id: $case_id}) WHERE d.name = $filename OR d.key = $filename "
@@ -233,6 +250,37 @@ def _record(db: Session, case_id: UUID, evidence_id: str, *, deleted: bool | Non
     if deleted is False and record.deleted_at is not None:
         raise EvidenceNotFound("Evidence file not found")
     return record
+
+
+def ledger_hold(db: Session, case_id, file_ids) -> str | None:
+    """Why these files cannot go to Deleted items while Financial counts payments read from them, or None.
+
+    A deleted file is hidden by its own rows, but the payments read from it hang off its statement source
+    (financial_source_documents -> periods and transactions) and many ledger reads are hand-written SQL, so they
+    would keep counting. A PDF is already held by services/financial/import_removal.py ``financial_hold`` until its
+    imports are removed; this holds any other file type with admitted payments (none on live, 2026-11-04: all 2,765
+    statement sources are PDFs), which has no Remove imports path. Rejected and superseded readings do not count in
+    totals and do not hold."""
+    from sqlalchemy import func, select
+    from postgres.models.financial import FinancialSourceDocument as Source, FinancialTransaction as Transaction
+    ids = [UUID(str(value)) for value in file_ids or []]
+    if not ids:
+        return None
+    rows = db.execute(
+        select(EvidenceFile.original_filename, func.count(Transaction.id))
+        .join(Source, Source.evidence_file_id == EvidenceFile.id)
+        .join(Transaction, Transaction.source_document_id == Source.id)
+        .where(EvidenceFile.case_id == case_id, EvidenceFile.id.in_(ids), Source.status == "admitted",
+               Transaction.ledger_status == "admitted")
+        .group_by(EvidenceFile.original_filename)).all()
+    held = [(name, count) for name, count in rows if not (name or "").lower().endswith(".pdf")]
+    if not held:
+        return None
+    payments = sum(count for _, count in held)
+    names = ", ".join(name for name, _ in held[:3]) + (f" and {len(held) - 3} more" if len(held) > 3 else "")
+    return (f"{names}: {payments} payment{'s' if payments != 1 else ''} read from "
+            f"{'it' if len(held) == 1 else 'them'} still count in this case's Financial totals, so "
+            f"{'it' if len(held) == 1 else 'they'} cannot be moved to Deleted items. Nothing was deleted.")
 
 
 def import_in_progress(db: Session, case_id, file_ids) -> list:
@@ -388,11 +436,15 @@ def list_deleted(db: Session, case_id: UUID) -> list[dict]:
 
 
 def remove_for_good(db: Session, record: EvidenceFile, *, deleted_by_email: str | None,
-                    delete_exclusive_entities: bool = True) -> tuple:
+                    delete_exclusive_entities: bool = True, known: dict | None = None) -> tuple:
     """The evidence delete used before Deleted items existed (routers/evidence.py at 8fe01c61), unchanged in what it
     removes: exclusive entities to the graph recycle bin, the Document node, the chunks and those entities' vectors,
     the file on disk unless it is a phone production or another row uses it. Returns (engine_job_id, result_info);
-    the caller removes the engine copy and then the row."""
+    the caller removes the engine copy and then the row.
+
+    ``known`` (the 30-day purge): what the delete recorded, {"doc_key", "exclusive_entities", "chunk_ids"}. Then nothing
+    is looked up by filename: another live file of the same name, uploaded while this one waited in Deleted items,
+    keeps its Document node, its entities and its chunks."""
     from services.neo4j_service import neo4j_service
     from services.evidence_db_storage import EvidenceDBStorage
     case_id = str(record.case_id)
@@ -402,11 +454,16 @@ def remove_for_good(db: Session, record: EvidenceFile, *, deleted_by_email: str 
                    "document_deleted": False, "exclusive_entities_recycled": [], "chromadb_cleaned": False}
     doc_key = None
     try:
-        doc_node = neo4j_service.find_document_node(filename, case_id)
+        if known is not None:
+            doc_node = {"key": known["doc_key"]} if known.get("doc_key") else None
+        else:
+            doc_node = neo4j_service.find_document_node(filename, case_id)
         if doc_node:
             doc_key = doc_node["key"]
             if delete_exclusive_entities:
-                for entity in neo4j_service.find_exclusive_entities(doc_key, case_id):
+                exclusive = ([dict(e) for e in known.get("exclusive_entities") or []] if known is not None
+                             else neo4j_service.find_exclusive_entities(doc_key, case_id))
+                for entity in exclusive:
                     try:
                         neo4j_service.soft_delete_entity(node_key=entity["key"], case_id=case_id,
                                                          deleted_by=deleted_by_email,
@@ -423,8 +480,14 @@ def remove_for_good(db: Session, record: EvidenceFile, *, deleted_by_email: str 
     try:
         vector_db = _vector_db()
         if vector_db:
-            vector_db.delete_chunks_for_document(case_id=case_id, evidence_file_id=str(record.id), doc_key=doc_key,
-                                                 file_name=filename)
+            if known is not None:
+                ids = set(known.get("chunk_ids") or []) | set(_document_chunk_ids(
+                    vector_db, case_id=case_id, file_id=record.id, doc_key=None, file_name=None))
+                if ids:
+                    vector_db.chunk_collection.delete(ids=sorted(ids))
+            else:
+                vector_db.delete_chunks_for_document(case_id=case_id, evidence_file_id=str(record.id),
+                                                     doc_key=doc_key, file_name=filename)
             for entity in result_info["exclusive_entities_recycled"]:
                 vector_db.delete_entity(entity["key"])
             result_info["chromadb_cleaned"] = True

@@ -526,3 +526,155 @@ def test_a_file_purge_after_30_days_does_what_the_old_delete_did(tmp_path):
         with engine.connect() as c:
             assert c.execute(text("SELECT count(*) FROM evidence_files WHERE id = :i"), {"i": ids["file"]}).scalar() == 0
             assert c.execute(text("SELECT count(*) FROM activity_events WHERE action = 'evidence_purged'")).scalar() == 1
+
+
+@phone_pg.needs_template
+def test_a_live_file_linked_to_a_deleted_one_by_a_set_null_key_stays_visible():
+    """duplicate_of_id is ON DELETE SET NULL and the upload sets it across cases (same bytes): the old delete left the
+    other file in place, so a deleted file must not hide it."""
+    from sqlalchemy import select, text
+    from sqlalchemy.orm import Session
+    from postgres.models.evidence import EvidenceFile
+    from services import evidence_casebin
+    with phone_pg.fresh_engine() as engine:
+        case, owner_id, ids = _seed(engine)
+        other_case, _, _ = _seed(engine)
+        with engine.begin() as c:
+            copy = c.execute(text("SELECT id FROM evidence_files WHERE case_id = :c AND original_filename = "
+                                  "'notes.pdf'"), {"c": other_case}).scalar()
+            c.execute(text("UPDATE evidence_files SET duplicate_of_id = :d WHERE id = :i"),
+                      {"d": ids["file"], "i": copy})
+        with Session(engine) as s:
+            evidence_casebin.delete_file(s, s.get(EvidenceFile, ids["file"]), _user(engine, owner_id),
+                                         graph_session=_NoGraph(), vector_db=FakeVectorDB())
+        with Session(engine) as s:
+            assert s.get(EvidenceFile, ids["file"]) is None
+            assert s.get(EvidenceFile, copy) is not None
+            assert sorted(f.original_filename for f in s.scalars(
+                select(EvidenceFile).where(EvidenceFile.case_id == other_case))) == ["notes.pdf", "synthetic.pdf"]
+
+
+class _NoGraph:
+    """A graph session for files with no Document node (every query finds nothing)."""
+
+    def close(self):
+        pass
+
+    def run(self, *a, **k):
+        class _R:
+            def single(self):
+                return None
+
+            def __iter__(self):
+                return iter(())
+        return _R()
+
+    def execute_write(self, work):
+        class _Tx:
+            def run(self, *a, **k):
+                class _R:
+                    def single(self):
+                        return {"c": 0}
+
+                    def __iter__(self):
+                        return iter(())
+                return _R()
+        return work(_Tx())
+
+
+@phone_pg.needs_template
+def test_a_spreadsheet_whose_payments_count_is_refused_and_a_pdf_one_is_held_as_before():
+    """Payments hang off the statement source, not the file, and many ledger reads are hand-written SQL: a non-PDF
+    file whose payments count cannot go to Deleted items (it has no Remove imports path); the PDF hold is unchanged."""
+    from sqlalchemy import text
+    from routers.evidence import router as evidence_router
+    with phone_pg.fresh_engine() as engine:
+        case, owner_id, ids = _seed(engine)
+        owner = _user(engine, owner_id)
+        with engine.begin() as c:
+            c.execute(text("UPDATE evidence_files SET original_filename = 'statement.csv' WHERE id = :i"),
+                      {"i": ids["file"]})
+        with _api(engine, owner, evidence_router) as api:
+            refused = api.delete(f"/api/evidence/{ids['file']}?case_id={case}")
+            assert refused.status_code == 409
+            assert "3 payments read from it still count" in refused.json()["detail"]
+        with engine.connect() as c:
+            assert c.execute(text("SELECT deleted_at FROM evidence_files WHERE id = :i"),
+                             {"i": ids["file"]}).scalar() is None
+        with engine.begin() as c:
+            c.execute(text("UPDATE financial_transactions SET ledger_status = 'rejected' WHERE source_document_id = :d"),
+                      {"d": ids["doc"]})
+        with patch("services.evidence_casebin._graph_session", lambda: _NoGraph()), \
+                patch("services.evidence_casebin._vector_db", lambda: FakeVectorDB()), \
+                _api(engine, owner, evidence_router) as api:
+            done = api.delete(f"/api/evidence/{ids['file']}?case_id={case}")
+            assert done.status_code == 200, done.text
+
+
+@needs_graph
+def test_a_file_purge_leaves_a_live_file_of_the_same_name_untouched(tmp_path):
+    """Deleted 'synthetic.pdf', then a corrected 'synthetic.pdf' uploaded: 30 days later the purge removes only what
+    the delete hid. The old delete looked up the Document and chunks by filename and took the live file's too."""
+    from sqlalchemy.orm import Session
+    from postgres.models.evidence import EvidenceFile
+    from services import casebin_purge, evidence_casebin
+    with phone_pg.fresh_engine() as engine, _graph() as (driver, gs):
+        case, owner_id, ids = _seed(engine)
+        owner = _user(engine, owner_id)
+        cid = str(case)
+        _seed_graph(gs, cid, "synthetic.pdf", "notes.pdf")
+        fake = FakeVectorDB()
+        _seed_chunks(fake, cid, ids["file"], uuid.uuid4())
+        with Session(engine) as s:
+            evidence_casebin.delete_file(s, s.get(EvidenceFile, ids["file"]), owner, graph_session=gs, vector_db=fake)
+        # The corrected upload: a live Document with the same name and key, its own entity and chunk.
+        new_file = uuid.uuid4()
+        gs.run("CREATE (d:Document {key: 'doc-synthetic.pdf', name: 'synthetic.pdf', case_id: $c, version: 2}), "
+               "(p:Person {key: 'p-only', name: 'Only Here', case_id: $c, version: 2}), "
+               "(p)-[:MENTIONED_IN {case_id: $c}]->(d)", c=cid)
+        fake.chunk_collection.add(f"{new_file}_chunk_0", {"case_id": cid, "evidence_file_id": str(new_file),
+                                                          "file_name": "synthetic.pdf", "doc_id": "synthetic.pdf"})
+        with patch("services.neo4j.entity_service.driver", driver), \
+                patch("services.neo4j.document_service.driver", driver), \
+                patch("services.evidence_casebin._vector_db", lambda: fake), \
+                patch("routers.evidence._resolve_stored_path", lambda p: None):
+            with Session(engine) as s:
+                details = casebin_purge.purge_file(s, ids["file"], graph_session=gs, vector_db=fake,
+                                                   engine_delete=lambda *a: None)
+        assert details["hidden_copies_removed"] == ["doc-synthetic.pdf", "p-only"]
+        live = gs.run("MATCH (n {case_id: $c}) WHERE n.key IN ['doc-synthetic.pdf', 'p-only'] "
+                      "RETURN n.key AS key, n.version AS v ORDER BY key", c=cid).data()
+        assert live == [{"key": "doc-synthetic.pdf", "v": 2}, {"key": "p-only", "v": 2}]
+        assert gs.run("MATCH (:Person {key: 'p-only', case_id: $c})-[r:MENTIONED_IN]->() RETURN count(r) AS k",
+                      c=cid).single()["k"] == 1
+        assert gs.run("MATCH (n:DeletedItem) RETURN count(n) AS k").single()["k"] == 0
+        assert f"{new_file}_chunk_0" in fake.chunk_collection.rows
+        assert [i for i in fake.chunk_collection.rows if i.startswith(str(ids["file"]))] == []
+
+
+@phone_pg.needs_template
+def test_the_purge_lock_is_released_so_the_next_run_purges():
+    """The advisory lock is per connection; taken through a session that commits, it stayed on a pooled connection
+    and every later run was skipped as 'another process is purging'."""
+    from sqlalchemy import text
+    from sqlalchemy.orm import Session, sessionmaker
+    from services import case_service, casebin_purge
+    with phone_pg.fresh_engine() as engine:
+        first, owner_id, _ = _seed(engine)
+        second, second_owner, _ = _seed(engine)
+        for case, owner in ((first, owner_id), (second, second_owner)):
+            with Session(engine) as s:
+                case_service.delete_case(s, case, _user(engine, owner))
+        factory = sessionmaker(bind=engine)
+        with engine.begin() as c:
+            c.execute(text("UPDATE cases SET deleted_at = now() - interval '40 days' WHERE id = :c"), {"c": first})
+        with patch("services.vector_db_service.vector_db_service", FakeVectorDB()):
+            done = casebin_purge.purge_due(factory)
+            assert [c["case_id"] for c in done["cases"]] == [str(first)] and done["skipped"] is None
+            with engine.connect() as c:
+                assert c.execute(text("SELECT count(*) FROM pg_locks WHERE locktype = 'advisory'")).scalar() == 0
+            with engine.begin() as c:
+                c.execute(text("UPDATE cases SET deleted_at = now() - interval '40 days' WHERE id = :c"),
+                          {"c": second})
+            again = casebin_purge.purge_due(factory)
+        assert again["skipped"] is None and [c["case_id"] for c in again["cases"]] == [str(second)]

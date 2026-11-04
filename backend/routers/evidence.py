@@ -2217,6 +2217,9 @@ def delete_evidence_file(
     hold = financial_hold(db, case_id=db_record.case_id, file_ids=[db_record.id])
     if hold:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=financial_hold_message(hold))
+    ledger = evidence_casebin.ledger_hold(db, db_record.case_id, [db_record.id])
+    if ledger:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=ledger)
     if evidence_casebin.import_in_progress(db, db_record.case_id, [db_record.id]):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="A Financial import is still preparing "
                             "this file. Wait for it to finish, or remove the import, then delete the file.")

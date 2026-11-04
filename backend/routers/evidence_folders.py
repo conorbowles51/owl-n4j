@@ -323,10 +323,14 @@ def delete_folder(
     try:
         _check_case_access(db, case_id, current_user, permission=("evidence", "delete"))
         from services.financial.import_removal import financial_hold, financial_hold_message
-        hold = financial_hold(db, case_id=uuid.UUID(case_id),
-                              file_ids=EvidenceDBStorage.folder_tree_file_ids(db, uuid.UUID(folder_id)))
+        tree_ids = EvidenceDBStorage.folder_tree_file_ids(db, uuid.UUID(folder_id))
+        hold = financial_hold(db, case_id=uuid.UUID(case_id), file_ids=tree_ids)
         if hold:
             raise HTTPException(status_code=409, detail=financial_hold_message(hold))
+        from services.evidence_casebin import ledger_hold
+        ledger = ledger_hold(db, uuid.UUID(case_id), tree_ids)
+        if ledger:
+            raise HTTPException(status_code=409, detail=ledger)
         # Every file in the folder tree goes to Deleted items (services/evidence_casebin.py), restorable for 30 days;
         # files already there are kept. Then the folders go. A restored file goes back to its folder if that folder
         # exists again, else to the top of Evidence.
