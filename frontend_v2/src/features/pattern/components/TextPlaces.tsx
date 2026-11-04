@@ -91,9 +91,10 @@ function TextPlaceRow({ caseId, item, suggestionsOn }: { caseId: string; item: T
   const [lon, setLon] = useState(p ? String(p.lon) : "")
   const [radius, setRadius] = useState(p ? String(Math.round(p.radius_m)) : "500")
   const [reason, setReason] = useState("")
-  // A saved placement that started from a suggestion keeps it while the point and text are still the suggestion's.
+  // A saved placement that started from a suggestion keeps it while the point and text are still the suggestion's
+  // (and suggestions are on: the server keeps only a suggestion its own list offers for the text).
   const [chosen, setChosen] = useState<Suggestion | null>(
-    p?.suggestion && p.place_text === item.place_text ? p.suggestion : null)
+    suggestionsOn && p?.suggestion && p.place_text === item.place_text ? p.suggestion : null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)

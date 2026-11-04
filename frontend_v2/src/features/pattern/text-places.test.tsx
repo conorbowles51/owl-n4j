@@ -143,7 +143,8 @@ describe("Text places", () => {
     const placed = item({ placement: { id: "p1", lat: 39.801720, lon: -89.643710, radius_m: 8000, reason: "the town",
       suggestion: sug, decision_id: "d1", actor_name: "Test Person", created_at: "2026-11-04T12:00:00+00:00",
       place_text: "Synthetic Hall, Springfield, IL" } })
-    vi.spyOn(textPlacesAPI, "list").mockResolvedValue(list([placed], false))
+    vi.spyOn(textPlacesAPI, "list").mockResolvedValue(list([placed]))
+    vi.spyOn(textPlacesAPI, "suggestions").mockResolvedValue({ enabled: true, reason: "", total: 1, returned: 1, candidates: [sug] })
     const place = vi.spyOn(textPlacesAPI, "place").mockResolvedValue({ placement_id: "p2", decision_id: "d2" })
     show()
     fireEvent.click(await screen.findByText("Change the place"))
@@ -152,6 +153,23 @@ describe("Text places", () => {
     fireEvent.click(screen.getByText("Save the place"))
     await waitFor(() => expect(place).toHaveBeenCalled())
     expect(place.mock.calls[0][1]).toMatchObject({ radius_m: 3000, suggestion: sug })
+  })
+
+  it("with suggestions off, re-placing a placement that started from a suggestion sends none", async () => {
+    const sug = { geonameid: 1, name: "Springfield", lat: "39.80172", lon: "-89.64371", country_code: "US",
+      admin1: "Illinois", population: 114394 }
+    const placed = item({ placement: { id: "p1", lat: 39.80172, lon: -89.64371, radius_m: 8000, reason: "the town",
+      suggestion: sug, decision_id: "d1", actor_name: "Test Person", created_at: "2026-11-04T12:00:00+00:00",
+      place_text: "Synthetic Hall, Springfield, IL" } })
+    vi.spyOn(textPlacesAPI, "list").mockResolvedValue(list([placed], false))
+    const place = vi.spyOn(textPlacesAPI, "place").mockResolvedValue({ placement_id: "p2", decision_id: "d2" })
+    show()
+    fireEvent.click(await screen.findByText("Change the place"))
+    fireEvent.change(screen.getByLabelText("Radius (metres)"), { target: { value: "3000" } })
+    fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "narrower" } })
+    fireEvent.click(screen.getByText("Save the place"))
+    await waitFor(() => expect(place).toHaveBeenCalled())
+    expect(place.mock.calls[0][1]).toMatchObject({ radius_m: 3000, suggestion: null })
   })
 
   it("a refused save says why in plain words", async () => {

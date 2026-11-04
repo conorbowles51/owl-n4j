@@ -203,6 +203,7 @@ def list_places(conn, case_id, *, extraction_id=None, status="all", cursor=0, li
     if status not in ("all", "placed", "not_placed"):
         raise TextPlaceError("status is all, placed or not_placed.")
     cands = _candidates(conn, case_id, extraction_id)
+    every = cands
     placed = current(conn, case_id)
     counts = {"calendar": 0, "checkin": 0, "other": 0}
     for r in cands:
@@ -239,7 +240,7 @@ def list_places(conn, case_id, *, extraction_id=None, status="all", cursor=0, li
         })
     total = len(cands)
     nxt = cursor + len(page)
-    stale = no_longer_applies(conn, case_id, placed, extraction_id)
+    stale = no_longer_applies(conn, case_id, placed, extraction_id, every)
     return {"total": total, "returned": len(page), "cursor": cursor, "limit": limit,
             "next_cursor": nxt if nxt < total else None, "items": items,
             "counts": {"all": sum(counts.values()), "placed": n_placed, "not_placed": sum(counts.values()) - n_placed,
@@ -248,7 +249,7 @@ def list_places(conn, case_id, *, extraction_id=None, status="all", cursor=0, li
             "status": status, "suggestions": suggestion_status()}
 
 
-def no_longer_applies(conn, case_id, placed=None, extraction_id=None) -> list:
+def no_longer_applies(conn, case_id, placed=None, extraction_id=None, candidates=None) -> list:
     """Current placements whose written place is no longer a text place of the case: the record gained a coordinate,
     its text was corrected to blank, or its phone was superseded. They give no observation; they are listed (never
     paged away) so a person can see and remove them."""
@@ -256,7 +257,8 @@ def no_longer_applies(conn, case_id, placed=None, extraction_id=None) -> list:
     mine = {k: p for k, p in placed.items() if extraction_id is None or str(p["extraction_id"]) == str(extraction_id)}
     if not mine:
         return []
-    live = {(r.record_uid, r.field_path) for r in _candidates(conn, case_id, extraction_id)}
+    rows = _candidates(conn, case_id, extraction_id) if candidates is None else candidates
+    live = {(r.record_uid, r.field_path) for r in rows}
     out = []
     for (uid, fp), p in sorted(mine.items(), key=lambda kv: (str(kv[1]["created_at"]), str(kv[0][0]))):
         if (uid, fp) in live:

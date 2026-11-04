@@ -394,7 +394,7 @@ def test_a_list_reads_record_bodies_once_per_phone_not_once_per_record(hooks):
         finally:
             event.remove(engine, "before_cursor_execute", count)
         assert out["total"] == 8
-        assert len(reads) <= 3, len(reads)  # check-ins once, Location kinds once, stale-list check-ins once
+        assert len(reads) <= 2, len(reads)  # check-ins once, Location kinds once
 
 
 @needs_template
