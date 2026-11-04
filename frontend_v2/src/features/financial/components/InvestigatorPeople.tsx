@@ -471,15 +471,18 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
   })
   // The list of names and accounts is the server's answer for the same payments (d5b330d1: 2 MB instead of every
   // payment, 64 MB). Every payment is read when a profile is opened, or when the server cannot answer (then the
-  // page groups them as before).
+  // page groups them as before). Once this scope's payments are read the list is the browser's own grouping of them
+  // again: a name saved in an opened profile patches those rows in place (PaymentNamingPanel) and does not ask the
+  // server again, so only the rows show it at once.
   const [rowsWanted, setRowsWanted] = useState(false)
   const data = useInvestigatorPayments(caseId, rowsWanted || !!view.selected)
+  const rowsRead = data.complete && !data.query.isPlaceholderData
   const people = useLedgerPeopleView(
     caseId,
     data.params,
     data.categories,
     view.currencyGroup,
-    !rowsWanted
+    !rowsWanted && !rowsRead
   )
   const serverFailed =
     people.isError ||
@@ -490,7 +493,7 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
     if (serverFailed) setRowsWanted(true)
   }, [serverFailed])
   const serverView =
-    !rowsWanted && people.data?.available && people.data.complete
+    !rowsWanted && !rowsRead && people.data?.available && people.data.complete
       ? people.data
       : null
   const serverCards = useMemo(
@@ -512,8 +515,8 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
       return result
     },
     // The server's list already holds what the cards show from the directory; the directory itself is read with
-    // every payment (a profile opened, or the server could not answer).
-    enabled: rowsWanted || !!view.selected,
+    // every payment (a profile opened, the server could not answer, or the payments are already read).
+    enabled: rowsWanted || !!view.selected || rowsRead,
   })
   const [source, setSource] = useState<string | null>(null)
   const [returnPath, , clearReturn] = useFinancialDraft<{
@@ -631,7 +634,7 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
       entry.payment_ids.some((id) => selectedIds.has(id))
     ) ?? []
   // The browser's own cards, only where the list is drawn from them (the server could not answer).
-  const browserList = !serverCards && !selected
+  const browserList = !selected && !(serverCards && !view.selected)
   const browserCards = useMemo(
     () => (browserList ? profiles.map(profileCard) : []),
     [browserList, profiles]
@@ -667,7 +670,7 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
           />
           {identityTools}
         </>
-      ) : !rowsWanted && !view.selected ? (
+      ) : !rowsWanted && !view.selected && !rowsRead ? (
         <p role="status" className="text-sm text-muted-foreground">
           Loading names and accounts…
         </p>

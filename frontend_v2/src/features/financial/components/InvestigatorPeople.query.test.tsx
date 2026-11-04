@@ -9,7 +9,7 @@ import { MemoryRouter } from "react-router-dom"
 import { afterEach, expect, it, vi } from "vitest"
 import fixture from "../lib/people-parity.fixture.json"
 import { InvestigatorPeople } from "./InvestigatorPeople"
-import { useFinancialDraftStore } from "../stores/financial-drafts"
+import { financialDraftKey, useFinancialDraftStore } from "../stores/financial-drafts"
 import { useInvestigationScopeStore } from "../stores/investigation-scope"
 
 const calls = vi.hoisted(() => [] as string[])
@@ -61,9 +61,9 @@ afterEach(() => {
   useFinancialDraftStore.setState({ drafts: {} })
 })
 
-const renderPage = () =>
+const renderPage = (client = new QueryClient()) =>
   render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={client}>
       <MemoryRouter>
         <InvestigatorPeople caseId={CASE} />
       </MemoryRouter>
@@ -126,4 +126,35 @@ it("keeps the controls on screen while a currency is worked out, then shows its 
   expect(hasCard("Shop")).toBe(false)
   expect(screen.getByLabelText("Profile currency and account type")).toBeInTheDocument()
   expect(calls.some((u) => u.startsWith("/api/financial/ledger?"))).toBe(false)
+})
+
+it("after a name is saved in an opened profile, the list shows the payments as they now are", async () => {
+  const client = new QueryClient()
+  renderPage(client)
+  fireEvent.click(await findCard("Shop"))
+  await screen.findByText(`Payment table with ${shop().payments} payments`)
+  // PaymentNamingPanel patches the read rows in place and asks nothing again.
+  const key = client.getQueryCache().findAll({ queryKey: ["financial-ledger", CASE] })
+    .find((q) => (q.state.data as { transactions?: unknown[] } | undefined)?.transactions)!.queryKey
+  const renamed = fixture.rows.find((r) => r.to_name === "Shop")!.key
+  client.setQueryData(key, {
+    case_id: CASE,
+    total: fixture.rows.length,
+    transactions: fixture.rows.map((r) => (r.key === renamed ? { ...r, to_name: "Corner Shop" } : r)),
+  })
+  const before = calls.length
+  fireEvent.click(screen.getByRole("button", { name: "Back to names and accounts" }))
+  expect(await findCard("Corner Shop")).toHaveTextContent("1 matching payments")
+  expect(await findCard("Shop")).toHaveTextContent(`${shop().payments - 1} matching payments`)
+  expect(calls.slice(before).some((u) => u.startsWith("/api/financial/ledger-people-view?"))).toBe(false)
+})
+
+it("shows the whole list when the profile kept open no longer exists", async () => {
+  useFinancialDraftStore.getState().put(financialDraftKey(CASE, "investigator-people"), {
+    search: "", kind: "all", sort: "count", selected: "name:Nobody", page: 0, currencyGroup: "",
+    profileScope: "owned_accounts", parentProfile: "",
+  })
+  renderPage()
+  expect(await findCard("Shop")).toHaveTextContent(`${shop().payments} matching payments`)
+  expect(screen.queryByText("No names match this search")).not.toBeInTheDocument()
 })
