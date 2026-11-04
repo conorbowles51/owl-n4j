@@ -42,7 +42,7 @@ def get_session(db, identity, user, *, lock=False):
         prior = db.get(EvidenceUploadSession, identity)
         if prior is not None and prior.group_id:
             from routers.evidence_upload_groups import get_group
-            get_group(db, prior.group_id, user, lock=True)
+            get_group(db, prior.group_id, user, lock='share')
     query = select(EvidenceUploadSession).where(EvidenceUploadSession.id == identity)
     if lock:
         query = query.with_for_update().execution_options(populate_existing=True)

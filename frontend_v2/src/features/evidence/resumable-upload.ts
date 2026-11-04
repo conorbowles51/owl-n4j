@@ -17,7 +17,7 @@ export interface UploadSession {
   evidence_id: string | null
   group_id?: string | null
 }
-const CHUNK_SIZE = 4 * 1024 * 1024
+export const CHUNK_SIZE = 4 * 1024 * 1024
 const transfers = new Map<
   string,
   {
@@ -43,6 +43,14 @@ export async function uploadFingerprint(
   file: File,
   onBytes?: (bytes: number) => void
 ) {
+  // A file of one part is its own only chunk: one SHA-256 is both (a phone folder is mostly such files; hashing
+  // them twice doubled the work of the check before upload).
+  if (file.size <= CHUNK_SIZE) {
+    const bytes = new Uint8Array(await file.slice(0, CHUNK_SIZE).arrayBuffer())
+    const digest = bytesToHex(sha256(bytes))
+    onBytes?.(bytes.length)
+    return { sha256: digest, chunks: file.size ? [digest] : [] }
+  }
   const whole = sha256.create()
   const chunks: string[] = []
   for (let offset = 0; offset < file.size; offset += CHUNK_SIZE) {

@@ -52,6 +52,48 @@ type Active = {
  * browser's six connections to the host for the page itself. */
 export const SEND_AT_ONCE = 4
 
+/** Files of one part up to this size go many to a request; the server takes a batch of up to 1,000 one-part files
+ * and 8 MiB (backend/routers/evidence_upload_groups.py BATCH_MAX_FILES, BATCH_MAX_BYTES). On a live 81,820-file phone
+ * folder 98.7 % of the files are under 1 MiB and hold 6 % of its bytes; each cost three requests sent alone. */
+export const BATCH_FILE_BYTES = 1024 * 1024
+export const BATCH_MAX_FILES = 500
+export const BATCH_MAX_BYTES = 4 * 1024 * 1024
+const STAGED = new Set(["staged", "completed"])
+
+type Member = UploadSession & { path: string }
+export const isBatchable = (member: Member) =>
+  member.size <= BATCH_FILE_BYTES && member.size <= member.chunk_size
+
+/** The next batch off the front of ``small``: up to BATCH_MAX_FILES files and BATCH_MAX_BYTES (always one file). */
+export function takeBatch(small: Member[]) {
+  const batch: Member[] = []
+  let bytes = 0
+  while (
+    small.length &&
+    batch.length < BATCH_MAX_FILES &&
+    (!batch.length || bytes + small[0].size <= BATCH_MAX_BYTES)
+  ) {
+    const member = small.shift()!
+    bytes += member.size
+    batch.push(member)
+  }
+  return batch
+}
+
+/** One request: a JSON line naming each file and its size, then the files' bytes back to back. The server checks
+ * every file against its SHA-256 and answers for each one. */
+export function sendBatch(groupId: string, files: { member: Member; file: File }[]) {
+  const head = JSON.stringify({ files: files.map(({ member }) => ({ id: member.id, size: member.size })) }) + "\n"
+  return fetchAPI<{ files: { id: string; status: UploadSession["status"]; error?: string }[] }>(
+    `${endpoint}/${groupId}/files`,
+    {
+      method: "PUT",
+      body: new Blob([head, ...files.map(({ file }) => file)]),
+      headers: { "Content-Type": "application/octet-stream" },
+    }
+  )
+}
+
 function setPaused(transfer: Active, paused: boolean) {
   transfer.paused = paused
   for (const id of transfer.memberIds) setLocalUploadPaused(id, paused)
@@ -217,36 +259,86 @@ function runGroup(
       sent.filesDone++
       return false
     })
+    // Small files of one part go many to a request; larger files go in resumable chunks as before.
+    const small = queue.filter((member) => isBatchable(member))
+    const large = queue.filter((member) => !isBatchable(member))
     // Several files are sent at once, so a file's own time overstates its cost; the time left is fitted on the
-    // interval between one file finishing and the next.
+    // interval between one file finishing and the next (a batch's interval is shared by its files).
     let lastFinish = performance.now()
     let failure: unknown = null
+    const finished = (done: { size: number }[]) => {
+      const now = performance.now()
+      for (const item of done) sent.fit = addFileCost(sent.fit, item.size, (now - lastFinish) / 1000 / done.length)
+      lastFinish = now
+      sent.filesDone += done.length
+      onProgress?.({ ...sent })
+    }
+    const sendSmall = async () => {
+      const batch = takeBatch(small)
+      let retried = false
+      for (;;) {
+        await whilePaused(transfer)
+        checkSession()
+        const missing = batch.find((member) => !selected.has(member.path))
+        if (missing) throw new Error(`Reselect ${missing.path} to finish this selection.`)
+        try {
+          const saved = await sendBatch(
+            state.id,
+            batch.map((member) => ({ member, file: selected.get(member.path)! }))
+          )
+          const refused = saved.files.filter((item) => item.error)
+          const done = batch.filter((member) =>
+            saved.files.some((item) => item.id === member.id && STAGED.has(item.status))
+          )
+          sent.bytesDone += done.reduce((sum, member) => sum + member.size, 0)
+          finished(done)
+          if (refused.length) {
+            const member = batch.find((item) => item.id === refused[0].id)
+            throw new Error(
+              `${member?.path ?? "A file"} does not match the fingerprint taken when it was chosen, so it was not saved. Select the original folder again; files already saved are kept.`
+            )
+          }
+          return
+        } catch (error) {
+          if (error instanceof Error && /does not match the fingerprint/.test(error.message)) throw error
+          // A pause (this tab's, or a release's) refuses the batch: wait for the resume and send it again. A lost
+          // answer is retried once: the server keeps a file it already saved and answers for it unchanged.
+          const member = await fetchAPI<UploadSession>(`/api/evidence-upload-sessions/${batch[0].id}`).catch(() => null)
+          if (member?.status === "paused" || transfer.paused) {
+            if (!transfer.paused) setPaused(transfer, true)
+            continue
+          }
+          if (retried) throw error
+          retried = true
+        }
+      }
+    }
+    const sendLarge = async (member: UploadSession & { path: string }) => {
+      const file = selected.get(member.path)
+      checkSession()
+      if (!file) throw new Error(`Reselect ${member.path} to finish this selection.`)
+      transfer.memberIds.add(member.id)
+      try {
+        await transferFile(member, file, (bytes) => {
+          sent.bytesDone += bytes
+          onProgress?.({ ...sent })
+        })
+      } finally {
+        transfer.memberIds.delete(member.id)
+      }
+      finished([member])
+    }
     const sender = async () => {
       for (;;) {
         await whilePaused(transfer)
-        const member = failure === null ? queue.shift() : undefined
-        if (!member) return
-        const file = selected.get(member.path)
+        if (failure !== null || (!small.length && !large.length)) return
         try {
-          checkSession()
-          if (!file)
-            throw new Error(`Reselect ${member.path} to finish this selection.`)
-          transfer.memberIds.add(member.id)
-          await transferFile(member, file, (bytes) => {
-            sent.bytesDone += bytes
-            onProgress?.({ ...sent })
-          })
+          if (small.length) await sendSmall()
+          else await sendLarge(large.shift()!)
         } catch (error) {
           failure ??= error
           return
-        } finally {
-          transfer.memberIds.delete(member.id)
         }
-        const now = performance.now()
-        sent.fit = addFileCost(sent.fit, file.size, (now - lastFinish) / 1000)
-        lastFinish = now
-        sent.filesDone++
-        onProgress?.({ ...sent })
       }
     }
     await Promise.all(Array.from({ length: Math.min(SEND_AT_ONCE, queue.length) }, sender))

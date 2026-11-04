@@ -5,6 +5,7 @@ phone-processing requests have stable identities across lost acknowledgements.
 Original evidence is never overwritten by a later upload with the same name.
 """
 import hashlib
+import json
 import math
 import os
 from pathlib import Path, PurePosixPath
@@ -17,7 +18,7 @@ from typing import Literal
 from uuid import UUID, uuid4, uuid5
 import zipfile
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import case, delete, func, select
@@ -69,13 +70,18 @@ def safe_path(raw):
 
 
 def get_group(db, identity, user, *, lock=False):
+    """``lock=True`` holds the group row alone (pause, resume, complete, discard). ``lock='share'`` is for a file's
+    own writes (a chunk, a file's finish, a batch of small files): they hold the row together, so several files of
+    one selection are saved at once, and a pause or finish still waits for every write in flight. Every member write
+    holding the row alone made a selection's files queue one behind another however many the page sent at once
+    (measured live on a 81,820-file phone folder: 3 to 6 files a second with four in flight)."""
     # The manifest (one entry per file: 43,123 on a measured phone folder) loads only when read. Every chunk and every
     # file completion locks its group, and decoding the whole manifest each time made a folder's cost grow with its
     # square (measured live: about 2 s per file at 300 of 43,123).
     query = select(EvidenceUploadGroup).options(defer(EvidenceUploadGroup.manifest)).where(
         EvidenceUploadGroup.id == identity)
     if lock:
-        query = query.with_for_update().execution_options(populate_existing=True)
+        query = query.with_for_update(read=lock == 'share').execution_options(populate_existing=True)
     group = db.scalar(query)
     if group is None or group.user_id != user.id:
         raise HTTPException(404, 'Upload selection not found')
@@ -532,6 +538,130 @@ def discard_group(db, identity, user):
     db.execute(delete(EvidenceUploadGroup).where(EvidenceUploadGroup.id == group.id))
     db.commit()
     return result
+
+
+# Small files of one selection travel many to a request (lx-uploadspeed C). Measured on a live 81,820-file phone
+# folder: 80 % of its files are under 16 KB, and each file cost three requests (its state, its one chunk, its finish)
+# and two flushed writes (the chunk, then the assembled file). One batch request carries up to BATCH_MAX_FILES files
+# of one part each (at most uploads.CHUNK_SIZE bytes), BATCH_MAX_BYTES in all. Every file is checked against the
+# SHA-256 it was chosen with and saved exactly as a finished single-file send saves it: the assembled file, its one
+# part, its own upload row marked staged. Registration later makes one evidence row per file, unchanged.
+BATCH_MAX_FILES = 1000
+BATCH_MAX_BYTES = 8 * 1024 * 1024
+BATCH_MAX_HEADER = 256 * 1024
+BATCH_MISMATCH = ('{name} does not match the fingerprint taken when it was chosen, so it was not saved. Select the '
+                  'original folder again; files already saved are kept.')
+
+
+def _batch_spec(body):
+    """The first line of a batch is JSON ``{"files": [{"id": <member id>, "size": <bytes>}, ...]}``; the files'
+    bytes follow it back to back in that order."""
+    end = body.find(b'\n', 0, BATCH_MAX_HEADER)
+    try:
+        if end < 0:
+            raise ValueError
+        files = json.loads(bytes(body[:end]))['files']
+        spec = [(UUID(str(item['id'])), item['size']) for item in files]
+    except (ValueError, KeyError, TypeError):
+        raise HTTPException(400, 'The batch does not describe its files. Nothing in it was saved.')
+    if (not spec or len(spec) > BATCH_MAX_FILES or len({i for i, _ in spec}) != len(spec)
+            or any(type(size) is not int or size < 0 for _, size in spec)
+            or sum(size for _, size in spec) != len(body) - end - 1):
+        raise HTTPException(400, 'The batch does not match its description. Nothing in it was saved.')
+    return spec, end + 1
+
+
+def _write_flushed(path, content):
+    """``content`` at ``path`` through a temporary file in the same folder; the caller flushes ``fd`` and replaces."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=path.parent)
+    with os.fdopen(fd, 'wb', closefd=False) as output:
+        output.write(content)
+    return fd, temporary
+
+
+def save_batch(db, identity, user, body):
+    spec, offset = _batch_spec(body)
+    group = get_group(db, identity, user, lock='share')
+    if group.status != 'uploading':
+        raise HTTPException(409, 'Resume this selection before sending more files')
+    S = EvidenceUploadSession
+    rows = {row.id: row for row in db.scalars(select(S).where(S.group_id == group.id, S.id.in_([i for i, _ in spec]))
+                                              .order_by(S.id).with_for_update())}
+    if len(rows) != len(spec):
+        raise HTTPException(404, 'A file in this batch is not part of this selection. Nothing in it was saved.')
+    view = memoryview(body)
+    pending, results = [], []
+    try:
+        for identity_, size in spec:
+            row, content = rows[identity_], view[offset:offset + size]
+            offset += size
+            if row.size != size or size > uploads.CHUNK_SIZE or len(row.chunks) != (1 if size else 0):
+                raise HTTPException(400, 'A file in this batch is not a one-part file of its chosen size. Nothing '
+                                         'in it was saved.')
+            if row.status in STAGED:  # a repeat after a lost response: saved already, kept as it is
+                results.append(dict(id=str(row.id), status=row.status))
+                continue
+            if row.status != 'uploading':
+                raise HTTPException(409, 'Resume this selection before sending more files')
+            digest = hashlib.sha256(content).hexdigest()
+            if digest != row.sha256 or (size and digest != row.chunks[0]):
+                results.append(dict(id=str(row.id), status=row.status, error=BATCH_MISMATCH.format(name=row.filename)))
+                continue
+            target = uploads.assembled_path(row)
+            fd, temporary = _write_flushed(target, content)
+            pending.append((row, fd, temporary, target))
+            results.append(dict(id=str(row.id), status='staged'))
+        # Every file is written first and flushed after, which lets the disk take the flushes together (measured on
+        # the evidence disk: 10.4 ms a file against 17.4 ms written and flushed one at a time).
+        while pending:
+            row, fd, temporary, target = pending.pop(0)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+            try:
+                os.replace(temporary, target)
+            except OSError:
+                os.unlink(temporary)
+                raise
+            if row.size:
+                # The file's one part is the same bytes: a second name for the assembled file, as a finished
+                # single-file send leaves its part (resume, the received count and a re-assembly read it).
+                part = uploads.directory(row) / '0.part'
+                part.parent.mkdir(parents=True, exist_ok=True)
+                link = part.parent / f'.batch-{uuid4().hex}'
+                try:
+                    os.link(target, link)
+                    os.replace(link, part)
+                except OSError:
+                    if os.path.lexists(link): os.unlink(link)
+                    uploads.write_chunk(row, 0, target.read_bytes())
+            row.status = 'staged'
+    finally:
+        for _, fd, temporary, _ in pending:
+            os.close(fd)
+            if os.path.exists(temporary): os.unlink(temporary)
+    db.commit()
+    return dict(files=results)
+
+
+def _check_batch_open(db, identity, user):
+    if get_group(db, identity, user).status != 'uploading':
+        raise HTTPException(409, 'Resume this selection before sending more files')
+
+
+@router.put('/{identity}/files')
+async def put_files(identity: UUID, request: Request, user: User = Depends(get_current_db_user),
+                    db: Session = Depends(get_db)):
+    # Async only to receive the body; database and disk work run in the thread pool, not on the event loop.
+    await run_in_threadpool(_check_batch_open, db, identity, user)
+    body = bytearray()
+    async for part in request.stream():
+        body.extend(part)
+        if len(body) > BATCH_MAX_BYTES + BATCH_MAX_HEADER:
+            raise HTTPException(413, 'This batch is too large')
+    return await run_in_threadpool(save_batch, db, identity, user, body)
 
 
 @router.post('/{identity}/{action}')

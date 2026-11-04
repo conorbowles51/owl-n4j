@@ -61,3 +61,19 @@ describe("resuming a saved upload", () => {
     expect(f.slice).toHaveBeenCalled()
   })
 })
+
+describe("small files in batches", () => {
+  const member = (i: number, size: number) =>
+    ({ id: `m-${i}`, path: `r/${i}`, size, chunk_size: 4 * 1024 * 1024, status: "uploading" }) as never
+  it("packs at most 500 files and 4 MiB a batch, in order, and always at least one file", async () => {
+    const { takeBatch, isBatchable, BATCH_FILE_BYTES } = await import("./resumable-upload-groups")
+    const small = Array.from({ length: 1200 }, (_, i) => member(i, 100))
+    const sizes = [takeBatch(small), takeBatch(small), takeBatch(small)].map((b) => b.length)
+    expect(sizes).toEqual([500, 500, 200])
+    expect(small).toEqual([])
+    const big = [member(0, 3 * 1024 * 1024), member(1, 2 * 1024 * 1024)]
+    expect(takeBatch(big).map((m: { id: string }) => m.id)).toEqual(["m-0"])
+    expect(isBatchable(member(0, BATCH_FILE_BYTES))).toBe(true)
+    expect(isBatchable(member(0, BATCH_FILE_BYTES + 1))).toBe(false)
+  })
+})

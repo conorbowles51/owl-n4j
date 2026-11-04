@@ -12,6 +12,7 @@ import { afterEach, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
 import { uploadFingerprint } from "../resumable-upload"
 import {
+  BATCH_FILE_BYTES,
   listUploadGroups,
   pauseUploadGroup,
   resumeUploadGroup,
@@ -232,6 +233,20 @@ it.each(["folder", "statements"] as const)(
       }
       if (url.startsWith("/api/evidence-upload-groups?"))
         return group && group.status !== "completed" ? [copy()] : []
+      if (group && url === `/api/evidence-upload-groups/${group.id}/files`) {
+        // the small file goes in a batch: a JSON line naming it, then its bytes
+        sent.push("batch")
+        const blob = options!.body as unknown as Blob
+        const head = JSON.parse((await blob.text()).split("\n")[0]) as { files: { id: string; size: number }[] }
+        return {
+          files: head.files.map(({ id }) => {
+            const m = group!.members!.find((item) => item.id === id)!
+            m.status = "staged"
+            m.received = [0]
+            return { id, status: "staged" }
+          }),
+        }
+      }
       if (url.startsWith("/api/evidence-upload-groups/")) {
         if (url.endsWith("/pause") || url.endsWith("/resume")) {
           group!.status = url.endsWith("/pause") ? "paused" : "uploading"
@@ -330,12 +345,7 @@ it.each(["folder", "statements"] as const)(
         })
       }
       expect(registrations).toBe(1)
-      expect(sent).toEqual([
-        "member-0:0",
-        "member-1:0",
-        "member-1:1",
-        "member-1:1",
-      ])
+      expect(sent).toEqual(["batch", "member-1:0", "member-1:1", "member-1:1"])
       await refresh()
       await waitFor(() =>
         expect(screen.queryByText("Folder")).not.toBeInTheDocument()
@@ -594,18 +604,24 @@ it("a selection the server pauses and resumes (a release) carries on sending in 
       group = {
         id: body.id, case_id: "case", name: "Phone", kind: "folder", status: "uploading", file_count: 3,
         staged_count: 0, size: 30, received_bytes: 0, replace_existing: false, folder_id: null, receipt: null,
-        members: body.members.map((m) => ({ id: `m-${m.path.replace("/", "-")}`, path: m.path, status: "uploading" })),
+        members: body.members.map((m) => ({
+          id: `m-${m.path.replace("/", "-")}`, path: m.path, status: "uploading", size: 10, chunk_size: CHUNK,
+        })),
       }
       return group
     }
     const id = url.split("/")[3]
-    if (url.startsWith("/api/evidence-upload-sessions/") && url.includes("/chunks/")) {
-      if (id === "m-Phone-b.txt" && !pausedOnce) {
+    if (group && url === `/api/evidence-upload-groups/${group.id}/files`) {
+      if (!pausedOnce) {
         pausedOnce = true
-        status = "paused" // the release pauses open uploads
+        status = "paused" // the release pauses open uploads while the batch is on its way
       }
-      if (status === "paused") throw new Error("This upload is paused")
-      return { ...session(id), received: [0] }
+      if (status === "paused") throw new Error("Resume this selection before sending more files")
+      const head = JSON.parse((await (options!.body as unknown as Blob).text()).split("\n")[0]) as {
+        files: { id: string }[]
+      }
+      for (const file of head.files) staged.add(file.id)
+      return { files: head.files.map((file) => ({ id: file.id, status: "staged" })) }
     }
     if (url.startsWith("/api/evidence-upload-sessions/") && url.endsWith("/complete")) {
       staged.add(id)
@@ -619,7 +635,7 @@ it("a selection the server pauses and resumes (a release) carries on sending in 
   const upload = uploadFolderOrArchive("case", files, { isFolder: true })
   await waitFor(() => expect(status).toBe("paused"))
   await new Promise((resolve) => setTimeout(resolve, 50))
-  expect(staged.size).toBe(1)
+  expect(staged.size).toBe(0)
   status = "uploading" // the release resumes what it paused
   await listUploadGroups("case") // the panel's 2 s poll
   const outcome = await Promise.race([
@@ -632,7 +648,8 @@ it("a selection the server pauses and resumes (a release) carries on sending in 
 
 
 it("a selection sends four files at once, stops starting new ones on Pause and carries on with Resume", async () => {
-  const files = Array.from({ length: 12 }, (_, i) => file(`Phone/f${i}.txt`, 10, i))
+  // files above the batch size go one at a time in parts; four of them at once
+  const files = Array.from({ length: 12 }, (_, i) => file(`Phone/f${i}.txt`, BATCH_FILE_BYTES + 1, i))
   let group: (Omit<UploadGroup, "members"> & { members: { id: string; path: string; status: string }[] }) | undefined
   let status: "uploading" | "paused" = "uploading"
   const staged = new Set<string>()
@@ -689,4 +706,61 @@ it("a selection sends four files at once, stops starting new ones on Pause and c
   const fit = seen.filter((p) => p.phase === "sending").at(-1)!.fit!
   expect(fit.n).toBe(12)
   expect(fit.sy).toBeLessThanOrEqual((performance.now() - began) / 1000)
+})
+
+
+it("small files go many to a request, each once, and a file the server refuses is named", { timeout: 120_000 }, async () => {
+  // 150 files of 64 KB: batches of at most 4 MiB (64 files), sent several at once
+  const files = Array.from({ length: 150 }, (_, i) => file(`Phone/d${Math.floor(i / 100)}/f${i}.db`, 65536, i % 251))
+  let group: (Omit<UploadGroup, "members"> & { members: { id: string; path: string; status: string }[] }) | undefined
+  const saved: string[] = []
+  const batches: number[] = []
+  let refuse: string | null = null
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    const method = options?.method ?? "GET"
+    if (url.startsWith("/api/evidence-upload-groups?")) return group ? [group] : []
+    if (url === "/api/evidence-upload-groups" && method === "POST") {
+      const body = options!.body as { id: string; members: { path: string; size: number; chunks: string[]; sha256: string }[] }
+      // one SHA-256 is both the file's and its one chunk's
+      expect(body.members.every((m) => m.chunks.length === 1 && m.chunks[0] === m.sha256)).toBe(true)
+      group = {
+        id: body.id, case_id: "case", name: "Phone", kind: "folder", status: "uploading", file_count: 150,
+        staged_count: 0, size: 150 * 65536, received_bytes: 0, replace_existing: false, folder_id: null, receipt: null,
+        members: body.members.map((m, i) => ({ id: `m-${i}`, path: m.path, status: "uploading", size: m.size, chunk_size: CHUNK })),
+      }
+      return group
+    }
+    if (group && url === `/api/evidence-upload-groups/${group.id}/files` && method === "PUT") {
+      const blob = options!.body as unknown as Blob
+      const text = await blob.slice(0, 64 * 1024).text()
+      const head = JSON.parse(text.split("\n")[0]) as { files: { id: string; size: number }[] }
+      batches.push(head.files.length)
+      expect(blob.size).toBe(text.split("\n")[0].length + 1 + head.files.reduce((n, f) => n + f.size, 0))
+      expect(head.files.reduce((n, f) => n + f.size, 0)).toBeLessThanOrEqual(4 * 1024 * 1024)
+      return {
+        files: head.files.map(({ id }) => {
+          if (id === refuse) return { id, status: "uploading", error: "f.db does not match" }
+          saved.push(id)
+          return { id, status: "staged" }
+        }),
+      }
+    }
+    if (group && url === `/api/evidence-upload-groups/${group.id}/complete`)
+      return { ...group, status: "completed", receipt: { file_ids: saved, job_ids: [], message: "Saved." } }
+    throw Error(`Unexpected request: ${method} ${url}`)
+  })
+  expect((await uploadFolderOrArchive("case", files, { isFolder: true })).message).toBe("Saved.")
+  expect(batches).toEqual([64, 64, 22])
+  expect(new Set(saved).size).toBe(150)
+  expect(saved.length).toBe(150)
+
+  // a file whose bytes the server refuses stops the upload with its path; the files saved stay saved
+  group = undefined
+  saved.length = 0
+  batches.length = 0
+  refuse = "m-7"
+  await expect(uploadFolderOrArchive("case", files.slice(0, 20), { isFolder: true })).rejects.toThrow(
+    "Phone/d0/f7.db does not match the fingerprint taken when it was chosen, so it was not saved."
+  )
+  expect(saved.length).toBe(19)
 })
