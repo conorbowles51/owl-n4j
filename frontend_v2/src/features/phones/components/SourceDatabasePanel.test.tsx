@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { describe, expect, it, vi } from "vitest"
 
@@ -85,5 +85,26 @@ describe("Source database panel wording", () => {
     show(withRow({ available: true, row_named: false, reason: "The report does not say which row this record came from.", source_index: 0 }))
     fireEvent.click(screen.getByRole("button", { name: "Open source database" }))
     expect(await screen.findByRole("alert")).toHaveTextContent("This file is not an SQLite database.")
+  })
+})
+
+describe("Source database panel after the press", () => {
+  it("shows the progress panel when it is due, 300 ms after the press, not at a later timer tick", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"] })
+    try {
+      api.getSourceDatabase.mockReset().mockReturnValue(new Promise(() => {}))
+      show(withRow({ available: true, row_named: true, reason: "", source_index: 0 }))
+      fireEvent.click(screen.getByRole("button", { name: "Open source row" }))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(250)
+      })
+      expect(screen.queryByRole("status")).not.toBeInTheDocument()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100)
+      })
+      expect(screen.getByRole("status")).toHaveTextContent("Copying the app database and opening the copy read-only")
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

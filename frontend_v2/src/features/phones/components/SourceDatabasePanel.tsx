@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { ProgressPanel } from "@/components/ui/progress-panel"
+import { useProgressClock } from "@/components/ui/use-progress-clock"
 import { failureText, getSourceDatabase } from "../api"
 import type { RawValue, RecordDetail, SourceDatabase } from "../schemas"
 
@@ -45,12 +46,8 @@ function SourceView({ caseId, recordUid, source }: { caseId: string; recordUid: 
     queryFn: () => getSourceDatabase(caseId, recordUid, source, browse, page),
     staleTime: 60_000,
   })
-  const [now, setNow] = useState(() => performance.now())
-  useEffect(() => {
-    if (!q.isFetching) return
-    const t = setInterval(() => setNow(performance.now()), 500)
-    return () => clearInterval(t)
-  }, [q.isFetching])
+  // ticks when the panel is due (300 ms after the press), then every 500 ms while the copy is being opened
+  const now = useProgressClock(q.isFetching, startedAt, 500)
   if (q.isError) {
     return (
       <div role="alert">
