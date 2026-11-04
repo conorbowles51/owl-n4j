@@ -12,15 +12,14 @@ import { loadedChunks, useAcrossBadges } from "./across-badges"
 import type { StreamItem } from "./hooks/use-stream"
 
 const row = (uid: string, copies: string[] = []) => ({ record_uid: uid, copies: { count: copies.length + 1, record_uids: copies, apps: [] } }) as never
-const item = (r: unknown): StreamItem => ({ type: "row", segment: 0, offset: 0, row: r as never, state: r ? "loaded" : "loading", windowKey: "w" })
+const item = (r: unknown, windowKey = "w"): StreamItem => ({ type: "row", segment: 0, offset: 0, row: r as never, state: r ? "loaded" : "loading", windowKey })
 
 describe("Messages across phones badges in Conversations (05 5.4)", () => {
-  it("asks for each window of rows once all of it has arrived, copies included, never a part of one", () => {
-    const items: StreamItem[] = [{ type: "header", segment: 0 }, item(row("u1", ["u1b"])), item(row("u2"))]
-    for (let i = 0; i < 200; i++) items.push(i === 199 ? item(null) : item(row(`v${i}`)))
+  it("asks for each loading window once its rows have arrived, copies included, never a part of one", () => {
+    const items: StreamItem[] = [{ type: "header", segment: 0 }, item(row("u1", ["u1b"]), "0|0"), item(row("u2"), "0|0"),
+      item(null, "0|100"), item(null, "0|100"), item(row("v1"), "1|0")]
     const chunks = loadedChunks({ count: items.length, item: (i) => items[i] })
-    expect(chunks).toHaveLength(1)    // the second window holds a row still loading
-    expect(chunks[0]).toContain("u1b")
+    expect(chunks).toEqual([["u1", "u1b", "u2"], ["v1"]])   // the window still loading is not asked yet
   })
 
   it("shows a row's badges, the reasons and the other copy, and says where they come from", async () => {
