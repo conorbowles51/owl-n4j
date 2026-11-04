@@ -316,3 +316,19 @@ def test_the_export_cover_prints_the_review_coverage_of_its_threads(api, monkeyp
     assert "<h2>Review coverage</h2>" in doc and "Review coverage of these threads" in doc
     with api["engine"].connect() as conn:
         assert review_share.coverage(conn, api["case"], thread_keys={k})["counts"] == out["counts"]["review"]
+
+
+def test_keyword_lists_come_from_cb_keywords_when_installed_and_print_on_the_cover(monkeypatch):
+    """07 J-13 step 6 with cb-keywords E: the summary names each keyword list and its terms."""
+    import sys
+    import types
+
+    from services.phone import review_share
+    mod = types.ModuleType("services.search.keyword_lists")
+    mod.for_coverage = lambda conn, case_id: [{"name": "Synthetic list", "terms": ["apple", {"term": "pie"}],
+                                               "summary": "Run on 1 phone."}]
+    monkeypatch.setitem(sys.modules, "services.search.keyword_lists", mod)
+    lists = review_share.keyword_lists(None, "case")
+    assert lists[0]["name"] == "Synthetic list" and lists[0]["terms"] == ["apple", "pie"]
+    cov = {"words": "w", "reviewers": [], "second_pass": [], "searches": [], "keyword_lists": lists, "limits": []}
+    assert 'Keyword list "Synthetic list": "apple"; "pie". Run on 1 phone.' in review_share.cover_lines(cov)

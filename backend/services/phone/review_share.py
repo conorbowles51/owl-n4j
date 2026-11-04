@@ -510,7 +510,18 @@ def searches(conn, case_id) -> list:
 
 
 def keyword_lists(conn, case_id) -> list:
-    """The case's saved keyword lists and their terms (cb-keywords E). Until that table exists there are none."""
+    """The case's saved keyword lists and their terms (cb-keywords E): ``services.search.keyword_lists.for_coverage``
+    when it is installed, else the table read directly; until either exists there are none."""
+    try:
+        from services.search.keyword_lists import for_coverage
+    except ImportError:
+        for_coverage = None
+    if for_coverage is not None:
+        out = []
+        for kl in for_coverage(conn, case_id) or []:
+            terms = [t if isinstance(t, str) else (t or {}).get("term") for t in kl.get("terms") or []]
+            out.append({**kl, "name": kl.get("name"), "terms": [t for t in terms if t]})
+        return out
     exists = conn.execute(text("SELECT to_regclass('public.phone_keyword_lists')")).scalar()
     if not exists:
         return []
@@ -622,7 +633,8 @@ def cover_lines(cov: dict) -> list:
     else:
         out.append("No search of the case's phone records is recorded.")
     for kl in cov["keyword_lists"]:
-        out.append('Keyword list "%s": %s.' % (kl["name"], "; ".join('"%s"' % t for t in kl["terms"] if t)))
+        out.append('Keyword list "%s": %s.%s' % (kl["name"], "; ".join('"%s"' % t for t in kl["terms"] if t),
+                                                 (" " + kl["summary"]) if isinstance(kl.get("summary"), str) else ""))
     for lim in cov["limits"]:
         if lim.get("message"):
             out.append(lim["message"])
