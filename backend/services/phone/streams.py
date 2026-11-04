@@ -494,14 +494,18 @@ def find_in_results(conn, f: StreamFilter, *, snapshot_token, query, exact=False
     day = "CASE WHEN sort_instant IS NULL THEN NULL ELSE (sort_instant AT TIME ZONE :zone)::date END"
     order = "CASE WHEN sort_instant IS NULL THEN NULL ELSE sort_instant END %s, CASE WHEN sort_instant IS NULL THEN " \
             "event_uid END ASC, CASE WHEN sort_instant IS NOT NULL THEN event_uid END %s" % (d, d)
-    base = ("WITH m AS (%s), r AS (SELECT event_uid, %s AS day, row_number() OVER (PARTITION BY %s ORDER BY %s) - 1 "
-            "AS offset_in_day FROM m WHERE %s), x AS (SELECT event_uid FROM (%s) mx) "
-            % (q.matched_sql(), day, day, order, _shown(f), sx))
-    total = int(conn.execute(text(base + "SELECT count(*) FROM r JOIN x USING (event_uid)"), params).scalar() or 0)
+    # with copies collapsed a row stands for its whole copy group, so a match in any copy finds the row shown (the
+    # list's own search ranks copies after searching and would show that copy); otherwise each row is itself
+    grp = "coalesce(extraction_id::text || ':' || dup_group_uid, event_uid::text)" if f.collapse_copies else \
+        "event_uid::text"
+    base = ("WITH m AS (%s), r AS (SELECT event_uid, %s AS g, %s AS day, row_number() OVER (PARTITION BY %s ORDER BY "
+            "%s) - 1 AS offset_in_day FROM m WHERE %s), x AS (SELECT DISTINCT %s AS g FROM (%s) mx) "
+            % (q.matched_sql(), grp, day, day, order, _shown(f), grp, sx))
+    total = int(conn.execute(text(base + "SELECT count(*) FROM r JOIN x USING (g)"), params).scalar() or 0)
     if total > FIND_MAX:
         raise FindTooLarge(total)
     nulls = "FIRST" if f.sort == "newest_first" else "LAST"
-    rows = conn.execute(text(base + "SELECT r.day, r.offset_in_day, r.event_uid FROM r JOIN x USING (event_uid) "
+    rows = conn.execute(text(base + "SELECT r.day, r.offset_in_day, r.event_uid FROM r JOIN x USING (g) "
                                     "ORDER BY r.day %s NULLS %s, r.offset_in_day" % (d, nulls)), params).fetchall()
     return {"query": query, "exact": bool(exact), "total": total,
             "matches": [{"day": r.day.isoformat() if r.day else None, "offset": int(r.offset_in_day),

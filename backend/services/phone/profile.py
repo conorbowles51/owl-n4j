@@ -83,12 +83,18 @@ def held_view(conn, extraction_id) -> list:
         diffs = h["differences"]
         out.append({"document_index": h["document_index"], "document": h["document"],
                     "difference_count": h["difference_count"], "accepted": h["accepted"],
+                    # a hash measure (attribute or text values) carries fingerprints, not counts: it is shown as
+                    # "differs" with no numbers, never as a number
                     "differences": [{"where": _path_words(d.get("path")), "measure": d.get("measure"),
                                      "what": MEASURE_WORDS.get(d.get("measure"), d.get("measure")),
-                                     "attribute": d.get("attribute"), "stated": d.get("source"),
-                                     "read": d.get("captured")} for d in diffs[:HELD_SHOWN]],
+                                     "attribute": d.get("attribute"), "stated": _count(d.get("source")),
+                                     "read": _count(d.get("captured"))} for d in diffs[:HELD_SHOWN]],
                     "shown": min(len(diffs), HELD_SHOWN)})
     return out
+
+
+def _count(v):
+    return v if isinstance(v, int) and not isinstance(v, bool) else None
 
 
 def held_sentence(held) -> str:
@@ -96,12 +102,17 @@ def held_sentence(held) -> str:
     named; the rest are counted."""
     open_ = [h for h in held if h["accepted"] is None]
     total = sum(h["difference_count"] for h in open_)
-    first = next((d for h in open_ for d in h["differences"]), None)
-    if first is None:
+    counted = [d for h in open_ for d in h["differences"]]
+    first = next((d for d in counted if d["stated"] is not None and d["read"] is not None), None)
+    if first is None and counted:
+        d = counted[0]
+        words = "Held: the %s at %s differ from what the report states." % (d["what"], d["where"])
+    elif first is None:
         return "Held: the report does not match its own counts."
-    words = "Held: the report lists %s %s at %s; %s %s read." % (
-        "{:,}".format(int(first["stated"] or 0)), first["what"], first["where"], "{:,}".format(int(first["read"] or 0)),
-        "was" if int(first["read"] or 0) == 1 else "were")
+    else:
+        words = "Held: the report lists %s %s at %s; %s %s read." % (
+            "{:,}".format(first["stated"]), first["what"], first["where"], "{:,}".format(first["read"]),
+            "was" if first["read"] == 1 else "were")
     if total > 1:
         words += " %s more %s." % ("{:,}".format(total - 1), "difference" if total == 2 else "differences")
     return words

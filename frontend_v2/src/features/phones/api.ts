@@ -281,6 +281,7 @@ export const ExportStateSchema = z.object({
   error: z.string().nullable(), created_at: z.string().nullable(), finished_at: z.string().nullable(), title: z.string().nullable().optional(),
   // the phones of the export's filter (history only); none means every phone in the case
   phones: z.array(z.string()).optional(),
+  whole_case: z.boolean().optional(),
 })
 export type ExportState = z.infer<typeof ExportStateSchema>
 

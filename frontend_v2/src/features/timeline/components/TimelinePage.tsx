@@ -70,7 +70,16 @@ export function TimelinePage() {
   // the first-use choice is stored only from a complete load of the whole case, never from a failed read or a layer
   const lens = usePhoneLens(caseId ?? "", events.length > 0, phoneCount > 0, !isLoading && !error && caseLayer !== "significant")
   const lensOn = lens.on || (!!phoneRecord && phoneCount > 0)
-  const lensToggle = phoneCount > 0 ? <PhoneLensToggle on={lensOn} onChange={lens.setOn} phones={phoneCount} /> : undefined
+  // turning the lens off also leaves the record a Show on Timeline link opened, or the link would keep it on
+  const setLens = (v: boolean) => {
+    lens.setOn(v)
+    if (!v && phoneRecord) {
+      const q = new URLSearchParams(location.search)
+      q.delete("phone_record")
+      navigate({ pathname: location.pathname, search: q.toString() }, { replace: true })
+    }
+  }
+  const lensToggle = phoneCount > 0 ? <PhoneLensToggle on={lensOn} onChange={setLens} phones={phoneCount} /> : undefined
 
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [exportOpen, setExportOpen] = useState(false)

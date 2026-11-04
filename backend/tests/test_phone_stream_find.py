@@ -86,3 +86,34 @@ def test_too_many_matches_is_refused_with_the_count(api, monkeypatch):  # noqa: 
     snap = _index(cl, f)["snapshot"]
     r = cl.post("/api/phones/streams/find", json={"filter": f, "snapshot": snap, "query": "hello"})
     assert r.status_code == 422 and r.json()["detail"].startswith("2 matches is more than one search lists (1).")
+
+
+def test_a_match_held_only_by_a_hidden_copy_finds_the_row_shown_for_its_group():
+    """Copies collapsed: the shown copy of a message has other text than a hidden copy that holds the search. Find
+    lands on the shown row (the list's own search would show that message); with every copy shown it lands on the
+    copy itself."""
+    from services.phone import streams
+    from services.phone.filters import StreamFilter
+    from tests.phone_pg import fresh_engine, make_case
+    from tests.phone_streams_fixture import phone
+    owner, ana = "phone:+12025550100", "phone:+12025550143"
+    parties = [(ana, "sender", False, None, None), (owner, "recipient", True, None, None)]
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            phone(c, case, events=[
+                dict(kind="message", instant=at(2023, 3, 14, 15), body="plain synthetic", app="SyntheticApp", thread="t",
+                     direction="incoming", dup="g1", parties=parties),
+                dict(kind="message", instant=at(2023, 3, 14, 15), body="needle synthetic", thread="t",
+                     direction="incoming", dup="g1", parties=parties)])
+        with engine.connect() as c:
+            for collapse in (True, False):
+                f = StreamFilter.model_validate({"case_id": str(case), "collapse_copies": collapse})
+                got = streams.find_in_results(c, f, snapshot_token=streams.snapshot(c, f), query="needle")
+                shown = c.execute(text(
+                    "WITH m AS (%s) SELECT event_uid::text, body FROM m WHERE %s ORDER BY body" % (
+                        streams._query(c, f)[0].matched_sql(), streams._shown(f))),
+                    streams._query(c, f)[0].params).fetchall()
+                assert got["total"] == 1, (collapse, got)
+                want = [u for u, b in shown if b == ("plain synthetic" if collapse else "needle synthetic")]
+                assert [m["event_uid"] for m in got["matches"]] == want, (collapse, got, shown)

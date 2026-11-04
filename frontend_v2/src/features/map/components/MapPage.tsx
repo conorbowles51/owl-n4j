@@ -149,8 +149,9 @@ export function MapPage() {
           locations={safeLocations}
           phoneItems={phones.on ? phones.points.data?.items : undefined}
           onView={phones.setView}
-          fitTo={nearFilter ? near.data?.bbox ?? null : phones.on ? phones.summary.data?.bbox ?? null : null}
+          fitTo={phones.on ? phones.summary.data?.bbox ?? null : null}
           focusPoint={focusPoint}
+          focusBox={nearFilter ? near.data?.bbox ?? null : null}
         />
         {nearUid && !focusPoint && <NearMessageNote loading={near.isLoading} failed={near.isError} near={near.data} />}
         {phones.summary.data && phones.summary.data.total > 0 && (

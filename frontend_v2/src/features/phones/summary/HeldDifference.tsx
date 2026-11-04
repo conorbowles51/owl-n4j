@@ -61,8 +61,15 @@ export function HeldDifference({ caseId, extraction, words, held }: { caseId: st
                       {d.what}
                       {d.attribute ? ` (${d.attribute})` : ""}
                     </td>
-                    <td className="pr-2 text-right">{fmt(d.stated ?? 0)}</td>
-                    <td className="text-right">{fmt(d.read ?? 0)}</td>
+                    {d.stated === null || d.read === null ? (
+                      // a fingerprint of the values, not a count: the values differ, there is no number to show
+                      <td className="text-right" colSpan={2}>Values differ</td>
+                    ) : (
+                      <>
+                        <td className="pr-2 text-right">{fmt(d.stated)}</td>
+                        <td className="text-right">{fmt(d.read)}</td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>

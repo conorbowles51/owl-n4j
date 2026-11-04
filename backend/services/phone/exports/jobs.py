@@ -248,10 +248,26 @@ def get(conn, case_id, export_id) -> dict | None:
 
 
 def history(conn, case_id) -> list:
-    return [dict(_out(r), phones=list((r.filter or {}).get("phones") or [])) for r in conn.execute(text(
+    """Every export of the case, newest first, each with the phones it covers: the filter's phones, the phones of a
+    frozen selection it exported, or none listed for a filter over the whole case (``whole_case``)."""
+    rows = conn.execute(text(
         "SELECT export_id, format, source, state, progress, counts, filename, size, sha256, error, created_at, "
         "finished_at, options, filter FROM phone_exports WHERE case_id = CAST(:c AS uuid) ORDER BY created_at DESC"),
-        {"c": str(case_id)})]
+        {"c": str(case_id)}).fetchall()
+    sel_ids = sorted({str((r.filter or {}).get("selection")) for r in rows if (r.filter or {}).get("selection")})
+    sel_phones = {}
+    if sel_ids:
+        for s in conn.execute(text(
+                "SELECT id::text AS i, mapping_versions FROM phone_selections WHERE case_id = CAST(:c AS uuid) AND "
+                "id::text = ANY(:s)"), {"c": str(case_id), "s": sel_ids}):
+            sel_phones[s.i] = sorted(p["extraction_id"] for p in (s.mapping_versions or {}).get("phones", []))
+    out = []
+    for r in rows:
+        f = r.filter or {}
+        sel = str(f["selection"]) if f.get("selection") else None
+        phones = list(f.get("phones") or []) or (sel_phones.get(sel, []) if sel else [])
+        out.append(dict(_out(r), phones=phones, whole_case=not phones and not sel))
+    return out
 
 
 def file_of(conn, case_id, export_id):

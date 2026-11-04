@@ -57,7 +57,8 @@ export function ExportHistory({ caseId, extraction }: { caseId: string; extracti
   const q = useQuery({ queryKey: ["phone-export-history", caseId], queryFn: () => getExportHistory(caseId) })
   if (q.isLoading) return <p className="text-muted-foreground">Loading the export history</p>
   if (q.isError) return <p role="alert">{failureText(q.error, "The export history could not be loaded.")}</p>
-  const mine = (q.data?.items ?? []).filter((e) => !e.phones || e.phones.length === 0 || e.phones.includes(extraction))
+  // an export covers this phone when it names it (its filter or its frozen selection), or when it was over the whole case
+  const mine = (q.data?.items ?? []).filter((e) => e.whole_case || (e.phones ?? []).includes(extraction))
   if (mine.length === 0) return <p>Nothing has been exported from this phone yet.</p>
   return (
     <div>
@@ -67,7 +68,7 @@ export function ExportHistory({ caseId, extraction }: { caseId: string; extracti
       <ul className="flex flex-col gap-0.5">
         {mine.map((e) => (
           <li key={e.export_id}>
-            <ExportLine caseId={caseId} e={e} wholeCase={!e.phones || e.phones.length === 0} />
+            <ExportLine caseId={caseId} e={e} wholeCase={!!e.whole_case} />
           </li>
         ))}
       </ul>

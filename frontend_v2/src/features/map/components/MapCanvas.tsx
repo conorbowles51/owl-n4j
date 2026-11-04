@@ -48,6 +48,8 @@ interface MapCanvasProps {
   fitTo?: number[] | null
   /** Show on Map (03 section 3.6): open centred on this phone position, [lon, lat], before any fit. */
   focusPoint?: [number, number] | null
+  /** A box to fit whenever it changes, also after the map has loaded (Show on Map from a message). */
+  focusBox?: number[] | null
 }
 
 const LOCATION_INTERACTIVE_LAYER_IDS = [
@@ -87,8 +89,23 @@ function getPointDistance(a: ScreenPoint, b: ScreenPoint) {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
-export function MapCanvas({ locations, phoneItems, onView, fitTo, focusPoint }: MapCanvasProps) {
+export function MapCanvas({ locations, phoneItems, onView, fitTo, focusPoint, focusBox }: MapCanvasProps) {
   const mapRef = useRef<MapRef>(null)
+  // a focus that arrives or changes after the map loaded moves it too (onLoad covers the first one)
+  const focusKey = focusPoint ? focusPoint.join(",") : ""
+  useEffect(() => {
+    const map = mapRef.current?.getMap()
+    if (map && focusPoint) map.jumpTo({ center: focusPoint, zoom: 15 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the point's value, not the array's identity
+  }, [focusKey])
+  const boxKey = focusBox ? focusBox.join(",") : ""
+  useEffect(() => {
+    const map = mapRef.current?.getMap()
+    if (!map || !focusBox || focusPoint) return
+    const [w, s, ea, n] = focusBox
+    map.fitBounds([[w, s], [ea === w ? ea + 0.01 : ea, n === s ? n + 0.01 : n]], { padding: 60, maxZoom: 15, duration: 0 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the box's value
+  }, [boxKey])
   const boxDragRef = useRef<BoxDragState | null>(null)
   const secondaryPanRef = useRef<SecondaryPanState | null>(null)
   const { mapStyle, transformRequest, onMapError, onMapView, basemapNote } = useMapTheme()
@@ -526,6 +543,9 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo, focusPoint }: 
         const map = e.target
         if (focusPoint) {
           map.jumpTo({ center: focusPoint, zoom: 15 })
+        } else if (focusBox) {
+          const [w, s, ea, n] = focusBox
+          map.fitBounds([[w, s], [ea === w ? ea + 0.01 : ea, n === s ? n + 0.01 : n]], { padding: 60, maxZoom: 15, duration: 0 })
         } else if (fitTo && locations.length === 0) {
           const [w, s, ea, n] = fitTo
           map.fitBounds([[w, s], [ea === w ? ea + 0.01 : ea, n === s ? n + 0.01 : n]], { padding: 60, maxZoom: 15, duration: 0 })

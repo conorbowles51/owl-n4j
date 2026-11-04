@@ -225,7 +225,8 @@ export function PhoneSummaryPage() {
 
       <div className="grid gap-3 md:grid-cols-2">
         <Section name="Since you last looked">
-          <SinceYouLastLooked caseId={caseId} extraction={extraction} />
+          {/* keyed by phone: moving to another phone reads that phone's own last visit */}
+          <SinceYouLastLooked key={`${caseId}:${extraction}`} caseId={caseId} extraction={extraction} />
         </Section>
         <Section name="Export history">
           <ExportHistory caseId={caseId} extraction={extraction} />

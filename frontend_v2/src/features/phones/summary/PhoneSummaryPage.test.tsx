@@ -141,6 +141,9 @@ describe("Phone summary", () => {
     api.getExportHistory.mockResolvedValue({ items: [
       { export_id: "x1", format: "pdf", source: "stream", state: "done", progress: 1, counts: { total: 12 }, file: { filename: "a.pdf", size: 1, sha256: "s" }, error: null, created_at: "2023-01-03T00:00:00Z", finished_at: null, title: "Synthetic", phones: ["e1"] },
       { export_id: "x2", format: "pdf", source: "stream", state: "done", progress: 1, counts: { total: 3 }, file: null, error: null, created_at: null, finished_at: null, title: null, phones: ["other"] },
+      // a finding exported as its frozen selection on another phone, and a whole-case stream export
+      { export_id: "x4", format: "pdf", source: "finding", state: "done", progress: 1, counts: { total: 2 }, file: null, error: null, created_at: null, finished_at: null, title: "Finding", phones: ["other"], whole_case: false },
+      { export_id: "x5", format: "pdf", source: "stream", state: "done", progress: 1, counts: { total: 9 }, file: null, error: null, created_at: null, finished_at: null, title: "Everything", phones: [], whole_case: true },
     ] })
     api.createExport.mockResolvedValue({ export_id: "x3" })
     api.getExport.mockResolvedValue({ export_id: "x3", format: "pdf", source: "phone_profile", state: "done", progress: 1, counts: {}, file: { filename: "phone-summary.pdf", size: 1, sha256: "s" }, error: null, created_at: null, finished_at: null })
@@ -151,7 +154,9 @@ describe("Phone summary", () => {
     expect(await within(since).findByText("1 new phone")).toBeInTheDocument()
     expect(api.getSinceLastLooked).toHaveBeenCalledWith("case-1", "e1", "2023-01-01T00:00:00.000Z")
     const hist = screen.getByRole("region", { name: "Export history" })
-    expect(await within(hist).findByText("1 export covers this phone.")).toBeInTheDocument()
+    expect(await within(hist).findByText("2 exports cover this phone.")).toBeInTheDocument()
+    expect(within(hist).getByText(/"Everything" \(every phone in the case\)/)).toBeInTheDocument()
+    expect(within(hist).queryByText(/"Finding"/)).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "Export profile as PDF" }))
     await waitFor(() => expect(api.createExport).toHaveBeenCalledWith("case-1", { case_id: "case-1", phones: ["e1"] }, { title: "Phone summary: C2" }, "pdf", "phone_profile"))
     expect(await screen.findByRole("button", { name: "Download phone-summary.pdf" })).toBeInTheDocument()

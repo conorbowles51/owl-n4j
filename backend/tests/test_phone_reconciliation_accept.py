@@ -141,3 +141,17 @@ def test_keep_held_writes_nothing(api):
     with api["engine"].connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM adjudications WHERE subject_id::text = :e"),
                             {"e": api["ext"]}).scalar() == 0
+
+
+def test_a_hash_difference_is_shown_as_values_differ_never_as_a_number():
+    """Attribute and text values are compared by fingerprint: a held reading whose first difference is a hash says
+    the values differ (the profile page must load), and a counted difference is named when there is one."""
+    from services.phone import profile
+    assert profile._count("00ab12cd34ef5678") is None and profile._count(1204) == 1204 and profile._count(True) is None
+    hashed = {"where": "a / b", "measure": "attr_hash", "what": "attribute values", "attribute": "x",
+              "stated": profile._count("00ab12cd34ef5678"), "read": profile._count("99ab12cd34ef5678")}
+    counted = {"where": "a / c", "measure": "elements", "what": "elements", "attribute": None, "stated": 1204, "read": 1198}
+    held = [{"accepted": None, "difference_count": 2, "differences": [hashed, counted]}]
+    assert profile.held_sentence(held) == "Held: the report lists 1,204 elements at a / c; 1,198 were read. 1 more difference."
+    only = [{"accepted": None, "difference_count": 1, "differences": [hashed]}]
+    assert profile.held_sentence(only) == "Held: the attribute values at a / b differ from what the report states."
