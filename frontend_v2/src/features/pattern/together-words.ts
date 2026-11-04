@@ -17,7 +17,8 @@ export function evidenceWords(counts: Record<string, number> | undefined): strin
     if (!n) continue
     let line = `${n.toLocaleString()} ${words}`
     if (basis === "shared_cell" && c["flag:mcc_inferred"]) {
-      line += `; ${c["flag:mcc_inferred"].toLocaleString()} of them use a country code taken from the phone's SIM card, because the tower record does not state one`
+      const m = c["flag:mcc_inferred"]
+      line += `; ${m.toLocaleString()} of them ${m === 1 ? "uses" : "use"} a country code taken from the phone's SIM card, because the tower record does not state one`
     }
     if (basis === "bluetooth") {
       const byName = c["flag:name_match"] || 0
