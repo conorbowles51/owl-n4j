@@ -191,4 +191,18 @@ describe("a fresh load starts the page's first data alongside its code", () => {
     await settle()
     expect(calls()).toEqual([])
   })
+
+  it("with the early sign-in check: the data starts when it answers, before the page has rendered", async () => {
+    window.history.replaceState(null, "", `/cases/${C}/phones`)
+    localStorage.setItem("authToken", "t")
+    let answer!: (user: never) => void
+    const signedIn = new Promise<never>((r) => { answer = r })
+    expect(preloadCurrentRoute(`/cases/${C}/phones`, "", signedIn)).toBe(true)
+    await settle()
+    expect(calls()).toEqual([])
+    act(() => answer(USER as never))
+    await waitFor(() => expect(calls().some((u) => u.startsWith("/api/phones?"))).toBe(true))
+    expect(useAuthStore.getState().user).toBeNull() // React has not set the user yet
+  })
 })
+

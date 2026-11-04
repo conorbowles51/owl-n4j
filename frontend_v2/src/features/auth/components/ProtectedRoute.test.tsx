@@ -5,6 +5,7 @@ import { ProtectedRoute } from "./ProtectedRoute"
 import { useAuthStore } from "../hooks/use-auth"
 import type { User } from "../auth.types"
 import { ApiError } from "@/lib/api-client"
+import { startSignInCheck } from "../sign-in-check"
 const me = vi.hoisted(() => vi.fn())
 vi.mock("../api", () => ({ authAPI: { me } }))
 const user = { username: "first@example.test", name: "First", role: "user" }
@@ -115,4 +116,34 @@ it("does not clear a newer login when the old profile request fails", async () =
   expect(localStorage.getItem("authToken")).toBe("new-token")
   expect(useAuthStore.getState().user?.username).toBe("second@example.test")
   expect(screen.getByText("Private case")).toBeVisible()
+})
+
+it("uses the sign-in check main.tsx sent before rendering: one request, handled as its own", async () => {
+  me.mockResolvedValue(user)
+  const sent = startSignInCheck()
+  expect(sent).not.toBeNull()
+  expect(me).toHaveBeenCalledTimes(1) // sent before anything renders
+  mount()
+  expect(await screen.findByText("Private case")).toBeInTheDocument()
+  // StrictMode is off here, as in the production build: the early check is the only one.
+  expect(me).toHaveBeenCalledTimes(1)
+  expect(useAuthStore.getState().user).toEqual(user)
+})
+
+it("an early check sent for another sign-in is not used", async () => {
+  me.mockResolvedValueOnce({ ...user, username: "other@example.test" }).mockResolvedValue(user)
+  startSignInCheck()
+  localStorage.setItem("authToken", "new-token")
+  mount()
+  expect(await screen.findByText("Private case")).toBeInTheDocument()
+  expect(me).toHaveBeenCalledTimes(2)
+  expect(useAuthStore.getState().user).toEqual(user)
+})
+
+it("an early check refused (401) signs out exactly as the page's own check does", async () => {
+  me.mockRejectedValue(new ApiError("expired", 401))
+  startSignInCheck()
+  mount()
+  expect(await screen.findByText("Login form")).toBeInTheDocument()
+  expect(me).toHaveBeenCalledTimes(1)
 })

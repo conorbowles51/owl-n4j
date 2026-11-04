@@ -2,7 +2,7 @@ import { createRoutesFromChildren, type RouteObject } from "react-router-dom"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import type { User } from "@/features/auth/auth.types"
 import { queryClient } from "@/lib/query-client"
-import { preloadRoute, registerRouteTree, routeDataFor } from "@/lib/route-preload"
+import { registerRouteTree, routeDataFor, routePageFor } from "@/lib/route-preload"
 import { AppRoutes } from "./routes"
 
 let tree: RouteObject[] | null = null
@@ -14,42 +14,68 @@ export function appRouteTree(): RouteObject[] {
 }
 
 /**
- * Calls `then` once the sign-in check (ProtectedRoute's /api/auth/me) has answered with the signed-in person:
- * requests that need the session wait for it exactly as the page's own do. Never if the person is signed out
- * first.
+ * Calls `then` once with the signed-in person, as soon as the sign-in check (ProtectedRoute's /api/auth/me, sent
+ * early by main.tsx: `signedIn`) has answered: requests that need the session wait for it exactly as the page's
+ * own do. Never if the check fails or the person is signed out first.
  */
-function whenSignedIn(then: (user: User) => void) {
+function whenSignedIn(signedIn: Promise<User> | null, then: (user: User) => void) {
   const now = useAuthStore.getState()
   if (now.user) return then(now.user)
+  let done = false
+  const once = (user: User) => {
+    if (done) return
+    done = true
+    stop()
+    then(user)
+  }
+  const token = localStorage.getItem("authToken")
   const stop = useAuthStore.subscribe((state) => {
-    if (state.user) {
+    if (state.user) once(state.user)
+    else if (!state.isAuthenticated) {
+      done = true
       stop()
-      then(state.user)
-    } else if (!state.isAuthenticated) stop()
+    }
   })
+  signedIn?.then(
+    (user) => {
+      if (localStorage.getItem("authToken") === token && useAuthStore.getState().isAuthenticated) once(user)
+    },
+    () => {}
+  )
 }
 
 /**
- * At startup, before React renders: start the code of the page at the address the app opened on and, once the
- * sign-in check has answered, the page's first data (only while the person is still on that address); and let
- * links start a page's code when pointed at (lib/route-preload.ts preloadRouteIntent).
+ * At startup, before React renders: once the sign-in check has answered, start the code and the first data of the
+ * page at the address the app opened on (only while the person is still on that address); and let links
+ * start a page's code when pointed at (lib/route-preload.ts preloadRouteIntent). The small module that asks for
+ * the data loads at once.
+ *
+ * The code waits for the sign-in check (measured 4 Nov, A/B on localhost: a page's code started before it sent
+ * up to 80 script requests that held the browser's 6 connections and delayed the check by 0.7-1.7 s; on plain
+ * http the live site has the same 6). It starts the moment the check answers, not after the data's module
+ * (waiting for that module started a phone summary's code 0.4 s later than the page itself would).
  */
-export function preloadCurrentRoute(pathname = window.location.pathname, search = window.location.search): boolean {
+export function preloadCurrentRoute(
+  pathname = window.location.pathname,
+  search = window.location.search,
+  signedIn: Promise<User> | null = null
+): boolean {
   registerRouteTree(appRouteTree)
   // Signed out, every private address goes to the sign-in page: its page's code would be downloaded for nothing.
   if (!localStorage.getItem("authToken")) return false
-  const code = preloadRoute(appRouteTree(), pathname, "start")
-  const data = routeDataFor(appRouteTree(), pathname)
-  if (data) {
-    const module = data.load()
-    module.catch(() => {}) // the page asks for its own data as before
-    whenSignedIn((user) => {
+  const tree = appRouteTree()
+  const page = routePageFor(tree, pathname)
+  const data = routeDataFor(tree, pathname)
+  const module = data?.load()
+  module?.catch(() => {}) // the page asks for its own data as before
+  if (!page && !data) return false
+  whenSignedIn(signedIn, (user) => {
+    if (window.location.pathname !== pathname) return
+    page?.preload("start")
+    void module?.then(({ prefetch }) => {
       if (window.location.pathname !== pathname) return
-      void module.then(({ prefetch }) => {
-        if (window.location.pathname !== pathname) return
-        prefetch({ client: queryClient, params: data.params, search: new URLSearchParams(search), user })
-      }, () => {})
-    })
-  }
-  return code || !!data
+      prefetch({ client: queryClient, params: data!.params, search: new URLSearchParams(search), user })
+    }, () => {})
+  })
+  return true
 }

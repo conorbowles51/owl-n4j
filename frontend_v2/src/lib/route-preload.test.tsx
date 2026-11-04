@@ -1,5 +1,5 @@
 import { Suspense, type ReactElement } from "react"
-import { act, render, screen } from "@testing-library/react"
+import { act, render, screen, waitFor } from "@testing-library/react"
 import { MemoryRouter, Route, Routes, createRoutesFromChildren } from "react-router-dom"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { QueryClient } from "@tanstack/react-query"
@@ -8,8 +8,10 @@ import { pageChunksPending, resetPageChunks } from "./page-chunks"
 import { preloadRoute, preloadRouteIntent, registerRouteTree, routePageFor } from "./route-preload"
 import { timedLazy } from "./timed-lazy"
 import { appRouteTree, preloadCurrentRoute } from "@/app/route-table"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
 
 afterEach(() => {
+  useAuthStore.setState({ isAuthenticated: false, user: null })
   resetPageChunks()
   localStorage.clear()
   window.history.replaceState(null, "", "/")
@@ -65,12 +67,16 @@ describe("matching the address against app/routes.tsx", () => {
     }
   })
 
-  it("at startup, starts only the page being opened, and only when someone is signed in", () => {
+  it("at startup, starts only the page being opened, and only when someone is signed in", async () => {
     window.history.replaceState(null, "", `${C}/evidence`)
     expect(preloadCurrentRoute()).toBe(false) // signed out: the address goes to the sign-in page
     localStorage.setItem("authToken", "t")
-    expect(preloadCurrentRoute(`${C}/evidence`)).toBe(true)
-    expect(pageChunksPending()).toBe(true) // the page timer sees the page's code loading
+    const user = { id: "u1", username: "u" } as never
+    useAuthStore.setState({ isAuthenticated: true, user: null })
+    expect(preloadCurrentRoute(`${C}/evidence`, "", Promise.resolve(user))).toBe(true)
+    expect(pageChunksPending()).toBe(false) // the code waits for the sign-in check (it must not queue behind it)
+    // then its first data's module and the data, then the code: the page timer sees the page's code loading
+    await waitFor(() => expect(pageChunksPending()).toBe(true), { timeout: 20_000 })
   })
 })
 
