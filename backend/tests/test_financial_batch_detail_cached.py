@@ -3,8 +3,8 @@
 Measured live 3 Nov on d5b330d1 batch 30231f0a (1,452 files): 14.2-52.8 s on every open (Server-Timing: inputs,
 finish and comparison stages), the page's one-minute limit within reach. A read-only dry run on the live database
 gave the same bytes through the view cache: 10.9 s to compute, 0.12 s from the kept copy (49494305 batch f6f7cd42:
-3.2 s / 0.10 s). Its one input that is not a row, the review queue's own cached view, is used only when current:
-a page built without it (missing, or an earlier copy) is shown and not kept.
+3.2 s / 0.10 s). Its one input that is not a row, the review queue's own cached view (missing, an earlier copy or
+current at the same rows), is left out of the kept part and added on every open.
 """
 import os
 import time
@@ -18,13 +18,14 @@ from routers import financial_statement_import
 from services.financial import import_batches, view_cache
 
 
-def test_the_batch_review_is_served_by_the_view_cache_at_its_path():
+def test_the_batch_review_route_adds_the_queue_lists_to_a_kept_part():
     endpoints = {route.path: route.endpoint for route in financial_statement_import.router.routes
                  if 'GET' in getattr(route, 'methods', ())}
     route = endpoints['/api/financial/statement-import/batches/{batch_id}']
     assert route is financial_statement_import.get_financial_batch
-    assert route.__code__.co_filename.endswith('services/financial/view_cache.py')
-    assert view_cache.handlers['batch-detail'] is route
+    kept = financial_statement_import.batch_without_queue_lists
+    assert kept.__code__.co_filename.endswith('services/financial/view_cache.py')
+    assert view_cache.handlers['batch-detail'] is kept
 
 
 @contextmanager
@@ -45,23 +46,6 @@ class _Item:
 class _Session:
     def rollback(self):
         pass
-
-
-@pytest.mark.parametrize('answer, kept', [
-    ((None, False), False),                       # no queue view yet: the page's own words, not kept
-    (({'entries': [], 'copy_files': []}, True), False),   # an earlier queue view (updating): not kept
-    (({'entries': [], 'copy_files': []}, False), True),   # the queue's current view: kept
-])
-def test_a_batch_page_built_without_the_current_queue_view_is_not_kept(answer, kept):
-    with _recording() as recording, patch('services.financial.review_queue.current_view', return_value=answer):
-        import_batches._as_the_queue_lists(_Session(), uuid.uuid4(), [_Item()], [])
-    assert recording.keep is kept
-
-
-def test_a_queue_view_that_fails_to_load_is_not_kept():
-    with _recording() as recording, patch('services.financial.review_queue.current_view', side_effect=RuntimeError):
-        assert import_batches._as_the_queue_lists(_Session(), uuid.uuid4(), [_Item()], []) is None
-    assert recording.keep is False
 
 
 def test_batch_provenance_that_fails_to_load_is_not_kept():
@@ -153,6 +137,11 @@ def test_reopening_an_unchanged_batch_of_d5b330d1_size_computes_nothing(big_batc
         reopened = time.perf_counter() - started
         assert len(calls) == 1, 'the second open of an unchanged batch is answered from the kept copy'
         assert bytes(again.body) == bytes(first.body)
+        # The queue's lists are read on every open, kept copy or not.
+        with patch('services.financial.import_batches._as_the_queue_lists', return_value={'still_to_finish': 7}), \
+                big_batch['Session']() as db:
+            listed = route(**kwargs, db=db)
+        assert len(calls) == 1 and b'"queue":{"still_to_finish":7}' in bytes(listed.body)
         assert reopened < 1.0, f'reopening took {reopened:.2f} s'
         assert b'"total":%d' % D5_FILES in bytes(first.body).replace(b' ', b'')
         # Any write to a row it read computes it again (never an out-of-date page).
@@ -166,30 +155,36 @@ def test_reopening_an_unchanged_batch_of_d5b330d1_size_computes_nothing(big_batc
         assert bytes(changed.body) != bytes(first.body)
 
 
-def test_the_refresh_builds_the_current_queue_view_before_the_batch_page(monkeypatch):
-    """A write to a batch changes the review queue too. Refreshed before the queue, the page is never kept (it needs
-    the queue's current view), the ask fails and the page shows its previous copy until the 10-minute limit."""
-    import json
-    from uuid import UUID
-    from services.financial import review_queue, view_refresh
-    order = []
 
-    def page(batch_id: UUID, case_id: UUID, db=None):
-        order.append('page')
+class QueueListsAddedLater(__import__('unittest').TestCase):
+    """The page with the queue's lists added to its kept part equals the page computed in one go, for each answer the
+    queue's view can give (none, an earlier copy, current), on a real prepared batch (the SQLite batch fixture)."""
 
-    class Session:
-        def __enter__(self):
-            return self
+    def setUp(self):
+        import tests.test_financial_import_batches as batch_tests
+        self.batches = batch_tests.BatchImportTests()
+        self.batches.setUp()
+        self.batch = self.batches.create()
+        self.batches.advance(self.batch)
+        self.f = self.batches.f
 
-        def __exit__(self, *exc):
-            return False
+    def tearDown(self):
+        self.batches.tearDown()
 
-        def rollback(self):
-            pass
-
-    case, batch = uuid.uuid4(), uuid.uuid4()
-    monkeypatch.setitem(view_cache.handlers, 'batch-detail', page)
-    monkeypatch.setattr(review_queue, 'refresh', lambda db, case_id: order.append(('queue', case_id)) or True)
-    key = view_cache.view_key('batch-detail', dict(batch_id=batch, case_id=case))
-    view_refresh._refresh_one('batch-detail', json.loads(key[1]), dict(key=list(key)), lambda: Session())
-    assert order == [('queue', case), 'page']
+    def test_added_later_equals_computed_in_one_go(self):
+        import json
+        with self.f.SessionLocal() as db:
+            whole = import_batches.batch_status(db, case_id=self.f.case.id, batch_id=self.batch)
+        file_id = whole['items'][0]['file_id'] if whole['items'] else str(self.f.file.id)
+        listing = {'entries': [{'id': 'q1', 'bucket': 'copies', 'file_ids': [file_id], 'statement_id': whole['items'][0].get('statement_id') or ''}] if whole['items'] else [],
+                   'copy_files': []}
+        for answer in ((None, False), (listing, True), (listing, False)):
+            with patch('services.financial.review_queue.current_view', return_value=answer), \
+                    patch('services.financial.review_queue._rechecked_by_recovery', return_value=[]):
+                with self.f.SessionLocal() as db:
+                    whole = import_batches.batch_status(db, case_id=self.f.case.id, batch_id=self.batch)
+                with self.f.SessionLocal() as db:
+                    part = json.loads(json.dumps(import_batches.batch_status(db, case_id=self.f.case.id, batch_id=self.batch, queue=False), default=str))
+                    self.assertIsNone(part['statement_summary']['queue'])
+                    later = import_batches.with_queue_lists(db, self.f.case.id, part)
+            self.assertEqual(json.dumps(later, sort_keys=False, default=str), json.dumps(json.loads(json.dumps(whole, default=str)), sort_keys=False))

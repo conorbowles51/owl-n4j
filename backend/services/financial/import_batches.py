@@ -1853,8 +1853,12 @@ def batch_failed_source_ids(session, case_id, batch_id):
             if file.get('status') == 'error' and (file.get('source_id') or file.get('file_id'))]
 
 
-def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_problems=False, review_group=None):
-    """Batch list read: stored projections only, no PDF reading and no writes."""
+def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_problems=False, review_group=None, queue=True):
+    """Batch list read: stored projections only, no PDF reading and no writes.
+
+    ``queue=False``: everything but the review queue's lists (statement_summary.queue stays None, unread files are not
+    marked from the queue), with the open statements those lists need under ``_queue_items``; ``with_queue_lists``
+    adds them. Without the queue the view is a function of rows only, so the page keeps it (routers: batch-base)."""
     from services.financial.batch_review_summary import validate_group
     from services.financial.request_timing import stage
     validate_group(review_group)
@@ -1864,7 +1868,16 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
     items=checked_batch_items(session, case_id, items)
     with stage('batch_summaries'):
         return _batch_view(session, case_id, batch_id, batch, items, offset=offset, limit=limit,
-            only_problems=only_problems, review_group=review_group)
+            only_problems=only_problems, review_group=review_group, queue=queue)
+
+
+def with_queue_lists(session, case_id, view):
+    """``view`` (batch_status(queue=False)) with the review queue's lists added in place, as batch_status gives them."""
+    from types import SimpleNamespace
+    open_items = [SimpleNamespace(id=entry[0], file_id=entry[1], statement_key=entry[2], status=entry[3])
+                  for entry in view.pop('_queue_items')]
+    view['statement_summary']['queue'] = _as_the_queue_lists(session, case_id, open_items, view['files'])
+    return view
 
 
 # Queue lists a statement can stand in when it is not the investigator's work: named on the progress line by what
@@ -1891,18 +1904,13 @@ def _as_the_queue_lists(session, case_id, items, files):
     if not open_items and not unread:
         return None
     from services.financial.review_queue import current_view, _rechecked_by_recovery, REREAD_BUCKETS
-    from services.financial.view_cache import not_kept
+    # Never inside a cached view: the queue's view is the queue's own cache, not a row (missing or an earlier copy
+    # now, current later at the same rows), so the batch page adds these lists to its kept part on every open.
     try:
         view, updating = current_view(session, case_id, latest=True)
     except Exception:
         session.rollback()
-        not_kept()
         return None
-    # The batch page is a cached view (GET /batches/{batch_id}); the queue's view is the queue's own cache, not a
-    # row: at the same rows it can be missing or an earlier copy (updating) now and current later. A page built
-    # without the current queue view is shown as it is and not kept, so the next open uses the current one.
-    if view is None or updating:
-        not_kept()
     if view is None:
         return None
     by_statement, by_file = {}, {}
@@ -1934,7 +1942,7 @@ def _as_the_queue_lists(session, case_id, items, files):
     return result
 
 
-def _batch_view(session, case_id, batch_id, batch, items, *, offset, limit, only_problems, review_group):
+def _batch_view(session, case_id, batch_id, batch, items, *, offset, limit, only_problems, review_group, queue=True):
     from services.financial.import_operations import operations_for
     from services.financial.batch_review_summary import matches_group, review_summary, statement_summary, group_label, needs_decision
     from services.financial.review_queue import actionable_problems
@@ -1953,9 +1961,11 @@ def _batch_view(session, case_id, batch_id, batch, items, *, offset, limit, only
             if reason:
                 file['set_aside'] = reason
     summary = statement_summary(items)
-    summary['queue'] = _as_the_queue_lists(session, case_id, items, files)
+    summary['queue'] = _as_the_queue_lists(session, case_id, items, files) if queue else None
     from services.financial.batch_file_overview import file_overview
-    return dict(id=str(batch.id),case_id=str(case_id),status=batch.status,files=files,counts=counts, reading_job_ids=job_ids,
+    later = {} if queue else dict(_queue_items=[[str(i.id), str(i.file_id), i.statement_key, i.status] for i in items
+                                                if i.status in ('ready', 'attention')])
+    return dict(**later,id=str(batch.id),case_id=str(case_id),status=batch.status,files=files,counts=counts, reading_job_ids=job_ids,
         statement_summary=summary, file_overview=file_overview(items),
         review_summary=review_summary(items), review_group=review_group, review_group_label=group_label(review_group),
         operations=operations_for(session, case_id, batch_id),

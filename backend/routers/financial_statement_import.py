@@ -1178,17 +1178,47 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
         failed_files=sum(f['status'] == 'error' for f in files_by_batch[b.id])) for b in batches])
 
 
-@router.get('/batches/{batch_id}')
-# Computed from stored projections only (no PDF reading, no writes): 14-53 s on d5b330d1 batch 30231f0a on every open
-# (live, 3 Nov), 0.12 s from the kept copy, byte-identical (read-only dry run on the live database). Kept only while
-# every row it read is unchanged, and only when built from the review queue's current view (_as_the_queue_lists).
+# Everything on the batch review page except the review queue's lists: a function of rows only, so it is kept. Computed
+# from stored projections (no PDF reading, no writes): 14-53 s on d5b330d1 batch 30231f0a on every open (live, 3 Nov);
+# 0.12 s from the kept copy (read-only dry run on the live database, the same bytes). Not a route: the page's route
+# below adds the queue's lists to it on every open.
 @cached_view('batch-detail')
-def get_financial_batch(batch_id: UUID, case_id: UUID = Query(...), offset: int = Query(0,ge=0), limit: int = Query(100,ge=1,le=500),only_problems: bool = Query(False),review_group: str | None = Query(None),db: Session = Depends(get_db)):
+def batch_without_queue_lists(batch_id: UUID, case_id: UUID, offset: int, limit: int, only_problems: bool,
+                              review_group: str | None, db: Session):
     try:
-        view = import_batches.batch_status(db,case_id=case_id,batch_id=batch_id,offset=offset,limit=limit,only_problems=only_problems,review_group=review_group)
+        view = import_batches.batch_status(db,case_id=case_id,batch_id=batch_id,offset=offset,limit=limit,only_problems=only_problems,review_group=review_group,queue=False)
         return {**view, 'added': _batch_added(db, case_id, batch_id)} if isinstance(view, dict) else view
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
+
+
+@router.get('/batches/{batch_id}')
+def get_financial_batch(batch_id: UUID, case_id: UUID = Query(...), offset: int = Query(0,ge=0), limit: int = Query(100,ge=1,le=500),only_problems: bool = Query(False),review_group: str | None = Query(None),db: Session = Depends(get_db)):
+    """The batch review page: its kept part (batch_without_queue_lists) and the review queue's lists, which come from
+    the queue's own cached view (current, or an earlier copy marked updating), read again on every open."""
+    import json as _json
+    from services.financial import view_cache
+    # The kept part as plain JSON: never this browser's 304 or a compressed body (both are for the whole answer).
+    gzip_token = view_cache._accepts_gzip.set(False)
+    match_token = view_cache._if_none_match.set('')
+    try:
+        part = batch_without_queue_lists(batch_id=batch_id, case_id=case_id, offset=offset, limit=limit,
+                                         only_problems=only_problems, review_group=review_group, db=db)
+    finally:
+        view_cache._if_none_match.reset(match_token)
+        view_cache._accepts_gzip.reset(gzip_token)
+    if isinstance(part, Response):
+        headers = {name: value for name, value in part.headers.items()
+                   if name.lower() in (view_cache.UPDATING_STATE_HEADER.lower(), view_cache.UPDATING_AS_OF_HEADER.lower(),
+                                       'cache-control')}
+        view = _json.loads(part.body)
+    else:
+        headers, view = {}, part
+    if isinstance(view, dict) and '_queue_items' in view:
+        import_batches.with_queue_lists(db, case_id, view)
+    response = view_cache.json_response(view)  # plain JSON written once, not FastAPI's walk over 1.6 MB
+    response.headers.update(headers)
+    return response
 
 
 @router.post('/batches/{batch_id}/control/{action}', dependencies=[Depends(case_access_dependency(lambda request,payload: ('case','edit')))])

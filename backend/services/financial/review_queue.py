@@ -427,9 +427,6 @@ def _rechecked_by_recovery(session, case_id, entries):
         again = rereading_files(session, case_id)
     except Exception:
         session.rollback()  # no recovery tables (an old database): nothing scheduled
-        # Shown as it stands, not kept by a cached view that reads it (the batch page): the next read tries again.
-        from services.financial.view_cache import not_kept
-        not_kept()
         return entries
     if again:
         for entry in entries:
