@@ -42,7 +42,7 @@ def _world(c):
              (1, "rec-absent", [("file-1", "sms", "3", 1)]),
              (2, "rec-mixed", [("no-such-file", "calls", "7", None), ("file-2", "calls", "7", 2),
                                ("file-5", None, "0", 5)]),
-             (3, "not-a-record", [("file-0", "messages", "99", 0)])]
+             (3, "not-a-record", [("file-0", "messages", "99", 0), ("file-4", "t", "1", 4)])]
     for xo, sid, nodes in infos:
         c.execute(text(
             "INSERT INTO phone_extra_infos (extraction_id, document_index, ordinal, source_id, info_type, body) VALUES "
