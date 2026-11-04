@@ -17,7 +17,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "20261104_pol_text_places"
-down_revision = "20261104_meaning_search_health"
+down_revision = "20261104_phone_views"
 branch_labels = None
 depends_on = None
 
