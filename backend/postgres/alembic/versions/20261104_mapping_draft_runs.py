@@ -11,7 +11,7 @@ changes.
 from alembic import op
 
 revision = "20261104_mapping_draft_runs"
-down_revision = "20261104_pol_mcc_inferred"
+down_revision = "20261104_phone_perceptual_hash"
 branch_labels = None
 depends_on = None
 
