@@ -24,7 +24,9 @@ export function summariseAiItems(facts: VerifiedFact[], insights: AIInsight[]): 
 export function aiItemsLine(s: AiItemsSummary): string {
   const parts = [`${s.facts} source-grounded fact${s.facts === 1 ? "" : "s"}${s.pinnedFacts ? ` (${s.pinnedFacts} pinned)` : ""}`]
   parts.push(
-    `${s.insights} insight${s.insights === 1 ? "" : "s"}: ${s.personVerified} confirmed by a person, ${s.notReviewed} not reviewed, ${s.rejected} rejected`,
+    s.insights
+      ? `${s.insights} insight${s.insights === 1 ? "" : "s"}: ${s.personVerified} confirmed by a person, ${s.notReviewed} not reviewed, ${s.rejected} rejected`
+      : "no insights",
   )
   return `AI-made · ${parts.join(" · ")}`
 }

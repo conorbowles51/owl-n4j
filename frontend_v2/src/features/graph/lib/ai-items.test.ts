@@ -24,4 +24,8 @@ describe("one consolidated view of an entity's AI facts and insights (FEAT-014)"
     expect(o.rejected.map((x) => x.index)).toEqual([0])
     expect(o.open.length + o.confirmed.length + o.rejected.length).toBe(insights.length)
   })
+  it("says there are no insights instead of a row of zeros", () => {
+    const s = summariseAiItems([{ text: "a" }, { text: "b" }], [])
+    expect(aiItemsLine(s)).toBe("AI-made · 2 source-grounded facts · no insights")
+  })
 })

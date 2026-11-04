@@ -783,7 +783,7 @@ export function DossierDetailSheet({
                 </div>
               </div>
             </header>
-            <Tabs defaultValue="brief" className="min-h-0">
+            <Tabs defaultValue="brief" className="shrink-0">
               <div className="sticky top-0 z-10 border-b border-border bg-background/95 px-5 backdrop-blur">
                 <TabsList variant="line" className="h-11">
                   <TabsTrigger value="brief">Brief</TabsTrigger>
