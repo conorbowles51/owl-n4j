@@ -1157,7 +1157,8 @@ def delete_interview(db: Session, *, dossier_id: uuid.UUID, interview_id: uuid.U
     from services import removed_records
     links = db.scalars(select(DossierInterviewEvidenceLink).where(DossierInterviewEvidenceLink.interview_id == item.id)).all()
     removed_records.keep(db, kind="dossier_interview", case_id=dossier.case_id, subject_id=item.id,
-                         label=f"Interview {item.date_value or (item.interview_date.date().isoformat() if item.interview_date else '')}".strip(),
+                         label=item.date_value or (item.interview_date.date().isoformat() if item.interview_date
+                                                   else "Date not recorded"),
                          rows=[item, *links], user=user)
     for link in links:  # what the foreign key cascade removes, removed explicitly (the copy holds exactly these)
         db.delete(link)

@@ -68,7 +68,7 @@ def test_a_removed_interview_keeps_its_working_notes_and_evidence_links(setup_db
         iid = uuid.UUID(made["id"])
         dossier_service.delete_interview(db, dossier_id=dossier_id, interview_id=iid, user=user)
         [kept] = removed_records.list_removed(db, case_id=case_id)["items"]
-        assert (kept["kind"], kept["rows"]) == ("dossier_interview", 3)
+        assert (kept["kind"], kept["rows"], kept["label"]) == ("dossier_interview", 3, "2025-07")
         removed_records.restore(db, removed_records.load(db, kept["id"]), user=user)
         db.commit()
         db.expire_all()
