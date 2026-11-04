@@ -84,3 +84,34 @@ describe("Kept result words", () => {
     expect(recordsWords(2)).toBe("2 records")
   })
 })
+
+describe("Kinds of term with their counts (05 10.3 step 1, cb-vocab)", () => {
+  it("lists every kind with the run's count, the new kinds included, and says nothing was left out", async () => {
+    keyDates.mockResolvedValue({ total: 0, items: [] })
+    const r = run("typed_words", { typed_not_in_extraction: 1 })
+    r.counts = { ...r.counts, hits_case_entity: 2, hits_ledger_amount: 1, hits_place: 3, hits_contact_name: 4, vocabulary_not_included: [] } as never
+    client.runs.mockResolvedValue({ items: [r] })
+    client.coverage.mockResolvedValue({ sentence: "Coverage sentence." })
+    client.results.mockResolvedValue({ total: 1, offset: 0, limit: 100, items: [{ ...TYPED, measures: { ...TYPED.measures, term_kinds: ["ledger_amount"] } }] })
+    mount(<TypedWordsPage />, "phone-analyses/typed-words")
+    const box = await screen.findByTestId("kind-counts")
+    expect(box.querySelector('[data-kind="case_entity"]')).toHaveTextContent("2 on a name or alias of a person, organisation or other entity in the case")
+    expect(box.querySelector('[data-kind="ledger_amount"]')).toHaveTextContent("1 on an amount in the case's ledger")
+    expect(box.querySelector('[data-kind="place"]')).toHaveTextContent("3 on an address or place name in the case")
+    expect(box.querySelector('[data-kind="account_ending"]')).toHaveTextContent("0 on an account ending")
+    expect(box).toHaveTextContent("Nothing in the case's vocabulary was left out of this run.")
+    expect(await screen.findByTestId("typed-result")).toHaveTextContent("matches an amount in the case's ledger")
+    expect(document.body.textContent).not.toMatch(/Not compared yet/)
+  })
+
+  it("says what a run could not compare", async () => {
+    keyDates.mockResolvedValue({ total: 0, items: [] })
+    const r = run("intent", { search_hit: 0, page_hit: 0 })
+    r.counts = { ...r.counts, vocabulary_not_included: ["Loupe case entities and the case's places (the case graph could not be read)"] } as never
+    client.runs.mockResolvedValue({ items: [r] })
+    client.coverage.mockResolvedValue({ sentence: "Coverage sentence." })
+    client.results.mockResolvedValue({ total: 0, offset: 0, limit: 100, items: [] })
+    mount(<IntentPage />, "phone-analyses/searches")
+    expect(await screen.findByTestId("kind-counts")).toHaveTextContent("This run could not compare: Loupe case entities and the case's places (the case graph could not be read).")
+  })
+})

@@ -12,6 +12,24 @@ export const TERM_WORDS: Record<string, string> = {
   account_ending: "an account ending in the financial records",
   financial_name: "an account holder or counterparty in the financial records",
   investigator_term: "a case term or a keyword list term",
+  case_entity: "a name or alias of a person, organisation or other entity in the case",
+  ledger_amount: "an amount in the case's ledger",
+  place: "an address or place name in the case",
+}
+
+/** The kinds of term in the order the screens list them (05 10.3 step 1). */
+export const TERM_KINDS = Object.keys(TERM_WORDS)
+
+/**
+ * Hits by kind of term from a completed run's counts (``hits_<kind>``), every kind listed with its count, and what
+ * the vocabulary of that run could not read (``vocabulary_not_included``); nothing missing says so.
+ */
+export function kindCountWords(counts: Record<string, unknown> | null | undefined): { items: { kind: string; words: string; count: number }[]; missing: string } {
+  const c = counts || {}
+  const items = TERM_KINDS.map((k) => ({ kind: k, words: TERM_WORDS[k], count: Number(c["hits_" + k] ?? 0) }))
+  const left = (c.vocabulary_not_included as string[] | undefined) || []
+  const missing = left.length ? `This run could not compare: ${left.join(", ")}.` : "Nothing in the case's vocabulary was left out of this run."
+  return { items, missing }
 }
 
 type M = Record<string, unknown>

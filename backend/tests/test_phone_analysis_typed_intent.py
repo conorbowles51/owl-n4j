@@ -177,4 +177,156 @@ def test_investigator_terms_from_case_terms_and_keyword_lists_reach_typed_words_
     assert [r["records"][0]["record_uid"] for r in after_i] == [s]
     assert after_i[0]["measures"]["term_kinds"] == ["investigator_term"] and after_i[0]["measures"]["terms_matched"] == 2
     assert rev0 != rev1
-    assert T.VERSION == "7.2" and I.VERSION == "9.2"
+    assert T.VERSION == "7.3" and I.VERSION == "9.3"
+
+
+# ---- 05 10.3 step 1, the rest of the vocabulary: case entities, ledger amounts, places (cb-vocab) -------------------
+
+def test_nothing_is_left_out_of_the_vocabulary():
+    """With case entities, ledger amounts and places read, no kind of 10.3 step 1 is missing; each new kind has its
+    plain words for the screens."""
+    assert V.NOT_INCLUDED == ()
+    for k in ("case_entity", "ledger_amount", "place"):
+        assert k in V.KINDS and V.KIND_WORDS[k]
+    assert V.not_included({"not_included": []}) == [] and V.vocabulary_partial_detail({}) is None
+
+
+def test_amount_forms():
+    """19.S10-e: the dot and comma conventions, grouped and plain; a whole amount also without decimals only when
+    grouped; at least 4 digits; a currency without minor units has no decimals."""
+    f = V.amount_forms(123456, "USD")
+    assert f == {"dot": {"1234.56", "1,234.56"}, "comma": {"1234,56", "1.234,56"}}
+    assert V.amount_forms(150000, "EUR") == {"dot": {"1500.00", "1,500.00", "1,500"},
+                                             "comma": {"1500,00", "1.500,00", "1.500"}}
+    assert V.amount_forms(-150000, "EUR") == V.amount_forms(150000, "EUR")
+    assert V.amount_forms(1500, "JPY") == {"dot": {"1,500"}, "comma": {"1.500"}}
+    assert V.amount_forms(999, "USD") == {"dot": set(), "comma": set()}  # 9.99: 3 digits
+    assert "1500" not in V.amount_forms(150000, "USD")["dot"]  # the plain whole form matched years and page numbers
+
+
+def test_amounts_match_as_a_whole_number():
+    vocab = dict(VOCAB, amount_forms=V.amount_forms(123456, "USD")["dot"])
+    assert V.matches("sent 1,234.56 today", vocab) == [("ledger_amount", "1 234 56")]
+    assert V.matches("$1234.56.", vocab) == [("ledger_amount", "1234 56")]
+    for other in ("11234.56", "1,234.567", "123456", "1234,56", "1.234,56", "21,234.56"):
+        assert V.matches(other, vocab) == [], other
+    assert V.matches("1234,56", dict(VOCAB, amount_forms=V.amount_forms(123456, "USD")["comma"])) == [
+        ("ledger_amount", "1234 56")]
+
+
+def test_case_entities_and_places_from_the_graph(monkeypatch):
+    """Case entity names and aliases by token, as contact names; graph places and entity addresses as phrases, whole
+    and by comma-separated part; an unreadable graph is stated, never silent."""
+    rows = [["Person", "Brannock Ostravel", ["Branny Ostravel"], []],
+            ["Organization", "Quorvane Holdings", None, ["14 Tidewell Lane, Marrowfield"]],
+            ["Location", "Kelderwick Quay", ["Old Kelderwick"], ["Kelderwick Quay, Port Ansel"]]]
+    monkeypatch.setattr(V, "_graph_rows", lambda case_id: rows)
+    got, note = V._read_graph("c1")
+    assert got == rows and note is None
+    places = {}
+    for label, name, aliases, addresses in got:
+        for v in ([name] + (aliases or []) if label in V.PLACE_LABELS else []) + addresses:
+            V._add_place(places, v)
+    vocab = dict(VOCAB, names={"brannock": {"case_entity"}, "branny": {"case_entity"}, "quorvane": {"case_entity"}},
+                 places=places)
+    assert V.matches("Branny", vocab) == [("case_entity", "branny")]
+    assert V.matches("ferry to kelderwick quay at 5", vocab) == [("place", "kelderwick quay")]
+    assert V.matches("kelderwick", vocab) == []  # a phrase matches whole, not by one of its words
+    assert V.matches("Marrowfield", vocab) == [("place", "marrowfield")]  # a comma-separated part of an address
+    assert V.matches("14 tidewell lane", vocab) == [("place", "14 tidewell lane")]
+    monkeypatch.setattr(V, "_graph_rows", lambda case_id: (_ for _ in ()).throw(RuntimeError("down")))
+    got, note = V._read_graph("c1")
+    assert got == [] and "could not be read" in note
+    monkeypatch.setattr(V, "_graph_rows", lambda case_id: rows * (V.GRAPH_LIMIT // 3 + 1))
+    got, note = V._read_graph("c1")
+    assert len(got) == V.GRAPH_LIMIT and "beyond the first" in note
+
+
+def test_graph_query_is_one_bounded_case_scoped_read_of_active_entities():
+    """One query per build, case-scoped on every label, limited, and only active nodes (not in the recycle bin, not
+    system nodes): a renamed entity gives its current name and a merged one only the entity it was merged into."""
+    q = V._graph_query()
+    assert q.count("{case_id: $case_id}") == len(V.ENTITY_LABELS) and "LIMIT $limit" in q
+    assert "RecycleBin" in q and "system_node" in q and "n.name" in q and "n.aliases" in q
+    assert "Person" in V.ENTITY_LABELS and "Organization" in V.ENTITY_LABELS and "Location" in V.PLACE_LABELS
+    assert not {"PhoneIdentity", "FinancialTransaction", "Document"} & set(V.ENTITY_LABELS)
+
+
+def test_phone_convention():
+    """The forms follow the phone's region; with none, the ledger's currencies; with neither, both."""
+    class C:
+        def __init__(self, keys):
+            self.keys = keys
+
+        def execute(self, *a, **k):
+            return [(x,) for x in self.keys]
+    import services.phone.mappings.apply as A
+    orig = A.default_region
+    try:
+        A.default_region = lambda conn, e: ("US", "assumed_default")
+        assert V.phone_convention(C(["phone:+34600000000"]), "e")[0] == ("comma",)
+        assert V.phone_convention(C(["phone:+12025550147"]), "e")[0] == ("dot",)
+        assert V.phone_convention(C([]), "e", ["MXN"])[0] == ("dot",)
+        assert V.phone_convention(C([]), "e", ["EUR"])[0] == ("comma", "dot")
+        assert V.phone_convention(C([]), "e")[0] == ("comma", "dot")
+        A.default_region = lambda conn, e: ("DE", "decided")
+        assert V.phone_convention(C(["phone:+12025550147"]), "e") == (("comma",), "region DE (decided)")
+    finally:
+        A.default_region = orig
+
+
+@needs_template
+def test_case_entities_amounts_and_places_reach_typed_words_and_intent(engine, monkeypatch):
+    """A learned word equal to a case entity's alias, an autofill value equal to a ledger amount in the phone's forms
+    and a search naming a case place are hits of kinds case_entity, ledger_amount and place; the old kinds' hits are
+    unchanged; the values never appear in a result; nothing is said to be left out; a superseded ledger row's amount
+    is not vocabulary (the corrected value is the one read)."""
+    from tests.test_phone_analysis_money_signals import Ledger
+    monkeypatch.setattr(V, "_graph_rows", lambda case_id: [
+        ["Person", "Brannock Ostravel", ["Branny"], []], ["Location", "Kelderwick Quay", [], []]])
+    with engine.begin() as c:
+        case = make_case(c)
+        ext, _ = phone(c, case, contacts={"phone:+12025550199": "Velmora Ashgrove"},
+                       events=[{"instant": at(2023, 1, 5, 10), "direction": "outgoing", "body": "see velmora soon"}])
+        led = Ledger(c, case)
+        acct = led.account("Synthetic Bank", "XX-9917")
+        led.txn(acct, 123456, at(2023, 1, 2, 0).date())
+        old = led.txn(acct, 777700, at(2023, 1, 3, 0).date())
+        new = led.txn(acct, 777800, at(2023, 1, 3, 0).date())
+        led.supersede(old, new)
+        w1 = record(c, case, ext, 800, "DictionaryWord", texts=[("Word", "branny")])
+        w2 = record(c, case, ext, 801, "DictionaryWord", texts=[("Word", "velmora")])
+        a1 = record(c, case, ext, 802, "Autofill", texts=[("Key", "amount"), ("Value", "1,234.56")],
+                    fields=[("Key", "String", "amount")], times=[("TimeStamp", at(2023, 1, 6, 9))])
+        a2 = record(c, case, ext, 803, "Autofill", texts=[("Key", "amount"), ("Value", "7,777.00")],
+                    fields=[("Key", "String", "amount")])
+        s = record(c, case, ext, 804, "SearchedItem", texts=[("Value", "ferry to Kelderwick Quay")])
+        for u in (w1, w2):
+            _sensitive(c, u)
+        for u in (a1, a2):
+            c.execute(text("UPDATE phone_texts SET is_sensitive = true WHERE record_uid = CAST(:u AS uuid) AND "
+                           "field_path = 'Value'"), {"u": u})
+    with engine.connect() as c:
+        res, counts = T.analyse(c, case, {})
+        ires, icounts = I.analyse(c, case, {})
+    by = {r["records"][0]["record_uid"]: r for r in res}
+    assert set(by) == {w1, w2, a1}  # a2: the superseded amount is not vocabulary
+    assert by[w1]["measures"]["term_kinds"] == ["case_entity"] and by[w1]["kind"] == "typed_not_in_extraction"
+    assert by[a1]["measures"]["term_kinds"] == ["ledger_amount"]
+    assert any(d["code"] == "amount_form" for d in by[a1]["directions"]["undercuts"])
+    assert by[w2]["measures"]["term_kinds"] == ["contact_name"]
+    assert counts["hits_case_entity"] == 1 and counts["hits_ledger_amount"] == 1 and counts["hits_contact_name"] == 1
+    assert counts["not_elsewhere_case_entity"] == 1 and counts["vocabulary_not_included"] == []
+    assert not any(d["code"] == "vocabulary_partial" for r in res + ires for d in r["directions"]["undercuts"])
+    assert [r["records"][0]["record_uid"] for r in ires] == [s]
+    assert ires[0]["measures"]["term_kinds"] == ["place"] and icounts["hits_place"] == 1
+    blob = json.dumps(res, default=str).lower()
+    for word in ("branny", "1,234.56", "1 234 56", "velmora"):
+        assert word not in blob  # 10.8.3
+    monkeypatch.setattr(V, "_graph_rows", lambda case_id: (_ for _ in ()).throw(RuntimeError("down")))
+    with engine.connect() as c:
+        res2, counts2 = T.analyse(c, case, {})
+    assert {r["records"][0]["record_uid"] for r in res2} == {w2, a1}
+    assert counts2["vocabulary_not_included"] and all(
+        any(d["code"] == "vocabulary_partial" and "could not be read" in d["detail"] for d in r["directions"]["undercuts"])
+        for r in res2)

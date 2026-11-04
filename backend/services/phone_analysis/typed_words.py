@@ -28,12 +28,12 @@ from services.phone_analysis import fields as FV
 from services.phone_analysis import vocabulary as V
 
 CODE = "typed_words"
-VERSION = "7.2"  # 7.2: the vocabulary takes investigator terms (case terms and keyword lists)
+VERSION = "7.3"  # 7.3: case entities, ledger amounts and places; 7.2: investigator terms
 PARAMETERS: dict = {}
 KINDS = ("typed_not_in_extraction", "typed_and_present")
 SUPPORTS = ("vocabulary_match", "not_in_extraction", "present_elsewhere", "time_recorded")
 UNDERCUTS = ("no_time_recorded", "learned_from_any_typing", "synced_dictionary", "frequency_not_period",
-             "absence_may_be_selection", "vocabulary_partial", "deleted_or_carved")
+             "absence_may_be_selection", "vocabulary_partial", "deleted_or_carved", "amount_form")
 DIRECTION_CODES = SUPPORTS + UNDERCUTS
 SIGNALS = [
     {"code": "dictionary", "label": "Keyboard learned words"},
@@ -51,6 +51,7 @@ def _d(code, detail, locators=()):
 def input_manifest(conn, case_id) -> dict:
     from services.phone_analysis.money_signals import ledger_revision
     return {"ledger": ledger_revision(conn, case_id), "investigator_terms": V.terms_revision(conn, case_id),
+            "case_graph": V.graph_revision(case_id),
             "identities": conn.execute(text(
         "SELECT md5(coalesce(string_agg(x, ',' ORDER BY x), '')) FROM (SELECT DISTINCT name AS x FROM pv_identity_name "
         "WHERE case_id = :c UNION SELECT DISTINCT value_normalised FROM pv_identity WHERE case_id = :c) s"),
@@ -89,6 +90,10 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
     counts["vocabulary_numbers"] = len(vocab["numbers"])
     counts["vocabulary_endings"] = len(vocab["endings"])
     counts["vocabulary_terms"] = len(vocab["terms"])
+    counts["vocabulary_places"] = sum(len(v) for v in vocab["places"].values())
+    counts["vocabulary_amounts"] = len(vocab["amount_forms"])
+    partial = V.vocabulary_partial_detail(vocab)
+    counts["vocabulary_not_included"] = V.not_included(vocab)
     phones = FV.active_phones(conn, case_id)
     out = []
     for i, (ext, label) in enumerate(phones.items()):
@@ -98,9 +103,10 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                 break
         typed = _typed(conn, ext)
         counts["typed_records"] += len(typed)
+        pv = V.for_phone(conn, vocab, ext)
         hits = {}
         for uid, t in typed.items():
-            m = sorted({x for v in t["values"] for x in V.matches(v, vocab)})
+            m = sorted({x for v in t["values"] for x in V.matches(v, pv)})
             if m:
                 hits[uid] = (t["model_type"], m)
         if not hits:
@@ -132,12 +138,17 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
             counts[kind] += 1
             for k in kinds:
                 counts["hits_" + k] += 1
+                if not present:
+                    counts["not_elsewhere_" + k] += 1
             words = ", ".join(V.KIND_WORDS[k] for k in kinds)
             supports = [_d("vocabulary_match", "The value matches %s." % words, [uid])]
             undercuts = [_d("learned_from_any_typing", "A keyboard learns from any typing on the device, in any app, "
-                            "by anyone using it."),
-                         _d("vocabulary_partial", "The comparison does not yet include: %s." %
-                            ", ".join(V.NOT_INCLUDED))]
+                            "by anyone using it.")]
+            if partial:
+                undercuts.append(_d("vocabulary_partial", partial))
+            if "ledger_amount" in kinds:
+                undercuts.append(_d("amount_form", "An amount is matched in this phone's number forms (%s); the same "
+                                    "figure can be any number typed for another reason." % pv["amount_basis"]))
             if present:
                 supports.append(_d("present_elsewhere", "The same term occurs in %d message, email, note, search or "
                                    "calendar records on this phone%s." % (n_else, "" if n_else <= len(links) else

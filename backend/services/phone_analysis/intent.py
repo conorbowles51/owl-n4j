@@ -30,12 +30,12 @@ from services.phone_analysis import fields as FV
 from services.phone_analysis import vocabulary as V
 
 CODE = "intent"
-VERSION = "9.2"  # 9.2: the vocabulary takes investigator terms (case terms and keyword lists)
+VERSION = "9.3"  # 9.3: case entities, ledger amounts and places; 9.2: investigator terms
 PARAMETERS: dict = {}
 KINDS = ("search_hit", "page_hit")
 SUPPORTS = ("vocabulary_match", "searched_at", "last_visited")
 UNDERCUTS = ("time_not_recorded", "last_visit_only", "suggested_or_prefetched", "synced_history", "common_term",
-             "address_only", "vocabulary_partial", "deleted_or_carved")
+             "address_only", "vocabulary_partial", "deleted_or_carved", "amount_form")
 DIRECTION_CODES = SUPPORTS + UNDERCUTS
 SIGNALS = [
     {"code": "searches", "label": "Searches"},
@@ -105,15 +105,20 @@ def _read(conn, ext, vocab):
 def analyse(conn, case_id, params, ctx=None) -> tuple:
     counts = defaultdict(int)
     vocab = V.build(conn, case_id)
+    partial = V.vocabulary_partial_detail(vocab)
+    counts["vocabulary_not_included"] = V.not_included(vocab)
     phones = FV.active_phones(conn, case_id)
     per_phone = {}
+    basis = {}
     term_records = Counter()
     for i, (ext, label) in enumerate(phones.items()):
         if ctx is not None:
             ctx.progress(i, len(phones), label)
             if ctx.cancelled():
                 break
-        hits = _read(conn, ext, vocab)
+        pv = V.for_phone(conn, vocab, ext)
+        basis[ext] = pv["amount_basis"]
+        hits = _read(conn, ext, pv)
         per_phone[ext] = hits
         for h in hits.values():
             term_records.update({t for _, t in h["matches"]})
@@ -143,11 +148,15 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
             visits = (vals.get("VisitCount") or [None])[0]
             counts[kind] += 1
             counts[kind + ("_timed" if when else "_untimed")] += 1
+            for k in kinds:
+                counts["hits_" + k] += 1
             supports = [_d("vocabulary_match", "The %s matches %s." % (
                 " and ".join({"search": "search text", "title": "page title", "address": "page address"}[w]
                              for w in matched_in), ", ".join(V.KIND_WORDS[k] for k in kinds)), [uid])]
-            undercuts = [_d("vocabulary_partial", "The comparison does not yet include: %s." %
-                            ", ".join(V.NOT_INCLUDED))]
+            undercuts = [_d("vocabulary_partial", partial)] if partial else []
+            if "ledger_amount" in kinds:
+                undercuts.append(_d("amount_form", "An amount is matched in this phone's number forms (%s); the same "
+                                    "figure can be any number written for another reason." % basis[ext]))
             if search and when:
                 supports.append(_d("searched_at", "The search records its time.", [uid]))
             elif not search and when:

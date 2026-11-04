@@ -289,7 +289,7 @@ def m6(conn, case_id):
              "not_counted": {"m6b": "shared keys need approach 6's key extraction"}}, "inconclusive")
 
 
-@measure("typed_words", "m7.4")
+@measure("typed_words", "m7.5")
 def m7(conn, case_id):
     """M-7a (05 10.6): per phone, dictionary words and autofill values matching the case vocabulary (vocabulary.py:
     identity names and numbers, ledger account endings, holders and counterparties), by term kind, and how many
@@ -303,17 +303,20 @@ def m7(conn, case_id):
     for r in results:
         m = r["measures"]
         c = per_phone.setdefault(m["phone_label"], {"hits": 0, "not_elsewhere": 0,
-                                                    **{"hits_" + k: 0 for k in V.KINDS}})
+                                                    **{"hits_" + k: 0 for k in V.KINDS},
+                                                    **{"not_elsewhere_" + k: 0 for k in V.KINDS}})
         c["hits"] += 1
         c["not_elsewhere"] += r["kind"] == "typed_not_in_extraction"
         for k in m["term_kinds"]:
             c["hits_" + k] += 1
+            c["not_elsewhere_" + k] += r["kind"] == "typed_not_in_extraction"
     best = max((c["hits"] for c in per_phone.values()), default=0)
     ending_absent = sum(1 for r in results if r["kind"] == "typed_not_in_extraction"
                         and "account_ending" in r["measures"]["term_kinds"])
     return ({"m7a_per_phone": per_phone, "typed_records": counts.get("typed_records", 0),
-             "vocabulary_terms": {k: counts.get("vocabulary_" + k, 0) for k in ("names", "numbers", "endings", "terms")},
-             "vocabulary_not_included": list(V.NOT_INCLUDED)},
+             "vocabulary_terms": {k: counts.get("vocabulary_" + k, 0) for k in ("names", "numbers", "endings", "terms",
+                                                                                 "places", "amounts")},
+             "vocabulary_not_included": counts.get("vocabulary_not_included", [])},
             "build" if best >= 10 or ending_absent > 0 else "inconclusive")
 
 
@@ -332,7 +335,7 @@ def m8(conn, case_id):
             "build" if (groups or 0) >= 25 else "inconclusive")
 
 
-@measure("intent", "m9.4")
+@measure("intent", "m9.5")
 def m9(conn, case_id):
     """M-9a, M-9b (05 12.6): searches and visited pages per phone; search values, page titles and page address path
     words matching the case vocabulary (vocabulary.py). Hits are counted per record and per distinct term; a term
@@ -345,15 +348,18 @@ def m9(conn, case_id):
     per_phone, terms = {}, collections.Counter()
     for r in results:
         m = r["measures"]
-        c = per_phone.setdefault(m["phone_label"], {"search_hits": 0, "page_hits": 0, "via_address_only": 0})
+        c = per_phone.setdefault(m["phone_label"], {"search_hits": 0, "page_hits": 0, "via_address_only": 0,
+                                                    **{"hits_" + k: 0 for k in V.KINDS}})
         c["search_hits" if r["kind"] == "search_hit" else "page_hits"] += 1
         c["via_address_only"] += m["matched_in"] == ["address"]
+        for k in m["term_kinds"]:
+            c["hits_" + k] += 1
     return ({"m9a_records": _type_counts(conn, case_id, ("SearchedItem", "VisitedPage", "WebBookmark")),
              "m9b_per_phone": per_phone, "m9b_hits": len(results),
              "m9b_specific_hits": sum(1 for r in results if r["strength"] == "specific_term"),
              "m9b_distinct_terms": counts.get("distinct_terms", 0),
              "m9b_specific_terms": counts.get("specific_terms", 0),
-             "vocabulary_not_included": list(V.NOT_INCLUDED)},
+             "vocabulary_not_included": counts.get("vocabulary_not_included", [])},
             "build" if len(results) >= 10 else "inconclusive")
 
 

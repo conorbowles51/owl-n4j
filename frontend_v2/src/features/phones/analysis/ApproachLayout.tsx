@@ -37,6 +37,8 @@ export interface ApproachLayoutProps {
   /** Words for a direction code; the server's detail is used when absent. */
   emptyWords?: string
   extra?: ReactNode
+  /** Shown under ``extra`` once a run has completed, from that run (for example its counts by kind of term). */
+  runExtra?: (run: AnalysisRun) => ReactNode
   /** Where a result opens beside its records (for example Conversations filtered to the person). */
   openLink?: (r: ApproachResult) => { to: string; label: string } | null
   /** Words for a result against one key date, where the approach's time means something narrower than a period. */
@@ -229,6 +231,7 @@ export function ApproachLayout(p: ApproachLayoutProps) {
       <div data-part="run"><RunControl caseId={caseId} run={run} client={client} onRequested={setRun} /></div>
       <p data-part="coverage" className="text-sm">{done?.coverage?.sentence || coverage.data?.sentence}</p>
       {p.extra}
+      {done && p.runExtra ? p.runExtra(done) : null}
       {kept && <KeptPanel caseId={caseId} id={kept} />}
       <section data-part="results" aria-label="Results" className="space-y-2">
         <div className="flex flex-wrap gap-2" role="tablist">

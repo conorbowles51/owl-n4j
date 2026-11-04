@@ -33,6 +33,15 @@
   `for_coverage()` feeds cb-review's J-13 summary (`review_share.keyword_lists`).
 - **Investigator terms (05 10.3, 12.3; 19.S10-c).** `vocabulary.py` reads case terms and keyword-list terms as kind
   `investigator_term` (whole folded words in order). `typed_words` 7.2, `intent` 9.2, input revision includes the terms.
+- **The rest of the case vocabulary (05 10.3 step 1; 19.S10-d to f; `cb-vocab`).** `vocabulary.py` adds kinds
+  `case_entity` (names and aliases of the case graph's named entity types, one bounded case-scoped graph query per
+  build, `ENTITY_LABELS`), `ledger_amount` (effective ledger amounts in the phone's number forms, `amount_forms`,
+  `for_phone` picks the convention from the phone's region or the ledger currency) and `place` (graph locations and
+  entity address fields, phrase match). `NOT_INCLUDED` is empty; a build that cannot read the graph states it per
+  run (`not_included`, run counts `vocabulary_not_included`). `typed_words` 7.3, `intent` 9.3, measurements m7.5 and
+  m9.5; the input revision includes the graph (`graph_revision`). Screens list hits per kind from the run counts
+  (`KindCounts`). Measured: old-kind hits identical on all 11 cases with phones or a ledger; new kinds 0 on C3 and C9
+  (no graph entities, no ledger there); plain whole amount form dropped (112 false hits on C3).
 - **19.S6-c.** `deletion_timeline` 3.3 emits `hole_confirmed_by_counterpart` from approach 2's strong matches
   (`counterpart_copies`); `message_reconciliation.load_phone` messages now carry `thread`.
 - Measured: live, no investigator terms, typed/intent/deletion hits identical before and after on all 5 cases with
