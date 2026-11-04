@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, text
 
 from services.neo4j_service import neo4j_service
+from services import entity_vectors
 from services.neo4j.graph_response_cache import cached_json, keys_digest, warm as warm_response
 from services.insights_service import generate_entity_insights
 from services.llm_service import LLMService
@@ -1267,6 +1268,8 @@ def update_node(node_key: str, request: UpdateNodeRequest, user: dict = Depends(
             edited_by=user.get("username", "unknown"),
             source_view=request.source_view or "entity_detail",
         )
+        if set(result.get("updated_fields") or []) & entity_vectors.SEARCH_FIELDS:
+            entity_vectors.refresh_after_edit(request.case_id, [node_key])
 
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
@@ -2137,6 +2140,7 @@ def batch_update_entities(
             request.case_id,
             edited_by=user.get("username", "unknown"),
         )
+        entity_vectors.refresh_after_edit(request.case_id, entity_vectors.keys_to_refresh(request.updates))
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,

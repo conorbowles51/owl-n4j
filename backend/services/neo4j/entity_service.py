@@ -254,40 +254,14 @@ class EntityService:
 
     @staticmethod
     def _rebuild_entity_embedding(entity: Dict[str, Any], case_id: str) -> None:
+        """Re-embed a restored entity from the graph, the same way an edit does (services.entity_vectors)."""
         try:
-            from services.embedding_service import EmbeddingService
-            from services.vector_db_service import get_vector_db_service
-
-            vector_db = get_vector_db_service()
-            if not vector_db:
-                return
-
-            if str(entity.get("type") or "").startswith("Phone"):
-                # Phone graph nodes carry phone names and numbers: not embedded by a third-party service without the
-                # case's decision (docs/cellebrite/02 section 9.8). They are found by name and number search instead.
-                return
-            props = entity.get("properties") or {}
-            text_parts = [
-                str(props.get("name") or entity.get("name") or entity.get("key") or ""),
-                str(props.get("summary") or ""),
-                str(props.get("notes") or ""),
-                str(props.get("verified_facts") or ""),
-            ]
-            text = "\n".join(part for part in text_parts if part.strip()).strip()
-            if not text:
-                return
-
-            embedding = EmbeddingService().generate_embedding(text)
-            vector_db.add_entity(
-                entity_key=entity["key"],
-                text=text,
-                embedding=embedding,
-                metadata={
-                    "case_id": case_id,
-                    "entity_type": entity.get("type"),
-                    "name": entity.get("name"),
-                },
-            )
+            from services import entity_vectors
+            props = dict(entity.get("properties") or {})
+            props.setdefault("name", entity.get("name") or entity.get("key"))
+            category = str(entity.get("type") or props.get("category") or "Other")
+            entity_vectors.refresh_entities(case_id, [entity["key"]],
+                                            read_nodes=lambda *_a, **_k: {entity["key"]: (category, props)})
         except Exception as e:
             logger.warning("Failed to rebuild entity embedding for %s: %s", entity.get("key"), e)
 

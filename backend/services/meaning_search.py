@@ -501,19 +501,24 @@ def _no_lock():
 
 def run_gap_backfill(*, case_ids: Iterable[str] | None = None, backfill: Callable | None = None,
                      gap: Callable | None = None, session_factory: Callable | None = None,
-                     log: Callable[[str, str], None] | None = None, lock: bool = True) -> dict[str, Any]:
+                     log: Callable[[str, str], None] | None = None, lock: bool = True,
+                     entities: Callable | None = None) -> dict[str, Any]:
     """Embed every document with text and no vector, case by case, one document at a time, through the existing
-    chunk backfill (``scripts.backfill_chunk_embeddings``). Stops at the first failure that would repeat; the
-    pending flag stays set, so the next successful call starts it again."""
+    chunk backfill (``scripts.backfill_chunk_embeddings``); then re-embed every entity vector older than the graph
+    (``entity_vectors.backfill_case``: an edit whose re-embed was refused). Stops at the first failure that would
+    repeat; the pending flag stays set, so the next successful call starts it again. A caller that passes its own
+    ``backfill`` runs the entity pass only when it passes ``entities`` too."""
     from sqlalchemy import text
     _lower_priority()
     if backfill is None:
         from scripts.backfill_chunk_embeddings import backfill_chunk_embeddings as backfill
+        if entities is None:
+            from services.entity_vectors import backfill_case as entities
     gap = gap or vector_gap
     log = log or _system_log
     factory = session_factory or _session_factory
     summary: dict[str, Any] = {"cases": 0, "documents_embedded": 0, "chunks": 0, "documents_activated": 0,
-                               "stopped": None}
+                               "entities_embedded": 0, "stopped": None}
     with (_backfill_lock() if lock else _no_lock()) as got:
         if not got:
             summary["stopped"] = "another gap backfill is running"
@@ -542,6 +547,13 @@ def run_gap_backfill(*, case_ids: Iterable[str] | None = None, backfill: Callabl
             if result.get("stopped"):
                 summary["stopped"] = result["stopped"]
                 break
+        if summary["stopped"] is None and entities is not None:
+            for case_id in cases:
+                result = entities(case_id, log=log) or {}
+                summary["entities_embedded"] += int(result.get("embedded") or 0)
+                if result.get("stopped"):
+                    summary["stopped"] = "entity vectors: %s" % result["stopped"]
+                    break
         if summary["stopped"] is None:
             with factory() as db:
                 db.execute(text("UPDATE service_health_states SET backfill_pending = false, updated_at = :now "
@@ -549,9 +561,9 @@ def run_gap_backfill(*, case_ids: Iterable[str] | None = None, backfill: Callabl
                 db.commit()
         log("info" if summary["stopped"] is None else "warning",
             "Meaning-search gap backfill %s: %d document(s), %d chunk(s) embedded, %d document(s) activated from "
-            "staged chunks in %d case(s)%s" % (
+            "staged chunks in %d case(s), %d entity vector(s) refreshed%s" % (
                 "finished" if summary["stopped"] is None else "stopped", summary["documents_embedded"],
-                summary["chunks"], summary["documents_activated"], summary["cases"],
+                summary["chunks"], summary["documents_activated"], summary["cases"], summary["entities_embedded"],
                 "" if summary["stopped"] is None else "; stopped: %s" % summary["stopped"]))
     return summary
 

@@ -133,7 +133,7 @@ def test_phone_graph_nodes_are_never_embedded(no_embedding, monkeypatch):
     assert no_embedding == []
     EntityService._rebuild_entity_embedding({"key": "k", "type": "Person", "name": "Someone",
                                              "properties": {"name": "Someone"}}, "case")
-    assert no_embedding == ["Someone"]  # the guard is only for phone nodes
+    assert no_embedding == ["Person: Someone"]  # the guard is only for phone nodes
 
 
 @needs_template
