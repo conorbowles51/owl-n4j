@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
+import { lazySchema } from "@/lib/lazy-schema"
 
-export const coverageReview = z.object({
+export const coverageReview = lazySchema(() => z.object({
   available: z.boolean(),
   revision: z.string().nullable(),
   reason: z.string().optional(),
@@ -20,7 +21,7 @@ export const coverageReview = z.object({
       matching_statement: z.boolean().optional(),
     })
   ),
-})
+}))
 export type CoverageReview = z.infer<typeof coverageReview>
 export function useStatementCoverageReview(
   caseId: string,

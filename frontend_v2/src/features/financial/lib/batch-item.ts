@@ -3,8 +3,9 @@ import { fetchAPI } from "@/lib/api-client"
 import { statementAssessment } from "./statement-assessment"
 import { statementDuplicateDisposition } from "./statement-duplicate"
 import { coverageReview } from "../hooks/use-statement-coverage-review"
+import { lazySchema } from "@/lib/lazy-schema"
 
-export const itemSchema = z.object({
+export const itemSchema = lazySchema(() => z.object({
   id: z.string(),
   file_id: z.string(),
   statement_id: z.string().nullish(),
@@ -59,7 +60,7 @@ export const itemSchema = z.object({
       review_reason: z.string().optional(),
     })
   ),
-})
+}))
 
 /** One batch statement as its review opens it. Shared so the review queue can
  * load the next statement in the background: Next then shows it at once. */

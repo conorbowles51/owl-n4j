@@ -16,15 +16,16 @@ import { ImportedStatementDetails } from "./ImportedStatementDetails"
 import { LedgerPanel } from "./LedgerPanel"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { correctionMinor, correctionMoney } from "../lib/correction-contract"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const details = z.object({
+const details = lazySchema(() => z.object({
   holder: z.string(),
   account_number: z.string(),
   institution: z.string(),
   period_start: z.string(),
   period_end: z.string(),
-})
-const response = z.object({
+}))
+const response = lazySchema(() => z.object({
   case_id: z.string(),
   source_document_id: z.string(),
   evidence_file_id: z.string(),
@@ -51,7 +52,7 @@ const response = z.object({
       })
       .passthrough()
   ),
-})
+}))
 type Data = z.infer<typeof response>
 type Section = z.infer<typeof details> & {
   key: string
@@ -61,7 +62,7 @@ type Section = z.infer<typeof details> & {
   openingPage: number
   closingPage: number
 }
-const summary = z.object({
+const summary = lazySchema(() => z.object({
   key: z.string(),
   holder: z.string(),
   account_number: z.string(),
@@ -70,14 +71,14 @@ const summary = z.object({
   incomplete_count: z.number(),
   credit_minor: z.string(),
   debit_minor: z.string(),
-})
-const previewSchema = z.object({
+}))
+const previewSchema = lazySchema(() => z.object({
   revision: z.string(),
   explanation: z.string(),
   transaction_count: z.number(),
   sections: z.array(summary),
-})
-const receiptSchema = z.object({
+}))
+const receiptSchema = lazySchema(() => z.object({
   applied: z.literal(true),
   source_document_id: z.string(),
   sections: z.array(
@@ -88,7 +89,7 @@ const receiptSchema = z.object({
       transaction_count: z.number(),
     })
   ),
-})
+}))
 
 export function SavedStatementRecovery({
   caseId,

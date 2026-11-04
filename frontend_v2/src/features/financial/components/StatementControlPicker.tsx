@@ -7,7 +7,8 @@ import { fetchAPI } from "@/lib/api-client"
 import { candidateUrl, assertCandidateScope } from "../lib/candidate-contract"
 import { type ControlCell } from "../lib/statement-scope-contract"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
-const tableSchema = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const tableSchema = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   page_number: z.number().int().positive(),
@@ -30,7 +31,7 @@ const tableSchema = z.object({
       })
     )
     .max(1000),
-})
+}))
 export function StatementControlPicker({
   caseId,
   fileId,

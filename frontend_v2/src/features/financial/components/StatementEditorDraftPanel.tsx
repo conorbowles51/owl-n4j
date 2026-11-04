@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { candidateUrl } from "../lib/candidate-contract"
 import { controlCell, statementScope } from "../lib/statement-scope-contract"
-const editorDraft = z
+import { lazySchema } from "@/lib/lazy-schema"
+const editorDraft = lazySchema(() => z
   .object({
     group: z.string().max(128),
     selected: z.array(z.string().uuid()).max(1000),
@@ -31,16 +32,16 @@ const editorDraft = z
     if (!value.credits_total) delete value.credits_total
     if (!value.debits_total) delete value.debits_total
     return value
-  })
+  }))
 export type EditorDraft = z.infer<typeof editorDraft>
-const envelope = z.object({
+const envelope = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   revision: z.string().nullable(),
   statement_scopes: z.array(statementScope),
   editor_draft: editorDraft.nullable(),
   applied: z.literal(false),
-})
+}))
 export function StatementEditorDraftPanel({
   caseId,
   fileId,

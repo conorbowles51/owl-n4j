@@ -1,6 +1,7 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const check = z.object({
+const check = lazySchema(() => z.object({
   scope: z.string(),
   kind: z.string(),
   result: z
@@ -13,16 +14,16 @@ const check = z.object({
       ]),
     })
     .catchall(z.unknown()),
-})
-const calculation = z.object({
+}))
+const calculation = lazySchema(() => z.object({
   format: z.enum(["camt053", "bai2", "mt940", "nacha"]),
   checks: z.array(check),
   mapped_rows: z.number().int().nonnegative(),
   unmapped_rows_retained: z.number().int().nonnegative(),
   basis: z.string(),
   changes_proof_class: z.literal(false),
-})
-export const nativeControlComparison = z.discriminatedUnion("available", [
+}))
+export const nativeControlComparison = lazySchema(() => z.discriminatedUnion("available", [
   z.object({ available: z.literal(false), reason: z.string() }),
   z.object({
     available: z.literal(true),
@@ -39,11 +40,11 @@ export const nativeControlComparison = z.discriminatedUnion("available", [
     current_transaction_ids: z.array(z.string()),
     limitation: z.string(),
   }),
-])
+]))
 export type NativeControlComparison = z.infer<typeof nativeControlComparison>
 
-export const currentNativeControls = z.discriminatedUnion("available", [
+export const currentNativeControls = lazySchema(() => z.discriminatedUnion("available", [
   nativeControlComparison.options[0],
   nativeControlComparison.options[1].omit({ proposed: true }),
-])
+]))
 export type CurrentNativeControls = z.infer<typeof currentNativeControls>

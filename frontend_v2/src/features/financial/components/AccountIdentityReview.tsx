@@ -16,6 +16,7 @@ import { randomRequestId } from "@/lib/browser-crypto"
 import { accountParties } from "../lib/account-parties"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { lazySchema } from "@/lib/lazy-schema"
 
 const kinds = {
   account_number: "Account number",
@@ -29,7 +30,7 @@ const kinds = {
 }
 type Identifier = { kind: keyof typeof kinds; value: string }
 type EntityLink = { party_id: string; entity_key: string }
-const identityReview = z
+const identityReview = lazySchema(() => z
   .object({
     identifiers: z
       .array(
@@ -48,8 +49,8 @@ const identityReview = z
       .array(z.object({ party_id: z.string().uuid(), entity_key: z.string() }))
       .default([]),
   })
-  .passthrough()
-const identityState = accountParties.extend({
+  .passthrough())
+const identityState = lazySchema(() => accountParties.extend({
   accounts: z.array(
     accountParties.shape.accounts.element.extend({
       identity_review: identityReview,
@@ -64,7 +65,7 @@ const identityState = accountParties.extend({
       recorded_at: z.string(),
     })
   ),
-})
+}))
 type Draft = {
   account: string
   newId: string

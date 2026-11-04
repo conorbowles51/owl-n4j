@@ -11,7 +11,8 @@ import { fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { candidateUrl, type CandidateReview } from "../lib/candidate-contract"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
-const source = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const source = lazySchema(() => z.object({
   case_id: z.string(),
   candidate_id: z.string(),
   mapping_id: z.string(),
@@ -50,7 +51,7 @@ const source = z.object({
       locator: z.unknown(),
     })
   ),
-})
+}))
 export function CandidateSourcePanel({
   caseId,
   mappingId,

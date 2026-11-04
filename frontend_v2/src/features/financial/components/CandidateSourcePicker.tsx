@@ -18,9 +18,10 @@ import {
 } from "../lib/candidate-contract"
 import { proposePdfHeaders } from "../lib/pdf-header-proposals"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const index = z.number().int().nonnegative()
-const sources = z.object({
+const index = lazySchema(() => z.number().int().nonnegative())
+const sources = lazySchema(() => z.object({
   case_id: z.string(),
   offset: index,
   has_more: z.boolean(),
@@ -31,7 +32,7 @@ const sources = z.object({
       page_number: z.number().int().positive(),
     })
   ),
-})
+}))
 const meanings = [
   ["unknown", "Unidentified"],
   ["amount", "Amount"],

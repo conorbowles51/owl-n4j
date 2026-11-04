@@ -16,12 +16,13 @@ import { indirectCatalog } from "./indirect-review"
 import { indirectWorkpaperReport } from "./indirect-workpaper-report"
 import { transactionDetail } from "./transaction-detail"
 import { correctionMoney } from "./correction-contract"
+import { lazySchema } from "@/lib/lazy-schema"
 
 export const financialReportSchema = "loupe.financial.finding_report/1"
 const MAX_REPORT_BYTES = 32 * 1024 * 1024
-const text = z.string()
-const record = z.record(text, z.unknown())
-const savedEntry = z.object({
+const text = lazySchema(() => z.string())
+const record = lazySchema(() => z.record(text, z.unknown()))
+const savedEntry = lazySchema(() => z.object({
   id: text.min(1),
   case_id: text.min(1),
   entry_type: z.enum(["note", "finding", "theory"]),
@@ -55,8 +56,8 @@ const savedEntry = z.object({
       metadata: record,
     })
   ),
-})
-const reportData = z.object({
+}))
+const reportData = lazySchema(() => z.object({
   schema: z.literal(financialReportSchema),
   case_id: text.min(1),
   case_title: text,
@@ -64,14 +65,14 @@ const reportData = z.object({
   introduction: text.max(8000),
   prepared_at: text.datetime(),
   notes: z.array(savedEntry).min(1),
-})
-const envelopeSchema = z.object({
+}))
+const envelopeSchema = lazySchema(() => z.object({
   schema: z.literal(financialReportSchema),
   case_id: text,
   report_json: text.max(MAX_REPORT_BYTES),
   sha256: text.regex(/^[a-f0-9]{64}$/),
   bytes: z.number().int().positive().max(MAX_REPORT_BYTES),
-})
+}))
 export type FinancialReportEnvelope = z.infer<typeof envelopeSchema>
 export type FinancialReport = {
   data: z.infer<typeof reportData>

@@ -9,7 +9,8 @@ import {
   statementScope,
   type StatementScope,
 } from "../lib/statement-scope-contract"
-const schema = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const schema = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   statement_scopes: z.array(statementScope).max(100),
@@ -19,7 +20,7 @@ const schema = z.object({
     .nullable(),
   saved_at: z.string().nullable(),
   applied: z.literal(false),
-})
+}))
 export function StatementDraftPanel({
   caseId,
   fileId,

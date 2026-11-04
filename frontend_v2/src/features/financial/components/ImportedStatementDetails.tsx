@@ -14,12 +14,13 @@ import { statementAssessment } from "../lib/statement-assessment"
 import { StatementReconciliationSummary } from "./StatementReconciliationSummary"
 import { AccountTypeEditor } from "./AccountTypeEditor"
 import { AccountDetailsCorrection } from "./AccountDetailsCorrection"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const balance = z.object({
+const balance = lazySchema(() => z.object({
   amount_minor: z.string().nullable(),
   page: z.number().nullable(),
-})
-const response = z.object({
+}))
+const response = lazySchema(() => z.object({
   case_id: z.string(),
   source_document_id: z.string(),
   evidence_file_id: z.string(),
@@ -39,7 +40,7 @@ const response = z.object({
   balances: z.object({ opening: balance, closing: balance }),
   has_payment_readings: z.boolean().optional(),
   admission: statementAssessment.optional(),
-})
+}))
 type Details = z.infer<typeof response>
 const roles = ["opening", "closing"] as const
 

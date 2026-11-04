@@ -1,14 +1,15 @@
 import { z } from "zod"
 import { correctionMinor } from "./correction-contract"
-export const controlCell = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+export const controlCell = lazySchema(() => z.object({
   page_number: z.number().int().positive(),
   table_index: z.number().int().nonnegative(),
   row_index: z.number().int().nonnegative(),
   column_index: z.number().int().nonnegative(),
   source_revision: z.string().regex(/^[a-f0-9]{64}$/),
   expected_text: z.string().min(1).max(4096),
-})
-const dateControl = z.object({
+}))
+const dateControl = lazySchema(() => z.object({
   value: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -20,8 +21,8 @@ const dateControl = z.object({
       )
     }),
   source: controlCell,
-})
-const balanceControl = z.object({
+}))
+const balanceControl = lazySchema(() => z.object({
   amount_minor: z
     .string()
     .regex(/^-?(0|[1-9][0-9]{0,18})$/)
@@ -30,8 +31,8 @@ const balanceControl = z.object({
         BigInt(v) >= -9223372036854775808n && BigInt(v) <= 9223372036854775807n
     ),
   source: controlCell,
-})
-export const statementScope = z
+}))
+export const statementScope = lazySchema(() => z
   .object({
     account_id: z.string().uuid(),
     currency: z.string().length(3),
@@ -53,10 +54,10 @@ export const statementScope = z
     (v) =>
       v.start.value <= v.end.value &&
       new Set(v.candidate_ids).size === v.candidate_ids.length
-  )
+  ))
 export type StatementScope = z.infer<typeof statementScope>
 export type ControlCell = z.infer<typeof controlCell>
-export const scopeReading = z.object({
+export const scopeReading = lazySchema(() => z.object({
   candidate_id: z.string(),
   account_id: z.string(),
   currency: z.string(),
@@ -64,7 +65,7 @@ export const scopeReading = z.object({
   booking_date: z.string().nullable(),
   transaction_date: z.string().nullable(),
   description: z.string().nullable(),
-})
+}))
 export type ScopeReading = z.infer<typeof scopeReading>
 export function signedControlMinor(value: string, currency: string) {
   const negative = value.startsWith("-")

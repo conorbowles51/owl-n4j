@@ -1,8 +1,9 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
 export const paymentDocumentSchema =
   "loupe.financial.payment_document/1" as const
-export const paymentDocumentProposal = z.object({
+export const paymentDocumentProposal = lazySchema(() => z.object({
   schema: z.literal(paymentDocumentSchema),
   version: z.string(),
   kind: z.enum(["wire_report", "deposit_receipt"]),
@@ -33,13 +34,13 @@ export const paymentDocumentProposal = z.object({
       ),
     })
   ),
-})
+}))
 export type PaymentDocumentProposal = z.infer<typeof paymentDocumentProposal>
-export const savedPaymentDocument = z.object({
+export const savedPaymentDocument = lazySchema(() => z.object({
   schema: z.literal(paymentDocumentSchema),
   original: paymentDocumentProposal,
   reviewed_values: z.record(z.string(), z.string()),
   correction_reasons: z.record(z.string(), z.string()),
   notes: z.string(),
   link_reason: z.string(),
-})
+}))

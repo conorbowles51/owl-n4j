@@ -4,8 +4,9 @@ import { fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { candidateUrl, assertCandidateScope } from "../lib/candidate-contract"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const answer = z.object({
+const answer = lazySchema(() => z.object({
   case_id: z.string(),
   candidate_id: z.string(),
   mapping_id: z.string(),
@@ -59,7 +60,7 @@ const answer = z.object({
       .refine((cell) => cell.source.text === cell.assessment.raw)
   ),
   unclassified_columns: z.array(z.number().int().nonnegative()),
-})
+}))
 
 export function CandidateDateAssessment({
   caseId,

@@ -3,6 +3,7 @@ import { z } from "zod"
 import { evidenceAPI } from "@/features/evidence/api"
 import { uploadFolderOrArchive } from "@/features/evidence/resumable-upload-groups"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { lazySchema } from "@/lib/lazy-schema"
 
 type UploadItem = {
   name: string
@@ -14,7 +15,7 @@ type Queue = { running: boolean; items: UploadItem[] }
 export const useStatementUploads = create<{ queues: Record<string, Queue> }>(
   () => ({ queues: {} })
 )
-const answer = z.object({
+const answer = lazySchema(() => z.object({
   files: z.array(
     z.object({
       id: z.string(),
@@ -22,15 +23,15 @@ const answer = z.object({
       original_filename: z.string(),
     })
   ),
-})
-const started = z.object({
+}))
+const started = lazySchema(() => z.object({
   job_ids: z.array(z.string()).optional().nullable(),
   message: z.string().optional(),
   // Exact copies of a file already in Financial are not read again.
   copies: z
     .array(z.object({ file_id: z.string(), copy_of: z.string() }))
     .optional(),
-})
+}))
 
 export async function uploadStatementFiles(
   files: File[],

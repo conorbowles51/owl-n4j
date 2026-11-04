@@ -4,6 +4,7 @@ import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { candidateUrl, assertCandidateScope } from "../lib/candidate-contract"
+import { lazySchema } from "@/lib/lazy-schema"
 
 type Source = {
   case_id: string
@@ -16,13 +17,13 @@ type Source = {
     cells: { column_index: number; expected_text: string }[]
   }[]
 }
-const cell = z
+const cell = lazySchema(() => z
   .object({
     column_index: z.number().int().nonnegative(),
     expected_text: z.string(),
   })
-  .nullable()
-const answer = z.object({
+  .nullable())
+const answer = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   page_number: z.number().int(),
@@ -53,7 +54,7 @@ const answer = z.object({
       })
     )
     .max(1000),
-})
+}))
 export function CandidateRowSuggestions({
   source,
   columns,

@@ -1,6 +1,7 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-export const savedStatementPosition = z.object({
+export const savedStatementPosition = lazySchema(() => z.object({
   case_id: z.string(),
   source_document_id: z.string(),
   evidence_file_id: z.string(),
@@ -16,4 +17,4 @@ export const savedStatementPosition = z.object({
     )
     .default([]),
   requires_manual_position: z.boolean().default(false),
-})
+}))

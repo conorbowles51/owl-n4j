@@ -6,7 +6,8 @@ import { fetchAPI } from "@/lib/api-client"
 import { assertCandidateScope, candidateUrl } from "../lib/candidate-contract"
 import { currentRunningBalanceComparison } from "../lib/correction-contract"
 import { RunningBalanceComparisonPanel } from "./RunningBalanceComparisonPanel"
-const answer = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const answer = lazySchema(() => z.object({
   case_id: z.string(),
   period_id: z.string(),
   source_document_id: z.string(),
@@ -15,7 +16,7 @@ const answer = z.object({
   applied: z.literal(false),
   checked_at: z.string(),
   comparison: currentRunningBalanceComparison,
-})
+}))
 export function StatementRunningBalances({
   caseId,
   periodId,

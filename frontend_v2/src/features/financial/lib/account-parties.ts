@@ -1,6 +1,7 @@
 import { z } from "zod"
-const party = z.object({ id: z.string().uuid(), name: z.string().min(1) })
-export const accountRelationship = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const party = lazySchema(() => z.object({ id: z.string().uuid(), name: z.string().min(1) }))
+export const accountRelationship = lazySchema(() => z.object({
   id: z.string().uuid(),
   party,
   role: z.enum(["holder", "controller", "signatory", "analysis_group"]),
@@ -13,8 +14,8 @@ export const accountRelationship = z.object({
   ),
   effective_from: z.string().nullable(),
   effective_to: z.string().nullable(),
-})
-export const accountParties = z.object({
+}))
+export const accountParties = lazySchema(() => z.object({
   case_id: z.string().uuid(),
   revision: z.string().regex(/^[a-f0-9]{64}$/),
   accounts: z.array(
@@ -103,5 +104,5 @@ export const accountParties = z.object({
   ),
   applied: z.boolean(),
   limitation: z.string(),
-})
+}))
 export type AccountParties = z.infer<typeof accountParties>

@@ -7,10 +7,11 @@ import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { assertCandidateScope, candidateUrl } from "../lib/candidate-contract"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
-const count = z.number().int().nonnegative()
-const report = z.object({
+const day = lazySchema(() => z.string().regex(/^\d{4}-\d{2}-\d{2}$/))
+const count = lazySchema(() => z.number().int().nonnegative())
+const report = lazySchema(() => z.object({
   case_id: z.string(),
   account_id: z.string(),
   start_date: day,
@@ -49,7 +50,7 @@ const report = z.object({
       gaps: z.array(z.object({ start: day, end: day, days: count.positive() })),
     })
   ),
-})
+}))
 const reasons = {
   source_not_admitted: "Source excluded from the current ledger",
   missing_dates: "Statement dates missing",

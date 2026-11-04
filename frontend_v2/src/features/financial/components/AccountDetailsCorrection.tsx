@@ -4,21 +4,22 @@ import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const statement = z.object({
+const statement = lazySchema(() => z.object({
   source_document_id: z.string(),
   period_start: z.string().nullable(),
   period_end: z.string().nullable(),
   currency: z.string().nullable(),
   holder: z.string(),
   institution: z.string(),
-})
-const values = z.object({
+}))
+const values = lazySchema(() => z.object({
   holder: z.string(),
   institution: z.string(),
   account_number: z.string().optional(),
-})
-const relay = z
+}))
+const relay = lazySchema(() => z
   .object({
     by: z.string(),
     note: z.string().nullish(),
@@ -26,8 +27,8 @@ const relay = z
     via: z.string().nullish(),
     at_given: z.string().nullish(),
   })
-  .passthrough()
-const historyEntry = z.object({
+  .passthrough())
+const historyEntry = lazySchema(() => z.object({
   id: z.string(),
   kind: z.string(),
   at: z.string(),
@@ -50,8 +51,8 @@ const historyEntry = z.object({
     })
     .passthrough()
     .nullish(),
-})
-const state = z.object({
+}))
+const state = lazySchema(() => z.object({
   case_id: z.string(),
   account_id: z.string(),
   holder: z.string(),
@@ -76,8 +77,8 @@ const state = z.object({
     )
     .nullish(),
   revision: z.string(),
-})
-const preview = z.object({
+}))
+const preview = lazySchema(() => z.object({
   case_id: z.string(),
   account_id: z.string(),
   before: values,
@@ -87,7 +88,7 @@ const preview = z.object({
     z.object({ account_id: z.string(), statements: z.array(statement) })
   ),
   revision: z.string(),
-})
+}))
 type Statement = z.infer<typeof statement>
 type HistoryEntry = z.infer<typeof historyEntry>
 type Confirmation = NonNullable<HistoryEntry["confirmed"]>

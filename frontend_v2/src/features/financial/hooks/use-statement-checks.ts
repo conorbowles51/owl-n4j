@@ -2,15 +2,16 @@ import { useEffect, useState } from "react"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import { statementAssessment } from "../lib/statement-assessment"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const finding = z.object({
+const finding = lazySchema(() => z.object({
   row_id: z.string().nullish(),
   page: z.number().nullish(),
   expected_minor: z.string(),
   printed_minor: z.string(),
   difference_minor: z.string(),
-})
-export const arithmeticCheck = z.object({
+}))
+export const arithmeticCheck = lazySchema(() => z.object({
   kind: z.enum([
     "closing_balance",
     "running_balance",
@@ -42,14 +43,14 @@ export const arithmeticCheck = z.object({
       })
     )
     .optional(),
-})
-const resultSchema = z.object({
+}))
+const resultSchema = lazySchema(() => z.object({
   revision: z.string(),
   checks_revision: z.string(),
   applied: z.literal(false),
   checks: z.array(arithmeticCheck),
   admission: statementAssessment.extend({ revision: z.string() }).optional(),
-})
+}))
 
 // Associate every response with its exact edit snapshot. An old response must
 // never enable confirmation after the investigator has changed another value.

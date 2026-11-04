@@ -91,6 +91,7 @@ import {
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { ReadingJudgements } from "./JudgementCalls"
+import { lazySchema } from "@/lib/lazy-schema"
 
 function BalanceDerivation({
   basis,
@@ -149,7 +150,7 @@ type Edit = {
   balance_minor: string | null
   reason: string
 }
-const receipt = z.object({
+const receipt = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   transaction_count: z.number(),
@@ -168,7 +169,7 @@ const receipt = z.object({
   ignored: z.boolean().optional(),
   duplicate_disposition: statementDuplicateDisposition.optional(),
   account_closed_on: z.string().nullable().optional(),
-})
+}))
 
 // 15 s apart: about ten minutes, longer than a save held behind a case lock.
 const MAX_BACKGROUND_IMPORT_CHECKS = 40

@@ -18,8 +18,9 @@ import { SelectedPaymentsReview } from "./SelectedPaymentsReview"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { AccountStatementReview } from "./AccountStatementReview"
 import type { AccountReviewDates } from "./AccountStatementReview"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const reference = z.object({
+const reference = lazySchema(() => z.object({
   id: z.string(),
   reference: z.string(),
   kind: z.string(),
@@ -45,8 +46,8 @@ const reference = z.object({
       statement_count: z.number(),
     })
   ),
-})
-const response = z.object({
+}))
+const response = lazySchema(() => z.object({
   case_id: z.string(),
   revision: z.string(),
   offset: z.number(),
@@ -56,7 +57,7 @@ const response = z.object({
   missing_count: z.number(),
   possible_match_count: z.number(),
   items: z.array(reference),
-})
+}))
 type Reference = z.infer<typeof reference>
 
 export function ReferencedAccounts({

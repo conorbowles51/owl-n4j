@@ -1,6 +1,7 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-export const batchReviewSummarySchema = z.object({
+export const batchReviewSummarySchema = lazySchema(() => z.object({
   blocked_statements: z.number(),
   importable_with_checks: z.number(),
   imported_with_checks: z.number(),
@@ -17,4 +18,4 @@ export const batchReviewSummarySchema = z.object({
       imported_statements: z.number(),
     })
   ),
-})
+}))

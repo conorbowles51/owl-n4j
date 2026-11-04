@@ -1,12 +1,13 @@
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const retained = z.object({
+const retained = lazySchema(() => z.object({
   evidence_file_id: z.string().nullish(),
   filename: z.string(),
-})
+}))
 
-export const batchStartPreview = z.object({
+export const batchStartPreview = lazySchema(() => z.object({
   case_id: z.string(),
   selected_files: z.number().int().nonnegative(),
   suggested_batch_id: z.string().nullable(),
@@ -43,7 +44,7 @@ export const batchStartPreview = z.object({
       ),
     })
   ),
-})
+}))
 export type BatchStartPreview = z.infer<typeof batchStartPreview>
 export type OpenBatch = BatchStartPreview["open_batches"][number]
 export type BatchStartChoiceValue = "continue" | "new"

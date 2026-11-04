@@ -1,16 +1,17 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const revision = z.string().regex(/^[a-f0-9]{64}$/)
+const revision = lazySchema(() => z.string().regex(/^[a-f0-9]{64}$/))
 
-export const retainedStatement = z.object({
+export const retainedStatement = lazySchema(() => z.object({
   evidence_file_id: z.string().uuid(),
   statement_id: revision.nullish(),
   source_document_id: z.string().uuid().nullish(),
   filename: z.string(),
   page_number: z.number().int().positive().default(1),
-})
+}))
 
-export const statementDuplicateDisposition = z
+export const statementDuplicateDisposition = lazySchema(() => z
   .object({
     policy: z.string(),
     reading_revision: revision,
@@ -32,14 +33,14 @@ export const statementDuplicateDisposition = z
     basis: z.string().nullish(),
     retained: retainedStatement.nullish(),
   })
-  .passthrough()
+  .passthrough())
 
-export const statementDuplicateResponse = z.object({
+export const statementDuplicateResponse = lazySchema(() => z.object({
   case_id: z.string().uuid(),
   evidence_file_id: z.string().uuid(),
   statement_id: revision.nullish(),
   duplicate_disposition: statementDuplicateDisposition,
-})
+}))
 
 export type RetainedStatement = z.infer<typeof retainedStatement>
 export type StatementDuplicateDisposition = z.infer<

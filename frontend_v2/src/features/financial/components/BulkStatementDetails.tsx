@@ -20,6 +20,7 @@ import { statementMonth } from "../lib/statement-month"
 import { AccountTypeEditor } from "./AccountTypeEditor"
 import { requestFailure, useElapsedSeconds } from "../lib/request-wait"
 import { commonProposal } from "../lib/common-proposal"
+import { lazySchema } from "@/lib/lazy-schema"
 
 const fields = [
   ["holder", "Account holder"],
@@ -30,7 +31,7 @@ const fields = [
   ["period_end", "Statement end date"],
 ] as const
 type Field = (typeof fields)[number][0]
-const statement = z.object({
+const statement = lazySchema(() => z.object({
   key: z.string(),
   file_id: z.string(),
   source_id: z.string().nullable(),
@@ -53,19 +54,19 @@ const statement = z.object({
       })
     )
     .optional(),
-})
+}))
 type Statement = z.infer<typeof statement>
 
-const listing = z.object({
+const listing = lazySchema(() => z.object({
   case_id: z.string(),
   items: z.array(statement),
   notices: z.array(z.object({ filename: z.string(), message: z.string() })),
-})
-const changes = z.record(
+}))
+const changes = lazySchema(() => z.record(
   z.string(),
   z.object({ before: z.string(), after: z.string(), confirmed: z.boolean().optional() })
-)
-const previewSchema = z.object({
+))
+const previewSchema = lazySchema(() => z.object({
   case_id: z.string(),
   preview_revision: z.string(),
   updated: z.number(),
@@ -83,8 +84,8 @@ const previewSchema = z.object({
       conflicts: z.array(z.string()).nullish(),
     })
   ),
-})
-const receiptSchema = z.object({
+}))
+const receiptSchema = lazySchema(() => z.object({
   case_id: z.string(),
   updated: z.number(),
   unchanged: z.number(),
@@ -99,7 +100,7 @@ const receiptSchema = z.object({
     })
   ),
   account_changes: z.array(z.object({ before: z.string(), after: z.string() })),
-})
+}))
 type Draft = {
   selected: Record<string, Statement>
   values: Partial<Record<Field, string>>

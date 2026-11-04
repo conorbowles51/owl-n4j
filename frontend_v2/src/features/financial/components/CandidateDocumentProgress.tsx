@@ -4,9 +4,10 @@ import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { candidateUrl, assertCandidateScope } from "../lib/candidate-contract"
-const count = z.number().int().nonnegative()
-const counts = z.object({ pending: count, resolved: count, rejected: count })
-const schema = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const count = lazySchema(() => z.number().int().nonnegative())
+const counts = lazySchema(() => z.object({ pending: count, resolved: count, rejected: count }))
+const schema = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   filename: z.string(),
@@ -29,7 +30,7 @@ const schema = z.object({
       })
     )
     .max(2000),
-})
+}))
 export function CandidateDocumentProgress({
   caseId,
   fileId,

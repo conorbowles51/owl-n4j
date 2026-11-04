@@ -1,9 +1,10 @@
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import type { LedgerTransaction } from "../api"
+import { lazySchema } from "@/lib/lazy-schema"
 
 /** The case agent's proposal on a judgement call (services.agent.proposals): changes nothing until a person accepts. */
-export const proposalSchema = z.object({
+export const proposalSchema = lazySchema(() => z.object({
   kind: z.string().nullable().optional(),
   value: z.unknown().optional(),
   why: z.string().nullable().optional(),
@@ -19,11 +20,11 @@ export const proposalSchema = z.object({
     .nullable()
     .optional(),
   applied: z.unknown().optional(),
-})
+}))
 export type JudgementProposal = z.infer<typeof proposalSchema>
 
 /** A value the processor chose that the page does not print outright, or a choice between two readings. */
-export const judgementSchema = z.object({
+export const judgementSchema = lazySchema(() => z.object({
   id: z.string(),
   case_id: z.string(),
   subject_type: z.string(),
@@ -61,11 +62,11 @@ export const judgementSchema = z.object({
   resolution_reason: z.string().nullable(),
   adjudication_id: z.string().nullable(),
   proposal: proposalSchema.nullable().optional(),
-})
+}))
 export type Judgement = z.infer<typeof judgementSchema>
 
-const option = z.object({ value: z.string(), label: z.string() })
-const listSchema = z.object({
+const option = lazySchema(() => z.object({ value: z.string(), label: z.string() }))
+const listSchema = lazySchema(() => z.object({
   items: z.array(judgementSchema),
   total: z.number().optional().default(0),
   offset: z.number().optional().default(0),
@@ -75,16 +76,16 @@ const listSchema = z.object({
   rules: z.array(z.tuple([z.string(), z.string(), z.string()])).optional().default([]),
   accounts: z.array(option).optional().default([]),
   files: z.array(option).optional().default([]),
-})
+}))
 export type JudgementPage = z.infer<typeof listSchema>
-const rowMapSchema = z.object({
+const rowMapSchema = lazySchema(() => z.object({
   judgements: z.array(judgementSchema),
   transactions: z.record(z.string(), z.array(z.string())),
   documents: z.record(z.string(), z.array(z.string())),
   categories: z.array(z.object({ key: z.string(), label: z.string() })),
-})
+}))
 export type JudgementRowMap = z.infer<typeof rowMapSchema>
-const previewItem = z.object({
+const previewItem = lazySchema(() => z.object({
   rule_id: z.string(),
   rule_label: z.string(),
   rule_source: z.string(),
@@ -98,10 +99,10 @@ const previewItem = z.object({
   priority: z.number().optional().default(1),
   priority_label: z.string().optional().default(""),
   page: z.union([z.number(), z.string()]).nullable().optional(),
-})
+}))
 export type JudgementPreview = z.infer<typeof previewItem>
-const tally = z.record(z.string(), z.union([z.number(), z.string(), z.null()]))
-const countsSchema = z.object({
+const tally = lazySchema(() => z.record(z.string(), z.union([z.number(), z.string(), z.null()])))
+const countsSchema = lazySchema(() => z.object({
   case: tally,
   statements: z.record(z.string(), tally),
   periods: z.record(z.string(), tally).optional().default({}),
@@ -109,8 +110,8 @@ const countsSchema = z.object({
   rules: z.array(
     z.object({ rule_id: z.string(), label: z.string(), total: z.number() }).passthrough()
   ),
-})
-const ruleRecord = z.object({
+}))
+const ruleRecord = lazySchema(() => z.object({
   rule_id: z.string(),
   label: z.string(),
   source: z.string(),
@@ -119,11 +120,11 @@ const ruleRecord = z.object({
   confirmed: z.number(),
   corrected: z.number(),
   total: z.number(),
-})
-const rulesSchema = z.object({
+}))
+const rulesSchema = lazySchema(() => z.object({
   case: z.array(ruleRecord),
   all_cases: z.array(ruleRecord),
-})
+}))
 export type RuleRecord = z.infer<typeof ruleRecord>
 
 export interface JudgementFilter {
@@ -263,7 +264,7 @@ export async function proposalSourceOpened(caseId: string, id: string, citation:
     )
 }
 
-const precisionKind = z.object({
+const precisionKind = lazySchema(() => z.object({
   kind: z.string(),
   label: z.string(),
   open: z.number(),
@@ -272,12 +273,12 @@ const precisionKind = z.object({
   rejected: z.number(),
   decided: z.number(),
   weeks: z.array(z.object({ week: z.string(), accepted: z.number(), corrected: z.number(), rejected: z.number() })),
-})
-const precisionBlock = z.object({
+}))
+const precisionBlock = lazySchema(() => z.object({
   kinds: z.array(precisionKind),
   confirmations: z.object({ total: z.number(), with_source_opened: z.number(), without_source_opened: z.number() }),
-})
-export const precisionSchema = z.object({ case: precisionBlock, all_cases: precisionBlock })
+}))
+export const precisionSchema = lazySchema(() => z.object({ case: precisionBlock, all_cases: precisionBlock }))
 export type ProposalPrecision = z.infer<typeof precisionSchema>
 
 export async function proposalPrecision(caseId: string) {

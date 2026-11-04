@@ -5,9 +5,10 @@ import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { candidateUrl } from "../lib/candidate-contract"
 import { PackageFilePicker } from "./PackageFilePicker"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const digest = z.string().regex(/^[a-f0-9]{64}$/)
-const verification = z.object({
+const digest = lazySchema(() => z.string().regex(/^[a-f0-9]{64}$/))
+const verification = lazySchema(() => z.object({
   schema_version: z.literal("loupe.financial.trace_support_verification/1"),
   archive_sha256: digest,
   case_id: z.string(),
@@ -30,7 +31,7 @@ const verification = z.object({
     .max(8),
   checkpoint_status: z.enum(["not_supplied", "matches_supplied_digest"]),
   limitation: z.string(),
-})
+}))
 type Verification = z.infer<typeof verification>
 
 export function TraceSupportVerification({ caseId }: { caseId: string }) {

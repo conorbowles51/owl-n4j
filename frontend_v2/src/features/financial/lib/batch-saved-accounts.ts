@@ -1,6 +1,7 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-export const batchSavedAccountsScope = z.object({
+export const batchSavedAccountsScope = lazySchema(() => z.object({
   case_id: z.string(),
   batch_id: z.string(),
   revision: z.string(),
@@ -10,4 +11,4 @@ export const batchSavedAccountsScope = z.object({
   transaction_count: z.number(),
   start_date: z.string().nullable(),
   end_date: z.string().nullable(),
-})
+}))

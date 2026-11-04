@@ -13,16 +13,17 @@ const correctionMoney = (value: string, currency: string) =>
   `${formatLedgerAmount(value, currency).text} ${currency}`
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
-const count = z.number().int().nonnegative(),
-  money = z.string().regex(/^-?(0|[1-9][0-9]*)$/)
-const totals = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const count = lazySchema(() => z.number().int().nonnegative()),
+  money = lazySchema(() => z.string().regex(/^-?(0|[1-9][0-9]*)$/))
+const totals = lazySchema(() => z.object({
   currency: z.string(),
   rows: count.positive(),
   credits_minor: money,
   debits_minor: money,
   net_minor: money,
-})
-const response = z.object({
+}))
+const response = lazySchema(() => z.object({
   has_credit_card_readings: z.boolean().default(false),
   case_id: z.string(),
   account_id: z.string().nullable(),
@@ -45,7 +46,7 @@ const response = z.object({
       source_document_ids: z.array(z.string()),
     })
   ),
-})
+}))
 export function LedgerTrendsPanel({
   caseId,
   params,

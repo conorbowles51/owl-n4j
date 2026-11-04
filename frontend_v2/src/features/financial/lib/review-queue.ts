@@ -6,8 +6,9 @@ import { randomRequestId } from "@/lib/browser-crypto"
 import { formatLedgerAmount } from "./ledger-format"
 import { filledBySave, listWords, missingRequired } from "./statement-needs"
 import type { StatementImportReceipt } from "../components/StatementImportPanel"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const entry = z.object({
+const entry = lazySchema(() => z.object({
   id: z.string(),
   batch_id: z.string().nullable(),
   file_id: z.string(),
@@ -88,10 +89,10 @@ const entry = z.object({
       })
     )
     .optional(),
-})
+}))
 export type QueueEntry = z.infer<typeof entry>
 
-export const queueCounts = z.object({
+export const queueCounts = lazySchema(() => z.object({
   imported: z.number(),
   saving: z.number().default(0),
   waiting: z.number(),
@@ -111,21 +112,21 @@ export const queueCounts = z.object({
   unexplained: z.number().default(0),
   /** Fund statements set aside as not payment statements. */
   not_payment: z.number().default(0),
-})
+}))
 export type QueueCounts = z.infer<typeof queueCounts>
 
 /** Statement files being read or prepared now, and files never read. */
-export const readingProgress = z.object({
+export const readingProgress = lazySchema(() => z.object({
   files_total: z.number().default(0),
   files_done: z.number().default(0),
   files_reading: z.number().default(0),
   files_waiting_to_start: z.number().default(0),
   paused: z.boolean().default(false),
   unread_statement_files: z.number().default(0),
-})
+}))
 export type ReadingProgress = z.infer<typeof readingProgress>
 
-export const reviewQueue = z.object({
+export const reviewQueue = lazySchema(() => z.object({
   case_id: z.string(),
   file_ids: z.array(z.string()).default([]),
   counts: queueCounts,
@@ -229,7 +230,7 @@ export const reviewQueue = z.object({
   /** True: this answer predates the latest change; a current one is being built. */
   refreshing: z.boolean().optional(),
   as_of: z.string().nullish(),
-})
+}))
 export type ReviewQueue = z.infer<typeof reviewQueue>
 
 /** The server's list names for paging (`page_list`). */
@@ -415,12 +416,12 @@ export async function readUnreadStatements(caseId: string) {
   return result
 }
 
-const status = z.object({
+const status = lazySchema(() => z.object({
   case_id: z.string(),
   counts: queueCounts,
   status_line: z.string(),
   reading: readingProgress.optional(),
-})
+}))
 
 export function useReviewStatus(caseId: string, enabled = true) {
   return useQuery({
@@ -567,23 +568,23 @@ export function entryPeriod(entry: QueueEntry) {
   return `${entry.period_start || "?"} to ${entry.period_end || "?"}`
 }
 
-const heldEntry = z.object({
+const heldEntry = lazySchema(() => z.object({
   item_id: z.string().nullable(),
   filename: z.string().default(""),
   period_start: z.string().default(""),
   period_end: z.string().default(""),
   reason: z.string(),
-})
+}))
 export type HeldStatement = z.infer<typeof heldEntry>
-const saveResponse = z.object({
+const saveResponse = lazySchema(() => z.object({
   request_id: z.string(),
   queued: z.number(),
   held: z.array(heldEntry),
   operations: z.array(
     z.object({ batch_id: z.string(), operation_id: z.string(), queued: z.number() })
   ),
-})
-const saveProgress = z.object({
+}))
+const saveProgress = lazySchema(() => z.object({
   case_id: z.string(),
   found: z.number(),
   pending: z.number(),
@@ -592,7 +593,7 @@ const saveProgress = z.object({
   duplicate_ignored: z.number(),
   failed: z.array(heldEntry),
   transaction_count: z.number(),
-})
+}))
 
 export type QueueSaveResult = {
   imported: number
@@ -727,13 +728,13 @@ export async function saveReadyStatements(
   return { ...result, message: saveResultLine(result) }
 }
 
-const fillResponse = z.object({
+const fillResponse = lazySchema(() => z.object({
   case_id: z.string(),
   filled: z.number(),
   statements: z.number(),
   failed: z.number(),
   ready_item_ids: z.array(z.string()),
-})
+}))
 
 const hasConfirmed = (entry: QueueEntry) =>
   Object.values(entry.proposals ?? {}).some((proposal) => proposal.confirmed)
@@ -793,12 +794,12 @@ export async function fillAndSaveReady(
   }
 }
 
-const readAfreshResponse = z.object({
+const readAfreshResponse = lazySchema(() => z.object({
   requested: z.number(),
   queued: z.number(),
   already: z.number(),
   refused: z.array(z.object({ batch_id: z.string(), source_id: z.string(), message: z.string() })),
-})
+}))
 
 /**
  * Explicitly reads the queue's retained PDFs afresh whose restart copy is gone.
@@ -827,11 +828,11 @@ export async function readRetainedAfresh(caseId: string, data: ReviewQueue): Pro
   return parts.join("; ")
 }
 
-const checkAgainResponse = z.object({
+const checkAgainResponse = lazySchema(() => z.object({
   requested: z.number(),
   queued: z.number(),
   skipped: z.array(z.object({ batch_id: z.string(), message: z.string() })),
-})
+}))
 
 /** Prepares the queue's unreadable statements' files again from their saved readings with the current reader. */
 export async function checkUnreadableAgain(caseId: string, data: ReviewQueue): Promise<string> {
@@ -861,14 +862,14 @@ export async function putBackNotPaymentStatement(caseId: string, fileId: string,
 
 export type ProposalGroup = NonNullable<ReviewQueue["proposal_groups"]>[number]
 
-const groupConfirmResponse = z.object({
+const groupConfirmResponse = lazySchema(() => z.object({
   group_id: z.string(),
   field: z.string(),
   value: z.string(),
   statements: z.number(),
   saved: z.number(),
   failed: z.number(),
-})
+}))
 
 /** Confirms one account's proposed value on all its waiting statements (empty fields only), as this person. */
 export async function confirmProposalGroup(caseId: string, group: ProposalGroup, fileIds: string[] = []) {

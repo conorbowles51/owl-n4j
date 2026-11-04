@@ -1,13 +1,14 @@
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
+import { lazySchema } from "@/lib/lazy-schema"
 
 /**
  * Who uploaded each file, and who added it to Financial, when and from where.
  * Only what the system recorded: a person is never named when no record names
  * them (``added_by`` / ``uploaded_by`` stay null).
  */
-const provenance = z.object({
+const provenance = lazySchema(() => z.object({
   file_id: z.string(),
   uploaded_by: z.string().nullable(),
   uploaded_at: z.string().nullable(),
@@ -20,7 +21,7 @@ const provenance = z.object({
   added_from: z.string().nullable(),
   added_via: z.string().nullable(),
   batch_id: z.string().nullable(),
-})
+}))
 export type FileProvenance = z.infer<typeof provenance>
 
 export const fileProvenanceKey = (caseId: string) => ["file-provenance", caseId]

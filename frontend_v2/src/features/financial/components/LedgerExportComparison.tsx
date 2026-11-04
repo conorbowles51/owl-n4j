@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from "react"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { candidateUrl } from "../lib/candidate-contract"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const changes = z.object({
+const changes = lazySchema(() => z.object({
   added: z.array(z.string()).max(25000),
   removed: z.array(z.string()).max(25000),
   changed: z
@@ -17,8 +18,8 @@ const changes = z.object({
       })
     )
     .max(25000),
-})
-const comparison = z
+}))
+const comparison = lazySchema(() => z
   .object({
     schema_version: z.literal("loupe.financial.export_comparison/1"),
     case_id: z.string(),
@@ -34,7 +35,7 @@ const comparison = z
     packaging_or_generation_changed: z.boolean(),
     limitation: z.string(),
   })
-  .passthrough()
+  .passthrough())
 type Result = z.infer<typeof comparison>
 const label = {
   scope_changed: "The selected filters or history scope changed",

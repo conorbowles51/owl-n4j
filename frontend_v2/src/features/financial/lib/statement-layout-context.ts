@@ -1,11 +1,12 @@
 import { z } from "zod"
-const citation = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const citation = lazySchema(() => z.object({
   row_index: z.number().int().nonnegative(),
   column_index: z.number().int().nonnegative(),
   expected_text: z.string(),
   locator: z.unknown(),
-})
-export const layoutContext = z.object({
+}))
+export const layoutContext = lazySchema(() => z.object({
   layout_id: z.literal("capital-one-platinum-card-sections"),
   version: z.literal(1),
   institution_source: citation,
@@ -47,6 +48,6 @@ export const layoutContext = z.object({
     .max(1000),
   applied: z.literal(false),
   limitation: z.string(),
-})
+}))
 export type StatementLayoutContext = z.infer<typeof layoutContext>
 export type LayoutCitation = z.infer<typeof citation>

@@ -1,6 +1,7 @@
 import { z } from "zod"
-const minor = z.string().regex(/^-?(0|[1-9][0-9]*)$/)
-export const statementDeltaHints = z.discriminatedUnion("available", [
+import { lazySchema } from "@/lib/lazy-schema"
+const minor = lazySchema(() => z.string().regex(/^-?(0|[1-9][0-9]*)$/))
+export const statementDeltaHints = lazySchema(() => z.discriminatedUnion("available", [
   z.object({ available: z.literal(false), reason: z.string() }),
   z.object({
     available: z.literal(true),
@@ -30,5 +31,5 @@ export const statementDeltaHints = z.discriminatedUnion("available", [
       })
     ),
   }),
-])
+]))
 export type StatementDeltaHints = z.infer<typeof statementDeltaHints>

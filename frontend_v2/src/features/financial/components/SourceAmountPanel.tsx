@@ -5,8 +5,9 @@ import { fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { sourceSelection } from "../lib/source-selection"
 import { correctionMoney } from "../lib/correction-contract"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const textWindow = z.object({
+const textWindow = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   content: z.string(),
@@ -16,8 +17,8 @@ const textWindow = z.object({
   character_count: z.number().int().nonnegative(),
   has_more: z.boolean(),
   offset_unit: z.literal("unicode_code_points"),
-})
-const assessment = z.object({
+}))
+const assessment = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   content_sha256: z.string(),
@@ -46,7 +47,7 @@ const assessment = z.object({
       )
       .optional(),
   }),
-})
+}))
 
 export function SourceAmountPanel({
   caseId,

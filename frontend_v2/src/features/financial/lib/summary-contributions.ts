@@ -1,6 +1,7 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-export const summaryContribution = z.object({
+export const summaryContribution = lazySchema(() => z.object({
   transaction_id: z.string().uuid(),
   ref_id: z.string(),
   currency: z.string(),
@@ -10,7 +11,7 @@ export const summaryContribution = z.object({
   proof_class: z.enum(["p0", "p1", "p2", "p3"]),
   source_proof_class: z.enum(["p0", "p1", "p2", "p3"]),
   source_document_id: z.string().uuid(),
-})
+}))
 export type SummaryContribution = z.infer<typeof summaryContribution>
 
 export function validateSummaryContributions(

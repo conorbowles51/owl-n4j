@@ -14,7 +14,8 @@ import {
   type PdfModelNomination,
 } from "../lib/pdf-model-nomination"
 import { verifyQueuedMapping } from "../lib/scanned-reading-queue"
-const historySchema = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const historySchema = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   offset: z.number().int().nonnegative(),
@@ -28,7 +29,7 @@ const historySchema = z.object({
     })
   ),
   applied: z.literal(false),
-})
+}))
 function PdfModelNominationPanelContent({
   source,
   onSaved,

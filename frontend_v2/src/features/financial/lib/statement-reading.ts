@@ -9,14 +9,15 @@ import {
 } from "./statement-duplicate"
 import { statementAssessment } from "./statement-assessment"
 import { statementModelWork } from "./statement-model-work"
+import { lazySchema } from "@/lib/lazy-schema"
 
 /** One statement as the server reads it for review (GET /api/financial/statement-import/{file}). */
-export const cell = z.object({
+export const cell = lazySchema(() => z.object({
   column_index: z.number(),
   expected_text: z.string(),
   locator: z.unknown(),
-})
-export const row = z
+}))
+export const row = lazySchema(() => z
   .object({
     id: z.string(),
     page_number: z.number(),
@@ -51,10 +52,10 @@ export const row = z
       else if (value !== null && value !== undefined) details[key] = value
     }
     return { ...rest, fields: strings, field_details: details }
-  })
+  }))
 // The figures a worked-out balance rests on, as the reading rule recorded them.
 
-export const proposalSchema = z.object({
+export const proposalSchema = lazySchema(() => z.object({
   recovered_saved_section: z.boolean().default(false),
   statement_page_numbers: z.array(z.number()).default([]),
   document_review: paymentDocumentProposal.optional(),
@@ -221,7 +222,7 @@ export const proposalSchema = z.object({
     })
     .nullable()
     .optional(),
-})
+}))
 
 export type Proposal = z.infer<typeof proposalSchema>
 

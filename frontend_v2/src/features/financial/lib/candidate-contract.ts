@@ -1,10 +1,11 @@
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const id = z.string().min(1)
-const revision = z.string().regex(/^[a-f0-9]{64}$/)
-export const candidateStatus = z.enum(["pending", "resolved", "rejected"])
-export const candidateReading = z.object({
+const id = lazySchema(() => z.string().min(1))
+const revision = lazySchema(() => z.string().regex(/^[a-f0-9]{64}$/))
+export const candidateStatus = lazySchema(() => z.enum(["pending", "resolved", "rejected"]))
+export const candidateReading = lazySchema(() => z.object({
   account_id: id,
   currency: z.string().regex(/^[A-Z]{3}$/),
   amount_minor: z
@@ -18,8 +19,8 @@ export const candidateReading = z.object({
   statement_end_date: z.string().nullable().optional(),
   description: z.string(),
   counterparty_raw: z.string().max(4096).nullable().optional(),
-})
-const original = z.object({
+}))
+const original = lazySchema(() => z.object({
   cells: z.array(
     z
       .object({
@@ -32,8 +33,8 @@ const original = z.object({
         (v) => typeof v.text === "string" || typeof v.source?.text === "string"
       )
   ),
-})
-const history = z.array(
+}))
+const history = lazySchema(() => z.array(
   z.object({
     id,
     sequence: z.number().int().positive(),
@@ -43,8 +44,8 @@ const history = z.array(
     actor: z.object({ name: z.string(), email: z.string() }),
     created_at: z.string(),
   })
-)
-export const candidateReview = z
+))
+export const candidateReview = lazySchema(() => z
   .object({
     candidate_id: id,
     case_id: id,
@@ -59,10 +60,10 @@ export const candidateReview = z
   .refine(
     (v) => (v.status === "resolved") === (v.reading !== null),
     "Inconsistent candidate review"
-  )
+  ))
 export type CandidateReview = z.infer<typeof candidateReview>
 export type CandidateReading = z.infer<typeof candidateReading>
-export const candidateMapping = z.object({
+export const candidateMapping = lazySchema(() => z.object({
   id,
   case_id: id,
   evidence_file_id: id,
@@ -79,8 +80,8 @@ export const candidateMapping = z.object({
       original,
     })
   ),
-})
-export const candidateList = z.object({
+}))
+export const candidateList = lazySchema(() => z.object({
   case_id: id,
   offset: z.number().int().nonnegative(),
   has_more: z.boolean(),
@@ -93,8 +94,8 @@ export const candidateList = z.object({
       created_at: z.string(),
     })
   ),
-})
-export const candidateAccounts = z.object({
+}))
+export const candidateAccounts = lazySchema(() => z.object({
   case_id: id,
   has_more: z.boolean(),
   pending_holders: z
@@ -129,8 +130,8 @@ export const candidateAccounts = z.object({
       source_file_id: z.string().nullable().optional(),
     })
   ),
-})
-export const candidateAssessment = z.object({
+}))
+export const candidateAssessment = lazySchema(() => z.object({
   case_id: id,
   candidate_id: id,
   mapping_id: id,
@@ -170,7 +171,7 @@ export const candidateAssessment = z.object({
     })
   ),
   unclassified_columns: z.array(z.number().int().nonnegative()),
-})
+}))
 
 export function candidateUrl(path: string, caseId: string) {
   return `/api/financial/${path}?${new URLSearchParams({ case_id: caseId })}`

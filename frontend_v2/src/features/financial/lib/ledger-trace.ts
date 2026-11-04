@@ -5,6 +5,7 @@ import {
   verifyTraceAssets,
 } from "./trace-assets"
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
 export const methods = [
   "lowest_intermediate_balance",
@@ -13,11 +14,11 @@ export const methods = [
   "pro_rata",
   "direct",
 ] as const
-const money = z.object({
+const money = lazySchema(() => z.object({
   minor_units: z.string().regex(/^-?[0-9]+$/),
   currency: z.string(),
-})
-export const traceInputs = z
+}))
+export const traceInputs = lazySchema(() => z
   .object({
     population: z.enum(["working", "verified"]).default("verified"),
     case_id: z.string(),
@@ -57,9 +58,9 @@ export const traceInputs = z
             (v.population === "working" &&
               r.exclusion_reason === "proof_class_not_included"))
       )
-  )
+  ))
 export type TraceInputs = z.infer<typeof traceInputs>
-const scenario = z.object({
+const scenario = lazySchema(() => z.object({
   schema: z.literal("loupe.financial.conditional_trace/1"),
   case_id: z.string(),
   account_id: z.string(),
@@ -81,7 +82,7 @@ const scenario = z.object({
       })
     ),
   }),
-})
+}))
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`
   if (value !== null && typeof value === "object")

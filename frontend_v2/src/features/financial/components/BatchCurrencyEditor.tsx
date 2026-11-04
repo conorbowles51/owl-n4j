@@ -6,8 +6,9 @@ import { useMutation, useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const statement = z.object({
+const statement = lazySchema(() => z.object({
   id: z.string(),
   file_id: z.string().optional(),
   statement_id: z.string().nullish(),
@@ -18,13 +19,13 @@ const statement = z.object({
   currency: z.string().optional(),
   status: z.string(),
   currency_revision: z.string(),
-})
-const listing = z.object({
+}))
+const listing = lazySchema(() => z.object({
   case_id: z.string(),
   id: z.string(),
   total: z.number(),
   items: z.array(statement),
-})
+}))
 type Item = z.infer<typeof statement>
 
 export function BatchCurrencyEditor({

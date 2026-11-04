@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import { statementDuplicateDisposition } from "../lib/statement-duplicate"
-export const statementFile = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+export const statementFile = lazySchema(() => z.object({
   id: z.string(),
   case_id: z.string(),
   original_filename: z.string(),
@@ -15,7 +16,7 @@ export const statementFile = z.object({
   financial_imports_removed: z.boolean().optional(),
   financial_visibility_revision: z.string().default("initial"),
   financial_visibility_changed_at: z.string().nullish(),
-})
+}))
 export type StatementFile = z.infer<typeof statementFile>
 
 // Reader capability only; Financial membership is determined by the server.
@@ -59,10 +60,10 @@ export function groupStatementReadings(files: StatementFile[]) {
     return { ...current, readingVersions: versions }
   })
 }
-const listing = z.object({
+const listing = lazySchema(() => z.object({
   files: z.array(statementFile),
-})
-const readyPeriod = z.object({
+}))
+const readyPeriod = lazySchema(() => z.object({
   statement_id: z.string(),
   holder: z.string(),
   institution: z.string(),
@@ -73,9 +74,9 @@ const readyPeriod = z.object({
   transaction_count: z.number().int().nonnegative(),
   incomplete_count: z.number().int().nonnegative(),
   problem_count: z.number().int().nonnegative(),
-})
+}))
 export type ReadyStatementPeriod = z.infer<typeof readyPeriod>
-export const statementImportStates = z.object({
+export const statementImportStates = lazySchema(() => z.object({
   case_id: z.string(),
   truncated: z.boolean(),
   files: z.array(
@@ -137,7 +138,7 @@ export const statementImportStates = z.object({
       ),
     })
   ),
-})
+}))
 
 export function useStatementFiles(
   caseId: string | undefined,

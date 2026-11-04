@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { statementMonth } from "./statement-month"
-export const historyPeriod = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+export const historyPeriod = lazySchema(() => z.object({
   id: z.string(),
   source_document_id: z.string(),
   evidence_file_id: z.string().nullable(),
@@ -23,8 +24,8 @@ export const historyPeriod = z.object({
       debit_minor: z.string(),
     })
   ),
-})
-export const historyResponse = z.object({
+}))
+export const historyResponse = lazySchema(() => z.object({
   case_id: z.string(),
   applied: z.literal(false),
   groups: z.array(
@@ -67,7 +68,7 @@ export const historyResponse = z.object({
       periods: z.array(historyPeriod),
     })
   ),
-})
+}))
 export type HistoryGroup = z.infer<typeof historyResponse>["groups"][number]
 export type HistoryPeriod = z.infer<typeof historyPeriod>
 export function accountColor(key: string) {

@@ -14,13 +14,14 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { type StatementFile } from "../hooks/use-statement-register"
 import { useStatementWorkspace } from "../stores/statement-workspace"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const answer = z.object({
+const answer = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   financial_removed: z.boolean(),
   financial_visibility_revision: z.string(),
-})
+}))
 
 export function FinancialFileAction({
   caseId,

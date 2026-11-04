@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { correctionMoney } from "../lib/correction-contract"
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { lazySchema } from "@/lib/lazy-schema"
 
 const TYPES = [
   ["credit_card", "Credit card"],
@@ -20,15 +21,15 @@ const typeLabel = (value: string) =>
       ? "Other account"
       : "Not set")
 
-const flaggedRow = z.object({
+const flaggedRow = lazySchema(() => z.object({
   transaction_id: z.string(),
   date: z.string().nullable(),
   description: z.string(),
   amount_minor: z.string(),
   direction: z.string(),
   proposed_direction: z.string(),
-})
-const statement = z.object({
+}))
+const statement = lazySchema(() => z.object({
   source_document_id: z.string(),
   period_start: z.string().nullable(),
   period_end: z.string().nullable(),
@@ -40,8 +41,8 @@ const statement = z.object({
   // Flipped with the type change: adds up exactly only with them reversed.
   auto_flip: z.boolean().optional().default(false),
   flagged_rows: z.array(flaggedRow),
-})
-const state = z.object({
+}))
+const state = lazySchema(() => z.object({
   case_id: z.string(),
   account_id: z.string(),
   account_type: z.string(),
@@ -53,8 +54,8 @@ const state = z.object({
   flagged_rows: z.number(),
   auto_flipped_rows: z.number().optional(),
   revision: z.string(),
-})
-const preview = z.object({
+}))
+const preview = lazySchema(() => z.object({
   case_id: z.string(),
   account_id: z.string(),
   account_type_after: z.string(),
@@ -63,7 +64,7 @@ const preview = z.object({
   flagged_rows: z.number(),
   auto_flip_rows: z.number().optional(),
   revision: z.string(),
-})
+}))
 type Statement = z.infer<typeof statement>
 
 const period = (s: Statement) =>

@@ -6,7 +6,8 @@ import {
 } from "./trace-assets"
 import { z } from "zod"
 import { transferInputs } from "./ledger-transfers"
-export const networkInputs = transferInputs.and(
+import { lazySchema } from "@/lib/lazy-schema"
+export const networkInputs = lazySchema(() => transferInputs.and(
   z.object({
     accounts: z.array(
       z.object({
@@ -18,14 +19,14 @@ export const networkInputs = transferInputs.and(
     network_row_limit: z.number().int().positive(),
     network_limitation: z.string(),
   })
-)
+))
 export type NetworkInputs = z.infer<typeof networkInputs>
-const minor = z.string().regex(/^(0|[1-9][0-9]*)$/),
-  money = z.object({
+const minor = lazySchema(() => z.string().regex(/^(0|[1-9][0-9]*)$/)),
+  money = lazySchema(() => z.object({
     minor_units: z.string().regex(/^-?(0|[1-9][0-9]*)$/),
     currency: z.string(),
-  })
-const resultSchema = z.object({
+  }))
+const resultSchema = lazySchema(() => z.object({
   schema: z.literal("loupe.financial.network_trace/1"),
   case_id: z.string(),
   applied: z.literal(false),
@@ -77,7 +78,7 @@ const resultSchema = z.object({
       unidentified_withdrawals_minor: minor,
     })
   ),
-})
+}))
 function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`
   if (v && typeof v === "object")

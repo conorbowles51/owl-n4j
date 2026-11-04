@@ -4,8 +4,9 @@ import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import type { StatementSection } from "./StatementSectionPicker"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const checks = z.object({
+const checks = lazySchema(() => z.object({
   transaction_count: z.number(),
   checks: z.array(
     z.object({
@@ -13,8 +14,8 @@ const checks = z.object({
       status: z.enum(["matches", "difference", "unavailable"]),
     })
   ),
-})
-const resultSchema = z.object({
+}))
+const resultSchema = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   revision: z.string(),
@@ -29,7 +30,7 @@ const resultSchema = z.object({
       after: checks,
     })
   ),
-})
+}))
 const names: Record<string, string> = {
   closing_balance: "Closing balance",
   running_balance: "Running balances",

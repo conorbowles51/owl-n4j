@@ -15,22 +15,23 @@ import { fetchAPI } from "@/lib/api-client"
 import { assertCandidateScope, candidateUrl } from "../lib/candidate-contract"
 import { correctionMoney } from "../lib/correction-contract"
 import { formatLedgerAmount } from "../lib/ledger-format"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const count = z.number().int().nonnegative()
-const minor = z.string().regex(/^-?(0|[1-9][0-9]*)$/)
-const day = z
+const count = lazySchema(() => z.number().int().nonnegative())
+const minor = lazySchema(() => z.string().regex(/^-?(0|[1-9][0-9]*)$/))
+const day = lazySchema(() => z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
-  .nullable()
-const amounts = z.object({
+  .nullable())
+const amounts = lazySchema(() => z.object({
   opening: minor.nullable(),
   credits: minor,
   debits: minor,
   computed_closing: minor.nullable(),
   closing: minor.nullable(),
   difference: minor.nullable(),
-})
-const item = z
+}))
+const item = lazySchema(() => z
   .object({
     period_id: z.string(),
     account_id: z.string(),
@@ -95,8 +96,8 @@ const item = z
       BigInt(a.computed_closing) - BigInt(a.closing) === BigInt(a.difference) &&
       (v.status === "balanced") === (BigInt(a.difference) === 0n)
     )
-  }, "Statement check arithmetic is inconsistent.")
-const report = z.object({
+  }, "Statement check arithmetic is inconsistent."))
+const report = lazySchema(() => z.object({
   case_id: z.string(),
   account_id: z.string().nullable().optional(),
   // A merged account's checks include its members' periods; this lists the accounts the merge joins.
@@ -108,7 +109,7 @@ const report = z.object({
   native_controls_requested: z.boolean().default(false),
   limitation: z.string(),
   items: z.array(item).max(25),
-})
+}))
 const statusLabel = {
   balanced: "Balances agree",
   unbalanced: "Balance difference",

@@ -1,6 +1,7 @@
 import { z } from "zod"
-const minor = z.string().regex(/^-?(0|[1-9][0-9]*)$/)
-export const printedTotalChecks = z
+import { lazySchema } from "@/lib/lazy-schema"
+const minor = lazySchema(() => z.string().regex(/^-?(0|[1-9][0-9]*)$/))
+export const printedTotalChecks = lazySchema(() => z
   .object({
     limitation: z.string(),
     checks: z
@@ -39,8 +40,8 @@ export const printedTotalChecks = z
       )
       .length(2),
   })
-  .refine((v) => new Set(v.checks.map((c) => c.role)).size === 2)
-export const printedTotalComparison = z.object({
+  .refine((v) => new Set(v.checks.map((c) => c.role)).size === 2))
+export const printedTotalComparison = lazySchema(() => z.object({
   current: printedTotalChecks,
   proposed: printedTotalChecks,
-})
+}))

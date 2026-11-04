@@ -6,7 +6,8 @@ import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { ResumableUploadsPanel } from "@/features/evidence/components/ResumableUploadsPanel"
-const uploadAnswer = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const uploadAnswer = lazySchema(() => z.object({
   files: z.array(
     z.object({
       id: z.string(),
@@ -17,18 +18,18 @@ const uploadAnswer = z.object({
       financial_removed: z.boolean().default(false),
     })
   ),
-})
-const started = z.object({
+}))
+const started = lazySchema(() => z.object({
   job_ids: z.array(z.string()).nullable().optional(),
   message: z.string().optional(),
-})
-const jobAnswer = z.object({
+}))
+const jobAnswer = lazySchema(() => z.object({
   id: z.string(),
   case_id: z.string(),
   status: z.string(),
   job_type: z.string(),
   quality_report: z.record(z.string(), z.unknown()).optional(),
-})
+}))
 function PdfReviewIntakeForm({
   caseId,
   onReady,

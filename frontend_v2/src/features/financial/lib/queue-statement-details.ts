@@ -2,6 +2,7 @@ import { z } from "zod"
 import { ApiError, fetchAPI } from "@/lib/api-client"
 import { newReviewId } from "./statement-review-id"
 import type { QueueEntry } from "./review-queue"
+import { lazySchema } from "@/lib/lazy-schema"
 
 /**
  * The queue's own use of the account-details path that the shared fix ("Fix
@@ -12,7 +13,7 @@ import type { QueueEntry } from "./review-queue"
  */
 const ENDPOINT = "/api/financial/statement-import/account-details"
 
-const statement = z.object({
+const statement = lazySchema(() => z.object({
   key: z.string(),
   file_id: z.string(),
   source_id: z.string().nullable(),
@@ -21,18 +22,18 @@ const statement = z.object({
   filename: z.string(),
   status: z.string(),
   values: z.record(z.string(), z.string()),
-})
+}))
 export type DetailsStatement = z.infer<typeof statement>
-const listing = z.object({
+const listing = lazySchema(() => z.object({
   case_id: z.string(),
   items: z.array(statement),
   notices: z.array(z.object({ filename: z.string(), message: z.string() })),
-})
-const changes = z.record(
+}))
+const changes = lazySchema(() => z.record(
   z.string(),
   z.object({ before: z.string(), after: z.string(), confirmed: z.boolean().optional() })
-)
-const preview = z.object({
+))
+const preview = lazySchema(() => z.object({
   case_id: z.string(),
   preview_revision: z.string(),
   updated: z.number(),
@@ -46,15 +47,15 @@ const preview = z.object({
       conflicts: z.array(z.string()).nullish(),
     })
   ),
-})
+}))
 export type DetailsPreview = z.infer<typeof preview>
-const receipt = z.object({
+const receipt = lazySchema(() => z.object({
   case_id: z.string(),
   updated: z.number(),
   unchanged: z.number(),
   imported: z.number(),
   drafts: z.number(),
-})
+}))
 
 export type DetailChanges = {
   holder?: string

@@ -2,23 +2,24 @@ import { nativeControlComparison } from "./native-control-contract"
 import { printedTotalComparison } from "./printed-total-checks"
 import { z } from "zod"
 import { currencyMinorUnits } from "./ledger-format"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const integer = z.string().regex(/^-?(0|[1-9][0-9]*)$/)
-const magnitude = z
+const integer = lazySchema(() => z.string().regex(/^-?(0|[1-9][0-9]*)$/))
+const magnitude = lazySchema(() => z
   .string()
   .regex(/^(0|[1-9][0-9]{0,18})$/)
   .refine(
     (value) =>
       /^[0-9]{1,19}$/.test(value) && BigInt(value) <= 9223372036854775807n,
     "Amount is outside the ledger range"
-  )
-const direction = z.enum(["credit", "debit"])
-const proof = z.enum(["p0", "p1", "p2", "p3"])
-const identity = z.object({
+  ))
+const direction = lazySchema(() => z.enum(["credit", "debit"]))
+const proof = lazySchema(() => z.enum(["p0", "p1", "p2", "p3"]))
+const identity = lazySchema(() => z.object({
   status: z.string(),
   delta_minor: integer.nullable(),
-})
-const balanceWalk = z
+}))
+const balanceWalk = lazySchema(() => z
   .object({
     compared_intervals: z.number().int().nonnegative(),
     mismatch_count: z.number().int().nonnegative(),
@@ -43,8 +44,8 @@ const balanceWalk = z
     (v) =>
       v.mismatch_count <= v.compared_intervals &&
       v.findings.length <= v.mismatch_count
-  )
-export const runningBalanceComparison = z.discriminatedUnion("available", [
+  ))
+export const runningBalanceComparison = lazySchema(() => z.discriminatedUnion("available", [
   z.object({
     available: z.literal(false),
     reason: z.string(),
@@ -66,9 +67,9 @@ export const runningBalanceComparison = z.discriminatedUnion("available", [
       .length(2)
       .refine((v) => new Set(v.map((i) => i.order)).size === 2),
   }),
-])
+]))
 export type RunningBalanceComparison = z.infer<typeof runningBalanceComparison>
-export const currentRunningBalanceComparison = z.discriminatedUnion(
+export const currentRunningBalanceComparison = lazySchema(() => z.discriminatedUnion(
   "available",
   [
     runningBalanceComparison.options[0],
@@ -84,11 +85,11 @@ export const currentRunningBalanceComparison = z.discriminatedUnion(
         .refine((v) => new Set(v.map((i) => i.order)).size === 2),
     }),
   ]
-)
+))
 export type CurrentRunningBalanceComparison = z.infer<
   typeof currentRunningBalanceComparison
 >
-export const correctionPreview = z.object({
+export const correctionPreview = lazySchema(() => z.object({
   case_id: z.string(),
   transaction_id: z.string(),
   document_revision: z.string().regex(/^[a-f0-9]{64}$/),
@@ -141,9 +142,9 @@ export const correctionPreview = z.object({
         (!eligible || value.reservations.length === 0)
       )
     }, "Correction verification is inconsistent"),
-})
+}))
 export type CorrectionPreview = z.infer<typeof correctionPreview>
-export const correctionAnswer = z.object({
+export const correctionAnswer = lazySchema(() => z.object({
   case_id: z.string(),
   transaction_id: z.string(),
   replacement_id: z.string().min(1),
@@ -152,7 +153,7 @@ export const correctionAnswer = z.object({
   applied: z.literal(true),
   proof_class: proof,
   ledger_status: z.enum(["admitted", "quarantined"]),
-})
+}))
 
 export function correctionMinor(
   value: string,

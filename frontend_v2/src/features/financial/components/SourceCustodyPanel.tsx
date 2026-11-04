@@ -9,6 +9,7 @@ import { fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { candidateUrl } from "../lib/candidate-contract"
 import { useFinancialDraft } from "../stores/financial-drafts"
+import { lazySchema } from "@/lib/lazy-schema"
 
 const emptyCustodyDraft = {
   kind: "receipt",
@@ -40,7 +41,7 @@ const custodyLabels: Record<string, string> = {
   unavailable: "Unavailable",
 }
 
-const event = z.object({
+const event = lazySchema(() => z.object({
   id: z.string().uuid(),
   case_id: z.string().uuid(),
   evidence_file_id: z.string().uuid(),
@@ -63,14 +64,14 @@ const event = z.object({
     corrects_event_id: z.string().uuid().nullable(),
     reason: z.string(),
   }),
-})
-const history = z.object({
+}))
+const history = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   evidence_sha256: z.string().nullable(),
   events: z.array(event),
   limitation: z.string(),
-})
+}))
 
 export function SourceCustodyPanel({
   caseId,

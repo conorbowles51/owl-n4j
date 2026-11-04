@@ -1,7 +1,8 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
 /** Which files in a batch are copies of statements kept elsewhere, as the batch reports them. */
-export const batchFileOverview = z.array(
+export const batchFileOverview = lazySchema(() => z.array(
   z.object({
     file_id: z.string(),
     filename: z.string(),
@@ -18,5 +19,5 @@ export const batchFileOverview = z.array(
       })
     ),
   })
-)
+))
 export type BatchFileOverviewEntry = z.infer<typeof batchFileOverview>[number]

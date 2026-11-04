@@ -5,14 +5,15 @@ import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { newReviewId } from "../lib/statement-review-id"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const confirmation = z.object({
+const confirmation = lazySchema(() => z.object({
   id: z.string(),
   value: z.string(),
   confirmed_at: z.string(),
   confirmed_by: z.object({ name: z.string().nullable().optional() }).passthrough(),
-})
-const group = z.object({
+}))
+const group = lazySchema(() => z.object({
   key: z.string(),
   field: z.enum(["holder", "institution", "currency"]),
   label: z.string(),
@@ -35,12 +36,12 @@ const group = z.object({
       money_proved: z.boolean(),
     })
   ),
-})
-const listing = z.object({
+}))
+const listing = lazySchema(() => z.object({
   case_id: z.string(),
   batch_id: z.string(),
   groups: z.array(group),
-})
+}))
 type Group = z.infer<typeof group>
 
 const BASIS: Record<string, string> = {

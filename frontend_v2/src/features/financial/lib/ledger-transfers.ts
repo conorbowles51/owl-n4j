@@ -1,8 +1,9 @@
 import { sha256Hex } from "@/lib/browser-crypto"
 import { z } from "zod"
-const money = z.string().regex(/^(0|[1-9][0-9]*)$/)
-const count = z.number().int().nonnegative()
-const reference = z
+import { lazySchema } from "@/lib/lazy-schema"
+const money = lazySchema(() => z.string().regex(/^(0|[1-9][0-9]*)$/))
+const count = lazySchema(() => z.number().int().nonnegative())
+const reference = lazySchema(() => z
   .object({
     kind: z.enum(["uuid", "nacha_trace"]),
     value: z.string().min(1),
@@ -15,8 +16,8 @@ const reference = z
         ? r.scope === "global" && r.scope_key === null
         : r.scope === "institution" && !!r.scope_key,
     "Reference scope is inconsistent."
-  )
-const row = z.object({
+  ))
+const row = lazySchema(() => z.object({
   key: z.string(),
   case_id: z.string(),
   account_id: z.string(),
@@ -30,8 +31,8 @@ const row = z.object({
   direction: z.enum(["credit", "debit"]),
   ordering_date: z.string(),
   description: z.string().nullable(),
-})
-export const transferInputs = z
+}))
+export const transferInputs = lazySchema(() => z
   .object({
     case_id: z.string(),
     start_date: z.string().nullable(),
@@ -141,9 +142,9 @@ export const transferInputs = z
         })
       pairs.add(key)
     }
-  })
+  }))
 export type TransferInputs = z.infer<typeof transferInputs>
-const figures = z.array(
+const figures = lazySchema(() => z.array(
   z.object({
     currency: z.string(),
     posting_rows: count,
@@ -154,7 +155,7 @@ const figures = z.array(
     unpaired_debits_minor: money,
     movement_volume_minor: money,
   })
-)
+))
 export async function verifyTransferScenario(
   raw: unknown,
   scope: TransferInputs,

@@ -6,17 +6,18 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { newReviewId } from "../lib/statement-review-id"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const receiptSchema = z.object({
+const receiptSchema = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   job_id: z.string(),
-})
-const recoverySchema = z.object({
+}))
+const recoverySchema = lazySchema(() => z.object({
   requestId: z.string().uuid(),
   receipt: receiptSchema.nullable(),
   readingMode: z.enum(["automatic", "page_images"]).default("automatic"),
-})
+}))
 
 function ReprocessStatementForm({
   caseId,

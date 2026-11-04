@@ -7,14 +7,15 @@ import {
   candidateStatus,
   candidateUrl,
 } from "../lib/candidate-contract"
-const count = z.number().int().nonnegative()
-const reference = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const count = lazySchema(() => z.number().int().nonnegative())
+const reference = lazySchema(() => z.object({
   candidate_id: z.string(),
   mapping_id: z.string(),
   row_index: count,
   status: candidateStatus,
-})
-const resultSchema = z.object({
+}))
+const resultSchema = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   counts: z.object({ pending: count, resolved: count, rejected: count }),
@@ -41,7 +42,7 @@ const resultSchema = z.object({
   applied: z.literal(false),
   scope: z.string(),
   limitation: z.string(),
-})
+}))
 const descriptions = {
   same_stored_row: "The same stored row was selected more than once.",
   overlapping_source_area:

@@ -1,7 +1,8 @@
 import { z } from "zod"
 import { ledgerTimeline } from "./ledger-timeline"
 import type { CaseworkCreateInput } from "@/features/workspace/casework-api"
-const source = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const source = lazySchema(() => z.object({
   row: ledgerTimeline.shape.rows.element,
   source: z
     .object({
@@ -11,8 +12,8 @@ const source = z.object({
     })
     .passthrough(),
   provenance: z.unknown(),
-})
-export const patternReview = z
+}))
+export const patternReview = lazySchema(() => z
   .object({
     schema: z.literal("loupe.financial.pattern_review/1"),
     case_id: z.string(),
@@ -108,7 +109,7 @@ export const patternReview = z
           message: "Candidate path does not match its supporting readings.",
         })
     }
-  })
+  }))
 export type PatternReview = z.infer<typeof patternReview>
 export function patternTheory(
   scope: PatternReview,

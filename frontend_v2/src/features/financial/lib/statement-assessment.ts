@@ -1,7 +1,8 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const minor = z.string().regex(/^-?\d+$/)
-export const statementCalculation = z.object({
+const minor = lazySchema(() => z.string().regex(/^-?\d+$/))
+export const statementCalculation = lazySchema(() => z.object({
   available: z.boolean(),
   currency: z.string().nullish(),
   balance_convention: z.string().optional(),
@@ -11,8 +12,8 @@ export const statementCalculation = z.object({
   calculated_closing_minor: minor.nullish(),
   printed_closing_minor: minor.nullish(),
   difference_minor: minor.nullish(),
-})
-export const statementBlocker = z.object({
+}))
+export const statementBlocker = lazySchema(() => z.object({
   message: z.string(),
   row_id: z.string().nullish(),
   field: z.string().optional(),
@@ -31,12 +32,12 @@ export const statementBlocker = z.object({
       page: z.number().nullish(),
     })
     .optional(),
-})
-export const statementAssessment = z.object({
+}))
+export const statementAssessment = lazySchema(() => z.object({
   can_import: z.boolean(),
   status: z.string(),
   revision: z.string().optional(),
   assessment_current: z.boolean().optional(),
   blockers: z.array(statementBlocker),
   calculation: statementCalculation.nullish(),
-})
+}))

@@ -1,7 +1,8 @@
 import { z } from "zod"
 import { correctionMoney } from "./correction-contract"
-const id = z.string().uuid()
-export const trailPreview = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const id = lazySchema(() => z.string().uuid())
+export const trailPreview = lazySchema(() => z.object({
   case_id: id,
   kind: z.enum(["transfer", "allocation"]),
   input: z.record(z.string(), z.unknown()),
@@ -81,8 +82,8 @@ export const trailPreview = z.object({
     })
     .nullable()
     .optional(),
-})
-export const savedTrail = z.object({
+}))
+export const savedTrail = lazySchema(() => z.object({
   id,
   case_id: id,
   kind: z.enum(["transfer", "allocation"]),
@@ -93,11 +94,11 @@ export const savedTrail = z.object({
   history: z.array(z.unknown()),
   matching_entries: trailPreview.shape.payments.default([]),
   matching_entries_truncated: z.boolean().default(false),
-})
-export const savedTrails = z.object({
+}))
+export const savedTrails = lazySchema(() => z.object({
   case_id: id,
   trails: z.array(savedTrail),
-})
+}))
 export type SavedTrail = z.infer<typeof savedTrail>
 export type TrailPreview = z.infer<typeof trailPreview>
 

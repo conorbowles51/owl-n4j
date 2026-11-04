@@ -5,13 +5,14 @@ import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import type { CaseworkEntry } from "@/features/workspace/casework-api"
 import { findingReport } from "./finding-report"
-const fileSchema = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const fileSchema = lazySchema(() => z.object({
   id: z.string().uuid(),
   case_id: z.string(),
   original_filename: z.string(),
   size: z.number().int().nonnegative(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
-})
+}))
 const MAX_BYTES = 64 * 1024 * 1024
 export async function verifiedFindingSources(
   entries: CaseworkEntry[],

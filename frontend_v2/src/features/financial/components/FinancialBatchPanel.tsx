@@ -42,7 +42,8 @@ import { useFinancialDraft } from "../stores/financial-drafts"
 import type { EvidenceJob } from "@/types/evidence.types"
 import { useReviewQueue } from "../lib/review-queue"
 import { batchItemQuery, itemSchema } from "../lib/batch-item"
-const recoveryReceipt = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const recoveryReceipt = lazySchema(() => z.object({
   retained_source_revision: z.string().nullish(),
   attempt_id: z.string().optional(),
   action: z.string().optional(),
@@ -50,8 +51,8 @@ const recoveryReceipt = z.object({
   message: z.string().optional(),
   review_file_id: z.string().nullish(),
   reading_file_id: z.string().nullish(),
-})
-const operationSchema = z.object({
+}))
+const operationSchema = lazySchema(() => z.object({
   id: z.string(),
   status: z.string(),
   created_at: z.string(),
@@ -73,7 +74,7 @@ const operationSchema = z.object({
       message: z.string().optional(),
     })
   ),
-})
+}))
 function reviewProblems(item: z.infer<typeof itemSchema>, group: string) {
   if (!group || group === "blocked") return item.problems
   return [...item.problems].sort(
@@ -102,7 +103,7 @@ function batchWorkLine(batch: {
   return "Files are being prepared. This page updates by itself. No action is needed."
 }
 
-const sentFrom = z
+const sentFrom = lazySchema(() => z
   .object({
     source_address: z.string().nullish(),
     origin: z.string().nullish(),
@@ -110,7 +111,7 @@ const sentFrom = z
     user_name: z.string().nullish(),
     at: z.string().nullish(),
   })
-  .nullish()
+  .nullish())
 type SentFrom = z.infer<typeof sentFrom>
 
 /** "Added by Alex, 27 Oct 2026 18:02 · from 203.0.113.7 via Evidence toolbar (Send to Financial)". */
@@ -137,7 +138,7 @@ function addedLine(
   return [`${who}${when ? `, ${when}` : ""}`, where].filter(Boolean).join(" · ")
 }
 
-const batchSchema = z.object({
+const batchSchema = lazySchema(() => z.object({
   id: z.string(),
   case_id: z.string(),
   status: z.string(),
@@ -183,8 +184,8 @@ const batchSchema = z.object({
       sent_from: sentFrom,
     })
     .nullish(),
-})
-const listSchema = z.object({
+}))
+const listSchema = lazySchema(() => z.object({
   case_id: z.string(),
   batches: z.array(
     z.object({
@@ -205,7 +206,7 @@ const listSchema = z.object({
       statement_summary: batchStatementSummary.optional(),
     })
   ),
-})
+}))
 const labels: Record<string, string> = {
   ready: "Ready to import",
   attention: "Needs attention",

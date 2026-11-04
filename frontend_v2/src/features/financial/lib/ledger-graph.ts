@@ -1,5 +1,6 @@
 import { z } from "zod"
-export const postingGraph = z
+import { lazySchema } from "@/lib/lazy-schema"
+export const postingGraph = lazySchema(() => z
   .object({
     case_id: z.string(),
     account_id: z.string().nullable(),
@@ -61,5 +62,5 @@ export const postingGraph = z
         })
       ids.add(edge.id)
     }
-  })
+  }))
 export type PostingGraph = z.infer<typeof postingGraph>

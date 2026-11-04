@@ -1,7 +1,8 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
-const statementContext = z.object({
+const count = lazySchema(() => z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER))
+const statementContext = lazySchema(() => z.object({
   period_id: z.string().min(1),
   account_id: z.string().min(1),
   bank: z.string().nullable(),
@@ -10,8 +11,8 @@ const statementContext = z.object({
   currency: z.string(),
   period_start: z.string().nullable(),
   period_end: z.string().nullable(),
-})
-const document = z.object({
+}))
+const document = lazySchema(() => z.object({
   document_id: z.string().min(1),
   filename: z.string(),
   status: z.string().min(1),
@@ -24,11 +25,11 @@ const document = z.object({
     .optional(),
   statement_context: z.array(statementContext).default([]),
   rows_by_status: z.record(z.string(), count).optional(),
-})
-const reviewedDocument = document.extend({
+}))
+const reviewedDocument = lazySchema(() => document.extend({
   revision: z.string().regex(/^[a-f0-9]{64}$/),
-})
-const schema = z.object({
+}))
+const schema = lazySchema(() => z.object({
   case_id: z.string(),
   documents: count,
   compared: count,
@@ -65,7 +66,7 @@ const schema = z.object({
         .min(2),
     })
   ),
-})
+}))
 export type DuplicateCandidates = z.infer<typeof schema>
 export type DuplicateDocument = z.infer<typeof document>
 export type DuplicateStatementContext = z.infer<typeof statementContext>

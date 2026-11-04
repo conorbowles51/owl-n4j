@@ -15,6 +15,7 @@ import { savedStatementPosition } from "../lib/saved-statement-position"
 import { sourceOrderAnchor } from "../lib/statement-review-draft"
 import { statementBlocker } from "../lib/statement-assessment"
 import { recordStatus } from "../lib/record-status"
+import { lazySchema } from "@/lib/lazy-schema"
 
 function recordPeriod(record: {
   period_start?: string | null
@@ -25,25 +26,25 @@ function recordPeriod(record: {
   return `statement ${record.period_start || "start not read"} to ${record.period_end || "end not read"}`
 }
 
-const minor = z.union([z.number(), z.string()]).nullish()
+const minor = lazySchema(() => z.union([z.number(), z.string()]).nullish())
 // The statement's closing balance with a given set of entered rows.
-const balanceEffect = z.object({
+const balanceEffect = lazySchema(() => z.object({
   reconciles: z.boolean(),
   calculated_closing_minor: minor,
   printed_closing_minor: minor,
   difference_minor: minor,
-})
+}))
 type BalanceEffect = z.infer<typeof balanceEffect>
-const repeatOf = z.object({
+const repeatOf = lazySchema(() => z.object({
   kind: z.enum(["saved", "corrected", "added"]),
   date: z.string().nullish(),
   amount_minor: z.string(),
   direction: z.string().nullish(),
   description: z.string(),
   page: z.number().nullish(),
-})
+}))
 type RepeatOf = z.infer<typeof repeatOf>
-const additionEffects = z.object({
+const additionEffects = lazySchema(() => z.object({
   source_document_id: z.string(),
   filename: z.string(),
   currency: z.string(),
@@ -52,10 +53,10 @@ const additionEffects = z.object({
   held_only_by_additions: z.boolean(),
   with_all: balanceEffect,
   without_additions: balanceEffect,
-})
+}))
 type AdditionEffects = z.infer<typeof additionEffects>
 
-const recordSchema = z.object({
+const recordSchema = lazySchema(() => z.object({
   id: z.string(),
   source_document_id: z.string(),
   evidence_file_id: z.string(),
@@ -108,7 +109,7 @@ const recordSchema = z.object({
     balance_minor: z.string().nullable(),
     reason: z.string(),
   }),
-})
+}))
 type ImportedRecord = z.infer<typeof recordSchema>
 
 export function ImportedRecordsPanel({

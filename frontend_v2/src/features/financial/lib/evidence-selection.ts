@@ -1,6 +1,7 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-export const intakeSelection = z.object({
+export const intakeSelection = lazySchema(() => z.object({
   case_id: z.string(),
   skipped_non_pdf: z.number().int().nonnegative(),
   /** Files inside a selected folder that were removed from Financial; left out unless chosen by name. */
@@ -14,5 +15,5 @@ export const intakeSelection = z.object({
       financial_visibility_revision: z.string(),
     })
   ),
-})
+}))
 export type IntakeSelection = z.infer<typeof intakeSelection>

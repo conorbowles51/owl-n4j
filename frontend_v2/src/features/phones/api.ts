@@ -17,6 +17,7 @@ import {
   type StreamIndex,
   type StreamWindow,
 } from "./schemas"
+import { lazySchema } from "@/lib/lazy-schema"
 
 /** Typed calls for the phone screens (03 sections 4 to 6). */
 
@@ -241,16 +242,16 @@ export async function getProfile(caseId: string, extractionId: string) {
 }
 
 /** Set whose phone this is (03 section 7.3): a set_phone_owner decision with the person's reason. */
-const CompareCountsSchema = z.object({ both: z.number(), only_a: z.number(), only_a_outside: z.number(), only_b: z.number(), only_b_outside: z.number() })
-const CompareSideSchema = z.object({ extraction_id: z.string(), label: z.string(), first: z.string().nullable(), last: z.string().nullable(), no_time: z.number() })
-export const CompareSchema = z.object({
+const CompareCountsSchema = lazySchema(() => z.object({ both: z.number(), only_a: z.number(), only_a_outside: z.number(), only_b: z.number(), only_b_outside: z.number() }))
+const CompareSideSchema = lazySchema(() => z.object({ extraction_id: z.string(), label: z.string(), first: z.string().nullable(), last: z.string().nullable(), no_time: z.number() }))
+export const CompareSchema = lazySchema(() => z.object({
   case_id: z.string(),
   person: z.string().nullable(),
   a: CompareSideSchema,
   b: CompareSideSchema,
   kinds: z.object({ message: CompareCountsSchema, call: CompareCountsSchema }),
   key: z.string(),
-})
+}))
 export type PhoneComparison = z.infer<typeof CompareSchema>
 
 export async function comparePhones(caseId: string, a: string, b: string, person?: string | null, signal?: AbortSignal) {
@@ -264,7 +265,7 @@ export async function getLinkedIdentities(caseId: string, key: string) {
   return fetchAPI<{ others: string[]; numbers: number; accounts: number }>(`/api/phones/people/linked?${new URLSearchParams({ case_id: caseId, key })}`)
 }
 
-export const ExportFactsSchema = z.object({
+export const ExportFactsSchema = lazySchema(() => z.object({
   total: z.number(), messages: z.number(), calls: z.number(), other: z.number(), unconfirmed: z.number(), phones: z.number(),
   collapsed_copies: z.number(), zone: z.string(), left_out: z.string(), sensitive_values: z.number().optional(), limits: z.array(z.object({ message: z.string() }).passthrough()),
   /** Machine text on the attachments in scope (07 5 Media, M-7): confirm it or keep it marked before exporting. */
@@ -274,15 +275,15 @@ export const ExportFactsSchema = z.object({
   }).optional(),
   /** The Timeline phone lens only: the device events and sensor readings it is not showing, in words (T-7). */
   hidden: z.string().nullable().optional(),
-})
-export const ExportStateSchema = z.object({
+}))
+export const ExportStateSchema = lazySchema(() => z.object({
   export_id: z.string(), format: z.string(), source: z.string(), state: z.enum(["queued", "rendering", "done", "failed"]), progress: z.number(),
   counts: z.record(z.string(), z.unknown()), file: z.object({ filename: z.string().nullable(), size: z.number().nullable(), sha256: z.string().nullable() }).nullable(),
   error: z.string().nullable(), created_at: z.string().nullable(), finished_at: z.string().nullable(), title: z.string().nullable().optional(),
   // the phones of the export's filter (history only); none means every phone in the case
   phones: z.array(z.string()).optional(),
   whole_case: z.boolean().optional(),
-})
+}))
 export type ExportState = z.infer<typeof ExportStateSchema>
 
 /** What an export of this filter holds, before anything is drawn (03 section 12.2 steps 1 and 2). */
@@ -362,7 +363,7 @@ export async function setOwner(caseId: string, extractionId: string, identityKey
   })
 }
 
-export const ExplanationSchema = z.object({
+export const ExplanationSchema = lazySchema(() => z.object({
   entry_id: z.string(),
   heading: z.string(),
   has_phone_links: z.boolean(),
@@ -374,7 +375,7 @@ export const ExplanationSchema = z.object({
   assumptions: z.array(z.object({ phone: z.string().nullable(), code: z.string(), words: z.string() })).optional(),
   label: z.string().optional(),
   label_reasons: z.array(z.string()).optional(),
-})
+}))
 export type Explanation = z.infer<typeof ExplanationSchema>
 
 /** How this was found (07 J-17): generated from a finding's phone links. */
@@ -390,26 +391,26 @@ export interface PhoneMapFilter {
   to_instant?: string | null
   include_no_time?: boolean
 }
-export const PhoneMapSummarySchema = z.object({
+export const PhoneMapSummarySchema = lazySchema(() => z.object({
   case_id: z.string(),
   positioned: z.number(),
   total: z.number(),
   not_positionable: z.array(z.object({ reason: z.string(), model_type: z.string(), count: z.number(), phones: z.number() })),
   by_source: z.record(z.string(), z.number()),
   bbox: z.array(z.number()).length(4).nullable(),
-})
-const PhoneMapPointSchema = z.object({
+}))
+const PhoneMapPointSchema = lazySchema(() => z.object({
   type: z.literal("point"), point_uid: z.string(), record_uid: z.string(), extraction_id: z.string(), phone_label: z.string(),
   lat: z.number(), lon: z.number(), accuracy_m: z.number().nullable(), accuracy_words: z.string(), source_words: z.string(),
   affiliation: z.string().nullable(), instant: z.string().nullable(), time: z.object({ full: z.string() }).passthrough().nullable(),
   model_type: z.string(), flags: z.array(z.string()), deleted_state: z.string().nullable(),
-})
-const PhoneMapClusterSchema = z.object({ type: z.literal("cluster"), lat: z.number(), lon: z.number(), count: z.number(), bbox: z.array(z.number()) })
-export const PhoneMapPointsSchema = z.object({
+}))
+const PhoneMapClusterSchema = lazySchema(() => z.object({ type: z.literal("cluster"), lat: z.number(), lon: z.number(), count: z.number(), bbox: z.array(z.number()) }))
+export const PhoneMapPointsSchema = lazySchema(() => z.object({
   case_id: z.string(), total: z.number(), clustered: z.boolean(),
   items: z.array(z.union([PhoneMapPointSchema, PhoneMapClusterSchema])),
   limits: z.array(z.object({ message: z.string() }).passthrough()),
-})
+}))
 export type PhoneMapSummary = z.infer<typeof PhoneMapSummarySchema>
 export type PhoneMapPoints = z.infer<typeof PhoneMapPointsSchema>
 export type PhoneMapItem = PhoneMapPoints["items"][number]
@@ -423,7 +424,7 @@ export async function getPhoneMapPoints(caseId: string, bbox: number[], zoom: nu
 }
 
 /** Show on Map from a message (03 section 3.6 item 7): the positions on the same phone within the hour of it. */
-export const PhoneMapNearSchema = z.object({
+export const PhoneMapNearSchema = lazySchema(() => z.object({
   record_uid: z.string(),
   extraction_id: z.string(),
   instant: z.string().nullable(),
@@ -434,7 +435,7 @@ export const PhoneMapNearSchema = z.object({
   bbox: z.array(z.number()).nullable(),
   nearest: z.object({ point_uid: z.string(), lat: z.number(), lon: z.number(), instant: z.string().nullable(), gap_seconds: z.number(), gap_words: z.string() }).nullable(),
   words: z.string(),
-})
+}))
 export type PhoneMapNear = z.infer<typeof PhoneMapNearSchema>
 export async function getPhoneMapNear(caseId: string, recordUid: string, signal?: AbortSignal) {
   const q = new URLSearchParams({ case_id: caseId, record_uid: recordUid })
@@ -442,7 +443,7 @@ export async function getPhoneMapNear(caseId: string, recordUid: string, signal?
 }
 
 /** A thread header's attachment counts (03 section 6.7): "14 attachments referenced, 3 not in the report". */
-export const ThreadAttachmentsSchema = z.object({
+export const ThreadAttachmentsSchema = lazySchema(() => z.object({
   thread_key: z.string(),
   referenced: z.number(),
   files: z.number(),
@@ -450,7 +451,7 @@ export const ThreadAttachmentsSchema = z.object({
   in_folders_only: z.number(),
   not_in_production: z.number(),
   words: z.string(),
-})
+}))
 export async function getThreadAttachments(caseId: string, threadKey: string) {
   const q = new URLSearchParams({ case_id: caseId, thread_key: threadKey })
   return ThreadAttachmentsSchema.parse(await fetchAPI(`/api/phones/threads/attachments?${q}`))
@@ -628,7 +629,7 @@ export interface ThreadTranslateCounts {
 export async function translateThread(caseId: string, threadKey: string) {
   return fetchAPI<ThreadTranslateCounts>("/api/phones/threads/translate", { method: "POST", body: { case_id: caseId, thread_key: threadKey } })
 }
-const TranslationsSchema = z.object({ items: z.record(z.string(), TranslationSchema) })
+const TranslationsSchema = lazySchema(() => z.object({ items: z.record(z.string(), TranslationSchema) }))
 export async function getTranslations(caseId: string, sourceType: "message" | "derived_text", keys: string[]) {
   return TranslationsSchema.parse(await fetchAPI("/api/phones/translations", { method: "POST", body: { case_id: caseId, source_type: sourceType, keys }, read: true })).items
 }

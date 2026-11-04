@@ -1,16 +1,17 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
 /** Response shapes of the phone screens (03 sections 4.2 to 4.5), validated like financial's source citations. */
 
-export const IdentifierSchema = z.object({
+export const IdentifierSchema = lazySchema(() => z.object({
   kind: z.string(),
   display: z.string(),
   subkind: z.string().nullable().optional(),
   captured: z.string().nullable().optional(),
   normalised: z.boolean().optional(),
-})
+}))
 
-export const ParticipantLabelSchema = z.object({
+export const ParticipantLabelSchema = lazySchema(() => z.object({
   identity_key: z.string().nullable(),
   name: z.string().nullable(),
   name_basis: z.enum(["contact_on_this_phone", "name_in_record", "case_person", "none"]),
@@ -19,28 +20,28 @@ export const ParticipantLabelSchema = z.object({
   owner_basis: z.string().nullable(),
   phone_label: z.string().nullable().optional(),
   case_names: z.array(z.object({ phone_label: z.string(), name: z.string() })),
-})
+}))
 export type ParticipantLabelData = z.infer<typeof ParticipantLabelSchema>
 
-export const TimeBlockSchema = z.object({
+export const TimeBlockSchema = lazySchema(() => z.object({
   instant: z.string().nullable(),
   row: z.string(),
   full: z.string(),
   offset_present: z.boolean(),
   time_field: z.string().nullable().optional(),
-})
+}))
 
-export const AttachmentSchema = z.object({
+export const AttachmentSchema = lazySchema(() => z.object({
   file_uid: z.string().nullable(),
   filename: z.string().nullable(),
   category: z.string().nullable(),
   verification: z.string().nullable(),
   mechanism: z.string(),
-})
+}))
 
 /** A machine translation of a message or a machine text (05 17.5): made on the server, beside the original, never
  * replacing it. `stale`: made from an earlier text of the original, corrected since. */
-export const TranslationSchema = z.object({
+export const TranslationSchema = lazySchema(() => z.object({
   id: z.string(),
   source_type: z.enum(["message", "derived_text"]),
   source_key: z.string(),
@@ -65,10 +66,10 @@ export const TranslationSchema = z.object({
   /** A finished result that asking again would make afresh (an "unsure" made under another confidence setting). */
   asks_again: z.boolean().optional(),
   machine_generated: z.literal(true),
-})
+}))
 export type Translation = z.infer<typeof TranslationSchema>
 
-export const StreamRowSchema = z.object({
+export const StreamRowSchema = lazySchema(() => z.object({
   event_uid: z.string(),
   record_uid: z.string(),
   /** "record": a non-communication entry on the Timeline lens (a location, a web visit...), 03 section 9.3. */
@@ -92,15 +93,15 @@ export const StreamRowSchema = z.object({
   interpretation_level: z.string(),
   line: z.string(),
   translation: TranslationSchema.nullable().optional(),
-})
+}))
 export type StreamRow = z.infer<typeof StreamRowSchema>
 
-export const LimitSchema = z.object({
+export const LimitSchema = lazySchema(() => z.object({
   kind: z.string(),
   shown: z.number().nullable().optional(),
   total: z.number().nullable().optional(),
   message: z.string(),
-})
+}))
 
 const envelope = <T extends z.ZodTypeAny>(item: T) =>
   z.object({
@@ -112,29 +113,29 @@ const envelope = <T extends z.ZodTypeAny>(item: T) =>
     items: z.array(item),
   })
 
-export const DaySchema = z.object({
+export const DaySchema = lazySchema(() => z.object({
   day: z.string(),
   count: z.number(),
   offsets: z.string(),
   header: z.string(),
   zone_label: z.string(),
-})
+}))
 export type StreamDay = z.infer<typeof DaySchema>
 
-export const StreamIndexSchema = envelope(DaySchema).extend({
+export const StreamIndexSchema = lazySchema(() => envelope(DaySchema).extend({
   no_time_count: z.number(),
   no_time_position: z.enum(["first", "last"]),
   zone: z.object({ name: z.string(), label: z.string(), basis: z.string(), mode: z.string(), note: z.string().nullable() }),
   full_load_rows: z.number(),
   sort: z.string(),
   group_totals: z.object({ threads: z.number(), events: z.number() }).optional(),
-})
+}))
 export type StreamIndex = z.infer<typeof StreamIndexSchema>
 
-export const StreamWindowSchema = envelope(StreamRowSchema)
+export const StreamWindowSchema = lazySchema(() => envelope(StreamRowSchema))
 export type StreamWindow = z.infer<typeof StreamWindowSchema>
 
-export const PhoneSummarySchema = z.object({
+export const PhoneSummarySchema = lazySchema(() => z.object({
   extraction_id: z.string(),
   label: z.string(),
   owner: ParticipantLabelSchema,
@@ -162,17 +163,17 @@ export const PhoneSummarySchema = z.object({
     files: z.number(),
     timeline_entries: z.number(),
   }),
-})
+}))
 export type PhoneSummary = z.infer<typeof PhoneSummarySchema>
 
-export const PhonesSchema = z.object({
+export const PhonesSchema = lazySchema(() => z.object({
   case_id: z.string(),
   phones: z.array(PhoneSummarySchema),
   total: z.number(),
   case_zone: z.object({ name: z.string(), basis: z.string(), note: z.string().nullable() }),
-})
+}))
 
-const ValueSchema = z.object({
+const ValueSchema = lazySchema(() => z.object({
   index: z.number(),
   type: z.string().nullable(),
   text: z.string().nullable(),
@@ -182,7 +183,7 @@ const ValueSchema = z.object({
     .optional(),
   /** a sensitive value shown masked until a person presses Reveal (05 section 3.8) */
   masked: z.boolean().optional(),
-})
+}))
 export interface RecordFieldData {
   name: string | null
   kind: string
@@ -192,7 +193,7 @@ export interface RecordFieldData {
   attributes: Record<string, unknown>
   children: { record_uid: string; model_type: string; cellebrite_id: string | null; deleted_state: string | null; fields: RecordFieldData[] }[]
 }
-const FieldSchema: z.ZodType<RecordFieldData> = z.lazy(() =>
+const FieldSchema: z.ZodType<RecordFieldData> = lazySchema(() => z.lazy(() =>
   z.object({
     name: z.string().nullable(),
     kind: z.string(),
@@ -210,9 +211,9 @@ const FieldSchema: z.ZodType<RecordFieldData> = z.lazy(() =>
       }),
     ),
   }),
-)
+))
 
-export const RecordDetailSchema = z.object({
+export const RecordDetailSchema = lazySchema(() => z.object({
   record_uid: z.string(),
   extraction: z.object({
     id: z.string(), label: z.string(), report_filename: z.string().nullable(), report_sha256: z.string().nullable(),
@@ -310,19 +311,19 @@ export const RecordDetailSchema = z.object({
   correctable: z
     .array(z.object({ field_path: z.string(), value_index: z.number(), value_type: z.string(), machine_text: z.string().nullable(), corrected_text: z.string().nullable(), revision: z.string() }))
     .optional(),
-})
+}))
 export type RecordDetail = z.infer<typeof RecordDetailSchema>
 
-export const ReviewSchema = z.object({
+export const ReviewSchema = lazySchema(() => z.object({
   by: z.string().nullable(),
   at: z.string().nullable(),
   record_count: z.number(),
   added_since: z.number(),
   words: z.string(),
-})
+}))
 export type Review = z.infer<typeof ReviewSchema>
 
-export const ThreadRowSchema = z.object({
+export const ThreadRowSchema = lazySchema(() => z.object({
   thread_key: z.string(),
   phone: z.object({ extraction_id: z.string(), label: z.string() }),
   app: z.string().nullable(),
@@ -339,25 +340,25 @@ export const ThreadRowSchema = z.object({
   deleted_count: z.number(),
   has_unreadable: z.boolean(),
   review: ReviewSchema.nullable(),
-})
+}))
 export type ThreadRow = z.infer<typeof ThreadRowSchema>
 
-export const ThreadListSchema = envelope(ThreadRowSchema).extend({ sort: z.string() })
+export const ThreadListSchema = lazySchema(() => envelope(ThreadRowSchema).extend({ sort: z.string() }))
 export type ThreadList = z.infer<typeof ThreadListSchema>
 
-export const ParticipantRowSchema = z.object({
+export const ParticipantRowSchema = lazySchema(() => z.object({
   label: ParticipantLabelSchema,
   events: z.number(),
   first_instant: z.string().nullable(),
   last_instant: z.string().nullable(),
   phones: z.array(z.string()),
   apps: z.array(z.string()),
-})
+}))
 export type ParticipantRow = z.infer<typeof ParticipantRowSchema>
-export const ParticipantListSchema = envelope(ParticipantRowSchema)
+export const ParticipantListSchema = lazySchema(() => envelope(ParticipantRowSchema))
 
-const LinkWords = z.object({ words: z.string(), link: z.string().nullable() })
-export const ProfileSchema = z.object({
+const LinkWords = lazySchema(() => z.object({ words: z.string(), link: z.string().nullable() }))
+export const ProfileSchema = lazySchema(() => z.object({
   phone: PhoneSummarySchema,
   verdict: z.object({ word: z.string(), sentence: z.string(), records: z.number(), apps: z.number(), first_day: z.string().nullable(), last_day: z.string().nullable(), needs_decision: z.number() }),
   owner: z.object({
@@ -414,17 +415,17 @@ export const ProfileSchema = z.object({
   where_to_start: z.array(LinkWords),
   zone_name: z.string(),
   links: z.object({ conversations: z.string(), review: z.string() }),
-})
+}))
 export type Profile = z.infer<typeof ProfileSchema>
 
 /** A raw database value: integers stay integers; a blob is its length and a hex preview, never decoded. */
-const RawValueSchema = z.union([
+const RawValueSchema = lazySchema(() => z.union([
   z.number(), z.string(), z.null(), z.boolean(),
   z.object({ blob_bytes: z.number(), hex_preview: z.string(), preview_complete: z.boolean() }),
-])
+]))
 
 /** 05 section 17.2: an app database named as a record's source, read from a read-only copy. */
-export const SourceDatabaseSchema = z.object({
+export const SourceDatabaseSchema = lazySchema(() => z.object({
   record_uid: z.string(),
   read_by: z.string(),
   refused: z.string().nullable(),
@@ -459,6 +460,6 @@ export const SourceDatabaseSchema = z.object({
     }).passthrough(),
     opened_by: z.object({ module: z.string(), version: z.string(), sqlite: z.string() }),
   }).passthrough().nullable(),
-})
+}))
 export type SourceDatabase = z.infer<typeof SourceDatabaseSchema>
 export type RawValue = z.infer<typeof RawValueSchema>

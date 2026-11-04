@@ -3,8 +3,9 @@ import type { CaseworkLinkInput } from "@/features/workspace/casework-api"
 import { traceScenarioSchema } from "./ledger-trace"
 import { networkTraceScenarioSchema } from "./network-trace"
 import { renderTraceReport, type VerifiedTrace } from "./trace-report"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const envelopeSchema = z.object({
+const envelopeSchema = lazySchema(() => z.object({
   case_id: z.string(),
   account_id: z.string().optional(),
   applied: z.literal(false),
@@ -15,7 +16,7 @@ const envelopeSchema = z.object({
     .int()
     .positive()
     .max(16 * 1024 * 1024),
-})
+}))
 export async function readSavedTrace(
   raw: unknown,
   caseId: string

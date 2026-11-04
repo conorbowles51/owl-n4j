@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const response = z.object({
+const response = lazySchema(() => z.object({
   case_id: z.string(),
   total: z.number().int().nonnegative(),
   entries: z.array(
@@ -13,7 +14,7 @@ const response = z.object({
       payment_ids: z.array(z.string()),
     })
   ),
-})
+}))
 export function useFinancialFindingIndex(caseId: string | undefined) {
   return useQuery({
     queryKey: ["casework", caseId, "financial-payment-links"],

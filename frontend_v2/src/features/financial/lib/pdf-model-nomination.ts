@@ -1,8 +1,9 @@
 import { z } from "zod"
 import { sourceTable } from "./pdf-source-table"
-const index = z.number().int().nonnegative()
-const digest = z.string().regex(/^[a-f0-9]{64}$/)
-const meaning = z.enum([
+import { lazySchema } from "@/lib/lazy-schema"
+const index = lazySchema(() => z.number().int().nonnegative())
+const digest = lazySchema(() => z.string().regex(/^[a-f0-9]{64}$/))
+const meaning = lazySchema(() => z.enum([
   "unknown",
   "date",
   "booking_date",
@@ -17,14 +18,14 @@ const meaning = z.enum([
   "account",
   "currency",
   "direction",
-])
-const cell = z.object({
+]))
+const cell = lazySchema(() => z.object({
   column_index: index,
   expected_text: z.string(),
   locator: z.unknown(),
   proposed_meaning: meaning,
-})
-export const pdfModelNomination = z
+}))
+export const pdfModelNomination = lazySchema(() => z
   .object({
     id: z.string().uuid(),
     case_id: z.string().uuid(),
@@ -101,7 +102,7 @@ export const pdfModelNomination = z
           (v.status === "pending"
             ? v.error_code === null && v.completed_at === null
             : v.error_code !== null && v.completed_at !== null))
-  )
+  ))
 export type PdfModelNomination = z.infer<typeof pdfModelNomination>
 export function modelNominationPlans(
   run: PdfModelNomination,

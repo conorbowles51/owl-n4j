@@ -15,8 +15,9 @@ import { ManualTransactionPosition } from "./ManualTransactionPosition"
 import { savedStatementPosition } from "../lib/saved-statement-position"
 import { sourceOrderAnchor } from "../lib/statement-review-draft"
 import { statementBlocker } from "../lib/statement-assessment"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const context = savedStatementPosition.extend({
+const context = lazySchema(() => savedStatementPosition.extend({
   revision: z.string(),
   currency: z.string().nullable(),
   details: z.object({
@@ -24,7 +25,7 @@ const context = savedStatementPosition.extend({
     account_number: z.string(),
     institution: z.string(),
   }),
-})
+}))
 
 export function AddSavedStatementPayment({
   caseId,

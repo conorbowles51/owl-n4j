@@ -1,10 +1,11 @@
 import { z } from "zod"
-const account = z
+import { lazySchema } from "@/lib/lazy-schema"
+const account = lazySchema(() => z
   .object({ id: z.string().uuid(), label: z.string() })
   .nullable()
-  .optional()
-const party = z.object({ id: z.string().uuid(), name: z.string().min(1) })
-export const counterpartyParties = z
+  .optional())
+const party = lazySchema(() => z.object({ id: z.string().uuid(), name: z.string().min(1) }))
+export const counterpartyParties = lazySchema(() => z
   .object({
     case_id: z.string().uuid(),
     revision: z.string().regex(/^[a-f0-9]{64}$/),
@@ -66,4 +67,4 @@ export const counterpartyParties = z
         code: "custom",
         message: "Counterparty identity scope is inconsistent.",
       })
-  })
+  }))

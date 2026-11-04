@@ -1,8 +1,9 @@
 import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
+import { lazySchema } from "@/lib/lazy-schema"
 
 /** A saved statement Claude saved, entered or changed the details of for a person, and whether a person has confirmed it. */
-export const statementModelWork = z.object({
+export const statementModelWork = lazySchema(() => z.object({
   status: z.enum(["not_confirmed", "confirmed", "corrected"]),
   model: z.string(),
   // False when the model only changed the statement's details (account, holder, number, balances), not its payments.
@@ -19,7 +20,7 @@ export const statementModelWork = z.object({
       resolved_by: z.string().nullable().optional(),
     })
   ),
-})
+}))
 export type StatementModelWork = z.infer<typeof statementModelWork>
 
 export async function confirmStatement(caseId: string, sourceDocumentId: string) {

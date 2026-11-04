@@ -9,13 +9,14 @@ import {
   FinancialAccessContext,
   useFinancialAccess,
 } from "../hooks/use-financial-access"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const accessSchema = z.object({
+const accessSchema = lazySchema(() => z.object({
   case_id: z.string(),
   user_id: z.string(),
   can_edit: z.boolean(),
   can_upload: z.boolean(),
-})
+}))
 
 export function FinancialAccessProvider({
   caseId,

@@ -1,7 +1,8 @@
 import { z } from "zod"
 import { transactionDetail } from "./transaction-detail"
+import { lazySchema } from "@/lib/lazy-schema"
 
-export const citationSchema = z.object({
+export const citationSchema = lazySchema(() => z.object({
   transaction: transactionDetail.optional(),
   case_id: z.string(),
   transaction_id: z.string(),
@@ -17,4 +18,4 @@ export const citationSchema = z.object({
   ledger_status: z.string(),
   superseded_by_id: z.string().nullable(),
   limitation: z.string(),
-})
+}))

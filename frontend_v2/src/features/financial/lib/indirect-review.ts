@@ -1,9 +1,10 @@
 import { sha256Hex } from "@/lib/browser-crypto"
 import { correctionMinor } from "./correction-contract"
 import { z } from "zod"
-const minor = z.string().regex(/^(0|-?[1-9][0-9]*)$/)
-const methodId = z.enum(["net_worth", "bank_deposits", "expenditure", "cash_t"])
-export const indirectCatalog = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const minor = lazySchema(() => z.string().regex(/^(0|-?[1-9][0-9]*)$/))
+const methodId = lazySchema(() => z.enum(["net_worth", "bank_deposits", "expenditure", "cash_t"]))
+export const indirectCatalog = lazySchema(() => z.object({
   case_id: z.string().uuid(),
   reference: z.string().url(),
   methods: z.array(
@@ -22,19 +23,19 @@ export const indirectCatalog = z.object({
     })
   ),
   requirements: z.array(z.object({ id: z.string(), label: z.string() })),
-})
+}))
 export type IndirectCatalog = z.infer<typeof indirectCatalog>
-const reference = {
+const reference = () => ({
   basis: z.string(),
   source_file_id: z.string().uuid().nullable(),
   source_location: z.string(),
-}
-const entry = z.object({ amount_minor: minor.nullable(), ...reference })
-const requirement = z.object({
-  status: z.enum(["reviewed", "unresolved"]),
-  ...reference,
 })
-export const indirectRequest = z.object({
+const entry = lazySchema(() => z.object({ amount_minor: minor.nullable(), ...reference() }))
+const requirement = lazySchema(() => z.object({
+  status: z.enum(["reviewed", "unresolved"]),
+  ...reference(),
+}))
+export const indirectRequest = lazySchema(() => z.object({
   method: methodId,
   currency: z.string().regex(/^[A-Z]{3}$/),
   start_date: z.string(),
@@ -42,16 +43,16 @@ export const indirectRequest = z.object({
   subject: z.string(),
   entries: z.record(z.string(), entry),
   requirements: z.record(z.string(), requirement),
-})
+}))
 export type IndirectRequest = z.infer<typeof indirectRequest>
-export const indirectEnvelope = z.object({
+export const indirectEnvelope = lazySchema(() => z.object({
   case_id: z.string().uuid(),
   applied: z.literal(false),
   scenario_json: z.string(),
   scenario_sha256: z.string().regex(/^[a-f0-9]{64}$/),
   scenario_byte_count: z.number().int().positive(),
-})
-const indirectValue = z.object({
+}))
+const indirectValue = lazySchema(() => z.object({
   schema: z.literal("loupe.financial.indirect_review/1"),
   case_id: z.string().uuid(),
   applied: z.literal(false),
@@ -84,7 +85,7 @@ const indirectValue = z.object({
   review_fields_complete: z.boolean(),
   difference_minor: minor.nullable(),
   limitation: z.string(),
-})
+}))
 const canonical = (v: unknown): string =>
   Array.isArray(v)
     ? `[${v.map(canonical).join(",")}]`

@@ -14,10 +14,11 @@ import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { assertCandidateScope, candidateUrl } from "../lib/candidate-contract"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const id = z.string().min(1)
-const revision = z.string().regex(/^[a-f0-9]{64}$/)
-const readySchema = z.object({
+const id = lazySchema(() => z.string().min(1))
+const revision = lazySchema(() => z.string().regex(/^[a-f0-9]{64}$/))
+const readySchema = lazySchema(() => z.object({
   case_id: id,
   evidence_file_id: id,
   applied: z.literal(false),
@@ -33,8 +34,8 @@ const readySchema = z.object({
   source_sha256: revision,
   byte_count: z.number().int().nonnegative(),
   limitation: z.string(),
-})
-const receiptSchema = z
+}))
+const receiptSchema = lazySchema(() => z
   .object({
     case_id: id,
     evidence_file_id: id,
@@ -71,8 +72,8 @@ const receiptSchema = z
         code: "custom",
         message: "Finalization links do not match the transaction count.",
       })
-  })
-const previewSchema = z.union([readySchema, receiptSchema])
+  }))
+const previewSchema = lazySchema(() => z.union([readySchema, receiptSchema]))
 
 function CandidateFinalizationPanelForm(props: {
   caseId: string

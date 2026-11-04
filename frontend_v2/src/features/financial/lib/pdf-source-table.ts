@@ -1,7 +1,8 @@
 import { z } from "zod"
 import { layoutContext } from "./statement-layout-context"
-const index = z.number().int().nonnegative()
-export const sourceTable = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const index = lazySchema(() => z.number().int().nonnegative())
+export const sourceTable = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   page_number: z.number().int().positive(),
@@ -31,4 +32,4 @@ export const sourceTable = z.object({
     .max(1000),
   layout_context: layoutContext.nullable().optional(),
   applied: z.literal(false),
-})
+}))

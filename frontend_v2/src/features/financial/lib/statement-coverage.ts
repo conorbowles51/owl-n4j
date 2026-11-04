@@ -1,7 +1,8 @@
 import { z } from "zod"
-const day = z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)
-const count = z.number().int().nonnegative()
-export const statementCoverage = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const day = lazySchema(() => z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))
+const count = lazySchema(() => z.number().int().nonnegative())
+export const statementCoverage = lazySchema(() => z.object({
   case_id: z.string(),
   account_id: z.string().nullable().optional(),
   offset: count,
@@ -55,7 +56,7 @@ export const statementCoverage = z.object({
       ),
     })
   ),
-})
+}))
 
 export type StatementCoverageAccount = z.infer<
   typeof statementCoverage

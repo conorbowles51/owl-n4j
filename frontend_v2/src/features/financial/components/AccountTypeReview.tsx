@@ -6,8 +6,9 @@ import { fetchAPI } from "@/lib/api-client"
 import { randomRequestId } from "@/lib/browser-crypto"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { AccountTypeEditor } from "./AccountTypeEditor"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const review = z.object({
+const review = lazySchema(() => z.object({
   case_id: z.string(),
   accounts: z.array(
     z.object({
@@ -24,8 +25,8 @@ const review = z.object({
   same_card: z.array(
     z.object({ account_ids: z.array(z.string()), reason: z.string() })
   ),
-})
-const consolidation = z.object({ case_id: z.string(), revision: z.string() })
+}))
+const consolidation = lazySchema(() => z.object({ case_id: z.string(), revision: z.string() }))
 const MERGE_REASON =
   "Same printed card number from the same bank, recorded as two accounts."
 

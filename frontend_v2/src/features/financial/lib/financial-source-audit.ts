@@ -1,8 +1,9 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const count = z.number().int().nonnegative()
-const visibility = z.enum(["visible", "hidden"])
-export const financialSourceAuditGroup = z.object({
+const count = lazySchema(() => z.number().int().nonnegative())
+const visibility = lazySchema(() => z.enum(["visible", "hidden"]))
+export const financialSourceAuditGroup = lazySchema(() => z.object({
   root_file_id: z.string(),
   current_file_id: z.string(),
   filename: z.string(),
@@ -29,11 +30,11 @@ export const financialSourceAuditGroup = z.object({
   protection_reasons: z.array(
     z.object({ code: z.string(), message: z.string() })
   ),
-})
+}))
 export type FinancialSourceAuditGroup = z.infer<
   typeof financialSourceAuditGroup
 >
-export const financialSourceAuditList = z.object({
+export const financialSourceAuditList = lazySchema(() => z.object({
   applied: z.literal(false),
   case_id: z.string(),
   total: count,
@@ -50,8 +51,8 @@ export const financialSourceAuditList = z.object({
   }),
   groups: z.array(financialSourceAuditGroup),
   limitation: z.string(),
-})
-export const financialSourceAuditDetail = z.object({
+}))
+export const financialSourceAuditDetail = lazySchema(() => z.object({
   applied: z.literal(false),
   case_id: z.string(),
   evidence_file_id: z.string(),
@@ -81,4 +82,4 @@ export const financialSourceAuditDetail = z.object({
     truncated: z.boolean(),
   }),
   limitation: z.string(),
-})
+}))

@@ -16,8 +16,9 @@ import {
 } from "../lib/payment-document"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const matchesSchema = z.object({
+const matchesSchema = lazySchema(() => z.object({
   case_id: z.string(),
   more_matches: z.boolean(),
   explanation: z.string(),
@@ -29,13 +30,13 @@ const matchesSchema = z.object({
       revision: z.string(),
     })
   ),
-})
-const saveSchema = z.object({
+}))
+const saveSchema = lazySchema(() => z.object({
   case_id: z.string(),
   entry_id: z.string(),
   created: z.boolean(),
   transaction_count: z.literal(0),
-})
+}))
 type Draft = {
   saved_entry_id?: string
   request_id: string

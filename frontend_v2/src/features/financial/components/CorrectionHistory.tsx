@@ -12,8 +12,9 @@ import {
   correctionMoney,
   runningBalanceComparison,
 } from "../lib/correction-contract"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const snapshot = z.object({
+const snapshot = lazySchema(() => z.object({
   running_balance_comparison: z.unknown().optional(),
   native_control_comparison: z.unknown().optional(),
   printed_total_comparison: z.unknown().optional(),
@@ -25,7 +26,7 @@ const snapshot = z.object({
     currency: z.string(),
     direction: z.enum(["credit", "debit"]),
   }),
-})
+}))
 export function CorrectionHistory({
   before,
   after,

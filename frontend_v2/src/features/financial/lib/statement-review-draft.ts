@@ -1,11 +1,12 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-export const sourceOrderAnchor = z.object({
+export const sourceOrderAnchor = lazySchema(() => z.object({
   relation: z.enum(["before", "after"]),
   row_id: z.string(),
-})
+}))
 
-const draftRow = z.object({
+const draftRow = lazySchema(() => z.object({
   id: z.string(),
   excluded: z.boolean(),
   manual_page: z.number().int().positive().nullable().optional(),
@@ -25,8 +26,8 @@ const draftRow = z.object({
   direction: z.enum(["credit", "debit", ""]),
   balance_minor: z.string().nullable(),
   reason: z.string(),
-})
-export const statementDraft = z.object({
+}))
+export const statementDraft = lazySchema(() => z.object({
   revision: z.string(),
   // New drafts retain only changes; older complete drafts remain readable.
   row_mode: z.literal("changes").optional(),
@@ -46,7 +47,7 @@ export const statementDraft = z.object({
     .object({ revision: z.string(), reason: z.string() })
     .optional(),
   amountText: z.record(z.string(), z.string()),
-})
+}))
 export type StatementDraft = z.infer<typeof statementDraft>
 
 export function serverStatementDraft(raw: Record<string, unknown> | undefined) {

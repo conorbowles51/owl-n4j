@@ -1,20 +1,21 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const minor = z.union([z.string().regex(/^-?\d+$/), z.number().int().safe()])
-const printedField = z.object({
+const minor = lazySchema(() => z.union([z.string().regex(/^-?\d+$/), z.number().int().safe()]))
+const printedField = lazySchema(() => z.object({
   text: z.string(),
   start: z.number().int().nonnegative(),
   end: z.number().int().nonnegative(),
-})
-const endpoint = z.object({
+}))
+const endpoint = lazySchema(() => z.object({
   party: printedField.extend({
     name: z.string(),
     qualifier: z.string().nullable(),
   }),
   bank: printedField,
   account: printedField.extend({ kind: z.literal("clabe") }),
-})
-const transferDetails = z.object({
+}))
+const transferDetails = lazySchema(() => z.object({
   method: z.literal("SPEI"),
   layout: z.literal("kapital-delimited-spei"),
   direction: z.enum(["credit", "debit"]),
@@ -22,10 +23,10 @@ const transferDetails = z.object({
   recipient: endpoint,
   payment_references: z.array(printedField),
   ownership_established: z.literal(false),
-})
+}))
 export type TransferDetails = z.infer<typeof transferDetails>
 // Declared before transactionDetail, which calls labelOrigin() as it is built.
-const modelOrigin = z
+const modelOrigin = lazySchema(() => z
   .object({
     kind: z.literal("model"),
     model: z.string(),
@@ -36,9 +37,9 @@ const modelOrigin = z
     how: z.string().optional(),
     recorded_as: z.string().optional(),
   })
-  .passthrough()
+  .passthrough())
 
-export const transactionDetail = z.object({
+export const transactionDetail = lazySchema(() => z.object({
   counterparty_link: z
     .object({
       kind: z.enum(["party", "account"]),
@@ -107,7 +108,7 @@ export const transactionDetail = z.object({
   quarantine_reason: z.string().nullable(),
   superseded_by_id: z.string().nullable(),
   locator: z.unknown().optional(),
-})
+}))
 
 function labelOrigin() {
   return z.object({

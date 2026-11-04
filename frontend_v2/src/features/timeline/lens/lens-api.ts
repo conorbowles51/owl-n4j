@@ -3,6 +3,7 @@ import { ApiError, fetchAPI } from "@/lib/api-client"
 import { StaleSnapshotError, type StreamFilter } from "@/features/phones/api"
 import { StreamIndexSchema, StreamWindowSchema, type StreamWindow } from "@/features/phones/schemas"
 import type { StreamSource } from "@/features/phones/hooks/use-stream"
+import { lazySchema } from "@/lib/lazy-schema"
 
 /** The Case Timeline phone lens (03 section 9.3). */
 export const LENS_KINDS = ["messages", "calls", "emails", "media", "locations", "web", "apps", "accounts", "device", "sensor", "other"] as const
@@ -17,24 +18,24 @@ export interface LensFilter extends StreamFilter {
   lane_by?: LaneBy
 }
 
-export const LensIndexSchema = StreamIndexSchema.extend({
+export const LensIndexSchema = lazySchema(() => StreamIndexSchema.extend({
   total: z.number(),
   lanes: z.array(z.object({ key: z.string(), label: z.string(), count: z.number() })),
   hidden: z.object({ count: z.number(), by_kind: z.record(z.string(), z.number()), words: z.string().nullable() }),
   kinds: z.array(z.object({ key: z.string(), label: z.string(), on: z.boolean() })),
   comm_filter_applies: z.boolean(),
   other_filter_applies: z.boolean(),
-})
+}))
 export type LensIndex = z.infer<typeof LensIndexSchema>
 
-export const BucketsSchema = z.object({
+export const BucketsSchema = lazySchema(() => z.object({
   case_id: z.string(),
   bucket: z.enum(["hour", "day", "week"]),
   zone: z.string(),
   lanes: z.array(z.object({ key: z.string(), label: z.string(), buckets: z.array(z.object({ start: z.string(), wall: z.string(), count: z.number(), no_data: z.boolean() })) })),
   no_data_words: z.string(),
   empty_words: z.string(),
-})
+}))
 export type LensBuckets = z.infer<typeof BucketsSchema>
 
 async function stale<T>(p: Promise<T>): Promise<T> {

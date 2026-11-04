@@ -10,6 +10,7 @@ import {
   duplicateStatementLabel,
   type DuplicateStatementContext,
 } from "../lib/duplicate-format"
+import { lazySchema } from "@/lib/lazy-schema"
 
 export interface ReviewedDocument {
   document_id: string
@@ -23,14 +24,14 @@ export interface DuplicateSelection {
   document: ReviewedDocument
   primary?: ReviewedDocument
 }
-const answer = z.object({
+const answer = lazySchema(() => z.object({
   case_id: z.string(),
   document_id: z.string(),
   action: z.enum(["exclude", "restore"]),
   applied: z.literal(true),
   changed_rows: z.number().int().nonnegative(),
   adjudication_id: z.string().min(1),
-})
+}))
 
 function DuplicateDecisionFormForm({
   selection,

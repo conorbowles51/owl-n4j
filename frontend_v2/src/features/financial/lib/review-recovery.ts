@@ -1,6 +1,7 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-export const reviewRecoverySchema = z.object({
+export const reviewRecoverySchema = lazySchema(() => z.object({
   revision: z.string(),
   required: z.boolean(),
   acknowledged: z.boolean(),
@@ -22,4 +23,4 @@ export const reviewRecoverySchema = z.object({
       saved_at: z.string().nullish(),
     })
   ),
-})
+}))

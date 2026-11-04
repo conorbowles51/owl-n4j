@@ -10,8 +10,9 @@ import { useFinancialAccess } from "../hooks/use-financial-access"
 import { accountParties } from "../lib/account-parties"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { AccountOwnershipReview } from "./AccountOwnershipReview"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const account = accountParties.shape.accounts.element.extend({
+const account = lazySchema(() => accountParties.shape.accounts.element.extend({
   canonical_id: z.string(),
   payment_count: z.number(),
   periods: z.array(
@@ -23,8 +24,8 @@ const account = accountParties.shape.accounts.element.extend({
       currency: z.string(),
     })
   ),
-})
-const state = z.object({
+}))
+const state = lazySchema(() => z.object({
   case_id: z.string(),
   revision: z.string(),
   accounts: z.array(account),
@@ -40,8 +41,8 @@ const state = z.object({
       recorded_at: z.string(),
     })
   ),
-})
-const preview = z.object({
+}))
+const preview = lazySchema(() => z.object({
   case_id: z.string(),
   revision: z.string(),
   retained_id: z.string(),
@@ -49,7 +50,7 @@ const preview = z.object({
   payment_count: z.number(),
   explanation: z.string(),
   source_choices: accountParties.shape.source_choices,
-})
+}))
 const label = (a: z.infer<typeof account>) =>
   [a.holder_as_recorded, a.institution, a.identifier_as_printed, a.currency]
     .filter(Boolean)

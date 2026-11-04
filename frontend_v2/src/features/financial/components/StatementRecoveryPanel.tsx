@@ -5,8 +5,9 @@ import { z } from "zod"
 import { fetchAPI } from "@/lib/api-client"
 import { Button } from "@/components/ui/button"
 import { useFinancialAccess } from "../hooks/use-financial-access"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const recoverySchema = z.object({
+const recoverySchema = lazySchema(() => z.object({
   run: z
     .object({ id: z.string(), status: z.string(), release: z.string() })
     .nullable(),
@@ -43,7 +44,7 @@ const recoverySchema = z.object({
         .optional(),
     })
   ),
-})
+}))
 
 type RecoverySections = NonNullable<
   z.infer<typeof recoverySchema>["items"][number]["sections"]

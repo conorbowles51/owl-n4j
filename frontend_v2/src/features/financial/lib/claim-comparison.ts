@@ -1,10 +1,11 @@
 import { sha256Hex } from "@/lib/browser-crypto"
 import { z } from "zod"
-const money = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const money = lazySchema(() => z.object({
   minor_units: z.string().regex(/^-?\d+$/),
   currency: z.string(),
-})
-export const claimComparison = z.object({
+}))
+export const claimComparison = lazySchema(() => z.object({
   schema: z.literal("loupe.financial.claim_comparison/1"),
   case_id: z.string(),
   applied: z.literal(false),
@@ -49,7 +50,7 @@ export const claimComparison = z.object({
       })
     ),
   }),
-})
+}))
 export async function verifyClaimComparison(
   raw: unknown,
   caseId: string,

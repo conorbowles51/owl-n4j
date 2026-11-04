@@ -1,8 +1,9 @@
 import { create } from "zustand"
 import { createJSONStorage, persist } from "zustand/middleware"
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const locationSchema = z.object({
+const locationSchema = lazySchema(() => z.object({
   selections: z
     .record(
       z.string(),
@@ -17,7 +18,7 @@ const locationSchema = z.object({
     )
     .default({}),
   sectionSearches: z.record(z.string(), z.string()).default({}),
-})
+}))
 type Location = z.infer<typeof locationSchema>
 type Workspace = Location & {
   setPage: (scope: string, page: number) => void

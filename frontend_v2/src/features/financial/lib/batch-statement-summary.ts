@@ -1,8 +1,9 @@
 import { z } from "zod"
+import { lazySchema } from "@/lib/lazy-schema"
 
 // Whole-batch, mutually exclusive review states. This is separate from the
 // filtered item count and from overlapping review-reason groups.
-export const batchStatementSummary = z.object({
+export const batchStatementSummary = lazySchema(() => z.object({
   total: z.number().int().nonnegative(),
   available: z.number().int().nonnegative(),
   blocked: z.number().int().nonnegative(),
@@ -35,5 +36,5 @@ export const batchStatementSummary = z.object({
       assigned: z.number().int().nonnegative().default(0),
     })
     .nullish(),
-})
+}))
 export type BatchStatementSummary = z.infer<typeof batchStatementSummary>

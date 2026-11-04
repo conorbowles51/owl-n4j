@@ -6,13 +6,14 @@ import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
 import { casesAPI } from "@/features/cases/api"
 import { candidateUrl } from "../lib/candidate-contract"
-const document = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const document = lazySchema(() => z.object({
   case_id: z.string(),
   document_id: z.string(),
   filename: z.string(),
   status: z.string(),
-})
-const comparison = z.object({
+}))
+const comparison = lazySchema(() => z.object({
   case_id: z.string(),
   comparison_case_id: z.string(),
   applied: z.literal(false),
@@ -31,7 +32,7 @@ const comparison = z.object({
       })
     )
     .max(1000),
-})
+}))
 export function CrossCaseDuplicatePanel({ caseId }: { caseId: string }) {
   const [opened, setOpened] = useState(false),
     [other, setOther] = useState("")

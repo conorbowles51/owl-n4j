@@ -1,7 +1,8 @@
 import { z } from "zod"
-const index = z.number().int().nonnegative(),
-  cell = z.object({ expected_text: z.string(), column_index: index })
-export const resultSchema = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const index = lazySchema(() => z.number().int().nonnegative()),
+  cell = lazySchema(() => z.object({ expected_text: z.string(), column_index: index }))
+export const resultSchema = lazySchema(() => z.object({
   case_id: z.string(),
   evidence_file_id: z.string(),
   start_page: index,
@@ -69,5 +70,5 @@ export const resultSchema = z.object({
       })
     )
     .max(50),
-})
+}))
 export type PdfPageScan = z.infer<typeof resultSchema>

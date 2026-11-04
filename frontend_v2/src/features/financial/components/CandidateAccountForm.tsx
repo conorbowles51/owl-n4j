@@ -10,11 +10,12 @@ import {
   candidateAccounts,
   candidateUrl,
 } from "../lib/candidate-contract"
+import { lazySchema } from "@/lib/lazy-schema"
 
 export type CandidateAccount = z.infer<
   typeof candidateAccounts
 >["items"][number]
-const resultSchema = z.object({
+const resultSchema = lazySchema(() => z.object({
   case_id: z.string(),
   candidate_id: z.string(),
   evidence_file_id: z.string(),
@@ -23,7 +24,7 @@ const resultSchema = z.object({
   applied: z.literal(false),
   created: z.boolean(),
   run_id: z.string(),
-})
+}))
 function CandidateAccountFormForm({
   caseId,
   candidateId,

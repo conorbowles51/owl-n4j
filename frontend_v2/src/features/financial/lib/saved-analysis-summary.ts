@@ -1,7 +1,8 @@
 import { z } from "zod"
 import { formatLedgerAmount } from "./ledger-format"
-const money = z.string().regex(/^[0-9]+$/)
-const transfer = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const money = lazySchema(() => z.string().regex(/^[0-9]+$/))
+const transfer = lazySchema(() => z.object({
   kind: z.literal("transfer-comparison"),
   details: z.object({
     basis: z.string(),
@@ -19,7 +20,7 @@ const transfer = z.object({
       })
     ),
   }),
-})
+}))
 export function savedAnalysisSummary(value: unknown): string[] {
   const parsed = transfer.safeParse(value)
   if (!parsed.success) return []

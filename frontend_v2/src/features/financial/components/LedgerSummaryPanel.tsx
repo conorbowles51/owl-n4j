@@ -14,16 +14,17 @@ import { fetchAPI } from "@/lib/api-client"
 import { assertCandidateScope, candidateUrl } from "../lib/candidate-contract"
 import { correctionMoney } from "../lib/correction-contract"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
-const count = z.number().int().nonnegative()
-const money = z.string().regex(/^-?(0|[1-9][0-9]*)$/)
-const exclusions = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const count = lazySchema(() => z.number().int().nonnegative())
+const money = lazySchema(() => z.string().regex(/^-?(0|[1-9][0-9]*)$/))
+const exclusions = lazySchema(() => z.object({
   quarantined: count,
   superseded: count,
   rejected: count,
   source_not_admitted: count,
   proof_class_not_included: count,
-})
-const common = z.object({
+}))
+const common = lazySchema(() => z.object({
   case_id: z.string(),
   account_id: z.string().nullable(),
   start_date: z.string().nullable(),
@@ -36,8 +37,8 @@ const common = z.object({
   population: z.literal("working").optional(),
   has_credit_card_readings: z.boolean().optional(),
   outside_verified_rows: count.nullable().optional(),
-})
-const report = z.discriminatedUnion("available", [
+}))
+const report = lazySchema(() => z.discriminatedUnion("available", [
   common.extend({
     available: z.literal(false),
     reason: z.string(),
@@ -64,7 +65,7 @@ const report = z.discriminatedUnion("available", [
       })
     ),
   }),
-])
+]))
 const labels = {
   quarantined: "Held-out rows",
   superseded: "Superseded readings",

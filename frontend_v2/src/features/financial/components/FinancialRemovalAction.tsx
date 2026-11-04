@@ -15,8 +15,9 @@ import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useStatementWorkspace } from "../stores/statement-workspace"
 import { newReviewId } from "../lib/statement-review-id"
+import { lazySchema } from "@/lib/lazy-schema"
 
-const previewSchema = z.object({
+const previewSchema = lazySchema(() => z.object({
   case_id: z.string(),
   revision: z.string(),
   file_count: z.number(),
@@ -30,12 +31,12 @@ const previewSchema = z.object({
   files: z.array(z.object({ id: z.string(), filename: z.string() })),
   can_remove: z.boolean(),
   blocked_reason: z.string().nullish(),
-})
-const receiptSchema = previewSchema.extend({
+}))
+const receiptSchema = lazySchema(() => previewSchema.extend({
   removed: z.literal(true),
   restart_file_ids: z.array(z.string()),
-})
-const batchSchema = z.object({ id: z.string(), case_id: z.string() })
+}))
+const batchSchema = lazySchema(() => z.object({ id: z.string(), case_id: z.string() }))
 
 function removalError(failure: unknown, fallback: string) {
   if (failure instanceof ApiError) {

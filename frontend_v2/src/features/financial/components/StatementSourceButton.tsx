@@ -22,7 +22,8 @@ import { evidenceAPI } from "@/features/evidence/api"
 import { assertCandidateScope, candidateUrl } from "../lib/candidate-contract"
 import { TransactionSourceHighlight } from "./TransactionSourceHighlight"
 import { correctionMoney } from "../lib/correction-contract"
-const retainedControls = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+const retainedControls = lazySchema(() => z.object({
   account_closure: z
     .object({
       date: z.string(),
@@ -54,8 +55,8 @@ const retainedControls = z.object({
       })
     )
     .max(6),
-})
-const source = z.object({
+}))
+const source = lazySchema(() => z.object({
   case_id: z.string(),
   period_id: z.string(),
   source_document_id: z.string(),
@@ -71,7 +72,7 @@ const source = z.object({
   reviewed_controls: retainedControls.nullable().optional(),
   can_edit_import_details: z.boolean().default(false),
   account_id: z.string().optional(),
-})
+}))
 export function StatementSourceButton({
   caseId,
   periodId,

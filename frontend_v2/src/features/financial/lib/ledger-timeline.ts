@@ -1,5 +1,6 @@
 import { z } from "zod"
-export const ledgerTimeline = z.object({
+import { lazySchema } from "@/lib/lazy-schema"
+export const ledgerTimeline = lazySchema(() => z.object({
   case_id: z.string(),
   account_id: z.string().nullable(),
   start_date: z.string().nullable(),
@@ -34,7 +35,7 @@ export const ledgerTimeline = z.object({
       })
     )
     .max(1000),
-})
+}))
 export type LedgerTimeline = z.infer<typeof ledgerTimeline>
 export const chronologyLabels = {
   value_date: "Value date",

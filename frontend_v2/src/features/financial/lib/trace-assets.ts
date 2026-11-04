@@ -1,6 +1,7 @@
 import { z } from "zod"
-const minor = z.string().regex(/^(0|[1-9][0-9]*)$/)
-const money = z.object({ minor_units: minor, currency: z.string() })
+import { lazySchema } from "@/lib/lazy-schema"
+const minor = lazySchema(() => z.string().regex(/^(0|[1-9][0-9]*)$/))
+const money = lazySchema(() => z.object({ minor_units: minor, currency: z.string() }))
 export interface TraceAssetUse {
   transaction_id: string
   asset_label: string
@@ -13,13 +14,13 @@ export interface TraceAssetUse {
     allocation_basis: "proportional_cost_share"
   }
 }
-const resaleInput = z.object({
+const resaleInput = lazySchema(() => z.object({
   transaction_id: z.string(),
   proceeds_minor: minor,
   basis: z.string().min(1),
   allocation_basis: z.literal("proportional_cost_share"),
-})
-const resaleResult = resaleInput.extend({
+}))
+const resaleResult = lazySchema(() => resaleInput.extend({
   receipt_minor: minor,
   currency: z.string(),
   allocated_by_claim: z.record(z.string(), minor),
@@ -28,8 +29,8 @@ const resaleResult = resaleInput.extend({
   unfunded_minor: minor,
   changes_cash_results: z.literal(false),
   limitation: z.string(),
-})
-export const traceAssetDraw = z.object({
+}))
+export const traceAssetDraw = lazySchema(() => z.object({
   transaction_id: z.string().optional(),
   amount: money.optional(),
   by_claim: z.record(z.string(), money).default({}),
@@ -37,8 +38,8 @@ export const traceAssetDraw = z.object({
   from_opening: money.optional(),
   unidentified: money,
   unfunded: money,
-})
-export const traceAssetResults = z
+}))
+export const traceAssetResults = lazySchema(() => z
   .array(
     z.object({
       transaction_id: z.string(),
@@ -62,7 +63,7 @@ export const traceAssetResults = z
       limitation: z.string(),
     })
   )
-  .max(50)
+  .max(50))
 export type TraceAssetResults = z.infer<typeof traceAssetResults>
 export function verifyTraceAssets(
   actual: TraceAssetResults,
