@@ -31,21 +31,27 @@ def verified_files(conn, case_root, extraction_id):
         "SELECT c.container_kind, c.stored_path, l.root_path FROM phone_extraction_container_links l JOIN "
         "phone_extraction_containers c ON c.id = l.container_id WHERE l.extraction_id = %s ORDER BY l.linked_at, c.id",
         (str(extraction_id),)).fetchall()
-    cur = conn.cursor(name="reparse_files")
-    cur.itersize = 2000
-    cur.execute("SELECT body->1->>'path', disk_relpath, outcome FROM phone_files WHERE extraction_id = %s "
-                "ORDER BY document_index, ordinal", (str(extraction_id),))
-    for path, rel, outcome in cur:
-        if outcome != "match" or not rel:
-            yield path, None, False
-            continue
-        opener = None
-        for kind, stored, root in conts:
-            opener = source_db._member_opener(case_root, kind, stored, root, rel)
-            if opener is not None:
-                break
-        yield path, opener, opener is not None
-    cur.close()
+    # pages of 2,000 by the primary key: the worker's connection is in autocommit, where a named (server-side) cursor
+    # is refused, and no transaction is held open while the files are copied
+    after = (-1, -1)
+    while True:
+        page = conn.execute(
+            "SELECT document_index, ordinal, body->1->>'path', disk_relpath, outcome FROM phone_files WHERE "
+            "extraction_id = %s AND (document_index, ordinal) > (%s, %s) ORDER BY document_index, ordinal LIMIT 2000",
+            (str(extraction_id), after[0], after[1])).fetchall()
+        if not page:
+            return
+        for doc, ordinal, path, rel, outcome in page:
+            if outcome != "match" or not rel:
+                yield path, None, False
+                continue
+            opener = None
+            for kind, stored, root in conts:
+                opener = source_db._member_opener(case_root, kind, stored, root, rel)
+                if opener is not None:
+                    break
+            yield path, opener, opener is not None
+        after = (page[-1][0], page[-1][1])
 
 
 def create_run(conn, case_id, extraction_id, os_family, requested_by) -> dict:
