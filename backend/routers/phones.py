@@ -463,7 +463,7 @@ def phone_media_download(body: MediaDownloadBody, db: Session = Depends(get_db),
         raise HTTPException(status_code=409, detail="A file could not be read (%s); nothing was downloaded." % exc)
     labels = phone_labels(conn, f.case_id)
     from services.system_log_service import LogOrigin, LogType, system_log_service
-    system_log_service.log(log_type=LogType.CASE_OPERATION, origin=LogOrigin.BACKEND, action="Download phone originals",
+    system_log_service.log(log_type=LogType.CASE_OPERATION, origin=LogOrigin.BACKEND, action="Started a download of phone originals",
                            details={"case_id": str(f.case_id), "files": plan["count"], "bytes": plan["bytes"]},
                            user=user.email, success=True, db=db)
     return StreamingResponse(media.download_stream(plan, labels, openers), media_type="application/zip",

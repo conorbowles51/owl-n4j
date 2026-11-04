@@ -9,6 +9,9 @@ extracted path (M-1), each with the mechanism that found it.
 """
 from __future__ import annotations
 
+import functools
+import zipfile
+
 from sqlalchemy import text
 
 from services.phone import time_display as T
@@ -325,6 +328,14 @@ def thumbnail(conn, case_id, file_uid, edge=THUMB_EDGE):
         return None
 
 
+@functools.lru_cache(maxsize=2)
+def _zip_directory(zpath, _mtime_ns, _size):
+    """{member name: ZipInfo} of one archive, read once while it is unchanged: a download of many files from a large
+    report would otherwise read the archive's whole directory once per file."""
+    with zipfile.ZipFile(zpath) as z:
+        return {i.filename: i for i in z.infolist()}
+
+
 def _in_container(conn, c, case_root, extraction_id, disk_relpath):
     """(size, opener) of one file in one container, or ContentRefused with the reason."""
     import posixpath
@@ -353,12 +364,16 @@ def _in_container(conn, c, case_root, extraction_id, disk_relpath):
             probe = AM.open_at(*args)
             if probe is not None:
                 probe.close()
-                return pos.size_bytes, lambda: AM.open_at(*args)
-        with zipfile.ZipFile(zpath) as z:
-            try:
-                info = z.getinfo(rel)
-            except KeyError:
-                raise ContentRefused(MISSING_WORDS) from None
+                def at():
+                    fh = AM.open_at(*args)
+                    if fh is None:
+                        raise ContentRefused("This file could not be read from its container just now.")
+                    return fh
+                return pos.size_bytes, at
+        st = zpath.stat()
+        info = _zip_directory(str(zpath), st.st_mtime_ns, st.st_size).get(rel)
+        if info is None:
+            raise ContentRefused(MISSING_WORDS)
         size = info.file_size
 
         def opener():
@@ -479,12 +494,12 @@ def download_stream(plan, labels, openers):
             k += 1
             stem, ext = posixpath.splitext(base)
             name = "%s/%s (%d)%s" % (folder, stem, k, ext)
-        used.add(name)
         stated_sha = (r["sha256"] or r["declared_sha256"] or "").strip().lower() or None
         if r["verification"] == "missing":
-            rows.append([name, phone, r["local_path"] or "", r["category"] or "", T.iso(r["first_at"]) or "",
+            rows.append(["", phone, r["local_path"] or "", r["category"] or "", T.iso(r["first_at"]) or "",
                          "not in the production", "", (r["md5"] or "").strip(), stated_sha or "", "", ""])
             continue
+        used.add(name)
         opener = openers[str(r["file_uid"])]
         h = hashlib.sha256()
         size = 0

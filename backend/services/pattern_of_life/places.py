@@ -105,11 +105,15 @@ def classify_point(model_type, p_source_kind, accuracy_basis, facts, flags):
 
 # ---- photos: taken on this phone, or received (6.2) -------------------------------------------------------------
 
-# A photo is taken on this phone when its file is in the phone's camera folder (a whole path component ``dcim`` or
-# ``camera``: Android ``DCIM/Camera``, iOS ``DCIM/100APPLE``), or when its EXIF camera make and model are both the
-# extraction device's own. Screenshot folders are not camera folders: a screenshot's position is not where it was
-# taken. Anything else (a received picture, a download, a file with no folder or EXIF) is ``received_media`` and is
-# never presence (04 6.2, decision l.1572).
+# A photo is taken on this phone when its EXIF camera make and model are the extraction device's own (exactly, after
+# case, punctuation, a make prefix and a bracketed suffix are set aside: "Phone X1" is not "Phone X1 Pro"), or when
+# its file is in the phone's camera folder (a whole path component ``dcim`` or ``camera``: Android ``DCIM/Camera``,
+# iOS ``DCIM/100APPLE``) and its EXIF does not name a camera of another make. A saved received photo lands in the
+# camera folder too (an iPhone's camera roll holds pictures saved from messages) and keeps the sender's EXIF and
+# position: measured on a reference phone, all 20 camera-folder photos named another make's camera. Screenshot
+# folders are not camera folders. Anything else (a received picture, a download, a file with no folder or EXIF) is
+# ``received_media`` and is never presence (04 6.2, decision l.1572). *Reverse if* the camera roll is shown to hold
+# only this phone's own photos, or a make is recorded under two names.
 CAMERA_FOLDER_RE = r"(^|/)(dcim|camera)(/|$)"
 MEDIA_BASIS_WORDS = {"camera_folder": "in this phone's camera folder",
                      "camera_matches_device": "the photo's EXIF camera is this phone",
@@ -120,9 +124,24 @@ def _norm(v):
     return "".join(ch for ch in str(v or "").lower() if ch.isalnum())
 
 
-def _same(a, b):
+def _same_make(a, b):
+    """Two camera makes are one when equal, or one is the other with a company word after it ("apple", "apple inc")."""
     a, b = _norm(a), _norm(b)
-    return bool(a and b) and (a == b or a in b or b in a)
+    return bool(a and b) and (a == b or a.startswith(b) or b.startswith(a))
+
+
+def _model_key(model, make):
+    import re
+    m = _norm(re.sub(r"\([^)]*\)", " ", str(model or "")))
+    for k in {_norm(make), _norm(str(make or "").split()[0] if str(make or "").split() else "")}:
+        if k and m.startswith(k) and len(m) > len(k):
+            m = m[len(k):]
+    return m
+
+
+def _same_model(a, b, make):
+    a, b = _model_key(a, make), _model_key(b, make)
+    return bool(a and b) and a == b
 
 
 def media_origin(conn, extraction_id) -> dict:
@@ -151,10 +170,11 @@ def media_origin(conn, extraction_id) -> dict:
             "WHERE fr.extraction_id = :e AND fr.resolution = 'tagged_file' AND NOT fr.ambiguous"),
             {"e": extraction_id, "cam": CAMERA_FOLDER_RE}):
         uid = str(ids.record_uid(extraction_id, doc, ordinal))
-        if in_cam:
-            basis = "camera_folder"
-        elif _same(maker, dev.get("manufacturer")) and _same(model, dev.get("model")):
+        device_make = dev.get("manufacturer")
+        if _same_make(maker, device_make) and _same_model(model, dev.get("model"), device_make):
             basis = "camera_matches_device"
+        elif in_cam and not (maker and device_make and not _same_make(maker, device_make)):
+            basis = "camera_folder"
         else:
             basis = None
         if out.get(uid) is None:

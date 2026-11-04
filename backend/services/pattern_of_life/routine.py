@@ -11,7 +11,7 @@ Computed on read from the subject's presence observations and returned with ever
 - Profile: 7 x 24 dwell minutes by local day of week and hour, divided by the weeks that cell was observed.
 - Names (04 7.7, cb-places-rest D): a place is unnamed until a person names it, through the case decision log
   (``label_place``). The name is kept with the place's centre (``pol_place_cluster``); a recomputed place takes the
-  name of the nearest named place of the case within ``eps_m`` of its centre, so a name survives new data that
+  name of the nearest named place of the same subject within ``eps_m`` of its centre, so a name survives new data that
   moves the centre a little. ``place_id`` is that stable identity; an unnamed place has none and is called by its
   number for this computation only.
 - Deviation: per day with at least 3 hours carrying stays, the mean surprise ``-log2 p`` of the place in each hour,
@@ -179,12 +179,19 @@ class PlaceError(Exception):
         self.status = status
 
 
-def named_places(conn, case_id) -> list:
-    if case_id is None:
+def subject_key(resolved) -> str:
+    """The key a subject's named places are kept under (04 7.7 ``subject_key``): ``extraction:<id>`` or
+    ``dossier:<id>``. A place is the subject's own, so a name given on one phone never appears on another."""
+    s = resolved["subject"]
+    return ("%s:%s" % (s["kind"], s.get("extraction_id") or s.get("dossier_id")))[:80]
+
+
+def named_places(conn, case_id, key) -> list:
+    if case_id is None or not key:
         return []
     return [dict(r._mapping) for r in conn.execute(text(
         "SELECT id, lat, lon, radius_m, label, label_decision_id, label_by_name, subject_key FROM pol_place_cluster "
-        "WHERE case_id = :c ORDER BY created_at, id"), {"c": str(case_id)})]
+        "WHERE case_id = :c AND subject_key = :k ORDER BY created_at, id"), {"c": str(case_id), "k": key})]
 
 
 def attach_names(places, named, eps_m):
@@ -216,7 +223,7 @@ def place_words(place) -> str:
     return place.get("label") or "place %s" % (place["cluster_id"] + 1)
 
 
-def compute(conn, extraction_ids, zone, params=PARAMS, case_id=None) -> dict:
+def compute(conn, extraction_ids, zone, params=PARAMS, case_id=None, subject=None) -> dict:
     pts = presence(conn, extraction_ids)
     by_phone = defaultdict(list)
     for p in pts:
@@ -244,7 +251,7 @@ def compute(conn, extraction_ids, zone, params=PARAMS, case_id=None) -> dict:
         places.append({"cluster_id": lab, "lat": clat, "lon": clon, "radius_m": radius, "stay_count": len(ss),
                        "day_count": len(days), "routine": bool(routine), "label": None,
                        "first_utc": min(s["start"] for s in ss), "last_utc": max(s["end"] for s in ss)})
-    attach_names(places, named_places(conn, case_id), params["eps_m"])
+    attach_names(places, named_places(conn, case_id, subject), params["eps_m"])
     # observed (local date, hour) cells and weeks
     observed = defaultdict(set)  # (dow, hour) -> set of iso weeks
     for p in pts:

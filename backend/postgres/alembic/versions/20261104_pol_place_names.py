@@ -2,7 +2,8 @@
 
 - ``pol_place_cluster``: a place a person has named. Clusters are computed on read (DBSCAN over stays), so a name is
   kept with the place's centre and radius when it was named; a recomputed place takes the name of the nearest named
-  place of the case whose centre is within the clustering distance (150 m) of its own. The row is the place's stable
+  place of the same subject (phone or person) whose centre is within the clustering distance (150 m) of its own.
+  The row is the place's stable
   identity across recomputes; ``label_decision_id`` is the case decision that set the current name.
 - The case decision ledger gains the subject ``place_cluster`` and the decision ``label_place`` (its reversal is
   another ``label_place``, to a new name or to none).

@@ -159,7 +159,7 @@ function PlaceRow({ caseId, subject, place }: { caseId: string; subject: Subject
   const save = async () => {
     setBusy(true); setErr(null)
     try {
-      await patternAPI.namePlace(caseId, subject, place.cluster_id, label.trim(), reason.trim())
+      await patternAPI.namePlace(caseId, subject, place.cluster_id, label.trim(), reason.trim(), undefined, { lat: place.lat, lon: place.lon })
       setOpen(false); setReason("")
       await qc.invalidateQueries({ queryKey: ["pattern-routine", caseId] })
       await qc.invalidateQueries({ queryKey: ["pattern-deviations", caseId] })

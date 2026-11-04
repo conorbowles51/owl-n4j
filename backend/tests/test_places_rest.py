@@ -69,6 +69,15 @@ def test_d_a_named_place_keeps_its_name_through_a_recompute_and_the_deviation_us
             missing = cl.post("/api/pattern/%s/routine/places/name" % case, json={
                 "subject": _subject(ext), "cluster_id": 99, "zone": "UTC", "label": "x", "reason": "x"})
             assert missing.status_code == 404
+            # the page's centre no longer the place's: the number now names another place, so nothing is saved
+            moved = cl.post("/api/pattern/%s/routine/places/name" % case, json={
+                "subject": _subject(ext), "cluster_id": home["cluster_id"], "zone": "UTC", "label": "Elsewhere",
+                "reason": "x", "lat": HOME[0] + 0.01, "lon": HOME[1]})
+            assert moved.status_code == 409 and "Reload" in moved.json()["detail"]
+            seen = cl.post("/api/pattern/%s/routine/places/name" % case, json={
+                "subject": _subject(ext), "cluster_id": home["cluster_id"], "zone": "UTC", "label": "Flat (synthetic)",
+                "reason": "again", "lat": home["lat"], "lon": home["lon"]})
+            assert seen.status_code == 409  # the centre matched; refused only as the same name
         with engine.connect() as c:
             evs = c.execute(text("SELECT decision, before, after, actor_name FROM adjudications WHERE subject_type = "
                                  "'place_cluster' ORDER BY subject_sequence")).fetchall()
@@ -77,7 +86,7 @@ def test_d_a_named_place_keeps_its_name_through_a_recompute_and_the_deviation_us
             assert (evs[1].before["label"], evs[1].after["label"]) == ("Home (synthetic)", "Flat (synthetic)")
             assert c.execute(text("SELECT count(*) FROM manual_changes WHERE kind = 'pattern_place_name'"
                                   )).scalar() == 2
-        # new data a few metres off moves the centre; the place keeps its name and identity
+        # another phone with stays at the same spot: a place is its subject's own, so the name never crosses over
         with engine.begin() as c:
             p2 = routine_phone()
             for d in range(7):
@@ -86,10 +95,13 @@ def test_d_a_named_place_keeps_its_name_through_a_recompute_and_the_deviation_us
         build(engine, ext2)
         from zoneinfo import ZoneInfo
         with engine.connect() as c:
-            res = routine.compute(c, [str(ext2)], ZoneInfo("UTC"), case_id=case)
-        h3 = min((p for p in res["places"] if p["routine"]), key=lambda p: abs(p["lat"] - HOME[0]))
+            res = routine.compute(c, [str(ext2)], ZoneInfo("UTC"), case_id=case,
+                                  subject="extraction:%s" % ext2)
+            mine = routine.compute(c, [str(ext)], ZoneInfo("UTC"), case_id=case, subject="extraction:%s" % ext)
+        assert res["places"] and not any(p["label"] or p["place_id"] for p in res["places"])
+        h3 = min((p for p in mine["places"] if p["routine"]), key=lambda p: abs(p["lat"] - HOME[0]))
         assert (h3["place_id"], h3["label"]) == (named["place_id"], "Flat (synthetic)")
-        assert sum(1 for p in res["places"] if p["label"]) == 1  # one name, one place
+        assert sum(1 for p in mine["places"] if p["label"]) == 1  # one name, one place
         assert res["parameters"]["places_version"] == routine.PLACES_VERSION
 
 
@@ -131,6 +143,9 @@ def test_e_a_photo_taken_on_the_phone_is_presence_and_a_received_one_never_is(ho
             other = p.photo(DAY + timedelta(hours=2))
             shot = p.photo(DAY + timedelta(hours=3))
             bare = p.photo(DAY + timedelta(hours=4))
+            saved = p.photo(DAY + timedelta(hours=5))
+            pro = p.photo(DAY + timedelta(hours=6))
+            coded = p.photo(DAY + timedelta(hours=7))
             ext = make_extraction(c, case, p.records, timestamps=p.stamps, metadata={
                 "DeviceInfoSelectedManufacturer": "Acme", "DeviceInfoSelectedDeviceName": "Phone X1"})
             _file(c, ext, cam, 1, "/storage/emulated/0/DCIM/Camera/IMG_1.jpg")
@@ -138,6 +153,12 @@ def test_e_a_photo_taken_on_the_phone_is_presence_and_a_received_one_never_is(ho
             _file(c, ext, other, 3, "/storage/emulated/0/WhatsApp/Media/WhatsApp Images/IMG_3.jpg", "Other",
                   "Model 9")
             _file(c, ext, shot, 4, "/storage/emulated/0/Pictures/Screenshots/S_4.png")
+            # a received photo saved to the camera roll keeps the sender's camera: not presence
+            _file(c, ext, saved, 5, "/private/var/mobile/Media/DCIM/100APPLE/IMG_5.jpg", "Other", "Model 9")
+            # one model name inside the other is another phone
+            _file(c, ext, pro, 6, "/storage/emulated/0/Pictures/IMG_6.jpg", "Acme", "Phone X1 Pro")
+            # the make written before the model, and a bracketed code, are the same camera
+            _file(c, ext, coded, 7, "/storage/emulated/0/Pictures/IMG_7.jpg", "Acme Inc.", "Acme Phone X1 (A123)")
         stats = build(engine, ext)
         got = [(o["kind"], o["presence_basis"], [f for f in o["attribution_flags"] if "media" in f])
                for o in obs(engine, ext)]
@@ -145,9 +166,12 @@ def test_e_a_photo_taken_on_the_phone_is_presence_and_a_received_one_never_is(ho
                        ("presence", "camera_matches_device", ["media_taken_on_device"]),
                        ("media", None, ["received_media"]),
                        ("media", None, ["received_media"]),
-                       ("media", None, ["received_media"])]
+                       ("media", None, ["received_media"]),
+                       ("media", None, ["received_media"]),
+                       ("media", None, ["received_media"]),
+                       ("presence", "camera_matches_device", ["media_taken_on_device"])]
         assert bare not in (cam, exif)
-        assert stats["media:camera_folder"] == 1 and stats["media:received_media"] == 3
+        assert stats["media:camera_folder"] == 1 and stats["media:received_media"] == 5
         assert "media" not in places.ROUTINE_KINDS  # received media stays out of routine and together
 
 
@@ -359,8 +383,8 @@ def test_i_download_originals_is_a_zip_of_the_files_with_a_manifest_whose_hashes
         assert rows[0][0] == "file_in_zip" and len(rows) == 3
         held = next(x for x in rows[1:] if x[0] == names[0])
         assert (held[9], held[10]) == (sha, "yes")
-        gone = next(x for x in rows[1:] if x[0] != names[0])
-        assert gone[5] == "not in the production" and gone[9] == ""
+        gone = next(x for x in rows[1:] if x is not held)
+        assert gone[5] == "not in the production" and gone[9] == "" and gone[0] == ""  # nothing in the zip for it
         # a file that cannot be read refuses the whole download before any byte
         r = cl.post("/api/phones/media/download", json={"filter": {"case_id": str(case)}})
         assert r.status_code == 409 and "nothing was downloaded" in r.json()["detail"], r.text

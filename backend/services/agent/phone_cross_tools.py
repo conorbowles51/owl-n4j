@@ -367,7 +367,7 @@ def routine_deviations(conn, case_id, *, person=None, phone=None, start_date=Non
         z, zname = _zone(conn, case_id, r["extraction_ids"], zone)
         a = date.fromisoformat(start_date) if start_date else None
         b = date.fromisoformat(end_date) if end_date else None
-        res = routine.compute(conn, r["extraction_ids"], z, case_id=case_id)
+        res = routine.compute(conn, r["extraction_ids"], z, case_id=case_id, subject=routine.subject_key(r))
         dev = routine.deviations(res, z, a, b)
         flagged = _clean(dev["flagged"])
         for f in flagged:

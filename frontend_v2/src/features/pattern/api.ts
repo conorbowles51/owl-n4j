@@ -367,10 +367,11 @@ export const patternAPI = {
     fetchAPI<RoutineResponse>(`${base(caseId)}/routine?subject=${subj(s)}&zone=${encodeURIComponent(zone)}`),
   deviations: (caseId: string, s: Subject, zone = "device") =>
     fetchAPI<DeviationResponse>(`${base(caseId)}/routine/deviations?subject=${subj(s)}&zone=${encodeURIComponent(zone)}`),
-  namePlace: (caseId: string, s: Subject, cluster_id: number, label: string, reason: string, zone = "device") =>
+  /** ``at`` is the centre the page showed; the server refuses (409) when that number is now another place. */
+  namePlace: (caseId: string, s: Subject, cluster_id: number, label: string, reason: string, zone = "device", at?: { lat: number; lon: number }) =>
     fetchAPI<{ place_id: string; decision_id: string; label: string | null; previous_label: string | null }>(
       `${base(caseId)}/routine/places/name`,
-      { method: "POST", body: { subject: JSON.stringify(s), cluster_id, label, reason, zone } as never }),
+      { method: "POST", body: { subject: JSON.stringify(s), cluster_id, label, reason, zone, ...(at ?? {}) } as never }),
   manualPlaces: (caseId: string, transactionId: string) =>
     fetchAPI<{ total: number; items: ManualPlace[] }>(`${base(caseId)}/places/manual/${encodeURIComponent(transactionId)}`),
   attachPlace: (caseId: string, transactionId: string, lat: number, lon: number, radius_m: number, reason: string) =>

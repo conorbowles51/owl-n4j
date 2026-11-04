@@ -79,7 +79,7 @@ describe("Places over time", () => {
     fireEvent.change(screen.getByLabelText("Place name"), { target: { value: "Home" } })
     fireEvent.change(screen.getByLabelText("Why this name"), { target: { value: "Every night" } })
     fireEvent.click(screen.getByRole("button", { name: "Save the name" }))
-    await waitFor(() => expect(name).toHaveBeenCalledWith("c", { kind: "extraction", extraction_id: "e1" }, 0, "Home", "Every night"))
+    await waitFor(() => expect(name).toHaveBeenCalledWith("c", { kind: "extraction", extraction_id: "e1" }, 0, "Home", "Every night", undefined, { lat: expect.any(Number), lon: expect.any(Number) }))
   })
 })
 

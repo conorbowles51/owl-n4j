@@ -256,7 +256,7 @@ def get_routine(subject: str = Query(...), zone: str = Query("device"), case_id:
     r = resolve(db, case_id, subject)
     conn = db.connection()
     z, zname = _zone_for(conn, r["extraction_ids"], zone)
-    out = routine.compute(conn, r["extraction_ids"], z, case_id=case_id)
+    out = routine.compute(conn, r["extraction_ids"], z, case_id=case_id, subject=routine.subject_key(r))
     out["zone"] = zname
     return _jsonable(dict(out, subject=r["subject"], stays_total=len(out["stays"]), label=PLACE_LABEL_WORDS))
 
@@ -271,7 +271,7 @@ def get_deviations(subject: str = Query(...), start_date: str = Query(None), end
     b = parse_date(end_date, "end_date") if end_date else None
     conn = db.connection()
     z, zname = _zone_for(conn, r["extraction_ids"], zone)
-    res = routine.compute(conn, r["extraction_ids"], z, case_id=case_id)
+    res = routine.compute(conn, r["extraction_ids"], z, case_id=case_id, subject=routine.subject_key(r))
     out = routine.deviations(res, z, a, b)
     return _jsonable(dict(out, subject=r["subject"], zone=zname, routine_places=res["routine_places"],
                           label=PLACE_LABEL_WORDS))
@@ -284,6 +284,9 @@ class PlaceName(BaseModel):
     zone: str = Field(default="device", max_length=64)
     label: str | None = Field(default=None, max_length=400)
     reason: str = Field(min_length=1, max_length=4000)
+    # the centre the page showed: a place whose number now belongs to another place is refused (409)
+    lat: float | None = Field(default=None, ge=-90, le=90)
+    lon: float | None = Field(default=None, ge=-180, le=180)
 
 
 @router.post("/{case_id}/routine/places/name")
@@ -295,12 +298,16 @@ def post_place_name(body: PlaceName, case_id: UUID = Depends(require_case_edit),
     r = resolve(db, case_id, body.subject)
     conn = db.connection()
     z, _ = _zone_for(conn, r["extraction_ids"], body.zone)
-    res = routine.compute(conn, r["extraction_ids"], z, case_id=case_id)
+    res = routine.compute(conn, r["extraction_ids"], z, case_id=case_id, subject=routine.subject_key(r))
     cluster = next((p for p in res["places"] if p["cluster_id"] == body.cluster_id), None)
     if cluster is None:
         raise HTTPException(status_code=404, detail="That place is not in this phone's places as they read now.")
+    if body.lat is not None and body.lon is not None and routine.haversine_m(
+            body.lat, body.lon, cluster["lat"], cluster["lon"]) > res["parameters"]["eps_m"]:
+        raise HTTPException(status_code=409, detail="The places have changed since this page was read (new data for "
+                                                    "this phone). Reload and name the place again.")
     cluster = dict(cluster, computed_with=res["parameters"])
-    key = "%s:%s" % (r["subject"]["kind"], r["subject"].get("extraction_id") or r["subject"].get("dossier_id"))
+    key = routine.subject_key(r)
     try:
         out = routine.name_place(db, case_id, subject_key=key, cluster=cluster, label=body.label,
                                  reason=body.reason, actor=_place_actor(user))
