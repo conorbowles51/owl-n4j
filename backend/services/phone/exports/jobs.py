@@ -34,7 +34,8 @@ from services.phone.filters import StreamFilter, snapshot
 log = logging.getLogger(__name__)
 BUILT_FORMATS = ("pdf", "rsmf")
 BUILT_SOURCES = ("stream", "timeline_lens", "collection", "finding", "dossier", "statement_check", "analysis_result",
-                 "incident_window")
+                 "incident_window", "phone_profile")
+# the Phone summary as a PDF (03 section 7.3 "Export profile as PDF", same renderer): filter {"phones": [one id]}
 # a finding, theory or note is exported as the frozen selection of its phone records (services.phone.entry_export)
 STALE_RENDER_SECONDS = 2 * 3600  # a render claimed this long ago by a worker that died is queued again
 MAX_ATTEMPTS = 2  # a render that stopped this many times is failed with a reason, never claimed forever
@@ -210,7 +211,13 @@ def create(conn, *, case_id, user_id, fmt, source, filter_body, options) -> dict
     if source not in BUILT_SOURCES:
         raise ExportError("Exporting a %s is not built yet." % source.replace("_", " "))
     f = _lens_filter(case_id, filter_body) if source == "timeline_lens" else _filter(case_id, filter_body)
-    if source not in ("stream", "timeline_lens") and not f.selection:
+    if source == "phone_profile":
+        if fmt != "pdf" or len(f.phones) != 1:
+            raise ExportError("A phone summary is exported as a PDF of one phone.")
+        if conn.execute(text("SELECT 1 FROM phone_extractions WHERE id = CAST(:e AS uuid) AND case_id = CAST(:c AS uuid)"),
+                        {"e": f.phones[0], "c": str(case_id)}).first() is None:
+            raise ExportError("That phone is not in this case.")
+    elif source not in ("stream", "timeline_lens") and not f.selection:
         raise ExportError("A %s is exported through the selection of its phone records." % source.replace("_", " "))
     export_id = uuid.uuid4()
     conn.execute(text(
@@ -230,9 +237,9 @@ def get(conn, case_id, export_id) -> dict | None:
 
 
 def history(conn, case_id) -> list:
-    return [_out(r) for r in conn.execute(text(
+    return [dict(_out(r), phones=list((r.filter or {}).get("phones") or [])) for r in conn.execute(text(
         "SELECT export_id, format, source, state, progress, counts, filename, size, sha256, error, created_at, "
-        "finished_at, options FROM phone_exports WHERE case_id = CAST(:c AS uuid) ORDER BY created_at DESC"),
+        "finished_at, options, filter FROM phone_exports WHERE case_id = CAST(:c AS uuid) ORDER BY created_at DESC"),
         {"c": str(case_id)})]
 
 
@@ -361,8 +368,10 @@ def draw(engine, export_id, claimed=None) -> dict:
             "c.title AS case_title, u.name AS who "
             "FROM phone_exports e JOIN cases c ON c.id = e.case_id LEFT JOIN users u ON u.id = e.created_by "
             "WHERE e.export_id = :i"), {"i": export_id}).one()
-        lens = e.source == "timeline_lens"
         options = e.options or {}
+        if e.source == "phone_profile":
+            return _draw_profile(engine, conn, e, export_id, options, claimed)
+        lens = e.source == "timeline_lens"
         if lens:
             from services.phone import timeline_lens as TL
             f = _lens_filter(e.case_id, e.filter)
@@ -485,6 +494,16 @@ def draw(engine, export_id, claimed=None) -> dict:
             review=review, review_threads=review_cov)
         data = pdf.render_isolated(doc)
         extra = {"missing_characters": sum(missing.values())}
+    counts = {"total": total, "messages": facts["messages"], "calls": facts["calls"],
+              "unconfirmed": facts["unconfirmed"], "phones": facts["phones"], "snapshot": snap,
+              "machine_texts": machine["total"], "machine_texts_unconfirmed": machine["unconfirmed"],
+              "machine_translations": translations["total"], "machine_translations_stale": translations["stale"],
+              "review": review_cov["counts"], **extra}
+    return _store(engine, e, export_id, data, fmt, options, counts, snap, claimed, "phone-messages")
+
+
+def _store(engine, e, export_id, data, fmt, options, counts, snap, claimed, default_name):
+    """Write the file under a temporary name, move it into place, and mark the export done (nothing half-delivered)."""
     sha = hashlib.sha256(data).hexdigest()
     folder = export_dir() / str(e.case_id)
     folder.mkdir(parents=True, exist_ok=True)
@@ -493,12 +512,7 @@ def draw(engine, export_id, claimed=None) -> dict:
     tmp.write_bytes(data)
     os.replace(tmp, final)
     stem = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in (options.get("title") or ""))[:80]
-    filename = "%s.%s" % (stem.strip(" _") and stem.strip() or "phone-messages", fmt)
-    counts = {"total": total, "messages": facts["messages"], "calls": facts["calls"],
-              "unconfirmed": facts["unconfirmed"], "phones": facts["phones"], "snapshot": snap,
-              "machine_texts": machine["total"], "machine_texts_unconfirmed": machine["unconfirmed"],
-              "machine_translations": translations["total"], "machine_translations_stale": translations["stale"],
-              "review": review_cov["counts"], **extra}
+    filename = "%s.%s" % (stem.strip(" _") and stem.strip() or default_name, fmt)
     with engine.begin() as c:
         done = c.execute(text(
             "UPDATE phone_exports SET state = 'done', progress = 1, counts = CAST(:k AS jsonb), filename = :n, "
@@ -509,6 +523,25 @@ def draw(engine, export_id, claimed=None) -> dict:
     if not done:  # another worker holds the claim now; it records the result
         return {"export_id": str(export_id), "state": "lost", "counts": counts}
     return {"export_id": str(export_id), "state": "done", "counts": counts}
+
+
+def _draw_profile(engine, conn, e, export_id, options, claimed) -> dict:
+    """Export profile as PDF (03 section 7.3): the Phone summary's sections, every number as the page shows it, drawn
+    by the same renderer as the other exports."""
+    from services.phone import profile as P
+    from services.phone.exports import pdf
+    ext = (e.filter or {}).get("phones", [None])[0]
+    p = P.profile(conn, str(e.case_id), ext)
+    sections = P.profile_sections(p)
+    generated = "Generated by %s on %s UTC." % (e.who or "a Loupe user", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"))
+    doc, missing = pdf.build_sections_html(
+        title=options.get("title") or "Phone summary: %s" % p["phone"]["label"], case_name=e.case_title or "",
+        generated=generated, export_id=str(export_id), sections=sections, page=options.get("page_size") or "letter")
+    data = pdf.render_isolated(doc)
+    snap = "profile:%s:%s" % (ext, p["verdict"]["records"])
+    counts = {"total": p["verdict"]["records"], "messages": None, "calls": None, "unconfirmed": None, "phones": 1,
+              "sections": len(sections), "missing_characters": sum(missing.values())}
+    return _store(engine, e, export_id, data, "pdf", options, counts, snap, claimed, "phone-summary")
 
 
 def _rsmf(engine, e, options, contains, out_days):

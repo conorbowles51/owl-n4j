@@ -250,3 +250,28 @@ def render_isolated(doc: str) -> bytes:
             raise RenderStopped("the PDF could not be drawn within %d MB (exit %s)" % (RENDER_MEMORY_MB, p.exitcode))
         with open(out_path, "rb") as fh:
             return fh.read()
+
+
+def build_sections_html(*, title, case_name, generated, export_id, sections, page="letter") -> tuple:
+    """A document of headed sections of lines (the Phone summary, 03 section 7.3) with the same cover, fonts, page
+    and missing-character appendix as the message exports. Returns (html, missing Counter)."""
+    missing = Counter()
+    body = ['<section class="cover"><h1>%s</h1>' % _e(title, missing), "<p>%s</p>" % _e(case_name, missing),
+            "<p>%s</p>" % _e(generated, missing), "<p>Export %s</p></section>" % _e(export_id, missing)]
+    for heading, lines in sections:
+        body.append("<h2>%s</h2><ul class=\"contains\">" % _e(heading, missing))
+        body += ["<li>%s</li>" % _e(x, missing) for x in lines]
+        body.append("</ul>")
+    if missing:
+        n = sum(missing.values())
+        body.append("<p>%s %s that no bundled font can draw %s as [U+...] and %s listed below.</p>" % (
+            "{:,}".format(n), "character" if n == 1 else "characters", "prints" if n == 1 else "print",
+            "is" if n == 1 else "are"))
+        body.append('<h2>Characters that could not be drawn</h2><table class="appendix">')
+        for token, k in sorted(missing.items()):
+            body.append("<tr><td>%s</td><td>%s</td></tr>" % (token, "{:,}".format(k)))
+        body.append("</table>")
+    page_css = "A4" if page == "a4" else "letter"
+    doc = ("<!doctype html><html><head><meta charset='utf-8'><style>%s\n%s</style></head><body>%s</body></html>"
+           % (font_faces(), CSS % {"page": page_css, "chain": FAMILY_CHAIN}, "".join(body)))
+    return doc, missing

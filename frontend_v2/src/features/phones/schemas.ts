@@ -402,6 +402,7 @@ export const ProfileSchema = z.object({
   apps: z.array(z.object({ app: z.string(), events: z.number() })),
   top_people: z.array(z.object({ label: ParticipantLabelSchema, text: z.string(), events: z.number(), link: z.string().nullable() })),
   needs: z.array(LinkWords.extend({ kind: z.string() })),
+  busiest_weeks: z.array(z.object({ week: z.string(), last_day: z.string(), events: z.number(), words: z.string(), link: z.string() })).default([]),
   where_to_start: z.array(LinkWords),
   zone_name: z.string(),
   links: z.object({ conversations: z.string(), review: z.string() }),

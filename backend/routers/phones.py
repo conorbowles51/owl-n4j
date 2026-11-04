@@ -45,7 +45,7 @@ class ExportBody(BaseModel):
     case_id: UUID
     format: Literal["pdf", "rsmf"] = "pdf"
     source: Literal["stream", "timeline_lens", "collection", "finding", "dossier", "statement_check",
-                    "analysis_result", "incident_window"] = "stream"
+                    "analysis_result", "incident_window", "phone_profile"] = "stream"
     filter: dict
     options: dict = Field(default_factory=dict)
 
@@ -1054,6 +1054,17 @@ def phone_profile(extraction_id: UUID, case_id: UUID = Query(...), db: Session =
         return phone_profile_service.profile(db.connection(), case_id, extraction_id)
     except phone_profile_service.NotFound:
         raise HTTPException(status_code=404, detail="This phone is not in this case.")
+
+
+@router.get("/{extraction_id}/since")
+def phone_since(extraction_id: UUID, case_id: UUID = Query(...), since: datetime = Query(...),
+                db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Since you last looked (03 section 7.3, 07 J-15): counts per change kind after the viewer's last visit."""
+    from services.phone import profile as phone_profile_service
+    authorize_case(db, case_id, user, ("case", "view"))
+    if since.tzinfo is None:
+        raise HTTPException(status_code=422, detail="The time of the last visit needs its offset from UTC.")
+    return phone_profile_service.since_last_looked(db.connection(), case_id, extraction_id, since, user.id)
 
 
 @router.get("/{extraction_id}/owner")

@@ -35,6 +35,7 @@ SIGNALS = (("messages", "pv_comm_event", "sort_instant", "kind = 'message'"),
            ("locations", "pv_location_point", "instant", "true"),
            ("timeline entries", "pv_timeline_entry", "instant", "true"))
 TOP_PEOPLE = 10
+BUSIEST_WEEKS = 5
 
 
 class NotFound(LookupError):
@@ -257,6 +258,21 @@ def profile(conn, case_id, extraction_id) -> dict:
             k = "%04d-%02d" % (y, mo)
             month_rows.append(months.get(k, {"month": k, "messages": 0, "calls": 0, "other": 0}))
             y, mo = (y + 1, 1) if mo == 12 else (y, mo + 1)
+    # busiest weeks (03 section 7.3 triage block): Monday-to-Sunday weeks in the display zone, each count the one its
+    # Conversations link lists (dated rows only, copies collapsed)
+    from datetime import timedelta
+    week_rows = []
+    for (wk,) in conn.execute(text(
+            "SELECT date_trunc('week', sort_instant AT TIME ZONE :z)::date AS w FROM pv_comm_event WHERE "
+            "extraction_id::text = :e AND sort_instant IS NOT NULL GROUP BY 1 ORDER BY count(*) DESC, 1 LIMIT :n"),
+            {"e": ext, "z": "UTC" if T.is_utc(zname) else zname, "n": BUSIEST_WEEKS * 2}):
+        last = wk + timedelta(days=6)
+        start, end = T.day_bounds(wk, zname)[0], T.day_bounds(last, zname)[1] - timedelta(milliseconds=1)
+        n = listed(from_instant=start.isoformat(), to_instant=end.isoformat(), include_no_time=False)
+        week_rows.append({"week": wk.isoformat(), "last_day": last.isoformat(), "events": n,
+                          "words": "Week of %s" % T.format_day_header(wk),
+                          "link": "%s?from=%s&to=%s&notime=0" % (conv, wk.isoformat(), last.isoformat())})
+    week_rows = sorted(week_rows, key=lambda w: (-w["events"], w["week"]))[:BUSIEST_WEEKS]
     people = streams.participant_list(conn, StreamFilter.model_validate({"case_id": str(case_id), "phones": [ext]}))
     top = [p for p in people["items"] if not p["label"].get("is_owner")][:TOP_PEOPLE]
     top_rows = [{"label": p["label"], "text": L.label_text(p["label"]), "events": p["events"],
@@ -294,6 +310,7 @@ def profile(conn, case_id, extraction_id) -> dict:
         "coverage": coverage_rows,
         "data_periods": periods,
         "months": month_rows,
+        "busiest_weeks": week_rows,
         "apps": apps,
         "top_people": top_rows,
         "needs": needs,
@@ -301,3 +318,99 @@ def profile(conn, case_id, extraction_id) -> dict:
         "zone_name": zname,
         "links": {"conversations": conv, "review": "%s/phone-review" % base},
     }
+
+
+CONFIRM_DECISIONS = ("confirm_phone_reading", "correct_phone_reading", "confirm_phone_result", "reject_phone_result",
+                     "correct_phone_value", "accept_phone_reconciliation_difference")
+LINK_DECISIONS = ("link_phone_identity", "unlink_phone_identity")
+
+
+def since_last_looked(conn, case_id, extraction_id, since, user_id) -> dict:
+    """Since you last looked (03 section 7.3, 07 J-15 step 3): counts per change kind in this case after ``since``
+    (the viewer's last visit to this Phone summary, kept in their browser): new phones, Replace, re-readings, and
+    colleagues' confirmations and links. Each count is a count of rows in the table that records that change; the
+    viewer's own changes are not counted as colleagues'."""
+    p = {"c": str(case_id), "s": since, "u": str(user_id) if user_id else None, "e": str(extraction_id)}
+    one = lambda sql: int(conn.execute(text(sql), p).scalar() or 0)  # noqa: E731
+    phone_types = ("phone_record", "phone_thread", "phone_file", "phone_identity", "phone_extraction",
+                   "phone_selection", "phone_view", "phone_analysis")
+    p["t"] = list(phone_types)
+    counts = {
+        "new_phones": one("SELECT count(*) FROM phone_extractions WHERE case_id = CAST(:c AS uuid) AND created_at > :s "
+                          "AND standing <> 'superseded' AND supersedes_id IS NULL"),
+        "replaced": one("SELECT count(*) FROM phone_extractions WHERE case_id = CAST(:c AS uuid) AND superseded_at > :s"),
+        "re_readings": one("SELECT count(*) FROM phone_interpretation_state s JOIN phone_extractions e ON e.id = "
+                           "s.extraction_id WHERE e.case_id = CAST(:c AS uuid) AND s.generation > 1 AND "
+                           "s.interpreted_at > :s"),
+        "confirmations": one("SELECT count(*) FROM adjudications WHERE case_id = CAST(:c AS uuid) AND created_at > :s "
+                             "AND decision IN (%s) AND actor_user_id IS DISTINCT FROM CAST(:u AS uuid)"
+                             % ", ".join("'%s'" % d for d in CONFIRM_DECISIONS)),
+        "links": one("SELECT (SELECT count(*) FROM adjudications WHERE case_id = CAST(:c AS uuid) AND created_at > :s "
+                     "AND decision IN (%s) AND actor_user_id IS DISTINCT "
+                     "FROM CAST(:u AS uuid)) + (SELECT count(*) FROM workspace_entry_links WHERE case_id = "
+                     "CAST(:c AS uuid) AND created_at > :s AND target_type = ANY(:t) AND created_by_user_id IS DISTINCT "
+                     "FROM CAST(:u AS uuid)) + (SELECT count(*) FROM dossier_links WHERE case_id = CAST(:c AS uuid) AND "
+                     "created_at > :s AND target_type = ANY(:t) AND created_by_user_id IS DISTINCT FROM "
+                     "CAST(:u AS uuid))" % ", ".join("'%s'" % d for d in LINK_DECISIONS)),
+        "this_phone_read_again": one("SELECT count(*) FROM phone_interpretation_state WHERE extraction_id = "
+                                     "CAST(:e AS uuid) AND generation > 1 AND interpreted_at > :s") > 0,
+    }
+    words = {"new_phones": ("new phone", "new phones"), "replaced": ("phone replaced", "phones replaced"),
+             "re_readings": ("phone read again", "phones read again"),
+             "confirmations": ("confirmation or correction by a colleague", "confirmations or corrections by colleagues"),
+             "links": ("link added by a colleague", "links added by colleagues")}
+    lines = ["%s %s" % ("{:,}".format(counts[k]), w[0] if counts[k] == 1 else w[1]) for k, w in words.items()]
+    return {"since": T.iso(since) if hasattr(since, "isoformat") else since, "counts": counts, "lines": lines,
+            "nothing": not any(counts[k] for k in words)}
+
+
+def profile_sections(p: dict) -> list:
+    """The Phone summary as ``[(heading, [lines])]`` for Export profile as PDF (03 section 7.3): the page's own
+    sentences and counts, in the page's order. Nothing is recomputed here; every number is the profile's."""
+    n = lambda v: "{:,}".format(int(v or 0))  # noqa: E731
+    lab = lambda x: L.label_text(x) if x else "not found"  # noqa: E731
+    out = [("Verdict", [p["verdict"]["sentence"]])]
+    out.append(("Needs a decision", [x["words"] for x in p["needs"]] or ["Nothing needs a decision on this phone."]))
+    held = (p.get("completeness") or {}).get("held") or []
+    for h in held:
+        acc = h.get("accepted")
+        out[-1][1].append("%s: %s %s found by the check%s." % (
+            h.get("document") or "Document %d" % (h["document_index"] + 1), n(h["difference_count"]),
+            "difference" if h["difference_count"] == 1 else "differences",
+            ", accepted by %s: %s" % (acc.get("by") or "a person", acc.get("reason") or "") if acc else ", held"))
+    out.append(("Coverage by month", ["%s: %s messages, %s calls%s" % (m["month"], n(m["messages"]), n(m["calls"]),
+                                                                       ", %s other" % n(m["other"]) if m["other"] else "")
+                                      for m in p["months"]] or ["No dated messages or calls on this phone."]))
+    out.append(("Busiest weeks", ["%s: %s messages and calls" % (w["words"], n(w["events"]))
+                                  for w in p.get("busiest_weeks") or []] or ["No dated messages or calls."]))
+    out.append(("Top people by contact", ["%s: %s messages and calls" % (t["text"], n(t["events"]))
+                                          for t in p["top_people"]] or ["No other person on this phone."]))
+    out.append(("Apps", ["%s: %s" % (a["app"], n(a["events"])) for a in p["apps"]] or ["No app recorded."]))
+    out.append(("Whose phone", ["Owner: %s (%s)" % (lab(p["owner"]["label"]), p["owner"]["words"])]))
+    r = p["report"]
+    out.append(("Device and report", [
+        "Report %s, %s, version %s" % (r["filename"] or "not recorded", r["form"] or "form not recorded",
+                                        r["report_version"] or "not recorded"),
+        "Made by %s%s" % (r["producer"] or "a tool the report does not name",
+                          ", %s extraction" % r["extraction_type"] if r["extraction_type"] else ""),
+        "SHA-256 of what was received: %s" % (r["container_sha256"] or "not recorded")]))
+    out.append(("What the production says it contains", ["%s: %s%s" % (s["name"], s["verbatim"],
+                                                                       ". %s" % s["meaning"] if s["meaning"] else "")
+                                                         for s in p["selection"]]))
+    c = p["completeness"]
+    whole = ("Every part of the report matches its own counts." if c["reconciliation"] == "exact" else
+             "Part of the report does not match its own counts." if c["reconciliation"] == "failed" else
+             "The report's counts have not been checked yet.")
+    out.append(("Did it arrive whole", [whole] + ["%s: the report states %s, %s read" % (x["what"], x["stated"], x["read"])
+                                                  for d in c["documents"] for x in d["stated_vs_read"]]))
+    f = p["files"]
+    out.append(("Files", ["%s files" % n(f["total"])] + ["%s: %s" % (k, n(v)) for k, v in f["by_category"].items()]
+                + ["Checked %s: %s" % (k, n(v)) for k, v in f["verification"].items()]))
+    out.append(("Deleted and recovered", ["%s deleted messages and calls" % n(p["deleted"]["comm_events"])] +
+                ["%s: %s deleted, %s in the trash" % (d["model_type"], n(d["deleted"]), n(d["trash"]))
+                 for d in p["deleted"]["by_type"]]))
+    out.append(("What Loupe reads", ["%s: %s records, %s" % (t["model_type"], n(t["records"]), t["level_words"])
+                                     for t in p["coverage"]]))
+    out.append(("When there is data", ["%s: %s%s" % (d["signal"], n(d["records"]), ", %s to %s" % (
+        d["first_words"], d["last_words"]) if d.get("first_words") else "") for d in p["data_periods"]]))
+    return out

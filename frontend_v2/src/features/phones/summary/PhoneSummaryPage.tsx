@@ -11,6 +11,7 @@ import { fmt } from "../ui/count-sentence"
 import { NamePhone } from "./NamePhone"
 import { SetOwner } from "./SetOwner"
 import { HeldDifference } from "./HeldDifference"
+import { ExportHistory, ExportProfile, SinceYouLastLooked } from "./SummaryExtras"
 
 /**
  * Phone summary (03 section 7; 07 J-2, J-11, J-15): the verdict, what needs a decision, the triage block (coverage
@@ -58,6 +59,7 @@ export function PhoneSummaryPage() {
         <h1 className="text-lg font-semibold">Phone summary: {p.phone.label}</h1>
         <span className="ml-auto flex gap-2">
           <CopyButton rows={1} noun="profile" label="Copy profile as text" build={() => ({ text: profileText(p) })} />
+          <ExportProfile caseId={caseId} extraction={extraction} label={p.phone.label} />
           <Button asChild size="sm" variant="outline">
             <Link to={conv}>Conversations</Link>
           </Button>
@@ -161,6 +163,21 @@ export function PhoneSummaryPage() {
             {p.apps.length === 0 && <li>No app recorded on any message or call.</li>}
           </ul>
         </Section>
+        <Section name="Busiest weeks">
+          {p.busiest_weeks.length === 0 ? (
+            <p>No dated messages or calls on this phone.</p>
+          ) : (
+            <ol className="flex flex-col gap-0.5">
+              {p.busiest_weeks.map((w) => (
+                <li key={w.week}>
+                  <Link className="underline underline-offset-2" to={w.link}>
+                    {w.words}: {fmt(w.events)} messages and calls
+                  </Link>
+                </li>
+              ))}
+            </ol>
+          )}
+        </Section>
         <Section name="Deleted, recovered and missing">
           <ul className="flex flex-col gap-0.5">
             <li>
@@ -206,6 +223,14 @@ export function PhoneSummaryPage() {
         )}
       </Section>
 
+      <div className="grid gap-3 md:grid-cols-2">
+        <Section name="Since you last looked">
+          <SinceYouLastLooked caseId={caseId} extraction={extraction} />
+        </Section>
+        <Section name="Export history">
+          <ExportHistory caseId={caseId} extraction={extraction} />
+        </Section>
+      </div>
       <Section name="Review coverage">
         <ReviewCoverage caseId={caseId} extraction={extraction} />
       </Section>

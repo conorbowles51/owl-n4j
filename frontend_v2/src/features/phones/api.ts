@@ -259,11 +259,13 @@ export const ExportStateSchema = z.object({
   export_id: z.string(), format: z.string(), source: z.string(), state: z.enum(["queued", "rendering", "done", "failed"]), progress: z.number(),
   counts: z.record(z.string(), z.unknown()), file: z.object({ filename: z.string().nullable(), size: z.number().nullable(), sha256: z.string().nullable() }).nullable(),
   error: z.string().nullable(), created_at: z.string().nullable(), finished_at: z.string().nullable(), title: z.string().nullable().optional(),
+  // the phones of the export's filter (history only); none means every phone in the case
+  phones: z.array(z.string()).optional(),
 })
 export type ExportState = z.infer<typeof ExportStateSchema>
 
 /** What an export of this filter holds, before anything is drawn (03 section 12.2 steps 1 and 2). */
-export type ExportSource = "stream" | "timeline_lens" | "collection" | "finding" | "dossier" | "analysis_result" | "statement_check" | "incident_window"
+export type ExportSource = "stream" | "timeline_lens" | "collection" | "finding" | "dossier" | "analysis_result" | "statement_check" | "incident_window" | "phone_profile"
 /** `source` "timeline_lens": the filter is the Timeline phone lens's and the totals are the lens's. */
 export async function describeExport(caseId: string, filter: StreamFilter, source: ExportSource = "stream") {
   const body = source === "timeline_lens" ? { case_id: caseId, filter, source } : { case_id: caseId, filter }
@@ -320,6 +322,15 @@ export async function acceptReconciliationDifference(caseId: string, extractionI
   return fetchAPI<{ decision_id: string; differences: number; restart: { state: string; words: string } }>(
     `/api/phones/${encodeURIComponent(extractionId)}/reconciliation/accept`,
     { method: "POST", body: { case_id: caseId, reason } },
+  )
+}
+
+/** Since you last looked (03 section 7.3, 07 J-15): counts per change kind after the viewer's last visit. */
+export async function getSinceLastLooked(caseId: string, extractionId: string, since: string) {
+  const q = new URLSearchParams({ case_id: caseId, since })
+  return fetchAPI<{ since: string; counts: Record<string, number | boolean>; lines: string[]; nothing: boolean }>(
+    `/api/phones/${encodeURIComponent(extractionId)}/since?${q}`,
+    { read: true },
   )
 }
 

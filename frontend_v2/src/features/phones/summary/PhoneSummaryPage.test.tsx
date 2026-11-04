@@ -7,7 +7,7 @@ import type { Profile } from "../schemas"
 
 /** Phone summary (03 section 7; 07 J-2, J-11, J-15) with the server stubbed. Synthetic data only. */
 const api = vi.hoisted(() => ({
-  getProfile: vi.fn(), setOwner: vi.fn(), setPhoneLabel: vi.fn(), acceptReconciliationDifference: vi.fn(),
+  getProfile: vi.fn(), setOwner: vi.fn(), setPhoneLabel: vi.fn(), acceptReconciliationDifference: vi.fn(), getSinceLastLooked: vi.fn(), getExportHistory: vi.fn().mockResolvedValue({ items: [] }), createExport: vi.fn(), getExport: vi.fn(),
   getThreads: vi.fn().mockResolvedValue({
     counts: { threads: 3, reviewed: 1, partly_reviewed: 1, not_reviewed: 2 },
     items: [
@@ -57,6 +57,7 @@ function profile(over: Partial<Profile> = {}): Profile {
       { kind: "zone", words: "This phone did not record its time zone. Times show in the case zone (Eastern time).", link: "/cases/case-1/settings" },
     ],
     where_to_start: [{ words: "Look at the 12 deleted messages and calls", link: `${conv}?deleted=only` }],
+    busiest_weeks: [{ week: "2023-01-02", last_day: "2023-01-08", events: 5, words: "Week of Monday, January 2, 2023", link: `${conv}?from=2023-01-02&to=2023-01-08&notime=0` }],
     zone_name: "America/New_York",
     links: { conversations: conv, review: "/cases/case-1/phone-review" },
     ...over,
@@ -132,6 +133,28 @@ describe("Phone summary", () => {
     fireEvent.click(save)
     await waitFor(() => expect(api.acceptReconciliationDifference).toHaveBeenCalledWith("case-1", "e1", "synthetic reason"))
     expect(await within(box).findByText(/^2 differences accepted\. The difference is accepted\./)).toBeInTheDocument()
+  })
+
+  it("busiest weeks link to their week, Since you last looked counts from the previous visit, and the export history and profile PDF are offered (03 7.3, J-15)", async () => {
+    localStorage.setItem("loupe.phone.lastLooked.case-1.e1", "2023-01-01T00:00:00.000Z")
+    api.getSinceLastLooked.mockResolvedValue({ since: "2023-01-01T00:00:00Z", counts: { new_phones: 1, this_phone_read_again: false }, lines: ["1 new phone", "0 phones replaced"], nothing: false })
+    api.getExportHistory.mockResolvedValue({ items: [
+      { export_id: "x1", format: "pdf", source: "stream", state: "done", progress: 1, counts: { total: 12 }, file: { filename: "a.pdf", size: 1, sha256: "s" }, error: null, created_at: "2023-01-03T00:00:00Z", finished_at: null, title: "Synthetic", phones: ["e1"] },
+      { export_id: "x2", format: "pdf", source: "stream", state: "done", progress: 1, counts: { total: 3 }, file: null, error: null, created_at: null, finished_at: null, title: null, phones: ["other"] },
+    ] })
+    api.createExport.mockResolvedValue({ export_id: "x3" })
+    api.getExport.mockResolvedValue({ export_id: "x3", format: "pdf", source: "phone_profile", state: "done", progress: 1, counts: {}, file: { filename: "phone-summary.pdf", size: 1, sha256: "s" }, error: null, created_at: null, finished_at: null })
+    page()
+    const weeks = await screen.findByRole("region", { name: "Busiest weeks" })
+    expect(within(weeks).getByRole("link", { name: "Week of Monday, January 2, 2023: 5 messages and calls" })).toHaveAttribute("href", `${conv}?from=2023-01-02&to=2023-01-08&notime=0`)
+    const since = screen.getByRole("region", { name: "Since you last looked" })
+    expect(await within(since).findByText("1 new phone")).toBeInTheDocument()
+    expect(api.getSinceLastLooked).toHaveBeenCalledWith("case-1", "e1", "2023-01-01T00:00:00.000Z")
+    const hist = screen.getByRole("region", { name: "Export history" })
+    expect(await within(hist).findByText("1 export covers this phone.")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Export profile as PDF" }))
+    await waitFor(() => expect(api.createExport).toHaveBeenCalledWith("case-1", { case_id: "case-1", phones: ["e1"] }, { title: "Phone summary: C2" }, "pdf", "phone_profile"))
+    expect(await screen.findByRole("button", { name: "Download phone-summary.pdf" })).toBeInTheDocument()
   })
 
   beforeEach(() => {
