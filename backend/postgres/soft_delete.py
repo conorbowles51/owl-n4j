@@ -21,6 +21,9 @@ most every ``REFRESH_SECONDS`` (two index-only lookups on partial indexes) and a
 restore. With nothing deleted (the usual state) no filter is added at all. Another process can see a just-deleted
 case's child rows for up to ``REFRESH_SECONDS`` in background work; requests are refused at once by the case check.
 
+Only while Deleted items are switched on (``enabled()``, config.DELETED_ITEMS_ENABLED); off, nothing is filtered and
+deletes are immediate.
+
 Reading deleted rows is opt-in: ``with showing_deleted(session): ...`` (the Deleted-items listing, restore and purge
 only). Relationship and column loads are left alone: they only follow a row that was already allowed.
 """
@@ -42,6 +45,13 @@ _lock = threading.Lock()
 # Per database (engine URL): {"cases", "files", "at"}. One process can talk to more than one database (tests,
 # scripts), and one database's deleted ids mean nothing in another.
 _known: dict = {}
+
+
+def enabled() -> bool:
+    """Deleted items switched on (config.DELETED_ITEMS_ENABLED, off by default). Off: deletes are immediate and this
+    filter adds nothing."""
+    import config
+    return bool(getattr(config, "DELETED_ITEMS_ENABLED", False))
 
 
 @contextmanager
@@ -181,6 +191,8 @@ def _classes_in(statement):
 
 def _hide_deleted(state):
     if not state.is_select or state.is_column_load or state.is_relationship_load:
+        return
+    if not enabled():
         return
     if state.session.info.get(SHOW_DELETED) or state.execution_options.get(SHOW_DELETED):
         return

@@ -243,9 +243,14 @@ def list_deleted(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
-    """Deleted items: the deleted cases this person can restore (their own; every case for an admin)."""
+    """Deleted items: the deleted cases this person can restore (their own; every case for an admin). ``enabled``
+    says whether Deleted items are switched on (config.DELETED_ITEMS_ENABLED); off, the list is empty and the app
+    shows no Deleted items, Restore or retention wording."""
+    from postgres.soft_delete import enabled
     from services.case_service import DELETED_RETENTION_DAYS, list_deleted_cases
-    return dict(cases=list_deleted_cases(db, current_user), retention_days=DELETED_RETENTION_DAYS)
+    if not enabled():
+        return dict(enabled=False, cases=[], retention_days=None)
+    return dict(enabled=True, cases=list_deleted_cases(db, current_user), retention_days=DELETED_RETENTION_DAYS)
 
 
 @router.get("/{case_id}", response_model=CaseResponse)
@@ -464,7 +469,9 @@ def preview_case_delete(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
-    """What deleting this case takes out of view (the counts the delete records) and how long it can be restored."""
+    """What deleting this case removes (the counts the delete records) and, with Deleted items switched on, how long
+    it can be restored (``restorable_days``; None when deletes are immediate)."""
+    from postgres.soft_delete import enabled
     from services.case_service import DELETED_RETENTION_DAYS, _case_record_counts, check_case_access
     try:
         case, _ = check_case_access(db, case_id, current_user, required_permission=("case", "delete"))
@@ -474,25 +481,29 @@ def preview_case_delete(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="Access denied - case.delete permission required")
     return dict(case_id=str(case.id), title=case.title, holds=_case_record_counts(db, case_id),
-                restorable_days=DELETED_RETENTION_DAYS)
+                restorable_days=DELETED_RETENTION_DAYS if enabled() else None)
 
 
 @router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_existing_case(
     case_id: UUID,
-    confirm_title: str = Query(..., description="The case title, typed by the person deleting it"),
+    confirm_title: str | None = Query(None, description="The case title, typed by the person deleting it "
+                                                       "(required while Deleted items are switched on)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
     """
-    Move a case to Deleted items (restorable by its owner or an admin for 30 days, then purged).
+    Delete a case: at once (Deleted items off, the default), or into Deleted items, restorable by its owner or an
+    admin for 30 days, then purged (switched on).
 
-    Requires case.delete permission and the case title typed exactly (``confirm_title``).
+    Requires case.delete permission. A typed title (``confirm_title``), when given, must match exactly; with Deleted
+    items switched on it is required (the app always sends it).
     """
     try:
         from services.case_service import check_case_access
         case, _ = check_case_access(db, case_id, current_user, required_permission=("case", "delete"))
-        if confirm_title.strip() != (case.title or "").strip():
+        from postgres.soft_delete import enabled
+        if (confirm_title is not None or enabled()) and (confirm_title or "").strip() != (case.title or "").strip():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                                 detail="Type the case title exactly to delete it")
         delete_case(db=db, case_id=case_id, user=current_user)
@@ -514,8 +525,11 @@ def restore_deleted_case(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
-    """Bring a case back from Deleted items, exactly as it was (owner or admin)."""
+    """Bring a case back from Deleted items, exactly as it was (owner or admin; Deleted items switched on)."""
+    from postgres.soft_delete import enabled
     from services.case_service import CaseNotDeleted, restore_case
+    if not enabled():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deleted items are switched off")
     try:
         restore_case(db, case_id, current_user)
     except CaseNotFound:

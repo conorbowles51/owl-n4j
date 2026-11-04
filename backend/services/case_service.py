@@ -373,8 +373,71 @@ class CaseNotDeleted(Exception):
 
 
 def delete_case(db: Session, case_id: UUID, user: User) -> None:
+    """Delete a case: at once (Deleted items off, the default), or into Deleted items (switched on).
+
+    Raises:
+        CaseNotFound: If the case doesn't exist
+        CaseAccessDenied: If the user doesn't have delete permission
     """
-    Move a case to Deleted items. Nothing is removed: the case and everything in it are hidden from every screen,
+    from postgres.soft_delete import enabled
+    if enabled():
+        _move_case_to_deleted_items(db, case_id, user)
+    else:
+        _delete_case_at_once(db, case_id, user)
+
+
+def _delete_case_at_once(db: Session, case_id: UUID, user: User) -> None:
+    """
+    Delete a case and all associated memberships (the delete used while Deleted items are off; unchanged).
+
+    Args:
+        db: Database session
+        case_id: The case ID
+        user: The user performing the deletion
+
+    Raises:
+        CaseNotFound: If the case doesn't exist
+        CaseAccessDenied: If the user doesn't have delete permission
+    """
+    case, _ = check_case_access(db, case_id, user, required_permission=("case", "delete"))
+    details = dict(case_title=case.title,
+                   case_created_at=case.created_at.isoformat() if case.created_at else None,
+                   owner_user_id=str(case.owner_user_id) if case.owner_user_id else None,
+                   records_removed=_case_record_counts(db, case_id))
+
+    # Clean up vector database entries for this case
+    try:
+        from services.vector_db_service import vector_db_service
+        if vector_db_service:
+            case_id_str = str(case_id)
+            chunks_deleted = vector_db_service.delete_chunks_by_case(case_id_str)
+            entities_deleted = vector_db_service.delete_entities_by_case(case_id_str)
+            details.update(vector_chunks_removed=chunks_deleted, vector_entities_removed=entities_deleted)
+            print(f"[CaseService] Cleaned up ChromaDB for case {case_id_str}: "
+                  f"{chunks_deleted} chunks, {entities_deleted} entities")
+    except Exception as e:
+        details.update(vector_cleanup_error=str(e)[:200])
+        print(f"[CaseService] Warning: ChromaDB cleanup failed for case {case_id}: {e}")
+        # Don't block case deletion if vector cleanup fails
+
+    # The audit row goes in the same transaction as the delete: it commits only if the case is really gone, and
+    # activity_events has no foreign key to cases, so the row outlives the case.
+    from services import activity_trail
+    activity_trail.record("case_deleted", db=db, user=user, case_id=case_id, details=details)
+
+    # Memberships will be cascade deleted due to FK constraint
+    db.delete(case)
+    db.commit()
+
+    # The case's graph goes only once its rows are gone for good (a failed delete keeps both). Before, a deleted
+    # case's nodes stayed in Neo4j: 7 deleted cases held 1,548 nodes on live, 3 Nov (followups m110323033215300).
+    graph = remove_case_graph(str(case_id))
+    activity_trail.record("case_graph_removed", db=db, commit=True, user=user, case_id=case_id, details=graph)
+
+
+def _move_case_to_deleted_items(db: Session, case_id: UUID, user: User) -> None:
+    """
+    Move a case to Deleted items (switched on only). Nothing is removed: the case and everything in it are hidden from every screen,
     search, agent, export and background job (postgres/soft_delete.py) until the owner or an admin restores it,
     or until it is purged DELETED_RETENTION_DAYS later (purge_case, the delete used before).
 
@@ -394,7 +457,7 @@ def delete_case(db: Session, case_id: UUID, user: User) -> None:
     case.deleted_by_user_id = user.id
     # The audit row goes in the same transaction: it commits only if the case is really moved to Deleted items.
     from services import activity_trail
-    activity_trail.record("case_deleted", db=db, user=user, case_id=case_id, details=details)
+    activity_trail.record("case_moved_to_deleted_items", db=db, user=user, case_id=case_id, details=details)
     db.commit()
     from postgres import soft_delete
     soft_delete.forget()

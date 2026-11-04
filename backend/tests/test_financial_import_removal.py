@@ -243,16 +243,11 @@ class EvidenceDeleteKeepsFinancialWholeTests(TestCase):
         from routers import evidence as router
         graph = MagicMock()
         graph.find_document_node.return_value = None
-        # The delete moves the file to Deleted items (services/evidence_casebin.py); graph and vectors faked.
         with patch('services.case_service.check_case_access'), patch.object(router, 'neo4j_service', graph), \
-                patch('services.evidence_casebin._graph_session', return_value=MagicMock()), \
-                patch('services.evidence_casebin.find_document_key', return_value=None), \
-                patch('services.evidence_casebin.hide_graph', return_value={'nodes': 0, 'relationships': 0}), \
-                patch('services.evidence_casebin._vector_db', return_value=None), \
+                patch('services.vector_db_service.get_vector_db_service', return_value=None), \
                 patch.object(router.evidence_engine_client, 'delete_file', new=AsyncMock()):
-            return router.delete_evidence_file(str(evidence_id), case_id=str(self.f.case.id),
-                delete_exclusive_entities=False, current_user=SimpleNamespace(id=None, email='a@example.test'),
-                db=self.f.db)
+            return asyncio.run(router.delete_evidence_file(str(evidence_id), case_id=str(self.f.case.id),
+                delete_exclusive_entities=False, current_user=SimpleNamespace(email='a@example.test'), db=self.f.db))
 
     def _payments(self):
         self.f.db.expire_all()
@@ -271,8 +266,8 @@ class EvidenceDeleteKeepsFinancialWholeTests(TestCase):
         self.assertEqual(self._payments(), 12)
         self.remove(file_ids=[self.f.file.id])
         self._delete_file(self.f.file.id)
-        self.f.db.expunge_all()
-        self.assertIsNone(self.f.db.get(EvidenceFile, self.f.file.id))  # in Deleted items: hidden
+        self.f.db.expire_all()
+        self.assertIsNone(self.f.db.get(EvidenceFile, self.f.file.id))
 
     def test_deleting_the_original_of_a_separate_prepared_reading_is_refused(self):
         # The batch lists an original PDF whose payments were read from a

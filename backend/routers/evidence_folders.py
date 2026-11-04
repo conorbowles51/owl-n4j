@@ -319,7 +319,57 @@ def delete_folder(
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
+    """Delete a folder and all its contents recursively: at once, as before (Deleted items off, the default), or its
+    files into Deleted items (switched on, config.DELETED_ITEMS_ENABLED)."""
+    from postgres.soft_delete import enabled
+    if enabled():
+        return _move_folder_to_deleted_items(folder_id, case_id, current_user, db)
+    return _delete_folder_at_once(folder_id, case_id, current_user, db)
+
+
+def _delete_folder_at_once(folder_id: str, case_id: str, current_user: User, db: Session):
     """Delete a folder and all its contents recursively."""
+    try:
+        _check_case_access(db, case_id, current_user, permission=("evidence", "delete"))
+        from services.financial.import_removal import financial_hold, financial_hold_message
+        hold = financial_hold(db, case_id=uuid.UUID(case_id),
+                              file_ids=EvidenceDBStorage.folder_tree_file_ids(db, uuid.UUID(folder_id)))
+        if hold:
+            raise HTTPException(status_code=409, detail=financial_hold_message(hold))
+        stored_paths = EvidenceDBStorage.delete_folder(
+            db, uuid.UUID(folder_id), uuid.UUID(case_id)
+        )
+
+        # Clean up physical files. The folder's rows are already flushed away, so any row still pointing at a path
+        # lives outside this folder and keeps its file.
+        from pathlib import Path
+        deleted_files = 0
+        shared = EvidenceDBStorage.stored_paths_in_use(db, stored_paths)
+        for path_str in dict.fromkeys(stored_paths):
+            if not path_str or path_str in shared:
+                continue
+            try:
+                p = Path(path_str)
+                if p.exists():
+                    p.unlink()
+                    deleted_files += 1
+            except Exception as e:
+                logger.warning("Failed to delete file %s: %s", path_str, e)
+
+        db.commit()
+        return {
+            "deleted_files": deleted_files,
+            "deleted_folders": 1,  # The root folder
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _move_folder_to_deleted_items(folder_id: str, case_id: str, current_user: User, db: Session):
+    """Move every file in the folder tree to Deleted items, then delete the folders (Deleted items switched on)."""
     try:
         _check_case_access(db, case_id, current_user, permission=("evidence", "delete"))
         from services.financial.import_removal import financial_hold, financial_hold_message
@@ -380,7 +430,6 @@ def delete_folder(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.put("/{folder_id}/move")
 def move_folder(

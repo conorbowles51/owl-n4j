@@ -12,7 +12,7 @@ import os
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -187,10 +187,12 @@ def _api(engine, user, *routers):
 
 
 @pytest.fixture(autouse=True)
-def _fresh_filter():
+def _fresh_filter(request):
+    """Deleted items switched on for these tests (off on live; the ``test_switched_off_*`` tests run with it off)."""
     from postgres import soft_delete
     soft_delete.forget()
-    yield
+    with patch("config.DELETED_ITEMS_ENABLED", not request.node.name.startswith("test_switched_off")):
+        yield
     soft_delete.forget()
 
 
@@ -236,7 +238,7 @@ def test_a_deleted_case_is_hidden_then_restored_with_every_count_identical():
         with engine.connect() as c:
             actions = [r[0] for r in c.execute(text(
                 "SELECT action FROM activity_events WHERE case_id = :c ORDER BY at"), {"c": case})]
-        assert actions == ["case_deleted", "case_restored"]
+        assert actions == ["case_moved_to_deleted_items", "case_restored"]
 
 
 @phone_pg.needs_template
@@ -716,3 +718,85 @@ def test_a_phone_file_in_deleted_items_can_be_added_again_and_its_old_row_is_not
             rows = dict(c.execute(text("SELECT id, deleted_at IS NOT NULL FROM evidence_files WHERE source_ref = "
                                        "'pf-1'")).all())
         assert rows == {first: True, again: False}
+
+
+
+# ------------------------------------------------------------------------------- switched off (live): as before
+
+
+@phone_pg.needs_template
+def test_switched_off_a_case_delete_is_immediate_as_before_and_no_deleted_items_show():
+    """Off (the default, and live): the delete removes the case and its cascade at once, the old way; nothing waits in
+    Deleted items, the lists are empty and restore is refused. Fails if any soft path runs."""
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+    from routers.cases import router as cases_router
+    from routers.evidence import router as evidence_router
+    from services import casebin_purge
+    from services.neo4j import neo4j_service
+    with phone_pg.fresh_engine() as engine:
+        case, owner_id, _ = _seed(engine)
+        keep, _, _ = _seed(engine)
+        kept = _core_counts(engine, keep)
+        owner = _user(engine, owner_id)
+        with engine.connect() as c:
+            title = c.execute(text("SELECT title FROM cases WHERE id = :c"), {"c": case}).scalar()
+        graph = []
+        with patch.object(neo4j_service, "delete_case_data",
+                          lambda cid: graph.append(cid) or dict(nodes_deleted=0, relationships_deleted=0)), \
+                patch("services.vector_db_service.vector_db_service", FakeVectorDB()), \
+                _api(engine, owner, cases_router, evidence_router) as api:
+            preview = api.get(f"/api/cases/{case}/delete-preview").json()
+            assert preview["restorable_days"] is None and preview["holds"]["financial_transactions"] == 3
+            assert api.delete(f"/api/cases/{case}").status_code == 204  # as before: no typed title needed
+            assert api.get("/api/cases/deleted").json() == {"enabled": False, "cases": [], "retention_days": None}
+            assert api.post(f"/api/cases/{case}/restore").status_code == 404
+        assert graph == [str(case)]
+        with engine.connect() as c:
+            assert c.execute(text("SELECT count(*) FROM cases WHERE id = :c"), {"c": case}).scalar() == 0
+            tables = [r[0] for r in c.execute(text(
+                "SELECT DISTINCT conrelid::regclass::text FROM pg_constraint WHERE contype = 'f' "
+                "AND confrelid = 'cases'::regclass"))]
+            left = {t: c.execute(text(f"SELECT count(*) FROM {t} WHERE case_id = :c"), {"c": case}).scalar()
+                    for t in tables if t != "cases"}
+            actions = [r[0] for r in c.execute(text("SELECT action FROM activity_events WHERE case_id = :c "
+                                                     "ORDER BY id"), {"c": case})]
+        assert {t: n for t, n in left.items() if n} == {}
+        assert actions == ["case_deleted", "case_graph_removed"]
+        assert _core_counts(engine, keep) == kept
+        assert title  # the title was there to type; not needed while off
+        assert casebin_purge.purge_due(sessionmaker(bind=engine))["skipped"] == "Deleted items are switched off"
+
+
+@phone_pg.needs_template
+def test_switched_off_an_evidence_delete_is_immediate_and_the_filter_adds_nothing():
+    from sqlalchemy import event, select, text
+    from sqlalchemy.orm import Session
+    from postgres.models.financial import FinancialTransaction as T
+    from routers.evidence import router as evidence_router
+    with phone_pg.fresh_engine() as engine:
+        case, owner_id, ids = _seed(engine)
+        owner = _user(engine, owner_id)
+        with engine.connect() as c:
+            notes = c.execute(text("SELECT id FROM evidence_files WHERE case_id = :c AND original_filename = "
+                                   "'notes.pdf'"), {"c": case}).scalar()
+        graph = MagicMock()
+        graph.find_document_node.return_value = None
+        from routers import evidence as evidence_module
+        with patch.object(evidence_module, "neo4j_service", graph), \
+                patch("services.vector_db_service.get_vector_db_service", return_value=None), \
+                patch.object(evidence_module.evidence_engine_client, "delete_file", new=AsyncMock()), \
+                _api(engine, owner, evidence_router) as api:
+            assert api.delete(f"/api/evidence/{notes}?case_id={case}").status_code == 200
+            assert api.get(f"/api/evidence/deleted?case_id={case}").json() == {
+                "enabled": False, "files": [], "retention_days": None, "can_restore": False}
+            assert api.post(f"/api/evidence/{notes}/restore?case_id={case}").status_code == 404
+        with engine.connect() as c:
+            assert c.execute(text("SELECT count(*) FROM evidence_files WHERE id = :i"), {"i": notes}).scalar() == 0
+            c.execute(text("UPDATE evidence_files SET deleted_at = now() WHERE id = :i"), {"i": ids["file"]})
+            c.commit()
+        seen = []
+        event.listen(engine, "before_cursor_execute", lambda *a: seen.append(a[2]))
+        with Session(engine) as s:
+            assert s.scalar(select(T.id).where(T.case_id == case).limit(1)) is not None
+        assert all("deleted_at" not in q for q in seen)

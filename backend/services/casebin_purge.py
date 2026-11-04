@@ -44,6 +44,10 @@ def purge_due(session_factory, *, now=None, engine_delete=None) -> dict:
     from services import case_service, evidence_casebin
     cutoff = due_cutoff(now)
     out = {"cases": [], "files": [], "skipped": None, "cutoff": cutoff.isoformat()}
+    if not soft_delete.enabled():
+        # Switched off: deletes are immediate and whatever was left in Deleted items shows again; nothing is purged.
+        out["skipped"] = "Deleted items are switched off"
+        return out
     with session_factory() as db:
         # The advisory lock belongs to one database connection, and the session hands its connection back to the
         # pool at every commit, so the lock is taken and released on a connection of its own.
@@ -150,6 +154,10 @@ async def run_purge_forever():
     await asyncio.sleep(FIRST_DELAY_SECONDS)
     while True:
         try:
+            from postgres.soft_delete import enabled
+            if not enabled():
+                await asyncio.sleep(PURGE_EVERY_SECONDS)
+                continue
             result = await asyncio.to_thread(purge_due, _get_background_session_local())
             if result["cases"] or result["files"] or result["skipped"]:
                 logger.warning("Deleted items purge: %d case(s), %d file(s)%s", len(result["cases"]),

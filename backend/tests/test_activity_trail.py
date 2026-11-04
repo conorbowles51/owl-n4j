@@ -147,7 +147,74 @@ class CaseDeletionTests(TrailBase):
         with self.f.SessionLocal() as db, patch.object(neo4j_service, 'delete_case_data', graph):
             user = db.merge(self.f.user)
             case_service.delete_case(db, self.f.case.id, user)
-        # Moved to Deleted items: no read sees it, the row is kept for a restore (tests/test_casebin.py).
+            self.assertIsNone(db.get(Case, self.f.case.id))
+        return graph
+
+    def test_deleting_a_case_removes_its_graph_after_the_rows_and_records_it(self):
+        # followups m110323033215300: a deleted case's nodes stayed in Neo4j (7 deleted cases, 1,548 nodes live).
+        from postgres.models.case import Case
+        seen = []
+
+        def graph(case_id):
+            with self.f.SessionLocal() as other:
+                seen.append(other.get(Case, self.f.case.id))  # the case's rows are already gone
+            return dict(nodes_deleted=12, relationships_deleted=30)
+        self.delete(Mock(side_effect=graph))
+        self.assertEqual(seen, [None])
+        [event] = self.events('case_graph_removed')
+        self.assertEqual((event.case_id, event.details), (self.f.case.id,
+                                                          dict(nodes_removed=12, relationships_removed=30)))
+
+    def test_a_graph_that_cannot_be_reached_still_deletes_the_case_and_says_so(self):
+        self.delete(Mock(side_effect=RuntimeError('graph down')))
+        [event] = self.events('case_graph_removed')
+        self.assertEqual(event.details, dict(graph_cleanup_error='graph down'))
+        self.assertEqual(len(self.events('case_deleted')), 1)
+
+    def test_deleting_a_case_records_who_when_and_what_it_held(self):
+        title = self.f.case.title
+        with self.f.SessionLocal() as db:
+            files = db.query(EvidenceFile).filter(EvidenceFile.case_id == self.f.case.id).count()
+        self.assertGreater(files, 0)
+        self.delete()
+        [event] = self.events('case_deleted')
+        self.assertEqual((event.user_email, event.case_id, event.source_address, event.session_ref),
+                         (self.f.user.email, self.f.case.id, '203.0.113.7', '0123456789abcdef'))
+        self.assertEqual(event.details['case_title'], title)
+        self.assertEqual(event.details['records_removed']['evidence_files'], files)
+        self.assertEqual(event.details['records_removed']['case_memberships'], 1)
+        self.assertIsNotNone(event.at)
+        self.assertEqual(activity_trail.ACTIONS['case_deleted'], 'Deleted a case')
+
+    def test_a_refused_delete_records_nothing(self):
+        from services import case_service
+        with self.f.SessionLocal() as db, patch.object(case_service, 'check_case_access',
+                side_effect=case_service.CaseAccessDenied('no')):
+            with self.assertRaises(case_service.CaseAccessDenied):
+                case_service.delete_case(db, self.f.case.id, self.f.user)
+        self.assertEqual(self.events('case_deleted'), [])
+
+
+class DeletedItemsCaseDeletionTests(CaseDeletionTests):
+    """Deleted items switched on (config.DELETED_ITEMS_ENABLED; off on live): the case moves to Deleted items, keeps
+    its graph for a restore, and the 30-day purge removes the rows and then the graph. The off path (above, the
+    delete as before) is what live runs."""
+
+    def setUp(self):
+        super().setUp()
+        switch = patch('config.DELETED_ITEMS_ENABLED', True)
+        switch.start()
+        self.addCleanup(switch.stop)
+
+    def delete(self, graph=None):
+        from postgres.models.case import Case
+        from services import case_service
+        from services.neo4j import neo4j_service
+        graph = graph or Mock(return_value=dict(nodes_deleted=0, relationships_deleted=0))
+        with self.f.SessionLocal() as db, patch.object(neo4j_service, 'delete_case_data', graph):
+            user = db.merge(self.f.user)
+            case_service.delete_case(db, self.f.case.id, user)
+        # In Deleted items: no read sees it, the row is kept for a restore (tests/test_casebin.py).
         with self.f.SessionLocal() as db:
             self.assertIsNone(db.get(Case, self.f.case.id))
         return graph
@@ -158,7 +225,7 @@ class CaseDeletionTests(TrailBase):
         with self.f.SessionLocal() as db, patch.object(neo4j_service, 'delete_case_data', graph):
             return case_service.purge_case(db, self.f.case.id)
 
-    def test_a_deleted_case_keeps_its_graph_until_the_purge_removes_it_after_the_rows(self):
+    def test_deleting_a_case_removes_its_graph_after_the_rows_and_records_it(self):
         # followups m110323033215300: a deleted case's nodes stayed in Neo4j (7 deleted cases, 1,548 nodes live).
         # In Deleted items the graph stays for a restore; the 30-day purge removes it once the rows are gone.
         from postgres.models.case import Case
@@ -179,35 +246,27 @@ class CaseDeletionTests(TrailBase):
         self.assertEqual((event.case_id, event.details), (self.f.case.id,
                                                           dict(nodes_removed=12, relationships_removed=30)))
 
-    def test_a_graph_that_cannot_be_reached_still_purges_the_case_and_says_so(self):
+    def test_a_graph_that_cannot_be_reached_still_deletes_the_case_and_says_so(self):
         self.delete()
         self.purge(Mock(side_effect=RuntimeError('graph down')))
         [event] = self.events('case_graph_removed')
         self.assertEqual(event.details, dict(graph_cleanup_error='graph down'))
-        self.assertEqual((len(self.events('case_deleted')), len(self.events('case_purged'))), (1, 1))
+        self.assertEqual((len(self.events('case_moved_to_deleted_items')), len(self.events('case_purged'))), (1, 1))
+        self.assertEqual(self.events('case_deleted'), [])
 
     def test_deleting_a_case_records_who_when_and_what_it_held(self):
         title = self.f.case.title
         with self.f.SessionLocal() as db:
-            files = db.query(EvidenceFile).filter(EvidenceFile.case_id == self.f.case.id).count()
-        self.assertGreater(files, 0)
+            files = db.query(EvidenceFile).filter_by(case_id=self.f.case.id).count()
         self.delete()
-        [event] = self.events('case_deleted')
+        [event] = self.events('case_moved_to_deleted_items')
         self.assertEqual((event.user_email, event.case_id, event.source_address, event.session_ref),
                          (self.f.user.email, self.f.case.id, '203.0.113.7', '0123456789abcdef'))
         self.assertEqual(event.details['case_title'], title)
         self.assertEqual(event.details['records_held']['evidence_files'], files)
         self.assertEqual(event.details['records_held']['case_memberships'], 1)
-        self.assertIsNotNone(event.at)
-        self.assertEqual(activity_trail.ACTIONS['case_deleted'], 'Deleted a case (kept 30 days in Deleted items)')
-
-    def test_a_refused_delete_records_nothing(self):
-        from services import case_service
-        with self.f.SessionLocal() as db, patch.object(case_service, 'check_case_access',
-                side_effect=case_service.CaseAccessDenied('no')):
-            with self.assertRaises(case_service.CaseAccessDenied):
-                case_service.delete_case(db, self.f.case.id, self.f.user)
-        self.assertEqual(self.events('case_deleted'), [])
+        self.assertIn('purge_after', event.details)
+        self.assertEqual(activity_trail.ACTIONS['case_moved_to_deleted_items'], 'Moved a case to Deleted items')
 
 
 class ProvenanceTests(TrailBase):

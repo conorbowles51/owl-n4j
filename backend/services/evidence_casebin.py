@@ -340,7 +340,7 @@ def delete_file(db: Session, record: EvidenceFile, user: User, *, delete_exclusi
     details = dict(evidence_id=str(record.id), filename=filename, size=record.size, sha256=record.sha256,
                    hidden_graph_nodes=graph["nodes"], hidden_graph_relationships=graph["relationships"],
                    hidden_chunks=len(chunks), purge_after=(now + timedelta(days=DELETED_RETENTION_DAYS)).isoformat())
-    activity_trail.record("evidence_deleted", db=db, user=user, case_id=record.case_id, details=details)
+    activity_trail.record("evidence_moved_to_deleted_items", db=db, user=user, case_id=record.case_id, details=details)
     try:
         db.commit()
     except Exception:
