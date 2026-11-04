@@ -29,15 +29,18 @@ _ACTIVE_JOB_STATUSES = {
 }
 
 
-def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any], db=None) -> bool:
+def _sync_db_record_from_job(db_rec: EvidenceFile, job: dict[str, Any], db=None, *, request_checked=False) -> bool:
+    """request_checked: the caller already matched the job to the file's accepted ingestion request (the jobs poll
+    reads that one JSON field in SQL), so the whole profile snapshot is not loaded again here."""
     changed = False
     status = str(job.get("status", "") or "")
     now = datetime.now(timezone.utc)
 
-    snapshot = getattr(db_rec, 'last_processed_profile_snapshot', None) or {}
     incoming = job.get('pipeline_state') or {}
-    if snapshot.get('ingestion_request_id') and incoming.get('ingestion_request_id') and incoming['ingestion_request_id'] != snapshot['ingestion_request_id']:
-        return False
+    if not request_checked:
+        snapshot = getattr(db_rec, 'last_processed_profile_snapshot', None) or {}
+        if snapshot.get('ingestion_request_id') and incoming.get('ingestion_request_id') and incoming['ingestion_request_id'] != snapshot['ingestion_request_id']:
+            return False
     if job.get('job_type') == 'audio_review' and status in ('completed', 'failed'):
         from services.transcript_review import capture_source, summary
         if status == 'completed':
@@ -243,7 +246,7 @@ def _reconcile(db: Session, jobs: list[dict[str, Any]], record_cases: set | None
 
     updated = 0
     for db_rec, job in pending:
-        if _apply_job(db_rec, job, db=db):
+        if _apply_job(db_rec, job, db=db, request_checked=True):
             updated += 1
 
     if updated:
@@ -263,13 +266,13 @@ def _accepted_request_ids(db: Session, predicates) -> dict | None:
     return {row[0]: row[1] for row in rows if row[1]}
 
 
-def _apply_job(db_rec: EvidenceFile, job: dict[str, Any], db=None) -> bool:
+def _apply_job(db_rec: EvidenceFile, job: dict[str, Any], db=None, *, request_checked=False) -> bool:
     changed = False
     job_id = str(job.get("id") or "")
     if job_id and db_rec.engine_job_id != job_id:
         db_rec.engine_job_id = job_id
         changed = True
-    if _sync_db_record_from_job(db_rec, job, db=db):
+    if _sync_db_record_from_job(db_rec, job, db=db, request_checked=request_checked):
         changed = True
     return changed
 
@@ -284,7 +287,7 @@ def _record_would_change(db_rec: EvidenceFile, job: dict[str, Any]) -> bool:
         info = (getattr(db_rec, 'metadata_', None) or {}).get('transcript_review') or {}
         if info.get('published_revision_id') != revision:
             return True
-    return _apply_job(_detached_copy(db_rec), job)
+    return _apply_job(_detached_copy(db_rec), job, request_checked=True)
 
 
 _SYNCED_FIELDS = ("engine_job_id", "status", "last_error", "processing_stale", "processed_at", "summary",
