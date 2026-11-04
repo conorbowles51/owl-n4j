@@ -11,6 +11,18 @@ import phonenumbers
 PINNED = "9.0.31"
 
 
+def regions() -> frozenset:
+    """Every country code a phone can be read in (ISO 3166-1 alpha-2)."""
+    return frozenset(phonenumbers.SUPPORTED_REGIONS)
+
+
+def region_name(region) -> str:
+    """The country's name in words, from the library's own data; the code when it has none."""
+    from phonenumbers import geocoder
+    example = phonenumbers.example_number(region)
+    return (geocoder.country_name_for_number(example, "en") if example else "") or region
+
+
 def parse(text, region="US", region_basis="assumed_default"):
     s = (text or "").strip()
     explicit = s.startswith("+")

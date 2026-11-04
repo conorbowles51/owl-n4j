@@ -236,7 +236,16 @@ def profile(conn, case_id, extraction_id) -> dict:
                       "is set. Set the owner.", "link": "%s/phones/%s#set-owner" % (base, ext)})
     if not x.device_zone:
         needs.append({"kind": "zone", "words": "This phone did not record its time zone. Times show in the case zone "
-                      "(%s)." % zone["display_name"], "link": "%s/settings" % base})
+                      "(%s)." % zone["display_name"], "link": "%s/phones/%s#set-zone" % (base, ext)})
+    no_offset = conn.execute(text(
+        "SELECT count(*) FROM phone_time_values t JOIN phone_interpretation_state s ON s.extraction_id = t.extraction_id "
+        "AND s.generation = t.generation WHERE t.case_id = :c AND t.extraction_id::text = :e AND t.effective_instant "
+        "IS NULL AND t.local_wall_time IS NOT NULL"), {"c": case_id, "e": ext}).scalar() or 0
+    if no_offset:
+        needs.append({"kind": "offsetless", "words": "%s %s written with no offset, so %s no place in time until a "
+                      "zone is applied." % ("{:,}".format(no_offset), "time was" if no_offset == 1 else "times were",
+                                            "it has" if no_offset == 1 else "they have"),
+                      "link": "%s/phones/%s#set-offsetless" % (base, ext)})
     held = held_view(conn, extraction_id) if x.reconciliation_state == "failed" else []
     if any(h["accepted"] is None for h in held):
         needs.append({"kind": "reconciliation", "words": held_sentence(held), "link": None})

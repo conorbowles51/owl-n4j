@@ -75,6 +75,14 @@ def thread_attachments(conn, case_id, thread_key) -> dict:
             "in_folders_only": folders, "not_in_production": missing, "words": ", ".join(parts)}
 
 
+def with_significant(conn, case_id, f: dict) -> dict:
+    """The filter with the toggle's identity keys, read once (``_where`` has no connection)."""
+    if not f.get("significant_only"):
+        return f
+    from services.phone import significant
+    return dict(f, significant_keys=significant.identity_keys(conn, case_id))
+
+
 def _where(f: dict, p: dict) -> str:
     w = ["f.case_id = :c"]
     if f.get("phones"):
@@ -103,6 +111,10 @@ def _where(f: dict, p: dict) -> str:
         w.append(carried % ("EXISTS (SELECT 1 FROM phone_participations pp WHERE pp.record_uid = ev2.record_uid AND "
                             "pp.generation = ev2.generation AND pp.identity_key = ANY(:people))"))
         p["people"] = list(f["participants"])
+    if f.get("significant_keys") is not None:  # the Significant toggle (07 XF-11)
+        w.append(carried % ("EXISTS (SELECT 1 FROM phone_participations ps WHERE ps.record_uid = ev2.record_uid AND "
+                            "ps.generation = ev2.generation AND ps.identity_key = ANY(:sig))"))
+        p["sig"] = list(f["significant_keys"])
     # a file's time is its first carrying message's (``c.first_at``); a dated window leaves out files with no time,
     # and the index counts them (``outside_dates_no_time``)
     if f.get("from_instant"):
@@ -123,7 +135,7 @@ def _base(where):
 
 
 def index(conn, case_id, f: dict | None = None) -> dict:
-    f, p = dict(f or {}), {"c": str(case_id)}
+    f, p = with_significant(conn, case_id, dict(f or {})), {"c": str(case_id)}
     base = _base(_where(f, p))
     # a file with no time was carried by no message, or only by messages that carry no time: counted apart
     total, no_time, no_message, missing = conn.execute(text(
@@ -147,7 +159,7 @@ def facets(conn, case_id, f: dict | None = None) -> dict:
     """The apps and the people (other than the phone's owner) whose messages carried the files in scope, each with
     its file count, for the app and participant filters (03 8.3). Every value is listed; none is cut."""
     from services.phone.graph_projection import _identity_labels
-    f = {k: v for k, v in dict(f or {}).items() if k not in ("apps", "participants")}
+    f = with_significant(conn, case_id, {k: v for k, v in dict(f or {}).items() if k not in ("apps", "participants")})
     p = {"c": str(case_id)}
     carried = ("FROM pv_attachment_link l2 JOIN phone_record_summaries s2 ON s2.record_uid = l2.record_uid JOIN "
                "phone_comm_events ev2 ON ev2.record_uid = coalesce(s2.root_record_uid, l2.record_uid) AND "
@@ -171,7 +183,8 @@ def facets(conn, case_id, f: dict | None = None) -> dict:
 
 
 def window(conn, case_id, f: dict | None = None, offset: int = 0, limit: int = 200) -> dict:
-    f, p = dict(f or {}), {"c": str(case_id), "o": max(0, int(offset)), "l": max(1, min(WINDOW_MAX, int(limit)))}
+    f, p = with_significant(conn, case_id, dict(f or {})), {"c": str(case_id), "o": max(0, int(offset)),
+                                                            "l": max(1, min(WINDOW_MAX, int(limit)))}
     from services.phone.readings import phone_labels
     labels = phone_labels(conn, case_id)
     zones = {str(r[0]): r[1] for r in conn.execute(text(
@@ -409,7 +422,7 @@ def _size_words(n):
 def download_plan(conn, case_id, f: dict | None = None, file_uids=None) -> dict:
     """The files a download holds (the filter's, or the chosen files within it), their total bytes, and the refusal
     when it is too large. Missing files are listed in the manifest as not in the production, never left out."""
-    f, p = dict(f or {}), {"c": str(case_id)}
+    f, p = with_significant(conn, case_id, dict(f or {})), {"c": str(case_id)}
     where = _where(f, p)
     if file_uids:
         where += " AND f.file_uid::text = ANY(:uids)"

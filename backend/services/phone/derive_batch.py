@@ -42,7 +42,7 @@ def _scope(conn, case_id, kind, scope):
         raise BatchError("Only transcription of audio and text reading of images can be run for a whole scope.")
     p = {"c": str(case_id), "kc": list(KINDS[kind]), "k": kind}
     # an uncategorised file is counted and left out (its bytes decide, so it is read one at a time, 05 17.4)
-    where = media._where(dict(scope or {}), p) + " AND (f.category = ANY(:kc) OR coalesce(f.category, '') IN ('', " \
+    where = media._where(media.with_significant(conn, case_id, dict(scope or {})), p) + " AND (f.category = ANY(:kc) OR coalesce(f.category, '') IN ('', " \
         "'Uncategorized'))"
     already = ("EXISTS (SELECT 1 FROM phone_derived_texts d WHERE d.case_id = :c AND d.file_uid = f.file_uid AND "
                "d.kind = :k AND d.state IN ('queued', 'running', 'done'))")

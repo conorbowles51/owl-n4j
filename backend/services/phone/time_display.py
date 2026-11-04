@@ -196,8 +196,23 @@ def iso(instant) -> str | None:
     return i.astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if i is not None else None
 
 
-def time_block(instant, zone: str, *, offset_present=True, time_field=None, wall=None) -> dict:
-    """The ``time`` object of a StreamRow (03 section 4.5)."""
+ZONE_DECIDED = "zone from a decision, no offset in report"
+ZONE_BASES = ("zone_decision", "zone_and_clock")
+
+
+def format_decided(instant, zone: str, basis) -> str:
+    """``format_full`` of an effective time, which says so when a zone decision placed it (02 section 4.1 rule 2)."""
+    full = format_full(instant, zone)
+    return "%s (%s)" % (full, ZONE_DECIDED) if basis in ZONE_BASES else full
+
+
+def time_block(instant, zone: str, *, offset_present=True, time_field=None, wall=None, zone_decided=False) -> dict:
+    """The ``time`` object of a StreamRow (03 section 4.5). ``zone_decided``: the report wrote no offset and a person's
+    decision placed this time (02 section 4.1 rule 2); it says so wherever the time is shown."""
+    if zone_decided and instant is not None:
+        return {"instant": iso(instant), "row": format_row(instant, zone), "time_field": time_field,
+                "full": "%s (%s)" % (format_full(instant, zone), ZONE_DECIDED), "offset_present": False,
+                "zone_decided": True}
     if instant is None and wall is not None:
         return {"instant": None, "row": _clock(wall, False), "full": format_wall(wall), "offset_present": False,
                 "time_field": time_field}

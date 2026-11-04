@@ -78,6 +78,8 @@ class StreamFilter(BaseModel):
     from_instant: Optional[datetime] = None
     to_instant: Optional[datetime] = None
     include_no_time: bool = True
+    # the Significant layer's toggle (07 XF-11): only events with an identity the case's manifest covers
+    significant_only: bool = False
     text: TextFilter = Field(default_factory=TextFilter)
     collapse_copies: bool = True
     names: Names = Field(default_factory=Names)
@@ -161,5 +163,8 @@ def data_sequence(conn, case_id) -> str:
 
 
 def snapshot(conn, f: StreamFilter, *, extra: str = "") -> str:
+    if f.significant_only:  # the toggle's list changes with the manifest, which no phone decision touches
+        from services.phone import significant
+        extra = "%s|%s" % (extra, significant.manifest_mark(conn, f.case_id))
     return hashlib.sha256(("%s|%s|%s" % (canonical_json(f), data_sequence(conn, f.case_id), extra)).encode()
                           ).hexdigest()

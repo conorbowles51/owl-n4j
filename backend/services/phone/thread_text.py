@@ -92,7 +92,7 @@ def build_extraction(conn, extraction_id) -> dict:
     from services.phone import identities
     from services.phone.readings import phone_labels
     head = conn.execute(text(
-        "SELECT e.case_id, e.device_zone, e.standing, s.generation FROM phone_extractions e JOIN "
+        "SELECT e.case_id, coalesce(s.device_zone, e.device_zone) AS device_zone, e.standing, s.generation FROM phone_extractions e JOIN "
         "phone_interpretation_state s ON s.extraction_id = e.id WHERE e.id = :e"), {"e": extraction_id}).one_or_none()
     if head is None or head.standing != "active" or not head.generation:
         return remove_extraction(conn, extraction_id)

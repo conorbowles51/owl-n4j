@@ -19,7 +19,8 @@ from postgres.session import get_db
 from routers.case_access import authorize_case
 from routers.users import get_current_db_user, require_admin, require_super_admin
 from services.financial.quarantine_row import ActorError, actor_from_user
-from services.phone import corrections, coverage, external_processing, identities, identity_decisions, readings, registry
+from services.phone import (corrections, coverage, external_processing, identities, identity_decisions, phone_setup,
+                           readings, registry)
 
 router = APIRouter(prefix="/api/phones", tags=["phones"])
 
@@ -461,6 +462,7 @@ class MediaFilter(BaseModel):
     participants: list[str] = Field(default_factory=list, max_length=200)
     from_instant: Optional[datetime] = None
     to_instant: Optional[datetime] = None
+    significant_only: bool = False
 
 
 class MediaDownloadBody(BaseModel):
@@ -851,6 +853,7 @@ class BatchScope(BaseModel):
     verification: list[str] = Field(default_factory=list)
     linked_to_message: Optional[bool] = None
     thread_key: Optional[str] = Field(None, max_length=512)  # Media opened from a thread's Attachments (N)
+    significant_only: bool = False
 
 
 class BatchBody(BaseModel):
@@ -1551,6 +1554,87 @@ def set_clock_offset(extraction_id: UUID, body: ClockOffset, db: Session = Depen
     return out
 
 
+@router.get("/{extraction_id}/setup")
+def phone_setup_state(extraction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
+                      user: User = Depends(get_current_db_user)):
+    """The region, device zone, zone for times with no offset and clock offsets of one phone, each with its basis and
+    the true counts the Needs a decision box states (03 section 7.3, 02 section 8.3)."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    try:
+        return phone_setup.state(db.connection(), case_id, extraction_id)
+    except corrections.CorrectionError:
+        raise HTTPException(status_code=404, detail="Phone extraction not found in this case")
+
+
+class SetupDescribe(BaseModel):
+    """What one proposed setting would change, counted on this phone's rows. Nothing is saved."""
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    kind: Literal["region", "device_zone", "offsetless_zone", "clock_offset"]
+    value: Optional[str] = Field(default=None, max_length=64)
+    offset_seconds: Optional[int] = None
+    start: Optional[str] = Field(default=None, max_length=64)
+    end: Optional[str] = Field(default=None, max_length=64)
+
+
+@router.post("/{extraction_id}/setup/describe")
+def phone_setup_describe(extraction_id: UUID, body: SetupDescribe, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_db_user)):
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    conn = db.connection()
+    try:
+        phone_setup.state_exists(conn, body.case_id, extraction_id)
+        if body.kind == "region":
+            return phone_setup.describe_region(conn, extraction_id, (body.value or "").upper())
+        if body.kind == "device_zone":
+            return phone_setup.describe_device_zone(conn, extraction_id, body.value)
+        if body.kind == "offsetless_zone":
+            return phone_setup.describe_offsetless(conn, extraction_id, body.value)
+        return phone_setup.describe_clock(conn, extraction_id, body.offset_seconds, body.start, body.end)
+    except corrections.CorrectionError as exc:
+        _correction_error(db, exc)
+
+
+class PhoneSetting(BaseModel):
+    """A value, or null to clear the decision; the reason is required either way (02 section 8.8)."""
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    value: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+def _setting_call(db, user, fn, body, extraction_id, key):
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        out = fn(db, case_id=body.case_id, extraction_id=extraction_id, reason=body.reason, actor=_actor(user),
+                 **{key: body.value})
+    except corrections.CorrectionError as exc:
+        _correction_error(db, exc)
+    db.commit()
+    return out
+
+
+@router.post("/{extraction_id}/default-region")
+def set_default_region(extraction_id: UUID, body: PhoneSetting, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_db_user)):
+    """A ``set_phone_default_region`` decision; the phone is read again (02 sections 8.3, 8.8)."""
+    return _setting_call(db, user, corrections.set_default_region, body, extraction_id, "region")
+
+
+@router.post("/{extraction_id}/device-zone")
+def set_device_zone(extraction_id: UUID, body: PhoneSetting, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_db_user)):
+    """A ``set_phone_device_zone`` decision; the phone is read again (02 section 4.2)."""
+    return _setting_call(db, user, corrections.set_device_zone, body, extraction_id, "zone")
+
+
+@router.post("/{extraction_id}/offsetless-zone")
+def apply_offsetless_zone(extraction_id: UUID, body: PhoneSetting, db: Session = Depends(get_db),
+                          user: User = Depends(get_current_db_user)):
+    """An ``apply_phone_zone_to_offsetless`` decision; the phone is read again (02 section 4.1 rule 2)."""
+    return _setting_call(db, user, corrections.apply_zone_to_offsetless, body, extraction_id, "zone")
+
+
 class OwnerDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID
@@ -1684,6 +1768,20 @@ class DisplaySettings(BaseModel):
     time_zone: str = Field(min_length=1, max_length=64)
 
 
+def _own_blur(conn, case_id, user):
+    """This person's own blur choice in this case (03 section 8.3, 07 section 4.11); None when they made none."""
+    from sqlalchemy import text as sql
+    return conn.execute(sql("SELECT media_blur FROM phone_person_settings WHERE case_id = :c AND user_id = :u"),
+                        {"c": case_id, "u": user.id}).scalar()
+
+
+class OwnBlur(BaseModel):
+    """A person's own choice in this case; null goes back to the case default."""
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    blur: Optional[bool] = None
+
+
 @router.get("/settings")
 def get_settings(case_id: UUID = Query(...), db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
     """The case time zone for phone data (4.6): the setting if one is saved, else the default and why."""
@@ -1695,7 +1793,8 @@ def get_settings(case_id: UUID = Query(...), db: Session = Depends(get_db), user
     zone = streams.case_zone(db.connection(), case_id)
     return {"case_id": str(case_id), "time_zone": row.time_zone if row else None, "effective": zone,
             "updated_at": time_display.iso(row.updated_at) if row else None, "updated_by": row.name if row else None,
-            "media_blur": media_blur_default(db.connection(), case_id)}
+            "media_blur": media_blur_default(db.connection(), case_id),
+            "own_media_blur": _own_blur(db.connection(), case_id, user)}
 
 
 def media_blur_default(conn, case_id) -> dict:
@@ -1763,6 +1862,28 @@ def put_settings(body: DisplaySettings, db: Session = Depends(get_db), user: Use
                            user=user.email, success=True, db=db)
     db.commit()
     return get_settings(case_id=body.case_id, db=db, user=user)
+
+
+@router.put("/settings/my-blur")
+def put_own_blur(body: OwnBlur, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """One person's own choice (07 section 4.11: each person can turn blur off): anyone who can view the case."""
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    from sqlalchemy import text as sql
+    db.connection().execute(sql(
+        "INSERT INTO phone_person_settings (case_id, user_id, media_blur, updated_at) VALUES (:c, :u, :b, now()) "
+        "ON CONFLICT (case_id, user_id) DO UPDATE SET media_blur = EXCLUDED.media_blur, updated_at = now()"),
+        {"c": body.case_id, "u": user.id, "b": body.blur})
+    db.commit()
+    return get_settings(case_id=body.case_id, db=db, user=user)
+
+
+@router.get("/significant")
+def phone_significant(case_id: UUID = Query(...), db: Session = Depends(get_db),
+                      user: User = Depends(get_current_db_user)):
+    """The Significant sentence's counts (07 XF-11), from the set the ``significant_only`` filter narrows by."""
+    from services.phone import significant
+    authorize_case(db, case_id, user, ("case", "view"))
+    return significant.summary(db.connection(), case_id)
 
 
 @router.post("/streams/index")

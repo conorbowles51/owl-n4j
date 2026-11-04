@@ -236,6 +236,101 @@ def set_clock_offset(db, *, case_id, extraction_id, offset_seconds, start=None, 
     return {"decision_id": str(row.id), "offset_seconds": offset_seconds}
 
 
+def _latest(conn, extraction_id, decision):
+    """The latest decision of this kind on a phone, with who, when and why."""
+    return conn.execute(text(
+        "SELECT id, after, before, actor_name, created_at, reason FROM adjudications WHERE subject_type = "
+        "'phone_extraction' AND subject_id = :e AND decision = :d ORDER BY subject_sequence DESC LIMIT 1"),
+        {"e": extraction_id, "d": decision}).one_or_none()
+
+
+def decided_setting(conn, extraction_id, decision, key):
+    """The value a phone setting decision holds now; None when there is none or the last one cleared it."""
+    r = _latest(conn, extraction_id, decision)
+    return (r.after or {}).get(key) if r else None
+
+
+def _setting(db, *, case_id, extraction_id, decision, key, value, computed, reason, actor, feed_kind, words):
+    """One phone setting (02 section 8.8). The decision is the only write; the sweep re-reads the phone through the
+    production pass because the decision changes the phone's decision revision (5.7). ``before`` keeps what was
+    decided, which is what an undo goes back to, and the value the phone had without any decision. ``value`` None
+    clears the decision. A setting decided twice to one value is refused: nothing would change."""
+    from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
+    from postgres.models.phone_extraction import PhoneExtraction
+    from services import manual_changes
+    from services.financial import decisions
+    if not reason or not reason.strip():
+        raise CorrectionError("%s needs a reason in your own words." % words)
+    ext = db.get(PhoneExtraction, extraction_id)
+    if ext is None or str(ext.case_id) != str(case_id):
+        raise CorrectionError("That phone is not in this case.")
+    was = decided_setting(db.connection(), extraction_id, decision, key)
+    if was == value:
+        raise CorrectionError("That is already the value in effect.")
+    before, after = {key: was, "computed": computed}, {key: value, "computed": computed}
+    row = decisions.record(db, case_id=case_id, subject=ext, subject_type=AdjudicationSubject.phone_extraction,
+                           decision=AdjudicationDecision(decision), reason=reason.strip(), actor=actor,
+                           before=before, after=after)
+    manual_changes.record_change(db, feed_kind, case_id, {"type": "phone_extraction", "id": str(extraction_id)},
+                                 before, after, actor, reason.strip(), link="/cases/%s/phones/%s" % (case_id, extraction_id),
+                                 pattern_key=manual_changes.make_pattern_key(feed_kind))
+    return {"decision_id": str(row.id), key: value, "before": was, "computed": computed}
+
+
+def set_default_region(db, *, case_id, extraction_id, region, reason, actor) -> dict:
+    """``set_phone_default_region`` (02 sections 8.3, 8.8): the country numbers written without + are read in on this
+    phone. None clears the decision, so the case setting or the assumed default applies again."""
+    from services.phone import numbers
+    from services.phone.mappings import apply
+    if region is not None:
+        region = region.strip().upper()
+        if region not in numbers.regions():
+            raise CorrectionError("Choose a country from the list.")
+    return _setting(db, case_id=case_id, extraction_id=extraction_id, decision="set_phone_default_region",
+                    key="default_region", value=region, computed=_undecided_region(db.connection(), extraction_id),
+                    reason=reason, actor=actor, feed_kind="phone_default_region", words="Setting the country")
+
+
+def _undecided_region(conn, extraction_id):
+    """The region this phone reads under with no decision on it (02 section 8.3 steps 2 and 3)."""
+    case_region = conn.execute(text(
+        "SELECT c.phone_default_region FROM cases c JOIN phone_extractions e ON e.case_id = c.id WHERE e.id = :e"),
+        {"e": extraction_id}).scalar()
+    return case_region or "US"
+
+
+def _valid_zone(zone):
+    from services.phone import time_display
+    if zone is not None and not time_display.valid_zone(zone):
+        raise CorrectionError("Choose a time zone from the list (for example America/New_York).")
+    return zone
+
+
+def set_device_zone(db, *, case_id, extraction_id, zone, reason, actor) -> dict:
+    """``set_phone_device_zone`` (02 section 4.2): the zone this phone kept. The report's value stays in the decision's
+    ``before`` and on the capture row; every screen reads ``pv_extraction.device_zone``. None clears the decision."""
+    computed = db.connection().execute(text("SELECT device_zone FROM phone_extractions WHERE id = :e"),
+                                       {"e": extraction_id}).scalar()
+    return _setting(db, case_id=case_id, extraction_id=extraction_id, decision="set_phone_device_zone",
+                    key="device_zone", value=_valid_zone(zone), computed=computed, reason=reason, actor=actor,
+                    feed_kind="phone_device_zone", words="Setting the time zone")
+
+
+def apply_zone_to_offsetless(db, *, case_id, extraction_id, zone, reason, actor) -> dict:
+    """``apply_phone_zone_to_offsetless`` (02 section 4.1 rule 2): read this phone's times written with no offset in
+    this zone. The report's text and wall time stay; the instant is labelled as coming from the decision. None
+    returns those times to "no offset in report"."""
+    return _setting(db, case_id=case_id, extraction_id=extraction_id, decision="apply_phone_zone_to_offsetless",
+                    key="offsetless_zone", value=_valid_zone(zone), computed=None, reason=reason, actor=actor,
+                    feed_kind="phone_offsetless_zone", words="Applying a zone")
+
+
+def zone_time(wall, zone_name):
+    """A wall time read in a chosen zone, as UTC. A time the clocks skip or repeat takes zoneinfo's first reading."""
+    from zoneinfo import ZoneInfo
+    return wall.replace(tzinfo=ZoneInfo(zone_name)).astimezone(timezone.utc)
+
+
 def set_owner(db, *, case_id, extraction_id, identity_key, reason, actor) -> dict:
     """``set_phone_owner`` (8.8, 03 section 7.3): a person says whose phone this is. The number must be one this
     phone shows (an owner candidate or a party to its messages and calls); the computed candidates stay visible."""

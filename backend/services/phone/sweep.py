@@ -140,6 +140,14 @@ def candidates(conn, limit=50, only=None):
     return out
 
 
+def decided_device_zone(conn, extraction_id):
+    """The zone a ``set_phone_device_zone`` decision holds (02 section 4.2), else None."""
+    row = conn.execute(text(
+        "SELECT after FROM adjudications WHERE subject_type = 'phone_extraction' AND subject_id = :e AND decision = "
+        "'set_phone_device_zone' ORDER BY subject_sequence DESC LIMIT 1"), {"e": extraction_id}).first()
+    return (row[0] or {}).get("device_zone") if row else None
+
+
 def examiner_zone(flags):
     return ((flags or {}).get("examiner_selected_zone") or {}).get("zone")
 
@@ -206,14 +214,16 @@ def interpret_one(engine, extraction_id) -> dict:
                           **{"applied:%s" % k: v for k, v in applied.items()})
             if generation:
                 counts["purge_pending"] = True  # cleared by the purge below; a stopped process leaves it set
+            decided_zone = decided_device_zone(conn, extraction_id)
             conn.execute(text(
                 "UPDATE phone_interpretation_state SET generation = :g, mapping_set_id = :ms, interpreter_version = :iv, "
                 "capture_revision = :cr, decision_revision = :dr, registry_observed_at = now(), interpreted_at = now(), "
                 "device_zone = :dz, device_zone_basis = :dzb, examiner_zone = :ez, status = 'done', error = NULL, "
                 "counts = CAST(:counts AS jsonb), updated_at = now() WHERE extraction_id = :e"),
                 {"g": new_gen, "ms": set_id, "iv": interpreter_version(), "cr": capture_revision(ext),
-                 "dr": decision_revision(conn, extraction_id), "dz": ext["device_zone"],
-                 "dzb": "device_setting_in_report" if ext["device_zone"] else "not_in_report",
+                 "dr": decision_revision(conn, extraction_id), "dz": decided_zone or ext["device_zone"],
+                 "dzb": "decided" if decided_zone else
+                        ("device_setting_in_report" if ext["device_zone"] else "not_in_report"),
                  "ez": examiner_zone(ext["flags"]), "counts": json.dumps(counts, default=str), "e": extraction_id})
     # The swap has committed: readers see generation new_gen. Earlier generations go in short paced transactions.
     t0 = time.monotonic()

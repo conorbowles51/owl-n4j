@@ -84,8 +84,8 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
 
     times = {}
     for t in conn.execute(text(
-            "SELECT record_uid, field_path, value_index, instant, original_text, offset_present, local_wall_time "
-            "FROM pv_time WHERE extraction_id = :e AND (record_uid = CAST(:u AS uuid) OR record_uid IN (SELECT "
+            "SELECT record_uid, field_path, value_index, instant, original_text, offset_present, local_wall_time, "
+            "instant_basis FROM pv_time WHERE extraction_id = :e AND (record_uid = CAST(:u AS uuid) OR record_uid IN (SELECT "
             "record_uid FROM phone_record_summaries WHERE root_record_uid = CAST(:u AS uuid) OR parent_record_uid = "
             "CAST(:u AS uuid)))"), {"e": ext, "u": str(record_uid)}):
         times[(str(t.record_uid), t.field_path, t.value_index)] = t
@@ -107,7 +107,7 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
                     item["time"] = {
                         "original_text": t.original_text if t else v.text,
                         "offset_present": bool(t.offset_present) if t else None,
-                        "full": T.format_full(t.instant, zone) if t and t.instant else
+                        "full": T.format_decided(t.instant, zone, t.instant_basis) if t and t.instant else
                         (T.format_wall(t.local_wall_time) if t and t.local_wall_time else T.NO_TIME),
                         "instant": T.iso(t.instant) if t and t.instant else None,
                     }
@@ -173,7 +173,7 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
                   "source_index": loc.source_index, "interpretation_level": loc.interpretation_level},
         "fields": root["fields"] if root else [], "attributes": root["attributes"] if root else {},
         "times": [{"record_uid": k[0], "field_path": k[1], "value_index": k[2], "instant": T.iso(t.instant),
-                   "full": T.format_full(t.instant, zone) if t.instant else
+                   "full": T.format_decided(t.instant, zone, t.instant_basis) if t.instant else
                    (T.format_wall(t.local_wall_time) if t.local_wall_time else T.NO_TIME),
                    "original_text": t.original_text, "offset_present": bool(t.offset_present)}
                   for k, t in sorted(times.items(), key=lambda kv: (kv[0][0] != str(record_uid), kv[0][1], kv[0][2]))],

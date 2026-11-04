@@ -214,6 +214,9 @@ class Interpreter:
         self.corr = _corrections.current(conn, extraction_id)
         self.offsets = _corrections.clock_offsets(conn, extraction_id)
         self._effective = _corrections.effective_instant
+        self._zone_time = _corrections.zone_time
+        self.offsetless_zone = _corrections.decided_setting(conn, extraction_id, "apply_phone_zone_to_offsetless",
+                                                            "offsetless_zone")
         self.ctx = {}
         self.subtree = []
         self.stats = defaultdict(int)
@@ -302,7 +305,12 @@ class Interpreter:
                     fpath = prefix + (f.name or "")
                     fixed = self.corr.get((uid, fpath, v.index))
                     eff, basis = self._effective(st["instant"], fixed[0] if fixed else None, self.offsets)
-                    if fixed or basis == "clock_offset":
+                    if eff is None and self.offsetless_zone and st["local_wall_time"] is not None:
+                        # 4.1 rule 2: instant and wall time stay as captured; only the effective instant is decided
+                        eff, moved = self._effective(self._zone_time(st["local_wall_time"], self.offsetless_zone), None,
+                                                     self.offsets)
+                        basis = "zone_and_clock" if moved == "clock_offset" else "zone_decision"
+                    if fixed or basis in ("clock_offset", "zone_decision", "zone_and_clock"):
                         self.stats["effective_" + basis] += 1
                     row = dict(
                         self._common(doc, ordinal, uid, root_uid, model_type, ds, dc,

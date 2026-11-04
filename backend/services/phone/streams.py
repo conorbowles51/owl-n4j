@@ -225,6 +225,10 @@ class Query:
                          "s.parent_record_uid = ev.record_uid AND s.generation = ev.generation AND t.extraction_id = "
                          "ev.extraction_id AND t.generation = ev.generation AND NOT t.is_sensitive AND %s))" % (cond, cond))
         self._participants()
+        if f.significant_only:
+            from services.phone import significant
+            keys = significant.identity_keys(self.conn, f.case_id)
+            self.where.append(self.party(keys) if keys else "false")
 
     def _flags(self):
         fl, w = self.f.flags, self.where
@@ -533,6 +537,8 @@ def build_rows(conn, ctx: L.LabelContext, rows, zone: str, f: StreamFilter) -> l
     if not rows:
         return []
     uids = [r.record_uid for r in rows]
+    from services.phone import phone_setup
+    zone_decided = phone_setup.zone_decided_times(conn, f.case_id, uids)
     parties = defaultdict(list)
     for p in conn.execute(text(
             "SELECT p.record_uid, p.identity_key, p.role, p.implied_role, p.role_in_record, p.name_in_record, "
@@ -596,7 +602,8 @@ def build_rows(conn, ctx: L.LabelContext, rows, zone: str, f: StreamFilter) -> l
             "thread": {"thread_key": r.thread_key, "title": titles.get(r.thread_key)} if r.thread_key else None,
             "direction": r.direction,
             "time": T.time_block(r.sort_instant, zone, offset_present=r.sort_instant is not None,
-                                 time_field=r.time_field),
+                                 time_field=r.time_field,
+                                 zone_decided=(str(r.record_uid), r.time_field) in zone_decided),
             "from": frm, "to": to, "body": r.body, "subject": r.subject,
             "call": {"duration_s": float(r.call_duration_s) if r.call_duration_s is not None else None,
                      "status": r.call_status, "video": r.video, "words": call_words(r)} if r.kind == "call" else None,

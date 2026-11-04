@@ -105,8 +105,9 @@ def grid(conn, extraction_ids, labels, start_date: date, end_date: date, zone_na
 def _grid(conn, extraction_ids, labels, start_date, end_date, zone_name, min_strength, classes, include_physical):
     device_zone = None
     if extraction_ids:
-        device_zone = conn.execute(text("SELECT device_zone FROM phone_extractions WHERE id = :e"),
-                                   {"e": extraction_ids[0]}).scalar()
+        device_zone = conn.execute(text(
+            "SELECT coalesce(s.device_zone, e.device_zone) FROM phone_extractions e LEFT JOIN phone_interpretation_state "
+            "s ON s.extraction_id = e.id WHERE e.id = :e"), {"e": extraction_ids[0]}).scalar()
     zone, zname = zone_of(zone_name, device_zone)
     whole_hour = True
     days = []

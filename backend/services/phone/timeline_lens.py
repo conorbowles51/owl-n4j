@@ -138,6 +138,10 @@ class _Other:
             elif len(sets) == len(f.participants):
                 w.append("t.identity_keys && CAST(:pk AS text[])")
                 self.p["pk"] = sorted({k for s in sets for k in s})
+        if f.significant_only:
+            from services.phone import significant
+            w.append("t.identity_keys && CAST(:sig AS text[])")
+            self.p["sig"] = significant.identity_keys(conn, f.case_id)
         if f.text.query.strip():
             from services.phone import fold as F
             if f.text.exact_characters:
@@ -330,11 +334,13 @@ def window(conn, f: TimelineLensFilter, *, snapshot_token, day, offset=0, limit=
                                           lens_kind="calls" if built["kind"] in ("call", "voicemail") else
                                           "emails" if built["kind"] == "email" else "messages")
     if other_ids:
-        from services.phone import readings
+        from services.phone import phone_setup, readings
         names = readings.phone_labels(conn, f.case_id)
-        for r in conn.execute(text(
-                "SELECT t.*, %s AS lens_kind FROM pv_timeline_entry t WHERE t.case_id = :c AND t.entry_uid = "
-                "ANY(CAST(:ids AS uuid[]))" % _kind_sql()), {"c": f.case_id, "ids": other_ids}):
+        found = conn.execute(text(
+            "SELECT t.*, %s AS lens_kind FROM pv_timeline_entry t WHERE t.case_id = :c AND t.entry_uid = "
+            "ANY(CAST(:ids AS uuid[]))" % _kind_sql()), {"c": f.case_id, "ids": other_ids}).fetchall()
+        zone_decided = phone_setup.zone_decided_times(conn, f.case_id, [r.record_uid for r in found])
+        for r in found:
             ext = str(r.extraction_id)
             # the StreamRow shape (03 4.5), so the one phone list shows, badges and copies it like a message
             rows[str(r.entry_uid)] = {
@@ -342,7 +348,7 @@ def window(conn, f: TimelineLensFilter, *, snapshot_token, day, offset=0, limit=
                 "phone": {"extraction_id": ext, "label": names.get(ext, "A phone")}, "app": None, "thread": None,
                 "direction": "none",
                 "time": T.time_block(r.instant, zone["name"], offset_present=r.instant is not None,
-                                     time_field=r.field_path),
+                                     time_field=r.field_path, zone_decided=(str(r.record_uid), r.field_path) in zone_decided),
                 "from": None, "to": [], "body": r.summary,
                 "subject": "%s: %s" % (KIND_WORDS.get(r.lens_kind, "Record"), r.model_type),
                 "call": None, "attachments": [], "flags": ["deleted"] if r.deleted_state else [],
