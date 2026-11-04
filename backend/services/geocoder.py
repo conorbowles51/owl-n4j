@@ -367,3 +367,187 @@ if _PRIMARY:
     logger.info("Geocoder primary backend: %s", _PRIMARY.name)
 if _FALLBACK and _FALLBACK is not _PRIMARY:
     logger.info("Geocoder fallback backend: %s", _FALLBACK.name)
+
+
+# ---------------------------------------------------------------------------
+# Offline forward lookup: a written place name -> GeoNames candidates
+# (docs/cellebrite/04-pattern-of-life.md section 6.5)
+# ---------------------------------------------------------------------------
+#
+# A suggestion only, never a placement: a person chooses a point and radius and that choice is what is saved. The
+# lookup reads a GeoNames index on this server and sends nothing anywhere. The index is a SQLite file built once from
+# the GeoNames ``cities1000.txt`` (with ``admin1CodesASCII.txt`` and ``countryInfo.txt`` beside it) under
+# ``$LOUPE_REFERENCE_DATA_DIR/geonames``:
+#
+#     python -m services.geocoder build-forward-index
+#
+# Each lookup opens it read-only, so no worker holds the 170,000 places in memory (an in-memory index measured
+# 98 MB and 16 s to load per worker on this server).
+
+import re as _re
+import sqlite3 as _sqlite3
+import sys as _sys
+import unicodedata as _ud
+
+GEONAMES_ATTRIBUTION = "Place names: GeoNames (geonames.org), CC BY 4.0"
+FORWARD_LIMIT = 5
+FORWARD_INDEX = "geonames-forward.sqlite"
+
+
+def _reference_dir() -> str:
+    return os.path.join(os.environ.get("LOUPE_REFERENCE_DATA_DIR", "/mnt/owl-data/reference-data"), "geonames")
+
+
+def fold_place_name(s: str) -> str:
+    """Case, accents and punctuation folded, spaces collapsed: ``"Sant Julià de Lòria"`` -> ``"sant julia de loria"``."""
+    s = _ud.normalize("NFKD", s or "")
+    s = "".join(ch for ch in s if not _ud.combining(ch)).casefold()
+    return " ".join(_re.sub(r"[^0-9a-z]+", " ", s).split())
+
+
+def forward_index_path() -> str:
+    return os.path.join(_reference_dir(), FORWARD_INDEX)
+
+
+def forward_source() -> Dict[str, Any]:
+    """``{"available", "path", "places", "reason"}`` for the offline place index, read from its own metadata."""
+    path = forward_index_path()
+    if not os.path.isfile(path):
+        return {"available": False, "path": path, "places": 0,
+                "reason": "The offline GeoNames place list is not installed on this server."}
+    try:
+        with _sqlite3.connect("file:%s?mode=ro" % path, uri=True) as db:
+            n = int(db.execute("SELECT value FROM meta WHERE key = 'places'").fetchone()[0])
+    except Exception as e:  # noqa: BLE001 - a broken index means no suggestions, said so
+        logger.warning("GeoNames forward index unreadable: %s", e)
+        return {"available": False, "path": path, "places": 0,
+                "reason": "The offline GeoNames place list on this server could not be read."}
+    return {"available": True, "path": path, "places": n, "reason": None}
+
+
+def build_forward_index(source_dir: Optional[str] = None, out_path: Optional[str] = None) -> Dict[str, Any]:
+    """Build the SQLite index from GeoNames ``cities1000.txt`` (tab-separated, the export's own columns)."""
+    d = source_dir or _reference_dir()
+    out = out_path or os.path.join(d, FORWARD_INDEX)
+    admin1, countries = {}, dict(_COUNTRY_NAMES)
+    a1 = os.path.join(d, "admin1CodesASCII.txt")
+    if os.path.isfile(a1):
+        with open(a1, encoding="utf-8") as fh:
+            for line in fh:
+                p = line.rstrip("\n").split("\t")
+                if len(p) >= 2:
+                    admin1[p[0]] = p[1]
+    ci = os.path.join(d, "countryInfo.txt")
+    if os.path.isfile(ci):
+        with open(ci, encoding="utf-8") as fh:
+            for line in fh:
+                p = line.rstrip("\n").split("\t")
+                if not line.startswith("#") and len(p) > 4 and p[0]:
+                    countries[p[0]] = p[4]
+    tmp = out + ".building"
+    if os.path.exists(tmp):
+        os.remove(tmp)
+    db = _sqlite3.connect(tmp)
+    db.executescript(
+        "CREATE TABLE place (geonameid INTEGER PRIMARY KEY, name TEXT NOT NULL, fold TEXT NOT NULL, "
+        "lat REAL NOT NULL, lon REAL NOT NULL, cc TEXT, admin1_code TEXT, admin1 TEXT, population INTEGER);"
+        "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);")
+    n = bad = 0
+    batch = []
+    with open(os.path.join(d, "cities1000.txt"), encoding="utf-8") as fh:
+        for line in fh:
+            p = line.rstrip("\n").split("\t")
+            try:
+                row = (int(p[0]), p[1], fold_place_name(p[1]), float(p[4]), float(p[5]), p[8] or None,
+                       p[10] or None, admin1.get("%s.%s" % (p[8], p[10])), int(p[14] or 0))
+            except (IndexError, ValueError):
+                bad += 1
+                continue
+            batch.append(row)
+            n += 1
+            if len(batch) >= 20000:
+                db.executemany("INSERT INTO place VALUES (?,?,?,?,?,?,?,?,?)", batch)
+                batch = []
+    if batch:
+        db.executemany("INSERT INTO place VALUES (?,?,?,?,?,?,?,?,?)", batch)
+    db.execute("CREATE INDEX ix_place_fold ON place (fold)")
+    db.executemany("INSERT INTO meta VALUES (?, ?)", [("places", str(n)), ("rejected", str(bad)),
+                                                     ("countries", "\t".join("%s=%s" % kv for kv in
+                                                                             sorted(countries.items())))])
+    db.commit()
+    db.close()
+    os.replace(tmp, out)
+    os.chmod(out, 0o644)
+    return {"places": n, "rejected": bad, "path": out}
+
+
+_COUNTRY_CACHE: Dict[str, Any] = {}
+
+
+def _countries(db, path) -> tuple:
+    """(code -> name, folded country names) from the index's metadata, kept per index file and build time."""
+    key = (path, os.path.getmtime(path))
+    if _COUNTRY_CACHE.get("key") != key:
+        raw = db.execute("SELECT value FROM meta WHERE key = 'countries'").fetchone()
+        names = dict(kv.split("=", 1) for kv in raw[0].split("\t") if "=" in kv) if raw and raw[0] else {}
+        _COUNTRY_CACHE.update(key=key, names=names, folded={fold_place_name(v): k for k, v in names.items()})
+    return _COUNTRY_CACHE["names"], _COUNTRY_CACHE["folded"]
+
+
+def _name_parts(text: str):
+    """(names, region codes, country words) from a written place. Names are each comma-separated part (last first,
+    where a town usually stands) without house numbers, postcodes or a trailing two-letter region code, then the
+    whole text; region codes are two-letter capitals (``IL``, ``CA``) that rank places in that region first."""
+    parts = [p.strip() for p in (text or "").split(",") if p.strip()]
+    names, regions = [], set()
+    for p in reversed(parts):
+        raw_words = [w for w in p.replace(".", " ").split() if not any(ch.isdigit() for ch in w)]
+        while raw_words and len(raw_words[-1]) == 2 and raw_words[-1].isalpha() and raw_words[-1].isupper():
+            regions.add(raw_words.pop())  # "Springfield IL 62701" -> name "springfield", region IL
+        cand = fold_place_name(" ".join(raw_words))
+        if cand and cand not in names:
+            names.append(cand)
+    whole = fold_place_name(text)
+    if whole and whole not in names:
+        names.append(whole)
+    return names, regions, {fold_place_name(p) for p in parts}
+
+
+def forward_candidates(text: str, limit: int = FORWARD_LIMIT) -> Dict[str, Any]:
+    """GeoNames places whose name matches a part of ``text``: ``{"total", "returned", "limit", "candidates",
+    "attribution"}``. Each candidate: name, lat, lon, country_code, country, admin1, population, geonameid, matched
+    (the part of the text it matched). Places in a region or country the text names come first, then by the part's
+    position (last part first), then population. ``total`` counts every match, so a clipped list says so. Raises
+    ``LookupError`` when the index is not installed."""
+    src = forward_source()
+    if not src["available"]:
+        raise LookupError(src["reason"])
+    names, regions, words = _name_parts(text)
+    with _sqlite3.connect("file:%s?mode=ro" % src["path"], uri=True) as db:
+        countries, folded = _countries(db, src["path"])
+        wanted_cc = {folded[w] for w in words if w in folded}
+        seen, ordered = set(), []
+        for rank, part in enumerate(names):
+            if not part or part in folded:
+                continue  # a country name alone is not a place to stand at
+            for gid, name, lat, lon, cc, a1c, a1, pop in db.execute(
+                    "SELECT geonameid, name, lat, lon, cc, admin1_code, admin1, population FROM place WHERE fold = ?",
+                    (part,)):
+                if gid in seen:
+                    continue
+                seen.add(gid)
+                in_region = (a1c in regions) or (cc in regions) or (cc in wanted_cc)
+                ordered.append(((0 if in_region else 1, rank, -(pop or 0)), {
+                    "name": name, "lat": lat, "lon": lon, "country_code": cc, "country": countries.get(cc or ""),
+                    "admin1": a1, "population": pop, "geonameid": gid, "matched": part}))
+    ordered.sort(key=lambda x: x[0])
+    out = [c for _, c in ordered[:limit]]
+    return {"total": len(ordered), "returned": len(out), "limit": limit, "candidates": out,
+            "attribution": GEONAMES_ATTRIBUTION}
+
+
+if __name__ == "__main__":  # pragma: no cover - operator command
+    if _sys.argv[1:2] == ["build-forward-index"]:
+        print(build_forward_index(*(_sys.argv[2:4])))
+    else:
+        print("usage: python -m services.geocoder build-forward-index [source_dir] [out_path]")

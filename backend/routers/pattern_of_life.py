@@ -412,6 +412,94 @@ def get_manual_place_history(transaction_id: UUID, case_id: UUID = Depends(requi
     return _jsonable({"total": len(rows), "items": rows})
 
 
+# ---- text places (04 section 6.5) ----------------------------------------------------------------------------------
+
+class TextPlaceTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    record_uid: UUID
+    field_path: str = Field(min_length=1, max_length=512)
+
+
+class TextPlaceRequest(TextPlaceTarget):
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    radius_m: int = Field(ge=1, le=50000)
+    reason: str = Field(min_length=1, max_length=4000)
+    suggestion: dict | None = None
+
+
+class TextPlaceRemoval(TextPlaceTarget):
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+def _text_place_error(exc):
+    return HTTPException(status_code=exc.status, detail=str(exc))
+
+
+@router.get("/{case_id}/text-places")
+def get_text_places(extraction_id: UUID | None = Query(None), status: str = Query("all"),
+                    cursor: int = Query(0, ge=0), case_id: UUID = Depends(require_case_view),
+                    db: Session = Depends(get_db)):
+    """Written places of the case's phones with no coordinate (calendar locations, check-in names, written
+    addresses), each with its current placement by a person, paged with true totals."""
+    from services.pattern_of_life import text_places
+    try:
+        out = text_places.list_places(db.connection(), case_id, extraction_id=extraction_id, status=status,
+                                      cursor=cursor)
+    except text_places.TextPlaceError as exc:
+        raise _text_place_error(exc)
+    return _jsonable(out)
+
+
+@router.get("/{case_id}/text-places/suggestions")
+def get_text_place_suggestions(record_uid: UUID = Query(...), field_path: str = Query(..., max_length=512),
+                               case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
+    """Offline GeoNames candidates for one written place: suggested, not confirmed. Off, with the reason, when the
+    configured geocoder is not in house or the place list is not installed."""
+    from services.pattern_of_life import text_places
+    try:
+        return _jsonable(text_places.suggest(db.connection(), case_id, record_uid, field_path))
+    except text_places.TextPlaceError as exc:
+        raise _text_place_error(exc)
+
+
+@router.get("/{case_id}/text-places/history")
+def get_text_place_history(record_uid: UUID = Query(...), field_path: str = Query(..., max_length=512),
+                           case_id: UUID = Depends(require_case_view), db: Session = Depends(get_db)):
+    from services.pattern_of_life import text_places
+    rows = text_places.history(db.connection(), case_id, record_uid, field_path)
+    return _jsonable({"total": len(rows), "items": rows})
+
+
+@router.post("/{case_id}/text-places")
+def post_text_place(body: TextPlaceRequest, case_id: UUID = Depends(require_case_edit),
+                    db: Session = Depends(get_db), user=Depends(get_current_db_user)):
+    """A person places a written place on the map (point, radius, reason), recorded as a decision with them as
+    Actor. A suggestion they started from is kept beside it; the point and radius saved are theirs."""
+    from services.pattern_of_life import text_places
+    try:
+        out = text_places.place(db, case_id, body.record_uid, body.field_path, lat=body.lat, lon=body.lon,
+                                radius_m=body.radius_m, reason=body.reason, actor=_place_actor(user),
+                                suggestion=body.suggestion)
+    except text_places.TextPlaceError as exc:
+        raise _text_place_error(exc)
+    db.commit()
+    return out
+
+
+@router.post("/{case_id}/text-places/remove")
+def post_text_place_removal(body: TextPlaceRemoval, case_id: UUID = Depends(require_case_edit),
+                            db: Session = Depends(get_db), user=Depends(get_current_db_user)):
+    from services.pattern_of_life import text_places
+    try:
+        out = text_places.remove(db, case_id, body.record_uid, body.field_path, reason=body.reason,
+                                 actor=_place_actor(user))
+    except text_places.TextPlaceError as exc:
+        raise _text_place_error(exc)
+    db.commit()
+    return out
+
+
 # ---- statement check (04 section 9) ------------------------------------------------------------------------------
 
 class ClaimFields(BaseModel):

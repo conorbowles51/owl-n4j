@@ -145,6 +145,8 @@ def build(conn, extraction_id) -> dict:
                      "app": r.source_app})
         stats["observations:%s" % kind] += 1
     _insert(conn, rows)
+    from services.pattern_of_life import text_places  # a person's placements survive every rebuild (6.5)
+    stats.update({"text_places:" + k: v for k, v in text_places.project(conn, extraction_id).items()})
     stats.update(_towers(conn, extraction_id, case_id, gen))
     stats.update({"anchors:" + k: v for k, v in build_anchors(conn, case_id).items()})
     return dict(stats)

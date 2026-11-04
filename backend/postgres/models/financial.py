@@ -127,7 +127,7 @@ _ADJUDICATION_DECISIONS = (
     "'confirm_phone_reading', 'correct_phone_reading', 'mark_not_duplicate', "
     "'attach_transaction_place', 'remove_transaction_place', 'dispute_check_item', 'withdraw_check_item_dispute', "
     "'correct_machine_text', 'confirm_machine_text', 'not_pursue_phone_result', 'undo_phone_result_decision', "
-    "'correct_security_row', 'confirm_security_row')"
+    "'correct_security_row', 'confirm_security_row', 'place_text_place', 'remove_text_place')"
 )
 _ADJUDICATION_REASON_KINDS = "('typed', 'standard')"
 _QUARANTINE_REASONS = (

@@ -290,6 +290,11 @@ class AdjudicationDecision(str, Enum):
     # Reversed by ``remove_transaction_place``; attaching again over a place replaces it (before holds the old one).
     attach_transaction_place = "attach_transaction_place"
     remove_transaction_place = "remove_transaction_place"
+    # 04 section 6.5: a person places a written place of a phone record (a calendar location, a check-in name, a
+    # written address) on the map with a point and radius. Reversed by ``remove_text_place``; placing it again
+    # replaces it (before holds the old one). A GeoNames suggestion is never this decision until a person chooses.
+    place_text_place = "place_text_place"
+    remove_text_place = "remove_text_place"
     # 04 section 9.5: "This item is wrong" on a statement check item, with a typed reason. It marks the item and
     # changes no computed outcome (decision 11); withdrawing the mark is its reversal.
     dispute_check_item = "dispute_check_item"
