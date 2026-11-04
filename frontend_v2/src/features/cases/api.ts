@@ -87,7 +87,8 @@ export interface CaseDeletePreview {
   case_id: string
   title: string
   holds: CaseRecordCounts
-  restorable_days: number
+  /** Days a deleted case stays restorable; null while Deleted items are switched off (the delete is immediate). */
+  restorable_days: number | null
 }
 
 export interface DeletedPerson {
@@ -108,8 +109,10 @@ export interface DeletedCase {
 }
 
 export interface DeletedCasesResponse {
+  /** Deleted items switched on (server setting, off by default): off, deletes are immediate and the list is empty. */
+  enabled: boolean
   cases: DeletedCase[]
-  retention_days: number
+  retention_days: number | null
 }
 
 /** Plain words for the counted tables, in the order a person reads them. */

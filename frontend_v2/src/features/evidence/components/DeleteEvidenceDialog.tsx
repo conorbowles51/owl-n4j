@@ -17,6 +17,8 @@ interface DeleteEvidenceDialogProps {
   fileCount: number
   onConfirm: (deleteExclusiveEntities: boolean) => void
   isPending?: boolean
+  /** Deleted items switched on (server setting, off by default): the files are kept 30 days and can be restored. */
+  deletedItems?: boolean
 }
 
 export function DeleteEvidenceDialog({
@@ -25,6 +27,7 @@ export function DeleteEvidenceDialog({
   fileCount,
   onConfirm,
   isPending,
+  deletedItems = false,
 }: DeleteEvidenceDialogProps) {
   const [deleteEntities, setDeleteEntities] = useState(false)
 
@@ -37,10 +40,16 @@ export function DeleteEvidenceDialog({
             Delete Evidence
           </DialogTitle>
           <DialogDescription>
-            {fileCount} file{fileCount !== 1 ? "s" : ""} will be moved to Deleted items and disappear from every
-            screen, search and the agent. The case owner or an admin can restore{" "}
-            {fileCount !== 1 ? "them" : "it"} exactly as before for 30 days; after that{" "}
-            {fileCount !== 1 ? "they are" : "it is"} removed for good.
+            {deletedItems ? (
+              <>
+                {fileCount} file{fileCount !== 1 ? "s" : ""} will be moved to Deleted items and disappear from every
+                screen, search and the agent. The case owner or an admin can restore{" "}
+                {fileCount !== 1 ? "them" : "it"} exactly as before for 30 days; after that{" "}
+                {fileCount !== 1 ? "they are" : "it is"} removed for good.
+              </>
+            ) : (
+              <>This will permanently delete {fileCount} file{fileCount !== 1 ? "s" : ""} from this case.</>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -53,10 +62,12 @@ export function DeleteEvidenceDialog({
             />
             <div>
               <p className="text-sm font-medium text-foreground">
-                Also hide exclusive entities
+                {deletedItems ? "Also hide exclusive entities" : "Also delete exclusive entities"}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Hide the entities and relationships found only in these files (they come back with a restore)
+                {deletedItems
+                  ? "Hide the entities and relationships found only in these files (they come back with a restore)"
+                  : "Remove entities and relationships that were only found in these files"}
               </p>
             </div>
           </label>
@@ -71,7 +82,9 @@ export function DeleteEvidenceDialog({
             onClick={() => onConfirm(deleteEntities)}
             disabled={isPending}
           >
-            {isPending ? "Moving..." : "Move to Deleted items"}
+            {deletedItems
+              ? isPending ? "Moving..." : "Move to Deleted items"
+              : isPending ? "Deleting..." : "Delete"}
           </Button>
         </DialogFooter>
       </DialogContent>

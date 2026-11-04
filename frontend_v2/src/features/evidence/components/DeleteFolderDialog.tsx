@@ -22,6 +22,8 @@ interface DeleteFolderDialogProps {
   isPending?: boolean
   /** Why the last delete was refused (shown in the dialog; the folder is kept). */
   error?: string | null
+  /** Deleted items switched on (server setting, off by default): the files are kept 30 days and can be restored. */
+  deletedItems?: boolean
 }
 
 export function DeleteFolderDialog({
@@ -33,6 +35,7 @@ export function DeleteFolderDialog({
   onConfirm,
   isPending,
   error,
+  deletedItems = false,
 }: DeleteFolderDialogProps) {
   const summary = useQuery({
     queryKey: ["evidence-folder-delete-summary", caseId, folderId],
@@ -59,7 +62,7 @@ export function DeleteFolderDialog({
           <div className="rounded-md border border-red-500/20 bg-red-500/5 p-3 text-sm" role="status">
             <p className="font-medium text-red-600 dark:text-red-400">
               {summary.data
-                ? describeFolderDelete(summary.data)
+                ? describeFolderDelete(summary.data, deletedItems)
                 : summary.isError
                   ? "The files in this folder could not be counted, so it cannot be deleted now. Close this and try again."
                   : "Counting the files in this folder and its subfolders…"}
@@ -67,8 +70,9 @@ export function DeleteFolderDialog({
           </div>
           <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm">
             <p className="text-primary">
-              Graph data (entities, relationships) found only in these files is hidden with them and comes back
-              with a restore.
+              {deletedItems
+                ? "Graph data (entities, relationships) found only in these files is hidden with them and comes back with a restore."
+                : "Graph data (entities, relationships) extracted from these files will be preserved in Neo4j."}
             </p>
           </div>
           {error && (

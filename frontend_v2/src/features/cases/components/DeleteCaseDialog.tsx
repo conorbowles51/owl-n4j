@@ -41,7 +41,9 @@ export function DeleteCaseDialog({
 
   const title = caseToDelete?.title ?? ""
   const matches = typed.trim() === title.trim() && title.trim() !== ""
-  const days = preview.data?.restorable_days ?? 30
+  // Deleted items switched on (the server says how long a restore stays possible); off, the delete is immediate.
+  const days = preview.data?.restorable_days ?? null
+  const kept = days !== null
   const counts = preview.data ? describeCaseCounts(preview.data.holds) : []
 
   const handleDelete = () => {
@@ -71,27 +73,46 @@ export function DeleteCaseDialog({
 
         <div className="space-y-3 py-2">
           <p className="text-sm">
-            <span className="font-semibold">{title}</span> will be moved to Deleted items.
+            {kept ? (
+              <>
+                <span className="font-semibold">{title}</span> will be moved to Deleted items.
+              </>
+            ) : (
+              <>
+                Are you sure you want to delete <span className="font-semibold">{title}</span>?
+              </>
+            )}
           </p>
           <div
-            className="rounded-md border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 space-y-1.5"
+            className={
+              kept
+                ? "rounded-md border border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 space-y-1.5"
+                : "rounded-md border border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400 space-y-1.5"
+            }
             data-testid="delete-case-summary"
           >
             {preview.isLoading ? (
               <p>Counting what this case holds…</p>
             ) : preview.isError ? (
-              <p>What this case holds could not be counted. It is still kept in full if you delete it.</p>
+              <p>What this case holds could not be counted.</p>
             ) : (
               <p>
                 It holds{" "}
-                {counts.length ? counts.join(", ") : "no evidence, ledger or phone records"}. All of it
-                disappears from every screen, search and the agent at once.
+                {counts.length ? counts.join(", ") : "no evidence, ledger or phone records"}.
+                {kept ? " All of it disappears from every screen, search and the agent at once." : ""}
               </p>
             )}
-            <p>
-              The case owner or an admin can restore it, exactly as it was, from Deleted items for{" "}
-              {days} days. After that it is removed for good.
-            </p>
+            {kept ? (
+              <p>
+                The case owner or an admin can restore it, exactly as it was, from Deleted items for{" "}
+                {days} days. After that it is removed for good.
+              </p>
+            ) : (
+              <p>
+                This action is permanent. All case data, evidence files, snapshots, and graph data will be
+                irreversibly deleted.
+              </p>
+            )}
           </div>
           <label className="block space-y-1 text-xs">
             <span>
@@ -123,7 +144,7 @@ export function DeleteCaseDialog({
             onClick={handleDelete}
             disabled={deleteCase.isPending || !matches}
           >
-            {deleteCase.isPending ? <LoadingSpinner size="sm" /> : "Move to Deleted items"}
+            {deleteCase.isPending ? <LoadingSpinner size="sm" /> : kept ? "Move to Deleted items" : "Delete Case"}
           </Button>
         </DialogFooter>
       </DialogContent>

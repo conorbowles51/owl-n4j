@@ -323,7 +323,8 @@ export interface DeletedEvidenceFile {
 }
 
 export interface DeletedEvidenceResponse {
+  enabled: boolean
   files: DeletedEvidenceFile[]
-  retention_days: number
+  retention_days: number | null
   can_restore: boolean
 }

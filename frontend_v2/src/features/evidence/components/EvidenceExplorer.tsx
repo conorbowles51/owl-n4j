@@ -20,6 +20,7 @@ import { DeleteFolderDialog } from "./DeleteFolderDialog"
 import { folderDeleteRefusal } from "../folder-delete"
 import { DeleteEvidenceDialog } from "./DeleteEvidenceDialog"
 import { DeletedEvidenceDialog } from "./DeletedEvidenceDialog"
+import { useDeletedItemsEnabled } from "@/features/cases/hooks/use-deleted-items"
 import { FolderContextDialog } from "./FolderContextDialog"
 import { CaseProcessingProfileDialog } from "./CaseProcessingProfileDialog"
 import { toast } from "sonner"
@@ -112,6 +113,8 @@ export function EvidenceExplorer() {
   const [caseProfileOpen, setCaseProfileOpen] = useState(false)
   const [deleteEvidenceOpen, setDeleteEvidenceOpen] = useState(false)
   const [deletedItemsOpen, setDeletedItemsOpen] = useState(false)
+  // Deleted items switched on (server setting, off by default); off, deletes are immediate as before.
+  const deletedItems = useDeletedItemsEnabled()
   const [deleteEvidenceTarget, setDeleteEvidenceTarget] = useState<EvidenceFile | null>(null)
 
   // Mutations
@@ -151,7 +154,11 @@ export function EvidenceExplorer() {
       onSuccess: () => {
         setDeleteFolderOpen(false)
         setDeleteFolderTarget(null)
-        toast.success(`Folder "${deleteFolderTarget.name}" deleted; its files are in Deleted items for 30 days`)
+        toast.success(
+          deletedItems
+            ? `Folder "${deleteFolderTarget.name}" deleted; its files are in Deleted items for 30 days`
+            : `Folder "${deleteFolderTarget.name}" deleted`
+        )
       },
       onError: (err) => {
         const message = folderDeleteRefusal(err)
@@ -173,7 +180,11 @@ export function EvidenceExplorer() {
 
     const deleteNext = (index: number) => {
       if (index >= ids.length) {
-        toast.success(`Moved ${ids.length} file${ids.length !== 1 ? "s" : ""} to Deleted items (restorable for 30 days)`)
+        toast.success(
+          deletedItems
+            ? `Moved ${ids.length} file${ids.length !== 1 ? "s" : ""} to Deleted items (restorable for 30 days)`
+            : `Deleted ${ids.length} file${ids.length !== 1 ? "s" : ""}`
+        )
         setDeleteEvidenceOpen(false)
         setDeleteEvidenceTarget(null)
         clearSelection()
@@ -234,7 +245,7 @@ export function EvidenceExplorer() {
               onDeleteFolder={handleOpenDeleteFolder}
               onEditFolderProfile={setFolderProfileFolderId}
               onEditCaseProfile={() => setCaseProfileOpen(true)}
-              onOpenDeleted={() => setDeletedItemsOpen(true)}
+              onOpenDeleted={deletedItems ? () => setDeletedItemsOpen(true) : undefined}
             />
           </ResizablePanel>
 
@@ -252,7 +263,9 @@ export function EvidenceExplorer() {
         </ResizablePanelGroup>
 
         {/* Dialog portals */}
-        <DeletedEvidenceDialog caseId={caseId!} open={deletedItemsOpen} onOpenChange={setDeletedItemsOpen} />
+        {deletedItems && (
+          <DeletedEvidenceDialog caseId={caseId!} open={deletedItemsOpen} onOpenChange={setDeletedItemsOpen} />
+        )}
         <CreateFolderDialog
           open={createFolderOpen}
           onOpenChange={setCreateFolderOpen}
@@ -269,6 +282,7 @@ export function EvidenceExplorer() {
           onConfirm={handleConfirmDeleteFolder}
           isPending={deleteFolderMutation.isPending}
           error={deleteFolderError}
+          deletedItems={deletedItems}
         />
 
         <DeleteEvidenceDialog
@@ -277,6 +291,7 @@ export function EvidenceExplorer() {
           fileCount={deleteEvidenceTarget ? 1 : selectedFileIds.size}
           onConfirm={handleConfirmDeleteEvidence}
           isPending={deleteEvidenceMutation.isPending}
+          deletedItems={deletedItems}
         />
 
         {folderProfileFolderId ? (

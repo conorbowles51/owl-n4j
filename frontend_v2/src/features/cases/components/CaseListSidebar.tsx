@@ -19,6 +19,7 @@ import { isSuperAdminUser } from "@/features/auth/auth.types"
 import { CaseListItem } from "./CaseListItem"
 import { CreateCaseDialog } from "./CreateCaseDialog"
 import { DeletedCasesDialog } from "./DeletedCasesDialog"
+import { useDeletedItemsEnabled } from "../hooks/use-deleted-items"
 import type { Case } from "@/types/case.types"
 
 interface CaseListSidebarProps {
@@ -30,6 +31,7 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
   const [createOpen, setCreateOpen] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
   const [deletedOpen, setDeletedOpen] = useState(false)
+  const deletedItems = useDeletedItemsEnabled()
   const { selectedCaseId, setSelectedCaseId, viewMode, setViewMode, sortBy, setSortBy } =
     useCaseManagementStore()
   const user = useAuthStore((s) => s.user)
@@ -129,15 +131,17 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
           />
           Archived
         </label>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 w-full justify-start gap-2 px-1 text-xs text-muted-foreground"
-          onClick={() => setDeletedOpen(true)}
-        >
-          <Trash2 className="size-3.5" />
-          Deleted items
-        </Button>
+        {deletedItems && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-full justify-start gap-2 px-1 text-xs text-muted-foreground"
+            onClick={() => setDeletedOpen(true)}
+          >
+            <Trash2 className="size-3.5" />
+            Deleted items
+          </Button>
+        )}
       </div>
 
       {/* Case list */}
@@ -186,7 +190,7 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
       </div>
 
       <CreateCaseDialog open={createOpen} onOpenChange={setCreateOpen} />
-      <DeletedCasesDialog open={deletedOpen} onOpenChange={setDeletedOpen} />
+      {deletedItems && <DeletedCasesDialog open={deletedOpen} onOpenChange={setDeletedOpen} />}
     </div>
   )
 }

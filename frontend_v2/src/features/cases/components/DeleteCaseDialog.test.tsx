@@ -67,4 +67,26 @@ describe("DeleteCaseDialog", () => {
     expect(hooks.mutate).toHaveBeenCalledTimes(1)
     expect(hooks.mutate.mock.calls[0][0]).toEqual({ caseId: "case-1", confirmTitle: "Operation Lantern" })
   })
+
+  it("with Deleted items switched off (live) says the delete is permanent and never mentions Deleted items", () => {
+    const on = hooks.preview.data
+    hooks.preview = { ...hooks.preview, data: { ...on, restorable_days: null } as unknown as typeof on }
+    try {
+      render(<DeleteCaseDialog open onOpenChange={() => {}} caseToDelete={lantern} />)
+      const summary = screen.getByTestId("delete-case-summary").textContent ?? ""
+      expect(summary).toContain("480 ledger rows")
+      expect(summary).toMatch(/permanent/)
+      expect(document.body.textContent ?? "").not.toMatch(/Deleted items|restore|30 days/i)
+      const button = screen.getByRole("button", { name: "Delete Case" })
+      expect(button).toBeDisabled()
+      fireEvent.change(screen.getByLabelText("Case title to confirm"), { target: { value: "Operation Lantern" } })
+      fireEvent.click(button)
+      expect(hooks.mutate).toHaveBeenCalledWith(
+        { caseId: "case-1", confirmTitle: "Operation Lantern" },
+        expect.anything()
+      )
+    } finally {
+      hooks.preview = { ...hooks.preview, data: on }
+    }
+  })
 })

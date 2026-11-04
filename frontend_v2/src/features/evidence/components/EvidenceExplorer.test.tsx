@@ -58,6 +58,7 @@ vi.mock("./DeleteFolderDialog", () => ({
     ) : null,
 }))
 vi.mock("./DeletedEvidenceDialog", () => ({ DeletedEvidenceDialog: () => null }))
+vi.mock("@/features/cases/hooks/use-deleted-items", () => ({ useDeletedItemsEnabled: () => false }))
 vi.mock("./DeleteEvidenceDialog", () => ({
   DeleteEvidenceDialog: ({ onConfirm }: { onConfirm: (exclusive: boolean) => void }) => (
     <button onClick={() => onConfirm(false)}>Confirm delete</button>
