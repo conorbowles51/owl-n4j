@@ -183,11 +183,15 @@ def record_count(conn, extraction_id) -> dict:
          "fr.record_ordinal WHERE fr.extraction_id = :e AND fr.mechanism = 'jumptarget' AND fr.resolution = "
          "'tagged_file') "
          "SELECT (SELECT count(*) FROM ok) AS files, "
+         "(SELECT count(DISTINCT (n.file_document_index, n.file_ordinal)) FROM phone_extra_info_nodes n JOIN ok ON "
+         "ok.document_index = n.file_document_index AND ok.ordinal = n.file_ordinal WHERE n.extraction_id = :e AND "
+         "n.resolution = 'tagged_file_id') AS files_by_id, "
          "(SELECT count(DISTINCT (document_index, top_ordinal)) FROM vx WHERE resolution = 'tagged_file_id') AS by_id, "
          "(SELECT count(DISTINCT (document_index, top_ordinal)) FROM vx) AS extra_info, "
          "(SELECT count(*) FROM vj) AS jump_target, "
          "(SELECT count(*) FROM (SELECT document_index, top_ordinal FROM vx UNION SELECT document_index, top_ordinal "
          "FROM vj) u) AS either")
     r = conn.execute(text(q), {"e": ext}).first()
-    return {"verified_database_files": r.files, "records_by_extra_info_id": r.by_id,
+    return {"verified_database_files": r.files, "verified_database_files_referenced_by_id": r.files_by_id,
+            "records_by_extra_info_id": r.by_id,
             "records_by_extra_info": r.extra_info, "records_by_jump_target": r.jump_target, "records": r.either}

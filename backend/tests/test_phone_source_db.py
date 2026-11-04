@@ -144,7 +144,8 @@ def test_the_gate_count_takes_top_level_records_once_by_each_mechanism(world):
     engine, _, ext = world
     with engine.connect() as c:
         n = source_db.record_count(c, ext)
-    assert n == {"verified_database_files": 2, "records_by_extra_info_id": 1, "records_by_extra_info": 1,
+    assert n == {"verified_database_files": 2, "verified_database_files_referenced_by_id": 1,
+                 "records_by_extra_info_id": 1, "records_by_extra_info": 1,
                  "records_by_jump_target": 1, "records": 2}
 
 
