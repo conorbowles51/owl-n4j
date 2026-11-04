@@ -1,4 +1,5 @@
-import { lazy, Suspense } from "react"
+import { Suspense } from "react"
+import { timedLazy as lazy } from "@/lib/timed-lazy"
 import { Routes, Route, Navigate } from "react-router-dom"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { LoginPage } from "@/features/auth/components/LoginPage"

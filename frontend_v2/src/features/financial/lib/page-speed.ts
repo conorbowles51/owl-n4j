@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react"
 import { useQueryClient, type QueryClient } from "@tanstack/react-query"
 import { apiRequestsInFlight, fetchAPI } from "@/lib/api-client"
 import { viewDetail, type ViewDetail } from "@/lib/browser-timing"
+import { pageChunksPending, takeMountedChunkStart, watchPageChunks } from "@/lib/page-chunks"
 
 /**
  * Time from opening a Financial view to its data being on screen, as the person sees it.
@@ -91,7 +92,8 @@ export function takeDocumentLoad(pathname: string, channel = "financial") {
 }
 
 /**
- * Resolves (with performance.now) at the first frame after nothing is fetching, or null on give-up/cancel.
+ * Resolves (with performance.now) at the first frame after nothing is fetching and no page chunk for this address
+ * is still loading or waiting to mount (lib/page-chunks.ts), or null on give-up/cancel.
  * Cache events only ask for a look at the next frame: client.isFetching() scans every query in the cache, so
  * scanning on every event cost events x queries (measured 630 ms of main thread on a Trends tab first open with
  * ~2,700 queries). At most one scan runs per frame, and the frame that finds nothing fetching is the time.
@@ -99,12 +101,14 @@ export function takeDocumentLoad(pathname: string, channel = "financial") {
 export function whenSettled(client: QueryClient, signal: { cancelled: boolean }): Promise<number | null> {
   return new Promise((resolve) => {
     let unsubscribe = () => {}
+    let unwatch = () => {}
     let done = false
     let frame: number | null = null
     const finish = (value: number | null) => {
       if (done) return
       done = true
       unsubscribe()
+      unwatch()
       clearTimeout(giveUp)
       if (frame !== null) cancelAnimationFrame(frame)
       resolve(value)
@@ -115,7 +119,8 @@ export function whenSettled(client: QueryClient, signal: { cancelled: boolean })
       if (done) return
       if (signal.cancelled) return finish(null)
       // Data has arrived and this frame paints it: the view is on screen.
-      if (client.isFetching() === 0) finish(performance.now())
+      // A lazy page whose code is still on its way has not asked for its data yet.
+      if (!pageChunksPending() && client.isFetching() === 0) finish(performance.now())
     }
     const lookNextFrame = () => {
       if (done) return
@@ -123,6 +128,7 @@ export function whenSettled(client: QueryClient, signal: { cancelled: boolean })
       frame ??= requestAnimationFrame(look)
     }
     unsubscribe = client.getQueryCache().subscribe(lookNextFrame)
+    unwatch = watchPageChunks(lookNextFrame)
     lookNextFrame()
   })
 }
@@ -151,7 +157,10 @@ export function useViewSpeed(caseId: string | null, page: string | null, channel
     // opening's start: it is the same page load.
     const inherit = previous && !previous.armed
     const method = inherit ? previous.method : takeDocumentLoad(window.location.pathname, channel) ? "LOAD" : "VIEW"
-    const start = inherit ? previous.start : method === "LOAD" ? 0 : performance.now()
+    // A page whose code had to arrive first was asked for when its code was (the address changes on screen
+    // only once the code is here).
+    const chunkStart = takeMountedChunkStart(channel)
+    const start = inherit ? previous.start : method === "LOAD" ? 0 : chunkStart ?? performance.now()
     const signal = { cancelled: false }
     const measuring = { start, method, armed: false, signal }
     current.current = measuring
