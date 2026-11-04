@@ -318,3 +318,15 @@ def test_an_import_request_waits_until_the_case_is_quiet(factory):
     with factory() as s:
         assert s.execute(text("SELECT count(*) FROM case_brief_requests WHERE case_id = :c"), {"c": cid}).scalar() == 0
         assert B.history(s.connection(), cid)["total"] == 1
+
+
+def test_a_person_deciding_a_phone_match_is_a_change_and_a_brief_without_match_counts_takes_them():
+    """05 4.3.8: confirming or rejecting a phone-to-payment match changes what the brief counts, so a new brief is
+    written; a brief made before matches were counted is not compared, but the first counts are a change."""
+    m0 = {"by_level": {"strong": 18, "moderate": 0, "weak": 10, "faint": 41}, "confirmed": 0, "rejected": 0}
+    m1 = {"by_level": {"strong": 18, "moderate": 0, "weak": 9, "faint": 41}, "confirmed": 1, "rejected": 1}
+    ph = {"phones": 1, "run_id": "x", "leads": {}, "outcomes": {"corroborated": 16}}
+    assert not B.diff(_snap(phone=dict(ph, matches=m0)), _snap(phone=dict(ph, matches=m0)))["something_changed"]
+    c = B.diff(_snap(phone=dict(ph, matches=m0)), _snap(phone=dict(ph, matches=m1)))
+    assert c["something_changed"] and c["newly_testable"]["phone_matches_after"] == m1
+    assert B.diff(_snap(phone=ph), _snap(phone=dict(ph, matches=m0)))["something_changed"]

@@ -576,6 +576,10 @@ def diff(prev: dict | None, cur: dict) -> dict:
     out["something_changed"] = bool(first or closed or opened or out["totals"]["changed"] or
                                     out["judgement_calls"]["added_open"] or out["judgement_calls"]["resolved"] or
                                     changed or testable or out["newly_testable"]["phone_unresolved_change"] or
+                                    # a person confirming or rejecting a phone match, or a run finding other matches
+                                    # (05 4.3.8); a brief made before matches were counted has none to compare
+                                    (p_ph.get("matches") is not None and p_ph.get("matches") != c_ph.get("matches")) or
+                                    (p_ph.get("matches") is None and bool(c_ph.get("matches"))) or
                                     prev.get("ledger_revision") != cur.get("ledger_revision"))
     return out
 
