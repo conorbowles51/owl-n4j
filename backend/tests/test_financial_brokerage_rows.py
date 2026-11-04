@@ -339,16 +339,28 @@ class BrokerageLedgerTests(DuplicateTestCase):
 
     def test_holdings_come_only_from_the_statement_s_own_pages(self):
         from services.financial import brokerage_ledger as BL
-        self.doc.metadata_ = dict(statement_import_original=dict(statement_page_numbers=[1]))
+        self.doc.metadata_ = dict(statement_import_statement_id='s1',
+                                  statement_import_original=dict(statement_page_numbers=[1]))
         self.cash(INTERCAM_REPO_MATURITY, amount=102979554, direction='credit', day=date(2025, 4, 1))
         sources = self._holding_sources(page=1) + self._holding_sources(page=2, instrument='+TASA M2')
-        with patch.object(BL, '_file_tables', return_value=sources):
-            BL.sync_document(self.db, self.doc.id)
+
+        def holdings():
+            with patch.object(BL, '_file_tables', return_value=sources):
+                BL.sync_document(self.db, self.doc.id)
+            self.db.commit()
+            return sorted(r.instrument for r in self.admitted() if r.row_kind == 'holding' and
+                          r.source_document_id == self.doc.id)
+        # The file holds this one statement: every page is its own (a position table on an information page too).
+        assert holdings() == ['+TASA M1', '+TASA M2']
+        # A re-read copy of the same statement is not another statement.
+        copy, _ = self._second_statement()
+        copy.metadata_ = dict(statement_import_statement_id='s1')
         self.db.commit()
-        assert [r.instrument for r in self.admitted() if r.row_kind == 'holding'] == ['+TASA M1']
-        # A second statement of the same file whose pages are not recorded reads no position table at all.
-        other, _ = self._second_statement()
-        assert BL.statement_pages(self.db, other) == []
+        assert BL.statement_pages(self.db, self.doc) is None
+        # Another statement of the same file: each reads its own recorded pages; one with none recorded reads none.
+        copy.metadata_ = dict(statement_import_statement_id='s2')
+        self.db.commit()
+        assert holdings() == ['+TASA M1'] and BL.statement_pages(self.db, copy) == []
 
     def test_a_removed_statement_s_holdings_are_not_shown_and_its_cited_row_says_why(self):
         from services.financial.brokerage_ledger import get_row, query_rows
@@ -396,6 +408,38 @@ class BrokerageLedgerTests(DuplicateTestCase):
                 raise AssertionError(value)
             except SecurityRowError as exc:
                 assert exc.status_code == code, (value, exc.status_code)
+
+    def test_a_statement_set_aside_and_restored_keeps_a_person_s_correction_and_confirmation(self):
+        from services.financial.brokerage_ledger import SecurityRowError, confirm_row, correct_row
+        self.cash(INTERCAM_REPO_MATURITY, amount=102979554, direction='credit', day=date(2025, 4, 1))
+        self.sync()
+        (trade,) = self.admitted()
+        correct_row(self.db, case_id=self.case.id, row_id=trade.id, field='quantity', value='10154',
+                    reason='Printed 10,154', actor=self.actor)
+        confirm_row(self.db, case_id=self.case.id, row_id=trade.id, reason='Checked', actor=self.actor)
+        self.doc.status = 'superseded'  # set aside, then restored: each re-syncs the statement's rows
+        self.sync()
+        assert self.admitted() == []
+        self.doc.status = 'admitted'
+        self.sync()
+        (back,) = self.admitted()
+        assert (back.id != trade.id, back.quantity, back.corrections['quantity']['read'], bool(back.confirmation)) == (
+            True, Decimal('10154'), '10153', True)
+        for field, value in (('instrument', ' '), ('execution_time', 'x' * 33)):
+            try:
+                correct_row(self.db, case_id=self.case.id, row_id=back.id, field=field, value=value, reason='x',
+                            actor=self.actor)
+                raise AssertionError(field)
+            except SecurityRowError as exc:
+                assert exc.status_code == 422
+
+    def test_a_holding_whose_value_was_not_read_is_counted_not_summed_as_zero(self):
+        from services.agent.brokerage_tools import _totals
+        row = dict(account_id='a', account='A', instrument='X 1', currency='MXN', holding_kind='repo',
+                   as_of_date='2025-04-30', quantity='10', market_value_minor=500)
+        (total,) = _totals([row, dict(row, market_value_minor=None)], 'holding')
+        assert (total['latest_quantity'], total['latest_lines_value_not_read'], total['latest_market_value_minor']) == (
+            '20', 1, None)
 
     def test_holdings_of_one_instrument_in_two_accounts_are_kept_apart_and_a_p4_statement_stays_p4(self):
         from services.agent.brokerage_tools import get_trades
@@ -501,4 +545,24 @@ class FundStatementTests(DuplicateTestCase):
         # Bought 1,949,992.38 (COMPRA), received 500,032.35 (VENTA); the reclassification moves no money.
         assert (fund['net_paid_minor'], fund['net_received_minor'], fund['money_direction_unknown']) == (
             194999238, 50003235, 1)
+
+    def test_a_fund_statement_removed_from_financial_leaves_the_ledger(self):
+        from postgres.models.evidence import EvidenceFile
+        from services.financial import brokerage_ledger as BL
+        Base.metadata.create_all(self.engine, tables=[FinancialSecurityRow.__table__])
+        doc = self.make_document()
+        file = self.db.get(EvidenceFile, doc.evidence_file_id)
+        with patch.object(BL, '_file_tables', return_value=FUND_TABLES), \
+                patch.object(BL, '_text_content', return_value=''):
+            BL.sync_fund_statement(self.db, file.id)
+            self.db.commit()
+            assert BL.query_rows(self.db, case_id=self.case.id)['total'] == 4  # 3 read, 1 line not read
+            file.metadata_ = dict(financial_import_removal=dict(id='r1'))
+            self.db.commit()
+            listed = BL.query_rows(self.db, case_id=self.case.id)  # before any sync: not shown, and counted
+            assert (listed['total'], listed['not_shown_statement_not_in_ledger']) == (0, 4)
+            out = BL.sync_fund_statement(self.db, file.id)
+            self.db.commit()
+        assert out['removed'] is True and self.db.query(FinancialSecurityRow).filter_by(
+            ledger_status='admitted').count() == 0
 

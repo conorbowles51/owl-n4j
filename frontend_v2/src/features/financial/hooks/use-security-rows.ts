@@ -128,6 +128,10 @@ export function useSecurityRowAction(caseId: string | undefined) {
         { method: "POST", body }
       )) as SecurityRow,
     onSuccess: () =>
-      client.invalidateQueries({ queryKey: ["financial-ledger", caseId, "security-rows"] }),
+      Promise.all([
+        client.invalidateQueries({ queryKey: ["financial-ledger", caseId, "security-rows"] }),
+        // the cited row's panel shows the same row
+        client.invalidateQueries({ queryKey: ["financial-ledger", caseId, "security-row"] }),
+      ]),
   })
 }

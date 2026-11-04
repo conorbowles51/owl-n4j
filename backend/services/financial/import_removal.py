@@ -83,10 +83,6 @@ def preview_removal(session, *, case_id, batch_ids=(), file_ids=(), lock=False):
     representatives = {}
     for file in files:
         representatives.setdefault(file.sha256, file)
-    session.flush()
-    from services.financial.brokerage_ledger import after_cash_rows_changed
-    for source in sources:  # their trades and holdings leave the ledger with them (lx-brokerage)
-        after_cash_rows_changed(session, source.id)
     affected_ids = {str(f.id) for f in files} | gone
     archived = sum(all(f['file_id'] in affected_ids or f['source_id'] in affected_ids for f in b.files) for b in batches)
     return dict(case_id=str(case_id), revision=revision, archived_batch_count=archived, updated_batch_count=len(batches) - archived, file_count=len(representatives),
@@ -129,9 +125,11 @@ def remove_imports(session, *, case_id, batch_ids=(), file_ids=(), expected_revi
         row.ledger_status = 'rejected'
         row.quarantine_reason = None
     session.flush()
-    from services.financial.brokerage_ledger import after_cash_rows_changed
+    from services.financial.brokerage_ledger import after_cash_rows_changed, after_fund_statement_assessed
     for source in sources:  # their trades and holdings leave the ledger with them (lx-brokerage)
         after_cash_rows_changed(session, source.id)
+    for file in files:  # and a fund statement's (no statement record): the file is now removed from Financial
+        after_fund_statement_assessed(session, file.id)
     affected_ids = {str(f.id) for f in files} | gone
     for batch in batches:
         removed_files = [f for f in batch.files if f['file_id'] in affected_ids or f['source_id'] in affected_ids]

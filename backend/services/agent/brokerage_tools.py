@@ -124,10 +124,14 @@ def _totals(rows, kind):
             g["quantity_not_read"] += 1
         if kind == "holding":
             if quantity is not None:
-                day = g["by_day"].setdefault(r["as_of_date"] or "", dict(quantity=Decimal(0), value=0, lines=0))
+                day = g["by_day"].setdefault(r["as_of_date"] or "", dict(quantity=Decimal(0), value=0, lines=0,
+                                                                         value_not_read=0))
                 day["quantity"] += quantity
-                day["value"] += int(r["market_value_minor"] or 0)
                 day["lines"] += 1
+                if r["market_value_minor"] is None:
+                    day["value_not_read"] += 1  # counted, never summed as zero
+                else:
+                    day["value"] += int(r["market_value_minor"])
             continue
         if quantity is not None:
             if r["side"] in ("buy", "repo_start"):
@@ -148,9 +152,11 @@ def _totals(rows, kind):
             by_day = g.pop("by_day")
             latest = max(by_day) if by_day else None
             day = by_day.get(latest) if latest is not None else None
-            value = day["value"] if day else None
+            # The value is a total only when every line of that date printed one; otherwise it is not given.
+            value = day["value"] if day and not day["value_not_read"] else None
             g.update(latest_as_of=latest or None, latest_quantity=str(day["quantity"]) if day else None,
-                     latest_lines=day["lines"] if day else 0, latest_market_value_minor=value,
+                     latest_lines=day["lines"] if day else 0,
+                     latest_lines_value_not_read=day["value_not_read"] if day else 0, latest_market_value_minor=value,
                      latest_market_value=formatted(value, g["currency"])["amount"] if value is not None else None)
         else:
             g["quantity_in"], g["quantity_out"] = str(g["quantity_in"]), str(g["quantity_out"])

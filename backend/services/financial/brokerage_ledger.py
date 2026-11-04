@@ -175,14 +175,16 @@ def statement_pages(session, document):
     """The pages of the file that print this statement, as its saved review recorded them, or None when the file
     holds this one statement only (every page is then its own). A file of several statements whose pages are not
     recorded reads no holdings for any of them (``[]``): a position table cannot be given to the wrong one."""
+    own = (document.metadata_ or {}).get('statement_import_statement_id') or ''
+    others = session.execute(select(FinancialSourceDocument.metadata_).where(
+        FinancialSourceDocument.evidence_file_id == document.evidence_file_id,
+        FinancialSourceDocument.id != document.id, FinancialSourceDocument.status == 'admitted')).scalars().all()
+    # Another copy of the same statement (a re-read saved before the old copy is set aside) is not another statement.
+    if not any(((m or {}).get('statement_import_statement_id') or '') != own for m in others):
+        return None
     original = (document.metadata_ or {}).get('statement_import_original') or {}
     pages = original.get('statement_page_numbers') or original.get('page_numbers')
-    if pages:
-        return sorted({int(p) for p in pages})
-    others = session.scalar(select(func.count()).select_from(FinancialSourceDocument).where(
-        FinancialSourceDocument.evidence_file_id == document.evidence_file_id,
-        FinancialSourceDocument.id != document.id, FinancialSourceDocument.status == 'admitted'))
-    return None if not others else []
+    return sorted({int(p) for p in pages}) if pages else []
 
 
 def _page_tables(session, document) -> list:
@@ -270,6 +272,20 @@ def _apply(session, *, case_id, evidence_file_id, source_document_id, readers, w
         (FinancialSecurityRow.source_document_id == source_document_id) if source_document_id is not None
         else FinancialSecurityRow.source_document_id.is_(None),
         FinancialSecurityRow.reader.in_(readers), FinancialSecurityRow.ledger_status == 'admitted'))}
+    # A statement set aside and later restored has no admitted rows: a person's corrections and confirmation carry
+    # from the line's latest earlier row (still only while the value as read is unchanged).
+    earlier = {}
+    missing = [key for key in wanted if key not in existing]
+    if missing:
+        for row in session.scalars(select(FinancialSecurityRow).where(
+                FinancialSecurityRow.evidence_file_id == evidence_file_id,
+                (FinancialSecurityRow.source_document_id == source_document_id) if source_document_id is not None
+                else FinancialSecurityRow.source_document_id.is_(None),
+                FinancialSecurityRow.reader.in_(readers), FinancialSecurityRow.ledger_status == 'superseded',
+                FinancialSecurityRow.reading_key.in_(missing)).order_by(
+                FinancialSecurityRow.updated_at, FinancialSecurityRow.created_at)):
+            if row.corrections or row.confirmation:
+                earlier[row.reading_key] = row
     for key, (values, provenance) in wanted.items():
         # A printed line kept as not read is counted on its own, not as a trade or holding read.
         counts['lines_not_read' if provenance.get('unread') else
@@ -279,7 +295,8 @@ def _apply(session, *, case_id, evidence_file_id, source_document_id, readers, w
         if old is not None and old.content_hash == digest:
             counts['unchanged'] += 1
             continue
-        corrections, confirmation = _carry(old, values) if old is not None else ({}, None)
+        source = old if old is not None else earlier.get(key)
+        corrections, confirmation = _carry(source, values) if source is not None else ({}, None)
         if old is not None:
             counts['carried_corrections'] += len(corrections)
             counts['dropped_corrections'] += len(old.corrections or {}) - len(corrections)
@@ -375,7 +392,9 @@ def sync_fund_statement(session, evidence_file_id, *, force: bool = False) -> di
     if file is None:
         return counts
     wanted = {}
-    if canonical_copy(session, file):
+    if (file.metadata_ or {}).get('financial_import_removal'):
+        counts['removed'] = True  # removed from Financial: its rows leave the ledger with it
+    elif canonical_copy(session, file):
         for key, values, provenance in fund_rows(session, file):
             wanted[key] = (values, provenance)
     else:
@@ -495,14 +514,17 @@ def query_rows(session, *, case_id, row_kind='trade', instrument=None, account_i
     page_size = max(1, min(int(page_size or 50), MAX_PAGE))
     cash, statement = FinancialTransaction, FinancialSourceDocument
     base = select(FinancialSecurityRow).outerjoin(cash, cash.id == FinancialSecurityRow.cash_transaction_id).outerjoin(
-        statement, statement.id == FinancialSecurityRow.source_document_id).where(
+        statement, statement.id == FinancialSecurityRow.source_document_id).join(
+        EvidenceFile, EvidenceFile.id == FinancialSecurityRow.evidence_file_id).where(
         FinancialSecurityRow.case_id == case_id, FinancialSecurityRow.row_kind == row_kind,
         FinancialSecurityRow.ledger_status == 'admitted')
     # A row counts only while its statement is in the ledger (not removed, set aside or replaced) and, for a trade,
     # while its cash leg is: the others are not shown, and the counts say how many.
-    statement_out = and_(FinancialSecurityRow.source_document_id.is_not(None), or_(
+    statement_out = or_(and_(FinancialSecurityRow.source_document_id.is_not(None), or_(
         statement.id.is_(None), statement.status != 'admitted',
-        statement.metadata_['financial_import_removal'].as_string().is_not(None)))
+        statement.metadata_['financial_import_removal'].as_string().is_not(None))),
+        and_(FinancialSecurityRow.source_document_id.is_(None),
+             EvidenceFile.metadata_['financial_import_removal'].as_string().is_not(None)))
     cash_out = and_(FinancialSecurityRow.cash_transaction_id.is_not(None),
                     or_(cash.id.is_(None), cash.ledger_status != 'admitted'))
     hidden_statement = session.scalar(select(func.count()).select_from(base.where(statement_out).subquery()))
@@ -559,19 +581,22 @@ def get_row(session, *, case_id, row_id) -> dict:
     if row is None or row.case_id != case_id:
         raise SecurityRowError('Not in this case.', 404)
     why = None
-    if row.ledger_status != 'admitted':
-        why = 'This reading was replaced by a newer one.'
-    elif row.source_document_id is not None:
+    file = session.get(EvidenceFile, row.evidence_file_id)
+    if row.source_document_id is not None:
         statement = session.get(FinancialSourceDocument, row.source_document_id)
         if statement is None or statement.status != 'admitted' or (statement.metadata_ or {}).get(
                 'financial_import_removal'):
             why = 'Its statement is no longer in the ledger.'
+    elif file is None or (file.metadata_ or {}).get('financial_import_removal'):
+        why = 'Its file was removed from Financial.'
+    if why is None and row.ledger_status != 'admitted':
+        why = ('This reading was replaced by a newer one.' if row.superseded_by_id else
+               'The current reading of the statement no longer reads this line.')
     if why is None and row.cash_transaction_id is not None:
         cash = session.get(FinancialTransaction, row.cash_transaction_id)
         if cash is None or cash.ledger_status != 'admitted':
             why = 'Its cash line is no longer in the money ledger.'
     account = session.get(FinancialAccount, row.account_id) if row.account_id else None
-    file = session.get(EvidenceFile, row.evidence_file_id)
     names = {row.account_id: ' '.join(x for x in (account.institution_name, account.identifier_as_printed) if x)
              } if account else {}
     return dict(to_json(row, account_names=names, file_names={row.evidence_file_id: file.original_filename}
@@ -579,7 +604,9 @@ def get_row(session, *, case_id, row_id) -> dict:
 
 
 def _parse(field, value):
-    if value is None or value == '':
+    if value is None or str(value).strip() == '':
+        if field == 'instrument':
+            raise SecurityRowError('An instrument cannot be blank: correct it to the name printed.')
         return None
     if field in ('quantity', 'price'):
         text_value = str(value).strip()
@@ -599,6 +626,9 @@ def _parse(field, value):
         except (TypeError, ValueError):
             raise SecurityRowError(f'{field} must be a whole number of minor units.')
     text_value = ' '.join(str(value).split())
+    limit = {'execution_time': 32, 'isin': 12}.get(field, 128)
+    if len(text_value) > limit:
+        raise SecurityRowError(f'{field} is at most {limit} characters.')
     if field == 'isin' and text_value and not re.fullmatch(r'[A-Z]{2}[A-Z0-9]{9}[0-9]', text_value):
         raise SecurityRowError('An ISIN is 12 characters: two letters, nine letters or digits, one check digit.')
     return text_value[:128]

@@ -155,7 +155,10 @@ export function TradesView({ caseId }: { caseId: string }) {
   const citedKind = cited.data?.row_kind
   useEffect(() => {
     // A citation opens the list of its own kind (a holding's link shows Holdings).
-    if (citedKind) setKind(citedKind)
+    if (citedKind) {
+      setKind(citedKind)
+      setPage(1)
+    }
   }, [citedKind])
   const data = query.data
   const hiddenStatements = data?.not_shown_statement_not_in_ledger ?? 0
