@@ -9,6 +9,7 @@ import { errorWords, laneRowsOf, setApartWords, snapshotView, usualLast } from "
 import { StatementCheckPanel } from "./StatementCheckPanel"
 import { KeepResult } from "./CollectBar"
 import { KeyDatesBar } from "./KeyDates"
+import { TextPlaces } from "./TextPlaces"
 
 /**
  * The Patterns screen (04 section 8.6): Day view, Pattern grid, Places over time, Together and Statement check, with
@@ -132,6 +133,7 @@ export function PatternsPage() {
       )}
       {!opening && subject && view === "grid" && <GridView caseId={caseId} subject={subject} last={last(subject)} />}
       {!opening && subject && view === "places" && <PlacesView caseId={caseId} subject={subject} last={last(subject)} />}
+      {!opening && subject && view === "places" && <TextPlaces caseId={caseId} extractionIds={phonesOf(subjects.data, subject).map((e) => e.extraction_id)} />}
       {!opening && subject && view === "together" && subjects.data && <TogetherView caseId={caseId} subject={subject} list={subjects.data} />}
       {!opening && subject && view === "check" && <StatementCheckPanel caseId={caseId} subject={subject}
         saved={savedCheck.data && subjectKey(savedCheck.data.subject) === subjectKey(subject) ? savedCheck.data : undefined} />}
