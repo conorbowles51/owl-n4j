@@ -127,7 +127,7 @@ function FlagRow({ flag }: { flag: RegistryFlag }) {
       <td className="py-2 text-xs">
         <div className="flex flex-wrap gap-1">
           {flagActions(flag.state).map((a) => (
-            <Button key={a.to} size="sm" variant={action?.to === a.to ? "default" : "outline"} onClick={() => setAction(a)}>
+            <Button key={a.to} size="sm" variant={action?.to === a.to ? "primary" : "outline"} onClick={() => setAction(a)}>
               {a.label}
             </Button>
           ))}
@@ -166,11 +166,11 @@ function FlagsTab() {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-1" role="group" aria-label="Flag state">
         {FLAG_ORDER.map((s) => (
-          <Button key={s} size="sm" variant={state === s ? "default" : "outline"} onClick={() => pick(s)}>
+          <Button key={s} size="sm" variant={state === s ? "primary" : "outline"} onClick={() => pick(s)}>
             {FLAG_STATE_WORDS[s]} ({data ? data.counts[s].toLocaleString() : "…"})
           </Button>
         ))}
-        <Button size="sm" variant={state === undefined ? "default" : "outline"} onClick={() => pick(undefined)}>
+        <Button size="sm" variant={state === undefined ? "primary" : "outline"} onClick={() => pick(undefined)}>
           All ({data ? all.toLocaleString() : "…"})
         </Button>
       </div>
@@ -274,7 +274,7 @@ function ProposalRow({ p }: { p: MappingProposal }) {
             <Button size="sm" variant="outline" disabled={download.isPending} onClick={() => download.mutate()}>
               Download file
             </Button>
-            <Button size="sm" variant={rejecting ? "default" : "outline"} onClick={() => setRejecting(true)}>
+            <Button size="sm" variant={rejecting ? "primary" : "outline"} onClick={() => setRejecting(true)}>
               Reject
             </Button>
           </div>
@@ -319,17 +319,17 @@ function ProposalsTab() {
       </p>
       <div className="flex flex-wrap gap-1" role="group" aria-label="Proposal state">
         {PROPOSAL_ORDER.map((s) => (
-          <Button key={s} size="sm" variant={state === s ? "default" : "outline"} onClick={() => { setState(s); setOffset(0) }}>
+          <Button key={s} size="sm" variant={state === s ? "primary" : "outline"} onClick={() => { setState(s); setOffset(0) }}>
             {PROPOSAL_STATE_WORDS[s]} ({data ? data.counts[s].toLocaleString() : "…"})
           </Button>
         ))}
-        <Button size="sm" variant={state === undefined ? "default" : "outline"} onClick={() => { setState(undefined); setOffset(0) }}>
+        <Button size="sm" variant={state === undefined ? "primary" : "outline"} onClick={() => { setState(undefined); setOffset(0) }}>
           All ({data ? all.toLocaleString() : "…"})
         </Button>
       </div>
       <div className="flex flex-wrap gap-1" role="group" aria-label="Proposal origin">
         {([undefined, "case_correction", "ai_draft"] as (ProposalOrigin | undefined)[]).map((o) => (
-          <Button key={o ?? "all"} size="sm" variant={origin === o ? "default" : "outline"} onClick={() => { setOrigin(o); setOffset(0) }}>
+          <Button key={o ?? "all"} size="sm" variant={origin === o ? "primary" : "outline"} onClick={() => { setOrigin(o); setOffset(0) }}>
             {o ? ORIGIN_WORDS[o] : "Any origin"}
           </Button>
         ))}
