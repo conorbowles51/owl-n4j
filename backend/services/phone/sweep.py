@@ -304,7 +304,12 @@ def stop_requested():
 
 def seed_registry(engine):
     with engine.begin() as conn:
-        return registry.apply_seed(conn)
+        counts = registry.apply_seed(conn)
+        forgotten = registry.forget_invented_values(conn)
+        if forgotten["values"] or forgotten["flags"]:
+            log.info("phone registry: took out %d invented value(s), dismissed %d flag(s)", forgotten["values"],
+                     forgotten["flags"])
+        return counts
 
 
 async def run_phone_interpretation_forever():

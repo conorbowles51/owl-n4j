@@ -183,6 +183,17 @@ class BuilderShapes(unittest.TestCase):
                         if v.get("type") in enums:
                             self.assertIn(v.text, enums[v.get("type")], key)
 
+    def test_named_set_fields_hold_only_vocabulary(self):
+        # a free-text value in a named-set field reaches the global registry as vocabulary (499 on live, 4 Nov 2026)
+        plain = {"String", "TimeStamp", "TimeSpan", "Guid", "Boolean", "Int32", "Int64", "Double", "UInt32"}
+        seen = set()
+        for _, report in self.reports():
+            for m in re.finditer(r'<value type="([^"]+)"[^>]*>(?:<!\[CDATA\[)?([^<\]]*)', report.read_text("utf-8")):
+                if m.group(1) not in plain:
+                    seen.add(m.group(1))
+                    self.assertFalse(m.group(2).startswith("synthetic "), m.group(0))
+        self.assertIn("DecodingSourceOptions", seen)
+
     def test_invented_values_only(self):
         number = re.compile(r"\+1\d{3}5550[01]\d\d")
         allowed_names = set(fb.FIRST) | set(fb.LAST)

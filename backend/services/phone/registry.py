@@ -20,6 +20,12 @@ VALUE_FIELD_KINDS = ("field", "multiField", "nodeField", "dataField")
 SET_VALUE_CAP = 500
 ATTRIBUTE_ELEMENTS = ("model", "extractionInfo", "project", "file", "value")
 BATCH = 5000
+# The sentence the test-phone builder (evidence-engine/tests/phone/fixture_builder.py) writes into every report's
+# case notes. A value invented for a test is not vocabulary a phone was seen to use (3.3).
+INVENTED_REPORT_MARK = "SYNTHETIC: invented data, no real case material"
+INVENTED_ACTOR = "Registry clean-up"
+INVENTED_REASON = ("Value of an invented test report (its case notes carry the invented-data mark); no real report "
+                   "holds it.")
 
 FLAG_FOR_TABLE = {"types": "new_type", "fields": "new_field", "nesting": "new_nesting",
                   "set_values": "new_set_value", "attributes": "new_attribute"}
@@ -239,6 +245,16 @@ def _extraction_meta(conn, extraction_id):
     return {"report_version": row[1], "producer_version": row[2]}
 
 
+def _invented_sql(extraction_column):
+    return ("EXISTS (SELECT 1 FROM phone_extraction_documents d WHERE d.extraction_id = %s AND "
+            "strpos(d.skeleton::text, :mark) > 0)" % extraction_column)
+
+
+def is_invented_report(conn, extraction_id) -> bool:
+    return bool(conn.execute(text("SELECT " + _invented_sql(":e")),
+                             {"e": extraction_id, "mark": INVENTED_REPORT_MARK}).scalar())
+
+
 def _insert(conn, table, cols: dict, conflict: str, meta, extraction_id):
     """Insert an observed row if absent; returns (id, inserted)."""
     keycols = list(cols)
@@ -277,6 +293,8 @@ def observe_extraction(conn, extraction_id, named_by_mapping=frozenset()) -> dic
     """
     meta = _extraction_meta(conn, extraction_id)
     acc = accumulate(conn, extraction_id)
+    invented = is_invented_report(conn, extraction_id)
+    skipped_values = 0
     raised = []
     obs = {}  # (table, id) -> [records, values, empties]
     new_types = set()
@@ -354,6 +372,9 @@ def observe_extraction(conn, extraction_id, named_by_mapping=frozenset()) -> dic
     for (s, v), n in sorted(acc.sets.items()):
         exists = conn.execute(text("SELECT id FROM phone_schema_set_values WHERE set_name = :s AND value = :v"),
                               {"s": s, "v": v}).scalar()
+        if exists is None and invented:
+            skipped_values += 1
+            continue
         if exists is None:
             size = set_sizes.get(s)
             if size is None:
@@ -397,7 +418,42 @@ def observe_extraction(conn, extraction_id, named_by_mapping=frozenset()) -> dic
     raised = [r for r in raised if r is not None]
     return {"flags_raised": len(raised), "flag_ids": raised, "types": len(acc.types), "fields": len(acc.fields),
             "nesting": len(acc.nesting), "set_values": len(acc.sets), "attributes": len(acc.attributes),
-            "previous_observations": len(previous)}
+            "previous_observations": len(previous), "invented_values_skipped": skipped_values}
+
+
+def forget_invented_values(conn, *, dry_run=False) -> dict:
+    """Take out named-set values only invented test reports were seen to hold, with their observations, and dismiss
+    their flags. A seed value, or a value any other report holds, stays. Each flag keeps the value in its detail and
+    a dismissal event, so what was removed stays visible in the queue. Idempotent: runs with the seed."""
+    params = {"mark": INVENTED_REPORT_MARK}
+    rows = conn.execute(text(
+        "SELECT s.id, s.set_name, s.value FROM phone_schema_set_values s WHERE s.origin = 'observed' "
+        "AND s.first_seen_extraction_id IS NOT NULL AND " + _invented_sql("s.first_seen_extraction_id") +
+        " AND NOT EXISTS (SELECT 1 FROM phone_schema_observations o WHERE o.registry_table = 'set_values' "
+        "AND o.registry_id = s.id AND NOT " + _invented_sql("o.extraction_id") + ") ORDER BY s.id"), params).fetchall()
+    ids = [r[0] for r in rows]
+    overflow = conn.execute(text(
+        "SELECT fl.id FROM phone_schema_flags fl WHERE fl.flag_kind = 'set_overflow' AND fl.state = 'open' "
+        "AND fl.raised_by_extraction_id IS NOT NULL AND " + _invented_sql("fl.raised_by_extraction_id") +
+        " ORDER BY fl.id"), params).scalars().all()
+    flags = conn.execute(text(
+        "SELECT id, registry_id FROM phone_schema_flags WHERE flag_kind = 'new_set_value' AND registry_table = "
+        "'set_values' AND registry_id = ANY(:i) ORDER BY id"), {"i": ids}).fetchall()
+    out = {"values": len(ids), "flags": len(flags) + len(overflow), "dry_run": dry_run}
+    if dry_run or not (ids or overflow):
+        return out
+    value_of = {r[0]: r[2] for r in rows}
+    for fid, rid in flags:
+        conn.execute(text("UPDATE phone_schema_flags SET detail = detail || CAST(:d AS jsonb) WHERE id = :i"),
+                     {"d": json.dumps({"value": value_of[rid]}), "i": fid})
+    for fid in [f[0] for f in flags] + list(overflow):
+        if conn.execute(text("SELECT state FROM phone_schema_flags WHERE id = :i"), {"i": fid}).scalar() != "dismissed":
+            transition_flag(conn, fid, "dismissed", INVENTED_REASON, actor_name=INVENTED_ACTOR, automatic=True)
+    conn.execute(text("DELETE FROM phone_schema_observations WHERE registry_table = 'set_values' AND "
+                      "registry_id = ANY(:i)"), {"i": ids})
+    conn.execute(text("DELETE FROM phone_schema_set_values WHERE id = ANY(:i)"), {"i": ids})
+    _refresh_totals(conn)
+    return out
 
 
 def _refresh_totals(conn):
@@ -478,7 +534,8 @@ def _flag_subject(r) -> dict:
         return {"type": d.get("parent") or r.n_parent, "field": d.get("field") or r.n_field,
                 "child": d.get("child") or r.n_child}
     if t == "set_values":
-        return {"set": d.get("set") or r.s_set, "value": r.s_value if r.flag_kind == "new_set_value" else None}
+        return {"set": d.get("set") or r.s_set,
+                "value": (r.s_value or d.get("value")) if r.flag_kind == "new_set_value" else None}
     if t == "attributes":
         return {"element": d.get("element") or r.a_element, "attribute": d.get("attribute") or r.a_attribute}
     return {}

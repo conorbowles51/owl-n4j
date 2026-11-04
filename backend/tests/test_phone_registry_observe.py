@@ -1,6 +1,7 @@
 """02-U3: observation pass and review queue (02 sections 3.3 and 3.4)."""
 from __future__ import annotations
 
+import json
 import threading
 
 import pytest
@@ -213,3 +214,64 @@ def test_flag_endpoints_are_admin_only_and_record_the_actor():
             ev = c.execute(text("SELECT to_state, actor_name, actor_email FROM phone_schema_flag_events WHERE "
                                 "flag_id = :f"), {"f": fid}).fetchall()
         assert [tuple(e) for e in ev] == [("acknowledged", "Admin Person", "admin@x.test")]
+
+
+INVENTED_SKELETON = ["project", {"reportVersion": "7.70"}, None, [
+    ["caseInformation", None, None, [["field", {"name": "Notes"}, registry.INVENTED_REPORT_MARK, None]]],
+    ["decodedData", None, None, [["@r", 0, 1]]]]]
+
+
+def _direction(value):
+    return [(0, None, 0, model("Call", [fld("Direction", ("ModelDirections", value))]))]
+
+
+@needs_template
+def test_an_invented_report_adds_no_vocabulary_and_a_known_value_is_still_counted():
+    with fresh_engine() as engine, engine.begin() as c:
+        registry.apply_seed(c)
+        case = make_case(c)
+        ext = make_extraction(c, case, _direction("Sideways"), skeleton=INVENTED_SKELETON)
+        out = registry.observe_extraction(c, ext)
+        assert out["invented_values_skipped"] == 1 and out["flags_raised"] == 0
+        assert c.execute(text("SELECT count(*) FROM phone_schema_set_values WHERE value = 'Sideways'")).scalar() == 0
+        known = make_extraction(c, case, _direction("Incoming"), skeleton=INVENTED_SKELETON)
+        assert registry.observe_extraction(c, known)["invented_values_skipped"] == 0
+        assert c.execute(text("SELECT observed_count FROM phone_schema_set_values WHERE set_name = 'ModelDirections' "
+                              "AND value = 'Incoming'")).scalar() == 1
+
+
+@needs_template
+def test_forgetting_invented_values_keeps_real_ones_and_the_record_of_the_flag():
+    with fresh_engine() as engine, engine.begin() as c:
+        registry.apply_seed(c)
+        case = make_case(c)
+        junk = make_extraction(c, case, _direction("Junk"), label="J")
+        shared = make_extraction(c, case, _direction("Shared"), label="S")
+        real = make_extraction(c, case, _direction("Real"), label="R")
+        also_real = make_extraction(c, case, _direction("Shared"), label="T")
+        for e in (junk, shared, real, also_real):
+            registry.observe_extraction(c, e)
+        # each report was marked only after it was observed, as on live
+        for e in (junk, shared):
+            c.execute(text("UPDATE phone_extraction_documents SET skeleton = CAST(:s AS jsonb) WHERE extraction_id = :e"),
+                      {"s": json.dumps(INVENTED_SKELETON), "e": e})
+        over = c.execute(text("SELECT min(id) FROM phone_schema_set_values WHERE set_name = 'ModelDirections'")).scalar()
+        c.execute(text("INSERT INTO phone_schema_flags (flag_kind, registry_table, registry_id, "
+                       "raised_by_extraction_id, severity, state, detail) VALUES ('set_overflow', 'set_values', :r, "
+                       ":e, 'info', 'open', '{}'::jsonb)"), {"r": over, "e": junk})
+        dry = registry.forget_invented_values(c, dry_run=True)
+        assert (dry["values"], dry["flags"]) == (1, 2)
+        assert c.execute(text("SELECT count(*) FROM phone_schema_set_values WHERE value = 'Junk'")).scalar() == 1
+        seed_before = c.execute(text("SELECT count(*) FROM phone_schema_set_values WHERE origin = 'seed'")).scalar()
+
+        assert registry.forget_invented_values(c)["values"] == 1
+        values = {r[0] for r in c.execute(text("SELECT value FROM phone_schema_set_values WHERE origin = 'observed'"))}
+        assert values == {"Shared", "Real"}
+        assert c.execute(text("SELECT count(*) FROM phone_schema_set_values WHERE origin = 'seed'")).scalar() == seed_before
+        page = registry.list_flags_page(c, "dismissed")
+        assert page["total"] == 2
+        kept = [f for f in page["flags"] if f["flag_kind"] == "new_set_value"][0]
+        assert kept["subject"]["value"] == "Junk"
+        assert kept["last_event"]["by"] == registry.INVENTED_ACTOR and "invented" in kept["last_event"]["reason"]
+        assert registry.forget_invented_values(c)["values"] == 0
+        assert registry.list_flags_page(c, "dismissed")["total"] == 2

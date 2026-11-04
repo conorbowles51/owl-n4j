@@ -273,6 +273,12 @@ than 23: `PermissionCategory`).
    a reviewed mapping names is `blocks_mapping`, and that mapping is suspended for that field on this
    extraction (section 6.7) until the flag leaves `open`.
 
+An invented test report (its case notes carry the test-phone builder's invented-data sentence) adds no new
+named-set value and raises no flag for one: a value it invents is not vocabulary a phone was seen to use. Known
+values are still counted. `registry.forget_invented_values`, which runs with the seed, takes out any value only
+such reports hold, with its observations, and dismisses its flags as "Registry clean-up"; each flag keeps the
+value in its detail.
+
 Concurrency: two extractions observed at once may both try to insert the same new row; inserts use
 `ON CONFLICT DO NOTHING` and the flag is raised by whichever transaction inserted, so one flag is raised,
 not two.

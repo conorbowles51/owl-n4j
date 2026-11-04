@@ -543,7 +543,10 @@ class PhoneBuild:
             return "00:00:%02d" % self.rng.randrange(60)
         if fname.lower() in ("url", "domain"):
             return f"https://site{self.rng.randrange(40)}.example.com/page"
-        return f"synthetic {mtype.lower()} {fname.lower()} {self.rng.randrange(10_000)}"
+        drawn = self.rng.randrange(10_000)  # drawn for every text value, so the rest of a report keeps its content
+        if vtype == "DecodingSourceOptions":  # a named set with one value (02 section 3.5), absent from the enums
+            return "Decoding"
+        return f"synthetic {mtype.lower()} {fname.lower()} {drawn}"
 
     # -- document -------------------------------------------------------------------------
     def write(self, out: Path) -> dict:
