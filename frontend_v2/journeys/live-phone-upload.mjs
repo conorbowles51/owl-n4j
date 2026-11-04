@@ -68,7 +68,8 @@ try {
   await page.getByRole("button", { name: "Add phone report (folder or ZIP)" }).click()
   const chooser = page.waitForEvent("filechooser")
   await page.getByRole("menuitem", { name: kind === "folder" ? "Phone report folder" : "Phone report ZIP file" }).click()
-  await (await chooser).setFiles(path)
+  // a folder of 200,000 files takes Playwright minutes to hand to the page; the default 30 s stopped P07 and P03
+  await (await chooser).setFiles(path, { timeout: 60 * 60_000 })
   // until the menu closes itself on a pick (3765860e), close it so the page is not left hidden
   if (await page.getByRole("menu").count()) await page.keyboard.press("Escape")
   t0 = Date.now() // the clock starts at the pick
