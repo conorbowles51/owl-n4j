@@ -56,10 +56,22 @@ def test_the_tree_holds_only_verified_files_at_their_original_paths(tmp_path):
              ("", lambda: open(a, "rb"), True),
              ("/data/data/x/databases/a.db", lambda: open(a, "rb"), True)]
     counts = R.build_tree(files, str(tmp_path / "tree"))
-    assert counts == {"placed": 2, "bytes": 22, "not_verified": 1, "no_path": 1, "duplicate_path": 1}
+    assert counts == {"placed": 2, "bytes": 22, "not_verified": 1, "no_path": 1, "duplicate_path": 1,
+                      "path_conflict": 0}
     assert (tmp_path / "tree" / "data/data/x/databases/a.db").read_bytes() == b"synthetic a"
     assert (tmp_path / "tree" / "etc/passwd").exists()  # '..' cannot climb out: it lands inside the tree
     assert not (tmp_path / "etc").exists()
+
+
+def test_a_file_and_files_beneath_the_same_path_keep_the_first_and_count_the_conflict(tmp_path):
+    a = tmp_path / "a"
+    a.write_bytes(b"synthetic")
+    op = lambda: open(a, "rb")  # noqa: E731
+    files = [("/data/apex/pkg.apex", op, True), ("/data/apex/pkg.apex/assets/x", op, True),  # file, then beneath it
+             ("/data/d/inner", op, True), ("/data/d", op, True)]  # beneath a path, then the path as a file
+    counts = R.build_tree(files, str(tmp_path / "tree"))
+    assert (counts["placed"], counts["path_conflict"]) == (2, 2)
+    assert (tmp_path / "tree" / "data/apex/pkg.apex").is_file() and (tmp_path / "tree" / "data/d/inner").is_file()
 
 
 def test_the_tool_is_chosen_by_operating_system():

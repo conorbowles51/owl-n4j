@@ -36,10 +36,12 @@ try {
   if ((await page.evaluate(() => window.isSecureContext)) !== false) throw new Error("isSecureContext was not false")
   const section = page.getByRole("region", { name: "Re-parse runs" })
   await section.waitFor({ timeout: 60000 })
-  const order = await page.evaluate(async (c) => {
+  const runs = () => page.evaluate(async (c) => {
     const r = await fetch(`/api/phones/reparse/runs?case_id=${c}`, { headers: { Authorization: `Bearer ${localStorage.getItem("authToken")}` } })
-    return (await r.json()).phones.map((p) => p.extraction_id)
+    return (await r.json()).phones.map((p) => ({ id: p.extraction_id, latest: p.runs[0]?.id ?? null }))
   }, caseId)
+  const before = await runs()
+  const order = before.map((p) => p.id)
   const k = order.indexOf(extraction)
   if (k < 0) throw new Error("this extraction is not in the case's phone list")
   const item = section.getByTestId("reparse-phone").nth(k)
@@ -53,6 +55,15 @@ try {
   if (await button.isEnabled()) {
     console.log(`${secs()} s pressed "${(await button.textContent()).trim()}"`)
     await button.click()
+    // the line shows the latest run; wait until the new run is the latest, so an earlier run's words are not read
+    const prior = before[order.indexOf(extraction)].latest
+    for (let w = 0; w < 30; w++) {
+      const now = (await runs()).find((p) => p.id === extraction)?.latest
+      if (now && now !== prior) break
+      await page.waitForTimeout(2000)
+    }
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await section.waitFor({ timeout: 60000 })
   } else {
     console.log(`${secs()} s a run is already open for this phone; watching it`)
   }

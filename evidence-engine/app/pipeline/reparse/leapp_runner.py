@@ -92,8 +92,12 @@ def safe_relpath(original_path: str | None) -> str | None:
 
 def build_tree(files, dest: str) -> dict:
     """``files``: iterable of ``(original_path, opener, verified)``. Places each verified file at its path under
-    ``dest``. Returns counts by outcome (placed, not verified, no or unsafe path, same path twice)."""
-    counts = {"placed": 0, "bytes": 0, "not_verified": 0, "no_path": 0, "duplicate_path": 0}
+    ``dest``. Returns counts by outcome (placed, not verified, no or unsafe path, same path twice, path conflict).
+
+    A report can list a file and also files beneath the same path (measured on P12: an Android ``.apex`` package and
+    the files read from inside it). A filesystem holds only one of them, so the first in the report's order is
+    placed and the other is counted as a path conflict; nothing is renamed or guessed."""
+    counts = {"placed": 0, "bytes": 0, "not_verified": 0, "no_path": 0, "duplicate_path": 0, "path_conflict": 0}
     seen = set()
     os.makedirs(dest, exist_ok=True)
     for original_path, opener, verified in files:
@@ -109,8 +113,13 @@ def build_tree(files, dest: str) -> dict:
             continue
         seen.add(rel)
         target = os.path.join(dest, rel)
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-        with opener() as src, open(target, "wb") as out:
+        try:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            out = open(target, "xb")
+        except (NotADirectoryError, FileExistsError, IsADirectoryError):
+            counts["path_conflict"] += 1
+            continue
+        with opener() as src, out:
             for chunk in iter(lambda: src.read(1 << 20), b""):
                 out.write(chunk)
                 counts["bytes"] += len(chunk)
