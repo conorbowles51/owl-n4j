@@ -309,22 +309,50 @@ def holdings_from_tables(sources: Iterable[dict], *, period_end: Optional[date] 
                 section = 'position'
                 as_of_position = dates[-1]
                 continue
+            where = dict(page_number=source.get('page_number'), table_index=source.get('table_index'),
+                         row_index=row.get('row_index'), printed_text=text, locator=_row_locator(cells))
             if section == 'position' or (section is None and 'MXN' in text):
                 match = _HOLDING.match(text)
-                if match:
-                    holding = _holding(match, as_of_position or period_end)
-                    if holding:
-                        found.append(dict(holding, page_number=source.get('page_number'),
-                                          table_index=source.get('table_index'), row_index=row.get('row_index'),
-                                          printed_text=text, locator=_row_locator(cells)))
+                holding = _holding(match, as_of_position or period_end) if match else None
+                if holding:
+                    found.append(dict(holding, **where))
+                    continue
+                if section == 'position' and _POSITION_LINE.search(text) and not folded.startswith('TOTAL'):
+                    # A printed position line that does not read or does not prove its valuation: kept, not read.
+                    found.append(unread_line('holding', READER_HOLDINGS, text, as_of_position or period_end,
+                                             'does not prove units x price = valuation' if match else
+                                             'line not in the position layout', holding_kind='security', **where))
                     continue
             if section == 'repo':
                 match = _REPO.match(text)
                 if match:
-                    found.append(dict(_repo(match, as_of_repos), page_number=source.get('page_number'),
-                                      table_index=source.get('table_index'), row_index=row.get('row_index'),
-                                      printed_text=text, locator=_row_locator(cells)))
+                    found.append(dict(_repo(match, as_of_repos), **where))
+                elif _REPO_LINE.search(text):
+                    found.append(unread_line('holding', READER_HOLDINGS, text, as_of_repos,
+                                             'line not in the repo layout', holding_kind='repo', **where))
     return found
+
+
+# A position line prints a currency code and at least two decimal figures; a repo line prints its start date.
+_POSITION_LINE = re.compile(r'\b(?:MXN|USD|EUR)\b(?=.*\d\.\d.*\d\.\d)')
+_REPO_LINE = re.compile(r'^\d{1,12}\s+\d{4}/\d{2}/\d{2}\b')
+_LEADING_INSTRUMENT = re.compile(r'^(?P<issuer>[+A-Z][A-Z0-9&.+\-]{1,11})\s+(?P<series>[A-Za-z0-9\-]{1,8})\b')
+
+
+def unread_line(row_kind, reader, text, as_of, why, *, instrument=None, holding_kind=None, **where):
+    """A printed line of a trades or holdings table that the reader could not read with proof. It is kept (counted,
+    shown with its printed text and the reason) and never summed: no units, price or value is taken from it."""
+    if instrument is None:
+        lead = _LEADING_INSTRUMENT.match(text)
+        instrument = f"{lead.group('issuer')} {lead.group('series')}" if lead and not lead.group('issuer').isdigit() \
+            else None
+    missing = ['quantity', 'price', 'value'] + (['instrument'] if instrument in (None, 'Not read') else [])
+    return dict(row_kind=row_kind, reader=reader, unread=why, holding_kind=holding_kind, side=None, operation=None,
+                instrument=instrument or 'Not read', issuer=None, series=None, coupon=None, isin=None, currency=None,
+                quantity_printed=None, quantity=None, price_printed=None, price=None, market_value_minor=None,
+                gross_minor=None, commission_minor=None, premium_minor=None, tax_minor=None, net_minor=None,
+                trade_date=None, settlement_date=None, as_of=as_of if row_kind == 'holding' else None,
+                proof='not_read', not_read=missing, **where)
 
 
 def _holding(match, as_of):
@@ -467,6 +495,14 @@ def fund_statement_rows(sources: Iterable[dict], *, extra_texts: Iterable[str] =
                             page_number=source.get('page_number'), table_index=source.get('table_index'),
                             row_index=rows[index + 1][0].get('row_index'), printed_text=f"{text} {rows[index + 1][2]}",
                             locator=_row_locator(cells + rows[index + 1][1])))
+                    else:
+                        out['not_read'].append(unread_line(
+                            'holding', READER_FUNDS, f"{text} {rows[index + 1][2]}", period[1] if period else None,
+                            'units x price does not equal the printed value',
+                            instrument=f"{name.group('fund')} {name.group('series')}", holding_kind='security',
+                            page_number=source.get('page_number'), table_index=source.get('table_index'),
+                            row_index=rows[index + 1][0].get('row_index'),
+                            printed_text=f"{text} {rows[index + 1][2]}", locator=_row_locator(cells + rows[index + 1][1])))
                 continue
             move = _FUND_MOVE.match(folded)
             if not move:
@@ -475,8 +511,12 @@ def fund_statement_rows(sources: Iterable[dict], *, extra_texts: Iterable[str] =
             quantity, price, amount = _number(parts['qty']), _number(parts['price']), _number(parts['amount'])
             balance = _number(parts['balance_qty'])
             if fund is None or not _units_price_agree(quantity, price, amount):
-                out['not_read'].append(dict(page_number=source.get('page_number'), printed_text=text,
-                                            why='no fund heading' if fund is None else 'units x price != amount'))
+                out['not_read'].append(unread_line(
+                    'trade', READER_FUNDS, text, None,
+                    'no fund heading above the line' if fund is None else 'units x price does not equal the amount',
+                    instrument=fund or 'Not read', page_number=source.get('page_number'),
+                    table_index=source.get('table_index'), row_index=row.get('row_index'), printed_text=text,
+                    locator=_row_locator(cells)))
                 continue
             previous = last_balance.get(fund)
             chain = None if previous is None else previous + quantity == balance

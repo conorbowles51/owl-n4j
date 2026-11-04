@@ -48,6 +48,8 @@ export type SecurityRow = {
   }
   not_printed: string[]
   not_read: string[]
+  /** Why a printed line could not be read with proof; its figures are then absent, never guessed. */
+  unread?: string | null
   checks: Record<string, boolean | string>
   corrections: Record<string, SecurityCorrection>
   origin: { kind: "reader" | "model" | "confirmed"; text: string }

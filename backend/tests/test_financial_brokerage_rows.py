@@ -95,9 +95,14 @@ class BrokerageReadingTests(DuplicateTestCase):
                                           '1,029,580.84) 0 0.00) 1 228.80) 1,029,580.84)')),
         ])]
         found = R.holdings_from_tables(sources)
-        assert [(h['holding_kind'], h['instrument']) for h in found] == [('security', '+TASA M1'),
-                                                                       ('repo', 'BPAG91 270506')]
-        security, repo = found
+        assert [(h['holding_kind'], h['instrument'], h.get('unread')) for h in found] == [
+            ('security', '+TASA M1', None),
+            # 63,246 x 1.3981020 is 88,424.36, not the printed 99,999.99: kept as a line not read, no figure taken.
+            ('security', '+TASA M2', 'does not prove units x price = valuation'),
+            ('repo', 'BPAG91 270506', None)]
+        security, unread, repo = found
+        assert (unread['quantity'], unread['market_value_minor'], unread['row_index']) == (None, None, 3)
+        assert '99,999.99' in unread['printed_text'] and unread['not_read'] == ['quantity', 'price', 'value']
         assert (security['quantity'], security['market_value_minor'], security['as_of']) == (
             Decimal('63246'), 8842436, date(2025, 4, 30))
         assert (repo['market_value_minor'], repo['settlement_date'], repo['as_of']) == (
@@ -235,6 +240,29 @@ class BrokerageLedgerTests(DuplicateTestCase):
         assert (holding.instrument, holding.currency, holding.as_of_date) == ('+TASA M1', 'MXN', date(2025, 4, 30))
         assert holding.market_value_minor == 8842436 and holding.provenance['source']['page'] == 2
 
+    def test_a_position_line_that_cannot_be_read_is_kept_counted_and_never_summed(self):
+        # As on live: a line split across two table rows prints only last month's figures on its first row.
+        sources = [dict(page_number=2, table_index=1, rows=[
+            dict(row_index=0, cells=cells('POSICION AL 31 DE MAYO DE 2024', 'POSICION AL 30 DE JUNIO DE 2024')),
+            dict(row_index=2, cells=cells('+TASA M1 0) MXN)', '317,820)', '1.1349110)', '360,697.41)')),
+            dict(row_index=3, cells=cells('+TASA M2 0) MXN)', '0) 0.0000000)', '0.00)',
+                                          '63,246) 1.3981020) 0.00000)', '88,424.36)'))])]
+        self.cash('', amount=100, direction='credit', day=date(2024, 6, 3))
+        out = self.sync(sources)
+        assert (out['holdings'], out['lines_not_read']) == (1, 1)
+        unread = self.db.query(FinancialSecurityRow).filter_by(instrument='+TASA M1').one()
+        assert (unread.quantity, unread.price, unread.market_value_minor) == (None, None, None)
+        assert unread.provenance['unread'] == 'line not in the position layout'
+        assert '360,697.41' in unread.provenance['printed_text'] and unread.as_of_date == date(2024, 6, 30)
+        from services.agent.brokerage_tools import get_trades
+        data = get_trades(self.db, case_id=self.case.id, kind='holding')
+        assert (data['total'], data['lines_not_read']) == (2, 1)
+        totals = {t['instrument']: t for t in data['totals_by_instrument']}
+        assert totals['+TASA M1']['quantity_not_read'] == 1 and totals['+TASA M1']['latest_quantity'] is None
+        assert totals['+TASA M2']['latest_quantity'] == '63246'
+        (item,) = [i for i in data['items'] if i['unread']]
+        assert item['citation']['printed_text'] and item['market_value'] is None
+
     def test_get_trades_keeps_the_ledger_tool_contract(self):
         from contextlib import contextmanager
         from services.agent.tools import AgentToolContext, make_agent_tools
@@ -305,8 +333,11 @@ class FundStatementTests(DuplicateTestCase):
         assert trades[1]['checks'] == {'units_times_price_equals_amount': True, 'units_chain': True}
         assert trades[2]['checks']['units_chain'] is True and trades[2]['currency'] == 'MXN'
         # 100 x 43.000000 is 4,300.00, not the printed 9,999.99: the line is not read, and says so.
-        assert out['not_read'] == [dict(page_number=4, printed_text=out['not_read'][0]['printed_text'],
-                                        why='units x price != amount')]
+        (unread,) = out['not_read']
+        assert (unread['row_kind'], unread['instrument'], unread['unread'], unread['quantity'], unread['net_minor'],
+                unread['page_number'], unread['row_index']) == (
+            'trade', 'SYNTHFD B-2', 'units x price does not equal the amount', None, None, 4, 1)
+        assert '9,999.99' in unread['printed_text'] and 'locator' in unread
         (holding,) = out['holdings']
         assert (holding['instrument'], holding['quantity'], holding['market_value_minor'], holding['as_of']) == (
             'SYNTHFD B-2', Decimal('44090'), 191594708, date(2025, 11, 28))

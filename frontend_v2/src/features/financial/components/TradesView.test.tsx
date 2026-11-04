@@ -126,3 +126,17 @@ it("says plainly when the case has no trades", async () => {
   view()
   expect(await screen.findByText(/No trades have been read in this case/)).toBeTruthy()
 })
+
+it("shows a printed line that could not be read, with its reason and printed text, and no figures", async () => {
+  vi.mocked(fetchAPI).mockResolvedValue({ row_kind: "trade", total: 1, returned: 1, page: 1, page_size: 50,
+    next_page: null, not_shown_cash_leg_not_in_ledger: 0, revision: null,
+    items: [trade({ quantity: null, quantity_printed: null, price: null, net_minor: null, cash_transaction_id: null,
+                    unread: "line not in the position layout", not_read: ["quantity", "price", "value"],
+                    citation: { file_id: "30000000-0000-4000-8000-000000000001", page: 2,
+                                printed_text: "+TASA M1 0 MXN 317,820 1.1349110 360,697.41" } })] })
+  view()
+  expect(await screen.findByText(/Line not read \(line not in the position layout\)/)).toBeTruthy()
+  expect(screen.getByText(/Printed: \+TASA M1 0 MXN 317,820/)).toBeTruthy()
+  expect(screen.getByText("Not read: quantity, price, value")).toBeTruthy()
+  expect(screen.queryByRole("link", { name: "Cash line" })).toBeNull()
+})

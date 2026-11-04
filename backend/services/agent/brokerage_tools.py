@@ -62,15 +62,17 @@ def get_trades(db, *, case_id, kind="trade", instrument=None, account_id=None, s
     reading_by = {}
     for r in rows:
         reading_by[r["origin"]["kind"]] = reading_by.get(r["origin"]["kind"], 0) + 1
+    unread = sum(1 for r in rows if r.get("unread"))
     window = items[offset:offset + limit]
     nxt = offset + limit if offset + limit < len(items) else None
     return dict(schema=SCHEMA, case_id=str(case_id), available=True, reason=None,
                 revision=_revision([revision, len(items), [i["id"] for i in items]]),
                 total=len(items), returned=len(window), offset=offset, has_more=nxt is not None, next_offset=nxt,
                 items=window, totals_by_instrument=totals, readings_by_origin=reading_by,
-                not_shown_cash_leg_not_in_ledger=hidden,
+                not_shown_cash_leg_not_in_ledger=hidden, lines_not_read=unread,
                 note=("Trade date is the printed operation day; no time of execution is printed. Rows with origin "
-                      "kind 'model' were read by a model and no person has confirmed them."))
+                      "kind 'model' were read by a model and no person has confirmed them. Rows with 'unread' are "
+                      "printed lines that could not be read with proof: they are counted, never summed."))
 
 
 def _item(case_id, r):
@@ -88,7 +90,8 @@ def _item(case_id, r):
         account=r["account"], account_id=r["account_id"], file=r["file"], proof_class=r["proof_class"],
         origin=r["origin"], corrections={k: dict(read=v.get("read"), value=v.get("value"), by=(v.get("by") or {}).get("name"))
                                          for k, v in (r.get("corrections") or {}).items()},
-        not_printed=r["not_printed"], not_read=r["not_read"], checks=r["checks"], citation=citation,
+        not_printed=r["not_printed"], not_read=r["not_read"], unread=r.get("unread"), checks=r["checks"],
+        citation=citation,
         # Each minor-unit figure beside its formatted amount, so a model never reads centavos as pesos.
         currency_exponent=formatted(0, r["currency"])["currency_exponent"],
         **{m: formatted(r[m + "_minor"], r["currency"])["amount"] if r[m + "_minor"] is not None else None

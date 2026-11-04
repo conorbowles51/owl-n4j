@@ -329,6 +329,11 @@ export function TradesView({ caseId }: { caseId: string }) {
                           Cash line
                         </a>
                       )}
+                      {row.unread && (
+                        <span className="block font-medium">
+                          Line not read ({row.unread}). Printed: {row.citation.printed_text}
+                        </span>
+                      )}
                       {row.not_read.length > 0 && (
                         <span className="block text-muted-foreground">Not read: {row.not_read.join(", ")}</span>
                       )}

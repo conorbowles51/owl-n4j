@@ -161,7 +161,8 @@ def desired_rows(session, document) -> list:
             locator=holding.get('locator'), printed_text=holding['printed_text'], basis='printed_line',
             source=dict(page=holding['page_number'], table=holding['table_index'], row=holding['row_index']),
             folio=holding.get('folio'), coupon=holding.get('coupon'), previous=holding.get('previous'),
-            checks={'proof': holding['proof']}, not_printed=['execution_time', 'isin'], not_read=[],
+            checks={'proof': holding['proof']}, not_printed=['execution_time', 'isin'],
+            not_read=holding.get('not_read') or [], unread=holding.get('unread'),
             unreadable=[], reading_origin=None, source_document_id=str(document.id),
             currency_basis='printed' if holding.get('currency') else ('statement' if currency else 'absent'))
         key = f"holding:{holding['page_number']}:{holding['table_index']}:{holding['row_index']}"
@@ -210,7 +211,7 @@ def reading_digest(row_or_values) -> str:
 def sync_document(session, document_id, *, force: bool = False) -> dict:
     """Make the document's security rows match its current reading. Returns counts; writes no cash row."""
     counts = dict(document_id=str(document_id), added=0, superseded=0, unchanged=0, trades=0, holdings=0,
-                  carried_corrections=0, dropped_corrections=0, brokerage=False)
+                  lines_not_read=0, carried_corrections=0, dropped_corrections=0, brokerage=False)
     if not enabled() and not force:
         return counts
     document_id = document_id if isinstance(document_id, uuid.UUID) else uuid.UUID(str(document_id))
@@ -235,7 +236,9 @@ def _apply(session, *, case_id, evidence_file_id, source_document_id, readers, w
         else FinancialSecurityRow.source_document_id.is_(None),
         FinancialSecurityRow.reader.in_(readers), FinancialSecurityRow.ledger_status == 'admitted'))}
     for key, (values, provenance) in wanted.items():
-        counts['trades' if values['row_kind'] == 'trade' else 'holdings'] += 1
+        # A printed line kept as not read is counted on its own, not as a trade or holding read.
+        counts['lines_not_read' if provenance.get('unread') else
+               'trades' if values['row_kind'] == 'trade' else 'holdings'] += 1
         digest = _digest(dict(values, provenance=provenance))
         old = existing.pop(key, None)
         if old is not None and old.content_hash == digest:
@@ -290,7 +293,7 @@ def fund_rows(session, file) -> list:
         return []
     read = reading.fund_statement_rows(sources, extra_texts=[content] if content else [])
     found = []
-    for item in read['trades'] + read['holdings']:
+    for item in read['trades'] + read['holdings'] + read['not_read']:
         kind = item['row_kind']
         values = dict(
             row_kind=kind, operation=item.get('operation'), side=item.get('side'), holding_kind=item.get('holding_kind'),
@@ -308,7 +311,8 @@ def fund_rows(session, file) -> list:
             locator=item.get('locator'), printed_text=item['printed_text'], basis='printed_line',
             source=dict(page=item['page_number'], table=item['table_index'], row=item['row_index']),
             checks=item.get('checks') or {'proof': item.get('proof')}, not_printed=item.get('not_printed') or
-            ['execution_time', 'isin'], not_read=[], unreadable=[], reading_origin=None,
+            ['execution_time', 'isin'], not_read=item.get('not_read') or [], unread=item.get('unread'),
+            unreadable=[], reading_origin=None,
             previous=item.get('previous'), balance_after=item.get('balance_after'),
             period=[d.isoformat() for d in read['period']] if read['period'] else None,
             outside_money_ledger='An investment-fund statement: set aside from the money ledger (no cash lines); '
@@ -323,7 +327,8 @@ def sync_fund_statement(session, evidence_file_id, *, force: bool = False) -> di
     case (same bytes) gets none. Writes no cash row (a fund statement has none in the money ledger)."""
     from postgres.models.evidence import EvidenceFile
     counts = dict(evidence_file_id=str(evidence_file_id), added=0, superseded=0, unchanged=0, trades=0,
-                  holdings=0, carried_corrections=0, dropped_corrections=0, fund_statement=False, copy=False)
+                  holdings=0, lines_not_read=0, carried_corrections=0, dropped_corrections=0, fund_statement=False,
+                  copy=False)
     if not enabled() and not force:
         return counts
     file_id = evidence_file_id if isinstance(evidence_file_id, uuid.UUID) else uuid.UUID(str(evidence_file_id))
@@ -423,7 +428,8 @@ def to_json(row, *, account_names=None, file_names=None) -> dict:
                       locator=provenance.get('locator'), printed_text=provenance.get('printed_text'),
                       cash_leg=provenance.get('cash_leg')),
         checks=provenance.get('checks') or {}, not_printed=provenance.get('not_printed') or [],
-        not_read=provenance.get('not_read') or [], unreadable=provenance.get('unreadable') or [],
+        not_read=provenance.get('not_read') or [], unread=provenance.get('unread'),
+        unreadable=provenance.get('unreadable') or [],
         corrections={field: dict(entry) for field, entry in (row.corrections or {}).items()},
         confirmation=row.confirmation, origin=label(row), reader=row.reader)
 

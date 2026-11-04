@@ -45,7 +45,8 @@ def fund_statement_files(session, cases=None):
 
 def run_funds(factory, cases=None, *, apply=False):
     from services.financial.brokerage_ledger import sync_fund_statement
-    totals = dict(files=0, fund_statements=0, copies=0, trades=0, holdings=0, added=0, superseded=0, unchanged=0)
+    totals = dict(files=0, fund_statements=0, copies=0, trades=0, holdings=0, lines_not_read=0, added=0, superseded=0,
+                  unchanged=0)
     per_file = []
     with factory() as session:
         ids = fund_statement_files(session, cases)
@@ -57,15 +58,15 @@ def run_funds(factory, cases=None, *, apply=False):
         totals['files'] += 1
         totals['fund_statements'] += bool(out['fund_statement'])
         totals['copies'] += bool(out['copy'])
-        for key in ('trades', 'holdings', 'added', 'superseded', 'unchanged'):
+        for key in ('trades', 'holdings', 'lines_not_read', 'added', 'superseded', 'unchanged'):
             totals[key] += out[key]
     return totals, per_file
 
 
 def run(factory, cases=None, *, apply=False):
     from services.financial.brokerage_ledger import sync_document
-    totals = dict(documents=0, admitted_documents=0, trades=0, holdings=0, added=0, superseded=0, unchanged=0,
-                  carried_corrections=0, dropped_corrections=0)
+    totals = dict(documents=0, admitted_documents=0, trades=0, holdings=0, lines_not_read=0, added=0, superseded=0,
+                  unchanged=0, carried_corrections=0, dropped_corrections=0)
     per_document = []
     with factory() as session:
         ids = brokerage_documents(session, cases)
@@ -79,7 +80,7 @@ def run(factory, cases=None, *, apply=False):
         per_document.append(out)
         totals['documents'] += 1
         totals['admitted_documents'] += 1 if out['trades'] or out['holdings'] else 0
-        for key in ('trades', 'holdings', 'added', 'superseded', 'unchanged', 'carried_corrections',
+        for key in ('trades', 'holdings', 'lines_not_read', 'added', 'superseded', 'unchanged', 'carried_corrections',
                     'dropped_corrections'):
             totals[key] += out[key]
     return totals, per_document
