@@ -80,6 +80,30 @@ describe("matching the address against app/routes.tsx", () => {
   })
 })
 
+describe("each start-up step is off unless its switch is on", () => {
+  it("with both steps off, nothing starts and links start nothing", async () => {
+    window.history.replaceState(null, "", "/cases/c1/evidence")
+    localStorage.setItem("authToken", "t")
+    useAuthStore.setState({ isAuthenticated: true, user: null })
+    registerRouteTree(() => [])
+    expect(preloadCurrentRoute("/cases/c1/evidence", "", Promise.resolve({ id: "u1" } as never), { data: false, code: false })).toBe(false)
+    await act(() => new Promise<void>((r) => setTimeout(r, 200)))
+    expect(pageChunksPending()).toBe(false)
+    expect(preloadRouteIntent("/cases/c1/financial")).toBe(false)
+  })
+
+  it("the switches are read from the address like the other switches, and are off by default", async () => {
+    const { applySwitchesFromSearch, isSwitchOn } = await import("./ui-switches")
+    for (const name of ["open-sign-in-first", "open-data-first", "open-code-first"] as const) {
+      expect(isSwitchOn(name)).toBe(false)
+      applySwitchesFromSearch(`?${name}=on`)
+      expect(isSwitchOn(name)).toBe(true)
+      applySwitchesFromSearch(`?${name}=off`)
+      expect(isSwitchOn(name)).toBe(false)
+    }
+  })
+})
+
 describe("the code started at startup is the code React renders", () => {
   function app(Page: ReturnType<typeof page>["Page"], at: string) {
     return render(

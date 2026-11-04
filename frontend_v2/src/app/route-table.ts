@@ -58,14 +58,15 @@ function whenSignedIn(signedIn: Promise<User> | null, then: (user: User) => void
 export function preloadCurrentRoute(
   pathname = window.location.pathname,
   search = window.location.search,
-  signedIn: Promise<User> | null = null
+  signedIn: Promise<User> | null = null,
+  steps: { data: boolean; code: boolean } = { data: true, code: true }
 ): boolean {
-  registerRouteTree(appRouteTree)
+  if (steps.code) registerRouteTree(appRouteTree)
   // Signed out, every private address goes to the sign-in page: its page's code would be downloaded for nothing.
-  if (!localStorage.getItem("authToken")) return false
+  if (!localStorage.getItem("authToken") || (!steps.data && !steps.code)) return false
   const tree = appRouteTree()
-  const page = routePageFor(tree, pathname)
-  const data = routeDataFor(tree, pathname)
+  const page = steps.code ? routePageFor(tree, pathname) : null
+  const data = steps.data ? routeDataFor(tree, pathname) : null
   const module = data?.load()
   module?.catch(() => {}) // the page asks for its own data as before
   if (!page && !data) return false
