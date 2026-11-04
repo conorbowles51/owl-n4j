@@ -101,14 +101,16 @@ def _base(where):
 def index(conn, case_id, f: dict | None = None) -> dict:
     f, p = dict(f or {}), {"c": str(case_id)}
     base = _base(_where(f, p))
-    total, no_time, missing = conn.execute(text(
-        "SELECT count(*), count(*) FILTER (WHERE c.first_at IS NULL), count(*) FILTER (WHERE f.verification = "
-        "'missing') " + base), p).one()
+    # a file with no time was carried by no message, or only by messages that carry no time: counted apart
+    total, no_time, no_message, missing = conn.execute(text(
+        "SELECT count(*), count(*) FILTER (WHERE c.first_at IS NULL), count(*) FILTER (WHERE c.file_uid IS NULL), "
+        "count(*) FILTER (WHERE f.verification = 'missing') " + base), p).one()
     by_cat = {r[0] or "Uncategorised": int(r[1]) for r in conn.execute(text(
         "SELECT f.category, count(*) " + base + " GROUP BY 1 ORDER BY 2 DESC, 1"), p)}
     by_ver = {r[0] or "unchecked": int(r[1]) for r in conn.execute(text(
         "SELECT f.verification, count(*) " + base + " GROUP BY 1 ORDER BY 2 DESC, 1"), p)}
-    return {"case_id": str(case_id), "total": int(total), "no_time_count": int(no_time), "missing": int(missing),
+    return {"case_id": str(case_id), "total": int(total), "no_time_count": int(no_time),
+            "no_message_count": int(no_message), "missing": int(missing),
             "by_category": by_cat, "verification": by_ver}
 
 

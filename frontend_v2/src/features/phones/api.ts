@@ -464,7 +464,7 @@ export interface MediaFilter {
   linked_to_message?: boolean | null
   thread_key?: string
 }
-export interface MediaIndex { total: number; no_time_count: number; missing: number; by_category: Record<string, number>; verification: Record<string, number> }
+export interface MediaIndex { total: number; no_time_count: number; no_message_count?: number; missing: number; by_category: Record<string, number>; verification: Record<string, number> }
 export interface MediaItem {
   file_uid: string; extraction_id: string; phone_label: string; category: string | null; filename: string; size: number | null
   taken_or_sent: { instant: string | null; full: string; basis: string }

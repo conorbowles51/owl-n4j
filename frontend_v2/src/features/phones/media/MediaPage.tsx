@@ -10,6 +10,7 @@ import { ImageSearch } from "./ImageSearch"
 import { MachineTextPrompt } from "./MachineTextPrompt"
 import { useObjectUrl } from "./use-object-url"
 import { acceptDerivedText, confirmDerivedText, correctDerivedText, getDerivedTexts, getMediaDetail, getMediaIndex, getMediaWindow, getTranslations, requestDerivedText, translateDerivedText, type DerivedText, type MediaFilter, type MediaItem } from "../api"
+import { noTimeWords } from "./no-time-words"
 
 const n = (v: number) => v.toLocaleString("en-US")
 const WINDOW = 200
@@ -501,7 +502,7 @@ export default function MediaPage() {
           <p role="status" className="text-sm">
             {n(total)} {total === 1 ? "file" : "files"}{category || state || thread ? ` match the filter (of ${n(all.data?.total ?? total)} on this phone)` : ""}.
             {idx.data.missing ? ` ${n(idx.data.missing)} the report refers to are not in the production.` : ""}
-            {idx.data.no_time_count ? ` ${n(idx.data.no_time_count)} were carried by no message and have no time; they are listed at the end.` : ""}
+            {noTimeWords(idx.data.no_time_count, idx.data.no_message_count)}
           </p>
         )}
         <div className="flex flex-wrap items-center gap-2 text-xs">

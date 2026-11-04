@@ -8,7 +8,7 @@ import type { PhoneMapNear } from "@/features/phones/api"
  */
 export function NearMessageNote({ loading, failed, near }: { loading: boolean; failed: boolean; near: PhoneMapNear | undefined }) {
   return (
-    <p role="status" className="absolute left-2 top-2 z-10 max-w-md rounded border bg-card px-2 py-1 text-xs shadow-sm">
+    <p role="status" className="absolute left-3 top-12 z-10 max-w-md rounded border bg-card px-2 py-1 text-xs shadow-sm">
       {loading && "Finding the positions near this message"}
       {failed && "The positions near this message could not be found."}
       {near?.words}
