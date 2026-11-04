@@ -711,10 +711,11 @@ export interface LinkEdge {
 
 /** Combined edges between subjects, counted as Conversations counts Between A and B (direct, copies collapsed by
  * default), so an edge's count equals the list it opens. */
-export async function getLinkEdges(caseId: string, subjects: EdgeSubject[], opts: { groupScope?: "direct" | "include_groups"; collapseCopies?: boolean } = {}) {
+export async function getLinkEdges(caseId: string, subjects: EdgeSubject[], opts: { groupScope?: "direct" | "include_groups"; collapseCopies?: boolean; fromInstant?: string | null; toInstant?: string | null } = {}) {
   return fetchAPI<{ edges: LinkEdge[]; financial_records?: boolean; money_absent?: string | null }>("/api/phones/link-analysis/edges", {
     method: "POST",
-    body: { case_id: caseId, subjects, group_scope: opts.groupScope ?? "direct", collapse_copies: opts.collapseCopies ?? true },
+    body: { case_id: caseId, subjects, group_scope: opts.groupScope ?? "direct", collapse_copies: opts.collapseCopies ?? true,
+      ...(opts.fromInstant ? { from_instant: opts.fromInstant } : {}), ...(opts.toInstant ? { to_instant: opts.toInstant } : {}) },
     read: true,
   })
 }

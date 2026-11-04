@@ -1,4 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from "react"
+import { useEdgeWindow, windowStyle } from "../stores/edge-window.store"
 import ForceGraph2D, {
   type ForceGraphMethods,
   type NodeObject,
@@ -436,6 +437,9 @@ export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: G
     [selectedNodeKeys, hoveredNode, canvasColors]
   )
 
+  const edgeWindow = useEdgeWindow((st) => st.window)
+  const edgeCounts = useEdgeWindow((st) => st.counts)
+
   /* ---- Custom link renderer with LOD tiers ---- */
   const paintLink = useCallback(
     (link: ForceLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -446,7 +450,9 @@ export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: G
       /* LOD: skip links entirely at very low zoom */
       if (globalScale < 0.3) return
 
-      const baseWidth = Math.max(0.5, (link.weight ?? 1) * 0.8)
+      // the Graph time slider (03 14.3): a phone pair's edge restyled from its count in the window
+      const ws = windowStyle(link.type, String(src.id ?? ""), String(tgt.id ?? ""), edgeWindow, edgeCounts)
+      const baseWidth = Math.max(0.5, (link.weight ?? 1) * 0.8) * (ws?.widthFactor ?? 1)
       const width = baseWidth / Math.sqrt(globalScale)
 
       ctx.beginPath()
@@ -454,8 +460,10 @@ export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: G
       ctx.lineTo(tgt.x, tgt.y!)
       ctx.strokeStyle = canvasColors.linkColor
       ctx.lineWidth = width
-      ctx.globalAlpha = 0.4
+      ctx.globalAlpha = ws?.alpha ?? 0.4
+      ctx.setLineDash(ws?.dashed ? [4 / globalScale, 3 / globalScale] : [])
       ctx.stroke()
+      ctx.setLineDash([])
 
       /* LOD: Thin lines only (globalScale 0.3–0.6) — no arrows, no labels */
       if (globalScale < 0.6) {
@@ -520,7 +528,7 @@ export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: G
 
       ctx.globalAlpha = 1.0
     },
-    [showRelationshipLabels, canvasColors]
+    [showRelationshipLabels, canvasColors, edgeWindow, edgeCounts]
   )
 
   /* ---- Click handlers ---- */

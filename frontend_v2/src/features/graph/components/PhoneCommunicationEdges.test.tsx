@@ -52,6 +52,40 @@ describe("communication edges on the Graph", () => {
     expect([q.get("tab"), q.get("people"), q.get("mode")]).toEqual(["people", `${A},${B}`, "between"])
   })
 
+  it("recounts each pair for the chosen window, restyles from that count and opens Conversations for the window (03 14.3, R-3)", async () => {
+    api.getLinkEdges.mockReset()
+    api.getLinkEdges.mockImplementation(async (_c: string, _s: unknown, opts?: { fromInstant?: string }) => ({ edges: [{
+      a: { identity_key: A, label: "Synthetic Ana" }, b: { identity_key: B, label: "Synthetic Ben" }, label: "",
+      communication: { messages_ab: opts?.fromInstant ? 1 : 2, messages_ba: opts?.fromInstant ? 0 : 1, calls_ab: 0, calls_ba: 0, emails_ab: 0, emails_ba: 0,
+        first_instant: null, last_instant: null, phones: ["C1"], no_time_count: 0 } }] }))
+    render(
+      <MemoryRouter initialEntries={["/cases/case-1/graph"]}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <Routes>
+            <Route path="/cases/:id/graph" element={<PhoneCommunicationEdges caseId="case-1" nodes={nodes} edges={edges} />} />
+            <Route path="*" element={<Where />} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByRole("button", { name: "3 messages between Synthetic Ana and Synthetic Ben" })
+    fireEvent.change(screen.getByLabelText("Edges from"), { target: { value: "2023-03-01" } })
+    fireEvent.change(screen.getByLabelText("to"), { target: { value: "2023-03-31" } })
+    fireEvent.click(screen.getByRole("button", { name: "Count this window" }))
+    const button = await screen.findByRole("button", { name: "1 message between Synthetic Ana and Synthetic Ben in the window" })
+    expect(api.getLinkEdges).toHaveBeenLastCalledWith("case-1", [{ identity_key: A }, { identity_key: B }],
+      { fromInstant: "2023-03-01T00:00:00Z", toInstant: "2023-03-31T23:59:59Z" })
+    const { useEdgeWindow, edgeKey, windowStyle } = await import("../stores/edge-window.store")
+    await waitFor(() => expect(useEdgeWindow.getState().counts[edgeKey(A, B)]).toBe(1))
+    const st = useEdgeWindow.getState()
+    expect(windowStyle("COMMUNICATED", `phone-identity:${A}`, `phone-identity:${B}`, st.window, st.counts)?.dashed).toBe(false)
+    expect(windowStyle("COMMUNICATED", `phone-identity:${A}`, `phone-identity:${B}`, st.window, { [edgeKey(A, B)]: 0 })?.dashed).toBe(true)
+    expect(windowStyle("APPEARS_ON", `phone-identity:${A}`, "phone-extraction:x", st.window, st.counts)).toBeNull()
+    fireEvent.click(button)
+    const q = new URLSearchParams((screen.getByTestId("where").textContent || "").split("?")[1])
+    expect([q.get("from"), q.get("to"), q.get("notime"), q.get("mode")]).toEqual(["2023-03-01T00:00:00Z", "2023-03-31T23:59:59Z", "0", "between"])
+  })
+
   it("shows nothing when the graph has no communication edge", () => {
     const { container } = render(
       <MemoryRouter><QueryClientProvider client={new QueryClient()}>

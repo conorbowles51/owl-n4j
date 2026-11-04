@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,7 @@ import { AddToMenu } from "@/features/phones/ui/AddToMenu"
 import { useFinancialPresence } from "@/features/phones/financial-presence"
 import type { GraphEdge, GraphNode } from "@/types/graph.types"
 import { pairConversationsHref } from "@/features/graph/lib/pair-href"
+import { edgeKey, useEdgeWindow } from "@/features/graph/stores/edge-window.store"
 
 const PREFIX = "phone-identity:"
 const SHOWN = 8
@@ -20,9 +21,13 @@ function PairEdge({ caseId, a, b, aName, bName, picked, onPick }: {
   caseId: string; a: string; b: string; aName: string; bName: string; picked: boolean; onPick: (on: boolean) => void
 }) {
   const navigate = useNavigate()
+  const win = useEdgeWindow((s) => s.window)
+  const setCount = useEdgeWindow((s) => s.setCount)
   const q = useQuery({
-    queryKey: ["graph-pair-edge", caseId, a, b],
-    queryFn: () => getLinkEdges(caseId, [{ identity_key: a }, { identity_key: b }]),
+    queryKey: ["graph-pair-edge", caseId, a, b, win?.from ?? null, win?.to ?? null],
+    queryFn: () => (win
+      ? getLinkEdges(caseId, [{ identity_key: a }, { identity_key: b }], { fromInstant: win.from, toInstant: win.to })
+      : getLinkEdges(caseId, [{ identity_key: a }, { identity_key: b }])),
     staleTime: 60_000,
   })
   const edge = q.data?.edges[0]
@@ -30,16 +35,20 @@ function PairEdge({ caseId, a, b, aName, bName, picked, onPick }: {
   const messages = c ? c.messages_ab + c.messages_ba : null
   const calls = c ? c.calls_ab + c.calls_ba : 0
   const emails = c ? c.emails_ab + c.emails_ba : 0
+  useEffect(() => {
+    if (win && messages !== null) setCount(edgeKey(a, b), messages + calls + emails)
+    else if (win && q.data && !edge) setCount(edgeKey(a, b), 0)
+  }, [win, messages, calls, emails, a, b, q.data, edge, setCount])
   const A = edge?.a.label || aName
   const B = edge?.b.label || bName
   const words = messages === null
     ? `Counting messages between ${A} and ${B}`
-    : `${plural(messages, "message", "messages")}${calls ? ` and ${plural(calls, "call", "calls")}` : ""}${emails ? ` and ${plural(emails, "email", "emails")}` : ""} between ${A} and ${B}`
+    : `${plural(messages, "message", "messages")}${calls ? ` and ${plural(calls, "call", "calls")}` : ""}${emails ? ` and ${plural(emails, "email", "emails")}` : ""} between ${A} and ${B}${win ? " in the window" : ""}`
   return (
     <li className="flex items-center gap-1">
       <input type="checkbox" checked={picked} onChange={(e) => onPick(e.target.checked)} aria-label={`Choose ${A} and ${B} to add`} />
       <Button size="sm" variant="outline" className="h-auto whitespace-normal text-left text-xs" disabled={q.isError}
-        onClick={() => navigate(pairConversationsHref(caseId, a, b))}>
+        onClick={() => navigate(pairConversationsHref(caseId, a, b, win))}>
         {q.isError ? `Could not count the messages between ${A} and ${B}` : words}
       </Button>
     </li>
@@ -112,6 +121,34 @@ function ChosenPairs({ caseId, pairs }: { caseId: string; pairs: Pair[] }) {
  * Communication edges on the Graph (03-11, 07 J-3 Graph start): one entry per pair of phone identities that wrote to
  * or called each other, with the count Conversations shows for Between A and B, opening that list.
  */
+/** The Graph time slider (03 14.3): a window of whole days (UTC) that recounts every listed pair and restyles the
+ * canvas edges from those counts; "All time" clears it. Nodes are not reloaded. */
+function EdgeWindowControls() {
+  const win = useEdgeWindow((s) => s.window)
+  const setWindow = useEdgeWindow((s) => s.setWindow)
+  const [from, setFrom] = useState(win?.from.slice(0, 10) ?? "")
+  const [to, setTo] = useState(win?.to.slice(0, 10) ?? "")
+  useEffect(() => () => setWindow(null), [setWindow])  // leaving the Graph clears the window
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to) && from <= to
+  const apply = () => {
+    const end = new Date(`${to}T00:00:00Z`); end.setUTCDate(end.getUTCDate() + 1)
+    setWindow({ from: `${from}T00:00:00Z`, to: new Date(end.getTime() - 1000).toISOString().replace(".000Z", "Z") })
+  }
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" aria-label="Time window for the edges">
+      <label htmlFor="edge-from">Edges from</label>
+      <input id="edge-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded border bg-background px-1" />
+      <label htmlFor="edge-to">to</label>
+      <input id="edge-to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded border bg-background px-1" />
+      <Button size="sm" variant="outline" disabled={!valid} onClick={apply}>Count this window</Button>
+      {win && <Button size="sm" variant="ghost" onClick={() => { setWindow(null); setFrom(""); setTo("") }}>All time</Button>}
+      <span className="text-muted-foreground">{win
+        ? `Counts and edge widths are for ${win.from.slice(0, 10)} to ${win.to.slice(0, 10)} (UTC); a dashed edge has none in the window.`
+        : "Counts are for all time."}</span>
+    </div>
+  )
+}
+
 export function PhoneCommunicationEdges({ caseId, nodes, edges }: { caseId: string; nodes: GraphNode[]; edges: GraphEdge[] }) {
   const [all, setAll] = useState(false)
   const [picked, setPicked] = useState<string[]>([])
@@ -133,6 +170,7 @@ export function PhoneCommunicationEdges({ caseId, nodes, edges }: { caseId: stri
         // 07 section 8, SA-3 and SA-4: the edges carry no money words; the absence is said once
         <p className="text-xs text-muted-foreground">{presence.data.phone_sentence}</p>
       )}
+      <EdgeWindowControls />
       <ul className="mt-1 flex flex-wrap gap-1.5">
         {shown.map((e) => {
           const p = asPair(e)
