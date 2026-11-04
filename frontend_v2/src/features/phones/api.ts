@@ -208,6 +208,26 @@ export interface SavedSelection {
 export async function getSelection(caseId: string, id: string) {
   return fetchAPI<SavedSelection>(`/api/phones/selections/${encodeURIComponent(id)}?case_id=${encodeURIComponent(caseId)}`)
 }
+/** Save this view (07 section 6): the filter kept as a phone_view held by a new Workspace note. */
+export interface SavedView {
+  id: string
+  words: string
+  location: string
+  event_count_then: number
+  event_count_now: number
+  created_at: string | null
+  sentence: string
+  replaced: string | null
+}
+export async function saveView(filter: StreamFilter, location: string, words: string) {
+  return fetchAPI<{ id: string; entry_id: string; event_count: number; words: string }>("/api/phones/views", {
+    method: "POST",
+    body: { filter, location, words },
+  })
+}
+export async function getSavedView(caseId: string, id: string) {
+  return fetchAPI<SavedView>(`/api/phones/views/${encodeURIComponent(id)}?case_id=${encodeURIComponent(caseId)}`)
+}
 export async function freezeSelection(filter: StreamFilter, words: string) {
   return fetchAPI<{ id: string; record_count: number; event_count: number; words: string }>("/api/phones/selections", {
     method: "POST",

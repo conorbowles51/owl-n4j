@@ -9,6 +9,8 @@ import {
   failureText,
   freezeSelection,
   getSelection,
+  getSavedView,
+  saveView,
   getParticipants,
   getPhones,
   getSettings,
@@ -267,6 +269,18 @@ export function ConversationsPage() {
   // ---- review marks ----------------------------------------------------------------------------------------------
   // 05 17.5: every message with text in this conversation is translated on the server, one translation each
   const [translateNote, setTranslateNote] = useState<{ thread: string; text: string } | null>(null)
+  // ---- Save this view (07 section 6): the filter kept in a Workspace note; a saved view opens re-run live ---------
+  const savedViewId = new URLSearchParams(location.search).get("saved_view")
+  const savedView = useQuery({
+    queryKey: ["phone-view", caseId, savedViewId],
+    queryFn: () => getSavedView(caseId, savedViewId!),
+    enabled: !!caseId && !!savedViewId,
+    retry: false,
+  })
+  const saveThisView = useMutation({
+    mutationFn: () => saveView(streamFilter!, `${location.pathname}?${viewToSearch({ ...view, at: null, record: null }, fixedPhone)}`, filterWords),
+  })
+
   const translate = useMutation({
     mutationFn: (thread: string) => translateThread(caseId, thread),
     onSuccess: (c, thread) => {
@@ -417,6 +431,14 @@ export function ConversationsPage() {
             <button type="button" className="underline underline-offset-2" onClick={() => setView({ selection: null })}>
               Show every message
             </button>
+          </p>
+        )}
+        {savedViewId && (
+          <p role="status" className="w-full text-sm" data-testid="saved-view">
+            {savedView.isLoading && "Opening the saved view"}
+            {savedView.isError && failureText(savedView.error, "This saved view could not be opened.")}
+            {savedView.data && `${savedView.data.sentence} The list below is the view re-run now.`}{" "}
+            {savedView.data?.replaced && <span className="text-status-review">{savedView.data.replaced}.</span>}
           </p>
         )}
         {!view.noTime && (
@@ -613,6 +635,20 @@ export function ConversationsPage() {
                 <GoToDate days={stream.index.items} where={view.thread && !view.people.length ? "in this thread" : "in these results"} open={goOpen} onOpenChange={setGoOpen}
                   onGo={(day) => { setGoOpen(false); setJump({ day, seq: Date.now() }) }} />
               )}
+              {streamFilter && (
+                <Button size="sm" variant="outline" disabled={saveThisView.isPending} onClick={() => saveThisView.mutate()}>
+                  Save this view
+                </Button>
+              )}
+              {saveThisView.data && (
+                <span role="status" className="text-xs">
+                  Saved as a Workspace note ({fmt(saveThisView.data.event_count)} {saveThisView.data.event_count === 1 ? "message" : "messages"} now).{" "}
+                  <Link className="underline underline-offset-2" to={`/cases/${encodeURIComponent(caseId)}/workspace?view=casework&entry=${encodeURIComponent(saveThisView.data.entry_id)}`}>
+                    Open the note
+                  </Link>
+                </span>
+              )}
+              {saveThisView.isError && <span role="alert" className="text-xs">{failureText(saveThisView.error, "The view could not be saved.")}</span>}
               {streamFilter && (
                 <FindInResults filter={streamFilter} snapshot={stream.index?.snapshot} onQuery={setFindHl}
                   onGo={(m) => setJump({ day: m.day, offset: m.offset, seq: Date.now() })} />

@@ -21,6 +21,8 @@ const api = vi.hoisted(() => ({
   streamIndex: vi.fn(),
   getSelection: vi.fn(),
   translateThread: vi.fn(),
+  saveView: vi.fn(),
+  getSavedView: vi.fn(),
 }))
 vi.mock("@/features/phones/api", async (orig) => ({ ...(await orig<object>()), ...api }))
 vi.mock("@/features/cases/hooks/use-cases", () => ({ useCase: () => ({ data: { title: "Synthetic case" } }) }))
@@ -153,6 +155,27 @@ describe("Conversations", () => {
     expect(seen.search).not.toContain("thread=")
     expect(streamFilters.at(-1)).toMatchObject({ selection: "s1" })
     expect((streamFilters.at(-1) as { threads?: string[] }).threads ?? []).toEqual([])
+  })
+
+  it("Save this view keeps the filter and where it was saved from in a Workspace note; a saved view states the count then and now (07 section 6)", async () => {
+    streamState.index = { snapshot: "s", zone: { label: "UTC" }, items: [], counts: {} }
+    api.saveView.mockResolvedValue({ id: "v1", entry_id: "n1", event_count: 9, words: "w" })
+    page()
+    await waitFor(() => expect(seen.search).toContain("thread=t1"))
+    fireEvent.click(await screen.findByRole("button", { name: "Save this view" }))
+    await waitFor(() => expect(api.saveView).toHaveBeenCalled())
+    const [filter, where] = api.saveView.mock.calls[0]
+    expect(filter).toMatchObject({ case_id: "case-1" })
+    expect(where).toMatch(/^\/cases\/case-1\/conversations\?.*thread=t1/)
+    expect(await screen.findByText(/Saved as a Workspace note \(9 messages now\)/)).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Open the note" })).toHaveAttribute("href", "/cases/case-1/workspace?view=casework&entry=n1")
+  })
+
+  it("a saved view opened from its note says the count when saved and now", async () => {
+    api.getSavedView.mockResolvedValue({ id: "v1", words: "w", location: "/cases/case-1/conversations?thread=t1", event_count_then: 3, event_count_now: 5, created_at: null, sentence: 'Saved view "Synthetic view": 3 messages when saved on November 4, 2026; 5 now.', replaced: null })
+    page("/cases/case-1/conversations?thread=t1&saved_view=v1")
+    await waitFor(() => expect(screen.getByTestId("saved-view")).toHaveTextContent('Saved view "Synthetic view": 3 messages when saved on November 4, 2026; 5 now. The list below is the view re-run now.'))
+    expect(api.getSavedView).toHaveBeenCalledWith("case-1", "v1")
   })
 
   it("opens the first thread on arrival so the keys act at once (D-38), in the URL", async () => {

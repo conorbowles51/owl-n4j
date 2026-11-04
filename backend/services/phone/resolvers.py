@@ -205,3 +205,5 @@ def register() -> None:
     link_types.register_phone_resolver("phone_identity", resolve_identity)
     from services.phone import selections
     link_types.register_phone_resolver("phone_selection", selections.resolve)
+    from services.phone import views
+    link_types.register_phone_resolver("phone_view", views.resolve)

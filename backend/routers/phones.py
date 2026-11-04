@@ -1686,6 +1686,38 @@ def get_selection(selection_id: str, case_id: UUID = Query(...), db: Session = D
     return out
 
 
+class SaveViewBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filter: dict
+    location: str = Field(min_length=1, max_length=4000)
+    words: str = Field("", max_length=1000)
+    title: Optional[str] = Field(None, max_length=300)
+
+
+@router.post("/views")
+def save_view(body: SaveViewBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Save this view (07 section 6): the filter as a ``phone_view`` held by a new Workspace note. Needs edit access."""
+    from services.phone import views
+    f = _filter(body.filter, db, user, ("case", "edit"))
+    try:
+        return views.save(db, f, user, location=body.location, words=body.words, title=body.title)
+    except views.ViewError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/views/{view_id}")
+def get_view(view_id: str, case_id: UUID = Query(...), db: Session = Depends(get_db),
+             user: User = Depends(get_current_db_user)):
+    """A saved view re-run live: the count when saved and now, and the screen it opens (07 section 6)."""
+    authorize_case(db, case_id, user, ("case", "view"))
+    from services.phone import views
+    out = views.describe(db, case_id, view_id)
+    if out is None:
+        raise HTTPException(status_code=404, detail="This saved view is not in this case.")
+    return out
+
+
 class ReviewMarkBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID

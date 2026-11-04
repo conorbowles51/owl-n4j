@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { Link, Navigate, useLocation, useParams } from "react-router-dom"
-import { failureText, getMediaDetail, getPhones, getRecord } from "@/features/phones/api"
+import { failureText, getMediaDetail, getPhones, getRecord, getSavedView } from "@/features/phones/api"
 import { Button } from "@/components/ui/button"
 import { ComparePhones } from "@/features/phones/components/ComparePhones"
 import { phoneQueryTarget } from "./phone-query"
@@ -20,23 +20,26 @@ export function PhonesIndexPage() {
   const fileUid = q.get("file")
   // a saved phone_file link opens the file on its phone's Media screen
   const file = useQuery({ queryKey: ["phone-file-home", caseId, fileUid], queryFn: () => getMediaDetail(caseId, fileUid!), enabled: !!caseId && !!fileUid && !target, retry: false })
+  // a saved phone_view link (07 section 6) re-opens the screen it was saved from, re-run live
+  const viewId = q.get("view")
+  const saved = useQuery({ queryKey: ["phone-view", caseId, viewId], queryFn: () => getSavedView(caseId, viewId!), enabled: !!caseId && !!viewId && !target, retry: false })
   const phones = useQuery({ queryKey: ["phones", caseId], queryFn: () => getPhones(caseId), enabled: !!caseId && !target })
   const [comparing, setComparing] = useState(false)
   if (target) return <Navigate to={target} replace />
+  if (saved.data && saved.data.location.startsWith(`/cases/${caseId}/`)) {
+    const at = saved.data.location
+    return <Navigate to={`${at}${at.includes("?") ? "&" : "?"}saved_view=${encodeURIComponent(saved.data.id)}`} replace />
+  }
   if (file.data)
     return <Navigate to={`/cases/${encodeURIComponent(caseId)}/phones/${encodeURIComponent(file.data.extraction_id)}/records/media?file=${encodeURIComponent(fileUid!)}`} replace />
   // a report retired by Replace stays readable but is listed apart, so two reports of one phone never share a name
   const active = (phones.data?.phones ?? []).filter((p) => p.standing !== "superseded")
   const replaced = (phones.data?.phones ?? []).filter((p) => p.standing === "superseded")
-  const unsupported = ["view"].find((k) => q.get(k))
   return (
     <div className="flex flex-col gap-3 p-6">
       <h1 className="text-lg font-semibold">Phones</h1>
-      {unsupported && (
-        <p role="status" className="text-sm">
-          This link names a phone {unsupported}. It opens on its own screen once that screen is released; the phones of the case are listed below.
-        </p>
-      )}
+      {viewId && saved.isLoading && <p role="status" className="text-sm">Opening the saved view</p>}
+      {viewId && saved.isError && <p role="alert">{failureText(saved.error, "This saved view is not in this case.")}</p>}
       {fileUid && file.isLoading && <p role="status" className="text-sm">Opening the file</p>}
       {fileUid && file.isError && <p role="alert">{failureText(file.error, "This file is not in this case.")}</p>}
       {phones.isLoading && <p className="text-sm">Loading the phones</p>}
