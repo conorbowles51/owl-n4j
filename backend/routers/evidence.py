@@ -2191,20 +2191,6 @@ async def delete_evidence_file(
     db: Session = Depends(get_db),
 ):
     """
-    Delete an evidence file and optionally its exclusive entities: at once, as before (Deleted items off, the
-    default), or into Deleted items for 30 days (switched on, config.DELETED_ITEMS_ENABLED).
-    """
-    from postgres.soft_delete import enabled
-    if not enabled():
-        return await _delete_evidence_file_at_once(evidence_id, case_id, delete_exclusive_entities, current_user, db)
-    from starlette.concurrency import run_in_threadpool
-    return await run_in_threadpool(_move_evidence_file_to_deleted_items, evidence_id, case_id,
-                                   delete_exclusive_entities, current_user, db)
-
-
-async def _delete_evidence_file_at_once(evidence_id: str, case_id: str, delete_exclusive_entities: bool,
-                                       current_user: User, db: Session):
-    """
     Delete an evidence file and optionally its exclusive entities.
 
     This will:
@@ -2215,7 +2201,14 @@ async def _delete_evidence_file_at_once(evidence_id: str, case_id: str, delete_e
        mentioned in this document (not shared with other documents)
     5. Clean up related embeddings from ChromaDB
     6. Exclusive entities are soft-deleted to the recycling bin
+
+    With Deleted items switched on (config.DELETED_ITEMS_ENABLED, off by default) the file goes into Deleted items
+    for 30 days instead (_move_evidence_file_to_deleted_items); off, everything below runs as before.
     """
+    from postgres.soft_delete import enabled
+    if enabled():
+        return await run_in_threadpool(_move_evidence_file_to_deleted_items, evidence_id, case_id,
+                                       delete_exclusive_entities, current_user, db)
     import logging
     logger = logging.getLogger(__name__)
 
