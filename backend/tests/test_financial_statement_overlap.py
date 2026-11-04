@@ -13,12 +13,12 @@ from services.financial import import_batches as batches
 from services.financial import statement_import_overlap as overlap
 from services.financial.statement_import import StatementReviewDraft
 from services.financial.pdf_candidates import PdfMappingError
-from tests.test_financial_import_batches import BatchImportTests as BatchFixture
+from tests import test_financial_import_batches as _test_financial_import_batches
 
 
 class StatementOverlapTests(TestCase):
     def setUp(self):
-        self.b = BatchFixture('test_folder_preparation_bulk_confirmation_and_repeat_do_not_duplicate')
+        self.b = _test_financial_import_batches.BatchImportTests('test_folder_preparation_bulk_confirmation_and_repeat_do_not_duplicate')
         self.b.setUp()
         self.f = self.b.f
         text = self.f.db.get(EvidenceDocumentText, self.f.file.id)

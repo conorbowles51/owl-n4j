@@ -9,12 +9,12 @@ from services.financial.ledger_snapshot import LedgerExport
 from services.financial.network_tracing import evaluate_network_trace
 from services.financial.trace_scenario_report import render_scenario_report
 from services.financial.trace_support_archive import build_trace_support_archive, verify_trace_support_archive
-from tests.test_financial_network_tracing import NetworkTracingTests
+from tests import test_financial_network_tracing as _test_financial_network_tracing
 
 
 class TraceScenarioReportTests(unittest.TestCase):
     def setUp(self):
-        self.fixture = NetworkTracingTests()
+        self.fixture = _test_financial_network_tracing.NetworkTracingTests()
         self.fixture.setUp()
         export, request, rows = self.fixture.network()
         # A separate incoming payment follows the purchase and is explicitly

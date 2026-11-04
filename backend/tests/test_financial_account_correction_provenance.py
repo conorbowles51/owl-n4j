@@ -6,7 +6,7 @@ number correction), plus a person's correction and an undone one."""
 import json
 from copy import deepcopy
 
-from tests.test_financial_ledger_summary import LedgerSummaryTests
+from tests import test_financial_ledger_summary as _test_financial_ledger_summary
 
 NEIL = dict(name='Neil Byrne', user_id='f567bf20-4c58-4ca0-9117-54f1fa78d4ee')
 CLAUDE = dict(kind='model', model='Claude', at='2026-10-25T23:09:34+00:00', **{'for': NEIL})
@@ -39,7 +39,7 @@ HISTORY = [
 ]
 
 
-class AccountCorrectionExportTests(LedgerSummaryTests):
+class AccountCorrectionExportTests(_test_financial_ledger_summary.LedgerSummaryTests):
     def export(self):
         from services.financial.ledger_snapshot import LedgerSnapshot, _capture_history, capture_ledger_snapshot
         # The export's own capture needs PostgreSQL; this is the same snapshot and history capture on SQLite.

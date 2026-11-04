@@ -22,7 +22,7 @@ from services.financial import import_batches as service
 from services.financial.batch_review_summary import needs_decision
 from services.financial.review_queue import (actionable_problems, case_review_queue, classify, describe,
                                              issue_sentence, status_line)
-from tests.test_financial_statement_import import StatementImportTests as Fixture
+from tests import test_financial_statement_import as _test_financial_statement_import
 
 # The Financial file library (unread statement files) reads these.
 FINANCIAL_SCOPE_TABLES = [FinancialCandidateMapping.__table__, FinancialStatementReviewDraft.__table__,
@@ -166,7 +166,7 @@ class QueueReadTests(TestCase):
     """A real (synthetic) prepared statement read through the batch machinery."""
 
     def setUp(self):
-        self.f = Fixture('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
+        self.f = _test_financial_statement_import.StatementImportTests('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
         self.f.setUp()
         self.f.file.status = 'processed'
         Base.metadata.create_all(self.f.db.connection(), tables=[Batch.__table__, Item.__table__, IngestionLog.__table__,

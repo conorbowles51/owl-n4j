@@ -4,10 +4,10 @@ from dataclasses import FrozenInstanceError
 from unittest.mock import patch
 from services.financial.ledger_snapshot import capture_ledger_snapshot
 from services.financial.ledger_summary import LedgerSummaryError
-from tests.test_financial_ledger_summary import LedgerSummaryTests
+from tests import test_financial_ledger_summary as _test_financial_ledger_summary
 from postgres.models.enums import TransactionDirection
 
-class LedgerSnapshotTests(LedgerSummaryTests):
+class LedgerSnapshotTests(_test_financial_ledger_summary.LedgerSummaryTests):
     def capture(self):return capture_ledger_snapshot(self.db,case_id=self.case.id)
 
     def test_content_is_exact_stable_and_immutable(self):

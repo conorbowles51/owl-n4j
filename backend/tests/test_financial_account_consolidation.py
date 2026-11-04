@@ -7,12 +7,12 @@ from services.financial.account_parties import AccountPartyError
 from services.financial.decisions import Actor
 from services.financial.transaction_query import list_transactions, to_view
 from services.financial.working_totals import working_ledger_summary
-from tests.test_financial_account_selection import AccountSelectionTests
+from tests import test_financial_account_selection as _test_financial_account_selection
 
 
 class ConsolidationTests(unittest.TestCase):
     def setUp(self):
-        self.fixture = AccountSelectionTests(); self.fixture.setUp()
+        self.fixture = _test_financial_account_selection.AccountSelectionTests(); self.fixture.setUp()
         self.f = self.fixture.f
         self.other = self.fixture.second
         self.actor = Actor(name='Reviewer', email='reviewer@example.test')

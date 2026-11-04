@@ -13,10 +13,11 @@ from services.financial import import_batches as service
 from services.financial.pdf_candidates import _digest
 from services.financial import queue_save
 from services.financial.review_queue import case_review_queue
-from tests.test_financial_review_queue import QueueReadTests as Base, CURRENCY
+from tests import test_financial_review_queue as _test_financial_review_queue
+from tests.test_financial_review_queue import CURRENCY
 
 
-class QueueSaveTests(Base):
+class QueueSaveTests(_test_financial_review_queue.QueueReadTests):
     # The queue's own tests run in their module.
     test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
     test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
@@ -192,7 +193,7 @@ class QueueSaveTests(Base):
         self.assertEqual(queue_save.held_summary(held), '3 currency not printed: choose one, 1 already saved')
 
 
-class AutomaticSaveTests(Base):
+class AutomaticSaveTests(_test_financial_review_queue.QueueReadTests):
     test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
     test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
 
@@ -234,7 +235,7 @@ class AutomaticSaveTests(Base):
         self.assertFalse(queue_save.fully_reconciled(plain, ready, draft))
 
 
-class BacklogCommandTests(Base):
+class BacklogCommandTests(_test_financial_review_queue.QueueReadTests):
     test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
     test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
 
@@ -253,7 +254,7 @@ class BacklogCommandTests(Base):
             self.assertEqual(db.query(Item).filter(Item.batch_id == batch).one().status, 'imported')
 
 
-class BacklogSweepTests(Base):
+class BacklogSweepTests(_test_financial_review_queue.QueueReadTests):
     """The background save of the ready backlog: the backlog command's rule, a few per round, never twice."""
     test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
     test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
@@ -338,7 +339,7 @@ class BacklogSweepTests(Base):
         self.assertEqual(refreshed, [[item_id]])
 
 
-class TurnOrderTests(Base):
+class TurnOrderTests(_test_financial_review_queue.QueueReadTests):
     test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
     test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
 
@@ -364,7 +365,7 @@ class TurnOrderTests(Base):
             self.assertEqual(service.turn_batches(db, limit=1), [newer])
 
 
-class SupersededBatchTests(Base):
+class SupersededBatchTests(_test_financial_review_queue.QueueReadTests):
     test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
     test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
 
@@ -409,7 +410,7 @@ class SupersededBatchTests(Base):
         self.assertEqual(sorted(b['superseded'] for b in listing['batches']), [False, True])
 
 
-class FilledDetailsTests(Base):
+class FilledDetailsTests(_test_financial_review_queue.QueueReadTests):
     """Confirmed proposals are filled (System) before saving; a System fill is not an investigator edit."""
     test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
     test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
@@ -495,7 +496,7 @@ class FilledDetailsTests(Base):
         self.assertEqual((result['filled'], result['ready_item_ids']), (1, [str(item_id)]))
 
 
-class QueueCacheTests(Base):
+class QueueCacheTests(_test_financial_review_queue.QueueReadTests):
     test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
     test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None
 

@@ -6,7 +6,7 @@ from services.financial.correction_preview import preview_amount_correction
 from services.financial.corrections import correct_transaction
 from services.financial.ledger_source import statement_source
 from services.financial.statement_checks import list_statement_checks
-from tests.test_financial_candidate_statement_scopes import StatementScopeTests
+from tests import test_financial_candidate_statement_scopes as _test_financial_candidate_statement_scopes
 from postgres.models.financial import FinancialStatementPeriod, AdjudicationEvent
 
 class PrintedArithmeticTests(TestCase):
@@ -24,7 +24,7 @@ class PrintedArithmeticTests(TestCase):
         c=self.controls();c['controls']*=2
         with self.assertRaises(ValueError):compare_printed_totals(c,credits=1,debits=0)
 
-class PrintedTotalsJourneyTests(StatementScopeTests):
+class PrintedTotalsJourneyTests(_test_financial_candidate_statement_scopes.StatementScopeTests):
     def totals_scope(self):
         scope=self.scope()
         scope['credits_total']=deepcopy(scope['opening'])

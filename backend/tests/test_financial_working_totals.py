@@ -3,12 +3,12 @@ import json
 from datetime import date
 from unittest.mock import patch
 from postgres.models.enums import LedgerStatus, TransactionDirection
-from tests.test_financial_ledger_summary import LedgerSummaryTests
+from tests import test_financial_ledger_summary as _test_financial_ledger_summary
 from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.working_totals import working_ledger_summary, working_totals_from_readings
 
 
-class WorkingTotalsTests(LedgerSummaryTests):
+class WorkingTotalsTests(_test_financial_ledger_summary.LedgerSummaryTests):
     def working(self, **scope):
         return working_ledger_summary(self.db, case_id=self.case.id, **scope)
 

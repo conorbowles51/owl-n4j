@@ -1,9 +1,9 @@
 from unittest.mock import patch
 from services.financial.ledger_graph import ledger_posting_graph
 from services.financial.ledger_summary import LedgerSummaryError
-from tests.test_financial_ledger_transfers import LedgerTransferTests
+from tests import test_financial_ledger_transfers as _test_financial_ledger_transfers
 
-class LedgerGraphTests(LedgerTransferTests):
+class LedgerGraphTests(_test_financial_ledger_transfers.LedgerTransferTests):
     def test_postings_are_source_bound_and_label_groups_do_not_merge_accounts(self):
         debit, credit = self.pair()
         debit.counterparty_raw = credit.counterparty_raw = '<name & label>'

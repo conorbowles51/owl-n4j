@@ -10,12 +10,12 @@ from services.financial.saved_statement_recovery import (
     StatementRecoveryRequest, read_recovery, preview_recovery, save_recovery,
 )
 from services.financial.statement_details import read_statement_details
-from tests.test_financial_statement_import import StatementImportTests as Fixture
+from tests import test_financial_statement_import as _test_financial_statement_import
 
 
 class SavedStatementRecoveryTests(TestCase):
     def setUp(self):
-        self.f = Fixture('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
+        self.f = _test_financial_statement_import.StatementImportTests('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
         self.f.setUp()
         self.receipt = self.f.confirm()
         self.source_id = UUID(self.receipt['source_document_id'])

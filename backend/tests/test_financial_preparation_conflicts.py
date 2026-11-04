@@ -3,7 +3,7 @@ from unittest import TestCase
 from unittest.mock import patch
 from sqlalchemy.exc import OperationalError
 from services.financial import import_batches as service
-from tests.test_financial_import_batches import BatchImportTests
+from tests import test_financial_import_batches as _test_financial_import_batches
 
 
 class DatabaseConflict(Exception):
@@ -12,7 +12,7 @@ class DatabaseConflict(Exception):
 
 class PreparationConflictTests(TestCase):
     def setUp(self):
-        self.fixture = BatchImportTests()
+        self.fixture = _test_financial_import_batches.BatchImportTests()
         self.fixture.setUp()
 
     def tearDown(self):

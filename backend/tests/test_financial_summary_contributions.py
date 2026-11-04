@@ -1,10 +1,10 @@
 from unittest.mock import patch
 from postgres.models.enums import TransactionDirection, LedgerStatus
-from tests.test_financial_ledger_summary import LedgerSummaryTests
+from tests import test_financial_ledger_summary as _test_financial_ledger_summary
 from services.financial.summary_contributions import summary_contributions
 
 
-class SummaryContributionTests(LedgerSummaryTests):
+class SummaryContributionTests(_test_financial_ledger_summary.LedgerSummaryTests):
     def contributions(self, **scope):
         return summary_contributions(self.db, case_id=self.case.id, **scope)
 

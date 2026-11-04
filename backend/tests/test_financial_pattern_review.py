@@ -1,9 +1,9 @@
 from unittest.mock import patch
-from tests.test_financial_ledger_timeline import LedgerTimelineTests
+from tests import test_financial_ledger_timeline as _test_financial_ledger_timeline
 from services.financial.pattern_review import screen_ledger_patterns
 from services.financial.ledger_summary import LedgerSummaryError
 
-class PatternReviewTests(LedgerTimelineTests):
+class PatternReviewTests(_test_financial_ledger_timeline.LedgerTimelineTests):
     def pair(self, direction='debit', date='2026-01-02'):
         rows=[]
         for key,d,day in [('credit','credit','2026-01-01'),('other',direction,date)]:

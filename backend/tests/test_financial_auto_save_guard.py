@@ -15,7 +15,7 @@ from postgres.models.financial_import_batches import FinancialImportBatchItem as
 from services.financial import auto_save_guard as guard
 from services.financial import queue_save
 from services.financial.review_queue import classify, describe
-from tests.test_financial_review_queue import QueueReadTests
+from tests import test_financial_review_queue as _test_financial_review_queue
 
 
 def cells(*texts):
@@ -140,7 +140,7 @@ class MisreadAccountTests(TestCase):
             self.right + other))
 
 
-class QueueTests(QueueReadTests):
+class QueueTests(_test_financial_review_queue.QueueReadTests):
     """The real queue and automatic save: a held statement is not saved by the System and says why."""
     test_a_statement_in_two_batches_is_one_entry_and_leaves_once_saved = None
     test_a_statement_with_a_problem_is_queued_with_its_sentence_and_file_filter_applies = None

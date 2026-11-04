@@ -11,7 +11,7 @@ from services.financial.ledger_snapshot import (FULL_DOCUMENT_COVERS, LEDGER_SCO
     LedgerSnapshot, capture_ledger_export, capture_ledger_scope, snapshot_matches)
 from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.ledger_transfers import evaluate_transfer_scenario, ledger_transfer_candidates
-from tests.test_financial_ledger_summary import LedgerSummaryTests
+from tests import test_financial_ledger_summary as _test_financial_ledger_summary
 
 STAMPS = ('snapshot_sha256', 'digest_covers', 'snapshot_json')
 
@@ -20,7 +20,7 @@ def _review_history(text):
     return lambda session, **kw: dict(reviews=[dict(note=text)], candidates=[], finalizations=[])
 
 
-class LedgerScopeTests(LedgerSummaryTests):
+class LedgerScopeTests(_test_financial_ledger_summary.LedgerSummaryTests):
     def consistent(self):
         # SQLite stands in for the view's read-only PostgreSQL snapshot: the caller's connection is used as is.
         return patch('services.financial.ledger_snapshot._in_consistent_read', return_value=True)

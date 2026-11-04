@@ -15,7 +15,7 @@ from services.financial.statement_import import StatementImportRequest, Statemen
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.effective_statement_review import batch_review_revision
 from services.financial.statement_progress import review_progress
-from tests.test_financial_statement_import import StatementImportTests as Fixture
+from tests import test_financial_statement_import as _test_financial_statement_import
 
 
 class BatchImportTests(TestCase):
@@ -1139,7 +1139,7 @@ class BatchImportTests(TestCase):
         self.assertEqual(self.status(batch)['files'][0]['status'], 'checked')
 
     def setUp(self):
-        self.f = Fixture('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
+        self.f = _test_financial_statement_import.StatementImportTests('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
         self.f.setUp()
         self.f.file.status="processed"
         Base.metadata.create_all(self.f.db.connection(), tables=[Batch.__table__, Item.__table__, IngestionLog.__table__])

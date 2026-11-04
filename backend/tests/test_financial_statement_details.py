@@ -7,11 +7,11 @@ from postgres.models.financial import FinancialAccount, FinancialSourceDocument,
 from services.financial.pdf_candidates import PdfMappingError
 from services.financial.statement_details import StatementDetailsRequest, read_statement_details, update_statement_details
 from services.financial.statement_import_controls import read_import_controls
-from tests.test_financial_statement_import import StatementImportTests as Fixture
+from tests import test_financial_statement_import as _test_financial_statement_import
 
 class StatementDetailsTests(TestCase):
     def setUp(self):
-        self.f = Fixture('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
+        self.f = _test_financial_statement_import.StatementImportTests('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
         self.f.setUp()
         self.receipt = self.f.confirm()
         self.source_id = UUID(self.receipt['source_document_id'])
@@ -343,7 +343,7 @@ class StatementDetailsTests(TestCase):
 
 class ManualBalanceImportTests(TestCase):
     def test_enter_missing_balances_before_import_without_creating_payments(self):
-        f = Fixture('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
+        f = _test_financial_statement_import.StatementImportTests('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
         f.setUp()
         try:
             request = f.request()

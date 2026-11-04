@@ -4,7 +4,7 @@ from unittest import TestCase
 from uuid import UUID
 from sqlalchemy import select
 
-from tests.test_financial_statement_import import StatementImportTests as Fixture
+from tests import test_financial_statement_import as _test_financial_statement_import
 from services.financial.statement_import import read_statement_import
 from services.financial.import_batches import initial_request
 from services.financial.legacy_statement_refresh import refresh_legacy_import
@@ -17,7 +17,7 @@ from services.financial.periods import read_opening, read_closing
 
 class EmptyImportRecoveryTests(TestCase):
     def setUp(self):
-        self.f = Fixture('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
+        self.f = _test_financial_statement_import.StatementImportTests('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
         self.f.setUp()
 
     def tearDown(self):

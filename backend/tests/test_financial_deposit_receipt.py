@@ -11,7 +11,7 @@ from services.financial.deposit_receipt_proposal import propose_deposit_receipt,
 from services.financial.payment_document_review import read_payment_document, save_payment_document, matching_payments
 from services.financial.statement_import import read_statement_import
 from services.financial.pdf_candidates import PdfMappingError
-from tests.test_financial_payment_document_review import PaymentDocumentReviewTests
+from tests import test_financial_payment_document_review as _test_financial_payment_document_review
 from tests.test_financial_pdf_geometry_candidates import rectangle
 
 
@@ -53,7 +53,7 @@ class ReceiptProposalTests(unittest.TestCase):
         s=receipt_source();s['rows'][0]['cells'][0]['expected_text']='Another Bank';self.assertIsNone(propose_deposit_receipt(s))
 
 
-class ReceiptSaveTests(PaymentDocumentReviewTests):
+class ReceiptSaveTests(_test_financial_payment_document_review.PaymentDocumentReviewTests):
     def add_receipt(self, page=2):
         grid=receipt_source(page);first=self.db.get(EvidenceTableGeometry,(self.wire.id,1))
         self.db.add(EvidenceTableGeometry(evidence_file_id=self.wire.id,page_number=page,engine_job_id=first.engine_job_id,

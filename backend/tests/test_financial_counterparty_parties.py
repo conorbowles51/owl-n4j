@@ -1,9 +1,9 @@
 from uuid import uuid4
 from services.financial.counterparty_parties import counterparty_parties,set_counterparty_party,CounterpartyPartyRequest
 from services.financial.account_parties import AccountPartyError
-from tests.test_financial_ledger_summary import LedgerSummaryTests
+from tests import test_financial_ledger_summary as _test_financial_ledger_summary
 
-class CounterpartyPartyTests(LedgerSummaryTests):
+class CounterpartyPartyTests(_test_financial_ledger_summary.LedgerSummaryTests):
     def state(self):return counterparty_parties(self.db,case_id=self.case.id)
     def assign(self,rows,**changes):
         args=dict(expected_revision=self.state()['revision'],transaction_ids=[r.id for r in rows],new_party_name='Reviewed recipient',reason='Checked the original payment sources')

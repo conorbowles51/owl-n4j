@@ -5,9 +5,9 @@ from services.financial.ledger_snapshot import LedgerExport, LedgerSnapshot, cap
 from services.financial.ledger_transfers import ledger_transfer_candidates, evaluate_transfer_scenario
 from services.financial.ledger_summary import LedgerSummaryError
 from postgres.models.enums import TransactionDirection, LedgerStatus
-from tests.test_financial_ledger_summary import LedgerSummaryTests
+from tests import test_financial_ledger_summary as _test_financial_ledger_summary
 
-class LedgerTransferTests(LedgerSummaryTests):
+class LedgerTransferTests(_test_financial_ledger_summary.LedgerSummaryTests):
     def capture(self):
         snap = capture_ledger_snapshot(self.db, case_id=self.case.id)
         doc = _capture_history(self.db, json.loads(snap.content), case_id=self.case.id)

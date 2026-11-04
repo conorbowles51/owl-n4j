@@ -8,10 +8,10 @@ from services.financial.ledger_tracing import LedgerTraceInput, ledger_trace_inp
 from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.tracing import Doctrine, TracingError
 from postgres.models.enums import TransactionDirection, LedgerStatus
-from tests.test_financial_ledger_summary import LedgerSummaryTests
+from tests import test_financial_ledger_summary as _test_financial_ledger_summary
 
 
-class LedgerTracingTests(LedgerSummaryTests):
+class LedgerTracingTests(_test_financial_ledger_summary.LedgerSummaryTests):
     def captured(self):
         snap=capture_ledger_snapshot(self.db, case_id=self.case.id, account_id=self.account.id,
                                     start_date=date(2026,1,1), end_date=date(2026,1,31))

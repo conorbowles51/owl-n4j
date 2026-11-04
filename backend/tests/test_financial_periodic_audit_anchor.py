@@ -8,8 +8,8 @@ from unittest.mock import patch
 from services.financial.audit_chain import verify_financial_audit_chain
 from services.financial.audit_timestamp import checkpoint
 from services.financial.periodic_audit_anchor import anchor_financial_case_once
-from tests.test_financial_audit_chain import FinancialAuditChainTests
-from tests.test_financial_export_comparison import ExportComparisonTests
+from tests import test_financial_audit_chain as _test_financial_audit_chain
+from tests import test_financial_export_comparison as _test_financial_export_comparison
 MODULE='services.financial.periodic_audit_anchor.'
 
 
@@ -17,11 +17,11 @@ class PeriodicAnchorTests(unittest.TestCase):
     def setUp(self):
         self.directory=tempfile.TemporaryDirectory();self.addCleanup(self.directory.cleanup)
         self.root=Path(self.directory.name);self.case=uuid4()
-        fixture=FinancialAuditChainTests();fixture.case=self.case
+        fixture=_test_financial_audit_chain.FinancialAuditChainTests();fixture.case=self.case
         self.entries=fixture.entries();self.chain=dict(entries=self.entries,verification=verify_financial_audit_chain(self.entries,case_id=self.case))
-        self.document=ExportComparisonTests().document();self.document['ledger']['case_id']=str(self.case)
+        self.document=_test_financial_export_comparison.ExportComparisonTests().document();self.document['ledger']['case_id']=str(self.case)
         self.document['case_financial_history']=dict(audit_chain=self.chain)
-        self.archive=ExportComparisonTests().archive(self.document)
+        self.archive=_test_financial_export_comparison.ExportComparisonTests().archive(self.document)
         self.folder=self.root/str(self.case)
         self.options=dict(case_id=self.case,output=self.root,tsa_url='https://synthetic.invalid/tsa',ca_file=self.root/'roots.pem')
         self.head=self.patch('_current_chain',return_value=self.chain)

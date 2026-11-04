@@ -6,9 +6,9 @@ from services.financial.ledger_snapshot import LedgerExport,LedgerSnapshot,captu
 from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.tracing import Doctrine
 from postgres.models.enums import TransactionDirection
-from tests.test_financial_ledger_summary import LedgerSummaryTests
+from tests import test_financial_ledger_summary as _test_financial_ledger_summary
 
-class NetworkTracingTests(LedgerSummaryTests):
+class NetworkTracingTests(_test_financial_ledger_summary.LedgerSummaryTests):
     def network(self):
         b=self._account(self.case.id,identity_key='network-b');c=self._account(self.case.id,identity_key='network-c');self.db.add_all([b,c]);self.db.commit()
         def row(account,amount,direction=TransactionDirection.credit):

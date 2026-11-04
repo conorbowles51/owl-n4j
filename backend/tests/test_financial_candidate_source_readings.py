@@ -2,11 +2,11 @@ import unittest
 from uuid import uuid4
 from services.financial.candidate_assessment import candidate_source_readings
 from services.financial.candidate_store import CandidateStoreError
-from tests.test_financial_candidate_assessment import CandidateAssessmentTests
+from tests import test_financial_candidate_assessment as _test_financial_candidate_assessment
 
 class CandidateSourceReadingTests(unittest.TestCase):
     def setUp(self):
-        self.f = CandidateAssessmentTests(); self.f.setUp(); self.f.save()
+        self.f = _test_financial_candidate_assessment.CandidateAssessmentTests(); self.f.setUp(); self.f.save()
     def tearDown(self): self.f.tearDown()
     def read(self, **kwargs):
         return candidate_source_readings(self.f.fixture.db, **{**dict(case_id=self.f.fixture.case,candidate_id=self.f.candidate_id),**kwargs})

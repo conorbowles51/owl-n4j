@@ -14,12 +14,12 @@ from services.financial import bulk_statement_details as service, import_batches
 from services.financial.pdf_candidates import PdfMappingError, _digest
 from services.financial.statement_details import read_statement_details
 from services.financial.statement_import import read_statement_import, confirm_statement_import
-from tests.test_financial_statement_import import StatementImportTests as Fixture
+from tests import test_financial_statement_import as _test_financial_statement_import
 
 
 class BulkStatementDetailsTests(TestCase):
     def setUp(self):
-        self.f = Fixture('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
+        self.f = _test_financial_statement_import.StatementImportTests('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
         self.f.setUp()
         path = Path(self.f._directory) / 'second.pdf'
         path.write_bytes(b'%PDF-1.4\nSecond synthetic statement')

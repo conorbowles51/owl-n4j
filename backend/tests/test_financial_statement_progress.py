@@ -8,12 +8,12 @@ from services.financial.statement_progress import save_progress, previous_review
 from services.financial.statement_import import StatementReviewDraft
 from services.financial.statement_import import StatementImportRequest, check_import_request
 from services.financial.pdf_candidates import PdfMappingError
-from tests.test_financial_statement_import import StatementImportTests as Fixture
+from tests import test_financial_statement_import as _test_financial_statement_import
 
 
 class StatementProgressTests(TestCase):
     def setUp(self):
-        self.f = Fixture('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
+        self.f = _test_financial_statement_import.StatementImportTests('test_existing_import_and_same_request_keep_the_saved_account_for_navigation')
         self.f.setUp()
 
     def tearDown(self):
