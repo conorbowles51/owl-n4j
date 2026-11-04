@@ -403,10 +403,9 @@ describe("FinancialPage", () => {
 
   // This journey renders every retained tab repeatedly and checks the original file input.
   // It is one journey on purpose: the same input element has to survive every switch.
-  // Measured on the shared deploy box: 41.5 s run alone, 252 s in a full run under load. On 4 Nov it took 129 s
-  // alone at load 26-32 and ran past 300 s (the unit project's budget) alone and in its file at load 39-48, with
-  // the same result on the code before and after the ledger-mock change. The 900 s budget is a hang guard; nothing
-  // here asserts time.
+  // Measured on the shared deploy box: 41.5 s run alone, 252 s in a full run under load. On 4 Nov: 129 s alone at
+  // load 26-32; past the unit project's 300 s budget alone at load 39-49 on the earlier ledger mock, and in its whole
+  // file at load ~45 on the current one. The 900 s budget is a hang guard; nothing here asserts time.
   it("retains the selected PDF when switching financial tabs and transaction modes", () => {
     graphWithRows()
     renderPage()
