@@ -73,23 +73,42 @@ if run "$(epoch '2026-11-05 01:32')" dump; then fail "truncated dump accepted"; 
 [[ "$(count)" -eq 1 ]] || fail "truncated dump counted as a dump"
 ls -A "${dir}" | grep -q 'suspect' || fail "truncated dump not kept aside"
 
-# 7. Retention: 40 nightly dumps -> the 7 newest plus the newest of earlier weeks, at most 4 weeks back.
+# 7. Retention is by age: a scheduled dump more than 30 days old is pruned, one 29 days old is kept.
 rm -f "${dir}"/owl_db-* "${dir}"/.owl_db-*
 echo ok > "${mode}"
+now7="$(epoch '2026-12-10 01:30')"
+name_at() { echo "owl_db-$(date -u -d "@$1" +%Y%m%d-%H%M)Z.dump"; }
+for days in 31 29 20 10 5 3 2 1; do printf 'PGDMP\n' > "${dir}/$(name_at $(( now7 - days * 86400 )))"; done
+run "${now7}" dump || fail "dump at day 0 failed"
+[[ ! -f "${dir}/$(name_at $(( now7 - 31 * 86400 )))" ]] || fail "31-day-old dump kept"
+[[ -f "${dir}/$(name_at $(( now7 - 29 * 86400 )))" ]] || fail "29-day-old dump pruned"
+[[ "$(count)" -eq 8 ]] || fail "expected 8 dumps (7 within 30 days + new), got $(count)"
+grep -q "prune $(name_at $(( now7 - 31 * 86400 ))) (older than 30 days)" "${test_root}/log" || fail "prune not logged"
+
+# 7b. 40 nightly dumps: exactly the last 31 (ages 0-30 days) remain, newest included.
+rm -f "${dir}"/owl_db-*
 start="$(epoch '2026-09-01 01:30')"
 for i in $(seq 0 39); do run $(( start + i * 86400 )) dump || fail "dump ${i} failed"; done
-kept="$(find "${dir}" -maxdepth 1 -name 'owl_db-*Z.dump' -printf '%f\n' | sort)"
-n="$(echo "${kept}" | wc -l)"
-newest="owl_db-$(date -u -d "@$(( start + 39 * 86400 ))" +%Y%m%d-%H%M)Z.dump"
-echo "${kept}" | grep -qx "${newest}" || fail "newest dump pruned"
-(( n >= 8 && n <= 12 )) || fail "kept ${n} dumps: ${kept}"
-oldest_kept="$(echo "${kept}" | head -n 1)"
-oldest_epoch="$(date -u -d "${oldest_kept:7:8} ${oldest_kept:16:2}:${oldest_kept:18:2}" +%s)"
-(( start + 39 * 86400 - oldest_epoch <= 35 * 86400 )) || fail "kept a dump older than 5 weeks: ${oldest_kept}"
+[[ "$(count)" -eq 31 ]] || fail "kept $(count) of 40 nightly dumps, expected 31"
+[[ -f "${dir}/$(name_at $(( start + 39 * 86400 )))" ]] || fail "newest dump pruned"
+[[ -f "${dir}/$(name_at $(( start + 9 * 86400 )))" ]] || fail "30-day-old dump pruned"
+
+# 7c. The newest scheduled dump is never pruned, however old (prune keeps the last one).
+rm -f "${dir}"/owl_db-*
+old1="$(name_at $(( now7 - 90 * 86400 )))"; old2="$(name_at $(( now7 - 60 * 86400 )))"
+printf 'PGDMP\n' > "${dir}/${old1}"; printf 'PGDMP\n' > "${dir}/${old2}"
+env BACKUP_DIR="${dir}" NOW_EPOCH="${now7}" bash -c 'source <(sed -n "/^prune() {/,/^}/p; /^now() {/p; /^log() {/p; /^scheduled_dumps() {/,/^}/p; /^dump_epoch() {/,/^}/p" "$1"); BACKUP_KEEP_DAYS=30; prune' _ "${script}" >> "${test_root}/log" 2>&1
+[[ -f "${dir}/${old2}" ]] || fail "newest dump pruned although it was the only recent copy"
+[[ ! -f "${dir}/${old1}" ]] || fail "90-day-old dump kept"
+
+# 7d. A dump is written mode 600 (it holds every case), whatever umask the caller has.
+rm -f "${dir}"/owl_db-*
+( umask 022; run "${now7}" dump ) || fail "dump for mode check failed"
+[[ "$(stat -c %a "${dir}/$(name_at "${now7}")")" == "600" ]] || fail "dump mode $(stat -c %a "${dir}/$(name_at "${now7}")"), expected 600"
 
 # 8. Hand-made dumps in the same directory are never pruned.
 touch "${dir}/owl_db-20261023-1649-pre-pid-d5.dump"
-run $(( start + 40 * 86400 )) dump || fail "dump 40 failed"
+run $(( now7 + 86400 )) dump || fail "dump 40 failed"
 [[ -f "${dir}/owl_db-20261023-1649-pre-pid-d5.dump" ]] || fail "hand-made dump pruned"
 
 echo "test-db-backup: all passed"

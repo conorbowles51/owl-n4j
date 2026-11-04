@@ -10,19 +10,20 @@
 # pg_restore --list reads it back and it is at least half the size of the previous one, so a cut-off dump never
 # replaces a good one and never triggers pruning.
 #
-# Retention: the newest BACKUP_KEEP_DAILY (7) dumps, plus the newest dump of each of the last BACKUP_KEEP_WEEKLY (4)
-# ISO weeks. Measured 2026-11-03: owl_db is 4.4 GB on disk and dumped to 1.22 GB in 253 s (20:32 UTC, load 29-31), so 11 dumps are about 13.5 GB of
-# the 357 GB free on /mnt/owl-data.
+# Retention (Neil 2026-11-04: "run nightly and keep 30 days, deleting anything older than 30 days"): a scheduled
+# dump whose name-date is more than BACKUP_KEEP_DAYS (30) days before now is pruned; the newest scheduled dump is
+# never pruned, however old. Measured 2026-11-03: owl_db is 4.4 GB on disk and dumped to 1.22 GB in 253 s (20:32 UTC,
+# load 29-31), so 30-31 dumps are about 38 GB of the 352 GB free on /mnt/owl-data. Dumps are written mode 600.
 #
 # Install: deploy/owl-db-backup.service + .timer, deploy/owl-db-backup-check.service + .timer (see their headers).
 set -euo pipefail
+umask 077   # a dump holds every case; only root reads it
 
 BACKUP_DIR="${BACKUP_DIR:-/mnt/owl-data/backups/scheduled}"
 PG_CONTAINER="${PG_CONTAINER:-owl-v2-pg}"
 PG_USER="${PG_USER:-owl_us}"
 PG_DB="${PG_DB:-owl_db}"
-BACKUP_KEEP_DAILY="${BACKUP_KEEP_DAILY:-7}"
-BACKUP_KEEP_WEEKLY="${BACKUP_KEEP_WEEKLY:-4}"
+BACKUP_KEEP_DAYS="${BACKUP_KEEP_DAYS:-30}"
 BACKUP_MAX_AGE_HOURS="${BACKUP_MAX_AGE_HOURS:-25}"
 BACKUP_ALERT_CMD="${BACKUP_ALERT_CMD:-}"
 DOCKER="${DOCKER:-docker}"
@@ -57,23 +58,16 @@ dump_epoch() {  # owl_db-YYYYMMDD-HHMMZ.dump -> epoch seconds
 }
 
 prune() {
-    local -a all keep=()
+    local -a all
     mapfile -t all < <(scheduled_dumps)
-    local n="${#all[@]}" i f week
-    declare -A seen_week=()
-    # Newest first: keep the daily window, then the newest dump of each recent ISO week.
-    for (( i = n - 1; i >= 0; i-- )); do
+    local n="${#all[@]}" i f cutoff
+    (( n > 1 )) || return 0
+    cutoff=$(( $(now) - BACKUP_KEEP_DAYS * 86400 ))
+    # Oldest first; the last (newest) dump is never pruned.
+    for (( i = 0; i < n - 1; i++ )); do
         f="${all[i]}"
-        week="$(date -u -d "@$(dump_epoch "$f")" +%G-%V)"
-        if (( n - 1 - i < BACKUP_KEEP_DAILY )); then
-            keep+=("$f"); seen_week["$week"]=1
-        elif [[ -z "${seen_week[$week]:-}" && "${#seen_week[@]}" -lt $(( BACKUP_KEEP_WEEKLY + 1 )) ]]; then
-            keep+=("$f"); seen_week["$week"]=1
-        fi
-    done
-    for f in "${all[@]}"; do
-        if [[ " ${keep[*]} " != *" $f "* ]]; then
-            log "prune ${f}"
+        if (( $(dump_epoch "$f") < cutoff )); then
+            log "prune ${f} (older than ${BACKUP_KEEP_DAYS} days)"
             rm -f -- "${BACKUP_DIR}/${f}"
         fi
     done
