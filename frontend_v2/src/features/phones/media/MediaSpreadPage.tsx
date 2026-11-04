@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { recordPath } from "@/lib/record-links"
 import { getMediaSpreadIndex, getMediaSpreadWindow, type SpreadCopy, type SpreadFilter, type SpreadGroup, type SpreadPhone } from "../api"
 import { Detail } from "./MediaPage"
+import { NearIdentical } from "./NearIdentical"
 import { useObjectUrl } from "./use-object-url"
 
 const n = (v: number) => v.toLocaleString("en-US")
@@ -162,6 +163,7 @@ export default function MediaSpreadPage() {
             <Button size="sm" variant="outline" disabled={offset + PAGE >= total} onClick={() => setOffset(offset + PAGE)}>Next</Button>
           </div>
         )}
+        <NearIdentical caseId={caseId} onOpen={setOpen} />
       </div>
       {open && <Detail caseId={caseId} fileUid={open} onClose={() => setOpen(null)} />}
     </div>

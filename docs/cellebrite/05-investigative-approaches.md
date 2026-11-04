@@ -1314,9 +1314,16 @@ inventory is generic interpretation plus a view and is built with 03 regardless.
 saved-login accounts 325), 376 weak; 3-phone case 0 strong, 464 medium, 144 weak. Header ICCID, IMSI and
 MSISDN are shared by no pair. Gate: cross-phone list **fail** (2 < 5).
 
-**Do not build** the cross-phone list (`cb-approaches`, 2026-11-03): 2 strong shared keys against 5 needed; the
-per-phone inventory stays generic interpretation. Approach 5's shared markers (05-S8) list the same strong keys per
-phone pair. *Reverse if* a case reaches 5 strong keys shared by two or more phones (measure m6.1 on that case).
+**Built on every case (`cb-gated-spread`, `backend/services/phone_analysis/other_devices.py`, screen "Devices and
+accounts across phones"):** the cross-phone list, the per-phone inventory, services without an app and remote
+sessions. The gate above is not a build condition: Neil's standing decision (2026-11-04) is that no fixed count hides a
+candidate. Every key on two or more phones is listed with a strength (strong: a hardware or subscriber identifier;
+moderate: a username on one service; weak: a name or web service; one level lower for a Bluetooth device only detected
+nearby or a weak key most phones hold) and its reasons in two parts (how well matched, how substantiated). The screen
+states the true counts by strength above the list, names the earlier rule, and labels the levels rules of thumb.
+Medium and weak keys are listed as such, never merged into an identity and never added into a total. Keys reuse
+approach 5's markers (`device_users.markers`). Live on 2026-11-04 (measure in `CB-GATED-SPREAD-STATUS.md`): the
+training case 1 strong shared key, reference case 7006c0ab 1 weak; the other cases 0.
 
 ### 9.7 Dependencies
 
@@ -1474,7 +1481,7 @@ to 1,115; M-8b: 112 exact groups spanning phones in the 10-report case, 46 in th
 **pass** (112 >= 25); the perceptual tier needs approach 2's `both_sides` sample and is measured by `cb-crossev`.
 
 **Perceptual-tier gate (cb-media, `measurements/m8-perceptual-gate.md`, scripts `scripts/p8_extract.py` and
-`scripts/p8_cross.py`, 3 Nov):** **not met; the perceptual tier is not built.** Every phone pair of the 10-report
+`scripts/p8_cross.py`, 3 Nov):** **not met** (the tier is built regardless; see below). Every phone pair of the 10-report
 and 3-phone cases was matched by approach 2's rules (same family, opposite directions, within 120 s, ties left
 unmatched; content not used). The corpus holds no 20 such media pairs: with 5.3.2's K3 rule, 58 pairs, of which 14
 have an MD5 on both sides and 1 of 14 (7.1 percent) differs (44 lack the file on one side); with the loosest rule
@@ -1485,6 +1492,17 @@ least 20 image pairs with an MD5 on both sides of which at least a quarter diffe
 C3 2,497 and C9 3,017 attachment-linked files with an MD5; M-8b 0 groups spanning phones (one phone per case).
 Synthetic cases: 5 groups spanning phones in each. M-8c on the live cases adds nothing to the corpus result above:
 no live case holds two real phones.
+
+**Perceptual tier built on every case with two or more phones (`cb-gated-spread`,
+`backend/services/phone_analysis/perceptual_hash.py`, `media_spread.perceptual`, the "Near-identical pictures"
+section of Media spread):** the gate above is not a build condition (Neil, 2026-11-04). Each population picture gets a
+64-bit pHash and dHash computed on the server with Pillow (no outside service, no new library) in the phone worker's
+after-pass at the lowest priority, resumable. Pairs across two phones are graded by the larger Hamming distance: 0 to 2
+strong, 3 to 4 moderate, 5 to 6 weak (step 3's visually-similar rule), 7 to 10 faint, one level lower for a nearly
+plain picture; identical files stay in the exact tier, which is unchanged. The section states the counts by strength,
+how many pictures were compared and why others were not, and labels the levels rules of thumb. Measured CPU on the
+live reference phones: 4.7 to 12.1 seconds per 1,000 pictures, peak memory 128 MB or less. A one-phone case is not
+hashed (nothing to compare across phones), and says so.
 
 ### 11.7 Dependencies
 
@@ -1610,9 +1628,16 @@ otherwise these types remain generic interpretation only. Calendar location (3 v
 **Server result (stage A3, `measurements/a3/README.md` section 9):** calendar entries with a location: 3 (P06); check-ins: 9 on P02, P13 and P14, none with a nested place
 record; notes 0 to 13. Gate **fail** (3 placed items < 20).
 
-**Do not build** the comparison (`cb-approaches`, 2026-11-03): 3 placed items against 20 needed; calendar entries,
-check-ins and notes stay generic interpretation. *Reverse if* a case holds 20 placed items on phones that also
-carry location (measure m10.1 on that case).
+**Built on every case (`cb-gated-spread`, `backend/services/phone_analysis/plans.py`, screen "Plans and check-ins
+against location"):** every calendar entry, check-in and note is listed; repeating entries expand by their stored rule
+(the start is always an occurrence; occurrences run to `RepeatUntil` or the phone's last record); an entry or check-in
+the phone itself places (04's `planned` and `declared` observations) is compared with the phone's presence
+observations in its window: `consistent`, `inconsistent`, `mixed` or `no_data`. A place written as text is shown as
+written and not geocoded (no offline forward geocoder or case place list is installed; reverse if one is). The gate
+above is not a build condition (Neil, 2026-11-04). Strength: both sides stating a radius strong, one radius assumed
+moderate, disagreeing observations weak, not compared faint, a rule of thumb stated on screen with the true counts.
+Live on 2026-11-04: 85 calendar entries across the live cases, 0 placed by the phone (6 with a text place), 0
+check-ins.
 
 ### 13.7 Dependencies
 

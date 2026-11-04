@@ -1,0 +1,16 @@
+{"id": "S01", "setting": "all data", "question": "Which networks, devices and accounts do the two phones share?", "total_ok": true, "check_ok": true, "known_total": 5, "stated_total": 5}
+{"id": "S02", "setting": "all data", "question": "Which shared keys are of moderate strength?", "total_ok": true, "check_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "S03", "setting": "all data", "question": "Which shared keys are only weak matches?", "total_ok": true, "check_ok": true, "known_total": 2, "stated_total": 2}
+{"id": "S04", "setting": "all data", "question": "Was the shared Bluetooth device connected on both phones?", "total_ok": true, "check_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "S05", "setting": "all data", "question": "Was any check-in made away from where the phone was?", "total_ok": true, "check_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "S06", "setting": "all data", "question": "Which calendar entries agree with the phone's location?", "total_ok": true, "check_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "S07", "setting": "all data", "question": "Which pictures look the same on both phones?", "total_ok": true, "check_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "S08", "setting": "all data", "question": "Are there strong near-identical pictures, and how many of each strength?", "total_ok": true, "check_ok": true, "known_total": 1, "stated_total": 1}
+{"id": "S01", "setting": "significant", "question": "Which networks, devices and accounts do the two phones share?", "refused": true, "no_records": true}
+{"id": "S02", "setting": "significant", "question": "Which shared keys are of moderate strength?", "refused": true, "no_records": true}
+{"id": "S03", "setting": "significant", "question": "Which shared keys are only weak matches?", "refused": true, "no_records": true}
+{"id": "S04", "setting": "significant", "question": "Was the shared Bluetooth device connected on both phones?", "refused": true, "no_records": true}
+{"id": "S05", "setting": "significant", "question": "Was any check-in made away from where the phone was?", "refused": true, "no_records": true}
+{"id": "S06", "setting": "significant", "question": "Which calendar entries agree with the phone's location?", "refused": true, "no_records": true}
+{"id": "S07", "setting": "significant", "question": "Which pictures look the same on both phones?", "refused": true, "no_records": true}
+{"id": "S08", "setting": "significant", "question": "Are there strong near-identical pictures, and how many of each strength?", "refused": true, "no_records": true}

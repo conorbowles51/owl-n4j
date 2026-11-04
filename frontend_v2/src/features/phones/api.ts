@@ -524,6 +524,27 @@ export async function getMediaSpreadWindow(caseId: string, filter: SpreadFilter,
   for (const p of filter.phones ?? []) q.append("phones", p)
   return fetchAPI<{ case_id: string; total: number; offset: number; limit: number; items: SpreadGroup[]; clock_words: string }>(`/api/phones/media-spread/window?${q.toString()}`)
 }
+/** Near-identical pictures across phones, perceptual tier (05 section 11.3 step 3): graded pairs, never "identical". */
+export interface PerceptualCopy {
+  file_uid: string; extraction_id: string; phone_label: string; md5: string; filename: string; category: string | null
+  copies_on_phone: number; roles: string[]; messages_total: number
+  messages: { message_record_uid: string; role: string; full: string; app: string | null; deleted: boolean }[]
+}
+export interface PerceptualPair {
+  level: "strong" | "moderate" | "weak" | "faint"; distance: number; phash_distance: number; dhash_distance: number; simple: boolean
+  a: PerceptualCopy; b: PerceptualCopy; reasons: { match: string[]; substantiation: string[] }; label: string
+}
+export interface PerceptualPage {
+  case_id: string; tier: "perceptual"; total: number; offset: number; limit: number; items: PerceptualPair[]
+  by_strength: Record<string, number>; total_all: number; pictures_compared: number; stopped_words: string | null
+  words: string; rule_words: string; clock_words: string
+  hashing: { pictures: number; hashed: number; failed: number; waiting: number; failed_by_reason: Record<string, number>; failed_words: Record<string, string>; case_phones: number; not_hashed_words: string | null }
+}
+export async function getMediaSpreadPerceptual(caseId: string, strength: string | null, offset: number, limit = 50) {
+  const q = new URLSearchParams({ case_id: caseId, offset: String(offset), limit: String(limit) })
+  if (strength) q.set("strength", strength)
+  return fetchAPI<PerceptualPage>(`/api/phones/media-spread/perceptual?${q.toString()}`)
+}
 /** Machine-generated text from a photo or audio (03 8.3, M-3): made by a model on the server, never by a person. */
 export interface DerivedText {
   id: string; file_uid: string; kind: "ocr" | "transcript"; state: "queued" | "running" | "done" | "failed"

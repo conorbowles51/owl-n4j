@@ -33,6 +33,7 @@ const api = vi.hoisted(() => ({
   getMediaDetail: vi.fn().mockResolvedValue({ file_uid: "f2", extraction_id: "e2", category: "Image", local_path: "files/Image/synthetic-a.jpg", size: 10, hashes: {}, verification: "no_hash", verification_words: "Present; no hash stated to check", missing: false, missing_words: null, deleted_state: null, is_carved: false, message_count: 1, messages: [] }),
   mediaObjectUrl: vi.fn().mockRejectedValue(new Error("not in a browser")),
   getDerivedTexts: vi.fn().mockResolvedValue({ file_uid: "f2", items: [] }),
+  getMediaSpreadPerceptual: vi.fn().mockResolvedValue({ case_id: "c1", tier: "perceptual", total: 0, offset: 0, limit: 50, items: [], by_strength: { strong: 0, moderate: 0, weak: 0, faint: 0 }, total_all: 0, pictures_compared: 0, stopped_words: null, words: "", rule_words: "", clock_words: "", hashing: { pictures: 0, hashed: 0, failed: 0, waiting: 0, failed_by_reason: {}, failed_words: {}, case_phones: 2, not_hashed_words: null } }),
 }))
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
 vi.mock("../collect-targets", () => ({ useCollectTargets: () => ({ targets: [], note: null, loading: false, error: null }) }))

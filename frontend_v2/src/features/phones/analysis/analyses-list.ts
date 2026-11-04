@@ -12,9 +12,10 @@ export const ANALYSES = [
   { code: "contact_matrix", path: "phone-analyses/who-contacts-whom", title: "Who contacts whom", what: "For each pair, the calls, messages and emails one sent to the other, in each direction, calls by whether they connected." },
   { code: "number_switching", path: "phone-analyses/number-changes", title: "Possible number changes", what: "A number or account whose contact stops while another, in contact with mostly the same people, starts soon after." },
   { code: "extraction_comparison", path: "phone-analyses/two-extractions", title: "Two extractions of one phone", what: "Whether two extractions are of one device, and what is in one and not the other, deleted between them, or new." },
+  { code: "other_devices", path: "phone-analyses/devices-accounts", title: "Devices and accounts across phones", what: "WiFi networks, Bluetooth devices, accounts and web services each phone shows, and every one two or more phones share, graded by how well it matches." },
+  { code: "plans", path: "phone-analyses/plans", title: "Plans and check-ins against location", what: "Calendar entries, check-ins and notes, and where the phone places one, whether its own location at the time agrees." },
   { code: "awareness", path: "phone-analyses/groups", title: "Reading, replies and group roles", what: "When messages were read or played, how long replies took, messages read with no reply or still unread, and the admins and membership changes of each group chat." },
 ]
 
-export const NOT_BUILT = [
-  { title: "Plans and check-ins against location", why: "Not built: the measured phones hold 3 calendar entries with a place (20 needed)." },
-]
+/** Analyses not offered, each with the measured reason. Empty while every planned analysis is built. */
+export const NOT_BUILT: { title: string; why: string }[] = []

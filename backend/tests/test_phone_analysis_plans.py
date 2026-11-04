@@ -43,6 +43,11 @@ def test_weekly_entry_with_repeat_until_expands_to_the_right_count():
     assert [o.month for o in m] == [1, 3, 5]
     assert len(P.occurrences(s, "Daily", 1, None, horizon=at(2023, 1, 4, 10))) == 3
     assert P.occurrences(s, None, None, None) == [s] and P.occurrences(s, "Weekly", None, None) == [s]
+    # a bound before the start (seen on live: a repeating entry after the phone's last record) keeps the start
+    assert P.occurrences(s, "Daily", 1, at(2022, 12, 1)) == [s]
+    assert P.occurrences(s, "Daily", 1, None, horizon=at(2022, 12, 1)) == [s]
+    # a weekly rule on other days still counts its start (Monday) first
+    assert P.occurrences(s, "Weekly", 1, at(2023, 1, 8, 23), "Wednesday")[0] == s
 
 
 def test_compare_by_hand():

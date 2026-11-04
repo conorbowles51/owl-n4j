@@ -799,6 +799,7 @@ def analysis_results(conn, case_id, approach, *, kind=None, phone=None, start=No
                  total_matching=res["total"], returned=len(items), has_more=nxt is not None, next_offset=nxt,
                  items=items, kinds=list(getattr(module, "KINDS", ())), by_strength=by_strength,
                  coverage_notes=list(cov.get("notes") or []),
+                 strength_rule=getattr(module, "RULE_OF_THUMB", None),
                  coverage="%s, last completed run: %d results%s%s. %s%s" % (
                      approach, res["total"], (" of kind %s" % kind) if kind else "",
                      (" of strength %s" % strength) if strength else "", cov.get("sentence") or "",
@@ -807,6 +808,45 @@ def analysis_results(conn, case_id, approach, *, kind=None, phone=None, start=No
                  if nxt is not None else None,
                  note="Each result is a lead for enquiry with what supports and what undercuts it; the analysis "
                       "reports numbers, never who did what.")
+
+
+def near_identical_pictures(conn, case_id, *, strength=None, offset=0, limit=DEFAULT_LIMIT) -> dict:
+    """Approach 8's perceptual tier (05 11.3 step 3): pictures that look nearly the same on two phones although the
+    files differ, every pair graded strong to faint with its reasons, the exact total and the counts by strength.
+    A pair cites the messages that carried each picture (rec://) and the files by id."""
+    from services.phone import media_spread as S
+    tool = "near_identical_pictures"
+    lim, off = _limit(limit), max(0, int(offset or 0))
+    page = S.perceptual(conn, case_id, strength, off, lim)
+    items = []
+    for it in page["items"]:
+        recs = []
+        for side in ("a", "b"):
+            for m in it[side]["messages"]:
+                recs.append({"rec": _rec(m["message_record_uid"]), "role": "%s on %s" % (m["role"],
+                                                                                   it[side]["phone_label"])})
+        items.append({"strength": it["level"], "distance_bits": it["distance"], "reasons": it["reasons"],
+                      "label": it["label"],
+                      "pictures": [{"phone": it[s_]["phone_label"], "file_uid": it[s_]["file_uid"],
+                                    "filename": it[s_]["filename"], "roles": it[s_]["roles"],
+                                    "copies_on_phone": it[s_]["copies_on_phone"],
+                                    "open": "/cases/%s/phones/%s/records/media/spread?file=%s" % (
+                                        case_id, it[s_]["extraction_id"], it[s_]["file_uid"])} for s_ in ("a", "b")],
+                      "records": recs})
+    nxt = off + len(items) if off + len(items) < page["total"] else None
+    h = page["hashing"]
+    cov = h["not_hashed_words"] or ("%d of %d pictures compared, %d waiting, %d could not be read." % (
+        h["hashed"], h["pictures"], h["waiting"], h["failed"]))
+    return _base(tool, case_id, total_matching=page["total"], returned=len(items), has_more=nxt is not None,
+                 next_offset=nxt, offset=off, items=items, by_strength=page["by_strength"],
+                 total_all_strengths=page["total_all"], strength_rule=page["rule_words"],
+                 coverage="Near-identical pictures: %d pairs%s. %s" % (
+                     page["total"], (" of strength %s" % strength) if strength else "", cov),
+                 limitation=" ".join(x for x in (
+                     ("Only %d of %d are in this result; read on with offset %d." % (len(items), page["total"], nxt))
+                     if nxt is not None else None, page["stopped_words"]) if x) or None,
+                 note="A near-identical picture is a lead for enquiry, not proof of the same file; identical files "
+                      "are the exact tier (media spread) and are not listed here.")
 
 
 # ---- connection 3: who had the means to operate an account ----------------------------------------------------------
@@ -1404,16 +1444,23 @@ class StatementArgs(_Page):
 
 
 class AnalysisArgs(_Page):
-    approach: Literal["message_reconciliation", "deletion_timeline", "relationships", "awareness", "device_users"]
+    approach: Literal["message_reconciliation", "deletion_timeline", "relationships", "awareness", "device_users",
+                      "other_devices", "plans"]
     kind: str | None = Field(None, description=(
         "awareness: group_roles, read_events, reply_latency, read_without_reply, unread. device_users: "
-        "shared_markers, complementary_use, more_than_one_user, co_location, use_while_apart."))
+        "shared_markers, complementary_use, more_than_one_user, co_location, use_while_apart. other_devices: "
+        "shared_key lists every key two or more phones share."))
     strength: str | None = Field(None, description=(
         "Only results of this strength. Read, reply, unread, co-location and use-while-apart results are graded "
-        "strong, moderate, weak or faint by a stated rule; by_strength gives the count of each."))
+        "strong, moderate, weak or faint by a stated rule (other_devices and plans too); by_strength gives the "
+        "count of each."))
     phone: str | None = None
     start: str | None = None
     end: str | None = None
+
+
+class NearIdenticalArgs(_Page):
+    strength: Literal["strong", "moderate", "weak", "faint"] | None = None
 
 
 class ControlArgs(BaseModel):
@@ -1480,9 +1527,18 @@ TOOLS = [
     ("get_analysis_results", "analysis_results", AnalysisArgs,
      "Results of a phone analysis's last run: message_reconciliation (messages across phones: copies matched, "
      "deleted on one side), deletion_timeline, relationships, awareness (read and play times, reply times, read "
-     "with no reply, unread, group roles) or device_users (shared markers, use in turn, together or apart, used "
-     "while apart, signs of more than one user), with exact totals, the count per strength (by_strength) and "
-     "records cited. List weak and faint results as such; coverage_notes give the counts they rest on."),
+     "with no reply, unread, group roles), device_users (shared markers, use in turn, together or apart, used "
+     "while apart, signs of more than one user), other_devices (WiFi networks, Bluetooth devices, accounts and web "
+     "services each phone shows; kind shared_key lists every one two or more phones share) or plans (calendar "
+     "entries, check-ins and notes; a placed one compared with the phone's location: consistent, inconsistent, "
+     "mixed, no_data), with exact totals, the count per strength (by_strength) and records cited. List weak and "
+     "faint results as such; coverage_notes give the counts they rest on. Medium and weak keys are leads, never "
+     "an identity."),
+    ("get_near_identical_pictures", "near_identical_pictures", NearIdenticalArgs,
+     "Pictures that look nearly the same on two phones although the files differ (a re-compressed forward), every "
+     "pair graded strong, moderate, weak or faint with its reasons, the exact total and counts by strength, the "
+     "messages that carried each copy (rec://) and how many pictures were compared. A lead, not proof of the same "
+     "file."),
     ("draft_control_claim", "control_claim", ControlArgs,
      "Draft 'P had the means to operate account A from t1 to t2' as two evidenced links (account to phone: codes, "
      "alerts, app, use; phone to person: the reviewed owner link, with strands against). A proposal, model drafted "

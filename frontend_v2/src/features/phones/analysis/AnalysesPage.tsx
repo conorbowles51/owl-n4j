@@ -25,10 +25,10 @@ export default function AnalysesPage() {
         ))}
       </ul>
       <KeptList caseId={caseId} />
-      <section aria-label="Not built" className="space-y-1 text-xs text-muted-foreground">
+      {NOT_BUILT.length > 0 && <section aria-label="Not built" className="space-y-1 text-xs text-muted-foreground">
         <h2 className="text-sm font-medium text-foreground">Not offered, and why</h2>
         <ul className="list-disc pl-4">{NOT_BUILT.map((n) => <li key={n.title}>{n.title}: {n.why}</li>)}</ul>
-      </section>
+      </section>}
     </div>
   )
 }

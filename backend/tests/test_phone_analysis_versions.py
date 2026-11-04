@@ -27,6 +27,8 @@ RECORDED = {
     "contact_matrix": ("15.1", "49cad534aa52a2bf"),
     "number_switching": ("16.1", "2189f1b2740ec40b"),
     "extraction_comparison": ("12.1", "919fdb03776732f1"),
+    "other_devices": ("6.1", "20f50aaea147ed02"),
+    "plans": ("10.2", "68845cb09f2a4cc5"),
 }
 
 

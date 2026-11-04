@@ -51,7 +51,7 @@ from sqlalchemy import text
 from services.phone_analysis import fields as FV
 
 CODE = "plans"
-VERSION = "10.1"
+VERSION = "10.2"
 PARAMETERS = {
     "checkin_window_minutes": {"default": 60, "min": 5, "max": 1440},
     "assumed_radius_m": {"default": 1000, "min": 50, "max": 50000},
@@ -136,6 +136,9 @@ def occurrences(start, rule=None, interval=None, until=None, repeat_day=None, ho
             if t is not None and t <= end:
                 out.append(t)
             k += 1
+    # RFC 5545: the start itself is always the first occurrence, even when the rule's days or bound leave it out
+    if not out or out[0] != start:
+        out.insert(0, start)
     return out
 
 
