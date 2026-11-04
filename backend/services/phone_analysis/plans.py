@@ -54,7 +54,7 @@ from sqlalchemy import text
 from services.phone_analysis import fields as FV
 
 CODE = "plans"
-VERSION = "10.3"
+VERSION = "10.4"
 PARAMETERS = {
     "checkin_window_minutes": {"default": 60, "min": 5, "max": 1440},
     "assumed_radius_m": {"default": 1000, "min": 50, "max": 50000},
@@ -178,6 +178,17 @@ def compare(item, fixes, assumed_radius_m) -> dict:
             "assumed": one_side_assumed, "nearest_m": round(nearest, 1), "margin_m": round(margin, 1)}
 
 
+def input_manifest(conn, case_id) -> dict:
+    """What a run reads beyond the phones: the current placements people made. A placement added or removed is a new
+    input, so a rerun compares again rather than returning the earlier run."""
+    return {"person_placements": [
+        {"record_uid": r.u, "field_path": r.field_path, "decision_id": r.d, "lat": r.lat, "lon": r.lon,
+         "radius_m": r.radius_m}
+        for r in conn.execute(text(
+            "SELECT record_uid::text AS u, field_path, decision_id::text AS d, lat, lon, radius_m FROM pol_text_place "
+            "WHERE case_id = :c AND removed_decision_id IS NULL ORDER BY 1, 2"), {"c": case_id})]}
+
+
 def coverage(conn, case_id) -> dict:
     phones = {}
     for ext, label in FV.active_phones(conn, case_id).items():
@@ -293,6 +304,8 @@ def _item_result(ext, label, uid, source, when, end, place, cmp_, text_place, pa
         kind, level = "no_place", "faint"
         match = ["No place is recorded, so nothing is compared."]
         subst = ["Not compared."]
+    if extra.get("undated"):
+        match.insert(0, "No date is recorded for this item, so it cannot be compared with location.")
     measures = {"phone_label": label, "source": source, "start": _iso(when), "end": _iso(end),
                 "place_text": text_place, "placed": place is not None,
                 "placed_by": ("person" if person else "phone") if place is not None else None,
@@ -334,7 +347,12 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
             t = ct.get(uid) or {}
             start = t.get("StartDate")
             if start is None:
+                # listed, not dropped: a place cannot be compared without a date, but the entry exists
                 counts["calendar_undated"] += 1
+                out.append(_item_result(ext, label, uid, "calendar", None, None, None, None,
+                                        (_first(v, "Location") or "").strip() or None, params,
+                                        {"subject": _first(v, "Subject"), "account": _first(v, "Account"),
+                                         "undated": True}))
                 continue
             end = t.get("EndDate") if t.get("EndDate") and t["EndDate"] >= start else None
             length = (end - start) if end else DEFAULT_END
@@ -374,11 +392,13 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
             v = checkins[uid]
             when = (st.get(uid) or {}).get("TimeStamp")
             counts["checkins"] += 1
+            extra = {"title": _first(v, "Title"), "account": _first(v, "Account")}
             if when is None:
                 counts["checkins_undated"] += 1
+                out.append(_item_result(ext, label, uid, "checkin", None, None, None, None, None, params,
+                                        dict(extra, undated=True)))
                 continue
             place = placed_c.get(uid)
-            extra = {"title": _first(v, "Title"), "account": _first(v, "Account")}
             if place is None:
                 counts["checkins_unplaced"] += 1
                 out.append(_item_result(ext, label, uid, "checkin", when, None, None, None, None, params, extra))

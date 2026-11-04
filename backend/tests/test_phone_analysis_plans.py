@@ -164,3 +164,48 @@ def test_a_person_placed_text_place_is_compared_and_named_as_theirs(engine):
     assert "person_placed" in [u["code"] for u in person["directions"]["undercuts"]]
     assert (own["kind"], own["strength"]) == ("consistent", "strong") and own["measures"]["placed_by"] == "phone"
     assert counts["calendar_placed"] == 2 and counts["calendar_placed_by_person"] == 1
+
+
+@needs_template
+def test_a_placement_is_a_new_input_and_a_rerun_compares_again(engine):
+    """Fails on 10.3, whose manifest left placements out: placing or removing a written place changes the run's input
+    revision, so Run does not return the earlier run."""
+    import uuid
+    t = at(2023, 3, 6, 10)
+    with engine.begin() as c:
+        case = make_case(c)
+        x, _ = phone(c, case, label="C1", events=[])
+        e = record(c, case, x, 100, "CalendarEntry", fields=[("Location", "String", "Market Square")],
+                   times=[("StartDate", t)])
+    with engine.connect() as c:
+        before = F.input_manifest(c, case, P)
+    with engine.begin() as c:
+        c.execute(text(
+            "INSERT INTO pol_text_place (id, case_id, extraction_id, record_uid, field_path, model_type, place_text, "
+            "lat, lon, radius_m, reason, decision_id, actor_name, actor_email) VALUES (:i, :c, :e, :u, 'Location', "
+            "'CalendarEntry', 'Market Square', 40.0, -75.0, 200, 'test', :d, 'Test Person', 'test@loupe.invalid')"),
+            {"i": uuid.uuid4(), "c": case, "e": x, "u": e, "d": uuid.uuid4()})
+    with engine.connect() as c:
+        placed = F.input_manifest(c, case, P)
+    with engine.begin() as c:
+        c.execute(text("UPDATE pol_text_place SET removed_decision_id = :d"), {"d": uuid.uuid4()})
+    with engine.connect() as c:
+        removed = F.input_manifest(c, case, P)
+    assert before["person_placements"] == [] and len(placed["person_placements"]) == 1
+    assert F.sha256(before) != F.sha256(placed) and F.sha256(placed) != F.sha256(removed)
+
+
+@needs_template
+def test_an_undated_entry_is_listed_not_dropped(engine):
+    """Fails on 10.3, which only counted it: a calendar entry with no date and a written place, and one with neither,
+    are in the results with the reason, and the stated total counts them."""
+    with engine.begin() as c:
+        case = make_case(c)
+        x, _ = phone(c, case, label="C1", events=[])
+        record(c, case, x, 100, "CalendarEntry", fields=[("Location", "String", "Market Square")])
+        record(c, case, x, 101, "CalendarEntry", fields=[("Subject", "String", "No date")])
+    with engine.connect() as c:
+        res, counts = P.analyse(c, case, PARAMS)
+    assert sorted(r["kind"] for r in res) == ["no_place", "place_as_text"]
+    assert all(r["measures"]["undated"] and r["measures"]["reasons"]["match"][0].startswith("No date") for r in res)
+    assert counts["calendar_undated"] == 2 and counts["by_strength_faint"] == 2
