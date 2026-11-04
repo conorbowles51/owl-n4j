@@ -306,7 +306,18 @@ class HealthTests(Fixture):
 class GapBackfillTests(Fixture):
     def _patches(self):
         import scripts.backfill_chunk_embeddings as backfill
-        return (patch.object(backfill, "get_background_session", self.session),
+        live_like = sessionmaker(bind=self.engine, future=True)  # expire_on_commit, as on live
+
+        @contextmanager
+        def background_session():  # postgres.session.get_background_session: commit on exit, then close
+            db = live_like()
+            try:
+                yield db
+                db.commit()
+            finally:
+                db.close()
+
+        return (patch.object(backfill, "get_background_session", background_session),
                 patch.object(backfill, "_find_graph_document", lambda f: {"id": str(f.id), "key": "",
                                                                           "name": f.original_filename,
                                                                           "case_id": str(f.case_id)}),
@@ -365,6 +376,73 @@ class GapBackfillTests(Fixture):
         self.assertEqual(result["stopped"], QUOTA_REASON)
         self.assertEqual(QuotaEmbeddings.calls, 1)  # one failed call, not one per document
         self.assertEqual(Store.added, [])
+
+    def test_staged_never_activated_chunks_are_activated_without_an_embedding_call(self):
+        """Live 2026-11-04: 17 documents (8,399 chunks) held complete vectors staged as 'draft' by ingestions that
+        stopped before activation, so meaning search never read them, and the gap backfill skipped them as
+        'already has chunks'. Their staged revision equals the stored text hash, so they are activated as is."""
+        from scripts.backfill_chunk_embeddings import backfill_chunk_embeddings
+
+        def matches(meta, where):
+            if "$and" in where:
+                return all(matches(meta, w) for w in where["$and"])
+            return all(meta.get(k) == v for k, v in where.items())
+
+        class Collection:
+            def __init__(self, rows):
+                self.rows = rows
+
+            def get(self, where=None, include=None, limit=None, offset=0):
+                hit = [(cid, m) for cid, m in self.rows.items() if matches(m, where or {})]
+                hit = hit[offset:offset + limit] if limit else hit[offset:]
+                return {"ids": [c for c, _ in hit], "metadatas": [dict(m) for _, m in hit]}
+
+            def update(self, ids, metadatas):
+                for cid, meta in zip(ids, metadatas):
+                    self.rows[cid] = meta
+
+        case = str(self.case_id)
+        tender, receipt = str(self.tender.id), str(self.receipt.id)
+        rows = {
+            "%s:%s:chunk:%d" % (tender, "b" * 64, i): {"case_id": case, "doc_id": tender, "evidence_file_id": tender,
+                                                       "revision_id": "b" * 64, "ingestion_state": "draft"}
+            for i in range(3)}
+        rows["%s:old:chunk:0" % tender] = {"case_id": case, "doc_id": tender, "evidence_file_id": tender,
+                                           "revision_id": "old", "ingestion_state": "active"}
+        # a staged revision of other text (not what the case holds now) stays staged and gets embedded
+        rows["%s:stale:chunk:0" % receipt] = {"case_id": case, "doc_id": receipt, "evidence_file_id": receipt,
+                                              "revision_id": "c" * 64, "ingestion_state": "draft"}
+
+        class Store:
+            def __init__(self):
+                self.added = []
+                self.chunk_collection = Collection(rows)
+
+            def add_chunk(self, chunk_id, text, embedding, metadata):
+                self.added.append(metadata)
+
+        QuotaEmbeddings.calls = 0
+        store = Store()
+        p1, p2, p3 = self._patches()
+        with p1, p2, p3:
+            result = backfill_chunk_embeddings(case_id=case, evidence_file_ids=[tender, receipt],
+                                               prefer_stored_text=True, stop_on_failure=True,
+                                               embedder=QuotaEmbeddings(), vector_store=store)
+        states = {cid: m["ingestion_state"] for cid, m in rows.items()}
+        self.assertEqual([states["%s:%s:chunk:%d" % (tender, "b" * 64, i)] for i in range(3)], ["active"] * 3)
+        self.assertEqual(states["%s:old:chunk:0" % tender], "inactive")
+        self.assertEqual(states["%s:stale:chunk:0" % receipt], "draft")
+        self.assertEqual((result["stats"]["staged_activated"], result["stats"]["staged_chunks_activated"]), (1, 3))
+        # the receipt's draft does not count as having chunks: it was sent to embedding (refused, nothing stored)
+        self.assertEqual(result["stopped"], QUOTA_REASON)
+        self.assertEqual(QuotaEmbeddings.calls, 1)
+        self.assertEqual(store.added, [])
+
+        meaning_search._gap_cache.clear()
+        with self.Session() as db:
+            gap = meaning_search.vector_gap(case, db=db, collection=store.chunk_collection, fresh=True)
+        self.assertNotIn(tender, gap["missing_evidence_file_ids"])
+        self.assertIn(receipt, gap["missing_evidence_file_ids"])
 
     def test_run_gap_backfill_keeps_pending_when_stopped_and_clears_it_when_done(self):
         with self.engine.begin() as conn:

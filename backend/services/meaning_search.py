@@ -512,7 +512,8 @@ def run_gap_backfill(*, case_ids: Iterable[str] | None = None, backfill: Callabl
     gap = gap or vector_gap
     log = log or _system_log
     factory = session_factory or _session_factory
-    summary: dict[str, Any] = {"cases": 0, "documents_embedded": 0, "chunks": 0, "stopped": None}
+    summary: dict[str, Any] = {"cases": 0, "documents_embedded": 0, "chunks": 0, "documents_activated": 0,
+                               "stopped": None}
     with (_backfill_lock() if lock else _no_lock()) as got:
         if not got:
             summary["stopped"] = "another gap backfill is running"
@@ -535,6 +536,7 @@ def run_gap_backfill(*, case_ids: Iterable[str] | None = None, backfill: Callabl
             stats = result.get("stats") or {}
             summary["documents_embedded"] += int(stats.get("processed") or 0)
             summary["chunks"] += int(stats.get("total_chunks_created") or 0)
+            summary["documents_activated"] += int(stats.get("staged_activated") or 0)
             with _gap_lock:
                 _gap_cache.pop(str(case_id), None)
             if result.get("stopped"):
@@ -546,9 +548,10 @@ def run_gap_backfill(*, case_ids: Iterable[str] | None = None, backfill: Callabl
                                 "WHERE service = :service"), {"service": SERVICE, "now": _now()})
                 db.commit()
         log("info" if summary["stopped"] is None else "warning",
-            "Meaning-search gap backfill %s: %d document(s), %d chunk(s) embedded in %d case(s)%s" % (
+            "Meaning-search gap backfill %s: %d document(s), %d chunk(s) embedded, %d document(s) activated from "
+            "staged chunks in %d case(s)%s" % (
                 "finished" if summary["stopped"] is None else "stopped", summary["documents_embedded"],
-                summary["chunks"], summary["cases"],
+                summary["chunks"], summary["documents_activated"], summary["cases"],
                 "" if summary["stopped"] is None else "; stopped: %s" % summary["stopped"]))
     return summary
 

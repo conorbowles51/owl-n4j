@@ -73,7 +73,11 @@ def _load_evidence_files(case_id: str | None, evidence_file_ids: list[str] | Non
         if evidence_file_ids is not None:
             wanted = [u for u in (_coerce_uuid(i) for i in evidence_file_ids) if u]
             query = query.where(EvidenceFile.id.in_(wanted))
-        return list(db.scalars(query).all())
+        files = list(db.scalars(query).all())
+        # Detach before the session commits on exit: a commit expires loaded rows, and an expired detached row
+        # raises DetachedInstanceError at its first attribute read (every gap backfill on live, 2026-11-04).
+        db.expunge_all()
+        return files
 
 
 def _stored_text(file: EvidenceFile) -> str | None:
@@ -83,6 +87,63 @@ def _stored_text(file: EvidenceFile) -> str | None:
     with get_background_session() as db:
         return db.scalar(select(EvidenceDocumentText.content)
                          .where(EvidenceDocumentText.evidence_file_id == file.id))
+
+
+SEARCHABLE_STATES = (None, "", "active")
+
+
+def _searchable(metadata: dict | None) -> bool:
+    """A chunk meaning search reads: an active revision, or one made before revisions existed (no state)."""
+    return (metadata or {}).get("ingestion_state") in SEARCHABLE_STATES
+
+
+def _stored_text_hashes(files: list[EvidenceFile]) -> dict[str, str]:
+    from postgres.models.evidence import EvidenceDocumentText
+
+    if not files:
+        return {}
+    with get_background_session() as db:
+        rows = db.execute(select(EvidenceDocumentText.evidence_file_id, EvidenceDocumentText.content_sha256)
+                          .where(EvidenceDocumentText.evidence_file_id.in_([f.id for f in files]))).all()
+    return {str(fid): str(sha) for fid, sha in rows if sha}
+
+
+def activate_staged_revisions(files: list[EvidenceFile], collection, *, dry_run: bool = False,
+                              log_callback=None) -> dict[str, int]:
+    """Make searchable the documents whose chunks were embedded and staged by the evidence engine but never
+    activated (the ingestion stopped between staging and publication), when the staged revision is exactly the
+    document text the case holds now (``revision_id`` == stored ``content_sha256``). No embedding call is made:
+    the vectors already exist. The file's other active chunks are retired, as the engine's own activation does
+    (evidence-engine ``chunk_embed.activate_chunk_revision``). Returns {evidence_file_id: chunks activated}."""
+    hashes = _stored_text_hashes(files)
+    wanted = {str(f.id): f for f in files if str(f.id) in hashes}
+    activated: dict[str, int] = {}
+    for case_id in sorted({str(f.case_id) for f in wanted.values()}):
+        staged = collection.get(where={"$and": [{"case_id": case_id}, {"ingestion_state": "draft"}]},
+                                include=["metadatas"])
+        by_file: dict[str, list[tuple[str, dict]]] = {}
+        for chunk_id, metadata in zip(staged.get("ids") or [], staged.get("metadatas") or []):
+            metadata = dict(metadata or {})
+            file_id = str(metadata.get("evidence_file_id") or "")
+            if file_id in wanted and metadata.get("revision_id") == hashes[file_id]:
+                by_file.setdefault(file_id, []).append((str(chunk_id), metadata))
+        for file_id, current in sorted(by_file.items()):
+            current_ids = {chunk_id for chunk_id, _ in current}
+            others = collection.get(where={"evidence_file_id": file_id}, include=["metadatas"])
+            retire = [(str(cid), dict(m or {})) for cid, m in zip(others.get("ids") or [], others.get("metadatas") or [])
+                      if str(cid) not in current_ids and (m or {}).get("ingestion_state") in ("active", "draft")]
+            name = wanted[file_id].original_filename
+            _log(log_callback, "info", "%s %d staged chunk(s) of %s (revision %s matches its stored text)%s" % (
+                "[DRY RUN] Would activate" if dry_run else "Activating", len(current), name, hashes[file_id][:12],
+                "; retiring %d older chunk(s)" % len(retire) if retire else ""))
+            if not dry_run:
+                ids = [cid for cid, _ in current] + [cid for cid, _ in retire]
+                metas = ([{**m, "ingestion_state": "active"} for _, m in current]
+                         + [{**m, "ingestion_state": "inactive"} for _, m in retire])
+                for start in range(0, len(ids), 500):
+                    collection.update(ids=ids[start:start + 500], metadatas=metas[start:start + 500])
+            activated[file_id] = len(current)
+    return activated
 
 
 def _find_graph_document(file: EvidenceFile) -> dict[str, Any]:
@@ -196,6 +257,8 @@ def backfill_chunk_embeddings(
         "embedding_failed": 0,
         "total_chunks_created": 0,
         "file_not_found_names": [],
+        "staged_activated": 0,
+        "staged_chunks_activated": 0,
     }
 
     if dry_run:
@@ -203,7 +266,21 @@ def backfill_chunk_embeddings(
 
     start_time = time.time()
 
+    # Before any embedding call (which may be refused for every document): documents whose vectors exist but
+    # were staged and never activated become searchable from those vectors.
+    activated: dict[str, int] = {}
+    if prefer_stored_text:
+        try:
+            activated = activate_staged_revisions(files, vector_db_service_.chunk_collection, dry_run=dry_run,
+                                                  log_callback=log_callback)
+        except Exception as exc:
+            _log(log_callback, "warning", f"Could not check staged chunk revisions: {exc}")
+        stats["staged_activated"] = len(activated)
+        stats["staged_chunks_activated"] = sum(activated.values())
+
     for index, file in enumerate(files, 1):
+        if str(file.id) in activated:
+            continue
         graph_doc = _find_graph_document(file)
         doc_id = str(graph_doc.get("id") or file.legacy_id or file.id)
         doc_key = str(graph_doc.get("key") or "")
@@ -212,8 +289,11 @@ def backfill_chunk_embeddings(
 
         if skip_existing:
             try:
-                existing_chunks = vector_db_service_.chunk_collection.get(where={"doc_id": doc_id}, include=[])
-                if existing_chunks and existing_chunks.get("ids"):
+                existing_chunks = vector_db_service_.chunk_collection.get(where={"doc_id": doc_id},
+                                                                          include=["metadatas"])
+                # Staged (draft) or retired chunks are never searched: they do not count as having chunks.
+                metadatas = (existing_chunks or {}).get("metadatas") or [None] * len((existing_chunks or {}).get("ids") or [])
+                if any(_searchable(m) for m in metadatas):
                     _log(
                         log_callback,
                         "info",
@@ -346,7 +426,8 @@ def backfill_chunk_embeddings(
         log_callback,
         "info",
         f"Chunk backfill complete: {stats['processed']} processed, "
-        f"{stats['already_has_chunks']} already had chunks, {stats['failed']} failed",
+        f"{stats['already_has_chunks']} already had chunks, {stats['failed']} failed, "
+        f"{stats['staged_activated']} activated from staged chunks",
     )
 
     return {"status": "complete", "stats": stats, "elapsed_seconds": elapsed}
