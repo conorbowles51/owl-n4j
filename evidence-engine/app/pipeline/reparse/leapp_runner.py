@@ -90,16 +90,22 @@ def safe_relpath(original_path: str | None) -> str | None:
     return rel
 
 
+NAME_MAX = 255  # bytes in one path component on the scratch filesystem
+
+
 def build_tree(files, dest: str) -> dict:
     """``files``: iterable of ``(original_path, opener, verified)``. Places each verified file at its path under
-    ``dest``. Returns counts by outcome (placed, not verified, no or unsafe path, same path twice, path conflict).
+    ``dest``. Returns counts by outcome: placed, not verified, no or unsafe path, same path twice, inside another
+    file, unusable name, path conflict.
 
-    A report can list a file and also files beneath the same path (measured on P12: an Android ``.apex`` package and
-    the files read from inside it). A filesystem holds only one of them, so the first in the report's order is
-    placed and the other is counted as a path conflict; nothing is renamed or guessed."""
-    counts = {"placed": 0, "bytes": 0, "not_verified": 0, "no_path": 0, "duplicate_path": 0, "path_conflict": 0}
-    seen = set()
-    os.makedirs(dest, exist_ok=True)
+    A report lists, beneath a file's own path, items read from inside that file (measured on P12: files inside an
+    Android ``.apex`` package, and items beneath a WhatsApp database's path). A filesystem holds only one of the two,
+    and the outer file is the one that existed on the phone, so it is placed and the items beneath it are counted as
+    ``inside_another_file``, whatever their order in the report. A name longer than the filesystem allows is counted
+    as ``path_unusable``. Nothing is renamed or guessed."""
+    counts = {"placed": 0, "bytes": 0, "not_verified": 0, "no_path": 0, "duplicate_path": 0,
+              "inside_another_file": 0, "path_unusable": 0, "path_conflict": 0}
+    items = []
     for original_path, opener, verified in files:
         if not verified:
             counts["not_verified"] += 1
@@ -108,16 +114,31 @@ def build_tree(files, dest: str) -> dict:
         if rel is None:
             counts["no_path"] += 1
             continue
+        items.append((rel, opener))
+    listed = {rel for rel, _ in items}
+    seen = set()
+    os.makedirs(dest, exist_ok=True)
+    for rel, opener in items:
+        parts = rel.split("/")
+        if any("/".join(parts[:k]) in listed for k in range(1, len(parts))):
+            counts["inside_another_file"] += 1
+            continue
         if rel in seen:
             counts["duplicate_path"] += 1
             continue
         seen.add(rel)
+        if any(len(part.encode("utf-8", "surrogateescape")) > NAME_MAX for part in parts):
+            counts["path_unusable"] += 1
+            continue
         target = os.path.join(dest, rel)
         try:
             os.makedirs(os.path.dirname(target), exist_ok=True)
             out = open(target, "xb")
         except (NotADirectoryError, FileExistsError, IsADirectoryError):
             counts["path_conflict"] += 1
+            continue
+        except OSError:  # any other name the filesystem refuses
+            counts["path_unusable"] += 1
             continue
         with opener() as src, out:
             for chunk in iter(lambda: src.read(1 << 20), b""):

@@ -57,21 +57,22 @@ def test_the_tree_holds_only_verified_files_at_their_original_paths(tmp_path):
              ("/data/data/x/databases/a.db", lambda: open(a, "rb"), True)]
     counts = R.build_tree(files, str(tmp_path / "tree"))
     assert counts == {"placed": 2, "bytes": 22, "not_verified": 1, "no_path": 1, "duplicate_path": 1,
-                      "path_conflict": 0}
+                      "inside_another_file": 0, "path_unusable": 0, "path_conflict": 0}
     assert (tmp_path / "tree" / "data/data/x/databases/a.db").read_bytes() == b"synthetic a"
     assert (tmp_path / "tree" / "etc/passwd").exists()  # '..' cannot climb out: it lands inside the tree
     assert not (tmp_path / "etc").exists()
 
 
-def test_a_file_and_files_beneath_the_same_path_keep_the_first_and_count_the_conflict(tmp_path):
+def test_items_listed_beneath_a_files_path_never_displace_the_file_and_long_names_are_counted(tmp_path):
     a = tmp_path / "a"
     a.write_bytes(b"synthetic")
     op = lambda: open(a, "rb")  # noqa: E731
     files = [("/data/apex/pkg.apex", op, True), ("/data/apex/pkg.apex/assets/x", op, True),  # file, then beneath it
-             ("/data/d/inner", op, True), ("/data/d", op, True)]  # beneath a path, then the path as a file
+             ("/data/db/msgstore.db/https/item", op, True), ("/data/db/msgstore.db", op, True),  # beneath it first
+             ("/data/x/" + "n" * 300, op, True)]  # longer than one name may be
     counts = R.build_tree(files, str(tmp_path / "tree"))
-    assert (counts["placed"], counts["path_conflict"]) == (2, 2)
-    assert (tmp_path / "tree" / "data/apex/pkg.apex").is_file() and (tmp_path / "tree" / "data/d/inner").is_file()
+    assert (counts["placed"], counts["inside_another_file"], counts["path_unusable"]) == (2, 2, 1)
+    assert (tmp_path / "tree" / "data/apex/pkg.apex").is_file() and (tmp_path / "tree" / "data/db/msgstore.db").is_file()
 
 
 def test_the_tool_is_chosen_by_operating_system():
