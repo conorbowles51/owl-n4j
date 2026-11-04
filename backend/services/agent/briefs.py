@@ -323,7 +323,7 @@ def evidence_stamp(conn, case_id) -> dict:
         "SELECT (SELECT max(created_at) FROM financial_source_documents WHERE case_id = :c) st, "
         "(SELECT max(updated_at) FROM financial_source_documents WHERE case_id = :c) stu, "
         "(SELECT max(updated_at) FROM financial_transactions WHERE case_id = :c) lr, "
-        "(SELECT max(created_at) FROM evidence_files WHERE case_id = :c) ef, "
+        "(SELECT max(created_at) FROM evidence_files WHERE case_id = :c AND deleted_at IS NULL) ef, "
         "(SELECT max(created_at) FROM phone_extractions WHERE case_id = :c) ph, "
         "(SELECT max(greatest(created_at, coalesce(resolved_at, created_at))) FROM financial_judgements WHERE "
         "case_id = :c) jc, "

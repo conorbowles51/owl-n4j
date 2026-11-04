@@ -43,7 +43,7 @@ def _case_material(db, case_id) -> dict[str, dict[str, Any]]:
     """How much of each kind of material the case holds (counted now, at export)."""
     out: dict[str, dict[str, Any]] = {}
     queries = {
-        "documents": "SELECT count(*) FROM evidence_files WHERE case_id = :c",
+        "documents": "SELECT count(*) FROM evidence_files WHERE case_id = :c AND deleted_at IS NULL",
         "ledger": "SELECT count(*) FROM financial_transactions WHERE case_id = :c AND ledger_status = 'admitted'",
         "phones": "SELECT count(*) FROM phone_extractions WHERE case_id = :c",
         "casework": "SELECT count(*) FROM workspace_entries WHERE case_id = :c AND deleted_at IS NULL",

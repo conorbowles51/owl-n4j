@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from postgres import soft_delete
@@ -46,6 +47,10 @@ class EvidenceNotFound(Exception):
 
 class EvidenceNotDeleted(Exception):
     pass
+
+
+class EvidenceAddedAgain(EvidenceNotDeleted):
+    """The same phone file was added to Evidence again while this row waited in Deleted items."""
 
 
 class EvidenceRestoreDenied(Exception):
@@ -378,6 +383,14 @@ def restore_file(db: Session, case_id: UUID, evidence_id: str, user: User, *, gr
     record = _record(db, case_id, evidence_id, deleted=True)
     if not can_restore(db, case_id, user):
         raise EvidenceRestoreDenied("Only the case owner or an admin can restore a deleted file")
+    if record.source_type == "phone_file" and record.source_ref and db.scalar(
+            select(EvidenceFile.id).where(EvidenceFile.case_id == record.case_id,
+                                          EvidenceFile.source_type == "phone_file",
+                                          EvidenceFile.source_ref == record.source_ref)):
+        # One live evidence row per phone file (uq_evidence_files_case_phone_file, live rows only).
+        raise EvidenceAddedAgain(f"{record.original_filename} was added to Evidence again from the phone after it "
+                                 "was deleted, so this copy cannot be restored. The file in Evidence is the same "
+                                 "phone file.")
     state = record.deleted_state or {}
     own = graph_session is None
     gs = graph_session or _graph_session()

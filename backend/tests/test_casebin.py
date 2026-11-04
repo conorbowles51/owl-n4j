@@ -682,3 +682,35 @@ def test_the_purge_lock_is_released_so_the_next_run_purges():
                           {"c": second})
             again = casebin_purge.purge_due(factory)
         assert again["skipped"] is None and [c["case_id"] for c in again["cases"]] == [str(second)]
+
+
+@phone_pg.needs_template
+def test_a_phone_file_in_deleted_items_can_be_added_again_and_its_old_row_is_not_restored_over_it():
+    """One live evidence row per phone file: the unique index counted the deleted row too, so adding the phone file
+    again failed (the lookup could not see the hidden row either)."""
+    from sqlalchemy import text
+    from sqlalchemy.orm import Session
+    from postgres.models.evidence import EvidenceFile
+    from services import evidence_casebin
+    with phone_pg.fresh_engine() as engine:
+        case, owner_id, _ = _seed(engine)
+        owner = _user(engine, owner_id)
+        first = uuid.uuid4()
+        insert = text("INSERT INTO evidence_files (id, case_id, original_filename, stored_path, sha256, source_type, "
+                      "source_ref) VALUES (:i, :c, 'IMG_0001.jpg', '/phone/IMG_0001.jpg', :h, 'phone_file', 'pf-1')")
+        with engine.begin() as c:
+            c.execute(insert, {"i": first, "c": case, "h": "c" * 64})
+        with Session(engine) as s:
+            evidence_casebin.delete_file(s, s.get(EvidenceFile, first), owner, graph_session=_NoGraph(),
+                                         vector_db=FakeVectorDB())
+        again = uuid.uuid4()
+        with engine.begin() as c:
+            c.execute(insert, {"i": again, "c": case, "h": "c" * 64})
+        with Session(engine) as s:
+            with pytest.raises(evidence_casebin.EvidenceAddedAgain):
+                evidence_casebin.restore_file(s, case, str(first), owner, graph_session=_NoGraph(),
+                                              vector_db=FakeVectorDB())
+        with engine.connect() as c:
+            rows = dict(c.execute(text("SELECT id, deleted_at IS NOT NULL FROM evidence_files WHERE source_ref = "
+                                       "'pf-1'")).all())
+        assert rows == {first: True, again: False}

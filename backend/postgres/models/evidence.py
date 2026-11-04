@@ -103,10 +103,12 @@ class EvidenceFile(Base, TimestampMixin):
         Index("ix_evidence_files_source_type", "source_type"),
         Index("ix_evidence_files_case_source", "case_id", "source_type"),
         Index("ix_evidence_files_case_cellebrite_report", "case_id", "cellebrite_report_key"),
-        # One evidence row per phone file per case (07 section 6.4 item 4).
+        # One live evidence row per phone file per case (07 section 6.4 item 4). A row in Deleted items does not
+        # count, so the phone file can be added again; restoring that row is then refused (services/evidence_casebin.py).
         Index(
             "uq_evidence_files_case_phone_file", "case_id", "source_ref", unique=True,
-            postgresql_where=text("source_type = 'phone_file'"), sqlite_where=text("source_type = 'phone_file'"),
+            postgresql_where=text("source_type = 'phone_file' AND deleted_at IS NULL"),
+            sqlite_where=text("source_type = 'phone_file' AND deleted_at IS NULL"),
         ),
         Index("ix_evidence_files_case_cellebrite_file", "case_id", "cellebrite_file_id"),
         Index("ix_evidence_files_case_cellebrite_model", "case_id", "cellebrite_model_id"),
