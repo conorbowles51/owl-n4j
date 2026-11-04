@@ -35,6 +35,43 @@ SELECT l.file_uid, min(ev.sort_instant) AS first_at, count(DISTINCT coalesce(s.r
  GROUP BY l.file_uid"""
 
 
+# every file reference made by a thread's messages and their child records, at the current reading
+_THREAD_REFS = """
+SELECT l.record_uid, l.file_uid, l.resolution, l.resolved, l.reference_text, coalesce(l.ambiguous, false) AS ambiguous
+  FROM pv_attachment_link l
+  JOIN phone_record_summaries s ON s.record_uid = l.record_uid
+  JOIN phone_interpretation_state st ON st.extraction_id = s.extraction_id AND st.generation = s.generation
+  JOIN pv_comm_event ev ON ev.record_uid = coalesce(s.root_record_uid, l.record_uid) AND ev.case_id = l.case_id
+ WHERE l.case_id = :c AND ev.thread_key = :tk"""
+
+
+def thread_attachments(conn, case_id, thread_key) -> dict:
+    """The thread header's attachment counts (03 section 6.7): every reference to a file the thread's messages make,
+    counted once per file. ``files`` are the report's files (the Media grid scoped to the thread lists exactly
+    these); ``not_in_report`` are references found neither in the report nor in the production; ``in_folders_only``
+    are paths found in the production's folders that the report's file list does not name; ``not_in_production``
+    are files the report names that the production does not hold. References to other records (a jump target to a
+    record) are not files and are not counted."""
+    p = {"c": str(case_id), "tk": thread_key}
+    r = conn.execute(text(
+        "SELECT count(DISTINCT x.file_uid) FILTER (WHERE x.file_uid IS NOT NULL) AS files, "
+        "count(DISTINCT x.reference_text) FILTER (WHERE x.resolution = 'container_entry' AND x.file_uid IS NULL) AS folders, "
+        "count(DISTINCT (x.record_uid, x.reference_text)) FILTER (WHERE NOT x.resolved) AS unresolved, "
+        "count(DISTINCT x.file_uid) FILTER (WHERE f.verification = 'missing') AS missing "
+        "FROM (%s) x LEFT JOIN pv_file f ON f.file_uid = x.file_uid" % _THREAD_REFS), p).one()
+    files, folders, unresolved, missing = (int(v or 0) for v in r)
+    referenced = files + folders + unresolved
+    parts = ["%s %s referenced" % ("{:,}".format(referenced), "attachment" if referenced == 1 else "attachments")]
+    if unresolved:
+        parts.append("%s not in the report" % "{:,}".format(unresolved))
+    if folders:
+        parts.append("%s only in the production's folders" % "{:,}".format(folders))
+    if missing:
+        parts.append("%s named in the report but not in the production" % "{:,}".format(missing))
+    return {"thread_key": thread_key, "referenced": referenced, "files": files, "not_in_report": unresolved,
+            "in_folders_only": folders, "not_in_production": missing, "words": ", ".join(parts)}
+
+
 def _where(f: dict, p: dict) -> str:
     w = ["f.case_id = :c"]
     if f.get("phones"):
@@ -46,6 +83,10 @@ def _where(f: dict, p: dict) -> str:
     if f.get("verification"):
         w.append("coalesce(f.verification, '') = ANY(:ver)")
         p["ver"] = list(f["verification"])
+    if f.get("thread_key"):
+        # Attachments (N) in a thread header (03 section 6.7, MD-1): the files the thread's messages carried
+        w.append("f.file_uid IN (SELECT r.file_uid FROM (%s) r WHERE r.file_uid IS NOT NULL)" % _THREAD_REFS)
+        p["tk"] = f["thread_key"]
     if f.get("linked_to_message") is True:
         w.append("c.file_uid IS NOT NULL")
     elif f.get("linked_to_message") is False:

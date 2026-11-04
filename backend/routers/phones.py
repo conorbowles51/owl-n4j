@@ -394,6 +394,7 @@ class MediaFilter(BaseModel):
     categories: list[str] = Field(default_factory=list)
     verification: list[str] = Field(default_factory=list)
     linked_to_message: Optional[bool] = None
+    thread_key: Optional[str] = Field(None, max_length=512)
 
 
 class MediaWindowBody(BaseModel):
@@ -401,6 +402,15 @@ class MediaWindowBody(BaseModel):
     filter: MediaFilter
     offset: int = Field(0, ge=0)
     limit: int = Field(200, ge=1, le=500)
+
+
+@router.get("/threads/attachments")
+def phone_thread_attachments(case_id: UUID = Query(...), thread_key: str = Query(..., max_length=512),
+                             db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The thread header's attachment counts: "14 attachments referenced, 3 not in the report" (03 section 6.7)."""
+    from services.phone import media
+    authorize_case(db, case_id, user, ("case", "view"))
+    return media.thread_attachments(db.connection(), case_id, thread_key)
 
 
 @router.post("/media/index")

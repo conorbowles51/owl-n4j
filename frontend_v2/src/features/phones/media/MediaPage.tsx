@@ -375,15 +375,23 @@ export function DerivedTexts({ caseId, fileUid, category, filename = null }: { c
 
 /** The Media file panel: the file, its hashes and state, and every message that carried it. Also opened from Media
  * spread. */
-export function Detail({ caseId, fileUid, onClose }: { caseId: string; fileUid: string; onClose: () => void }) {
+export function Detail({ caseId, fileUid, onClose, onStep, position }: { caseId: string; fileUid: string; onClose: () => void; onStep?: (by: 1 | -1) => void; position?: { at: number; of: number } }) {
   const d = useQuery({ queryKey: ["phone-media-detail", caseId, fileUid], queryFn: () => getMediaDetail(caseId, fileUid) })
   const file = useObjectUrl(caseId, fileUid, !!d.data && !d.data.missing)
   const x = d.data
   return (
     <aside aria-label="File" className="flex w-96 shrink-0 flex-col gap-2 overflow-auto border-l p-3 text-xs">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold">File</h2>
-        <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
+        <h2 className="text-sm font-semibold">File{position ? ` ${n(position.at)} of ${n(position.of)}` : ""}</h2>
+        <span className="flex gap-1">
+          {onStep && position && (
+            <>
+              <Button size="sm" variant="ghost" disabled={position.at <= 1} onClick={() => onStep(-1)}>Previous</Button>
+              <Button size="sm" variant="ghost" disabled={position.at >= position.of} onClick={() => onStep(1)}>Next</Button>
+            </>
+          )}
+          <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
+        </span>
       </div>
       {d.isLoading && <p role="status">Loading the file.</p>}
       {d.isError && <p role="alert">This file could not be loaded.</p>}
@@ -441,7 +449,17 @@ export default function MediaPage() {
     return next
   }, { replace: true })
   const [blur, setBlur] = useState(() => localStorage.getItem(BLUR_KEY) !== "off")
-  const filter: MediaFilter = { case_id: caseId, phones: [extraction], ...(category ? { categories: [category === NONE ? "" : category] } : {}), ...(state ? { verification: [state === NONE ? "" : state] } : {}) }
+  // Attachments (N) from a thread header (03 section 6.7, MD-1): the grid scoped to the files that thread carried
+  const thread = params.get("thread")
+  const threadTitle = params.get("thread_title")
+  const back = params.get("back")
+  const backTo = back && back.startsWith("/cases/") ? back : null
+  const clearThread = () => setParams((p) => {
+    const next = new URLSearchParams(p)
+    for (const k of ["thread", "thread_title", "back"]) next.delete(k)
+    return next
+  }, { replace: true })
+  const filter: MediaFilter = { case_id: caseId, phones: [extraction], ...(thread ? { thread_key: thread } : {}), ...(category ? { categories: [category === NONE ? "" : category] } : {}), ...(state ? { verification: [state === NONE ? "" : state] } : {}) }
   const idx = useQuery({ queryKey: ["phone-media-index", filter], queryFn: () => getMediaIndex(filter), enabled: !!caseId })
   const all = useQuery({ queryKey: ["phone-media-index", caseId, extraction], queryFn: () => getMediaIndex({ case_id: caseId, phones: [extraction] }), enabled: !!caseId })
   const pages = useInfiniteQuery({
@@ -470,9 +488,18 @@ export default function MediaPage() {
           <h1 className="text-lg font-semibold">Media</h1>
           <Link className="text-sm underline" to={`/cases/${encodeURIComponent(caseId)}/phones/${encodeURIComponent(extraction)}/records/media/spread`}>Media spread: the same file on other phones</Link>
         </div>
+        {thread && (
+          <div role="group" aria-label="Scope" className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="rounded-full border px-2 py-0.5">
+              Files carried by the conversation {threadTitle ? `"${threadTitle}"` : "you came from"}
+              <button type="button" className="ml-1 text-muted-foreground" aria-label="Remove the conversation scope" onClick={clearThread}>×</button>
+            </span>
+            {backTo && <Link className="underline underline-offset-2" to={backTo}>Back to the stream</Link>}
+          </div>
+        )}
         {idx.data && (
           <p role="status" className="text-sm">
-            {n(total)} {total === 1 ? "file" : "files"}{category || state ? ` match the filter (of ${n(all.data?.total ?? total)})` : ""}.
+            {n(total)} {total === 1 ? "file" : "files"}{category || state || thread ? ` match the filter (of ${n(all.data?.total ?? total)} on this phone)` : ""}.
             {idx.data.missing ? ` ${n(idx.data.missing)} the report refers to are not in the production.` : ""}
             {idx.data.no_time_count ? ` ${n(idx.data.no_time_count)} were carried by no message and have no time; they are listed at the end.` : ""}
           </p>
@@ -519,7 +546,22 @@ export default function MediaPage() {
         <div ref={sentinel} />
         {pages.isFetchingNextPage && <p role="status" className="text-xs">Loading more files ({n(items.length)} of {n(total)} shown).</p>}
       </div>
-      {open && <Detail caseId={caseId} fileUid={open} onClose={() => setOpen(null)} />}
+      {open && (
+        <Detail
+          caseId={caseId}
+          fileUid={open}
+          onClose={() => setOpen(null)}
+          position={items.some((i) => i.file_uid === open) ? { at: items.findIndex((i) => i.file_uid === open) + 1, of: total } : undefined}
+          onStep={(by) => {
+            const at = items.findIndex((i) => i.file_uid === open) + by
+            if (at >= 0 && at < items.length) setOpen(items[at].file_uid)
+            else if (at === items.length && pages.hasNextPage) void pages.fetchNextPage().then((r) => {
+              const more = r.data?.pages.flatMap((p) => p.items) ?? []
+              if (more[at]) setOpen(more[at].file_uid)
+            })
+          }}
+        />
+      )}
     </div>
   )
 }

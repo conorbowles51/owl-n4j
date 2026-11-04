@@ -48,6 +48,31 @@ describe("Media (03 section 8)", () => {
     expect(within(panel).getByRole("link", { name: /The message at/ })).toHaveAttribute("href", "/cases/c/records/m1")
   })
 
+  it("scoped to a thread from its Attachments (N): the scope is shown, Previous and Next step the files, Back to the stream returns (MD-1)", async () => {
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter initialEntries={[`/cases/c/phones/e1/records/media?${new URLSearchParams({ thread: "t1", thread_title: "Synthetic thread", back: "/cases/c/phones/e1/records/conversations?thread=t1&at=ev9" })}`]}>
+          <Routes>
+            <Route path="/cases/:id/phones/:extraction/records/media" element={<MediaPage />} />
+            <Route path="/cases/:id/phones/:extraction/records/conversations" element={<p>the stream</p>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText(/Files carried by the conversation "Synthetic thread"/)).toBeInTheDocument()
+    await waitFor(() => expect(api.getMediaIndex).toHaveBeenCalledWith({ case_id: "c", phones: ["e1"], thread_key: "t1" }))
+    expect(api.getMediaWindow).toHaveBeenCalledWith({ case_id: "c", phones: ["e1"], thread_key: "t1" }, 0, expect.any(Number))
+    const grid = await screen.findByRole("list", { name: "Files" })
+    fireEvent.click(await within(grid).findByText("synthetic-a.jpg"))
+    const panel = await screen.findByRole("complementary", { name: "File" })
+    expect(within(panel).getByRole("heading", { name: "File 1 of 2" })).toBeInTheDocument()
+    expect(within(panel).getByRole("button", { name: "Previous" })).toBeDisabled()
+    fireEvent.click(within(panel).getByRole("button", { name: "Next" }))
+    expect(await within(screen.getByRole("complementary", { name: "File" })).findByRole("heading", { name: "File 2 of 2" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("link", { name: "Back to the stream" }))
+    expect(await screen.findByText("the stream")).toBeInTheDocument()
+  })
+
   it("opens the file named in the address, asks for its text, and shows the result labelled machine-generated beside the original (M-3)", async () => {
     api.getDerivedTexts
       .mockResolvedValueOnce({ file_uid: "f1", items: [] })

@@ -420,12 +420,28 @@ export async function getPhoneMapNear(caseId: string, recordUid: string, signal?
   return PhoneMapNearSchema.parse(await fetchAPI(`/api/phones/map/near?${q}`, { signal }))
 }
 
+/** A thread header's attachment counts (03 section 6.7): "14 attachments referenced, 3 not in the report". */
+export const ThreadAttachmentsSchema = z.object({
+  thread_key: z.string(),
+  referenced: z.number(),
+  files: z.number(),
+  not_in_report: z.number(),
+  in_folders_only: z.number(),
+  not_in_production: z.number(),
+  words: z.string(),
+})
+export async function getThreadAttachments(caseId: string, threadKey: string) {
+  const q = new URLSearchParams({ case_id: caseId, thread_key: threadKey })
+  return ThreadAttachmentsSchema.parse(await fetchAPI(`/api/phones/threads/attachments?${q}`))
+}
+
 export interface MediaFilter {
   case_id: string
   phones?: string[]
   categories?: string[]
   verification?: string[]
   linked_to_message?: boolean | null
+  thread_key?: string
 }
 export interface MediaIndex { total: number; no_time_count: number; missing: number; by_category: Record<string, number>; verification: Record<string, number> }
 export interface MediaItem {

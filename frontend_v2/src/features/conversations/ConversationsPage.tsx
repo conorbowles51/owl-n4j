@@ -32,6 +32,7 @@ import { useStream } from "@/features/phones/hooks/use-stream"
 import { ExportDialog } from "./ExportDialog"
 import { SplitForReview } from "./SplitForReview"
 import { ThreadReviewBar } from "./ThreadReviewBar"
+import { ThreadAttachments } from "./ThreadAttachments"
 import { PersonScope } from "./PersonScope"
 import { useThreadMatches } from "./use-thread-matches"
 import { viewFromSearch, viewToFilter, viewToSearch, type ConversationView } from "@/features/phones/lib/filter-url"
@@ -565,6 +566,10 @@ export function ConversationsPage() {
                 {current.app ? `, ${current.app}` : ""}
               </span>
             ) : null}
+            {current && (
+              <ThreadAttachments caseId={caseId} extraction={current.phone.extraction_id} threadKey={current.thread_key} title={current.title}
+                back={`${location.pathname}?${viewToSearch({ ...view, at: focused?.event_uid ?? view.at }, fixedPhone)}`} />
+            )}
             {view.deleted === true && (
               // 07 J-11: a deletion state never carries a time; say what it does and does not establish.
               <span className="w-full text-xs">Deleted at some time between the message's own time and the extraction. The report does not record when.</span>
