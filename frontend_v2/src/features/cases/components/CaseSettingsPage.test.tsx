@@ -9,6 +9,11 @@ const caseHooks = vi.hoisted(() => ({
   update: vi.fn(),
 }))
 
+// The AI costs card reads its own report; it has its own tests (CaseCostsSection.test.tsx).
+vi.mock("./CaseCostsSection", () => ({
+  CaseCostsSection: () => <div>AI costs</div>,
+}))
+
 vi.mock("../hooks/use-cases", () => ({
   useCase: caseHooks.useCase,
   useUpdateCase: () => ({

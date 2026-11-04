@@ -34,6 +34,8 @@ import type {
 } from "@/types/case.types"
 import { useCase, useUpdateCase } from "../hooks/use-cases"
 import { AddressLookupSetting } from "./AddressLookupSetting"
+import { CaseCostsSection } from "./CaseCostsSection"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
 
 const STATUS_OPTIONS: Array<{
   value: CaseStatus
@@ -291,6 +293,7 @@ export function CaseSettingsPage() {
   const { id } = useParams()
   const { data: caseData, isLoading, isError, refetch } = useCase(id)
   const updateCase = useUpdateCase(id)
+  const user = useAuthStore((s) => s.user)
 
   if (isLoading) {
     return (
@@ -321,6 +324,8 @@ export function CaseSettingsPage() {
   }
 
   const statusBadge = STATUS_BADGES[caseData.status]
+  const role = user?.global_role ?? user?.role
+  const canSeeCosts = caseData.is_owner || role === "admin" || role === "super_admin"
 
   return (
     <div className="h-full overflow-y-auto bg-background">
@@ -358,6 +363,7 @@ export function CaseSettingsPage() {
         </Card>
 
         <AddressLookupSetting caseData={caseData} />
+        {canSeeCosts && <CaseCostsSection caseId={caseData.id} caseTitle={caseData.title} />}
       </div>
     </div>
   )
