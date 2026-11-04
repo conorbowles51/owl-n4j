@@ -173,6 +173,15 @@ describe("Conversations", () => {
     await waitFor(() => expect(api.undoReviewed).toHaveBeenCalledWith("case-1", "t1"))
   })
 
+  it("g opens Go to date beside its visible button (03 section 3.9, D-27)", async () => {
+    streamState.index = { snapshot: "s", zone: { label: "UTC" }, items: [{ day: "2023-03-10", count: 2, offsets: "", header: "", zone_label: "UTC" }], counts: {} }
+    page()
+    await waitFor(() => expect(seen.search).toContain("thread=t1"))
+    expect(await screen.findByRole("button", { name: /Go to date/ })).toBeInTheDocument()
+    dispatchKey(new KeyboardEvent("keydown", { key: "g" }))
+    expect(await screen.findByLabelText("Date to go to")).toBeInTheDocument()
+  })
+
   it("Translate this conversation queues its messages on the server and states the counts, left out by reason (05 17.5)", async () => {
     api.translateThread.mockResolvedValue({ in_conversation: 3, queued: 2, left_out: { no_text: 1, already_translated: 0, already_waiting: 0 } })
     page()

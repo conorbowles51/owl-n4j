@@ -46,6 +46,7 @@ import { EMPTY_SCOPE, scopeWords } from "@/features/phones/ui/scope"
 import { useChatStore } from "@/features/chat/stores/chat.store"
 import { useUIStore } from "@/stores/ui.store"
 import { TimeStrip, type StripDay } from "@/features/phones/ui/TimeStrip"
+import { GoToDate } from "@/features/phones/components/GoToDate"
 
 /**
  * Conversations (03 section 6; 07 sections 5 and 6.1): the threads of the case's phones, or the people in them, on
@@ -157,6 +158,7 @@ export function ConversationsPage() {
   const [splitting, setSplitting] = useState(false)
   const [jump, setJump] = useState<{ day: string | null; seq: number; offset?: number } | null>(null)
   const [findHl, setFindHl] = useState<string | null>(null)
+  const [goOpen, setGoOpen] = useState(false)
   const listRoot = useRef<HTMLDivElement>(null)
 
   // ---- a search hit: the whole thread, its matches marked, stepped through (03 S-8) -------------------------------
@@ -348,6 +350,7 @@ export function ConversationsPage() {
           if (f?.time.instant) setAround(f)
         },
       },
+      { key: "g", label: "Go to date", run: () => setGoOpen(true) },
       {
         key: "m",
         label: "Mark this thread reviewed",
@@ -601,6 +604,10 @@ export function ConversationsPage() {
                 title={selection.rows.length === 0 ? "Select messages to ask about them" : undefined}>
                 {selection.rows.length === 0 ? "Select messages to ask about them" : "Ask about these messages"}
               </Button>
+              {stream.index && (
+                <GoToDate days={stream.index.items} where={view.thread && !view.people.length ? "in this thread" : "in these results"} open={goOpen} onOpenChange={setGoOpen}
+                  onGo={(day) => { setGoOpen(false); setJump({ day, seq: Date.now() }) }} />
+              )}
               {streamFilter && (
                 <FindInResults filter={streamFilter} snapshot={stream.index?.snapshot} onQuery={setFindHl}
                   onGo={(m) => setJump({ day: m.day, offset: m.offset, seq: Date.now() })} />
