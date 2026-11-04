@@ -1659,7 +1659,7 @@ Each is a decision with its reasoning and what would reverse it.
     25). A stay's day is the local date it starts. Deviation labels each local hour by the stay with the most minutes
     in it; a stay outside the routine places is "elsewhere"; the 95th percentile is interpolated over the subject's
     scored days. A claim naming a cluster stores the cluster's centre and radius when it is confirmed, so a recompute
-    never changes a confirmed claim. Places stay unnamed (no labelling route yet). *Reverse if* P14 routine misses
+    never changes a confirmed claim. Places are named by a person (decision 42). *Reverse if* P14 routine misses
     30 s (11), then stays are stored per extraction and recomputed with the projection.
 
 27. **Together and apart as built (04-U9; `services/pattern_of_life/colocation.py`, migration
@@ -1771,13 +1771,16 @@ Each is a decision with its reasoning and what would reverse it.
     The corpus totals in section 2 are measurements of the research corpus, not what a case shows. *Reverse if*
     an investigator setting should keep them shown.
 
-36. **Places over time and Together on the Case Map (8.6; 07 J-10c).** The Case Map's phone layer is built by the
-    phone screens (03 section 13, J-10a), so Patterns draws no second map. The two hand over by address: the Case
-    Map reads `phone_subject`, `start` and `end` for a subject's positions and `together_run` for a Together run
-    (paged at 1,000 pairs with totals), and Patterns links "Show on the Case Map" once the layer reads them.
-    Whichever of the two jobs finishes second wires the link and carries J-10c. Until then Places over time and
-    Together list their results in full with totals. *Reverse if* the Case Map layer cannot take these
-    parameters; Patterns then embeds that layer's component instead.
+36. **Places over time and Together on the Patterns screen (8.3, 8.4, 8.6; 07 J-10c).** Both views draw on a map
+    built from the Case Map's own base map and theme (`features/map/components/PlacesMap.tsx`, with `useMapTheme`
+    and `BasemapNote`), inside the Patterns screen. Places over time draws every position as a point with its stated
+    radius as an area, the trajectory per phone with every move over 2 hours left as a gap (the counts of lines
+    and gaps are stated), and the subject's places with their names. Positions load a page at a time with the
+    total. Together takes a chosen window and a phone or a person on either side, and draws each compared pair as a
+    line coloured by verdict; "The map draws X of Y pairs" counts the pairs whose positions are no longer held.
+    Every map carries "Investigative location, not cell-site opinion" on its face. Built in cb-places-rest
+    (7d8aeb28, 85abddb4), live LIVE_SHA. *Reverse if* the Case Map page takes a subject and a Together run by
+    address; the views then link to it as well.
 
 37. **Context events in a statement check are counted per phone, hour and reason (9.5).** Undercutting,
     supporting, gap and near-window items are one item per record. Events inside the window that bear on neither
@@ -1854,6 +1857,40 @@ Each is a decision with its reasoning and what would reverse it.
     `nearby_not_connected`. *Reverse if* a report states a peer's address in its own field (then compare that field,
     not the name), a case shows SIM country codes differing from the towers' own on the same phone (then stop
     inferring), or `Paired` records prove to carry the pairing date rather than a sighting (then exclude them).
+
+47. **Named places (8.3, 7.7).** A person names a place of a subject's routine, renames it, or clears the name,
+    as the case decision `label_place` on subject `place_cluster` with the person as Actor, and one
+    corrections-feed line (`pattern_place_name`). `pol_place_cluster` (migration `20261104_pol_place_names`) keeps
+    the name with the place's centre and radius when named and the subject it belongs to (`extraction:<id>` or
+    `dossier:<id>`). A recomputed place takes the name of the nearest named place of the same subject within 150 m,
+    one name per place, so a name survives new data and never crosses to another subject. The route recomputes the
+    place on the server from its number; the page also sends the centre it showed, and a number that now names a
+    place more than 150 m away is refused (409, "Reload and name the place again"). A deviation then reads "Usually
+    at <name> on Tuesdays 21:00 to 00:00." Built in cb-places-rest (7d8aeb28, e4f1c82e), live LIVE_SHA. *Reverse if*
+    named locations are wanted case-wide; a name then shows on every subject's place within 150 m.
+
+48. **Photos taken on the phone are presence; received photos are not (6.2).** A `Media Locations` point is
+    presence when its photo's EXIF camera make and model are the extraction device's own, compared exactly after
+    case, punctuation, a make prefix and a bracketed code are set aside (a "Pro" model is another phone), or when
+    the file is in the phone's camera folder (`DCIM`, `Camera`) and its EXIF names no camera of another make. A
+    photo saved from a message lands in an iPhone's camera roll with the sender's EXIF and position. Measured on
+    the reference phones: one phone's 21 photos (20 in the camera folder, every one from another make's camera) are
+    received media, and the other phone's 33 match the device exactly. Every other media point is kind `media`
+    with flag `received_media` and never enters stays, routine or Together. `PLACES_VERSION` 2 is part of the
+    projection signature, so every phone's places are rebuilt through the projection at release. Built in
+    cb-places-rest (7d8aeb28, e4f1c82e), live LIVE_SHA. *Reverse if* the camera roll is shown to hold only the
+    phone's own photos, or one phone's camera is recorded under two spellings.
+
+49. **A place for a payment on screen (8.5).** The transaction panel and the ledger source dialog show the place
+    attached to a payment, with who attached it and why, and attach, change or remove it through the manual-place
+    routes of decision 28 (latitude, longitude, a radius of 1 to 50,000 whole metres, a reason). Earlier places stay
+    counted as kept in the decision log. A person who can only view the case is told so. Built in cb-places-rest
+    (85abddb4), live LIVE_SHA.
+
+50. **The investigative label on maps and exports (8.3, 6.2).** "Investigative location, not cell-site opinion" is
+    drawn on the Places, Together and Case Map phone layer maps and in Phones seen in this area. It is printed on
+    the cover of every phone export whose kinds include locations. Built in cb-places-rest (7d8aeb28, 956ef372),
+    live LIVE_SHA.
 
 ## 15. Not yet established
 

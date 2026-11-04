@@ -1116,6 +1116,25 @@ message_count, thumbnail_url or null, has_derived: ["transcript"]}`.
 - Selection and `Copy file list` (filename, phone, category, time, hashes, state, one per line);
   `Download originals` as a zip with a manifest of hashes.
 
+**Built (cb-places-rest, D_MEDIA_B, D_MEDIA_F, D_REVIEW; live LIVE_SHA).**
+- The open file has `Previous` and `Next`, also the left and right arrow keys, through the filtered result. At the end of what is loaded, Next loads the next page.
+- `Thumbnails` sets the grid to small, medium or large (kept per browser).
+- The filter bar has:
+  - phones: this phone, every phone in the case, or another phone;
+  - category and state;
+  - app and person, listing every app and person whose messages carried the files, each with its file count (`POST /api/phones/media/facets`);
+  - dates: whole UTC days by the carrying message's time. The files with no time that a date range leaves out are counted.
+- Files are chosen with their boxes.
+- `Copy file list` copies file, phone, category, time, state, SHA-256 and MD5, tab-separated, without the clipboard API. When the browser refuses, the list is shown to copy by hand. With nothing chosen, it says when only the loaded files are in the list.
+- `Download originals` (`POST /api/phones/media/download`):
+  - it first states what the zip holds (files, size, and how many the production lacks);
+  - it then downloads the zip: each file stored as it is, plus `manifest.csv` with the stated hashes and the SHA-256 of the bytes in the zip;
+  - over 2,000 files or 1 GB it is refused with the numbers, and nothing is made;
+  - a file that cannot be read refuses the whole download before the first byte.
+- Blur:
+  - follows the case default until the person chooses for themselves;
+  - the default is on in a criminal case (case context template `criminal_defense`) unless Case settings › `Blur phone pictures` sets it for the case (`case_phone_settings`, `PUT /api/phones/settings/media-blur`).
+
 ### 8.4 Performance targets
 
 | Operation | Target | Basis |
@@ -1632,6 +1651,12 @@ to a lookup service.
   hardware Loupe targets, and clustering above it keeps the counts exact; *reverse if* measured rendering
   on Owl's machines says otherwise.
 
+**Built (cb-places-rest, D_MAP; live LIVE_SHA).**
+- With the phone layer on, the last area drawn lists "Phones seen in this area" (`POST /api/phones/map/area`, a ring of up to 500 vertices).
+- Each phone shows its exact count of positions inside, and its first and last time there. Nothing is capped, and the totals are stated.
+- Each phone links to its conversations in that window (J-10).
+- The map and the list carry "Investigative location, not cell-site opinion".
+
 ### 13.4 Acceptance tests (Map)
 
 | Id | Test |
@@ -1688,6 +1713,12 @@ applies regardless.
   `{edges: [{a, b, counts..., first, last}]}`; the canvas restyles without reloading nodes.
 - From the lessons of the existing phone piece (16.2): flow view with arrows and thickness by volume and direction, trace path between
   two people, drill (re-anchor on a person), expand neighbours, edge detail never empty.
+
+**Built (cb-places-rest, D_GRAPH; live LIVE_SHA).**
+- The communication edges have a window (`Edges from` / `to`, `Count this window`, `All time`).
+- Each pair's counts are read for the window through `/api/phones/link-analysis/edges` with `from_instant` and `to_instant`.
+- The canvas restyles edges from the stored counts without reloading nodes: an edge with nothing in the window is drawn thin and dashed.
+- The pair's `Open these messages` link carries the window.
 
 ### 14.4 Acceptance tests (Graph)
 
