@@ -133,6 +133,11 @@ def test_the_phones_own_bluetooth_identity_is_a_cited_header_sighting(hooks):
             ("metadata:DeviceInfoBluetoothDeviceName", "header", B_NAME, "other", "bluetooth_name")]
         assert set(own) == {("bluetooth_address", "0a:1b:2c:3d:4e:5f"), ("bluetooth_name", "synthetic handset b")}
         assert owners == 0  # an identifier of the device, never an owner candidate
+        with engine.begin() as c:  # an Android report stating both: the device name is not a second Bluetooth name
+            both = ColocPhone({"DeviceInfoBluetoothDeviceName": B_NAME, "DeviceInfoDeviceName": "Model X1"}).make(c, case)
+        assert sweep.interpret_one(engine, both)["status"] == "done"
+        with engine.connect() as c:
+            assert set(identities.own_bluetooth(c, [both])[str(both)]) == {("bluetooth_name", "synthetic handset b")}
         # the stage's version is part of the interpreter version, so every phone read before is read again
         now = sweep.interpreter_version()
         try:

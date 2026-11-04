@@ -1812,8 +1812,8 @@ Each is a decision with its reasoning and what would reverse it.
     Choices: (a) the own identity is stored as identities of kind `other`, subkind `bluetooth_address` or
     `bluetooth_name`, context `header`, `field_path` `metadata:<item>`, on each generation (versioned with the
     interpretation; the stage carries `stage_version` 2, which re-reads every phone once); never an owner candidate.
-    (b) `DeviceInfoDeviceName` counts as the Bluetooth name on an iPhone, where the device name is what Bluetooth
-    shows. (c) Every nature (`Connected`, `Paired`, `Disconnected`, `Detected`) is evidence at the record's time,
+    (b) `DeviceInfoDeviceName` counts as the Bluetooth name only when the header states no `DeviceInfoBluetoothDeviceName` (an iPhone, where the device name is what Bluetooth
+    shows). (c) Every nature (`Connected`, `Paired`, `Disconnected`, `Detected`) is evidence at the record's time,
     with the nature as a flag; untimed `RecognizedDevice` records are not compared. (d) The placeholder addresses
     `02:00:00:00:00:00`, all zeros and all ones are not identities. (e) The cell comparison is a keyed join with a
     sorted range per key (same output; 860 towers a side, best of three 8.4 s before, 3.4 s after, load average

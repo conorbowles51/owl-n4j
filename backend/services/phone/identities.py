@@ -140,6 +140,8 @@ def build(conn, extraction_id, generation, the_plan=None) -> dict:
     pending = []
     # the phone's own Bluetooth address and name (cb-coloc-rest B), cited by the header item that states them
     for item, subkind in identifiers.BLUETOOTH_HEADER_ITEMS:
+        if item == "DeviceInfoDeviceName" and items.get("DeviceInfoBluetoothDeviceName"):
+            continue  # the device name stands for the Bluetooth name only where the report states no Bluetooth name
         for i, raw in enumerate(items.get(item, [])):
             ident = identifiers.bluetooth(raw, subkind)
             if ident is None:

@@ -202,8 +202,8 @@ def bluetooth_peers(conn, extraction_id, start, end):
     return sorted(out, key=lambda x: (x[1], x[0]))
 
 
-def _bt_item(peer, ident, p):
-    uid, t, (sub, _v), nature = peer
+def _bt_item(peer, p):
+    _uid, _t, (sub, _v), nature = peer
     by_name = sub == "bluetooth_name"
     flags = (["name_match"] if by_name else []) + (["nearby_not_connected"] if nature == "Detected" else [])
     flags += ["nature:%s" % nature.lower()] if nature else []
@@ -232,7 +232,7 @@ def _bluetooth_pairs(conn, ea, eb, start, end, p):
                     rec = {"ref": "rec:%s" % peer[0], "start": peer[1]}
                     ident = {"ref": "ident:%s" % cite["sighting_uid"], "start": peer[1]}
                     a, b = (rec, ident) if a_is_peer else (ident, rec)
-                    out.append((a, b, _bt_item(peer, cite, p)))
+                    out.append((a, b, _bt_item(peer, p)))
     return out
 
 

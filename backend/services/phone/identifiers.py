@@ -76,7 +76,8 @@ def classify(raw, *, context=None, region="US", region_basis="assumed_default") 
 MAC_SHAPE = re.compile(r"^[0-9A-Fa-f]{2}([:\-. ]?[0-9A-Fa-f]{2}){5}$")
 # The report header items that state the phone's own Bluetooth identity: the adapter address (Android
 # ``Bluetooth MAC Address``, both platforms ``DeviceInfoBluetoothDeviceAddress``) and the name it advertises (Android
-# ``DeviceInfoBluetoothDeviceName``; on an iPhone the Bluetooth name is the device name, ``DeviceInfoDeviceName``).
+# ``DeviceInfoBluetoothDeviceName``; on an iPhone the Bluetooth name is the device name, ``DeviceInfoDeviceName``, read
+# only when the report states no ``DeviceInfoBluetoothDeviceName``).
 BLUETOOTH_HEADER_ITEMS = (("Bluetooth MAC Address", "bluetooth_address"),
                           ("DeviceInfoBluetoothDeviceAddress", "bluetooth_address"),
                           ("DeviceInfoBluetoothDeviceName", "bluetooth_name"),
