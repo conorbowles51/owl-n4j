@@ -20,6 +20,7 @@ import {
   undoReviewed,
   type ThreadSort,
   streamLocate,
+  streamIndex,
 } from "@/features/phones/api"
 import { liveCollectClient, undoCollect, type CollectLink, type CollectResult, type CollectTarget } from "@/features/phones/collect.api"
 import { MessageTranslation } from "@/features/phones/components/MessageTranslation"
@@ -46,6 +47,7 @@ import type { StreamRow, ThreadRow } from "@/features/phones/schemas"
 import { AddToMenu } from "@/features/phones/ui/AddToMenu"
 import { fmt } from "@/features/phones/ui/count-sentence"
 import { ScopeBar, type Scope } from "@/features/phones/ui/ScopeBar"
+import { SignificantNote } from "@/features/phones/ui/SignificantNote"
 import { EMPTY_SCOPE, scopeWords } from "@/features/phones/ui/scope"
 import { useChatStore } from "@/features/chat/stores/chat.store"
 import { useUIStore } from "@/stores/ui.store"
@@ -139,6 +141,16 @@ export function ConversationsPage() {
   const ready = view.tab === "threads" ? !!view.thread || !!view.record || !!view.selection : view.people.length > 0
   const streamFilter = useMemo(() => (ready && settingsQ.isSuccess ? viewToFilter(caseId, view, zoneName, true) : null), [ready, settingsQ.isSuccess, caseId, view, zoneName])
   const stream = useStream(streamFilter)
+  // the toggle states what it hides (07 XF-11): the same view without it, counted by the same index
+  const allRecords = useQuery({
+    queryKey: ["phone-stream-all", streamFilter],
+    queryFn: () => streamIndex({ ...streamFilter!, significant_only: false }),
+    enabled: !!streamFilter && view.significant,
+  })
+  const allCount = allRecords.data?.counts.events
+  const significantHidden = view.significant && stream.index && allCount !== undefined
+    ? `${fmt(Math.max(0, allCount - stream.total))} of ${fmt(allCount)} messages and calls in this view are hidden.`
+    : null
 
   const [find, setFind] = useState("")
   const shownThreads = useMemo(() => {
@@ -221,7 +233,7 @@ export function ConversationsPage() {
   }, [stream])
   const { usedIn, refresh: refreshUsedIn } = useUsedIn(caseId, marked.ids, marked.complete)
   const across = useAcrossBadges(caseId, stream)
-  const filterWords = current ? `${current.title} on ${current.phone.label}` : view.people.length ? "Messages with the chosen people" : "Conversations"
+  const filterWords = `${current ? `${current.title} on ${current.phone.label}` : view.people.length ? "Messages with the chosen people" : "Conversations"}${view.significant ? ", significant phone identities only" : ""}`
   const freeze = useQuery({
     queryKey: ["phone-selection", streamFilter, selection.all],
     queryFn: () => freezeSelection(streamFilter!, `${filterWords}, every message`),
@@ -599,6 +611,7 @@ export function ConversationsPage() {
                 setView={setView}
               />
             )}
+            <SignificantNote caseId={caseId} on={view.significant} onChange={(on) => setView({ significant: on })} hiddenWords={significantHidden} />
           </ScopeBar>
           <div className="flex flex-wrap items-center gap-2 border-b px-3 py-1.5 text-sm">
             {current ? (

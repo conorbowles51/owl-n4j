@@ -28,6 +28,8 @@ export const TimeBlockSchema = lazySchema(() => z.object({
   row: z.string(),
   full: z.string(),
   offset_present: z.boolean(),
+  /** The report wrote no offset and a person's decision placed this time (02 section 4.1 rule 2). */
+  zone_decided: z.boolean().optional(),
   time_field: z.string().nullable().optional(),
 }))
 

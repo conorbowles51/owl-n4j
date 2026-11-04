@@ -13,7 +13,7 @@ export const EVERY_PHONE = "*"
  * app, person and date filters that are set (MediaPage and the start-up prefetch, which share one cache entry).
  */
 export function mediaFilter(caseId: string, extraction: string, thread: string | null, category: string, state: string,
-  more: Pick<MediaFilter, "apps" | "participants" | "from_instant" | "to_instant"> = {}): MediaFilter {
+  more: Pick<MediaFilter, "apps" | "participants" | "from_instant" | "to_instant" | "significant_only"> = {}): MediaFilter {
   return {
     case_id: caseId,
     ...(extraction === EVERY_PHONE ? {} : { phones: [extraction] }),

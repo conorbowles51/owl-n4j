@@ -7,6 +7,7 @@ import type { Profile } from "../schemas"
 
 /** Phone summary (03 section 7; 07 J-2, J-11, J-15) with the server stubbed. Synthetic data only. */
 const api = vi.hoisted(() => ({
+  getPhoneSetup: vi.fn(), describeSetup: vi.fn(), savePhoneSetting: vi.fn(), saveClockOffset: vi.fn(), getExternalProcessing: vi.fn().mockResolvedValue({ external_processing: false, decided_by: null, decided_at: null, reason: null }),
   getProfile: vi.fn(), setOwner: vi.fn(), setPhoneLabel: vi.fn(), acceptReconciliationDifference: vi.fn(), getSinceLastLooked: vi.fn(), getExportHistory: vi.fn().mockResolvedValue({ items: [] }), createExport: vi.fn(), getExport: vi.fn(),
   getThreads: vi.fn().mockResolvedValue({
     counts: { threads: 3, reviewed: 1, partly_reviewed: 1, not_reviewed: 2 },
@@ -31,11 +32,23 @@ const share = vi.hoisted(() => ({
   }),
 }))
 vi.mock("../review-share", async (orig) => ({ ...(await orig<object>()), ...share }))
+vi.mock("@/features/cases/hooks/use-cases", () => ({ useCase: () => ({ data: { user_role: "editor" } }) }))
+vi.mock("../review/readings.api", () => ({ readingsAPI: { progress: vi.fn().mockResolvedValue({ phones: [{ extraction_id: "e1", phone: "C2", state: "waiting", records_total: 0, records_done: 0, seconds_left: null }] }) } }))
 
 import PhoneSummaryPage from "./PhoneSummaryPage"
 
 const label = (name: string, owner = false) => ({ identity_key: `phone:${name}`, name, name_basis: "contact_on_this_phone" as const, identifier: null, is_owner: owner, owner_basis: null, case_names: [] })
 const conv = "/cases/case-1/phones/e1/records/conversations"
+
+const setup = (over: object = {}) => ({
+  extraction_id: "e1",
+  region: { region: "US", name: "United States", basis: "assumed_default", assumed: true, numbers: 7, unread: 2, words: "7 numbers were read assuming United States", decision: null, undo_to: null },
+  zone: { zone: null, name: null, basis: "not_in_report", report_zone: null, examiner_zone: "Africa/Abidjan", decided: null, decision: null, undo_to: null },
+  offsetless: { times: 22, applied: 0, zone: null, name: null, decision: null, undo_to: null },
+  clock: { periods: [] },
+  regions: [{ code: "MX", name: "Mexico" }, { code: "US", name: "United States" }],
+  ...over,
+})
 
 function profile(over: Partial<Profile> = {}): Profile {
   return {
@@ -235,5 +248,72 @@ describe("Phone summary", () => {
     expect(await within(region).findByRole("link", { name: "Thread a" })).toHaveAttribute("href", `${conv}?thread=a&at=ev-1`)
     expect(within(region).queryByRole("link", { name: "Thread b" })).toBeNull()
     expect(within(region).getByText(/Bea Synthetic stopped at/)).toBeInTheDocument()
+  })
+
+  describe("the Needs a decision controls", () => {
+    const open = async () => {
+      api.getProfile.mockResolvedValue(profile())
+      api.getSinceLastLooked.mockResolvedValue({ since: "x", counts: {}, words: [] })
+      render(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <TooltipProvider>
+            <MemoryRouter initialEntries={["/cases/case-1/phones/e1"]}>
+              <Routes>
+                <Route path="/cases/:id/phones/:extraction" element={<PhoneSummaryPage />} />
+              </Routes>
+            </MemoryRouter>
+          </TooltipProvider>
+        </QueryClientProvider>,
+      )
+      return within(await screen.findByLabelText("Phone settings"))
+    }
+
+    it("states an assumed country and the true counts before saving, and needs a reason", async () => {
+      api.getPhoneSetup.mockResolvedValue(setup())
+      api.describeSetup.mockResolvedValue({ words: "7 numbers on this phone have no country code. Read in Mexico, 5 of them would change." })
+      api.savePhoneSetting.mockResolvedValue({ decision_id: "d1" })
+      const box = await open()
+      expect(box.getByText(/7 numbers were read assuming United States\. This country is assumed, not known\./)).toBeInTheDocument()
+      expect(box.getByText(/not evidence of the phone/)).toBeInTheDocument()
+      fireEvent.click(within(box.getByText(/Default country:/).closest("div")!).getByRole("button", { name: "Change" }))
+      const form = within(await box.findByRole("form", { name: "Default country" }))
+      const save = form.getByRole("button", { name: "Save and read again" })
+      expect(save).toBeDisabled()
+      fireEvent.change(form.getByRole("combobox", { name: "Default country" }), { target: { value: "MX" } })
+      expect(await form.findByText(/5 of them would change/)).toBeInTheDocument()
+      expect(save).toBeDisabled() // the consequence is shown, but no reason yet
+      fireEvent.change(form.getByLabelText("Reason, in your own words"), { target: { value: "a Mexican phone" } })
+      fireEvent.click(save)
+      await waitFor(() => expect(api.savePhoneSetting).toHaveBeenCalledWith("case-1", "e1", "region", "MX", "a Mexican phone"))
+      expect(await box.findByText(/Waiting to read this phone again/)).toBeInTheDocument()
+    })
+
+    it("Undo goes back to what held before the decision and keeps the reason on record", async () => {
+      api.savePhoneSetting.mockClear()
+      api.getPhoneSetup.mockResolvedValue(setup({
+        region: { region: "MX", name: "Mexico", basis: "decided", assumed: false, numbers: 7, unread: 0, words: "7 numbers were read assuming Mexico (a person's decision on this phone)", decision: { id: "d1", by: "A Reviewer", at: "2026-11-04T10:00:00Z", reason: "a Mexican phone" }, undo_to: null },
+      }))
+      api.savePhoneSetting.mockResolvedValue({ decision_id: "d2" })
+      const box = await open()
+      expect(box.getByText(/Set by A Reviewer on 2026-11-04: a Mexican phone\./)).toBeInTheDocument()
+      fireEvent.click(box.getByRole("button", { name: "Undo" }))
+      await waitFor(() => expect(api.savePhoneSetting).toHaveBeenCalledWith("case-1", "e1", "region", null, "Undo of: a Mexican phone"))
+    })
+
+    it("a clock offset says which way times move and links outside services to Case settings", async () => {
+      api.getPhoneSetup.mockResolvedValue(setup())
+      api.describeSetup.mockResolvedValue({ words: "3 of this phone's 9 times would move 2 minutes earlier." })
+      api.saveClockOffset.mockResolvedValue({ decision_id: "d3" })
+      const box = await open()
+      fireEvent.click(box.getByRole("button", { name: "Add" }))
+      const form = within(await box.findByRole("form", { name: "Clock offset" }))
+      fireEvent.change(form.getByLabelText("Minutes"), { target: { value: "2" } })
+      expect(await form.findByText(/would move 2 minutes earlier/)).toBeInTheDocument()
+      expect(api.describeSetup).toHaveBeenLastCalledWith("case-1", "e1", { kind: "clock_offset", offset_seconds: -120, start: null, end: null })
+      fireEvent.change(form.getByLabelText("Reason, in your own words"), { target: { value: "ran fast" } })
+      fireEvent.click(form.getByRole("button", { name: "Save and read again" }))
+      await waitFor(() => expect(api.saveClockOffset).toHaveBeenCalledWith("case-1", "e1", -120, null, null, "ran fast"))
+      expect(box.getByRole("link", { name: "Open in Case settings" })).toHaveAttribute("href", "/cases/case-1/settings#phones")
+    })
   })
 })

@@ -35,6 +35,7 @@ import type {
 import { useCase, useUpdateCase } from "../hooks/use-cases"
 import { AddressLookupSetting } from "./AddressLookupSetting"
 import { CaseCostsSection } from "./CaseCostsSection"
+import { CasePhonesSection } from "./CasePhonesSection"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { MediaBlurSetting } from "./MediaBlurSetting"
 
@@ -366,6 +367,7 @@ export function CaseSettingsPage() {
         <AddressLookupSetting caseData={caseData} />
         {canSeeCosts && <CaseCostsSection caseId={caseData.id} caseTitle={caseData.title} />}
         <MediaBlurSetting caseId={caseData.id} />
+        <CasePhonesSection caseId={caseData.id} isSuperAdmin={role === "super_admin"} />
       </div>
     </div>
   )

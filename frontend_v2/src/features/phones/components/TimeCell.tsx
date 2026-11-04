@@ -39,6 +39,7 @@ export function TimeCell(props: TimeCellProps) {
           }}
         >
           {props.time.row}
+          {props.time.zone_decided && <span className="ml-1 italic">zone by decision</span>}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-[28rem] text-xs" aria-label="Original time value">

@@ -6,7 +6,7 @@ import type { RecordDetail } from "../schemas"
 export interface TimeCellProps {
   caseId: string
   recordUid: string
-  time: { instant: string | null; row: string; full: string; offset_present: boolean; time_field?: string | null }
+  time: { instant: string | null; row: string; full: string; offset_present: boolean; time_field?: string | null; zone_decided?: boolean }
   zone: string
   zoneBasis?: string
   modelType?: string
@@ -16,7 +16,7 @@ export function originalLines(detail: RecordDetail | null, props: TimeCellProps)
   const t =
     detail?.times.find((x) => x.record_uid === props.recordUid && (!props.time.time_field || x.field_path === props.time.time_field)) ??
     detail?.times.find((x) => x.record_uid === props.recordUid)
-  const shown = props.time.instant ? formatFull(props.time.instant, props.zone) : props.time.full
+  const shown = props.time.instant && !props.time.zone_decided ? formatFull(props.time.instant, props.zone) : props.time.full
   const lines = [{ label: "Shown as", value: shown }]
   if (!t) {
     lines.push({ label: "In the report", value: detail ? "This record has no time value." : "Loading" })
@@ -25,7 +25,7 @@ export function originalLines(detail: RecordDetail | null, props: TimeCellProps)
   lines.push({ label: "In the report", value: t.original_text })
   lines.push({
     label: "Offset stored",
-    value: t.offset_present ? offsetWords(t.original_text) : "No offset in the report. Loupe has not assumed one.",
+    value: t.offset_present ? offsetWords(t.original_text) : props.time.zone_decided ? "No offset in the report. This moment comes from a person's zone decision." : "No offset in the report. Loupe has not assumed one.",
   })
   lines.push({ label: "Field", value: `${t.field_path} on ${detail?.model_type ?? props.modelType ?? "this record"}` })
   lines.push({ label: "Zone used", value: `${zoneName(props.zone)}, ${props.zone}${props.zoneBasis ? `: ${zoneBasisWords(props.zoneBasis)}` : ""}` })
@@ -41,6 +41,8 @@ function offsetWords(original: string): string {
 
 export function zoneBasisWords(basis: string): string {
   switch (basis) {
+    case "decided":
+      return "a person's decision on this phone"
     case "device_metadata":
       return "the phone's time zone as stated in the report"
     case "decision":

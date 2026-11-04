@@ -10,9 +10,11 @@ import { ImageSearch } from "./ImageSearch"
 import { MachineTextPrompt } from "./MachineTextPrompt"
 import { useObjectUrl } from "./use-object-url"
 import { EVERY_PHONE, mediaFilter, mediaIndexQuery, mediaPhoneIndexQuery, mediaWindowQuery, NONE } from "./media-queries"
-import { BLUR_KEY, THUMB_KEY, THUMB_SIZES, blurFor, copyText, dayStart, fileListText, saveBlob, sizeWords, storedThumbSize, useArrowKeys, type ThumbSize } from "./media-tools"
-import { acceptDerivedText, checkMediaDownload, confirmDerivedText, correctDerivedText, downloadMediaOriginals, getDerivedTexts, getMediaDetail, getMediaFacets, getPhones, getSettings, getTranslations, requestDerivedText, translateDerivedText, type DerivedText, type MediaDownloadFacts, type MediaFilter, type MediaItem } from "../api"
+import { THUMB_KEY, THUMB_SIZES, copyText, dayStart, fileListText, saveBlob, sizeWords, storedThumbSize, useArrowKeys, type ThumbSize } from "./media-tools"
+import { acceptDerivedText, checkMediaDownload, confirmDerivedText, correctDerivedText, downloadMediaOriginals, getDerivedTexts, getMediaDetail, getMediaFacets, getPhones, getTranslations, requestDerivedText, translateDerivedText, type DerivedText, type MediaDownloadFacts, type MediaFilter, type MediaItem } from "../api"
 import { noTimeWords } from "./no-time-words"
+import { useMediaBlur } from "./use-media-blur"
+import { SignificantNote } from "../ui/SignificantNote"
 
 const n = (v: number) => v.toLocaleString("en-US")
 
@@ -476,9 +478,21 @@ export default function MediaPage() {
   const [plan, setPlan] = useState<MediaDownloadFacts | null>(null)
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState<string | null>(null)
-  const settings = useQuery({ queryKey: ["phone-settings", caseId], queryFn: () => getSettings(caseId), enabled: !!caseId })
-  const [ownBlur, setOwnBlur] = useState(() => localStorage.getItem(BLUR_KEY))
-  const blur = blurFor(ownBlur, settings.data?.media_blur?.default_on)
+  const blur = useMediaBlur(caseId)
+  const [revealed, setRevealed] = useState<ReadonlySet<string>>(new Set())
+  const [revealedPhones, setRevealedPhones] = useState<ReadonlySet<string>>(new Set())
+  // an opened picture stays unblurred (03 section 8.3: blurred until opened); leaving the screen blurs them again
+  useEffect(() => {
+    if (open) setRevealed((r) => (r.has(open) ? r : new Set(r).add(open)))
+  }, [open])
+  const blurred = (it: MediaItem) => blur.on && !revealedPhones.has(it.extraction_id) && !revealed.has(it.file_uid)
+  const significant = params.get("significant") === "1"
+  const setSignificant = (on: boolean) => setFilter(() => setParams((p) => {
+    const next = new URLSearchParams(p)
+    if (on) next.set("significant", "1")
+    else next.delete("significant")
+    return next
+  }, { replace: true }))
   const from = dayStart(fromDay)
   const to = dayStart(toDay, 1)
   // the phone in the address, every phone in the case, or another phone of the case
@@ -486,8 +500,9 @@ export default function MediaPage() {
   const filter: MediaFilter = mediaFilter(caseId, onPhone, thread, category, state, {
     ...(app ? { apps: [app] } : {}), ...(person ? { participants: [person] } : {}),
     ...(from ? { from_instant: from } : {}), ...(to ? { to_instant: to } : {}),
+    ...(significant ? { significant_only: true } : {}),
   })
-  const filtered = !!(category || state || thread || app || person || from || to)
+  const filtered = !!(category || state || thread || app || person || from || to || significant)
   const scope = mediaFilter(caseId, onPhone, thread, "", "")
   const facets = useQuery({ queryKey: ["phone-media-facets", scope], queryFn: () => getMediaFacets(scope), enabled: !!caseId })
   const casePhones = useQuery({ queryKey: ["phones", caseId], queryFn: () => getPhones(caseId), enabled: !!caseId })
@@ -495,6 +510,7 @@ export default function MediaPage() {
   const all = useQuery({ ...mediaPhoneIndexQuery(caseId, onPhone), enabled: !!caseId })
   const pages = useInfiniteQuery({ ...mediaWindowQuery(filter), enabled: !!caseId })
   const items = pages.data?.pages.flatMap((p) => p.items) ?? []
+  const shownPhones = [...new Map(items.map((i) => [i.extraction_id, { id: i.extraction_id, label: i.phone_label }])).values()]
   const sentinel = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = sentinel.current
@@ -568,6 +584,12 @@ export default function MediaPage() {
             {idx.data.outside_dates_no_time ? ` ${n(idx.data.outside_dates_no_time)} more have no time, so the dates leave them out.` : ""}
           </p>
         )}
+        <SignificantNote
+          caseId={caseId}
+          on={significant}
+          onChange={setSignificant}
+          hiddenWords={significant && idx.data && all.data ? `${n(Math.max(0, all.data.total - total))} of ${n(all.data.total)} files are hidden.` : null}
+        />
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <label className="flex items-center gap-1">Phones
             <select value={phone} onChange={(e) => setFilter(() => { setPhone(e.target.value); setApp(""); setPerson("") })} className="max-w-48 rounded border bg-background px-1 py-0.5">
@@ -613,10 +635,17 @@ export default function MediaPage() {
             </select>
           </label>
           <label className="flex items-center gap-1">
-            <input type="checkbox" checked={blur} onChange={(e) => { const v = e.target.checked ? "on" : "off"; setOwnBlur(v); localStorage.setItem(BLUR_KEY, v) }} />
+            <input type="checkbox" checked={blur.on} onChange={(e) => blur.choose(e.target.checked)} />
             Blur pictures until opened
           </label>
-          {settings.data?.media_blur && <span className="text-muted-foreground">Case default: {settings.data.media_blur.default_on ? "on" : "off"}. {settings.data.media_blur.words}</span>}
+          {blur.caseDefault && <span className="text-muted-foreground">Case default: {blur.caseDefault.default_on ? "on" : "off"}. {blur.caseDefault.words}</span>}
+          {blur.on && shownPhones.map((p) => (
+            <button key={p.id} type="button" className="underline underline-offset-2" aria-pressed={revealedPhones.has(p.id)}
+              onClick={() => setRevealedPhones((r) => { const next = new Set(r); if (!next.delete(p.id)) next.add(p.id); return next })}>
+              {revealedPhones.has(p.id) ? `Blur ${p.label}'s pictures again` : `Show ${p.label}'s pictures`}
+            </button>
+          ))}
+          {blur.error && <span role="alert">{blur.error}</span>}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs" aria-label="Files to copy or download">
           <span>{selected.size ? `${n(selected.size)} chosen.` : "Choose files with their boxes, or act on every file the filter shows."}</span>
@@ -646,14 +675,14 @@ export default function MediaPage() {
         {downloadError && <p role="alert" className="text-xs">{downloadError}</p>}
         {pages.isError && <p role="alert" className="text-sm">The files could not be loaded.</p>}
         <BatchReading caseId={caseId} filter={filter} scopeWords={[category && `${category === NONE ? "uncategorised" : category} files`, state && `${state === NONE ? "unchecked" : state} files`].filter(Boolean).join(", ") || (phone === EVERY_PHONE ? "every phone in the case" : "this phone")} />
-        <ImageSearch caseId={caseId} blur={blur} onOpen={setOpen} />
+        <ImageSearch caseId={caseId} blur={blur.on} onOpen={setOpen} />
         <ul aria-label="Files" className={`grid ${THUMB_SIZES[size].grid} gap-2`}>
           {items.map((it) => (
             <li key={it.file_uid} className="relative">
               <input type="checkbox" aria-label={`Choose ${it.filename}`} checked={selected.has(it.file_uid)} onChange={() => toggle(it.file_uid)}
                 className="absolute left-2 top-2 z-10" />
               <button type="button" onClick={() => setOpen(it.file_uid)} className="flex w-full flex-col gap-1 rounded border p-1 text-left text-[11px] hover:bg-muted/40">
-                <Thumb caseId={caseId} item={it} blur={blur && open !== it.file_uid} height={THUMB_SIZES[size].height} />
+                <Thumb caseId={caseId} item={it} blur={blurred(it)} height={THUMB_SIZES[size].height} />
                 <span className="truncate font-medium">{it.filename}</span>
                 <span className="truncate text-muted-foreground">{it.phone_label} · {it.taken_or_sent.full}</span>
                 <span className="truncate">{it.verification_words}{it.message_count ? ` · ${n(it.message_count)} ${it.message_count === 1 ? "message" : "messages"}` : ""}</span>

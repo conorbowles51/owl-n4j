@@ -12,6 +12,7 @@ import { fmt } from "../ui/count-sentence"
 import { NamePhone } from "./NamePhone"
 import { SetOwner } from "./SetOwner"
 import { HeldDifference } from "./HeldDifference"
+import { PhoneSetup } from "./PhoneSetup"
 import { ExportHistory, ExportProfile, SinceYouLastLooked } from "./SummaryExtras"
 import { flagKindWords, flagSubjectWords, type FlagSubject } from "@/features/admin/phone-registry"
 import type { Profile } from "../schemas"
@@ -103,7 +104,7 @@ export function PhoneSummaryPage() {
                     {n.words}{" "}
                     {n.link && (
                       <Link className="underline underline-offset-2" to={n.link}>
-                        Open
+                        {n.kind === "zone" || n.kind === "offsetless" ? "Decide" : "Open"}
                       </Link>
                     )}
                   </>
@@ -112,6 +113,7 @@ export function PhoneSummaryPage() {
             ))}
           </ul>
         )}
+        <PhoneSetup caseId={caseId} extraction={extraction} />
       </Section>
 
       <div className="grid gap-3 md:grid-cols-2">

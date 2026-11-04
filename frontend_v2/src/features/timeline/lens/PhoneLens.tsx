@@ -5,7 +5,8 @@ import { ExportDialog } from "@/features/conversations/ExportDialog"
 import { Lanes, type LaneRow } from "@/features/pattern/components/Lanes"
 import { StreamList } from "@/features/phones/components/StreamList"
 import { useStream } from "@/features/phones/hooks/use-stream"
-import { DEFAULT_LENS_KINDS, LENS_KINDS, LENS_SOURCE, lensBuckets, lensLocateRecord, type LaneBy, type LensFilter, type LensKind } from "./lens-api"
+import { DEFAULT_LENS_KINDS, LENS_KINDS, LENS_SOURCE, lensBuckets, lensIndex, lensLocateRecord, type LaneBy, type LensFilter, type LensKind } from "./lens-api"
+import { SignificantNote } from "@/features/phones/ui/SignificantNote"
 
 const n = (x: number) => x.toLocaleString("en-US")
 const KIND_LABELS: Record<LensKind, string> = {
@@ -123,11 +124,19 @@ export function LensList({ caseId, caseName, filter, filterWords }: { caseId: st
  * line, the whole result under filters (no "Load more"), and one Lanes view to compare phones, people or kinds.
  * The stream and the lanes list rows through the one phone list, so copy gives the same text in both (T-4).
  */
+const hiddenEntries = (shown: number, all: number) => `${n(Math.max(0, all - shown))} of ${n(all)} entries are hidden.`
+
 export function PhoneLens({ caseId, caseName, note, focusRecord }: { caseId: string; caseName: string; note?: string | null; focusRecord?: string | null }) {
   const [kinds, setKinds] = useState<LensKind[]>(DEFAULT_LENS_KINDS)
   const [laneBy, setLaneBy] = useState<LaneBy>("phone")
   const [mode, setMode] = useState<"stream" | "lanes">("stream")
-  const filter = useMemo<LensFilter>(() => ({ case_id: caseId, lens_kinds: kinds, lane_by: laneBy }), [caseId, kinds, laneBy])
+  const [significant, setSignificant] = useState(false)
+  const filter = useMemo<LensFilter>(() => ({ case_id: caseId, lens_kinds: kinds, lane_by: laneBy, ...(significant ? { significant_only: true } : {}) }), [caseId, kinds, laneBy, significant])
+  const everything = useQuery({
+    queryKey: ["phone-lens-all", caseId, kinds, laneBy],
+    queryFn: () => lensIndex({ case_id: caseId, lens_kinds: kinds, lane_by: laneBy }),
+    enabled: significant,
+  })
   const stream = useStream(filter, { source: LENS_SOURCE })
   const idx = stream.index as (typeof stream.index & { total?: number; hidden?: { count: number; words: string | null } }) | null
   const hiddenShown = kinds.includes("device") || kinds.includes("sensor")
@@ -172,6 +181,12 @@ export function PhoneLens({ caseId, caseName, note, focusRecord }: { caseId: str
           </select>
         </label>
       </div>
+      <SignificantNote
+        caseId={caseId}
+        on={significant}
+        onChange={setSignificant}
+        hiddenWords={significant && idx && everything.data ? hiddenEntries((idx.total ?? idx.counts.events ?? 0), everything.data.total ?? everything.data.counts.events ?? 0) : null}
+      />
       {note && <p role="note" className="text-xs">{note}</p>}
       {focusNote && <p role="status" className="text-xs">{focusNote}</p>}
       {idx?.hidden && (idx.hidden.count > 0 || hiddenShown) && (

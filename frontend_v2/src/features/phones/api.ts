@@ -44,6 +44,8 @@ export interface StreamFilter {
   sort?: "oldest_first" | "newest_first"
   /** A frozen phone selection's id: only its records (a saved link to a whole result, 07 6.1). */
   selection?: string
+  /** The Significant layer's toggle (07 XF-11): only events with an identity the case's manifest covers. */
+  significant_only?: boolean
 }
 
 /** A window asked for under a snapshot the server no longer holds (3.1 rule 3). */
@@ -150,10 +152,83 @@ export async function revealValue(caseId: string, recordUid: string, fieldPath: 
   })
 }
 
+export interface PhoneSettings {
+  case_id: string
+  time_zone: string | null
+  effective: { name: string; basis: string; note: string | null }
+  updated_at: string | null
+  updated_by: string | null
+  media_blur?: MediaBlurDefault
+  /** This person's own choice, which outranks the case default; null when they made none. */
+  own_media_blur?: boolean | null
+}
+
 export async function getSettings(caseId: string) {
-  return fetchAPI<{ case_id: string; time_zone: string | null; effective: { name: string; basis: string; note: string | null }; updated_at: string | null; updated_by: string | null; media_blur?: MediaBlurDefault }>(
-    `/api/phones/settings?case_id=${encodeURIComponent(caseId)}`,
-  )
+  return fetchAPI<PhoneSettings>(`/api/phones/settings?case_id=${encodeURIComponent(caseId)}`)
+}
+
+/** A person's own choice in this case; null goes back to the case default. */
+export async function putOwnBlur(caseId: string, blur: boolean | null) {
+  return fetchAPI<PhoneSettings>(`/api/phones/settings/my-blur`, { method: "PUT", body: { case_id: caseId, blur } })
+}
+
+export interface DecisionNote { id: string; by: string | null; at: string | null; reason: string | null }
+
+/** The Needs a decision box's data (03 section 7.3): each setting with its basis and true counts. */
+export interface PhoneSetup {
+  extraction_id: string
+  region: { region: string; name: string; basis: string; assumed: boolean; numbers: number; unread: number; words: string; decision: DecisionNote | null; undo_to: string | null }
+  zone: { zone: string | null; name: string | null; basis: string | null; report_zone: string | null; examiner_zone: string | null; decided: string | null; decision: DecisionNote | null; undo_to: string | null }
+  offsetless: { times: number; applied: number; zone: string | null; name: string | null; decision: DecisionNote | null; undo_to: string | null }
+  clock: { periods: { offset_seconds: number; start: string | null; end: string | null; times: number; decision: DecisionNote }[] }
+  regions: { code: string; name: string }[]
+}
+
+export async function getPhoneSetup(caseId: string, extraction: string) {
+  return fetchAPI<PhoneSetup>(`/api/phones/${encodeURIComponent(extraction)}/setup?case_id=${encodeURIComponent(caseId)}`)
+}
+
+export type SetupKind = "region" | "device_zone" | "offsetless_zone" | "clock_offset"
+
+/** What a proposed setting would change, counted on this phone's rows; nothing is saved. */
+export async function describeSetup(caseId: string, extraction: string, body: { kind: SetupKind; value?: string; offset_seconds?: number; start?: string | null; end?: string | null }) {
+  return fetchAPI<{ words: string }>(`/api/phones/${encodeURIComponent(extraction)}/setup/describe`, { method: "POST", body: { case_id: caseId, ...body }, read: true })
+}
+
+const SETTING_PATH = { region: "default-region", device_zone: "device-zone", offsetless_zone: "offsetless-zone" } as const
+
+/** A decision on one setting; value null clears it. The phone is read again. */
+export async function savePhoneSetting(caseId: string, extraction: string, kind: keyof typeof SETTING_PATH, value: string | null, reason: string) {
+  return fetchAPI<{ decision_id: string }>(`/api/phones/${encodeURIComponent(extraction)}/${SETTING_PATH[kind]}`, {
+    method: "POST",
+    body: { case_id: caseId, value, reason },
+  })
+}
+
+/** A clock offset for a period; an offset of 0 for the same period ends it (02 section 10.1). */
+export async function saveClockOffset(caseId: string, extraction: string, offsetSeconds: number, start: string | null, end: string | null, reason: string) {
+  return fetchAPI<{ decision_id: string }>(`/api/phones/${encodeURIComponent(extraction)}/clock-offset`, {
+    method: "POST",
+    body: { case_id: caseId, offset_seconds: offsetSeconds, start, end, reason },
+  })
+}
+
+export interface ExternalProcessing { external_processing: boolean; decided_by: string | null; decided_at: string | null; reason: string | null }
+
+export async function getExternalProcessing(caseId: string, extraction: string) {
+  return fetchAPI<ExternalProcessing>(`/api/phones/${encodeURIComponent(extraction)}/external-processing?case_id=${encodeURIComponent(caseId)}`)
+}
+
+export async function setExternalProcessing(caseId: string, extraction: string, allow: boolean, reason: string) {
+  return fetchAPI<ExternalProcessing>(`/api/phones/${encodeURIComponent(extraction)}/external-processing`, {
+    method: "POST",
+    body: { case_id: caseId, allow, reason },
+  })
+}
+
+/** The Significant sentence on phone screens (07 XF-11), from the set the toggle narrows by. */
+export async function getSignificantSummary(caseId: string) {
+  return fetchAPI<{ case_id: string; significant: number; total: number; words: string }>(`/api/phones/significant?case_id=${encodeURIComponent(caseId)}`)
 }
 
 export async function putSettings(caseId: string, timeZone: string) {
@@ -485,6 +560,8 @@ export interface MediaFilter {
   /** The carrying message's time, as instants with an offset; files with no time fall outside a dated window. */
   from_instant?: string
   to_instant?: string
+  /** Files carried by messages with a significant identity (07 XF-11). */
+  significant_only?: boolean
 }
 export interface MediaIndex {
   total: number; no_time_count: number; no_message_count?: number; missing: number; by_category: Record<string, number>; verification: Record<string, number>
