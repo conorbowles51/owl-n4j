@@ -15,6 +15,7 @@ const graphMocks = vi.hoisted(() => ({
   rejectMergePair: vi.fn(),
   startScan: vi.fn(),
   removePair: vi.fn(),
+  summary: null as null | { total: number; belowThreshold: number; threshold: number; floor: number },
 }))
 
 vi.mock("../hooks/use-similar-entities", () => ({
@@ -33,6 +34,7 @@ vi.mock("../hooks/use-similar-entities", () => ({
         similarity: 0.91,
       },
     ],
+    summary: graphMocks.summary,
     error: null,
     startScan: graphMocks.startScan,
     cancel: vi.fn(),
@@ -99,6 +101,21 @@ describe("SimilarEntitiesView", () => {
     graphMocks.rejectMergePair.mockReset()
     graphMocks.startScan.mockReset()
     graphMocks.removePair.mockReset()
+    graphMocks.summary = null
+  })
+
+  it("states what the scan found against what is shown and what the threshold leaves unlisted", () => {
+    graphMocks.summary = { total: 1500, belowThreshold: 320, threshold: 0.7, floor: 0.5 }
+    render(<SimilarEntitiesView caseId="case-1" graphData={graphData} onRefresh={vi.fn()} />)
+    const line = screen.getByTestId("similar-scan-summary")
+    expect(line).toHaveTextContent("Showing 1 of 1,500 pairs found, most alike first.")
+    expect(line).toHaveTextContent("320 more pairs are 50% to under 70% alike: counted, not listed")
+  })
+
+  it("adds no summary line when everything found is shown", () => {
+    graphMocks.summary = { total: 1, belowThreshold: 0, threshold: 0.7, floor: 0.5 }
+    render(<SimilarEntitiesView caseId="case-1" graphData={graphData} onRefresh={vi.fn()} />)
+    expect(screen.queryByTestId("similar-scan-summary")).toBeNull()
   })
 
   it("removes a pair from the list once the server records it as not a duplicate", async () => {

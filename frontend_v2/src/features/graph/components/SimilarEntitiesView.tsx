@@ -35,6 +35,7 @@ export function SimilarEntitiesView({
     progress,
     currentType,
     results,
+    summary,
     error,
     startScan,
     cancel,
@@ -264,6 +265,14 @@ export function SimilarEntitiesView({
       {/* Results */}
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-2">
+          {summary && (summary.total > results.length || summary.belowThreshold > 0) && (
+            <p className="mb-2 text-xs text-muted-foreground" data-testid="similar-scan-summary">
+              {summary.total > results.length &&
+                `Showing ${results.length.toLocaleString("en-US")} of ${summary.total.toLocaleString("en-US")} pairs found, most alike first. `}
+              {summary.belowThreshold > 0 &&
+                `${summary.belowThreshold.toLocaleString("en-US")} more pairs are ${Math.round(summary.floor * 100)}% to under ${Math.round(summary.threshold * 100)}% alike: counted, not listed; lower the threshold to see them.`}
+            </p>
+          )}
           {results.length > 0 && (
             <div className="flex items-center justify-between mb-2">
               <Badge variant="amber">{results.length} pairs</Badge>

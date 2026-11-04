@@ -15,6 +15,11 @@ from sqlalchemy.orm import Session
 from services.neo4j.driver import driver, parse_json_field
 from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 
+# The lowest threshold the Similar entities screen offers (its slider runs 0.5 to 1). Pairs from here up to the
+# chosen threshold are counted in the scan's complete event as ``below_threshold``; names under half alike are not
+# a possible duplicate by definition.
+SCAN_FLOOR = 0.5
+
 logger = logging.getLogger(__name__)
 
 
@@ -673,6 +678,7 @@ class EntityService:
         comparisons_done = 0
         pairs_found = 0
         last_progress_update = 0
+        below_threshold = 0
 
         for type_index, type_name in enumerate(entity_types_list):
             entities = entities_by_type[type_name]
@@ -714,6 +720,10 @@ class EntityService:
 
                     similarity = SequenceMatcher(None, name1, name2).ratio()
 
+                    if SCAN_FLOOR <= similarity < name_similarity_threshold:
+                        # counted, never hidden: the screen states how many pairs sit between its slider's floor
+                        # and the chosen threshold, so lowering the threshold lists them
+                        below_threshold += 1
                     if similarity >= name_similarity_threshold:
                         pair = {
                             "entity1": {
@@ -805,6 +815,9 @@ class EntityService:
             "data": {
                 "total_pairs": len(similar_pairs),
                 "total_comparisons": comparisons_done,
+                "below_threshold": below_threshold,
+                "threshold": name_similarity_threshold,
+                "floor": SCAN_FLOOR,
                 "limited_results": similar_pairs[:max_results] if len(similar_pairs) > max_results else similar_pairs,
             }
         }

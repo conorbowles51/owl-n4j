@@ -524,7 +524,8 @@ export interface SimilarEntitiesStreamCallbacks {
     pairs_found: number
   }) => void
   onTypeComplete?: (data: { type: string; pairs: SimilarPair[] }) => void
-  onComplete?: (data: { total_pairs: number; total_comparisons: number; limited_results: unknown[] }) => void
+  onComplete?: (data: { total_pairs: number; total_comparisons: number; below_threshold?: number
+    floor?: number; threshold?: number; limited_results: unknown[] }) => void
   onError?: (error: string) => void
   onCancelled?: () => void
 }

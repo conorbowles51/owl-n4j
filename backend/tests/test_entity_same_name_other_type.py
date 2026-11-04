@@ -79,3 +79,19 @@ def test_the_scan_threshold_applies_and_names_without_letters_are_not_matched():
                 _entity('c', 'Улица 5', 'Location'), _entity('d', 'Офис 5', 'Organization')]
     assert same_name_other_type_pairs(entities, threshold=0.8) == []
     assert [(a['key'], b['key']) for a, b, _ in same_name_other_type_pairs(entities, threshold=0.7)] == [('a', 'b')]
+
+
+def test_the_streaming_scan_counts_the_pairs_between_the_floor_and_the_threshold():
+    """Neil 2026-11-04: no cutoff hides a match. Pairs under the chosen threshold are counted (from the screen's
+    0.5 floor) so the screen can say how many lowering the threshold would list; the old scan said nothing."""
+    entities = [_entity('a', 'Mark Hollis', 'Person'), _entity('b', 'Mark Hollins', 'Person'),
+                _entity('c', 'Marc Hollist', 'Person'), _entity('d', 'Zzyzx Qwerty', 'Person')]
+    with _graph(entities):
+        async def stream(threshold):
+            events = [e async for e in EntityService().find_similar_entities_streaming(
+                'case', name_similarity_threshold=threshold)]
+            return events[-1]['data']
+        strict, loose = asyncio.run(stream(0.99)), asyncio.run(stream(0.5))
+    assert strict['total_pairs'] == 0 and strict['floor'] == 0.5 and strict['threshold'] == 0.99
+    assert strict['below_threshold'] == loose['total_pairs'] == 3   # the three Hollis spellings; Zzyzx is under 0.5
+    assert loose['below_threshold'] == 0

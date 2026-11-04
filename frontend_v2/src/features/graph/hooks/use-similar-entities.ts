@@ -18,6 +18,8 @@ export function useSimilarEntities(caseId: string) {
   const [currentType, setCurrentType] = useState<string | null>(null)
   const [results, setResults] = useState<SimilarPair[]>([])
   const [error, setError] = useState<string | null>(null)
+  // what the scan found against what is shown: never a silent cut (Neil 2026-11-04: no cutoff hides a match)
+  const [summary, setSummary] = useState<{ total: number; belowThreshold: number; threshold: number; floor: number } | null>(null)
   const cancelRef = useRef<(() => void) | null>(null)
 
   const startScan = useCallback(
@@ -28,6 +30,7 @@ export function useSimilarEntities(caseId: string) {
     }) => {
       setIsScanning(true)
       setResults([])
+      setSummary(null)
       setError(null)
       setProgress(null)
 
@@ -44,6 +47,12 @@ export function useSimilarEntities(caseId: string) {
         onTypeComplete: () => {},
         onComplete: (data) => {
           const rawPairs = Array.isArray(data.limited_results) ? data.limited_results : []
+          setSummary({
+            total: data.total_pairs ?? rawPairs.length,
+            belowThreshold: data.below_threshold ?? 0,
+            threshold: data.threshold ?? options.similarityThreshold ?? 0,
+            floor: data.floor ?? 0.5,
+          })
           const mapped: SimilarPair[] = rawPairs.map((value) => {
             const p = value as Record<string, unknown>
             const e1 = p.entity1 as Record<string, unknown> | undefined
@@ -105,6 +114,7 @@ export function useSimilarEntities(caseId: string) {
     progress,
     currentType,
     results,
+    summary,
     error,
     startScan,
     cancel,
