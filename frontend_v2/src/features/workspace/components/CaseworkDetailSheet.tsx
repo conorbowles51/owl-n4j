@@ -3,6 +3,7 @@ import { TheoryKeywordLists } from "@/features/search/components/KeywordListsPag
 import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { PhoneLinkDetail } from "@/features/phones/PhoneLinkDetail"
+import { CollectedPhoneExport } from "@/features/phones/CollectedPhoneExport"
 import { ReplacedLinkNote } from "@/features/phones/ReplacedLinkNote"
 import { useReplacedLinks } from "@/features/phones/replaced-links"
 import { isPhoneLinkType, phoneLinkHref, phoneLinkSummary } from "@/features/phones/phone-links"
@@ -529,6 +530,9 @@ export function CaseworkDetailSheet({
                           </button>
                           {link.target_type === "phone_record" && (
                             <ReplacedLinkNote caseId={caseId} state={replaced[link.target_id]} />
+                          )}
+                          {link.target_type === "phone_selection" && (
+                            <CollectedPhoneExport caseId={caseId} source="collection" id={link.target_id} label="Export this collection" />
                           )}
                           </div>
                         )

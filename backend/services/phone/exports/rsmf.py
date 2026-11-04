@@ -107,6 +107,7 @@ def build(rows: list, *, title: str, contains: list, read_file=None) -> tuple[by
     events, files, missing = [], {}, 0
     attachments_total = 0
     times = []
+    used = {}
     for row in rows:
         thread = row.get("thread") or {}
         ckey = thread.get("thread_key") or "loose:%s:%s" % (row["phone"]["extraction_id"], row.get("app") or "")
@@ -123,7 +124,12 @@ def build(rows: list, *, title: str, contains: list, read_file=None) -> tuple[by
             if p and p not in conv_members[ckey]:
                 conv_members[ckey].append(p)
         flags = row.get("flags") or []
-        ev = {"id": row["record_uid"], "type": "message", "conversation": conv_of[ckey],
+        # a record printed at more than one event time (a Timeline lens entry per time value) keeps one id per event
+        eid = row["record_uid"]
+        used[eid] = used.get(eid, 0) + 1
+        if used[eid] > 1:
+            eid = "%s-%d" % (eid, used[eid])
+        ev = {"id": eid, "type": "message", "conversation": conv_of[ckey],
               "body": _call_body(row) if row.get("kind") == "call" else (row.get("body") or ""),
               "deleted": "Deleted" in flags}
         if sender:

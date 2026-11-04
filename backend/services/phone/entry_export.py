@@ -70,7 +70,21 @@ def gather(db, case_id, entry_id) -> dict:
         wanted.extend(str(r) for r in db.execute(text(
             "SELECT record_uid FROM pv_comm_event WHERE case_id = :c AND thread_key = ANY(:t) "
             "ORDER BY sort_instant NULLS LAST, event_uid, record_uid"), {"c": case, "t": threads}).scalars())
-    ordered = list(dict.fromkeys(wanted))
+    records, split = split_records(db, case, wanted)
+    for kind, n in split.items():
+        not_exported[kind] = not_exported.get(kind, 0) + n
+    return {"entry": entry, "records": records, "not_exported": not_exported, "replaced": replaced}
+
+
+
+def split_records(db, case, wanted) -> tuple:
+    """``(records, not_exported)``: the record uids of ``wanted`` (in order, each once) that are messages, calls or
+    other communications of the case's read views, and by kind the count of the others: records of a phone report
+    since replaced (``phone_record_replaced``) and records that are not a communication
+    (``phone_record_not_communication``). Reads only."""
+    not_exported: dict[str, int] = {}
+    case = uuid.UUID(str(case))
+    ordered = list(dict.fromkeys(str(w).lower() for w in wanted))
     found = set()
     if ordered:
         found = {str(r) for r in db.execute(text(
@@ -88,8 +102,7 @@ def gather(db, case_id, entry_id) -> dict:
             not_exported["phone_record_replaced"] = len(stale)
         if len(missing) > len(stale):
             not_exported["phone_record_not_communication"] = len(missing) - len(stale)
-    return {"entry": entry, "records": records, "not_exported": not_exported, "replaced": replaced}
-
+    return records, not_exported
 
 def sentence(g: dict) -> str | None:
     parts = []

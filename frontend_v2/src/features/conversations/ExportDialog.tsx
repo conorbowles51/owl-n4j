@@ -17,7 +17,8 @@ const rsmfMissing = (counts: Record<string, unknown>) =>
  */
 export function ExportDialog(props: {
   caseId: string; filter: StreamFilter; words: string; open: boolean; onOpenChange: (v: boolean) => void
-  /** "finding": the frozen phone records of a finding, theory or note (07 XF-7); `note` says what is not in it */
+  /** "finding", "collection", "dossier"...: the frozen phone records of that source (07 XF-7, 6.4 item 14); `note`
+   * says what of it is not in the export. "timeline_lens": `filter` is the Timeline phone lens filter. */
   source?: ExportSource; note?: string | null
 }) {
   const { caseId, filter, words, open, onOpenChange, source = "stream", note } = props
@@ -26,7 +27,7 @@ export function ExportDialog(props: {
   const [format, setFormat] = useState<"pdf" | "rsmf">("pdf")
   const noun = format === "rsmf" ? "RSMF file" : "PDF"
   const [machineSettled, setMachineSettled] = useState(false)
-  const facts = useQuery({ queryKey: ["export-facts", caseId, filter], queryFn: () => describeExport(caseId, filter), enabled: open, retry: false })
+  const facts = useQuery({ queryKey: ["export-facts", caseId, source, filter], queryFn: () => describeExport(caseId, filter, source), enabled: open, retry: false })
   const start = useMutation({
     mutationFn: () => createExport(caseId, filter, { title: title.trim() || words, words }, format, source),
     onSuccess: (r) => setExportId(r.export_id),
@@ -60,6 +61,7 @@ export function ExportDialog(props: {
               All {kinds}
               {words ? `, ${words}` : ""}, on {plural(f.phones, "phone", "phones")}, times in {f.zone}. {f.left_out}
             </p>
+            {f.hidden && <p>{f.hidden}</p>}
             {note && <p>{note}</p>}
             {f.unconfirmed > 0 ? (
               <p>

@@ -8,8 +8,10 @@ under a temporary name and moved into place only when complete).
 Built: the PDF and the RSMF file of a stream (a conversation, a person or a pair, any Conversations filter), and of a
 finding, theory or note (source ``finding``: the frozen selection of its phone records, services.phone.entry_export),
 and of an analysis result, a statement check or an incident window (the frozen selection of their records,
-services.phone.source_export). The other sources (timeline lens, collection, dossier) answer that they are not built
-yet rather than producing something partial.
+services.phone.source_export), and of a collection (a collected selection) or a dossier's phone records (the same
+module), and of the Timeline phone lens (source ``timeline_lens``: every entry the lens shows for its filter, the
+messages and calls with the other records' event times, day by day under the lens's own day headers). All eight
+sources of 03 section 12.2 are built.
 """
 from __future__ import annotations
 
@@ -31,7 +33,8 @@ from services.phone.filters import StreamFilter, snapshot
 
 log = logging.getLogger(__name__)
 BUILT_FORMATS = ("pdf", "rsmf")
-BUILT_SOURCES = ("stream", "finding", "analysis_result", "statement_check", "incident_window")
+BUILT_SOURCES = ("stream", "timeline_lens", "collection", "finding", "dossier", "statement_check", "analysis_result",
+                 "incident_window")
 # a finding, theory or note is exported as the frozen selection of its phone records (services.phone.entry_export)
 STALE_RENDER_SECONDS = 2 * 3600  # a render claimed this long ago by a worker that died is queued again
 MAX_ATTEMPTS = 2  # a render that stopped this many times is failed with a reason, never claimed forever
@@ -56,6 +59,47 @@ def export_dir() -> Path:
 def _filter(case_id, body: dict) -> StreamFilter:
     f = StreamFilter.model_validate({**(body or {}), "case_id": str(case_id)})
     return f
+
+
+def _lens_filter(case_id, body: dict):
+    from services.phone.timeline_lens import TimelineLensFilter
+    return TimelineLensFilter.model_validate({**(body or {}), "case_id": str(case_id)})
+
+
+def describe_lens(conn, case_id, filter_body: dict) -> dict:
+    """``describe`` for the Timeline phone lens: the lens total (communications and the other records' event times,
+    as the lens counts them), by kind, with the phones, the zone and the readings not yet confirmed."""
+    from services.phone import timeline_lens as TL
+    f = _lens_filter(case_id, filter_body)
+    sf, other = TL._parts(conn, f)
+    comm = {"total": 0, "messages": 0, "calls": 0, "unconfirmed": 0, "collapsed_copies": 0, "limits": []}
+    phones = set()
+    if sf is not None:
+        comm = describe(conn, case_id, sf.model_dump(mode="json"))
+        q, _ = streams._query(conn, sf)
+        phones |= {str(p) for (p,) in conn.execute(text(
+            "WITH m AS (%s) SELECT DISTINCT extraction_id FROM m WHERE %s" % (q.matched_sql(), streams._shown(sf))),
+            q.params)}
+    others, other_unconfirmed = 0, 0
+    if other is not None:
+        r = conn.execute(text(
+            "SELECT count(*) AS n, count(*) FILTER (WHERE t.interpretation_level = 'applied_unconfirmed') AS u, "
+            "array_agg(DISTINCT t.extraction_id::text) AS p FROM pv_timeline_entry t WHERE %s" % other.where),
+            other.p).one()
+        others, other_unconfirmed = int(r.n), int(r.u)
+        phones |= set(r.p or []) - {None}
+    zone = streams.resolve_zone(conn, f)
+    total = comm["total"] + others
+    return {"case_id": str(case_id), "total": total, "messages": comm["messages"], "calls": comm["calls"],
+            "other": total - comm["messages"] - comm["calls"], "unconfirmed": comm["unconfirmed"] + other_unconfirmed,
+            "phones": len(phones), "collapsed_copies": comm["collapsed_copies"], "zone": zone["display_name"],
+            "left_out": LEFT_OUT, "limits": comm["limits"], "snapshot": snapshot(conn, f),
+            "hidden": TL.hidden_counts(conn, f)["words"]}
+
+
+def describe_source(conn, case_id, source: str, filter_body: dict) -> dict:
+    return describe_lens(conn, case_id, filter_body) if source == "timeline_lens" else \
+        describe(conn, case_id, filter_body)
 
 
 def describe(conn, case_id, filter_body: dict) -> dict:
@@ -116,7 +160,7 @@ def printable_translation(t):
     return t
 
 
-def describe_machine_text(conn, case_id, filter_body: dict) -> dict:
+def describe_machine_text(conn, case_id, filter_body: dict, lens: bool = False) -> dict:
     """Machine-generated texts on the attachments of the rows an export would print, for the prompt "This transcript
     is machine-generated. Listen and confirm, or keep it marked" (07 5 Media). Counts are true; the list is capped at
     ``PROMPT_ITEMS`` and says so."""
@@ -125,7 +169,13 @@ def describe_machine_text(conn, case_id, filter_body: dict) -> dict:
                              "state = 'done')"), {"c": str(case_id)}).scalar():
         return none
     from services.phone import derive
-    f = _filter(case_id, filter_body)
+    if lens:
+        from services.phone import timeline_lens as TL
+        f = TL._stream_filter(_lens_filter(case_id, filter_body))
+        if f is None:  # no message or call in the lens: no attachment either
+            return none
+    else:
+        f = _filter(case_id, filter_body)
     q, _ = streams._query(conn, f)
     p = dict(q.params, dc=str(case_id))
     rows = conn.execute(text(
@@ -159,8 +209,8 @@ def create(conn, *, case_id, user_id, fmt, source, filter_body, options) -> dict
         raise ExportError("An export is a PDF or an RSMF file.")
     if source not in BUILT_SOURCES:
         raise ExportError("Exporting a %s is not built yet." % source.replace("_", " "))
-    f = _filter(case_id, filter_body)
-    if source != "stream" and not f.selection:
+    f = _lens_filter(case_id, filter_body) if source == "timeline_lens" else _filter(case_id, filter_body)
+    if source not in ("stream", "timeline_lens") and not f.selection:
         raise ExportError("A %s is exported through the selection of its phone records." % source.replace("_", " "))
     export_id = uuid.uuid4()
     conn.execute(text(
@@ -291,27 +341,48 @@ def _rows(conn, f):
     return idx, days
 
 
+def _lens_rows(conn, f):
+    """``_rows`` for the Timeline phone lens: its own index, day headers drawn by the same formatter."""
+    from services.phone import timeline_lens as TL
+    idx = TL.index(conn, f)
+    days = [(d["day"], "%s, %s" % (d["header"], d["zone_label"]), d["count"]) for d in idx["items"]]
+    if idx["no_time_count"]:
+        pos = len(days) if idx["no_time_position"] == "last" else 0
+        days.insert(pos, (None, "No time recorded", idx["no_time_count"]))
+    return idx, days
+
+
 def draw(engine, export_id, claimed=None) -> dict:
     from services.phone.exports import pdf
     from services.phone.readings import phone_labels
     with engine.connect() as conn:
         e = conn.execute(text(
-            "SELECT e.export_id, e.case_id, e.format, e.filter, e.options, e.created_by, c.title AS case_title, "
-            "u.name AS who "
+            "SELECT e.export_id, e.case_id, e.format, e.source, e.filter, e.options, e.created_by, "
+            "c.title AS case_title, u.name AS who "
             "FROM phone_exports e JOIN cases c ON c.id = e.case_id LEFT JOIN users u ON u.id = e.created_by "
             "WHERE e.export_id = :i"), {"i": export_id}).one()
-        f = StreamFilter.model_validate(e.filter)
+        lens = e.source == "timeline_lens"
         options = e.options or {}
-        facts = describe(conn, e.case_id, e.filter)
-        idx, days = _rows(conn, f)
+        if lens:
+            from services.phone import timeline_lens as TL
+            f = _lens_filter(e.case_id, e.filter)
+            facts = describe_lens(conn, e.case_id, e.filter)
+            idx, days = _lens_rows(conn, f)
+            window, window_max = TL.window, TL.WINDOW_MAX
+        else:
+            f = StreamFilter.model_validate(e.filter)
+            facts = describe(conn, e.case_id, e.filter)
+            idx, days = _rows(conn, f)
+            window, window_max = streams.window_comm_events, streams.WINDOW_MAX
         snap = idx["snapshot"]
         total = sum(n for _, _, n in days)
+        if lens and facts["total"] != total:  # the stated total is the lens total (E-4); never deliver a mismatch
+            raise RuntimeError("lens export stated total %d differs from the lens total %d" % (facts["total"], total))
         out_days, seen, people = [], 0, {}
         for day, header, n in days:
             rows = []
-            for off in range(0, n, streams.WINDOW_MAX):
-                w = streams.window_comm_events(conn, f, snapshot_token=snap, day=day, offset=off,
-                                               limit=streams.WINDOW_MAX)
+            for off in range(0, n, window_max):
+                w = window(conn, f, snapshot_token=snap, day=day, offset=off, limit=window_max)
                 rows.extend(w["items"])
             out_days.append((header, rows))
             seen += len(rows)
@@ -348,7 +419,7 @@ def draw(engine, export_id, claimed=None) -> dict:
         # the review coverage of the threads this export prints (07 J-13 step 6, CO-20): the marks' own counts
         from services.phone import review_share
         exported = {(r.get("thread") or {}).get("thread_key") or (streams.NO_THREAD_PREFIX + r["phone"]["extraction_id"])
-                    for _, rows in out_days for r in rows}
+                    for _, rows in out_days for r in rows if r.get("source") != "other"}
         review_cov = review_share.coverage(conn, e.case_id, thread_keys=exported)
         review = review_share.cover_lines(review_cov)
     words = (options.get("words") or "").strip()
@@ -390,6 +461,13 @@ def draw(engine, export_id, claimed=None) -> dict:
                                 "{:,}".format(n), "translation" if n == 1 else "translations",
                                 "is" if n == 1 else "are", "its" if n == 1 else "their", "" if n == 1 else "s",
                                 _stale_words(translations["stale_message"], translations["stale_derived_text"])))
+    if lens:
+        # the lens's kinds of entry, and the device events and sensor readings it is not showing (T-7)
+        from services.phone import timeline_lens as TL
+        contains.insert(1, "The Case Timeline phone lens: %s, one row per event time, day by day as the lens shows "
+                           "them." % ", ".join(TL.KIND_WORDS[k].lower() for k in TL.KIND_WORDS if k in f.lens_kinds))
+        if facts.get("hidden"):
+            contains.insert(2, facts["hidden"])
     if phones:
         contains.insert(1, "Phones: %s." % ", ".join(phones))
     contains += [lim["message"] for lim in facts["limits"]]

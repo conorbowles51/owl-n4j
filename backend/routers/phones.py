@@ -36,6 +36,8 @@ class ExportDescribeBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID
     filter: dict
+    # "timeline_lens": the filter is the Timeline phone lens filter and the totals are the lens's (03 12.2)
+    source: Literal["stream", "timeline_lens"] = "stream"
 
 
 class ExportBody(BaseModel):
@@ -55,9 +57,10 @@ def describe_export(body: ExportDescribeBody, db: Session = Depends(get_db),
     from services.phone.exports import jobs
     authorize_case(db, body.case_id, user, ("case", "view"))
     try:
-        out = jobs.describe(db.connection(), body.case_id, body.filter)
+        out = jobs.describe_source(db.connection(), body.case_id, body.source, body.filter)
         # machine text on the attachments in scope: the dialog asks to confirm it or keep it marked (07 5 Media)
-        out["machine_text"] = jobs.describe_machine_text(db.connection(), body.case_id, body.filter)
+        out["machine_text"] = jobs.describe_machine_text(db.connection(), body.case_id, body.filter,
+                                                         lens=body.source == "timeline_lens")
         return out
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc.errors()[0].get("msg")))
@@ -1494,15 +1497,16 @@ class EntryExportBody(BaseModel):
 class SourceExportBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID
-    source: Literal["analysis_result", "statement_check", "incident_window"]
+    source: Literal["analysis_result", "statement_check", "incident_window", "collection", "dossier"]
     ref: dict = Field(default_factory=dict)
 
 
 @router.post("/exports/source")
 def prepare_source_export(body: SourceExportBody, db: Session = Depends(get_db),
                           user: User = Depends(get_current_db_user)):
-    """The records behind an analysis result, a statement check or an incident window frozen as one selection for the
-    export dialog (07 J-14b): the filter, the count frozen (the export's total), and what is not in the export."""
+    """The records behind an analysis result, a statement check or an incident window, or collected in a collection
+    (``ref.selection_id``) or a dossier (``ref.dossier_id``), frozen as one selection for the export dialog (07 J-14b,
+    6.4 item 14): the filter, the count frozen (the export's total), and what is not in the export."""
     from services.phone import source_export
     authorize_case(db, body.case_id, user, ("case", "view"))
     try:

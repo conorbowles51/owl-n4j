@@ -22,6 +22,7 @@ import {
 import { toast } from "sonner"
 import { useNavigate } from "react-router-dom"
 import { PhoneLinkDetail } from "@/features/phones/PhoneLinkDetail"
+import { CollectedPhoneExport } from "@/features/phones/CollectedPhoneExport"
 import { ReplacedLinkNote } from "@/features/phones/ReplacedLinkNote"
 import { useReplacedLinks } from "@/features/phones/replaced-links"
 import { isPhoneLinkType, phoneLinkHref, phoneLinkSummary } from "@/features/phones/phone-links"
@@ -87,6 +88,9 @@ const CaseworkDetailSheet = lazy(() =>
     (module) => ({ default: module.CaseworkDetailSheet })
   )
 )
+
+/** Links whose phone records a dossier's phone export draws (records, collected selections, conversations). */
+const PHONE_EXPORTABLE = ["phone_record", "phone_selection", "phone_thread"]
 
 function formatDate(value?: string | null) {
   return value
@@ -963,6 +967,9 @@ export function DossierDetailSheet({
                     <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                       <Link2 className="size-4" /> Evidence & connected casework
                     </h3>
+                    {dossier.links?.some((link) => PHONE_EXPORTABLE.includes(link.target_type)) && (
+                      <CollectedPhoneExport caseId={caseId} source="dossier" id={dossier.id} />
+                    )}
                     {canEdit && (
                       <Button
                         size="sm"
@@ -996,6 +1003,9 @@ export function DossierDetailSheet({
                               {link.label || link.target_id}
                               {link.target_type === "phone_record" && <ReplacedLinkNote caseId={caseId} state={replaced[link.target_id]} />}
                             </span>
+                          )}
+                          {link.target_type === "phone_selection" && (
+                            <CollectedPhoneExport caseId={caseId} source="collection" id={link.target_id} label="Export" />
                           )}
                           {canEdit && (
                             <Button

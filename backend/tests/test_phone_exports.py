@@ -141,7 +141,7 @@ def test_unbuilt_formats_and_sources_are_refused_in_words_and_another_case_sees_
             jobs.create(c, case_id=world["case"], user_id=world["user"], fmt="docx", source="stream",
                         filter_body={}, options={})
         with pytest.raises(jobs.ExportError, match="not built yet"):
-            jobs.create(c, case_id=world["case"], user_id=world["user"], fmt="pdf", source="dossier",
+            jobs.create(c, case_id=world["case"], user_id=world["user"], fmt="pdf", source="slideshow",
                         filter_body={}, options={})
         made = jobs.create(c, case_id=world["case"], user_id=world["user"], fmt="pdf", source="stream",
                            filter_body={}, options={})

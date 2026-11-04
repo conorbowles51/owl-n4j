@@ -221,6 +221,8 @@ export const ExportFactsSchema = z.object({
     total: z.number(), unconfirmed: z.number(), items_cap: z.number(),
     items: z.array(z.object({ id: z.string(), file_uid: z.string(), kind: z.enum(["ocr", "transcript"]), filename: z.string().nullable(), words: z.string().nullable() })),
   }).optional(),
+  /** The Timeline phone lens only: the device events and sensor readings it is not showing, in words (T-7). */
+  hidden: z.string().nullable().optional(),
 })
 export const ExportStateSchema = z.object({
   export_id: z.string(), format: z.string(), source: z.string(), state: z.enum(["queued", "rendering", "done", "failed"]), progress: z.number(),
@@ -230,10 +232,12 @@ export const ExportStateSchema = z.object({
 export type ExportState = z.infer<typeof ExportStateSchema>
 
 /** What an export of this filter holds, before anything is drawn (03 section 12.2 steps 1 and 2). */
-export async function describeExport(caseId: string, filter: StreamFilter) {
-  return ExportFactsSchema.parse(await fetchAPI("/api/phones/exports/describe", { method: "POST", body: { case_id: caseId, filter }, read: true }))
+export type ExportSource = "stream" | "timeline_lens" | "collection" | "finding" | "dossier" | "analysis_result" | "statement_check" | "incident_window"
+/** `source` "timeline_lens": the filter is the Timeline phone lens's and the totals are the lens's. */
+export async function describeExport(caseId: string, filter: StreamFilter, source: ExportSource = "stream") {
+  const body = source === "timeline_lens" ? { case_id: caseId, filter, source } : { case_id: caseId, filter }
+  return ExportFactsSchema.parse(await fetchAPI("/api/phones/exports/describe", { method: "POST", body, read: true }))
 }
-export type ExportSource = "stream" | "finding" | "analysis_result" | "statement_check" | "incident_window"
 export async function createExport(caseId: string, filter: StreamFilter, options: Record<string, unknown>, format: "pdf" | "rsmf" = "pdf", source: ExportSource = "stream") {
   return fetchAPI<{ export_id: string }>("/api/phones/exports", { method: "POST", body: { case_id: caseId, format, source, filter, options } })
 }
@@ -245,8 +249,8 @@ export async function prepareEntryExport(caseId: string, entryId: string) {
 }
 /** The records behind an analysis result (or a kept one), a statement check or an incident window frozen as one
  * selection to export (07 J-14b); `sentence` says what behind it is not a message or call and so not in the export. */
-export async function prepareSourceExport(caseId: string, source: "analysis_result" | "statement_check" | "incident_window", ref: Record<string, unknown>) {
-  return fetchAPI<{ selection_id: string; filter: StreamFilter; collected: number; events: number; words: string; sentence: string | null }>(
+export async function prepareSourceExport(caseId: string, source: "analysis_result" | "statement_check" | "incident_window" | "collection" | "dossier", ref: Record<string, unknown>) {
+  return fetchAPI<{ selection_id: string; filter: StreamFilter; collected: number; members?: number; events: number; words: string; sentence: string | null }>(
     "/api/phones/exports/source", { method: "POST", body: { case_id: caseId, source, ref } })
 }
 export async function getExport(caseId: string, exportId: string) {

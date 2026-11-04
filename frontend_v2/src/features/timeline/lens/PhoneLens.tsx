@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { ExportDialog } from "@/features/conversations/ExportDialog"
 import { Lanes, type LaneRow } from "@/features/pattern/components/Lanes"
 import { StreamList } from "@/features/phones/components/StreamList"
 import { useStream } from "@/features/phones/hooks/use-stream"
@@ -133,6 +134,7 @@ export function PhoneLens({ caseId, caseName, note }: { caseId: string; caseName
   const toggleKind = (k: LensKind) => setKinds((ks) => (ks.includes(k) ? ks.filter((x) => x !== k) : [...ks, k]))
   const kindWords = kinds.map((k) => KIND_LABELS[k]).join(", ")
   const days = stream.index?.items ?? []
+  const [exportOpen, setExportOpen] = useState(false)
   return (
     <section aria-label="Phone entries" className="flex min-h-0 flex-1 flex-col gap-2 p-3">
       <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -142,6 +144,8 @@ export function PhoneLens({ caseId, caseName, note }: { caseId: string; caseName
           <Button size="sm" variant={mode === "stream" ? "primary" : "outline"} aria-pressed={mode === "stream"} onClick={() => setMode("stream")}>Stream</Button>
           <Button size="sm" variant={mode === "lanes" ? "primary" : "outline"} aria-pressed={mode === "lanes"} onClick={() => setMode("lanes")}>Lanes</Button>
         </div>
+        {/* the all-channel timeline for counsel: exactly the entries the lens lists, under its day headers (03 12.2) */}
+        <Button size="sm" variant="outline" disabled={!idx} onClick={() => setExportOpen(true)}>Export</Button>
         <label className="flex items-center gap-1 text-xs">
           Lanes by
           <select value={laneBy} onChange={(e) => setLaneBy(e.target.value as LaneBy)} className="rounded border bg-background px-1 py-0.5">
@@ -190,6 +194,10 @@ export function PhoneLens({ caseId, caseName, note }: { caseId: string; caseName
       ) : stream.index ? (
         <p className="text-sm">No dated phone entries match; the lanes have nothing to draw.</p>
       ) : null}
+      {exportOpen && (
+        <ExportDialog caseId={caseId} filter={filter} words={`the Case Timeline phone lens (${kindWords || "no kinds"})`}
+          open={exportOpen} onOpenChange={setExportOpen} source="timeline_lens" />
+      )}
     </section>
   )
 }
