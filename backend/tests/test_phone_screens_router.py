@@ -330,7 +330,8 @@ def test_phone_summary_numbers_equal_their_count_queries_and_the_lists_they_open
             "CAST('[]' AS jsonb), 1)"), {"e": ext})
     p = c.get(f"/api/phones/{ext}/profile", params={"case_id": case}).json()
     assert p["verdict"]["word"] == "Partly read" and p["verdict"]["sentence"].startswith("Partly read: ")
-    assert p["completeness"]["documents"][0]["stated_vs_read"] == [{"what": "files", "stated": 9, "read": 7}]
+    assert p["completeness"]["documents"][0]["stated_vs_read"] == [
+        {"what": "files", "stated": 9, "read": 7, "words": "Files: the report states 9, Loupe read 7."}]
     assert any(n["kind"] == "reconciliation" for n in p["needs"])
     assert c.get(f"/api/phones/{ext}/profile", params={"case_id": api["other_case"]}).status_code in (403, 404)
 

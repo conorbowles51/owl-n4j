@@ -187,6 +187,20 @@ describe("Phone summary", () => {
     expect(within(screen.getByRole("region", { name: "Top people" })).getByRole("link", { name: /41 messages and calls/ })).toHaveAttribute("href", `${conv}?tab=people&people=phone:Synthetic A`)
   })
 
+  it("Did it arrive whole shows each stated-vs-read line in words, never a raw object (live 2a372c60: '[object Object] read')", async () => {
+    const rows = { stored: { f: 4, r: 637, x: 0 }, consumed: { f: 4, r: 637, x: 0 } }
+    const rowsWords = "Rows Loupe stored from this document: 637 records, 4 files, 0 extra-information entries; every one is reached again from the report."
+    api.getProfile.mockResolvedValue(profile({ completeness: { reconciliation: "exact", state: "ingested", held: [], documents: [{ document_index: 0, result: "exact", differences: 0, stated_vs_read: [
+      { what: "rows", stated: null, read: rows, words: rowsWords },
+      { what: "ws_only_texts", stated: 18, read: 0 },
+    ] }] } }))
+    page()
+    const box = await screen.findByRole("region", { name: "Did it arrive whole" })
+    expect(within(box).getByText(rowsWords)).toBeInTheDocument()
+    expect(within(box).getByText("ws_only_texts: the report states 18, 0 read")).toBeInTheDocument()
+    expect(box.textContent).not.toContain("[object Object]")
+  })
+
   it("the header opens the phone's Media screen beside its Conversations", async () => {
     page()
     expect(await screen.findByRole("link", { name: "Media" })).toHaveAttribute("href", "/cases/case-1/phones/e1/records/media")

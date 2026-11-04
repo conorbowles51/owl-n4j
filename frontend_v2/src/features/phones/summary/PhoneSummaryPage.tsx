@@ -294,7 +294,7 @@ export function PhoneSummaryPage() {
         {p.completeness.documents.flatMap((d) =>
           d.stated_vs_read.map((x) => (
             <p key={`${d.document_index}-${x.what}`} className="text-xs">
-              {x.what}: the report states {String(x.stated ?? "nothing")}, {String(x.read ?? "none")} read
+              {x.words ?? `${x.what}: the report states ${typeof x.stated === "number" ? fmt(x.stated) : "nothing"}, ${typeof x.read === "number" ? fmt(x.read) : "none"} read`}
             </p>
           )),
         )}

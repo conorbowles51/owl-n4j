@@ -74,6 +74,51 @@ def _path_words(path):
     return " / ".join(str(path or "").split("/")[-3:])
 
 
+ROW_KIND_WORDS = (("r", "record", "records"), ("f", "file", "files"), ("x", "extra-information entry",
+                                                                         "extra-information entries"))
+TOTAL_WORDS = {"elements": "elements", "texts": "texts", "text_chars": "characters of text",
+               "text_bytes": "bytes of text", "nonws_texts": "texts with words", "comments": "comments",
+               "processing_instructions": "processing instructions", "tagged_files": "tagged files",
+               "models_top": "top-level records", "models_nested": "nested records", "max_depth": "deepest nesting",
+               "longest_text_chars": "longest text (characters)", "distinct_paths": "distinct element paths",
+               "distinct_path_attributes": "distinct attribute paths", "values": "values",
+               "attributes": "attributes", "bad_tails": "pieces of text between elements"}
+
+
+def _n(v):
+    return "{:,}".format(v) if isinstance(v, int) and not isinstance(v, bool) else str(v)
+
+
+def _kinds_words(d):
+    return ", ".join("%s %s" % (_n(int(d.get(k) or 0)), one if int(d.get(k) or 0) == 1 else many)
+                     for k, one, many in ROW_KIND_WORDS)
+
+
+def stated_vs_read_words(what, stated, read) -> str:
+    """One line of "Did it arrive whole" in words. ``rows`` is Loupe's own tally of the rows it stored and reached
+    again from the report (the report states no such count); whitespace-only text between elements is layout, kept
+    as nothing by design (01 section 5.3), so the report having more of it than Loupe kept is not a loss."""
+    if what == "rows" and isinstance(read, dict):
+        stored, reached = read.get("stored") or {}, read.get("consumed") or {}
+        line = "Rows Loupe stored from this document: %s" % _kinds_words(stored)
+        if all(int(stored.get(k) or 0) == int(reached.get(k) or 0) for k, _, _ in ROW_KIND_WORDS):
+            return line + "; every one is reached again from the report."
+        return line + "; reached again from the report: %s." % _kinds_words(reached)
+    if (what == "ws_only_texts" and isinstance(stated, int) and isinstance(read, int) and stated > read):
+        gap = stated - read
+        return ("Whitespace-only text: the report has %s, Loupe kept %s; the other %s %s layout between elements, "
+                "kept as nothing by design." % (_n(stated), _n(read), _n(gap), "is" if gap == 1 else "are"))
+    label = TOTAL_WORDS.get(what, "whitespace-only texts" if what == "ws_only_texts" else what)
+    if isinstance(stated, dict) or isinstance(read, dict):
+        def flat(v):
+            return ("nothing" if v is None else ", ".join("%s %s" % (k, _n(x)) for k, x in sorted(v.items()))
+                    if isinstance(v, dict) else _n(v))
+        return "%s: the report states %s; Loupe read %s." % (label[:1].upper() + label[1:], flat(stated), flat(read))
+    return "%s: the report states %s, Loupe read %s." % (label[:1].upper() + label[1:],
+                                                        "nothing" if stated is None else _n(stated),
+                                                        "none" if read is None else _n(read))
+
+
 def held_view(conn, extraction_id) -> list:
     """Documents held by the check (01 section 8.4, 07 J-1), each with every difference up to ``HELD_SHOWN`` and the
     true total, and the acceptance on record if a person accepted them."""
@@ -220,7 +265,8 @@ def profile(conn, case_id, extraction_id) -> dict:
             "ran_at DESC"), {"e": ext}):
         src, got = r.source_totals or {}, r.captured_totals or {}
         recon.append({"document_index": r.document_index, "result": r.result, "differences": int(r.difference_count or 0),
-                      "stated_vs_read": [{"what": k, "stated": src.get(k), "read": got.get(k)}
+                      "stated_vs_read": [{"what": k, "stated": src.get(k), "read": got.get(k),
+                                          "words": stated_vs_read_words(k, src.get(k), got.get(k))}
                                          for k in sorted(set(src) | set(got)) if src.get(k) != got.get(k)]})
 
     # ---- files, deleted, coverage --------------------------------------------------------------------------------
@@ -413,7 +459,8 @@ def profile_sections(p: dict) -> list:
     whole = ("Every part of the report matches its own counts." if c["reconciliation"] == "exact" else
              "Part of the report does not match its own counts." if c["reconciliation"] == "failed" else
              "The report's counts have not been checked yet.")
-    out.append(("Did it arrive whole", [whole] + ["%s: the report states %s, %s read" % (x["what"], x["stated"], x["read"])
+    out.append(("Did it arrive whole", [whole] + [x.get("words") or stated_vs_read_words(x["what"], x["stated"],
+                                                                                           x["read"])
                                                   for d in c["documents"] for x in d["stated_vs_read"]]))
     f = p["files"]
     out.append(("Files", ["%s files" % n(f["total"])] + ["%s: %s" % (k, n(v)) for k, v in f["by_category"].items()]

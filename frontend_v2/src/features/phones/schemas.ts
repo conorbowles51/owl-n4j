@@ -382,7 +382,7 @@ export const ProfileSchema = lazySchema(() => z.object({
   completeness: z.object({
     reconciliation: z.string().nullable(),
     state: z.string(),
-    documents: z.array(z.object({ document_index: z.number(), result: z.string(), differences: z.number(), stated_vs_read: z.array(z.object({ what: z.string(), stated: z.unknown(), read: z.unknown() })) })),
+    documents: z.array(z.object({ document_index: z.number(), result: z.string(), differences: z.number(), stated_vs_read: z.array(z.object({ what: z.string(), stated: z.unknown(), read: z.unknown(), words: z.string().optional() })) })),
     held: z
       .array(
         z.object({
