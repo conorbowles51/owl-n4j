@@ -230,6 +230,11 @@ export function ApproachLayout(p: ApproachLayoutProps) {
       <p data-part="what">{p.whatItDoes}</p>
       <div data-part="run"><RunControl caseId={caseId} run={run} client={client} onRequested={setRun} /></div>
       <p data-part="coverage" className="text-sm">{done?.coverage?.sentence || coverage.data?.sentence}</p>
+      {(coverage.data?.notes?.length ?? 0) > 0 && (
+        <div className="space-y-1 text-sm text-muted-foreground" data-testid={`${p.testId}-notes`} aria-label="What the results rest on">
+          {coverage.data!.notes!.map((n) => <p key={n}>{n}</p>)}
+        </div>
+      )}
       {p.extra}
       {done && p.runExtra ? p.runExtra(done) : null}
       {kept && <KeptPanel caseId={caseId} id={kept} />}

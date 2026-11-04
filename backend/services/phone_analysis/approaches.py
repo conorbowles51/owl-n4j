@@ -25,7 +25,7 @@ TITLES = {
     "message_reconciliation": "Messages across phones",
     "deletion_timeline": "Deleted and hidden",
     "relationships": "Relationships over time",
-    "awareness": "Group admins and membership",
+    "awareness": "Reading, replies and group roles",
     "device_users": "Who used which phone",
     "reparse_comparison": "Read again by an independent tool",
     "typed_words": "Typed words",

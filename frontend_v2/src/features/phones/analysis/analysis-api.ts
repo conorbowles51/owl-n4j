@@ -34,7 +34,7 @@ export function analysisAPI(approach: string) {
       fetchAPI<AnalysisRun>(`${BASE}/runs`, { method: "POST", body: { case_id: caseId, approach, ...(parameters ? { parameters } : {}) } }),
     run: (caseId: string, runId: string) => fetchAPI<AnalysisRun>(`${BASE}/runs/${runId}?${q({ case_id: caseId })}`),
     cancel: (caseId: string, runId: string) => fetchAPI<AnalysisRun>(`${BASE}/runs/${runId}/cancel?${q({ case_id: caseId })}`, { method: "POST" }),
-    coverage: (caseId: string) => fetchAPI<{ sentence: string }>(`${BASE}/coverage?${q({ case_id: caseId, approach })}`),
+    coverage: (caseId: string) => fetchAPI<{ sentence: string; notes?: string[] }>(`${BASE}/coverage?${q({ case_id: caseId, approach })}`),
     results: (caseId: string, runId: string, f: { kind?: string; strength?: string; offset: number; limit?: number }) =>
       fetchAPI<ApproachPage>(`${BASE}/runs/${runId}/results?${q({ case_id: caseId, kind: f.kind, strength: f.strength, offset: f.offset, limit: f.limit ?? 100 })}`),
     detail: (caseId: string, resultId: string) =>
