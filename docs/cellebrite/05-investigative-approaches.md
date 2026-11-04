@@ -1143,9 +1143,11 @@ percent of incoming messages on 2 phones (P03 457 of 867, P04 2,471 of 4,797); P
 2.2 percent elsewhere (P05, P06, P08, P09, P12 none). M-4c: timed ChatActivity 277 on P14 (3-phone case) and 25 on
 P04 (10-report case).
 
-**Live (read-only, `headless/fv-scripts/cbga-measure-a.sql`).** 11 active phones in 5 cases. Owner read or play times
-on incoming messages: 0 on every phone (the reference phones C3 0 of 1,702 and C9 0 of 2,013; the synthetic phones
-none). Incoming messages marked unread at extraction: 7 on C9 (in each of its two cases), 5 on C3.
+**Live (read-only, `headless/fv-scripts/cbga-measure-a.sql`, 4 November).** 12 active phones in 5 cases. Owner read or
+play times on incoming messages: 0 on every phone (the reference phones C3 0 of 1,702, C9 0 of 2,013 and the second
+phone of case 7006c0ab 0 of 1,347; the synthetic phones none). Outgoing messages with a recipient's read or delivery
+time: 562 on that second phone, 1 on C9. Incoming messages marked unread at extraction: 12, 7 on C9 (in each of its
+two cases) and 5 on C3.
 
 **Built (`awareness` version 4.2-aware, screen "Reading, replies and group roles").** Steps 1 to 5. The screen states
 what the results rest on with true counts: phones with owner read times, timed incoming messages, messages marked
@@ -1238,9 +1240,9 @@ pair is 43 (P03 and P04), and no pair shares a BSSID in a bin; M-5b: one pair ha
 E.164 numbers in common); M-5c: 43 pairs have at least 14 days of overlapping interaction data (most: P08 and P10,
 729).
 
-**Live (read-only, `headless/fv-scripts/cbga-measure-a.sql`).** 13 phone pairs in 2 cases (the synthetic cases; each
-reference case holds one phone). Co-placed presence bins: 0 on every pair; 5 or 6 presence observations per synthetic
-phone, 2 on C9, 0 on C3.
+**Live (read-only, `headless/fv-scripts/cbga-measure-a.sql`, 4 November).** 14 phone pairs in 3 cases (the two
+synthetic cases and reference case 7006c0ab). Co-placed presence bins: 0 on every pair; 5 or 6 presence observations
+per synthetic phone, 12 and 2 on the two phones of 7006c0ab, 0 on C3.
 
 **Built (`device_users` version 5.3-together, screen "Who used which phone").** Steps 1 to 5. The screen states what
 together and apart rest on with true counts: phones placed, observations, co-placed quarter hours over how many pairs
