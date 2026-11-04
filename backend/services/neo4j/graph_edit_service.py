@@ -429,11 +429,18 @@ class GraphEditService:
     def lookup_address(props: dict[str, Any]) -> str:
         """The address to send for a flagged entity: the address read from the evidence, else the query ingestion
         would have sent."""
-        return str(props.get("location_raw") or props.get("geocoding_query") or "").strip()
+        raw = str(props.get("location_raw") or "").strip()
+        return raw or str(props.get("geocoding_query") or "").strip()
 
     def addresses_waiting(self, case_id: str, limit: int = 50) -> tuple[int, list[dict[str, Any]]]:
         """Entities of a case whose address was never looked up (status not_run, no pin, not placed by a person):
         how many, and the first ``limit`` of them (key and address)."""
+        # The same entities the map's Needs review lists (services.neo4j.geo_service.get_locations_needing_review),
+        # and the same address as lookup_address: the evidence address unless blank, else the ingestion query.
+        address = (
+            "trim(CASE WHEN trim(coalesce(n.location_raw, '')) <> '' THEN n.location_raw "
+            "ELSE coalesce(n.geocoding_query, '') END)"
+        )
         where = f"""
             WHERE n.case_id = $case_id
               AND {active_node_predicate('n')}
@@ -441,13 +448,15 @@ class GraphEditService:
               AND (n.latitude IS NULL OR n.longitude IS NULL)
               AND NONE(field IN coalesce(n.manual_fields, [])
                        WHERE field IN ['latitude', 'longitude', 'location_name', 'location_formatted'])
-              AND trim(coalesce(n.location_raw, n.geocoding_query, '')) <> ''
+              AND NONE(label IN labels(n) WHERE label IN ['Document', 'RecycleBin', 'RecycleBinItem'])
+              AND coalesce(n.system_node, false) <> true
+              AND {address} <> ''
         """
         with driver.session() as session:
             total = session.run(f"MATCH (n) {where} RETURN count(n) AS c", case_id=case_id).single()["c"]
             rows = session.run(
                 f"""MATCH (n) {where}
-                RETURN n.key AS key, trim(coalesce(n.location_raw, n.geocoding_query)) AS address
+                RETURN n.key AS key, {address} AS address
                 ORDER BY n.key LIMIT $limit""",
                 case_id=case_id, limit=limit,
             ).data()

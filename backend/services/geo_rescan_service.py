@@ -48,6 +48,20 @@ LOOKUP_SERVICE_NAME = "OpenStreetMap address service (nominatim.openstreetmap.or
 AUTOMATIC = "automatic"
 
 
+def _rescan_lookup_words(case_id: str) -> str:
+    """What the rescan tells the person about places it could not place from the cache, by the case's mode."""
+    try:
+        from services.address_lookup import AUTO, case_mode
+
+        automatic = case_mode(case_id)[0] == AUTO
+    except Exception:
+        automatic = False
+    if automatic:
+        return ("Places not already in the address cache were not looked up by the rescan; addresses found in "
+                "evidence are looked up automatically for this case.")
+    return NOT_LOOKED_UP_MESSAGE
+
+
 def held_on_this_server(url: str) -> bool:
     """Whether a service address is on this server or its private network (loopback, a private address, or a
     one-word container name), never a public host."""
@@ -506,7 +520,7 @@ def rescan_case_locations(
         "locations_geocoded": len(geocoded),
         "locations_failed_geocode": len(failed_geocode),
         "failed_places": failed_geocode[:20],
-        "geocoding_not_run": None if automatic_lookup_allowed() else NOT_LOOKED_UP_MESSAGE,
+        "geocoding_not_run": None if automatic_lookup_allowed() else _rescan_lookup_words(case_id),
         "entities_updated": entities_updated,
         "location_nodes_created": location_nodes_created,
         "relationships_created": relationships_created,

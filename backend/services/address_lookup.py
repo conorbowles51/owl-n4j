@@ -58,9 +58,10 @@ def case_mode(case_id: str | UUID) -> tuple[str, Optional[str]]:
 
 
 def auto_case_ids() -> list[str]:
-    """Cases whose lookup is automatic, set on the case or by the default."""
+    """Cases not archived whose lookup is automatic, set on the case or by the default."""
     with get_background_session() as db:
-        rows = db.query(Case.id, Case.address_lookup_mode).all()
+        # archived cases are not worked: their addresses are not sent on their own
+        rows = db.query(Case.id, Case.address_lookup_mode).filter(Case.archived.is_(False)).all()
     fallback = default_mode()
     return [str(case_id) for case_id, chosen in rows if (chosen or fallback) == AUTO]
 
@@ -120,7 +121,13 @@ def run_pass(stop: Event) -> dict[str, int]:
     for case_id in auto_case_ids():
         if stop.is_set():
             break
-        counts = look_up_waiting(case_id, stop)
+        try:
+            counts = look_up_waiting(case_id, stop)
+        except Exception:
+            # one case's failure never starves the cases after it; this case is tried again next pass
+            log.exception("Automatic address lookups failed for case %s", case_id)
+            totals["case_failed"] = totals.get("case_failed", 0) + 1
+            continue
         for outcome, n in counts.items():
             totals[outcome] = totals.get(outcome, 0) + n
         if counts.get("unavailable"):

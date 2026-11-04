@@ -104,6 +104,33 @@ class AddressLookupModeTests(unittest.TestCase):
         look.assert_not_called()
 
 
+class AddressLookupPassTests(unittest.TestCase):
+    def test_one_case_failing_does_not_starve_the_cases_after_it(self):
+        with patch.object(address_lookup, "auto_case_ids", return_value=["bad", "good"]), \
+                patch.object(address_lookup, "look_up_waiting",
+                             side_effect=[RuntimeError("bad node"), {"placed": 2}]) as look:
+            totals = address_lookup.run_pass(Event())
+        self.assertEqual(look.call_count, 2)
+        self.assertEqual(totals, {"case_failed": 1, "placed": 2})
+
+    def test_waiting_addresses_are_the_ones_needs_review_lists(self):
+        from pathlib import Path
+
+        source = (Path(__file__).resolve().parents[1] / "services/neo4j/graph_edit_service.py").read_text()
+        body = source[source.index("def addresses_waiting"):source.index("def apply_looked_up_location")]
+        self.assertIn("'Document', 'RecycleBin', 'RecycleBinItem'", body)
+        self.assertIn("system_node", body)
+        self.assertIn("WHEN trim(coalesce(n.location_raw, '')) <> '' THEN n.location_raw", body)
+
+    def test_the_address_sent_falls_back_from_a_blank_evidence_address(self):
+        from services.neo4j.graph_edit_service import GraphEditService
+
+        self.assertEqual(GraphEditService.lookup_address({"location_raw": " ", "geocoding_query": "10 Downing St"}),
+                         "10 Downing St")
+        self.assertEqual(GraphEditService.lookup_address({"location_raw": "1 Main St", "geocoding_query": "x"}),
+                         "1 Main St")
+
+
 class AddressLookupSettingTests(unittest.TestCase):
     def test_only_known_modes_are_accepted(self):
         from routers.cases import AddressLookupModeRequest

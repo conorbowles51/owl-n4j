@@ -93,6 +93,17 @@ describe("NeedsReviewPanel address lookups", () => {
     expect(lookUp).not.toHaveBeenCalled()
   })
 
+  it("in automatic mode, Look up all leaves the addresses the server is already looking up to the server", async () => {
+    lookupSetting.mockResolvedValue({ mode: "auto", chosen: "auto", default_mode: "auto", words: "", waiting: 0 })
+    flagged[0].geocoding_status = "not_run"
+    try {
+      renderPanel()
+      await screen.findByRole("button", { name: "Look up all 11" })
+    } finally {
+      flagged[0].geocoding_status = "ambiguous"
+    }
+  })
+
   it("Cancel sends nothing", () => {
     renderPanel()
     fireEvent.click(screen.getByRole("button", { name: "Look up all 12" }))

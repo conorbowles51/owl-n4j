@@ -72,7 +72,11 @@ export function NeedsReviewPanel({ caseId, locations }: NeedsReviewPanelProps) {
 
   const reviewPins = locations.filter(needsReview)
   const flagged = (flaggedQueue ?? []).filter(needsReview)
-  const lookable = flagged.filter(canLookUp)
+  // In automatic mode the server is already working through the addresses never looked up: Look up all offers only
+  // the ones the service answered before (no match, ambiguous), so a person's run never races the server's.
+  const lookable = flagged.filter(
+    (item) => canLookUp(item) && !(lookupSetting?.mode === "auto" && item.geocoding_status === "not_run")
+  )
   const total = reviewPins.length + flagged.length
   const running = progress !== null
 
