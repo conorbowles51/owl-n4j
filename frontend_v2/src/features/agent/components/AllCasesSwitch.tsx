@@ -13,7 +13,7 @@ export function AllCasesSwitch({
   return (
     <div
       className={
-        "flex items-center gap-2 rounded-md border px-2 py-1 " +
+        "flex shrink-0 items-center gap-2 rounded-md border px-2 py-1 " +
         (checked ? "border-amber-500/40 bg-amber-500/10" : "border-border")
       }
       title={
@@ -31,7 +31,7 @@ export function AllCasesSwitch({
         onCheckedChange={onCheckedChange}
         aria-label="All my cases"
       />
-      <label htmlFor="agent-all-cases" className="text-xs font-medium text-foreground">
+      <label htmlFor="agent-all-cases" className="whitespace-nowrap text-xs font-medium text-foreground">
         {checked ? "Reading all my cases" : "This case only"}
       </label>
     </div>
