@@ -136,7 +136,7 @@ class LookUpFlaggedAddressesTests(unittest.TestCase):
         base.update(props)
         return {"labels": ["Location"], "category": "Location", "properties": base}
 
-    def _run(self, keys, nodes, answer):
+    def _run(self, keys, nodes, answer, user=None):
         neo = MagicMock()
         from services.neo4j.graph_edit_service import GraphEditService
         real = GraphEditService.__new__(GraphEditService)
@@ -152,7 +152,7 @@ class LookUpFlaggedAddressesTests(unittest.TestCase):
                 patch.object(geo_rescan_service, "_save_geocode_cache"), \
                 patch.object(geo_rescan_service.urllib.request, "urlopen", return_value=_answer(answer)) as sent:
             out = graph.look_up_flagged_addresses(graph.LookupFlaggedRequest(case_id="c", node_keys=keys),
-                                                  user={"username": "investigator", "name": "Ann Investigator"})
+                                                  user=user or {"username": "investigator", "name": "Ann Investigator"})
         return out, sent, neo
 
     def test_each_flagged_address_clicked_is_sent_once_and_kept_as_a_machine_placement(self):
@@ -164,6 +164,10 @@ class LookUpFlaggedAddressesTests(unittest.TestCase):
         self.assertEqual(kwargs["requested_by"], "investigator")
         self.assertEqual(kwargs["requested_by_name"], "Ann Investigator")
         self.assertIn("nominatim.openstreetmap.org", kwargs["service"])
+
+    def test_the_person_who_asked_is_named_even_when_the_sign_in_carries_only_an_address(self):
+        out, sent, neo = self._run(["a"], {"a": self._node()}, WHITE_HOUSE, user={"username": "ann@example.com"})
+        self.assertEqual(neo.apply_looked_up_location.call_args.kwargs["requested_by_name"], "ann@example.com")
 
     def test_nothing_is_sent_for_a_pin_a_person_placed_or_an_unflagged_node(self):
         nodes = {

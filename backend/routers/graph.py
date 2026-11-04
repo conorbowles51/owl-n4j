@@ -2481,7 +2481,7 @@ def look_up_flagged_addresses(body: LookupFlaggedRequest, user: dict = Depends(g
     from services.geo_rescan_service import GeocoderUnavailable, LOOKUP_SERVICE_NAME, geocode_with_cache
 
     username = user.get("username", "unknown")
-    display_name = user.get("name") or user.get("full_name") or user.get("email")
+    display_name = user.get("name") or user.get("full_name") or user.get("email") or username
     results = []
     for node_key in dict.fromkeys(body.node_keys):
         current, why_not = neo4j_service.flagged_address(node_key, body.case_id)
@@ -2540,7 +2540,7 @@ def confirm_looked_up_location(node_key: str, body: ConfirmLookupRequest, user: 
     try:
         confirmed = neo4j_service.confirm_looked_up_location(
             node_key, case_id=body.case_id, confirmed_by=user.get("username", "unknown"),
-            confirmed_by_name=user.get("name") or user.get("full_name") or user.get("email"),
+            confirmed_by_name=user.get("name") or user.get("full_name") or user.get("email") or user.get("username"),
         )
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
