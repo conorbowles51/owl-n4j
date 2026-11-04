@@ -57,7 +57,8 @@ def test_busiest_weeks_count_what_their_link_lists_in_the_display_zone(world):
 def test_since_you_last_looked_counts_a_colleagues_change_and_not_my_own(world):
     from services.phone import profile
     eng, case, ext, me = world["engine"], world["case"], world["ext"], world["user"]
-    t0 = datetime.now(timezone.utc) - timedelta(seconds=1)
+    with eng.connect() as c:  # the database's own clock, after the fixture's phone was made
+        t0 = c.execute(text("SELECT clock_timestamp()")).scalar()
     with eng.begin() as c:
         colleague = uuid.uuid4()
         c.execute(text("INSERT INTO users (id, email, name, password_hash, global_role, is_active, created_at, "
