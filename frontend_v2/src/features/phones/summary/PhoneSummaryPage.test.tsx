@@ -20,6 +20,7 @@ const api = vi.hoisted(() => ({
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
 // the coverage panel reads the coverage summary (07 J-13 step 6), the same counts as the thread list
 const share = vi.hoisted(() => ({
+  getContinueWork: vi.fn().mockResolvedValue({ assigned: [], reading: [] }),
   getReviewCoverage: vi.fn().mockResolvedValue({
     counts: { threads: 3, reviewed: 1, partly_reviewed: 1, not_reviewed: 2, never_reviewed: 1 },
     words: "", cover: [], keyword_lists: [], terms: [], splits: [], second_pass: [], searches: [],
@@ -217,10 +218,22 @@ describe("Phone summary", () => {
     expect(await screen.findByText("not stated")).toBeInTheDocument()
   })
 
-  it("Continue reading lists the threads opened on this browser (07 J-15)", async () => {
-    localStorage.setItem("loupe.continue-reading.case-1", JSON.stringify([{ thread: "t9", title: "Synthetic thread", phone: "C2", extraction: "e1", at: "2026-11-02T00:00:00Z" }]))
+  it("Continue reading lists the threads opened on this browser by id, with the title from the server (07 J-15)", async () => {
+    localStorage.setItem("loupe.continue-reading.case-1", JSON.stringify([{ thread: "t9", extraction: "e1", record: "ev-4", at: "2026-11-02T00:00:00Z" }]))
+    share.getContinueWork.mockResolvedValue({ assigned: [], reading: [{ thread_key: "t9", title: "Synthetic thread", phone: "C2", extraction_id: "e1", record: "ev-4" }] })
     page()
     const region = await screen.findByRole("region", { name: "Continue reading" })
-    expect(within(region).getByRole("link", { name: "Synthetic thread" })).toHaveAttribute("href", `${conv}?thread=t9`)
+    expect(await within(region).findByRole("link", { name: "Synthetic thread" })).toHaveAttribute("href", `${conv}?thread=t9&at=ev-4`)
+    expect(share.getContinueWork).toHaveBeenCalledWith("case-1", [{ thread: "t9", record: "ev-4" }])
+  })
+
+  it("Continue reading shows an assigned review of this phone with its server position, and not another phone's", async () => {
+    const thread = (key: string, ext: string) => ({ thread_key: key, title: `Thread ${key}`, extraction_id: ext, open: "not yet reviewed, 3 messages", position: { event_uid: "ev-1", instant: "2023-03-14T09:00:00Z", by_name: "Bea Synthetic", at: "2026-11-04T00:00:00Z" } })
+    share.getContinueWork.mockResolvedValue({ assigned: [{ task_id: "t1", title: "Review phone conversations, part 1 of 2", kind: "threads", total: 4, open: 3, items: [thread("a", "e1"), thread("b", "e2")], next: null }], reading: [] })
+    page()
+    const region = await screen.findByRole("region", { name: "Continue reading" })
+    expect(await within(region).findByRole("link", { name: "Thread a" })).toHaveAttribute("href", `${conv}?thread=a&at=ev-1`)
+    expect(within(region).queryByRole("link", { name: "Thread b" })).toBeNull()
+    expect(within(region).getByText(/Bea Synthetic stopped at/)).toBeInTheDocument()
   })
 })

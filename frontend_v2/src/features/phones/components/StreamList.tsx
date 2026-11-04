@@ -41,6 +41,8 @@ export interface StreamListProps {
   noun?: { one: string; many: string }
   onOpenRecord?: (row: StreamRow) => void
   onFocusRow?: (row: StreamRow | null) => void
+  /** The first message in view, as the person scrolls. */
+  onTopRow?: (row: StreamRow) => void
   /** Keys the page handles (Around this time, Mark reviewed, Add to…); return true when handled. */
   onKey?: (e: KeyLike, focused: StreamRow | null, selected: StreamRow[]) => boolean
   /** Listen at the window too, so keys work before the list has focus (07 section 4.9). */
@@ -78,6 +80,7 @@ export function StreamList({
   noun = { one: "message", many: "messages" },
   onOpenRecord,
   onFocusRow,
+  onTopRow,
   onKey,
   globalKeys = false,
   jumpTo,
@@ -121,6 +124,15 @@ export function StreamList({
     stream.setFocused(focusedRow?.event_uid ?? null)
     onFocusRow?.(focusedRow)
   }, [focusedRow, stream, onFocusRow])
+
+  const topIndex = virtualizer.range?.startIndex ?? null
+  useEffect(() => {
+    if (topIndex === null || !onTopRow) return
+    for (let i = topIndex; i < Math.min(topIndex + 3, stream.count); i++) {
+      const it = stream.item(i)
+      if (it.type === "row") return onTopRow(it.row)
+    }
+  }, [topIndex, stream, onTopRow, rowsVersion])
 
   const loadedSelection = useCallback((): StreamRow[] | null => {
     // nothing selected: no row to read (this runs after every render, over every row of the list)

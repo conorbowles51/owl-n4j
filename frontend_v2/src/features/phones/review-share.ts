@@ -90,6 +90,8 @@ export interface SecondPassState {
   task_id: string
   title: string
   mine: boolean
+  status: string
+  position?: ReviewPosition | null
 }
 
 export function recordSecondPass(caseId: string, taskId: string, threadKey: string, agrees: boolean, note: string) {
@@ -99,10 +101,57 @@ export function recordSecondPass(caseId: string, taskId: string, threadKey: stri
   })
 }
 
+export interface ReviewPosition {
+  event_uid: string
+  instant: string | null
+  by_name: string
+  at: string
+}
+
 export interface ThreadReviewState {
   thread_key: string
-  tasks: { task_id: string; title: string; assigned_to_name: string | null; mine: boolean }[]
+  tasks: { task_id: string; title: string; assigned_to_name: string | null; mine: boolean; status: string; position?: ReviewPosition | null }[]
   second_pass: SecondPassState[]
+}
+
+/** The position of an assigned review, kept on the task's link (07 J-15 step 2). */
+export function saveReviewPosition(caseId: string, threadKey: string, position: { event_uid: string; instant: string | null }) {
+  return fetchAPI<{ saved: number }>("/api/phones/conversations/review/position", {
+    method: "POST",
+    body: { case_id: caseId, thread_key: threadKey, position },
+  })
+}
+
+export interface ContinueThread {
+  thread_key: string
+  title: string | null
+  extraction_id: string
+  open: string
+  position: ReviewPosition | null
+}
+
+export interface ContinueWork {
+  assigned: { task_id: string; title: string; kind: "threads" | "readings"; total: number; open: number; items: ContinueThread[]; next: ContinueThread | null }[]
+  reading: { thread_key: string; title: string; phone: string; extraction_id: string; record: string | null }[]
+}
+
+export function getContinueWork(caseId: string, threads: { thread: string; record: string | null }[]) {
+  return fetchAPI<ContinueWork>("/api/phones/conversations/review/continue", { method: "POST", body: { case_id: caseId, threads } })
+}
+
+export interface HandedOver {
+  note_id: string
+  open_items: number
+  positions: number
+  words: string
+}
+
+/** Reassigns a review task and attaches a Workspace note listing positions and open items (07 J-15 step 4). */
+export function handOverReview(caseId: string, taskId: string, toUser: string, note: string) {
+  return fetchAPI<HandedOver>(`/api/phones/conversations/review/tasks/${encodeURIComponent(taskId)}/hand-over`, {
+    method: "POST",
+    body: { case_id: caseId, to_user: toUser, note: note.trim() || null },
+  })
 }
 
 export function getThreadReviewState(caseId: string, threadKey: string) {
@@ -156,6 +205,7 @@ export interface ReviewCoverageSummary {
     pending: number
     disagreements: { thread_key: string; title: string; by: string; first_by: string | null; note: string }[]
   }[]
+  reading_rechecks?: { sampled: number; agrees: number; disagrees: number; pending: number; rate_percent: number | null; too_few: boolean; words: string }
   searches: { query: string; exact: boolean; runs: number; people: string[]; surfaces: string[]; last_hits: number | null; last_run_at: string }[]
   keyword_lists: { name: string; terms: string[] }[]
   terms: string[]

@@ -7,7 +7,7 @@ import { profileText } from "../lib/profile-text"
 import { failureText } from "../api"
 import { phoneProfileQuery } from "../phone-queries"
 import { labelText } from "../lib/labels"
-import { readingSpots } from "../lib/continue-reading"
+import { ContinueReading } from "../ContinueReading"
 import { fmt } from "../ui/count-sentence"
 import { NamePhone } from "./NamePhone"
 import { SetOwner } from "./SetOwner"
@@ -52,7 +52,6 @@ export function PhoneSummaryPage() {
     )
   const p = q.data
   const conv = p.links.conversations
-  const spots = readingSpots(caseId).filter((s) => s.extraction === extraction)
   const maxMonth = Math.max(1, ...p.months.map((m) => m.messages + m.calls + m.other))
   const soFar = p.verdict.word === "Still reading" ? " (so far)" : ""
   const missing = p.files.verification.missing ?? 0
@@ -206,24 +205,14 @@ export function PhoneSummaryPage() {
         </ul>
       </Section>
       <Section name="Continue reading">
-        {spots.length === 0 ? (
+        <ContinueReading caseId={caseId} extraction={extraction} empty={(
           <p>
-            Nothing opened yet on this browser.{" "}
+            Nothing opened yet on this browser, and no assigned review with a saved position.{" "}
             <Link className="underline underline-offset-2" to={conv}>
               Open Conversations
             </Link>
           </p>
-        ) : (
-          <ul className="flex flex-col gap-0.5">
-            {spots.map((s) => (
-              <li key={s.thread}>
-                <Link className="underline underline-offset-2" to={`${conv}?thread=${encodeURIComponent(s.thread)}`}>
-                  {s.title}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+        )} />
       </Section>
 
       <div className="grid gap-3 md:grid-cols-2">

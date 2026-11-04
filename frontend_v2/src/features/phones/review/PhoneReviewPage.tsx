@@ -6,13 +6,15 @@ import { PageHeader } from "@/components/ui/page-header"
 import { ApiError } from "@/lib/api-client"
 import { installKeymap, register } from "@/lib/keymap"
 import { trackUx } from "@/lib/ux-events"
-import { instantWords } from "../lib/time-words"
 import { fmt } from "../ui/count-sentence"
 import { KeymapOverlay } from "../ui/KeymapOverlay"
+import { ConfirmKindPanel } from "./ConfirmKindPanel"
+import { ExampleView } from "./ExampleView"
 import { IdentityLinkGroup } from "./IdentityLinkGroup"
 import { PeopleSuggestions } from "./PeopleSuggestions"
+import { ReadingRechecks } from "./ReadingRechecks"
 import { identitiesAPI } from "./identities.api"
-import { readingsAPI, type ExampleKind, type PhoneProgress, type Reading, type ReadingExamples } from "./readings.api"
+import { readingsAPI, type CorrectionPreview, type ExampleKind, type PhoneProgress, type Reading, type ReadingExamples } from "./readings.api"
 
 /**
  * Needs a decision, readings group (02 sections 6.8 and 6.10; 07 J-8 and section 5). Each reading is one rule the
@@ -35,45 +37,6 @@ function errorWords(e: unknown) {
     return typeof detail === "string" ? detail : e.message
   }
   return e instanceof Error ? e.message : String(e)
-}
-
-function roleWords(role: string | null) {
-  return role ? role.replace(/_/g, " ") : "side not known"
-}
-
-function ExampleView({ k }: { k: ExampleKind }) {
-  const x = k.example
-  return (
-    <div className="mt-2 flex flex-col gap-1 rounded border bg-background p-2 text-sm">
-      <p className="text-xs text-muted-foreground">
-        {k.label}. {fmt(k.count)} of the affected records are of this kind.
-      </p>
-      <p>{x.instant ? instantWords(x.instant, ZONE) : "No time recorded"}{x.app ? ` · ${x.app}` : ""}{x.direction ? ` · ${x.direction}` : ""}</p>
-      {x.parties.length > 0 && (
-        <ul className="flex flex-col gap-0.5">
-          {x.parties.map((p, i) => (
-            <li key={i} className={p.mapped_by_this ? "font-medium" : undefined}>
-              {p.implicit_owner ? "The phone's owner" : p.name || p.identifier || "No name or number"}
-              {!p.implicit_owner && p.name && p.identifier ? ` (${p.identifier})` : ""}: read as {roleWords(p.role)}
-              {p.mapped_by_this ? " (this reading)" : ""}
-            </li>
-          ))}
-        </ul>
-      )}
-      {x.times.filter((t) => t.mapped_by_this || t.is_event_time).map((t, i) => (
-        <p key={i} className={t.mapped_by_this ? "font-medium" : undefined}>
-          {t.field}: {t.instant ? instantWords(t.instant, ZONE) : t.original_text ?? "no time"}
-          {t.mapped_by_this ? " (this reading)" : ""}
-        </p>
-      ))}
-      {x.subject && <p>Subject: {x.subject}</p>}
-      {(x.kind === "message" || x.kind === "email") && (
-        <p className="whitespace-pre-wrap rounded bg-muted/40 p-1">{x.text || <em>No text in this record</em>}</p>
-      )}
-      {!x.kind && x.title && <p>{x.title}</p>}
-      {x.deleted_state && x.deleted_state !== "Intact" && <p>Marked on the phone as: {x.deleted_state}</p>}
-    </div>
-  )
 }
 
 function ProgressLine({ p, records }: { p: PhoneProgress; records: number }) {
@@ -124,6 +87,8 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [watching, setWatching] = useState<string | null>(null)
+  const [emptying, setEmptying] = useState<CorrectionPreview | null>(null)
+  const [kindOpen, setKindOpen] = useState(false)
   const progress = useQuery({
     queryKey: ["phone-reading-progress", caseId],
     queryFn: () => readingsAPI.progress(caseId),
@@ -141,6 +106,8 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
     setNote("")
     setError(null)
     setOpen(null)
+    setEmptying(null)
+    setKindOpen(false)
   }, [r?.id])
   const kinds = ex.data?.kinds ?? []
   const seen = viewed[r?.id ?? ""] ?? []
@@ -178,17 +145,28 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
       setBusy(false)
     }
   }
-  const saveCorrection = async () => {
+  // A correction that would leave something empty is shown first, with its true count; nothing is written until
+  // Continue, and the server refuses if the count is no longer the one agreed to (07 J-8 failure state).
+  const saveCorrection = async (agreed?: CorrectionPreview) => {
     if (!r || !choice || !reason.trim() || busy) return
     setBusy(true)
     setError(null)
     try {
-      await readingsAPI.correct(caseId, r.id, { choice, reason: reason.trim(), scope, note: note.trim() || undefined, expected_status: r.status })
+      if (!agreed) {
+        const seen = await readingsAPI.correctionPreview(caseId, r.id, { choice, scope })
+        if (seen.records > 0) {
+          setEmptying(seen)
+          return
+        }
+      }
+      await readingsAPI.correct(caseId, r.id, { choice, reason: reason.trim(), scope, note: note.trim() || undefined, expected_status: r.status, expected_empty: agreed?.records ?? 0 })
       track("correct")
+      setEmptying(null)
       setNotRight(false)
       setWatching(r.extraction_id)
       await refresh()
     } catch (e) {
+      setEmptying(null)
       setError(errorWords(e))
       await refresh()
     } finally {
@@ -217,6 +195,8 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
   if (queue.isError) return <p role="alert" className="text-sm">The readings could not be loaded. {errorWords(queue.error)} <Button size="sm" variant="outline" onClick={() => void queue.refetch()}>Try again</Button></p>
   if (!r) return <p className="text-sm">Nothing needs a decision. New items appear when a phone is added or a reading changes.</p>
   const checked = queue.data?.checked ?? 0
+  // The rows of this kind on this phone that a person can still confirm: one rule part on one phone (UXD-58).
+  const sameKind = items.filter((x) => x.status === "open" && x.extraction_id === r.extraction_id && x.part === r.part)
   return (
     <section aria-labelledby="readings-group" className="flex flex-col gap-3">
       <h2 id="readings-group" className="text-base font-semibold">Readings to check</h2>
@@ -270,8 +250,17 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
             <Button variant="ghost" onClick={skip}>
               Skip <kbd className="ml-1 text-xs">s</kbd>
             </Button>
+            {r.status === "open" && sameKind.length > 1 && (
+              <Button variant="outline" aria-expanded={kindOpen} onClick={() => setKindOpen((o) => !o)}>
+                Looks right for all {fmt(sameKind.length)} rows of this kind on this phone…
+              </Button>
+            )}
             {!allSeen && r.status === "open" && <span className="text-sm text-muted-foreground">Looks right is available once every kind of example has been opened.</span>}
           </div>
+          {kindOpen && r.status === "open" && (
+            <ConfirmKindPanel caseId={caseId} phone={r.phone} rows={sameKind} note={note}
+              onClose={() => setKindOpen(false)} onDone={() => void refresh()} />
+          )}
           {notRight && (
             <fieldset className="flex flex-col gap-2 rounded border p-2 text-sm">
               <legend className="font-medium">What is wrong?</legend>
@@ -297,8 +286,20 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
                     <label><input type="radio" name="scope" checked={scope === "same_format"} onChange={() => setScope("same_format")} /> {r.phone} and the other phones in this case from the same kind of report</label>
                   </div>
                   <div>
-                    <Button size="sm" onClick={() => void saveCorrection()} disabled={!reason.trim() || busy}>Save correction</Button>
+                    <Button size="sm" onClick={() => void saveCorrection()} disabled={!reason.trim() || busy || !!emptying}>Save correction</Button>
                   </div>
+                  {emptying && (
+                    <div role="alertdialog" aria-label="This correction would leave records empty" className="flex flex-col gap-2 rounded border border-status-review bg-status-review-soft p-2">
+                      <p>{emptying.words}</p>
+                      {emptying.phones.length > 1 && (
+                        <ul>{emptying.phones.map((p) => <li key={p.extraction_id}>{p.phone}: {fmt(p.records)}</li>)}</ul>
+                      )}
+                      <div className="flex gap-2">
+                        <Button size="sm" onClick={() => void saveCorrection(emptying)} disabled={busy}>Continue</Button>
+                        <Button size="sm" variant="outline" onClick={() => setEmptying(null)} disabled={busy}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </fieldset>
@@ -354,6 +355,7 @@ export default function PhoneReviewPage() {
       <PeopleSuggestionsLink caseId={caseId} open={people} />
       {identity && <IdentityLinkGroup caseId={caseId} identityKey={identity} />}
       {people ? <PeopleSuggestions caseId={caseId} /> : <ReadingsGroup caseId={caseId} />}
+      {!people && <ReadingRechecks caseId={caseId} />}
       <KeymapOverlay open={keysOpen} onOpenChange={setKeysOpen} />
     </div>
   )

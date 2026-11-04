@@ -34,6 +34,7 @@ import { ExportDialog } from "./ExportDialog"
 import { phoneSettingsQuery, phoneThreadsQuery } from "@/features/phones/phone-queries"
 import { SplitForReview } from "./SplitForReview"
 import { ThreadReviewBar } from "./ThreadReviewBar"
+import type { ReadRow } from "./use-reading-position"
 import { ThreadAttachments } from "./ThreadAttachments"
 import { PersonScope } from "./PersonScope"
 import { useThreadMatches } from "./use-thread-matches"
@@ -149,13 +150,19 @@ export function ConversationsPage() {
   const current: ThreadRow | undefined = threads.find((t) => t.thread_key === view.thread)
   // Continue reading on the Phone summary (07 J-15): the threads opened here, on this browser.
   useEffect(() => {
-    if (current) rememberSpot(caseId, { thread: current.thread_key, title: current.title, phone: current.phone.label, extraction: current.phone.extraction_id, at: new Date().toISOString() })
+    if (current) rememberSpot(caseId, { thread: current.thread_key, extraction: current.phone.extraction_id, at: new Date().toISOString() })
   }, [caseId, current])
 
   // ---- record panel, focus, selection --------------------------------------------------------------------------
   const [recordUid, setRecordUid] = useState<string | null>(view.record)
   const [focused, setFocused] = useState<StreamRow | null>(null)
   const [selection, setSelection] = useState<{ rows: StreamRow[]; all: boolean }>({ rows: [], all: false })
+  // Where the person is reading: the row they focused or, while scrolling, the top row. A ref, so reading never
+  // re-renders the page; the bar reads it on its own beat (use-reading-position).
+  const readRow = useRef<ReadRow | null>(null)
+  const onReadRow = useCallback((row: StreamRow) => { readRow.current = { event_uid: row.event_uid, instant: row.time.instant ?? null } }, [])
+  useEffect(() => { readRow.current = null }, [view.thread])
+  const onFocusRead = useCallback((row: StreamRow | null) => { setFocused(row); if (row) onReadRow(row) }, [onReadRow])
   const onSelectionChange = useCallback((rows: StreamRow[], all: boolean) => setSelection({ rows, all }), [])
   const [exporting, setExporting] = useState(false)
   const [splitting, setSplitting] = useState(false)
@@ -709,7 +716,7 @@ export function ConversationsPage() {
               </p>
             )}
           </div>
-          {view.thread && <ThreadReviewBar caseId={caseId} threadKey={view.thread} />}
+          {view.thread && <ThreadReviewBar caseId={caseId} threadKey={view.thread} extraction={current?.phone.extraction_id ?? null} readRow={readRow} onResume={(uid) => void goTo(uid)} />}
           {view.hl && view.thread && (
             <div className="flex flex-wrap items-center gap-2 border-b bg-status-review-soft px-3 py-1.5 text-xs">
               <p role="status">
@@ -753,7 +760,8 @@ export function ConversationsPage() {
               jumpTo={jump}
               highlight={findHl ? { query: findHl, exact: false } : view.hl ? { query: view.hl, exact: view.hlExact } : null}
               onOpenRecord={(row) => setRecordUid(row.record_uid)}
-              onFocusRow={setFocused}
+              onFocusRow={onFocusRead}
+              onTopRow={onReadRow}
               onSelectionChange={onSelectionChange}
               rowExtra={(row) => (
                 <>

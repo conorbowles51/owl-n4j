@@ -11,6 +11,8 @@ const share = vi.hoisted(() => ({
   getThreadReviewState: vi.fn(),
   recordSecondPass: vi.fn(),
   getReviewCoverage: vi.fn(),
+  saveReviewPosition: vi.fn(),
+  handOverReview: vi.fn(),
   startSecondPass: vi.fn(),
 }))
 const members = vi.hoisted(() => ({ list: vi.fn() }))
@@ -22,6 +24,8 @@ import { ReviewCoverage } from "@/features/phones/summary/ReviewCoverage"
 import { SplitForReview } from "./SplitForReview"
 import { ThreadReviewBar } from "./ThreadReviewBar"
 import { PRESENCE_BEAT_MS } from "./use-thread-presence"
+import { POSITION_BEAT_MS } from "./use-reading-position"
+import { readingSpots, rememberSpot } from "@/features/phones/lib/continue-reading"
 
 const people = [
   { user_id: "u-ann", user_name: "Ann Synthetic", user_email: "a@x.test", preset: "owner", permissions: {} },
@@ -36,6 +40,11 @@ const plan = {
   ],
   words: "4 threads into 2 tasks, by thread; 1 thread already reviewed is left out.", warning: null,
 }
+
+const noRow = { current: null }
+const Bar = ({ readRow = noRow, onResume = () => undefined }: { readRow?: { current: { event_uid: string; instant: string | null } | null }; onResume?: (uid: string) => void }) => (
+  <ThreadReviewBar caseId="case-1" threadKey="k1" extraction="e1" readRow={readRow} onResume={onResume} />
+)
 
 function wrap(ui: React.ReactNode) {
   return render(
@@ -91,7 +100,7 @@ describe("[name] is also reviewing this thread (07 J-13 failure state)", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     share.presenceBeat.mockResolvedValue({ thread_key: "k1", others: ["Bea Synthetic"], words: "Bea Synthetic is also reviewing this thread.", next_in_seconds: 45 })
     share.getThreadReviewState.mockResolvedValue({ thread_key: "k1", tasks: [], second_pass: [] })
-    const view = wrap(<ThreadReviewBar caseId="case-1" threadKey="k1" />)
+    const view = wrap(<Bar />)
     expect(await screen.findByText("Bea Synthetic is also reviewing this thread.")).toBeInTheDocument()
     expect(share.presenceBeat).toHaveBeenCalledTimes(1)
     expect(PRESENCE_BEAT_MS).toBeGreaterThan(30_000)
@@ -111,7 +120,7 @@ describe("Second pass (07 J-13 step 5)", () => {
       first: { reviewed_by_name: "Ann Synthetic", record_count: 12 }, result: null, earlier_results: 0, assigned_to: "u-bea", assigned_to_name: "Bea Synthetic",
       seed: 77, percent: 10, words: "In a second-pass sample for Bea Synthetic; no result yet.", task_id: "sp1", title: "Second-pass review", mine: true }] })
     share.recordSecondPass.mockResolvedValue({})
-    wrap(<ThreadReviewBar caseId="case-1" threadKey="k1" />)
+    wrap(<Bar />)
     expect(await screen.findByText(/First review by Ann Synthetic \(12 messages\), kept as it is\./)).toBeInTheDocument()
     expect(screen.getByText(/In review task "Review phone conversations, part 1 of 2 \(by thread\)", assigned to Ann Synthetic\./)).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Disagrees" })).toBeDisabled()
@@ -143,5 +152,85 @@ describe("Coverage summary (07 J-13 step 6)", () => {
     expect(screen.getByText(/10% sample \(seed 77\) for Bea Synthetic: 1 sampled, 0 agree, 1 disagree/)).toBeInTheDocument()
     expect(screen.getByText(/Bea Synthetic disagrees with Ann Synthetic's review of "Synthetic one": missed a reply/)).toBeInTheDocument()
     expect(screen.getByTestId("searches-run")).toHaveTextContent('"apple": run 2 times by Ann Synthetic; 2 found the last time')
+  })
+})
+
+describe("An assigned review's position and Hand over (07 J-15)", () => {
+  const task = (over: object) => ({ task_id: "t1", title: "Review phone conversations, part 1 of 2", assigned_to_name: "Ann Synthetic", mine: true, status: "in_progress", position: null, ...over })
+  const open = (over: object = {}) => {
+    share.presenceBeat.mockResolvedValue({ thread_key: "k1", others: [], words: null, next_in_seconds: 45 })
+    share.getThreadReviewState.mockResolvedValue({ thread_key: "k1", tasks: [task(over)], second_pass: [] })
+    share.saveReviewPosition.mockResolvedValue({ saved: 1 })
+  }
+
+  it("saves the row the assigned person moved to, once, and never the row the thread opened on", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    open()
+    const readRow = { current: { event_uid: "ev-first", instant: null } as { event_uid: string; instant: string | null } | null }
+    wrap(<Bar readRow={readRow} />)
+    await vi.waitFor(() => expect(screen.getByText(/In review task/)).toBeInTheDocument())
+    await act(async () => { await vi.advanceTimersByTimeAsync(POSITION_BEAT_MS * 2) })
+    expect(share.saveReviewPosition).not.toHaveBeenCalled() // an open thread that was not read saves nothing
+    readRow.current = { event_uid: "ev-9", instant: "2023-03-14T09:00:00Z" }
+    await act(async () => { await vi.advanceTimersByTimeAsync(POSITION_BEAT_MS * 3) })
+    expect(share.saveReviewPosition).toHaveBeenCalledTimes(1)
+    expect(share.saveReviewPosition).toHaveBeenCalledWith("case-1", "k1", readRow.current)
+  })
+
+  it("a thread not assigned to this person never writes to the task; the position stays in the browser as an id", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    localStorage.clear()
+    open({ mine: false })
+    const readRow = { current: { event_uid: "ev-first", instant: null } as { event_uid: string; instant: string | null } | null }
+    wrap(<Bar readRow={readRow} />)
+    await vi.waitFor(() => expect(screen.getByText(/In review task/)).toBeInTheDocument())
+    await act(async () => { await vi.advanceTimersByTimeAsync(POSITION_BEAT_MS) })
+    readRow.current = { event_uid: "ev-9", instant: null }
+    await act(async () => { await vi.advanceTimersByTimeAsync(POSITION_BEAT_MS * 2) })
+    expect(share.saveReviewPosition).not.toHaveBeenCalled()
+    expect(readingSpots("case-1")).toEqual([expect.objectContaining({ thread: "k1", extraction: "e1", record: "ev-9" })])
+  })
+
+  it("a colleague can go on from the stored position", async () => {
+    open({ mine: false, position: { event_uid: "ev-5", instant: "2023-03-14T09:00:00Z", by_name: "Bea Synthetic", at: "2026-11-04T00:00:00Z" } })
+    const onResume = vi.fn()
+    wrap(<Bar onResume={onResume} />)
+    fireEvent.click(await screen.findByRole("button", { name: /Continue where Bea Synthetic stopped/ }))
+    expect(onResume).toHaveBeenCalledWith("ev-5")
+  })
+
+  it("Hand over offers only people who can do the review and reports what the note lists", async () => {
+    open()
+    members.list.mockResolvedValue(people)
+    share.handOverReview.mockResolvedValue({ note_id: "n1", open_items: 3, positions: 1, words: "Handed over to Bea Synthetic, with a note listing 1 position and 3 open items." })
+    wrap(<Bar />)
+    fireEvent.click(await screen.findByRole("button", { name: "Hand over…" }))
+    const who = await screen.findByRole("combobox", { name: "Hand over to" })
+    await waitFor(() => expect(screen.getByRole("option", { name: "Bea Synthetic" })).toBeInTheDocument())
+    expect(screen.queryByRole("option", { name: "Viv Viewer" })).toBeNull()
+    fireEvent.change(who, { target: { value: "u-bea" } })
+    fireEvent.change(screen.getByRole("textbox", { name: "Anything to add" }), { target: { value: "Start at the group thread." } })
+    fireEvent.click(screen.getByRole("button", { name: "Hand over" }))
+    await waitFor(() => expect(share.handOverReview).toHaveBeenCalledWith("case-1", "t1", "u-bea", "Start at the group thread."))
+    expect(await screen.findByText(/with a note listing 1 position and 3 open items/)).toBeInTheDocument()
+  })
+
+  it("a done task offers no Hand over", async () => {
+    open({ status: "done" })
+    wrap(<Bar />)
+    await screen.findByText(/In review task/)
+    expect(screen.queryByRole("button", { name: "Hand over…" })).toBeNull()
+  })
+})
+
+describe("Casual reading in browser storage (UXD-36)", () => {
+  it("keeps record ids only, and an earlier build's title and label are dropped when read", () => {
+    localStorage.clear()
+    localStorage.setItem("loupe.continue-reading.c9", JSON.stringify([{ thread: "t1", title: "A person's name", phone: "C1", extraction: "e1", at: "x" }]))
+    expect(readingSpots("c9")).toEqual([{ thread: "t1", extraction: "e1", record: null, at: "x" }])
+    expect(localStorage.getItem("loupe.continue-reading.c9")).not.toContain("person's name")
+    rememberSpot("c9", { thread: "t2", extraction: "e1", record: "ev-1", at: "y" })
+    rememberSpot("c9", { thread: "t2", extraction: "e1", at: "z" })
+    expect(readingSpots("c9")[0]).toEqual({ thread: "t2", extraction: "e1", record: "ev-1", at: "z" })
   })
 })

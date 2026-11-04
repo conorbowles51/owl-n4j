@@ -1,3 +1,4 @@
+import { HandOverDialog } from "@/features/conversations/HandOverDialog"
 import { useEffect, useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { CalendarClock, CheckSquare, Plus, Trash2 } from "lucide-react"
@@ -78,6 +79,18 @@ function WorkItemDialog({
     selection.type === "deadline" ? selection.deadline : undefined
   const existing = Boolean(task || deadline)
   const members = useCaseMembers(caseId).data ?? []
+  // A phone review task is passed on with a note of where it stands (07 J-15 step 4), not by changing the assignee.
+  const [handingOver, setHandingOver] = useState(false)
+  const canHandOver =
+    canEdit &&
+    task?.status !== "done" &&
+    (task?.links ?? []).some(
+      (l) =>
+        l.source_anchor &&
+        ("review_split" in l.source_anchor ||
+          "second_pass" in l.source_anchor ||
+          "reading_recheck" in l.source_anchor)
+    )
   const createTask = useCreateTask(caseId)
   const updateTask = useUpdateTask(caseId)
   const createDeadline = useCreateDeadline(caseId)
@@ -330,6 +343,16 @@ function WorkItemDialog({
             </p>
           )}
           <div className="flex justify-end gap-2">
+            {canHandOver && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => setHandingOver(true)}
+              >
+                Hand over…
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
@@ -356,6 +379,15 @@ function WorkItemDialog({
             )}
           </div>
         </form>
+        {task && handingOver && (
+          <HandOverDialog
+            caseId={caseId}
+            taskId={task.id}
+            title={task.title}
+            open
+            onClose={() => setHandingOver(false)}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )

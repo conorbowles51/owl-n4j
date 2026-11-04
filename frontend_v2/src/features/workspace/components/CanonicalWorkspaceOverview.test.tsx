@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { WorkspaceOverviewResponse } from "../api"
@@ -8,7 +9,9 @@ const mocks = vi.hoisted(() => ({
   overview: vi.fn(),
   setAttention: vi.fn(),
   caseContext: vi.fn(),
+  getContinueWork: vi.fn(),
 }))
+vi.mock("@/features/phones/review-share", async (orig) => ({ ...(await orig<object>()), getContinueWork: mocks.getContinueWork }))
 
 const overview: WorkspaceOverviewResponse = {
   case_id: "case-1",
@@ -123,13 +126,15 @@ vi.mock("./HowThisWasFound", () => ({
 
 function renderOverview(canEdit = true) {
   return render(
-    <MemoryRouter>
-      <CanonicalWorkspaceOverview
-        caseId="case-1"
-        canEdit={canEdit}
-        onOpenCasework={vi.fn()}
-      />
-    </MemoryRouter>,
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>
+        <CanonicalWorkspaceOverview
+          caseId="case-1"
+          canEdit={canEdit}
+          onOpenCasework={vi.fn()}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>,
   )
 }
 
@@ -142,6 +147,29 @@ describe("CanonicalWorkspaceOverview", () => {
     })
     mocks.setAttention.mockReset().mockResolvedValue({})
     mocks.caseContext.mockReset()
+    mocks.getContinueWork.mockReset().mockResolvedValue({ assigned: [], reading: [] })
+    localStorage.clear()
+  })
+
+  it("Your work shows Continue reading: assigned reviews from the server, casual reading sent as ids only (07 J-15)", async () => {
+    localStorage.setItem("loupe.continue-reading.case-1", JSON.stringify([{ thread: "t9", extraction: "e1", record: "ev-4", at: "2026-11-02T00:00:00Z" }]))
+    mocks.getContinueWork.mockResolvedValue({
+      assigned: [{ task_id: "t1", title: "Review phone conversations, part 1 of 2", kind: "threads", total: 4, open: 3, next: null,
+        items: [{ thread_key: "a", title: "Thread a", extraction_id: "e1", open: "not yet reviewed, 3 messages", position: { event_uid: "ev-1", instant: "2023-03-14T09:00:00Z", by_name: "Bea Synthetic", at: "2026-11-04T00:00:00Z" } }] }],
+      reading: [{ thread_key: "t9", title: "Casual thread", phone: "C2", extraction_id: "e1", record: "ev-4" }],
+    })
+    renderOverview()
+    const feed = await screen.findByRole("region", { name: "Continue reading" })
+    expect(mocks.getContinueWork).toHaveBeenCalledWith("case-1", [{ thread: "t9", record: "ev-4" }])
+    expect(within(feed).getByRole("link", { name: "Thread a" })).toHaveAttribute("href", "/cases/case-1/phones/e1/records/conversations?thread=a&at=ev-1")
+    expect(within(feed).getByRole("link", { name: "Casual thread" })).toHaveAttribute("href", "/cases/case-1/phones/e1/records/conversations?thread=t9&at=ev-4")
+    expect(within(feed).getByText(/Bea Synthetic stopped at/)).toBeInTheDocument()
+  })
+
+  it("a case with nothing to continue shows no Continue reading block", async () => {
+    renderOverview()
+    await waitFor(() => expect(mocks.getContinueWork).toHaveBeenCalled())
+    expect(screen.queryByRole("region", { name: "Continue reading" })).toBeNull()
   })
 
   it("separates ranked shared awareness from personal work using one overview query", () => {

@@ -43,6 +43,7 @@ import { CaseContextSection } from "./CaseContextSection"
 import { CaseBriefPanel } from "./CaseBriefPanel"
 import { SnapshotsSection } from "@/features/cases/components/SnapshotsSection"
 import { CaseFileSummaries } from "./CaseFileSummaries"
+import { ContinueReadingFeed } from "@/features/phones/ContinueReading"
 
 interface CanonicalWorkspaceOverviewProps {
   caseId: string
@@ -494,6 +495,7 @@ export function CanonicalWorkspaceOverview({
             onDismiss={(item) => void handleAttentionState(item, "dismiss")}
             onSnooze={(item) => void handleAttentionState(item, "snooze")}
           />
+          <ContinueReadingFeed caseId={caseId} />
         </section>
       </div>
 
