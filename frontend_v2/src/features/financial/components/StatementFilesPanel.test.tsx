@@ -553,7 +553,7 @@ it("reads the existing failed file without uploading another copy", async () => 
       .mocked(fetchAPI)
       .mock.calls.every(([url]) =>
         [
-          "/api/evidence?case_id=case&include_reading_versions=true&financial_only=true",
+          "/api/evidence/statement-register?case_id=case",
           "/api/financial/statement-import/files?case_id=case",
         ].includes(url)
       )

@@ -182,7 +182,7 @@ it.each(["folder", "statements"] as const)(
     vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
       if (url.startsWith("/api/financial/statement-import/files?"))
         return { case_id: "case", files: [], truncated: false }
-      if (url.startsWith("/api/evidence?"))
+      if (/^\/api\/evidence(\/statement-register)?\?/.test(url))
         return { files: group?.status === "completed" ? records : [] }
       if (url === "/api/evidence/a" || url === "/api/evidence/b")
         return records.find((record) => url.endsWith("/" + record.id))

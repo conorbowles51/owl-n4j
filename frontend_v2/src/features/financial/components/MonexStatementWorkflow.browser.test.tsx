@@ -89,7 +89,7 @@ it("chooses the currency account, saves balances, switches accounts and reopens 
   const saved = new Set<string>()
   const requests: Record<string, unknown>[] = []
   vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
-    if (url.startsWith("/api/evidence?"))
+    if (/^\/api\/evidence(\/statement-register)?\?/.test(url))
       return {
         files: [
           {

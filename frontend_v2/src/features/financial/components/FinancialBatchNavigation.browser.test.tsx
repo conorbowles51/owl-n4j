@@ -97,7 +97,7 @@ beforeEach(async () => {
     if (options?.method) throw Error("This navigation journey must not write or reprocess data.")
     if (url.includes("/batches/list?")) return { case_id: "case", batches: [{ id: batch.id, status: "review", created_at: "2026-09-25T10:00:00Z", file_count: 1, failed_files: 1 }] } as never
     if (url.includes(`/batches/${batch.id}?`)) return batch as never
-    if (url.startsWith("/api/evidence?")) return { files: [file, otherFile] } as never
+    if (/^\/api\/evidence(\/statement-register)?\?/.test(url)) return { files: [file, otherFile] } as never
     if (url.startsWith("/api/evidence-upload-")) return [] as never
     if (url.includes("/statement-import/files?")) return { case_id: "case", truncated: false, files: [] } as never
     if (url.includes("/deployment-recovery?")) return { run: null, total: 0, counts: {}, items: [] } as never
@@ -259,7 +259,7 @@ for (const sourceState of ["removed", "missing"] as const) {
         throw Error(
           "Opening an unavailable review must not change or reprocess any source."
         )
-      if (url.startsWith("/api/evidence?"))
+      if (/^\/api\/evidence(\/statement-register)?\?/.test(url))
         return {
           files: [
             ...(sourceState === "removed"

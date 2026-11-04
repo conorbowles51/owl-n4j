@@ -119,7 +119,7 @@ for (const [filename, width] of [
           financial_visibility_revision: selected.financial_visibility_revision,
         }
       }
-      if (url.startsWith("/api/evidence?"))
+      if (/^\/api\/evidence(\/statement-register)?\?/.test(url))
         return { files: [...files, independent] }
       if (url.startsWith("/api/evidence-upload-")) return []
       if (url.includes("/statement-import/files?"))

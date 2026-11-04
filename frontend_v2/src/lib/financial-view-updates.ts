@@ -60,6 +60,7 @@ export function acceptsUpdating(endpoint: string, method?: string, now = Date.no
     (method ?? "GET").toUpperCase() === "GET" &&
     now - ownWriteAt >= AFTER_OWN_WRITE_MS &&
     (endpoint.startsWith("/api/financial") ||
+      endpoint.startsWith("/api/evidence/statement-register?") ||
       (endpoint.startsWith("/api/evidence?") && endpoint.includes("financial_only=true")))
   )
 }

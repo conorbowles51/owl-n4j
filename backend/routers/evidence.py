@@ -850,6 +850,34 @@ def list_evidence(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# The fields of each file the Financial page's statement register reads (frontend use-statement-register.ts
+# statementFile); its schema drops every other field of the listing.
+STATEMENT_REGISTER_FIELDS = (
+    'id', 'case_id', 'original_filename', 'status', 'created_at', 'statement_root_evidence_id',
+    'statement_parent_evidence_id', 'financial_removed', 'financial_imports_removed',
+    'financial_visibility_revision', 'financial_visibility_changed_at')
+
+
+@router.get("/statement-register", dependencies=[Depends(get_current_user)])
+@cached_view('statement-register')
+def list_statement_register(
+    case_id: str = Query(..., description="Case ID"),
+    db: Session = Depends(get_db),
+):
+    """The Financial page's statement register: the listing ``GET /api/evidence`` answers with
+    ``include_reading_versions=true&financial_only=true``, each file given only the fields the register reads
+    (STATEMENT_REGISTER_FIELDS; a field the listing leaves out stays out). d5b330d1: 3,176 files, 4.6 MB whole.
+    Made from the kept copy of that listing when one is current, so both come from the same rows."""
+    from services.financial.view_cache import kept_copy
+    scope = dict(case_id=case_id, status_filter=None, include_cellebrite_artifacts=False,
+                 include_reading_versions=True, financial_only=True)
+    listing = kept_copy('evidence-list', scope)
+    if listing is None:
+        listing = list_evidence(db=db, **scope)
+    return {"files": [{field: file[field] for field in STATEMENT_REGISTER_FIELDS if field in file}
+                      for file in listing["files"]]}
+
+
 @router.get("/text-search", response_model=CaseTextSearchResponse)
 def text_search(
     response: Response,

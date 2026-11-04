@@ -179,7 +179,7 @@ beforeEach(() => {
   failure = false
   vi.mocked(fetchAPI).mockReset()
   vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
-    if (String(url).startsWith("/api/evidence?"))
+    if (/^\/api\/evidence(\/statement-register)?\?/.test(String(url)))
       return {
         files: [
           {
@@ -1637,7 +1637,7 @@ it("removes empty correction controls when all unassigned payments have been mov
 
 it("changes the printed page with next and previous controls", async () => {
   vi.mocked(fetchAPI).mockImplementation(async (url) =>
-    String(url).startsWith("/api/evidence?")
+    /^\/api\/evidence(\/statement-register)?\?/.test(String(url))
       ? ({
           files: [
             {
@@ -2434,7 +2434,7 @@ it("opens a receipt separately from statement periods and returns to the same fi
     },
   ]
   vi.mocked(fetchAPI).mockImplementation(async (url) => {
-    if (String(url).startsWith("/api/evidence?"))
+    if (/^\/api\/evidence(\/statement-register)?\?/.test(String(url)))
       return {
         files: [
           {

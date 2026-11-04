@@ -65,7 +65,7 @@ beforeEach(async () => {
     if (url.includes("/checks?")) return { revision, checks_revision: "b".repeat(64), applied: false, checks: [], admission: { status: "needs_review", can_import: false, revision: "b".repeat(64), blockers: [{ message: "Printed closing balance is not available." }] } }
     if (url.includes("/coverage-check?")) return { case_id: "case", evidence_file_id: "file", available: true, revision: "c".repeat(64), candidates: [] }
     if (options?.method) throw Error(`Unexpected mutation: ${url}`)
-    if (url.startsWith("/api/evidence?")) return { files: [file] }
+    if (/^\/api\/evidence(\/statement-register)?\?/.test(url)) return { files: [file] }
     if (url.startsWith("/api/evidence-upload-")) return []
     if (url.includes("/statement-import/file?")) return proposal
     if (url.includes("/statement-import/files?")) return { case_id: "case", files: [], truncated: false }

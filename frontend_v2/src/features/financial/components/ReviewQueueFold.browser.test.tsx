@@ -43,7 +43,7 @@ beforeEach(() => {
   vi.mocked(fetchAPI).mockReset()
   vi.mocked(fetchAPI).mockImplementation(async (url: string) => {
     if (url.includes("/review/queue")) return queue as never
-    if (url.startsWith("/api/evidence?")) return { files: [] } as never
+    if (/^\/api\/evidence(\/statement-register)?\?/.test(url)) return { files: [] } as never
     if (url.startsWith("/api/evidence-upload-")) return [] as never
     if (url.includes("/statement-import/files?")) return { case_id: "case", files: [], truncated: false } as never
     if (url.includes("/deployment-recovery?")) return { run: null, total: 0, counts: {}, items: [] } as never

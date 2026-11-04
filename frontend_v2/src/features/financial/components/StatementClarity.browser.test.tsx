@@ -204,7 +204,7 @@ it.each([1280, 390])(
             },
           ],
         }
-      if (url.startsWith("/api/evidence?"))
+      if (/^\/api\/evidence(\/statement-register)?\?/.test(url))
         return {
           files: ["ready", "duplicate"].map((id) => ({
             id,

@@ -491,7 +491,7 @@ def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None, stoppe
                                           get_ledger_transactions, get_ledger_trends_view,
                                           get_ledger_people_view)
     from routers.financial_statement_import import files as get_statement_files
-    from routers.evidence import list_evidence
+    from routers.evidence import list_evidence, list_statement_register
     from routers.financial_ledger import get_account_consolidations, get_account_parties
     from routers.financial_statement_import import account_types as get_account_types
     from routers.financial_statement_import import list_financial_batches
@@ -545,6 +545,8 @@ def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None, stoppe
         # The Financial page's statement register asks for every reading version of its files.
         ('statement register files', list_evidence, dict(status_filter=None, include_cellebrite_artifacts=False,
                                                          include_reading_versions=True, financial_only=True)),
+        # The fields of them the register reads (GET /api/evidence/statement-register), from the listing just kept.
+        ('statement register', list_statement_register, {}),
         # Measured live 2026-10-30 17:52-18:00, first call after a start (load 12-19): d5b330d1 58 / 43 / 38 s,
         # 49494305 63 / 34 / 25 s; then 0.1-1.2 s. Saved copies do not outlive a release (new code identity).
         ('account parties', get_account_parties, {}),
@@ -633,7 +635,7 @@ def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None, stoppe
         try:
             with SessionLocal() as db:
                 # Each route gets case_id as FastAPI gives it (the evidence listing and graph records declare it as text).
-                route(case_id=str(case_id) if route in (list_evidence, get_financial_records) else case_id, **defaults, db=db)
+                route(case_id=str(case_id) if route in (list_evidence, list_statement_register, get_financial_records) else case_id, **defaults, db=db)
             logger.info('Financial %s warmed for case %s (%.1f s)', name, case_id, time.perf_counter() - started)
             warmed += 1
             outcome = 'warmed'

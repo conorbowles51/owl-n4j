@@ -54,6 +54,7 @@ def periods(tmp_path, monkeypatch):
     monkeypatch.setattr(routers.financial_statement_import, 'files', lambda **kw: calls.append(dict(kw, view='files')))
     import routers.evidence
     monkeypatch.setattr(routers.evidence, 'list_evidence', lambda **kw: calls.append(dict(kw, view='evidence')))
+    monkeypatch.setattr(routers.evidence, 'list_statement_register', lambda **kw: calls.append(dict(kw, view='register')))
     monkeypatch.setattr(routers.financial_ledger, 'get_account_parties', lambda **kw: calls.append(dict(kw, view='parties')))
     monkeypatch.setattr(routers.financial_statement_import, 'account_types', lambda **kw: calls.append(dict(kw, view='types')))
     monkeypatch.setattr(routers.financial_ledger, 'get_account_consolidations',
@@ -99,13 +100,13 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
     view_warmup.warm_account_history()
     assert [(str(call['case_id']), call.get('view')) for call in calls] == [
         (str(large), None), (str(large), 'transactions'), (str(large), 'overview'), (str(large), 'panels'), (str(large), 'panel-figures'),
-        (str(large), 'first-view'), (str(large), 'files'), (str(large), 'evidence'),
+        (str(large), 'first-view'), (str(large), 'files'), (str(large), 'evidence'), (str(large), 'register'),
         (str(large), 'parties'), (str(large), 'types'), (str(large), 'consolidations'), (str(large), 'queue'), (str(large), 'receipts'),
         (str(large), 'batches'), (str(large), 'summary'), (str(large), 'working-summary'),
         (str(large), 'graph-transactions'), (str(large), 'graph-intelligence'),
         (str(large), 'graph-page'), (str(large), 'timeline-page'),
         (str(small), None), (str(small), 'transactions'), (str(small), 'overview'), (str(small), 'panels'), (str(small), 'panel-figures'),
-        (str(small), 'first-view'), (str(small), 'files'), (str(small), 'evidence'),
+        (str(small), 'first-view'), (str(small), 'files'), (str(small), 'evidence'), (str(small), 'register'),
         (str(small), 'parties'), (str(small), 'types'), (str(small), 'consolidations'), (str(small), 'queue'), (str(small), 'receipts'),
         (str(small), 'batches'), (str(small), 'summary'), (str(small), 'working-summary'),
         (str(small), 'graph-transactions'), (str(small), 'graph-intelligence'),
@@ -116,16 +117,17 @@ def test_every_case_is_warmed_largest_first_with_the_routes_defaults(periods):
         (str(small), 'working'), (str(small), 'graph'), (str(small), 'cpa'), (str(small), 'timeline'),
         (str(small), 'transfers'), (str(small), 'patterns')]
     # The batch list takes only the case, as a UUID (FastAPI's type for it): the same cached-view key.
-    assert {key: value for key, value in calls[13].items() if key != 'db'} == dict(case_id=large, view='batches')
+    assert {key: value for key, value in calls[14].items() if key != 'db'} == dict(case_id=large, view='batches')
     # The three account views take only the case: the same cached-view key as a first visit.
-    assert {key for key in calls[8] if key != 'db'} == {'case_id', 'view'}
+    assert {key for key in calls[9] if key != 'db'} == {'case_id', 'view'}
     assert calls[7]['case_id'] == str(large)  # as text, as FastAPI gives the evidence listing
+    assert {key: value for key, value in calls[8].items() if key != 'db'} == dict(case_id=str(large), view='register')
     # The graph records as a first visit asks for them (case as text, every filter unset): the same cached-view key.
-    assert {key: value for key, value in calls[16].items() if key != 'db'} == dict(
+    assert {key: value for key, value in calls[17].items() if key != 'db'} == dict(
         case_id=str(large), mode='transactions', types=None, start_date=None, end_date=None, categories=None,
         view='graph-transactions')
     # The Graph and Timeline pages' reads take only the case; each builds the route's own key (routers.graph/timeline).
-    assert [{key: value for key, value in calls[index].items() if key != 'db'} for index in (18, 19)] == [
+    assert [{key: value for key, value in calls[index].items() if key != 'db'} for index in (19, 20)] == [
         dict(case_id=large, view='graph-page'), dict(case_id=large, view='timeline-page')]
     assert {key: value for key, value in calls[0].items() if key != 'db'} == dict(
         case_id=large, account_id=None, account_ids=None, account_holders=None, start_date=None, end_date=None)

@@ -70,7 +70,7 @@ for (const width of [1280, 390]) {
           Number(parsed.searchParams.get("text_offset"))
         )
       }
-      if (url.startsWith("/api/evidence?")) return { files }
+      if (/^\/api\/evidence(\/statement-register)?\?/.test(url)) return { files }
       if (url.startsWith("/api/evidence-upload-")) return []
       if (url.includes("/statement-import/files?"))
         return { case_id: "case", files: [], truncated: false }

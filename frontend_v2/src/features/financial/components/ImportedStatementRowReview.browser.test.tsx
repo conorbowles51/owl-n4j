@@ -129,7 +129,7 @@ it.each([1280, 390])(
       }
     )
     vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
-      if (url.startsWith("/api/evidence?"))
+      if (/^\/api\/evidence(\/statement-register)?\?/.test(url))
         return {
           files: [
             {

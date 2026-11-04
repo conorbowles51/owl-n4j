@@ -157,7 +157,7 @@ beforeEach(async () => {
   vi.mocked(fetchAPI).mockReset()
   vi.mocked(fetchAPI).mockImplementation(importJobs(async (url) => {
     if (url.startsWith("/api/evidence-upload-")) return [] as never
-    if (url.startsWith("/api/evidence?"))
+    if (/^\/api\/evidence(\/statement-register)?\?/.test(url))
       return {
         files: [
           {

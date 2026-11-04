@@ -136,7 +136,7 @@ it.each([1280, 390])(
       unexpected: string[] = []
     vi.mocked(fetchAPI).mockReset()
     vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
-      if (url.startsWith("/api/evidence?"))
+      if (/^\/api\/evidence(\/statement-register)?\?/.test(url))
         return {
           files: [
             {

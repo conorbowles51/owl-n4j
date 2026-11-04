@@ -170,7 +170,7 @@ beforeEach(() => {
   vi.mocked(fetchAPI).mockReset()
   vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
     if (url.startsWith("/api/evidence-upload-")) return [] as never
-    if (String(url).startsWith("/api/evidence?"))
+    if (/^\/api\/evidence(\/statement-register)?\?/.test(String(url)))
       return {
         files: [
           {
@@ -285,7 +285,7 @@ it("sends all 588 selected PDFs to one preparation request even when a search hi
       return { id: "prepared-batch", case_id: "case" } as never
     }
     return (
-      url.startsWith("/api/evidence?")
+      /^\/api\/evidence(\/statement-register)?\?/.test(url)
         ? { files }
         : { case_id: "case", files: [], truncated: false }
     ) as never
@@ -519,7 +519,7 @@ it("keeps a 51-period PDF manageable from file list through saved-period review 
   vi.mocked(fetchAPI).mockImplementation(importJobs(async (url, options) => {
     if (url.startsWith("/api/evidence-upload-")) return [] as never
     if (options?.method === "POST") writes.push(url)
-    if (url.startsWith("/api/evidence?"))
+    if (/^\/api\/evidence(\/statement-register)?\?/.test(url))
       return {
         files: [
           {

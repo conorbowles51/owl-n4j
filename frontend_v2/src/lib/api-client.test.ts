@@ -148,6 +148,8 @@ it("keeps asking to be answered as updating after the page posts its speed recor
     await fetchAPI("/api/request-speed/page-views", { method: "POST", body: { views: [] } })
     await fetchAPI("/api/evidence?case_id=c1&include_reading_versions=true&financial_only=true")
     expect(fetch.mock.calls[1][1].headers["X-Financial-View-Accept"]).toBe("updating")
+    await fetchAPI("/api/evidence/statement-register?case_id=c1")
+    expect(fetch.mock.calls[2][1].headers["X-Financial-View-Accept"]).toBe("updating")
   } finally {
     vi.useRealTimers()
   }

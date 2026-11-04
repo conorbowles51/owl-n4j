@@ -212,7 +212,7 @@ it("reports detail and locate errors and preserves the inventory for retry", asy
 it("finds the exact file family despite duplicate names, focuses its controls and returns to the retained audit", async () => {
   vi.mocked(fetchAPI).mockImplementation(async (url) => {
     if (url.includes("/source-audit")) return respond(url)
-    if (url.startsWith("/api/evidence?"))
+    if (/^\/api\/evidence(\/statement-register)?\?/.test(url))
       return {
         files: groups.slice(0, 3).map((group) => ({
           id: group.current_file_id,

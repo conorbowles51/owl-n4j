@@ -161,7 +161,9 @@ export function useStatementFiles(
     queryFn: async () => {
       const result = listing.parse(
         await fetchAPI(
-          `/api/evidence?${new URLSearchParams({ case_id: caseId!, include_reading_versions: "true", financial_only: "true" })}`
+          // The evidence listing with every reading version of the Financial files, each file given only the
+          // fields statementFile reads (the whole listing was 4.66 MB on the largest case, 4 Nov).
+          `/api/evidence/statement-register?${new URLSearchParams({ case_id: caseId! })}`
         )
       )
       if (result.files.some((file) => file.case_id !== caseId))
