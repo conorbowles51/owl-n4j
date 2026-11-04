@@ -1292,10 +1292,17 @@ def payment_conversation(conn, case_id, payment, *, person_a=None, person_b=None
             except records.NotFound:
                 body = None
             items.append(dict(it, rec=_rec(it["record_uid"]), text=body))
+        # the window is a stated search bound (lx-matchgrades): what it leaves out is counted, not hidden
+        ever = link_edges.edges(conn, case_id, [sa, sb])["edges"][0]["communication"]
+        n_ever = sum(link_edges.comm_total(ever, p) for p in ("messages", "calls", "emails"))
+        outside = max(0, n_ever - len(found))
         return _base(tool, case_id, **base, outcome=None, total_matching=len(found), returned=len(items),
                      has_more=nxt is not None, next_offset=nxt, offset=offset_, items=items,
-                     coverage="%d messages, %d calls and %d emails between %s and %s in the window." % (
-                         totals["messages"], totals["calls"], totals["emails"], pa.display_name, pb.display_name),
+                     outside_window=outside,
+                     coverage="%d messages, %d calls and %d emails between %s and %s in the window%s." % (
+                         totals["messages"], totals["calls"], totals["emails"], pa.display_name, pb.display_name,
+                         ("; %d more between them are outside it (widen with hours or days, up to %d days, to read "
+                          "them)" % (outside, MAX_WINDOW_DAYS)) if outside else ""),
                      limitation=("Only %d of %d are here; read on with offset %d before drafting." % (
                          len(items), len(found), nxt)) if nxt is not None else None,
                      note="Read every record in the window, then draft the purpose with draft_payment_purpose: "

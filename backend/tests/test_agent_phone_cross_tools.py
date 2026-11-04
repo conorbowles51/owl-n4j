@@ -135,6 +135,8 @@ def test_the_conversation_around_a_payment_is_the_day_plus_two_hours_between_the
     assert [i["rec"] for i in out["items"]] == ["rec://%s" % e["record_uid"] for e in world["evs"][:2]]
     assert "sending the money for the car" in out["items"][0]["text"]
     assert "unrelated" not in str(out["items"])   # Ben is not one of the two
+    # the window is a stated bound: the one message between them outside it is counted (lx-matchgrades)
+    assert out["outside_window"] == 1 and "1 more between them are outside it" in out["coverage"]
 
 
 def test_no_conversation_in_the_window_is_decided_by_the_records_with_its_reason(world):
