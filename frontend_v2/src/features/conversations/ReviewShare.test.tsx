@@ -20,7 +20,8 @@ vi.mock("@/features/cases/members-api", () => ({ caseMembersAPI: members }))
 import { ApiError } from "@/lib/api-client"
 import { ReviewCoverage } from "@/features/phones/summary/ReviewCoverage"
 import { SplitForReview } from "./SplitForReview"
-import { PRESENCE_BEAT_MS, ThreadReviewBar } from "./ThreadReviewBar"
+import { ThreadReviewBar } from "./ThreadReviewBar"
+import { PRESENCE_BEAT_MS } from "./use-thread-presence"
 
 const people = [
   { user_id: "u-ann", user_name: "Ann Synthetic", user_email: "a@x.test", preset: "owner", permissions: {} },
