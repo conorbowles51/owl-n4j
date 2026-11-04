@@ -27,3 +27,37 @@ describe("upload size limit", () => {
     expect(small.slice).not.toHaveBeenCalled()
   })
 })
+
+describe("resuming a saved upload", () => {
+  const state = {
+    id: "g-1", case_id: "case-1", folder_id: null, name: "r", kind: "folder", status: "paused", replace_existing: false,
+    file_count: 1, staged_count: 0, size: 10, received_bytes: 0, receipt: null,
+    members: [{ id: "m-1", path: "r/a.db", size: 10, sha256: "a".repeat(64), status: "uploading", received: [] }],
+  }
+  const file = () => ({ name: "a.db", size: 10, webkitRelativePath: "r/a.db", slice: vi.fn(() => new Blob(["0123456789"])) }) as unknown as File
+  const stopAfterResume = () => {
+    api.fetchAPI.mockReset()
+    api.fetchAPI.mockImplementation(async (url: string, init?: { method?: string }) => {
+      if (url === "/api/evidence-upload-groups/g-1" && !init) return state
+      if (init?.method === "POST" && url.endsWith("/resume")) return {}
+      throw new Error("stop here")
+    })
+  }
+
+  it("does not read again a file the same selection already fingerprinted and matched", async () => {
+    stopAfterResume()
+    const { resumeUploadGroup } = await import("./resumable-upload-groups")
+    const f = file()
+    await resumeUploadGroup("g-1", [f], undefined, new Map([["r/a.db", "a".repeat(64)]])).catch(() => null)
+    expect(f.slice).not.toHaveBeenCalled()
+    expect(api.fetchAPI).toHaveBeenCalledWith("/api/evidence-upload-groups/g-1/resume", { method: "POST" })
+  })
+
+  it("still checks a file it has not fingerprinted, and refuses a changed one", async () => {
+    stopAfterResume()
+    const { resumeUploadGroup } = await import("./resumable-upload-groups")
+    const f = file()
+    await expect(resumeUploadGroup("g-1", [f])).rejects.toThrow("The original file r/a.db is missing or has changed.")
+    expect(f.slice).toHaveBeenCalled()
+  })
+})

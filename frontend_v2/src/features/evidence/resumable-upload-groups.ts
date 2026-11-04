@@ -130,10 +130,13 @@ export async function pauseUploadGroup(id: string) {
   }
 }
 
+/** ``verified``: path to SHA-256 of files the caller fingerprinted in this same selection and matched against this
+ *  group's members; those are not read a second time. */
 export async function resumeUploadGroup(
   id: string,
   files?: File[],
-  onProgress?: (progress: UploadProgress) => void
+  onProgress?: (progress: UploadProgress) => void,
+  verified?: ReadonlyMap<string, string>
 ): Promise<UploadGroup> {
   const checkSession = uploadSessionGuard()
   const state = await fetchAPI<UploadGroup>(`${endpoint}/${id}`)
@@ -164,7 +167,7 @@ export async function resumeUploadGroup(
       if (
         !file ||
         file.size !== member.size ||
-        (await uploadFingerprint(file)).sha256 !== member.sha256
+        (verified?.get(member.path) ?? (await uploadFingerprint(file)).sha256) !== member.sha256
       )
         throw new Error(
           `The original file ${member.path} is missing or has changed. Saved upload data has not changed.`
@@ -357,7 +360,8 @@ export async function uploadFolderOrArchive(
     }))
   checkSession()
   const result = prior
-    ? await resumeUploadGroup(group.id, files, onProgress)
+    ? // every file was fingerprinted above and matched this group's members: do not read them all again
+      await resumeUploadGroup(group.id, files, onProgress, new Map(manifest.map((item) => [item.path, item.sha256])))
     : await runGroup(group, files, onProgress)
   if (!result.receipt)
     throw new Error(
