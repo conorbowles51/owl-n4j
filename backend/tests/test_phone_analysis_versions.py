@@ -23,7 +23,7 @@ RECORDED = {
     "typed_words": ("7.3", "e323b05b2b998e4a"),
     "intent": ("9.3", "1eb9c37ead0b9301"),
     "common_contacts": ("14.1", "46ee93fe71781001"),
-    "reparse_comparison": ("17.3-1", "b27a8eff1720fac7"),
+    "reparse_comparison": ("17.3-2", "52a05e6e6642f217"),
     "contact_matrix": ("15.1", "49cad534aa52a2bf"),
     "number_switching": ("16.1", "2189f1b2740ec40b"),
     "extraction_comparison": ("12.1", "919fdb03776732f1"),

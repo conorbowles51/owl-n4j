@@ -23,4 +23,10 @@ describe("re-parse wording", () => {
     expect(reparseWords(r("count_differs", { ...base, compared: "call", report_count: 1200, reparse_count: 1188 })).title)
       .toBe("calls: 1,200 in the report, 1,188 read by ALEAPP v2026.4.5")
   })
+  it("says a kind is not compared when the tool wrote nothing for it, never that it is only in the report", () => {
+    const w = reparseWords(r("not_compared", { ...base, compared: "whatsapp_message", report_count: 312,
+      reason: "ALEAPP v2026.4.5 wrote no WhatsApp messages for this phone, so the report's 312 WhatsApp messages are not compared." }))
+    expect(w.title).toBe("WhatsApp messages: not compared")
+    expect(w.line).toBe("ALEAPP v2026.4.5 wrote no WhatsApp messages for this phone, so the report's 312 WhatsApp messages are not compared.")
+  })
 })

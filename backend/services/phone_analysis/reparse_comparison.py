@@ -13,6 +13,10 @@ Each kind: exact key, one to one, is ``present_in_both``; same party and content
 other content is ``value_differs``; what is left is ``only_in_reparse`` (a record the report did not decode, or a
 deleted row the tool read) or ``only_in_report``. A kind whose totals differ also gets one ``count_differs``.
 
+A kind is compared only when the tool wrote output for it on that phone (the run's ``artefact_counts.mapped``). When it
+did not, the report's records of that kind are one ``not_compared`` result with the reason, never "only in the
+report": measured on P12, the pinned ALEAPP reads WhatsApp only under ``com.whatsapp``, not WhatsApp Business.
+
 The tool's rows are never merged into a captured record: a result names the report record and the tool's row
 (run, artefact, row) side by side, and the screen shows the tool's row as "read by <tool> <version>".
 """
@@ -24,11 +28,14 @@ from collections import defaultdict
 from sqlalchemy import text
 
 CODE = "reparse_comparison"
-VERSION = "17.3-1"
+VERSION = "17.3-2"
 PARAMETERS = {
     "time_window_hours": {"default": 26, "min": 0, "max": 48},
 }
-KINDS = ("count_differs", "only_in_reparse", "only_in_report", "time_differs", "value_differs", "present_in_both")
+KINDS = ("count_differs", "only_in_reparse", "only_in_report", "time_differs", "value_differs", "present_in_both",
+         "not_compared")
+KIND_WORDS = {"sms": "text messages", "call": "calls", "whatsapp_message": "WhatsApp messages", "contact": "contacts",
+              "web_history": "web history"}
 COMPARED = ("sms", "call", "whatsapp_message", "contact", "web_history")
 TOOL_NAMES = {"aleapp": "ALEAPP", "ileapp": "iLEAPP"}
 _last = {}
@@ -52,7 +59,8 @@ def latest_runs(conn, case_id) -> list:
     """The newest completed re-parse run of each active phone of the case."""
     return [dict(r._mapping) for r in conn.execute(text(
         "SELECT DISTINCT ON (r.extraction_id) r.id::text AS run_id, r.extraction_id::text AS extraction_id, r.tool, "
-        "r.tool_version, r.tool_commit, r.mapping_version, r.output_manifest_sha256 FROM phone_reparse_runs r JOIN "
+        "r.tool_version, r.tool_commit, r.mapping_version, r.output_manifest_sha256, r.artefact_counts->'mapped' AS "
+        "mapped FROM phone_reparse_runs r JOIN "
         "phone_extractions e ON e.id = r.extraction_id AND e.standing = 'active' WHERE r.case_id = :c AND r.status = "
         "'completed' ORDER BY r.extraction_id, r.finished_at DESC"), {"c": str(case_id)})]
 
@@ -243,7 +251,23 @@ def run(conn, case_id, params, ctx) -> list:
         tool_meta = {"run_id": run_id, "tool": TOOL_NAMES[rn["tool"]], "version": rn["tool_version"],
                      "commit": rn["tool_commit"], "mapping_version": rn["mapping_version"], "read_by": read_by}
         counts["phones"] += 1
+        wrote = set((rn.get("mapped") or {}).keys())
         for kind in COMPARED:
+            if kind not in wrote:
+                rep = report_side(conn, ext, kind)
+                if rep:
+                    c = counts["by_kind"].setdefault(kind, defaultdict(int))
+                    c["report"] += len(rep)
+                    c["not_compared"] += len(rep)
+                    results.append({"kind": "not_compared", "strength": "observation",
+                                    "measures": dict(tool_meta, compared=kind, report_count=len(rep), reason=(
+                                        "%s %s wrote no %s for this phone, so the report's %s %s are not compared."
+                                        % (tool_meta["tool"], tool_meta["version"], KIND_WORDS[kind],
+                                           format(len(rep), ","), KIND_WORDS[kind]))),
+                                    "directions": {}, "records": [{"extraction_id": ext, "record_uid": None,
+                                                                   "field_path": "not_compared:%s:%s" % (run_id, kind),
+                                                                   "role": "count"}]})
+                continue
             rep, tool = report_side(conn, ext, kind), tool_side(conn, run_id, kind)
             if not rep and not tool:
                 continue

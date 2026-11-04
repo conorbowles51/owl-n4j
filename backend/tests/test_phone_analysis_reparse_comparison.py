@@ -56,9 +56,11 @@ def world():
             run_id = uuid.uuid4()
             c.execute(text(
                 "INSERT INTO phone_reparse_runs (id, case_id, extraction_id, tool, tool_version, tool_commit, "
-                "tool_licence, status, mapping_version, requested_by, output_manifest_sha256, finished_at) VALUES "
-                "(:i, :c, :e, 'aleapp', 'v2026.4.5', :commit, 'MIT', 'completed', '1', 'synthetic', :h, now())"),
-                {"i": run_id, "c": case, "e": ext, "commit": "7a8dc905283b868bcc4767be8bea470e1a231ea2", "h": "0" * 64})
+                "tool_licence, status, mapping_version, requested_by, output_manifest_sha256, finished_at, "
+                "artefact_counts) VALUES (:i, :c, :e, 'aleapp', 'v2026.4.5', :commit, 'MIT', 'completed', '1', "
+                "'synthetic', :h, now(), CAST(:ac AS jsonb))"),
+                {"i": run_id, "c": case, "e": ext, "commit": "7a8dc905283b868bcc4767be8bea470e1a231ea2", "h": "0" * 64,
+                 "ac": json.dumps({"mapped": {"sms": 4, "call": 2}})})
             _tool_rows(c, run_id, [
                 ("get_sms_mms", "sms", T1, {"party": "+12025550143", "body": "synthetic one", "direction": "Received"}),
                 ("get_sms_mms", "sms", T2 + timedelta(hours=5), {"party": "+1 202-555-0143", "body": "synthetic two"}),
@@ -114,3 +116,21 @@ def test_the_tools_rows_are_never_merged_into_the_report(world):
     assert tuple(before) == tuple(after) and events == 5
     assert [(b["kind"], b["read_by"], b["difference_hours"]) for b in beside] == [
         ("time_differs", "read by ALEAPP v2026.4.5", 5.0)]
+
+
+def test_a_kind_the_tool_wrote_nothing_for_is_not_compared_rather_than_only_in_the_report(world):
+    from services.phone_analysis import framework as F
+    engine, case, ext, evs, run_id = world
+    with engine.begin() as c:
+        c.execute(text("UPDATE phone_reparse_runs SET artefact_counts = CAST(:ac AS jsonb) WHERE id = :i"),
+                  {"ac": json.dumps({"mapped": {"call": 2}}), "i": run_id})  # the tool wrote no SMS table
+        run, _ = F.request_run(c, case, "reparse_comparison", {}, "synthetic@example.org")
+    F.execute(engine, uuid.UUID(run["id"]))
+    with engine.connect() as c:
+        rows = c.execute(text("SELECT kind, measures FROM phone_analysis_results WHERE run_id = :r"),
+                         {"r": run["id"]}).fetchall()
+    sms = [(r.kind, r.measures.get("reason")) for r in rows if r.measures["compared"] == "sms"]
+    assert sms == [("not_compared", "ALEAPP v2026.4.5 wrote no text messages for this phone, so the report's 4 text "
+                                    "messages are not compared.")]
+    assert sorted(r.kind for r in rows if r.measures["compared"] == "call") == [
+        "count_differs", "only_in_reparse", "present_in_both"]

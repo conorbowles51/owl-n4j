@@ -8,6 +8,7 @@ export const TABS = [
   { kind: "time_differs", label: "Times differ" },
   { kind: "value_differs", label: "Content differs" },
   { kind: "present_in_both", label: "Read the same" },
+  { kind: "not_compared", label: "Not compared" },
 ]
 
 const KIND_NAMES: Record<string, [string, string]> = {
@@ -39,6 +40,10 @@ export function reparseWords(r: ApproachResult) {
   const rep = m.report as Side | undefined
   const tool = m.reparse as Side | undefined
   const where = tool?.artefact ? ` (${tool.artefact}, row ${tool.row_index})` : ""
+  if (r.kind === "not_compared") {
+    return { title: `${name(m.compared, 2)[0].toUpperCase()}${name(m.compared, 2).slice(1)}: not compared`,
+      line: String(m.reason || "The tool wrote nothing of this kind for this phone, so these records are not compared.") }
+  }
   if (r.kind === "count_differs") {
     return { title: `${name(m.compared, 2)}: ${n(m.report_count)} in the report, ${n(m.reparse_count)} ${readBy}`,
       line: "The totals differ. The tabs list each record on one side only, and each pair whose time or content differs." }
