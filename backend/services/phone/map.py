@@ -10,6 +10,8 @@
 """
 from __future__ import annotations
 
+from datetime import timedelta
+
 from sqlalchemy import text
 
 from services.phone import time_display as T
@@ -127,3 +129,72 @@ def points(conn, case_id, bbox, zoom, f: dict | None = None, zone: str | None = 
                         "message": "%s positions in this view are grouped into %s clusters; zoom in to see each one."
                         % ("{:,}".format(total), "{:,}".format(len(items)))}]}
 
+
+
+NEAR_WINDOW_S = 3600
+
+
+def gap_words(seconds: float) -> str:
+    """A time gap in words: "3 h 12 min", "45 min", "less than a minute", "2 days 4 h"."""
+    s = int(abs(seconds))
+    if s < 60:
+        return "less than a minute"
+    d, rem = divmod(s, 86400)
+    h, rem = divmod(rem, 3600)
+    m = rem // 60
+    parts = []
+    if d:
+        parts.append("%s %s" % ("{:,}".format(d), "day" if d == 1 else "days"))
+    if h:
+        parts.append("%d h" % h)
+    if m and not d:
+        parts.append("%d min" % m)
+    return " ".join(parts) or "%d h" % h
+
+
+def near_record(conn, case_id, record_uid, window_s: int = NEAR_WINDOW_S) -> dict | None:
+    """Show on Map from a message (03 section 3.6 item 7): the positioned records on the same phone within
+    ``window_s`` of the message's time, all of them (the map layer draws them under the same 5,000-point rule).
+    When there are none, the nearest positioned record on that phone and how far it is in time. None when the
+    record is not a message, call or other dated communication in this case."""
+    ev = conn.execute(text(
+        "SELECT extraction_id, sort_instant FROM pv_comm_event WHERE case_id = :c AND record_uid = CAST(:u AS uuid) "
+        "ORDER BY sort_instant NULLS LAST, event_uid LIMIT 1"), {"c": str(case_id), "u": str(record_uid)}).first()
+    if ev is None:
+        return None
+    ext = str(ev.extraction_id)
+    out = {"record_uid": str(record_uid), "extraction_id": ext, "instant": T.iso(ev.sort_instant),
+           "window_minutes": window_s // 60, "within": 0, "from_instant": None, "to_instant": None, "bbox": None,
+           "nearest": None}
+    if ev.sort_instant is None:
+        out["words"] = "This message has no time, so no positions can be matched to it by time."
+        return out
+    p = {"c": str(case_id), "e": ext, "t": ev.sort_instant, "w": window_s}
+    row = conn.execute(text(
+        "SELECT count(*) AS n, min(lon) AS w, min(lat) AS s, max(lon) AS e, max(lat) AS nn, "
+        "min(instant) AS lo, max(instant) AS hi FROM pv_location_point WHERE case_id = :c AND extraction_id = "
+        "CAST(:e AS uuid) AND lat IS NOT NULL AND lon IS NOT NULL AND instant BETWEEN "
+        "CAST(:t AS timestamptz) - make_interval(secs => :w) AND CAST(:t AS timestamptz) + make_interval(secs => :w)"),
+        p).first()
+    n = int(row.n or 0)
+    out["from_instant"] = T.iso(ev.sort_instant - timedelta(seconds=window_s))
+    out["to_instant"] = T.iso(ev.sort_instant + timedelta(seconds=window_s))
+    if n:
+        out.update(within=n, bbox=[row.w, row.s, row.e, row.nn])
+        out["words"] = "%s positioned %s on the same phone within 1 hour of this message." % (
+            "{:,}".format(n), "record" if n == 1 else "records")
+        return out
+    near = conn.execute(text(
+        "SELECT point_uid, lat, lon, instant, extract(epoch FROM instant - CAST(:t AS timestamptz)) AS gap FROM "
+        "pv_location_point WHERE case_id = :c AND extraction_id = CAST(:e AS uuid) AND lat IS NOT NULL AND lon IS "
+        "NOT NULL AND instant IS NOT NULL ORDER BY abs(extract(epoch FROM instant - CAST(:t AS timestamptz))), "
+        "point_uid LIMIT 1"), p).first()
+    if near is None:
+        out["words"] = "No positioned records within 1 hour of this message. This phone has no positioned records with a time."
+        return out
+    gap = float(near.gap)
+    when = "%s %s" % (gap_words(gap), "earlier" if gap < 0 else "later")
+    out["nearest"] = {"point_uid": str(near.point_uid), "lat": float(near.lat), "lon": float(near.lon),
+                      "instant": T.iso(near.instant), "gap_seconds": gap, "gap_words": when}
+    out["words"] = "No positioned records within 1 hour of this message. The nearest is %s." % when
+    return out

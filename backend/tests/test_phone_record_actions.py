@@ -85,3 +85,46 @@ def test_correctable_values_are_the_ones_the_correction_route_accepts_and_keep_t
         "case_id": case, "field_path": v["field_path"], "value_index": v["value_index"],
         "corrected_text": "other", "reason": "synthetic", "expected_revision": v["revision"]})
     assert again.status_code == 409
+
+
+def _point(c, case, ext, gen, ordinal, instant, lat=38.9, lon=-77.03):
+    c.execute(text(
+        "INSERT INTO phone_location_points (case_id, extraction_id, document_index, ordinal, record_uid, "
+        "root_record_uid, locator, model_type, generation, point_uid, coordinate_record_uid, lat, lon, "
+        "accuracy_basis, source_kind, instant) VALUES (:c, :e, 0, :o, :u, :u, :l, 'Location', :g, :p, :u, :lat, :lon, "
+        "'none', 'device_location', :t)"),
+        {"c": case, "e": ext, "o": ordinal, "u": uuid.uuid4(), "l": "%s/0/p%d" % (ext, ordinal), "g": gen,
+         "p": uuid.uuid4(), "t": instant, "lat": lat, "lon": lon})
+
+
+def test_show_on_map_from_a_message_lists_the_hour_around_it_or_says_how_far_the_nearest_is(api):  # noqa: F811
+    from datetime import timedelta
+    cl, case = api["client"], api["case"]
+    uid = api["evs"][0]["record_uid"]
+    assert _detail(api, uid)["message_dated"] is True
+    with api["engine"].begin() as c:
+        ext, t = c.execute(text("SELECT extraction_id, sort_instant FROM pv_comm_event WHERE record_uid = :u"),
+                           {"u": uid}).first()
+        gen = c.execute(text("SELECT generation FROM phone_interpretation_state WHERE extraction_id = :e"),
+                        {"e": ext}).scalar()
+        _point(c, case, ext, gen, 9100, t - timedelta(hours=3, minutes=12))
+    r = cl.get("/api/phones/map/near", params={"case_id": case, "record_uid": uid})
+    assert r.status_code == 200, r.text
+    got = r.json()
+    assert got["within"] == 0 and got["nearest"]["gap_words"] == "3 h 12 min earlier"
+    assert got["words"] == "No positioned records within 1 hour of this message. The nearest is 3 h 12 min earlier."
+    with api["engine"].begin() as c:
+        _point(c, case, ext, gen, 9101, t + timedelta(minutes=59), lat=38.95, lon=-77.0)
+        _point(c, case, ext, gen, 9102, t - timedelta(minutes=30), lat=38.85, lon=-77.1)
+        _point(c, case, ext, gen, 9103, t + timedelta(minutes=61))  # just outside the hour
+    got = cl.get("/api/phones/map/near", params={"case_id": case, "record_uid": uid}).json()
+    assert got["within"] == 2 and got["nearest"] is None
+    assert got["bbox"] == [-77.1, 38.85, -77.0, 38.95]
+    assert got["words"] == "2 positioned records on the same phone within 1 hour of this message."
+    # the map layer, given the same phone and hour, counts the same records
+    m = cl.post("/api/phones/map/summary", json={"case_id": case, "filter": {
+        "phones": [str(ext)], "from_instant": got["from_instant"], "to_instant": got["to_instant"],
+        "include_no_time": False}}).json()
+    assert m["positioned"] == got["within"]
+    other = cl.get("/api/phones/map/near", params={"case_id": case, "record_uid": api["other_evs"][0]["record_uid"]})
+    assert other.status_code == 404

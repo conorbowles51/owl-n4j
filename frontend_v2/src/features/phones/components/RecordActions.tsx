@@ -31,11 +31,16 @@ export function RecordActions({ detail, caseId }: { detail: RecordDetail; caseId
             Show on Timeline
           </Button>
         )}
-        {detail.position && (
+        {detail.position ? (
           <Button size="sm" variant="outline" onClick={() => navigate(`/cases/${encodeURIComponent(caseId)}/map?phone_point=${detail.position!.lon},${detail.position!.lat}`)}>
             Show on Map
           </Button>
-        )}
+        ) : detail.message_dated ? (
+          // a message without its own position: the positions on the same phone within the hour of it (03 3.6 item 7)
+          <Button size="sm" variant="outline" onClick={() => navigate(`/cases/${encodeURIComponent(caseId)}/map?phone_near=${encodeURIComponent(uid)}`)}>
+            Show on Map
+          </Button>
+        ) : null}
         <AddToMenu
           caseId={caseId}
           links={links}

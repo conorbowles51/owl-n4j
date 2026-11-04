@@ -285,6 +285,19 @@ def phone_map_points(body: MapPointsBody, db: Session = Depends(get_db), user: U
     return phone_map.points(db.connection(), body.case_id, body.bbox, body.zoom, body.filter.model_dump())
 
 
+@router.get("/map/near")
+def phone_map_near(case_id: UUID = Query(...), record_uid: UUID = Query(...), db: Session = Depends(get_db),
+                   user: User = Depends(get_current_db_user)):
+    """Show on Map from a message (03 section 3.6 item 7): positions on the same phone within 1 hour of it, or the
+    nearest one and how far it is in time."""
+    from services.phone import map as phone_map
+    authorize_case(db, case_id, user, ("case", "view"))
+    out = phone_map.near_record(db.connection(), case_id, record_uid)
+    if out is None:
+        raise HTTPException(status_code=404, detail="This record is not a message, call or email in this case.")
+    return out
+
+
 @router.get("/graph/pair")
 def phone_graph_pair(case_id: UUID = Query(...), a: str = Query(..., max_length=512), b: str = Query(..., max_length=512),
                      from_instant: Optional[str] = Query(None, alias="from"), to_instant: Optional[str] = Query(None, alias="to"),

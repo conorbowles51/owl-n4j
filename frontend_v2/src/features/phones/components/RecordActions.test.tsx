@@ -99,4 +99,11 @@ describe("Record panel actions (03 section 3.6)", () => {
     )
     expect(await within(form).findByText(/^Corrected\. The phone's own value stays recorded/)).toBeInTheDocument()
   })
+
+  it("a dated message without its own position offers Show on Map near it in time (03 section 3.6 item 7)", () => {
+    api.getRecordUses.mockResolvedValue({ target_id: "r-1", summary: null, counts: {}, uses: [] })
+    show({ ...base, message_dated: true } as RecordDetail)
+    fireEvent.click(screen.getByRole("button", { name: "Show on Map" }))
+    expect(screen.getByTestId("where")).toHaveTextContent("/cases/case-1/map?phone_near=r-1")
+  })
 })

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { getPhoneMapPoints, getPhoneMapSummary } from "@/features/phones/api"
+import { getPhoneMapNear, getPhoneMapPoints, getPhoneMapSummary, type PhoneMapFilter } from "@/features/phones/api"
 import { PhoneLayerPanel } from "./PhoneLayer"
+import { NearMessageNote } from "./NearMessageNote"
 import { useParams, useSearchParams } from "react-router-dom"
 import { MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -49,7 +50,18 @@ export function MapPage() {
   // Show on Map from a record (03 section 3.6): ?phone_point=<lon>,<lat> opens the phone layer centred on it
   const [params] = useSearchParams()
   const focusPoint = parsePoint(params.get("phone_point"))
-  const phones = usePhoneLayer(caseId, isLoading ? null : safeLocations.length, !!focusPoint)
+  // Show on Map from a message: ?phone_near=<record uid> shows the same phone's positions within the hour of it
+  const nearUid = params.get("phone_near")
+  const near = useQuery({
+    queryKey: ["phone-map-near", caseId, nearUid],
+    queryFn: ({ signal }) => getPhoneMapNear(caseId!, nearUid!, signal),
+    enabled: !!caseId && !!nearUid,
+  })
+  const nearFilter: PhoneMapFilter | undefined =
+    near.data && near.data.within > 0
+      ? { phones: [near.data.extraction_id], from_instant: near.data.from_instant ?? undefined, to_instant: near.data.to_instant ?? undefined, include_no_time: false }
+      : undefined
+  const phones = usePhoneLayer(caseId, isLoading ? null : safeLocations.length, !!focusPoint || !!nearUid, nearFilter)
 
   // Auto-expand CaseLayout's side panel to detail tab when a node is selected from the map
   const expandGraphPanelTo = useUIStore((s) => s.expandGraphPanelTo)
@@ -137,14 +149,10 @@ export function MapPage() {
           locations={safeLocations}
           phoneItems={phones.on ? phones.points.data?.items : undefined}
           onView={phones.setView}
-          fitTo={phones.on ? phones.summary.data?.bbox ?? null : null}
+          fitTo={nearFilter ? near.data?.bbox ?? null : phones.on ? phones.summary.data?.bbox ?? null : null}
           focusPoint={focusPoint}
         />
-        {focusPoint && (
-          <p role="status" className="absolute left-2 top-2 z-10 rounded border bg-card px-2 py-1 text-xs shadow-sm">
-            Centred on the position of the record you opened ({focusPoint[1].toFixed(5)}, {focusPoint[0].toFixed(5)}).
-          </p>
-        )}
+        {nearUid && !focusPoint && <NearMessageNote loading={near.isLoading} failed={near.isError} near={near.data} />}
         {phones.summary.data && phones.summary.data.total > 0 && (
           <button
             type="button"
@@ -194,13 +202,13 @@ function parsePoint(v: string | null): [number, number] | null {
   return m && m.length === 2 && m.every(Number.isFinite) && Math.abs(m[0]) <= 180 && Math.abs(m[1]) <= 90 ? [m[0], m[1]] : null
 }
 
-function usePhoneLayer(caseId: string | undefined, graphLocations: number | null, forced = false) {
+function usePhoneLayer(caseId: string | undefined, graphLocations: number | null, forced = false, scope?: PhoneMapFilter) {
   const key = `loupe.map.phones.${caseId}`
   const [stored, setStored] = useState<string | null>(() => (caseId ? localStorage.getItem(key) : null))
   const [view, setView] = useState<{ bbox: number[]; zoom: number } | null>(null)
   const summary = useQuery({
-    queryKey: ["phone-map-summary", caseId],
-    queryFn: ({ signal }) => getPhoneMapSummary(caseId!, {}, signal),
+    queryKey: ["phone-map-summary", caseId, scope ?? null],
+    queryFn: ({ signal }) => getPhoneMapSummary(caseId!, scope ?? {}, signal),
     enabled: !!caseId,
     staleTime: 30_000,
   })
@@ -213,8 +221,8 @@ function usePhoneLayer(caseId: string | undefined, graphLocations: number | null
   // a Show on Map link shows the layer for this visit without changing the stored choice
   const on = stored === "on" || forced
   const points = useQuery({
-    queryKey: ["phone-map-points", caseId, view?.bbox.map((v) => v.toFixed(4)).join(","), view ? Math.round(view.zoom) : null],
-    queryFn: ({ signal }) => getPhoneMapPoints(caseId!, view!.bbox, view!.zoom, {}, signal),
+    queryKey: ["phone-map-points", caseId, view?.bbox.map((v) => v.toFixed(4)).join(","), view ? Math.round(view.zoom) : null, scope ?? null],
+    queryFn: ({ signal }) => getPhoneMapPoints(caseId!, view!.bbox, view!.zoom, scope ?? {}, signal),
     enabled: !!caseId && on && !!view && !!summary.data?.positioned,
     placeholderData: keepPreviousData,
     staleTime: 30_000,

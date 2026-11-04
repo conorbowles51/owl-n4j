@@ -186,6 +186,7 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
         # Correct this value over exactly the values the correction route accepts (02 section 10.4)
         "position": _position(conn, case_id, record_uid),
         "on_timeline": _on_timeline(conn, case_id, record_uid),
+        "message_dated": _message_dated(conn, case_id, record_uid),
         "correctable": correctable_values(conn, record_uid),
         "readings": _open_readings(conn, case_id, ext, loc.model_type, label),
     }
@@ -204,6 +205,13 @@ def _on_timeline(conn, case_id, record_uid) -> bool:
         "SELECT EXISTS (SELECT 1 FROM pv_comm_event WHERE case_id = :c AND record_uid = CAST(:u AS uuid)) OR EXISTS "
         "(SELECT 1 FROM pv_timeline_entry WHERE case_id = :c AND record_uid = CAST(:u AS uuid))"),
         {"c": case_id, "u": str(record_uid)}).scalar() is True
+
+
+def _message_dated(conn, case_id, record_uid) -> bool:
+    """A dated message, call or email: Show on Map then opens the positions near it in time (03 section 3.6)."""
+    return conn.execute(text(
+        "SELECT EXISTS (SELECT 1 FROM pv_comm_event WHERE case_id = :c AND record_uid = CAST(:u AS uuid) AND "
+        "sort_instant IS NOT NULL)"), {"c": case_id, "u": str(record_uid)}).scalar() is True
 
 
 def correctable_values(conn, record_uid) -> list:

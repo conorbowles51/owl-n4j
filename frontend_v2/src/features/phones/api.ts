@@ -401,6 +401,25 @@ export async function getPhoneMapPoints(caseId: string, bbox: number[], zoom: nu
   return PhoneMapPointsSchema.parse(await fetchAPI("/api/phones/map/points", { method: "POST", body: { case_id: caseId, bbox, zoom, filter }, read: true, signal }))
 }
 
+/** Show on Map from a message (03 section 3.6 item 7): the positions on the same phone within the hour of it. */
+export const PhoneMapNearSchema = z.object({
+  record_uid: z.string(),
+  extraction_id: z.string(),
+  instant: z.string().nullable(),
+  window_minutes: z.number(),
+  within: z.number(),
+  from_instant: z.string().nullable(),
+  to_instant: z.string().nullable(),
+  bbox: z.array(z.number()).nullable(),
+  nearest: z.object({ point_uid: z.string(), lat: z.number(), lon: z.number(), instant: z.string().nullable(), gap_seconds: z.number(), gap_words: z.string() }).nullable(),
+  words: z.string(),
+})
+export type PhoneMapNear = z.infer<typeof PhoneMapNearSchema>
+export async function getPhoneMapNear(caseId: string, recordUid: string, signal?: AbortSignal) {
+  const q = new URLSearchParams({ case_id: caseId, record_uid: recordUid })
+  return PhoneMapNearSchema.parse(await fetchAPI(`/api/phones/map/near?${q}`, { signal }))
+}
+
 export interface MediaFilter {
   case_id: string
   phones?: string[]

@@ -305,6 +305,7 @@ export const RecordDetailSchema = z.object({
   // 03 section 3.6 item 7: Show on Map only when positioned; Show on Timeline only when it has an entry
   position: z.object({ point_uid: z.string(), lat: z.number(), lon: z.number() }).nullable().optional(),
   on_timeline: z.boolean().optional(),
+  message_dated: z.boolean().optional(),
   // the values Correct this value accepts (02 section 10.4), each with the machine text kept
   correctable: z
     .array(z.object({ field_path: z.string(), value_index: z.number(), value_type: z.string(), machine_text: z.string().nullable(), corrected_text: z.string().nullable(), revision: z.string() }))
