@@ -35,6 +35,12 @@ export interface MapLocation {
   manual_correction_history: ManualCorrection[]
   geocoding_status?: string
   manual_fields?: string[]
+  geocoding_requested_by_name?: string | null
+  geocoding_requested_at?: string | null
+  geocoding_lookup_outcome?: string | null
+  geocoding_lookup_service?: string | null
+  geocoding_confirmed_by_name?: string | null
+  geocoding_confirmed_at?: string | null
   summary?: string
   date?: string
   connections?: { key: string; name: string; type: string; relationship: string }[]
@@ -60,6 +66,12 @@ interface RawMapLocation {
   manual_correction_history?: unknown
   geocoding_status?: string
   manual_fields?: string[]
+  geocoding_requested_by_name?: string | null
+  geocoding_requested_at?: string | null
+  geocoding_lookup_outcome?: string | null
+  geocoding_lookup_service?: string | null
+  geocoding_confirmed_by_name?: string | null
+  geocoding_confirmed_at?: string | null
   summary?: string
   date?: string
   connections?: { key: string; name: string; type: string; relationship: string }[]
@@ -173,6 +185,9 @@ export interface ReviewQueueItem {
   geocoding_status?: string
   geocoding_confidence?: string
   manual_fields?: string[]
+  geocoding_requested_by_name?: string | null
+  geocoding_requested_at?: string | null
+  geocoding_lookup_outcome?: string | null
 }
 
 /** Locations flagged at ingestion (no coordinates, so no pin). */

@@ -400,6 +400,141 @@ class GraphEditService:
             "properties": dict(record["properties"] or {}) if record else {},
         }
 
+    # A placement found by an address lookup a person asked for. It is a machine reading: the coordinates are set,
+    # but no location field becomes a person's (manual_fields is untouched), the address from the evidence
+    # (location_raw, location_formatted) stays as it was, and who asked and when is kept beside the result. It is
+    # shown as "not confirmed" until a person confirms it or moves the pin.
+    LOOKED_UP_STATUS = "looked_up"
+    FLAGGED_STATUSES = ("ambiguous", "unverified", "failed", "not_run")
+
+    def flagged_address(self, node_key: str, case_id: str) -> tuple[dict[str, Any] | None, str | None]:
+        """The node and its address when it is waiting for a lookup (flagged, no pin, not placed by a person);
+        otherwise (node or None, why it cannot be looked up)."""
+        current = self._fetch_node(node_key, case_id)
+        if not current:
+            return None, "Not found in this case."
+        props = current["properties"]
+        manual = set(props.get("manual_fields") or [])
+        if manual & {"latitude", "longitude", "location_name", "location_formatted"}:
+            return current, "Placed by a person; not looked up."
+        if props.get("latitude") is not None and props.get("longitude") is not None:
+            return current, "Already has a pin."
+        if str(props.get("geocoding_status") or "") not in self.FLAGGED_STATUSES:
+            return current, "Not flagged for an address lookup."
+        if not str(props.get("location_raw") or "").strip():
+            return current, "No address recorded."
+        return current, None
+
+    def apply_looked_up_location(
+        self,
+        node_key: str,
+        *,
+        case_id: str,
+        query: str,
+        result: dict[str, Any],
+        requested_by: str,
+        requested_by_name: str | None,
+        service: str,
+    ) -> dict[str, Any]:
+        requested_at = datetime.now(timezone.utc).isoformat()
+        updates: dict[str, Any] = {
+            "latitude": self._coerce_scalar("latitude", result["latitude"]),
+            "longitude": self._coerce_scalar("longitude", result["longitude"]),
+            "geocoding_status": self.LOOKED_UP_STATUS,
+            "geocoding_provider": result.get("provider") or "nominatim",
+            "geocoding_query": query,
+            "geocoding_formatted_address": result.get("formatted_address") or query,
+            "geocoding_lookup_service": service,
+            "geocoding_requested_by": requested_by,
+            "geocoding_requested_by_name": requested_by_name,
+            "geocoding_requested_at": requested_at,
+            "geocoding_lookup_outcome": "placed",
+        }
+        if result.get("confidence"):
+            updates["geocoding_confidence"] = result["confidence"]
+        if result.get("location_granularity"):
+            updates["location_granularity"] = result["location_granularity"]
+        with driver.session() as session:
+            record = session.run(
+                f"""
+                MATCH (n {{key: $key, case_id: $case_id}})
+                WHERE {active_node_predicate('n')}
+                  AND (n.latitude IS NULL OR n.longitude IS NULL)
+                  AND NONE(field IN coalesce(n.manual_fields, [])
+                           WHERE field IN ['latitude', 'longitude', 'location_name', 'location_formatted'])
+                SET n.geocoding_status_before_lookup = n.geocoding_status
+                SET n += $updates
+                RETURN n.key AS key
+                """,
+                key=node_key,
+                case_id=case_id,
+                updates=updates,
+            ).single()
+        if not record:
+            raise LookupError(f"Node not found or no longer waiting for a lookup: {node_key}")
+        return {"success": True, "node_key": node_key, **{k: updates[k] for k in (
+            "latitude", "longitude", "geocoding_formatted_address", "geocoding_requested_at")}}
+
+    def record_lookup_outcome(
+        self, node_key: str, *, case_id: str, outcome: str, requested_by: str, requested_by_name: str | None,
+    ) -> None:
+        """A lookup a person asked for found nothing (or the service did not answer): say so on the node; it stays
+        flagged."""
+        with driver.session() as session:
+            session.run(
+                f"""
+                MATCH (n {{key: $key, case_id: $case_id}})
+                WHERE {active_node_predicate('n')}
+                SET n.geocoding_lookup_outcome = $outcome,
+                    n.geocoding_requested_by = $requested_by,
+                    n.geocoding_requested_by_name = $requested_by_name,
+                    n.geocoding_requested_at = $requested_at
+                """,
+                key=node_key,
+                case_id=case_id,
+                outcome=outcome,
+                requested_by=requested_by,
+                requested_by_name=requested_by_name,
+                requested_at=datetime.now(timezone.utc).isoformat(),
+            )
+
+    def confirm_looked_up_location(
+        self, node_key: str, *, case_id: str, confirmed_by: str, confirmed_by_name: str | None,
+    ) -> dict[str, Any]:
+        """A person confirms a looked-up pin: from now on it is their placement (Manual), with who and when kept."""
+        confirmed_at = datetime.now(timezone.utc).isoformat()
+        with driver.session() as session:
+            record = session.run(
+                f"""
+                MATCH (n {{key: $key, case_id: $case_id}})
+                WHERE {active_node_predicate('n')}
+                  AND n.geocoding_status = $looked_up
+                  AND n.latitude IS NOT NULL AND n.longitude IS NOT NULL
+                SET n.manual_fields = reduce(
+                        acc = coalesce(n.manual_fields, []),
+                        field IN ['latitude', 'longitude'] |
+                        CASE WHEN field IN acc THEN acc ELSE acc + field END
+                    ),
+                    n.geocoding_confirmed_by = $confirmed_by,
+                    n.geocoding_confirmed_by_name = $confirmed_by_name,
+                    n.geocoding_confirmed_at = $confirmed_at,
+                    n.last_edited_at = $confirmed_at,
+                    n.last_edited_by = $confirmed_by,
+                    n.last_edit_source = 'map'
+                RETURN n.key AS key, n.latitude AS latitude, n.longitude AS longitude
+                """,
+                key=node_key,
+                case_id=case_id,
+                looked_up=self.LOOKED_UP_STATUS,
+                confirmed_by=confirmed_by,
+                confirmed_by_name=confirmed_by_name,
+                confirmed_at=confirmed_at,
+            ).single()
+        if not record:
+            raise LookupError(f"No looked-up pin to confirm: {node_key}")
+        return {"success": True, "node_key": node_key, "confirmed_at": confirmed_at,
+                "latitude": record["latitude"], "longitude": record["longitude"]}
+
     def remove_location(
         self,
         node_key: str,

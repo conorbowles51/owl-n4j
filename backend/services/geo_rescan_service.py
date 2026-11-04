@@ -7,14 +7,17 @@ and writes the coordinates back to the matching entities in Neo4j
 (or creates LOCATED_AT relationships from events/entities to locations).
 """
 
+import fcntl
 import ipaddress
 import json
 import os
+import tempfile
 import threading
 import time
 import hashlib
 import urllib.request
 import urllib.error
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import quote, urlsplit
 
@@ -27,13 +30,19 @@ from postgres.session import get_background_session
 # Nominatim geocoding for persisted location entities.
 # ---------------------------------------------------------------------------
 
-# Addresses from evidence are never sent to a service outside this server (an outside geocoder learns every place a
-# case names). Lookups run only against a Nominatim held on this server, named by GEOCODER_SEARCH_URL (for example
-# http://localhost:8080/search); unset, or naming an outside host, nothing is sent and the address is not placed.
-# Results already in the geocoding cache are still used: reading them sends nothing.
-NOMINATIM_URL = os.environ.get("GEOCODER_SEARCH_URL", "").strip()
+# Addresses from evidence are sent to an outside geocoder only when a person asks for that address to be looked up
+# (Neil 2026-11-04: "Flagging potential lookups and having them user activated is best"). Automatic paths (the case
+# rescan, ingestion) send nothing: an address they cannot place from the cache is flagged for review, where a person
+# can click "Look up". A geocoder held on this server or its private network (GEOCODER_SEARCH_URL, for example
+# http://localhost:8080/search) may be asked automatically, since nothing then leaves the server.
+PUBLIC_NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+NOMINATIM_URL = os.environ.get("GEOCODER_SEARCH_URL", "").strip() or PUBLIC_NOMINATIM_URL
+# Nominatim's usage policy: identify the application; no personal contact details are sent.
 USER_AGENT = "InvestigationConsole/1.0"
-NOT_RUN_MESSAGE = "Address not placed: geocoding is not run on this server."
+NOT_LOOKED_UP_MESSAGE = (
+    "Address not looked up: addresses are sent to the outside address service only when a person clicks Look up."
+)
+LOOKUP_SERVICE_NAME = "OpenStreetMap address service (nominatim.openstreetmap.org)"
 
 
 def held_on_this_server(url: str) -> bool:
@@ -54,13 +63,21 @@ def held_on_this_server(url: str) -> bool:
     return address.is_loopback or address.is_private
 
 
-def geocoding_not_run_reason() -> Optional[str]:
-    """None when lookups may be sent (to a geocoder on this server); otherwise what to tell the person."""
-    return None if held_on_this_server(NOMINATIM_URL) else NOT_RUN_MESSAGE
+def automatic_lookup_allowed() -> bool:
+    """Whether an address may be looked up without a person asking: only when the geocoder is on this server."""
+    return held_on_this_server(NOMINATIM_URL)
+
+
+class GeocoderUnavailable(Exception):
+    """The geocoder did not answer (network error, refusal, bad reply). Not cached: asking again may work."""
+
+
 _last_request_time = 0.0
-# Nominatim allows one request a second. Geocoding route handlers run in FastAPI's thread pool, so the spacing is
-# kept under a lock (held through the wait), not by the event loop running them one at a time.
+# Nominatim allows one request a second. Geocoding route handlers run in FastAPI's thread pool and the backend runs
+# more than one worker process, so the spacing is kept under a thread lock plus a file lock shared by the workers,
+# held through the wait, with the time of the last request written in the file.
 _rate_lock = threading.Lock()
+_RATE_FILE = os.path.join(tempfile.gettempdir(), "loupe-geocoder-rate.lock")
 
 def _get_cached_geocode(cache_key: str) -> tuple[bool, Optional[Dict]]:
     with get_background_session() as db:
@@ -80,7 +97,10 @@ def _get_cached_geocode(cache_key: str) -> tuple[bool, Optional[Dict]]:
         }
 
 
-def _save_geocode_cache(cache_key: str, original_query: str, result: Optional[Dict]) -> None:
+def _save_geocode_cache(
+    cache_key: str, original_query: str, result: Optional[Dict], *, requested_by: Optional[str] = None
+) -> None:
+    asked = {"requested_by": requested_by, "requested_at": datetime.now(timezone.utc).isoformat()} if requested_by else {}
     with get_background_session() as db:
         if result:
             entry = GeocodingCacheEntry(
@@ -92,7 +112,7 @@ def _save_geocode_cache(cache_key: str, original_query: str, result: Optional[Di
                 longitude=result.get("longitude"),
                 formatted_address=result.get("formatted_address"),
                 confidence=result.get("confidence"),
-                raw_response=result,
+                raw_response={**result, **asked},
             )
         else:
             entry = GeocodingCacheEntry(
@@ -100,7 +120,7 @@ def _save_geocode_cache(cache_key: str, original_query: str, result: Optional[Di
                 normalized_query=cache_key,
                 original_query=original_query,
                 status="failed",
-                raw_response={},
+                raw_response=asked,
             )
         db.merge(entry)
 
@@ -108,10 +128,32 @@ def _save_geocode_cache(cache_key: str, original_query: str, result: Optional[Di
 def _rate_limit():
     global _last_request_time
     with _rate_lock:
-        elapsed = time.time() - _last_request_time
-        if elapsed < 1.0:
-            time.sleep(1.0 - elapsed)
-        _last_request_time = time.time()
+        try:
+            handle = open(_RATE_FILE, "a+")
+        except OSError:
+            handle = None
+        try:
+            last = _last_request_time
+            if handle is not None:
+                fcntl.flock(handle, fcntl.LOCK_EX)
+                handle.seek(0)
+                try:
+                    last = max(last, float(handle.read().strip() or 0))
+                except ValueError:
+                    pass
+            elapsed = time.time() - last
+            if elapsed < 1.0:
+                time.sleep(1.0 - elapsed)
+            _last_request_time = time.time()
+            if handle is not None:
+                handle.seek(0)
+                handle.truncate()
+                handle.write(repr(_last_request_time))
+                handle.flush()
+        finally:
+            if handle is not None:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+                handle.close()
 
 
 def _location_granularity(result: Dict) -> Optional[str]:
@@ -132,17 +174,23 @@ def _location_granularity(result: Dict) -> Optional[str]:
     return None
 
 
-def geocode_with_cache(location: str) -> Optional[Dict]:
-    """Geocode a location string, using the shared Nominatim cache."""
+def geocode_with_cache(location: str, *, requested_by: Optional[str] = None) -> Optional[Dict]:
+    """Geocode a location string, using the shared Nominatim cache.
+
+    requested_by names the person who clicked Look up for this address. Without it nothing is sent to an outside
+    geocoder: the address is placed from the cache or not at all. With it, exactly one request is sent when the cache
+    holds no success (an earlier failure is asked again: the person asked for a fresh lookup). A geocoder that does not
+    answer raises GeocoderUnavailable when a person asked (so they are told), and is never cached as "no match".
+    """
     if not location or not location.strip():
         return None
     normalized = location.lower().strip()
     cache_key = hashlib.md5(normalized.encode("utf-8")).hexdigest()
     cached, cached_result = _get_cached_geocode(cache_key)
-    if cached:
+    if cached and (cached_result or not requested_by):
         return cached_result
-    if geocoding_not_run_reason():
-        # Nothing is sent and nothing is cached: a geocoder held on this server later still gets the question.
+    if not requested_by and not automatic_lookup_allowed():
+        # Nothing is sent and nothing is cached: the address stays flagged until a person asks for it.
         return None
 
     _rate_limit()
@@ -152,27 +200,28 @@ def geocode_with_cache(location: str) -> Optional[Dict]:
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
-        if not data:
-            _save_geocode_cache(cache_key, location, None)
-            return None
-        r = data[0]
-        importance = float(r.get("importance", 0))
-        confidence = "high" if importance > 0.7 else ("medium" if importance > 0.4 else "low")
-        result = {
-            "provider": "nominatim",
-            "query": location.strip(),
-            "latitude": float(r["lat"]),
-            "longitude": float(r["lon"]),
-            "formatted_address": r.get("display_name", location),
-            "confidence": confidence,
-            "location_granularity": _location_granularity(r),
-        }
-        _save_geocode_cache(cache_key, location, result)
-        return result
     except Exception as e:
-        print(f"[GeoRescan] Geocode error for '{location}': {e}")
-        _save_geocode_cache(cache_key, location, None)
+        print(f"[GeoRescan] Geocoder did not answer for '{location}': {type(e).__name__}")
+        if requested_by:
+            raise GeocoderUnavailable(f"The address service did not answer ({type(e).__name__}).") from e
         return None
+    if not data:
+        _save_geocode_cache(cache_key, location, None, requested_by=requested_by)
+        return None
+    r = data[0]
+    importance = float(r.get("importance", 0))
+    confidence = "high" if importance > 0.7 else ("medium" if importance > 0.4 else "low")
+    result = {
+        "provider": "nominatim",
+        "query": location.strip(),
+        "latitude": float(r["lat"]),
+        "longitude": float(r["lon"]),
+        "formatted_address": r.get("display_name", location),
+        "confidence": confidence,
+        "location_granularity": _location_granularity(r),
+    }
+    _save_geocode_cache(cache_key, location, result, requested_by=requested_by)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -441,7 +490,7 @@ def rescan_case_locations(
         "locations_geocoded": len(geocoded),
         "locations_failed_geocode": len(failed_geocode),
         "failed_places": failed_geocode[:20],
-        "geocoding_not_run": geocoding_not_run_reason(),
+        "geocoding_not_run": None if automatic_lookup_allowed() else NOT_LOOKED_UP_MESSAGE,
         "entities_updated": entities_updated,
         "location_nodes_created": location_nodes_created,
         "relationships_created": relationships_created,

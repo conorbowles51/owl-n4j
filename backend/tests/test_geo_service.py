@@ -58,6 +58,9 @@ class GeoServiceReviewQueueTests(unittest.TestCase):
                     "geocoding_status": "ambiguous",
                     "geocoding_confidence": None,
                     "manual_fields": [],
+                    "geocoding_requested_by_name": None,
+                    "geocoding_requested_at": None,
+                    "geocoding_lookup_outcome": None,
                 }
             ],
         )

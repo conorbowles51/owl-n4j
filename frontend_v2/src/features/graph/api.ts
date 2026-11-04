@@ -479,6 +479,27 @@ export const graphAPI = {
       { method: "POST", body: { case_id: caseId, address } }
     ),
 
+  /** Send these flagged addresses to the address service: only ever called from a person's click (Look up). */
+  lookUpFlaggedAddresses: (caseId: string, nodeKeys: string[]) =>
+    fetchAPI<{
+      results: {
+        key: string
+        outcome: "placed" | "no_match" | "unavailable" | "skipped"
+        message: string
+        latitude?: number
+        longitude?: number
+        formatted_address?: string
+      }[]
+      counts: Record<string, number>
+    }>("/api/graph/locations/lookup", { method: "POST", body: { case_id: caseId, node_keys: nodeKeys } }),
+
+  /** A person confirms a pin placed by an address lookup; it becomes their placement. */
+  confirmLookedUpLocation: (nodeKey: string, caseId: string) =>
+    fetchAPI<{ success: boolean; confirmed_at: string }>(
+      `/api/graph/node/${encodeURIComponent(nodeKey)}/confirm-location`,
+      { method: "POST", body: { case_id: caseId } }
+    ),
+
   /* --- Query panel (read only, inside one case) --- */
 
   runCaseQuery: (caseId: string, query: string) =>

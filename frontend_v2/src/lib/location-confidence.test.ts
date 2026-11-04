@@ -90,10 +90,38 @@ describe("reviewReason", () => {
   })
 })
 
-describe("addresses not looked up on this server", () => {
-  it("are listed for review with the plain reason", async () => {
-    const { needsReview: nr, reviewReason: rr } = await import("./location-confidence")
+describe("addresses looked up only when a person asks", () => {
+  it("lists addresses not looked up yet with a Look up action", async () => {
+    const { needsReview: nr, reviewReason: rr, canLookUp } = await import("./location-confidence")
     expect(nr({ geocoding_status: "not_run" })).toBe(true)
-    expect(rr({ geocoding_status: "not_run" })).toBe("Address not placed: geocoding is not run on this server")
+    expect(rr({ geocoding_status: "not_run" })).toBe("Not looked up yet")
+    expect(canLookUp({ geocoding_status: "failed", location_raw: "12 Main St" })).toBe(true)
+    expect(canLookUp({ geocoding_status: "failed", location_raw: " " })).toBe(false)
+    expect(canLookUp({ geocoding_status: "success", location_raw: "12 Main St" })).toBe(false)
+    expect(canLookUp({ geocoding_status: "failed", location_raw: "12 Main St", manual_fields: ["latitude"] })).toBe(
+      false
+    )
+  })
+
+  it("keeps a looked-up pin under review as a machine placement until a person confirms it", async () => {
+    const { needsReview: nr, reviewReason: rr, isUnconfirmedLookup, getConfidenceTier: tier } = await import(
+      "./location-confidence"
+    )
+    const lookedUp = { geocoding_status: "looked_up", geocoding_confidence: "high" }
+    expect(nr(lookedUp)).toBe(true)
+    expect(isUnconfirmedLookup(lookedUp)).toBe(true)
+    expect(rr(lookedUp)).toBe("Placed by address lookup · not confirmed")
+    const confirmed = { ...lookedUp, manual_fields: ["latitude", "longitude"] }
+    expect(nr(confirmed)).toBe(false)
+    expect(isUnconfirmedLookup(confirmed)).toBe(false)
+    expect(tier(confirmed)).toBe("manual")
+  })
+
+  it("says what a lookup found when it found nothing", async () => {
+    const { reviewReason: rr } = await import("./location-confidence")
+    expect(rr({ geocoding_status: "failed", geocoding_lookup_outcome: "no_match" })).toBe("Looked up: no match found")
+    expect(rr({ geocoding_status: "failed", geocoding_lookup_outcome: "unavailable" })).toBe(
+      "Looked up: the address service did not answer"
+    )
   })
 })

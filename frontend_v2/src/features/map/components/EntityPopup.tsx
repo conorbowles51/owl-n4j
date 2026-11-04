@@ -15,6 +15,7 @@ import {
   getConfidenceTier,
   CONFIDENCE_TIER_LABELS,
   CONFIDENCE_TIER_BADGE_VARIANTS,
+  isUnconfirmedLookup,
 } from "@/lib/location-confidence"
 import type { EntityType } from "@/lib/theme"
 import { useParams } from "react-router-dom"
@@ -130,6 +131,20 @@ export function EntityPopup({
             )}
             {location.geocoding_formatted_address && (
               <p>Resolved: {location.geocoding_formatted_address}</p>
+            )}
+            {location.geocoding_status === "looked_up" && (
+              <p>
+                Placed by address lookup
+                {location.geocoding_requested_by_name ? `, asked by ${location.geocoding_requested_by_name}` : ""}
+                {location.geocoding_requested_at
+                  ? ` on ${new Date(location.geocoding_requested_at).toLocaleString()}`
+                  : ""}
+                {isUnconfirmedLookup(location)
+                  ? " · not confirmed"
+                  : location.geocoding_confirmed_by_name
+                    ? ` · confirmed by ${location.geocoding_confirmed_by_name}`
+                    : ""}
+              </p>
             )}
           </div>
         )}

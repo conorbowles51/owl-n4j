@@ -2360,19 +2360,19 @@ def geocode_node(
     user: dict = Depends(get_current_user),
 ):
     """Geocode a single entity address, optionally applying it to the node."""
-    from services.geo_rescan_service import geocode_with_cache, geocoding_not_run_reason
+    from services.geo_rescan_service import GeocoderUnavailable, geocode_with_cache
 
     if not body.address.strip():
         raise HTTPException(status_code=400, detail="Address cannot be empty")
 
     try:
-        result = geocode_with_cache(body.address)
+        # The edit dialog's Look up button: a person typed this address and clicked, so it may be sent.
+        try:
+            result = geocode_with_cache(body.address, requested_by=user.get("username", "unknown"))
+        except GeocoderUnavailable as e:
+            return {"success": False, "error": str(e), "address": body.address}
         if not result:
-            # An address already looked up is still placed from the cache; a new one is not sent off this server.
-            not_run = geocoding_not_run_reason()
-            if not_run:
-                return {"success": False, "error": not_run, "not_run": True, "address": body.address}
-            return {"success": False, "error": "Could not geocode address", "address": body.address}
+            return {"success": False, "error": "No match found for this address.", "address": body.address}
 
         if apply:
             neo4j_service.update_geocoded_location(
@@ -2407,3 +2407,87 @@ def geocode_node(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Address lookups a person asks for ---
+# Addresses from evidence are flagged, not sent (services.geo_rescan_service). A person clicks "Look up" for one
+# flagged address, or "Look up all", and only then is each address sent to the address service, one a second. The
+# browser sends a few at a time so the person sees progress and can stop; the result is kept as a machine placement.
+
+LOOKUP_BATCH_LIMIT = 10
+
+
+class LookupFlaggedRequest(BaseModel):
+    case_id: str
+    node_keys: List[str] = Field(..., min_length=1, max_length=LOOKUP_BATCH_LIMIT)
+
+
+@router.post("/locations/lookup")
+def look_up_flagged_addresses(body: LookupFlaggedRequest, user: dict = Depends(get_current_user)):
+    """Send the addresses of these flagged entities to the address service, because a person asked."""
+    from services.geo_rescan_service import GeocoderUnavailable, LOOKUP_SERVICE_NAME, geocode_with_cache
+
+    username = user.get("username", "unknown")
+    display_name = user.get("name") or user.get("full_name") or user.get("email")
+    results = []
+    for node_key in dict.fromkeys(body.node_keys):
+        current, why_not = neo4j_service.flagged_address(node_key, body.case_id)
+        if why_not:
+            results.append({"key": node_key, "outcome": "skipped", "message": why_not})
+            continue
+        address = str(current["properties"]["location_raw"]).strip()
+        try:
+            found = geocode_with_cache(address, requested_by=username)
+        except GeocoderUnavailable as e:
+            neo4j_service.record_lookup_outcome(node_key, case_id=body.case_id, outcome="unavailable",
+                                                requested_by=username, requested_by_name=display_name)
+            results.append({"key": node_key, "outcome": "unavailable", "message": f"{e} Try again later."})
+            continue
+        if not found:
+            neo4j_service.record_lookup_outcome(node_key, case_id=body.case_id, outcome="no_match",
+                                                requested_by=username, requested_by_name=display_name)
+            results.append({"key": node_key, "outcome": "no_match", "address": address,
+                            "message": "No match found for this address."})
+            continue
+        try:
+            placed = neo4j_service.apply_looked_up_location(
+                node_key, case_id=body.case_id, query=address, result=found, requested_by=username,
+                requested_by_name=display_name, service=LOOKUP_SERVICE_NAME,
+            )
+        except LookupError as e:
+            results.append({"key": node_key, "outcome": "skipped", "message": str(e)})
+            continue
+        results.append({"key": node_key, "outcome": "placed", "address": address,
+                        "latitude": placed["latitude"], "longitude": placed["longitude"],
+                        "formatted_address": placed["geocoding_formatted_address"],
+                        "confidence": found.get("confidence"),
+                        "message": "Placed by address lookup; not confirmed."})
+    counts = {}
+    for item in results:
+        counts[item["outcome"]] = counts.get(item["outcome"], 0) + 1
+    system_log_service.log(
+        log_type=LogType.GRAPH_OPERATION,
+        origin=LogOrigin.FRONTEND,
+        action="Addresses Looked Up",
+        details={"case_id": body.case_id, "service": LOOKUP_SERVICE_NAME, "requested": len(results),
+                 "outcomes": counts},
+        user=username,
+        success=True,
+    )
+    return {"results": results, "counts": counts}
+
+
+class ConfirmLookupRequest(BaseModel):
+    case_id: str
+
+
+@router.post("/node/{node_key}/confirm-location")
+def confirm_looked_up_location(node_key: str, body: ConfirmLookupRequest, user: dict = Depends(get_current_user)):
+    """A person confirms a pin placed by an address lookup; it becomes their placement."""
+    try:
+        return neo4j_service.confirm_looked_up_location(
+            node_key, case_id=body.case_id, confirmed_by=user.get("username", "unknown"),
+            confirmed_by_name=user.get("name") or user.get("full_name") or user.get("email"),
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))

@@ -562,6 +562,8 @@ export function EditNodeDialog({ open, onOpenChange, nodeKey, caseId, onSaved }:
                         size="icon"
                         onClick={handleGeocode}
                         disabled={!locationSearch.trim() || geocoding}
+                        aria-label="Look up this address"
+                        title="Look up this address: sends it to the OpenStreetMap address service (outside this server)"
                       >
                         <Search className={cn("size-4", geocoding && "animate-spin")} />
                       </Button>

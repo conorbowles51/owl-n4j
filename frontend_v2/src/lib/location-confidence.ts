@@ -59,6 +59,23 @@ export interface LocationConfidenceInput {
   geocoding_confidence?: string | null
   geocoding_status?: string | null
   manual_fields?: string[] | null
+  geocoding_lookup_outcome?: string | null
+}
+
+/** Status of a pin placed by an address lookup a person asked for: a machine placement until a person confirms it. */
+export const LOOKED_UP_STATUS = "looked_up"
+
+/** A pin placed by an address lookup that no person has confirmed or moved yet. */
+export function isUnconfirmedLookup(input: LocationConfidenceInput): boolean {
+  return input.geocoding_status?.toLowerCase() === LOOKED_UP_STATUS && !isManuallyPlaced(input)
+}
+
+/** Flagged addresses that can be sent to the address service when a person clicks Look up. */
+const LOOKUP_STATUSES = new Set(["ambiguous", "unverified", "failed", "not_run"])
+
+export function canLookUp(input: LocationConfidenceInput & { location_raw?: string | null }): boolean {
+  if (isManuallyPlaced(input)) return false
+  return LOOKUP_STATUSES.has(input.geocoding_status?.toLowerCase() ?? "") && !!input.location_raw?.trim()
 }
 
 export function isManuallyPlaced(input: LocationConfidenceInput): boolean {
@@ -78,13 +95,13 @@ export function getConfidenceTier(input: LocationConfidenceInput): ConfidenceTie
 
 /**
  * Whether a location belongs in the needs-review queue: low-confidence
- * geocodes plus anything flagged ambiguous/unverified/failed/not run at ingestion. Manually
- * placed locations never need review.
+ * geocodes, anything flagged ambiguous/unverified/failed/not looked up at ingestion, and pins placed by an address
+ * lookup that no person has confirmed. Manually placed locations never need review.
  */
 export function needsReview(input: LocationConfidenceInput): boolean {
   if (isManuallyPlaced(input)) return false
   const status = input.geocoding_status?.toLowerCase()
-  if (status === "ambiguous" || status === "unverified" || status === "failed" || status === "not_run") {
+  if (status && (LOOKUP_STATUSES.has(status) || status === LOOKED_UP_STATUS)) {
     return true
   }
   return getConfidenceTier(input) === "low"
@@ -93,10 +110,14 @@ export function needsReview(input: LocationConfidenceInput): boolean {
 /** Human-readable reason a location is in the review queue. */
 export function reviewReason(input: LocationConfidenceInput): string {
   const status = input.geocoding_status?.toLowerCase()
+  if (status === LOOKED_UP_STATUS) return "Placed by address lookup · not confirmed"
+  const outcome = input.geocoding_lookup_outcome?.toLowerCase()
+  if (outcome === "no_match") return "Looked up: no match found"
+  if (outcome === "unavailable") return "Looked up: the address service did not answer"
   if (status === "ambiguous") return "Ambiguous at ingestion"
   if (status === "unverified") return "Unverified at ingestion"
   if (status === "failed") return "Geocoding failed"
-  // nothing was sent: addresses from evidence are never looked up by a service outside this server
-  if (status === "not_run") return "Address not placed: geocoding is not run on this server"
+  // nothing was sent: an address from evidence goes to the outside address service only when a person clicks Look up
+  if (status === "not_run") return "Not looked up yet"
   return "Low geocoding confidence"
 }

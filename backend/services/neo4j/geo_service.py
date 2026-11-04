@@ -111,6 +111,12 @@ class GeoService:
                     coalesce(n.manual_correction_history, n.geocoding_correction_history) AS manual_correction_history,
                     n.geocoding_status AS geocoding_status,
                     n.manual_fields AS manual_fields,
+                    n.geocoding_requested_by_name AS geocoding_requested_by_name,
+                    n.geocoding_requested_at AS geocoding_requested_at,
+                    n.geocoding_lookup_outcome AS geocoding_lookup_outcome,
+                    n.geocoding_lookup_service AS geocoding_lookup_service,
+                    n.geocoding_confirmed_by_name AS geocoding_confirmed_by_name,
+                    n.geocoding_confirmed_at AS geocoding_confirmed_at,
                     n.summary AS summary,
                     n.date AS date,
                     connections
@@ -139,6 +145,12 @@ class GeoService:
                     "manual_correction_history": _parse_list_property(record["manual_correction_history"]),
                     "geocoding_status": record["geocoding_status"],
                     "manual_fields": record["manual_fields"] or [],
+                    "geocoding_requested_by_name": record.get("geocoding_requested_by_name"),
+                    "geocoding_requested_at": record.get("geocoding_requested_at"),
+                    "geocoding_lookup_outcome": record.get("geocoding_lookup_outcome"),
+                    "geocoding_lookup_service": record.get("geocoding_lookup_service"),
+                    "geocoding_confirmed_by_name": record.get("geocoding_confirmed_by_name"),
+                    "geocoding_confirmed_at": record.get("geocoding_confirmed_at"),
                     "summary": record["summary"],
                     "date": record["date"],
                     "connections": [c for c in record["connections"] if c["key"]],
@@ -188,7 +200,10 @@ class GeoService:
                     n.location_raw AS location_raw,
                     n.geocoding_status AS geocoding_status,
                     n.geocoding_confidence AS geocoding_confidence,
-                    n.manual_fields AS manual_fields
+                    n.manual_fields AS manual_fields,
+                    n.geocoding_requested_by_name AS geocoding_requested_by_name,
+                    n.geocoding_requested_at AS geocoding_requested_at,
+                    n.geocoding_lookup_outcome AS geocoding_lookup_outcome
                 ORDER BY n.name
             """
             result = session.run(query, **params)
@@ -201,6 +216,9 @@ class GeoService:
                     "geocoding_status": record["geocoding_status"],
                     "geocoding_confidence": record["geocoding_confidence"],
                     "manual_fields": record["manual_fields"] or [],
+                    "geocoding_requested_by_name": record.get("geocoding_requested_by_name"),
+                    "geocoding_requested_at": record.get("geocoding_requested_at"),
+                    "geocoding_lookup_outcome": record.get("geocoding_lookup_outcome"),
                 }
                 for record in result
             ]
