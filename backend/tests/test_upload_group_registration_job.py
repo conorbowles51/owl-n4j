@@ -4,6 +4,7 @@ selection: it is started again and registers every file once."""
 import os
 import threading
 import time
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
@@ -196,6 +197,18 @@ def test_on_postgresql_another_server_process_reads_progress_and_a_stopped_heart
         with Session(engine) as other:
             assert api._stored_registration(other, group)['state'] == 'failed'
             assert api._stored_registration(other, group)['error']['status_code'] == 409
+        # That failure stays in this process's memory for a while. The user retries and another server process
+        # runs it: its heartbeat makes the row "running" again, and this process answers with the newer run.
+        finished = api.Registration(group, 5000)
+        finished.error, finished.task = registration.error, SimpleNamespace(done=lambda: True)
+        api._running[group] = finished
+        retry = api.Registration(group, 5000)
+        retry.phase, retry.done = 'checking', 10
+        api._registration_store(engine, retry)
+        with Session(engine) as other:
+            assert api._registration_state(other, group) == dict(state='running', phase='checking', done=10,
+                                                                 total=5000)
+        api._running.pop(group, None)
     finally:
         with engine.begin() as c:
             c.execute(text('delete from evidence_upload_groups where id = :g'), dict(g=group))

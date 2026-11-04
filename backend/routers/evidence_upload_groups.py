@@ -4,6 +4,7 @@ Members are verified privately. Registration commits with the group receipt;
 phone-processing requests have stable identities across lost acknowledgements.
 Original evidence is never overwritten by a later upload with the same name.
 """
+import asyncio
 import hashlib
 import json
 import math
@@ -13,6 +14,7 @@ import re
 import shutil
 import stat
 import tempfile
+import time
 from types import SimpleNamespace
 from typing import Literal
 from uuid import UUID, uuid4, uuid5
@@ -700,20 +702,52 @@ async def group_action(identity: UUID, action: str, user: User = Depends(get_cur
         return await run_in_threadpool(discard_group, db, identity, user)
     if action not in {'pause', 'resume', 'complete'}:
         raise HTTPException(404, 'Unknown upload action')
-    if action == 'complete':
-        return await start_registration(identity, user, db)
+    if action != 'complete':
+        def change():
+            group = get_group(db, identity, user, lock=True)
+            if group.status == 'completed': return snapshot(db, group)
+            if group.receipt:
+                raise HTTPException(409, 'Files are saved. Finish registration to reconnect their processing jobs.')
+            group.status = 'paused' if action == 'pause' else 'uploading'
+            for row in members(db, group):
+                if row.status != 'staged': row.status = group.status
+            db.commit()
+            return snapshot(db, group)
+        return await run_in_threadpool(change)
 
-    def change():
-        group = get_group(db, identity, user, lock=True)
-        if group.status == 'completed': return snapshot(db, group)
-        if group.receipt:
-            raise HTTPException(409, 'Files are saved. Finish registration to reconnect their processing jobs.')
-        group.status = 'paused' if action == 'pause' else 'uploading'
-        for row in members(db, group):
-            if row.status != 'staged': row.status = group.status
-        db.commit()
-        return snapshot(db, group)
-    return await run_in_threadpool(change)
+    def check():
+        # The same refusals the registration makes under the selection's lock, answered at once.
+        group = get_group(db, identity, user)
+        if group.status == 'completed':
+            return snapshot(db, group), None, None
+        if group.status == 'paused':
+            raise HTTPException(409, 'Resume this selection before completing it')
+        S = EvidenceUploadSession
+        if not group.receipt and db.scalar(select(func.count()).where(S.group_id == group.id, S.status != 'staged')):
+            raise HTTPException(409, 'Some files have not finished uploading. Resume the selection to send the missing parts.')
+        stored = _stored_registration(db, identity)
+        bind = db.get_bind()
+        # This request's reads end here: the registration has a session of its own.
+        db.rollback()
+        return None, stored, bind
+    answer, stored, bind = await run_in_threadpool(check)
+    if answer is not None:
+        return answer
+    _forget_finished()
+    registration = _running.get(identity)
+    if registration is None or registration.task.done():
+        if stored is not None and stored['state'] == 'running':
+            # Another server process is registering it now.
+            return await run_in_threadpool(_progress_answer, db, identity, user, stored)
+        registration = Registration(identity, 0)
+        registration.task = asyncio.create_task(_register(registration, identity, user, bind))
+        # A failure is told to the page through GET /registration, whether or not this request is still waiting.
+        registration.task.add_done_callback(lambda task: task.cancelled() or task.exception())
+        _running[identity] = registration
+    done, _ = await asyncio.wait({registration.task}, timeout=COMPLETE_WAIT_SECONDS)
+    if done:
+        return registration.task.result()
+    return await run_in_threadpool(_progress_answer, db, identity, user)
 
 
 # --- registration (lx-uploadfollow C) ----------------------------------------------------------------------------
@@ -733,7 +767,7 @@ _running = {}  # group id -> Registration, in this server process
 class Registration:
     def __init__(self, identity, total):
         self.identity, self.phase, self.done, self.total = identity, 'starting', 0, total
-        self.error, self.task, self.finished_at = None, None, None
+        self.error, self.task, self.finished_at, self.stored = None, None, None, False
 
     def state(self):
         if self.task is not None and self.task.done():
@@ -753,13 +787,14 @@ def _registration_store(bind, registration, *, finished=False):
     from postgres.models.evidence_upload import EvidenceUploadRegistration as R
     values = dict(phase=registration.phase, done=registration.done, total=registration.total,
                   error=registration.error, heartbeat_at=func.now(), finished_at=func.now() if finished else None)
+    if not registration.stored:
+        values['started_at'] = func.now()  # this run's first write: a new run of a selection that stopped before
     try:
         with bind.connect() as connection:
             statement = insert(R).values(group_id=registration.identity, **values)
-            if registration.phase == 'starting':
-                values['started_at'] = func.now()  # a new run of a selection that stopped before
             connection.execute(statement.on_conflict_do_update(index_elements=[R.group_id], set_=values))
             connection.commit()
+        registration.stored = True
     except Exception:
         import logging
         logging.getLogger(__name__).exception('Upload registration progress could not be stored (registration is '
@@ -784,14 +819,19 @@ def _stored_registration(db, identity):
 
 
 def _registration_state(db, identity):
+    """This process's registration while it runs; otherwise the shared row, which also holds a newer run another
+    server process started after this one finished (a retry after a failure lands anywhere)."""
     here = _running.get(identity)
-    if here is not None:
+    if here is not None and here.state()['state'] == 'running':
         return here.state()
-    return _stored_registration(db, identity) or dict(state='idle')
+    stored = _stored_registration(db, identity)
+    if stored is not None:
+        return stored
+    return here.state() if here is not None else dict(state='idle')
 
 
 def _forget_finished():
-    now = __import__('time').monotonic()
+    now = time.monotonic()
     for identity, registration in list(_running.items()):
         if registration.finished_at is not None and now - registration.finished_at > KEEP_FINISHED_SECONDS:
             _running.pop(identity, None)
@@ -800,14 +840,21 @@ def _forget_finished():
 async def _register(registration, identity, user, bind):
     """The finish of a selection, as the request did it before: in its own session, the selection held alone from
     the first step to the commit that ends it."""
-    db = Session(bind=bind)
-    beating = True
+    db = Session(bind=bind, autoflush=False)
+    stop = asyncio.Event()
 
     async def heartbeat():
-        while beating:
-            await run_in_threadpool(_registration_store, bind, registration)
-            await __import__('asyncio').sleep(HEARTBEAT_SECONDS)
-    beat = __import__('asyncio').create_task(heartbeat())
+        while not stop.is_set():
+            # Only a registration holding the selection writes: one waiting behind another process's must not
+            # overwrite that one's progress.
+            if registration.phase != 'starting':
+                await run_in_threadpool(_registration_store, bind, registration)
+            try:
+                await asyncio.wait_for(stop.wait(), HEARTBEAT_SECONDS)
+            except asyncio.TimeoutError:
+                pass
+    beat = asyncio.create_task(heartbeat())
+    cancelled = False
     try:
         current = await run_in_threadpool(lambda: db.get(User, user.id) or user)
         return await _complete(db, identity, current, registration)
@@ -818,12 +865,23 @@ async def _register(registration, identity, user, bind):
         registration.error = dict(status_code=500, detail='Registration stopped with an error. Choose Finish '
                                   'registration to try again; files will not be uploaded again.')
         raise HTTPException(500, registration.error['detail']) from exc
+    except asyncio.CancelledError:
+        # The server is stopping. Its rows commit only with the receipt, so nothing is half-registered; the stored
+        # heartbeat stops moving and the page sees "stopped" and starts it again. The session may still be in use by
+        # the step's worker thread, so it is left to end with the process.
+        cancelled = True
+        raise
     finally:
-        beating = False
-        beat.cancel()
-        registration.finished_at = __import__('time').monotonic()
-        await run_in_threadpool(_registration_store, bind, registration, finished=True)
-        await run_in_threadpool(db.close)
+        stop.set()
+        if not cancelled:
+            await beat  # a heartbeat write in flight lands before the finished one
+            registration.finished_at = time.monotonic()
+            if registration.phase != 'starting' or registration.error is not None:
+                await run_in_threadpool(_registration_store, bind, registration, finished=True)
+            await run_in_threadpool(db.close)
+        else:
+            beat.cancel()
+            registration.finished_at = time.monotonic()
 
 
 async def _complete(db, identity, user, registration):
@@ -833,6 +891,7 @@ async def _complete(db, identity, user, registration):
     def start():
         group = get_group(db, identity, user, lock=True)
         if group.status == 'completed': return None, None, snapshot(db, group)
+        registration.phase = 'checking'  # the selection is held: from here this registration reports progress
         rows = members(db, group)
         if group.status == 'paused':
             raise HTTPException(409, 'Resume this selection before completing it')
@@ -895,43 +954,6 @@ async def _complete(db, identity, user, registration):
 def _progress_answer(db, identity, user, registration=None):
     group = get_group(db, identity, user)
     return dict(summary(db, group), registration=registration or _registration_state(db, identity))
-
-
-async def start_registration(identity, user, db):
-    import asyncio
-
-    def check():
-        # The same refusals the registration makes under the selection's lock, answered at once.
-        group = get_group(db, identity, user)
-        if group.status == 'completed':
-            return snapshot(db, group), None
-        if group.status == 'paused':
-            raise HTTPException(409, 'Resume this selection before completing it')
-        S = EvidenceUploadSession
-        if not group.receipt and db.scalar(select(func.count()).where(S.group_id == group.id, S.status != 'staged')):
-            raise HTTPException(409, 'Some files have not finished uploading. Resume the selection to send the missing parts.')
-        stored = _stored_registration(db, identity)
-        # This request's reads end here: the registration has a session of its own.
-        db.rollback()
-        return None, stored
-    answer, stored = await run_in_threadpool(check)
-    if answer is not None:
-        return answer
-    _forget_finished()
-    registration = _running.get(identity)
-    if registration is None or registration.task.done():
-        if registration is None and stored is not None and stored['state'] == 'running':
-            # Another server process is registering it now.
-            return await run_in_threadpool(_progress_answer, db, identity, user, stored)
-        registration = Registration(identity, 0)
-        registration.task = asyncio.create_task(_register(registration, identity, user, db.get_bind()))
-        # A failure is told to the page through GET /registration, whether or not this request is still waiting.
-        registration.task.add_done_callback(lambda task: task.cancelled() or task.exception())
-        _running[identity] = registration
-    done, _ = await asyncio.wait({registration.task}, timeout=COMPLETE_WAIT_SECONDS)
-    if done:
-        return registration.task.result()
-    return await run_in_threadpool(_progress_answer, db, identity, user)
 
 
 @router.get('/{identity}/registration')
