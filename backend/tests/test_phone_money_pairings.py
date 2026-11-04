@@ -246,3 +246,58 @@ def test_the_final_answer_prompt_carries_the_strength_and_confirmation_wording()
     from services.agent.graph import _final_answer_system_prompt
     s = _final_answer_system_prompt()
     assert "never call a rule-found pairing confirmed" in s and "weak and faint" in s
+
+
+def test_before_a_rerun_a_corrected_row_keeps_its_decision_and_every_reader_leaves_a_rejected_match_out():
+    from services.agent import phone_tools
+    from services.phone_analysis import money_signals as MS
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            L = Ledger(c, case)
+            a = L.account("Synthetic Bank", "XXXX-XXXX-1234")
+            exact = L.txn(a, 5000, date(2024, 3, 2))
+            late = L.txn(a, 5000, date(2024, 3, 10))
+        p = Phone()
+        p.notification("test.synthbank.mobile", ALERT, when=WHEN)
+        p.make(engine, case)
+        run_id, items = _run(engine, case)
+        m = _reading(items, 5000)["measures"]
+        _decide(engine, case, m, exact, "rejected", "Refund")
+        # the late row is corrected after the run and before any rerun: Confirm on the stored id still works
+        with engine.begin() as c:
+            fixed = Ledger(c, case, first_row=50).txn(a, 5000, date(2024, 3, 10))
+            Ledger(c, case, first_row=60).supersede(late, fixed)
+        _decide(engine, case, m, late, "confirmed")
+        with engine.connect() as c:
+            got = _reading(F.results(c, str(case), run_id, limit=50)["items"], 5000)["measures"]
+            readings = phone_tools.money_readings(c, case, outcome="corroborated")
+            links = MS.phone_links(c, case, [exact])
+        by = {x["transaction_id"]: x for x in got["pairings"]}
+        assert by[str(late)]["decision"] == "confirmed" and by[str(late)]["corrected_to"] == str(fixed)
+        assert by[str(exact)]["decision"] == "rejected"
+        assert len(got["pairings"]) == 2  # no second entry for the corrected row
+        assert got["pair_counts"]["by_level"]["strong"] == 0 and got["pair_counts"]["rejected"] == 1
+        # the badge reads the strongest pairing not rejected
+        assert got["best_level"] == "weak"
+        # the other readers: the rejected rule match is not corroboration
+        assert readings["total_matching"] == 0
+        assert links == {}
+
+
+def test_rows_outside_the_search_are_all_counted_and_said_including_the_other_direction():
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            L = Ledger(c, case)
+            a = L.account("Synthetic Bank", "XXXX-XXXX-1234")
+            L.txn(a, 99999, date(2024, 6, 1))                       # beyond both the days and the amount
+            L.txn(a, 5000, date(2024, 3, 2), direction="credit")     # the other direction
+        p = Phone()
+        p.notification("test.synthbank.mobile", ALERT, when=WHEN)
+        p.make(engine, case)
+        _, items = _run(engine, case)
+        m = _reading(items, 5000)["measures"]
+        assert m["pairings"] == []
+        assert m["pairings_left_out"]["beyond_days"] == 1 and m["pairings_left_out"]["other_direction"] == 1
+        assert "1 in the other direction (money in, where the phone says out)" in m["pairings_left_out_words"]

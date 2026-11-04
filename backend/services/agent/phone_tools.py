@@ -401,6 +401,9 @@ def places(conn, case_id, *, start=None, end=None, phones=(), offset=0, limit=DE
                  unconfirmed=[i["rec"] for i in items if i["unconfirmed"]])
 
 
+REJECTED_OUTCOME = "rule match rejected by a person"
+
+
 def money_readings(conn, case_id, *, outcome=None, offset=0, limit=DEFAULT_LIMIT) -> dict:
     """Approach 1's last completed run: money the phones record, each checked against the ledger. Every reading is
     a reading from a phone (p4), never a statement."""
@@ -411,17 +414,35 @@ def money_readings(conn, case_id, *, outcome=None, offset=0, limit=DEFAULT_LIMIT
         return _base("money_readings", case_id, total_matching=0, returned=0, has_more=False, next_offset=None,
                      items=[], coverage="Money on the phones has not been run in this case.",
                      limitation="Run it from Money on the phones; until then there is nothing to read.")
+    from services.phone_analysis import money_pairings
     where = "r.run_id = :r AND r.kind = 'money_reading'"
     params = {"r": run.id}
-    if outcome:
-        where += " AND r.measures ->> 'outcome' = :o"
-        params["o"] = outcome
-    total = int(conn.execute(text("SELECT count(*) FROM phone_analysis_results r WHERE %s" % where),
-                             params).scalar())
+    rejected = money_pairings.rejected_links(conn, case_id)
     offset, lim = max(0, int(offset or 0)), _limit(limit)
-    rows = conn.execute(text(
-        "SELECT r.id, r.measures, r.strength FROM phone_analysis_results r WHERE %s ORDER BY r.period_start NULLS "
-        "LAST, r.id OFFSET :off LIMIT :lim" % where), {**params, "off": offset, "lim": lim}).fetchall()
+    if rejected:
+        # 05 4.3.8: a rule match a person rejected is not corroboration; the reading is relabelled, so the outcome
+        # filter and the total are applied after the decisions are read
+        everything = conn.execute(text(
+            "SELECT r.id, r.measures, r.strength FROM phone_analysis_results r WHERE %s ORDER BY r.period_start NULLS "
+            "LAST, r.id" % where), params).fetchall()
+        relabel = {}
+        for r in everything:
+            m = r.measures or {}
+            if m.get("outcome") in ("corroborated", "near_amount") and any(
+                    (m.get("record_uid"), x.get("transaction_id")) in rejected for x in m.get("matched") or []):
+                relabel[r.id] = REJECTED_OUTCOME
+        kept = [r for r in everything if not outcome or relabel.get(r.id, (r.measures or {}).get("outcome")) == outcome]
+        total, rows = len(kept), kept[offset:offset + lim]
+    else:
+        relabel = {}
+        if outcome:
+            where += " AND r.measures ->> 'outcome' = :o"
+            params["o"] = outcome
+        total = int(conn.execute(text("SELECT count(*) FROM phone_analysis_results r WHERE %s" % where),
+                                 params).scalar())
+        rows = conn.execute(text(
+            "SELECT r.id, r.measures, r.strength FROM phone_analysis_results r WHERE %s ORDER BY r.period_start NULLS "
+            "LAST, r.id OFFSET :off LIMIT :lim" % where), {**params, "off": offset, "lim": lim}).fetchall()
     links = {}
     if rows:
         for x in conn.execute(text(
@@ -438,9 +459,11 @@ def money_readings(conn, case_id, *, outcome=None, offset=0, limit=DEFAULT_LIMIT
             "phone": m.get("phone_label"), "source": m.get("source"), "instant": m.get("event_instant"),
             "amount_minor": m.get("amount_minor"), "currency": m.get("currency"), "amount_text": m.get("amount_text"),
             "direction": m.get("direction"), "institution": (m.get("institution") or {}).get("name"),
-            "account": m.get("account_ref"), "outcome": m.get("outcome"), "reason": m.get("reason"),
+            "account": m.get("account_ref"), "outcome": relabel.get(r.id, m.get("outcome")), "reason": m.get("reason"),
             "strength": r.strength, "proof_class": "p4",
-            "ledger_rows": [{"payment": str(x.tid), "ref": x.ref_id, "role": x.role} for x in xs if x.tid]})
+            "ledger_rows": [{"payment": str(x.tid), "ref": x.ref_id,
+                             "role": "ledger_match_rejected_by_person" if (m.get("record_uid"), str(x.tid)) in rejected
+                             else x.role} for x in xs if x.tid]})
     nxt = offset + len(items) if offset + len(items) < total else None
     return _base("money_readings", case_id, run_id=str(run.id), total_matching=total, returned=len(items),
                  has_more=nxt is not None, next_offset=nxt, items=items,

@@ -882,6 +882,7 @@ def phone_links(conn, case_id, transaction_ids) -> dict:
     ids = [str(t) for t in transaction_ids][:500]
     if not ids:
         return {}
+    rejected = MP.rejected_links(conn, case_id)  # a link a person rejected is not shown as corroboration (4.3.8)
     out = defaultdict(list)
     for r in conn.execute(text(
             "SELECT x.ledger_transaction_id, res.id, res.measures, ev.record_uid, ev.field_path FROM "
@@ -894,6 +895,8 @@ def phone_links(conn, case_id, transaction_ids) -> dict:
             "x.ledger_transaction_id = ANY(CAST(:t AS uuid[])) ORDER BY res.period_start, res.id"),
             {"a": CODE, "c": str(case_id), "t": ids}):
         m = r.measures or {}
+        if (str(r.record_uid), str(r.ledger_transaction_id)) in rejected:
+            continue
         out[str(r.ledger_transaction_id)].append({
             "phone_label": m.get("phone_label"), "source": m.get("source"), "instant": m.get("event_instant"),
             "record_uid": str(r.record_uid), "link": "rec://%s#%s" % (r.record_uid, r.field_path),

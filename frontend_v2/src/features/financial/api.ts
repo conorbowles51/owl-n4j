@@ -906,6 +906,7 @@ export const ADJUDICATION_DECISIONS = [
   "confirm_phone_result",
   "reject_phone_result",
   "not_pursue_phone_result",
+  "undo_phone_result_decision",
   "attach_transaction_place",
   "remove_transaction_place",
   "dispute_check_item",

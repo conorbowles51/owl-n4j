@@ -519,6 +519,7 @@ def money_signal_matches(conn, case_id, *, outcome=None, strength=None, offset=0
         measures += res["items"]
     items, by_outcome, by_level = [], {}, {lv: 0 for lv in LEVELS}
     confirmed = rejected = 0
+    all_rejected = []
     left_words = []
     old_run = False
     for r in measures:
@@ -534,6 +535,12 @@ def money_signal_matches(conn, case_id, *, outcome=None, strength=None, offset=0
         rejected_rule = {p["payment"] for p in pairs if p["rule_match"] and p["status"] == "rejected by a person"}
         live = [p for p in pairs if p["status"] != "rejected by a person"]
         best = live[0]["strength"] if live else None
+        if not live and not (m.get("outcome") in MATCHED and not rejected_rule):
+            # every pairing was rejected by a person: not a reading that pairs, counted apart and listed apart
+            all_rejected.append({"result_id": r["id"], "rec": it.get("rec"),
+                                 "rejected": [p["payment"] for p in pairs]})
+            rejected += len(pairs)
+            continue
         if outcome and m.get("outcome") != outcome:
             continue
         if strength and best != strength:
@@ -561,9 +568,11 @@ def money_signal_matches(conn, case_id, *, outcome=None, strength=None, offset=0
                           pairings_left_out_words=m.get("pairings_left_out_words")))
     total_pairs = sum(by_level.values())
     cov = ("Approach 1's last run: %d phone readings pair with ledger rows; %d pairings by strength: %s. %d confirmed "
-           "by a person, %d rejected by a person (left out of these counts). Outcomes: %s." % (
+           "by a person, %d rejected by a person (left out of these counts). Outcomes: %s.%s" % (
                len(items), total_pairs, ", ".join("%s %d" % (lv, by_level[lv]) for lv in LEVELS), confirmed, rejected,
-               ", ".join("%s %d" % kv for kv in sorted(by_outcome.items())) or "none"))
+               ", ".join("%s %d" % kv for kv in sorted(by_outcome.items())) or "none",
+               (" %d more readings had every pairing rejected by a person and are not counted." % len(all_rejected))
+               if all_rejected else ""))
     limitation = None
     if left_words:
         limitation = "Search bound: %s %d readings have payments outside it, counted not listed (see each " \
@@ -573,6 +582,7 @@ def money_signal_matches(conn, case_id, *, outcome=None, strength=None, offset=0
                                           "again to list every candidate payment with its strength.") if x)
     return _paged(tool, case_id, items, offset, limit, "readings", run_id=str(run.id), by_outcome=by_outcome,
                   by_strength=by_level, confirmed_by_person=confirmed, rejected_by_person=rejected,
+                  readings_with_every_pairing_rejected=all_rejected,
                   search=MP.search_words(), coverage=cov, limitation=limitation,
                   note="Mention every pairing with its strength and reasons, weak and faint ones as weak or faint, "
                        "never dropped. Say which are confirmed by a person and which are found by the rule; never "

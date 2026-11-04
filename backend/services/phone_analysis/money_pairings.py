@@ -176,6 +176,9 @@ def pairings(item, binding, accounts, entries, group_of, window, other_records, 
         supports_base.append("%d other phone record%s with the same amount that day"
                              % (other_records, "" if other_records == 1 else "s"))
     bound = search_bound_minor(r.amount_minor, r.currency or "USD")
+    if r.direction in ("debit", "credit"):
+        left["direction_word"] = "out" if r.direction == "debit" else "in"
+        left["other_direction_word"] = "in" if r.direction == "debit" else "out"
     seen, out = set(), []
     for aid in ids:
         members = tuple(group_of(aid) or [aid])
@@ -193,8 +196,7 @@ def pairings(item, binding, accounts, entries, group_of, window, other_records, 
                 lag = (e["date"] - item["event_date"]).days
                 diff = abs(abs(int(r.amount_minor)) - abs(int(e["amount_minor"])))
                 if abs(lag) > SEARCH["days"]:
-                    if diff <= bound:
-                        left["beyond_days"] += 1
+                    left["beyond_days"] += 1   # whatever the amount: every row outside the search is counted
                     continue
                 if diff > bound:
                     left["beyond_amount"] += 1
@@ -242,6 +244,12 @@ def left_out_words(left):
         parts.append("%d whose amount differs by more than half" % left["beyond_amount"])
     if left.get("beyond_cap"):
         parts.append("%d beyond the %d strongest listed" % (left["beyond_cap"], SEARCH["per_reading"]))
+    if left.get("other_direction"):
+        parts.append("%d in the other direction (money %s, where the phone says %s)" % (
+            left["other_direction"], left.get("other_direction_word") or "the other way",
+            left.get("direction_word") or "this way"))
+    if left.get("other_currency"):
+        parts.append("%d in another currency" % left["other_currency"])
     return ("Not listed: payments on these accounts " + ", ".join(parts) + ".") if parts else None
 
 
@@ -360,6 +368,9 @@ def overlay(conn, case_id, items):
         if m.get("record_uid"):
             uids.add(m["record_uid"])
     decided = case_decisions(conn, case_id, uids) if uids else {}
+    # a row corrected since the run stands as its successor: a decision on either is the same decision
+    stored = {p["transaction_id"] for it in readings for p in ((it.get("measures") or {}).get("pairings") or [])}
+    eff = _effective(conn, case_id, stored) if (stored and decided) else {}
     for it in readings:
         m = it["measures"] = dict(it.get("measures") or {})
         uid, fp = m.get("record_uid"), m.get("field_path") or ""
@@ -367,7 +378,11 @@ def overlay(conn, case_id, items):
         found = set()
         for p in m.get("pairings") or []:
             p = dict(p)
-            d = decided.get((uid, fp, p["transaction_id"]))
+            now = eff.get(p["transaction_id"], p["transaction_id"])
+            d = decided.get((uid, fp, now))
+            if now != p["transaction_id"]:
+                p["corrected_to"] = now
+            found.add(now)
             p["decision"] = d["state"] if d else None
             p["decision_words"] = decision_words(d)
             p["decision_note"] = d["note"] if d else ""
@@ -386,6 +401,9 @@ def overlay(conn, case_id, items):
                               "currency": (d["pair"] or {}).get("currency"), "date": (d["pair"] or {}).get("date")})
         m["pairings"] = pairs
         m["pair_counts"] = counts(pairs)
+        # the badge reads the strongest pairing a person has not rejected (the order stays the run's rank)
+        live = [p for p in pairs if p.get("decision") != "rejected" and p.get("found_by_rule", True)]
+        m["best_level"] = live[0]["level"] if live else None
     return items
 
 
@@ -427,14 +445,17 @@ def decide(db, case_id, record_uid, field_path, transaction_id, decision, note, 
                                                                                       str(record_uid)):
         raise PairError("The record and the payment are named by their ids.")
     conn = db.connection()
-    key = pair_key(record_uid, field_path, transaction_id)
     decided = case_decisions(conn, case_id, {str(record_uid)})
     eff = _effective(conn, case_id, [transaction_id]).get(str(transaction_id), str(transaction_id))
     prior = decided.get((str(record_uid), field_path or "", eff))
+    key = pair_key(record_uid, field_path, eff)
     reading = _current_reading(conn, case_id, record_uid, field_path)
     pair = None
     if reading is not None:
-        pair = next((p for p in (reading.measures or {}).get("pairings") or [] if p["transaction_id"] == eff), None)
+        stored = (reading.measures or {}).get("pairings") or []
+        resolved = _effective(conn, case_id, [p["transaction_id"] for p in stored]) if stored else {}
+        pair = next((p for p in stored if p["transaction_id"] in (str(transaction_id), eff)
+                     or resolved.get(p["transaction_id"]) == eff), None)
     if decision == "undo":
         if prior is None or not prior["state"]:
             raise PairError("There is no decision on this match to undo.")
@@ -519,4 +540,16 @@ def orphaned(conn, case_id) -> list:
             out.append({"record_uid": uid, "field_path": fp, "transaction_id": tid, "decision": d["state"],
                         "decision_words": decision_words(d) + ", no longer found by the rule",
                         "pair": d["pair"]})
+    return out
+
+
+def rejected_links(conn, case_id) -> set:
+    """``{(record_uid, transaction id)}`` of pairings a person rejected, by the row each now stands as, and by the
+    row decided on: every reader of approach 1's links leaves these out of its corroboration (05 4.3.8)."""
+    out = set()
+    for (uid, _fp, tid), d in case_decisions(conn, case_id).items():
+        if d["state"] == "rejected":
+            out.add((uid, tid))
+            if d.get("decided_on"):
+                out.add((uid, d["decided_on"]))
     return out
