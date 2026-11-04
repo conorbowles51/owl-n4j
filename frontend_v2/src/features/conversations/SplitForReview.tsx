@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { caseMembersAPI } from "@/features/cases/members-api"
 import { failureText, type StreamFilter } from "@/features/phones/api"
-import { makeSplit, previewSplit, type SplitBy, type SplitMade, type SplitPlan } from "@/features/phones/review-share"
+import { makeSplit, previewSplit, shareFailure, type SplitBy, type SplitMade, type SplitPlan } from "@/features/phones/review-share"
 import { fmt } from "@/features/phones/ui/count-sentence"
 
 /**
@@ -35,7 +35,7 @@ export function SplitForReview({ caseId, filter, scopeWords, open, onClose }: {
   const preview = useMutation({
     mutationFn: () => previewSplit(body),
     onSuccess: (p) => { setPlan(p); setNote(null) },
-    onError: (e) => setNote(failureText(e, "The split could not be counted.")),
+    onError: (e) => setNote(shareFailure(e, "The split could not be counted.")),
   })
   const create = useMutation({
     mutationFn: () => makeSplit({ ...body, expect_threads: plan!.threads }),
@@ -46,7 +46,7 @@ export function SplitForReview({ caseId, filter, scopeWords, open, onClose }: {
       void qc.invalidateQueries({ queryKey: ["phone-thread-review"] })
     },
     onError: (e) => {
-      setNote(failureText(e, "The review tasks could not be made."))
+      setNote(shareFailure(e, "The review tasks could not be made."))
       setPlan(null) // a 409 says the threads changed: count again before making anything
     },
   })

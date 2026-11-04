@@ -1,8 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { failureText } from "@/features/phones/api"
-import { getThreadReviewState, recordSecondPass, type SecondPassState } from "@/features/phones/review-share"
+import { getThreadReviewState, recordSecondPass, shareFailure, type SecondPassState } from "@/features/phones/review-share"
 import { useThreadPresence } from "./use-thread-presence"
 
 /**
@@ -42,7 +41,7 @@ function SecondPassRow({ caseId, threadKey, s }: { caseId: string; threadKey: st
       void qc.invalidateQueries({ queryKey: ["phone-thread-review", caseId, threadKey] })
       void qc.invalidateQueries({ queryKey: ["phone-review-coverage"] })
     },
-    onError: (e) => setError(failureText(e, "The second-pass result could not be saved.")),
+    onError: (e) => setError(shareFailure(e, "The second-pass result could not be saved.")),
   })
   const first = s.first.reviewed_by_name ?? "a person"
   return (

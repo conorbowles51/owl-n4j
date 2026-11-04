@@ -3,8 +3,7 @@ import { useState } from "react"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { caseMembersAPI } from "@/features/cases/members-api"
-import { failureText } from "../api"
-import { getReviewCoverage, startSecondPass, type CoverageThread } from "../review-share"
+import { getReviewCoverage, shareFailure, startSecondPass, type CoverageThread } from "../review-share"
 
 const n = (v: number) => v.toLocaleString("en-US")
 
@@ -93,7 +92,7 @@ function SecondPass({ caseId, summary }: { caseId: string; summary: Awaited<Retu
       setOpen(false)
       void qc.invalidateQueries({ queryKey: ["phone-review-coverage"] })
     },
-    onError: (e) => setNote(failureText(e, "The second-pass sample could not be drawn.")),
+    onError: (e) => setNote(shareFailure(e, "The second-pass sample could not be drawn.")),
   })
   return (
     <div data-testid="second-pass-summary">

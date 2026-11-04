@@ -1,5 +1,14 @@
-import { fetchAPI } from "@/lib/api-client"
-import type { StreamFilter } from "./api"
+import { ApiError, fetchAPI } from "@/lib/api-client"
+import { failureText, type StreamFilter } from "./api"
+
+/** A refusal's own reason: these routes answer with a sentence in ``detail`` (a 409 or 422 says why). */
+export function shareFailure(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) {
+    const d = (error.data as { detail?: unknown } | undefined)?.detail
+    if (typeof d === "string" && d.trim()) return d
+  }
+  return failureText(error, fallback)
+}
 
 /** Sharing a phone review across people (07 J-13 steps 1, 5 and 6 and "[name] is also reviewing this thread."). */
 
