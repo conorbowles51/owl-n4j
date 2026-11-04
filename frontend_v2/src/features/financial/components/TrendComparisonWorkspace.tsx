@@ -107,7 +107,10 @@ export function TrendComparisonWorkspace({
     [finding, setFinding] = useState<Evidence | null>(null)
   const [expanded, setExpanded] = useState<Record<string, number>>({})
   const [downloadWanted, setDownloadWanted] = useState(false)
-  const rows = payments.complete ? payments.rows : null
+  // Rows held over from another scope (placeholder data) are not this scope's payments: until this scope's own rows
+  // arrive the page shows the server's figures for it.
+  const rows =
+    payments.complete && !payments.query.isPlaceholderData ? payments.rows : null
   const browser = rows !== null
   // The server's figures for the page's own choices; when the server picks a different group from the page's order
   // (two groups with the same number of payments), the page asks again with its own choice.
@@ -122,6 +125,7 @@ export function TrendComparisonWorkspace({
     : firstGroups[0] || ""
   const askAgain =
     !browser &&
+    !first.isPlaceholderData &&
     !!first.data?.available &&
     !!first.data.complete &&
     serverGroup !== first.data.group
@@ -134,7 +138,10 @@ export function TrendComparisonWorkspace({
   )
   const serverQuery = askAgain ? second : first
   const server = serverQuery.data
-  const unavailable = !browser && server?.available === false
+  // An answer for an earlier choice, shown only for its groups and periods while this one is worked out.
+  const serverCurrent =
+    !!server && !serverQuery.isPlaceholderData && !(askAgain && first.isPlaceholderData)
+  const unavailable = !browser && serverCurrent && server?.available === false
   useEffect(() => {
     if (unavailable) onNeedRows()
   }, [unavailable, onNeedRows])
@@ -167,9 +174,10 @@ export function TrendComparisonWorkspace({
   const earlier = view.earlier ?? defaults.earlier,
     later = view.later ?? defaults.later
   const scopedCount = browser ? scoped.length : (server?.scoped_count ?? 0)
+  // An answer for an earlier choice does not say this one has no dated payments.
   const scopedDated = browser
     ? scoped.some((row) => paymentDay(row))
-    : !!server?.scoped_dated
+    : !serverCurrent || !!server?.scoped_dated
   const error =
     rangeError(earlier, later) ||
     ((loadedStart && earlier.start < loadedStart) ||
@@ -188,10 +196,10 @@ export function TrendComparisonWorkspace({
       return browserResult
         ? { ...browserResult, invalidAmountCount: browserResult.invalidAmounts.length }
         : null
-    return !error && server?.available && server.complete
+    return !error && serverCurrent && server?.available && server.complete
       ? trendsFromServer(server, coverage)
       : null
-  }, [browser, browserResult, server, coverage, error])
+  }, [browser, browserResult, server, serverCurrent, coverage, error])
   const drivers: TrendViewDriver[] = useMemo(() => {
     if (browser)
       return browserResult
@@ -366,7 +374,7 @@ export function TrendComparisonWorkspace({
           : null
       : serverQuery.isError
         ? serverQuery.error.message
-        : server?.complete === false
+        : serverCurrent && server?.complete === false
           ? "Not all payments were returned. These views cannot yet describe the whole selection."
           : null
     if (failed)
@@ -494,6 +502,11 @@ export function TrendComparisonWorkspace({
       {error && (
         <p role="alert" className="rounded border p-4">
           {error}
+        </p>
+      )}
+      {!browser && !serverCurrent && !error && (
+        <p role="status" className="rounded border p-4">
+          Working out trends for these periods…
         </p>
       )}
       {result && (

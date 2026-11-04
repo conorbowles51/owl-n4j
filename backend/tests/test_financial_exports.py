@@ -86,6 +86,7 @@ ALIASED_EXPORTS = {
     "summary_contributions": "list_summary_contributions",
     "transaction_search": "search_transactions",
     "transactions_first_view": "transactions_first_page",
+    "trends_first_view": "trends_comparison",
     "unread_pages": "find_unread_pages",
 }
 # No export replaces its submodule attribute any more (the 16 that did are aliased above); a new one fails

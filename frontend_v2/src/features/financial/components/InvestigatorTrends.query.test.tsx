@@ -3,12 +3,13 @@
  * (d5b330d1: every payment is 64 MB; the page took 45-67 s before anything showed while it waited for them).
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 import { afterEach, expect, it, vi } from "vitest"
 import fixture from "../lib/trends-parity.fixture.json"
 import { InvestigatorTrends } from "./InvestigatorTrends"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
+import { useInvestigationScopeStore } from "../stores/investigation-scope"
 
 const calls = vi.hoisted(() => [] as string[])
 const server = vi.hoisted(() => ({ unavailable: false }))
@@ -45,12 +46,13 @@ afterEach(() => {
   cleanup()
   calls.length = 0
   server.unavailable = false
+  useInvestigationScopeStore.getState().reset()
   useFinancialDraftStore.setState({ drafts: {} })
 })
 
-const renderPage = () =>
+const renderPage = (client = new QueryClient()) =>
   render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={client}>
       <MemoryRouter>
         <InvestigatorTrends caseId={CASE} />
       </MemoryRouter>
@@ -98,4 +100,35 @@ it("calculates in the browser from every payment where the server cannot reprodu
     `Later · ${debit.afterCount} payments`
   )
   expect(calls.filter((u) => u.startsWith("/api/financial/ledger?"))).toHaveLength(1)
+})
+
+it("never shows payments held over from another scope as this scope's figures", async () => {
+  // Every payment for the whole case is already read (another page, or a download); the scope then narrows.
+  const client = new QueryClient()
+  client.setQueryData(["financial-ledger", CASE, {}], {
+    case_id: CASE,
+    total: fixture.rows.length,
+    transactions: fixture.rows,
+  })
+  renderPage(client)
+  await screen.findByRole("region", { name: "What changed" })
+  expect(calls).toHaveLength(0)
+  act(() => useInvestigationScopeStore.getState().apply(CASE, { startDate: "2021-01-01" }))
+  await waitFor(() =>
+    expect(calls.some((u) => u.startsWith("/api/financial/ledger-trends-view?") && u.includes("start_date=2021-01-01"))).toBe(true)
+  )
+  expect(calls.some((u) => u.startsWith("/api/financial/ledger?"))).toBe(false)
+})
+
+it("keeps the period controls on screen while a new choice is worked out", async () => {
+  renderPage()
+  await screen.findByRole("region", { name: "What changed" })
+  const month = screen.getByLabelText("earlier month")
+  fireEvent.change(month, { target: { value: "2020-12" } })
+  expect(month).toBeInTheDocument()
+  expect(screen.queryByRole("region", { name: "What changed" })).not.toBeInTheDocument()
+  expect(screen.getByText("Working out trends for these periods…")).toBeInTheDocument()
+  await waitFor(() =>
+    expect(calls.filter((u) => u.startsWith("/api/financial/ledger-trends-view?"))).toHaveLength(2)
+  )
 })

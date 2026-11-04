@@ -36,5 +36,9 @@ export function useLedgerTrendsView(
       }),
     enabled: !!caseId && enabled,
     retry: false,
+    // The last answer stays while the next is worked out, so the page keeps its controls (a date being typed)
+    // on screen; its figures are not shown for the new choice (the page reads isPlaceholderData).
+    placeholderData: (previous, query) =>
+      query?.queryKey[1] === caseId ? previous : undefined,
   })
 }

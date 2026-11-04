@@ -59,6 +59,16 @@ class BrowserBehaviourTests(unittest.TestCase):
         with self.assertRaises(Unavailable):
             trends_view([row('a', to_name=7)], 'c', [])
 
+    def test_a_period_typed_through_year_0000_is_compared_as_the_browser_compares_it(self):
+        # A date input passes through 0000-... while a year is typed; the browser treats it as a real day.
+        view = trends_view([row('a')], 'c', [], earlier={'start': '0000-02-29', 'end': '0000-03-01'},
+                           later={'start': '2021-02-01', 'end': '2021-02-28'})
+        self.assertIsNone(view['error'])
+        self.assertEqual(view['result']['totals'][1]['afterCount'], 1)
+        self.assertEqual(trends_view([row('a')], 'c', [], earlier={'start': '0001-02-29', 'end': '0001-03-01'},
+                                     later={'start': '2021-02-01', 'end': '2021-02-28'})['error'],
+                         'Choose valid start and end dates for both periods.')
+
     def test_an_incomplete_answer_is_not_described(self):
         self.assertEqual(trends_view([row('a'), row('a')], 'c', []), {'complete': False})
         self.assertEqual(trends_view([row('a', case_id='other')], 'c', []), {'complete': False})

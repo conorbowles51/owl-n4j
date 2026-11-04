@@ -232,8 +232,16 @@ def default_ranges(rows) -> dict:
     return dict(earlier=month_range('%04d-%02d' % (year, number)), later=later)
 
 
+def _valid_period_day(value) -> bool:
+    """dateValid for a period the page asks about. Year 0000 is a real day to the browser (proleptic Gregorian, a
+    leap year like 2000); only the text is compared, so it needs no date arithmetic here."""
+    if isinstance(value, str) and _DAY.fullmatch(value) and value.startswith('0000'):
+        return _check_day('2000' + value[4:]) is not None
+    return _valid_day(value) is not None
+
+
 def range_error(earlier: dict, later: dict) -> str | None:
-    if not all(_valid_day(day) for day in (earlier['start'], earlier['end'], later['start'], later['end'])):
+    if not all(_valid_period_day(day) for day in (earlier['start'], earlier['end'], later['start'], later['end'])):
         return 'Choose valid start and end dates for both periods.'
     if earlier['start'] > earlier['end'] or later['start'] > later['end']:
         return 'Each period must end on or after its start date.'
