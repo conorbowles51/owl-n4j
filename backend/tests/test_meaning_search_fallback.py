@@ -128,6 +128,9 @@ class AgentSearchDocumentsTests(Fixture):
         self.assertTrue(all("not a meaning match" in r["match"] for r in data["results"]))
         self.assertEqual(data["total"], 1)
         self.assertIn(2, {r["page"] for r in data["results"]})  # "award" sits on page 2
+        # each word hit carries its doc:// citation: the file by id at the hit's page (agent-citations)
+        self.assertTrue(all(r["cite"] == "doc://%s/%s" % (r["evidence_file_id"], r["page"]) if r.get("page")
+                            else r["cite"] == "doc://%s" % r["evidence_file_id"] for r in data["results"]))
 
         # The run record names what was not meaning-searched.
         from services.agent.run_record import call_facts, returned_items
