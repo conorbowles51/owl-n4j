@@ -72,4 +72,13 @@ describe("lazySchema", () => {
       children: [{ name: "c", children: [] }],
     })
   })
+  it("refuses to be frozen at once and keeps working afterwards (lx-mainthread: a frozen stand-in broke Object.keys)", () => {
+    const schema = lazySchema(() => z.object({ id: z.string() }))
+    expect(() => Object.freeze(schema)).toThrow(TypeError)
+    expect(() => Object.preventExtensions(schema)).toThrow(TypeError)
+    expect(Object.isExtensible(schema)).toBe(true)
+    expect(() => Object.keys(schema)).not.toThrow()
+    expect(Object.keys(schema.shape)).toEqual(["id"])
+    expect(schema.parse({ id: "a" })).toEqual({ id: "a" })
+  })
 })

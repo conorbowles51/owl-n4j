@@ -5,6 +5,12 @@
 // ever parses with them. `lazySchema(() => z.object(...))` returns a stand-in that builds the schema the first time
 // anything reads from it (`.parse`, `.shape`, `.extend`, use inside another schema, ...) and from then on forwards
 // every read to that one built schema, so behaviour is the schema's own.
+//
+// Two limits. The stand-in cannot be frozen or sealed: Object.freeze / Object.preventExtensions on it throw at once
+// and leave it working (a non-extensible stand-in would break every later Object.keys with a proxy invariant
+// error). And the stand-in is a different object from the built schema, so anything keyed on schema identity (a zod
+// registry, .meta(), z.toJSONSchema) sees two objects; nothing in the app uses those today. Use the stand-in for
+// parsing and composing, and build the schema directly where identity matters.
 export function lazySchema<T extends object>(build: () => T): T {
   let built: T | undefined
   const schema = (): T => (built ??= build())
@@ -22,5 +28,9 @@ export function lazySchema<T extends object>(build: () => T): T {
     },
     defineProperty: (_target, key, descriptor) => Reflect.defineProperty(schema(), key, descriptor),
     getPrototypeOf: () => Reflect.getPrototypeOf(schema()),
+    // Refused (see above): returning false makes Object.freeze / preventExtensions throw a TypeError here, while the
+    // target stays extensible so every other trap keeps its invariants.
+    preventExtensions: () => false,
+    isExtensible: (target) => Reflect.isExtensible(target),
   })
 }
