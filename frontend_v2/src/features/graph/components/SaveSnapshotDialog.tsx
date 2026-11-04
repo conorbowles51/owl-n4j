@@ -35,8 +35,9 @@ export function SaveSnapshotDialog({ caseId, shown, open, onOpenChange }: SaveSn
   const nodeCount = shown.nodes.length
 
   const save = () => {
-    const subgraph = buildSnapshotSubgraph(shown, readCanvasGraph())
+    // Timed from the click, so the reported seconds include reading the canvas, not only the server round trip.
     const startedAt = performance.now()
+    const subgraph = buildSnapshotSubgraph(shown, readCanvasGraph())
     create.mutate(
       { name: name.trim(), notes: notes.trim(), subgraph, case_id: caseId },
       {
