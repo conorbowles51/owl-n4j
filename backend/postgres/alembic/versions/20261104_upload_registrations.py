@@ -10,7 +10,7 @@ registration runs. Discarding a selection removes its row. New table; no existin
 from alembic import op
 
 revision = "20261104_upload_registrations"
-down_revision = "20261104_phone_perceptual_hash"
+down_revision = "20261103_financial_link_targets"
 branch_labels = None
 depends_on = None
 
