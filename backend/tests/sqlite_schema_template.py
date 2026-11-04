@@ -40,3 +40,24 @@ def copy_empty_schema(path, metadata, tables) -> None:
             engine.dispose()
         _templates[key] = template
     shutil.copyfile(template, path)
+
+
+def sqlite_tables(metadata) -> list:
+    """Every table of ``metadata`` that SQLite can create, in dependency order: the schema a test gets "the way
+    production does" (from the models, as alembic does) instead of a hand list that misses a table a service starts
+    writing (``removed_records`` since b41f761f). A table SQLite cannot render (a PostgreSQL-only column type such as
+    JSONB without a SQLite variant) is left out; a service that writes one fails with "no such table", by name."""
+    import postgres.models  # noqa: F401  (registers every model on the metadata)
+    from sqlalchemy.dialects import sqlite
+    from sqlalchemy.exc import CompileError
+    from sqlalchemy.schema import CreateTable
+
+    dialect = sqlite.dialect()
+    tables = []
+    for table in metadata.sorted_tables:
+        try:
+            CreateTable(table).compile(dialect=dialect)
+        except CompileError:
+            continue
+        tables.append(table)
+    return tables

@@ -1,4 +1,7 @@
 from datetime import datetime, timedelta, timezone
+import os
+import shutil
+import tempfile
 import unittest
 
 from sqlalchemy import create_engine
@@ -19,8 +22,11 @@ from services.presence_service import PresenceService
 from services.snapshot_storage import SnapshotStorage
 from services.system_log_service import LogOrigin, LogType, SystemLogService
 from services.wiretap_tracking import WiretapTrackingService
+from tests.sqlite_schema_template import copy_empty_schema, sqlite_tables
 
 
+# The runtime-state models these services own; the schema itself is every model table (sqlite_tables), so a table a
+# service writes alongside them (removed_records, when a snapshot is deleted) exists as it does in production.
 RUNTIME_STATE_TABLES = [
     BackgroundTask.__table__,
     WiretapProcessedFolder.__table__,
@@ -33,8 +39,13 @@ RUNTIME_STATE_TABLES = [
 
 class RuntimeStateServiceTests(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
-        Base.metadata.create_all(self.engine, tables=RUNTIME_STATE_TABLES)
+        tables = sqlite_tables(Base.metadata)
+        missing = [t.name for t in RUNTIME_STATE_TABLES if t not in tables]
+        self.assertEqual(missing, [], "runtime-state tables SQLite cannot create")
+        self._directory = tempfile.mkdtemp(prefix="runtime-state-")
+        path = os.path.join(self._directory, "state.db")
+        copy_empty_schema(path, Base.metadata, tables)  # built once per process, copied per test
+        self.engine = create_engine(f"sqlite+pysqlite:///{path}", future=True)
         self.SessionLocal = sessionmaker(
             bind=self.engine,
             autoflush=False,
@@ -42,8 +53,8 @@ class RuntimeStateServiceTests(unittest.TestCase):
         )
 
     def tearDown(self):
-        Base.metadata.drop_all(self.engine, tables=RUNTIME_STATE_TABLES)
         self.engine.dispose()
+        shutil.rmtree(self._directory, ignore_errors=True)
 
     def test_background_task_create_update_list_delete(self):
         storage = BackgroundTaskStorage(session_factory=self.SessionLocal)
@@ -217,6 +228,12 @@ class RuntimeStateServiceTests(unittest.TestCase):
         self.assertTrue(storage.delete("snapshot-1"))
         self.assertIsNone(storage.get("snapshot-1"))
         self.assertFalse(storage.delete("snapshot-1"))
+        # The removal kept a copy that can be put back (removed_records, b41f761f).
+        from postgres.models.removed_record import RemovedRecord
+        with self.SessionLocal() as session:
+            kept = session.query(RemovedRecord).all()
+        self.assertEqual([(r.kind, r.subject_id, r.label) for r in kept], [("snapshot", "snapshot-1", "Updated graph")])
+        self.assertEqual([row["table"] for row in kept[0].data["rows"]], ["snapshots"])
 
     def test_system_log_service_filters_stats_and_clear(self):
         service = SystemLogService(session_factory=self.SessionLocal)

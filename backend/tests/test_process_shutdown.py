@@ -282,6 +282,7 @@ APP_SOURCE = textwrap.dedent('''
 
     FIXED = os.environ.get("SHUTDOWN_VARIANT") == "fixed"
     MARKER = os.environ["HANG_MARKER"]
+    READY = os.environ["READY_MARKER"]
     never = threading.Event()
 
     def atomic_unit():
@@ -292,6 +293,7 @@ APP_SOURCE = textwrap.dedent('''
         if FIXED:
             process_shutdown.install_signal_handlers()
         task = asyncio.create_task(_finish_atomic(atomic_unit), name="stuck-import")
+        open(READY + str(os.getpid()), "w").close()
         yield
         if FIXED:
             await process_shutdown.stop_background_tasks([task])
@@ -339,16 +341,22 @@ class UvicornStopTests(unittest.TestCase):
         marker = str(Path(workdir, "hang-"))
         environment = {**os.environ, "PYTHONPATH": f"{workdir}{os.pathsep}{BACKEND_DIR}",
                        "SHUTDOWN_VARIANT": variant, "HANG_MARKER": marker,
+                       "READY_MARKER": str(Path(workdir, "ready-")),
                        "PYTHONDONTWRITEBYTECODE": "1", **(env or {})}
         server = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "hang_app:app", "--host", "127.0.0.1",
              "--port", str(port), "--workers", str(workers), *extra_args],
             cwd=workdir, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         try:
-            deadline = time.monotonic() + 60
+            # Start-up is not what these tests measure (the stop after SIGTERM is), so its wait is a hang guard:
+            # 180 s, as for the other subprocess tests (one interpreter per worker imports FastAPI and the backend;
+            # over 60 s at load 34-44, lx-tiles 4 Nov). Every worker must have finished its lifespan start-up,
+            # not only the first to answer, or the SIGTERM lands on a worker still importing.
+            deadline = time.monotonic() + 180
             while True:
                 try:
-                    if _get(port, "/ready", 1) == 200:
+                    if (len(list(Path(workdir).glob("ready-*"))) >= workers
+                            and _get(port, "/ready", 1) == 200):
                         break
                 except OSError:
                     pass
@@ -358,7 +366,7 @@ class UvicornStopTests(unittest.TestCase):
             # One hung request per worker (connections are spread by the kernel).
             for _ in range(workers * 3):
                 threading.Thread(target=lambda: _swallow(_get, port, "/hang", 120), daemon=True).start()
-            deadline = time.monotonic() + 20
+            deadline = time.monotonic() + 60
             while len(list(Path(workdir).glob("hang-*"))) < min(workers, 1):
                 self.assertLess(time.monotonic(), deadline, "hung request never arrived")
                 time.sleep(0.05)
