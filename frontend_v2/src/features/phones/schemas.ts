@@ -413,8 +413,12 @@ export const SourceDatabaseSchema = z.object({
       name: z.string(), type: z.string(), schema: z.string().nullable(), row_count: z.number().nullable(),
       count_note: z.string().nullable(),
     })),
+    // the row holding the report's position (a byte position in the file), the table it is in, and the raw bytes
     named_row: z.object({
-      found: z.boolean(), reason: z.string().optional(), rowid: z.number().optional(),
+      found: z.boolean(), reason: z.string().optional(), rowid: z.number().optional(), table: z.string().optional(),
+      note: z.string().optional(), log_note: z.string().optional(),
+      position: z.object({ byte: z.number(), page: z.number().nullable().optional(), byte_in_row: z.number().nullable().optional() }).passthrough().optional(),
+      bytes_at_position: RawValueSchema.optional(),
       columns: z.array(z.string()).optional(), values: z.array(RawValueSchema).optional(),
     }).nullable(),
     page: z.object({

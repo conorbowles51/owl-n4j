@@ -133,7 +133,8 @@ def source_row(sources: list) -> dict:
     db = [s for s in sources if s["file"] and s["file"]["is_database"]]
     ok = [s for s in db if s["state"] == "verified"]
     if ok:
-        named = [s for s in ok if s["table_name"] and s["offset"] not in (None, "")]
+        # the offset is a byte position in the file and names the row by itself (05 section 19); a table is optional
+        named = [s for s in ok if s["offset"] not in (None, "")]
         first = (named or ok)[0]
         return {"available": True, "row_named": bool(named), "reason": None if named else NO_ROW_NAMED,
                 "source_index": next(i for i, s in enumerate(sources) if s is first),

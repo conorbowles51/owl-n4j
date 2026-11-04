@@ -86,10 +86,19 @@ export function SourceBody({ data, browse, onBrowse, busy }: {
         {v.copy.siblings.length > 0 ? `; copied with it: ${v.copy.siblings.map((s) => `${s.suffix} (${s.size.toLocaleString("en-US")} bytes)`).join(", ")}` : "; no log or journal file beside it"}.
         {" "}SQLite {v.opened_by.sqlite}.
       </p>
-      {data.source.table_name && (
-        <p>The report says this record came from table {data.source.table_name}, position {data.source.offset ?? "(none given)"}.</p>
+      {(data.source.table_name || data.source.offset) && (
+        <p>
+          The report says this record came from {data.source.table_name ? `table ${data.source.table_name}` : "this file"}
+          {data.source.offset ? `, at byte ${Number(data.source.offset).toLocaleString("en-US")} of the file` : ", with no position given"}.
+        </p>
       )}
+      {nr && nr.found && <p>The row holding that byte: row {nr.rowid} of table {nr.table}.</p>}
+      {nr?.note && <p>{nr.note}</p>}
+      {nr?.log_note && <p className="text-muted-foreground">{nr.log_note}</p>}
       {nr && !nr.found && <p>{nr.reason}</p>}
+      {nr?.bytes_at_position && (
+        <p className="break-all text-muted-foreground">The bytes at that position, as they are: <Raw value={nr.bytes_at_position} /></p>
+      )}
       {nr && nr.found && nr.columns && nr.values && (
         <table aria-label="Source row" className="w-full table-fixed border-collapse">
           <tbody>

@@ -88,10 +88,11 @@ def test_rows_only_in_the_copied_write_ahead_log_are_read_and_the_log_is_listed(
     copy = _copy(src, str(tmp_path / "copy"))
     assert [s["suffix"] for s in copy["siblings"]] == ["-wal", "-shm"]
     db_sha, wal_sha = _sha(copy["path"]), _sha(copy["path"] + "-wal")
-    out = S.view(copy["path"], table="messages", offset="5002")
+    out = S.view(copy["path"], table="messages", offset=_at(copy["path"], b"synthetic 9"), browse="messages", page_no=3)
     assert out["open_mode"] == "read-only, write-ahead log read"
     assert [t["row_count"] for t in out["tables"] if t["name"] == "messages"] == [1202]
-    assert out["named_row"]["found"] and out["named_row"]["values"][2] == "only in log"
+    assert out["page"]["rows"][-1][2] == "only in log"
+    assert out["named_row"]["found"] and out["named_row"]["log_note"].startswith("This file has a write-ahead log")
     # no checkpoint: the copy's database and log bytes are as copied
     assert _sha(copy["path"]) == db_sha and _sha(copy["path"] + "-wal") == wal_sha
     writer.close()
@@ -111,17 +112,50 @@ def test_pages_of_500_with_the_total_stated_and_raw_values(tmp_path):
     assert no_rowid["columns"] == ["k", "v"] and no_rowid["total"] == 0
 
 
-def test_the_named_row_and_each_reason_it_cannot_be_shown(tmp_path):
+def _at(path, needle: bytes, nth: int = 0) -> str:
+    """The byte position of a field's bytes in the file, as a report gives it."""
+    data, i = open(path, "rb").read(), -1
+    for _ in range(nth + 1):
+        i = data.index(needle, i + 1)
+    return str(i)
+
+
+def test_the_row_at_the_reports_byte_position_and_each_reason_it_cannot_be_shown(tmp_path):
     src = str(tmp_path / "app.db")
     _db(src)
+    w = sqlite3.connect(src)
+    w.execute("CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT)")
+    w.execute("INSERT INTO notes VALUES (1, ?)", ("synthetic long note " + "x" * 9000,))  # overflows its page
+    w.execute("INSERT INTO notes VALUES (2, 'synthetic gone')")
+    w.commit()
+    w.execute("PRAGMA secure_delete = OFF")
+    w.execute("DELETE FROM notes WHERE id = 2")  # its bytes stay in the page's unused space
+    w.commit()
+    w.close()
     with S.open_read_only(src) as c:
-        ok = S.named_row(c, "messages", "7")
-        assert ok["found"] and ok["rowid"] == 7 and ok["values"][1:3] == [7, "synthetic 7"]
-        assert S.named_row(c, "messages", "99999")["reason"].startswith("No row of this table")
-        assert S.named_row(c, "nosuch", "1")["reason"] == "The report names a table this database does not have."
-        assert S.named_row(c, "messages", "0x1f")["reason"] == "The report's position for this record is not a row number."
-        assert "no row numbers" in S.named_row(c, "settings", "1")["reason"]
-        assert S.named_row(c, None, None)["reason"] == "The report does not say which row this record came from."
+        # 1,200 rows: a b-tree with interior pages; the position is inside row 777's body text
+        ok = S.named_row(c, src, "messages", _at(src, b"synthetic 777"))
+        assert ok["found"] and ok["table"] == "messages" and ok["rowid"] == 777
+        assert ok["values"][1:3] == [777, "synthetic 777"] and "note" not in ok
+        # a record built from several tables: the report lists them, comma-separated; the row is in one of them
+        listed = S.named_row(c, src, "messages, settings", _at(src, b"synthetic 777"))
+        assert listed["found"] and listed["table"] == "messages" and "note" not in listed
+        assert ok["position"]["byte_in_row"] > 0 and ok["bytes_at_position"]["hex_preview"].startswith(b"synthetic 777".hex())
+        # the report names another table: the row is shown with the table that holds it
+        other = S.named_row(c, src, "notes", _at(src, b"synthetic 120"))
+        assert other["found"] and other["table"] == "messages"
+        assert other["note"] == "The report names table notes; the row at its position is in table messages."
+        assert S.named_row(c, src, None, _at(src, b"synthetic 5"))["note"].endswith("the row there is in table messages.")
+        # a row whose text continues on overflow pages: the position in its first part finds it
+        assert S.named_row(c, src, "notes", _at(src, b"synthetic long note"))["rowid"] == 1
+        gone = S.named_row(c, src, "notes", _at(src, b"synthetic gone"))
+        assert not gone["found"] and gone["reason"].startswith("The report's position is in unused space of this file")
+        assert gone["bytes_at_position"]["hex_preview"].startswith(b"synthetic gone".hex())
+        size = os.path.getsize(src)
+        assert S.named_row(c, src, "messages", str(size + 10))["reason"] == "The report's position is beyond the end of this file."
+        assert S.named_row(c, src, "messages", "0x1f")["reason"] == "The report's position for this record is not a byte position."
+        assert S.named_row(c, src, "messages", None)["reason"] == "The report does not say which row this record came from."
+        assert S.named_row(c, src, "messages", "40")["reason"] == "The report's position is not inside a table row of this file."
 
 
 def test_a_file_that_is_not_sqlite_is_refused(tmp_path):
@@ -151,7 +185,7 @@ def test_a_member_of_a_zip_and_of_a_folder_is_copied_with_its_log_and_a_mismatch
         assert got["reused"] is False and got["sha256"] == want
         assert S.prepared_copy({"open": main, "siblings": {"-wal": wal}, "sha256": want},
                                str(tmp_path / kind))["reused"] is True
-        assert S.view(got["path"], table="messages", offset="5001")["named_row"]["found"]
+        assert S.view(got["path"], table="messages", offset=_at(got["path"], b"synthetic 42"))["named_row"]["rowid"] == 42
         with pytest.raises(S.Refused, match="does not match"):
             S.prepared_copy({"open": main, "siblings": {}, "sha256": "0" * 64}, str(tmp_path / (kind + "-bad")))
     writer.close()

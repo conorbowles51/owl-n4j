@@ -23,7 +23,7 @@ PAGE_ROWS = 500
 BLOB_PREVIEW_BYTES = 64
 SIBLING_SUFFIXES = ("-wal", "-shm", "-journal")
 SQLITE_MAGIC = b"SQLite format 3\x00"
-MODULE_VERSION = "1"
+MODULE_VERSION = "2"
 
 
 class Refused(Exception):
@@ -181,6 +181,9 @@ def page(conn, table: str, page_no: int = 1) -> dict:
             "rows": [[raw(v) for v in r] for r in rows]}
 
 
+NO_ROW_NAMED = "The report does not say which row this record came from."
+
+
 def _has_rowid(conn, table) -> bool:
     try:
         run(conn, "SELECT rowid FROM %s LIMIT 0" % _q(table))
@@ -189,30 +192,172 @@ def _has_rowid(conn, table) -> bool:
         return False
 
 
-def named_row(conn, table: str, offset) -> dict:
-    """The row the report names by table and offset, read as that table's rowid. Says plainly when it cannot."""
-    if not table:
-        return {"found": False, "reason": "The report does not say which row this record came from."}
-    if table not in _table_names(conn):
-        return {"found": False, "reason": "The report names a table this database does not have."}
+def _varint(b: bytes, i: int):
+    v = 0
+    for k in range(8):
+        c = b[i + k]
+        v = (v << 7) | (c & 0x7F)
+        if c < 0x80:
+            return v, i + k + 1
+    return (v << 8) | b[i + 8], i + 9
+
+
+class _Pages:
+    """The pages of a database copy, read straight from the copy's bytes (05 section 19: the report's ``offset`` is a
+    byte position in the file, measured on P12; SQLite cannot be asked which row holds a byte)."""
+
+    def __init__(self, path):
+        self.fh = open(path, "rb")
+        head = self.fh.read(100)
+        ps = int.from_bytes(head[16:18], "big")
+        self.size = 65536 if ps == 1 else ps
+        self.usable = self.size - head[20]
+        self.count = os.fstat(self.fh.fileno()).st_size // self.size
+
+    def page(self, n: int) -> bytes:  # 1-based, as SQLite numbers pages
+        self.fh.seek((n - 1) * self.size)
+        return self.fh.read(self.size)
+
+    def bytes_at(self, offset: int, n: int) -> bytes:
+        self.fh.seek(offset)
+        return self.fh.read(n)
+
+    def close(self):
+        self.fh.close()
+
+
+def _page_header(n: int, data: bytes):
+    h = 100 if n == 1 else 0
+    kind = data[h]
+    cells = int.from_bytes(data[h + 3:h + 5], "big")
+    first = h + (12 if kind in (2, 5) else 8)
+    ptrs = [int.from_bytes(data[first + 2 * k:first + 2 * k + 2], "big") for k in range(cells)]
+    right = int.from_bytes(data[h + 8:h + 12], "big") if kind in (2, 5) else None
+    return kind, ptrs, right
+
+
+def _leaf_cell(data: bytes, start: int, usable: int):
+    """``(rowid, end)`` of a table leaf cell: its header, the payload kept on this page and any overflow pointer."""
+    p, i = _varint(data, start)
+    rowid, j = _varint(data, i)
+    x = usable - 35
+    if p <= x:
+        local, extra = p, 0
+    else:
+        m = ((usable - 12) * 32 // 255) - 23
+        k = m + ((p - m) % (usable - 4))
+        local, extra = (k if k <= x else m), 4
+    return rowid, j + local + extra
+
+
+def position(pages: _Pages, offset: int) -> dict:
+    """The table row holding byte ``offset`` of the file: its page and rowid, or the reason there is none."""
+    n = offset // pages.size + 1
+    if offset < 0 or n > pages.count:
+        return {"reason": "The report's position is beyond the end of this file."}
+    data = pages.page(n)
+    kind, ptrs, _ = _page_header(n, data)
+    at = offset - (n - 1) * pages.size
+    header_end = (100 if n == 1 else 0) + 8 + 2 * len(ptrs)
+    if kind != 13 or at < header_end:
+        return {"page": n, "reason": "The report's position is not inside a table row of this file."}
+    for p in ptrs:
+        if p <= at:
+            rowid, end = _leaf_cell(data, p, pages.usable)
+            if at < end:
+                return {"page": n, "rowid": rowid, "byte_in_row": at - p}
+    return {"page": n, "reason": "The report's position is in unused space of this file: the row it points to is no "
+                                 "longer in any table (for example a deleted record). The bytes there are shown as "
+                                 "they are."}
+
+
+def _leaf_for_rowid(pages: _Pages, root: int, rowid: int):
+    """The leaf page a table's b-tree leads to for ``rowid``, walking from its root page (a few page reads)."""
+    n = root
+    for _ in range(64):
+        if not 1 <= n <= pages.count:
+            return None
+        data = pages.page(n)
+        kind, ptrs, right = _page_header(n, data)
+        if kind == 13:
+            return n
+        if kind != 5:
+            return None
+        nxt = right
+        for p in ptrs:  # in key order
+            key, _ = _varint(data, p + 4)
+            if rowid <= key:
+                nxt = int.from_bytes(data[p:p + 4], "big")
+                break
+        n = nxt
+    return None
+
+
+def _named_tables(table) -> list:
+    """The report's ``tableName`` is one table or a comma-separated list of the tables a record was built from
+    (measured on P12: "visits, urls"); the position is in a row of one of them."""
+    return [t.strip() for t in str(table or "").split(",") if t.strip()]
+
+
+def _owner(conn, pages: _Pages, page_no: int, rowid: int, named: list):
+    """The table whose rows lead to ``page_no`` for ``rowid``: the named tables first, then every other table."""
+    _, roots = run(conn, "SELECT name, rootpage FROM sqlite_master WHERE type = 'table' AND rootpage > 0")
+    lower = {n.lower() for n in named}
+    order = sorted(roots, key=lambda r: (r[0] not in named, (r[0] or "").lower() not in lower, r[0]))
+    for name, root in order:
+        if _leaf_for_rowid(pages, int(root), rowid) == page_no:
+            return name
+    return None
+
+
+def named_row(conn, path: str, table, offset) -> dict:
+    """The row at the report's position (a byte position in the file), with the table that holds it. The bytes at the
+    position are always returned raw. Says plainly when no live row is there."""
+    text_offset = None if offset is None else str(offset).strip()
+    if not text_offset:
+        return {"found": False, "reason": NO_ROW_NAMED}
+    if not text_offset.isdigit():
+        return {"found": False, "reason": "The report's position for this record is not a byte position."}
+    off = int(text_offset)
+    pages = _Pages(path)
     try:
-        rowid = int(str(offset).strip())
-    except (TypeError, ValueError):
-        return {"found": False, "reason": "The report's position for this record is not a row number."}
-    if not _has_rowid(conn, table):
-        return {"found": False, "reason": "This table has no row numbers, so the report's position cannot be read."}
-    cols, rows = run(conn, "SELECT rowid AS \"(rowid)\", * FROM %s WHERE rowid = ?" % _q(table), (rowid,))
+        pos = position(pages, off)
+        out = {"found": False, "named_table": table,
+               "position": {"byte": off, "page": pos.get("page"), "byte_in_row": pos.get("byte_in_row"),
+                            "page_size": pages.size},
+               "bytes_at_position": raw(pages.bytes_at(off, BLOB_PREVIEW_BYTES))}
+        if "reason" in pos:
+            out["reason"] = pos["reason"]
+            return out
+        names = _named_tables(table)
+        owner = _owner(conn, pages, pos["page"], pos["rowid"], names)
+    finally:
+        pages.close()
+    if owner is None:
+        out["reason"] = "The report's position is inside a row on page %d, but no table of this file holds that " \
+                        "page now." % pos["page"]
+        return out
+    cols, rows = run(conn, "SELECT rowid AS \"(rowid)\", * FROM %s WHERE rowid = ?" % _q(owner), (pos["rowid"],))
     if not rows:
-        return {"found": False, "rowid": rowid,
-                "reason": "No row of this table has the row number the report gives (%d)." % rowid}
-    return {"found": True, "rowid": rowid, "columns": cols, "values": [raw(v) for v in rows[0]]}
+        out["reason"] = "The row at the report's position could not be read from table %s." % owner
+        return out
+    out.update(found=True, table=owner, rowid=pos["rowid"], columns=cols, values=[raw(v) for v in rows[0]])
+    if names and owner not in names:
+        out["note"] = "The report names table %s; the row at its position is in table %s." % (table, owner)
+    elif not names:
+        out["note"] = "The report gives a position but no table; the row there is in table %s." % owner
+    return out
 
 
 def view(path, table=None, offset=None, browse=None, page_no=1) -> dict:
     """Everything the panel shows for one database copy, timed."""
     t0 = time.monotonic()
     with open_read_only(path) as conn:
-        out = {"open_mode": conn.open_mode, "tables": tables(conn), "named_row": named_row(conn, table, offset) if table or offset else None}
+        out = {"open_mode": conn.open_mode, "tables": tables(conn),
+               "named_row": named_row(conn, path, table, offset) if table or offset else None}
+        if out["named_row"] and conn.open_mode != "read-only, immutable":
+            out["named_row"]["log_note"] = ("This file has a write-ahead log beside it; the report's position is read "
+                                            "in the main file, and the log may hold a newer copy of that page.")
         if browse:
             out["page"] = page(conn, browse, page_no)
     out["open_ms"] = round((time.monotonic() - t0) * 1000, 1)

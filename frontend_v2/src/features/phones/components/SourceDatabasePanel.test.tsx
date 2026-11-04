@@ -51,20 +51,24 @@ describe("Source database panel wording", () => {
   it("opens the named row as read from the file, values raw, never as the report's record", async () => {
     api.getSourceDatabase.mockResolvedValue({
       record_uid: "r-1", refused: null, read_by: "x",
-      source: { mechanism: "extra_info", table_name: "messages", offset: "12", state: "verified", file: { original_path: "/data/synthetic/app.db", sha256: "ab" } },
+      source: { mechanism: "extra_info", table_name: "messages", offset: "40960", state: "verified", file: { original_path: "/data/synthetic/app.db", sha256: "ab" } },
       view: {
         open_mode: "read-only, immutable",
         tables: [{ name: "messages", type: "table", schema: "CREATE TABLE messages (...)", row_count: 1200, count_note: null }],
-        named_row: { found: true, rowid: 12, columns: ["(rowid)", "id", "body", "data"], values: [12, 12, "synthetic", { blob_bytes: 100, hex_preview: "0001", preview_complete: false }] },
+        named_row: { found: true, rowid: 12, table: "messages", position: { byte: 40960, page: 11, byte_in_row: 24 },
+          bytes_at_position: { blob_bytes: 64, hex_preview: "73796e", preview_complete: true },
+          columns: ["(rowid)", "id", "body", "data"], values: [12, 12, "synthetic", { blob_bytes: 100, hex_preview: "0001", preview_complete: false }] },
         copy: { sha256: "c0ffee", size: 4096, siblings: [{ suffix: "-wal", sha256: "d1", size: 4152 }] },
         opened_by: { module: "app.phone.source_db", version: "1", sqlite: "3.46.1" },
       },
     })
-    show(withRow({ available: true, row_named: true, reason: null, source_index: 2, table_name: "messages", offset: "12" }))
+    show(withRow({ available: true, row_named: true, reason: null, source_index: 2, table_name: "messages", offset: "40960" }))
     fireEvent.click(screen.getByRole("button", { name: "Open source row" }))
     expect(await screen.findByText(/Read from the app database \/data\/synthetic\/app\.db by Loupe's read-only viewer; this is the file's content, not the report's record\./)).toBeInTheDocument()
     expect(api.getSourceDatabase).toHaveBeenCalledWith("case-1", "r-1", 2, undefined, 1)
-    expect(screen.getByText("The report says this record came from table messages, position 12.")).toBeInTheDocument()
+    expect(screen.getByText("The report says this record came from table messages, at byte 40,960 of the file.")).toBeInTheDocument()
+    expect(screen.getByText("The row holding that byte: row 12 of table messages.")).toBeInTheDocument()
+    expect(screen.getByText(/The bytes at that position, as they are:/)).toHaveTextContent("64 bytes: 73796e")
     const row = screen.getByRole("table", { name: "Source row" })
     expect(row).toHaveTextContent("synthetic")
     expect(row).toHaveTextContent("100 bytes: 0001 …")
