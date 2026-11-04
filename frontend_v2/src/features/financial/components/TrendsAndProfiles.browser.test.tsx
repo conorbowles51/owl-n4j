@@ -425,4 +425,6 @@ it("shows quiet statement records and keeps a person's five accounts together th
       name: "Accounts belonging to this person or business",
     }),
   })
-})
+  // Two viewport changes and two screenshots: 10 s alone, 35 s under fleet load (load 20, 2026-11-04 07:45 UTC)
+  // against the browser default of 15 s. 120 s covers that and still fails a hang.
+}, 120_000)
