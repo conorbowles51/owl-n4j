@@ -405,6 +405,12 @@ def fold_place_name(s: str) -> str:
     return " ".join(_re.sub(r"[^0-9a-z]+", " ", s).split())
 
 
+def _ro_uri(path: str) -> str:
+    """A read-only SQLite URI for ``path``, quoted so ``?``, ``#`` or ``%`` in a directory name stay part of the path."""
+    from urllib.parse import quote
+    return "file:%s?mode=ro" % quote(os.path.abspath(path))
+
+
 def forward_index_path() -> str:
     return os.path.join(_reference_dir(), FORWARD_INDEX)
 
@@ -416,7 +422,7 @@ def forward_source() -> Dict[str, Any]:
         return {"available": False, "path": path, "places": 0,
                 "reason": "The offline GeoNames place list is not installed on this server."}
     try:
-        with _sqlite3.connect("file:%s?mode=ro" % path, uri=True) as db:
+        with _sqlite3.connect(_ro_uri(path), uri=True) as db:
             n = int(db.execute("SELECT value FROM meta WHERE key = 'places'").fetchone()[0])
     except Exception as e:  # noqa: BLE001 - a broken index means no suggestions, said so
         logger.warning("GeoNames forward index unreadable: %s", e)
@@ -523,7 +529,7 @@ def forward_candidates(text: str, limit: int = FORWARD_LIMIT) -> Dict[str, Any]:
     if not src["available"]:
         raise LookupError(src["reason"])
     names, regions, words = _name_parts(text)
-    with _sqlite3.connect("file:%s?mode=ro" % src["path"], uri=True) as db:
+    with _sqlite3.connect(_ro_uri(src["path"]), uri=True) as db:
         countries, folded = _countries(db, src["path"])
         wanted_cc = {folded[w] for w in words if w in folded}
         seen, ordered = set(), []
@@ -536,8 +542,10 @@ def forward_candidates(text: str, limit: int = FORWARD_LIMIT) -> Dict[str, Any]:
                 if gid in seen:
                     continue
                 seen.add(gid)
-                in_region = (a1c in regions) or (cc in regions) or (cc in wanted_cc)
-                ordered.append(((0 if in_region else 1, rank, -(pop or 0)), {
+                # A region the text names (its own admin1 code, or a country written out) ranks first; a
+                # two-letter code that is only a country code ("IL" is Illinois before it is Israel) ranks next.
+                tier = 0 if (a1c in regions or cc in wanted_cc) else 1 if cc in regions else 2
+                ordered.append(((tier, rank, -(pop or 0)), {
                     "name": name, "lat": lat, "lon": lon, "country_code": cc, "country": countries.get(cc or ""),
                     "admin1": a1, "population": pop, "geonameid": gid, "matched": part}))
     ordered.sort(key=lambda x: x[0])

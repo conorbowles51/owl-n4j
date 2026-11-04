@@ -1,9 +1,9 @@
 import { lazy, Suspense, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  textPlacesAPI, type Suggestion, type SuggestionList, type TextPlace, type TextPlaceHistoryRow,
+  textPlacesAPI, type StalePlacement, type Suggestion, type SuggestionList, type TextPlace, type TextPlaceHistoryRow,
 } from "../text-places-api"
-import { startRadiusFor, suggestionWords, validPlacement } from "../text-places-lib"
+import { atSuggestion, startRadiusFor, suggestionWords, validPlacement } from "../text-places-lib"
 
 const TextPlacePicker = lazy(() => import("./TextPlacePicker"))
 
@@ -46,9 +46,22 @@ function TextPlaceList({ caseId, extractionId }: { caseId: string; extractionId:
   if (q.isLoading) return <p className="text-muted-foreground">Reading text places…</p>
   if (q.isError || !q.data) return <p className="text-muted-foreground">Text places could not be read just now.</p>
   const d = q.data
-  if (!d.total) return <p className="text-muted-foreground">No text places without a position on this phone.</p>
+  const stale = d.no_longer_applies ?? []
+  const staleList = stale.length > 0 && (
+    <div className="flex flex-col gap-1" aria-label="Placements that no longer apply">
+      <p>
+        {stale.length.toLocaleString()} {stale.length === 1 ? "placement no longer applies" : "placements no longer apply"}{" "}
+        and {stale.length === 1 ? "is" : "are"} not on the map.
+      </p>
+      <ul className="flex flex-col gap-2">
+        {stale.map((p) => <StaleRow key={p.id} caseId={caseId} p={p} />)}
+      </ul>
+    </div>
+  )
+  if (!d.total) return staleList || <p className="text-muted-foreground">No text places without a position on this phone.</p>
   return (
     <div className="flex flex-col gap-2">
+      {staleList}
       <p>
         {d.total.toLocaleString()} text {d.total === 1 ? "place" : "places"}: {d.counts.placed.toLocaleString()} placed by a person,{" "}
         {d.counts.not_placed.toLocaleString()} not placed.{" "}
@@ -78,7 +91,9 @@ function TextPlaceRow({ caseId, item, suggestionsOn }: { caseId: string; item: T
   const [lon, setLon] = useState(p ? String(p.lon) : "")
   const [radius, setRadius] = useState(p ? String(Math.round(p.radius_m)) : "500")
   const [reason, setReason] = useState("")
-  const [chosen, setChosen] = useState<Suggestion | null>(null)
+  // A saved placement that started from a suggestion keeps it while the point and text are still the suggestion's.
+  const [chosen, setChosen] = useState<Suggestion | null>(
+    p?.suggestion && p.place_text === item.place_text ? p.suggestion : null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
@@ -98,7 +113,7 @@ function TextPlaceRow({ caseId, item, suggestionsOn }: { caseId: string; item: T
       if (open === "place") {
         const la = Number(lat), lo = Number(lon)
         // the suggestion is kept beside the placement only when the point is still the one it offered
-        const keep = chosen && Number(chosen.lat) === la && Number(chosen.lon) === lo ? chosen : null
+        const keep = chosen && atSuggestion(chosen, la, lo) ? chosen : null
         await textPlacesAPI.place(caseId, { record_uid: item.record_uid, field_path: item.field_path, lat: la, lon: lo,
           radius_m: Number(radius), reason: reason.trim(), suggestion: keep })
       } else {
@@ -235,5 +250,50 @@ function TextPlaceHistory({ caseId, item }: { caseId: string; item: TextPlace })
         </li>
       ))}
     </ol>
+  )
+}
+
+/** A placement whose written place is no longer a text place: shown with why, and removable with a reason. */
+function StaleRow({ caseId, p }: { caseId: string; p: StalePlacement }) {
+  const qc = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [reason, setReason] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const remove = async () => {
+    setBusy(true); setError(null)
+    try {
+      await textPlacesAPI.remove(caseId, { record_uid: p.record_uid, field_path: p.field_path, reason: reason.trim() })
+      setOpen(false); setReason("")
+      await qc.invalidateQueries({ queryKey: ["text-places", caseId] })
+      await qc.invalidateQueries({ queryKey: ["text-place-history", caseId, p.record_uid, p.field_path] })
+      await qc.invalidateQueries({ queryKey: ["pattern-places", caseId] })
+    } catch (e) { setError(errWords(e)) } finally { setBusy(false) }
+  }
+  return (
+    <li className="flex flex-col gap-1 rounded border border-dashed p-2" aria-label={`Placement no longer applies: ${p.place_text}`}>
+      <p className="break-words">“{p.place_text}”</p>
+      <p>
+        Placed at {p.lat.toFixed(5)}, {p.lon.toFixed(5)} within {Math.round(p.radius_m).toLocaleString()} m by{" "}
+        {p.actor_name || "a person"} on {when(p.created_at)}: “{p.reason}”.
+      </p>
+      <p className="text-xs text-muted-foreground">{p.reason_words}</p>
+      {!open ? (
+        <p><button type="button" className="underline" onClick={() => setOpen(true)}>Remove the place</button></p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          <label className="flex flex-col gap-1">
+            <span>Reason</span>
+            <textarea aria-label="Reason" className="rounded border bg-background px-2 py-1" value={reason}
+              onChange={(e) => setReason(e.target.value)} rows={2} />
+          </label>
+          {error && <p role="alert" className="text-destructive">{error}</p>}
+          <p className="flex gap-3">
+            <button type="button" className="underline" disabled={busy || !reason.trim()} onClick={() => void remove()}>Remove</button>
+            <button type="button" className="underline" onClick={() => setOpen(false)}>Cancel</button>
+          </p>
+        </div>
+      )}
+    </li>
   )
 }

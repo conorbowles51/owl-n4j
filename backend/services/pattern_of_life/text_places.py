@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from types import SimpleNamespace
 
 from sqlalchemy import text
 
@@ -48,6 +49,10 @@ GROUP_WORDS = {"calendar": "Calendar location", "checkin": "Check-in place", "ot
 KIND_WORDS = {"planned": "Planned (calendar)", "declared": "Declared (written, not a visit)",
               "searched": "Searched (looked up, not visited)"}
 END_FIELDS = ("EndDate", "EndTime", "DateEnded", "To")
+# Never the time a written place stands for: when a recurrence stops.
+NOT_START_FIELDS = ("RepeatUntil",)
+# When no time of the record is marked its event time, these name its start, in this order, before any other time.
+START_FIELDS = ("StartDate", "StartTime", "TimeStamp", "Date", "DateStarted", "From")
 
 
 class TextPlaceError(ValueError):
@@ -99,32 +104,54 @@ WHERE t.case_id = :c AND (CAST(:e AS uuid) IS NULL OR t.extraction_id = CAST(:e 
 """
 
 
+def _key(r):
+    return (str(r.extraction_id), int(r.document_index), int(r.ordinal))
+
+
+def _record_fields_many(conn, rows, wanted) -> dict:
+    """(extraction_id, document_index, ordinal) -> the wanted field values of each row's record, one query per phone
+    rather than one per record."""
+    out, by_ext = {}, {}
+    for r in rows:
+        by_ext.setdefault(str(r.extraction_id), set()).add((int(r.document_index), int(r.ordinal)))
+    for ext, keys in by_ext.items():
+        d, o = zip(*sorted(keys))
+        for di, oi, body in conn.execute(text(
+                "SELECT r.document_index, r.ordinal, r.body FROM phone_records r JOIN unnest(CAST(:d AS int[]), "
+                "CAST(:o AS int[])) AS k(d, o) ON r.document_index = k.d AND r.ordinal = k.o "
+                "WHERE r.extraction_id = CAST(:e AS uuid)"), {"e": ext, "d": list(d), "o": list(o)}):
+            if body is not None:
+                out[(ext, int(di), int(oi))] = activity._field_values(body, set(wanted))
+    return out
+
+
 def _record_fields(conn, extraction_id, document_index, ordinal, wanted):
-    body = conn.execute(text("SELECT body FROM phone_records WHERE extraction_id = :e AND document_index = :d AND "
-                             "ordinal = :o"), {"e": extraction_id, "d": document_index, "o": ordinal}).scalar()
-    return activity._field_values(body, set(wanted)) if body is not None else {}
-
-
-def _is_checkin(conn, r) -> bool:
-    f = _record_fields(conn, r.extraction_id, r.document_index, r.ordinal, ("SocialActivityType",))
-    return activity._first(f.get("SocialActivityType")) == "CheckIn"
+    r = SimpleNamespace(extraction_id=extraction_id, document_index=document_index, ordinal=ordinal)
+    return _record_fields_many(conn, [r], wanted).get(_key(r), {})
 
 
 def _candidates(conn, case_id, extraction_id=None) -> list:
-    rows = []
-    for r in conn.execute(text(_CANDIDATES + " ORDER BY t.extraction_id, t.document_index, t.ordinal, t.field_path"),
-                          {"c": case_id, "e": extraction_id}):
-        if r.model_type == "SocialMediaActivity" and not _is_checkin(conn, r):
-            continue
-        rows.append(r)
-    return rows
+    rows = list(conn.execute(text(_CANDIDATES + " ORDER BY t.extraction_id, t.document_index, t.ordinal, "
+                                                "t.field_path"), {"c": case_id, "e": extraction_id}))
+    social = [r for r in rows if r.model_type == "SocialMediaActivity"]
+    types = _record_fields_many(conn, social, ("SocialActivityType",)) if social else {}
+    return [r for r in rows if r.model_type != "SocialMediaActivity" or
+            activity._first(types.get(_key(r), {}).get("SocialActivityType")) == "CheckIn"]
 
 
-def kind_of(conn, r) -> str:
-    """The observation kind of a placed text: what ``classify_point`` says of the record, never presence."""
+def location_fields(conn, rows) -> dict:
+    """The Type and Category of every Location among ``rows``, read in one query per phone (for ``kind_of``)."""
+    locs = [r for r in rows if r.model_type == "Location"]
+    return _record_fields_many(conn, locs, ("Type", "Category")) if locs else {}
+
+
+def kind_of(conn, r, fields=None) -> str:
+    """The observation kind of a placed text: what ``classify_point`` says of the record, never presence. ``fields``
+    is ``location_fields`` read for many rows at once; without it the record is read here."""
     facts = {"fields": {}}
     if r.model_type == "Location":
-        facts["fields"] = _record_fields(conn, r.extraction_id, r.document_index, r.ordinal, ("Type", "Category"))
+        facts["fields"] = (fields.get(_key(r), {}) if fields is not None else
+                           _record_fields(conn, r.extraction_id, r.document_index, r.ordinal, ("Type", "Category")))
     kind = places.classify_point(r.model_type, None, None, facts, [])[0]
     return kind if kind in ("planned", "declared", "searched") else NEVER_PRESENCE
 
@@ -139,7 +166,10 @@ def _times(conn, extraction_id, record_uids, zones) -> dict:
             "v.instant_basis, v.is_event_time FROM phone_time_values v JOIN phone_interpretation_state s ON "
             "s.extraction_id = v.extraction_id AND s.generation = v.generation WHERE v.extraction_id = :e AND "
             "v.record_uid = ANY(:u) AND v.value_index = 0 ORDER BY v.record_uid, v.is_event_time DESC, "
-            "v.effective_instant NULLS LAST"), {"e": extraction_id, "u": list(record_uids)}):
+            "array_position(CAST(:sf AS text[]), v.field_name) NULLS LAST, v.effective_instant NULLS LAST"),
+            {"e": extraction_id, "u": list(record_uids), "sf": list(START_FIELDS)}):
+        if r.field_name in NOT_START_FIELDS:
+            continue
         inst, _, ostat = activity._instant(r, zones.get(str(extraction_id)))
         if inst is None:
             continue
@@ -187,6 +217,7 @@ def list_places(conn, case_id, *, extraction_id=None, status="all", cursor=0, li
     times = {}
     for e in {r.extraction_id for r in page}:
         times.update(_times(conn, e, [r.record_uid for r in page if r.extraction_id == e], zones))
+    kinds = location_fields(conn, page)
     history_n = dict(conn.execute(text(
         "SELECT subject_id::text || '|' || (after ->> 'field'), count(*) FROM adjudications WHERE case_id = :c AND "
         "subject_type = 'phone_record' AND decision IN ('place_text_place', 'remove_text_place') GROUP BY 1"),
@@ -194,7 +225,7 @@ def list_places(conn, case_id, *, extraction_id=None, status="all", cursor=0, li
     items = []
     for r in page:
         group = FIELDS[(r.model_type, r.field_name)]
-        kind = kind_of(conn, r)
+        kind = kind_of(conn, r, kinds)
         t = times.get(r.record_uid)
         p = placed.get((r.record_uid, r.field_path))
         items.append({
@@ -208,11 +239,34 @@ def list_places(conn, case_id, *, extraction_id=None, status="all", cursor=0, li
         })
     total = len(cands)
     nxt = cursor + len(page)
+    stale = no_longer_applies(conn, case_id, placed, extraction_id)
     return {"total": total, "returned": len(page), "cursor": cursor, "limit": limit,
             "next_cursor": nxt if nxt < total else None, "items": items,
             "counts": {"all": sum(counts.values()), "placed": n_placed, "not_placed": sum(counts.values()) - n_placed,
-                       "by_group": counts},
+                       "by_group": counts, "no_longer_applies": len(stale)},
+            "no_longer_applies": stale,
             "status": status, "suggestions": suggestion_status()}
+
+
+def no_longer_applies(conn, case_id, placed=None, extraction_id=None) -> list:
+    """Current placements whose written place is no longer a text place of the case: the record gained a coordinate,
+    its text was corrected to blank, or its phone was superseded. They give no observation; they are listed (never
+    paged away) so a person can see and remove them."""
+    placed = current(conn, case_id) if placed is None else placed
+    mine = {k: p for k, p in placed.items() if extraction_id is None or str(p["extraction_id"]) == str(extraction_id)}
+    if not mine:
+        return []
+    live = {(r.record_uid, r.field_path) for r in _candidates(conn, case_id, extraction_id)}
+    out = []
+    for (uid, fp), p in sorted(mine.items(), key=lambda kv: (str(kv[1]["created_at"]), str(kv[0][0]))):
+        if (uid, fp) in live:
+            continue
+        out.append(dict(_view(p), extraction_id=p["extraction_id"], record_uid=uid, field_path=fp,
+                        model_type=p["model_type"],
+                        reason_words="This placement no longer applies: the record now has a position, its text is "
+                                     "blank, or its phone report is no longer the one the case stands on. It is not "
+                                     "on the map; remove it to close it."))
+    return out
 
 
 def _view(p):
@@ -290,6 +344,24 @@ def _clean_suggestion(sug):
     return keep
 
 
+def _offered(r, sug):
+    """The suggestion as this server offers it for the record's text now, or a refusal: a placement keeps only a
+    candidate the list really offered for that text (its name and point taken from the list, not the request)."""
+    if sug is None:
+        return None
+    from services import geocoder
+    if not suggestion_status()["enabled"]:
+        raise TextPlaceError("Suggestions are off on this server, so a suggestion cannot be kept with the place.")
+    try:
+        offered = geocoder.forward_candidates(r.place_text)["candidates"]
+    except LookupError:
+        raise TextPlaceError("Suggestions are off on this server, so a suggestion cannot be kept with the place.")
+    for c in offered:
+        if str(c["geonameid"]) == str(sug["geonameid"]):
+            return _clean_suggestion(c)
+    raise TextPlaceError("The suggestion is not one the list offered for this text.")
+
+
 def place(session, case_id, record_uid, field_path, *, lat, lon, radius_m, reason, actor, suggestion=None):
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise TextPlaceError("The point is not on the map.")
@@ -300,7 +372,7 @@ def place(session, case_id, record_uid, field_path, *, lat, lon, radius_m, reaso
         raise TextPlaceError("Say why the place is here.")
     conn = session.connection()
     r = _target(conn, case_id, record_uid, field_path)
-    sug = _clean_suggestion(suggestion)
+    sug = _offered(r, _clean_suggestion(suggestion))
     old = current(conn, case_id).get((r.record_uid, r.field_path))
     after = {"place": _place_snapshot({"lat": lat, "lon": lon, "radius_m": radius_m}), "field": r.field_path,
              "suggestion": _sug_snapshot(sug), "text": r.place_text}
@@ -379,6 +451,8 @@ def project(conn, extraction_id, bump=False) -> dict:
             "WHERE extraction_id = :e AND removed_decision_id IS NULL"), {"e": extraction_id}).all()
         if rows:
             cands = {(r.record_uid, r.field_path): r for r in _candidates(conn, st.case_id, extraction_id)}
+            kinds = location_fields(conn, [cands[(p.record_uid, p.field_path)] for p in rows
+                                           if (p.record_uid, p.field_path) in cands])
             times = _times(conn, extraction_id, [p.record_uid for p in rows],
                            {str(extraction_id): activity._zone(st.device_zone)})
             out = []
@@ -392,7 +466,7 @@ def project(conn, extraction_id, bump=False) -> dict:
                     stats["no_time"] += 1
                     continue
                 out.append({"c": st.case_id, "e": extraction_id, "ru": p.record_uid, "rt": p.model_type[:64],
-                            "k": kind_of(conn, c), "sk": SOURCE_KIND, "lat": p.lat, "lon": p.lon,
+                            "k": kind_of(conn, c, kinds), "sk": SOURCE_KIND, "lat": p.lat, "lon": p.lon,
                             "rad": float(p.radius_m), "rep": None, "rb": "manual", "s": t[0], "en": t[1],
                             "os": t[3], "sem": t[2], "pb": None,
                             "fl": [] if t[3] == "explicit" else ["offset_absent"], "app": None,

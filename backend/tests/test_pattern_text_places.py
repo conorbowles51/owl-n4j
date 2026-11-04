@@ -319,3 +319,130 @@ def test_saving_the_same_place_again_is_refused_and_counts_and_staleness_follow_
             h = text_places.history(c, case, *key)
             assert (h[0]["ended_by"], h[0]["ended_reason"], h[0]["ended_actor_name"]) == (
                 "remove_text_place", "wrong hall", "Test Person")
+
+
+# ---- followups m110415512326577: the cb-textplaces review's minor items ---------------------------------------------
+
+def test_a_two_letter_region_ranks_its_own_region_before_a_country_with_that_code(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOUPE_REFERENCE_DATA_DIR", str(tmp_path / "ref"))
+    big = CITIES + [("7", "Springfield", "31.9", "35.2", "IL", "01", "900000")]  # synthetic, larger than Illinois'
+    monkeypatch.setitem(globals(), "CITIES", big)  # undone after the test
+    _place_list(tmp_path / "ref" / "geonames")
+    out = geocoder.forward_candidates("Synthetic Hall, Springfield, IL 62701")
+    assert [c["geonameid"] for c in out["candidates"]][:2] == [1, 7]  # Illinois, then the country code IL
+
+
+def test_the_place_list_opens_from_a_directory_whose_name_has_uri_characters(monkeypatch, tmp_path):
+    ref = tmp_path / "ref?a#b%20c"
+    monkeypatch.setenv("LOUPE_REFERENCE_DATA_DIR", str(ref))
+    _place_list(ref / "geonames")
+    src = geocoder.forward_source()
+    assert src["available"] is True and src["places"] == len(CITIES)
+    assert geocoder.forward_candidates("Dublin")["total"] == 1
+
+
+@needs_template
+def test_a_placement_that_no_longer_applies_is_listed_with_why_and_can_be_removed(hooks):
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case, ext = _phone(c)
+        build(engine, ext)
+        cal = [i for i in _items(engine, case)["items"] if i["group"] == "calendar"][0]
+        key = (cal["record_uid"], cal["field_path"])
+        with Session(engine) as s:
+            text_places.place(s, case, *key, lat=PIN[0], lon=PIN[1], radius_m=150, reason="first", actor=ACTOR)
+            s.commit()
+        assert _items(engine, case)["no_longer_applies"] == []
+        with engine.begin() as c:  # the text is corrected to blank: it is no longer a written place
+            c.execute(text("UPDATE phone_texts SET effective_value = '' WHERE record_uid = :u AND field_path = :f"),
+                      {"u": key[0], "f": key[1]})
+        out = _items(engine, case)
+        assert out["total"] == 2 and out["counts"]["no_longer_applies"] == 1
+        stale = out["no_longer_applies"][0]
+        assert (stale["record_uid"], stale["field_path"], stale["reason"]) == (key[0], key[1], "first")
+        assert "no longer applies" in stale["reason_words"]
+        assert _items(engine, case, extraction_id=ext)["counts"]["no_longer_applies"] == 1
+        with Session(engine) as s:
+            text_places.remove(s, case, *key, reason="text is blank now", actor=ACTOR)
+            s.commit()
+        assert _items(engine, case)["no_longer_applies"] == []
+
+
+@needs_template
+def test_a_list_reads_record_bodies_once_per_phone_not_once_per_record(hooks):
+    from sqlalchemy import event
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            p = TextPhone()
+            for h in range(4):
+                p.written_location(DAY + timedelta(hours=h), "%d Synthetic Road, Dublin 8" % h)
+                p.social(DAY + timedelta(hours=h, minutes=30), "Synthetic Cafe %d" % h, "CheckIn")
+            ext = p.make(c, case)
+        build(engine, ext)
+        reads = []
+
+        def count(conn, cursor, statement, *a):
+            if "FROM phone_records" in statement:
+                reads.append(statement)
+        event.listen(engine, "before_cursor_execute", count)
+        try:
+            out = _items(engine, case)
+        finally:
+            event.remove(engine, "before_cursor_execute", count)
+        assert out["total"] == 8
+        assert len(reads) <= 3, len(reads)  # check-ins once, Location kinds once, stale-list check-ins once
+
+
+@needs_template
+def test_a_suggestion_not_offered_for_the_text_is_refused_and_an_offered_one_is_kept_as_the_list_has_it(
+        hooks, place_list):
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case, ext = _phone(c)
+        build(engine, ext)
+        cal = [i for i in _items(engine, case)["items"] if i["group"] == "calendar"][0]
+        forged = {"geonameid": 3, "name": "Dublin", "lat": 53.33306, "lon": -6.24889}  # not offered for Springfield
+        with Session(engine) as s:
+            with pytest.raises(text_places.TextPlaceError) as e:
+                text_places.place(s, case, cal["record_uid"], cal["field_path"], lat=39.8, lon=-89.65,
+                                  radius_m=5000, reason="x", actor=ACTOR, suggestion=forged)
+            assert "not one the list offered" in str(e.value)
+            s.rollback()
+        renamed = {"geonameid": 1, "name": "Somewhere Else", "lat": 1.0, "lon": 2.0}
+        with Session(engine) as s:
+            text_places.place(s, case, cal["record_uid"], cal["field_path"], lat=39.8, lon=-89.65, radius_m=5000,
+                              reason="The town in the entry", actor=ACTOR, suggestion=renamed)
+            s.commit()
+        with engine.connect() as c:
+            sug = c.execute(text("SELECT suggestion FROM pol_text_place")).scalar()
+            assert (sug["name"], sug["lat"], sug["lon"]) == ("Springfield", "39.80172", "-89.64371")
+
+
+@needs_template
+def test_with_no_event_time_a_records_start_field_is_its_time_not_its_earliest_time(hooks):
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case, ext = _phone(c)
+        build(engine, ext)
+        cal = [i for i in _items(engine, case)["items"] if i["group"] == "calendar"][0]
+        with engine.begin() as c:
+            c.execute(text("UPDATE phone_time_values SET is_event_time = false WHERE record_uid = :u"),
+                      {"u": cal["record_uid"]})
+            c.execute(text(
+                "CREATE TEMP TABLE tv AS SELECT * FROM phone_time_values WHERE record_uid = :u AND "
+                "field_name = 'StartDate'"), {"u": cal["record_uid"]})
+            for name, shift in (("CreationTime", "-3 days"), ("RepeatUntil", "-1 day")):  # both before the start
+                c.execute(text(
+                    "UPDATE tv SET time_uid = gen_random_uuid(), field_name = CAST(:n AS text), field_path = field_path || CAST(:n AS text), "
+                    "instant = instant + CAST(:s AS interval), "
+                    "effective_instant = effective_instant + CAST(:s AS interval)"), {"n": name, "s": shift})
+                c.execute(text("INSERT INTO phone_time_values SELECT * FROM tv"))
+        again = [i for i in _items(engine, case)["items"] if i["group"] == "calendar"][0]
+        assert again["start_utc"] == DAY + timedelta(hours=9)
+        assert again["end_utc"] == DAY + timedelta(hours=11)

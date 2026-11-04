@@ -119,6 +119,41 @@ describe("Text places", () => {
     await waitFor(() => expect(remove).toHaveBeenCalledWith("c", { record_uid: "r1", field_path: "Location", reason: "wrong hall" }))
   })
 
+  it("a placement that no longer applies is listed with why and can be removed", async () => {
+    const data = { ...list([]), counts: { ...list([]).counts, no_longer_applies: 1 }, no_longer_applies: [{
+      id: "p9", lat: 39.8, lon: -89.6, radius_m: 300, reason: "the hall", suggestion: null, decision_id: "d9",
+      actor_name: "Test Person", created_at: "2026-11-04T12:00:00+00:00", place_text: "Synthetic Hall, Springfield",
+      extraction_id: "e1", record_uid: "r9", field_path: "Location", model_type: "CalendarEntry",
+      reason_words: "This placement no longer applies: the record now has a position.",
+    }] }
+    vi.spyOn(textPlacesAPI, "list").mockResolvedValue(data)
+    const remove = vi.spyOn(textPlacesAPI, "remove").mockResolvedValue({ decision_id: "d10" })
+    show()
+    expect(await screen.findByText(/1 placement no longer applies and is not on the map/)).toBeTruthy()
+    expect(screen.getByText(/This placement no longer applies: the record now has a position/)).toBeTruthy()
+    fireEvent.click(screen.getByText("Remove the place"))
+    fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "has a position now" } })
+    fireEvent.click(screen.getByText("Remove"))
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("c", { record_uid: "r9", field_path: "Location", reason: "has a position now" }))
+  })
+
+  it("re-placing at a saved suggestion's point after a reload keeps the suggestion", async () => {
+    const sug = { geonameid: 1, name: "Springfield", lat: "39.80172", lon: "-89.64371", country_code: "US",
+      admin1: "Illinois", population: 114394 }
+    const placed = item({ placement: { id: "p1", lat: 39.801720, lon: -89.643710, radius_m: 8000, reason: "the town",
+      suggestion: sug, decision_id: "d1", actor_name: "Test Person", created_at: "2026-11-04T12:00:00+00:00",
+      place_text: "Synthetic Hall, Springfield, IL" } })
+    vi.spyOn(textPlacesAPI, "list").mockResolvedValue(list([placed], false))
+    const place = vi.spyOn(textPlacesAPI, "place").mockResolvedValue({ placement_id: "p2", decision_id: "d2" })
+    show()
+    fireEvent.click(await screen.findByText("Change the place"))
+    fireEvent.change(screen.getByLabelText("Radius (metres)"), { target: { value: "3000" } })
+    fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "narrower" } })
+    fireEvent.click(screen.getByText("Save the place"))
+    await waitFor(() => expect(place).toHaveBeenCalled())
+    expect(place.mock.calls[0][1]).toMatchObject({ radius_m: 3000, suggestion: sug })
+  })
+
   it("a refused save says why in plain words", async () => {
     vi.spyOn(textPlacesAPI, "list").mockResolvedValue(list([item()], false))
     vi.spyOn(textPlacesAPI, "place").mockRejectedValue(Object.assign(new Error("Forbidden"), { status: 403 }))

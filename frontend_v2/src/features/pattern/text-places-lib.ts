@@ -39,3 +39,10 @@ export function startRadiusFor(population: number | string | null) {
   if (p >= 10_000) return 4000
   return 2000
 }
+
+/** Whether a point is the one a suggestion offers. The ledger keeps a suggestion's point to 5 decimal places, so a
+ * point read back from a saved suggestion still counts as the suggestion's own. */
+export function atSuggestion(s: { lat: number | string; lon: number | string } | null | undefined, lat: number, lon: number): boolean {
+  if (!s) return false
+  return Math.abs(Number(s.lat) - lat) <= 0.0000051 && Math.abs(Number(s.lon) - lon) <= 0.0000051
+}

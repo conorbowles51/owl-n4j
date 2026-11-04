@@ -41,9 +41,20 @@ export interface TextPlaceList {
   limit: number
   next_cursor: number | null
   items: TextPlace[]
-  counts: { all: number; placed: number; not_placed: number; by_group: Record<string, number> }
+  counts: { all: number; placed: number; not_placed: number; by_group: Record<string, number>; no_longer_applies?: number }
+  /** Placements whose written place is no longer a text place (the record gained a position, its text was corrected
+   * to blank, or its phone report was replaced). Not paged: every one is listed so a person can remove it. */
+  no_longer_applies?: StalePlacement[]
   status: string
   suggestions: SuggestionStatus
+}
+
+export interface StalePlacement extends TextPlacement {
+  extraction_id: string
+  record_uid: string
+  field_path: string
+  model_type: string
+  reason_words: string
 }
 
 export interface Suggestion {
