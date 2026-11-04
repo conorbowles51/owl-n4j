@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   revealFile: vi.fn(),
   queryClient: { invalidateQueries: vi.fn() },
   deleteMutate: vi.fn(),
+  folderDeleteMutate: vi.fn(),
   selected: new Set<string>(),
 }))
 
@@ -34,16 +35,28 @@ vi.mock("../evidence.store", () => {
 })
 vi.mock("../hooks/use-folder-mutations", () => ({
   useCreateFolder: () => ({ mutate: vi.fn(), isPending: false }),
-  useDeleteFolder: () => ({ mutate: vi.fn(), isPending: false }),
+  useDeleteFolder: () => ({ mutate: mocks.folderDeleteMutate, isPending: false }),
 }))
 vi.mock("../hooks/use-evidence-detail", () => ({
   useDeleteEvidence: () => ({ mutate: mocks.deleteMutate, isPending: false }),
 }))
 vi.mock("./EvidenceMoveProvider", () => ({ EvidenceMoveProvider: ({ children }: { children: React.ReactNode }) => children }))
-vi.mock("./FolderTreeSidebar", () => ({ FolderTreeSidebar: () => <div /> }))
+vi.mock("./FolderTreeSidebar", () => ({
+  FolderTreeSidebar: ({ onDeleteFolder }: { onDeleteFolder?: (id: string, name: string, count: number) => void }) => (
+    <button onClick={() => onDeleteFolder?.("folder-1", "Phone dump", 0)}>Delete Phone dump</button>
+  ),
+}))
 vi.mock("./FileListPanel", () => ({ FileListPanel: () => <div /> }))
 vi.mock("./CreateFolderDialog", () => ({ CreateFolderDialog: () => null }))
-vi.mock("./DeleteFolderDialog", () => ({ DeleteFolderDialog: () => null }))
+vi.mock("./DeleteFolderDialog", () => ({
+  DeleteFolderDialog: ({ open, onConfirm, error }: { open: boolean; onConfirm: () => void; error?: string | null }) =>
+    open ? (
+      <div>
+        <button onClick={onConfirm}>Confirm folder delete</button>
+        {error && <p role="alert">{error}</p>}
+      </div>
+    ) : null,
+}))
 vi.mock("./DeleteEvidenceDialog", () => ({
   DeleteEvidenceDialog: ({ onConfirm }: { onConfirm: (exclusive: boolean) => void }) => (
     <button onClick={() => onConfirm(false)}>Confirm delete</button>
@@ -201,4 +214,32 @@ it("says which files were deleted and passes on the refusal when a delete is ref
     "Deleted 1 of 3 files. statement.pdf is still in Financial. The other selected file was not deleted."
   )
   mocks.selected.clear()
+})
+
+describe("Delete Folder refused", () => {
+  it("says in plain words that the account cannot delete, and keeps the folder", async () => {
+    const { ApiError } = await import("@/lib/api-client")
+    mocks.folderDeleteMutate.mockReset()
+    mocks.queryClient.invalidateQueries.mockReset()
+    mocks.folderDeleteMutate.mockImplementation((_id: string, options: { onError: (error: Error) => void }) =>
+      options.onError(new ApiError("User does not have evidence.delete permission for case case-1", 403)))
+    const error = vi.spyOn(toast, "error").mockImplementation(() => "")
+    render(
+      <MemoryRouter initialEntries={["/cases/case-1/evidence"]}>
+        <Routes>
+          <Route path="/cases/:id/evidence" element={<EvidenceExplorer />} />
+        </Routes>
+      </MemoryRouter>
+    )
+    fireEvent.click(screen.getAllByText("Delete Phone dump")[0])
+    fireEvent.click(screen.getByText("Confirm folder delete"))
+    const message =
+      "You can view this case's evidence but your account cannot delete it, so the folder and its files were kept. Ask the case owner for permission to delete evidence."
+    expect(screen.getByRole("alert").textContent).toBe(message)
+    expect(error).toHaveBeenCalledWith(message)
+    expect(mocks.folderDeleteMutate).toHaveBeenCalledWith("folder-1", expect.anything())
+    // The dialog stays open on the refusal and nothing is refreshed away.
+    expect(screen.getByText("Confirm folder delete")).toBeTruthy()
+    expect(mocks.queryClient.invalidateQueries).not.toHaveBeenCalled()
+  })
 })

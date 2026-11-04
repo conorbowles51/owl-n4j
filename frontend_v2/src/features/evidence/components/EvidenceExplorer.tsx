@@ -17,6 +17,7 @@ import { FolderTreeSidebar } from "./FolderTreeSidebar"
 import { FileListPanel } from "./FileListPanel"
 import { CreateFolderDialog } from "./CreateFolderDialog"
 import { DeleteFolderDialog } from "./DeleteFolderDialog"
+import { folderDeleteRefusal } from "../folder-delete"
 import { DeleteEvidenceDialog } from "./DeleteEvidenceDialog"
 import { FolderContextDialog } from "./FolderContextDialog"
 import { CaseProcessingProfileDialog } from "./CaseProcessingProfileDialog"
@@ -104,8 +105,8 @@ export function EvidenceExplorer() {
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<{
     id: string
     name: string
-    fileCount: number
   } | null>(null)
+  const [deleteFolderError, setDeleteFolderError] = useState<string | null>(null)
   const [folderProfileFolderId, setFolderProfileFolderId] = useState<string | null>(null)
   const [caseProfileOpen, setCaseProfileOpen] = useState(false)
   const [deleteEvidenceOpen, setDeleteEvidenceOpen] = useState(false)
@@ -135,8 +136,10 @@ export function EvidenceExplorer() {
     setCreateFolderOpen(true)
   }
 
-  const handleOpenDeleteFolder = (id: string, name: string, fileCount: number) => {
-    setDeleteFolderTarget({ id, name, fileCount })
+  // The tree's file count is a folder's direct files only; the dialog asks the server for everything the delete removes.
+  const handleOpenDeleteFolder = (id: string, name: string) => {
+    setDeleteFolderTarget({ id, name })
+    setDeleteFolderError(null)
     setDeleteFolderOpen(true)
   }
 
@@ -148,7 +151,11 @@ export function EvidenceExplorer() {
         setDeleteFolderTarget(null)
         toast.success(`Folder "${deleteFolderTarget.name}" deleted`)
       },
-      onError: (err) => toast.error(err.message),
+      onError: (err) => {
+        const message = folderDeleteRefusal(err)
+        setDeleteFolderError(message)
+        toast.error(message)
+      },
     })
   }
 
@@ -252,10 +259,12 @@ export function EvidenceExplorer() {
         <DeleteFolderDialog
           open={deleteFolderOpen}
           onOpenChange={setDeleteFolderOpen}
+          caseId={caseId!}
+          folderId={deleteFolderTarget?.id ?? null}
           folderName={deleteFolderTarget?.name ?? ""}
-          fileCount={deleteFolderTarget?.fileCount ?? 0}
           onConfirm={handleConfirmDeleteFolder}
           isPending={deleteFolderMutation.isPending}
+          error={deleteFolderError}
         />
 
         <DeleteEvidenceDialog

@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 
 from postgres.session import get_db
 from postgres.models.user import User
+from postgres.models.evidence import EvidenceFolder
 from routers.users import get_current_db_user
 from services.evidence_db_storage import EvidenceDBStorage, EvidenceMoveError
 from services.evidence_processing_service import process_db_files
@@ -294,6 +295,21 @@ def rename_folder(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{folder_id}/delete-summary")
+def delete_summary(
+    folder_id: uuid.UUID,
+    case_id: uuid.UUID = Query(..., description="Case ID"),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """What Delete Folder would remove: every file in the folder and its subfolders, and the subfolders."""
+    _check_case_access(db, str(case_id), current_user)
+    folder = db.get(EvidenceFolder, folder_id)
+    if folder is None or folder.case_id != case_id:
+        raise HTTPException(status_code=404, detail="Folder not found. Refresh and try again.")
+    return EvidenceDBStorage.folder_tree_counts(db, folder_id)
 
 
 @router.delete("/{folder_id}")

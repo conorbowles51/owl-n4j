@@ -253,6 +253,25 @@ class EvidenceDBStorage:
         return ids
 
     @staticmethod
+    def folder_tree_counts(db: Session, folder_id: uuid.UUID) -> Dict[str, int]:
+        """What deleting the folder removes, counted: every file in it and its subfolders (the files of
+        ``folder_tree_file_ids``), how many of those Evidence lists (the rest are internal copies and phone thread
+        documents, 02 section 9.7), and the subfolders. The tree's own count is a folder's direct files only, so a
+        folder whose files all sit in subfolders showed none."""
+        from services.financial.source_lineage import visible_evidence_condition
+        folders, pending = [folder_id], [folder_id]
+        while pending:
+            children = db.scalars(select(EvidenceFolder.id).where(EvidenceFolder.parent_id == pending.pop())).all()
+            folders.extend(children)
+            pending.extend(children)
+        total = listed = 0
+        for at in range(0, len(folders), 500):
+            chunk = EvidenceFile.folder_id.in_(folders[at:at + 500])
+            total += db.scalar(select(func.count()).select_from(EvidenceFile).where(chunk))
+            listed += db.scalar(select(func.count()).select_from(EvidenceFile).where(chunk, visible_evidence_condition()))
+        return dict(file_count=total, listed_file_count=listed, subfolder_count=len(folders) - 1)
+
+    @staticmethod
     def delete_folder(db: Session, folder_id: uuid.UUID, case_id: uuid.UUID) -> List[str]:
         """
         Delete a folder and collect stored_paths of all files that will be removed.

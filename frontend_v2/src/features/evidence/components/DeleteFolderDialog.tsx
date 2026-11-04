@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query"
 import {
   Dialog,
   DialogContent,
@@ -8,24 +9,39 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { AlertTriangle } from "lucide-react"
+import { foldersAPI } from "../folders.api"
+import { describeFolderDelete } from "../folder-delete"
 
 interface DeleteFolderDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  caseId: string
+  folderId: string | null
   folderName: string
-  fileCount: number
   onConfirm: () => void
   isPending?: boolean
+  /** Why the last delete was refused (shown in the dialog; the folder is kept). */
+  error?: string | null
 }
 
 export function DeleteFolderDialog({
   open,
   onOpenChange,
+  caseId,
+  folderId,
   folderName,
-  fileCount,
   onConfirm,
   isPending,
+  error,
 }: DeleteFolderDialogProps) {
+  const summary = useQuery({
+    queryKey: ["evidence-folder-delete-summary", caseId, folderId],
+    queryFn: () => foldersAPI.deleteSummary(folderId!, caseId),
+    enabled: open && !!folderId,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+  })
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -40,18 +56,25 @@ export function DeleteFolderDialog({
         </DialogHeader>
 
         <div className="space-y-3 py-2">
-          {fileCount > 0 && (
-            <div className="rounded-md border border-red-500/20 bg-red-500/5 p-3 text-sm">
-              <p className="font-medium text-red-600 dark:text-red-400">
-                {fileCount} file{fileCount !== 1 ? "s" : ""} will be permanently deleted from disk and database.
-              </p>
-            </div>
-          )}
+          <div className="rounded-md border border-red-500/20 bg-red-500/5 p-3 text-sm" role="status">
+            <p className="font-medium text-red-600 dark:text-red-400">
+              {summary.data
+                ? describeFolderDelete(summary.data)
+                : summary.isError
+                  ? "The files in this folder could not be counted, so it cannot be deleted now. Close this and try again."
+                  : "Counting the files in this folder and its subfolders…"}
+            </p>
+          </div>
           <div className="rounded-md border border-primary/20 bg-primary/5 p-3 text-sm">
             <p className="text-primary">
               Graph data (entities, relationships) extracted from these files will be preserved in Neo4j.
             </p>
           </div>
+          {error && (
+            <p role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">
+              {error}
+            </p>
+          )}
         </div>
 
         <DialogFooter>
@@ -66,7 +89,7 @@ export function DeleteFolderDialog({
             variant="danger"
             size="sm"
             onClick={onConfirm}
-            disabled={isPending}
+            disabled={isPending || !summary.data}
           >
             {isPending ? "Deleting..." : "Delete Folder"}
           </Button>

@@ -27,6 +27,14 @@ export interface EvidenceFileLocation {
 
 export const FILE_PAGE_SIZE = 250
 
+export interface FolderDeleteSummary {
+  /** Every file the delete removes. */
+  file_count: number
+  /** Of those, the files Evidence lists (the rest are internal copies and phone thread documents). */
+  listed_file_count: number
+  subfolder_count: number
+}
+
 export const foldersAPI = {
   getFileLocation: (caseId: string, fileId: string, signal?: AbortSignal, sort: Partial<EvidenceSort> = {}) =>
     fetchAPI<EvidenceFileLocation>(
@@ -84,6 +92,12 @@ export const foldersAPI = {
       method: "PUT",
       body: { name },
     }),
+
+  /** What deleting the folder removes: every file in it and its subfolders (the tree's count is direct files only). */
+  deleteSummary: (folderId: string, caseId: string) =>
+    fetchAPI<FolderDeleteSummary>(
+      `/api/evidence-folders/${encodeURIComponent(folderId)}/delete-summary?case_id=${encodeURIComponent(caseId)}`
+    ),
 
   delete: (folderId: string, caseId: string) =>
     fetchAPI<{ deleted_files: number; deleted_folders: number }>(
