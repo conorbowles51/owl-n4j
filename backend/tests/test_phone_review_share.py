@@ -174,9 +174,17 @@ def test_a_mark_in_a_split_task_counts_in_the_one_coverage_and_moves_the_task_on
     with api["engine"].connect() as conn:
         assert conn.execute(text("SELECT status FROM case_tasks WHERE id = :t"),
                             {"t": bea_task["task_id"]}).scalar() == "done"
-    # a second split leaves out what is already reviewed, and says so
+    # a second split leaves out what is already reviewed and what is still in an open review task, and says so
     plan2, _ = split(api, "thread")
-    assert plan2["already_reviewed_left_out"] == len(keys) and plan2["threads"] == 5 - len(keys)
+    owner_task = next(t for t in made["tasks"] if t["reviewer"]["user_id"] == api["owner"])
+    assert plan2["already_reviewed_left_out"] == len(keys)
+    assert plan2["already_in_a_task_left_out"] == owner_task["threads"] and plan2["threads"] == 0
+    assert "already in an open review task" in plan2["words"]
+    # a deleted task frees its threads for a new split
+    with api["engine"].begin() as conn:
+        conn.execute(text("UPDATE case_tasks SET deleted_at = now() WHERE id = :t"), {"t": owner_task["task_id"]})
+    plan3, _ = split(api, "thread")
+    assert plan3["threads"] == owner_task["threads"] and plan3["already_in_a_task_left_out"] == 0
 
 
 def test_the_coverage_summary_always_equals_the_marks(api):

@@ -98,7 +98,14 @@ def plan_split(conn, f, *, by: str, reviewers: list, only_not_reviewed: bool = T
     people = _members(conn, f.case_id, reviewers)
     listed = streams.thread_list(conn, f, sort="name")["items"]
     reviewed = [t for t in listed if t["review"] and not t["review"]["added_since"]]
-    threads = [t for t in listed if not (only_not_reviewed and t["review"] and not t["review"]["added_since"])]
+    # a thread already in an open review task is not given out twice; a done or deleted task frees it
+    in_task = {r[0] for r in conn.execute(text(
+        "SELECT DISTINCT l.target_id FROM case_task_links l JOIN case_tasks t ON t.id = l.task_id WHERE "
+        "l.case_id = :c AND l.target_type = 'phone_thread' AND t.deleted_at IS NULL AND t.status <> 'done' AND "
+        "l.source_anchor ? 'review_split'"), {"c": str(f.case_id)})} if only_not_reviewed else set()
+    full = {t["thread_key"] for t in reviewed}
+    assigned = [t for t in listed if t["thread_key"] in in_task and t["thread_key"] not in full]
+    threads = [t for t in listed if not (only_not_reviewed and (t["thread_key"] in full or t["thread_key"] in in_task))]
     units: dict = {}
     for t in threads:
         person = _person_of(t) if by == "person" else None
@@ -128,9 +135,13 @@ def plan_split(conn, f, *, by: str, reviewers: list, only_not_reviewed: bool = T
     if skipped:
         words += "; %s already reviewed %s left out" % (_plural(skipped, "thread", "threads"),
                                                          "is" if skipped == 1 else "are")
+    if assigned:
+        words += "; %s already in an open review task %s left out" % (
+            _plural(len(assigned), "thread", "threads"), "is" if len(assigned) == 1 else "are")
     empty = [p for p in out_parts if not p["threads"]]
     return {"by": by, "only_not_reviewed": only_not_reviewed, "threads_in_filter": len(listed),
             "threads": len(threads), "messages": total_msgs, "already_reviewed_left_out": skipped,
+            "already_in_a_task_left_out": len(assigned),
             "parts": out_parts, "words": words + ".",
             "warning": ("%s would get no threads: there are fewer units than reviewers." %
                         _plural(len(empty), "person", "people")) if empty else None,

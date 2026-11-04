@@ -21,6 +21,7 @@ export interface SplitPlan {
   threads: number
   messages: number
   already_reviewed_left_out: number
+  already_in_a_task_left_out?: number
   parts: SplitPart[]
   words: string
   warning: string | null

@@ -100,7 +100,7 @@ export function SplitForReview({ caseId, filter, scopeWords, open, onClose }: {
               {membersQ.data && members.length === 0 && <p>No member of this case can mark threads reviewed.</p>}
             </fieldset>
             <label className="inline-flex items-center gap-1">
-              <input type="checkbox" checked={onlyNot} onChange={(e) => change(() => setOnlyNot(e.target.checked))} /> Leave out threads already fully reviewed
+              <input type="checkbox" checked={onlyNot} onChange={(e) => change(() => setOnlyNot(e.target.checked))} /> Leave out threads already fully reviewed or in an open review task
             </label>
             {plan && (
               <div data-testid="split-counts" className="rounded border p-2">
