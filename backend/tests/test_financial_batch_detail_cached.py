@@ -53,6 +53,20 @@ def test_the_batch_review_page_answers_304_when_the_browser_holds_the_same_bytes
         finally:
             view_cache._if_none_match.reset(token)
         assert changed.status_code == 200 and changed.headers['ETag'] != first.headers['ETag']
+    # A kept part answered as updating is sent whole, never as 304.
+    from fastapi.responses import Response
+    import json as _json
+    updating = Response(content=_json.dumps(page).encode(), media_type='application/json',
+                        headers={view_cache.UPDATING_STATE_HEADER: 'updating', view_cache.UPDATING_AS_OF_HEADER: 'x'})
+    with patch.object(financial_statement_import, 'batch_without_queue_lists', return_value=updating):
+        token = view_cache._if_none_match.set(first.headers['ETag'])
+        try:
+            whole = route(batch_id=uuid.uuid4(), case_id=uuid.uuid4(), offset=0, limit=100, only_problems=False,
+                          review_group=None, db=None)
+        finally:
+            view_cache._if_none_match.reset(token)
+        assert whole.status_code == 200 and 'ETag' not in whole.headers
+        assert whole.headers[view_cache.UPDATING_STATE_HEADER] == 'updating'
 
 
 @contextmanager
