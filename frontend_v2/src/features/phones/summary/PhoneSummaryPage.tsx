@@ -4,7 +4,8 @@ import { Link, useParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { CopyButton } from "@/components/ui/copy-button"
 import { profileText } from "../lib/profile-text"
-import { failureText, getProfile } from "../api"
+import { failureText } from "../api"
+import { phoneProfileQuery } from "../phone-queries"
 import { labelText } from "../lib/labels"
 import { readingSpots } from "../lib/continue-reading"
 import { fmt } from "../ui/count-sentence"
@@ -38,7 +39,7 @@ function Section({ name, children, className }: { name: string; children: React.
 
 export function PhoneSummaryPage() {
   const { id: caseId = "", extraction = "" } = useParams()
-  const q = useQuery({ queryKey: ["phone-profile", caseId, extraction], queryFn: () => getProfile(caseId, extraction), enabled: !!caseId && !!extraction })
+  const q = useQuery({ ...phoneProfileQuery(caseId, extraction), enabled: !!caseId && !!extraction })
   if (q.isLoading) return <p className="p-6 text-sm">Loading the phone summary</p>
   if (q.isError || !q.data)
     return (

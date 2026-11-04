@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
-import { useFinancialDraft } from "../stores/financial-drafts"
+import { financialDraftKey, useFinancialDraft, useFinancialDraftStore } from "../stores/financial-drafts"
 
 export const categoryName = (row: { category?: string }) =>
   row.category || "Uncategorized"
@@ -20,6 +20,12 @@ export const matchesCategories = (
 ) => !categories.length || categories.includes(categoryName(row))
 
 const ALL_CATEGORIES: string[] = []
+
+/** The categories usePaymentCategory returns for this case, read outside React (the start-up prefetch). */
+export function paymentCategoriesNow(caseId: string): string[] {
+  const raw = useFinancialDraftStore.getState().drafts[financialDraftKey(caseId, "investigation-category")]
+  return raw === undefined ? ALL_CATEGORIES : categoryList(raw)
+}
 
 /** The categories chosen across financial views: empty means all. */
 export function usePaymentCategory(caseId: string) {

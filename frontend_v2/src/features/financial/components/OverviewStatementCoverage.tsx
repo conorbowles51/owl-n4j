@@ -2,9 +2,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
-import { fetchAPI } from "@/lib/api-client"
-import { candidateUrl, assertCandidateScope } from "../lib/candidate-contract"
-import { statementCoverage } from "../lib/statement-coverage"
+import { overviewCoverageQuery } from "../lib/statement-coverage"
 import { coverageMonths } from "../lib/coverage-months"
 import {
   Dialog,
@@ -97,20 +95,9 @@ export function OverviewStatementCoverage({
     else setOpened(month)
   }
   const query = useQuery({
-    queryKey: ["financial-ledger", caseId, "coverage", undefined, offset],
+    ...overviewCoverageQuery(caseId, offset),
     enabled: active,
     retry: false,
-    queryFn: async () => {
-      const data = statementCoverage.parse(
-        await fetchAPI(
-          `${candidateUrl("statement-coverage", caseId)}&offset=${offset}`
-        )
-      )
-      assertCandidateScope(data, caseId)
-      if (data.offset !== offset)
-        throw Error("The account list changed. Refresh this check.")
-      return data
-    },
   })
   const heading = { fontFamily: "'Space Grotesk', ui-sans-serif, system-ui, sans-serif", letterSpacing: "-0.02em" }
   const cell = (status: string) =>

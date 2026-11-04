@@ -1,22 +1,13 @@
 import { useEffect, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { z } from "zod"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { ACCESS_REFUSED_EVENT } from "@/lib/access-refused"
-import { fetchAPI } from "@/lib/api-client"
+import { financialCaseAccessQuery } from "../lib/financial-access-query"
 import { Button } from "@/components/ui/button"
 import {
   FinancialAccessContext,
   useFinancialAccess,
 } from "../hooks/use-financial-access"
-import { lazySchema } from "@/lib/lazy-schema"
-
-const accessSchema = lazySchema(() => z.object({
-  case_id: z.string(),
-  user_id: z.string(),
-  can_edit: z.boolean(),
-  can_upload: z.boolean(),
-}))
 
 export function FinancialAccessProvider({
   caseId,
@@ -30,22 +21,12 @@ export function FinancialAccessProvider({
   const user = useAuthStore((state) => state.user)
   const owner = user?.id || user?.username
   const query = useQuery({
-    queryKey: ["financial-case-access", owner, caseId],
+    ...financialCaseAccessQuery(caseId, user),
     enabled: !!caseId && !!owner,
     retry: false,
     // Checked when a page opens (if the last check is older than this) and
     // whenever any request is refused with 401 or 403, not on a timer.
     staleTime: 30_000,
-    queryFn: async () => {
-      const data = accessSchema.parse(
-        await fetchAPI(
-          `/api/financial/case-access?${new URLSearchParams({ case_id: caseId! })}`
-        )
-      )
-      if (data.case_id !== caseId || (user?.id && data.user_id !== user.id))
-        throw Error("The access response does not match this case and user.")
-      return data
-    },
   })
   const { refetch } = query
   useEffect(() => {

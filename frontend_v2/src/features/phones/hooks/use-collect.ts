@@ -8,10 +8,13 @@ import type { CollectTarget, TargetKind } from "../collect.api"
  * page cut; a case with more than the request limit is read in parts).
  */
 export function useCollectTargets(caseId: string | undefined) {
-  return useQuery({
+  return useQuery({ ...collectTargetsQuery(caseId), enabled: !!caseId, staleTime: 30_000 })
+}
+
+/** Key and fetcher shared by the hook and the start-up prefetch (route-data.ts). */
+export function collectTargetsQuery(caseId: string | undefined) {
+  return {
     queryKey: ["collect-targets", caseId],
-    enabled: !!caseId,
-    staleTime: 30_000,
     queryFn: async (): Promise<CollectTarget[]> => {
       const out: CollectTarget[] = []
       for (let offset = 0; ; offset += 200) {
@@ -32,7 +35,7 @@ export function useCollectTargets(caseId: string | undefined) {
       }
       return out
     },
-  })
+  }
 }
 
 /** How long rows that are still loading may keep changing before their marks are asked for anyway (a window that

@@ -19,19 +19,24 @@ import {
 // default or the previous case's view; drawing the tabs then would open that
 // view as well (a cold open of Trends also read the whole Overview, which a
 // retained tab then keeps mounted: 1 Nov replay, 11-18 parallel reads per tab).
+/** The view a visit to Financial opens on: the address's, else the last one used in this case, else Overview. */
+export function initialFinancialView(caseId: string, params: URLSearchParams): FinancialMainView {
+  const requested =
+    params.get("view") ||
+    (useFinancialDraftStore.getState().drafts[
+      financialDraftKey(caseId, "last-view")
+    ] as string | undefined)
+  return financialMainViews.includes(requested as FinancialMainView)
+    ? (requested as FinancialMainView)
+    : "overview"
+}
+
 export function useFinancialViewNavigation(caseId: string | undefined) {
   const [params, setParams] = useSearchParams()
   const [appliedFor, setAppliedFor] = useState<string | undefined>()
   useLayoutEffect(() => {
     if (!caseId) return
-    const requested =
-      params.get("view") ||
-      (useFinancialDraftStore.getState().drafts[
-        financialDraftKey(caseId, "last-view")
-      ] as string | undefined)
-    const view = financialMainViews.includes(requested as FinancialMainView)
-      ? (requested as FinancialMainView)
-      : "overview"
+    const view = initialFinancialView(caseId, params)
     // A fresh visit to Financial uses the full case. Explicit statement/batch
     // navigation and browser Back retain their intentionally selected scope.
     if (!params.get("view") && view === "transactions")

@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { describe, expect, it, vi } from "vitest"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AppSidebar } from "./sidebar"
+import { preloadRouteIntent } from "@/lib/route-preload"
 
 vi.mock("@/stores/app.store", () => ({
   useAppStore: () => ({ sidebarExpanded: true, toggleSidebar: vi.fn() }),
@@ -20,9 +21,15 @@ vi.mock("@/features/significant/components/CaseLayerSwitcher", () => ({
 vi.mock("@/hooks/use-media-query", () => ({ useMediaQuery: () => false }))
 
 const phones = vi.hoisted(() => ({ list: [] as { extraction_id: string; label: string }[] }))
-vi.mock("@/features/phones/api", () => ({
-  getPhones: async (caseId: string) => ({ case_id: caseId, phones: phones.list }),
+// The sidebar's phones query (shared with the Phones page and the start-up prefetch) answers from this list.
+vi.mock("@/features/phones/phones-query", () => ({
+  phonesQuery: (caseId: string) => ({
+    queryKey: ["phones", caseId],
+    queryFn: async () => ({ case_id: caseId, phones: phones.list }),
+  }),
 }))
+
+vi.mock("@/lib/route-preload", () => ({ preloadRouteIntent: vi.fn(() => true) }))
 
 function sidebar() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -84,5 +91,20 @@ describe("AppSidebar case navigation", () => {
     ])
     expect(within(group).getByRole("link", { name: /Conversations/ })).toHaveAttribute("href", "/cases/case-1/conversations")
     expect(screen.queryByText("Phones (prototype)")).not.toBeInTheDocument()
+  })
+})
+
+describe("AppSidebar navigation intent", () => {
+  it("pointing at or focusing a case view link starts that page's code (not on render)", () => {
+    vi.mocked(preloadRouteIntent).mockClear()
+    sidebar()
+    expect(preloadRouteIntent).not.toHaveBeenCalled()
+    const caseViews = screen.getByRole("region", { name: "Case views" })
+    const [first, second] = within(caseViews).getAllByRole("link")
+    fireEvent.pointerEnter(first)
+    expect(preloadRouteIntent).toHaveBeenLastCalledWith(first.getAttribute("href"))
+    fireEvent.focus(second)
+    expect(preloadRouteIntent).toHaveBeenLastCalledWith(second.getAttribute("href"))
+    expect(preloadRouteIntent).toHaveBeenCalledTimes(2)
   })
 })

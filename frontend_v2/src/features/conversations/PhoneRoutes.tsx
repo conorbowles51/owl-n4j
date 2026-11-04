@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
 import { useState } from "react"
 import { Link, Navigate, useLocation, useParams } from "react-router-dom"
-import { failureText, getMediaDetail, getPhones, getRecord, getSavedView } from "@/features/phones/api"
+import { failureText, getMediaDetail, getRecord, getSavedView } from "@/features/phones/api"
 import { Button } from "@/components/ui/button"
 import { ComparePhones } from "@/features/phones/components/ComparePhones"
 import { phoneQueryTarget } from "./phone-query"
+import { phonesQuery } from "@/features/phones/phones-query"
 
 /**
  * The phone addresses Workspace, dossiers and Notebook links use (07 section 4.13; phone-links.ts). Each one lands
@@ -23,7 +24,7 @@ export function PhonesIndexPage() {
   // a saved phone_view link (07 section 6) re-opens the screen it was saved from, re-run live
   const viewId = q.get("view")
   const saved = useQuery({ queryKey: ["phone-view", caseId, viewId], queryFn: () => getSavedView(caseId, viewId!), enabled: !!caseId && !!viewId && !target, retry: false })
-  const phones = useQuery({ queryKey: ["phones", caseId], queryFn: () => getPhones(caseId), enabled: !!caseId && !target })
+  const phones = useQuery({ ...phonesQuery(caseId), enabled: !!caseId && !target })
   const [comparing, setComparing] = useState(false)
   if (target) return <Navigate to={target} replace />
   if (saved.data && saved.data.location.startsWith(`/cases/${caseId}/`)) {

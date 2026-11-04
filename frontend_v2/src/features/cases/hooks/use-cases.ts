@@ -3,19 +3,23 @@ import { casesAPI } from "../api"
 import type { CaseListViewMode } from "../api"
 import type { CaseMetadataUpdate } from "@/types/case.types"
 
+/** Keys and fetchers shared by the hooks and the start-up prefetch (route-data.ts). */
+export const casesListQuery = (viewMode?: CaseListViewMode, includeArchived = false) => ({
+  queryKey: ["cases", viewMode ?? "default", includeArchived],
+  queryFn: () => casesAPI.list(viewMode, includeArchived),
+})
+
+export const caseQuery = (caseId: string | undefined) => ({
+  queryKey: ["cases", caseId],
+  queryFn: () => casesAPI.get(caseId!),
+})
+
 export function useCases(viewMode?: CaseListViewMode, includeArchived = false) {
-  return useQuery({
-    queryKey: ["cases", viewMode ?? "default", includeArchived],
-    queryFn: () => casesAPI.list(viewMode, includeArchived),
-  })
+  return useQuery(casesListQuery(viewMode, includeArchived))
 }
 
 export function useCase(caseId: string | undefined) {
-  return useQuery({
-    queryKey: ["cases", caseId],
-    queryFn: () => casesAPI.get(caseId!),
-    enabled: !!caseId,
-  })
+  return useQuery({ ...caseQuery(caseId), enabled: !!caseId })
 }
 
 export function useCreateCase() {

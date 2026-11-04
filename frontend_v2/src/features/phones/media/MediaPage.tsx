@@ -9,11 +9,11 @@ import { BatchReading } from "./BatchReading"
 import { ImageSearch } from "./ImageSearch"
 import { MachineTextPrompt } from "./MachineTextPrompt"
 import { useObjectUrl } from "./use-object-url"
-import { acceptDerivedText, confirmDerivedText, correctDerivedText, getDerivedTexts, getMediaDetail, getMediaIndex, getMediaWindow, getTranslations, requestDerivedText, translateDerivedText, type DerivedText, type MediaFilter, type MediaItem } from "../api"
+import { mediaFilter, mediaIndexQuery, mediaPhoneIndexQuery, mediaWindowQuery, NONE } from "./media-queries"
+import { acceptDerivedText, confirmDerivedText, correctDerivedText, getDerivedTexts, getMediaDetail, getTranslations, requestDerivedText, translateDerivedText, type DerivedText, type MediaFilter, type MediaItem } from "../api"
 import { noTimeWords } from "./no-time-words"
 
 const n = (v: number) => v.toLocaleString("en-US")
-const WINDOW = 200
 const BLUR_KEY = "loupe.media.blur"
 
 const CONVERTED_WORDS = "Playing a converted copy. The original file is unchanged."
@@ -434,7 +434,6 @@ export function Detail({ caseId, fileUid, onClose, onStep, position }: { caseId:
 }
 
 /** The filter value for files with no category or no check: sent as "" so the server matches the empty ones. */
-const NONE = "__none__"
 
 /** Media (03 section 8): every file on the phone, by category and state; the total is the phone summary's. */
 export default function MediaPage() {
@@ -460,16 +459,10 @@ export default function MediaPage() {
     for (const k of ["thread", "thread_title", "back"]) next.delete(k)
     return next
   }, { replace: true })
-  const filter: MediaFilter = { case_id: caseId, phones: [extraction], ...(thread ? { thread_key: thread } : {}), ...(category ? { categories: [category === NONE ? "" : category] } : {}), ...(state ? { verification: [state === NONE ? "" : state] } : {}) }
-  const idx = useQuery({ queryKey: ["phone-media-index", filter], queryFn: () => getMediaIndex(filter), enabled: !!caseId })
-  const all = useQuery({ queryKey: ["phone-media-index", caseId, extraction], queryFn: () => getMediaIndex({ case_id: caseId, phones: [extraction] }), enabled: !!caseId })
-  const pages = useInfiniteQuery({
-    queryKey: ["phone-media-window", filter],
-    queryFn: ({ pageParam }) => getMediaWindow(filter, pageParam, WINDOW),
-    initialPageParam: 0,
-    getNextPageParam: (last) => (last.items.length === WINDOW ? last.offset + WINDOW : undefined),
-    enabled: !!caseId,
-  })
+  const filter: MediaFilter = mediaFilter(caseId, extraction, thread, category, state)
+  const idx = useQuery({ ...mediaIndexQuery(filter), enabled: !!caseId })
+  const all = useQuery({ ...mediaPhoneIndexQuery(caseId, extraction), enabled: !!caseId })
+  const pages = useInfiniteQuery({ ...mediaWindowQuery(filter), enabled: !!caseId })
   const items = pages.data?.pages.flatMap((p) => p.items) ?? []
   const sentinel = useRef<HTMLDivElement>(null)
   useEffect(() => {

@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 import { EvidenceSortHeader } from "./EvidenceTableHeaders"
 import {
+  folderContentsParams,
   useFolderContents,
   useFilenameSearch,
 } from "../hooks/use-folder-contents"
@@ -90,14 +91,7 @@ export function FileListPanel({
   }, [fileSearchTerm])
   const searching = searchMode !== "text" && fileSearchTerm.length > 0
   const searchSettled = debouncedSearch === fileSearchTerm
-  const params = {
-    limit: FILE_PAGE_SIZE,
-    offset: filePage * FILE_PAGE_SIZE,
-    status: statusFilter !== "all" ? statusFilter : undefined,
-    type: typeFilter || undefined,
-    sort_by: sortBy,
-    sort_direction: sortDirection,
-  }
+  const params = folderContentsParams({ filePage, statusFilter, typeFilter, sortBy, sortDirection })
   const browse = useFolderContents(caseId, currentFolderId, params)
   const search = useFilenameSearch(
     caseId,

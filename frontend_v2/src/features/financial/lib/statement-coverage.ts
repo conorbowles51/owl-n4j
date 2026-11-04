@@ -1,5 +1,7 @@
 import { z } from "zod"
+import { fetchAPI } from "@/lib/api-client"
 import { lazySchema } from "@/lib/lazy-schema"
+import { assertCandidateScope, candidateUrl } from "./candidate-contract"
 const day = lazySchema(() => z.string().regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/))
 const count = lazySchema(() => z.number().int().nonnegative())
 export const statementCoverage = lazySchema(() => z.object({
@@ -61,3 +63,24 @@ export const statementCoverage = lazySchema(() => z.object({
 export type StatementCoverageAccount = z.infer<
   typeof statementCoverage
 >["items"][number]
+
+/**
+ * The Overview's statement coverage query (key and fetcher), shared by OverviewStatementCoverage and the start-up
+ * prefetch (route-data.ts).
+ */
+export function overviewCoverageQuery(caseId: string, offset: number) {
+  return {
+    queryKey: ["financial-ledger", caseId, "coverage", undefined, offset],
+    queryFn: async () => {
+      const data = statementCoverage.parse(
+        await fetchAPI(
+          `${candidateUrl("statement-coverage", caseId)}&offset=${offset}`
+        )
+      )
+      assertCandidateScope(data, caseId)
+      if (data.offset !== offset)
+        throw Error("The account list changed. Refresh this check.")
+      return data
+    },
+  }
+}

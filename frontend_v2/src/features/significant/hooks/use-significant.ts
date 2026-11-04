@@ -21,10 +21,15 @@ function refreshScopedProjections(
   ])
 }
 
+/** Key and fetcher shared by the hook and the start-up prefetch (every case page's route data). */
+export const significantManifestQuery = (caseId: string | undefined) => ({
+  queryKey: significantKeys.manifest(caseId ?? "missing"),
+  queryFn: () => significantAPI.getManifest(caseId!),
+})
+
 export function useSignificantManifest(caseId: string | undefined) {
   const query = useQuery({
-    queryKey: significantKeys.manifest(caseId ?? "missing"),
-    queryFn: () => significantAPI.getManifest(caseId!),
+    ...significantManifestQuery(caseId),
     enabled: Boolean(caseId),
     staleTime: 10_000,
     refetchInterval: 15_000,

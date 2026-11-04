@@ -10,12 +10,15 @@ import { figureKeys, orderOverviewPanels, type PanelFigure } from "../lib/overvi
  * the page would add up from every payment (useInvestigatorPayments), without waiting for every payment.
  * Under the case's "financial-ledger" key, so every write that refreshes the ledger refreshes these too.
  */
-export function useLedgerOverview(caseId: string, active = true) {
-  const [categories] = usePaymentCategory(caseId)
-  const [params] = useInvestigationScope(caseId)
-  const queryKey = ["financial-ledger", caseId, "overview", params ?? null, categories]
-  const query = useQuery({
-    queryKey,
+type OverviewScope = ReturnType<typeof useInvestigationScope>[0]
+
+/**
+ * The Overview's headline figures query (key and fetcher), shared by the page's hook and the start-up prefetch
+ * (route-data.ts), so a prefetched answer is the one the page reads.
+ */
+export function ledgerOverviewQuery(caseId: string, params: OverviewScope | null | undefined, categories: string[]) {
+  return {
+    queryKey: ["financial-ledger", caseId, "overview", params ?? null, categories] as QueryKey,
     queryFn: async () => {
       const result = await financialAPI.getLedgerOverview({
         caseId,
@@ -29,6 +32,28 @@ export function useLedgerOverview(caseId: string, active = true) {
       if (result.case_id !== caseId) throw Error("The figures came from a different case.")
       return result
     },
+  }
+}
+
+/** The Overview's lower panels query (key and fetcher), shared by the page's hook and the start-up prefetch. */
+export function ledgerOverviewPanelsQuery(caseId: string, params: OverviewScope | null | undefined, categories: string[]) {
+  return {
+    queryKey: ["financial-ledger", caseId, "overview-panel-figures", params ?? null, categories] as QueryKey,
+    queryFn: async () => {
+      const result = await financialAPI.getLedgerOverviewPanelFigures({ caseId, ...panelScope(params), categories })
+      if (result.case_id !== caseId) throw Error("The payments came from a different case.")
+      return orderOverviewPanels(result)
+    },
+  }
+}
+
+export function useLedgerOverview(caseId: string, active = true) {
+  const [categories] = usePaymentCategory(caseId)
+  const [params] = useInvestigationScope(caseId)
+  const { queryKey, queryFn } = ledgerOverviewQuery(caseId, params, categories)
+  const query = useQuery({
+    queryKey,
+    queryFn,
     // The previous answer stays up only for the same case and categories (a scope change keeps it until the new
     // one lands, as the ledger does); figures for other categories are never shown as these.
     placeholderData: (previous, query) =>
@@ -74,14 +99,10 @@ function useRefreshWhenShown(
 export function useLedgerOverviewPanels(caseId: string, active = true) {
   const [categories] = usePaymentCategory(caseId)
   const [params] = useInvestigationScope(caseId)
-  const queryKey = ["financial-ledger", caseId, "overview-panel-figures", params ?? null, categories]
+  const { queryKey, queryFn } = ledgerOverviewPanelsQuery(caseId, params, categories)
   const query = useQuery({
     queryKey,
-    queryFn: async () => {
-      const result = await financialAPI.getLedgerOverviewPanelFigures({ caseId, ...panelScope(params), categories })
-      if (result.case_id !== caseId) throw Error("The payments came from a different case.")
-      return orderOverviewPanels(result)
-    },
+    queryFn,
     placeholderData: (previous, query) =>
       query?.queryKey[1] === caseId && JSON.stringify(query?.queryKey[4]) === JSON.stringify(categories)
         ? previous
@@ -92,7 +113,7 @@ export function useLedgerOverviewPanels(caseId: string, active = true) {
   return query
 }
 
-const panelScope = (params: ReturnType<typeof useInvestigationScope>[0]) => ({
+const panelScope = (params: OverviewScope | null | undefined) => ({
   accountId: params?.accountId,
   accountIds: params?.accountIds,
   accountHolders: params?.accountHolders,

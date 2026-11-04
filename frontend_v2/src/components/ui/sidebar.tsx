@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, type ReactNode } from "react"
 import { Link, useLocation, useParams } from "react-router-dom"
+import { preloadRouteIntent } from "@/lib/route-preload"
+import { phonesQuery } from "@/features/phones/phones-query"
 import {
   Banknote,
   FolderOpen,
@@ -142,6 +144,8 @@ function SidebarLink({
   const link = (
     <Link
       to={item.to}
+      onPointerEnter={() => preloadRouteIntent(item.to)}
+      onFocus={() => preloadRouteIntent(item.to)}
       aria-current={active ? "page" : undefined}
       aria-label={!expanded ? item.label : undefined}
       className={cn(
@@ -283,8 +287,8 @@ export function AppSidebar() {
   const user = useAuthStore((s) => s.user)
   const role = user?.global_role ?? user?.role
   const canSeeAdmin = role === "admin" || role === "super_admin"
-  const phones = useQuery({ queryKey: ["phones", caseId], // The phones API module (and its schema library) loads with this query, not with the shell.
-    queryFn: () => import("@/features/phones/api").then((m) => m.getPhones(caseId!)), enabled: !!caseId, staleTime: 60_000 })
+  // The phones API module (and its schema library) loads with this query, not with the shell.
+  const phones = useQuery({ ...phonesQuery(caseId), enabled: !!caseId, staleTime: 60_000 })
   const hasPhones = (phones.data?.phones.length ?? 0) > 0
 
   const toggleButton = (

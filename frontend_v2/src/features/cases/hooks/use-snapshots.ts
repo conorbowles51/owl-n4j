@@ -1,11 +1,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { snapshotsAPI, type SnapshotCreateData } from "../snapshots-api"
 
+/** Key and fetcher shared by the hook and the start-up prefetch (route-data.ts). */
+export const snapshotsQuery = (caseId?: string) => ({
+  queryKey: caseId ? ["snapshots", "case", caseId] : ["snapshots"],
+  queryFn: () => snapshotsAPI.list(caseId),
+})
+
 export function useSnapshots(caseId?: string) {
-  return useQuery({
-    queryKey: caseId ? ["snapshots", "case", caseId] : ["snapshots"],
-    queryFn: () => snapshotsAPI.list(caseId),
-  })
+  return useQuery(snapshotsQuery(caseId))
 }
 
 export function useSnapshot(snapshotId: string | undefined) {

@@ -5,9 +5,13 @@ import { assertCandidateScope, candidateAccounts, candidateUrl } from "../lib/ca
 // Shared by the account selectors and the recorded-account summary. Both need
 // the complete directory, not just the first page or accounts with payments.
 export function useLedgerAccountDirectory(caseId: string | undefined) {
-  return useQuery({
+  return useQuery({ ...ledgerAccountDirectoryQuery(caseId), enabled: !!caseId })
+}
+
+/** Key and fetcher shared by the hook and the start-up prefetch (route-data.ts). */
+export function ledgerAccountDirectoryQuery(caseId: string | undefined) {
+  return {
     queryKey: ["financial-ledger", caseId, "account-filter-directory"],
-    enabled: !!caseId,
     queryFn: async () => {
       const items = []
       let offset = 0
@@ -41,5 +45,5 @@ export function useLedgerAccountDirectory(caseId: string | undefined) {
         offset += data.items.length
       }
     },
-  })
+  }
 }

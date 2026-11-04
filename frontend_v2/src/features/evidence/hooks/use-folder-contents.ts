@@ -1,5 +1,35 @@
 import { useQuery } from "@tanstack/react-query"
-import { foldersAPI, type FolderContentsParams } from "../folders.api"
+import { FILE_PAGE_SIZE, foldersAPI, type FolderContentsParams } from "../folders.api"
+import type { EvidenceSort } from "../utils/preferences"
+
+/** The file list's page request for the list's state (FileListPanel and the start-up prefetch). */
+export function folderContentsParams(state: {
+  filePage: number
+  statusFilter: string
+  typeFilter: string
+  sortBy: EvidenceSort["sort_by"]
+  sortDirection: EvidenceSort["sort_direction"]
+}) {
+  return {
+    limit: FILE_PAGE_SIZE,
+    offset: state.filePage * FILE_PAGE_SIZE,
+    status: state.statusFilter !== "all" ? state.statusFilter : undefined,
+    type: state.typeFilter || undefined,
+    sort_by: state.sortBy,
+    sort_direction: state.sortDirection,
+  }
+}
+
+/** Key and fetcher shared by the hook and the start-up prefetch (route-data.ts). */
+export const folderContentsQuery = (
+  caseId: string | undefined,
+  folderId: string | null,
+  params: FolderContentsParams = {}
+) => ({
+  queryKey: ["evidence-folder-contents", caseId, folderId, params],
+  queryFn: ({ signal }: { signal: AbortSignal }) =>
+    foldersAPI.getContents(caseId!, folderId, params, signal),
+})
 
 export function useFolderContents(
   caseId: string | undefined,
@@ -7,9 +37,7 @@ export function useFolderContents(
   params: FolderContentsParams = {}
 ) {
   return useQuery({
-    queryKey: ["evidence-folder-contents", caseId, folderId, params],
-    queryFn: ({ signal }) =>
-      foldersAPI.getContents(caseId!, folderId, params, signal),
+    ...folderContentsQuery(caseId, folderId, params),
     enabled: !!caseId,
     refetchInterval: query => query.state.data?.files.some(file => file.status === 'processing') ? 3000 : false,
   })

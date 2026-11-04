@@ -13,7 +13,6 @@ import {
   saveView,
   getParticipants,
   getPhones,
-  getSettings,
   getThreads,
   markNotACopy,
   markReviewed,
@@ -32,6 +31,7 @@ import { StreamList } from "@/features/phones/components/StreamList"
 import { useCollectTargets, useUsedIn } from "@/features/phones/hooks/use-collect"
 import { useStream } from "@/features/phones/hooks/use-stream"
 import { ExportDialog } from "./ExportDialog"
+import { phoneSettingsQuery, phoneThreadsQuery } from "@/features/phones/phone-queries"
 import { SplitForReview } from "./SplitForReview"
 import { ThreadReviewBar } from "./ThreadReviewBar"
 import { ThreadAttachments } from "./ThreadAttachments"
@@ -112,13 +112,12 @@ export function ConversationsPage() {
     retry: false,
   })
   const phonesQ = useQuery({ queryKey: ["phones", caseId], queryFn: () => getPhones(caseId), enabled: !!caseId })
-  const settingsQ = useQuery({ queryKey: ["phone-settings", caseId], queryFn: () => getSettings(caseId), enabled: !!caseId })
+  const settingsQ = useQuery({ ...phoneSettingsQuery(caseId), enabled: !!caseId })
   const zoneName = settingsQ.data?.effective.name ?? "UTC"
 
   const listFilter = useMemo(() => viewToFilter(caseId, view, zoneName, false), [caseId, view, zoneName])
   const threadsQ = useQuery({
-    queryKey: ["phone-threads", listFilter, view.threadSort],
-    queryFn: () => getThreads(listFilter, view.threadSort),
+    ...phoneThreadsQuery(listFilter, view.threadSort),
     enabled: !!caseId && settingsQ.isSuccess,
   })
   const peopleQ = useQuery({

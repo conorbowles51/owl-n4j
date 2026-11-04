@@ -59,6 +59,11 @@ export const useInvestigationScopeStore = create<{
   )
 )
 
+/** The scope the Overview will open with for this case, read outside React (the start-up prefetch). */
+export function investigationScopeNow(caseId: string): Scope {
+  return useInvestigationScopeStore.getState().scopes[scopeKey(caseId)] ?? emptyScope
+}
+
 function useScopeKey(caseId: string | undefined) {
   const owner = useAuthStore((state) => state.user?.id || state.user?.username)
   return caseId ? scopeKey(caseId, owner) : undefined

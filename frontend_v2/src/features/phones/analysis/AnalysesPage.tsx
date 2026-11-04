@@ -1,7 +1,7 @@
 import { Link, useParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { ANALYSES, NOT_BUILT } from "./analyses-list"
-import { keptResults } from "./analysis-api"
+import { keptResultsQuery } from "../phone-queries"
 import { recordsWords } from "./count-words"
 import { SourceExport } from "./SourceExport"
 
@@ -35,7 +35,7 @@ export default function AnalysesPage() {
 
 /** Kept results (05 3.4): each opens in its analysis and exports the records it was kept with (07 J-14b). */
 function KeptList({ caseId }: { caseId: string }) {
-  const q = useQuery({ queryKey: ["phone-analysis-kept-list", caseId], queryFn: () => keptResults(caseId), enabled: !!caseId })
+  const q = useQuery({ ...keptResultsQuery(caseId), enabled: !!caseId })
   if (!q.data || q.data.total === 0) return null
   const shown = q.data.items.length
   return (
