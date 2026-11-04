@@ -181,3 +181,5 @@ from postgres.models.agent_proposals import AgentProposalSourceOpen, ProceedsCal
 __all__ += ["AgentProposalSourceOpen", "ProceedsCalculation"]
 from postgres.models.removed_record import RemovedRecord
 __all__ += ["RemovedRecord"]
+from postgres.models.financial_transaction_number import FinancialTransactionNumber, FinancialTransactionNumberCounter
+__all__ += ["FinancialTransactionNumber", "FinancialTransactionNumberCounter"]

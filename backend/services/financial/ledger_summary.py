@@ -131,6 +131,8 @@ def ledger_summary(session, *, case_id, account_id=None, start_date=None, end_da
         # Stored categories in bounded queries, not one query per payment in to_view.
         from services.financial.payment_categories import attach_stored
         attach_stored(session, [row for row, _, _ in pairs])
+        from services.financial.transaction_numbers import attach_numbers
+        attach_numbers(session, [row for row, _, _ in pairs])
     for row, document, account in pairs:
         if document is None or account is None or document.case_id != case_id or account.case_id != case_id:
             raise LedgerSummaryError("Ledger source or account ownership is inconsistent; summary unavailable.")

@@ -2380,3 +2380,6 @@ __all__ += ["ProceedsError", "confirm_assumption", "list_calculations", "propose
 from services.financial.brokerage_ledger import SecurityRowError
 from services.financial.brokerage_reading import holdings_from_tables, trade_from_cash_row
 __all__ += ["SecurityRowError", "holdings_from_tables", "trade_from_cash_row"]
+
+from services.financial.transaction_numbers import attach_numbers, number_of, numbers_for_case
+__all__ += ["attach_numbers", "number_of", "numbers_for_case"]

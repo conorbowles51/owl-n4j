@@ -141,6 +141,8 @@ def list_transactions(
     # Load the stored categories in bounded queries so each row's label view finds its own without a query.
     from services.financial.payment_categories import attach_stored
     attach_stored(session, rows)
+    from services.financial.transaction_numbers import attach_numbers
+    attach_numbers(session, rows)
     return rows
 
 
@@ -224,6 +226,8 @@ class TransactionView:
     label_sources: dict = field(default_factory=dict)
     balance_status: str = 'unavailable'
     description_correction: Optional[dict] = None
+    # The printable per-case number (postgres.models.financial_transaction_number); None until numbered.
+    txn_number: Optional[int] = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -252,6 +256,7 @@ class TransactionView:
             "ingestion_run_id": self.ingestion_run_id,
             "statement_period_id": self.statement_period_id,
             "ref_id": self.ref_id,
+            "txn_number": self.txn_number,
             "row_index": self.row_index,
             "amount_minor": str(self.amount_minor),
             "currency": self.currency,
@@ -300,6 +305,7 @@ def to_view(row: FinancialTransaction, *, account=None, account_parties=None, ca
     from services.financial.payment_labels import payment_label_view
     from services.financial.payment_inference import balance_reading_status
     from services.financial.spei_description import kapital_spei
+    from services.financial.transaction_numbers import number_of
     account_type = account.account_type if account is not None and account.case_id == row.case_id else None
     identity = (account_parties or {}).get(str(row.account_id), {})
     canonical_id = (account.metadata_ or {}).get('canonical_account_id') if account is not None else None
@@ -338,6 +344,7 @@ def to_view(row: FinancialTransaction, *, account=None, account_parties=None, ca
             else None
         ),
         ref_id=row.ref_id,
+        txn_number=number_of(row),
         row_index=row.row_index,
         amount_minor=row.amount_minor,
         currency=row.currency,
