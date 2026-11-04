@@ -28,6 +28,33 @@ def test_the_batch_review_route_adds_the_queue_lists_to_a_kept_part():
     assert view_cache.handlers['batch-detail'] is kept
 
 
+def test_the_batch_review_page_answers_304_when_the_browser_holds_the_same_bytes():
+    """Each open answered the whole page (d5b330d1 30231f0a: 315 KB gzip) although nothing had changed."""
+    page = {'batch': {'id': 'b'}, 'files': [{'id': 'f'}]}
+    route = financial_statement_import.get_financial_batch
+    with patch.object(financial_statement_import, 'batch_without_queue_lists', return_value=dict(page)):
+        first = route(batch_id=uuid.uuid4(), case_id=uuid.uuid4(), offset=0, limit=100, only_problems=False,
+                      review_group=None, db=None)
+        assert first.status_code == 200 and first.headers['ETag'].startswith('W/"')
+        assert first.headers['Cache-Control'] == 'private, no-cache'
+        token = view_cache._if_none_match.set(first.headers['ETag'])
+        try:
+            again = route(batch_id=uuid.uuid4(), case_id=uuid.uuid4(), offset=0, limit=100, only_problems=False,
+                          review_group=None, db=None)
+        finally:
+            view_cache._if_none_match.reset(token)
+        assert again.status_code == 304 and not again.body
+    with patch.object(financial_statement_import, 'batch_without_queue_lists',
+                      return_value={**page, 'files': [{'id': 'g'}]}):
+        token = view_cache._if_none_match.set(first.headers['ETag'])
+        try:
+            changed = route(batch_id=uuid.uuid4(), case_id=uuid.uuid4(), offset=0, limit=100, only_problems=False,
+                            review_group=None, db=None)
+        finally:
+            view_cache._if_none_match.reset(token)
+        assert changed.status_code == 200 and changed.headers['ETag'] != first.headers['ETag']
+
+
 @contextmanager
 def _recording():
     recording = view_cache._Recording(owner=None, snapshot='')

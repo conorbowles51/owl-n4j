@@ -1216,7 +1216,9 @@ def get_financial_batch(batch_id: UUID, case_id: UUID = Query(...), offset: int 
         headers, view = {}, part
     if isinstance(view, dict) and '_queue_items' in view:
         import_batches.with_queue_lists(db, case_id, view)
-    response = view_cache.json_response(view)  # plain JSON written once, not FastAPI's walk over 1.6 MB
+    # Plain JSON written once, not FastAPI's walk over 1.6 MB; tagged with its bytes, so a browser that holds
+    # them gets 304 and no body (d5b330d1 30231f0a: 315 KB gzip on every open without it).
+    response = view_cache.etagged(view_cache.json_response(view))
     response.headers.update(headers)
     return response
 
