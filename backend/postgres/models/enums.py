@@ -140,6 +140,8 @@ class AdjudicationSubject(str, Enum):
     phone_derived_text = "phone_derived_text"
     # A trade or holding read from a brokerage statement (financial_security_rows): corrected or confirmed.
     security_row = "security_row"
+    # 04 sections 7.7 and 8.3: a routine place a person names (pol_place_cluster); clusters are unnamed until then.
+    place_cluster = "place_cluster"
 
 
 class AdjudicationReasonKind(str, Enum):
@@ -295,6 +297,9 @@ class AdjudicationDecision(str, Enum):
     # replaces it (before holds the old one). A GeoNames suggestion is never this decision until a person chooses.
     place_text_place = "place_text_place"
     remove_text_place = "remove_text_place"
+    # 04 section 8.3: a person names a place (or clears its name); reversed by another label_place, the old name in
+    # before.
+    label_place = "label_place"
     # 04 section 9.5: "This item is wrong" on a statement check item, with a typed reason. It marks the item and
     # changes no computed outcome (decision 11); withdrawing the mark is its reversal.
     dispute_check_item = "dispute_check_item"

@@ -46,6 +46,10 @@ CELL_MIN_RANGE_M = 300
 CELL_SPARSE_RANGE_M = 2000
 CELL_MIN_SAMPLES = 3
 REFERENCE_DIR = os.environ.get("LOUPE_REFERENCE_DATA_DIR", "/mnt/owl-data/reference-data")
+# The words every map, export and agent sentence that shows a place carries (the investigative-workflows report:
+# "Maps labelled investigative"): a place drawn here is an investigator's reading of the phone's records, never a
+# cell-site expert's opinion of where the handset was.
+PLACE_LABEL_WORDS = "Investigative location, not cell-site opinion"
 ROUTINE_KINDS = ("presence",)  # media enters routine only once it is shown to be taken on this device (decision 25)
 
 
@@ -99,6 +103,73 @@ def classify_point(model_type, p_source_kind, accuracy_basis, facts, flags):
     return "presence", "app_location", "record_with_coordinate", extra
 
 
+# ---- photos: taken on this phone, or received (6.2) -------------------------------------------------------------
+
+# A photo is taken on this phone when its file is in the phone's camera folder (a whole path component ``dcim`` or
+# ``camera``: Android ``DCIM/Camera``, iOS ``DCIM/100APPLE``), or when its EXIF camera make and model are both the
+# extraction device's own. Screenshot folders are not camera folders: a screenshot's position is not where it was
+# taken. Anything else (a received picture, a download, a file with no folder or EXIF) is ``received_media`` and is
+# never presence (04 6.2, decision l.1572).
+CAMERA_FOLDER_RE = r"(^|/)(dcim|camera)(/|$)"
+MEDIA_BASIS_WORDS = {"camera_folder": "in this phone's camera folder",
+                     "camera_matches_device": "the photo's EXIF camera is this phone",
+                     "received_media": "not shown to be taken on this phone (received, downloaded or unknown)"}
+
+
+def _norm(v):
+    return "".join(ch for ch in str(v or "").lower() if ch.isalnum())
+
+
+def _same(a, b):
+    a, b = _norm(a), _norm(b)
+    return bool(a and b) and (a == b or a in b or b in a)
+
+
+def media_origin(conn, extraction_id) -> dict:
+    """{record uid: "camera_folder" | "camera_matches_device" | None} for the extraction's location records whose
+    file reference resolves to a tagged file (the ``Media Locations`` points)."""
+    from services.phone import ids
+    from services.phone.records import _device
+    dev = _device(conn, extraction_id)
+    out = {}
+    for doc, ordinal, in_cam, maker, model in conn.execute(text(
+            "SELECT fr.document_index, fr.record_ordinal, "
+            "  (lower(replace(coalesce(pf.body -> 1 ->> 'path', ''), '\\', '/')) ~ :cam OR "
+            "   lower(replace(coalesce(pf.local_path, ''), '\\', '/')) ~ :cam) AS in_cam, "
+            "  (SELECT it ->> 2 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(pf.body -> 3) = 'array' THEN "
+            "     pf.body -> 3 ELSE '[]'::jsonb END) m, jsonb_array_elements(CASE WHEN jsonb_typeof(m -> 3) = 'array' "
+            "     THEN m -> 3 ELSE '[]'::jsonb END) it WHERE m ->> 0 = 'metadata' AND it ->> 0 = 'item' AND "
+            "     it -> 1 ->> 'name' = 'EXIFCameraMaker' LIMIT 1) AS maker, "
+            "  (SELECT it ->> 2 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(pf.body -> 3) = 'array' THEN "
+            "     pf.body -> 3 ELSE '[]'::jsonb END) m, jsonb_array_elements(CASE WHEN jsonb_typeof(m -> 3) = 'array' "
+            "     THEN m -> 3 ELSE '[]'::jsonb END) it WHERE m ->> 0 = 'metadata' AND it ->> 0 = 'item' AND "
+            "     it -> 1 ->> 'name' = 'EXIFCameraModel' LIMIT 1) AS model "
+            "FROM phone_file_references fr JOIN phone_records r ON r.extraction_id = fr.extraction_id AND "
+            "  r.document_index = fr.document_index AND r.ordinal = fr.record_ordinal AND r.model_type = 'Location' "
+            "JOIN phone_files pf ON pf.extraction_id = fr.extraction_id AND pf.document_index = fr.file_document_index "
+            "  AND pf.ordinal = fr.file_ordinal "
+            "WHERE fr.extraction_id = :e AND fr.resolution = 'tagged_file' AND NOT fr.ambiguous"),
+            {"e": extraction_id, "cam": CAMERA_FOLDER_RE}):
+        uid = str(ids.record_uid(extraction_id, doc, ordinal))
+        if in_cam:
+            basis = "camera_folder"
+        elif _same(maker, dev.get("manufacturer")) and _same(model, dev.get("model")):
+            basis = "camera_matches_device"
+        else:
+            basis = None
+        if out.get(uid) is None:
+            out[uid] = basis
+    return out
+
+
+def media_presence(basis, extra):
+    """(kind, presence basis, flags) of a media place: presence when taken on this phone, else received media."""
+    flags = [f for f in extra if f != "media_device_not_established"]
+    if basis:
+        return "presence", basis, flags + ["media_taken_on_device"]
+    return "media", None, flags + ["received_media"]
+
+
 # ---- observations from points --------------------------------------------------------------------------------------
 
 def build(conn, extraction_id) -> dict:
@@ -111,6 +182,7 @@ def build(conn, extraction_id) -> dict:
     conn.execute(text("DELETE FROM pol_unplaced_tower WHERE extraction_id = :e"), {"e": extraction_id})
     stats = defaultdict(int)
     rows = []
+    taken = media_origin(conn, extraction_id)
     for r in conn.execute(text(
             "SELECT p.record_uid, p.coordinate_record_uid, p.model_type, p.lat, p.lon, p.accuracy_m, p.accuracy_basis, "
             "p.source_kind, p.flags, p.deleted_state, p.decoding_confidence, "
@@ -137,6 +209,9 @@ def build(conn, extraction_id) -> dict:
             stats["no_time"] += 1
             continue
         kind, source, basis, extra = classify_point(r.model_type, r.source_kind, r.accuracy_basis, r.match_facts, flags)
+        if kind == "media":
+            kind, basis, extra = media_presence(taken.get(str(r.record_uid)), extra)
+            stats["media:%s" % (basis or "received_media")] += 1
         radius, reported, rbasis = radius_of(r.accuracy_m, r.accuracy_basis, source)
         rows.append({"c": case_id, "e": extraction_id, "ru": r.record_uid, "cu": r.coordinate_record_uid,
                      "rt": (r.model_type or "")[:64], "k": kind, "sk": source, "lat": r.lat, "lon": r.lon,

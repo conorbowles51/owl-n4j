@@ -29,7 +29,7 @@ from datetime import timedelta
 
 from sqlalchemy import text
 
-from services.pattern_of_life.places import ROUTINE_KINDS, haversine_m
+from services.pattern_of_life.places import PLACE_LABEL_WORDS, ROUTINE_KINDS, haversine_m
 
 log = logging.getLogger(__name__)
 
@@ -359,8 +359,14 @@ def read_run(conn, run_id, case_id, cursor=0, page=PAGE):
     if run is None:
         return None
     total = conn.execute(text("SELECT count(*) FROM pol_colocation_item WHERE run_id = :i"), {"i": run_id}).scalar()
+    # each pair carries both positions so Together can be drawn on the map (04 8.6; cb-places-rest C)
     items = [dict(r._mapping) for r in conn.execute(text(
-        "SELECT * FROM pol_colocation_item WHERE run_id = :i AND ordinal >= :o ORDER BY ordinal LIMIT :l"),
+        "SELECT i.*, a.lat AS a_lat, a.lon AS a_lon, a.radius_m AS a_radius_m, b.lat AS b_lat, b.lon AS b_lon, "
+        "b.radius_m AS b_radius_m FROM pol_colocation_item i "
+        "LEFT JOIN pol_place_observation a ON a.id = i.a_observation_id "
+        "LEFT JOIN pol_place_observation b ON b.id = i.b_observation_id "
+        "WHERE i.run_id = :i AND i.ordinal >= :o ORDER BY i.ordinal LIMIT :l"),
         {"i": run_id, "o": cursor, "l": page})]
     nxt = cursor + len(items) if cursor + len(items) < total else None
-    return dict(run, total=total, returned=len(items), next_cursor=nxt, page_size=page, items=items)
+    return dict(run, total=total, returned=len(items), next_cursor=nxt, page_size=page, items=items,
+                label=PLACE_LABEL_WORDS)

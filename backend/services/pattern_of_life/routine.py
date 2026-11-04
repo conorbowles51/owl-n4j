@@ -9,6 +9,11 @@ Computed on read from the subject's presence observations and returned with ever
 - Places: DBSCAN over the subject's stays (haversine, eps 150 m, at least 3 stays). A routine place has stays on at
   least 4 distinct days, or on at least 25 percent of the days with any presence data.
 - Profile: 7 x 24 dwell minutes by local day of week and hour, divided by the weeks that cell was observed.
+- Names (04 7.7, cb-places-rest D): a place is unnamed until a person names it, through the case decision log
+  (``label_place``). The name is kept with the place's centre (``pol_place_cluster``); a recomputed place takes the
+  name of the nearest named place of the case within ``eps_m`` of its centre, so a name survives new data that
+  moves the centre a little. ``place_id`` is that stable identity; an unnamed place has none and is called by its
+  number for this computation only.
 - Deviation: per day with at least 3 hours carrying stays, the mean surprise ``-log2 p`` of the place in each hour,
   ``p`` estimated from all other weeks (Laplace, alpha 1, over places plus "elsewhere"); a day is flagged above the
   subject's own 95th percentile with at least one hour of 3 bits or more.
@@ -17,12 +22,18 @@ from __future__ import annotations
 
 import math
 import statistics
+import uuid
 from collections import Counter, defaultdict
 from datetime import timedelta, timezone
 
 from sqlalchemy import text
 
 from services.pattern_of_life.places import ROUTINE_KINDS, haversine_m
+
+# Bumped when what enters places changes (2: photos taken on the phone count as presence, received ones never;
+# cb-places-rest E). Echoed with every routine result and part of the projection signature, so phones built under
+# an older version are rebuilt through the projection.
+PLACES_VERSION = 2
 
 PARAMS = {"stay_max_radius_m": 250.0, "stay_min_distance_m": 100.0, "stay_min_minutes": 10, "stay_min_points": 2,
           "eps_m": 150.0, "min_samples": 3, "routine_min_days": 4, "routine_min_share": 0.25,
@@ -162,7 +173,50 @@ def _hours_split(start, end, zone):
     return out
 
 
-def compute(conn, extraction_ids, zone, params=PARAMS) -> dict:
+class PlaceError(Exception):
+    def __init__(self, message, status=400):
+        super().__init__(message)
+        self.status = status
+
+
+def named_places(conn, case_id) -> list:
+    if case_id is None:
+        return []
+    return [dict(r._mapping) for r in conn.execute(text(
+        "SELECT id, lat, lon, radius_m, label, label_decision_id, label_by_name, subject_key FROM pol_place_cluster "
+        "WHERE case_id = :c ORDER BY created_at, id"), {"c": str(case_id)})]
+
+
+def attach_names(places, named, eps_m):
+    """Give each computed place the nearest named place within ``eps_m`` of its centre; a named place goes to one
+    computed place only (the nearest), so two places never share one name."""
+    pairs = sorted((haversine_m(p["lat"], p["lon"], n["lat"], n["lon"]), i, j)
+                   for i, p in enumerate(places) for j, n in enumerate(named))
+    used_p, used_n = set(), set()
+    for d, i, j in pairs:
+        if d > eps_m or i in used_p or j in used_n:
+            continue
+        used_p.add(i)
+        used_n.add(j)
+        n = named[j]
+        places[i].update({"place_id": str(n["id"]), "label": n["label"], "label_decision_id":
+                          str(n["label_decision_id"]) if n["label_decision_id"] else None,
+                          "label_by": n["label_by_name"]})
+    for p in places:
+        p.setdefault("place_id", None)
+        p.setdefault("label_decision_id", None)
+        p.setdefault("label_by", None)
+    return places
+
+
+def place_words(place) -> str:
+    """How a place is called in a sentence: its name, else its number in this computation."""
+    if place is None:
+        return "no usual place"
+    return place.get("label") or "place %s" % (place["cluster_id"] + 1)
+
+
+def compute(conn, extraction_ids, zone, params=PARAMS, case_id=None) -> dict:
     pts = presence(conn, extraction_ids)
     by_phone = defaultdict(list)
     for p in pts:
@@ -188,7 +242,9 @@ def compute(conn, extraction_ids, zone, params=PARAMS) -> dict:
         routine = len(days) >= params["routine_min_days"] or (
             presence_days and len(days) / len(presence_days) >= params["routine_min_share"])
         places.append({"cluster_id": lab, "lat": clat, "lon": clon, "radius_m": radius, "stay_count": len(ss),
-                       "day_count": len(days), "routine": bool(routine), "label": None})
+                       "day_count": len(days), "routine": bool(routine), "label": None,
+                       "first_utc": min(s["start"] for s in ss), "last_utc": max(s["end"] for s in ss)})
+    attach_names(places, named_places(conn, case_id), params["eps_m"])
     # observed (local date, hour) cells and weeks
     observed = defaultdict(set)  # (dow, hour) -> set of iso weeks
     for p in pts:
@@ -201,7 +257,8 @@ def compute(conn, extraction_ids, zone, params=PARAMS) -> dict:
                 prof[h0.weekday()][h0.hour] += mins
         pl["profile"] = [[round(prof[d][h] / len(observed[(d, h)]), 1) if observed[(d, h)] else None
                           for h in range(24)] for d in range(7)]
-    return {"parameters": dict(params), "zone": str(zone), "stays": stays, "places": places,
+    return {"parameters": dict(params, places_version=PLACES_VERSION), "zone": str(zone), "stays": stays,
+            "places": places,
             "routine_places": [p["cluster_id"] for p in places if p["routine"]],
             "presence_days": len(presence_days), "observations_used": len(pts)}
 
@@ -209,6 +266,7 @@ def compute(conn, extraction_ids, zone, params=PARAMS) -> dict:
 def deviations(result, zone, start_date=None, end_date=None, params=PARAMS) -> dict:
     """Flag days whose places break the routine (8.3 Deviation)."""
     routine = set(result["routine_places"])
+    by_id = {p["cluster_id"]: p for p in result.get("places", [])}
     hour_label = {}  # (local date, hour) -> (label, minutes, stay)
     for s in result["stays"]:
         lab = s["cluster"] if s["cluster"] in routine else "elsewhere"
@@ -255,12 +313,77 @@ def deviations(result, zone, start_date=None, end_date=None, params=PARAMS) -> d
         hot = [x for x in detail if x["surprise_bits"] >= params["deviation_min_bits"]]
         if score > thr and hot:
             flagged.append({"date": d.isoformat(), "score_bits": round(score, 3), "hours": hot,
-                            "expectation": _expectation(d, hot)})
+                            "expectation": _expectation(d, hot, by_id)})
     return {"parameters": dict(params), "threshold": round(thr, 3), "days_scored": len(scored), "flagged": flagged}
 
 
-def _expectation(d, hot):
-    names = sorted({x["expected_place"] for x in hot if x["expected_place"] is not None}, key=str)
-    hours = ", ".join("%02d:00" % x["hour"] for x in hot)
-    where = ", ".join("place %s" % n if n != "elsewhere" else "elsewhere" for n in names) or "no usual place"
-    return "Usually at %s on %ss at %s." % (where, d.strftime("%A"), hours)
+def _expectation(d, hot, by_id=None):
+    """The routine the day broke, in words: "Usually at home on Tuesdays 21:00 to 00:00." Consecutive hours are one
+    span; a span's place is its usual place in that hour (named, else numbered)."""
+    by_id = by_id or {}
+
+    def name(n):
+        if n is None:
+            return "no usual place"
+        if n == "elsewhere":
+            return "elsewhere"
+        return place_words(by_id.get(n, {"cluster_id": n}))
+    spans = []
+    for x in sorted(hot, key=lambda x: x["hour"]):
+        w = name(x["expected_place"])
+        if spans and spans[-1][0] == w and spans[-1][2] == x["hour"]:
+            spans[-1][2] = x["hour"] + 1
+        else:
+            spans.append([w, x["hour"], x["hour"] + 1])
+    day = d.strftime("%A")
+    parts = ["at %s on %ss %02d:00 to %02d:00" % (w, day, a, b % 24) for w, a, b in spans]
+    return "Usually " + "; ".join(parts) + "."
+
+
+def name_place(session, case_id, *, subject_key, cluster, label, reason, actor) -> dict:
+    """A person names a computed place, or renames or clears a named one, as a case decision (04 7.7). ``cluster``
+    is the place as computed on the server just now (the route recomputes it; a client's centre is never trusted)."""
+    from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
+    from postgres.models.pattern_places import PolPlaceCluster
+    from services import manual_changes
+    from services.financial import decisions
+    label = " ".join((label or "").split()) or None
+    if label is not None and len(label) > 200:
+        raise PlaceError("A place name is at most 200 characters.")
+    if not isinstance(reason, str) or not reason.strip():
+        raise PlaceError("Say why the place has this name.")
+    row = session.get(PolPlaceCluster, uuid.UUID(cluster["place_id"])) if cluster.get("place_id") else None
+    if row is None:
+        if label is None:
+            raise PlaceError("The place has no name to clear.", 409)
+        row = PolPlaceCluster(id=uuid.uuid4(), case_id=uuid.UUID(str(case_id)), subject_key=subject_key[:80],
+                              lat=cluster["lat"], lon=cluster["lon"], radius_m=cluster["radius_m"],
+                              stay_count=cluster["stay_count"], day_count=cluster["day_count"])
+        session.add(row)
+        session.flush()
+        before = None
+    else:
+        before = row.label
+        if before == label:
+            raise PlaceError("The place already has that name.", 409)
+    ev = decisions.record(session, case_id=row.case_id, subject=row, subject_type=AdjudicationSubject.place_cluster,
+                          decision=AdjudicationDecision.label_place, reason=reason.strip(), actor=actor,
+                          before={"label": before, "lat": "%.7f" % row.lat, "lon": "%.7f" % row.lon},
+                          after={"label": label, "lat": "%.7f" % row.lat, "lon": "%.7f" % row.lon})
+    session.execute(text(
+        "UPDATE pol_place_cluster SET label = :l, label_decision_id = :d, label_by_name = :n, stay_count = :sc, "
+        "day_count = :dc, profile = CAST(:pr AS jsonb), computed_with = CAST(:cw AS jsonb), updated_at = now() "
+        "WHERE id = :i"), {"l": label, "d": ev.id, "n": actor.name, "sc": cluster["stay_count"],
+                           "dc": cluster["day_count"], "pr": _json(cluster.get("profile")),
+                           "cw": _json(cluster.get("computed_with") or {}), "i": row.id})
+    manual_changes.record_change(session, "pattern_place_name", case_id, {"type": "place_cluster", "id": str(row.id)},
+                                 {"label": before}, {"label": label}, actor, reason.strip(),
+                                 link="/cases/%s/phone-patterns?view=places" % case_id,
+                                 pattern_key=manual_changes.make_pattern_key("pattern_place_name", "label",
+                                                                             "routine", "dbscan"), source="phone")
+    return {"place_id": str(row.id), "decision_id": str(ev.id), "label": label, "previous_label": before}
+
+
+def _json(v):
+    import json
+    return json.dumps(v, default=str)

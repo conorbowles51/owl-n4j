@@ -49,7 +49,7 @@ def test_home_and_work_are_routine_and_a_tuesday_night_elsewhere_is_flagged(hook
         utc = ZoneInfo("UTC")
         with engine.connect() as c:
             res = routine.compute(c, [str(ext)], utc)
-        assert res["parameters"] == routine.PARAMS  # echoed with the result
+        assert res["parameters"] == dict(routine.PARAMS, places_version=routine.PLACES_VERSION)  # echoed
         assert len(res["routine_places"]) == 2
         places = {p["cluster_id"]: p for p in res["places"]}
         assert all(places[k]["radius_m"] < 150 for k in res["routine_places"])

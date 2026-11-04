@@ -583,7 +583,10 @@ def signature(conn, extraction_id, idx=None) -> str:
                   if str(k[0]).startswith(("activity_strength/", "attribution/")))
     # the owner decides who the counterpart is (``_counterparts``): a set_phone_owner decision re-applies
     owners = "owners=" + ",".join(owner_keys(conn, extraction_id))
-    return hashlib.sha256(idx.signature("|".join(mine + [owners])).encode()).hexdigest()
+    # what enters places (routine.PLACES_VERSION): a new version rebuilds each phone's places through this projection
+    from services.pattern_of_life.routine import PLACES_VERSION
+    places = [] if PLACES_VERSION == 1 else ["places=%d" % PLACES_VERSION]
+    return hashlib.sha256(idx.signature("|".join(mine + [owners] + places)).encode()).hexdigest()
 
 
 def families(conn, extraction_id) -> list:

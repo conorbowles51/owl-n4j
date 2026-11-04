@@ -68,6 +68,7 @@ from postgres.models.phone_extraction import PhoneExtraction
 from postgres.models.phone_identity import PhoneIdentity, PhoneRecordSubject
 from postgres.models.phone_analysis import PhoneAnalysisResultSubject
 from postgres.models.phone_derived import PhoneDerivedText
+from postgres.models.pattern_places import PolPlaceCluster
 from postgres.models.financial_securities import FinancialSecurityRow
 from postgres.models.financial import (
     FinancialAccount,
@@ -115,6 +116,7 @@ _SUBJECT_MODELS: dict[AdjudicationSubject, type] = {
     AdjudicationSubject.phone_analysis_result: PhoneAnalysisResultSubject,
     AdjudicationSubject.phone_derived_text: PhoneDerivedText,
     AdjudicationSubject.security_row: FinancialSecurityRow,
+    AdjudicationSubject.place_cluster: PolPlaceCluster,
 }
 
 # Every member of the vocabulary must be reachable, or a decision that the

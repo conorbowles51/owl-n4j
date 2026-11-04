@@ -23,6 +23,7 @@ from postgres.session import get_db
 from routers.case_access import require_case_edit, require_case_view
 from routers.users import get_current_db_user, require_admin
 from services.pattern_of_life import availability, grid, subjects
+from services.pattern_of_life.places import PLACE_LABEL_WORDS
 
 router = APIRouter(prefix="/api/pattern", tags=["pattern-of-life"])
 
@@ -191,7 +192,7 @@ def get_places(subject: str = Query(...), start: str = Query(...), end: str = Qu
     total, rows = places.observations(conn, r["extraction_ids"], a, b, ks, cursor, PLACE_PAGE)
     nxt = cursor + len(rows) if cursor + len(rows) < total else None
     return _jsonable({"subject": r["subject"], "total": total, "returned": len(rows), "next_cursor": nxt,
-                      "page_size": PLACE_PAGE, "observations": rows,
+                      "page_size": PLACE_PAGE, "observations": rows, "label": PLACE_LABEL_WORDS,
                       "towers_not_placed": [dict(t, words=places.TOWER_WORDS[t["reason"]],
                                                  mcc_words=places.MCC_INFERRED_WORDS if t["mcc_inferred"] else None)
                                             for t in places.unplaced_towers(conn, r["extraction_ids"])],
@@ -255,9 +256,9 @@ def get_routine(subject: str = Query(...), zone: str = Query("device"), case_id:
     r = resolve(db, case_id, subject)
     conn = db.connection()
     z, zname = _zone_for(conn, r["extraction_ids"], zone)
-    out = routine.compute(conn, r["extraction_ids"], z)
+    out = routine.compute(conn, r["extraction_ids"], z, case_id=case_id)
     out["zone"] = zname
-    return _jsonable(dict(out, subject=r["subject"], stays_total=len(out["stays"])))
+    return _jsonable(dict(out, subject=r["subject"], stays_total=len(out["stays"]), label=PLACE_LABEL_WORDS))
 
 
 @router.get("/{case_id}/routine/deviations")
@@ -270,9 +271,43 @@ def get_deviations(subject: str = Query(...), start_date: str = Query(None), end
     b = parse_date(end_date, "end_date") if end_date else None
     conn = db.connection()
     z, zname = _zone_for(conn, r["extraction_ids"], zone)
-    res = routine.compute(conn, r["extraction_ids"], z)
+    res = routine.compute(conn, r["extraction_ids"], z, case_id=case_id)
     out = routine.deviations(res, z, a, b)
-    return _jsonable(dict(out, subject=r["subject"], zone=zname, routine_places=res["routine_places"]))
+    return _jsonable(dict(out, subject=r["subject"], zone=zname, routine_places=res["routine_places"],
+                          label=PLACE_LABEL_WORDS))
+
+
+class PlaceName(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    subject: str = Field(min_length=1, max_length=200)
+    cluster_id: int = Field(ge=0)
+    zone: str = Field(default="device", max_length=64)
+    label: str | None = Field(default=None, max_length=400)
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+@router.post("/{case_id}/routine/places/name")
+def post_place_name(body: PlaceName, case_id: UUID = Depends(require_case_edit), db: Session = Depends(get_db),
+                    user=Depends(get_current_db_user)):
+    """A person names a place of the routine (or renames it, or clears the name with an empty label), recorded as
+    a case decision with them as Actor (04 7.7). The place is recomputed here; the client sends only its number."""
+    from services.pattern_of_life import routine
+    r = resolve(db, case_id, body.subject)
+    conn = db.connection()
+    z, _ = _zone_for(conn, r["extraction_ids"], body.zone)
+    res = routine.compute(conn, r["extraction_ids"], z, case_id=case_id)
+    cluster = next((p for p in res["places"] if p["cluster_id"] == body.cluster_id), None)
+    if cluster is None:
+        raise HTTPException(status_code=404, detail="That place is not in this phone's places as they read now.")
+    cluster = dict(cluster, computed_with=res["parameters"])
+    key = "%s:%s" % (r["subject"]["kind"], r["subject"].get("extraction_id") or r["subject"].get("dossier_id"))
+    try:
+        out = routine.name_place(db, case_id, subject_key=key, cluster=cluster, label=body.label,
+                                 reason=body.reason, actor=_place_actor(user))
+    except routine.PlaceError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    db.commit()
+    return out
 
 
 class TogetherParams(BaseModel):

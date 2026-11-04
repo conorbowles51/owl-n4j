@@ -177,6 +177,8 @@ from postgres.models.phone_analysis import PhoneAnalysisResultSubject
 __all__ += ["PhoneAnalysisResultSubject"]
 from postgres.models.phone_derived import PhoneDerivedText
 __all__ += ["PhoneDerivedText"]
+from postgres.models.pattern_places import PolPlaceCluster
+__all__ += ["PolPlaceCluster"]
 from postgres.models.agent_proposals import AgentProposalSourceOpen, ProceedsCalculation
 __all__ += ["AgentProposalSourceOpen", "ProceedsCalculation"]
 from postgres.models.removed_record import RemovedRecord
