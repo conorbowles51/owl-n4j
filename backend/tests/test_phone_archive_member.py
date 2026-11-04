@@ -163,6 +163,7 @@ def test_f_a_zip_kept_file_collected_as_evidence_opens_with_the_members_bytes(wo
     assert resp.headers["content-length"] == str(len(DATA)) and resp.media_type == "image/jpeg"
 
 
+@needs_template
 def test_f_a_zip_kept_evidence_file_answers_a_byte_range_with_206(world, tmp_path, monkeypatch):
     """Followup m110308340222832: the archive-kept branch ignored Range (a 200 with the whole file), so audio and
     video could not be seeked and Safari would not play them. A range is a 206 with exactly those bytes; past the

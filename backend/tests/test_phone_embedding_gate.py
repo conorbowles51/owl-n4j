@@ -166,6 +166,7 @@ def test_co10_theory_analysis_reads_a_linked_message_in_full_and_cites_its_recor
             db.rollback()
 
 
+@needs_template
 def test_xf7_search_hit_to_finding_to_export_and_theory_analysis_with_the_same_records():
     """07 XF-7 (and CO-12): Search hits added to a finding (the Add to… batch path) export with the collected count as
     the export's total; a theory holding them is read by Workspace AI with every record cited; nothing of another

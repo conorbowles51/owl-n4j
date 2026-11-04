@@ -62,6 +62,8 @@ def check_template_at_head(url=None):
     """Fail (not skip) when the template is behind or ahead of the head, so a stale template reads as that and not
     as an UndefinedColumn in whichever test touches the newest column. Checked once per template per run."""
     from sqlalchemy import create_engine, text
+    if not (url or TEMPLATE_URL):
+        pytest.skip(TEMPLATE_REASON)
     url = sa_url(url or TEMPLATE_URL)
     if url in _TEMPLATE_CHECKED:
         return
@@ -79,6 +81,8 @@ def check_template_at_head(url=None):
 
 @contextmanager
 def fresh_engine():
+    """Skips with TEMPLATE_REASON when no template database is set, so a test or fixture that reaches it without the
+    ``needs_template`` mark skips instead of crashing on a missing URL."""
     from sqlalchemy import create_engine, text
     check_template_at_head()
     base, template = _split(sa_url(TEMPLATE_URL))
@@ -99,6 +103,8 @@ def fresh_engine():
 @contextmanager
 def corpus_connection():
     from sqlalchemy import create_engine
+    if not CORPUS_URL:
+        pytest.skip(CORPUS_REASON)
     engine = create_engine(sa_url(CORPUS_URL))
     conn = engine.connect()
     tx = conn.begin()
