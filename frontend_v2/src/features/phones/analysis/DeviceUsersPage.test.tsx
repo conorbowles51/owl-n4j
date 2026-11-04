@@ -12,9 +12,10 @@ vi.mock("@/features/pattern/api", () => ({ patternAPI: { keyDates: vi.fn().mockR
 vi.mock("@/features/pattern/components/CollectBar", () => ({ CollectBar: () => <div>Add to…</div> }))
 
 import DeviceUsersPage, { WHAT_IT_DOES } from "./DeviceUsersPage"
-import { deviceWords } from "./device-words"
+import { GRADED_TABS, deviceWords } from "./device-words"
+import { strengthCounts } from "./strength-words"
 
-const RUN = { id: "run-5", approach: "device_users", status: "completed", progress: {}, error: null, counts: { by_kind: { shared_markers: 1 } },
+const RUN = { id: "run-5", approach: "device_users", status: "completed", progress: {}, error: null, counts: { by_kind: { shared_markers: 1 }, shared_markers_strong: 1 },
   coverage: { sentence: "Records of the owner using the phone exist on all 2 phones." }, created_at: "2026-11-03T08:00:00Z", finished_at: "2026-11-03T08:01:00Z" }
 const NOTE = "Rule of thumb (no measurement behind it): the plan asked for 200 such quarter hours for a pair before comparing places; the most here is 0."
 const MARK = { id: "m1", kind: "shared_markers", strength: "strong", label: "Lead for enquiry", decision: null, decisions: [], period_start: null, period_end: null,
@@ -26,6 +27,16 @@ describe("Who used which phone (AP-1, 05 8.8)", () => {
       const w = deviceWords({ ...MARK, strength, measures: { phones: ["C1", "C2"], by_kind: { account: 2 } } })
       expect(w.line).toContain("Strongest kind: moderate.")
     }
+  })
+
+  it("says results of a run made before grading are not graded, never none", () => {
+    const old = { ...RUN, counts: { by_kind: { shared_markers: 10, complementary_use: 10 }, results: 20 } }
+    expect(strengthCounts(old as never, GRADED_TABS)).toEqual([
+      "In common: 10 not graded in this run (run it again to grade them)",
+      "Used in turn: 10 not graded in this run (run it again to grade them)",
+      "Together or apart: none", "Used while apart: none"])
+    const now = { ...RUN, counts: { by_kind: { complementary_use: 2 }, complementary_use_weak: 2, co_location_strong: 0 } }
+    expect(strengthCounts(now as never, GRADED_TABS)).toEqual(["In common: none", "Used in turn: 2 weak", "Together or apart: none", "Used while apart: none"])
   })
 
   it("lays out the parts and the counts behind together and apart", async () => {
@@ -40,7 +51,7 @@ describe("Who used which phone (AP-1, 05 8.8)", () => {
     expect(Array.from(document.querySelectorAll("[data-part]")).map((e) => e.getAttribute("data-part"))).toEqual(["what", "run", "coverage", "results"])
     expect(screen.getByText(WHAT_IT_DOES)).toBeInTheDocument()
     expect(within(screen.getByTestId("device-user-result-notes")).getByText(NOTE)).toBeInTheDocument()
-    expect(screen.getByTestId("device-user-result-strengths").textContent).toBe("By strength: In common: none; Used in turn: none; Together or apart: none; Used while apart: none.")
+    expect(screen.getByTestId("device-user-result-strengths").textContent).toBe("By strength: In common: 1 strong; Used in turn: none; Together or apart: none; Used while apart: none.")
     expect(screen.getByTestId("device-user-result-total").textContent).toBe("1 result.")
     expect(within(row).getByText("Lead for enquiry")).toBeInTheDocument()
     expect(row).toHaveTextContent("C1 and C2 have 1 SIM card number in common")
