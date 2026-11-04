@@ -196,6 +196,11 @@ _FINAL_ANSWER_REQUEST = (
     "a comment about an earlier reply."
 )
 
+def _final_answer_system_prompt(rules: str = "") -> str:
+    """The finalizer's system prompt; a guided workflow's closing rules follow it (services.agent.workflows)."""
+    return _FINAL_ANSWER_SYSTEM_PROMPT + ("\n\n" + rules if rules else "")
+
+
 _FINAL_ANSWER_SYSTEM_PROMPT = (
     "Write the final answer from the completed tool results. "
     "Be concise, do not call tools, and mention any artifacts created. "
@@ -657,6 +662,7 @@ class AgentGraphRunner:
         available_artifacts: list[dict[str, Any]] | None = None,
         allowed_entity_keys: list[str] | None = None,
         mandate_context_block: str = "",
+        final_answer_rules: str = "",
         proposer: dict[str, Any] | None = None,
         user_id: str | None = None,
         all_cases: bool = False,
@@ -802,7 +808,7 @@ class AgentGraphRunner:
             final_messages = _messages_for_finalizer(state)
             response = self.base_model.invoke(
                 [
-                    SystemMessage(content=_FINAL_ANSWER_SYSTEM_PROMPT),
+                    SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),
                     *final_messages,
                     HumanMessage(content=_FINAL_ANSWER_REQUEST),
                 ]
@@ -856,6 +862,7 @@ class AgentGraphRunner:
         should_cancel: Callable[[], bool] | None = None,
         allowed_entity_keys: list[str] | None = None,
         mandate_context_block: str = "",
+        final_answer_rules: str = "",
         proposer: dict[str, Any] | None = None,
         user_id: str | None = None,
         all_cases: bool = False,
@@ -1009,7 +1016,7 @@ class AgentGraphRunner:
             final_messages = _messages_for_finalizer(state)
             response = self.base_model.invoke(
                 [
-                    SystemMessage(content=_FINAL_ANSWER_SYSTEM_PROMPT),
+                    SystemMessage(content=_final_answer_system_prompt(final_answer_rules)),
                     *final_messages,
                     HumanMessage(content=_FINAL_ANSWER_REQUEST),
                 ]

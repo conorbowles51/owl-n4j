@@ -530,6 +530,20 @@ def render_block(w: Workflow, tools: Iterable[str] | None = None, budget: int = 
     return "\n".join(lines)
 
 
+def final_rules(w: Workflow) -> str:
+    """What the final answer of a workflow run must hold. The final answer is written under its own prompt, which
+    does not see the plan (live 4 Nov 2026: the first answer had no 'Proposals made' or 'Not examined' and left out
+    two refused proposals), so the steps are restated here in plain words."""
+    steps = "; ".join("%d. %s%s" % (i, s.why, " (a person does this on screen)" if s.by_person else "")
+                      for i, s in enumerate(w.steps, 1))
+    return ("This answer follows guided workflow %d, %s. Its steps were: %s. End the answer with three headed parts, "
+            "in this order and with these headings: 'Proposals made' (each proposal recorded in this run, in plain "
+            "words, and each refused with the reason it gave; 'none' if none), 'For a person to confirm' (each item, "
+            "cited: %s), and 'Not examined' (each step above that did not run, ran on no data or was cut by the tool "
+            "budget, and why, in plain words; 'none' only if every step ran). Never present the result as a "
+            "conclusion." % (w.number, w.title, steps, w.person_confirms))
+
+
 def case_counts(conn, case_id) -> dict[str, int | None]:
     """The case's own counts of each data kind, read-only. A missing table counts 0 (a test schema)."""
     from sqlalchemy import text

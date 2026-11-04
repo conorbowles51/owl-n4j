@@ -106,7 +106,8 @@ def prompt_version_source() -> dict[str, Any]:
                    key=lambda item: item.get("function", {}).get("name", ""))
     from services.agent import workflows
     names = [item.get("function", {}).get("name", "") for item in tools]
-    prompts["workflows"] = {w.id: workflows.render_block(w, names) for w in workflows.WORKFLOWS}
+    prompts["workflows"] = {w.id: [workflows.render_block(w, names), workflows.final_rules(w)]
+                            for w in workflows.WORKFLOWS}
     return {"prompts": prompts, "tools": tools}
 
 

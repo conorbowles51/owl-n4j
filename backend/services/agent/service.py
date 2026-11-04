@@ -179,6 +179,7 @@ class AgentService:
                 should_cancel=lambda: is_cancelled(run_id),
                 allowed_entity_keys=allowed_entity_keys,
                 mandate_context_block=self._prompt_block(mandate_context.block, request),
+                final_answer_rules=self._final_rules(request),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
                 user_id=str(user.id),
                 all_cases=request.all_cases,
@@ -468,6 +469,7 @@ class AgentService:
                 ),
                 allowed_entity_keys=allowed_entity_keys,
                 mandate_context_block=self._prompt_block(mandate_context.block, request),
+                final_answer_rules=self._final_rules(request),
                 proposer=self._proposer(db, user, request, provider, model, run, thread),
                 user_id=str(user.id),
                 all_cases=request.all_cases,
@@ -759,6 +761,14 @@ class AgentService:
         w = workflows.get(request.workflow_id)
         return {"workflow": {"id": w.id, "number": w.number, "title": w.title,
                              "steps": [s.tool for s in w.steps], "proposals": [t for t, _ in w.proposals]}}
+
+    @staticmethod
+    def _final_rules(request: AgentMessageRequest) -> str:
+        """The guided workflow's closing rules for the final answer, which is written under its own prompt."""
+        if not request.workflow_id:
+            return ""
+        from services.agent import workflows
+        return workflows.final_rules(workflows.get(request.workflow_id))
 
     @staticmethod
     def _prompt_block(mandate_block: str, request: AgentMessageRequest) -> str:

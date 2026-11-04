@@ -193,3 +193,56 @@ def test_block_states_the_budget_and_when_to_stop():
     from services.agent.service import AgentService, DEFAULT_AGENT_MAX_TOOL_CALLS
     req = AgentMessageRequest(message="go", case_id=uuid.uuid4(), workflow_id="hidden-assets")
     assert "allows %d tool calls" % DEFAULT_AGENT_MAX_TOOL_CALLS in AgentService._prompt_block("", req)
+
+
+class _CaptureModel:
+    """One tool call, then the finalizer: records the system prompt the final answer is written under."""
+
+    def __init__(self):
+        self.final_system = None
+        self.calls = 0
+
+    def bind_tools(self, tools):
+        from langchain_core.messages import AIMessage
+        owner = self
+
+        class Bound:
+            def invoke(self, messages):
+                owner.calls += 1
+                if owner.calls == 1:
+                    return AIMessage(content="", tool_calls=[{"id": "c1", "name": "read_tool_result_page",
+                                                              "args": {"result_id": "x", "path": ["data"],
+                                                                       "offset": 0}}])
+                return AIMessage(content="draft")
+        return Bound()
+
+    def invoke(self, messages):
+        from langchain_core.messages import AIMessage, SystemMessage
+        self.final_system = next(m.content for m in messages if isinstance(m, SystemMessage))
+        return AIMessage(content="final")
+
+
+@pytest.mark.parametrize("path", ["invoke", "stream"])
+def test_final_answer_is_written_under_the_workflow_closing_rules(path):
+    from langchain_core.messages import HumanMessage
+    from services.agent.graph import AgentGraphRunner, _FINAL_ANSWER_SYSTEM_PROMPT
+    w = W.get("last-proof-of-life")
+    rules = W.final_rules(w)
+    assert "'Proposals made'" in rules and "'Not examined'" in rules and "deletion_timeline" in rules
+    for given, expect_rules in ((rules, True), ("", False)):
+        runner = object.__new__(AgentGraphRunner)
+        runner.base_model = _CaptureModel()
+        runner.model_id = "m"
+        kw = dict(case_id=str(uuid.uuid4()), messages=[HumanMessage(content="q")], final_answer_rules=given)
+        list(runner.stream(**kw)) if path == "stream" else runner.invoke(**kw)
+        system = runner.base_model.final_system
+        assert system.startswith(_FINAL_ANSWER_SYSTEM_PROMPT)
+        assert (rules in system) is expect_rules
+
+
+def test_service_passes_closing_rules_only_for_a_workflow():
+    from services.agent.schemas import AgentMessageRequest
+    from services.agent.service import AgentService
+    assert AgentService._final_rules(AgentMessageRequest(message="q", case_id=uuid.uuid4())) == ""
+    req = AgentMessageRequest(message="q", case_id=uuid.uuid4(), workflow_id="carer-abuse")
+    assert AgentService._final_rules(req).startswith("This answer follows guided workflow 3")
