@@ -1,7 +1,7 @@
 """Mapping proposals in the admin list (02 section 6.8 steps 2, 3 and 5; cb-registry-admin B).
 
 A proposal is a suggested change to a global mapping: a case correction (``correct_phone_reading`` writes one,
-``readings.py``) or, later, an AI draft. Nothing here changes the global registry or any mapping: an admin either
+``readings.py``) or an AI draft (``mapping_drafts.py``). Nothing here changes the global registry or any mapping: an admin either
 rejects a proposal with a reason, or downloads it as a mapping file with ``status: draft`` that a person edits,
 reviews and commits (6.8 step 3). The applier never reads ``phone_mapping_proposals`` (6.8 step 2).
 
@@ -41,7 +41,8 @@ def _event(conn, proposal_id, from_state, to_state, reason, actor_name, actor_em
 
 def _lock(conn, proposal_id):
     row = conn.execute(text(
-        "SELECT id, kind, name, content, origin, decision_id, state, case_id FROM phone_mapping_proposals "
+        "SELECT id, kind, name, content, model, model_version, origin, decision_id, state, case_id FROM "
+        "phone_mapping_proposals "
         "WHERE id = :i FOR UPDATE"), {"i": proposal_id}).one_or_none()
     if row is None:
         raise ProposalRefused("Proposal not found.", 404)
@@ -139,6 +140,8 @@ def build_file(conn, row) -> dict:
     pc = row.content or {}
     if row.origin == "ai_draft":
         content = copy.deepcopy(pc)
+        if "unparsed_answer" in content:
+            raise ProposalRefused("The model's answer was not JSON, so no file can be written from it.", 422)
     else:
         base = conn.execute(text("SELECT content FROM phone_mapping_versions WHERE id::text = :v"),
                             {"v": str(pc.get("mapping_version_id"))}).scalar()
@@ -163,6 +166,12 @@ def build_file(conn, row) -> dict:
                        "block and set status to reviewed (02 section 6.8 step 3)."
                        % (row.id, row.origin, (", decision %s" % row.decision_id) if row.decision_id else "",
                           dt.date.today().isoformat()))
+    if row.origin == "ai_draft":
+        # A model reading is shown as one (rule 1): who drafted it, and that no person has reviewed it yet.
+        drafted = "Drafted by %s · not reviewed." % (row.model or "a model")
+        note = (pc.get("review") or {}).get("basis") or ""
+        note = note.split("· not reviewed.", 1)[1].strip() if "· not reviewed." in note else ""
+        review["basis"] = " ".join(x for x in (drafted, note, review["basis"]) if x)
     review.setdefault("registry_requirements", [])
     content["review"] = review
     try:

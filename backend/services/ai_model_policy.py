@@ -64,6 +64,12 @@ WORKLOADS: dict[str, dict[str, str]] = {
                        "the case's phone material in full. Every draft is cited and confirmed by a person.",
         "group": "Investigation",
     },
+    "phone_mapping_draft": {
+        "label": "Phone mapping drafts",
+        "description": "Drafts a phone mapping file from the registry's structure only (type and field names, value "
+                       "types, named-set values, counts; no case material). Admin only; a person reviews and commits.",
+        "group": "Phones",
+    },
     "financial_vision": {
         "label": "Statement page images",
         "description": "Reads held bank statement pages from their images; saved only when the figures reconcile exactly.",
@@ -113,6 +119,9 @@ DEFAULT_POLICY: dict[str, dict[str, str]] = {
     "ingestion_quality": {"provider": "openai", "model_id": "gpt-5.6-terra"},
     # 04 section 9.2 step 4 (cb-pol item L): DeepSeek by default; the AI settings page switches it like any workload.
     "statement_claim_drafting": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
+    # 02 section 6.8 step 2 (cb-mapdrafts): DeepSeek's strongest model, thinking at max (Neil, 2026-11-04: "We're
+    # using deep seek everywhere possible in the platform. Deepseek at max performance.").
+    "phone_mapping_draft": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
     "financial_vision": dict(FINANCIAL_VISION_DEFAULT),
 }
 
@@ -120,7 +129,8 @@ DEFAULT_POLICY: dict[str, dict[str, str]] = {
 FINANCIAL_VISION_PROFILE = {k: v for k, v in FINANCIAL_VISION_DEFAULT.items() if k != "deepseek_only"}
 PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
     "openai": {**deepcopy(DEFAULT_POLICY), "financial_vision": deepcopy(FINANCIAL_VISION_PROFILE),
-               "statement_claim_drafting": {"provider": "openai", "model_id": "gpt-5.6-sol"}},
+               "statement_claim_drafting": {"provider": "openai", "model_id": "gpt-5.6-sol"},
+               "phone_mapping_draft": {"provider": "openai", "model_id": "gpt-5.6-sol"}},
     "anthropic": {
         "chat": {"provider": "anthropic", "model_id": "claude-sonnet-5"},
         "agent": {"provider": "anthropic", "model_id": "claude-opus-4-8"},
@@ -131,6 +141,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "ingestion_document_summary": {"provider": "anthropic", "model_id": "claude-opus-4-8"},
         "ingestion_quality": {"provider": "anthropic", "model_id": "claude-sonnet-5"},
         "statement_claim_drafting": {"provider": "anthropic", "model_id": "claude-opus-4-8"},
+        "phone_mapping_draft": {"provider": "anthropic", "model_id": "claude-opus-4-8"},
         "financial_vision": dict(FINANCIAL_VISION_PROFILE),
     },
     "gemini": {
@@ -143,6 +154,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "ingestion_document_summary": {"provider": "gemini", "model_id": "gemini-3.5-flash"},
         "ingestion_quality": {"provider": "gemini", "model_id": "gemini-3.6-flash"},
         "statement_claim_drafting": {"provider": "gemini", "model_id": "gemini-3.5-flash"},
+        "phone_mapping_draft": {"provider": "gemini", "model_id": "gemini-3.5-flash"},
         "financial_vision": dict(FINANCIAL_VISION_PROFILE),
     },
     "deepseek": {
@@ -155,6 +167,7 @@ PROVIDER_DEFAULTS: dict[str, dict[str, dict[str, str]]] = {
         "ingestion_document_summary": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
         "ingestion_quality": {"provider": "deepseek", "model_id": "deepseek-v4-flash"},
         "statement_claim_drafting": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
+        "phone_mapping_draft": {"provider": "deepseek", "model_id": "deepseek-v4-pro"},
         "financial_vision": dict(FINANCIAL_VISION_PROFILE),
     },
 }

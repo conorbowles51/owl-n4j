@@ -308,7 +308,7 @@ def test_the_applier_never_reads_proposals(hooks):
         seen = []
         event.listen(engine, "before_cursor_execute", lambda *a: seen.append(a[2]))
         sweep.interpret_one(engine, ext)
-        assert seen and not [s for s in seen if "phone_mapping_proposals" in s]
+        assert seen and not [s for s in seen if "phone_mapping_proposals" in s or "phone_mapping_draft_runs" in s]
 
 
 @needs_template

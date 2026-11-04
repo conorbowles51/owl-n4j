@@ -70,7 +70,10 @@ class LLMExecutionContext:
         temperature: float = 0.3,
         json_mode: bool = False,
         timeout: int = 600,
+        reasoning_effort: str | None = None,
     ) -> str:
+        """``reasoning_effort`` (DeepSeek only): thinking enabled at that effort, e.g. ``"max"`` for a draft a person
+        reviews (Neil, 2026-11-04: "Deepseek at max performance"). Other providers ignore it."""
         self.last_prompt = prompt
         self.last_raw_response = None
         self.last_usage = None
@@ -84,7 +87,7 @@ class LLMExecutionContext:
         elif self.provider == "gemini":
             result = self._call_gemini(prompt, temperature, json_mode, timeout)
         elif self.provider == "deepseek":
-            result = self._call_deepseek(prompt, temperature, json_mode, timeout)
+            result = self._call_deepseek(prompt, temperature, json_mode, timeout, reasoning_effort=reasoning_effort)
         else:
             raise ValueError(f"Unknown provider: {self.provider}")
 
@@ -440,6 +443,7 @@ class LLMExecutionContext:
         temperature: float,
         json_mode: bool,
         timeout: int,
+        reasoning_effort: str | None = None,
     ) -> str:
         api_key = self.api_key or DEEPSEEK_API_KEY
         if not api_key:
@@ -458,6 +462,11 @@ class LLMExecutionContext:
             # OpenAI-compatible multi-turn behavior across Loupe workloads.
             "thinking": {"type": "disabled"},
         }
+        if reasoning_effort:
+            # Thinking on (a slower, stronger answer); its tokens count against max_tokens, as for page images.
+            payload.pop("temperature")
+            payload.update(thinking={"type": "enabled"}, reasoning_effort=reasoning_effort,
+                           max_tokens=self.DEEPSEEK_VISION_MAX_TOKENS)
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
         self._remember_request(payload)
@@ -475,14 +484,16 @@ class LLMExecutionContext:
         self._remember_response(data)
         choices = data.get("choices") or []
         content = str(((choices[0].get("message") or {}).get("content") or "")).strip() if choices else ""
-        if not content:
-            raise ValueError("DeepSeek returned an empty response")
         usage = data.get("usage") or {}
         self.last_usage = {
             "prompt_tokens": usage.get("prompt_tokens"),
             "completion_tokens": usage.get("completion_tokens"),
             "total_tokens": usage.get("total_tokens"),
         }
+        if not content:
+            raise ValueError("DeepSeek returned an empty response")
+        if reasoning_effort and choices and choices[0].get("finish_reason") not in (None, "stop"):
+            raise ValueError("DeepSeek's answer was incomplete (%s)" % choices[0].get("finish_reason"))
         return content
 
     def _call_openai_responses(

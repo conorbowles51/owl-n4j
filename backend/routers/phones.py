@@ -964,6 +964,49 @@ def export_mapping_proposal(proposal_id: UUID, db: Session = Depends(get_db), us
                              "X-Mapping-Path": out["path"]})
 
 
+class MappingDraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type_name: str = Field(min_length=1, max_length=128)
+
+
+@router.get("/registry/mapping-drafts")
+def list_mapping_drafts(limit: int = Query(20, ge=1, le=100), db: Session = Depends(get_db),
+                        _: User = Depends(require_admin)):
+    """Recent AI draft runs (newest first, ``total`` stated) and what can be drafted (every registry type and named
+    set). Admin only: the registry is global."""
+    from services.phone import mapping_drafts
+    conn = db.connection()
+    return dict(mapping_drafts.list_runs(conn, limit), draftable=mapping_drafts.draftable(conn))
+
+
+@router.post("/registry/mapping-drafts", status_code=202)
+def create_mapping_draft(body: MappingDraftRequest, db: Session = Depends(get_db),
+                         user: User = Depends(require_admin)):
+    """02 6.8 step 2: ask the ``phone_mapping_draft`` workload's model for a mapping of one registry type (or named
+    set) from the registry's structure only. Runs in the background (the model thinks for minutes); the answer is
+    stored as an ``ai_draft`` proposal, ``draft`` when it is a valid mapping, ``rejected`` with the reason when not."""
+    from services.phone import mapping_drafts
+    from postgres.session import _get_background_session_local
+    try:
+        rid = mapping_drafts.create_run(db.connection(), body.type_name, actor_name=user.name,
+                                        actor_email=user.email, actor_user_id=user.id)
+    except mapping_drafts.DraftRefused as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    db.commit()
+    mapping_drafts.run_in_background(lambda: _get_background_session_local()(), rid)
+    return mapping_drafts.read_run(db.connection(), rid)
+
+
+@router.get("/registry/mapping-drafts/{run_id}")
+def read_mapping_draft(run_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    from services.phone import mapping_drafts
+    out = mapping_drafts.read_run(db.connection(), run_id)
+    if out is None:
+        raise HTTPException(status_code=404, detail="No such draft run.")
+    return out
+
+
 @router.get("/{extraction_id}/coverage")
 def extraction_coverage(extraction_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
                         user: User = Depends(get_current_db_user)):
