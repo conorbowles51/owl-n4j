@@ -217,6 +217,54 @@ class AllCasesTests(DuplicateTestCase):
         named = "See [12 Mar](%s) (case: Matter B)." % link
         self.assertEqual(name_cases_in_answer(named, cited, str(self.case.id)), named)
 
+    def test_the_streamed_answer_names_the_other_case_like_the_stored_answer(self):
+        # followups m11040024065628: the streamed draft and answer showed a bare txn:// of another case until 'done'.
+        # The run's context holds a citation an earlier read of Matter B returned (as read_in_case records it).
+        from dataclasses import dataclass
+        from unittest.mock import patch
+
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        from services.agent import graph
+        from services.agent.all_cases import payment_path
+        other, txn = str(self.other_case.id), str(uuid.uuid4())
+        bare = "Paid [12 Mar](txn://%s) from the other matter." % txn
+
+        @dataclass
+        class ReadContext(graph.AgentToolContext):
+            def __post_init__(self):
+                if self.all_cases:
+                    self.other_case_citations[payment_path(other, txn)] = (other, "Matter B")
+                    self.cases_read[other] = "Matter B"
+
+        class Model:
+            def bind_tools(self, tools):
+                class Bound:
+                    def invoke(self, messages):
+                        return AIMessage(content=bare)
+                return Bound()
+
+            def invoke(self, messages):
+                return AIMessage(content=bare)
+
+        runner = object.__new__(graph.AgentGraphRunner)
+        runner.base_model, runner.model_id = Model(), "deepseek-v4-pro"
+
+        @contextmanager
+        def session(*_a, **_k):
+            with self.SessionLocal() as s:
+                yield s
+        with patch("services.agent.tools._financial_session", session), patch.object(graph, "AgentToolContext",
+                                                                                      ReadContext):
+            events = list(runner.stream(case_id=str(self.case.id), messages=[HumanMessage(content="Who paid?")],
+                                        user_id=str(self.user.id), all_cases=True))
+        answers = [e["answer"] for e in events if e["type"] in ("answer", "assistant_draft")]
+        self.assertEqual({e["type"] for e in events if e["type"] in ("answer", "assistant_draft")},
+                         {"answer", "assistant_draft"})
+        for answer in answers:
+            self.assertNotIn("txn://", answer)
+            self.assertIn("[12 Mar](%s) (case: Matter B)" % payment_path(other, txn), answer)
+
     def test_the_run_record_lists_the_cases_read(self):
         from types import SimpleNamespace
 

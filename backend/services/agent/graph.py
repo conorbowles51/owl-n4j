@@ -520,6 +520,19 @@ def _cross_case_result(tool_context: AgentToolContext, case_id: str) -> dict[str
             "other_case_citations": {href: list(owner) for href, owner in tool_context.other_case_citations.items()}}
 
 
+def _streamed_answer(tool_context: AgentToolContext, case_id: str, text: str) -> str:
+    """All-cases mode: a streamed draft or answer names the other cases it cites, as the stored answer does
+    (service._name_other_cases), so a bare link to another case's record is never on screen while the run finishes
+    (followups m11040024065628)."""
+    if not text or not tool_context.all_cases:
+        return text
+    from services.agent.all_cases import name_cases_in_answer
+    cross = _cross_case_result(tool_context, case_id)
+    cited = {href: tuple(owner) for href, owner in cross["other_case_citations"].items()}
+    titles = {c["case_id"]: c.get("case_name") for c in cross["cases_read"] if not c.get("this_case")}
+    return name_cases_in_answer(text, cited, str(case_id), titles=titles)
+
+
 def render_system_prompt(*, case_id: str, significant: bool, mandate_context_block: str,
                           artifact_preference: str, available_artifact_context: str,
                           all_cases: bool = False) -> str:
@@ -1084,7 +1097,8 @@ class AgentGraphRunner:
                     else:
                         content = message_content_to_text(getattr(last, "content", ""))
                         if content and not collected_trace:
-                            yield {"type": "assistant_draft", "answer": content}
+                            yield {"type": "assistant_draft",
+                                   "answer": _streamed_answer(tool_context, case_id, content)}
 
             tools_update = update.get("tools")
             if tools_update:
@@ -1114,7 +1128,7 @@ class AgentGraphRunner:
                     yield {"type": "clarification", "clarification": clarification}
                 final_answer = finalize_update.get("final_answer") or final_answer
                 if final_answer:
-                    yield {"type": "answer", "answer": final_answer}
+                    yield {"type": "answer", "answer": _streamed_answer(tool_context, case_id, final_answer)}
 
         result = {
             "answer": final_answer,
