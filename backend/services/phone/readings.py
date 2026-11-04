@@ -334,9 +334,11 @@ def _before(after, known):
     return {k: known.get(k) for k in after}
 
 
-def confirm(db, case_id, judgement_id, *, viewed, actor, note=None, opened=None, expected_status="open") -> dict:
+def confirm(db, case_id, judgement_id, *, viewed, actor, note=None, opened=None, expected_status="open",
+            listed_with=None) -> dict:
     """Looks right. ``viewed``: the example kinds the person viewed; every kind must be in it. Only an open reading
-    is confirmed; a corrected one goes back to the mapping's choice by another correction (8.8)."""
+    is confirmed; a corrected one goes back to the mapping's choice by another correction (8.8). ``listed_with``:
+    the number of rows shown together when this one is confirmed by ``confirm_kind``; it is kept on the decision."""
     from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
     from postgres.models.phone_extraction import PhoneExtraction
     from services import manual_changes
@@ -356,6 +358,8 @@ def confirm(db, case_id, judgement_id, *, viewed, actor, note=None, opened=None,
     ext = db.get(PhoneExtraction, call.extraction_id)
     after = {_key(call): "reviewed", "examples": examples_record, "rule_part": call.rule_part,
              "note": note.strip() if note and note.strip() else None}
+    if listed_with is not None:
+        after["listed_with_rows"] = int(listed_with)
     row = decisions.record(db, case_id=ext.case_id, subject=ext, subject_type=AdjudicationSubject.phone_extraction,
                            decision=AdjudicationDecision.confirm_phone_reading, reason=reason, actor=actor,
                            before=_before(after, {_key(call): "applied_unconfirmed", "rule_part": call.rule_part}),
@@ -371,6 +375,52 @@ def confirm(db, case_id, judgement_id, *, viewed, actor, note=None, opened=None,
             "resolved_by": actor.name}
 
 
+def confirm_kind(db, case_id, rows, *, actor, note=None) -> dict:
+    """"Looks right for all 12 rows of this kind on this phone" (07 J-8 step 6). A kind is one rule part on one phone
+    (UXD-58). ``rows`` are the rows the person was shown, each with the example kinds shown for it: only those are
+    confirmed, each by ``confirm`` as a decision of its own under this person, so a row is refused exactly as it
+    would be alone (changed since it was listed, a kind of example not shown). A refused row leaves the others
+    standing and is stated. An open row of the kind that was not listed stays open and is counted."""
+    if not rows:
+        raise ReadingError("No rows were listed.")
+    conn = db.connection()
+    items = {i["id"]: i for i in queue(conn, case_id)["items"]}
+    known = [items[str(r["id"])] for r in rows if str(r["id"]) in items]
+    if not known:
+        raise NotFound("None of these readings is in this case now.")
+    phone, part = known[0]["extraction_id"], known[0]["part"]
+    listed = {str(r["id"]) for r in rows}
+    done, refused = [], []
+    for r in rows:
+        rid = str(r["id"])
+        item = items.get(rid)
+        if item is None or (item["extraction_id"], item["part"]) != (phone, part):
+            refused.append({"id": rid, "sentence": item["sentence"] if item else None,
+                            "reason": "This row is not of this kind on this phone now, so it was not confirmed."})
+            continue
+        try:
+            with db.begin_nested():
+                out = confirm(db, case_id, rid, viewed=r.get("viewed"), opened=r.get("opened"), note=note, actor=actor,
+                              listed_with=len(rows))
+            done.append({"id": rid, "sentence": item["sentence"], "decision_id": out["decision_id"],
+                         "reason": out["reason"]})
+        except ReadingError as exc:
+            refused.append({"id": rid, "sentence": item["sentence"], "reason": str(exc)})
+    not_listed = sum(1 for i in items.values() if i["extraction_id"] == phone and i["part"] == part and
+                     i["status"] == "open" and i["id"] not in listed)
+    words = "Confirmed %s under your name, each as its own decision." % _rows(len(done))
+    if refused:
+        words += " %s refused." % _rows(len(refused), was=True)
+    if not_listed:
+        words += " %s not listed and stayed open." % _rows(not_listed, was=True)
+    return {"confirmed": done, "refused": refused, "not_listed": not_listed, "resolved_by": actor.name, "words": words}
+
+
+def _rows(n, was=False):
+    out = "%s row%s" % ("{:,}".format(n), "" if n == 1 else "s")
+    return out + ((" was" if n == 1 else " were") if was else "")
+
+
 def same_format_phones(conn, call):
     """The case's other active phones with the same report format (producer and report version), by label."""
     return [str(r[0]) for r in conn.execute(text(
@@ -379,10 +429,74 @@ def same_format_phones(conn, call):
         "NOT DISTINCT FROM e.producer_version WHERE e.id = :e ORDER BY o.created_at, o.id"), {"e": call.extraction_id})]
 
 
+def _scope_targets(conn, call, scope):
+    targets = [str(call.extraction_id)]
+    if scope == "same_format":
+        targets += same_format_phones(conn, call)
+    elif scope != "this_phone":
+        raise ReadingError("The scope is this phone or the phones with the same report format.")
+    return targets
+
+
+def _empty_count(conn, call, chosen, extraction_id):
+    """(records of this phone that would lose the value, what they would be without), read from the rows the rule
+    wrote at the phone's current generation. Nothing is written."""
+    params = {"e": extraction_id, "r": call.rule_id, "mv": call.mapping_version_id}
+    generation = "(SELECT generation FROM phone_interpretation_state WHERE extraction_id = :e)"
+    root = "coalesce(root_record_uid, record_uid)"
+    if call.rule_part == "role":
+        old = _evidence(conn, call).get("choice")
+        if not old or old == chosen["choice"]:
+            return 0, None
+        params["old"] = old
+        n = conn.execute(text(
+            "WITH mine AS (SELECT DISTINCT " + root + " AS r FROM phone_participations WHERE extraction_id = :e AND "
+            "generation = " + generation + " AND mapping_row_id = :r AND mapping_version_id = :mv AND role = :old), "
+            "others AS (SELECT DISTINCT " + root + " AS r FROM phone_participations WHERE extraction_id = :e AND "
+            "generation = " + generation + " AND mapping_row_id IS DISTINCT FROM :r AND "
+            "(role = :old OR implied_role = :old)) "
+            "SELECT count(*) FROM mine LEFT JOIN others USING (r) WHERE others.r IS NULL"), params).scalar()
+        return int(n), "no %s" % apply.words(old)
+    if call.rule_part == "event_time":
+        params["f"] = chosen["choice"]
+        n = conn.execute(text(
+            "WITH mine AS (SELECT DISTINCT " + root + " AS r FROM phone_time_values WHERE extraction_id = :e AND "
+            "generation = " + generation + " AND mapping_row_id = :r AND mapping_version_id = :mv AND "
+            "effective_instant IS NOT NULL), "
+            "kept AS (SELECT DISTINCT " + root + " AS r FROM phone_time_values WHERE extraction_id = :e AND "
+            "generation = " + generation + " AND field_name = :f AND effective_instant IS NOT NULL) "
+            "SELECT count(*) FROM mine LEFT JOIN kept USING (r) WHERE kept.r IS NULL"), params).scalar()
+        return int(n), "no time"
+    return 0, None  # a time's meaning changes its words, never whether it is there
+
+
+def correction_preview(conn, case_id, judgement_id, *, choice_id, scope="this_phone") -> dict:
+    """What a correction would leave empty, before anything is written (07 J-8): the true count per phone in scope,
+    and the sentence "After this change, 2,140 messages will have no sender."."""
+    call = _call(conn, case_id, judgement_id)
+    options = {c["id"]: c for c in choices(conn, call)}
+    if choice_id not in options:
+        raise ReadingError("Choose one of the offered corrections.")
+    labels = phone_labels(conn, case_id)
+    noun, one = plural(apply.words(call.type_name)), apply.words(call.type_name)
+    phones, total, without = [], 0, None
+    for ext_id in _scope_targets(conn, call, scope):
+        n, what = _empty_count(conn, call, options[choice_id], ext_id)
+        phones.append({"extraction_id": ext_id, "phone": labels.get(ext_id, ext_id), "records": n})
+        total += n
+        without = what or without
+    words = None
+    if total:
+        words = "After this change, %s %s will have %s." % ("{:,}".format(total), noun if total != 1 else one, without)
+    return {"records": total, "without": without, "phones": phones, "words": words}
+
+
 def correct(db, case_id, judgement_id, *, choice_id, reason, actor, scope="this_phone", note=None,
-            expected_status="open") -> dict:
+            expected_status="open", expected_empty=None) -> dict:
     """Not right: a choice from the closed list and a typed reason. Re-derives only the phones in scope. Allowed on
-    a confirmed reading too: a correction is the confirmation's reversal (8.8)."""
+    a confirmed reading too: a correction is the confirmation's reversal (8.8). ``expected_empty``: the count of
+    ``correction_preview`` the person agreed to (the route always passes it, 0 when none was shown); if the true
+    count now differs, nothing is written and the new sentence is the answer."""
     from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
     from postgres.models.phone_extraction import PhoneExtraction
     from services import manual_changes
@@ -396,11 +510,12 @@ def correct(db, case_id, judgement_id, *, choice_id, reason, actor, scope="this_
     if choice_id not in options:
         raise ReadingError("Choose one of the offered corrections.")
     chosen = options[choice_id]
-    targets = [str(call.extraction_id)]
-    if scope == "same_format":
-        targets += same_format_phones(conn, call)
-    elif scope != "this_phone":
-        raise ReadingError("The scope is this phone or the phones with the same report format.")
+    targets = _scope_targets(conn, call, scope)
+    if expected_empty is not None:
+        preview = correction_preview(conn, case_id, judgement_id, choice_id=choice_id, scope=scope)
+        if preview["records"] != int(expected_empty):
+            raise Conflict((preview["words"] or "This correction would now leave nothing empty.") +
+                           " Continue or cancel.")
     labels = phone_labels(conn, case_id)
     original = _evidence(conn, call).get("choice") if call.rule_part != "meaning" else \
         (_evidence(conn, call).get("row") or {}).get("outputs")

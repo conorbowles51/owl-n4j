@@ -1158,6 +1158,45 @@ class CorrectReading(BaseModel):
     scope: Literal["this_phone", "same_format"] = "this_phone"
     note: Optional[str] = Field(default=None, max_length=4000)
     expected_status: Literal["open", "confirmed", "corrected"] = "open"
+    expected_empty: int = Field(default=0, ge=0)
+
+
+class ConfirmKindRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: UUID
+    viewed: list[str] = Field(default_factory=list, max_length=200)
+    opened: Optional[list[str]] = Field(default=None, max_length=200)
+
+
+class ConfirmKind(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    rows: list[ConfirmKindRow] = Field(min_length=1, max_length=1000)
+    note: Optional[str] = Field(default=None, max_length=4000)
+
+
+class CorrectionPreview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    choice: str = Field(min_length=1, max_length=300)
+    scope: Literal["this_phone", "same_format"] = "this_phone"
+
+
+class RecheckDraw(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    reviewer: UUID
+    percent: int = Field(default=5, ge=1, le=100)
+    seed: Optional[int] = Field(default=None, ge=0, le=2147483647)
+
+
+class RecheckResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    task_id: UUID
+    confirmation_id: UUID
+    agrees: bool
+    note: Optional[str] = Field(default=None, max_length=4000)
 
 
 def _actor(user):
@@ -1216,11 +1255,74 @@ def correct_reading(judgement_id: UUID, body: CorrectReading, db: Session = Depe
     try:
         out = readings.correct(db, body.case_id, judgement_id, choice_id=body.choice, reason=body.reason,
                                scope=body.scope, note=body.note, actor=_actor(user),
-                               expected_status=body.expected_status)
+                               expected_status=body.expected_status, expected_empty=body.expected_empty)
     except readings.ReadingError as exc:
         _reading_error(db, exc)
     db.commit()
     return out
+
+
+@router.post("/readings/confirm-kind")
+def confirm_reading_kind(body: ConfirmKind, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Looks right for the rows of one kind on one phone that were listed, each a decision of its own (07 J-8 step 6)."""
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        out = readings.confirm_kind(db, body.case_id, [r.model_dump(mode="json") for r in body.rows], note=body.note,
+                                    actor=_actor(user))
+    except readings.ReadingError as exc:
+        _reading_error(db, exc)
+    db.commit()
+    return out
+
+
+@router.post("/readings/{judgement_id}/correct/preview")
+def preview_reading_correction(judgement_id: UUID, body: CorrectionPreview, db: Session = Depends(get_db),
+                               user: User = Depends(get_current_db_user)):
+    """The true count of what a correction would leave empty; nothing is written (07 J-8 failure state)."""
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        return readings.correction_preview(db.connection(), body.case_id, judgement_id, choice_id=body.choice,
+                                           scope=body.scope)
+    except readings.ReadingError as exc:
+        _reading_error(db, exc)
+
+
+@router.get("/readings/rechecks")
+def reading_rechecks(case_id: UUID = Query(...), db: Session = Depends(get_db),
+                     user: User = Depends(get_current_db_user)):
+    """The second person's re-check of confirmations and its disagreement counts (07 J-8 quality measure)."""
+    from services.phone import reading_recheck
+    authorize_case(db, case_id, user, ("case", "view"))
+    return reading_recheck.summary(db.connection(), case_id, user)
+
+
+@router.post("/readings/rechecks")
+def draw_reading_recheck(body: RecheckDraw, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    from services.phone import reading_recheck, review_share
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        return reading_recheck.draw(db, body.case_id, reviewer_id=str(body.reviewer), user=user, percent=body.percent,
+                                    seed=body.seed)
+    except review_share.ReviewShareError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/readings/rechecks/result")
+def record_reading_recheck(body: RecheckResult, db: Session = Depends(get_db),
+                           user: User = Depends(get_current_db_user)):
+    from services.phone import reading_recheck, review_share
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        return reading_recheck.record_result(db, body.case_id, task_id=body.task_id,
+                                             confirmation_id=str(body.confirmation_id), user=user, agrees=body.agrees,
+                                             note=body.note)
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    except review_share.ReviewShareError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 class IdentityDecision(BaseModel):
@@ -2116,6 +2218,73 @@ def record_second_pass(body: SecondPassResultBody, db: Session = Depends(get_db)
     try:
         return review_share.record_second_pass(db, body.case_id, task_id=body.task_id, thread_key=body.thread_key,
                                                user=user, agrees=body.agrees, note=body.note)
+    except LookupError as exc:
+        db.rollback()
+        raise HTTPException(status_code=404, detail=str(exc))
+    except review_share.ReviewShareError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+class ReviewPositionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    event_uid: str = Field(min_length=1, max_length=128)
+    instant: Optional[str] = Field(default=None, max_length=64)
+
+
+class SavePositionBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    thread_key: str = Field(min_length=1, max_length=512)
+    position: ReviewPositionBody
+
+
+@router.post("/conversations/review/position")
+def save_review_position(body: SavePositionBody, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_db_user)):
+    """The reading position of an assigned review, kept on the review task's link (07 J-15 step 2). Only the
+    assigned person's own reading moves it; ``saved`` is 0 for anyone else."""
+    from services.phone import review_resume
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    return review_resume.save_position(db, body.case_id, body.thread_key, user, body.position.model_dump())
+
+
+class ContinueThread(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    thread: str = Field(min_length=1, max_length=512)
+    record: Optional[str] = Field(default=None, max_length=128)
+
+
+class ContinueBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    threads: list[ContinueThread] = Field(default_factory=list, max_length=50)
+
+
+@router.post("/conversations/review/continue")
+def continue_reading(body: ContinueBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Continue reading (07 J-15 step 1): this person's assigned reviews with their positions, and the casual threads
+    their browser names (record ids only) that are not finished."""
+    from services.phone import review_resume
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    return review_resume.continue_work(db.connection(), body.case_id, user, [t.model_dump() for t in body.threads])
+
+
+class HandOverBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    to_user: UUID
+    note: Optional[str] = Field(default=None, max_length=4000)
+
+
+@router.post("/conversations/review/tasks/{task_id}/hand-over")
+def hand_over_review(task_id: UUID, body: HandOverBody, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_db_user)):
+    """Reassign a review task and attach a Workspace note listing positions and open items (07 J-15 step 4)."""
+    from services.phone import review_resume, review_share
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        return review_resume.hand_over(db, body.case_id, task_id, to_user=str(body.to_user), user=user, note=body.note)
     except LookupError as exc:
         db.rollback()
         raise HTTPException(status_code=404, detail=str(exc))
