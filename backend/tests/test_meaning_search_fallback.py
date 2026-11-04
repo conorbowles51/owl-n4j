@@ -1,0 +1,355 @@
+"""Documents stay searchable when meaning search fails (lx-docsearch B-E).
+
+On live since 2026-10-28 every embedding call failed with OpenAI's 429 "insufficient quota": the agent's
+search_documents raised (the workflows reported "not examined" and listed documents instead), chat's chunk and
+entity search returned an empty context without saying so, and the AI settings page showed "Search embeddings:
+Ready". Each test here fails on the code before this change.
+"""
+from __future__ import annotations
+
+import unittest
+from contextlib import contextmanager
+from unittest.mock import patch
+from uuid import uuid4
+
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from postgres.base import Base
+from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceFolder
+from services import meaning_search
+
+QUOTA = ("Error code: 429 - {'error': {'message': 'You have no credits remaining.', 'type': "
+         "'insufficient_quota', 'code': 'credit_balance_exhausted'}}")
+QUOTA_REASON = "the search service (OpenAI) has no credits left: 429 insufficient quota"
+
+
+class QuotaError(Exception):
+    status_code = 429
+
+
+class QuotaEmbeddings:
+    calls = 0
+
+    def generate_embedding(self, text):
+        QuotaEmbeddings.calls += 1
+        raise QuotaError(QUOTA)
+
+
+class Fixture(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine("sqlite+pysqlite:///:memory:", future=True,
+                                    connect_args={"check_same_thread": False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine, tables=[EvidenceFolder.__table__, EvidenceFile.__table__,
+                                                      EvidenceDocumentText.__table__])
+        with self.engine.begin() as conn:
+            conn.execute(text("""CREATE TABLE service_health_states (service varchar PRIMARY KEY, status varchar,
+                reason_code varchar, reason text, down_since timestamp, last_failure_at timestamp,
+                last_success_at timestamp, failures_since_down integer NOT NULL DEFAULT 0,
+                backfill_pending boolean NOT NULL DEFAULT 0, updated_at timestamp)"""))
+            conn.execute(text("CREATE TABLE cost_records (id integer PRIMARY KEY, operation_kind varchar, "
+                              "created_at timestamp)"))
+        self.Session = sessionmaker(bind=self.engine, future=True, expire_on_commit=False)
+        self.case_id = uuid4()
+        with self.Session() as db:
+            self.tender = self._doc(db, "tender-award.pdf", "The tender for the depot closed on 3 May. The award "
+                                    "went to Northgate Ltd on 9 May.", pages=True)
+            self.receipt = self._doc(db, "receipt-0412.pdf", "Receipt: dinner for four, total 412.50, Northgate.")
+            self.scan = self._doc(db, "scan-no-text.jpg", None)
+            self.other = self._doc(db, "other-case.pdf", "tender award Northgate", case_id=uuid4())
+            db.commit()
+
+    def tearDown(self):
+        self.engine.dispose()
+        meaning_search._gap_cache.clear()
+
+    def _doc(self, db, name, content, *, pages=False, case_id=None, source_type=None):
+        evidence = EvidenceFile(id=uuid4(), case_id=case_id or self.case_id, original_filename=name,
+                                stored_path="/nonexistent/%s" % name, size=1, sha256="a" * 64, status="processed",
+                                source_type=source_type)
+        db.add(evidence)
+        if content is not None:
+            locations = [{"start_char": 0, "end_char": 40, "page_number": 1},
+                         {"start_char": 40, "end_char": len(content), "page_number": 2}] if pages else []
+            db.add(EvidenceDocumentText(evidence_file_id=evidence.id, content=content, content_sha256="b" * 64,
+                                        character_count=len(content), source_locations=locations))
+        return evidence
+
+    @contextmanager
+    def session(self):
+        with self.Session() as db:
+            yield db
+
+
+class WordSearchTests(Fixture):
+    def test_terms_drop_stopwords_and_keep_amounts(self):
+        self.assertEqual(meaning_search.search_terms("the tender and award dates")[0], ["tender", "award", "dates"])
+        self.assertEqual(meaning_search.search_terms("receipt for 412.50")[0], ["receipt", "412.50"])
+        many = " ".join("word%d" % i for i in range(12))
+        terms, not_searched = meaning_search.search_terms(many)
+        self.assertEqual(len(terms), meaning_search.MAX_TERMS)
+        self.assertEqual(len(not_searched), 12 - meaning_search.MAX_TERMS)  # stated, never dropped silently
+
+    def test_ranked_by_terms_held_paged_with_totals_and_case_scoped(self):
+        with self.Session() as db:
+            first = meaning_search.word_search_documents(db, case_id=self.case_id, query="tender Northgate",
+                                                         limit=1, offset=0)
+            second = meaning_search.word_search_documents(db, case_id=self.case_id, query="tender Northgate",
+                                                          limit=1, offset=1)
+        self.assertEqual(first["total_documents"], 2)  # the other case's document is never searched
+        self.assertEqual(first["documents"][0]["filename"], "tender-award.pdf")  # holds both terms
+        self.assertEqual(first["next_offset"], 1)
+        self.assertEqual(second["documents"][0]["filename"], "receipt-0412.pdf")
+        self.assertIsNone(second["next_offset"])
+        self.assertEqual((first["searchable_documents"], first["case_documents"]), (2, 3))
+
+
+class AgentSearchDocumentsTests(Fixture):
+    def _tools(self):
+        from services.agent.tools import AgentToolContext, make_agent_tools
+        context = AgentToolContext(case_id=str(self.case_id), ledger_session_factory=self.session)
+        return {tool.name: tool for tool in make_agent_tools(context)}
+
+    def test_quota_error_falls_back_to_word_search_and_says_so(self):
+        tools = self._tools()
+        with patch("services.agent.tools.get_vector_db_service", return_value=object()), patch(
+                "services.vector_db_service.get_vector_db_health", return_value={"available": True}), patch(
+                "services.embedding_service.embedding_service", QuotaEmbeddings()):
+            result = tools["search_documents"].invoke({"query": "the tender and award dates", "limit": 5})
+        self.assertEqual(result["status"], "success")
+        data = result["data"]
+        self.assertEqual(data["search"], "word")
+        self.assertEqual(data["note"], "Meaning search unavailable (%s); searched the words instead: 2 of 3 "
+                                       "documents searchable." % QUOTA_REASON)
+        self.assertTrue(result["summary"].startswith(data["note"]))
+        self.assertIn("1 document(s) have no stored text", result["summary"])
+        self.assertEqual({r["filename"] for r in data["results"]}, {"tender-award.pdf"})
+        self.assertTrue(all("not a meaning match" in r["match"] for r in data["results"]))
+        self.assertEqual(data["total"], 1)
+        self.assertIn(2, {r["page"] for r in data["results"]})  # "award" sits on page 2
+
+        # The run record names what was not meaning-searched.
+        from services.agent.run_record import call_facts, returned_items
+        from services.agent.run_record_export import _search_coverage_rows
+        facts = call_facts("search_documents", {"query": "x"}, result, None)
+        self.assertEqual(facts["search_coverage"]["search"], "word")
+        self.assertTrue(facts["available"])
+        items, _ = returned_items(data)
+        self.assertEqual({i["kind"] for i in items}, {"document"})
+        rows = _search_coverage_rows({"sequence": 1, "name": "search_documents",
+                                      "search_coverage": facts["search_coverage"]})
+        self.assertEqual([r["clipped by"] for r in rows], ["meaning search unavailable", "no stored text"])
+        self.assertIn("Nothing was meaning-searched", rows[0]["detail"])
+
+    def test_meaning_search_states_documents_without_a_vector(self):
+        class Collection:
+            def get(self, where, include, limit, offset):
+                if offset:
+                    return {"ids": [], "metadatas": []}
+                return {"ids": ["c1", "c2"], "metadatas": [
+                    {"case_id": where["case_id"], "evidence_file_id": str(tender_id), "ingestion_state": "active"},
+                    {"case_id": where["case_id"], "evidence_file_id": str(receipt_id), "ingestion_state": "draft"}]}
+
+        tender_id, receipt_id = self.tender.id, self.receipt.id
+
+        class Vectors:
+            chunk_collection = Collection()
+
+            def search_chunks(self, embedding, top_k, filter_metadata):
+                return [{"id": "c1", "text": "tender", "metadata": {"doc_name": "tender-award.pdf"},
+                         "distance": 0.2}]
+
+        class Embeddings:
+            def generate_embedding(self, text):
+                return [0.1]
+
+        tools = self._tools()
+        with patch("services.agent.tools.get_vector_db_service", return_value=Vectors()), patch(
+                "services.vector_db_service.get_vector_db_health", return_value={"available": True}), patch(
+                "services.embedding_service.embedding_service", Embeddings()):
+            result = tools["search_documents"].invoke({"query": "tender"})
+        self.assertEqual(result["data"]["search"], "meaning")
+        self.assertEqual(result["data"]["vector_gap"]["documents_without_vector"], 1)  # the draft is not searched
+        self.assertIn("1 of 2 documents with text in this case have no meaning-search vector", result["summary"])
+
+
+class ChatFallbackTests(Fixture):
+    def _rag(self):
+        from services.rag_service import RAGService
+        return RAGService.__new__(RAGService)
+
+    def test_embedding_error_gives_word_hits_never_a_silent_empty_context(self):
+        import services.rag_service as rag
+
+        class Vectors:
+            def count_chunks(self):
+                return 5
+
+        debug = {}
+        with patch.object(rag, "embedding_service", QuotaEmbeddings()), patch.object(
+                rag, "vector_db_service", Vectors()), patch.object(rag, "VECTOR_DB_AVAILABLE", True), patch(
+                "postgres.session.get_background_session", self.session):
+            chunks = self._rag()._retrieve_chunks("When was the tender award?", str(self.case_id), debug_log=debug)
+            context = self._rag()._build_context(chunks, [], {"selected_entities": []}, None, None) \
+                if hasattr(self._rag(), "_build_context") else None
+            sources = self._rag()._build_sources(chunks)
+        self.assertTrue(chunks)
+        self.assertEqual({c["metadata"]["doc_name"] for c in chunks}, {"tender-award.pdf"})
+        self.assertEqual(debug["chunk_search"]["source"], "word")
+        self.assertIn("Meaning search unavailable (%s); searched the words instead: 2 of 3 documents searchable."
+                      % QUOTA_REASON, debug["search_notes"])
+        self.assertEqual(sources[0]["filename"], "tender-award.pdf")
+        if context is not None:
+            self.assertIn("Found by word search", context if isinstance(context, str) else str(context))
+
+    def test_entity_search_falls_back_to_the_name_search(self):
+        import services.rag_service as rag
+
+        rag_service = self._rag()
+        searched = []
+
+        def search_nodes(term, limit, case_id):
+            searched.append(term)
+            return [{"key": "northgate-ltd"}] if term.lower() == "northgate" else []
+
+        debug = {}
+        with patch.object(rag, "embedding_service", QuotaEmbeddings()), patch.object(
+                rag, "VECTOR_DB_AVAILABLE", True), patch.object(rag, "ENTITY_SEARCH_ENABLED", True), patch(
+                "services.neo4j.graph_service.graph_service.search_nodes", side_effect=search_nodes), patch.object(
+                type(rag_service), "_get_entity_nodes_from_neo4j",
+                lambda self, keys, case_id=None: [{"key": k, "name": "Northgate Ltd"} for k in keys]):
+            entities = rag_service._retrieve_entities("Who is Northgate?", str(self.case_id), debug_log=debug)
+        self.assertEqual([e["key"] for e in entities], ["northgate-ltd"])
+        self.assertEqual(debug["entity_search"]["source"], "name")
+        self.assertIn("Entities were found by name instead of by meaning: 1 matched.", debug["search_notes"])
+
+
+class HealthTests(Fixture):
+    def test_down_since_the_first_failure_and_recovery_starts_the_backfill(self):
+        started = []
+        meaning_search._memo.update(status=None, checked_pending=False)
+        meaning_search.record_failure(QuotaError(QUOTA), session_factory=self.session)
+        with self.Session() as db:
+            first = db.execute(text("SELECT down_since FROM service_health_states")).scalar()
+        meaning_search.record_failure(QuotaError(QUOTA), session_factory=self.session)
+        with self.Session() as db:
+            health = meaning_search.health(db=db)
+        self.assertEqual(health["status"], "down")
+        self.assertEqual(health["reason"], QUOTA_REASON)
+        self.assertEqual(health["failures_since_down"], 2)
+        self.assertEqual(str(health["down_since"]).replace("T", " ")[:19], str(first).replace("T", " ")[:19])
+
+        meaning_search.record_success(session_factory=self.session, start_backfill=lambda: started.append(1))
+        with self.Session() as db:
+            health = meaning_search.health(db=db)
+        self.assertEqual(health["status"], "up")
+        self.assertIsNone(health["reason"])
+        self.assertTrue(health["backfill_pending"])
+        self.assertEqual(started, [1])
+        meaning_search._memo.update(status=None, checked_pending=False)
+
+    def test_ai_settings_reports_search_embeddings_down(self):
+        from routers import ai_settings
+
+        class Connection:
+            configured = True
+
+        down = {"status": "down", "reason": QUOTA_REASON, "down_since": "2026-11-04T05:00:00+00:00"}
+        with patch.object(ai_settings.credential_store, "get_connection", return_value=Connection()), patch.object(
+                meaning_search, "health", return_value=down):
+            services = ai_settings._supporting_services(None)
+        embeddings = next(s for s in services if s["id"] == "embeddings")
+        self.assertEqual(embeddings["status"], "down")
+        self.assertEqual(embeddings["health"]["reason"], QUOTA_REASON)
+
+
+class GapBackfillTests(Fixture):
+    def _patches(self):
+        import scripts.backfill_chunk_embeddings as backfill
+        return (patch.object(backfill, "get_background_session", self.session),
+                patch.object(backfill, "_find_graph_document", lambda f: {"id": str(f.id), "key": "",
+                                                                          "name": f.original_filename,
+                                                                          "case_id": str(f.case_id)}),
+                patch.object(backfill, "_set_vector_db_id", lambda doc_id: None))
+
+    def test_gap_documents_embedded_from_stored_text_one_at_a_time(self):
+        from scripts.backfill_chunk_embeddings import backfill_chunk_embeddings
+
+        class Store:
+            def __init__(self):
+                self.added = []
+
+                class Collection:
+                    def get(self, where, include):
+                        return {"ids": []}
+                self.chunk_collection = Collection()
+
+            def add_chunk(self, chunk_id, text, embedding, metadata):
+                self.added.append(metadata)
+
+        class Embeddings:
+            def generate_embedding(self, text):
+                return [0.5]
+
+        store = Store()
+        p1, p2, p3 = self._patches()
+        with p1, p2, p3:
+            result = backfill_chunk_embeddings(case_id=str(self.case_id), evidence_file_ids=[str(self.receipt.id)],
+                                               prefer_stored_text=True, stop_on_failure=True,
+                                               embedder=Embeddings(), vector_store=store)
+        self.assertEqual(result["stats"]["processed"], 1)
+        self.assertEqual({m["evidence_file_id"] for m in store.added}, {str(self.receipt.id)})  # only the gap
+        self.assertEqual(result["stats"]["file_not_found"], 0)  # stored text: no file read from disk
+
+    def test_quota_stops_the_backfill_with_nothing_half_stored(self):
+        from scripts.backfill_chunk_embeddings import backfill_chunk_embeddings
+
+        class Store:
+            added = []
+
+            class chunk_collection:  # noqa: N801 - the attribute name the backfill reads
+                @staticmethod
+                def get(where, include):
+                    return {"ids": []}
+
+            def add_chunk(self, **kwargs):
+                self.added.append(kwargs)
+
+        QuotaEmbeddings.calls = 0
+        p1, p2, p3 = self._patches()
+        with p1, p2, p3:
+            result = backfill_chunk_embeddings(case_id=str(self.case_id),
+                                               evidence_file_ids=[str(self.tender.id), str(self.receipt.id)],
+                                               prefer_stored_text=True, stop_on_failure=True,
+                                               embedder=QuotaEmbeddings(), vector_store=Store())
+        self.assertEqual(result["stopped"], QUOTA_REASON)
+        self.assertEqual(QuotaEmbeddings.calls, 1)  # one failed call, not one per document
+        self.assertEqual(Store.added, [])
+
+    def test_run_gap_backfill_keeps_pending_when_stopped_and_clears_it_when_done(self):
+        with self.engine.begin() as conn:
+            conn.execute(text("INSERT INTO service_health_states (service, status, backfill_pending) "
+                              "VALUES ('meaning_search', 'up', 1)"))
+        gap = lambda case_id, fresh: {"missing_evidence_file_ids": ["f1"]}  # noqa: E731
+        logged = []
+        stopped = meaning_search.run_gap_backfill(
+            case_ids=["c1", "c2"], gap=gap, session_factory=self.session, lock=False,
+            log=lambda level, msg: logged.append(msg),
+            backfill=lambda **kw: {"stopped": QUOTA_REASON, "stats": {}})
+        self.assertEqual(stopped["stopped"], QUOTA_REASON)
+        self.assertEqual(stopped["cases"], 1)  # stopped at the first case
+        with self.Session() as db:
+            self.assertTrue(db.execute(text("SELECT backfill_pending FROM service_health_states")).scalar())
+        calls = []
+        done = meaning_search.run_gap_backfill(
+            case_ids=["c1", "c2"], gap=gap, session_factory=self.session, lock=False, log=lambda *a: None,
+            backfill=lambda **kw: calls.append(kw) or {"stats": {"processed": 1, "total_chunks_created": 2}})
+        self.assertEqual((done["documents_embedded"], done["chunks"], done["stopped"]), (2, 4, None))
+        self.assertTrue(all(kw["prefer_stored_text"] and kw["stop_on_failure"] for kw in calls))
+        with self.Session() as db:
+            self.assertFalse(db.execute(text("SELECT backfill_pending FROM service_health_states")).scalar())
+
+
+if __name__ == "__main__":
+    unittest.main()

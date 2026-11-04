@@ -14,6 +14,16 @@ from services.ai_costs_service import CostOperationKind, get_current_ai_cost_con
 from services.cost_tracking_service import record_cost
 
 
+def _report_health(ok: bool, exc: Exception | None = None) -> None:
+    """Meaning-search health (services.meaning_search): whether the call worked, and since when it has not."""
+    try:
+        from services import meaning_search
+
+        meaning_search.report(ok, exc)
+    except Exception as health_error:  # a health record never changes the call's own outcome
+        print(f"[Embedding] Warning: could not record meaning-search health: {health_error}")
+
+
 class EmbeddingService:
     """Service for generating text embeddings."""
     
@@ -99,10 +109,12 @@ class EmbeddingService:
                         )
                 except Exception as tracking_error:
                     print(f"[Embedding] Warning: failed to record cost: {tracking_error}")
+            _report_health(True)
             return response.data[0].embedding
         
         except Exception as e:
             print(f"[Embedding] Error generating embedding: {e}")
+            _report_health(False, e)
             raise
     
     def generate_embeddings_batch(

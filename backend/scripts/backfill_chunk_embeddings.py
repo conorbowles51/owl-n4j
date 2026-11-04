@@ -64,13 +64,25 @@ def _resolve_path(stored_path: str | None) -> Path | None:
     return None
 
 
-def _load_evidence_files(case_id: str | None) -> list[EvidenceFile]:
+def _load_evidence_files(case_id: str | None, evidence_file_ids: list[str] | None = None) -> list[EvidenceFile]:
     case_uuid = _coerce_uuid(case_id)
     with get_background_session() as db:
         query = select(EvidenceFile).order_by(EvidenceFile.original_filename)
         if case_uuid:
             query = query.where(EvidenceFile.case_id == case_uuid)
+        if evidence_file_ids is not None:
+            wanted = [u for u in (_coerce_uuid(i) for i in evidence_file_ids) if u]
+            query = query.where(EvidenceFile.id.in_(wanted))
         return list(db.scalars(query).all())
+
+
+def _stored_text(file: EvidenceFile) -> str | None:
+    """The document text the case already holds (what word search reads), so no file is re-read from disk."""
+    from postgres.models.evidence import EvidenceDocumentText
+
+    with get_background_session() as db:
+        return db.scalar(select(EvidenceDocumentText.content)
+                         .where(EvidenceDocumentText.evidence_file_id == file.id))
 
 
 def _find_graph_document(file: EvidenceFile) -> dict[str, Any]:
@@ -131,19 +143,36 @@ def backfill_chunk_embeddings(
     case_id: Optional[str] = None,
     batch_size: int = 10,
     log_callback=None,
+    *,
+    evidence_file_ids: list[str] | None = None,
+    prefer_stored_text: bool = False,
+    stop_on_failure: bool = False,
+    pause_seconds: float = 0.0,
+    embedder=None,
+    vector_store=None,
 ) -> Dict[str, Any]:
     """
     Generate chunk-level embeddings from Postgres EvidenceFile rows.
+
+    ``evidence_file_ids``: only these files (the meaning-search gap backfill passes the documents with no vector).
+    ``prefer_stored_text``: embed the case's stored document text when it has one, else extract from the file.
+    ``stop_on_failure``: stop the whole run at the first embedding failure that would repeat on every call
+    (no credits, rate limit, key rejected, not connected); the result carries ``stopped`` with the reason.
+    ``pause_seconds``: wait between documents, so a long backfill stays light on a shared box.
     """
+    from services.meaning_search import STOP_CODES, describe_failure
+
+    embedding_service_ = embedder if embedder is not None else embedding_service
+    vector_db_service_ = vector_store if vector_store is not None else vector_db_service
     _log(log_callback, "info", "=" * 60)
     _log(log_callback, "info", "Backfilling chunk embeddings from Postgres evidence")
     _log(log_callback, "info", "=" * 60)
 
-    if embedding_service is None:
+    if embedding_service_ is None:
         _log(log_callback, "error", "Embedding service is not configured")
         return {"status": "error", "reason": "embedding_service_not_configured"}
 
-    if vector_db_service is None:
+    if vector_db_service_ is None:
         _log(log_callback, "error", "Vector database service is not configured")
         return {"status": "error", "reason": "vector_db_service_not_configured"}
 
@@ -151,7 +180,7 @@ def backfill_chunk_embeddings(
         _log(log_callback, "error", f"Invalid case_id: {case_id}")
         return {"status": "error", "reason": "invalid_case_id"}
 
-    files = _load_evidence_files(case_id)
+    files = _load_evidence_files(case_id, evidence_file_ids)
     if not files:
         _log(log_callback, "info", "No evidence files found")
         return {"status": "complete", "stats": {"total": 0, "processed": 0}}
@@ -183,7 +212,7 @@ def backfill_chunk_embeddings(
 
         if skip_existing:
             try:
-                existing_chunks = vector_db_service.chunk_collection.get(where={"doc_id": doc_id}, include=[])
+                existing_chunks = vector_db_service_.chunk_collection.get(where={"doc_id": doc_id}, include=[])
                 if existing_chunks and existing_chunks.get("ids"):
                     _log(
                         log_callback,
@@ -197,21 +226,27 @@ def backfill_chunk_embeddings(
 
         _log(log_callback, "info", f"[{index}/{stats['total']}] Processing {doc_name}")
 
-        file_path = _resolve_path(file.stored_path)
-        if file_path is None:
-            _log(log_callback, "warning", f"File not found on disk for {doc_name}")
-            stats["file_not_found"] += 1
-            stats["file_not_found_names"].append(doc_name)
-            continue
+        text = _stored_text(file) if prefer_stored_text else None
+        file_path = None
+        if text and text.strip():
+            source_suffix = Path(file.original_filename or "").suffix.lower().lstrip(".")
+        else:
+            file_path = _resolve_path(file.stored_path)
+            if file_path is None:
+                _log(log_callback, "warning", f"File not found on disk for {doc_name}")
+                stats["file_not_found"] += 1
+                stats["file_not_found_names"].append(doc_name)
+                continue
 
-        try:
-            text = extract_text_from_file(file_path)
-            if not text or not text.strip():
-                raise ValueError("text extraction returned no content")
-        except Exception as exc:
-            _log(log_callback, "error", f"Text extraction failed for {doc_name}: {exc}")
-            stats["extraction_failed"] += 1
-            continue
+            try:
+                text = extract_text_from_file(file_path)
+                if not text or not text.strip():
+                    raise ValueError("text extraction returned no content")
+            except Exception as exc:
+                _log(log_callback, "error", f"Text extraction failed for {doc_name}: {exc}")
+                stats["extraction_failed"] += 1
+                continue
+            source_suffix = file_path.suffix.lower().lstrip(".")
 
         try:
             chunks = chunk_document(text, doc_name)
@@ -229,20 +264,33 @@ def backfill_chunk_embeddings(
             continue
 
         chunks_stored = 0
+        stopped = None
+        prepared = []  # every chunk is embedded before any is stored, so a stop never leaves a half document
         for chunk_index, chunk_data in enumerate(chunks):
             chunk_text = str(chunk_data.get("text") or "")
             if not chunk_text.strip():
                 continue
 
             try:
-                embedding = embedding_service.generate_embedding(chunk_text)
+                embedding = embedding_service_.generate_embedding(chunk_text)
                 if not embedding:
                     raise ValueError("embedding service returned an empty vector")
             except Exception as exc:
                 stats["embedding_failed"] += 1
                 _log(log_callback, "error", f"Embedding failed for {doc_name} chunk {chunk_index}: {exc}")
+                code, reason = describe_failure(exc)
+                if stop_on_failure and code in STOP_CODES:
+                    stopped = reason
+                    break
                 continue
+            prepared.append((chunk_index, chunk_data, chunk_text, embedding))
 
+        if stopped:
+            _log(log_callback, "warning", f"Backfill stopped at {doc_name} (nothing of it stored): {stopped}")
+            return {"status": "stopped", "stopped": stopped, "stats": stats,
+                    "elapsed_seconds": time.time() - start_time}
+
+        for chunk_index, chunk_data, chunk_text, embedding in prepared:
             metadata = {
                 "doc_id": doc_id,
                 "doc_name": doc_name,
@@ -251,7 +299,7 @@ def backfill_chunk_embeddings(
                 "evidence_file_id": str(file.id),
                 "legacy_id": file.legacy_id or "",
                 "owner": file.owner or "",
-                "source_type": file.source_type or file_path.suffix.lower().lstrip(".") or "unknown",
+                "source_type": file.source_type or source_suffix or "unknown",
                 "chunk_index": chunk_index,
                 "total_chunks": len(chunks),
                 "page_start": chunk_data.get("page_start", -1) or -1,
@@ -259,7 +307,7 @@ def backfill_chunk_embeddings(
             }
 
             try:
-                vector_db_service.add_chunk(
+                vector_db_service_.add_chunk(
                     chunk_id=f"{doc_id}_chunk_{chunk_index}",
                     text=chunk_text,
                     embedding=embedding,
@@ -278,6 +326,8 @@ def backfill_chunk_embeddings(
         else:
             stats["failed"] += 1
             _log(log_callback, "error", f"No chunks stored for {doc_name}")
+        if pause_seconds:
+            time.sleep(pause_seconds)
 
         if index % batch_size == 0:
             elapsed = max(time.time() - start_time, 0.001)

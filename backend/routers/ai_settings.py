@@ -163,13 +163,23 @@ def _provider_usage(configuration: dict[str, dict[str, Any]]) -> dict[str, list[
 def _supporting_services(db: Session) -> list[dict[str, Any]]:
     openai_ready = credential_store.get_connection(db, "openai").configured
     embedding_provider = "openai" if EMBEDDING_PROVIDER == "openai" else "local"
+    from services import meaning_search
+
+    # The last calls decide, not only whether a key is saved: on live the key was saved while every call failed
+    # with 429 insufficient quota (lx-docsearch E).
+    meaning = meaning_search.health(db=db)
+    embeddings_status = "ready" if embedding_provider != "openai" or openai_ready else "needs_key"
+    if embeddings_status == "ready" and meaning.get("status") == "down":
+        embeddings_status = "down"
     return [
         {
             "id": "embeddings",
             "label": "Search embeddings",
             "provider": embedding_provider,
-            "status": "ready" if embedding_provider != "openai" or openai_ready else "needs_key",
-            "description": "Powers semantic evidence and entity search.",
+            "status": embeddings_status,
+            "description": "Powers semantic evidence and entity search. When it is down, searches use the "
+                           "words instead and say so.",
+            "health": meaning,
         },
         {
             "id": "transcription",

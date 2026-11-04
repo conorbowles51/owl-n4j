@@ -145,6 +145,7 @@ def load_record(db, run) -> dict[str, Any]:
             "reason": facts.get("reason") or call.error,
             "reason_code": facts.get("reason_code"), "not_in_case": facts.get("not_in_case"),
             "withheld": facts.get("withheld"), "exclusions": facts.get("exclusions"),
+            "search_coverage": facts.get("search_coverage"),
             "items_not_listed": facts.get("items_not_listed") or 0,
             "items_without_id": facts.get("items_without_id") or 0,
             "recorded": call.record_facts is not None,
@@ -243,6 +244,32 @@ def strategy_rows(record: dict[str, Any]) -> dict[str, Any]:
             "searches": searches, "exclusions": exclusions}
 
 
+def _search_coverage_rows(call: dict[str, Any]) -> list[dict[str, Any]]:
+    """What a document search did not meaning-search (lx-docsearch): the word fallback, documents without text,
+    documents without a vector."""
+    cov = call.get("search_coverage") or {}
+    rows = []
+    if cov.get("search") == "word":
+        rows.append({"#": call["sequence"], "tool": call["name"], "clipped by": "meaning search unavailable",
+                     "items": cov.get("case_documents") or "",
+                     "detail": "%s Nothing was meaning-searched; the hits are literal word matches." % cov.get("note")})
+        if cov.get("documents_without_text"):
+            rows.append({"#": call["sequence"], "tool": call["name"], "clipped by": "no stored text",
+                         "items": cov["documents_without_text"],
+                         "detail": "Documents with no stored text: neither meaning- nor word-searched."})
+        if cov.get("terms_not_searched"):
+            rows.append({"#": call["sequence"], "tool": call["name"], "clipped by": "term limit",
+                         "items": len(cov["terms_not_searched"]),
+                         "detail": "Terms not searched: %s" % ", ".join(cov["terms_not_searched"])})
+    elif cov.get("search") == "meaning" and cov.get("documents_without_vector"):
+        rows.append({"#": call["sequence"], "tool": call["name"], "clipped by": "no meaning-search vector",
+                     "items": cov["documents_without_vector"], "detail": cov.get("note") or ""})
+    elif cov.get("search") is None and cov.get("note"):
+        rows.append({"#": call["sequence"], "tool": call["name"], "clipped by": "document search failed",
+                     "items": "", "detail": cov["note"]})
+    return rows
+
+
 def not_examined_rows(record: dict[str, Any], *, material: dict[str, dict[str, Any]],
                       phone_types: list[dict[str, Any]]) -> dict[str, Any]:
     searched = {c["category"] for c in record["calls"] if c["category"] and c["available"]}
@@ -280,6 +307,8 @@ def not_examined_rows(record: dict[str, Any], *, material: dict[str, dict[str, A
                             "items": c["items_without_id"],
                             "detail": "Returned entries with no identifier the record can follow (rows of a "
                                       "custom query, groups, summaries): whether each was used is not known."})
+    for c in record["calls"]:
+        clipped.extend(_search_coverage_rows(c))
     for call in record.get("unrun_tool_calls") or []:
         clipped.append({"#": "", "tool": call.get("name"), "clipped by": "tool budget",
                         "items": "", "detail": "Asked for but not run (%s of %s tool calls used): %s" % (

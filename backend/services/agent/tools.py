@@ -171,6 +171,7 @@ class PathArgs(BaseModel):
 class SearchDocumentsArgs(BaseModel):
     query: str = Field(..., min_length=1)
     limit: int = Field(8, ge=1, le=20)
+    offset: int = Field(0, ge=0, description="Next page of documents (the result's next_offset).")
 
 
 class ReadonlyCypherArgs(BaseModel):
@@ -1915,38 +1916,43 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             summary=f"Found {len(paths)} shortest path(s) between {source_key} and {target_key}.",
         )
 
-    def search_documents(query: str, limit: int = 8) -> dict[str, Any]:
+    def search_documents(query: str, limit: int = 8, offset: int = 0) -> dict[str, Any]:
         if context.significant_scope:
             return scope_error("search_documents", "Case-wide document search")
+        from services import meaning_search
         from services.vector_db_service import get_vector_db_health
 
         health = get_vector_db_health()
         vector_db = get_vector_db_service()
-        if vector_db is None:
-            reason = health.get("reason") or "Vector document search is not configured."
-            return context.result(
-                "search_documents",
-                {"available": False, "health": health, "chunks": []},
-                summary=f"Vector document search is unavailable: {reason}",
-                status="error",
-                error=str(reason),
-            )
         from services.embedding_service import embedding_service
-        if embedding_service is None:
-            return context.result(
-                "search_documents",
-                {"available": False, "health": health, "chunks": []},
-                summary="Vector document search is unavailable: embedding service is not configured.",
-                status="error",
-                error="Embedding service is not configured.",
-            )
-
-        embedding = embedding_service.generate_embedding(query)
-        chunks = vector_db.search_chunks(
-            embedding,
-            top_k=limit,
-            filter_metadata={"case_id": context.case_id},
-        )
+        failure: tuple[str, str] | None = None
+        chunks: list[dict[str, Any]] = []
+        if vector_db is None:
+            failure = ("vector_store", "the vector store is not available: %s"
+                       % (health.get("reason") or "not configured"))
+        elif embedding_service is None:
+            failure = ("not_configured", "the search service (OpenAI) is not configured")
+        else:
+            try:
+                embedding = embedding_service.generate_embedding(query)
+                chunks = vector_db.search_chunks(
+                    embedding,
+                    top_k=offset + limit,
+                    filter_metadata={"case_id": context.case_id},
+                )
+            except Exception as exc:  # noqa: BLE001 - every failure falls back to the words (lx-docsearch 1)
+                logger.warning("Meaning search failed for case %s: %s", context.case_id, exc)
+                failure = meaning_search.describe_failure(exc)
+        collection = getattr(vector_db, "chunk_collection", None) if vector_db is not None else None
+        gap = None
+        if collection is not None:
+            try:
+                with (context.ledger_session_factory or _financial_session)() as gap_db:
+                    gap = meaning_search.vector_gap(context.case_id, db=gap_db, collection=collection)
+            except Exception:  # noqa: BLE001 - the gap sentence then says it could not be measured
+                logger.exception("Vector gap could not be measured for case %s", context.case_id)
+        if failure is not None:
+            return word_search_documents_result(query, limit, offset, failure, gap)
         compact = [
             {
                 "id": chunk.get("id"),
@@ -1954,13 +1960,80 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "metadata": chunk.get("metadata") or {},
                 "distance": chunk.get("distance"),
             }
-            for chunk in chunks
+            for chunk in chunks[offset:offset + limit]
         ]
+        gap_note = meaning_search.gap_sentence(gap)
+        coverage = {"search": "meaning", "note": gap_note,
+                    "documents_without_vector": (gap or {}).get("documents_without_vector"),
+                    "documents_with_text": (gap or {}).get("documents_with_text")}
         return context.result(
             "search_documents",
-            {"available": True, "health": health, "chunks": compact, "count": len(compact)},
-            summary=f"Found {len(compact)} semantically similar document chunk(s).",
+            {"available": True, "search": "meaning", "health": health, "chunks": compact, "count": len(compact),
+             "offset": offset, "vector_gap": meaning_search.public_gap(gap), "search_coverage": coverage},
+            summary=f"Found {len(compact)} semantically similar document chunk(s)."
+            + (f" {gap_note}" if gap_note else ""),
         )
+
+    def word_search_documents_result(query: str, limit: int, offset: int, failure: tuple[str, str],
+                                     gap: dict[str, Any] | None) -> dict[str, Any]:
+        """Meaning search failed: the query's words, through the case word search, said so (lx-docsearch 1, 2)."""
+        from services import meaning_search
+        code, reason = failure
+        try:
+            with (context.ledger_session_factory or _financial_session)() as db:
+                found = meaning_search.word_search_documents(db, case_id=context.case_id, query=query,
+                                                             limit=limit, offset=offset)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Word search fallback failed for case %s", context.case_id)
+            message = ("Meaning search unavailable (%s), and the word search could not run either (%s). "
+                       "No document was searched." % (reason, type(exc).__name__))
+            return context.result(
+                "search_documents",
+                {"available": False, "reason": message, "reason_code": code, "chunks": [],
+                 "search_coverage": {"search": None, "note": message, "meaning_reason": reason}},
+                summary=message, status="error", error=message)
+        note = meaning_search.fallback_note(reason, searchable_documents=found["searchable_documents"],
+                                            case_documents=found["case_documents"])
+        results = []
+        for doc in found["documents"]:
+            for match in doc["matches"]:
+                results.append({k: v for k, v in {
+                    "evidence_file_id": doc["evidence_file_id"], "filename": doc["filename"],
+                    "page": match.get("page_number"), "record_uid": match.get("record_uid"),
+                    "location": match.get("location_label"), "folder_path": doc.get("folder_path"),
+                    "match": "word (literal), not a meaning match", "matched": match.get("term"),
+                    "snippet": sanitize_text(match.get("snippet")),
+                    "document_word_hits": doc["total_matches"],
+                    "document_terms_matched": doc["terms_matched"],
+                    "document_phrase_matched": doc["phrase_matched"]}.items() if v is not None})
+        not_searched = found["case_documents"] - found["searchable_documents"]
+        extra = []
+        if not_searched > 0:
+            extra.append("%d document(s) have no stored text and were not searched." % not_searched)
+        if found["terms_not_searched"]:
+            extra.append("Terms not searched (over %d): %s." % (meaning_search.MAX_TERMS,
+                                                                 ", ".join(found["terms_not_searched"])))
+        coverage = {"search": "word", "note": note, "meaning_reason": reason, "meaning_reason_code": code,
+                    "case_documents": found["case_documents"],
+                    "searchable_documents": found["searchable_documents"],
+                    "documents_without_text": max(0, not_searched),
+                    "terms_not_searched": found["terms_not_searched"],
+                    "documents_without_vector": (gap or {}).get("documents_without_vector")}
+        data = {
+            "available": True, "search": "word", "note": note,
+            "meaning_search": {"available": False, "reason": reason, "reason_code": code},
+            "query": query, "terms_searched": found["terms_searched"], "phrase_searched": found["phrase_searched"],
+            "terms_not_searched": found["terms_not_searched"],
+            "case_documents": found["case_documents"], "searchable_documents": found["searchable_documents"],
+            "total": found["total_documents"], "returned": found["returned_documents"], "offset": offset,
+            "next_offset": found["next_offset"], "results": results,
+            "vector_gap": meaning_search.public_gap(gap), "search_coverage": coverage,
+        }
+        summary = "%s %d document(s) hold the words; %d returned%s. %s" % (
+            note, found["total_documents"], found["returned_documents"],
+            "" if found["next_offset"] is None else " (next page: offset %d)" % found["next_offset"],
+            " ".join(extra)) + " Word hits are literal matches, not meaning matches."
+        return context.result("search_documents", data, summary=" ".join(summary.split()))
 
     def run_cypher(query: str, params: dict[str, Any] | None = None, limit: int = 50) -> dict[str, Any]:
         if context.significant_scope:
@@ -2780,7 +2853,10 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
         wrap(
             search_documents,
             name="search_documents",
-            description="Semantic search over ingested document chunks for the current case.",
+            description=("Search the current case's documents: by meaning when the meaning-search service answers, "
+                         "otherwise by the query's words (the result's 'search' and 'note' say which ran; word hits "
+                         "are literal matches, never meaning matches; say so when you use them). Paged: pass "
+                         "next_offset for more."),
             args_schema=SearchDocumentsArgs,
         ),
         wrap(

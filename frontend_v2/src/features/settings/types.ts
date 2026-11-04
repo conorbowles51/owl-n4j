@@ -18,8 +18,20 @@ export interface AISupportingService {
   id: string
   label: string
   provider: string
-  status: "ready" | "needs_key"
+  status: "ready" | "needs_key" | "down"
   description: string
+  /** Meaning search only: the state its last calls left (up, down with why and since when). */
+  health?: AIServiceHealth
+}
+
+export interface AIServiceHealth {
+  status: "up" | "down" | "unknown"
+  reason?: string | null
+  down_since?: string | null
+  last_failure_at?: string | null
+  last_success_at?: string | null
+  failures_since_down?: number
+  backfill_pending?: boolean
 }
 
 export interface AISettings {

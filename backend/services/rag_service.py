@@ -10,6 +10,7 @@ Handles:
 """
 
 import json
+import re
 import sys
 import time
 from contextvars import ContextVar
@@ -38,6 +39,13 @@ except (ImportError, ValueError, AttributeError):
     VECTOR_DB_AVAILABLE = False
     vector_db_service = None
     embedding_service = None
+
+
+def _document_key(file_name: str) -> str:
+    """The graph's document key for a file name (the same rule as the evidence engine's normalize_document_key)."""
+    key = re.sub(r"[\s_]+", "-", str(file_name).strip().lower())
+    key = re.sub(r"[^a-z0-9\-]", "", key)
+    return re.sub(r"-+", "-", key).strip("-")
 
 
 class RAGService:
@@ -627,6 +635,92 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         debug_log: Optional[Dict] = None,
         strict_doc_scope: bool = False,
     ) -> List[Dict]:
+        """Chunks by meaning; when meaning search fails, by the question's words, and the answer says so
+        (lx-docsearch decision 1). Never a silent empty context."""
+        from services import meaning_search
+        try:
+            found = self._retrieve_chunks_by_meaning(
+                question, case_id, doc_keys=doc_keys, confidence_threshold=confidence_threshold,
+                debug_log=debug_log, strict_doc_scope=strict_doc_scope)
+        except Exception as exc:
+            return self._retrieve_chunks_by_words(question, case_id, doc_keys=doc_keys, debug_log=debug_log,
+                                                  strict_doc_scope=strict_doc_scope,
+                                                  failure=meaning_search.describe_failure(exc))
+        collection = getattr(vector_db_service, "chunk_collection", None) if VECTOR_DB_AVAILABLE else None
+        if case_id and debug_log is not None and collection is not None:
+            note = meaning_search.gap_sentence(meaning_search.vector_gap(case_id, collection=collection))
+            if note:
+                debug_log.setdefault("search_notes", []).append(note)
+        return found
+
+    def _retrieve_chunks_by_words(
+        self,
+        question: str,
+        case_id: Optional[str],
+        *,
+        doc_keys: Optional[List[str]],
+        debug_log: Optional[Dict],
+        strict_doc_scope: bool,
+        failure: tuple,
+    ) -> List[Dict]:
+        from services import meaning_search
+        code, reason = failure
+        if not case_id:
+            return []
+        try:
+            from postgres.session import get_background_session
+            with get_background_session() as db:
+                found = meaning_search.word_search_documents(
+                    db, case_id=case_id, query=question, limit=CHUNK_SEARCH_TOP_K, offset=0, snippet_context=600)
+        except Exception as exc:
+            note = ("Meaning search unavailable (%s), and the word search could not run either (%s); no document "
+                    "text was searched for this answer." % (reason, type(exc).__name__))
+            print(f"[RAG] Word search fallback error: {exc}")
+            if debug_log is not None:
+                debug_log["chunk_search"] = {"enabled": True, "source": "none", "error": str(exc)[:300],
+                                             "meaning_error": reason}
+                debug_log.setdefault("search_notes", []).append(note)
+            return []
+        if doc_keys and strict_doc_scope:
+            wanted = set(doc_keys)
+            found["documents"] = [d for d in found["documents"]
+                                  if _document_key(d["filename"]) in wanted]
+        elif strict_doc_scope:
+            found["documents"] = []
+        chunks = meaning_search.word_hit_chunks(found)
+        if doc_keys and not strict_doc_scope:
+            wanted = set(doc_keys)
+            for chunk in chunks:
+                chunk["_doc_scoped"] = _document_key(chunk["metadata"].get("doc_name") or "") in wanted
+            chunks.sort(key=lambda c: not c.get("_doc_scoped"))
+        note = meaning_search.fallback_note(reason, searchable_documents=found["searchable_documents"],
+                                            case_documents=found["case_documents"])
+        print(f"[RAG] {note} {found['total_documents']} document(s) matched; {len(chunks)} hit(s) used")
+        if debug_log is not None:
+            debug_log["chunk_search"] = {
+                "enabled": True, "source": "word", "meaning_error": reason, "meaning_error_code": code,
+                "terms_searched": found["terms_searched"], "phrase_searched": found["phrase_searched"],
+                "terms_not_searched": found["terms_not_searched"],
+                "total_documents": found["total_documents"], "returned_documents": found["returned_documents"],
+                "total_results": len(chunks), "filtered_results": len(chunks),
+                "case_documents": found["case_documents"], "searchable_documents": found["searchable_documents"],
+            }
+            notes = debug_log.setdefault("search_notes", [])
+            notes.append(note)
+            if found["total_documents"] > found["returned_documents"]:
+                notes.append("%d documents hold the words; the answer read the first %d."
+                             % (found["total_documents"], found["returned_documents"]))
+        return chunks
+
+    def _retrieve_chunks_by_meaning(
+        self,
+        question: str,
+        case_id: Optional[str] = None,
+        doc_keys: Optional[List[str]] = None,
+        confidence_threshold: Optional[float] = None,
+        debug_log: Optional[Dict] = None,
+        strict_doc_scope: bool = False,
+    ) -> List[Dict]:
         """
         Retrieve relevant text chunks via vector search.
         Falls back to document-level search if chunks collection is empty.
@@ -639,9 +733,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             List of result dicts with: id, text, metadata, distance
         """
         if not VECTOR_DB_AVAILABLE:
-            if debug_log is not None:
-                debug_log["chunk_search"] = {"enabled": False, "reason": "Vector DB not available"}
-            return []
+            raise RuntimeError("the vector store is not available")
 
         try:
             print("[RAG] Generating chunk embedding..."); sys.stdout.flush()
@@ -763,9 +855,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             print(f"[RAG] Chunk search error: {e}")
             import traceback
             traceback.print_exc()
-            if debug_log is not None:
-                debug_log["chunk_search"] = {"enabled": True, "error": str(e)}
-            return []
+            raise
 
     def _retrieve_entities(
         self,
@@ -802,7 +892,11 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
 
         try:
             print("[RAG] Generating entity embedding..."); sys.stdout.flush()
-            query_embedding = embedding_service.generate_embedding(question)
+            try:
+                query_embedding = embedding_service.generate_embedding(question)
+            except Exception as exc:
+                return self._retrieve_entities_by_name(question, case_id, top_k=top_k, debug_log=debug_log,
+                                                       allowed_entity_keys=allowed_entity_keys, exc=exc)
             print("[RAG] Entity embedding done"); sys.stdout.flush()
 
             # Enforce case_id isolation — never search without it
@@ -863,6 +957,30 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             if debug_log is not None:
                 debug_log["entity_search"] = {"enabled": True, "error": str(e)}
             return []
+
+    def _retrieve_entities_by_name(self, question, case_id, *, top_k, debug_log, allowed_entity_keys, exc):
+        """Meaning search failed: entities by the existing graph name search, and the answer says so."""
+        from services import meaning_search
+        code, reason = meaning_search.describe_failure(exc)
+        if not case_id:
+            return []
+        keys = meaning_search.word_search_entity_keys(question, case_id=case_id, limit=top_k)
+        if allowed_entity_keys is not None:
+            allowed = set(allowed_entity_keys)
+            keys = [k for k in keys if k in allowed]
+        keys = keys[:top_k]
+        entities = self._get_entity_nodes_from_neo4j(keys, case_id=case_id) if keys else []
+        for entity in entities:
+            entity["distance"] = 1.0
+            entity["_name_match"] = True
+        note = "Entities were found by name instead of by meaning: %d matched." % len(entities)
+        if debug_log is not None:
+            debug_log["entity_search"] = {"enabled": True, "source": "name", "meaning_error": reason,
+                                          "meaning_error_code": code, "vector_results": 0,
+                                          "enriched_entities": len(entities),
+                                          "entity_keys": [e.get("key") for e in entities[:20]]}
+            debug_log.setdefault("search_notes", []).append(note)
+        return entities
 
     def _traverse_graph(
         self,
@@ -995,6 +1113,9 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 lines.append(f"--- Passage {i}: {doc_name}{page_info}{doc_marker} ---")
                 if distance is not None:
                     lines.append(f"Relevance: {1 - distance:.4f}")
+                if chunk.get("_word_match"):
+                    lines.append("Found by word search (literal match for '%s'), not by meaning."
+                                 % metadata.get("matched_term", ""))
                 lines.append(chunk.get("text", ""))
                 lines.append("")
             section_text = "\n".join(lines)
@@ -2360,9 +2481,14 @@ Only include candidates with score >= 5."""
         used_node_keys = [e.get("key") for e in entity_results if e.get("key")]
 
         sources = self._build_sources(chunk_results)
+        search_notes = list(dict.fromkeys(debug_log.get("search_notes") or []))
+        if search_notes and answer:
+            # Which search ran is part of the answer, not only the debug log (lx-docsearch C).
+            answer = answer.rstrip() + "\n\n" + "\n".join("_%s_" % n for n in search_notes)
 
         return {
             "answer": answer,
+            "search_notes": search_notes,
             "context_mode": context_mode,
             "context_description": context_description,
             "cypher_used": cypher_context is not None,

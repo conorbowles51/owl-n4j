@@ -44,7 +44,7 @@ import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/cn"
 import { aiSettingsAPI } from "../api"
 import type { AIWorkloadModelChainEntry, LLMModel } from "@/types/evidence.types"
-import type { AIProviderConnection, AISettings } from "../types"
+import type { AIProviderConnection, AISettings, AIServiceHealth } from "../types"
 import { SettingsNav } from "./SettingsNav"
 
 function ProviderLogo({ provider }: { provider: string }) {
@@ -135,6 +135,23 @@ function statusLabel(provider: AIProviderConnection) {
   if (provider.status === "unavailable") return "Connection issue"
   if (provider.status === "invalid") return "Key rejected"
   return "API key needed"
+}
+
+function formatWhen(value?: string | null) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })
+}
+
+function serviceDownSentence(health: AIServiceHealth) {
+  const parts = [`Down: ${health.reason || "its last call failed"}.`]
+  const since = formatWhen(health.down_since)
+  if (since) parts.push(`Failing since ${since}${health.failures_since_down ? ` (${health.failures_since_down} failed calls)` : ""}.`)
+  const ok = formatWhen(health.last_success_at)
+  parts.push(ok ? `Last call that worked: ${ok}.` : "No call that worked is recorded.")
+  parts.push("Document searches use the words instead and say so.")
+  return parts.join(" ")
 }
 
 function providerDisplay(provider: string) {
@@ -603,13 +620,18 @@ export function AISettingsPage() {
                         <div>
                           <p className="text-xs font-medium">{service.label}</p>
                           <p className="mt-0.5 text-[10px] text-muted-foreground">{service.description}</p>
+                          {service.status === "down" && service.health ? (
+                            <p className="mt-1 text-[10px] text-status-warning" data-testid={`service-down-${service.id}`}>
+                              {serviceDownSentence(service.health)}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                       <div className="shrink-0 text-right">
                         <p className="text-[10px] font-medium">{providerDisplay(service.provider)}</p>
                         <p className={cn("mt-0.5 flex items-center justify-end gap-1 text-[9px]", service.status === "ready" ? "text-emerald-600" : "text-status-warning")}>
                           {service.status === "ready" ? <Check className="size-3" /> : <AlertTriangle className="size-3" />}
-                          {service.status === "ready" ? "Ready" : "Needs key"}
+                          {service.status === "ready" ? "Ready" : service.status === "down" ? "Down" : "Needs key"}
                         </p>
                       </div>
                     </div>

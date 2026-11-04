@@ -120,6 +120,34 @@ describe("AISettingsPage", () => {
     expect(screen.queryByText(/ollama/i)).not.toBeInTheDocument()
   })
 
+  it("says Search embeddings is down, why, and since when, instead of Ready", async () => {
+    api.get.mockResolvedValue({
+      ...settings,
+      supporting_services: [
+        {
+          id: "embeddings", label: "Search embeddings", provider: "openai", status: "down", description: "Semantic search",
+          health: {
+            status: "down",
+            reason: "the search service (OpenAI) has no credits left: 429 insufficient quota",
+            down_since: "2026-11-04T05:10:00+00:00",
+            last_success_at: "2026-10-27T18:42:49+00:00",
+            failures_since_down: 3,
+          },
+        },
+        settings.supporting_services[1],
+      ],
+    })
+    render(<MemoryRouter><AISettingsPage /></MemoryRouter>)
+
+    const line = await screen.findByTestId("service-down-embeddings")
+    expect(line).toHaveTextContent("Down: the search service (OpenAI) has no credits left: 429 insufficient quota.")
+    expect(line).toHaveTextContent("Failing since")
+    expect(line).toHaveTextContent("(3 failed calls)")
+    expect(line).toHaveTextContent("Last call that worked:")
+    expect(line).toHaveTextContent("Document searches use the words instead and say so.")
+    expect(screen.getByText("Down")).toBeInTheDocument()
+  })
+
   it("submits a new key once and never renders it back", async () => {
     render(<MemoryRouter><AISettingsPage /></MemoryRouter>)
     await screen.findByText("Provider connections")

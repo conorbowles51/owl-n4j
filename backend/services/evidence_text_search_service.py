@@ -41,15 +41,16 @@ def _clean_boundary(content: str, proposed: int, *, left: bool) -> int:
     return preceding_space[-1].start() if preceding_space else proposed
 
 
-def _snippet(content: str, match_start: int, match_end: int) -> tuple[str, int, int]:
+def _snippet(content: str, match_start: int, match_end: int,
+             context: int = SNIPPET_CONTEXT_CHARACTERS) -> tuple[str, int, int]:
     snippet_start = _clean_boundary(
         content,
-        max(0, match_start - SNIPPET_CONTEXT_CHARACTERS),
+        max(0, match_start - context),
         left=True,
     )
     snippet_end = _clean_boundary(
         content,
-        min(len(content), match_end + SNIPPET_CONTEXT_CHARACTERS),
+        min(len(content), match_end + context),
         left=False,
     )
     snippet_start = min(snippet_start, match_start)
@@ -93,8 +94,9 @@ def _hit(
     locations: list[dict[str, Any]] | None,
     start: int,
     end: int,
+    context: int = SNIPPET_CONTEXT_CHARACTERS,
 ) -> dict[str, Any]:
-    snippet, highlight_start, highlight_end = _snippet(content, start, end)
+    snippet, highlight_start, highlight_end = _snippet(content, start, end, context)
     location = _location_for_match(locations, start)
     return {
         "id": f"{evidence_id}:{start}:{end}",
@@ -145,7 +147,13 @@ def search_case_text(
     query: str,
     document_limit: int,
     document_offset: int,
+    snippet_context: int = SNIPPET_CONTEXT_CHARACTERS,
+    evidence_ids: list[UUID] | None = None,
 ) -> dict[str, Any]:
+    """Every document of the case whose text holds ``query`` literally (case-insensitive), paged by document.
+    ``snippet_context``: characters of text kept either side of each hit (the meaning-search fallback asks for more,
+    so an answer can be written from the hit). ``evidence_ids``: only these documents are read (the meaning-search
+    fallback ranks with ``matching_documents`` first and reads only the page it returns)."""
     started = time.perf_counter()
     lowered_query = query.lower()
     like_pattern = f"%{_escaped_like_value(lowered_query)}%"
@@ -174,6 +182,7 @@ def search_case_text(
         .where(
             EvidenceFile.case_id == case_id,
             func.lower(EvidenceDocumentText.content).like(like_pattern, escape="\\"),
+            *([EvidenceFile.id.in_(list(evidence_ids))] if evidence_ids is not None else []),
         )
         .order_by(func.lower(EvidenceFile.original_filename), EvidenceFile.id)
     ).all()
@@ -198,7 +207,7 @@ def search_case_text(
                 "shown_matches": len(preview),
                 "matches_truncated": len(occurrences) > len(preview),
                 "matches": [
-                    _hit(row.id, row.content, row.source_locations, start, end)
+                    _hit(row.id, row.content, row.source_locations, start, end, snippet_context)
                     for start, end in preview
                 ],
             }
@@ -229,6 +238,22 @@ def search_case_text(
         len(page),
     )
     return result
+
+
+def matching_documents(db: Session, *, case_id: UUID, query: str) -> list[tuple[UUID, str, int]]:
+    """(id, file name, literal occurrences) of every case document whose text holds ``query``, counted in the
+    database: no document text is loaded (on live BNB2, 3,239 texts / 58.6 M characters: 4 s for a term held by
+    2,358 documents, against 80 s loading them)."""
+    lowered_query = query.lower()
+    like_pattern = f"%{_escaped_like_value(lowered_query)}%"
+    lowered = func.lower(EvidenceDocumentText.content)
+    occurrences = (func.length(lowered) - func.length(func.replace(lowered, lowered_query, ""))) / max(
+        1, len(lowered_query))
+    return [(row[0], row[1], int(row[2] or 0)) for row in db.execute(
+        select(EvidenceFile.id, EvidenceFile.original_filename, occurrences)
+        .join(EvidenceDocumentText, EvidenceDocumentText.evidence_file_id == EvidenceFile.id)
+        .where(EvidenceFile.case_id == case_id, lowered.like(like_pattern, escape="\\"))
+    ).all()]
 
 
 def search_document_text(

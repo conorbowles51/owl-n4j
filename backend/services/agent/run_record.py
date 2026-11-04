@@ -361,6 +361,8 @@ def call_facts(name: str | None, args: dict[str, Any] | None, output: dict[str, 
         "reason_code": d.get("reason_code"),
         "not_in_case": bool(d.get("not_in_case")),
         "withheld": d.get("withheld"),
+        # Which document search ran (meaning or word) and what it could not reach (lx-docsearch).
+        "search_coverage": d.get("search_coverage") if isinstance(d.get("search_coverage"), dict) else None,
         "exclusions": exclusions,
         "list_lengths": lengths,
         "items": listed,
@@ -545,6 +547,7 @@ def apply_facts(record, facts: dict[str, Any]) -> None:
     record.model_paging = facts.get("model_paging") or None
     record.record_facts = {k: facts.get(k) for k in ("schema", "category", "available", "reason", "reason_code",
                                                      "not_in_case", "withheld", "exclusions", "list_lengths",
+                                                     "search_coverage",
                                                      "items_not_listed", "items_without_id", "offset",
                                                      "result_id")}
 
