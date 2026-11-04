@@ -1,4 +1,4 @@
-## 4 November: phone registry admin page (cb-registry-admin, 02 3.4 and 6.8), eb0584fa
+## 4 November: phone registry admin page (cb-registry-admin, 02 3.4 and 6.8), 765bd03e
 
 - **Admin > Phone registry** (`frontend_v2/src/features/admin/components/PhoneRegistryPage.tsx`, words and calls in
   `features/admin/phone-registry.ts`). Flags tab: state buttons with true counts, pages of 100 with the range and

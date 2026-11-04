@@ -292,7 +292,7 @@ Every transition writes a `phone_schema_flag_events` row before the state change
 `POST /api/phones/registry/flags/{id}/transition {"to", "reason"}`; admin role only, because the registry is
 global (the role check reuses the existing admin dependency used by `routers/admin_ai_costs.py`).
 
-**Built (cb-registry-admin, eb0584fa):** Admin > Phone registry lists the flags by state with each state's true
+**Built (cb-registry-admin, 765bd03e):** Admin > Phone registry lists the flags by state with each state's true
 count, a page of at most 200 (default 100) with "Showing a to b of n", the transitions above (each with a typed
 reason), what each flag is about and the phone that raised it, linked. The list endpoint takes `limit` and `offset`
 and returns `total` and `counts` on every page. The backlog of `mapping_needed` flags is shown on each phone's
@@ -784,7 +784,7 @@ For each extraction and each reviewed `type` mapping whose `applies_to` occurs i
 5. Case corrections appear in the admin list as proposals: each `correct_phone_reading` decision writes a
    `phone_mapping_proposals` row with `origin = case_correction` and its `decision_id`. Only an admin turns
    one into a global change, through steps 3 and 4. The admin list also holds registry flags (3.4).
-   **Built (cb-registry-admin, eb0584fa):** `GET /api/phones/registry/proposals?state=&origin=` (paged, total and
+   **Built (cb-registry-admin, 765bd03e):** `GET /api/phones/registry/proposals?state=&origin=` (paged, total and
    per-state counts; case, original reading beside the correction, deciding person),
    `POST /registry/proposals/{id}/reject {reason}` and `GET /registry/proposals/{id}/export` (admin only).
    State changes go to `phone_mapping_proposal_events`, written before the state changes. The AI draft endpoint
