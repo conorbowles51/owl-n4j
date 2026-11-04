@@ -403,8 +403,10 @@ describe("FinancialPage", () => {
 
   // This journey renders every retained tab repeatedly and checks the original file input.
   // It is one journey on purpose: the same input element has to survive every switch.
-  // Measured on the shared deploy box: 41.5 s run alone, 252 s in a full run under load
-  // (the unit project's 300 s budget, vitest.config.ts).
+  // Measured on the shared deploy box: 41.5 s run alone, 252 s in a full run under load. On 4 Nov it took 129 s
+  // alone at load 26-32 and ran past 300 s (the unit project's budget) alone and in its file at load 39-48, with
+  // the same result on the code before and after the ledger-mock change. The 900 s budget is a hang guard; nothing
+  // here asserts time.
   it("retains the selected PDF when switching financial tabs and transaction modes", () => {
     graphWithRows()
     renderPage()
@@ -474,7 +476,7 @@ describe("FinancialPage", () => {
     )
     expect(screen.getByLabelText("PDF document")).toBe(input)
     expect(input.files?.[0]).toBe(file)
-  })
+  }, 900_000)
 
   it("mounts the ledger panel in the ledger tab", () => {
     graphWithRows()
