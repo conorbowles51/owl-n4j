@@ -75,7 +75,9 @@ import {
   type DossierLink,
   type DossierInterview,
 } from "../api"
-import { useDossier, useDossierMutation } from "../hooks"
+import { dossierKeys, useDossier, useDossierMutation } from "../hooks"
+import { useQueryClient } from "@tanstack/react-query"
+import { RemovedFromDossier } from "./RemovedFromDossier"
 import { DossierEvidencePicker } from "./DossierEvidencePicker"
 import { EvidenceImage } from "./EvidenceImage"
 import { WorkspaceAIPanel } from "@/features/workspace-ai/components/WorkspaceAIPanel"
@@ -615,7 +617,13 @@ export function DossierDetailSheet({
       toast.error("Failed to load source file")
     }
   }
-  const refresh = () => void query.refetch()
+  const queryClient = useQueryClient()
+  const refresh = () => {
+    void query.refetch()
+    void queryClient.invalidateQueries({
+      queryKey: dossierKeys.removed(dossierId ?? ""),
+    })
+  }
   const moveMedia = async (from: number, to: number) => {
     if (!dossier?.media || to < 0 || to >= dossier.media.length) return
     const ordered = [...dossier.media]
@@ -1258,6 +1266,11 @@ export function DossierDetailSheet({
                 />
               </TabsContent>
             </Tabs>
+            <RemovedFromDossier
+              caseId={caseId}
+              dossierId={dossier.id}
+              canEdit={canEdit}
+            />
             {detailsOpen && (
               <EditDossierDialog
                 dossier={dossier}
@@ -1399,7 +1412,8 @@ export function DossierDetailSheet({
           <DialogHeader>
             <DialogTitle>Remove interview from dossier?</DialogTitle>
             <DialogDescription>
-              The interview entry and its working notes will be removed.
+              The interview entry and its working notes will be removed. A
+              copy is kept: put it back from Removed from this dossier.
               Original evidence files and accepted assessments remain saved.
             </DialogDescription>
           </DialogHeader>

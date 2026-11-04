@@ -1,5 +1,21 @@
 import { fetchAPI } from "@/lib/api-client"
 
+/** A removal kept so it can be undone (backend services/removed_records). */
+export interface RemovedRecord {
+  id: string
+  kind:
+    | "dossier_assessment"
+    | "dossier_interview"
+    | "dossier_media"
+    | "dossier_link"
+    | "dossier_evidence_link"
+  subject_id: string
+  label?: string | null
+  removed_by?: string | null
+  removed_at?: string | null
+  restored_at?: string | null
+  dossier_id?: string | null
+}
 export interface DossierRole {
   id: string
   name: string
@@ -320,5 +336,14 @@ export const dossiersAPI = {
     fetchAPI<void>(
       `/api/dossiers/${encodeURIComponent(id)}/interviews/${encodeURIComponent(interviewId)}`,
       { method: "DELETE" }
+    ),
+  removed: (caseId: string, id: string) =>
+    fetchAPI<{ items: RemovedRecord[]; clipped?: string }>(
+      `/api/cases/${encodeURIComponent(caseId)}/removed-records?dossier_id=${encodeURIComponent(id)}`
+    ),
+  putBack: (caseId: string, removedId: string) =>
+    fetchAPI<RemovedRecord>(
+      `/api/cases/${encodeURIComponent(caseId)}/removed-records/${encodeURIComponent(removedId)}/restore`,
+      { method: "POST" }
     ),
 }

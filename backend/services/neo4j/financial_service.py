@@ -723,7 +723,10 @@ class FinancialService:
                     key=parent_key, case_id=case_id,
                 )
 
-            return {"success": True, "child_key": child_key, "parent_key": parent_key}
+            # before/after: the manual-change record keeps the link removed, so it can be put back with the link
+            # route (followups m11032229063349).
+            return {"success": True, "child_key": child_key, "parent_key": parent_key,
+                    "before": {"parent_transaction_key": parent_key}, "after": {"parent_transaction_key": None}}
 
     def get_transaction_children(self, parent_key: str, case_id: str) -> list:
         """Get all child sub-transactions for a parent."""

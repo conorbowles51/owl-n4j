@@ -1939,7 +1939,19 @@ def delete_node(
             db, case_id=UUID(case_id), entity_key=node_key,
         ))
         if permanent:
-            result = neo4j_service.delete_node(node_key, case_id=case_id)
+            # Through the recycle bin and its purge, so the entity's snapshot is kept and the purge can be
+            # undone (followups m11032229063349: a bare DETACH DELETE kept nothing).
+            result = neo4j_service.soft_delete_entity(
+                node_key=node_key,
+                case_id=case_id,
+                deleted_by=user.get("username", "unknown"),
+                reason="permanent_delete",
+                db=db,
+            )
+            if result.get("recycle_key"):
+                result["purged"] = neo4j_service.permanently_delete_recycled(
+                    result["recycle_key"], case_id, db=db, purged_by=user.get("username", "unknown"),
+                ).get("permanently_deleted")
             action = "Node Permanently Deleted"
         else:
             result = neo4j_service.soft_delete_entity(
@@ -2341,6 +2353,33 @@ def permanently_delete_recycled(
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/recycle-bin/{recycle_key}/unpurge")
+def return_purged_to_bin(
+    recycle_key: str,
+    case_id: str = Query(..., description="Case ID"),
+    user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Undo a permanent delete: the entity, from its kept snapshot, is back in the recycle bin."""
+    from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
+    try:
+        check_case_access(db, UUID(case_id), current_user, required_permission=("case", "edit"))
+    except (CaseNotFound, ValueError):
+        raise HTTPException(status_code=404, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(status_code=403, detail="Access denied - case.edit permission required")
+    try:
+        result = neo4j_service.return_purged_to_bin(recycle_key, case_id, db=db)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    system_log_service.log(
+        log_type=LogType.GRAPH_OPERATION, origin=LogOrigin.FRONTEND, action="Purged Entity Returned to Recycle Bin",
+        details={"recycle_key": recycle_key, "case_id": case_id}, user=user.get("username", "unknown"), success=True,
+    )
+    return result
 
 
 # --- Geocoding endpoints ---

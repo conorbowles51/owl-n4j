@@ -24,7 +24,7 @@ from services import dossier_service
 
 from tests.test_dossier_service import TABLES as DOSSIER_TABLES
 
-TABLES = DOSSIER_TABLES + [ActivityEvent.__table__, CollectionMembership.__table__]
+TABLES = list(dict.fromkeys(DOSSIER_TABLES + [ActivityEvent.__table__, CollectionMembership.__table__]))
 
 
 @pytest.fixture()

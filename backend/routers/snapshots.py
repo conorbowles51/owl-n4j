@@ -76,6 +76,39 @@ class SnapshotResponse(BaseModel):
     case_name: Optional[str] = None  # Associated case name
 
 
+def _own_removed(db, user):
+    from postgres.models.removed_record import RemovedRecord
+    from sqlalchemy import select
+    rows = db.scalars(select(RemovedRecord).where(RemovedRecord.kind == "snapshot", RemovedRecord.restored_at.is_(None))
+                      .order_by(RemovedRecord.removed_at.desc())).all()
+    return [r for r in rows if ((r.data or {}).get("rows") or [{}])[0].get("values", {}).get("owner") == user["username"]]
+
+
+@router.get("/removed")
+def list_removed_snapshots(user: dict = Depends(get_current_user)):
+    """The person's own removed snapshots that can be put back (followups m11032229063349)."""
+    from postgres.session import _get_session_local
+    from services import removed_records
+    with _get_session_local()() as db:
+        return {"items": [removed_records.as_dict(r) for r in _own_removed(db, user)]}
+
+
+@router.post("/removed/{removed_id}/restore")
+def restore_removed_snapshot(removed_id: str, user: dict = Depends(get_current_user)):
+    """Put a removed snapshot back exactly as it was. Only its owner may."""
+    from postgres.session import _get_session_local
+    from services import removed_records
+    with _get_session_local()() as db:
+        if removed_id not in {str(r.id) for r in _own_removed(db, user)}:
+            raise HTTPException(status_code=404, detail="Removed snapshot not found")
+        try:
+            out = removed_records.restore(db, removed_records.load(db, removed_id), user=user)
+        except removed_records.RemovedRecordError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc))
+        db.commit()
+        return out
+
+
 @router.post("", response_model=SnapshotResponse)
 def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_current_user)):
     """
@@ -233,7 +266,7 @@ def delete_snapshot(snapshot_id: str, user: dict = Depends(get_current_user)):
     if snapshot_data is None or snapshot_data.get("owner") != user["username"]:
         raise HTTPException(status_code=404, detail="Snapshot not found")
 
-    if not snapshot_storage.delete(snapshot_id):
+    if not snapshot_storage.delete(snapshot_id, removed_by=user):
         raise HTTPException(status_code=404, detail="Snapshot not found")
 
     return {"status": "deleted", "id": snapshot_id}
@@ -256,7 +289,7 @@ def delete_all_snapshots(user: dict = Depends(get_current_user)):
     deleted_count = 0
     for snapshot_id in user_snapshot_ids:
         try:
-            if snapshot_storage.delete(snapshot_id):
+            if snapshot_storage.delete(snapshot_id, removed_by=user):
                 deleted_count += 1
         except Exception as e:
             print(f"Error deleting snapshot {snapshot_id}: {e}")

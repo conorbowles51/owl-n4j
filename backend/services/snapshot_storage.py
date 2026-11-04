@@ -144,19 +144,35 @@ class SnapshotStorage:
                 record.snapshot_timestamp = _truncate(snapshot_copy.get("timestamp"), 64)
                 session.flush()
 
-    def delete(self, snapshot_id: str, *, db: Session | None = None) -> bool:
-        """Delete a snapshot. Returns True if deleted, False if not found."""
+    def delete(self, snapshot_id: str, *, db: Session | None = None, removed_by=None) -> bool:
+        """Delete a snapshot. Returns True if deleted, False if not found. A copy is kept first (removed_records),
+        so its owner can put it back (followups m11032229063349)."""
         with self._lock:
             with self._session_scope(db) as session:
                 record = session.get(SnapshotRecord, snapshot_id)
                 if record is None:
                     return False
+                from services import removed_records
+                removed_records.keep(session, kind="snapshot", case_id=_existing_case(session, record.case_id),
+                                     subject_id=record.id, label=record.name, rows=[record],
+                                     user=removed_by or {"username": record.owner})
                 session.delete(record)
                 session.flush()
                 return True
 
     def reload(self) -> None:
         """Compatibility no-op: Postgres is queried directly for every call."""
+
+
+def _existing_case(session: Session, case_id):
+    """The snapshot's case when it is a case that exists (a snapshot's case id is free text)."""
+    import uuid
+    from postgres.models.case import Case
+    try:
+        value = uuid.UUID(str(case_id))
+    except (TypeError, ValueError):
+        return None
+    return value if session.get(Case, value) is not None else None
 
 
 snapshot_storage = SnapshotStorage()

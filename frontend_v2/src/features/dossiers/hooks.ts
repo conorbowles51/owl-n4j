@@ -7,6 +7,7 @@ export const dossierKeys = {
   list: (params: { caseId: string } & Record<string, unknown>) =>
     ["dossiers", "list", params.caseId, params] as const,
   detail: (id: string) => ["dossiers", "detail", id] as const,
+  removed: (id: string) => ["dossiers", "removed", id] as const,
 }
 
 export function useDossiers(params: Parameters<typeof dossiersAPI.list>[0]) {
@@ -32,7 +33,10 @@ function useRefresh(caseId: string, id?: string) {
       client.invalidateQueries({ queryKey: ["significant", caseId] }),
       client.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
       ...(id
-        ? [client.invalidateQueries({ queryKey: dossierKeys.detail(id) })]
+        ? [
+            client.invalidateQueries({ queryKey: dossierKeys.detail(id) }),
+            client.invalidateQueries({ queryKey: dossierKeys.removed(id) }),
+          ]
         : []),
     ])
 }

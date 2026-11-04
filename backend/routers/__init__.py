@@ -18,6 +18,7 @@ from routers.profiles import router as profiles_router
 from routers.filesystem import router as filesystem_router
 from routers.chat_history import router as chat_history_router
 from routers.system_logs import router as system_logs_router
+from routers.removed_records import router as removed_records_router
 from routers.backfill import router as backfill_router
 from routers.database import router as database_router
 from routers.llm_config import router as llm_config_router
@@ -66,6 +67,7 @@ __all__ = [
     "filesystem_router",
     "chat_history_router",
     "system_logs_router",
+    "removed_records_router",
     "backfill_router",
     "database_router",
     "llm_config_router",

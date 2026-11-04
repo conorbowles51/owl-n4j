@@ -1453,8 +1453,9 @@ class EntityService:
 
         original_key = item.original_key
         original_name = item.original_name
+        # The snapshot is kept: it is the last copy of the entity, and a purge can be undone
+        # (return_purged_to_bin). The bin shows active items only (followups m11032229063349).
         item.status = "purged"
-        item.snapshot = None
         db.commit()
 
         return {
@@ -1465,6 +1466,28 @@ class EntityService:
                 "name": original_name,
             },
         }
+
+    def return_purged_to_bin(self, recycle_key: str, case_id: str, db: Session = None) -> Dict[str, Any]:
+        """Undo a purge: the item, with its kept snapshot, is back in the recycle bin, where it can be restored."""
+        if db is None:
+            raise ValueError("db session is required for recycle-bin operations")
+        item = (
+            db.query(GraphRecycleBinItem)
+            .filter(
+                GraphRecycleBinItem.recycle_key == recycle_key,
+                GraphRecycleBinItem.case_id == self._case_uuid(case_id),
+                GraphRecycleBinItem.status == "purged",
+            )
+            .one_or_none()
+        )
+        if not item:
+            raise ValueError(f"Purged entity not found: {recycle_key}")
+        if not item.snapshot:
+            raise ValueError("This entity was purged before copies were kept; it cannot be returned.")
+        item.status = "active"
+        db.commit()
+        return {"success": True, "returned": {"recycle_key": recycle_key, "original_key": item.original_key,
+                                              "name": item.original_name}}
 
     def get_case_entity_summary(self, case_id: str) -> list:
         """Get a structured summary of all key entities in a case."""

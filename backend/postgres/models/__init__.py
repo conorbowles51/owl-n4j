@@ -177,3 +177,5 @@ from postgres.models.phone_derived import PhoneDerivedText
 __all__ += ["PhoneDerivedText"]
 from postgres.models.agent_proposals import AgentProposalSourceOpen, ProceedsCalculation
 __all__ += ["AgentProposalSourceOpen", "ProceedsCalculation"]
+from postgres.models.removed_record import RemovedRecord
+__all__ += ["RemovedRecord"]

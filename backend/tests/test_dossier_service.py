@@ -13,6 +13,8 @@ from postgres.base import Base
 from postgres.models.case import Case
 from postgres.models.case_deadline import CaseDeadline
 from postgres.models.case_profile import CaseProfile
+from postgres.models.collection_membership import CollectionMembership
+from postgres.models.removed_record import RemovedRecord
 from postgres.models.dossier import (
     DossierAssessment, DossierAssessmentLink, DossierGeneratedOutput,
     DossierInterview, DossierInterviewEvidenceLink, DossierLegacyMapping,
@@ -33,6 +35,7 @@ TABLES = [
     DossierAssessment.__table__, DossierAssessmentLink.__table__, DossierMedia.__table__,
     DossierInterview.__table__, DossierInterviewEvidenceLink.__table__,
     DossierGeneratedOutput.__table__, DossierLegacyMapping.__table__,
+    RemovedRecord.__table__, CollectionMembership.__table__,
 ]
 
 

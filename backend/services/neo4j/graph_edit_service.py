@@ -543,13 +543,19 @@ class GraphEditService:
         case_id: str,
         edited_by: str | None = None,
     ) -> dict[str, Any]:
-        return self.update_node(
+        result = self.update_node(
             node_key,
             case_id=case_id,
             properties={field: None for field in LOCATION_PROPERTY_KEYS},
             edited_by=edited_by,
             source_view="map",
         )
+        # The values removed are kept in the manual-change record (one per field), so the location can be set
+        # back (followups m11032229063349: they were nulled with no copy).
+        changes = result.get("changes") or {}
+        result["before"] = {field: change.get("before") for field, change in changes.items()}
+        result["after"] = {field: change.get("after") for field, change in changes.items()}
+        return result
 
     def batch_update_entities(
         self,

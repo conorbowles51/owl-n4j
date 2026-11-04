@@ -724,6 +724,13 @@ def remove_link(db: Session, *, dossier_id: uuid.UUID, link_id: uuid.UUID, user:
     if link is None:
         raise DossierNotFound("Link not found")
     details = {"link_id": str(link.id), "target_type": link.target_type, "target_id": link.target_id}
+    from postgres.models.collection_membership import CollectionMembership
+    from services import removed_records
+    members = db.scalars(select(CollectionMembership).where(CollectionMembership.link_id == link.id)).all()
+    kept = removed_records.keep(db, kind="dossier_link", case_id=dossier.case_id, subject_id=link.id,
+                                label=link.label or f"{link.target_type} {link.target_id}", rows=[link, *members],
+                                user=user)
+    details["removed_record_id"] = str(kept.id)
     if link.target_type == "phone_selection":
         from services import collection_index
 
@@ -794,6 +801,13 @@ def remove_evidence_link(
     user: User,
 ) -> dict[str, Any]:
     dossier = _write(db, dossier_id, user)
+    from services import removed_records
+    rows = db.scalars(select(DossierLink).where(
+        DossierLink.dossier_id == dossier.id, DossierLink.target_type == "evidence",
+        DossierLink.target_id == str(evidence_file_id))).all()
+    if rows:
+        removed_records.keep(db, kind="dossier_evidence_link", case_id=dossier.case_id, subject_id=evidence_file_id,
+                             label=rows[0].label or "Evidence link", rows=rows, user=user)
     db.execute(
         delete(DossierLink).where(
             DossierLink.dossier_id == dossier.id,
@@ -901,6 +915,13 @@ def delete_assessment(db: Session, *, dossier_id: uuid.UUID, assessment_id: uuid
     dossier = _write(db, dossier_id, user)
     assessment = db.scalar(select(DossierAssessment).where(DossierAssessment.id == assessment_id, DossierAssessment.dossier_id == dossier.id))
     if assessment is None: raise DossierNotFound("Assessment not found")
+    from services import removed_records
+    links = db.scalars(select(DossierAssessmentLink).where(DossierAssessmentLink.assessment_id == assessment.id)).all()
+    removed_records.keep(db, kind="dossier_assessment", case_id=dossier.case_id, subject_id=assessment.id,
+                         label=f"{assessment.category}: {(assessment.content or '')[:200]}", rows=[assessment, *links],
+                         user=user)
+    for link in links:  # what the foreign key cascade removes, removed explicitly (the copy holds exactly these)
+        db.delete(link)
     db.delete(assessment); db.commit()
 
 
@@ -994,6 +1015,9 @@ def delete_media(db: Session, *, dossier_id: uuid.UUID, media_id: uuid.UUID, use
     dossier = _write(db, dossier_id, user)
     item = db.scalar(select(DossierMedia).where(DossierMedia.id == media_id, DossierMedia.dossier_id == dossier.id))
     if item is None: raise DossierNotFound("Dossier media not found")
+    from services import removed_records
+    removed_records.keep(db, kind="dossier_media", case_id=dossier.case_id, subject_id=item.id,
+                         label=getattr(item, "caption", None) or "Media item", rows=[item], user=user)
     db.delete(item); db.commit()
 
 
@@ -1130,6 +1154,13 @@ def delete_interview(db: Session, *, dossier_id: uuid.UUID, interview_id: uuid.U
     dossier = _write(db, dossier_id, user)
     item = db.scalar(select(DossierInterview).where(DossierInterview.id == interview_id, DossierInterview.dossier_id == dossier.id))
     if item is None: raise DossierNotFound("Interview not found")
+    from services import removed_records
+    links = db.scalars(select(DossierInterviewEvidenceLink).where(DossierInterviewEvidenceLink.interview_id == item.id)).all()
+    removed_records.keep(db, kind="dossier_interview", case_id=dossier.case_id, subject_id=item.id,
+                         label=f"Interview {item.date_value or (item.interview_date.date().isoformat() if item.interview_date else '')}".strip(),
+                         rows=[item, *links], user=user)
+    for link in links:  # what the foreign key cascade removes, removed explicitly (the copy holds exactly these)
+        db.delete(link)
     db.delete(item); db.commit()
 
 
