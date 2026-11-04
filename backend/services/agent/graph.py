@@ -159,7 +159,7 @@ _PHONE_PROMPT = """Phones (extraction reports of the case's phones):
 - A phone shows what was on the phone, not who used it. Places are where a phone recorded itself, with the stated accuracy. A money reading from a phone is a lead, never a statement: it does not change or replace a ledger row.
 - Phone records are sent to the AI provider in full for this answer; say so in one line at the end when you used a phone tool.
 - Phones and money together: search_case finds words, names and numbers in every group; get_person_phones lists a person's numbers and accounts; get_day_activity reads one day; get_together_apart, get_routine_deviations and get_phone_map_summary read places; get_analysis_results reads the phone analyses; evaluate_statement checks a statement a person confirmed and gives the check's outcome, which you report and never change.
-- For any "between A and B" question use get_contact_and_money_between: its money is the ledger's verified rows per currency with p3 beside them, and you never add totals yourself. Phone alerts that match ledger rows come from get_money_signal_matches, and accounts or months the ledger lacks from get_money_signal_leads (alerts are listed, never totalled). Link each payment with the path in its financial_href field, as for the ledger tools, and phone records by rec://.
+- For any "between A and B" question use get_contact_and_money_between: its money is the ledger's verified rows per currency with p3 beside them, and you never add totals yourself. Phone alerts that match ledger rows come from get_money_signal_matches: mention every pairing it returns with its strength (strong, moderate, weak or faint) and its reasons, list weak and faint ones as weak or faint rather than dropping them, state the search bound and what it left out when the tool says so, and say for each whether a person confirmed it or the rule found it (never call a rule-found pairing confirmed; rejected pairings are not matches and are not counted); and accounts or months the ledger lacks from get_money_signal_leads (alerts are listed, never totalled). Link each payment with the path in its financial_href field, as for the ledger tools, and phone records by rec://.
 - Who controlled an account: use draft_control_claim and present its claim as "had the means to operate", with every strand for and against and the note that strands from one handset are not independent. Never say a person is an account's holder.
 - What a payment was for: read get_payment_conversation, then record your reading with draft_payment_purpose (consistent, different, or discussed but purpose not stated), quoting the messages by rec://. When the tool says no conversation in the window, report that and its reason. Label both as "model drafted, not confirmed" until a person confirms them.
 - A place is an investigative location, not cell-site opinion. A card payment places a card, not a person, at a terminal.
@@ -219,7 +219,11 @@ _FINAL_ANSWER_SYSTEM_PROMPT = (
     "comes only from get_money_between (or get_contact_and_money_between for people on the phones) and graph TRANSFERRED_TO amounts are never summed; use a corrected row's corrected value and give its original value; never add p4 or "
     "excluded rows into a total. Keep ledger-row links (the path in each row's financial_href) and document links "
     "(doc://filename/page) as Markdown links; never write the word financial_href in the answer. If any tool result was shown in part (_paging) and not read in full, say the answer covers "
-    "<returned> of <total> for that result."
+    "<returned> of <total> for that result. "
+    "For phone alerts matched to payments, mention every pairing returned with its strength (strong, moderate, weak "
+    "or faint) and its reasons, listing weak and faint ones as such rather than dropping them; state the search bound "
+    "and what it left out when the result gives them; say for each pairing whether a person confirmed it or the rule "
+    "found it, never call a rule-found pairing confirmed, and leave rejected pairings out of every count."
 )
 
 

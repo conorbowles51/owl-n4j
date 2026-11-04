@@ -9,6 +9,8 @@ import { CollectBar } from "@/features/pattern/components/CollectBar"
 import { moneyAPI, type AnalysisDecisionKind, type AnalysisResult, type AnalysisRun } from "./money-api"
 import { DECISION_WORDS } from "./decision-words"
 import { amountWords } from "./money-words"
+import { LevelBadge, MoneyPairings } from "./MoneyPairings"
+import { usePermissions } from "@/hooks/use-permissions"
 
 /**
  * Approach 1, money signals on the phone (05 section 4), in the shared results layout (05 section 3.9, AP-1): what it
@@ -128,7 +130,7 @@ function Behind({ caseId, result }: { caseId: string; result: AnalysisResult }) 
   )
 }
 
-function ReadingRow({ caseId, r, onChanged }: { caseId: string; r: AnalysisResult; onChanged: () => void }) {
+function ReadingRow({ caseId, r, canEdit, onChanged }: { caseId: string; r: AnalysisResult; canEdit: boolean; onChanged: () => void }) {
   const [open, setOpen] = useState(false)
   const m = r.measures
   const when = m.event_instant ? instantWords(m.event_instant, m.device_zone || "UTC") : "Time not recorded"
@@ -143,6 +145,7 @@ function ReadingRow({ caseId, r, onChanged }: { caseId: string; r: AnalysisResul
         {r.kind === "money_reading" && <span className="text-xs text-muted-foreground">{m.source} on {m.phone_label}, {when}. From the phone, not a statement.</span>}
         <span className="text-xs">{STRENGTH_WORDS[r.strength] || r.strength}</span>
         {r.decision && <span className="text-xs">{DECISION_WORDS[r.decision] ?? r.decision}</span>}
+        {r.kind === "money_reading" && m.best_level && <span className="text-xs">Best match: <LevelBadge level={m.best_level} /></span>}
       </div>
       {r.kind === "money_reading" && (
         <p className="text-xs">
@@ -151,6 +154,10 @@ function ReadingRow({ caseId, r, onChanged }: { caseId: string; r: AnalysisResul
           {m.institution && ` ${m.institution.name}.`}
           {m.account_ref && ` Account ${m.account_ref}.`}
         </p>
+      )}
+      {r.kind === "money_reading" && m.record_uid && (
+        <MoneyPairings caseId={caseId} recordUid={m.record_uid} fieldPath={m.field_path ?? ""} pairings={m.pairings ?? []}
+          leftOut={m.pairings_left_out_words} canEdit={canEdit} onChanged={onChanged} />
       )}
       {r.kind === "account_lead" && <p className="text-xs">{m.sentence}</p>}
       {open && (
@@ -174,6 +181,8 @@ export default function MoneySignalsPage() {
   const [strength, setStrength] = useState("")
   const [offset, setOffset] = useState(0)
   const presence = useFinancialPresence(caseId)
+  const { canEdit } = usePermissions(caseId)
+  const orphaned = useQuery({ queryKey: ["money-orphaned", caseId], queryFn: () => moneyAPI.orphaned(caseId), enabled: !!caseId })
   const runs = useQuery({ queryKey: ["money-runs", caseId], queryFn: () => moneyAPI.runs(caseId), enabled: !!caseId })
   const coverage = useQuery({ queryKey: ["money-coverage", caseId], queryFn: () => moneyAPI.coverage(caseId), enabled: !!caseId })
   useEffect(() => {
@@ -198,6 +207,21 @@ export default function MoneySignalsPage() {
   })
   const total = results.data?.total ?? 0
   const shown = results.data?.items.length ?? 0
+  const items = results.data?.items || []
+  const pairCounts = { strong: 0, moderate: 0, weak: 0, faint: 0, confirmed: 0, rejected: 0 }
+  let oldRun = false
+  for (const it of items) {
+    const c = it.measures.pair_counts
+    if (it.kind === "money_reading" && !it.measures.pairings && it.measures.outcome && it.measures.outcome !== "not_tested") oldRun = true
+    if (!c) continue
+    for (const k of ["strong", "moderate", "weak", "faint"] as const) pairCounts[k] += c.by_level[k] ?? 0
+    pairCounts.confirmed += c.confirmed
+    pairCounts.rejected += c.rejected
+  }
+  const changed = () => {
+    qc.invalidateQueries({ queryKey: ["money-results", caseId] })
+    qc.invalidateQueries({ queryKey: ["money-orphaned", caseId] })
+  }
   return (
     <div className="space-y-4 p-4" data-testid="money-signals-page">
       <h1 className="text-lg font-semibold">Money on the phones</h1>
@@ -227,11 +251,34 @@ export default function MoneySignalsPage() {
             {shown < total ? `, showing ${(offset + 1).toLocaleString("en-US")} to ${(offset + shown).toLocaleString("en-US")}` : ""}.
           </p>
         )}
+        {done && kind === "money_reading" && (
+          <div className="space-y-1 text-sm" data-testid="match-summary">
+            <p data-testid="pair-summary">
+              Matches with payments{shown < total ? " on this page" : ""}: strong {pairCounts.strong}, moderate {pairCounts.moderate}, weak {pairCounts.weak}, faint {pairCounts.faint}.
+              {" "}{pairCounts.confirmed} confirmed by a person; {pairCounts.rejected} rejected by a person and not counted. The rest are found by the rule and not confirmed.
+            </p>
+            {orphaned.data?.search && <p className="text-xs text-muted-foreground" data-testid="search-bound">{orphaned.data.search}</p>}
+            {oldRun && <p className="text-xs" role="status">The last run was made before match strengths were added. Run again to list every payment that could match, with its strength.</p>}
+          </div>
+        )}
         <ul className="space-y-2">
-          {(results.data?.items || []).map((r) => (
-            <ReadingRow key={r.id} caseId={caseId} r={r} onChanged={() => qc.invalidateQueries({ queryKey: ["money-results", caseId] })} />
+          {items.map((r) => (
+            <ReadingRow key={r.id} caseId={caseId} r={r} canEdit={canEdit} onChanged={changed} />
           ))}
         </ul>
+        {kind === "money_reading" && (orphaned.data?.items.length ?? 0) > 0 && (
+          <section aria-label="Decided matches the rule no longer finds" className="space-y-1 text-sm" data-testid="orphaned">
+            <p className="font-medium">Decided matches whose phone reading the last run no longer holds</p>
+            <ul className="space-y-1 text-xs">
+              {orphaned.data!.items.map((o) => (
+                <li key={`${o.record_uid}|${o.transaction_id}`}>
+                  <Link className="underline" to={`/cases/${caseId}/records/${o.record_uid}`}>Phone record</Link>{" and "}
+                  <Link className="underline" to={`/cases/${caseId}/financial?view=transactions&payment=${o.transaction_id}`}>payment {o.pair.ref_id ?? ""}</Link>: {o.decision_words}.
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {done && (offset > 0 || offset + shown < total) && (
           <div className="flex gap-2">
             <Button size="sm" variant="outline" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 100))}>Earlier</Button>

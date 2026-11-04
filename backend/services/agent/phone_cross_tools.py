@@ -464,42 +464,120 @@ def _last_run(conn, case_id, code):
 
 
 MATCHED = ("corroborated", "near_amount", "several_candidates")
+LEVELS = ("strong", "moderate", "weak", "faint")
 
 
-def money_signal_matches(conn, case_id, *, outcome=None, offset=0, limit=DEFAULT_LIMIT) -> dict:
-    """Approach 1's readings that answer a ledger row (corroborated, near amount, or several candidates), each with
-    the row it links to (``txn://``) and the alert (``rec://``). Wraps ``phone_money_readings``; a reading stays p4,
-    the row's class is unchanged."""
+def _pair_out(p):
+    """One candidate payment of a reading, as the matches screen shows it (05 4.3.8)."""
+    from services.phone import link_edges
+    status = ("rejected by a person" if p.get("decision") == "rejected" else
+              "confirmed by a person" if p.get("decision") == "confirmed" else "found by the rule, not confirmed")
+    return {"payment": p["transaction_id"], "txn": _txn(p["transaction_id"]), "ref": p.get("ref_id"),
+            "financial_href": "financial?view=transactions&payment=%s" % p["transaction_id"],
+            "strength": p.get("level"), "status": status, "decision_words": p.get("decision_words"),
+            "found_by_rule": p.get("found_by_rule", True), "rule_match": bool(p.get("rule_match")),
+            "amount": link_edges.format_minor(p["amount_minor"], p["currency"])
+            if p.get("amount_minor") is not None and p.get("currency") else None,
+            "date": p.get("date"), "lag_days": p.get("lag_days"),
+            "how_well_matched": (p.get("reasons") or {}).get("match") or [],
+            "how_substantiated": (p.get("reasons") or {}).get("substantiation") or []}
+
+
+def money_signal_matches(conn, case_id, *, outcome=None, strength=None, offset=0, limit=DEFAULT_LIMIT) -> dict:
+    """Every phone money reading of approach 1's last run that pairs with a ledger row at any strength (strong,
+    moderate, weak, faint; 05 4.3.8), strongest first, each with its candidate payments (txn://), the strength by rule
+    and the plain reasons (how well matched, how substantiated), and whether a person confirmed or rejected the pairing.
+    Rejected pairings stay listed and are left out of every count. The correlation outcome (corroborated, near amount,
+    several candidates) is unchanged; strength is extra. A reading stays p4; a row keeps its class."""
     from services.agent import phone_tools
+    from services.phone_analysis import framework as F
+    from services.phone_analysis import money_pairings as MP
     tool = "money_signal_matches"
     if outcome and outcome not in MATCHED:
         raise ValueError("outcome is one of %s; other readings are in phone_money_readings." % ", ".join(MATCHED))
+    if strength and strength not in LEVELS:
+        raise ValueError("strength is one of %s." % ", ".join(LEVELS))
     run = _last_run(conn, case_id, "money_signals")
     if run is None:
         return _base(tool, case_id, total_matching=0, returned=0, has_more=False, next_offset=None, items=[],
                      coverage="Money on the phones has not been run in this case.",
                      limitation="Run it from Money on the phones; until then there is nothing to read.")
-    wanted = [outcome] if outcome else list(MATCHED)
-    all_items = []
-    for o in wanted:
-        got = phone_tools.money_readings(conn, case_id, outcome=o, offset=0, limit=MAX_LIMIT)
-        n, off = got["total_matching"], 0
-        all_items += got["items"]
-        while len([x for x in all_items if x["outcome"] == o]) < n and got["has_more"]:
-            off = got["next_offset"]
-            got = phone_tools.money_readings(conn, case_id, outcome=o, offset=off, limit=MAX_LIMIT)
-            all_items += got["items"]
-    all_items.sort(key=lambda x: (x.get("instant") or "", x["result_id"]))
-    by = {}
-    for it in all_items:
-        by[it["outcome"]] = by.get(it["outcome"], 0) + 1
-        for r in it["ledger_rows"]:
-            r["txn"] = _txn(r["payment"])
-    return _paged(tool, case_id, all_items, offset, limit, "matches", run_id=str(run.id), by_outcome=by,
-                  coverage="Approach 1's last run: %d readings answer a ledger row (%s)." % (
-                      len(all_items), ", ".join("%s %d" % kv for kv in sorted(by.items())) or "none"),
-                  note="A reading is what a phone shows (p4), never summed; a matched row gains a link and keeps its "
-                       "class. Several candidates means two or more rows fit, and none is linked.")
+    base = {}
+    got = phone_tools.money_readings(conn, case_id, offset=0, limit=MAX_LIMIT)
+    while True:
+        for it in got["items"]:
+            base[it["result_id"]] = it
+        if not got["has_more"]:
+            break
+        got = phone_tools.money_readings(conn, case_id, offset=got["next_offset"], limit=MAX_LIMIT)
+    measures = []
+    res = F.results(conn, case_id, run.id, kind="money_reading", offset=0, limit=F.MAX_LIMIT, order="strength")
+    measures += res["items"]
+    while len(measures) < res["total"] and res["items"]:
+        res = F.results(conn, case_id, run.id, kind="money_reading", offset=len(measures), limit=F.MAX_LIMIT,
+                        order="strength")
+        measures += res["items"]
+    items, by_outcome, by_level = [], {}, {lv: 0 for lv in LEVELS}
+    confirmed = rejected = 0
+    left_words = []
+    old_run = False
+    for r in measures:
+        m = r["measures"] or {}
+        it = base.get(r["id"])
+        if it is None:
+            continue
+        if "pairings" not in m and m.get("outcome") in MATCHED:
+            old_run = True
+        pairs = [_pair_out(p) for p in m.get("pairings") or []]
+        if not pairs and m.get("outcome") not in MATCHED:
+            continue
+        rejected_rule = {p["payment"] for p in pairs if p["rule_match"] and p["status"] == "rejected by a person"}
+        live = [p for p in pairs if p["status"] != "rejected by a person"]
+        best = live[0]["strength"] if live else None
+        if outcome and m.get("outcome") != outcome:
+            continue
+        if strength and best != strength:
+            continue
+        o = m.get("outcome")
+        if o in ("corroborated", "near_amount") and rejected_rule:
+            o = "rule match rejected by a person"
+        by_outcome[o] = by_outcome.get(o, 0) + 1
+        for p in pairs:
+            if p["status"] == "rejected by a person":
+                rejected += 1
+            else:
+                if p["found_by_rule"]:
+                    by_level[p["strength"]] = by_level.get(p["strength"], 0) + 1
+                if p["status"] == "confirmed by a person":
+                    confirmed += 1
+        for row in it["ledger_rows"]:
+            row["txn"] = _txn(row["payment"])
+            if row["payment"] in rejected_rule:
+                row["status"] = "rejected by a person"
+        if m.get("pairings_left_out_words"):
+            left_words.append(m["pairings_left_out_words"])
+        items.append(dict(it, best_strength=best, pairings=pairs,
+                          pairings_left_out=m.get("pairings_left_out") or {},
+                          pairings_left_out_words=m.get("pairings_left_out_words")))
+    total_pairs = sum(by_level.values())
+    cov = ("Approach 1's last run: %d phone readings pair with ledger rows; %d pairings by strength: %s. %d confirmed "
+           "by a person, %d rejected by a person (left out of these counts). Outcomes: %s." % (
+               len(items), total_pairs, ", ".join("%s %d" % (lv, by_level[lv]) for lv in LEVELS), confirmed, rejected,
+               ", ".join("%s %d" % kv for kv in sorted(by_outcome.items())) or "none"))
+    limitation = None
+    if left_words:
+        limitation = "Search bound: %s %d readings have payments outside it, counted not listed (see each " \
+                     "reading's pairings_left_out_words)." % (MP.search_words(), len(left_words))
+    if old_run:
+        limitation = " ".join(x for x in (limitation, "The last run predates match strengths; run Money on the phones "
+                                          "again to list every candidate payment with its strength.") if x)
+    return _paged(tool, case_id, items, offset, limit, "readings", run_id=str(run.id), by_outcome=by_outcome,
+                  by_strength=by_level, confirmed_by_person=confirmed, rejected_by_person=rejected,
+                  search=MP.search_words(), coverage=cov, limitation=limitation,
+                  note="Mention every pairing with its strength and reasons, weak and faint ones as weak or faint, "
+                       "never dropped. Say which are confirmed by a person and which are found by the rule; never "
+                       "call a rule-found pairing confirmed. Rejected pairings are not evidence of a match and are "
+                       "not counted. A reading is what a phone shows (p4), never summed; a row keeps its class.")
 
 
 def _lead_alert_days(conn, case_id, run_id, record_uids):
@@ -1271,6 +1349,8 @@ class BetweenArgs(_Page):
 
 class MatchesArgs(_Page):
     outcome: Literal["corroborated", "near_amount", "several_candidates"] | None = None
+    strength: Literal["strong", "moderate", "weak", "faint"] | None = Field(
+        None, description="Only readings whose strongest pairing has this strength.")
 
 
 class StatementArgs(_Page):
@@ -1335,8 +1415,10 @@ TOOLS = [
      "ledger money between them (verified rows summed per currency, p3 stated apart) with each payment's txn:// "
      "link. Use it for any 'between A and B' question."),
     ("get_money_signal_matches", "money_signal_matches", MatchesArgs,
-     "Phone alerts that answer a ledger row (approach 1): the alert's rec:// and the row's txn://, the hour, handset "
-     "and amount. An alert is p4 and never summed; the row keeps its class."),
+     "Every phone alert or message that pairs with a ledger row at any strength (approach 1), strongest first: the "
+     "alert's rec://, each candidate row's txn://, the strength (strong, moderate, weak, faint) with the reasons "
+     "(how well matched, how substantiated), and whether a person confirmed or rejected it. An alert is p4 and never "
+     "summed; the row keeps its class."),
     ("get_money_signal_leads", "money_signal_leads", _Page,
      "Accounts and periods the phones point to that the ledger does not hold (approach 1 leads), each with "
      "institution, masked ending, alert days, missing account or missing period, and records. Alerts are never "

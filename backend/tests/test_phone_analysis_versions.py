@@ -14,7 +14,7 @@ import inspect
 from services.phone_analysis.approaches import BUILT
 
 RECORDED = {
-    "money_signals": ("1a.1", "bd3641f548e85576"),
+    "money_signals": ("1a.2", "28f66591910c4329"),
     "message_reconciliation": ("2.3", "a53b042ce1e90307"),
     "deletion_timeline": ("3.3", "24a4e51aa9a12535"),
     "relationships": ("11.2", "d2415dadbd83d048"),
@@ -35,7 +35,13 @@ def test_every_built_analysis_has_a_recorded_version_and_fingerprint():
     for name in BUILT:
         module = importlib.import_module("services.phone_analysis." + name)
         with open(inspect.getsourcefile(module), "rb") as fh:
-            fingerprint = hashlib.sha256(fh.read()).hexdigest()[:16]
+            digest = hashlib.sha256(fh.read())
+        # a module whose results also depend on a helper module names it in VERSION_SOURCES (money_signals: the
+        # 4.3.8 pairing strengths in money_pairings), so a change there also asks for a new VERSION
+        for extra in getattr(module, "VERSION_SOURCES", ()):
+            with open(inspect.getsourcefile(importlib.import_module("services.phone_analysis." + extra)), "rb") as fh:
+                digest.update(fh.read())
+        fingerprint = digest.hexdigest()[:16]
         assert (module.VERSION, fingerprint) == RECORDED[name], (
             "%s changed: bump VERSION if its results can change, then record (VERSION, fingerprint) = (%r, %r)"
             % (name, module.VERSION, fingerprint))

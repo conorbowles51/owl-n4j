@@ -277,6 +277,9 @@ class AdjudicationDecision(str, Enum):
     # typed reason that it is not being followed. It says nothing about whether the result is correct and changes no
     # computed field; a later confirm or reject on the same result is the next entry in its history.
     not_pursue_phone_result = "not_pursue_phone_result"
+    # 05 section 4.3.8: a person's confirm or reject on one phone-reading-to-payment match is reversed by appending
+    # this undo, which restores the state before the last decision; the ledger appends, it never retracts.
+    undo_phone_result_decision = "undo_phone_result_decision"
     # 04 section 8.5: a person attaches a place (point and radius) to a transaction; the ledger has no place column.
     # Reversed by ``remove_transaction_place``; attaching again over a place replaces it (before holds the old one).
     attach_transaction_place = "attach_transaction_place"

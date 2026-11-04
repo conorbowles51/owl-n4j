@@ -7,10 +7,12 @@ import { describe, expect, it, vi } from "vitest"
 const api = vi.hoisted(() => ({
   moneyAPI: {
     runs: vi.fn(), request: vi.fn(), run: vi.fn(), cancel: vi.fn(), coverage: vi.fn(), results: vi.fn(), detail: vi.fn(),
-    decide: vi.fn(), ledgerLinks: vi.fn(),
+    decide: vi.fn(), ledgerLinks: vi.fn(), decidePair: vi.fn(), orphaned: vi.fn(),
   },
 }))
 vi.mock("./money-api", () => api)
+const perms = vi.hoisted(() => ({ canEdit: true }))
+vi.mock("@/hooks/use-permissions", () => ({ usePermissions: () => ({ canEdit: perms.canEdit }) }))
 vi.mock("@/features/pattern/components/CollectBar", () => ({ CollectBar: () => <div>Add to…</div> }))
 
 import MoneySignalsPage, { WHAT_IT_DOES } from "./MoneySignalsPage"
@@ -29,9 +31,24 @@ const READING = {
   directions: { supports: [], undercuts: [] },
 }
 
+const SEARCH = "Every payment within 31 days and within half of the amount (at least 5.00) is listed, strongest first; payments outside that are counted, not hidden."
+const PAIR = (over: Record<string, unknown>) => ({
+  transaction_id: "tx-1", ref_id: "T-1", amount_minor: 1250, currency: "USD", date: "2024-03-02", lag_days: 0, level: "strong",
+  reasons: { match: ["same amount to the cent", "same day", "account fits by bank and ending"],
+    substantiation: ["the notification on the phone", "the bank's usual alert wording"] },
+  found_by_rule: true, rule_words: "found by the rule, strength strong", decision: null, decision_words: null, ...over })
+const PAIRED = { ...READING, measures: { ...READING.measures, record_uid: "rec-1", field_path: "Body", best_level: "strong",
+  pairings: [PAIR({}),
+    PAIR({ transaction_id: "tx-2", ref_id: "T-2", date: "2024-03-10", lag_days: 8, level: "weak", rule_words: "found by the rule, strength weak",
+      reasons: { match: ["same amount to the cent", "payment 8 days after the phone record", "account fits by bank and ending"], substantiation: ["the notification on the phone"] } }),
+    PAIR({ transaction_id: "tx-3", ref_id: "T-3", level: "faint", decision: "rejected", decision_words: "rejected by Synthetic Reviewer: Refund", rule_words: "found by the rule, strength faint" })],
+  pair_counts: { by_level: { strong: 1, moderate: 0, weak: 1, faint: 0 }, confirmed: 0, rejected: 1 },
+  pairings_left_out_words: "Not listed: payments on these accounts 1 more than 31 days away." } }
+
 function page() {
   api.moneyAPI.runs.mockResolvedValue({ items: [RUN] })
   api.moneyAPI.coverage.mockResolvedValue({ sentence: RUN.coverage.sentence })
+  api.moneyAPI.orphaned.mockResolvedValue({ items: [], search: SEARCH })
   api.moneyAPI.results.mockResolvedValue({ total: 1, offset: 0, limit: 100, items: [READING] })
   api.moneyAPI.detail.mockResolvedValue({ ...READING, records: [
     { record_uid: "rec-1", extraction_id: "e1", field_path: "Body", ledger_transaction_id: null, ledger_ref_id: null, role: "evidence" },
@@ -112,6 +129,50 @@ describe("Money on the phones (AP-1)", () => {
     expect(await screen.findByText("Payments that could be this one. None is linked to it.")).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Open possible payment T-2" })).toHaveAttribute("href", "/cases/c1/financial?payment=tx-2")
     expect(screen.queryByRole("link", { name: /^Open payment/ })).toBeNull()
+  })
+
+  it("lists every payment that could match, strongest first, with strength, reasons and what was left out (05 4.3.8)", async () => {
+    page()
+    api.moneyAPI.results.mockResolvedValue({ total: 1, offset: 0, limit: 100, items: [PAIRED] })
+    const pairs = await screen.findAllByTestId("money-pair")
+    expect(pairs.map((p) => within(p).getByTestId("pair-level").textContent)).toEqual(["Strong", "Weak", "Faint"])
+    expect(within(pairs[1]).getByTestId("pair-status").textContent).toBe("found by the rule, strength weak")
+    expect(within(pairs[1]).getByTestId("pair-matched").textContent).toContain("payment 8 days after the phone record")
+    expect(within(pairs[0]).getByTestId("pair-substantiated").textContent).toMatch(/^Substantiated by 2 sources/)
+    expect(screen.getByTestId("pair-left-out").textContent).toContain("1 more than 31 days away")
+    expect(screen.getByTestId("search-bound").textContent).toBe(SEARCH)
+    // rejected stays visible, collapsed, and is left out of the counts
+    expect(pairs[2].getAttribute("data-decision")).toBe("rejected")
+    expect(within(pairs[2]).getByText("rejected by Synthetic Reviewer: Refund. Not counted.")).toBeInTheDocument()
+    expect(screen.getByTestId("pair-summary").textContent).toContain("strong 1, moderate 0, weak 1, faint 0")
+    expect(screen.getByTestId("pair-summary").textContent).toContain("1 rejected by a person and not counted")
+    expect(screen.getByText(/2 payments in the financial records could be this one/)).toBeInTheDocument()
+  })
+
+  it("confirms, rejects with an optional note and undoes a match; a viewer gets no buttons", async () => {
+    page()
+    api.moneyAPI.results.mockResolvedValue({ total: 1, offset: 0, limit: 100, items: [PAIRED] })
+    api.moneyAPI.decidePair.mockResolvedValue({ decision: "confirmed", decision_words: "confirmed by Synthetic Reviewer 2026-11-04" })
+    fireEvent.click(await screen.findByRole("button", { name: "Confirm the match with payment T-1" }))
+    await waitFor(() => expect(api.moneyAPI.decidePair).toHaveBeenCalledWith("c1", "rec-1", "Body", "tx-1", "confirmed", ""))
+    const weak = screen.getAllByTestId("money-pair")[1]
+    fireEvent.click(within(weak).getByText("Add a note"))
+    fireEvent.change(within(weak).getByLabelText("Note"), { target: { value: "Different merchant" } })
+    fireEvent.click(within(weak).getByRole("button", { name: "Reject the match with payment T-2" }))
+    await waitFor(() => expect(api.moneyAPI.decidePair).toHaveBeenCalledWith("c1", "rec-1", "Body", "tx-2", "rejected", "Different merchant"))
+    fireEvent.click(screen.getByRole("button", { name: "Undo the decision on payment T-3" }))
+    await waitFor(() => expect(api.moneyAPI.decidePair).toHaveBeenCalledWith("c1", "rec-1", "Body", "tx-3", "undo", ""))
+  })
+
+  it("shows a confirmed match as confirmed by its person, and a viewer sees no decision buttons", async () => {
+    perms.canEdit = false
+    page()
+    const confirmed = { ...PAIRED, measures: { ...PAIRED.measures, pairings: [PAIR({ decision: "confirmed", decision_words: "confirmed by Synthetic Reviewer 2026-11-04" })] } }
+    api.moneyAPI.results.mockResolvedValue({ total: 1, offset: 0, limit: 100, items: [confirmed] })
+    const pair = await screen.findByTestId("money-pair")
+    expect(within(pair).getByTestId("pair-status").textContent).toBe("confirmed by Synthetic Reviewer 2026-11-04")
+    expect(within(pair).queryByRole("button")).toBeNull()
+    perms.canEdit = true
   })
 
   it("writes amounts from integer minor units by the currency's exponent, and the text as written when unknown", () => {

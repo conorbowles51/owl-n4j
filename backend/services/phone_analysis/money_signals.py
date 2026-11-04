@@ -38,11 +38,14 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import text
 
 from services.phone_analysis import institutions as INST
+from services.phone_analysis import money_pairings as MP
 from services.phone_analysis import money_parse as P
 
 log = logging.getLogger(__name__)
 CODE = "money_signals"
-VERSION = "1a.1"
+VERSION = "1a.2"
+# the pairing strengths (05 4.3.8) live in money_pairings: a change there is a change of this approach
+VERSION_SOURCES = ("money_pairings",)
 PARAMETERS = {
     "days_before": {"default": 1, "min": 0, "max": 7},
     "days_after": {"default": 7, "min": 0, "max": 31},
@@ -563,6 +566,7 @@ def reading_result(item, binding, per_account, accounts) -> dict:
             if item["event_instant"] else None, "event_date": item["event_date"].isoformat()
             if item["event_date"] else None, "stated_date": r.stated_date, "template": r.template,
             "flags": item["flags"], "spans": [list(s) for s in r.spans], "field_path": item["field_path"],
+            "record_uid": sig["record_uid"],
             "proof_class": "p4", "outcome": outcome, "reason": reason, "device_zone": item["phone"].get("zone"),
             "binding": {"outcome": binding["outcome"], "by_ending": binding["by_ending"],
                         "accounts": [{"id": a, "institution": accounts[a]["institution"],
@@ -802,6 +806,8 @@ def analyse(conn, case_id, params, ctx=None, coverage_for=None) -> tuple:
     counts = {"readings_by_signal": defaultdict(int), "binding": defaultdict(int), "outcome": defaultdict(int),
               "lag_days": defaultdict(int), "ledger_rows_without_date": len(skipped)}
     merged = {}
+    counts["pairings"] = defaultdict(int)
+    same_day = MP.same_day_counts(items)
     for i, item in enumerate(items):
         if ctx is not None and i % 200 == 0:
             ctx.progress(i, len(items))
@@ -829,6 +835,19 @@ def analyse(conn, case_id, params, ctx=None, coverage_for=None) -> tuple:
                 per.append(correlate_item(item, accounts[aid], rows, sources[ext],
                                           params["near_amount_pass"], coverage_for))
         res = reading_result(item, b, per, accounts)
+        # 4.3.8: every ledger row that could be this reading, with its strength by rule; the outcome is unchanged
+        item["source_word"] = SOURCE_WORDS[item["signal"]]
+        others = 0
+        if r.amount_minor is not None and item["event_date"] is not None:
+            others = len(same_day.get((abs(int(r.amount_minor)), r.currency, item["event_date"]), ())) - 1
+        pairs, left = MP.pairings(item, b, accounts, entries, group_of, window, max(0, others),
+                                  {m["transaction_id"] for m in res["measures"]["matched"]})
+        res["measures"].update({"pairings": pairs, "pairings_left_out": left,
+                                "pairings_left_out_words": MP.left_out_words(left),
+                                "best_level": pairs[0]["level"] if pairs else None,
+                                "match_rank": MP.best_rank(pairs)})
+        for p in pairs:
+            counts["pairings"][p["level"]] += 1
         counts["outcome"][res["measures"]["outcome"]] += 1
         for lag in res["measures"]["lag_days"]:
             counts["lag_days"][str(lag)] += 1

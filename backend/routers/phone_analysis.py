@@ -116,14 +116,16 @@ def run_results(run_id: UUID, case_id: UUID = Query(...), kind: Optional[str] = 
                 strength: Optional[str] = Query(None, max_length=24), from_: Optional[str] = Query(None, alias="from"),
                 to: Optional[str] = Query(None), phone: Optional[UUID] = Query(None),
                 identity: Optional[str] = Query(None, max_length=512), offset: int = Query(0, ge=0),
-                limit: int = Query(100, ge=1, le=F.MAX_LIMIT), db: Session = Depends(get_db),
-                user: User = Depends(get_current_db_user)):
-    """``total`` is always the full count under the filter (plan 10.2)."""
+                limit: int = Query(100, ge=1, le=F.MAX_LIMIT), order: str = Query("time", max_length=16),
+                db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """``total`` is always the full count under the filter (plan 10.2). ``order=strength``: approach 1's readings
+    with the strongest candidate payment first (05 4.3.8)."""
     _ready()
     authorize_case(db, case_id, user, ("case", "view"))
     try:
         return F.results(db.connection(), case_id, run_id, kind=kind, strength=strength, start=from_, end=to,
-                         phone=str(phone) if phone else None, identity=identity, offset=offset, limit=limit)
+                         phone=str(phone) if phone else None, identity=identity, offset=offset, limit=limit,
+                         order=order)
     except F.AnalysisError as exc:
         _fail(exc)
 
@@ -256,6 +258,43 @@ def ledger_links(body: PhoneLinksBody, db: Session = Depends(get_db), user: User
     from services.phone_analysis import money_signals
     authorize_case(db, body.case_id, user, ("case", "view"))
     return {"links": money_signals.phone_links(db.connection(), body.case_id, body.transaction_ids)}
+
+
+class PairDecisionBody(BaseModel):
+    """05 4.3.8: a person's decision on one phone-reading-to-payment match, remembered across reruns."""
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    record_uid: UUID
+    field_path: str = Field(default="", max_length=300)
+    transaction_id: UUID
+    decision: Literal["confirmed", "rejected", "undo"]
+    note: Optional[str] = Field(default=None, max_length=4000)
+
+
+@router.post("/money/pairs/decisions")
+def pair_decision(body: PairDecisionBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Confirm or reject one match with an optional note, or undo the last decision (restores the state before it).
+    Case edit permission. Recorded in the case decision ledger and the manual-change feed."""
+    from services.phone_analysis import money_pairings as MP
+    _ready()
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        out = MP.decide(db, body.case_id, body.record_uid, body.field_path, body.transaction_id, body.decision,
+                        body.note, _actor(user))
+    except MP.PairError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status, detail=str(exc))
+    db.commit()
+    return out
+
+
+@router.get("/money/pairs/orphaned")
+def pair_orphans(case_id: UUID = Query(...), db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Decided matches whose phone reading the current run no longer holds: still shown, never dropped."""
+    from services.phone_analysis import money_pairings as MP
+    _ready()
+    authorize_case(db, case_id, user, ("case", "view"))
+    return {"items": MP.orphaned(db.connection(), case_id), "search": MP.search_words()}
 
 
 @router.get("/money/directory")

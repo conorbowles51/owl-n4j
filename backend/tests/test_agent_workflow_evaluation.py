@@ -44,8 +44,10 @@ QUESTIONS = [
      "get_day_activity", {"person": "Sam Synthetic", "day": "2023-03-20", "zone": "UTC", "lanes": ["communications"]},
      1, ["e2"], lambda d: d["items"][0]["direction"] == "incoming"),
     ("WF02", "last-proof-of-life", "Which card payment has a phone alert that gives its time?",
-     "get_money_signal_matches", {}, 1, None,
-     lambda d: d["items"][0]["ledger_rows"][0]["txn"].endswith(d["_ids"]["t_paid"])),
+     "get_money_signal_matches", {}, 2, None,
+     # 05 4.3.8: the faint April pairing is listed too; the strongest (the alert's own payment) comes first
+     lambda d: d["items"][0]["ledger_rows"][0]["txn"].endswith(d["_ids"]["t_paid"])
+     and [i["best_strength"] for i in d["items"]] == ["strong", "faint"]),
     ("WF03", "last-proof-of-life", "Can the last-proof-of-life workflow run on this case?", R, {}, [], None, None),
     # 2 Hidden assets
     ("WF04", "hidden-assets", "Which accounts does the phone show that the financial records do not hold?",

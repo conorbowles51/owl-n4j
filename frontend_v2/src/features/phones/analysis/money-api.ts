@@ -26,6 +26,28 @@ export interface AnalysisDecision { decision: AnalysisDecisionKind; reason: stri
  * What a money reading or an account lead measured (the server's `measures`). Every field is optional: the two kinds
  * carry different ones, and the server may add more.
  */
+/** 05 section 4.3.8: a ledger row that could be the reading, with its strength by rule and a person's decision. */
+export type PairLevel = "strong" | "moderate" | "weak" | "faint"
+export type PairDecision = "confirmed" | "rejected"
+export interface Pairing {
+  transaction_id: string
+  ref_id: string | null
+  amount_minor: number | null
+  currency: string | null
+  date: string | null
+  lag_days?: number
+  level: PairLevel
+  fits?: { amount: number; date: number; account: number }
+  reasons: { match: string[]; substantiation: string[] }
+  rule_match?: boolean
+  found_by_rule: boolean
+  rule_words: string
+  decision: PairDecision | null
+  decision_words: string | null
+  decision_note?: string
+}
+export interface PairCounts { by_level: Record<PairLevel, number>; confirmed: number; rejected: number }
+
 export interface MoneyMeasures extends AmountReading {
   direction?: string | null
   source?: string | null
@@ -38,6 +60,12 @@ export interface MoneyMeasures extends AmountReading {
   reason?: string | null
   sentence?: string | null
   status?: string | null
+  record_uid?: string
+  field_path?: string
+  pairings?: Pairing[]
+  pair_counts?: PairCounts
+  pairings_left_out_words?: string | null
+  best_level?: PairLevel | null
   [key: string]: unknown
 }
 
@@ -85,8 +113,16 @@ export const moneyAPI = {
   run: (caseId: string, runId: string) => fetchAPI<AnalysisRun>(`${BASE}/runs/${runId}?${q({ case_id: caseId })}`),
   cancel: (caseId: string, runId: string) => fetchAPI<AnalysisRun>(`${BASE}/runs/${runId}/cancel?${q({ case_id: caseId })}`, { method: "POST" }),
   coverage: (caseId: string) => fetchAPI<{ sentence: string }>(`${BASE}/coverage?${q({ case_id: caseId, approach: "money_signals" })}`),
-  results: (caseId: string, runId: string, kind: string, strength: string, offset: number, limit = 100) =>
-    fetchAPI<ResultPage>(`${BASE}/runs/${runId}/results?${q({ case_id: caseId, kind, strength, offset, limit })}`),
+  results: (caseId: string, runId: string, kind: string, strength: string, offset: number, limit = 100, order = "strength") =>
+    fetchAPI<ResultPage>(`${BASE}/runs/${runId}/results?${q({ case_id: caseId, kind, strength, offset, limit, order })}`),
+  decidePair: (caseId: string, recordUid: string, fieldPath: string, transactionId: string, decision: PairDecision | "undo", note: string) =>
+    fetchAPI<{ decision: PairDecision | null; decision_words: string | null }>(`${BASE}/money/pairs/decisions`, {
+      method: "POST",
+      body: { case_id: caseId, record_uid: recordUid, field_path: fieldPath, transaction_id: transactionId, decision, note: note || null },
+    }),
+  orphaned: (caseId: string) =>
+    fetchAPI<{ items: { record_uid: string; transaction_id: string; field_path: string; decision: PairDecision; decision_words: string; pair: { ref_id?: string; amount_minor?: number; currency?: string; date?: string } }[]; search: string }>(
+      `${BASE}/money/pairs/orphaned?${q({ case_id: caseId })}`),
   detail: (caseId: string, resultId: string) =>
     fetchAPI<AnalysisResult & { records: ResultRecord[] }>(`${BASE}/results/${resultId}?${q({ case_id: caseId })}`),
   decide: (caseId: string, resultId: string, decision: AnalysisDecisionKind, reason: string) =>

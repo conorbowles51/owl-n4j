@@ -449,20 +449,30 @@ def _filters(case_id, run_id, kind=None, strength=None, start=None, end=None, ph
     return " AND ".join(w), p
 
 
+ORDERS = {"time": "r.period_start NULLS LAST, r.id",
+          # approach 1 (05 4.3.8): the reading with the strongest candidate payment first, readings with none last
+          "strength": "coalesce((r.measures ->> 'match_rank')::int, -1) DESC, r.period_start NULLS LAST, r.id"}
+
+
 def results(conn, case_id, run_id, *, kind=None, strength=None, start=None, end=None, phone=None, identity=None,
-            offset=0, limit=100) -> dict:
-    get_run(conn, case_id, run_id)
+            offset=0, limit=100, order="time") -> dict:
+    run = get_run(conn, case_id, run_id)
     if limit > MAX_LIMIT or limit < 1 or offset < 0:
         raise AnalysisError("limit is 1 to %d." % MAX_LIMIT)
+    if order not in ORDERS:
+        raise AnalysisError("order is one of %s." % ", ".join(ORDERS))
     where, p = _filters(case_id, run_id, kind, strength, start, end, phone, identity)
     total = int(conn.execute(text("SELECT count(*) FROM phone_analysis_results r WHERE " + where), p).scalar() or 0)
     p.update({"off": offset, "lim": limit})
     rows = conn.execute(text(
-        "SELECT r.* FROM phone_analysis_results r WHERE %s ORDER BY r.period_start NULLS LAST, r.id OFFSET :off "
-        "LIMIT :lim" % where), p).fetchall()
+        "SELECT r.* FROM phone_analysis_results r WHERE %s ORDER BY %s OFFSET :off LIMIT :lim" % (where, ORDERS[order])),
+        p).fetchall()
     decisions = _decisions_for(conn, case_id, [(r.result_key, r) for r in rows])
-    return {"total": total, "offset": offset, "limit": limit,
-            "items": [_result_out(r, decisions.get(r.result_key, [])) for r in rows]}
+    items = [_result_out(r, decisions.get(r.result_key, [])) for r in rows]
+    if run.get("approach") == "money_signals":
+        from services.phone_analysis import money_pairings
+        items = money_pairings.overlay(conn, case_id, items)
+    return {"total": total, "offset": offset, "limit": limit, "items": items}
 
 
 def _result_out(r, decisions) -> dict:
@@ -496,6 +506,9 @@ def result_detail(conn, case_id, result_id) -> dict:
     out["records"] = records
     run = conn.execute(text("SELECT status, approach FROM phone_analysis_runs WHERE id = :r"), {"r": r.run_id}).first()
     out["run_status"], out["approach"] = run.status, run.approach
+    if run.approach == "money_signals":
+        from services.phone_analysis import money_pairings
+        out = money_pairings.overlay(conn, case_id, [out])[0]
     return out
 
 

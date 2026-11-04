@@ -610,6 +610,60 @@ Strength is shown on every claim and is a filter; it never gates correlation.
    requires a complete number (`account_identity.py:70-71`) and records the decision with an actor
    (`account_identity.py:153-155`). Nothing is created automatically.
 
+#### 4.3.8 Every candidate payment, its match strength, and a person's decision
+
+Every ledger row that could be a reading is listed beside it, whatever the 4.3.5 outcome, strongest first; no
+cutoff hides a candidate. The outcome rules of 4.3.5 are unchanged (corroborated still means the exact or
+near-amount pass inside the window); the match strength is extra and never promotes a reading (it stays p4) or a
+row. Code: `services/phone_analysis/money_pairings.py`, from approach version 1a.2.
+
+**Candidates.** Bound or ambiguous: the rows of the accounts that fit (whole merge group). Unbound (institution held
+but no account fits, not in productions, no anchor): the rows of the institution's accounts in the records, else of
+every account in the case, at account fit 0. Same currency and direction where the reading states them.
+
+**Search bound, for cost, always stated.** Rows within 31 days of the reading and within half of its amount (at
+least 5.00 in the currency) are listed, at most 50 per reading. Whatever the bound leaves out is counted per
+reading (more than 31 days away, amount differs by more than half, beyond the 50 listed) and the count is shown
+on the matches screen and in the agent's answer.
+
+**Strength, by rule, never by a model.** Three fits and one count:
+
+| Part | 3 | 2 | 1 | 0 |
+|---|---|---|---|---|
+| Amount | same to the cent | within the correlation tolerance (10%, at least 1.00) | within a quarter ("could be fees or an exchange rate") | within the search bound |
+| Date (ledger day minus the phone's day) | same day | one day before to three after | inside the approach window (1 before, 7 after) | within 31 days |
+| Account | one account fits by bank and ending | one account fits by bank or ending alone | more than one fits (ambiguous) | none fits (unbound) |
+
+Substantiation counts independent sources: the phone record itself, the bank's usual alert wording, a reviewed
+bank, each other phone record stating the same amount on the same day (an SMS and a notification), and a balanced
+statement period holding the row.
+
+| Strength | Rule |
+|---|---|
+| Strong | amount 2+, date 2+, account 2+, and at least two sources |
+| Moderate | amount 2+, date 1+, and account 1+ or at least two sources |
+| Weak | amount 1+ and date 1+, or amount 2+ at any date in the bound |
+| Faint | anything else inside the search bound |
+
+Each pairing carries the plain reasons in two parts, how well matched ("same amount to the cent; payment 8 days
+after the phone record; account bound by ending only") and how substantiated ("the notification on the phone;
+the bank's usual alert wording").
+
+**Confirm and reject, remembered.** A person with case edit permission confirms or rejects any pairing, at any
+strength, with an optional note; Undo restores the state before the last decision. Each decision is a row in the
+case decision ledger (`confirm_phone_result`, `reject_phone_result`, `undo_phone_result_decision` on a
+`phone_analysis_result_subjects` row keyed by the phone record, its field and the ledger row), so reruns, releases
+and re-parses never show a decided pairing as undecided and never overwrite a person's decision. A ledger row
+corrected later is followed through `superseded_by_id`. A rerun that no longer finds a decided pairing keeps it
+visible ("confirmed by <name>, no longer found by the rule"). Every decision is also a manual-change line
+(`phone_money_match`, ids only) for the lessons feed.
+
+**Shown honestly.** A rule-found pairing reads "found by the rule, strength X"; a confirmed one "confirmed by
+<name> <date>"; a rejected one stays visible, collapsed ("rejected by <name>: <note>"), and is left out of the
+counts, sums and the agent's corroboration totals. The agent (`get_money_signal_matches`) lists every pairing with
+its strength and reasons, says which are person-confirmed and which rule-found, and never presents a rule-found
+pairing as confirmed.
+
 ### 4.4 What the investigator gets
 
 - **Phone money events** list: every reading, with source (notification, SMS, email, chat), institution,
@@ -647,6 +701,7 @@ masked to the last four characters. Leads and claims built from S6 show service 
 | M-1c | readings bound to exactly one ledger account; ambiguous; unbound | case |
 | M-1d | of bound readings, corroborated at zero materiality; lag in days (ledger chronology date minus event date), distribution | case |
 | M-1e | leads by status and evidence class | case |
+| M-1f | candidate pairings by strength (strong, moderate, weak, faint); readings with at least one; rows the search bound left out; pairings a person confirmed or rejected (4.3.8) | case |
 
 Local evidence so far: short-code SMS with amounts exist on two of three local phones (M7: 13 and 15);
 Notification exists only in the 3-phone case. Gate: **build** if, on any case with financial records, at least

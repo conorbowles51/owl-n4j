@@ -168,8 +168,13 @@ QUESTIONS = [
      and d["items"][0]["quoted"] == ["rec://%s" % d["_ids"]["e0"]]),
     ("X10", "Record a reading quoting a message from outside the window", "draft_payment_purpose",
      {"payment": "@t_paid", "outcome": "consistent", "quoted": ["@e2"], "purpose": "the car"}, "refused", [], None),
-    ("X11", "Which phone alerts match ledger rows?", "get_money_signal_matches", {}, 1, None,
-     lambda d: d["items"][0]["ledger_rows"][0]["txn"].endswith(d["_ids"]["t_paid"])),
+    # 05 4.3.8: every pairing at any strength, strongest first; the $99.00 April alert pairs faintly with the USD
+    # 70.00 row (29% apart, within 31 days) and is listed as faint, not dropped
+    ("X11", "Which phone alerts match ledger rows?", "get_money_signal_matches", {}, 2, None,
+     lambda d: d["items"][0]["ledger_rows"][0]["txn"].endswith(d["_ids"]["t_paid"])
+     and d["items"][0]["best_strength"] == "strong" and d["items"][1]["best_strength"] == "faint"
+     and d["items"][1]["pairings"][0]["payment"] == d["_ids"]["t_quiet"]
+     and d["items"][1]["pairings"][0]["status"] == "found by the rule, not confirmed"),
     ("X12", "Which accounts or periods do the phones point to that the ledger lacks?", "get_money_signal_leads", {},
      2, None, lambda d: sorted((i["institution"], i["ledger"]) for i in d["items"]) == [
          ("Synthetic Bank", "missing_period"), ("Two Dollar Exchange", "missing_account")]),
