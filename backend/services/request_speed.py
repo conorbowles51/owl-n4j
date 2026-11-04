@@ -594,7 +594,8 @@ def flush_now():
 # --- page views from the browser -------------------------------------------------------------
 
 FINANCIAL_VIEWS = ('overview', 'follow-money', 'findings', 'patterns', 'case-context', 'ledger', 'quarantine', 'runs',
-                   'decisions', 'transactions', 'counterparties', 'trends', 'tracing', 'transfers', 'posting-graph')
+                   'decisions', 'transactions', 'counterparties', 'trends', 'tracing', 'transfers', 'posting-graph',
+                   'trades')
 STATEMENT_SECTIONS = ('queue', 'files', 'accounts', 'batches', 'remove', 'judgements')
 # Every route of the app (frontend src/app/routes.tsx), reported by lib/page-timing.ts as "case/<view>",
 # "admin/<view>" and so on; a Financial view is also reported in detail by its own page-speed hook.
