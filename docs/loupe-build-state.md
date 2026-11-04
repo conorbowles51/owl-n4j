@@ -1,3 +1,22 @@
+## 4 November: reading, replies, together and apart, built and graded (cb-gated-aware)
+
+- **Approach 4 steps 1 to 4** (`awareness` 4.2-aware, screen "Reading, replies and group roles"): read and play
+  times per conversation, reply latency per one-to-one conversation (median, middle half, n; from the owner's read
+  time where present), read without reply (48 h parameter `no_reply_hours`, widened to the case's 95th percentile at
+  the default; from the later of arrival and read time) and unread at extraction. Decisions 19.S7-d to f.
+- **Approach 5 steps 2 and 4** (`device_users` 5.3-together): per pair, quarter hours both placed, together / apart /
+  undecided through `colocation.verdict` (window = the bin), C with n, and apart quarter hours with the owner's use.
+  Parameters `include_synced`, `assumed_radius_m`. Decisions 19.S8-f, g.
+- **One grading rule** `services/phone_analysis/grading.py` (strong, moderate, weak, faint from substantiation and
+  fit); every result listed whatever its level. Coverage `notes` carry the true counts and the plan's figures as
+  rules of thumb; the shared `ApproachLayout` shows them (`data-testid=<testId>-notes`) and a per-strength line.
+- **Agent** `get_analysis_results`: `strength` filter, `by_strength`, `coverage_notes`; 9 questions in
+  `tests/test_agent_awareness_evaluation.py` (tool layer 0 of 9 before, 9 of 9 after).
+- Existing kinds byte-identical (fixture test `test_phone_analysis_unchanged_parts.py`; live old/new digests equal on
+  the 5 cases with phones). Live has no owner read time and no co-placed quarter hour on any pair, so the new tabs
+  hold reply times, recipients' read times and unread only. Follow-ups: complementary use `min_days` cutoff, "medium"
+  vs "moderate" on shared markers.
+
 ## 4 November: share a phone review and know what is left (cb-review, 07 J-13), live 45603ac4
 
 - **Split for review (J-13 step 1).** Conversations' "Split for review…" splits the threads under the current filter
