@@ -56,6 +56,7 @@ const panels = {
 // "stale": a background refetch failed while the query still holds its last answer (isError with data).
 type Status = "ready" | "pending" | "error" | "stale"
 const state = vi.hoisted(() => ({
+  placeholder: false,
   figureKeys: (() => Promise.resolve(null)) as (...args: unknown[]) => Promise<string[] | null>,
   panels: "ready" as Status,
   totals: "ready" as Status,
@@ -84,6 +85,7 @@ vi.mock("../hooks/use-ledger-overview", () => ({
   }),
   usePanelFigureKeys: () => state.figureKeys,
   useLedgerOverviewPanels: () => ({
+    isPlaceholderData: state.placeholder,
     data: (state.panels === "ready" || state.panels === "stale") ? panels : undefined,
     isPending: state.panels === "pending",
     isError: state.panels === "error" || state.panels === "stale",
@@ -233,6 +235,22 @@ it("reads the payments behind a figure when it is opened, says so meanwhile, and
   read.mockImplementation(() => Promise.resolve(null))
   fireEvent.click(screen.getByRole("button", { name: "Try again" }))
   expect(await screen.findByText(/these figures changed since they were drawn/)).toBeTruthy()
+  // Figures still drawn for the previous selection are never opened: the payments read would be the new one's.
+  read.mockClear()
+  state.placeholder = true
+  try {
+    cleanup()
+    render(
+      <MemoryRouter>
+        <InvestigatorOverview caseId="case" />
+      </MemoryRouter>
+    )
+    fireEvent.click(screen.getByRole("button", { name: "View these payments" }))
+    expect(await screen.findByText(/being worked out for the new selection/)).toBeTruthy()
+    expect(read).not.toHaveBeenCalled()
+  } finally {
+    state.placeholder = false
+  }
 })
 
 it("says so when the panels fail, and never draws them from an incomplete answer", () => {

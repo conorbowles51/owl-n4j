@@ -98,10 +98,14 @@ export function InvestigatorOverview({
   const openingNow = useRef<PanelFigure | null>(null)
   const openFigure = (figure: PanelFigure, title: string, drawn: number) => {
     openingNow.current = figure
-    setOpening({ figure, title, drawn })
     const failed = (error: string) => {
       if (openingNow.current === figure) setOpening({ figure, title, drawn, error })
     }
+    // Figures still drawn for the previous selection (the new one is loading) are not opened: the payments read
+    // now would be the new selection's.
+    if (panels.isPlaceholderData)
+      return failed("the figures are being worked out for the new selection; choose it again once they show")
+    setOpening({ figure, title, drawn })
     figureKeys(figure, drawn).then(
       (ids) => {
         if (openingNow.current !== figure) return
