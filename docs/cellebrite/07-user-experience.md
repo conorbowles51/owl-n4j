@@ -120,6 +120,7 @@ Each journey states **Testable from**: the unit that completes its last dependen
   - Stalls follow the rule in 4.7. Try again appears only when the server reports that the step stopped.
   - A failure names the step and gives a reference id and Retry. "Unknown error" never appears. Cancel sits on the card and says what is kept.
 - **Testable from:** J-1a (pick, hash, send, and the stages through "Checking nothing is missing") in the cb-capture gate. J-1b (the remaining stages through the Phone summary) in the cb-screens gate.
+- **Built (`cb-records-rest`, 87750e33):** Accept the difference and Keep held on the Phone summary (03 7.3).
 
 ### J-2 First look at a phone (triage)
 
@@ -183,6 +184,7 @@ Each journey states **Testable from**: the unit that completes its last dependen
   - "6,894 messages have no time and are listed at the end."
   - "No data" bands are never shown as no activity.
 - **Testable from:** 03-3, in the cb-screens gate. The "same-day payments" group is tested in cb-crossev.
+- **Built (`cb-records-rest`, 855a4630):** Go to date with the "Nearest:" wording and a button per nearest day.
 
 ### J-5 Reconstruct the window around a moment, across phones
 
@@ -357,6 +359,7 @@ Section 6 has the detail.
   4. **Hand over** on a review task reassigns it and attaches a handover note (a Workspace note linked to the task) that lists positions and open items.
 - **Targets:** resuming takes 2 actions or fewer [S]; a colleague finds the open items in 60 s or less [M].
 - **Testable from:** cb-screens gate.
+- **Built (`cb-records-rest`, 3ff6fa29, 564ffca4):** Since you last looked, export history, Export profile as PDF and busiest weeks on the Phone summary.
 
 ### J-16 Compare phones for a person or a pair
 
@@ -593,10 +596,10 @@ The owning spec holds each item. Section 15 gives the edit and the test ids. New
     - C-11: a hit opens in the full thread.
     - C-12: Around this time opens in place and leaves the anchor unchanged.
     - C-13: a person's "Not a copy" decision on a duplicate.
-    - MD-1: attachment counts equal Media under the same scope, and Back restores the anchor.
+    - MD-1: attachment counts equal Media under the same scope, and Back restores the anchor. Built `cb-records-rest` b8cbbee0, 5992d65a, 444067ea.
     - A15, redefined to the time strip and stream filling their space at 1280×800 and 1920×1080.
     - A16, with a reference id.
-    - UX-2: find covers rows outside the viewport.
+    - UX-2: find covers rows outside the viewport. Built `cb-records-rest` 243fe809.
     - UX-3: copy on http.
     - UX-4: the panel is non-modal and j/k move.
 - **Record panel (03 3.6).**
@@ -731,7 +734,7 @@ Every phone item can be collected as the investigator works: message, call, emai
 | CO-3 | The adder and time survive another person editing the dossier | lx-collect |
 | CO-4 | A phone photo as dossier cover registers exactly one evidence row with `source_type = phone_file`. No processing job is queued, no outbound request is made, and the Evidence count changes by one, labelled. | lx-collect + cb-screens |
 | CO-5 | The financial report builds and reopens with a phone link | lx-collect |
-| CO-6 | The Notebook prefill carries a 412-item phone selection with the pinned preview | cb-screens |
+| CO-6 | The Notebook prefill carries a 412-item phone selection with the pinned preview | cb-screens; built `cb-records-rest` 90571f23 |
 | CO-7 | "Used in this case" equals the reverse lookup | cb-screens |
 | CO-8 | A corrected record shows both values on the finding and in the export | cb-screens |
 | CO-9a | After Replace, a link shows "from a replaced copy" | cb-screens |

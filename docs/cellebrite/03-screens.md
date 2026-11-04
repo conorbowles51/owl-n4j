@@ -195,6 +195,12 @@ Rules:
    failed position: "These messages could not be loaded. Retry." and the rest of the list stays usable.
    Window requests are retried once automatically after 2 seconds.
 
+**Built (`cb-records-rest`, 243fe809, 564ffca4).** Find in these results (rule 4): the visible Find control and the
+first Ctrl/Cmd+F search the whole result on the server (`POST /api/phones/streams/find`), "Match 1 of N", Enter and
+Shift+Enter step through it and each match scrolls the list to its row; the second press is the browser's. With
+copies collapsed a match on a hidden copy finds the copy shown. More than 10,000 matches is refused with the count,
+nothing listed.
+
 ### 3.2 Time
 
 What is shown, everywhere a phone time appears:
@@ -388,6 +394,11 @@ each kind of absence has its own sentence, and none is collapsed into "unavailab
 | File present, report gave no hash | "The report gave no hash for this file, so it could not be checked." |
 | Field captured but not interpreted | "Captured, not yet interpreted." (still shown with its values) |
 
+**Built (`cb-records-rest`, 5c16bf15, 90571f23).** The record panel carries `Show on Timeline`, `Show on Map` (the
+point itself when the record is positioned, else the positions on the same phone within the hour), `Add to…`,
+`Correct this value` and `Used in this case`. A record pinned in the AI chat or Notebook composer shows a preview
+(three records, then "and N more") with `Open the record`.
+
 ### 3.7 Copy and paste
 
 The recorded feedback asks for copy and paste in timelines (plan 10.2).
@@ -484,6 +495,11 @@ values are masked in lists and search snippets (`Saved password (hidden). Show`)
 click, each reveal recorded through the audit log with the user and record; excluded from copy unless
 revealed; excluded from exports unless the export option `Include sensitive fields` is ticked, which the
 export manifest records.
+
+**Built (`cb-records-rest`, 1fd74fba).** The Export dialog's `Include sensitive fields` is off by default ("Saved
+passwords and card numbers left out"); ticked, it says how many sensitive values the export holds, the PDF and the
+RSMF body print each as "Sensitive field X: value", and the export records `sensitive_values` and
+`sensitive_included`. Measured on live: 43,842 sensitive values, 0 in timeline summaries.
 
 ### 3.11 Access and case scoping
 
@@ -865,6 +881,17 @@ that fetches bytes only on play (v1 checklist `media-voice-preload`). Missing or
 - Export (section 12) from the toolbar: exports exactly the current filter.
 - Toolbar always shows: total (3.1 rule 6), zone selector, names toggle, `Show every copy`, sort.
 
+**Built (`cb-records-rest`).** `Show on Map` from a message (ea2bc74e): the map opens on the same phone's positions
+within one hour (`GET /api/phones/map/near`), or says "No positioned records within 1 hour of this message. The
+nearest is 3 h 12 min earlier. Show it." `Go to date` (855a4630, key `g`): the day, or "No messages on March 12,
+2023 in this thread. Nearest: March 10, 2023 (14) and March 15, 2023 (3)." with a button per nearest day.
+`Attachments (N)` (b8cbbee0, 5992d65a, 444067ea): the header counts referenced attachments and those not in the
+report, only in the production's folders, or named but not in the production (`GET /api/phones/threads/attachments`);
+the Media grid scoped to the thread lists exactly those files, with `Back to the stream` to the anchored row.
+`Save this view` (66cc8619): the filter is kept as a `phone_view` held by a new Workspace note; opening it re-runs it
+and says 'Saved view "w": N messages when saved on <date>; M now.' `Write a note about these` (90571f23) opens the
+Notebook with "412 selected; all 412 will be linked".
+
 ### 6.8 Performance targets
 
 | Operation | Target (p95, server on the production host) | Basis |
@@ -995,6 +1022,13 @@ The sections below follow:
 
 Actions: `Copy profile as text`; `Export profile as PDF` (section 12, same renderer). Profile page for a
 phone still ingesting shows progress from 01's job state and every count marked `(so far)`.
+
+**Built (`cb-records-rest`, 87750e33, 3ff6fa29, 564ffca4).** A held reconciliation shows "Held: ..." with **Accept the
+difference** (typed reason, recorded as a decision naming the exact reconciliation, the capture resumed through the
+engine's Resume) and **Keep held**; a later reading with other differences is held again. Busiest weeks (each count
+the one its Conversations link lists), Since you last looked (counts per change kind since this browser's last
+visit, a colleague's change counted and the viewer's own not), the export history of exports that cover this phone,
+and `Export profile as PDF` through the export jobs.
 
 ### 7.4 Acceptance tests (Phone summary)
 
