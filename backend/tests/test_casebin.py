@@ -668,6 +668,10 @@ def test_the_purge_lock_is_released_so_the_next_run_purges():
         factory = sessionmaker(bind=engine)
         with engine.begin() as c:
             c.execute(text("UPDATE cases SET deleted_at = now() - interval '40 days' WHERE id = :c"), {"c": first})
+        # A web worker's pool holds several idle connections; a session takes whichever comes next after a commit.
+        warm = [engine.connect() for _ in range(4)]
+        for c in warm:
+            c.close()
         with patch("services.vector_db_service.vector_db_service", FakeVectorDB()):
             done = casebin_purge.purge_due(factory)
             assert [c["case_id"] for c in done["cases"]] == [str(first)] and done["skipped"] is None
