@@ -566,3 +566,23 @@ class FundStatementTests(DuplicateTestCase):
         assert out['removed'] is True and self.db.query(FinancialSecurityRow).filter_by(
             ledger_status='admitted').count() == 0
 
+    def test_a_copy_removed_from_financial_does_not_count_and_the_next_copy_does(self):
+        from datetime import datetime, timedelta, timezone
+        from postgres.models.evidence import EvidenceFile
+        from services.financial import brokerage_ledger as BL
+        Base.metadata.create_all(self.engine, tables=[FinancialSecurityRow.__table__])
+        doc = self.make_document()
+        removed = self.db.get(EvidenceFile, doc.evidence_file_id)
+        removed.metadata_ = dict(financial_import_removal=dict(id='r1'))
+        again = EvidenceFile(id=uuid.uuid4(), case_id=self.case.id, original_filename='again.pdf', stored_path='y',
+                             sha256=removed.sha256, size=1)
+        self.db.add(again)
+        removed.created_at = datetime(2026, 9, 19, tzinfo=timezone.utc)
+        again.created_at = removed.created_at + timedelta(days=4)
+        self.db.commit()
+        assert (BL.canonical_copy(self.db, removed), BL.canonical_copy(self.db, again)) == (False, True)
+        with patch.object(BL, '_file_tables', return_value=FUND_TABLES), \
+                patch.object(BL, '_text_content', return_value=''):
+            out = BL.sync_fund_statement(self.db, again.id)
+        assert (out['fund_statement'], out['trades'], out['holdings']) == (True, 3, 1)
+

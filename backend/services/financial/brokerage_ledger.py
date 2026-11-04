@@ -322,13 +322,18 @@ def _apply(session, *, case_id, evidence_file_id, source_document_id, readers, w
 
 def canonical_copy(session, file) -> bool:
     """The one file of a case whose fund-statement rows count, among copies with the same bytes: the earliest
-    uploaded file not marked a duplicate. Other copies get no rows (their rows would count the same trades twice)."""
+    uploaded file not marked a duplicate and not removed from Financial. Other copies get no rows (their rows would
+    count the same trades twice)."""
     from postgres.models.evidence import EvidenceFile
-    if file.is_duplicate:
+    if file.is_duplicate or (file.metadata_ or {}).get('financial_import_removal'):
         return False
+    # A copy removed from Financial does not count; the earliest copy still in Financial does (on live, a batch
+    # removed on 22 Sept was uploaded again the next day: the later copies count).
     first = session.execute(select(EvidenceFile.id).where(
         EvidenceFile.case_id == file.case_id, EvidenceFile.sha256 == file.sha256,
-        EvidenceFile.is_duplicate.is_(False)).order_by(EvidenceFile.created_at, EvidenceFile.id).limit(1)).scalar()
+        EvidenceFile.is_duplicate.is_(False),
+        EvidenceFile.metadata_['financial_import_removal'].as_string().is_(None)).order_by(
+        EvidenceFile.created_at, EvidenceFile.id).limit(1)).scalar()
     return first == file.id
 
 
