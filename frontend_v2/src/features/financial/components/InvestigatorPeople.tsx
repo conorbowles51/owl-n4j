@@ -3,12 +3,14 @@ import { categoryTotals } from "../lib/category-totals"
 import { Disclosure } from "./Disclosure"
 import { paymentInventory } from "../lib/payment-inventory"
 import { ProfileStatementSummary } from "./ProfileStatementSummary"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
 import { accountParties } from "../lib/account-parties"
 import { AccountHistory } from "./AccountHistory"
 import { AccountConsolidation } from "./AccountConsolidation"
 import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
+import { ledgerTransactionsQuery } from "../hooks/use-ledger-transactions"
+import { useInvestigationScope } from "../stores/investigation-scope"
 import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { downloadProtectedFile } from "@/lib/protected-file"
@@ -475,7 +477,14 @@ export function InvestigatorPeople({ caseId }: { caseId: string }) {
   // again: a name saved in an opened profile patches those rows in place (PaymentNamingPanel) and does not ask the
   // server again, so only the rows show it at once.
   const [rowsWanted, setRowsWanted] = useState(false)
-  const data = useInvestigatorPayments(caseId, rowsWanted || !!view.selected)
+  // Payments this scope already holds (read for a profile, or by another page) stay read: a write that marks them
+  // out of date (names linked, accounts joined) reads them again, so the list grouped from them is never older
+  // than the page's other figures.
+  const [scope] = useInvestigationScope(caseId)
+  const queryClient = useQueryClient()
+  const held =
+    queryClient.getQueryData(ledgerTransactionsQuery(caseId, scope).queryKey) !== undefined
+  const data = useInvestigatorPayments(caseId, rowsWanted || !!view.selected || held)
   const rowsRead = data.complete && !data.query.isPlaceholderData
   const people = useLedgerPeopleView(
     caseId,

@@ -11,7 +11,7 @@ import { useLedgerAccountDirectory } from "./use-ledger-account-directory"
 
 const CASE = "10000000-0000-4000-8000-000000000001"
 const calls = vi.hoisted(() => [] as string[])
-const answer = vi.hoisted(() => ({ more: false }))
+const answer = vi.hoisted(() => ({ more: false, wholeFails: false }))
 const account = (n: number) => ({
   id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
   display_label: `Account ${n}`,
@@ -27,6 +27,8 @@ vi.mock("@/lib/api-client", async (original) => ({
     calls.push(url)
     const query = new URLSearchParams(url.split("?")[1])
     const offset = Number(query.get("offset"))
+    if (answer.wholeFails && query.get("whole") === "true")
+      throw Error("Too many statement periods to show in this account page.")
     const items = query.get("whole") === "true" ? [account(1), account(2), account(3)] : [account(offset + 1)]
     return {
       case_id: CASE,
@@ -41,6 +43,7 @@ vi.mock("@/lib/api-client", async (original) => ({
 afterEach(() => {
   calls.length = 0
   answer.more = false
+  answer.wholeFails = false
 })
 
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -63,4 +66,14 @@ it("pages on when the answer says more accounts follow", async () => {
   expect(calls[1]).toContain("offset=3")
   expect(calls[1]).not.toContain("whole")
   expect(result.current.data!.items).toHaveLength(4)
+})
+
+it("reads 100 accounts at a time when the whole list cannot be answered at once", async () => {
+  answer.wholeFails = true
+  answer.more = true
+  const { result } = renderHook(() => useLedgerAccountDirectory(CASE), { wrapper })
+  await waitFor(() => expect(result.current.isSuccess).toBe(true))
+  expect(calls.map((u) => new URLSearchParams(u.split("?")[1]).get("offset"))).toEqual(["0", "0", "1"])
+  expect(calls[1]).not.toContain("whole")
+  expect(result.current.data!.items).toHaveLength(2)
 })
