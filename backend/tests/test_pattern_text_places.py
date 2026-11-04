@@ -283,3 +283,39 @@ def test_refused_placements_record_nothing(hooks):
         with engine.connect() as c:
             for t in ("pol_text_place", "adjudications", "manual_changes"):
                 assert c.execute(text("SELECT count(*) FROM %s" % t)).scalar() == 0
+
+
+@needs_template
+def test_saving_the_same_place_again_is_refused_and_counts_and_staleness_follow_the_decisions(hooks):
+    from services.pattern_of_life import snapshots
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case, ext = _phone(c)
+        build(engine, ext)
+        with engine.connect() as c:
+            frozen = snapshots.mapping_versions(c, case, [ext], text_places=True)
+            assert "text_places_version" not in frozen["extractions"][str(ext)]["projection"]  # old results unchanged
+        cal = [i for i in _items(engine, case)["items"] if i["group"] == "calendar"][0]
+        key = (cal["record_uid"], cal["field_path"])
+        with Session(engine) as s:
+            text_places.place(s, case, *key, lat=PIN[0], lon=PIN[1], radius_m=150, reason="first", actor=ACTOR)
+            s.commit()
+        with Session(engine) as s:
+            with pytest.raises(text_places.TextPlaceError) as e:  # same point, radius and text: nothing to decide
+                text_places.place(s, case, *key, lat=PIN[0], lon=PIN[1], radius_m=150, reason="again", actor=ACTOR)
+            assert e.value.status == 409
+            s.rollback()
+        with engine.connect() as c:
+            assert c.execute(text("SELECT count(*) FROM adjudications")).scalar() == 1
+            assert snapshots.mapping_versions(c, case, [ext], text_places=True) != frozen  # a saved result goes stale
+            assert snapshots.mapping_versions(c, case, [ext]) == frozen  # analysis results do not read text places
+        with Session(engine) as s:
+            text_places.remove(s, case, *key, reason="wrong hall", actor=ACTOR)
+            s.commit()
+        listed = [i for i in _items(engine, case)["items"] if i["group"] == "calendar"][0]
+        assert listed["decisions"] == 2 and listed["placement"] is None
+        with engine.connect() as c:
+            h = text_places.history(c, case, *key)
+            assert (h[0]["ended_by"], h[0]["ended_reason"], h[0]["ended_actor_name"]) == (
+                "remove_text_place", "wrong hall", "Test Person")

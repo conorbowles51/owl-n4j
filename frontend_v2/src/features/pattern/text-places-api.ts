@@ -80,6 +80,10 @@ export interface TextPlaceHistoryRow {
   removed_decision_id: string | null
   actor_name: string | null
   created_at: string
+  ended_by?: string | null
+  ended_reason?: string | null
+  ended_actor_name?: string | null
+  ended_at?: string | null
 }
 
 const base = (caseId: string) => `/api/pattern/${encodeURIComponent(caseId)}/text-places`

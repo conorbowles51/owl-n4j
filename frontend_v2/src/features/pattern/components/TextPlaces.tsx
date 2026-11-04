@@ -57,7 +57,7 @@ function TextPlaceList({ caseId, extractionId }: { caseId: string; extractionId:
       <p className="text-xs text-muted-foreground" data-testid="suggestion-status">{d.suggestions.reason}</p>
       <ul className="flex flex-col gap-2">
         {d.items.map((t) => (
-          <TextPlaceRow key={`${t.record_uid}|${t.field_path}`} caseId={caseId} item={t} suggestionsOn={d.suggestions.enabled} />
+          <TextPlaceRow key={`${t.record_uid}|${t.field_path}|${t.placement?.id ?? "none"}`} caseId={caseId} item={t} suggestionsOn={d.suggestions.enabled} />
         ))}
       </ul>
       {(d.cursor > 0 || d.next_cursor != null) && (
@@ -229,7 +229,9 @@ function TextPlaceHistory({ caseId, item }: { caseId: string; item: TextPlace })
         <li key={h.id}>
           {when(h.created_at)}, {h.actor_name || "a person"}: {h.lat.toFixed(5)}, {h.lon.toFixed(5)} within{" "}
           {Math.round(h.radius_m).toLocaleString()} m, “{h.reason}”. Text then: “{h.place_text}”.{" "}
-          {h.removed_decision_id ? "Replaced or removed later." : "Current."}
+          {!h.removed_decision_id ? "Current." : h.ended_by === "remove_text_place"
+            ? `Removed on ${when(h.ended_at ?? null)} by ${h.ended_actor_name || "a person"}: “${h.ended_reason ?? ""}”.`
+            : "Replaced by the next placement."}
         </li>
       ))}
     </ol>

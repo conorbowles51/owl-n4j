@@ -31,7 +31,7 @@ class SnapshotError(ValueError):
         self.status = status
 
 
-def mapping_versions(conn, case_id, extraction_ids) -> dict:
+def mapping_versions(conn, case_id, extraction_ids, text_places=False) -> dict:
     """Per extraction: the interpretation generation and the projection's mapping versions and signature; plus the
     case's cell dataset. The same set the statement check fingerprints (evaluation.inputs)."""
     out = {}
@@ -40,9 +40,14 @@ def mapping_versions(conn, case_id, extraction_ids) -> dict:
                            {"e": e}).scalar()
         p = conn.execute(text(
             "SELECT interpretation_generation, activity_mapping_version, meaning_mapping_version, "
-            "attribution_mapping_version, signature FROM pol_projection_state WHERE extraction_id = :e"),
-            {"e": e}).mappings().first()
-        out[e] = {"generation": gen, "projection": json.loads(json.dumps(dict(p), default=str)) if p else None}
+            "attribution_mapping_version, signature, text_places_version FROM pol_projection_state WHERE "
+            "extraction_id = :e"), {"e": e}).mappings().first()
+        proj = json.loads(json.dumps(dict(p), default=str)) if p else None
+        if proj is not None and (not text_places or not proj.get("text_places_version")):
+            # a person's text placements (04 6.5) make a saved result stale; none yet keeps the key out, so results
+            # saved before text places existed still compare equal
+            proj.pop("text_places_version", None)
+        out[e] = {"generation": gen, "projection": proj}
     ds = conn.execute(text("SELECT dataset_id FROM pol_case_cell_dataset WHERE case_id = :c"), {"c": case_id}).scalar()
     return {"extractions": out, "cell_dataset_id": str(ds) if ds else None}
 
@@ -119,7 +124,7 @@ def freeze(db, case_id, *, kind, subject, extraction_ids, labels, start: datetim
     records, counts = _result(conn, case_id, kind, extraction_ids, labels, start, end, zone, zname, parameters)
     snap = {"kind": kind, "subject": subject,
             "window": {"start": _iso(start), "end": _iso(end), "zone": zname},
-            "parameters": parameters, "mapping_versions": mapping_versions(conn, case_id, extraction_ids),
+            "parameters": parameters, "mapping_versions": mapping_versions(conn, case_id, extraction_ids, text_places=True),
             "record_ids": records, "summary_counts": counts}
     snap = link_types.validate_phone_analysis_snapshot(snap)
     sid = link_types.phone_analysis_snapshot_id(snap)
@@ -141,7 +146,7 @@ def read(conn, case_id, sid) -> dict | None:
         return None
     snap = row["snapshot"]
     exts = list((snap["mapping_versions"].get("extractions") or {}).keys())
-    now = mapping_versions(conn, case_id, exts)
+    now = mapping_versions(conn, case_id, exts, text_places=True)
     return {"id": row["id"], "kind": row["kind"], "label": row["label"], "snapshot": snap,
             "record_count": row["record_count"], "created_by_name": row["created_by_name"],
             "created_at": row["created_at"], "stale": now != snap["mapping_versions"],

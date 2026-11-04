@@ -101,7 +101,8 @@ describe("Text places", () => {
     vi.spyOn(textPlacesAPI, "list").mockResolvedValue(list([placed]))
     vi.spyOn(textPlacesAPI, "history").mockResolvedValue({ total: 2, items: [
       { id: "p1", place_text: "Synthetic Hal, Springfield", lat: 39.7, lon: -89.5, radius_m: 2000, reason: "first",
-        suggestion: null, decision_id: "d1", removed_decision_id: "d2", actor_name: "Test Person", created_at: "2026-11-04T11:00:00+00:00" },
+        suggestion: null, decision_id: "d1", removed_decision_id: "d2", actor_name: "Test Person", created_at: "2026-11-04T11:00:00+00:00",
+        ended_by: "place_text_place" },
       { id: "p2", place_text: "Synthetic Hal, Springfield", lat: 39.8, lon: -89.6, radius_m: 300, reason: "closer",
         suggestion: null, decision_id: "d2", removed_decision_id: null, actor_name: "Test Person", created_at: "2026-11-04T12:00:00+00:00" },
     ] })
@@ -111,7 +112,7 @@ describe("Text places", () => {
     expect(screen.getByText(/The phone recorded: “Synthetic Hal, Springfield”/)).toBeTruthy()
     expect(screen.getByText(/The text read “Synthetic Hal, Springfield” when it was placed/)).toBeTruthy()
     fireEvent.click(screen.getByText("Decisions (2)"))
-    expect(await screen.findByText(/“first”. Text then: “Synthetic Hal, Springfield”. Replaced or removed later./)).toBeTruthy()
+    expect(await screen.findByText(/“first”. Text then: “Synthetic Hal, Springfield”. Replaced by the next placement./)).toBeTruthy()
     fireEvent.click(screen.getByText("Remove the place"))
     fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "wrong hall" } })
     fireEvent.click(screen.getByText("Remove"))
@@ -147,5 +148,20 @@ describe("text place helpers", () => {
     expect(suggestionWords({ name: "Paris", admin1: null, country: "France", country_code: "FR", population: null })).toBe("Paris, France")
     expect(startRadiusFor(2_000_000)).toBe(20000)
     expect(startRadiusFor(null)).toBe(2000)
+  })
+})
+
+describe("text place history", () => {
+  it("shows a removal with who removed it and why", async () => {
+    const it2 = item({ decisions: 2 })
+    vi.spyOn(textPlacesAPI, "list").mockResolvedValue(list([it2]))
+    vi.spyOn(textPlacesAPI, "history").mockResolvedValue({ total: 1, items: [
+      { id: "p1", place_text: "Synthetic Hall, Springfield, IL", lat: 39.7, lon: -89.5, radius_m: 2000, reason: "first",
+        suggestion: null, decision_id: "d1", removed_decision_id: "d2", actor_name: "Test Person", created_at: "2026-11-04T11:00:00+00:00",
+        ended_by: "remove_text_place", ended_reason: "wrong hall", ended_actor_name: "Other Person", ended_at: "2026-11-04T12:00:00+00:00" },
+    ] })
+    show()
+    fireEvent.click(await screen.findByText("Decisions (2)"))
+    expect(await screen.findByText(/Removed on 2026-11-04 12:00 UTC by Other Person: “wrong hall”./)).toBeTruthy()
   })
 })

@@ -355,6 +355,16 @@ const DECISION_COPY: Record<AdjudicationDecision, TermCopy> = {
     description:
       "A place attached to a payment was removed. The earlier place stays in the history.",
   },
+  place_text_place: {
+    label: "Written place placed on the map",
+    description:
+      "A person placed a place written on a phone record (a calendar location, a check-in or an address) on the map, a point with a radius, with a reason. It shows what the record points to, never that the phone was there. The phone record itself is unchanged.",
+  },
+  remove_text_place: {
+    label: "Written place taken off the map",
+    description:
+      "A place a person had put on the map for a written place on a phone record was removed. The earlier placement stays in the history.",
+  },
   dispute_check_item: {
     label: "Statement check item marked wrong",
     description:
@@ -436,6 +446,8 @@ const DECISION_VARIANT: Record<AdjudicationDecision, BadgeVariant> = {
   undo_phone_result_decision: "slate",
   attach_transaction_place: "info",
   remove_transaction_place: "slate",
+  place_text_place: "info",
+  remove_text_place: "slate",
   dispute_check_item: "amber",
   withdraw_check_item_dispute: "slate",
   correct_machine_text: "info",
@@ -499,6 +511,8 @@ const CHANGED_STORED_STATE: Record<AdjudicationDecision, boolean> = {
   undo_phone_result_decision: true,
   attach_transaction_place: true,
   remove_transaction_place: true,
+  place_text_place: true,
+  remove_text_place: true,
   dispute_check_item: false,
   withdraw_check_item_dispute: false,
   correct_machine_text: true,

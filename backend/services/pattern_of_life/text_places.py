@@ -188,8 +188,9 @@ def list_places(conn, case_id, *, extraction_id=None, status="all", cursor=0, li
     for e in {r.extraction_id for r in page}:
         times.update(_times(conn, e, [r.record_uid for r in page if r.extraction_id == e], zones))
     history_n = dict(conn.execute(text(
-        "SELECT record_uid::text || '|' || field_path, count(*) FROM pol_text_place WHERE case_id = :c "
-        "GROUP BY 1"), {"c": case_id}).all())
+        "SELECT subject_id::text || '|' || (after ->> 'field'), count(*) FROM adjudications WHERE case_id = :c AND "
+        "subject_type = 'phone_record' AND decision IN ('place_text_place', 'remove_text_place') GROUP BY 1"),
+        {"c": case_id}).all())
     items = []
     for r in page:
         group = FIELDS[(r.model_type, r.field_name)]
@@ -279,8 +280,11 @@ def _clean_suggestion(sug):
     keep = {k: sug.get(k) for k in ("geonameid", "name", "country_code", "admin1", "lat", "lon", "population")}
     if keep["geonameid"] is None or not keep["name"]:
         raise TextPlaceError("The suggestion is not one the list offered.")
-    keep["lat"] = "%.5f" % float(keep["lat"]) if keep["lat"] is not None else None
-    keep["lon"] = "%.5f" % float(keep["lon"]) if keep["lon"] is not None else None
+    try:
+        keep["lat"] = "%.5f" % float(keep["lat"]) if keep["lat"] is not None else None
+        keep["lon"] = "%.5f" % float(keep["lon"]) if keep["lon"] is not None else None
+    except (TypeError, ValueError):
+        raise TextPlaceError("The suggestion is not one the list offered.")
     keep["source"] = "GeoNames (offline)"
     keep["basis"] = "suggested by the offline place list; the point and radius are the person's"
     return keep
@@ -299,9 +303,12 @@ def place(session, case_id, record_uid, field_path, *, lat, lon, radius_m, reaso
     sug = _clean_suggestion(suggestion)
     old = current(conn, case_id).get((r.record_uid, r.field_path))
     after = {"place": _place_snapshot({"lat": lat, "lon": lon, "radius_m": radius_m}), "field": r.field_path,
-             "suggestion": _sug_snapshot(sug)}
+             "suggestion": _sug_snapshot(sug), "text": r.place_text}
     before = {"place": _place_snapshot(old), "field": r.field_path,
-              "suggestion": _sug_snapshot(old["suggestion"]) if old else None}
+              "suggestion": _sug_snapshot(old["suggestion"]) if old else None,
+              "text": old["place_text"] if old else None}
+    if before == after:
+        raise TextPlaceError("This written place is already placed here with that radius.", 409)
     row = decisions.record(session, case_id=case_id, subject=_subject(session, case_id, r),
                            subject_type=AdjudicationSubject.phone_record,
                            decision=AdjudicationDecision.place_text_place, reason=reason.strip(), actor=actor,
@@ -335,8 +342,8 @@ def remove(session, case_id, record_uid, field_path, *, reason, actor):
     subject = session.get(PhoneRecordSubject, old["record_uid"])
     row = decisions.record(session, case_id=case_id, subject=subject, subject_type=AdjudicationSubject.phone_record,
                            decision=AdjudicationDecision.remove_text_place, reason=reason.strip(), actor=actor,
-                           before={"place": _place_snapshot(old), "field": field_path},
-                           after={"place": None, "field": field_path})
+                           before={"place": _place_snapshot(old), "field": field_path, "text": old["place_text"]},
+                           after={"place": None, "field": field_path, "text": old["place_text"]})
     conn.execute(text("UPDATE pol_text_place SET removed_decision_id = :d WHERE id = :i"),
                  {"d": row.id, "i": old["id"]})
     project(conn, old["extraction_id"], bump=True)
@@ -348,9 +355,12 @@ def history(conn, case_id, record_uid, field_path) -> list:
     """Every placement of the written place, oldest first, with the decision that ended each and the text as it
     stood when it was placed."""
     return [dict(r._mapping) for r in conn.execute(text(
-        "SELECT id, place_text, lat, lon, radius_m, reason, suggestion, decision_id, removed_decision_id, actor_name, "
-        "created_at FROM pol_text_place WHERE case_id = :c AND record_uid = :u AND field_path = :f "
-        "ORDER BY created_at, id"), {"c": case_id, "u": record_uid, "f": field_path})]
+        "SELECT p.id, p.place_text, p.lat, p.lon, p.radius_m, p.reason, p.suggestion, p.decision_id, "
+        "p.removed_decision_id, p.actor_name, p.created_at, e.decision AS ended_by, e.reason AS ended_reason, "
+        "e.actor_name AS ended_actor_name, e.created_at AS ended_at FROM pol_text_place p "
+        "LEFT JOIN adjudications e ON e.id = p.removed_decision_id "
+        "WHERE p.case_id = :c AND p.record_uid = :u AND p.field_path = :f ORDER BY p.created_at, p.id"),
+        {"c": case_id, "u": record_uid, "f": field_path})]
 
 
 # ---- the projection -------------------------------------------------------------------------------------------------
