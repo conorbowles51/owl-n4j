@@ -14,6 +14,10 @@ describe("Together evidence words", () => {
     expect(w[2]).toContain("1 matched by device name only")
     expect(w[2]).toContain("1 nearby, not connected")
   })
+  it("says how many Bluetooth sightings were not compared because a name is a factory default", () => {
+    expect(evidenceWords({ "not_compared:default_device_name": 3 })).toEqual([
+      "3 Bluetooth sightings not compared: the other phone's Bluetooth name is its factory default (its model name), which every phone of that model shares."])
+  })
   it("says nothing for a run with no pairs", () => {
     expect(evidenceWords({})).toEqual([])
     expect(evidenceWords(undefined)).toEqual([])

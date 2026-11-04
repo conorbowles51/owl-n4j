@@ -63,6 +63,16 @@ def test_bluetooth_addresses_and_names_normalise_and_placeholders_are_not_device
         "other", "bluetooth_address", "other:bluetooth_address:0a:1b:2c:3d:4e:5f")
 
 
+def test_a_factory_default_bluetooth_name_is_recognised_and_a_personal_one_is_not():
+    for name in ("iPhone", "Galaxy A02s", "galaxy s21 ultra", "Pixel 7 Pro", "moto g play - 2023", "iPhone 15 Pro Max",
+                 "Samsung Galaxy Note 20", "OnePlus Nord 2"):
+        assert identifiers.default_device_name(name), name
+    for name in ("Synthetic Handset B", "Sam's iPhone", "iPhone de Sam", "Galaxy of Sam", "Car Kit", "", None):
+        assert not identifiers.default_device_name(name), name
+    assert identifiers.default_device_name("Model X1", models=["MODEL  x1"])  # the report's own model name
+    assert not identifiers.default_device_name("Model X1", models=["Model X2"])
+
+
 def test_a_tower_without_mcc_takes_the_sims_only_when_exactly_one_is_known():
     body = model("CellTower", [fld("MNC", ("Int32", "7")), fld("LAC", ("Int32", "100")), fld("CID", ("Int32", "9"))])
     k, flags, reason = places.resolve_tower_key(body, {999})
@@ -210,3 +220,30 @@ def test_a_tower_without_mcc_is_compared_with_the_sims_mcc_and_flagged(hooks):
             un = places.unplaced_towers(c, [en])
         assert [(t["mcc"], t["mcc_inferred"], t["reason"]) for t in ua] == [(999, True, "no_reference_dataset")] * 2
         assert [(t["mcc"], t["mcc_inferred"], t["reason"]) for t in un] == [(None, False, "mcc_unknown_no_sim")]
+
+
+@needs_template
+def test_a_phone_whose_bluetooth_name_is_its_factory_default_is_not_compared_by_name_and_is_counted(hooks):
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            a = ColocPhone()
+            a.bt_peer(DAY, "Galaxy A02s", nature="Detected")  # any phone of that model would be seen so
+            a.bt_peer(DAY + timedelta(minutes=10), "Model X1", nature="Detected")  # the report's own model name
+            a.bt_peer(DAY + timedelta(minutes=20), B_ADDRESS, nature="Connected")  # the address still matches
+            ea = a.make(c, case)
+            eb = ColocPhone({"Bluetooth MAC Address": B_ADDRESS, "DeviceInfoBluetoothDeviceName": "Galaxy A02s"}
+                            ).make(c, case)
+            ec = ColocPhone({"DeviceInfoBluetoothDeviceName": "Model X1", "DeviceInfoSelectedDeviceName": "Model X1"}
+                            ).make(c, case)
+        for e in (ea, eb, ec):
+            build(engine, e)
+        items, counts, _ = _run(engine, case, ea, eb)
+        bt = [i for i in items if i["basis"] == "bluetooth"]
+        assert len(bt) == 1 and "name_match" not in bt[0]["flags"]  # only the address
+        assert counts["not_compared:default_device_name"] == 1 and counts["analysis_version"] == 3
+        items, counts, _ = _run(engine, case, ea, ec)
+        assert [i for i in items if i["basis"] == "bluetooth"] == []
+        assert counts["not_compared:default_device_name"] == 1

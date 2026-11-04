@@ -432,6 +432,20 @@ def own_bluetooth(conn, extraction_ids) -> dict:
     return out
 
 
+# Header items that name the phone's model (Cellebrite: the model chosen for the extraction, or detected).
+MODEL_HEADER_ITEMS = ("DeviceInfoSelectedDeviceName", "DeviceInfoDetectedPhoneModel", "DeviceInfoDetectedModel",
+                      "DeviceInfoSelectedModel", "DeviceInfoModel", "DeviceModel", "Model")
+
+
+def device_models(conn, extraction_ids) -> dict:
+    """``{extraction_id: [model names]}`` from each report's header (identifiers.default_device_name)."""
+    out = {}
+    for e in extraction_ids:
+        items = header_items(conn, e)
+        out[str(e)] = [v for k in MODEL_HEADER_ITEMS for v in items.get(k, [])]
+    return out
+
+
 # Version of this stage: a change to what it writes makes the sweep read every phone again (sweep.interpreter_version).
 # 2: the phone's own Bluetooth address and name from the report header (cb-coloc-rest B).
 build.stage_version = 2

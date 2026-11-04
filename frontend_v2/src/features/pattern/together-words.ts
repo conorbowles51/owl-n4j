@@ -28,6 +28,10 @@ export function evidenceWords(counts: Record<string, number> | undefined): strin
     }
     out.push(line + ".")
   }
+  const defaults = c["not_compared:default_device_name"] || 0
+  if (defaults) {
+    out.push(`${defaults.toLocaleString()} Bluetooth ${defaults === 1 ? "sighting" : "sightings"} not compared: the other phone's Bluetooth name is its factory default (its model name), which every phone of that model shares.`)
+  }
   return out
 }
 

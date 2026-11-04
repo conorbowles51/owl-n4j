@@ -101,6 +101,37 @@ def bluetooth_name(raw) -> Optional[str]:
     return s or None
 
 
+# A phone's factory-default Bluetooth name is its product or model name, which every phone of that model shares
+# (followups m110415502629705; measured 4 Nov: 2 of the 3 live phones stating their own Bluetooth name advertise
+# one, "galaxy a02s" and "moto g play - 2023"). Such a name is never compared: a scan that saw any phone of that
+# model would otherwise read as this phone. A brand or product word followed only by model tokens (a token with a
+# digit, a single letter, or a model word) is a default; a name with any other word ("Sam's iPhone") is not.
+_DEFAULT_BRANDS = (
+    "iphone", "ipad", "ipod", "apple watch", "airpods", "galaxy", "samsung galaxy", "samsung", "pixel",
+    "google pixel", "moto", "motorola", "redmi", "xiaomi", "oneplus", "huawei", "honor", "oppo", "vivo", "realme",
+    "nokia", "lg", "xperia", "sony xperia", "android", "nothing phone", "tcl", "zte", "alcatel")
+_DEFAULT_MODEL_WORDS = frozenset((
+    "pro", "max", "plus", "mini", "ultra", "lite", "note", "edge", "play", "power", "stylus", "fold", "flip", "fe",
+    "se", "xl", "xr", "xs", "x", "e", "a", "s", "z", "g", "tab", "touch", "nord", "neo", "prime", "go", "core",
+    "mate", "nova", "reno", "find", "5g", "4g", "lte", "-", "+"))
+
+
+def default_device_name(name, models=()) -> bool:
+    """True when a Bluetooth name (``bluetooth_name`` form) is a factory default: one of the phone's own model names
+    from its report header (``models``, compared in the same form), or a product name such as "iphone" or
+    "galaxy s21 ultra"."""
+    n = bluetooth_name(name)
+    if not n:
+        return False
+    if n in {bluetooth_name(m) for m in models if m}:
+        return True
+    for brand in sorted(_DEFAULT_BRANDS, key=len, reverse=True):
+        if n == brand or n.startswith(brand + " "):
+            rest = n[len(brand):].replace("(", " ").replace(")", " ").split()
+            return all(any(ch.isdigit() for ch in t) or t in _DEFAULT_MODEL_WORDS or len(t) == 1 for t in rest)
+    return False
+
+
 def bluetooth(raw, subkind) -> Optional[Identifier]:
     """The phone's own Bluetooth address or name as an identity (kind ``other``; never a person)."""
     if subkind == "bluetooth_address":

@@ -38,7 +38,8 @@ DEFAULT_PARAMS = {"window_s": 300, "assumed_radius_m": 1000.0, "max_speed_mps": 
                   "include_synced": False, "bluetooth_radius_m": 30.0}
 # Bumped when the pair rules change what a run returns; echoed in every run's counts.
 # 2: Bluetooth basis, MCC inferred from the SIM on shared cells (cb-coloc-rest).
-ANALYSIS_VERSION = 2
+# 3: a phone's factory-default Bluetooth name is not compared (counted as not_compared:default_device_name).
+ANALYSIS_VERSION = 3
 COUNTED_FLAGS = ("mcc_inferred", "name_match", "nearby_not_connected")  # counted per run so the screen can say them
 BACKGROUND_PAIRS = 2_000_000
 PAGE = 1000
@@ -213,21 +214,30 @@ def _bt_item(peer, p):
             "tight": (not by_name) and r <= p["tight_radius_m"], "flags": flags, "basis": "bluetooth"}
 
 
-def _bluetooth_pairs(conn, ea, eb, start, end, p):
+def _bluetooth_pairs(conn, ea, eb, start, end, p, not_compared=None):
     """One phone's Bluetooth peer record whose name or address is the other phone's own Bluetooth identity
-    (identities.own_bluetooth): ``compatible`` at that time, radius 30 m (04 8.4). Both directions are read."""
-    from services.phone.identities import own_bluetooth
+    (identities.own_bluetooth): ``compatible`` at that time, radius 30 m (04 8.4). Both directions are read.
+    A phone's own name that is its factory default (identifiers.default_device_name) is not compared; each peer
+    record that would have matched it is counted in ``not_compared["default_device_name"]``."""
+    from services.phone.identifiers import default_device_name
+    from services.phone.identities import device_models, own_bluetooth
     own = own_bluetooth(conn, list(ea) + list(eb))
+    models = device_models(conn, [e for e in list(ea) + list(eb) if own.get(str(e))])
     out = []
     for side_from, side_to, a_is_peer in ((ea, eb, True), (eb, ea, False)):
-        targets = {}
+        targets, defaults = {}, set()
         for y in side_to:
             for k, cite in own.get(str(y), {}).items():
+                if k[0] == "bluetooth_name" and default_device_name(k[1], models.get(str(y), ())):
+                    defaults.add(k)
+                    continue
                 targets.setdefault(k, []).append(cite)
-        if not targets:
+        if not targets and not defaults:
             continue
         for x in side_from:
             for peer in bluetooth_peers(conn, x, start, end):
+                if peer[2] in defaults and peer[2] not in targets and not_compared is not None:
+                    not_compared["default_device_name"] = not_compared.get("default_device_name", 0) + 1
                 for cite in targets.get(peer[2], ()):
                     rec = {"ref": "rec:%s" % peer[0], "start": peer[1]}
                     ident = {"ref": "ident:%s" % cite["sighting_uid"], "start": peer[1]}
@@ -287,7 +297,8 @@ def compute(conn, case_id, ea, eb, start, end, params, run_id=None) -> tuple:
     pairs = sweep_pairs(A, B, p)
     pairs += _bssid_pairs(conn, case_id, set(ea), set(eb), start, end, p)
     pairs += _cell_pairs(conn, ea, eb, start, end, p)
-    pairs += _bluetooth_pairs(conn, ea, eb, start, end, p)
+    not_compared = {}
+    pairs += _bluetooth_pairs(conn, ea, eb, start, end, p, not_compared)
     items = []
     for n, (a, b, v) in enumerate(sorted(pairs, key=lambda x: (min(x[0]["start"], x[1]["start"]),
                                                                str(x[0].get("id") or x[0].get("ref")),
@@ -298,6 +309,8 @@ def compute(conn, case_id, ea, eb, start, end, params, run_id=None) -> tuple:
                       "tight": v["tight"], "assumed": v["assumed"], "flags": v["flags"]})
     counts = {"pairs": len(items), "observations_a": len(A), "observations_b": len(B),
               "analysis_version": ANALYSIS_VERSION}
+    for k, n in not_compared.items():
+        counts["not_compared:" + k] = n
     for it in items:
         counts[it["verdict"]] = counts.get(it["verdict"], 0) + 1
         counts["basis:" + it["basis"]] = counts.get("basis:" + it["basis"], 0) + 1
