@@ -258,12 +258,52 @@ def collapse_mirrored(rows) -> list:
                                "ordering_date": mirror["ordering_date"]}
         kept["proof_class"] = p.proof_class.value
         dropped.add(mirror["id"])
+    _possible_mirrors([r for r in rows if r["id"] not in dropped])
     out = []
     for r in rows:
         if r["id"] in dropped:
             continue
         out.append({k: v for k, v in r.items() if not k.startswith("_")})
     return out
+
+
+MIRROR_SEARCH_DAYS = 365
+
+
+def _possible_mirrors(rows) -> None:
+    """A debit and a credit of the same amount and currency, in different accounts, the same way between the two
+    sides, further apart than the mirror rule's settlement window (within MIRROR_SEARCH_DAYS): each row lists the
+    other under ``possible_mirrors`` with the days apart and a strength by the transfer-pair rule
+    (linkage.graded_level). Both rows still count as they did; this only says they may be one payment seen twice
+    (Neil 2026-11-04: no cutoff hides a match)."""
+    from services.financial.flow import DEFAULT_SETTLEMENT_DAYS
+    from services.financial.linkage import _graded_date_fit, graded_level
+    groups = {}
+    for r in rows:
+        groups.setdefault((r["currency"], r["amount_minor"], r["direction"]), []).append(r)
+    for group in groups.values():
+        debits = [r for r in group if r["_debit"]]
+        credits = [r for r in group if not r["_debit"]]
+        found = []
+        for d in debits:
+            for c in credits:
+                if d["account_id"] == c["account_id"]:
+                    continue
+                gap = abs((date.fromisoformat(c["ordering_date"]) - date.fromisoformat(d["ordering_date"])).days)
+                if DEFAULT_SETTLEMENT_DAYS < gap <= MIRROR_SEARCH_DAYS:
+                    found.append((d, c, gap))
+        count = {}
+        for d, c, _ in found:
+            count[d["id"]] = count.get(d["id"], 0) + 1
+            count[c["id"]] = count.get(c["id"], 0) + 1
+        for d, c, gap in found:
+            unique = count[d["id"]] == 1 and count[c["id"]] == 1
+            level = graded_level(_graded_date_fit(gap), 0, 1 if unique else 0)
+            for me, other in ((d, c), (c, d)):
+                me.setdefault("possible_mirrors", []).append({
+                    "id": other["id"], "ref_id": other["ref_id"], "days_apart": gap, "level": level,
+                    "reason": "same amount and currency, the same way between them, %d days apart (the mirror rule "
+                              "joins rows within %d days); counted separately" % (gap, DEFAULT_SETTLEMENT_DAYS)})
 
 
 def money_totals(rows) -> list:
