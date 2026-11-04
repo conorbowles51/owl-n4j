@@ -1659,7 +1659,7 @@ Each is a decision with its reasoning and what would reverse it.
     25). A stay's day is the local date it starts. Deviation labels each local hour by the stay with the most minutes
     in it; a stay outside the routine places is "elsewhere"; the 95th percentile is interpolated over the subject's
     scored days. A claim naming a cluster stores the cluster's centre and radius when it is confirmed, so a recompute
-    never changes a confirmed claim. Places are named by a person (decision 42). *Reverse if* P14 routine misses
+    never changes a confirmed claim. Places are named by a person (decision 47). *Reverse if* P14 routine misses
     30 s (11), then stays are stored per extraction and recomputed with the projection.
 
 27. **Together and apart as built (04-U9; `services/pattern_of_life/colocation.py`, migration
