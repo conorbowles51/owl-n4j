@@ -1,6 +1,7 @@
 import { Trash2, GitMerge, Pencil, X, Star, StarOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { MAX_MERGE_ENTITIES } from "@/features/graph/lib/merge-limit"
 
 interface BulkActionsBarProps {
   count: number
@@ -65,11 +66,22 @@ export function BulkActionsBar({
           className="h-7 text-xs"
           disabled={count < 2}
           onClick={onMerge}
-          title={count < 2 ? "Select 2 or more entities to merge" : `Merge ${count} entities`}
+          title={
+            count < 2
+              ? "Select 2 or more entities to merge"
+              : count > MAX_MERGE_ENTITIES
+                ? `One merge takes up to ${MAX_MERGE_ENTITIES}: the first ${MAX_MERGE_ENTITIES} are merged, ${count - MAX_MERGE_ENTITIES} left out`
+                : `Merge ${count} entities in one step`
+          }
         >
           <GitMerge className="size-3.5" />
-          Merge
+          {count >= 2 ? `Merge ${Math.min(count, MAX_MERGE_ENTITIES)}` : "Merge"}
         </Button>
+        {count > MAX_MERGE_ENTITIES && (
+          <span className="text-[11px] text-amber-700 dark:text-amber-300" data-testid="merge-limit">
+            up to {MAX_MERGE_ENTITIES} per merge; {count - MAX_MERGE_ENTITIES} left out
+          </span>
+        )}
         <Button
           variant="ghost"
           size="sm"

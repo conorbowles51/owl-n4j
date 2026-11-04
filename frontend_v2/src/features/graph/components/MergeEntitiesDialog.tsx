@@ -6,6 +6,7 @@ import { NodeBadge } from "@/components/ui/node-badge"
 import { Progress } from "@/components/ui/progress"
 import type { GraphNode } from "@/types/graph.types"
 import { graphAPI } from "../api"
+import { MAX_MERGE_ENTITIES } from "../lib/merge-limit"
 import type { MergeTrackerJob } from "../hooks/use-merge-tracker"
 import { GitMerge, AlertTriangle, Loader2, CheckCircle2, XCircle } from "lucide-react"
 
@@ -46,13 +47,21 @@ export function MergeEntitiesDialog({
   onClearJob,
 }: MergeEntitiesDialogProps) {
   const [preferredName, setPreferredName] = useState("")
+  const [preferredType, setPreferredType] = useState("")
   const preferredNameId = useId()
+  const preferredTypeId = useId()
+  // More than the server's limit: the first 25, in the order shown, are merged; the rest stay selected for a second
+  // merge, and the dialog says how many are left out.
+  const merged = entities.slice(0, MAX_MERGE_ENTITIES)
+  const leftOut = entities.length - merged.length
+  const types = Array.from(new Set(merged.map((e) => e.type).filter(Boolean)))
   const preferredNameInput = useRef<HTMLInputElement>(null)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const resetLocalState = () => {
     setPreferredName("")
+    setPreferredType("")
     setSubmitting(false)
     setError(null)
   }
@@ -65,13 +74,14 @@ export function MergeEntitiesDialog({
     try {
       const result = await graphAPI.mergeEntities(
         caseId,
-        entities.map((e) => e.key),
-        preferredName.trim() || undefined
+        merged.map((e) => e.key),
+        preferredName.trim() || undefined,
+        preferredType || undefined
       )
       onStartTracking(
         result.job_id,
         result.merge_job_id,
-        entities.map((e) => e.key)
+        merged.map((e) => e.key)
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start merge")
@@ -110,7 +120,7 @@ export function MergeEntitiesDialog({
         <div className="space-y-4 py-2">
           {/* Entity cards */}
           <div className="flex flex-wrap gap-2">
-            {entities.map((entity) => (
+            {merged.map((entity) => (
               <button
                 key={entity.key}
                 type="button"
@@ -132,6 +142,14 @@ export function MergeEntitiesDialog({
             ))}
           </div>
 
+          {leftOut > 0 && (
+            <p role="status" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-900 dark:text-amber-200">
+              One merge takes up to {MAX_MERGE_ENTITIES} entities. These {MAX_MERGE_ENTITIES} will be merged;{" "}
+              {leftOut.toLocaleString()} more {leftOut === 1 ? "is" : "are"} left out of this merge. Merge{" "}
+              {leftOut === 1 ? "it" : "them"} in a second step.
+            </p>
+          )}
+
           {/* Options (hidden during processing) */}
           {!activeJob && !isFailed && (
             <>
@@ -152,14 +170,34 @@ export function MergeEntitiesDialog({
                 </p>
               </div>
 
+              <div className="space-y-1.5">
+                <label htmlFor={preferredTypeId} className="text-xs font-medium text-muted-foreground">
+                  Type of the merged entity
+                </label>
+                <select
+                  id={preferredTypeId}
+                  disabled={submitting}
+                  value={preferredType}
+                  onChange={(e) => setPreferredType(e.target.value)}
+                  className="h-8 w-full rounded-md border border-border bg-background px-2 text-sm"
+                >
+                  <option value="">Let the AI decide</option>
+                  {types.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {/* Warning */}
               <div className="flex items-start gap-2.5 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-700 dark:text-yellow-300" />
                 <div className="text-xs text-yellow-800 dark:text-yellow-200">
                   <p className="font-medium">AI-powered merge</p>
                   <p className="mt-0.5 opacity-80">
-                    AI will intelligently merge all properties from {entities.length} entities into one.
-                    The originals will be moved to the recycle bin.
+                    AI will merge the summaries, facts, insights and sources of {merged.length} entities into one,
+                    keeping where each came from. The originals will be moved to the recycle bin.
                   </p>
                 </div>
               </div>
@@ -230,7 +268,7 @@ export function MergeEntitiesDialog({
                 className="gap-1.5"
               >
                 <GitMerge className="h-3.5 w-3.5" />
-                {submitting ? "Starting..." : "Merge with AI"}
+                {submitting ? "Starting..." : `Merge ${merged.length} with AI`}
               </Button>
             </>
           )}
