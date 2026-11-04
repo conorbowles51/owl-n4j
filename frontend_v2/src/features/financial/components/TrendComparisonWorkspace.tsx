@@ -1,7 +1,6 @@
 import { Disclosure } from "./Disclosure"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
-import type { LedgerTransaction } from "../api"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { amountGroupName } from "../lib/transaction-analysis"
@@ -16,19 +15,29 @@ import {
   investigateTrends,
   monthRange,
   rangeError,
+  sortGroups,
   type CoverageInput,
   type DateRange,
-  type TrendObservation,
 } from "../lib/investigation-trends"
+import {
+  driversFromServer,
+  serverGroups,
+  trendsFromServer,
+  type TrendRow,
+  type TrendViewDriver,
+  type TrendViewObservation,
+} from "../lib/trends-view"
+import { useLedgerTrendsView } from "../hooks/use-ledger-trends-view"
+import type { useInvestigatorPayments } from "../hooks/use-investigator-payments"
 import { PaymentComparison } from "./PaymentComparison"
 import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
 
 interface Evidence {
   title: string
   explanation: string
-  rows: LedgerTransaction[]
+  rows: TrendRow[]
 }
-const idsOf = (rows: LedgerTransaction[]) => [
+const idsOf = (rows: TrendRow[]) => [
   ...new Set(rows.map((row) => row.key)),
 ]
 const kinds = [
@@ -68,18 +77,22 @@ const kinds = [
 
 export function TrendComparisonWorkspace({
   caseId,
-  rows,
+  payments,
   coverage,
   loadedStart,
   loadedEnd,
   onCoverageRetry,
+  onNeedRows,
 }: {
   caseId: string
-  rows: LedgerTransaction[]
+  /** Every payment, once read (Trends reads them only for the download, or where the server cannot work out the
+   * figures); until then the page shows the server's figures. */
+  payments: ReturnType<typeof useInvestigatorPayments>
   coverage: CoverageInput
   loadedStart?: string
   loadedEnd?: string
   onCoverageRetry: () => void
+  onNeedRows: () => void
 }) {
   const { canEdit } = useFinancialAccess()
   const [view, setView] = useFinancialDraft(caseId, "investigation-trends-v2", {
@@ -93,42 +106,99 @@ export function TrendComparisonWorkspace({
   const [open, setOpen] = useState<Evidence | null>(null),
     [finding, setFinding] = useState<Evidence | null>(null)
   const [expanded, setExpanded] = useState<Record<string, number>>({})
-  const groups = useMemo(() => {
+  const [downloadWanted, setDownloadWanted] = useState(false)
+  const rows = payments.complete ? payments.rows : null
+  const browser = rows !== null
+  // The server's figures for the page's own choices; when the server picks a different group from the page's order
+  // (two groups with the same number of payments), the page asks again with its own choice.
+  const ask = { group: view.group, earlier: view.earlier, later: view.later }
+  const first = useLedgerTrendsView(caseId, payments.params, payments.categories, ask, !browser)
+  const firstGroups = useMemo(
+    () => (first.data?.available ? serverGroups(first.data) : []),
+    [first.data]
+  )
+  const serverGroup = firstGroups.includes(view.group)
+    ? view.group
+    : firstGroups[0] || ""
+  const askAgain =
+    !browser &&
+    !!first.data?.available &&
+    !!first.data.complete &&
+    serverGroup !== first.data.group
+  const second = useLedgerTrendsView(
+    caseId,
+    payments.params,
+    payments.categories,
+    { ...ask, group: serverGroup },
+    askAgain
+  )
+  const serverQuery = askAgain ? second : first
+  const server = serverQuery.data
+  const unavailable = !browser && server?.available === false
+  useEffect(() => {
+    if (unavailable) onNeedRows()
+  }, [unavailable, onNeedRows])
+  const browserGroups = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const row of rows)
+    for (const row of rows ?? [])
       counts.set(paymentGroup(row), (counts.get(paymentGroup(row)) || 0) + 1)
-    return [...counts]
-      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-      .map(([g]) => g)
+    return sortGroups(counts)
   }, [rows])
-  const group = groups.includes(view.group) ? view.group : groups[0] || ""
+  const groups = browser ? browserGroups : firstGroups
+  const group = browser
+    ? groups.includes(view.group)
+      ? view.group
+      : groups[0] || ""
+    : serverGroup
   const scoped = useMemo(
-    () => rows.filter((row) => paymentGroup(row) === group),
+    () => (rows ?? []).filter((row) => paymentGroup(row) === group),
     [rows, group]
   )
-  const defaults = useMemo(() => defaultTrendRanges(scoped), [scoped])
+  const defaults = useMemo(
+    () =>
+      browser
+        ? defaultTrendRanges(scoped)
+        : {
+            earlier: server?.earlier ?? { start: "", end: "" },
+            later: server?.later ?? { start: "", end: "" },
+          },
+    [browser, scoped, server]
+  )
   const earlier = view.earlier ?? defaults.earlier,
     later = view.later ?? defaults.later
+  const scopedCount = browser ? scoped.length : (server?.scoped_count ?? 0)
+  const scopedDated = browser
+    ? scoped.some((row) => paymentDay(row))
+    : !!server?.scoped_dated
   const error =
     rangeError(earlier, later) ||
     ((loadedStart && earlier.start < loadedStart) ||
     (loadedEnd && later.end > loadedEnd)
       ? "These periods extend beyond the loaded date filter. Broaden Accounts and dates above to include both periods."
       : null)
-  const result = useMemo(
+  const browserResult = useMemo(
     () =>
-      !error && scoped.length
+      browser && !error && scoped.length
         ? investigateTrends(scoped, group, earlier, later, coverage)
         : null,
-    [scoped, group, earlier, later, coverage, error]
+    [browser, scoped, group, earlier, later, coverage, error]
   )
-  const drivers = useMemo(
-    () =>
-      result
-        ? changeDrivers(result.before, result.after, view.direction, view.by)
-        : [],
-    [result, view.direction, view.by]
-  )
+  const result = useMemo(() => {
+    if (browser)
+      return browserResult
+        ? { ...browserResult, invalidAmountCount: browserResult.invalidAmounts.length }
+        : null
+    return !error && server?.available && server.complete
+      ? trendsFromServer(server, coverage)
+      : null
+  }, [browser, browserResult, server, coverage, error])
+  const drivers: TrendViewDriver[] = useMemo(() => {
+    if (browser)
+      return browserResult
+        ? changeDrivers(browserResult.before, browserResult.after, view.direction, view.by)
+        : []
+    return result && server ? driversFromServer(server, view.direction, view.by) : []
+  }, [browser, browserResult, result, server, view.direction, view.by])
   const largestShownDelta = drivers
     .slice(0, view.driverCount)
     .reduce((m, d) => {
@@ -150,12 +220,12 @@ export function TrendComparisonWorkspace({
         : "Money out"
   const periodText = `Earlier: ${earlier.start} to ${earlier.end}. Later: ${later.start} to ${later.end}. ${amountGroupName(group)}.`
   const limitation = result
-    ? `${result.comparable ? "Recorded statement dates cover both ranges; this does not by itself prove extraction completeness." : "The comparison has incomplete coverage or unreadable dates/amounts. Differences describe the available records, not proven changes in all account activity."} ${result.unknownDates.length} payments have no usable transaction date; ${result.invalidAmounts.length} have no usable amount. Analysis is limited to the loaded account/date/category scope.`
+    ? `${result.comparable ? "Recorded statement dates cover both ranges; this does not by itself prove extraction completeness." : "The comparison has incomplete coverage or unreadable dates/amounts. Differences describe the available records, not proven changes in all account activity."} ${result.unknownDates.length} payments have no usable transaction date; ${result.invalidAmountCount} have no usable amount. Analysis is limited to the loaded account/date/category scope.`
     : ""
   const evidence = (
     title: string,
     explanation: string,
-    payments: LedgerTransaction[]
+    payments: TrendRow[]
   ): Evidence => ({
     title,
     explanation: `${periodText}\n${explanation}\n${limitation}`,
@@ -184,7 +254,7 @@ export function TrendComparisonWorkspace({
     </div>
   )
   const download = () => {
-    if (!result) return
+    if (!result || !browser) return
     const payload = {
       schema: "loupe.financial.trends/1",
       case_id: caseId,
@@ -219,6 +289,24 @@ export function TrendComparisonWorkspace({
     a.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
+  // The download carries every payment in scope, so it reads them first when the page shows the server's figures.
+  const requestDownload = () => {
+    if (browser) download()
+    else {
+      setDownloadWanted(true)
+      onNeedRows()
+    }
+  }
+  const downloadFailed =
+    downloadWanted &&
+    (payments.query.isError || (!!payments.query.data && !payments.complete))
+  useEffect(() => {
+    if (!downloadWanted || !browser || !result) return
+    setDownloadWanted(false)
+    download()
+    // download reads the current figures; it runs once, when the payments it needs have arrived.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [downloadWanted, browser, result])
   const updateRange = (
     side: "earlier" | "later",
     part: "start" | "end",
@@ -229,7 +317,7 @@ export function TrendComparisonWorkspace({
       [side]: { ...(side === "earlier" ? earlier : later), [part]: value },
       driverCount: 8,
     })
-  const observationCard = (item: TrendObservation) => {
+  const observationCard = (item: TrendViewObservation) => {
     const detail = item.baseline
       ? `${item.explanation} Earlier median: ${money(item.baseline.medianTwice / 2n)}${item.baseline.medianTwice % 2n ? " plus half a minor currency unit" : ""}; earlier maximum: ${money(item.baseline.maximum)}.`
       : item.explanation
@@ -269,7 +357,39 @@ export function TrendComparisonWorkspace({
       </article>
     )
   }
-  if (!scoped.some((row) => paymentDay(row)))
+  if (!browser) {
+    const failed = unavailable
+      ? payments.query.isError
+        ? payments.query.error.message
+        : payments.query.data && !payments.complete
+          ? "Not all payments were returned. These views cannot yet describe the whole selection."
+          : null
+      : serverQuery.isError
+        ? serverQuery.error.message
+        : server?.complete === false
+          ? "Not all payments were returned. These views cannot yet describe the whole selection."
+          : null
+    if (failed)
+      return (
+        <div role="alert" className="rounded border p-4 space-y-2">
+          <p>{failed}</p>
+          <Button
+            onClick={() =>
+              void (unavailable ? payments.query.refetch() : serverQuery.refetch())
+            }
+          >
+            {unavailable ? "Load payments again" : "Work out trends again"}
+          </Button>
+        </div>
+      )
+    if (!server || unavailable)
+      return (
+        <p role="status" className="p-6">
+          {unavailable ? "Loading this case’s payments…" : "Working out trends…"}
+        </p>
+      )
+  }
+  if (!scopedDated)
     return (
       <section className="rounded-lg border p-5 space-y-2">
         <h3 className="font-semibold">No dated payments in this scope</h3>
@@ -277,9 +397,9 @@ export function TrendComparisonWorkspace({
           Trends needs dated transactions to compare periods. Import statements
           or broaden Accounts and dates above.
         </p>
-        {scoped.length > 0 && (
+        {scopedCount > 0 && (
           <p>
-            {scoped.length} payments have no usable transaction date and cannot
+            {scopedCount} payments have no usable transaction date and cannot
             establish a time pattern.
           </p>
         )}
@@ -388,8 +508,20 @@ export function TrendComparisonWorkspace({
                   ? "Statement dates cover both comparison periods"
                   : "Comparison uses incomplete records"}
               </h3>
-              <Button size="sm" variant="outline" onClick={download}>
-                Download comparison and evidence
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (downloadFailed) void payments.query.refetch()
+                  else requestDownload()
+                }}
+                disabled={downloadWanted && !downloadFailed}
+              >
+                {downloadFailed
+                  ? "The payments could not all be read for the download. Try again"
+                  : downloadWanted
+                    ? "Reading every payment for the download…"
+                    : "Download comparison and evidence"}
               </Button>
             </div>
             <p className="text-sm">{limitation}</p>

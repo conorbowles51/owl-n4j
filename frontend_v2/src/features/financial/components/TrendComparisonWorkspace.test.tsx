@@ -1,14 +1,20 @@
 import {
-  render,
+  render as rtlRender,
   screen,
   fireEvent,
   within,
   cleanup,
 } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
+import type { ReactElement, ReactNode } from "react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TrendComparisonWorkspace } from "./TrendComparisonWorkspace"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
-import { trendRows, trendCoverage } from "../lib/trend-fixture.test-support"
+import {
+  trendRows,
+  trendCoverage,
+  loadedPayments,
+} from "../lib/trend-fixture.test-support"
 vi.mock("../hooks/use-financial-access", () => ({
   useFinancialAccess: () => ({ canEdit: true }),
 }))
@@ -43,6 +49,11 @@ vi.mock("./InvestigatorFindingEditor", () => ({
     </div>
   ),
 }))
+const client = new QueryClient()
+const Queries = ({ children }: { children: ReactNode }) => (
+  <QueryClientProvider client={client}>{children}</QueryClientProvider>
+)
+const render = (ui: ReactElement) => rtlRender(ui, { wrapper: Queries })
 afterEach(() => {
   cleanup()
   useFinancialDraftStore.setState({ drafts: {} })
@@ -51,7 +62,8 @@ it("explains changes, opens exact evidence and seeds a finding with periods and 
   render(
     <TrendComparisonWorkspace
       caseId="case"
-      rows={trendRows}
+      payments={loadedPayments(trendRows)}
+      onNeedRows={vi.fn()}
       coverage={trendCoverage}
       onCoverageRetry={vi.fn()}
     />
@@ -85,7 +97,8 @@ it("shows coverage failures and refuses overlapping or unloaded periods", () => 
   const { rerender } = render(
     <TrendComparisonWorkspace
       caseId="case"
-      rows={trendRows}
+      payments={loadedPayments(trendRows)}
+      onNeedRows={vi.fn()}
       coverage={{ ...trendCoverage, available: false }}
       onCoverageRetry={retry}
     />
@@ -110,7 +123,8 @@ it("shows coverage failures and refuses overlapping or unloaded periods", () => 
   rerender(
     <TrendComparisonWorkspace
       caseId="case"
-      rows={trendRows}
+      payments={loadedPayments(trendRows)}
+      onNeedRows={vi.fn()}
       coverage={trendCoverage}
       loadedStart="2021-02-01"
       onCoverageRetry={retry}
@@ -120,7 +134,8 @@ it("shows coverage failures and refuses overlapping or unloaded periods", () => 
 })
 it("draws a diverging bar beside each driver's signed difference and keeps coverage by account one labelled click away", () => {
   render(
-    <TrendComparisonWorkspace caseId="case" rows={trendRows} coverage={trendCoverage} onCoverageRetry={vi.fn()} />
+    <TrendComparisonWorkspace caseId="case" payments={loadedPayments(trendRows)}
+      onNeedRows={vi.fn()} coverage={trendCoverage} onCoverageRetry={vi.fn()} />
   )
   const table = screen.getByRole("table", { name: "Change drivers" })
   const rows = within(table).getAllByRole("row").slice(1)

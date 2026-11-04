@@ -62,3 +62,16 @@ export const trendCoverage = {
     },
   ],
 }
+
+/** The Trends page's payments as read in full (the page then calculates in the browser). */
+export const loadedPayments = (rows: typeof trendRows) =>
+  ({
+    query: { isError: false, data: { transactions: rows }, refetch: () => {} },
+    params: {},
+    setParams: () => {},
+    complete: true,
+    rows,
+    categories: [],
+  }) as unknown as ReturnType<
+    typeof import("../hooks/use-investigator-payments").useInvestigatorPayments
+  >

@@ -26,10 +26,14 @@ export function isCompleteLedger(data: Ledger | undefined, caseId: string) {
   return complete
 }
 
-export function useInvestigatorPayments(caseId: string) {
+export function useInvestigatorPayments(
+  caseId: string,
+  /** false: read no payments yet (Trends shows the server's figures and reads every payment when asked). */
+  enabled = true
+) {
   const [categories] = usePaymentCategory(caseId)
   const [params, setParams] = useInvestigationScope(caseId)
-  const query = useLedgerTransactions(caseId, params)
+  const query = useLedgerTransactions(caseId, params, enabled)
   const complete = isCompleteLedger(query.data, caseId)
   // The same array while the answer and categories are the same, so the readers' memos over it hold.
   const rows = useMemo(
@@ -41,5 +45,5 @@ export function useInvestigatorPayments(caseId: string) {
         : [],
     [complete, query.data, categories]
   )
-  return { query, params, setParams, complete, rows }
+  return { query, params, setParams, complete, rows, categories }
 }

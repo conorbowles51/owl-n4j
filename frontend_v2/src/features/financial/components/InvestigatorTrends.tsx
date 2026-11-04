@@ -1,11 +1,7 @@
-import { useMemo } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { useInvestigatorPayments } from "../hooks/use-investigator-payments"
 import { useStatementRegister } from "../hooks/use-statement-register"
-import {
-  InvestigationReadState,
-  WorkspaceHeading,
-  WorkspaceScope,
-} from "./InvestigationWorkspaceParts"
+import { WorkspaceHeading, WorkspaceScope } from "./InvestigationWorkspaceParts"
 import { TrendComparisonWorkspace } from "./TrendComparisonWorkspace"
 import { useFinancialStore } from "../stores/financial.store"
 import {
@@ -17,7 +13,11 @@ import { paymentTableDraftName } from "../lib/payment-table-draft"
 import { AccountHistory } from "./AccountHistory"
 
 export function InvestigatorTrends({ caseId, active = true }: { caseId: string; active?: boolean }) {
-  const data = useInvestigatorPayments(caseId)
+  // Every payment is read only when the download asks for it or the server cannot work out the figures
+  // (d5b330d1: 64 MB); the page shows the server's figures for the same payments until then.
+  const [rowsWanted, setRowsWanted] = useState(false)
+  const data = useInvestigatorPayments(caseId, rowsWanted)
+  const needRows = useCallback(() => setRowsWanted(true), [])
   const register = useStatementRegister(caseId, false, [], false, active)
   const coverage = useMemo(
     () => ({
@@ -61,16 +61,15 @@ export function InvestigatorTrends({ caseId, active = true }: { caseId: string; 
       />
       <WorkspaceScope caseId={caseId} />
       <AccountHistory caseId={caseId} />
-      <InvestigationReadState data={data}>
-        <TrendComparisonWorkspace
-          caseId={caseId}
-          rows={data.rows}
-          coverage={coverage}
-          loadedStart={data.params.startDate}
-          loadedEnd={data.params.endDate}
-          onCoverageRetry={() => void register.imports.refetch()}
-        />
-      </InvestigationReadState>
+      <TrendComparisonWorkspace
+        caseId={caseId}
+        payments={data}
+        coverage={coverage}
+        loadedStart={data.params.startDate}
+        loadedEnd={data.params.endDate}
+        onCoverageRetry={() => void register.imports.refetch()}
+        onNeedRows={needRows}
+      />
     </div>
   )
 }

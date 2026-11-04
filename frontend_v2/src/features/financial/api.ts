@@ -1,6 +1,7 @@
 import { appendAccountSelection } from "./lib/account-selection"
 import { fetchAPI } from "@/lib/api-client"
 import type { OverviewPanels } from "./lib/overview-panels"
+import type { TrendsServerView } from "./lib/trends-view"
 import { verifyBulkCorrectionResponse } from "./lib/bulk-correction-file"
 import type { DescriptionCorrection } from "./components/DescriptionCorrectionNote"
 
@@ -1675,6 +1676,46 @@ export const financialAPI = {
     qs.set("page", String(params.page))
     qs.set("page_size", String(params.pageSize))
     return fetchAPI<LedgerFirstView>(`/api/financial/ledger-first-view?${qs}`)
+  },
+
+  /**
+   * The Trends page over the rows `getLedgerTransactions` returns for the same filters, kept to the page's
+   * categories (GET /api/financial/ledger-trends-view): groups, the periods compared, totals, drivers and
+   * observations, each with the keys of its payments. A period left out is the latest month against the month
+   * before; a group left out (or not one of them) is the one with most payments.
+   */
+  getLedgerTrendsView: (params: {
+    caseId: string
+    sourceDocumentId?: string
+    accountIds?: string[]
+    accountHolders?: string[]
+    accountId?: string
+    ledgerStatus?: LedgerStatus
+    startDate?: string
+    endDate?: string
+    categories: string[]
+    group?: string
+    earlier?: { start: string; end: string } | null
+    later?: { start: string; end: string } | null
+  }) => {
+    const qs = new URLSearchParams({ case_id: params.caseId })
+    if (params.sourceDocumentId)
+      qs.set("source_document_id", params.sourceDocumentId)
+    appendAccountSelection(qs, params)
+    if (params.accountId) qs.set("account_id", params.accountId)
+    if (params.ledgerStatus) qs.set("ledger_status", params.ledgerStatus)
+    if (params.startDate) qs.set("start_date", params.startDate)
+    if (params.endDate) qs.set("end_date", params.endDate)
+    for (const category of params.categories) qs.append("categories", category)
+    if (params.group) qs.set("group", params.group)
+    for (const side of ["earlier", "later"] as const) {
+      const period = params[side]
+      if (period) {
+        qs.set(`${side}_start`, period.start)
+        qs.set(`${side}_end`, period.end)
+      }
+    }
+    return fetchAPI<TrendsServerView>(`/api/financial/ledger-trends-view?${qs}`)
   },
 
   /** How many rows `getLedgerTransactions` returns for the same filters, counted without reading them. */

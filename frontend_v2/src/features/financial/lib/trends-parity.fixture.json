@@ -1,0 +1,2622 @@
+{
+ "case_id": "case-trends",
+ "rows": [
+  {
+   "key": "jan-0",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Supplier",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-01",
+   "description": "Payment to Supplier (jan-0)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "jan-1",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Supplier",
+   "amount_minor": "2000",
+   "ordering_date": "2021-01-02",
+   "description": "Payment to Supplier (jan-1)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "jan-2",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Supplier",
+   "amount_minor": "3000",
+   "ordering_date": "2021-01-03",
+   "description": "Payment to Supplier (jan-2)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "jan-3",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Supplier",
+   "amount_minor": "4000",
+   "ordering_date": "2021-01-04",
+   "description": "Payment to Supplier (jan-3)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "jan-4",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Supplier",
+   "amount_minor": "5000",
+   "ordering_date": "2021-01-05",
+   "description": "Payment to Supplier (jan-4)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "sub-dec",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Software Co",
+   "amount_minor": "1299",
+   "ordering_date": "2020-12-10",
+   "description": "Payment to Software Co (sub-dec)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "sub-jan",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Software Co",
+   "amount_minor": "1299",
+   "ordering_date": "2021-01-10",
+   "description": "Payment to Software Co (sub-jan)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "sub-feb",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Software Co",
+   "amount_minor": "1299",
+   "ordering_date": "2021-02-10",
+   "description": "Payment to Software Co (sub-feb)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "wk-1",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": " Gym  Club ",
+   "amount_minor": "500",
+   "ordering_date": "2021-01-25",
+   "description": "Payment to  Gym  Club  (wk-1)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "wk-2",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Gym Club",
+   "amount_minor": "500",
+   "ordering_date": "2021-02-01",
+   "description": "Payment to Gym Club (wk-2)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "wk-3",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Gym Club",
+   "amount_minor": "500",
+   "ordering_date": "2021-02-08",
+   "description": "Payment to Gym Club (wk-3)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0,
+   "label_sources": {
+    "to_name": {
+     "source": "description"
+    }
+   }
+  },
+  {
+   "key": "large",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Supplier",
+   "amount_minor": "90000",
+   "ordering_date": "2021-02-16",
+   "description": "Payment to Supplier (large)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "new",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Nuevo Señor",
+   "amount_minor": "42000",
+   "ordering_date": "2021-02-17",
+   "description": "Payment to Nuevo Señor (new)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "linked",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Acme",
+   "amount_minor": "700",
+   "ordering_date": "2021-02-18",
+   "description": "Payment to Acme (linked)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0,
+   "counterparty_link": {
+    "kind": "party",
+    "id": "p1",
+    "label": "Acme"
+   }
+  },
+  {
+   "key": "unnamed-1",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": null,
+   "amount_minor": "300",
+   "ordering_date": "2021-02-19",
+   "description": "Payment to None (unnamed-1)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0,
+   "counterparty_raw": null,
+   "label_sources": {
+    "to_name": {
+     "source": "model_reading",
+     "reason": "Illegible / torn"
+    }
+   }
+  },
+  {
+   "key": "unnamed-2",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": null,
+   "amount_minor": "310",
+   "ordering_date": "2021-01-19",
+   "description": "Payment to None (unnamed-2)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0,
+   "counterparty_raw": "   "
+  },
+  {
+   "key": "raw",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": null,
+   "amount_minor": "330",
+   "ordering_date": "2021-02-20",
+   "description": "Payment to None (raw)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0,
+   "counterparty_raw": "Raw Name"
+  },
+  {
+   "key": "cat-suggested",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Cafe",
+   "amount_minor": "50",
+   "ordering_date": "2021-02-21",
+   "description": "Payment to Cafe (cat-suggested)",
+   "category": "Food",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0,
+   "label_sources": {
+    "category": {
+     "source": "description"
+    }
+   }
+  },
+  {
+   "key": "nocat",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Cafe",
+   "amount_minor": "60",
+   "ordering_date": "2021-01-21",
+   "description": "Payment to Cafe (nocat)",
+   "category": null,
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "out",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "",
+   "amount_minor": "1305000",
+   "ordering_date": "2021-02-22",
+   "description": "T17 SPID ENVIADO Ref. 001234 072",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 1
+  },
+  {
+   "key": "return",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "credit",
+   "from_name": "",
+   "to_name": "Trading Co",
+   "amount_minor": "1305000",
+   "ordering_date": "2021-02-22",
+   "description": "T22 spid devuelto ref: 001234 072",
+   "category": "Returned transfers",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 2
+  },
+  {
+   "key": "out-bank",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Other",
+   "amount_minor": "777",
+   "ordering_date": "2021-02-03",
+   "description": "Payment to Other (out-bank)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": null,
+   "bank_reference": " BR-9 "
+  },
+  {
+   "key": "ret-bank",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "credit",
+   "from_name": null,
+   "to_name": null,
+   "amount_minor": "777",
+   "ordering_date": "2021-02-05",
+   "description": "SPEI DEVUELTO",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0,
+   "counterparty_raw": "Bank",
+   "bank_reference": "BR-9"
+  },
+  {
+   "key": "in-1",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "credit",
+   "from_name": "Client A",
+   "to_name": "Trading Co",
+   "amount_minor": "10000",
+   "ordering_date": "2021-01-15",
+   "description": "Payment to Trading Co (in-1)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "in-2",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "credit",
+   "from_name": "Client A",
+   "to_name": "Trading Co",
+   "amount_minor": "25000",
+   "ordering_date": "2021-02-15",
+   "description": "Payment to Trading Co (in-2)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "in-3",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "credit",
+   "from_name": "Client B",
+   "to_name": "Trading Co",
+   "amount_minor": "9000",
+   "ordering_date": "2021-02-16",
+   "description": "Payment to Trading Co (in-3)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "undated",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Supplier",
+   "amount_minor": "100",
+   "ordering_date": null,
+   "description": "Payment to Supplier (undated)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "end-only",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Supplier",
+   "amount_minor": "100",
+   "ordering_date": "2021-02-28",
+   "description": "Payment to Supplier (end-only)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0,
+   "ordering_date_context": "statement_end_ordering_only"
+  },
+  {
+   "key": "bad-day",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Supplier",
+   "amount_minor": "100",
+   "ordering_date": "2021-02-30",
+   "description": "Payment to Supplier (bad-day)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "bad-amount",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Supplier",
+   "amount_minor": "1.5",
+   "ordering_date": "2021-02-11",
+   "description": "Payment to Supplier (bad-amount)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "negative",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Supplier",
+   "amount_minor": "-5",
+   "ordering_date": "2021-02-12",
+   "description": "Payment to Supplier (negative)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "card-1",
+   "case_id": "case-trends",
+   "account_id": "card",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "credit_card",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Store",
+   "amount_minor": "4000",
+   "ordering_date": "2021-02-02",
+   "description": "Payment to Store (card-1)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0,
+   "canonical_account_id": "card-main",
+   "canonical_account_label": "Card main",
+   "account_alias_ids": [
+    "card",
+    "card-main"
+   ]
+  },
+  {
+   "key": "card-2",
+   "case_id": "case-trends",
+   "account_id": "card",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "credit_card",
+   "currency": "USD",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Store",
+   "amount_minor": "3000",
+   "ordering_date": "2021-01-02",
+   "description": "Payment to Store (card-2)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  },
+  {
+   "key": "mxn",
+   "case_id": "case-trends",
+   "account_id": "account",
+   "account_label": "Trading Co · Bank A",
+   "account_holder": "Trading Co",
+   "account_type": "checking",
+   "currency": "MXN",
+   "direction": "debit",
+   "from_name": "Trading Co",
+   "to_name": "Tienda",
+   "amount_minor": "4000",
+   "ordering_date": "2021-02-02",
+   "description": "Payment to Tienda (mxn)",
+   "category": "Services",
+   "source_document_id": "doc",
+   "statement_period_id": "period",
+   "row_index": 0
+  }
+ ],
+ "scenarios": [
+  {
+   "ask": {},
+   "server": {
+    "complete": true,
+    "categories": [],
+    "groups": [
+     {
+      "group": "USD:bank",
+      "count": 31
+     },
+     {
+      "group": "USD:card",
+      "count": 2
+     },
+     {
+      "group": "MXN:bank",
+      "count": 1
+     }
+    ],
+    "group": "USD:bank",
+    "earlier": {
+     "start": "2021-01-01",
+     "end": "2021-01-31"
+    },
+    "later": {
+     "start": "2021-02-01",
+     "end": "2021-02-28"
+    },
+    "scoped_count": 31,
+    "scoped_dated": true,
+    "error": null,
+    "result": {
+     "accounts": [
+      {
+       "id": "account",
+       "label": "Trading Co · Bank A"
+      }
+     ],
+     "before_count": 10,
+     "after_count": 15,
+     "unknown_dates": [
+      "undated",
+      "end-only",
+      "bad-day"
+     ],
+     "invalid_amounts": 2,
+     "history_count": 11,
+     "totals": [
+      {
+       "direction": "credit",
+       "before": "10000",
+       "after": "1339777",
+       "beforeCount": 1,
+       "afterCount": 4
+      },
+      {
+       "direction": "debit",
+       "before": "17169",
+       "after": "1441456",
+       "beforeCount": 9,
+       "afterCount": 11
+      }
+     ],
+     "drivers": {
+      "debit:name": [
+       {
+        "key": "name:Supplier",
+        "name": "Supplier",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "jan-0",
+         "jan-1",
+         "jan-2",
+         "jan-3",
+         "jan-4"
+        ],
+        "later": [
+         "large"
+        ],
+        "before": "15000",
+        "after": "90000",
+        "delta": "75000"
+       },
+       {
+        "key": "name:Software Co",
+        "name": "Software Co",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "sub-jan"
+        ],
+        "later": [
+         "sub-feb"
+        ],
+        "before": "1299",
+        "after": "1299",
+        "delta": "0"
+       },
+       {
+        "key": "name:Gym Club",
+        "name": "Gym Club",
+        "suggested": true,
+        "unknown": false,
+        "earlier": [
+         "wk-1"
+        ],
+        "later": [
+         "wk-2",
+         "wk-3"
+        ],
+        "before": "500",
+        "after": "1000",
+        "delta": "500"
+       },
+       {
+        "key": "unknown:to",
+        "name": "Counterparty not identified",
+        "suggested": false,
+        "unknown": true,
+        "earlier": [
+         "unnamed-2"
+        ],
+        "later": [
+         "out"
+        ],
+        "before": "310",
+        "after": "1305000",
+        "delta": "1304690"
+       },
+       {
+        "key": "name:Cafe",
+        "name": "Cafe",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "nocat"
+        ],
+        "later": [
+         "cat-suggested"
+        ],
+        "before": "60",
+        "after": "50",
+        "delta": "-10"
+       },
+       {
+        "key": "name:Nuevo Señor",
+        "name": "Nuevo Señor",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "new"
+        ],
+        "before": "0",
+        "after": "42000",
+        "delta": "42000"
+       },
+       {
+        "key": "identity:party:p1:Acme",
+        "name": "Acme",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "linked"
+        ],
+        "before": "0",
+        "after": "700",
+        "delta": "700"
+       },
+       {
+        "key": "unknown:to:Illegible%20%2F%20torn",
+        "name": "Counterparty not identified",
+        "suggested": false,
+        "unknown": true,
+        "earlier": [],
+        "later": [
+         "unnamed-1"
+        ],
+        "before": "0",
+        "after": "300",
+        "delta": "300"
+       },
+       {
+        "key": "name:Raw Name",
+        "name": "Raw Name",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "raw"
+        ],
+        "before": "0",
+        "after": "330",
+        "delta": "330"
+       },
+       {
+        "key": "name:Other",
+        "name": "Other",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "out-bank"
+        ],
+        "before": "0",
+        "after": "777",
+        "delta": "777"
+       }
+      ],
+      "debit:category": [
+       {
+        "key": "Services",
+        "name": "Services",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "jan-0",
+         "jan-1",
+         "jan-2",
+         "jan-3",
+         "jan-4",
+         "sub-jan",
+         "wk-1",
+         "unnamed-2"
+        ],
+        "later": [
+         "sub-feb",
+         "wk-2",
+         "wk-3",
+         "large",
+         "new",
+         "linked",
+         "unnamed-1",
+         "raw",
+         "out",
+         "out-bank"
+        ],
+        "before": "17109",
+        "after": "1441406",
+        "delta": "1424297"
+       },
+       {
+        "key": "Uncategorized",
+        "name": "Uncategorized",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "nocat"
+        ],
+        "later": [],
+        "before": "60",
+        "after": "0",
+        "delta": "-60"
+       },
+       {
+        "key": "Food",
+        "name": "Food",
+        "suggested": true,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "cat-suggested"
+        ],
+        "before": "0",
+        "after": "50",
+        "delta": "50"
+       }
+      ],
+      "credit:name": [
+       {
+        "key": "name:Client A",
+        "name": "Client A",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "in-1"
+        ],
+        "later": [
+         "in-2"
+        ],
+        "before": "10000",
+        "after": "25000",
+        "delta": "15000"
+       },
+       {
+        "key": "unknown:from",
+        "name": "Counterparty not identified",
+        "suggested": false,
+        "unknown": true,
+        "earlier": [],
+        "later": [
+         "return"
+        ],
+        "before": "0",
+        "after": "1305000",
+        "delta": "1305000"
+       },
+       {
+        "key": "name:Bank",
+        "name": "Bank",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "ret-bank"
+        ],
+        "before": "0",
+        "after": "777",
+        "delta": "777"
+       },
+       {
+        "key": "name:Client B",
+        "name": "Client B",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "in-3"
+        ],
+        "before": "0",
+        "after": "9000",
+        "delta": "9000"
+       }
+      ],
+      "credit:category": [
+       {
+        "key": "Services",
+        "name": "Services",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "in-1"
+        ],
+        "later": [
+         "ret-bank",
+         "in-2",
+         "in-3"
+        ],
+        "before": "10000",
+        "after": "34777",
+        "delta": "24777"
+       },
+       {
+        "key": "Returned transfers",
+        "name": "Returned transfers",
+        "suggested": false,
+        "unknown": true,
+        "earlier": [],
+        "later": [
+         "return"
+        ],
+        "before": "0",
+        "after": "1305000",
+        "delta": "1305000"
+       }
+      ]
+     },
+     "observations": [
+      {
+       "id": "first:debit:name:Nuevo Señor",
+       "kind": "first-seen",
+       "title": "Nuevo Señor",
+       "explanation": "First appears on 2021-02-17 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "42000",
+       "rows": [
+        "new"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "first:debit:identity:party:p1:Acme",
+       "kind": "first-seen",
+       "title": "Acme",
+       "explanation": "First appears on 2021-02-18 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "700",
+       "rows": [
+        "linked"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "first:debit:name:Raw Name",
+       "kind": "first-seen",
+       "title": "Raw Name",
+       "explanation": "First appears on 2021-02-20 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "330",
+       "rows": [
+        "raw"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "first:debit:name:Other",
+       "kind": "first-seen",
+       "title": "Other",
+       "explanation": "First appears on 2021-02-03 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "777",
+       "rows": [
+        "out-bank"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "first:credit:name:Bank",
+       "kind": "first-seen",
+       "title": "Bank",
+       "explanation": "First appears on 2021-02-05 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "777",
+       "rows": [
+        "ret-bank"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "credit"
+      },
+      {
+       "id": "first:credit:name:Client B",
+       "kind": "first-seen",
+       "title": "Client B",
+       "explanation": "First appears on 2021-02-16 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "9000",
+       "rows": [
+        "in-3"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "credit"
+      },
+      {
+       "id": "recurring:[\"account\",\"USD:bank\",\"debit\",\"name:Software Co\",\"1299\"]",
+       "kind": "recurring",
+       "title": "Monthly payments · Software Co",
+       "explanation": "3 payments of the same amount in Trading Co · Bank A, 2020-12-10 to 2021-02-10. Gaps are 31–31 days. This is an observed schedule, not proof of a contract or purpose.",
+       "amount": "1299",
+       "rows": [
+        "sub-dec",
+        "sub-jan",
+        "sub-feb"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "recurring:[\"account\",\"USD:bank\",\"debit\",\"name:Gym Club\",\"500\"]",
+       "kind": "recurring",
+       "title": "Weekly payments · Gym Club",
+       "explanation": "3 payments of the same amount in Trading Co · Bank A, 2021-01-25 to 2021-02-08. Gaps are 7–7 days. This is an observed schedule, not proof of a contract or purpose.",
+       "amount": "500",
+       "rows": [
+        "wk-1",
+        "wk-2",
+        "wk-3"
+       ],
+       "earlier_rows": null,
+       "suggested": true,
+       "direction": "debit"
+      },
+      {
+       "id": "larger:large",
+       "kind": "larger",
+       "title": "Payment to Supplier (large)",
+       "explanation": "Above every one of the 9 earlier payments in the same account and direction, and more than three times their median. Compare the earlier payments before interpreting this increase.",
+       "amount": "90000",
+       "rows": [
+        "large"
+       ],
+       "earlier_rows": "account:debit",
+       "suggested": false,
+       "direction": "debit",
+       "baseline": {
+        "median_twice": "2598",
+        "maximum": "5000",
+        "count": 9
+       }
+      },
+      {
+       "id": "larger:new",
+       "kind": "larger",
+       "title": "Payment to Nuevo Señor (new)",
+       "explanation": "Above every one of the 9 earlier payments in the same account and direction, and more than three times their median. Compare the earlier payments before interpreting this increase.",
+       "amount": "42000",
+       "rows": [
+        "new"
+       ],
+       "earlier_rows": "account:debit",
+       "suggested": false,
+       "direction": "debit",
+       "baseline": {
+        "median_twice": "2598",
+        "maximum": "5000",
+        "count": 9
+       }
+      },
+      {
+       "id": "larger:out",
+       "kind": "larger",
+       "title": "T17 SPID ENVIADO Ref. 001234 072",
+       "explanation": "Above every one of the 9 earlier payments in the same account and direction, and more than three times their median. Compare the earlier payments before interpreting this increase.",
+       "amount": "1305000",
+       "rows": [
+        "out"
+       ],
+       "earlier_rows": "account:debit",
+       "suggested": false,
+       "direction": "debit",
+       "baseline": {
+        "median_twice": "2598",
+        "maximum": "5000",
+        "count": 9
+       }
+      },
+      {
+       "id": "return:return",
+       "kind": "return",
+       "title": "Returned transfer · reference 001234",
+       "explanation": "A credit explicitly described as a returned transfer matches one earlier debit by account, currency, amount and reference within seven days. Both entries remain in gross totals; this credit is not presented as a new payer.",
+       "amount": "1305000",
+       "rows": [
+        "out",
+        "return"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "credit"
+      },
+      {
+       "id": "return:ret-bank",
+       "kind": "return",
+       "title": "Returned transfer · reference BR-9",
+       "explanation": "A credit explicitly described as a returned transfer matches one earlier debit by account, currency, amount and reference within seven days. Both entries remain in gross totals; this credit is not presented as a new payer.",
+       "amount": "777",
+       "rows": [
+        "out-bank",
+        "ret-bank"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "credit"
+      }
+     ],
+     "baselines": {
+      "account:debit": [
+       "jan-0",
+       "jan-1",
+       "jan-2",
+       "jan-3",
+       "jan-4",
+       "sub-jan",
+       "wk-1",
+       "unnamed-2",
+       "nocat"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "ask": {
+    "group": "USD:card"
+   },
+   "server": {
+    "complete": true,
+    "categories": [],
+    "groups": [
+     {
+      "group": "USD:bank",
+      "count": 31
+     },
+     {
+      "group": "USD:card",
+      "count": 2
+     },
+     {
+      "group": "MXN:bank",
+      "count": 1
+     }
+    ],
+    "group": "USD:card",
+    "earlier": {
+     "start": "2021-01-01",
+     "end": "2021-01-31"
+    },
+    "later": {
+     "start": "2021-02-01",
+     "end": "2021-02-28"
+    },
+    "scoped_count": 2,
+    "scoped_dated": true,
+    "error": null,
+    "result": {
+     "accounts": [
+      {
+       "id": "card-main",
+       "aliasIds": [
+        "card",
+        "card-main"
+       ],
+       "label": "Card main"
+      },
+      {
+       "id": "card",
+       "label": "Trading Co · Bank A"
+      }
+     ],
+     "before_count": 1,
+     "after_count": 1,
+     "unknown_dates": [],
+     "invalid_amounts": 0,
+     "history_count": 1,
+     "totals": [
+      {
+       "direction": "credit",
+       "before": "0",
+       "after": "0",
+       "beforeCount": 0,
+       "afterCount": 0
+      },
+      {
+       "direction": "debit",
+       "before": "3000",
+       "after": "4000",
+       "beforeCount": 1,
+       "afterCount": 1
+      }
+     ],
+     "drivers": {
+      "debit:name": [
+       {
+        "key": "name:Store",
+        "name": "Store",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "card-2"
+        ],
+        "later": [
+         "card-1"
+        ],
+        "before": "3000",
+        "after": "4000",
+        "delta": "1000"
+       }
+      ],
+      "debit:category": [
+       {
+        "key": "Services",
+        "name": "Services",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "card-2"
+        ],
+        "later": [
+         "card-1"
+        ],
+        "before": "3000",
+        "after": "4000",
+        "delta": "1000"
+       }
+      ],
+      "credit:name": [],
+      "credit:category": []
+     },
+     "observations": [],
+     "baselines": {}
+    }
+   }
+  },
+  {
+   "ask": {
+    "group": "MXN:bank"
+   },
+   "server": {
+    "complete": true,
+    "categories": [],
+    "groups": [
+     {
+      "group": "USD:bank",
+      "count": 31
+     },
+     {
+      "group": "USD:card",
+      "count": 2
+     },
+     {
+      "group": "MXN:bank",
+      "count": 1
+     }
+    ],
+    "group": "MXN:bank",
+    "earlier": {
+     "start": "2021-01-01",
+     "end": "2021-01-31"
+    },
+    "later": {
+     "start": "2021-02-01",
+     "end": "2021-02-28"
+    },
+    "scoped_count": 1,
+    "scoped_dated": true,
+    "error": null,
+    "result": {
+     "accounts": [
+      {
+       "id": "account",
+       "label": "Trading Co · Bank A"
+      }
+     ],
+     "before_count": 0,
+     "after_count": 1,
+     "unknown_dates": [],
+     "invalid_amounts": 0,
+     "history_count": 0,
+     "totals": [
+      {
+       "direction": "credit",
+       "before": "0",
+       "after": "0",
+       "beforeCount": 0,
+       "afterCount": 0
+      },
+      {
+       "direction": "debit",
+       "before": "0",
+       "after": "4000",
+       "beforeCount": 0,
+       "afterCount": 1
+      }
+     ],
+     "drivers": {
+      "debit:name": [
+       {
+        "key": "name:Tienda",
+        "name": "Tienda",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "mxn"
+        ],
+        "before": "0",
+        "after": "4000",
+        "delta": "4000"
+       }
+      ],
+      "debit:category": [
+       {
+        "key": "Services",
+        "name": "Services",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "mxn"
+        ],
+        "before": "0",
+        "after": "4000",
+        "delta": "4000"
+       }
+      ],
+      "credit:name": [],
+      "credit:category": []
+     },
+     "observations": [],
+     "baselines": {}
+    }
+   }
+  },
+  {
+   "ask": {
+    "earlier": {
+     "start": "2020-12-01",
+     "end": "2021-01-31"
+    },
+    "later": {
+     "start": "2021-02-01",
+     "end": "2021-02-28"
+    }
+   },
+   "server": {
+    "complete": true,
+    "categories": [],
+    "groups": [
+     {
+      "group": "USD:bank",
+      "count": 31
+     },
+     {
+      "group": "USD:card",
+      "count": 2
+     },
+     {
+      "group": "MXN:bank",
+      "count": 1
+     }
+    ],
+    "group": "USD:bank",
+    "earlier": {
+     "start": "2020-12-01",
+     "end": "2021-01-31"
+    },
+    "later": {
+     "start": "2021-02-01",
+     "end": "2021-02-28"
+    },
+    "scoped_count": 31,
+    "scoped_dated": true,
+    "error": null,
+    "result": {
+     "accounts": [
+      {
+       "id": "account",
+       "label": "Trading Co · Bank A"
+      }
+     ],
+     "before_count": 11,
+     "after_count": 15,
+     "unknown_dates": [
+      "undated",
+      "end-only",
+      "bad-day"
+     ],
+     "invalid_amounts": 2,
+     "history_count": 11,
+     "totals": [
+      {
+       "direction": "credit",
+       "before": "10000",
+       "after": "1339777",
+       "beforeCount": 1,
+       "afterCount": 4
+      },
+      {
+       "direction": "debit",
+       "before": "18468",
+       "after": "1441456",
+       "beforeCount": 10,
+       "afterCount": 11
+      }
+     ],
+     "drivers": {
+      "debit:name": [
+       {
+        "key": "name:Supplier",
+        "name": "Supplier",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "jan-0",
+         "jan-1",
+         "jan-2",
+         "jan-3",
+         "jan-4"
+        ],
+        "later": [
+         "large"
+        ],
+        "before": "15000",
+        "after": "90000",
+        "delta": "75000"
+       },
+       {
+        "key": "name:Software Co",
+        "name": "Software Co",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "sub-dec",
+         "sub-jan"
+        ],
+        "later": [
+         "sub-feb"
+        ],
+        "before": "2598",
+        "after": "1299",
+        "delta": "-1299"
+       },
+       {
+        "key": "name:Gym Club",
+        "name": "Gym Club",
+        "suggested": true,
+        "unknown": false,
+        "earlier": [
+         "wk-1"
+        ],
+        "later": [
+         "wk-2",
+         "wk-3"
+        ],
+        "before": "500",
+        "after": "1000",
+        "delta": "500"
+       },
+       {
+        "key": "unknown:to",
+        "name": "Counterparty not identified",
+        "suggested": false,
+        "unknown": true,
+        "earlier": [
+         "unnamed-2"
+        ],
+        "later": [
+         "out"
+        ],
+        "before": "310",
+        "after": "1305000",
+        "delta": "1304690"
+       },
+       {
+        "key": "name:Cafe",
+        "name": "Cafe",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "nocat"
+        ],
+        "later": [
+         "cat-suggested"
+        ],
+        "before": "60",
+        "after": "50",
+        "delta": "-10"
+       },
+       {
+        "key": "name:Nuevo Señor",
+        "name": "Nuevo Señor",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "new"
+        ],
+        "before": "0",
+        "after": "42000",
+        "delta": "42000"
+       },
+       {
+        "key": "identity:party:p1:Acme",
+        "name": "Acme",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "linked"
+        ],
+        "before": "0",
+        "after": "700",
+        "delta": "700"
+       },
+       {
+        "key": "unknown:to:Illegible%20%2F%20torn",
+        "name": "Counterparty not identified",
+        "suggested": false,
+        "unknown": true,
+        "earlier": [],
+        "later": [
+         "unnamed-1"
+        ],
+        "before": "0",
+        "after": "300",
+        "delta": "300"
+       },
+       {
+        "key": "name:Raw Name",
+        "name": "Raw Name",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "raw"
+        ],
+        "before": "0",
+        "after": "330",
+        "delta": "330"
+       },
+       {
+        "key": "name:Other",
+        "name": "Other",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "out-bank"
+        ],
+        "before": "0",
+        "after": "777",
+        "delta": "777"
+       }
+      ],
+      "debit:category": [
+       {
+        "key": "Services",
+        "name": "Services",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "jan-0",
+         "jan-1",
+         "jan-2",
+         "jan-3",
+         "jan-4",
+         "sub-dec",
+         "sub-jan",
+         "wk-1",
+         "unnamed-2"
+        ],
+        "later": [
+         "sub-feb",
+         "wk-2",
+         "wk-3",
+         "large",
+         "new",
+         "linked",
+         "unnamed-1",
+         "raw",
+         "out",
+         "out-bank"
+        ],
+        "before": "18408",
+        "after": "1441406",
+        "delta": "1422998"
+       },
+       {
+        "key": "Uncategorized",
+        "name": "Uncategorized",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "nocat"
+        ],
+        "later": [],
+        "before": "60",
+        "after": "0",
+        "delta": "-60"
+       },
+       {
+        "key": "Food",
+        "name": "Food",
+        "suggested": true,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "cat-suggested"
+        ],
+        "before": "0",
+        "after": "50",
+        "delta": "50"
+       }
+      ],
+      "credit:name": [
+       {
+        "key": "name:Client A",
+        "name": "Client A",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "in-1"
+        ],
+        "later": [
+         "in-2"
+        ],
+        "before": "10000",
+        "after": "25000",
+        "delta": "15000"
+       },
+       {
+        "key": "unknown:from",
+        "name": "Counterparty not identified",
+        "suggested": false,
+        "unknown": true,
+        "earlier": [],
+        "later": [
+         "return"
+        ],
+        "before": "0",
+        "after": "1305000",
+        "delta": "1305000"
+       },
+       {
+        "key": "name:Bank",
+        "name": "Bank",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "ret-bank"
+        ],
+        "before": "0",
+        "after": "777",
+        "delta": "777"
+       },
+       {
+        "key": "name:Client B",
+        "name": "Client B",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "in-3"
+        ],
+        "before": "0",
+        "after": "9000",
+        "delta": "9000"
+       }
+      ],
+      "credit:category": [
+       {
+        "key": "Services",
+        "name": "Services",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "in-1"
+        ],
+        "later": [
+         "ret-bank",
+         "in-2",
+         "in-3"
+        ],
+        "before": "10000",
+        "after": "34777",
+        "delta": "24777"
+       },
+       {
+        "key": "Returned transfers",
+        "name": "Returned transfers",
+        "suggested": false,
+        "unknown": true,
+        "earlier": [],
+        "later": [
+         "return"
+        ],
+        "before": "0",
+        "after": "1305000",
+        "delta": "1305000"
+       }
+      ]
+     },
+     "observations": [
+      {
+       "id": "first:debit:name:Nuevo Señor",
+       "kind": "first-seen",
+       "title": "Nuevo Señor",
+       "explanation": "First appears on 2021-02-17 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "42000",
+       "rows": [
+        "new"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "first:debit:identity:party:p1:Acme",
+       "kind": "first-seen",
+       "title": "Acme",
+       "explanation": "First appears on 2021-02-18 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "700",
+       "rows": [
+        "linked"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "first:debit:name:Raw Name",
+       "kind": "first-seen",
+       "title": "Raw Name",
+       "explanation": "First appears on 2021-02-20 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "330",
+       "rows": [
+        "raw"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "first:debit:name:Other",
+       "kind": "first-seen",
+       "title": "Other",
+       "explanation": "First appears on 2021-02-03 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "777",
+       "rows": [
+        "out-bank"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "first:credit:name:Bank",
+       "kind": "first-seen",
+       "title": "Bank",
+       "explanation": "First appears on 2021-02-05 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "777",
+       "rows": [
+        "ret-bank"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "credit"
+      },
+      {
+       "id": "first:credit:name:Client B",
+       "kind": "first-seen",
+       "title": "Client B",
+       "explanation": "First appears on 2021-02-16 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "9000",
+       "rows": [
+        "in-3"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "credit"
+      },
+      {
+       "id": "recurring:[\"account\",\"USD:bank\",\"debit\",\"name:Software Co\",\"1299\"]",
+       "kind": "recurring",
+       "title": "Monthly payments · Software Co",
+       "explanation": "3 payments of the same amount in Trading Co · Bank A, 2020-12-10 to 2021-02-10. Gaps are 31–31 days. This is an observed schedule, not proof of a contract or purpose.",
+       "amount": "1299",
+       "rows": [
+        "sub-dec",
+        "sub-jan",
+        "sub-feb"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "recurring:[\"account\",\"USD:bank\",\"debit\",\"name:Gym Club\",\"500\"]",
+       "kind": "recurring",
+       "title": "Weekly payments · Gym Club",
+       "explanation": "3 payments of the same amount in Trading Co · Bank A, 2021-01-25 to 2021-02-08. Gaps are 7–7 days. This is an observed schedule, not proof of a contract or purpose.",
+       "amount": "500",
+       "rows": [
+        "wk-1",
+        "wk-2",
+        "wk-3"
+       ],
+       "earlier_rows": null,
+       "suggested": true,
+       "direction": "debit"
+      },
+      {
+       "id": "larger:large",
+       "kind": "larger",
+       "title": "Payment to Supplier (large)",
+       "explanation": "Above every one of the 10 earlier payments in the same account and direction, and more than three times their median. Compare the earlier payments before interpreting this increase.",
+       "amount": "90000",
+       "rows": [
+        "large"
+       ],
+       "earlier_rows": "account:debit",
+       "suggested": false,
+       "direction": "debit",
+       "baseline": {
+        "median_twice": "2598",
+        "maximum": "5000",
+        "count": 10
+       }
+      },
+      {
+       "id": "larger:new",
+       "kind": "larger",
+       "title": "Payment to Nuevo Señor (new)",
+       "explanation": "Above every one of the 10 earlier payments in the same account and direction, and more than three times their median. Compare the earlier payments before interpreting this increase.",
+       "amount": "42000",
+       "rows": [
+        "new"
+       ],
+       "earlier_rows": "account:debit",
+       "suggested": false,
+       "direction": "debit",
+       "baseline": {
+        "median_twice": "2598",
+        "maximum": "5000",
+        "count": 10
+       }
+      },
+      {
+       "id": "larger:out",
+       "kind": "larger",
+       "title": "T17 SPID ENVIADO Ref. 001234 072",
+       "explanation": "Above every one of the 10 earlier payments in the same account and direction, and more than three times their median. Compare the earlier payments before interpreting this increase.",
+       "amount": "1305000",
+       "rows": [
+        "out"
+       ],
+       "earlier_rows": "account:debit",
+       "suggested": false,
+       "direction": "debit",
+       "baseline": {
+        "median_twice": "2598",
+        "maximum": "5000",
+        "count": 10
+       }
+      },
+      {
+       "id": "return:return",
+       "kind": "return",
+       "title": "Returned transfer · reference 001234",
+       "explanation": "A credit explicitly described as a returned transfer matches one earlier debit by account, currency, amount and reference within seven days. Both entries remain in gross totals; this credit is not presented as a new payer.",
+       "amount": "1305000",
+       "rows": [
+        "out",
+        "return"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "credit"
+      },
+      {
+       "id": "return:ret-bank",
+       "kind": "return",
+       "title": "Returned transfer · reference BR-9",
+       "explanation": "A credit explicitly described as a returned transfer matches one earlier debit by account, currency, amount and reference within seven days. Both entries remain in gross totals; this credit is not presented as a new payer.",
+       "amount": "777",
+       "rows": [
+        "out-bank",
+        "ret-bank"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "credit"
+      }
+     ],
+     "baselines": {
+      "account:debit": [
+       "jan-0",
+       "jan-1",
+       "jan-2",
+       "jan-3",
+       "jan-4",
+       "sub-dec",
+       "sub-jan",
+       "wk-1",
+       "unnamed-2",
+       "nocat"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "ask": {
+    "earlier": {
+     "start": "2021-01-01",
+     "end": "2021-01-31"
+    },
+    "later": {
+     "start": "2021-01-15",
+     "end": "2021-02-28"
+    }
+   },
+   "server": {
+    "complete": true,
+    "categories": [],
+    "groups": [
+     {
+      "group": "USD:bank",
+      "count": 31
+     },
+     {
+      "group": "USD:card",
+      "count": 2
+     },
+     {
+      "group": "MXN:bank",
+      "count": 1
+     }
+    ],
+    "group": "USD:bank",
+    "earlier": {
+     "start": "2021-01-01",
+     "end": "2021-01-31"
+    },
+    "later": {
+     "start": "2021-01-15",
+     "end": "2021-02-28"
+    },
+    "scoped_count": 31,
+    "scoped_dated": true,
+    "error": "The earlier period must finish before the later period starts; comparison periods cannot overlap.",
+    "result": null
+   }
+  },
+  {
+   "ask": {
+    "earlier": {
+     "start": "2021-01-01",
+     "end": "2021-01-31"
+    },
+    "later": {
+     "start": "2021-02-30",
+     "end": "2021-03-01"
+    }
+   },
+   "server": {
+    "complete": true,
+    "categories": [],
+    "groups": [
+     {
+      "group": "USD:bank",
+      "count": 31
+     },
+     {
+      "group": "USD:card",
+      "count": 2
+     },
+     {
+      "group": "MXN:bank",
+      "count": 1
+     }
+    ],
+    "group": "USD:bank",
+    "earlier": {
+     "start": "2021-01-01",
+     "end": "2021-01-31"
+    },
+    "later": {
+     "start": "2021-02-30",
+     "end": "2021-03-01"
+    },
+    "scoped_count": 31,
+    "scoped_dated": true,
+    "error": "Choose valid start and end dates for both periods.",
+    "result": null
+   }
+  },
+  {
+   "ask": {
+    "categories": [
+     "Services"
+    ]
+   },
+   "server": {
+    "complete": true,
+    "categories": [
+     "Services"
+    ],
+    "groups": [
+     {
+      "group": "USD:bank",
+      "count": 28
+     },
+     {
+      "group": "USD:card",
+      "count": 2
+     },
+     {
+      "group": "MXN:bank",
+      "count": 1
+     }
+    ],
+    "group": "USD:bank",
+    "earlier": {
+     "start": "2021-01-01",
+     "end": "2021-01-31"
+    },
+    "later": {
+     "start": "2021-02-01",
+     "end": "2021-02-28"
+    },
+    "scoped_count": 28,
+    "scoped_dated": true,
+    "error": null,
+    "result": {
+     "accounts": [
+      {
+       "id": "account",
+       "label": "Trading Co · Bank A"
+      }
+     ],
+     "before_count": 9,
+     "after_count": 13,
+     "unknown_dates": [
+      "undated",
+      "end-only",
+      "bad-day"
+     ],
+     "invalid_amounts": 2,
+     "history_count": 10,
+     "totals": [
+      {
+       "direction": "credit",
+       "before": "10000",
+       "after": "34777",
+       "beforeCount": 1,
+       "afterCount": 3
+      },
+      {
+       "direction": "debit",
+       "before": "17109",
+       "after": "1441406",
+       "beforeCount": 8,
+       "afterCount": 10
+      }
+     ],
+     "drivers": {
+      "debit:name": [
+       {
+        "key": "name:Supplier",
+        "name": "Supplier",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "jan-0",
+         "jan-1",
+         "jan-2",
+         "jan-3",
+         "jan-4"
+        ],
+        "later": [
+         "large"
+        ],
+        "before": "15000",
+        "after": "90000",
+        "delta": "75000"
+       },
+       {
+        "key": "name:Software Co",
+        "name": "Software Co",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "sub-jan"
+        ],
+        "later": [
+         "sub-feb"
+        ],
+        "before": "1299",
+        "after": "1299",
+        "delta": "0"
+       },
+       {
+        "key": "name:Gym Club",
+        "name": "Gym Club",
+        "suggested": true,
+        "unknown": false,
+        "earlier": [
+         "wk-1"
+        ],
+        "later": [
+         "wk-2",
+         "wk-3"
+        ],
+        "before": "500",
+        "after": "1000",
+        "delta": "500"
+       },
+       {
+        "key": "unknown:to",
+        "name": "Counterparty not identified",
+        "suggested": false,
+        "unknown": true,
+        "earlier": [
+         "unnamed-2"
+        ],
+        "later": [
+         "out"
+        ],
+        "before": "310",
+        "after": "1305000",
+        "delta": "1304690"
+       },
+       {
+        "key": "name:Nuevo Señor",
+        "name": "Nuevo Señor",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "new"
+        ],
+        "before": "0",
+        "after": "42000",
+        "delta": "42000"
+       },
+       {
+        "key": "identity:party:p1:Acme",
+        "name": "Acme",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "linked"
+        ],
+        "before": "0",
+        "after": "700",
+        "delta": "700"
+       },
+       {
+        "key": "unknown:to:Illegible%20%2F%20torn",
+        "name": "Counterparty not identified",
+        "suggested": false,
+        "unknown": true,
+        "earlier": [],
+        "later": [
+         "unnamed-1"
+        ],
+        "before": "0",
+        "after": "300",
+        "delta": "300"
+       },
+       {
+        "key": "name:Raw Name",
+        "name": "Raw Name",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "raw"
+        ],
+        "before": "0",
+        "after": "330",
+        "delta": "330"
+       },
+       {
+        "key": "name:Other",
+        "name": "Other",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "out-bank"
+        ],
+        "before": "0",
+        "after": "777",
+        "delta": "777"
+       }
+      ],
+      "debit:category": [
+       {
+        "key": "Services",
+        "name": "Services",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "jan-0",
+         "jan-1",
+         "jan-2",
+         "jan-3",
+         "jan-4",
+         "sub-jan",
+         "wk-1",
+         "unnamed-2"
+        ],
+        "later": [
+         "sub-feb",
+         "wk-2",
+         "wk-3",
+         "large",
+         "new",
+         "linked",
+         "unnamed-1",
+         "raw",
+         "out",
+         "out-bank"
+        ],
+        "before": "17109",
+        "after": "1441406",
+        "delta": "1424297"
+       }
+      ],
+      "credit:name": [
+       {
+        "key": "name:Client A",
+        "name": "Client A",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "in-1"
+        ],
+        "later": [
+         "in-2"
+        ],
+        "before": "10000",
+        "after": "25000",
+        "delta": "15000"
+       },
+       {
+        "key": "name:Bank",
+        "name": "Bank",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "ret-bank"
+        ],
+        "before": "0",
+        "after": "777",
+        "delta": "777"
+       },
+       {
+        "key": "name:Client B",
+        "name": "Client B",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [],
+        "later": [
+         "in-3"
+        ],
+        "before": "0",
+        "after": "9000",
+        "delta": "9000"
+       }
+      ],
+      "credit:category": [
+       {
+        "key": "Services",
+        "name": "Services",
+        "suggested": false,
+        "unknown": false,
+        "earlier": [
+         "in-1"
+        ],
+        "later": [
+         "ret-bank",
+         "in-2",
+         "in-3"
+        ],
+        "before": "10000",
+        "after": "34777",
+        "delta": "24777"
+       }
+      ]
+     },
+     "observations": [
+      {
+       "id": "first:debit:name:Nuevo Señor",
+       "kind": "first-seen",
+       "title": "Nuevo Señor",
+       "explanation": "First appears on 2021-02-17 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "42000",
+       "rows": [
+        "new"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "first:debit:identity:party:p1:Acme",
+       "kind": "first-seen",
+       "title": "Acme",
+       "explanation": "First appears on 2021-02-18 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "700",
+       "rows": [
+        "linked"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "first:debit:name:Raw Name",
+       "kind": "first-seen",
+       "title": "Raw Name",
+       "explanation": "First appears on 2021-02-20 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "330",
+       "rows": [
+        "raw"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "first:debit:name:Other",
+       "kind": "first-seen",
+       "title": "Other",
+       "explanation": "First appears on 2021-02-03 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "777",
+       "rows": [
+        "out-bank"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "first:credit:name:Bank",
+       "kind": "first-seen",
+       "title": "Bank",
+       "explanation": "First appears on 2021-02-05 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "777",
+       "rows": [
+        "ret-bank"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "credit"
+      },
+      {
+       "id": "first:credit:name:Client B",
+       "kind": "first-seen",
+       "title": "Client B",
+       "explanation": "First appears on 2021-02-16 in the loaded records for this scope; 1 later-period payments. Earlier loaded records contain no payment with this displayed name. This does not establish a new relationship.",
+       "amount": "9000",
+       "rows": [
+        "in-3"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "credit"
+      },
+      {
+       "id": "recurring:[\"account\",\"USD:bank\",\"debit\",\"name:Software Co\",\"1299\"]",
+       "kind": "recurring",
+       "title": "Monthly payments · Software Co",
+       "explanation": "3 payments of the same amount in Trading Co · Bank A, 2020-12-10 to 2021-02-10. Gaps are 31–31 days. This is an observed schedule, not proof of a contract or purpose.",
+       "amount": "1299",
+       "rows": [
+        "sub-dec",
+        "sub-jan",
+        "sub-feb"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "debit"
+      },
+      {
+       "id": "recurring:[\"account\",\"USD:bank\",\"debit\",\"name:Gym Club\",\"500\"]",
+       "kind": "recurring",
+       "title": "Weekly payments · Gym Club",
+       "explanation": "3 payments of the same amount in Trading Co · Bank A, 2021-01-25 to 2021-02-08. Gaps are 7–7 days. This is an observed schedule, not proof of a contract or purpose.",
+       "amount": "500",
+       "rows": [
+        "wk-1",
+        "wk-2",
+        "wk-3"
+       ],
+       "earlier_rows": null,
+       "suggested": true,
+       "direction": "debit"
+      },
+      {
+       "id": "larger:large",
+       "kind": "larger",
+       "title": "Payment to Supplier (large)",
+       "explanation": "Above every one of the 8 earlier payments in the same account and direction, and more than three times their median. Compare the earlier payments before interpreting this increase.",
+       "amount": "90000",
+       "rows": [
+        "large"
+       ],
+       "earlier_rows": "account:debit",
+       "suggested": false,
+       "direction": "debit",
+       "baseline": {
+        "median_twice": "3299",
+        "maximum": "5000",
+        "count": 8
+       }
+      },
+      {
+       "id": "larger:new",
+       "kind": "larger",
+       "title": "Payment to Nuevo Señor (new)",
+       "explanation": "Above every one of the 8 earlier payments in the same account and direction, and more than three times their median. Compare the earlier payments before interpreting this increase.",
+       "amount": "42000",
+       "rows": [
+        "new"
+       ],
+       "earlier_rows": "account:debit",
+       "suggested": false,
+       "direction": "debit",
+       "baseline": {
+        "median_twice": "3299",
+        "maximum": "5000",
+        "count": 8
+       }
+      },
+      {
+       "id": "larger:out",
+       "kind": "larger",
+       "title": "T17 SPID ENVIADO Ref. 001234 072",
+       "explanation": "Above every one of the 8 earlier payments in the same account and direction, and more than three times their median. Compare the earlier payments before interpreting this increase.",
+       "amount": "1305000",
+       "rows": [
+        "out"
+       ],
+       "earlier_rows": "account:debit",
+       "suggested": false,
+       "direction": "debit",
+       "baseline": {
+        "median_twice": "3299",
+        "maximum": "5000",
+        "count": 8
+       }
+      },
+      {
+       "id": "return:ret-bank",
+       "kind": "return",
+       "title": "Returned transfer · reference BR-9",
+       "explanation": "A credit explicitly described as a returned transfer matches one earlier debit by account, currency, amount and reference within seven days. Both entries remain in gross totals; this credit is not presented as a new payer.",
+       "amount": "777",
+       "rows": [
+        "out-bank",
+        "ret-bank"
+       ],
+       "earlier_rows": null,
+       "suggested": false,
+       "direction": "credit"
+      }
+     ],
+     "baselines": {
+      "account:debit": [
+       "jan-0",
+       "jan-1",
+       "jan-2",
+       "jan-3",
+       "jan-4",
+       "sub-jan",
+       "wk-1",
+       "unnamed-2"
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

@@ -14,7 +14,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
 import { TrendComparisonWorkspace } from "./TrendComparisonWorkspace"
 import { InvestigatorPeople } from "./InvestigatorPeople"
-import { trendRows, trendCoverage } from "../lib/trend-fixture.test-support"
+import {
+  trendRows,
+  trendCoverage,
+  loadedPayments,
+} from "../lib/trend-fixture.test-support"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
 import type { AccountParties } from "../lib/account-parties"
 let profileRows = trendRows
@@ -154,7 +158,8 @@ it("shows evidence-driven trends, preserves a comparison after source navigation
     wrap(
       <TrendComparisonWorkspace
         caseId="case"
-        rows={trendRows}
+        payments={loadedPayments(trendRows)}
+      onNeedRows={vi.fn()}
         coverage={trendCoverage}
         onCoverageRetry={vi.fn()}
       />

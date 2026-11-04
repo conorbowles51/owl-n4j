@@ -487,7 +487,7 @@ def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None, stoppe
             .order_by(func.count().desc(), Period.case_id))]
     warmed = failed = 0
     from routers.financial_ledger import (get_ledger_first_view, get_ledger_overview, get_ledger_overview_panels,
-                                          get_ledger_transactions)
+                                          get_ledger_transactions, get_ledger_trends_view)
     from routers.financial_statement_import import files as get_statement_files
     from routers.evidence import list_evidence
     from routers.financial_ledger import get_account_consolidations, get_account_parties
@@ -528,6 +528,12 @@ def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None, stoppe
                                                                 ledger_status=None, start_date=None, end_date=None,
                                                                 page=0, page_size=50, account_ids=None,
                                                                 account_holders=None)),
+        # The Trends page (GET /ledger-trends-view) as it opens: the group with most payments, latest month
+        # against the month before, every category. d5b330d1: 5.8 s to compute under load (2026-11-04).
+        ('trends view', get_ledger_trends_view, dict(source_document_id=None, account_id=None, ledger_status=None,
+                                                    start_date=None, end_date=None, group=None, earlier_start=None,
+                                                    earlier_end=None, later_start=None, later_end=None,
+                                                    account_ids=None, account_holders=None, categories=None)),
         ('statement files', get_statement_files, {}),
         # The Financial page's statement register asks for every reading version of its files.
         ('statement register files', list_evidence, dict(status_filter=None, include_cellebrite_artifacts=False,

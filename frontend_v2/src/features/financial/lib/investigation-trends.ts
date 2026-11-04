@@ -196,12 +196,17 @@ export function changeDrivers(
       group.delta = group.after - group.before
       groups.set(key, group)
     }
-  return [...groups.values()].sort(
+  return sortDrivers([...groups.values()])
+}
+/** changeDrivers' order: largest difference first, then by name. */
+export const sortDrivers = <T extends { delta: bigint; name: string }>(
+  drivers: T[]
+) =>
+  drivers.sort(
     (a, b) =>
       bigintCompare(absolute(b.delta), absolute(a.delta)) ||
       a.name.localeCompare(b.name)
   )
-}
 export interface TrendObservation {
   id: string
   kind: "first-seen" | "recurring" | "larger" | "return"
@@ -426,10 +431,20 @@ export function trendObservations(
       direction: "credit",
     })
   }
-  return result.sort(
+  return sortObservations(result)
+}
+/** trendObservations' order: largest amount first, then by id. */
+export const sortObservations = <T extends { amount: bigint; id: string }>(
+  items: T[]
+) =>
+  items.sort(
     (a, b) => bigintCompare(b.amount, a.amount) || a.id.localeCompare(b.id)
   )
-}
+/** The currency and account type groups, most payments first, then by name. */
+export const sortGroups = (counts: Iterable<[string, number]>) =>
+  [...counts]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([g]) => g)
 export function investigateTrends(
   rows: LedgerTransaction[],
   group: string,

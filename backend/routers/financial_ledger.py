@@ -985,6 +985,44 @@ def get_ledger_first_view(
     return {"case_id": str(case_id), "available": True, **view}
 
 
+@router.get("/ledger-trends-view")
+@cached_view('ledger-trends-view')
+def get_ledger_trends_view(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    source_document_id: UUID | None = None,
+    account_id: Optional[UUID] = None,
+    ledger_status: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    group: str | None = None,
+    earlier_start: str | None = None,
+    earlier_end: str | None = None,
+    later_start: str | None = None,
+    later_end: str | None = None,
+    db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None,
+    account_holders: Annotated[list[str] | None, Query()] = None,
+    categories: Annotated[list[str] | None, Query()] = None):
+    """The Trends page over exactly the rows ``/ledger`` answers for the same query, restricted to ``categories`` as
+    the page restricts them: the currency and account type groups, the two periods compared (each defaulting to
+    the latest month against the month before), money in and out in each, what drove the difference and the
+    observations, each with the keys of the payments behind it (services.financial.trends_first_view; each figure is
+    the browser's own calculation over the same rows).
+
+    The page shows this instead of downloading every payment (d5b330d1: 64 MB). ``available`` is false (with the
+    reason) where the browser's calculation would treat these rows in a way the server does not reproduce; the page
+    then reads every row and calculates as before."""
+    from services.financial.trends_first_view import Unavailable, trends_view, _period
+    transactions = _overview_ledger_rows(
+        db, case_id, source_document_id=source_document_id, account_id=account_id, account_ids=account_ids,
+        account_holders=account_holders, ledger_status=ledger_status, start_date=start_date, end_date=end_date)
+    try:
+        view = trends_view(transactions, str(case_id), categories or [], group=group,
+                           earlier=_period(earlier_start, earlier_end), later=_period(later_start, later_end))
+    except Unavailable as e:
+        return {"case_id": str(case_id), "available": False, "reason": str(e)}
+    return {"case_id": str(case_id), "available": True, **view}
+
+
 def judgements_row_map(db, case_id):
     """The judgement row map ``/judgements/rows`` answers with (the ledger's marks), read in this view's snapshot."""
     from services.financial import judgements
