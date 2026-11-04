@@ -501,7 +501,7 @@ other party's side for outgoing calls; the class rule above keys on direction fi
 | CellTower.TimeStamp | any | passive | owner | | registration |
 | Location.TimeStamp | Type Searched (POL-S: C3 7, C8 4, C9 6) | interaction | owner | | a searched place, which is not a presence (6.1) |
 | Location.TimeStamp | other | passive | owner or per 4.2 | | presence evidence, handled in section 6 |
-| ActivitySensorData | any | passive | owner, or `other_device` when the source is a wearable (M9) | true when steps or distance > 0 | |
+| ActivitySensorData | any | passive | owner, or `other_device` when DeviceName names a wearable (decision 22) | true when steps or distance > 0 | |
 | ActivitySensorDataSample | any | passive | as above | true when the measured variable is steps, distance, flights or speed and Quantity > 0 | |
 | Journey | any | unknown | unknown | | 122 records; meaning per Source not established |
 
@@ -556,11 +556,11 @@ attribution mapping kind (spec 02 format), initial content:
 | Flag | Group | Condition | Displayed as (UI copy) |
 |---|---|---|---|
 | `synced_from_account` | A | DeviceLocationAffiliation = Synced | "Synced from the account. May come from another device." |
-| `affiliation_unknown` | B | DeviceLocationAffiliation = Unknown, or absent on a Location from a source known to sync (Google Maps timeline, M5) | "Not known whether this device recorded it." |
+| `affiliation_unknown` | B | DeviceLocationAffiliation = Unknown, or absent on a Location from a source known to sync (the list in the attribution mapping, from M5: decision 22) | "Not known whether this device recorded it." |
 | `other_device_platform` | A | InstantMessage Platform = Web | "Sent from a web or desktop session." |
 | `account_level` | B | actor `account` in the activity mapping | "Recorded on the account. The device that did it is not shown." |
 | `user_mapping_other` | A | UserMapping present and not `Decoding` (pending M2 meaning) | "Linked to a different device user or source." |
-| `wearable` | A | sensor record from a non-phone device (M9) | "Recorded by a paired wearable." |
+| `wearable` | A | sensor record, or a sample in it, whose DeviceName holds a wearable's word (the list in the attribution mapping, from M9: decision 22) | "Recorded by a paired wearable." |
 | `deleted_record` | B | deleted_state = Deleted | "Recovered deleted record." |
 | `deleted_state_unknown` | none (shown only) | deleted_state = Unknown | |
 | `low_decoding_confidence` | B | decoding_confidence not High | "Decoded with lower confidence." |
@@ -1457,6 +1457,18 @@ phone pairs (`scripts/a3_cross.py`), under the guards above; results per report 
   values), P14 (13,355; 39 m, 60 m over 12,728) and P13 (3,533; 57 m, 2,000 m over 2,608); 7 other reports
   have under 1,500. BSSIDs with a GPS observation within 5 minutes on 2 or more days: 3,068 on P04, none
   elsewhere (6.3).
+- M5, affiliation per Source (`scripts/pol_m5_places.py`, `measurements/m5-places.json`): no Location in any
+  report says `Synced`. AccountLocationAffiliation `Extracted` (the account holds the place) appears on Snapchat
+  (P03 86, P04 2,654), Find My (P04 2, P11 2) and WhatsApp (P14 2); an `Account` is named on Gmail (P11 618 of
+  1,236, P12 49 of 49), Facebook (P13, P14), WhatsApp (P08, P13, P14), WhatsApp Business (P12) and Google Maps
+  (P07, P14) Locations. Native Locations carries `Extracted` on the device side (P03 276, P04 13,537, P11 7, P13
+  2,648, P14 12,728). Timed Locations with no affiliation from those seven sources: P11 1,237, P12 49, P13 8,
+  P08 4, P04 3, none elsewhere (1,301).
+- M9 (`scripts/pol_m9_sensors.py`, `measurements/m9-sensors.json`): sensor records on P11 (17,082), P13 (15,311)
+  and P14 (13,125), always ActivitySensorData.Measurements -> Measurement.Samples -> Sample, Source `Health`.
+  SourceDeviceType is absent on P11 and P13 and `Unknown` on every P14 record; DeviceName is on P13 only (15,310
+  records and 41,721 measurements) and holds none of `Watch`, `iPhone`, `Phone`, `iPad`, `Fitbit`, `Garmin`,
+  `Band`, `Ring`, `Galaxy`. No Sample carries DeviceName or SourceDeviceType. No sensor record names a wearable.
 - M10: no phone pair shares a BSSID within 5 minutes or a full cell key within 15 minutes. Presence
   observation pairs within 5 minutes exist on 4 pairs (P13 and P14: 149, all with an unknown radius on at
   least one side; P03 and P04: 53). Bluetooth detections naming the other phone are skipped: they need each
@@ -1568,9 +1580,27 @@ Each is a decision with its reasoning and what would reverse it.
     from the report (8.0) with `instant_basis` `device_zone`; with no zone it is not placed and is counted
     (`skipped_no_instant:absent` in the projection state), never guessed. *Reverse if* the time spec resolves a zone
     by decision for such a phone (then the decision's zone).
-22. **Flags not yet computed.** `wearable` waits for M9 (no sensor record is yet known to come from a wearable) and
-    `affiliation_unknown` on a Location with no affiliation from a source known to sync waits for M5's list of such
-    sources. Both are in the flag vocabulary and the strength view; no rule raises them yet.
+22. **`wearable` and `affiliation_unknown` on a syncing source, from M9 and M5.** Both are rows of the attribution
+    mapping (version 2), so the word lists live in the mapping, not in code, and a person confirms or corrects
+    each row on the readings screen.
+    - `wearable` (group A): a sensor record (`From`) or sample (`DateSampled`) whose DeviceName holds `Watch`,
+      `Fitbit`, `Garmin`, `Oura` or `WHOOP`, matched without case (a new predicate `contains_any`). A sample names no
+      device, so it is matched on the DeviceName of the sensor record it sits in (`rows.INHERITED_FROM_ROOT`, only
+      DeviceName and SourceDeviceType, only for samples). The activity mapping (version 2) reads such records as
+      `passive` by `other_device` (3.2). M9 found no sensor record naming a wearable on the 14 server reports (13.1),
+      so the rule raises nothing there: it is proven on synthetic records. SourceDeviceType is not used: its only
+      value seen is `Unknown`. *Reverse if* a report shows a SourceDeviceType value naming the device kind (then a
+      row on that value), or a phone whose own name holds one of these words (then the word leaves the list).
+    - `affiliation_unknown` (group B) also on a Location whose DeviceLocationAffiliation is absent and whose Source
+      is one the reports show keeping places on the account: a Location from it names its account, or is marked
+      `Extracted` on the account, on at least one of the 14 reports. The list: Facebook, Find My, Gmail, Google
+      Maps, Snapchat, WhatsApp, WhatsApp Business. "Unknown on another report" is not the test: P14 marks nearly
+      every source Unknown, the phone's own Native Locations included. On the 14 reports this flags 1,301 timed
+      Locations (P11 1,237, P12 49, P13 8, P08 4, P04 3). *Reverse if* a report shows one of these sources with its
+      Locations marked `Extracted` by the device (then it leaves the list), or another source naming its account
+      or marked `Extracted` on the account (then it joins).
+    - A new mapping version leaves the old version's open readings touching no record (records_touched 0); a
+      reading a person decided keeps its count and decision.
 
 23. **Stream gaps measured (5.3 step 4, M4 on the 14 server reports, `measurements/a3/P*.json` `m4_streams`).**
     `max_gap` per family is the smallest whole hour at or above the 95th-percentile gap of every stream of that
@@ -1835,7 +1865,8 @@ Each is a decision with its reasoning and what would reverse it.
 - What `WirelessNetwork.TimeStamp` (25,356 values) and `CellTower.TimeStamp` record. M5.
 - NetworkUsage and ApplicationUsage bucket widths. M4.
 - Whether `DeviceConnectivity` `Paired` times are pairing moments. M4.
-- Sensor nesting and whether any sensor records come from a wearable. M9.
+- Whether a wearable source shows anything beyond its DeviceName: M9 found no sensor record naming one on the 14
+  server reports (decision 22), so no SourceDeviceType value other than `Unknown` has been seen.
 - Whether P03 and P10 are the same device (plan 12).
 - OpenCelliD licence obligations for Loupe outputs; whether the current export covers the case's
   2022-2023 towers.

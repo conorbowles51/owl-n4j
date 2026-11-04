@@ -1,0 +1,405 @@
+{
+ "measure": "M5 affiliation per Source (04 section 13), pol_m5_places.py; counts only; other M5 columns in measurements/a3/P*.json",
+ "reports": {
+  "P01": {
+   "m5_account_presence_by_source": {
+    "Google Photos | Account absent": 1154,
+    "Waze | Account absent": 66
+   },
+   "m5_affiliation_by_source": {
+    "Google Photos | top | Unknown | Unknown | Unknown": 1154,
+    "Waze | top | Unknown | Unknown | Unknown": 66
+   },
+   "m5_affiliation_by_source_timed": {
+    "Google Photos | top | Unknown | Unknown | Unknown": 1154,
+    "Waze | top | Unknown | Unknown | Unknown": 66
+   },
+   "seconds": 26.3
+  },
+  "P02": {
+   "m5_account_presence_by_source": {
+    "<absent> | Account absent": 30,
+    "Facebook | Account absent": 172,
+    "Google Maps | Account absent": 4
+   },
+   "m5_affiliation_by_source": {
+    "<absent> | top | <absent> | <absent> | <absent>": 30,
+    "Facebook | top | <absent> | <absent> | <absent>": 172,
+    "Google Maps | top | <absent> | <absent> | <absent>": 4
+   },
+   "m5_affiliation_by_source_timed": {
+    "<absent> | top | <absent> | <absent> | <absent>": 6
+   },
+   "seconds": 49.4
+  },
+  "P03": {
+   "m5_account_presence_by_source": {
+    "<absent> | Account absent": 17,
+    "<other> | Account absent": 2,
+    "Apple Maps | Account absent": 104,
+    "Google Maps | Account absent": 27,
+    "Native Locations | Account absent": 360,
+    "Recents | Account absent": 17,
+    "Safari | Account absent": 4,
+    "Snapchat | Account absent": 86
+   },
+   "m5_affiliation_by_source": {
+    "<absent> | top | <absent> | <absent> | <absent>": 17,
+    "<other> | top | <absent> | <absent> | <absent>": 1,
+    "<other> | top | <other> | Extracted | <absent>": 1,
+    "Apple Maps | Journey.FromPoint | <absent> | <absent> | <absent>": 21,
+    "Apple Maps | Journey.ToPoint | <absent> | <absent> | <absent>": 21,
+    "Apple Maps | Journey.WayPoints | <absent> | <absent> | <absent>": 42,
+    "Apple Maps | top | <absent> | <absent> | <absent>": 20,
+    "Google Maps | Journey.FromPoint | <absent> | <absent> | <absent>": 1,
+    "Google Maps | Journey.ToPoint | <absent> | <absent> | <absent>": 1,
+    "Google Maps | Journey.WayPoints | Unknown | Unknown | <absent>": 23,
+    "Google Maps | top | <absent> | <absent> | <absent>": 2,
+    "Native Locations | top | <absent> | <absent> | <absent>": 84,
+    "Native Locations | top | Extracted | Unknown | <absent>": 276,
+    "Recents | top | <absent> | <absent> | <absent>": 17,
+    "Safari | top | <absent> | <absent> | <absent>": 4,
+    "Snapchat | top | Unknown | Extracted | <absent>": 86
+   },
+   "m5_affiliation_by_source_timed": {
+    "<absent> | top | <absent> | <absent> | <absent>": 6,
+    "<other> | top | <absent> | <absent> | <absent>": 1,
+    "<other> | top | <other> | Extracted | <absent>": 1,
+    "Apple Maps | Journey.FromPoint | <absent> | <absent> | <absent>": 21,
+    "Apple Maps | Journey.ToPoint | <absent> | <absent> | <absent>": 21,
+    "Apple Maps | Journey.WayPoints | <absent> | <absent> | <absent>": 42,
+    "Apple Maps | top | <absent> | <absent> | <absent>": 20,
+    "Native Locations | top | <absent> | <absent> | <absent>": 84,
+    "Native Locations | top | Extracted | Unknown | <absent>": 276,
+    "Safari | top | <absent> | <absent> | <absent>": 4,
+    "Snapchat | top | Unknown | Extracted | <absent>": 9
+   },
+   "seconds": 112.8
+  },
+  "P04": {
+   "m5_account_presence_by_source": {
+    "<absent> | Account absent": 26158,
+    "<other> | Account present": 2,
+    "Apple Maps | Account absent": 85,
+    "Apple Photos | Account absent": 33,
+    "Calendar | Account absent": 4,
+    "Facebook | Account absent": 22,
+    "Find My | Account absent": 5,
+    "KnowledgeC | Account absent": 5,
+    "Native Locations | Account absent": 13593,
+    "Recents | Account absent": 13,
+    "Safari | Account absent": 18,
+    "Snapchat | Account absent": 2654,
+    "Uber | Account absent": 15
+   },
+   "m5_affiliation_by_source": {
+    "<absent> | top | <absent> | <absent> | <absent>": 26158,
+    "<other> | top | <absent> | <absent> | <absent>": 2,
+    "Apple Maps | Journey.FromPoint | <absent> | <absent> | <absent>": 14,
+    "Apple Maps | Journey.ToPoint | <absent> | <absent> | <absent>": 14,
+    "Apple Maps | Journey.WayPoints | <absent> | <absent> | <absent>": 28,
+    "Apple Maps | top | <absent> | <absent> | <absent>": 29,
+    "Apple Photos | top | <absent> | <absent> | <absent>": 33,
+    "Calendar | top | <absent> | <absent> | <absent>": 4,
+    "Facebook | top | <absent> | <absent> | <absent>": 22,
+    "Find My | top | <absent> | <absent> | <absent>": 3,
+    "Find My | top | <other> | Extracted | <absent>": 1,
+    "Find My | top | Extracted | Extracted | <absent>": 1,
+    "KnowledgeC | top | <absent> | <absent> | <absent>": 5,
+    "Native Locations | top | <absent> | <absent> | <absent>": 56,
+    "Native Locations | top | Extracted | Unknown | <absent>": 13537,
+    "Recents | top | <absent> | <absent> | <absent>": 13,
+    "Safari | Journey.FromPoint | <absent> | <absent> | <absent>": 2,
+    "Safari | Journey.ToPoint | <absent> | <absent> | <absent>": 2,
+    "Safari | Journey.WayPoints | <absent> | <absent> | <absent>": 2,
+    "Safari | top | <absent> | <absent> | <absent>": 12,
+    "Snapchat | top | Unknown | Extracted | <absent>": 2654,
+    "Uber | top | <absent> | <absent> | <absent>": 15
+   },
+   "m5_affiliation_by_source_timed": {
+    "<absent> | top | <absent> | <absent> | <absent>": 24150,
+    "<other> | top | <absent> | <absent> | <absent>": 2,
+    "Apple Maps | Journey.FromPoint | <absent> | <absent> | <absent>": 14,
+    "Apple Maps | Journey.ToPoint | <absent> | <absent> | <absent>": 14,
+    "Apple Maps | Journey.WayPoints | <absent> | <absent> | <absent>": 28,
+    "Apple Maps | top | <absent> | <absent> | <absent>": 29,
+    "Apple Photos | top | <absent> | <absent> | <absent>": 33,
+    "Find My | top | <absent> | <absent> | <absent>": 3,
+    "Find My | top | <other> | Extracted | <absent>": 1,
+    "Find My | top | Extracted | Extracted | <absent>": 1,
+    "KnowledgeC | top | <absent> | <absent> | <absent>": 5,
+    "Native Locations | top | <absent> | <absent> | <absent>": 56,
+    "Native Locations | top | Extracted | Unknown | <absent>": 13537,
+    "Safari | top | <absent> | <absent> | <absent>": 11,
+    "Snapchat | top | Unknown | Extracted | <absent>": 2214,
+    "Uber | top | <absent> | <absent> | <absent>": 15
+   },
+   "seconds": 317.0
+  },
+  "P05": {
+   "m5_account_presence_by_source": {
+    "<absent> | Account absent": 99,
+    "<other> | Account absent": 2,
+    "Google Maps | Account absent": 9
+   },
+   "m5_affiliation_by_source": {
+    "<absent> | top | <absent> | <absent> | <absent>": 99,
+    "<other> | top | <absent> | <absent> | <absent>": 2,
+    "Google Maps | top | <absent> | <absent> | <absent>": 9
+   },
+   "m5_affiliation_by_source_timed": {
+    "<absent> | top | <absent> | <absent> | <absent>": 81
+   },
+   "seconds": 86.3
+  },
+  "P06": {
+   "m5_account_presence_by_source": {
+    "<absent> | Account absent": 21,
+    "Google Maps | Account absent": 7,
+    "WhatsApp | Account absent": 3
+   },
+   "m5_affiliation_by_source": {
+    "<absent> | top | <absent> | <absent> | <absent>": 21,
+    "Google Maps | top | <absent> | <absent> | <absent>": 7,
+    "WhatsApp | top | <absent> | <absent> | <absent>": 3
+   },
+   "m5_affiliation_by_source_timed": {
+    "<absent> | top | <absent> | <absent> | <absent>": 21
+   },
+   "seconds": 70.3
+  },
+  "P07": {
+   "m5_account_presence_by_source": {
+    "<absent> | Account absent": 2,
+    "<other> | Account absent": 1,
+    "Chrome | Account absent": 7,
+    "Google Maps | Account absent": 6,
+    "Google Maps | Account present": 2,
+    "Google Photos | Account absent": 431,
+    "Snapchat | Account absent": 28
+   },
+   "m5_affiliation_by_source": {
+    "<absent> | top | <absent> | <absent> | <absent>": 2,
+    "<other> | top | <absent> | <absent> | <absent>": 1,
+    "Chrome | Journey.FromPoint | <absent> | <absent> | <absent>": 1,
+    "Chrome | Journey.ToPoint | <absent> | <absent> | <absent>": 1,
+    "Chrome | Journey.WayPoints | <absent> | <absent> | <absent>": 1,
+    "Chrome | top | <absent> | <absent> | <absent>": 4,
+    "Google Maps | top | <absent> | <absent> | <absent>": 8,
+    "Google Photos | top | <absent> | <absent> | <absent>": 431,
+    "Snapchat | top | Unknown | Unknown | <absent>": 28
+   },
+   "m5_affiliation_by_source_timed": {
+    "<other> | top | <absent> | <absent> | <absent>": 1,
+    "Chrome | Journey.FromPoint | <absent> | <absent> | <absent>": 1,
+    "Chrome | Journey.ToPoint | <absent> | <absent> | <absent>": 1,
+    "Chrome | Journey.WayPoints | <absent> | <absent> | <absent>": 1,
+    "Chrome | top | <absent> | <absent> | <absent>": 4,
+    "Google Photos | top | <absent> | <absent> | <absent>": 431,
+    "Snapchat | top | Unknown | Unknown | <absent>": 28
+   },
+   "seconds": 138.5
+  },
+  "P08": {
+   "m5_account_presence_by_source": {
+    "<absent> | Account absent": 6,
+    "<other> | Account absent": 2,
+    "WhatsApp | Account absent": 5,
+    "WhatsApp | Account present": 4
+   },
+   "m5_affiliation_by_source": {
+    "<absent> | top | <absent> | <absent> | <absent>": 6,
+    "<other> | top | <absent> | <absent> | <absent>": 2,
+    "WhatsApp | top | <absent> | <absent> | <absent>": 9
+   },
+   "m5_affiliation_by_source_timed": {
+    "<absent> | top | <absent> | <absent> | <absent>": 2,
+    "<other> | top | <absent> | <absent> | <absent>": 2,
+    "WhatsApp | top | <absent> | <absent> | <absent>": 4
+   },
+   "seconds": 846.2
+  },
+  "P09": {
+   "m5_account_presence_by_source": {
+    "<other> | Account absent": 1,
+    "Google Maps | Account absent": 6
+   },
+   "m5_affiliation_by_source": {
+    "<other> | top | <absent> | <absent> | <absent>": 1,
+    "Google Maps | top | <absent> | <absent> | <absent>": 6
+   },
+   "seconds": 60.2
+  },
+  "P10": {
+   "seconds": 412.7
+  },
+  "P11": {
+   "m5_account_presence_by_source": {
+    "<absent> | Account absent": 33,
+    "<other> | Account absent": 2,
+    "<other> | Account present": 2,
+    "Apple Maps | Account absent": 107,
+    "Find My | Account absent": 3,
+    "Gmail | Account absent": 618,
+    "Gmail | Account present": 618,
+    "Native Locations | Account absent": 7,
+    "Safari | Account absent": 92
+   },
+   "m5_affiliation_by_source": {
+    "<absent> | top | <absent> | <absent> | <absent>": 33,
+    "<other> | top | <absent> | <absent> | <absent>": 3,
+    "<other> | top | <absent> | <absent> | <other>": 1,
+    "Apple Maps | Journey.FromPoint | <absent> | <absent> | <absent>": 21,
+    "Apple Maps | Journey.ToPoint | <absent> | <absent> | <absent>": 21,
+    "Apple Maps | Journey.WayPoints | <absent> | <absent> | <absent>": 42,
+    "Apple Maps | top | <absent> | <absent> | <absent>": 23,
+    "Find My | top | <absent> | <absent> | <absent>": 1,
+    "Find My | top | <other> | Extracted | <absent>": 1,
+    "Find My | top | Extracted | Extracted | <absent>": 1,
+    "Gmail | top | <absent> | <absent> | <absent>": 1236,
+    "Native Locations | top | Extracted | Unknown | <absent>": 7,
+    "Safari | Journey.FromPoint | <absent> | <absent> | <absent>": 15,
+    "Safari | Journey.ToPoint | <absent> | <absent> | <absent>": 15,
+    "Safari | Journey.WayPoints | <absent> | <absent> | <absent>": 16,
+    "Safari | top | <absent> | <absent> | <absent>": 46
+   },
+   "m5_affiliation_by_source_timed": {
+    "<absent> | top | <absent> | <absent> | <absent>": 4,
+    "<other> | top | <absent> | <absent> | <absent>": 2,
+    "<other> | top | <absent> | <absent> | <other>": 1,
+    "Apple Maps | Journey.FromPoint | <absent> | <absent> | <absent>": 21,
+    "Apple Maps | Journey.ToPoint | <absent> | <absent> | <absent>": 21,
+    "Apple Maps | Journey.WayPoints | <absent> | <absent> | <absent>": 42,
+    "Apple Maps | top | <absent> | <absent> | <absent>": 23,
+    "Find My | top | <absent> | <absent> | <absent>": 1,
+    "Find My | top | <other> | Extracted | <absent>": 1,
+    "Find My | top | Extracted | Extracted | <absent>": 1,
+    "Gmail | top | <absent> | <absent> | <absent>": 1236,
+    "Native Locations | top | Extracted | Unknown | <absent>": 7,
+    "Safari | Journey.FromPoint | <absent> | <absent> | <absent>": 6,
+    "Safari | Journey.ToPoint | <absent> | <absent> | <absent>": 6,
+    "Safari | Journey.WayPoints | <absent> | <absent> | <absent>": 6,
+    "Safari | top | <absent> | <absent> | <absent>": 23
+   },
+   "seconds": 291.5
+  },
+  "P12": {
+   "m5_account_presence_by_source": {
+    "<absent> | Account absent": 32,
+    "<other> | Account absent": 1,
+    "Gmail | Account present": 49,
+    "Google Maps | Account absent": 6,
+    "Google Photos | Account absent": 12,
+    "WhatsApp Business | Account present": 3
+   },
+   "m5_affiliation_by_source": {
+    "<absent> | top | <absent> | <absent> | <absent>": 32,
+    "<other> | top | <absent> | <absent> | <absent>": 1,
+    "Gmail | top | <absent> | <absent> | <absent>": 49,
+    "Google Maps | top | <absent> | <absent> | <absent>": 6,
+    "Google Photos | top | Unknown | Unknown | <absent>": 12,
+    "WhatsApp Business | top | <absent> | <absent> | <absent>": 3
+   },
+   "m5_affiliation_by_source_timed": {
+    "<absent> | top | <absent> | <absent> | <absent>": 32,
+    "<other> | top | <absent> | <absent> | <absent>": 1,
+    "Gmail | top | <absent> | <absent> | <absent>": 49,
+    "Google Photos | top | Unknown | Unknown | <absent>": 12
+   },
+   "seconds": 12.7
+  },
+  "P13": {
+   "m5_account_presence_by_source": {
+    "<absent> | Account absent": 61,
+    "<other> | Account absent": 1,
+    "Apple Maps | Account absent": 92,
+    "Apple Photos | Account absent": 26,
+    "Facebook | Account present": 11,
+    "Google Maps | Account absent": 666,
+    "Native Locations | Account absent": 2671,
+    "WhatsApp | Account present": 5
+   },
+   "m5_affiliation_by_source": {
+    "<absent> | top | <absent> | <absent> | <absent>": 61,
+    "<other> | top | <absent> | <absent> | <absent>": 1,
+    "Apple Maps | Journey.FromPoint | <absent> | <absent> | <absent>": 16,
+    "Apple Maps | Journey.ToPoint | <absent> | <absent> | <absent>": 16,
+    "Apple Maps | Journey.WayPoints | <absent> | <absent> | <absent>": 32,
+    "Apple Maps | top | <absent> | <absent> | <absent>": 28,
+    "Apple Photos | top | Unknown | Unknown | <absent>": 26,
+    "Facebook | top | <absent> | <absent> | <absent>": 11,
+    "Google Maps | Journey.ToPoint | <absent> | <absent> | <absent>": 3,
+    "Google Maps | Journey.WayPoints | <absent> | <absent> | <absent>": 653,
+    "Google Maps | top | <absent> | <absent> | <absent>": 10,
+    "Native Locations | top | <absent> | <absent> | <absent>": 23,
+    "Native Locations | top | Extracted | Unknown | <absent>": 2648,
+    "WhatsApp | top | <absent> | <absent> | <absent>": 5
+   },
+   "m5_affiliation_by_source_timed": {
+    "<absent> | top | <absent> | <absent> | <absent>": 53,
+    "Apple Maps | Journey.FromPoint | <absent> | <absent> | <absent>": 16,
+    "Apple Maps | Journey.ToPoint | <absent> | <absent> | <absent>": 16,
+    "Apple Maps | Journey.WayPoints | <absent> | <absent> | <absent>": 32,
+    "Apple Maps | top | <absent> | <absent> | <absent>": 28,
+    "Apple Photos | top | Unknown | Unknown | <absent>": 26,
+    "Google Maps | top | <absent> | <absent> | <absent>": 3,
+    "Native Locations | top | <absent> | <absent> | <absent>": 23,
+    "Native Locations | top | Extracted | Unknown | <absent>": 2648,
+    "WhatsApp | top | <absent> | <absent> | <absent>": 5
+   },
+   "seconds": 339.0
+  },
+  "P14": {
+   "m5_account_presence_by_source": {
+    "<absent> | Account absent": 23,
+    "Apple Find My SearchParty | Account absent": 4,
+    "Apple Maps | Account absent": 119,
+    "Facebook | Account present": 13,
+    "Google Maps | Account absent": 409,
+    "Google Maps | Account present": 7,
+    "Native Locations | Account absent": 12757,
+    "Recents | Account absent": 4,
+    "Safari | Account absent": 12,
+    "WhatsApp | Account absent": 2,
+    "WhatsApp | Account present": 5
+   },
+   "m5_affiliation_by_source": {
+    "<absent> | top | Unknown | Unknown | Unknown": 23,
+    "Apple Find My SearchParty | top | Unknown | Unknown | Unknown": 4,
+    "Apple Maps | Journey.FromPoint | Unknown | Unknown | Unknown": 25,
+    "Apple Maps | Journey.ToPoint | Unknown | Unknown | Unknown": 25,
+    "Apple Maps | Journey.WayPoints | Unknown | Unknown | Unknown": 50,
+    "Apple Maps | top | Unknown | Unknown | Unknown": 19,
+    "Facebook | top | Unknown | Unknown | Unknown": 13,
+    "Google Maps | Journey.FromPoint | Unknown | Unknown | Unknown": 1,
+    "Google Maps | Journey.ToPoint | Unknown | Unknown | Unknown": 1,
+    "Google Maps | Journey.WayPoints | Unknown | Unknown | Unknown": 398,
+    "Google Maps | top | Unknown | Unknown | Unknown": 16,
+    "Native Locations | top | Extracted | Unknown | Unknown": 12728,
+    "Native Locations | top | Unknown | Unknown | Unknown": 29,
+    "Recents | top | Unknown | Unknown | Unknown": 4,
+    "Safari | Journey.FromPoint | Unknown | Unknown | Unknown": 1,
+    "Safari | Journey.ToPoint | Unknown | Unknown | Unknown": 1,
+    "Safari | Journey.WayPoints | Unknown | Unknown | Unknown": 1,
+    "Safari | top | Unknown | Unknown | Unknown": 9,
+    "WhatsApp | Journey.FromPoint | Unknown | Unknown | Unknown": 1,
+    "WhatsApp | Journey.ToPoint | Unknown | Unknown | Unknown": 1,
+    "WhatsApp | Journey.WayPoints | Unknown | Extracted | Unknown": 2,
+    "WhatsApp | top | Unknown | Unknown | Unknown": 3
+   },
+   "m5_affiliation_by_source_timed": {
+    "Apple Maps | Journey.FromPoint | Unknown | Unknown | Unknown": 25,
+    "Apple Maps | Journey.ToPoint | Unknown | Unknown | Unknown": 25,
+    "Apple Maps | Journey.WayPoints | Unknown | Unknown | Unknown": 50,
+    "Apple Maps | top | Unknown | Unknown | Unknown": 19,
+    "Google Maps | top | Unknown | Unknown | Unknown": 9,
+    "Native Locations | top | Extracted | Unknown | Unknown": 12728,
+    "Native Locations | top | Unknown | Unknown | Unknown": 29,
+    "Safari | top | Unknown | Unknown | Unknown": 4,
+    "WhatsApp | Journey.WayPoints | Unknown | Extracted | Unknown": 2,
+    "WhatsApp | top | Unknown | Unknown | Unknown": 3
+   },
+   "seconds": 197.3
+  }
+ }
+}

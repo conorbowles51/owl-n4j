@@ -7,7 +7,7 @@
  "review": {
   "reviewed_by": null,
   "reviewed_on": null,
-  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row. Version 2 (04 decision 22): wearable from M9 on the 14 server reports (no sensor record names a wearable in any of them; the rule reads the device name the sensor record carries).",
+  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row. Version 2 (04 decision 22): sources known to sync from M5 (a source with a Location that names its account or says the account holds it, AccountLocationAffiliation Extracted, on any of the 14 server reports; no Location there says Synced); wearable from M9 on the 14 server reports (no sensor record names a wearable in any of them; the rule reads the device name the sensor record carries).",
   "registry_requirements": []
  },
  "body": {
@@ -51,6 +51,38 @@
     "basis": "field_name",
     "reasoning": "The report does not say whether this device recorded it.",
     "would_change": "M5 shows the source always records on the device."
+   },
+   {
+    "row_id": "attr-location-sync-source-no-affiliation",
+    "type": "Location",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "DeviceLocationAffiliation",
+      "op": "absent"
+     },
+     {
+      "field": "Source",
+      "op": "in",
+      "value": [
+       "Facebook",
+       "Find My",
+       "Gmail",
+       "Google Maps",
+       "Snapchat",
+       "WhatsApp",
+       "WhatsApp Business"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "flag": "affiliation_unknown",
+     "group": "B"
+    },
+    "basis": "field_name",
+    "reasoning": "The place comes from an app that keeps places on the account, and the report does not say whether this device recorded it.",
+    "would_change": "A report shows one of these sources with every Location marked Extracted by the device (then the source leaves the list), or another source with a Location that names its account or is marked Extracted on the account (then it joins)."
    },
    {
     "row_id": "attr-im-web",

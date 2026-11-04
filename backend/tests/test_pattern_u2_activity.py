@@ -498,3 +498,36 @@ def test_a_new_mapping_version_leaves_one_open_reading_per_rule(hooks):
                 "rule_id = 'attribution/catalogue/attr-location-unknown' ORDER BY records_touched"),
                 {"e": ext}).fetchall()
             assert [r.records_touched for r in rows] == [0, 1]
+
+
+# ---- 04 decision 22: affiliation_unknown on a source known to sync (M5) ----------------------------------------
+
+def place(top, source, affiliation=None):
+    f = [fld("TimeStamp", ("TimeStamp", "2023-03-14T15:07:12-04:00")), fld("Source", ("String", source))]
+    if affiliation is not None:
+        f.append(fld("DeviceLocationAffiliation", ("DeviceLocationAffiliation", affiliation)))
+    return [(top, None, top, model("Location", f))], [ts(top, "0.0", "TimeStamp", "Location")]
+
+
+@needs_template
+def test_a_location_with_no_affiliation_from_a_source_known_to_sync_is_not_known_to_be_this_device(hooks):
+    """M5: Gmail Locations name their account (P11 618 of 1,236, P12 49 of 49) and carry no affiliation. Fails on the
+    old code: only an affiliation of Unknown raised the flag."""
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = phone(c, case, [place(0, "Gmail"), place(1, "Gmail", "Extracted"), place(2, "Native Locations"),
+                                  place(3, "Google Maps"), place(4, "Gmail", "Unknown")])
+        run(engine, ext)
+        with engine.connect() as c:
+            ev = events(c, ext)
+            for top in (0, 3):
+                e = ev[("Location", "TimeStamp", top)]
+                assert e.attribution_flags == ["affiliation_unknown"]
+                assert e.attribution_mapping_rows == ["attribution/catalogue/attr-location-sync-source-no-affiliation"]
+            assert ev[("Location", "TimeStamp", 1)].attribution_flags == []  # the report says this device recorded it
+            assert ev[("Location", "TimeStamp", 2)].attribution_flags == []  # the device's own location store
+            unknown = ev[("Location", "TimeStamp", 4)]  # an affiliation of Unknown keeps its own row
+            assert unknown.attribution_mapping_rows == ["attribution/catalogue/attr-location-unknown"]
