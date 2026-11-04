@@ -17,7 +17,7 @@ def install() -> None:
 BUILT = ["money_signals", "message_reconciliation", "deletion_timeline", "relationships", "awareness", "device_users",
          "reparse_comparison", "typed_words", "intent", "common_contacts",
          "contact_matrix", "number_switching",
-         "extraction_comparison"]
+         "extraction_comparison", "other_devices", "plans"]
 
 # The screen titles, for words outside the screens (a kept result's label).
 TITLES = {
@@ -34,4 +34,6 @@ TITLES = {
     "contact_matrix": "Who contacts whom",
     "number_switching": "Possible number changes",
     "extraction_comparison": "Two extractions of one phone",
+    "other_devices": "Devices and accounts across phones",
+    "plans": "Plans and check-ins against location",
 }
