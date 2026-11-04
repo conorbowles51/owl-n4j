@@ -99,7 +99,7 @@ export function DraftButton({ name, label = "Draft a mapping" }: { name: string;
       </Button>
       {m.isSuccess && (
         <span className="text-muted-foreground">
-          Drafting {name}: it takes a few minutes and arrives in Proposals. Progress is in AI drafts.
+          Drafting {name}: it takes a minute or two and arrives in Proposals. Progress is in AI drafts.
         </span>
       )}
       {m.error && <span className="text-destructive">{errorWords(m.error)}</span>}
