@@ -523,8 +523,8 @@ def render_block(w: Workflow, tools: Iterable[str] | None = None, budget: int = 
     lines.extend("Rule: %s" % r for r in w.rules)
     if w.not_modelled:
         lines.append("Not modelled in Loupe: %s Say so in the answer." % w.not_modelled)
-    lines.append("End the answer with three headed parts: 'Proposals made' (each proposal tool call and what it "
-                 "recorded), 'For a person to confirm' (each item, cited), and 'Not examined' (each step that did not "
+    lines.append("End the answer with three headed parts: 'Proposals made' (each proposal recorded, and each "
+                 "refused with its reason), 'For a person to confirm' (each item, cited), and 'Not examined' (each step that did not "
                  "run or ran on no data, and why, in plain words). Never present the workflow's result as a "
                  "conclusion.")
     return "\n".join(lines)
@@ -540,8 +540,9 @@ def final_rules(w: Workflow) -> str:
             "in this order and with these headings: 'Proposals made' (each proposal recorded in this run, in plain "
             "words, and each refused with the reason it gave; 'none' if none), 'For a person to confirm' (each item, "
             "cited: %s), and 'Not examined' (each step above that did not run, ran on no data or was cut by the tool "
-            "budget, and why, in plain words; 'none' only if every step ran). Never present the result as a "
-            "conclusion." % (w.number, w.title, steps, w.person_confirms))
+            "budget, and why, in plain words; 'none' only if every step ran). Name each step and proposal by what it does, "
+            "as worded above, never by a tool or function name. Never present the result as a conclusion."
+            % (w.number, w.title, steps, w.person_confirms))
 
 
 def case_counts(conn, case_id) -> dict[str, int | None]:

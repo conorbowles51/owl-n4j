@@ -229,6 +229,7 @@ def test_final_answer_is_written_under_the_workflow_closing_rules(path):
     w = W.get("last-proof-of-life")
     rules = W.final_rules(w)
     assert "'Proposals made'" in rules and "'Not examined'" in rules and "deletion_timeline" in rules
+    assert "never by a tool or function name" in rules
     for given, expect_rules in ((rules, True), ("", False)):
         runner = object.__new__(AgentGraphRunner)
         runner.base_model = _CaptureModel()
