@@ -8,7 +8,7 @@ case ``adjudications`` rows cannot hold these. New table; no existing row change
 from alembic import op
 
 revision = "20261104_proposal_events"
-down_revision = "20261104_meaning_search_health"
+down_revision = "20261104_phone_views"
 branch_labels = None
 depends_on = None
 
