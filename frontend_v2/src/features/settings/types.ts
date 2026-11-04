@@ -28,7 +28,13 @@ export interface AISupportingService {
 export interface AIServiceHealth {
   status: "up" | "down" | "unknown"
   reason?: string | null
+  /** When the outage began; null when its start was not recorded (see first_recorded_failure_at). */
   down_since?: string | null
+  down_since_known?: boolean
+  /** The first failure the app recorded; the outage may have begun earlier when down_since_known is false. */
+  first_recorded_failure_at?: string | null
+  /** Transcription: the OpenAI account's last call that worked, which bounds when the refusals began. */
+  failing_after?: string | null
   last_failure_at?: string | null
   last_success_at?: string | null
   failures_since_down?: number

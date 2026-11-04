@@ -423,19 +423,37 @@ def health(*, db=None) -> dict[str, Any]:
     except Exception as err:
         logger.warning("Meaning-search health could not be read: %s", err)
         return {"status": "unknown", "reason": "The meaning-search state could not be read."}
-    successes = [v for v in ((row or {}).get("last_success_at"), last_cost) if v is not None]
+    tracked_success = (row or {}).get("last_success_at")
+    successes = [v for v in (tracked_success, last_cost) if v is not None]
     last_success = max(successes) if successes else None
+    first_recorded = (row or {}).get("down_since")
+    # The outage start is known only when this table saw the service answer and then recorded the first failure.
+    # When the state table began during an outage (live: shipped 4 Nov while every call had been refused since
+    # 28 Oct), its first row is only the first *recorded* failure; the start lies after the last call that worked
+    # (followups m11040828134070, rule 1: never more certain than it is).
+    start_known = bool(first_recorded is not None and tracked_success is not None
+                       and _aware(tracked_success) <= _aware(first_recorded))
     out = {"status": (row or {}).get("status") or "unknown",
            "reason_code": (row or {}).get("reason_code"), "reason": (row or {}).get("reason"),
-           "down_since": _iso((row or {}).get("down_since")),
+           "down_since": _iso(first_recorded) if start_known else None,
+           "down_since_known": start_known,
+           "first_recorded_failure_at": _iso(first_recorded),
            "last_failure_at": _iso((row or {}).get("last_failure_at")),
            "last_success_at": _iso(last_success),
            "failures_since_down": int((row or {}).get("failures_since_down") or 0),
            "backfill_pending": bool((row or {}).get("backfill_pending"))}
     if out["status"] != "down":
         out["reason"] = out["reason_code"] = None
-        out["down_since"] = None
+        out["down_since"] = out["first_recorded_failure_at"] = None
+        out["down_since_known"] = False
     return out
+
+
+def _aware(value):
+    """Compare stored times whatever their zone: a naive time is UTC (SQLite in tests, timestamptz on live)."""
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
 def _iso(value) -> str | None:

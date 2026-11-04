@@ -146,8 +146,18 @@ function formatWhen(value?: string | null) {
 
 function serviceDownSentence(health: AIServiceHealth) {
   const parts = [`Down: ${health.reason || "its last call failed"}.`]
+  const calls = health.failures_since_down ? ` (${health.failures_since_down} failed calls recorded)` : ""
   const since = formatWhen(health.down_since)
-  if (since) parts.push(`Failing since ${since}${health.failures_since_down ? ` (${health.failures_since_down} failed calls)` : ""}.`)
+  const firstRecorded = formatWhen(health.first_recorded_failure_at)
+  const after = formatWhen(health.failing_after ?? health.last_success_at)
+  if (since && health.down_since_known !== false) {
+    parts.push(`Failing since ${since}${calls}.`)
+  } else if (firstRecorded) {
+    // The start of the outage was not recorded: never show the first recorded failure as its start.
+    parts.push(after
+      ? `Failing since some time between ${after} (the last call that worked) and ${firstRecorded} (the first failure recorded)${calls}.`
+      : `First failure recorded: ${firstRecorded}; it may have started earlier${calls}.`)
+  }
   const ok = formatWhen(health.last_success_at)
   parts.push(ok ? `Last call that worked: ${ok}.` : "No call that worked is recorded.")
   parts.push(health.consequence || "Document searches use the words instead and say so.")

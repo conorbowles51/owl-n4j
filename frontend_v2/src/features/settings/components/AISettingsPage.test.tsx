@@ -142,10 +142,38 @@ describe("AISettingsPage", () => {
     const line = await screen.findByTestId("service-down-embeddings")
     expect(line).toHaveTextContent("Down: the search service (OpenAI) has no credits left: 429 insufficient quota.")
     expect(line).toHaveTextContent("Failing since")
-    expect(line).toHaveTextContent("(3 failed calls)")
+    expect(line).toHaveTextContent("(3 failed calls recorded)")
     expect(line).toHaveTextContent("Last call that worked:")
     expect(line).toHaveTextContent("Document searches use the words instead and say so.")
     expect(screen.getByText("Down")).toBeInTheDocument()
+  })
+
+  it("never shows the first recorded failure as the outage start when the start was not recorded", async () => {
+    api.get.mockResolvedValue({
+      ...settings,
+      supporting_services: [
+        {
+          id: "embeddings", label: "Search embeddings", provider: "openai", status: "down", description: "Semantic search",
+          health: {
+            status: "down",
+            reason: "the search service (OpenAI) has no credits left: 429 insufficient quota",
+            down_since: null,
+            down_since_known: false,
+            first_recorded_failure_at: "2026-11-04T06:42:22+00:00",
+            last_success_at: "2026-10-27T18:42:49+00:00",
+            failures_since_down: 5,
+          },
+        },
+      ],
+    })
+    render(<MemoryRouter><AISettingsPage /></MemoryRouter>)
+
+    const line = await screen.findByTestId("service-down-embeddings")
+    expect(line).toHaveTextContent("Failing since some time between")
+    expect(line).toHaveTextContent("(the last call that worked)")
+    expect(line).toHaveTextContent("(the first failure recorded)")
+    expect(line).toHaveTextContent("(5 failed calls recorded)")
+    expect(line.textContent).not.toMatch(/Failing since [A-Z][a-z]{2} \d/)
   })
 
   it("says Audio transcription is down with its own consequence when the OpenAI account refuses calls", async () => {

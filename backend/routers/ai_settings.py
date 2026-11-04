@@ -194,6 +194,10 @@ def _openai_account_down(db: Session | None, meaning: dict[str, Any]) -> dict[st
         "reason_code": meaning.get("reason_code"),
         "reason": reason + "; found by the search embedding calls, which use the same account",
         "down_since": meaning.get("down_since"),
+        "down_since_known": bool(meaning.get("down_since_known")),
+        "first_recorded_failure_at": meaning.get("first_recorded_failure_at"),
+        # The account's last call that worked (any OpenAI call) bounds when the refusals began.
+        "failing_after": meaning.get("last_success_at"),
         "last_failure_at": meaning.get("last_failure_at"),
         "last_success_at": last.isoformat() if hasattr(last, "isoformat") else last,
         "consequence": "Audio uploaded now cannot be transcribed until the account works again.",

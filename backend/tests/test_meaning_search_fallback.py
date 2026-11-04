@@ -277,7 +277,11 @@ class HealthTests(Fixture):
         self.assertEqual(health["status"], "down")
         self.assertEqual(health["reason"], QUOTA_REASON)
         self.assertEqual(health["failures_since_down"], 2)
-        self.assertEqual(str(health["down_since"]).replace("T", " ")[:19], str(first).replace("T", " ")[:19])
+        # No call that worked was seen before the first recorded failure: its time is not the outage start.
+        self.assertIsNone(health["down_since"])
+        self.assertFalse(health["down_since_known"])
+        self.assertEqual(str(health["first_recorded_failure_at"]).replace("T", " ")[:19],
+                         str(first).replace("T", " ")[:19])
 
         meaning_search.record_success(session_factory=self.session, start_backfill=lambda: started.append(1))
         with self.Session() as db:
@@ -286,6 +290,33 @@ class HealthTests(Fixture):
         self.assertIsNone(health["reason"])
         self.assertTrue(health["backfill_pending"])
         self.assertEqual(started, [1])
+        meaning_search._memo.update(status=None, checked_pending=False)
+
+    def test_state_kept_from_mid_outage_never_shows_its_first_row_as_the_start(self):
+        """followups m11040828134070: live said 'Failing since 4 Nov 06:42' while every call was refused since 28 Oct."""
+        meaning_search._memo.update(status=None, checked_pending=False)
+        with self.Session() as db:
+            db.execute(text("INSERT INTO cost_records (id, operation_kind, created_at) "
+                            "VALUES (1, 'embedding', '2026-10-27 18:42:49')"))
+            db.commit()
+        meaning_search.record_failure(QuotaError(QUOTA), session_factory=self.session)
+        with self.Session() as db:
+            health = meaning_search.health(db=db)
+        self.assertIsNone(health["down_since"])
+        self.assertFalse(health["down_since_known"])
+        self.assertIsNotNone(health["first_recorded_failure_at"])
+        self.assertTrue(str(health["last_success_at"]).startswith("2026-10-27"))
+        meaning_search._memo.update(status=None, checked_pending=False)
+
+    def test_outage_start_is_known_when_the_state_saw_the_service_answer_first(self):
+        meaning_search._memo.update(status=None, checked_pending=False)
+        meaning_search.record_success(session_factory=self.session, start_backfill=lambda: None)
+        meaning_search.record_failure(QuotaError(QUOTA), session_factory=self.session)
+        with self.Session() as db:
+            first = db.execute(text("SELECT down_since FROM service_health_states")).scalar()
+            health = meaning_search.health(db=db)
+        self.assertTrue(health["down_since_known"])
+        self.assertEqual(str(health["down_since"]).replace("T", " ")[:19], str(first).replace("T", " ")[:19])
         meaning_search._memo.update(status=None, checked_pending=False)
 
     def test_ai_settings_reports_search_embeddings_down(self):
@@ -328,6 +359,16 @@ class HealthTests(Fixture):
         self.assertEqual(row["health"]["last_success_at"], "2026-09-17T15:05:00+00:00")
         self.assertIn("cannot be transcribed", row["health"]["consequence"])
         self.assertNotIn("failures_since_down", row["health"])  # those were embedding calls, not transcriptions
+
+    def test_transcription_outage_is_bounded_by_the_accounts_last_working_call(self):
+        down = {"status": "down", "reason_code": "quota", "reason": QUOTA_REASON, "down_since": None,
+                "down_since_known": False, "first_recorded_failure_at": "2026-11-04T06:42:00+00:00",
+                "last_success_at": "2026-10-27T18:42:49+00:00"}
+        row = self._transcription(down)
+        self.assertIsNone(row["health"]["down_since"])
+        self.assertFalse(row["health"]["down_since_known"])
+        self.assertEqual(row["health"]["first_recorded_failure_at"], "2026-11-04T06:42:00+00:00")
+        self.assertEqual(row["health"]["failing_after"], "2026-10-27T18:42:49+00:00")
 
     def test_transcription_stays_ready_when_the_outage_is_not_account_wide(self):
         for health in ({"status": "up"}, {"status": "down", "reason_code": "rate_limited", "reason": "429"},
