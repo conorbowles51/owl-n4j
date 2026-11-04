@@ -21,7 +21,7 @@ import zipfile
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import case, delete, func, select
+from sqlalchemy import case, delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, defer
 
@@ -81,6 +81,14 @@ def get_group(db, identity, user, *, lock=False):
     query = select(EvidenceUploadGroup).options(defer(EvidenceUploadGroup.manifest)).where(
         EvidenceUploadGroup.id == identity)
     if lock:
+        if db.get_bind().dialect.name == 'postgresql':
+            # Row locks do not queue fairly: a new FOR SHARE that need not wait goes ahead of a waiting FOR UPDATE,
+            # so files sent back to back could hold off a release's pause indefinitely. An advisory lock on the
+            # selection queues every taker in arrival order (shared for a file's writes, alone for the rest), and
+            # the row lock under it keeps its meaning. Both end with the transaction.
+            db.execute(text('SELECT pg_advisory_xact_lock_shared(hashtextextended(:k, 0))' if lock == 'share'
+                            else 'SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))'),
+                       {'k': f'loupe.upload_group:{identity}'})
         query = query.with_for_update(read=lock == 'share').execution_options(populate_existing=True)
     group = db.scalar(query)
     if group is None or group.user_id != user.id:
@@ -617,13 +625,13 @@ def save_batch(db, identity, user, body):
         while pending:
             row, fd, temporary, target = pending.pop(0)
             try:
-                os.fsync(fd)
-            finally:
-                os.close(fd)
-            try:
+                try:
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
                 os.replace(temporary, target)
             except OSError:
-                os.unlink(temporary)
+                if os.path.exists(temporary): os.unlink(temporary)
                 raise
             if row.size:
                 # The file's one part is the same bytes: a second name for the assembled file, as a finished

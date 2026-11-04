@@ -303,8 +303,10 @@ function runGroup(
           if (error instanceof Error && /does not match the fingerprint/.test(error.message)) throw error
           // A pause (this tab's, or a release's) refuses the batch: wait for the resume and send it again. A lost
           // answer is retried once: the server keeps a file it already saved and answers for it unchanged.
-          const member = await fetchAPI<UploadSession>(`/api/evidence-upload-sessions/${batch[0].id}`).catch(() => null)
-          if (member?.status === "paused" || transfer.paused) {
+          // The selection's own status says whether it is paused (a file's may already read staged); the list
+          // also lets this tab follow the server (followServer) at once rather than at the next poll.
+          const groups = await listUploadGroups(state.case_id).catch(() => null)
+          if (groups?.find((group) => group.id === state.id)?.status === "paused" || transfer.paused) {
             if (!transfer.paused) setPaused(transfer, true)
             continue
           }

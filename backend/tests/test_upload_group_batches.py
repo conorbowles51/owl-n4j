@@ -149,3 +149,26 @@ def test_a_files_own_writes_share_the_selection_lock_and_pause_takes_it_alone(gr
     from sqlalchemy.dialects import postgresql
     query = select(api.EvidenceUploadGroup)
     assert 'FOR SHARE' in str(query.with_for_update(read=True).compile(dialect=postgresql.dialect()))
+
+
+def test_on_postgresql_every_taker_queues_on_the_selection_advisory_lock_in_arrival_order():
+    """Row locks let a new FOR SHARE pass a waiting FOR UPDATE, so back-to-back file writes could hold off a
+    release's pause; the advisory lock in front of the row lock queues them fairly."""
+    from types import SimpleNamespace
+    import pytest
+    from fastapi import HTTPException
+    executed = []
+    db = SimpleNamespace(get_bind=lambda: SimpleNamespace(dialect=SimpleNamespace(name='postgresql')),
+                         execute=lambda statement, params=None: executed.append((str(statement), params)),
+                         scalar=lambda query: None)
+    identity = UUID('61b7d6d9-995d-4516-941f-a224a0c89254')
+    for lock in ('share', True):
+        with pytest.raises(HTTPException):
+            api.get_group(db, identity, SimpleNamespace(id=None), lock=lock)
+    assert executed == [
+        ('SELECT pg_advisory_xact_lock_shared(hashtextextended(:k, 0))', {'k': f'loupe.upload_group:{identity}'}),
+        ('SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))', {'k': f'loupe.upload_group:{identity}'})]
+    executed.clear()
+    with pytest.raises(HTTPException):
+        api.get_group(db, identity, SimpleNamespace(id=None))
+    assert executed == []
