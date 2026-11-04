@@ -377,6 +377,55 @@ def get_case_entry(
         _raise_entry_error(db, exc)
 
 
+class CaseworkReportRequest(BaseModel):
+    sections: list[str] = Field(default_factory=lambda: ["findings", "theories", "notes"])
+    privilege_marking: str = "unmarked"
+
+
+@router.post("/{case_id}/report", dependencies=[Depends(require_case_view)])
+def casework_report_pdf(
+    case_id: UUID,
+    request: CaseworkReportRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Findings first (by default) with the evidence linked to each, then the other chosen sections, as a PDF."""
+    from urllib.parse import quote
+
+    from postgres.models.case import Case
+    from services import casework_report
+    from services.snapshot_report import SnapshotReportError
+
+    try:
+        sections = casework_report.normalise_sections(request.sections)
+        entries = {
+            section: casework_report.collect_entries(
+                lambda entry_type, limit, offset: list_entries(
+                    db, case_id=case_id, entry_type=entry_type, sort_by="created_at", sort_direction="asc",
+                    limit=limit, offset=offset,
+                ),
+                casework_report.SECTIONS[section],
+            )
+            for section in sections
+        }
+        case = db.query(Case).filter(Case.id == case_id).first()
+        content = casework_report.render_casework_report_pdf(
+            entries,
+            sections=sections,
+            case_name=case.title if case else "",
+            generated_by=current_user.name or current_user.email,
+            privilege_marking=request.privilege_marking,
+        )
+    except (casework_report.CaseworkReportError, SnapshotReportError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    filename = f"casework-report-{datetime.now().strftime('%Y%m%d')}.pdf"
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}'},
+    )
+
+
 @router.post(
     "/{case_id}/entries",
     response_model=EntryResponse,

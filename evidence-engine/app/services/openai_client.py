@@ -150,6 +150,9 @@ async def chat_completion(
             model_id=resolved_model,
             operation_kind=operation_kind,
             usage=usage,
+            # The workload names the step (e.g. ingestion_document_summary), so a step's cost per document can be
+            # measured from the cost ledger instead of being lost inside the whole ingestion's total.
+            extra_metadata={"workload": workload} if workload else None,
         )
     except Exception as exc:
         logger.warning("Failed to record %s cost: %s", operation_kind, exc)

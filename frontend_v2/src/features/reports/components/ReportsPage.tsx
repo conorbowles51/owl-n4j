@@ -1,29 +1,11 @@
 import { FinancialReportsList } from "@/features/financial/components/FinancialReportsList"
-import { useState } from "react"
 import { Link, useParams } from "react-router-dom"
-import { FileBarChart, Plus, Trash2, Eye, Download } from "lucide-react"
+import { FileBarChart, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { useReports, useDeleteReport, type Report } from "../hooks/use-reports"
-import { ReportBuilder } from "./ReportBuilder"
-import { ReportViewer } from "./ReportViewer"
+import { CaseworkReportCard } from "./CaseworkReportCard"
 
 export function ReportsPage() {
   const { id: caseId } = useParams()
-  const { data: reports = [], isLoading, isError } = useReports(caseId)
-  const deleteMutation = useDeleteReport(caseId!)
-  const [buildOpen, setBuildOpen] = useState(false)
-  const [viewingReport, setViewingReport] = useState<Report | null>(null)
-
-  if (viewingReport) {
-    return (
-      <ReportViewer
-        report={viewingReport}
-        onBack={() => setViewingReport(null)}
-      />
-    )
-  }
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -43,93 +25,12 @@ export function ReportsPage() {
 
       <div className="flex-1 overflow-auto">
         {caseId && (
-          <div className="p-4">
+          <div className="space-y-4 p-4">
             <FinancialReportsList key={caseId} caseId={caseId} />
+            <CaseworkReportCard key={`casework-${caseId}`} caseId={caseId} />
           </div>
         )}
-        <details className="mx-4 mb-4 rounded border p-4">
-          <summary className="cursor-pointer font-medium">
-            Other report types
-          </summary>
-          {isLoading && <LoadingSpinner size="sm" />}
-          {isError && (
-            <p className="pt-3 text-sm">
-              Other report types could not be loaded. Your financial reports are
-              listed above.
-            </p>
-          )}
-          {!isLoading && !isError && (
-            <div className="flex items-center gap-3 pt-3">
-              <p className="text-sm">{reports.length} other reports</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setBuildOpen(true)}
-              >
-                Create another report type
-              </Button>
-            </div>
-          )}
-          {reports.length > 0 && (
-            <div className="space-y-2 p-4">
-              {reports.map((report) => (
-                <div
-                  key={report.id}
-                  className="group flex items-center gap-3 rounded-lg border border-border bg-card p-3 shadow-sm transition-colors hover:border-primary/30 hover:bg-muted/30"
-                >
-                  <FileBarChart className="size-4 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{report.title}</p>
-                    {report.description && (
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {report.description}
-                      </p>
-                    )}
-                    <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground">
-                      {report.created_at && (
-                        <span>
-                          Created{" "}
-                          {new Date(report.created_at).toLocaleDateString()}
-                        </span>
-                      )}
-                      {report.format && (
-                        <Badge variant="outline" className="text-[9px]">
-                          {report.format}
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex gap-1 opacity-0 transition group-hover:opacity-100">
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => setViewingReport(report)}
-                    >
-                      <Eye className="size-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon-sm">
-                      <Download className="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => deleteMutation.mutate(report.id)}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </details>
       </div>
-
-      <ReportBuilder
-        open={buildOpen}
-        onOpenChange={setBuildOpen}
-        caseId={caseId!}
-      />
     </div>
   )
 }
