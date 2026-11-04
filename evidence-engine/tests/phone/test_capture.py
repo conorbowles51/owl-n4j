@@ -257,3 +257,16 @@ def test_non_whitespace_tail_fails_reconciliation():
     source = count_stream(io.BytesIO(xml.encode()))
     result, diffs = reconcile(source, Recount(sink.memory_rows(res["skeleton"])).run())
     assert result == "differs" and diffs[0]["measure"] == "bad_tails"
+
+
+def test_an_accepted_difference_passes_only_when_the_differences_are_exactly_the_accepted_ones():
+    """02 decision 37, 07 J-1: Accept the difference lets the capture continue past exactly those differences."""
+    from app.phone.reconcile import is_accepted
+    xml = "<decodedData><a>t</a>tail<b/></decodedData>"
+    sink, res = capture(xml)
+    source = count_stream(io.BytesIO(xml.encode()))
+    result, diffs = reconcile(source, Recount(sink.memory_rows(res["skeleton"])).run())
+    assert result == "differs"
+    assert is_accepted({0: list(reversed(diffs))}, 0, diffs)
+    assert not is_accepted({}, 0, diffs) and not is_accepted({1: diffs}, 0, diffs)
+    assert not is_accepted({0: [dict(diffs[0], source=diffs[0]["source"] + 1)] + diffs[1:]}, 0, diffs)

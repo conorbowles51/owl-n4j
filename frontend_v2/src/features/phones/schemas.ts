@@ -374,6 +374,18 @@ export const ProfileSchema = z.object({
     reconciliation: z.string().nullable(),
     state: z.string(),
     documents: z.array(z.object({ document_index: z.number(), result: z.string(), differences: z.number(), stated_vs_read: z.array(z.object({ what: z.string(), stated: z.unknown(), read: z.unknown() })) })),
+    held: z
+      .array(
+        z.object({
+          document_index: z.number(),
+          document: z.string().nullable(),
+          difference_count: z.number(),
+          shown: z.number(),
+          accepted: z.object({ decision_id: z.string(), reason: z.string().nullable(), by: z.string().nullable(), at: z.string().nullable() }).passthrough().nullable(),
+          differences: z.array(z.object({ where: z.string(), measure: z.string().nullable(), what: z.string().nullable(), attribute: z.string().nullable(), stated: z.number().nullable(), read: z.number().nullable() })),
+        }),
+      )
+      .default([]),
   }),
   files: z.object({ total: z.number(), by_category: z.record(z.string(), z.number()), verification: z.record(z.string(), z.number()), link: z.string() }),
   deleted: z.object({ comm_events: z.number(), link: z.string(), by_type: z.array(z.object({ model_type: z.string(), intact: z.number(), deleted: z.number(), trash: z.number(), unknown: z.number() })) }),

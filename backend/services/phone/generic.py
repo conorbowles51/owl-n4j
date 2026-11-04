@@ -486,11 +486,10 @@ def positionable_types(conn):
 
 
 def held_documents(conn, ext):
-    """Documents whose latest reconciliation differs (02 decision 37). Acceptance decisions arrive with 8.8."""
-    rows = conn.execute(text(
-        "SELECT DISTINCT ON (document_index) document_index, result FROM phone_reconciliations WHERE "
-        "extraction_id = :e ORDER BY document_index, ran_at DESC"), {"e": ext}).fetchall()
-    return [d for d, r in rows if r == "differs"]
+    """Documents whose latest reconciliation differs and whose differences no person has accepted
+    (``accept_phone_reconciliation_difference``, 02 decision 37)."""
+    from services.phone import corrections
+    return [h["document_index"] for h in corrections.held_reconciliations(conn, ext) if h["accepted"] is None]
 
 
 def interpret(conn, extraction_id, generation, sensitive=SENSITIVE_DEFAULT, marks=None, progress=None) -> dict:

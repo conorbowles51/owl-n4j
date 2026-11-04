@@ -63,6 +63,49 @@ def _flag_words(value):
     return str(value)
 
 
+HELD_SHOWN = 500
+MEASURE_WORDS = {"elements": "elements", "attributes": "attributes", "attr_hash": "attribute values",
+                 "texts": "texts", "text_chars": "characters of text", "text_hash": "text values",
+                 "bad_tails": "pieces of text between elements", "rows_unreached": "stored rows no element reaches"}
+
+
+def _path_words(path):
+    return " / ".join(str(path or "").split("/")[-3:])
+
+
+def held_view(conn, extraction_id) -> list:
+    """Documents held by the check (01 section 8.4, 07 J-1), each with every difference up to ``HELD_SHOWN`` and the
+    true total, and the acceptance on record if a person accepted them."""
+    from services.phone import corrections
+    out = []
+    for h in corrections.held_reconciliations(conn, extraction_id):
+        diffs = h["differences"]
+        out.append({"document_index": h["document_index"], "document": h["document"],
+                    "difference_count": h["difference_count"], "accepted": h["accepted"],
+                    "differences": [{"where": _path_words(d.get("path")), "measure": d.get("measure"),
+                                     "what": MEASURE_WORDS.get(d.get("measure"), d.get("measure")),
+                                     "attribute": d.get("attribute"), "stated": d.get("source"),
+                                     "read": d.get("captured")} for d in diffs[:HELD_SHOWN]],
+                    "shown": min(len(diffs), HELD_SHOWN)})
+    return out
+
+
+def held_sentence(held) -> str:
+    """07 J-1: "Held: the report lists 1,204 call records; 1,198 were read. See which." The first difference is
+    named; the rest are counted."""
+    open_ = [h for h in held if h["accepted"] is None]
+    total = sum(h["difference_count"] for h in open_)
+    first = next((d for h in open_ for d in h["differences"]), None)
+    if first is None:
+        return "Held: the report does not match its own counts."
+    words = "Held: the report lists %s %s at %s; %s %s read." % (
+        "{:,}".format(int(first["stated"] or 0)), first["what"], first["where"], "{:,}".format(int(first["read"] or 0)),
+        "was" if int(first["read"] or 0) == 1 else "were")
+    if total > 1:
+        words += " %s more %s." % ("{:,}".format(total - 1), "difference" if total == 2 else "differences")
+    return words
+
+
 def profile(conn, case_id, extraction_id) -> dict:
     from services.phone import coverage, identities, records, readings
     ext = str(extraction_id)
@@ -137,9 +180,9 @@ def profile(conn, case_id, extraction_id) -> dict:
     if not x.device_zone:
         needs.append({"kind": "zone", "words": "This phone did not record its time zone. Times show in the case zone "
                       "(%s)." % zone["display_name"], "link": "%s/settings" % base})
-    if x.reconciliation_state == "failed":
-        needs.append({"kind": "reconciliation", "words": "Part of the report does not match its own counts. Accept the "
-                      "difference with a reason to read that part.", "link": "%s/phone-review" % base})
+    held = held_view(conn, extraction_id) if x.reconciliation_state == "failed" else []
+    if any(h["accepted"] is None for h in held):
+        needs.append({"kind": "reconciliation", "words": held_sentence(held), "link": None})
     if open_readings:
         needs.append({"kind": "readings", "words": "%s %s of how the system read this phone %s a person's check."
                       % ("{:,}".format(open_readings), "reading" if open_readings == 1 else "readings",
@@ -243,7 +286,8 @@ def profile(conn, case_id, extraction_id) -> dict:
                    "container_sha256": x.container_sha256, "report_sha256": x.report_sha256,
                    "extraction_start": phone["device"].get("extraction_start"), "ingested_at": T.iso(x.ingested_at)},
         "selection": selection,
-        "completeness": {"reconciliation": x.reconciliation_state, "state": x.state, "documents": recon},
+        "completeness": {"reconciliation": x.reconciliation_state, "state": x.state, "documents": recon,
+                         "held": held},
         "files": {"total": int(files_total or 0), "by_category": by_cat, "verification": verification,
                   "link": "%s/phones/%s/records/media" % (base, ext)},
         "deleted": {"comm_events": int(comm_deleted), "link": "%s?deleted=only" % conv, "by_type": deleted},

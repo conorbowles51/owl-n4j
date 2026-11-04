@@ -22,7 +22,7 @@ from app.phone import detect
 from app.phone.capture import CAPTURE_CODE_VERSION, Capture, CaptureMemoryBudgetExceeded
 from app.phone.counter import ParserDefect, check_parser, count_stream
 from app.phone.files import absent_count, absent_text
-from app.phone.reconcile import failure_message, reconcile, store_reconciliation
+from app.phone.reconcile import accepted_differences, failure_message, is_accepted, reconcile, store_reconciliation
 from app.phone.recount import recount_document
 from app.phone.store import CopySink, prepare_resume
 
@@ -406,6 +406,7 @@ def _run_root(conn, rep, source, members, case_id, container_id, root, job_id, c
     # reconciling
     set_state(conn, extraction_id, "reconciling")
     failed = []
+    accepted = accepted_differences(conn, extraction_id)
     for n, (i, d) in enumerate(data_docs):
         rep.stage("reconciling", _band(0.65, 0.75, n, len(data_docs)), "Checking nothing is missing",
                   {"documents_done": n, "documents_total": len(data_docs)})
@@ -415,7 +416,7 @@ def _run_root(conn, rep, source, members, case_id, container_id, root, job_id, c
         result, diffs = reconcile(source_counts, captured)
         with conn.transaction():
             store_reconciliation(conn, extraction_id, i, source_counts, captured, result, diffs)
-        if result != "exact":
+        if result != "exact" and not is_accepted(accepted, i, diffs):
             failed.append(diffs)
     if failed:
         set_state(conn, extraction_id, "reconciliation_failed")

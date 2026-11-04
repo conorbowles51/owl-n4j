@@ -1226,6 +1226,48 @@ def set_label(extraction_id: UUID, body: LabelDecision, db: Session = Depends(ge
     return out
 
 
+class AcceptDifference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+RESTART_FAILED = ("The difference is accepted and recorded, but reading could not be restarted: %s Choose Resume on "
+                  "this phone's evidence item to continue.")
+
+
+def _resume_capture(job_id, case_id) -> dict:
+    """Resume the phone's capture job through the engine's own Resume (01 section 10.4) after an acceptance."""
+    if not job_id:
+        return {"state": "not_restarted", "words": RESTART_FAILED % "this phone has no reading job on record."}
+    import anyio.from_thread
+
+    from services import evidence_engine_client
+    try:
+        out = anyio.from_thread.run(evidence_engine_client.control_job, job_id, str(case_id), "resume")
+    except Exception as exc:  # the decision stands; the person is told the restart did not happen and why
+        detail = getattr(getattr(exc, "response", None), "text", None) or exc.__class__.__name__
+        return {"state": "not_restarted", "words": RESTART_FAILED % ("the reading service answered: %s." % detail[:300])}
+    return {"state": out.get("state") or "queued",
+            "words": "The difference is accepted. Reading continues from the check; the phone summary updates as it goes."}
+
+
+@router.post("/{extraction_id}/reconciliation/accept")
+def accept_reconciliation_difference(extraction_id: UUID, body: AcceptDifference, db: Session = Depends(get_db),
+                                     user: User = Depends(get_current_db_user)):
+    """Accept the difference (07 J-1, 03 section 7.3): an ``accept_phone_reconciliation_difference`` decision with a
+    typed reason, then the held capture resumes and passes exactly the accepted differences (02 decision 37)."""
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    try:
+        out = corrections.accept_reconciliation_difference(db, case_id=body.case_id, extraction_id=extraction_id,
+                                                           reason=body.reason, actor=_actor(user))
+    except corrections.CorrectionError as exc:
+        _correction_error(db, exc)
+    db.commit()
+    out["restart"] = _resume_capture(out.pop("engine_job_id"), body.case_id)
+    return out
+
+
 # ---- screens: phone list, settings, streams, threads, record panel (03 sections 4 to 6) ----------------------------
 
 import logging as _logging  # noqa: E402

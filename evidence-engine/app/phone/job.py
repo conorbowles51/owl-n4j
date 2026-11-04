@@ -298,5 +298,8 @@ async def _finish(job, db, result):
         await _publish(job, db, JobStatus.COMPLETED, 1.0, result.get("message") or "Ready", stage="finishing",
                        counts={"records": result.get("records"), "files": result.get("files")})
     else:
+        if result["state"] == "reconciliation_failed":
+            # Held (07 J-1): Accept the difference resumes this job, which passes the accepted differences only
+            job.resumable = True
         await _publish(job, db, JobStatus.FAILED, job.progress or 0.0, result.get("message") or "",
                        stage="reconciling", error_message=result.get("message"))

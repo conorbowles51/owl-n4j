@@ -305,3 +305,76 @@ def record_decision_ids(conn, extraction_id) -> list:
     return [str(r[0]) for r in conn.execute(text(
         "SELECT decision_id FROM phone_value_corrections WHERE extraction_id = :e ORDER BY created_at, id"),
         {"e": extraction_id})]
+
+
+def held_reconciliations(conn, extraction_id) -> list:
+    """The latest reconciliation per document that differs (01 section 8.4), with whether a person accepted exactly
+    these differences (``accept_phone_reconciliation_difference``, 02 decision 37) and, if so, who, when and why."""
+    accepted = {}
+    for did, after, reason, name, at in conn.execute(text(
+            "SELECT id, after, reason, actor_name, created_at FROM adjudications WHERE subject_type = 'phone_extraction' "
+            "AND subject_id = :e AND decision = 'accept_phone_reconciliation_difference' ORDER BY subject_sequence"),
+            {"e": str(extraction_id)}):
+        for a in (after or {}).get("accepted_documents") or []:
+            accepted[int(a["document_index"])] = {"reconciliation_id": a["reconciliation_id"], "decision_id": str(did),
+                                                  "reason": reason, "by": name, "at": at.isoformat() if at else None}
+    out = []
+    for r in conn.execute(text(
+            "SELECT DISTINCT ON (r.document_index) r.id::text AS id, r.document_index, r.result, r.differences, "
+            "r.difference_count, r.ran_at, d.path FROM phone_reconciliations r LEFT JOIN phone_extraction_documents d "
+            "ON d.extraction_id = r.extraction_id AND d.document_index = r.document_index WHERE r.extraction_id = :e "
+            "ORDER BY r.document_index, r.ran_at DESC"), {"e": str(extraction_id)}):
+        if r.result == "exact":
+            continue
+        acc = accepted.get(r.document_index)
+        if acc is not None and acc["reconciliation_id"] != r.id:
+            # a later reading differs again: the earlier acceptance covers the earlier differences only, unless they
+            # are exactly the same (as the capture's own check decides, evidence-engine reconcile.is_accepted)
+            prev = conn.execute(text("SELECT differences FROM phone_reconciliations WHERE id::text = :i"),
+                                {"i": acc["reconciliation_id"]}).scalar()
+            if _diff_key(prev) != _diff_key(r.differences):
+                acc = None
+        out.append({"document_index": r.document_index, "reconciliation_id": r.id, "document": (r.path or "")
+                    .rsplit("/", 1)[-1] or None, "difference_count": int(r.difference_count or 0),
+                    "differences": list(r.differences or []), "accepted": acc})
+    return out
+
+
+def _diff_key(diffs):
+    return sorted((d.get("path"), d.get("measure"), d.get("attribute") or "", d.get("source"), d.get("captured"))
+                  for d in (diffs or []))
+
+
+def accept_reconciliation_difference(db, *, case_id, extraction_id, reason, actor) -> dict:
+    """``accept_phone_reconciliation_difference`` (02 decision 37, 03 section 7.3, 07 J-1 "Accept the difference"):
+    a person accepts, with a typed reason, the differences the check found on every held document of this phone.
+    The reconciliation rows stay as they are (the phone stays ``Partly read``); the capture is resumed and passes
+    only these exact differences. Keep held is the absence of this decision: nothing is written."""
+    from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
+    from postgres.models.phone_extraction import PhoneExtraction
+    from services import manual_changes
+    from services.financial import decisions
+    if not reason or not reason.strip():
+        raise CorrectionError("Accepting the difference needs a reason in your own words.")
+    ext = db.get(PhoneExtraction, extraction_id)
+    if ext is None or str(ext.case_id) != str(case_id):
+        raise CorrectionError("That phone is not in this case.")
+    held = held_reconciliations(db.connection(), extraction_id)
+    todo = [h for h in held if h["accepted"] is None]
+    if not todo:
+        raise StaleCorrection("Nothing on this phone is held: every difference the check found is already accepted, "
+                              "or the report matched its own counts.")
+    before = [{"document_index": h["document_index"], "reconciliation_id": h["accepted"]["reconciliation_id"]}
+              for h in held if h["accepted"]]
+    after = [{"document_index": h["document_index"], "reconciliation_id": h["reconciliation_id"],
+              "difference_count": h["difference_count"]} for h in todo]
+    row = decisions.record(db, case_id=case_id, subject=ext, subject_type=AdjudicationSubject.phone_extraction,
+                           decision=AdjudicationDecision.accept_phone_reconciliation_difference, reason=reason.strip(),
+                           actor=actor, before={"accepted_documents": before}, after={"accepted_documents": after})
+    manual_changes.record_change(db, "phone_reconciliation", case_id, {"type": "phone_extraction", "id": str(extraction_id)},
+                                 {"accepted_documents": before}, {"accepted_documents": after}, actor, reason.strip(),
+                                 link="/cases/%s/phones/%s" % (case_id, extraction_id),
+                                 pattern_key=manual_changes.make_pattern_key("phone_reconciliation", "accepted_documents", "reconcile", ext.form or ""), source="phone")
+    return {"decision_id": str(row.id), "accepted_documents": after,
+            "differences": sum(a["difference_count"] for a in after), "engine_job_id":
+            str(ext.engine_job_id) if getattr(ext, "engine_job_id", None) else None}

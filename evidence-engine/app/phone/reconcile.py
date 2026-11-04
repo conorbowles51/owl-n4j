@@ -50,3 +50,29 @@ def store_reconciliation(conn, extraction_id, document_index, source, captured, 
              json.dumps(source["totals"]), json.dumps(dict(captured["totals"], rows=captured.get("rows"))),
              json.dumps(diffs), len(diffs)))
     return rid
+
+
+def accepted_differences(conn, extraction_id) -> dict:
+    """``{document_index: differences}`` a person accepted with ``accept_phone_reconciliation_difference`` (02
+    decision 37, 07 J-1): for each document, the differences of the reconciliation the latest such decision names.
+    The check itself is never loosened: a reading whose differences are not exactly the accepted ones stays held."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT after FROM adjudications WHERE subject_type = 'phone_extraction' AND subject_id = %s AND "
+                    "decision = 'accept_phone_reconciliation_difference' ORDER BY subject_sequence", (extraction_id,))
+        named = {}
+        for (after,) in cur.fetchall():
+            for a in (after or {}).get("accepted_documents") or []:
+                named[int(a["document_index"])] = a["reconciliation_id"]
+        if not named:
+            return {}
+        cur.execute("SELECT id::text, document_index, differences FROM phone_reconciliations WHERE extraction_id = %s "
+                    "AND id::text = ANY(%s)", (extraction_id, list(named.values())))
+        return {d: diffs for rid, d, diffs in cur.fetchall() if named.get(d) == rid}
+
+
+def is_accepted(accepted: dict, document_index: int, diffs: list) -> bool:
+    """A document passes only when a person accepted exactly these differences on it (same paths, measures and
+    counts); any change in what differs needs a new decision."""
+    key = lambda d: (d["path"], d["measure"], d.get("attribute") or "", d["source"], d["captured"])  # noqa: E731
+    got = accepted.get(document_index)
+    return got is not None and sorted(map(key, got)) == sorted(map(key, diffs))

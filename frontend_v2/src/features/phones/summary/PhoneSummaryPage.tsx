@@ -10,6 +10,7 @@ import { readingSpots } from "../lib/continue-reading"
 import { fmt } from "../ui/count-sentence"
 import { NamePhone } from "./NamePhone"
 import { SetOwner } from "./SetOwner"
+import { HeldDifference } from "./HeldDifference"
 
 /**
  * Phone summary (03 section 7; 07 J-2, J-11, J-15): the verdict, what needs a decision, the triage block (coverage
@@ -91,6 +92,8 @@ export function PhoneSummaryPage() {
                       Set the owner.
                     </button>
                   </>
+                ) : n.kind === "reconciliation" ? (
+                  <HeldDifference caseId={caseId} extraction={extraction} words={n.words} held={p.completeness.held} />
                 ) : (
                   <>
                     {n.words}{" "}
@@ -251,6 +254,15 @@ export function PhoneSummaryPage() {
               ? "Part of the report does not match its own counts."
               : "The report's counts have not been checked yet."}
         </p>
+        {p.completeness.held
+          .filter((h) => h.accepted)
+          .map((h) => (
+            <p key={`acc-${h.document_index}`} className="text-xs">
+              {fmt(h.difference_count)} {h.difference_count === 1 ? "difference" : "differences"} in {h.document ?? `document ${h.document_index + 1}`} accepted
+              {h.accepted?.by ? ` by ${h.accepted.by}` : ""}
+              {h.accepted?.at ? ` on ${h.accepted.at.slice(0, 10)}` : ""}: {h.accepted?.reason ?? ""}
+            </p>
+          ))}
         {p.completeness.documents.flatMap((d) =>
           d.stated_vs_read.map((x) => (
             <p key={`${d.document_index}-${x.what}`} className="text-xs">

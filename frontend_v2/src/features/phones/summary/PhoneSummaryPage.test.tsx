@@ -7,7 +7,7 @@ import type { Profile } from "../schemas"
 
 /** Phone summary (03 section 7; 07 J-2, J-11, J-15) with the server stubbed. Synthetic data only. */
 const api = vi.hoisted(() => ({
-  getProfile: vi.fn(), setOwner: vi.fn(), setPhoneLabel: vi.fn(),
+  getProfile: vi.fn(), setOwner: vi.fn(), setPhoneLabel: vi.fn(), acceptReconciliationDifference: vi.fn(),
   getThreads: vi.fn().mockResolvedValue({
     counts: { threads: 3, reviewed: 1, partly_reviewed: 1, not_reviewed: 2 },
     items: [
@@ -44,7 +44,7 @@ function profile(over: Partial<Profile> = {}): Profile {
     zone: { device_zone: null, basis: null, case_zone: "Eastern time" },
     report: { filename: "C2.ufdr", form: "ufdr", report_version: "7", producer: null, extraction_type: null, container_name: null, container_sha256: null, report_sha256: null, extraction_start: null, ingested_at: null },
     selection: [{ flag: "IsSelectiveExtraction", name: "Selective extraction", verbatim: "not stated", meaning: null }],
-    completeness: { reconciliation: "exact", state: "ingested", documents: [] },
+    completeness: { reconciliation: "exact", state: "ingested", documents: [], held: [] },
     files: { total: 4, by_category: { Image: 4 }, verification: { match: 3, missing: 1 }, link: "/m" },
     deleted: { comm_events: 12, link: `${conv}?deleted=only`, by_type: [] },
     coverage: [{ model_type: "InstantMessage", records: 600, level: "reviewed", level_words: "Interpreted" }],
@@ -105,6 +105,33 @@ describe("Phone summary", () => {
     fireEvent.click(save)
     await waitFor(() => expect(api.setPhoneLabel).toHaveBeenCalledWith("case-1", "e1", "C1", "synthetic reason"))
     expect(await within(form).findByText(/^This phone is now called C1\./)).toBeInTheDocument()
+  })
+
+  it("a held difference offers See which, Accept the difference with a typed reason, and Keep held (07 J-1)", async () => {
+    const held = [{ document_index: 0, document: "C2_Report.xml", difference_count: 2, shown: 2, accepted: null,
+      differences: [{ where: "decodedData / modelType / model", measure: "elements", what: "elements", attribute: null, stated: 1204, read: 1198 },
+        { where: "modelType / model / field", measure: "texts", what: "texts", attribute: null, stated: 9, read: 8 }] }]
+    const words = "Held: the report lists 1,204 elements at decodedData / modelType / model; 1,198 were read. 1 more difference."
+    api.getProfile.mockResolvedValue(profile({ completeness: { reconciliation: "failed", state: "ingested", documents: [], held }, needs: [{ kind: "reconciliation", words, link: null }] }))
+    api.acceptReconciliationDifference.mockResolvedValue({ decision_id: "d3", differences: 2, restart: { state: "queued", words: "The difference is accepted. Reading continues from the check; the phone summary updates as it goes." } })
+    page()
+    const box = await screen.findByLabelText("Held by the check")
+    expect(within(box).getByText(words, { exact: false })).toBeInTheDocument()
+    fireEvent.click(within(box).getByRole("button", { name: "See which" }))
+    expect(within(box).getByText("1,204")).toBeInTheDocument()
+    expect(within(box).getByText("C2_Report.xml: 2 differences")).toBeInTheDocument()
+    fireEvent.click(within(box).getByRole("button", { name: "Keep held" }))
+    expect(within(box).getByText(/^Kept held\./)).toBeInTheDocument()
+    expect(api.acceptReconciliationDifference).not.toHaveBeenCalled()
+    fireEvent.click(within(box).getByRole("button", { name: "Change this" }))
+    fireEvent.click(within(box).getByRole("button", { name: "Accept the difference" }))
+    const form = within(box).getByRole("form", { name: "Accept the difference" })
+    const save = within(form).getByRole("button", { name: "Accept the difference" })
+    expect(save).toBeDisabled()
+    fireEvent.change(within(form).getByRole("textbox"), { target: { value: "synthetic reason" } })
+    fireEvent.click(save)
+    await waitFor(() => expect(api.acceptReconciliationDifference).toHaveBeenCalledWith("case-1", "e1", "synthetic reason"))
+    expect(await within(box).findByText(/^2 differences accepted\. The difference is accepted\./)).toBeInTheDocument()
   })
 
   beforeEach(() => {

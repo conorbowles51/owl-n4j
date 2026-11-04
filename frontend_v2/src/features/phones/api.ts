@@ -284,6 +284,14 @@ export async function setPhoneLabel(caseId: string, extractionId: string, label:
   })
 }
 
+/** Accept the difference (07 J-1): an accept_phone_reconciliation_difference decision; the held reading resumes. */
+export async function acceptReconciliationDifference(caseId: string, extractionId: string, reason: string) {
+  return fetchAPI<{ decision_id: string; differences: number; restart: { state: string; words: string } }>(
+    `/api/phones/${encodeURIComponent(extractionId)}/reconciliation/accept`,
+    { method: "POST", body: { case_id: caseId, reason } },
+  )
+}
+
 export async function setOwner(caseId: string, extractionId: string, identityKey: string, reason: string) {
   return fetchAPI<{ decision_id: string; owner_identity_keys: string[] }>(`/api/phones/${encodeURIComponent(extractionId)}/owner`, {
     method: "POST",
