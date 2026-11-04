@@ -8,7 +8,7 @@ rebuilds them).
 from alembic import op
 
 revision = "20261104_pol_mcc_inferred"
-down_revision = "20261104_phone_views"
+down_revision = "20261104_pol_text_places"
 branch_labels = None
 depends_on = None
 
