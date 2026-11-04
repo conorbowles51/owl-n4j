@@ -45,7 +45,9 @@ def build(s):
                   check='total'))
     Q.append(dict(id='T02', case=b, q='How many of those did a model read with no person confirming them?',
                   tool='get_trades', args=dict(limit=1),
-                  expect=dict(model=int(q1(s, "SELECT count(*) " + SHOWN + " AND r.confirmation IS NULL AND "
+                  # an unconfirmed row's confirmation is JSON null (not SQL NULL): no object means not confirmed
+                  expect=dict(model=int(q1(s, "SELECT count(*) " + SHOWN + " AND jsonb_typeof(r.confirmation) IS "
+                                              "DISTINCT FROM 'object' AND "
                                               "r.provenance->'reading_origin'->>'kind' = 'model'", c=b, k='trade'))),
                   check='model'))
     # The fund bought and sold most often, by its cash lines.
@@ -61,7 +63,7 @@ def build(s):
                   tool='get_trades', args=dict(instrument=fund, side=None, limit=1),
                   expect=dict(paid=paid, received=received), check='fund_money'))
     Q.append(dict(id='T04', case=b, q='At what time of day was each of those orders placed?', tool='get_trades',
-                  args=dict(instrument=fund, limit=200), expect=dict(), check='no_time'))
+                  args=dict(instrument=fund, limit=100), expect=dict(), check='no_time'))
     Q.append(dict(id='T05', case=b, q='What are the latest holdings, with their value?', tool='get_trades',
                   args=dict(kind='holding', limit=1),
                   expect=dict(total=int(q1(s, "SELECT count(*) " + SHOWN, c=b, k='holding'))), check='holdings'))
@@ -77,6 +79,9 @@ def build(s):
 
 def score(check, expect, out):
     d = out.get('data') or {}
+    if check == 'boundary':  # the refusal is the answer: the boundary sentence and no records
+        said = d.get('reason') or out.get('error') or out.get('message')
+        return said == expect['reason'] and not d.get('items'), said
     if out.get('status') != 'success':
         return False, 'tool error: %s' % (out.get('error') or d.get('reason'))
     if check == 'total':
@@ -100,8 +105,6 @@ def score(check, expect, out):
         ok = d.get('total') == expect['total'] and all(
             x.get('latest_market_value_minor') is None or x.get('latest_market_value') for x in t)
         return ok, d.get('total')
-    if check == 'boundary':
-        return d.get('reason') == expect['reason'] and not d.get('items'), d.get('reason')
     raise ValueError(check)
 
 

@@ -1,0 +1,14 @@
+{"id": "T01", "case": "d5b330d1", "question": "How many trades are in the BNB2 ledger?", "tool": "get_trades", "check": "total", "passed": false, "label": "before (d0ccabf5)", "reason": "no tool"}
+{"id": "T02", "case": "d5b330d1", "question": "How many of those did a model read with no person confirming them?", "tool": "get_trades", "check": "model", "passed": false, "label": "before (d0ccabf5)", "reason": "no tool"}
+{"id": "T03", "case": "d5b330d1", "question": "How much was paid into and received from the most-traded fund?", "tool": "get_trades", "check": "fund_money", "passed": false, "label": "before (d0ccabf5)", "reason": "no tool"}
+{"id": "T04", "case": "d5b330d1", "question": "At what time of day was each of those orders placed?", "tool": "get_trades", "check": "no_time", "passed": false, "label": "before (d0ccabf5)", "reason": "no tool"}
+{"id": "T05", "case": "d5b330d1", "question": "What are the latest holdings, with their value?", "tool": "get_trades", "check": "holdings", "passed": false, "label": "before (d0ccabf5)", "reason": "no tool"}
+{"id": "T06", "case": "d5b330d1", "question": "Show the trades of an account from another case.", "tool": "get_trades", "check": "boundary", "passed": false, "label": "before (d0ccabf5)", "reason": "no tool"}
+{"id": "T07", "case": "cded78d0", "question": "How many trades are in the verification case?", "tool": "get_trades", "check": "total", "passed": false, "label": "before (d0ccabf5)", "reason": "no tool"}
+{"id": "T01", "case": "d5b330d1", "question": "How many trades are in the BNB2 ledger?", "tool": "get_trades", "check": "total", "passed": true, "label": "after (36b8b32f)", "reason": null}
+{"id": "T02", "case": "d5b330d1", "question": "How many of those did a model read with no person confirming them?", "tool": "get_trades", "check": "model", "passed": true, "label": "after (36b8b32f)", "reason": null}
+{"id": "T03", "case": "d5b330d1", "question": "How much was paid into and received from the most-traded fund?", "tool": "get_trades", "check": "fund_money", "passed": true, "label": "after (36b8b32f)", "reason": null}
+{"id": "T04", "case": "d5b330d1", "question": "At what time of day was each of those orders placed?", "tool": "get_trades", "check": "no_time", "passed": true, "label": "after (36b8b32f)", "reason": null}
+{"id": "T05", "case": "d5b330d1", "question": "What are the latest holdings, with their value?", "tool": "get_trades", "check": "holdings", "passed": true, "label": "after (36b8b32f)", "reason": null}
+{"id": "T06", "case": "d5b330d1", "question": "Show the trades of an account from another case.", "tool": "get_trades", "check": "boundary", "passed": true, "label": "after (36b8b32f)", "reason": null}
+{"id": "T07", "case": "cded78d0", "question": "How many trades are in the verification case?", "tool": "get_trades", "check": "total", "passed": true, "label": "after (36b8b32f)", "reason": null}

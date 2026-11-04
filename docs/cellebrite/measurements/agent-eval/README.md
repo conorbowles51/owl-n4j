@@ -97,3 +97,24 @@ possible because trades are not modelled).
 
 On 96640bde (before the workflows): 24 of 30. The 24 tool questions use tools already released and answer the same;
 the 6 readiness questions have no answer, because no workflow catalogue existed.
+
+## Trades and holdings, tool layer, 2026-11-04 (`trades-tool-layer-2026-11-04.jsonl`)
+
+7 questions on BNB2's brokerage and fund statements and the verification case, asked through `get_trades` with the
+run's case by `backend/scripts/financial_agent_trades_eval.py` on live (read-only sessions). Each known answer is
+computed by plain SQL in the script: money from the cash ledger's own rows, counts from the security rows. The file
+holds scores only, never case values.
+
+| Tree | Score | Why the misses missed |
+|---|---|---|
+| before (d0ccabf5) | 0 of 7 | no tool: the agent's 59 tools read no trade, instrument, quantity or holding |
+| after (36b8b32f) | 7 of 7 | |
+
+The questions: how many trades the case holds; how many a model read and no person has confirmed; money paid into and
+received from the most-traded fund (against its cash lines); the time of day of those orders (none is printed: every
+trade says so); the latest holdings with their value; an account from another case ("That account is not in this
+case."); trades in the verification case.
+
+By hand against one printed statement (an Intercam April 2025 statement, page 3 and the position table): the fund's
+4 trades, units bought and sold, money paid and received, and the position and value at the month end returned by
+`get_trades` equal the print.
