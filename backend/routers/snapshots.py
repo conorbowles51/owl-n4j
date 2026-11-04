@@ -167,7 +167,11 @@ def create_snapshot(
     if timeline is None and case is not None:
         # Saved from the graph: the snapshot keeps the events among its own entities, so its report prints
         # those and only those (BUG-012: the old report printed every event in the case).
-        timeline = snapshot_events(db, str(case.id), snapshot.subgraph or {})
+        try:
+            timeline = snapshot_events(db, str(case.id), snapshot.subgraph or {})
+        except Exception as exc:  # the graph store being unreachable must not lose the snapshot itself
+            print(f"Snapshot {snapshot_id}: events not captured ({exc}); saved without events")
+            timeline = []
     
     # Store the full snapshot data
     snapshot_data = {

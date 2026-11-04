@@ -49,6 +49,7 @@ def test_report_prints_only_the_snapshots_own_events_with_sources_and_marking():
     assert sr.PRIVILEGE_BASIS in html
     assert "Snapshot report" in html
     assert "Events:</strong> 1" in html
+    assert "<svg class=\"graph-svg\"" in html
 
 
 def test_report_never_reaches_beyond_the_snapshot():
@@ -112,3 +113,21 @@ def test_saving_from_the_graph_keeps_only_the_events_among_its_entities(monkeypa
     saved = next(iter(stored.values()))
     assert saved["timeline"] == [{"key": "e1", "name": "Wire", "date": "2022-11-30"}]
     assert saved["case_name"] == "Case A"
+
+
+def test_snapshot_saves_even_when_events_cannot_be_read(monkeypatch):
+    from routers import snapshots as router
+    import services.timeline_view_service as tvs
+
+    def broken(*a, **k):
+        raise RuntimeError("graph store unreachable")
+
+    monkeypatch.setattr(tvs, "_fetch_current_events", broken)
+    stored = {}
+    monkeypatch.setattr(router.snapshot_storage, "save", lambda sid, data, **k: stored.update({sid: data}))
+    monkeypatch.setattr(router.snapshot_storage, "get", lambda sid, **k: stored.get(sid))
+    case = types.SimpleNamespace(id="11111111-1111-1111-1111-111111111111", title="Case A")
+    monkeypatch.setattr(router, "_case_for", lambda db, case_id, user: case)
+    body = router.SnapshotCreate(name="s", notes="", case_id=case.id, subgraph={"nodes": [{"key": "p1"}], "links": []})
+    out = router.create_snapshot(body, user={"username": "u"}, db=None, db_user=None)
+    assert out.node_count == 1 and out.timeline_count == 0 and len(stored) == 1

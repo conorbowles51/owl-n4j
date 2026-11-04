@@ -190,7 +190,7 @@ def render_snapshot_report_html(
     </section>
     <section class="snapshot-graph">
       <h2>Graph</h2>
-      <img src="data:image/svg+xml;charset=utf-8,{_svg_data(graph_svg(subgraph))}" alt="Snapshot graph"/>
+      <div class="graph-frame">{graph_svg(subgraph).replace('<svg ', '<svg class="graph-svg" ', 1)}</div>
       <p class="muted">Drawn as vector graphics from the saved graph. {html.escape(layout_note)}</p>
     </section>
     <section class="snapshot-entities">
@@ -204,7 +204,8 @@ def render_snapshot_report_html(
     css = """
       .snapshot-marking { border: 1.5px solid #0f172a; padding: 6px 10px; margin: 10px 0; font-size: 11px; }
       .snapshot-marking span { display: block; color: #475569; font-size: 9px; margin-top: 2px; }
-      .snapshot-graph img { width: 100%; border: 1px solid #cbd5e1; }
+      .graph-frame { border: 1px solid #cbd5e1; }
+      .graph-svg { width: 100%; height: auto; display: block; }
       .snapshot-entities table { width: 100%; border-collapse: collapse; font-size: 9px; }
       .snapshot-entities td, .snapshot-entities th { border-bottom: 1px solid #e2e8f0; padding: 3px 4px; text-align: left; vertical-align: top; }
       .muted { color: #64748b; }
@@ -226,20 +227,11 @@ def render_snapshot_report_html(
     )
 
 
-def _svg_data(svg: str) -> str:
-    from urllib.parse import quote
-
-    return quote(svg, safe="")
-
-
 def render_snapshot_report_pdf(snapshot: dict[str, Any], **kwargs: Any) -> bytes:
     from weasyprint import HTML
 
     def deny_resource(url: str, *args: Any, **kw: Any):
-        if url.startswith("data:"):
-            from weasyprint.urls import default_url_fetcher
-
-            return default_url_fetcher(url, *args, **kw)
+        # The graph is inline SVG in the page, so the report never needs to fetch anything.
         raise ValueError("Snapshot reports cannot load external or local resources.")
 
     return HTML(string=render_snapshot_report_html(snapshot, **kwargs), url_fetcher=deny_resource).write_pdf()
