@@ -11,7 +11,9 @@ required even for a super admin: all-cases mode never becomes a superuser read o
 The identifier index is a read over columns the case data already keeps normalised, so it is never stale and needs no
 refresh: ``financial_accounts.identifier_normalised`` (digits as printed) and ``iban``, and ``phone_identities``
 (phone numbers in E.164, emails, app handles). An account number shorter than ``MIN_ACCOUNT_DIGITS`` digits (a last-4
-or last-5 a statement prints) never matches: it cannot tell two accounts apart. Account numbers are shown masked.
+or last-5 a statement prints) never matches: it cannot tell two accounts apart. It is listed instead as a faint
+possible match (``possible``) when its digits end the looked-up number: the same last digits, which many accounts share
+(Neil 2026-11-04: any match is mentioned, with its strength). Account numbers are shown masked.
 
 A run scoped to one case learns only how many other cases the person may open hold the identifier, never which cases
 and never their content.
@@ -25,6 +27,7 @@ from typing import Any, Iterable
 MIN_ACCOUNT_DIGITS = 6
 MIN_HANDLE_CHARS = 3
 MAX_MATCHES = 50  # matches listed per identifier, stated with their total
+MIN_SUFFIX_DIGITS = 4  # a stored last-4 or last-5 is listed as a faint possible match; fewer digits say nothing
 
 NOT_OPEN = "That case is not one you can open."
 
@@ -63,6 +66,8 @@ def lookup_keys(identifier: str) -> dict[str, Any]:
             keys["accounts"].append(digits)
         else:
             keys["too_short"] = True
+            if len(digits) >= MIN_SUFFIX_DIGITS:
+                keys["suffix"] = digits
         if 7 <= len(digits) <= 17:
             e164, _display, valid, _basis = numbers.parse(raw if unmasked == raw else digits)
             if valid:
@@ -159,9 +164,30 @@ def find_identifier(db, identifier: str, case_ids: list[uuid.UUID]) -> dict[str,
             matches.append({"case_id": str(r.case_id), "kind": {"app_user": "handle"}.get(r.kind, r.kind),
                             "record_id": str(r.id), "value": r.value_display,
                             "seen_times_on_phones": r.sighting_count, "phones": r.phone_count})
+    possible: list[dict[str, Any]] = []
+    if ids and (keys["accounts"] or keys.get("suffix")):
+        from sqlalchemy import literal
+        # a looked-up last-4 or last-5: every account whose number ends with it
+        ends = [FinancialAccount.identifier_normalised.like("%" + keys["suffix"])] if keys.get("suffix") else []
+        ends += [and_(func.length(FinancialAccount.identifier_normalised).between(MIN_SUFFIX_DIGITS,
+                                                                                  MIN_ACCOUNT_DIGITS - 1),
+                     literal(d).like(func.concat("%", FinancialAccount.identifier_normalised)))
+                for d in keys["accounts"]]
+        rows = (db.query(FinancialAccount).filter(FinancialAccount.case_id.in_(ids), or_(*ends))
+                .order_by(FinancialAccount.case_id, FinancialAccount.id).all())
+        for r in rows:
+            n = min(len(r.identifier_normalised), len(keys.get("suffix") or r.identifier_normalised))
+            possible.append({"case_id": str(r.case_id), "kind": "account", "record_id": str(r.id),
+                             "value": mask_account(r.identifier_normalised), "institution": r.institution_name,
+                             "holder_name_as_printed": r.holder_name, "account_type": r.account_type,
+                             "strength": "faint",
+                             "how_well_matched": ["the same last %d digits, and no more digits to compare" % n],
+                             "how_substantiated": [],
+                             "limitation": "Many accounts share their last %d digits: a possibility to check, "
+                                           "not a match." % n})
     cases = sorted({m["case_id"] for m in matches})
     return {"identifier_kinds_looked_up": _kinds(keys), "too_short": keys["too_short"], "cases": cases,
-            "matches": matches}
+            "matches": matches, "possible": possible, "suffix": bool(keys.get("suffix"))}
 
 
 def _kinds(keys: dict[str, Any]) -> list[str]:
@@ -356,11 +382,29 @@ def make_cross_case_tools(context) -> list:
                           for c in found["cases"]]}
         if len(matches) > len(shown):
             data["clipped"] = f"Showing {len(shown)} of {len(matches)} matches."
+        possible = found["possible"]
+        for m in possible:
+            m["case_name"] = titles.get(m["case_id"])
+        if possible:
+            data["possible"] = possible[:MAX_MATCHES]
+            data["possible_total"] = len(possible)
+            one = len(possible) == 1
+            data["possible_words"] = (
+                ("%d account%s end%s with these digits: listed as faint possible matches, never as matches." % (
+                    len(possible), "" if one else "s", "s" if one else ""))
+                if found.get("suffix") else
+                ("%d account%s print%s only last digits that end this number: listed as faint possible matches, "
+                 "never as matches." % (len(possible), "" if one else "s", "s" if one else "")))
+            if len(possible) > MAX_MATCHES:
+                data["possible_clipped"] = f"Showing {MAX_MATCHES} of {len(possible)} possible matches."
         if found["too_short"] and not found["identifier_kinds_looked_up"]:
             data["reason"] = ("Too short to tell records apart (an account number needs %d digits or more); not "
-                              "looked up." % MIN_ACCOUNT_DIGITS)
+                              "matched." % MIN_ACCOUNT_DIGITS) + (" Accounts ending with these digits are listed as "
+                                                                  "faint possible matches." if possible else "")
         summary = (f"Found in {len(found['cases'])} of {len(ids)} case(s) the person may open "
                    f"({len(matches)} record(s)).")
+        if possible:
+            summary += " " + data["possible_words"]
         return context.result("find_identifier_across_cases", data, summary=summary)
 
     class ReadInCaseArgs(BaseModel):

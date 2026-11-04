@@ -102,6 +102,24 @@ class AllCasesTests(DuplicateTestCase):
         self.assertEqual(out["data"]["other_cases"], 0)
         self.assertIn("too short", out["summary"])
 
+    def test_a_stored_last_four_is_a_faint_possible_match_never_a_match(self):
+        """Neil 2026-11-04: any match is mentioned with its strength. A statement printing only 2233 can be the
+        account 40112233 or any other ending 2233: listed as faint, never in matches or cases."""
+        self.other_account.identifier_normalised = "2233"
+        self.db.commit()
+        out = self.tools(self.context(all_cases=True))["find_identifier_across_cases"].invoke({"identifier": NUMBER})
+        data = out["data"]
+        self.assertEqual({m["case_name"] for m in data["matches"]}, {"Matter A"})
+        self.assertEqual([(m["case_name"], m["strength"]) for m in data["possible"]], [("Matter B", "faint")])
+        self.assertEqual(data["possible"][0]["how_well_matched"], ["the same last 4 digits, and no more digits to compare"])
+        last4 = self.tools(self.context(all_cases=True))["find_identifier_across_cases"].invoke({"identifier": "2233"})
+        self.assertEqual(last4["data"]["matches"], [])
+        self.assertEqual(sorted(m["case_name"] for m in last4["data"]["possible"]), ["Matter A", "Matter B"])
+        self.assertIn("2 accounts end with these digits", last4["summary"])
+        self.assertIn("1 account prints only last digits that end this number", out["summary"])
+        self.assertNotIn(str(self.closed_case.id), json.dumps(out))
+        self.assertNotIn(NUMBER, json.dumps(data))
+
     def test_phone_numbers_emails_and_handles_are_indexed(self):
         self.phone_identity(self.other_case, "phone", "+12015550104", "+1 201-555-0104")
         self.phone_identity(self.other_case, "email", "mule@example.test")
