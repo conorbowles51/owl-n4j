@@ -63,8 +63,17 @@ def _ids(text):
     return set(re.findall(r'judgement ([0-9a-f-]{36})$', text, re.M))
 
 
-def append_correction(session, item, statement=None):
+def _by_jobs_login(email):
+    """A correction made by the automated-checks login is a test, not a lesson (followups m110400110314678); the
+    manual-change feed marks the same changes test and never delivers them."""
+    from services.manual_changes import JOBS_EMAILS
+    return (email or '').strip().lower() in JOBS_EMAILS
+
+
+def append_correction(session, item, statement=None, *, actor_email=None):
     if item.get('status') not in ('corrected', 'rejected'):  # a rejected agent proposal is a lesson too
+        return False
+    if _by_jobs_login(actor_email or item.get('resolved_by_email')):
         return False
     if str(item['id']) in _ids(_known()):
         return False
@@ -89,8 +98,9 @@ def missing(session):
     """Ids of corrections in the database with no line in the inbox (an append that failed and was not caught up)."""
     from postgres.models.financial_judgements import FinancialJudgement as J
     known = _ids(_known())
-    return [str(i) for i in session.scalars(select(J.id).where(J.status.in_(('corrected', 'rejected'))).order_by(J.resolved_at))
-            if str(i) not in known]
+    rows = session.execute(select(J.id, J.resolved_by_email).where(J.status.in_(('corrected', 'rejected')))
+                           .order_by(J.resolved_at))
+    return [str(i) for i, email in rows if str(i) not in known and not _by_jobs_login(email)]
 
 
 def sync(session):
@@ -99,7 +109,7 @@ def sync(session):
     from services.financial.judgements import as_dict
     added = 0
     for row in session.scalars(select(J).where(J.status.in_(('corrected', 'rejected'))).order_by(J.resolved_at)):
-        added += append_correction(session, as_dict(row))
+        added += append_correction(session, as_dict(row), actor_email=row.resolved_by_email)
     return added
 
 

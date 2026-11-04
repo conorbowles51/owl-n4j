@@ -46,5 +46,36 @@ class InboxConcurrencyTests(unittest.TestCase):
             self.assertEqual(text.count(f'judgement {item(n)["id"]}'), 1)
 
 
+class JobsLoginCorrectionsTests(unittest.TestCase):
+    """The automated-checks login's corrections are tests, not lessons (followups m110400110314678: two live checks
+    in the verification case opened the lesson job twice)."""
+
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.inbox = Path(directory.name) / 'inbox.md'
+        patcher = mock.patch.object(judgement_inbox, 'INBOX', self.inbox)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_jobs_login_correction_is_not_a_lesson(self):
+        self.assertFalse(judgement_inbox.append_correction(None, item(1), statement='s.pdf',
+                                                           actor_email='Jobs-Verify@loupe.invalid'))
+        self.assertFalse(judgement_inbox.append_correction(
+            None, dict(item(2), resolved_by_email='jobs-verify@loupe.invalid'), statement='s.pdf'))
+        self.assertTrue(judgement_inbox.append_correction(None, item(3), statement='s.pdf',
+                                                          actor_email='analyst@example.test'))
+        text = self.inbox.read_text()
+        self.assertNotIn(item(1)['id'], text)
+        self.assertNotIn(item(2)['id'], text)
+        self.assertIn(item(3)['id'], text)
+
+    def test_missing_does_not_count_jobs_login_corrections(self):
+        rows = [(item(1)['id'], 'jobs-verify@loupe.invalid'), (item(2)['id'], 'analyst@example.test')]
+        session = mock.Mock()
+        session.execute.return_value = rows
+        self.assertEqual(judgement_inbox.missing(session), [item(2)['id']])
+
+
 if __name__ == '__main__':
     unittest.main()

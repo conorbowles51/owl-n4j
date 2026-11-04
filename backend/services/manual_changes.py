@@ -235,7 +235,8 @@ def record_judgement_correction(session, item, statement=None, *, committed, act
     corr = ev.get('correction') or {}
 
     def judgement_line():
-        judgement_inbox.append_correction(session, item, statement=statement)
+        judgement_inbox.append_correction(session, item, statement=statement,
+                                          actor_email=_actor_fields(actor)[1] or item.get('resolved_by_email'))
 
     return record_change(
         session, 'judgement_correct', item.get('case_id'), ('judgement', item.get('id')),
