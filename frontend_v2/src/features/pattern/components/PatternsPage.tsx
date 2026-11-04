@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/ui/page-header"
+import { evidenceWords, towerMccWords } from "../together-words"
 import { patternAPI, type Snapshot, type Subject, type SubjectList, type TogetherResponse } from "../api"
 import { Lanes } from "./Lanes"
 import { errorWords, laneRowsOf, setApartWords, snapshotView, usualLast } from "../lanes-lib"
@@ -239,13 +240,14 @@ export function PlacesView({ caseId, subject, last }: { caseId: string; subject:
       {q.data && (
         <>
           <p>Showing {q.data.returned.toLocaleString()} of {q.data.total.toLocaleString()} positioned records, {startD.toISOString().slice(0, 10)} to {last}.
-            {q.data.towers_not_placed.length > 0 ? ` ${q.data.towers_not_placed.length.toLocaleString()} cell tower sightings cannot be placed: ${q.data.towers_not_placed[0].words}` : ""}</p>
+            {q.data.towers_not_placed.length > 0 ? ` ${q.data.towers_not_placed.length.toLocaleString()} cell tower sightings cannot be placed: ${q.data.towers_not_placed[0].words}` : ""}
+            {towerMccWords(q.data.towers_not_placed, q.data.mcc_inferred_words) ? ` ${towerMccWords(q.data.towers_not_placed, q.data.mcc_inferred_words)}` : ""}</p>
           <KeepResult caseId={caseId} origin="Added from Phone patterns, Places over time"
             request={{ kind: "places", subject: JSON.stringify(subject), start: startD.toISOString(), end: nextDay(last), zone: "UTC" }} />
           {q.data.next_cursor !== null && <span> The list shows the first {q.data.returned.toLocaleString()}; the rest are on later pages.</span>}
           <table className="text-xs"><thead><tr><th className="text-left">Time</th><th className="text-left">Source</th><th className="text-left">Radius</th></tr></thead>
             <tbody>{q.data.observations.map((o) => (
-              <tr key={o.id}><td>{o.start_utc}</td><td>{o.source_kind}</td><td>{o.radius_m ? `${Math.round(o.radius_m)} m` : "Accuracy not recorded"}</td></tr>))}</tbody>
+              <tr key={o.id}><td>{o.start_utc}</td><td>{o.source_kind}{o.attribution_flags?.includes("mcc_inferred") ? " (country code from the SIM card)" : ""}</td><td>{o.radius_m ? `${Math.round(o.radius_m)} m` : "Accuracy not recorded"}</td></tr>))}</tbody>
           </table>
         </>
       )}
@@ -305,6 +307,7 @@ function TogetherView({ caseId, subject, list }: { caseId: string; subject: Subj
         <>
           <p>{(res.total ?? c.pairs ?? 0).toLocaleString()} pairs compared: {(c.compatible || 0).toLocaleString()} compatible, {(c.separated || 0).toLocaleString()} separated, {(c.undetermined || 0).toLocaleString()} undetermined.
             A position with no accuracy uses an assumed radius of 1,000 m and is marked. A broad overlap is never called together.</p>
+          {evidenceWords(c).length > 0 && <ul aria-label="Kinds of evidence">{evidenceWords(c).map((w) => <li key={w}>{w}</li>)}</ul>}
           <h3 className="font-medium">Episodes ({(res.episodes || []).length.toLocaleString()})</h3>
           <ul>{(res.episodes || []).map((e, i) => <li key={i}>{e.kind === "together" ? `compatible (${e.breadth})` : "separated"}: {e.start} to {e.end}, {e.items.toLocaleString()} pairs</li>)}</ul>
         </>

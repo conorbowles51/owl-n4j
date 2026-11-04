@@ -182,26 +182,64 @@ def case_dataset(conn, case_id):
     return conn.execute(text("SELECT dataset_id FROM pol_case_cell_dataset WHERE case_id = :c"), {"c": case_id}).scalar()
 
 
-def _towers(conn, extraction_id, case_id, gen) -> dict:
+def sim_mccs(conn, extraction_id) -> set:
+    """The home network country codes the phone's SIM data states: the first three digits of every IMSI in the
+    report header (``IMSI``) and in SIMData records named IMSI (04 6.2: "the extraction's home network MCC")."""
+    import re
+    from services.phone import identities
+    from services.phone_analysis import fields as FV
+    imsis = list(identities.header_items(conn, extraction_id).get("IMSI", []))
+    for v in FV.field_values(conn, extraction_id, ("SIMData",), ("Name", "Value")).values():
+        if "IMSI" in " ".join(v["values"].get("Name", ())).upper():
+            imsis += v["values"].get("Value", ())
+    return {int(d[:3]) for d in (re.sub(r"\D", "", x or "") for x in imsis) if 6 <= len(d) <= 15}
+
+
+def resolve_tower_key(body, mccs):
+    """``(key, flags, reason)`` of one CellTower record. A tower with no MCC takes the SIM's when exactly one is known
+    (flag ``mcc_inferred``); with none or several it stays unresolved and ``reason`` says which (04 6.2)."""
+    k = tower_key(body)
+    if None in (k["mnc"], k["lac"], k["cid"]):
+        return k, [], "key_incomplete"
+    if k["mcc"] is not None:
+        return k, [], None
+    if len(mccs) == 1:
+        return dict(k, mcc=next(iter(mccs))), ["mcc_inferred"], None
+    return k, [], "mcc_unknown_several_sims" if mccs else "mcc_unknown_no_sim"
+
+
+def tower_rows(conn, extraction_id):
+    """Every CellTower record of the extraction with its resolved key and its first projected time:
+    ``[(record_uid, key, flags, reason, event or None)]``, read in two queries (not one per record)."""
     from services.phone import ids
+    mccs = None
+    events = {}
+    for r in conn.execute(text(
+            "SELECT DISTINCT ON (record_uid) record_uid, instant_utc, end_utc, time_semantics, offset_status, "
+            "attribution_flags FROM pol_activity_event WHERE extraction_id = :e AND record_type = 'CellTower' "
+            "ORDER BY record_uid, instant_utc"), {"e": extraction_id}):
+        events[str(r.record_uid)] = r
+    out = []
+    for doc, ordinal, body in conn.execute(text(
+            "SELECT document_index, ordinal, body FROM phone_records WHERE extraction_id = :e AND model_type = "
+            "'CellTower' ORDER BY document_index, ordinal"), {"e": extraction_id}):
+        if mccs is None:
+            mccs = sim_mccs(conn, extraction_id)
+        uid = ids.record_uid(extraction_id, doc, ordinal)
+        k, flags, reason = resolve_tower_key(body, mccs)
+        out.append((uid, k, flags, reason, events.get(str(uid))))
+    return out
+
+
+def _towers(conn, extraction_id, case_id, gen) -> dict:
     stats = defaultdict(int)
     ds = case_dataset(conn, case_id)
     obs = []
-    for doc, ordinal, body in conn.execute(text(
-            "SELECT document_index, ordinal, body FROM phone_records WHERE extraction_id = :e AND model_type = "
-            "'CellTower'"), {"e": extraction_id}):
-        uid = ids.record_uid(extraction_id, doc, ordinal)
-        k = tower_key(body)
-        ev = conn.execute(text("SELECT instant_utc, end_utc, time_semantics, offset_status, attribution_flags FROM "
-                               "pol_activity_event WHERE extraction_id = :e AND record_uid = :u ORDER BY instant_utc "
-                               "LIMIT 1"), {"e": extraction_id, "u": uid}).one_or_none()
-        reason = None
+    for uid, k, kflags, reason, ev in tower_rows(conn, extraction_id):
         ref = None
-        if None in (k["mcc"], k["mnc"], k["lac"], k["cid"]):
-            reason = "key_incomplete"
-        elif ds is None:
+        if reason is None and ds is None:
             reason = "no_reference_dataset"
-        else:
+        elif reason is None:
             ref = conn.execute(text(
                 "SELECT lat, lon, range_m, samples FROM pol_cell_reference WHERE dataset_id = :d AND mcc = :mcc AND "
                 "mnc = :mnc AND lac = :lac AND cid = :cid AND (CAST(:radio AS varchar) IS NULL OR radio = :radio) "
@@ -210,16 +248,19 @@ def _towers(conn, extraction_id, case_id, gen) -> dict:
                 reason = "tower_not_in_reference_data"
             elif ev is None:
                 reason = "no_time"
+        if "mcc_inferred" in kflags:
+            stats["towers_mcc_inferred"] += 1
         if reason is not None:
             conn.execute(text(
                 "INSERT INTO pol_unplaced_tower (case_id, extraction_id, record_uid, radio, mcc, mnc, lac, cid, "
-                "instant_utc, reason) VALUES (:c, :e, :u, :radio, :mcc, :mnc, :lac, :cid, :i, :r)"),
-                dict(k, c=case_id, e=extraction_id, u=uid, i=ev[0] if ev else None, r=reason))
+                "instant_utc, reason, mcc_inferred) VALUES (:c, :e, :u, :radio, :mcc, :mnc, :lac, :cid, :i, :r, :mi)"),
+                dict(k, c=case_id, e=extraction_id, u=uid, i=ev.instant_utc if ev else None, r=reason,
+                     mi="mcc_inferred" in kflags))
             stats["towers_not_placed:%s" % reason] += 1
             continue
         sparse = (ref.samples or 0) < CELL_MIN_SAMPLES
         radius = max(ref.range_m or 0, CELL_SPARSE_RANGE_M if sparse else CELL_MIN_RANGE_M)
-        flags = list(ev.attribution_flags or []) + (["reference_sparse"] if sparse else [])
+        flags = list(ev.attribution_flags or []) + (["reference_sparse"] if sparse else []) + kflags
         obs.append({"c": case_id, "e": extraction_id, "ru": uid, "rt": "CellTower", "k": "presence",
                     "sk": "cell_reference", "lat": ref.lat, "lon": ref.lon, "rad": float(radius),
                     "rep": float(ref.range_m) if ref.range_m is not None else None, "rb": "cell_reference",
@@ -232,7 +273,8 @@ def _towers(conn, extraction_id, case_id, gen) -> dict:
 
 def unplaced_towers(conn, extraction_ids) -> list:
     return [dict(r._mapping) for r in conn.execute(text(
-        "SELECT extraction_id, record_uid, radio, mcc, mnc, lac, cid, instant_utc, reason FROM pol_unplaced_tower WHERE "
+        "SELECT extraction_id, record_uid, radio, mcc, mnc, lac, cid, instant_utc, reason, mcc_inferred FROM "
+        "pol_unplaced_tower WHERE "
         "extraction_id = ANY(CAST(:e AS uuid[])) ORDER BY instant_utc NULLS LAST, id"),
         {"e": [str(x) for x in extraction_ids]})]
 
@@ -240,7 +282,13 @@ def unplaced_towers(conn, extraction_ids) -> list:
 TOWER_WORDS = {"no_reference_dataset": "Not placed: this case uses no cell tower reference data.",
                "tower_not_in_reference_data": "Tower not in reference data.",
                "key_incomplete": "Not placed: the tower's network code or cell number is missing.",
-               "no_time": "Not placed in time: the record gives no time."}
+               "no_time": "Not placed in time: the record gives no time.",
+               "mcc_unknown_no_sim": "Not placed: the tower's country code is missing and the phone's SIM data "
+                                     "does not state one.",
+               "mcc_unknown_several_sims": "Not placed: the tower's country code is missing and the phone's SIM "
+                                           "data states more than one."}
+# shown beside a tower whose country code was taken from the phone's SIM (flag ``mcc_inferred``)
+MCC_INFERRED_WORDS = "Country code taken from the phone's SIM card; the tower record does not state it."
 
 
 # ---- cell reference import ------------------------------------------------------------------------------------------

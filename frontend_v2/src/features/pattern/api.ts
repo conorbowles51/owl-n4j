@@ -220,6 +220,7 @@ export interface PlaceObservation {
   start_utc: string
   end_utc: string
   source_app: string | null
+  attribution_flags?: string[] | null
 }
 
 export interface PlacesResponse {
@@ -228,7 +229,8 @@ export interface PlacesResponse {
   next_cursor: number | null
   page_size: number
   observations: PlaceObservation[]
-  towers_not_placed: { words: string; reason: string }[]
+  towers_not_placed: { words: string; reason: string; mcc_inferred?: boolean; mcc_words?: string | null }[]
+  mcc_inferred_words?: string
   reverse_geocoding: { enabled: boolean; reason: string }
 }
 

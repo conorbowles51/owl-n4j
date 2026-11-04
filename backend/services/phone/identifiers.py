@@ -69,3 +69,55 @@ def classify(raw, *, context=None, region="US", region_basis="assumed_default") 
     if label == "username":
         v = v.casefold().lstrip("@")
     return Identifier("app_user", label, v, s, "app:%s:%s:%s" % (namespace, label, v), None)
+
+
+# ---- Bluetooth identity (cb-coloc-rest B; 04 section 8.4 "the other phone's own Bluetooth identity") -------------
+
+MAC_SHAPE = re.compile(r"^[0-9A-Fa-f]{2}([:\-. ]?[0-9A-Fa-f]{2}){5}$")
+# The report header items that state the phone's own Bluetooth identity: the adapter address (Android
+# ``Bluetooth MAC Address``, both platforms ``DeviceInfoBluetoothDeviceAddress``) and the name it advertises (Android
+# ``DeviceInfoBluetoothDeviceName``; on an iPhone the Bluetooth name is the device name, ``DeviceInfoDeviceName``).
+BLUETOOTH_HEADER_ITEMS = (("Bluetooth MAC Address", "bluetooth_address"),
+                          ("DeviceInfoBluetoothDeviceAddress", "bluetooth_address"),
+                          ("DeviceInfoBluetoothDeviceName", "bluetooth_name"),
+                          ("DeviceInfoDeviceName", "bluetooth_name"))
+
+
+def bluetooth_address(raw) -> Optional[str]:
+    """``aa:bb:cc:dd:ee:ff`` for a written 48-bit address (colons, dashes, dots or none), else None."""
+    s = str(raw or "").strip()
+    if not MAC_SHAPE.match(s):
+        return None
+    h = re.sub(r"[^0-9a-f]", "", s.lower())
+    if h in ("000000000000", "ffffffffffff") or h == "02" + "0" * 10:  # placeholders, never a device
+        return None
+    return ":".join(h[i:i + 2] for i in range(0, 12, 2))
+
+
+def bluetooth_name(raw) -> Optional[str]:
+    """A Bluetooth device name compared as written, after Unicode compatibility folding, case and spacing."""
+    s = " ".join(unicodedata.normalize("NFKC", str(raw or "")).casefold().split())
+    return s or None
+
+
+def bluetooth(raw, subkind) -> Optional[Identifier]:
+    """The phone's own Bluetooth address or name as an identity (kind ``other``; never a person)."""
+    if subkind == "bluetooth_address":
+        v = bluetooth_address(raw)
+    elif subkind == "bluetooth_name":
+        v = bluetooth_name(raw)
+    else:
+        raise ValueError(subkind)
+    if v is None:
+        return None
+    return Identifier("other", subkind, v, str(raw).strip(), "other:%s:%s" % (subkind, v), None)
+
+
+def bluetooth_peer(raw):
+    """``("bluetooth_address", v)`` when a peer's written name is an address, else ``("bluetooth_name", v)``, or
+    None: how a peer record on one phone is compared with another phone's own identity."""
+    a = bluetooth_address(raw)
+    if a:
+        return ("bluetooth_address", a)
+    n = bluetooth_name(raw)
+    return ("bluetooth_name", n) if n else None

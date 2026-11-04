@@ -35,7 +35,10 @@ def interpreter_version() -> str:
     """The generic version and the stages that ran with it (fits ``interpreter_version varchar(32)``). A stage added
     later (the identities, readings, a new applier) changes it, so phones read without that stage are read again;
     otherwise they would never gain its rows, as nothing else about them changed."""
-    stages = sorted("%s.%s" % (fn.__module__, fn.__qualname__) for fn in _hooks["apply"])
+    # a stage may carry ``stage_version`` (an int); a stage without one keeps its name alone, so its version is unchanged
+    stages = sorted("%s.%s%s" % (fn.__module__, fn.__qualname__,
+                                 "@%s" % fn.stage_version if getattr(fn, "stage_version", None) else "")
+                    for fn in _hooks["apply"])
     if _hooks["planner"] is not None:
         stages.append("planner:%s.%s" % (_hooks["planner"].__module__, _hooks["planner"].__qualname__))
     if not stages:

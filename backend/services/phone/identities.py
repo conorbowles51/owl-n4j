@@ -132,11 +132,30 @@ def build(conn, extraction_id, generation, the_plan=None) -> dict:
             "c.effective_value = :sim WHERE v.extraction_id = :e AND v.generation = :g AND v.case_id = :c AND "
             "v.model_type = 'SIMData' AND v.field_name = 'Value'"), dict(p, sim=SIM_MSISDN)):
         rows.append(("header", t_uid, rec, root, "SIMData.Value", raw, {}, None, None, None))
-    for i, raw in enumerate(header_msisdns(conn, extraction_id)):
+    items = header_items(conn, extraction_id)
+    for i, raw in enumerate(items.get("MSISDN", [])):
         rows.append(("header", uuid.uuid5(SIGHTING_NS, "%s|metadata|%d" % (extraction_id, i)), None, None,
                      "metadata:MSISDN", raw, {}, None, None, None))
     instants = _root_instants(conn, extraction_id, generation, {r[3] for r in rows if r[3]})
     pending = []
+    # the phone's own Bluetooth address and name (cb-coloc-rest B), cited by the header item that states them
+    for item, subkind in identifiers.BLUETOOTH_HEADER_ITEMS:
+        for i, raw in enumerate(items.get(item, [])):
+            ident = identifiers.bluetooth(raw, subkind)
+            if ident is None:
+                stats["sightings_without_identity:header_bluetooth"] += 1
+                continue
+            found.setdefault(ident.identity_key, ident)
+            if found[ident.identity_key] is None:
+                found[ident.identity_key] = ident
+            pending.append({
+                "sighting_uid": uuid.uuid5(SIGHTING_NS, "header|%s|metadata:%s|%d" % (extraction_id, item, i)),
+                "case_id": case_id, "extraction_id": extraction_id,
+                "identity_id": identity_id(case_id, ident.identity_key), "identity_key": ident.identity_key,
+                "record_uid": None, "root_record_uid": None, "card_record_uid": None, "card_type": None,
+                "field_path": "metadata:" + item, "identifier_raw": raw, "context": "header", "name_alongside": None,
+                "region_basis": None, "instant": None, "generation": generation})
+            stats["sightings:header_bluetooth"] += 1
     for context, uid, rec, root, path, raw, ctx, card, card_type, name in rows:
         ident = identifiers.classify(raw, context=ctx, region=region[0], region_basis=region[1])
         if ident is None:
@@ -394,6 +413,26 @@ def owner(conn, extraction_id) -> dict:
         out["owner_identity_keys"] = [top["identity_key"]] if top else []
         out["owner_basis"] = out["computed"]["basis"]
     return out
+
+
+def own_bluetooth(conn, extraction_ids) -> dict:
+    """``{extraction_id: {(subkind, value): {"sighting_uid", "field_path", "identity_key"}}}``: each phone's own
+    Bluetooth address and name from its current generation's header sightings (cb-coloc-rest B)."""
+    out = {str(e): {} for e in extraction_ids}
+    for ext, uid, path, key, sub, value in conn.execute(text(
+            "SELECT x.extraction_id, x.sighting_uid, x.field_path, x.identity_key, i.subkind, i.value_normalised "
+            "FROM phone_identity_sightings x JOIN phone_interpretation_state s ON s.extraction_id = x.extraction_id "
+            "AND s.generation = x.generation JOIN phone_identities i ON i.id = x.identity_id WHERE x.extraction_id = "
+            "ANY(CAST(:e AS uuid[])) AND x.context = 'header' AND i.kind = 'other' AND i.subkind IN "
+            "('bluetooth_address', 'bluetooth_name') ORDER BY x.field_path, x.sighting_uid"),
+            {"e": [str(e) for e in extraction_ids]}):
+        out[str(ext)].setdefault((sub, value), {"sighting_uid": str(uid), "field_path": path, "identity_key": key})
+    return out
+
+
+# Version of this stage: a change to what it writes makes the sweep read every phone again (sweep.interpreter_version).
+# 2: the phone's own Bluetooth address and name from the report header (cb-coloc-rest B).
+build.stage_version = 2
 
 
 def install():

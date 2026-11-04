@@ -12,8 +12,10 @@
   flagged on a ``compatible`` pair.
 
 Beyond coordinates: the same BSSID seen by both within the window is ``compatible`` (basis ``shared_bssid``, radius the
-anchor's or 150 m); the same full cell key within 15 minutes is ``compatible``, broad (basis ``shared_cell``). The SSID
-is never used. Nothing is capped; a run whose estimated pairs exceed ``BACKGROUND_PAIRS`` runs in the background and
+anchor's or 150 m); the same full cell key within 15 minutes is ``compatible``, broad (basis ``shared_cell``; a key
+whose MCC came from the SIM is flagged ``mcc_inferred``); one phone's Bluetooth peer record naming the other phone's own
+Bluetooth address or name is ``compatible`` at radius 30 m (basis ``bluetooth``; ``name_match`` when by name, never
+tight; ``nearby_not_connected`` when the record is a scan detection). The SSID is never used. Nothing is capped; a run whose estimated pairs exceed ``BACKGROUND_PAIRS`` runs in the background and
 every page carries the total.
 """
 from __future__ import annotations
@@ -33,7 +35,11 @@ log = logging.getLogger(__name__)
 
 DEFAULT_PARAMS = {"window_s": 300, "assumed_radius_m": 1000.0, "max_speed_mps": 40.0, "tight_radius_m": 150.0,
                   "episode_gap_s": 1800, "cell_window_s": 900, "unanchored_bssid_radius_m": 150.0,
-                  "include_synced": False}
+                  "include_synced": False, "bluetooth_radius_m": 30.0}
+# Bumped when the pair rules change what a run returns; echoed in every run's counts.
+# 2: Bluetooth basis, MCC inferred from the SIM on shared cells (cb-coloc-rest).
+ANALYSIS_VERSION = 2
+COUNTED_FLAGS = ("mcc_inferred", "name_match", "nearby_not_connected")  # counted per run so the screen can say them
 BACKGROUND_PAIRS = 2_000_000
 PAGE = 1000
 
@@ -124,34 +130,109 @@ def _bssid_pairs(conn, case_id, ea, eb, start, end, p):
     return out
 
 
-def _cell_pairs(conn, ea, eb, start, end, p):
-    from services.pattern_of_life.places import tower_key
-    from services.phone import ids
-    towers = {}
-    for e in list(ea) + list(eb):
-        for doc, ordinal, body in conn.execute(text(
-                "SELECT document_index, ordinal, body FROM phone_records WHERE extraction_id = :e AND model_type = "
-                "'CellTower'"), {"e": e}):
-            k = tower_key(body)
-            if None in (k["mcc"], k["mnc"], k["lac"], k["cid"]):
-                continue
-            uid = ids.record_uid(e, doc, ordinal)
-            t = conn.execute(text("SELECT instant_utc FROM pol_activity_event WHERE extraction_id = :e AND "
-                                  "record_uid = :u ORDER BY instant_utc LIMIT 1"), {"e": e, "u": uid}).scalar()
-            if t is None or not (start <= t < end):
-                continue
-            towers.setdefault(e, []).append(((k["radio"], k["mcc"], k["mnc"], k["lac"], k["cid"]), t, uid))
+def _tower_obs(conn, extraction_ids, start, end):
+    """Every resolved tower sighting in [start, end): ``[(key, instant, record uid, flags)]``. A tower with no MCC takes
+    the SIM's (flag ``mcc_inferred``, places.resolve_tower_key); one still incomplete is not compared."""
+    from services.pattern_of_life.places import tower_rows
     out = []
-    w = timedelta(seconds=p["cell_window_s"])
-    for x_e in ea:
-        for y_e in eb:
-            for kx, tx, ux in towers.get(x_e, ()):
-                for ky, ty, uy in towers.get(y_e, ()):
-                    if kx == ky and abs(tx - ty) <= w:
-                        out.append(({"ref": "rec:%s" % ux, "start": tx}, {"ref": "rec:%s" % uy, "start": ty},
-                                    {"verdict": "compatible", "distance_m": None, "radii_sum_m": None,
-                                     "dt_s": abs((tx - ty).total_seconds()), "assumed": False, "tight": False,
-                                     "flags": ["broad"], "basis": "shared_cell"}))
+    for e in extraction_ids:
+        for uid, k, flags, reason, ev in tower_rows(conn, e):
+            if reason is not None or ev is None or not (start <= ev.instant_utc < end):
+                continue
+            out.append(((k["radio"], k["mcc"], k["mnc"], k["lac"], k["cid"]), ev.instant_utc, uid, flags))
+    return out
+
+
+def cell_matches(A, B, window_s):
+    """Pairs of tower sightings with the same full key within ``window_s``: a keyed join, then a sorted range per key
+    (O(n_a log n_b + pairs); it replaced a nested loop over both phones, cb-coloc-rest E). ``A``, ``B``:
+    ``[(key, instant, uid, flags)]``; returns ``[(a, b)]`` in A's order, then B's time order."""
+    import bisect
+    w = timedelta(seconds=window_s)
+    by_key = {}
+    for y in B:
+        by_key.setdefault(y[0], []).append(y)
+    for ys in by_key.values():
+        ys.sort(key=lambda y: (y[1], str(y[2])))
+    times = {k: [y[1] for y in ys] for k, ys in by_key.items()}
+    out = []
+    for x in A:
+        ys = by_key.get(x[0])
+        if not ys:
+            continue
+        ts = times[x[0]]
+        for y in ys[bisect.bisect_left(ts, x[1] - w):bisect.bisect_right(ts, x[1] + w)]:
+            out.append((x, y))
+    return out
+
+
+def _cell_pairs(conn, ea, eb, start, end, p):
+    out = []
+    for (kx, tx, ux, fx), (ky, ty, uy, fy) in cell_matches(_tower_obs(conn, ea, start, end),
+                                                        _tower_obs(conn, eb, start, end), p["cell_window_s"]):
+        flags = ["broad"] + (["mcc_inferred"] if "mcc_inferred" in fx or "mcc_inferred" in fy else [])
+        out.append(({"ref": "rec:%s" % ux, "start": tx}, {"ref": "rec:%s" % uy, "start": ty},
+                    {"verdict": "compatible", "distance_m": None, "radii_sum_m": None,
+                     "dt_s": abs((tx - ty).total_seconds()), "assumed": False, "tight": False,
+                     "flags": flags, "basis": "shared_cell"}))
+    return out
+
+
+def bluetooth_peers(conn, extraction_id, start, end):
+    """The phone's Bluetooth peer records with a time in [start, end): ``[(record uid, instant, (subkind, value),
+    nature)]``. A peer's written name that is an address is compared as an address, otherwise as a name."""
+    from services.phone import identifiers
+    from services.phone_analysis import fields as FV
+    recs = {uid: v for uid, v in FV.field_values(conn, extraction_id, ("DeviceConnectivity",),
+                                                 ("DeviceName", "ConnectivityMethod", "ConnectivityNature")).items()
+            if "Bluetooth" in v["values"].get("ConnectivityMethod", ()) and v["values"].get("DeviceName")}
+    if not recs:
+        return []
+    times = {str(r[0]): r[1] for r in conn.execute(text(
+        "SELECT DISTINCT ON (record_uid) record_uid, instant_utc FROM pol_activity_event WHERE extraction_id = :e AND "
+        "record_type = 'DeviceConnectivity' AND record_uid = ANY(CAST(:u AS uuid[])) ORDER BY record_uid, "
+        "instant_utc"), {"e": str(extraction_id), "u": list(recs)})}
+    out = []
+    for uid, v in recs.items():
+        t = times.get(uid)
+        key = identifiers.bluetooth_peer(v["values"]["DeviceName"][0])
+        if t is None or key is None or not (start <= t < end):
+            continue
+        out.append((uid, t, key, (v["values"].get("ConnectivityNature") or [None])[0]))
+    return sorted(out, key=lambda x: (x[1], x[0]))
+
+
+def _bt_item(peer, ident, p):
+    uid, t, (sub, _v), nature = peer
+    by_name = sub == "bluetooth_name"
+    flags = (["name_match"] if by_name else []) + (["nearby_not_connected"] if nature == "Detected" else [])
+    flags += ["nature:%s" % nature.lower()] if nature else []
+    r = p["bluetooth_radius_m"]
+    return {"verdict": "compatible", "distance_m": None, "radii_sum_m": r, "dt_s": 0.0, "assumed": False,
+            # a name is user-settable and not unique, so a match by name alone is never tight
+            "tight": (not by_name) and r <= p["tight_radius_m"], "flags": flags, "basis": "bluetooth"}
+
+
+def _bluetooth_pairs(conn, ea, eb, start, end, p):
+    """One phone's Bluetooth peer record whose name or address is the other phone's own Bluetooth identity
+    (identities.own_bluetooth): ``compatible`` at that time, radius 30 m (04 8.4). Both directions are read."""
+    from services.phone.identities import own_bluetooth
+    own = own_bluetooth(conn, list(ea) + list(eb))
+    out = []
+    for side_from, side_to, a_is_peer in ((ea, eb, True), (eb, ea, False)):
+        targets = {}
+        for y in side_to:
+            for k, cite in own.get(str(y), {}).items():
+                targets.setdefault(k, []).append(cite)
+        if not targets:
+            continue
+        for x in side_from:
+            for peer in bluetooth_peers(conn, x, start, end):
+                for cite in targets.get(peer[2], ()):
+                    rec = {"ref": "rec:%s" % peer[0], "start": peer[1]}
+                    ident = {"ref": "ident:%s" % cite["sighting_uid"], "start": peer[1]}
+                    a, b = (rec, ident) if a_is_peer else (ident, rec)
+                    out.append((a, b, _bt_item(peer, cite, p)))
     return out
 
 
@@ -206,6 +287,7 @@ def compute(conn, case_id, ea, eb, start, end, params, run_id=None) -> tuple:
     pairs = sweep_pairs(A, B, p)
     pairs += _bssid_pairs(conn, case_id, set(ea), set(eb), start, end, p)
     pairs += _cell_pairs(conn, ea, eb, start, end, p)
+    pairs += _bluetooth_pairs(conn, ea, eb, start, end, p)
     items = []
     for n, (a, b, v) in enumerate(sorted(pairs, key=lambda x: (min(x[0]["start"], x[1]["start"]),
                                                                str(x[0].get("id") or x[0].get("ref")),
@@ -214,10 +296,14 @@ def compute(conn, case_id, ea, eb, start, end, params, run_id=None) -> tuple:
                       "br": b.get("ref"), "at_utc": max(a["start"], b["start"]), "verdict": v["verdict"],
                       "d": v["distance_m"], "r": v["radii_sum_m"], "dt": v["dt_s"], "basis": v["basis"],
                       "tight": v["tight"], "assumed": v["assumed"], "flags": v["flags"]})
-    counts = {"pairs": len(items), "observations_a": len(A), "observations_b": len(B)}
+    counts = {"pairs": len(items), "observations_a": len(A), "observations_b": len(B),
+              "analysis_version": ANALYSIS_VERSION}
     for it in items:
         counts[it["verdict"]] = counts.get(it["verdict"], 0) + 1
         counts["basis:" + it["basis"]] = counts.get("basis:" + it["basis"], 0) + 1
+        for f in it["flags"]:
+            if f in COUNTED_FLAGS:
+                counts["flag:" + f] = counts.get("flag:" + f, 0) + 1
     return items, counts, episodes(items, p["episode_gap_s"])
 
 

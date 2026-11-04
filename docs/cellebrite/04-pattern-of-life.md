@@ -1033,6 +1033,16 @@ plausible ground speed, about 144 km/h):
   broad, radius from reference or unknown.
 - Bluetooth: one phone detecting a device whose name or address matches the other phone's own Bluetooth
   identity (identity spec): `compatible`, basis `bluetooth`, radius 30 m. Feasibility measured in M10.
+  As built (decision 46): the own identity is the report header's Bluetooth address (`Bluetooth MAC Address`,
+  `DeviceInfoBluetoothDeviceAddress`) and name (`DeviceInfoBluetoothDeviceName`; on an iPhone `DeviceInfoDeviceName`),
+  stored as header identity sightings that cite the item. A peer record is a `DeviceConnectivity` record on
+  `Bluetooth` with a time; its written name is compared as an address when it has an address's shape, otherwise as
+  a name. A match by name only carries `name_match` and is never tight (names are user-settable); a `Detected`
+  record carries `nearby_not_connected` ("nearby, not connected", 05 9.8 test 2). The pair is the peer record and
+  the other phone's header sighting, at the record's time.
+- A tower with no MCC takes the extraction's SIM MCC (the first three digits of each IMSI in the header and in
+  SIMData) when exactly one is known, flagged `mcc_inferred` in placement, in `shared_cell` items and on unplaced
+  towers; with none or several it stays unresolved with reason `mcc_unknown_no_sim` or `mcc_unknown_several_sims`.
 
 **Episodes.** Consecutive `compatible` pairs for the same subject pair, separated by less than 30 min,
 merge into an episode (start, end, tight or broad, observation counts). Consecutive `separated` pairs merge
@@ -1632,6 +1642,7 @@ Each is a decision with its reasoning and what would reverse it.
     device. Nothing is capped: every pair is stored as an item and paged at 1,000 with the total on each page; a
     run estimated above 2,000,000 pairs answers 202 and runs in the background. *Reverse if* Neil asks for group
     runs (then every pair of subjects, each its own run), or 02 links Bluetooth addresses (then a seen-peer basis).
+    **Reversed (decision 46): 02 links Bluetooth addresses; the seen-peer basis `bluetooth` is built.**
 
 28. **Money lane and manual places as built (04-U10; `services/pattern_of_life/money.py`, migration
     `20261102_pol_money`, `GET .../money`, `POST .../places/manual`, `POST .../places/manual/remove`,
@@ -1788,6 +1799,28 @@ Each is a decision with its reasoning and what would reverse it.
     The package's file has no population, and holding the list in each worker measured 98 MB and 16 s to load on this
     server; the index answers in 1 to 6 ms and holds nothing in memory. Reverse if the index cannot be kept on a
     deployment (then the package copy, without population).
+
+46. **Bluetooth and SIM-inferred cells as co-location evidence (cb-coloc-rest; `services/phone/identities.py`,
+    `services/phone/identifiers.py`, `services/pattern_of_life/places.py`, `colocation.py`, migration
+    `20261104_pol_mcc_inferred`).** Measured first (`measurements/coloc-rest-a.jsonl`, counts only, scripts
+    `measurements/scripts/coloc_*.py`): on the 14 server reports, 10 state their own Bluetooth address or name in the
+    header; Bluetooth peer records are on 8 (P14 1,628, P13 1,338, P04 1,630, P11 1,228, P03 1,215, the rest 5 or
+    fewer), mostly `Detected`; no peer names another phone of its case by address; one pair does by name (P13
+    names P12 4 times, 2 with a time). The live database holds 4 real phones, none with Bluetooth peer or
+    CellTower records. Towers with no MCC: P03 8, P04 9, P11 10, P13 6 take the SIM's (each SIM states one), P14's
+    17 stay unresolved (no SIM data); no pair shares a full key within 15 minutes before or after.
+    Choices: (a) the own identity is stored as identities of kind `other`, subkind `bluetooth_address` or
+    `bluetooth_name`, context `header`, `field_path` `metadata:<item>`, on each generation (versioned with the
+    interpretation; the stage carries `stage_version` 2, which re-reads every phone once); never an owner candidate.
+    (b) `DeviceInfoDeviceName` counts as the Bluetooth name on an iPhone, where the device name is what Bluetooth
+    shows. (c) Every nature (`Connected`, `Paired`, `Disconnected`, `Detected`) is evidence at the record's time,
+    with the nature as a flag; untimed `RecognizedDevice` records are not compared. (d) The placeholder addresses
+    `02:00:00:00:00:00`, all zeros and all ones are not identities. (e) The cell comparison is a keyed join with a
+    sorted range per key (same output; 860 towers a side, best of three 8.4 s before, 3.4 s after, load average
+    42 to 52). (f) A run's counts carry `analysis_version` 2 and counts of `mcc_inferred`, `name_match` and
+    `nearby_not_connected`. *Reverse if* a report states a peer's address in its own field (then compare that field,
+    not the name), a case shows SIM country codes differing from the towers' own on the same phone (then stop
+    inferring), or `Paired` records prove to carry the pairing date rather than a sighting (then exclude them).
 
 ## 15. Not yet established
 

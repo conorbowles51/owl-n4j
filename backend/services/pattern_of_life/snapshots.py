@@ -100,12 +100,15 @@ def _result(conn, case_id, kind, exts, labels, a, b, zone, zname, parameters):
         records = _event_records(conn, exts, a, b, " AND (%s)" % " OR ".join(parts), {"s": allowed}) if parts else []
         return records, counts
     rows = conn.execute(text(
-        "SELECT source_kind, record_uid::text FROM pol_place_observation WHERE extraction_id = ANY(CAST(:e AS uuid[])) "
-        "AND start_utc < :b AND end_utc >= :a"), {"e": [str(x) for x in exts], "a": a, "b": b}).fetchall()
+        "SELECT source_kind, record_uid::text, attribution_flags FROM pol_place_observation WHERE extraction_id = "
+        "ANY(CAST(:e AS uuid[])) AND start_utc < :b AND end_utc >= :a"),
+        {"e": [str(x) for x in exts], "a": a, "b": b}).fetchall()
     counts = {"observations": len(rows)}
-    for sk, _ in rows:
+    for sk, _, flags in rows:
         counts["source_" + sk] = counts.get("source_" + sk, 0) + 1
-    return sorted({r for _, r in rows if r}), counts
+        if "mcc_inferred" in (flags or ()):  # a tower placed with the SIM's country code (cb-coloc-rest D)
+            counts["mcc_inferred"] = counts.get("mcc_inferred", 0) + 1
+    return sorted({r for _, r, _ in rows if r}), counts
 
 
 def freeze(db, case_id, *, kind, subject, extraction_ids, labels, start: datetime, end: datetime, zone, zname,

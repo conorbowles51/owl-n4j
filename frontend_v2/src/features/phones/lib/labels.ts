@@ -18,6 +18,9 @@ export function identifierText(id: ParticipantLabelData["identifier"]): string |
     const app = APP_WORDS[(id.subkind ?? "").split("_")[0].toLowerCase()]
     return app ? `${app} id ${id.display}` : `app id ${id.display}`
   }
+  // the phone's own Bluetooth identity from the report header (cb-coloc-rest B)
+  if (id.subkind === "bluetooth_address") return `Bluetooth address ${id.display}`
+  if (id.subkind === "bluetooth_name") return `Bluetooth name ${id.display}`
   return id.display
 }
 
