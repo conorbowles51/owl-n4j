@@ -243,12 +243,32 @@ class Interrupted(Exception):
     """The worker is stopping (a deploy): the run goes back to the queue and runs again from the start."""
 
 
+INPUTS_CHANGED_WORDS = ("The phones or records changed after this analysis was asked for. It was queued again on the "
+                        "current material.")
+GRAPH_UNREAD_WORDS = ("The case graph could not be read when this analysis was asked for or when it started, so its "
+                      "inputs could not be confirmed as the same. It was queued again.")
+
+
+def inputs_changed_words(asked, now) -> str:
+    """Why a run's inputs differ from those recorded at the request. When the only difference is the case graph and
+    one of the two reads could not reach it, the graph is named, not a change to the phones or records."""
+    asked = asked if isinstance(asked, dict) else {}
+    now = json.loads(canonical(now or {}))  # compared as stored (jsonb)
+    differ = {k for k in set(asked) | set(now) if asked.get(k) != now.get(k)}
+    graph = [asked.get("case_graph"), now.get("case_graph")]
+    from services.phone_analysis.vocabulary import GRAPH_UNREADABLE_PREFIX
+    if differ == {"case_graph"} and any(isinstance(g, str) and g.startswith(GRAPH_UNREADABLE_PREFIX) for g in graph):
+        return GRAPH_UNREAD_WORDS
+    return INPUTS_CHANGED_WORDS
+
+
 def execute(engine, run_id, stop=None) -> dict:
     """Run one queued run to its end: results written in one transaction with the run's completion; the previous
     completed run of the same approach in the case becomes ``superseded`` and stays readable."""
     with engine.begin() as c:
         row = c.execute(text("UPDATE phone_analysis_runs SET status = 'running', started_at = now() WHERE id = :i AND "
-                             "status = 'queued' RETURNING case_id, approach, approach_version, parameters, input_revision, requested_by"),
+                             "status = 'queued' RETURNING case_id, approach, approach_version, parameters, input_manifest, "
+                             "input_revision, requested_by"),
                         {"i": run_id}).first()
     if row is None:
         return {"run_id": str(run_id), "status": "not_queued"}
@@ -257,10 +277,10 @@ def execute(engine, run_id, stop=None) -> dict:
     # the inputs recorded at the request must be the inputs read: when a phone changed in between, this run is
     # closed with the reason and the same request is queued against the new inputs
     with engine.begin() as c:
-        if sha256(input_manifest(c, case_id, module)) != row.input_revision:
+        current = input_manifest(c, case_id, module)
+        if sha256(current) != row.input_revision:
             c.execute(text("UPDATE phone_analysis_runs SET status = 'failed', finished_at = now(), error = :e WHERE "
-                           "id = :i"), {"i": run_id, "e": "The phones or records changed after this analysis was "
-                                                          "asked for. It was queued again on the current material."})
+                           "id = :i"), {"i": run_id, "e": inputs_changed_words(row.input_manifest, current)})
             again, _ = request_run(c, case_id, row.approach, dict(row.parameters), row.requested_by)
         else:
             again = None

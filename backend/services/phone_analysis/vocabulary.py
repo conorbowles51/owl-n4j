@@ -169,6 +169,11 @@ def _graph_rows(case_id) -> list:
     return (rows[0].get("rows") if rows else None) or []
 
 
+GRAPH_UNREADABLE_NOTE = "Loupe case entities and the case's places (the case graph could not be read)"
+# an input revision of an unreadable graph starts with this, so the run's input check can name the graph as the cause
+GRAPH_UNREADABLE_PREFIX = "unreadable:"
+
+
 def _read_graph(case_id) -> tuple:
     """``(rows, note)``: the case's graph entities, or none and the reason when the graph could not be read; a list
     cut at ``GRAPH_LIMIT`` keeps the first rows and says so."""
@@ -177,7 +182,7 @@ def _read_graph(case_id) -> tuple:
         rows = _graph_rows(case_id)
     except Exception as exc:  # noqa: BLE001 - an unreadable graph leaves its kinds out, stated on every result
         logging.getLogger(__name__).warning("case graph not read for the vocabulary: %s", type(exc).__name__)
-        return [], "Loupe case entities and the case's places (the case graph could not be read)"
+        return [], GRAPH_UNREADABLE_NOTE
     if len(rows) > GRAPH_LIMIT:
         return rows[:GRAPH_LIMIT], ("Loupe case entities and places beyond the first %d graph entities"
                                     % GRAPH_LIMIT)
@@ -190,8 +195,9 @@ def graph_revision(case_id) -> str:
     import hashlib
     import json
     rows, note = _read_graph(str(case_id))
-    return hashlib.sha256(json.dumps([sorted(json.dumps(r, sort_keys=True, default=str) for r in rows), note])
-                          .encode()).hexdigest()
+    digest = hashlib.sha256(json.dumps([sorted(json.dumps(r, sort_keys=True, default=str) for r in rows), note])
+                            .encode()).hexdigest()
+    return GRAPH_UNREADABLE_PREFIX + digest if note == GRAPH_UNREADABLE_NOTE else digest
 
 
 def _place_words(value) -> list:

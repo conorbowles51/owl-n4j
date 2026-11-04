@@ -334,3 +334,46 @@ def test_case_entities_amounts_and_places_reach_typed_words_and_intent(engine, m
     assert counts2["vocabulary_not_included"] and all(
         any(d["code"] == "vocabulary_partial" and "could not be read" in d["detail"] for d in r["directions"]["undercuts"])
         for r in res2)
+
+
+# ---- a graph read that fails on one side of the input check names the graph, not the phones (followups 2026-11-04) -
+
+def test_an_unreadable_graph_has_its_own_revision_and_a_readable_graph_keeps_its_old_one(monkeypatch):
+    import hashlib
+    rows = [["Person", "Brannock Ostravel", ["Branny"], []]]
+    monkeypatch.setattr(V, "_graph_rows", lambda case_id: rows)
+    readable = V.graph_revision("c1")
+    # unchanged for a readable graph, so runs already recorded keep their input revision
+    assert readable == hashlib.sha256(json.dumps([sorted(json.dumps(r, sort_keys=True, default=str) for r in rows),
+                                                  None]).encode()).hexdigest()
+    monkeypatch.setattr(V, "_graph_rows", lambda case_id: (_ for _ in ()).throw(TimeoutError("10 s")))
+    unreadable = V.graph_revision("c1")
+    assert unreadable.startswith(V.GRAPH_UNREADABLE_PREFIX) and unreadable != readable
+
+
+def test_the_input_check_names_the_graph_when_only_the_graph_could_not_be_read():
+    from services.phone_analysis import framework as F
+    asked = {"phones": {"e1": "r1"}, "ledger": "l1", "case_graph": "abc"}
+    unread = dict(asked, case_graph=V.GRAPH_UNREADABLE_PREFIX + "def")
+    assert F.inputs_changed_words(asked, unread) == F.GRAPH_UNREAD_WORDS
+    assert F.inputs_changed_words(unread, asked) == F.GRAPH_UNREAD_WORDS
+    assert "case graph could not be read" in F.GRAPH_UNREAD_WORDS and "phones or records" not in F.GRAPH_UNREAD_WORDS
+    # a real change still reads as a change: a phone changed too, or the graph itself changed while readable
+    assert F.inputs_changed_words(asked, dict(unread, phones={"e1": "r2"})) == F.INPUTS_CHANGED_WORDS
+    assert F.inputs_changed_words(asked, dict(asked, case_graph="xyz")) == F.INPUTS_CHANGED_WORDS
+
+
+@needs_template
+def test_a_run_whose_graph_read_fails_at_the_check_is_queued_again_with_the_graph_named(engine, monkeypatch):
+    from services.phone_analysis import framework as F
+    monkeypatch.setitem(F.APPROACHES, T.CODE, T)
+    monkeypatch.setattr(V, "_graph_rows", lambda case_id: [["Person", "Brannock Ostravel", [], []]])
+    with engine.begin() as c:
+        case = make_case(c)
+        phone(c, case, contacts={}, events=[])
+        run, _ = F.request_run(c, case, T.CODE, None, "x@x.test")
+    monkeypatch.setattr(V, "_graph_rows", lambda case_id: (_ for _ in ()).throw(TimeoutError("10 s")))
+    out = F.execute(engine, run["id"])
+    assert out["status"] == "inputs_changed" and out["requeued"] != run["id"]
+    with engine.connect() as c:
+        assert F.get_run(c, case, run["id"])["error"] == F.GRAPH_UNREAD_WORDS
