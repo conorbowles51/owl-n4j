@@ -65,7 +65,7 @@ function SourceView({ caseId, recordUid, source }: { caseId: string; recordUid: 
       />
     )
   }
-  return <SourceBody data={q.data} browse={browse} onBrowse={(t, p) => { setBrowse(t); setPage(p) }} busy={q.isFetching} />
+  return <SourceBody data={q.data} browse={browse} onBrowse={(t, p) => { setStartedAt(performance.now()); setBrowse(t); setPage(p) }} busy={q.isFetching} />
 }
 
 export function SourceBody({ data, browse, onBrowse, busy }: {

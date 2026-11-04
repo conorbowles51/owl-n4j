@@ -1,3 +1,4 @@
+import ts from "typescript"
 import { describe, expect, it, vi } from "vitest"
 
 // Importing a module must build no zod schema of its own accord: every module-level schema is declared with
@@ -45,7 +46,7 @@ const sources = import.meta.glob<string>(["/src/**/*.{ts,tsx}", "!/src/**/*.test
 })
 const modules = import.meta.glob(["/src/**/*.{ts,tsx}", "!/src/**/*.test.{ts,tsx}", "!/src/**/*.stories.tsx", "!/src/test/**"])
 const zodModules = Object.keys(sources)
-  .filter((file) => /^import \{[^}]*\bz\b[^}]*\} from ["']zod["']/m.test(sources[file]))
+  .filter((file) => /^import (?!type\b)[^;]*from ["']zod["']/m.test(sources[file]))
   .sort()
 
 describe("module-level zod schemas", () => {
@@ -64,5 +65,56 @@ describe("module-level zod schemas", () => {
       zodCalls.armed = false
     }
     expect([...new Set(zodCalls.calls)]).toEqual([])
+  })
+})
+
+// What the import check above cannot see: a module-level line that derives a schema from a lazy one or reads it
+// (`const B = A.extend(...)`, `A.shape.x`, `A.parse(...)` outside any function) builds it while the page's code loads
+// without calling a z factory. Read from the source: any module-level use of a lazySchema name or of `z`, outside
+// function bodies and type positions, is refused. Test fixtures (`__fixtures__`) are code for tests only.
+const lazyNames = new Set(
+  Object.values(sources).flatMap((text) => [...text.matchAll(/^(?:export )?const (\w+)(?:: [^=]+)? = lazySchema\(/gm)].map((m) => m[1])),
+)
+
+function moduleLevelUses(file: string, text: string): string[] {
+  const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, file.endsWith("x") ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+  const found: string[] = []
+  // the lazy schemas this file can see: its own and those it imports (a name like `document` is lazy in one file
+  // and the browser's global in another)
+  const visible = new Set<string>([...text.matchAll(/^(?:export )?const (\w+)(?:: [^=]+)? = lazySchema\(/gm)].map((m) => m[1]))
+  for (const st of sf.statements)
+    if (ts.isImportDeclaration(st) && st.importClause?.namedBindings && ts.isNamedImports(st.importClause.namedBindings))
+      for (const el of st.importClause.namedBindings.elements) if (lazyNames.has((el.propertyName ?? el.name).text)) visible.add(el.name.text)
+  const visit = (node: ts.Node) => {
+    if (ts.isFunctionLike(node) || ts.isClassLike(node) || ts.isTypeNode(node) || ts.isImportDeclaration(node)) return
+    if ((ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) && ts.isIdentifier(node.expression)) {
+      const name = node.expression.text
+      if (name === "z" || visible.has(name)) {
+        found.push(`${file}:${sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1} ${node.getText(sf).slice(0, 60)}`)
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+  return found
+}
+
+describe("module-level code over lazy schemas", () => {
+  it("knows the lazy schemas", () => {
+    expect(lazyNames.size).toBeGreaterThan(200)
+  })
+
+  it("never reads, derives from or builds a schema outside a function", () => {
+    const uses = Object.entries(sources)
+      .filter(([file]) => !file.includes("/__fixtures__/") && file !== "/src/lib/lazy-schema.ts")
+      .flatMap(([file, text]) => moduleLevelUses(file, text))
+    expect(uses).toEqual([])
+  })
+
+  it("would refuse a derived schema at module level", () => {
+    expect(moduleLevelUses("/x.ts", "const A = lazySchema(() => z.object({}))\nexport const B = A.extend({})")).toHaveLength(1)
+    expect(moduleLevelUses("/x.ts", 'import { HitSchema } from "@/features/search/api"\nexport const B = HitSchema.array()')).toHaveLength(1)
+    expect(moduleLevelUses("/x.ts", "export const C = z.string()")).toHaveLength(1)
+    expect(moduleLevelUses("/x.ts", "export const D = lazySchema(() => z.string())\nexport type T = z.infer<typeof D>")).toEqual([])
   })
 })

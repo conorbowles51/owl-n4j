@@ -104,8 +104,8 @@ export function StreamList({
   const first = virtualItems[0]?.index ?? 0
   const last = virtualItems[virtualItems.length - 1]?.index ?? 0
 
-  // Asked again when the visible range, the list or its loaded rows change, not on every render of the page (the
-  // stream object is new on every render; what ensure asks for depends only on these).
+  // Asked again when the visible range, the list or its loaded rows change, not on every render of the page (what
+  // ensure asks for depends only on these).
   const { ensure, count: streamCount, rowsVersion } = stream
   useEffect(() => {
     if (streamCount) ensure(first, last)
@@ -294,8 +294,8 @@ export function StreamList({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per request (seq)
   }, [jumpTo?.seq, stream.segments])
 
-  // Reported only when the selection changes: the stream object is new on every render, and a parent that stores
-  // the rows (Conversations) would otherwise render again forever.
+  // Reported only when the selection changes: the stream object changes whenever its rows change, and a parent that
+  // stores the rows (Conversations) would otherwise render again forever.
   const reported = useRef<string | null>(null)
   useEffect(() => {
     if (!onSelectionChange) return

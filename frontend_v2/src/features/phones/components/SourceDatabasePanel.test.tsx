@@ -107,4 +107,38 @@ describe("Source database panel after the press", () => {
       vi.useRealTimers()
     }
   })
+
+  it("counts a table opened from the view from its own press: no panel before 300 ms, not the first press's time", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"] })
+    try {
+      const data = {
+        record_uid: "r-1", refused: null, read_by: "x",
+        source: { mechanism: "extra_info", table_name: "messages", offset: null, state: "verified", file: { original_path: "/data/synthetic/app.db", sha256: "ab" } },
+        view: {
+          open_mode: "read-only, immutable",
+          tables: [{ name: "messages", type: "table", schema: "CREATE TABLE messages (...)", row_count: 3, count_note: null }],
+          named_row: null,
+          copy: { sha256: "c0ffee", size: 4096, siblings: [] },
+          opened_by: { module: "app.phone.source_db", version: "1", sqlite: "3.46.1" },
+        },
+      }
+      api.getSourceDatabase.mockReset().mockResolvedValueOnce(data).mockReturnValue(new Promise(() => {}))
+      show(withRow({ available: true, row_named: false, reason: "The report does not say which row this record came from.", source_index: 0 }))
+      fireEvent.click(screen.getByRole("button", { name: "Open source database" }))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000)
+      })
+      fireEvent.click(screen.getByRole("button", { name: "messages" }))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100)
+      })
+      expect(screen.queryByRole("status")).not.toBeInTheDocument()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(300)
+      })
+      expect(screen.getByRole("status")).toHaveTextContent("Copying the app database and opening the copy read-only")
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

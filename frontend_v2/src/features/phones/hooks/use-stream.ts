@@ -356,24 +356,29 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
     [index, windowSize, loadIndex, checkSnapshot],
   )
 
-  return {
-    status,
-    error,
-    index,
-    segments,
-    count,
-    total: index?.counts.events ?? 0,
-    notice,
-    item,
-    rowsVersion,
-    ensure,
-    retry,
-    reload: () => void loadIndex(false),
-    positionOf,
-    allRows,
-    checkSnapshot,
-    setFocused: (uid) => {
-      focused.current = uid
-    },
-  }
+  // One object per state of the list, not one per render: a consumer keyed on the stream (a memo or an effect over
+  // every row) runs again only when the list or its loaded rows change (rowsVersion), not on every page render.
+  return useMemo(
+    () => ({
+      status,
+      error,
+      index,
+      segments,
+      count,
+      total: index?.counts.events ?? 0,
+      notice,
+      item,
+      rowsVersion,
+      ensure,
+      retry,
+      reload: () => void loadIndex(false),
+      positionOf,
+      allRows,
+      checkSnapshot,
+      setFocused: (uid: string | null) => {
+        focused.current = uid
+      },
+    }),
+    [status, error, index, segments, count, notice, item, rowsVersion, ensure, retry, loadIndex, positionOf, allRows, checkSnapshot],
+  )
 }
