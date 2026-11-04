@@ -362,7 +362,7 @@ export function GraphToolbar({
           <>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon-sm" onClick={onOpenSimilarEntities}>
+                <Button variant="ghost" size="icon-sm" aria-label="Find Similar Entities" onClick={onOpenSimilarEntities}>
                   <Users className="size-3.5" />
                 </Button>
               </TooltipTrigger>
