@@ -385,6 +385,7 @@ def make_cross_case_tools(context) -> list:
         possible = found["possible"]
         for m in possible:
             m["case_name"] = titles.get(m["case_id"])
+            context.cases_read.setdefault(m["case_id"], titles.get(m["case_id"]))
         if possible:
             data["possible"] = possible[:MAX_MATCHES]
             data["possible_total"] = len(possible)

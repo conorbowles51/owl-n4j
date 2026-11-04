@@ -1479,7 +1479,8 @@ def link_transactions(
 #: The search bound kept for cost: pairs further apart than this are counted, not listed.  Measured on BNB2
 #: (2026-11-04): 23,380 equal-amount cross-account pairs within it, 34,721 beyond it.
 GRADED_SEARCH_DAYS = 365
-#: At most this many pairs are listed for one payment, strongest first; the number beyond is counted.
+#: Each payment keeps at least its this-many strongest pairs; a pair is left out only when both of its payments
+#: already have this many listed, and the number left out is counted.
 GRADED_PER_ROW = 50
 GRADED_RULE = (
     "Every pair of payments in different accounts with the same currency and the same amount to the cent, one money "
@@ -1528,6 +1529,7 @@ def graded_transfer_pairs(
     search_days: int = GRADED_SEARCH_DAYS,
     per_row: Optional[int] = GRADED_PER_ROW,
     same_holder: Optional[Callable[[LinkObservation, LinkObservation], bool]] = None,
+    only: Optional[uuid.UUID] = None,
 ) -> dict:
     """Every possible transfer pair, graded, strongest first, with what the search bound left out.
 
@@ -1535,6 +1537,8 @@ def graded_transfer_pairs(
     possible transfer when :func:`classify_relation` calls them ``counterparty`` (different accounts, opposite
     directions) with the same currency and amount; the amount is equal by definition of a transfer's two legs.
     ``same_holder``: whether the two accounts share a holder (substantiation), when the caller knows the holders.
+    ``only``: grade and list only the pairs that contain this payment; partners are still counted over every row, so
+    each listed pair's strength is the same as in the full list.
 
     Returns ``{pairs, left_out: {beyond_days, beyond_per_row}, by_level, rule}``.  Each pair: ``debit_id``,
     ``credit_id``, ``gap_days``, ``compared_date_field``, ``like_for_like``, ``level``, ``fits``,
@@ -1572,6 +1576,8 @@ def graded_transfer_pairs(
         return seen_names[key]
 
     same_holders: dict = {}
+    if only is not None:
+        raw = [x for x in raw if only in (x[0].transaction_id, x[1].transaction_id)]
     for d, c, agreement in raw:
         gap = agreement.gap_days
         date_fit = _graded_date_fit(gap)

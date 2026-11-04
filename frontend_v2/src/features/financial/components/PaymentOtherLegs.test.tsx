@@ -29,3 +29,20 @@ it("loads when opened and lists every possible other leg with its strength, reas
   expect(weak).toHaveTextContent("How well matched: same amount and currency, money out of one account and into another; 20 days apart; no name to compare")
   expect(weak).toHaveTextContent("Against: one line is cash")
 })
+
+it("opens a listed possible other leg", async () => {
+  const body = {
+    transaction_id: "t1", named_from: null,
+    candidates: [
+      { transaction_id: "t3", date: "2024-03-21", direction: "credit", description: "SPEI", holder: "DELTA", institution: "Santander", identifier: "9999", gap_days: 20, level: "weak", is_the_named_leg: false,
+        reasons: { match: ["20 days apart"], substantiation: [], against: [] } },
+    ],
+    by_level: { strong: 0, moderate: 0, weak: 1, faint: 0 }, left_out: { beyond_days: 0, search_days: 365 }, rule: "rule",
+  }
+  vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(body)))
+  const onOpen = vi.fn()
+  render(<QueryClientProvider client={new QueryClient()}><PaymentOtherLegs caseId="c" transactionId="t1" onOpen={onOpen} /></QueryClientProvider>)
+  fireEvent.click(screen.getByRole("button", { name: "Possible other legs of this payment" }))
+  fireEvent.click(await screen.findByRole("button", { name: "Open this payment" }))
+  expect(onOpen).toHaveBeenCalledWith("t3")
+})

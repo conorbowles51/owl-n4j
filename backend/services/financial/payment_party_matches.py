@@ -404,7 +404,7 @@ def other_leg_candidates(session, case_id, transaction_id):
         side = r.get('name')
         from dataclasses import replace
         obs.append(replace(o, counterparty_raw=side or None, holder_name=r.get('holder') or None))
-    graded = graded_transfer_pairs(obs, per_row=None, same_holder=lambda d, c: _related_holders(
+    graded = graded_transfer_pairs(obs, per_row=None, only=UUID(me['id']), same_holder=lambda d, c: _related_holders(
         by_id[str(d.transaction_id)]['holder'], by_id[str(c.transaction_id)]['holder']))
     out = []
     for p in graded['pairs']:

@@ -7,7 +7,9 @@ scale (services.match_strength; set by a stated rule, never by a model) and its 
 exact totals (``total``, ``returned``, ``has_more``, ``next_offset``) and the count per strength:
 
 - ``get_transfer_pairs``: possible transfers between the case's accounts (services.financial.linkage
-  .graded_transfer_pairs over the whole case, as the Transfers workbench grades its scope);
+  .graded_transfer_pairs over the whole case, by the Transfers workbench's rule; a whole case can hold tens of
+  thousands of pairs, so each payment keeps its GRADED_PER_ROW strongest and the number left out is returned and
+  stated in ``left_out_words``; the workbench's scope of at most 500 payments lists every pair);
 - ``get_payment_other_legs``: one payment's possible other legs (payment_party_matches.other_leg_candidates);
 - ``get_identity_suggestions``: phone identity suggestions (services.phone.identity_decisions).
 

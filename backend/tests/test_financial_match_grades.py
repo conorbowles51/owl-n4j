@@ -65,6 +65,17 @@ class GradedTransferPairTests(unittest.TestCase):
         self.assertEqual(alone["level"], "strong")
         self.assertEqual(out["by_level"], {"strong": 0, "moderate": 1, "weak": 1, "faint": 0})
 
+    def test_only_one_payment_keeps_the_strength_of_the_full_list(self):
+        rows = _pair(day_left=5, day_right=6, debit_cp="BLUE RIVER L.L.C.", debit_holder="ACME HOLDINGS LTD",
+                     credit_cp="ACME HOLDINGS LIMITED", credit_holder="BLUE RIVER LLC")
+        rows.append(observation(3, account=300, document=903, direction=CREDIT, day=30))
+        rows.append(observation(4, account=400, document=904, direction=DEBIT, day=31))
+        full = graded_transfer_pairs(rows, per_row=None)["pairs"]
+        me = rows[2].transaction_id
+        mine = graded_transfer_pairs(rows, per_row=None, only=me)["pairs"]
+        self.assertEqual(mine, [p for p in full if str(me) in (p["debit_id"], p["credit_id"])])
+        self.assertEqual(len(mine), 2)
+
     def test_the_search_bound_is_counted_not_hidden(self):
         rows = [observation(1, account=100, document=901, direction=DEBIT, day=1),
                 observation(2, account=200, document=902, direction=CREDIT, day=1, date_field="value_date",

@@ -246,7 +246,7 @@ export function LedgerSourceDialog({
                       </dd>
                     </div>
                   </dl>
-                  <PaymentOtherLegs caseId={caseId} transactionId={data.transaction.key} />
+                  <PaymentOtherLegs caseId={caseId} transactionId={data.transaction.key} onOpen={setReplacement} />
                 </DrawerSection>
                 <DrawerSection title="Category">
                   <dl className="text-sm">
