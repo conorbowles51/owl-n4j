@@ -27,6 +27,7 @@ from itertools import groupby
 from sqlalchemy import text
 
 from services.pattern_of_life import attribution as A
+from services.phone.mappings import rows as R
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +57,9 @@ FAMILY = {
 COMM_TYPES = ("InstantMessage", "Call", "Email", "Voicemail", "ChatActivity")
 
 ALWAYS_FACT_FIELDS = ("Source", "UserMapping")
+# a nested record takes its top-level record's Source, and the fields rows.INHERITED_FROM_ROOT names for its type
+ROOT_FIELDS = frozenset({"Source"}.union(*(set(v) for v in R.INHERITED_FROM_ROOT.values())))
+INHERITED_FROM_ROOT = R.INHERITED_FROM_ROOT
 EXTRA_FACT_FIELDS = {"DeviceEvent": ("EventType", "Value"), "PoweringEvent": ("Event", "Element"),  # power (5.3 step 5)
                      "Location": ("Type", "Category", "Origin")}  # place kind (6.1, 6.2)
 
@@ -248,7 +252,7 @@ def build(conn, extraction_id, mappings=None) -> dict:
         stream_results=True, yield_per=5000), {"e": extraction_id, "g": gen})
     w = generic.Writer(conn, {"pol_activity_event": COLUMNS})
     stats = defaultdict(int)
-    root_cache = {"key": None, "source": None}
+    root_cache = {"key": None, "vals": {}}
     fields_used = defaultdict(set)
     for (doc, ordinal), grp in groupby(rows, key=lambda r: (r.document_index, r.ordinal)):
         grp = list(grp)
@@ -270,9 +274,11 @@ def build(conn, extraction_id, mappings=None) -> dict:
                 root_body = conn.execute(text(
                     "SELECT body FROM phone_records WHERE extraction_id = :e AND document_index = :d AND ordinal = :o"),
                     {"e": extraction_id, "d": doc, "o": first.top_ordinal}).scalar()
-                root_cache.update(key=key, source=_first(_field_values(root_body, {"Source"}).get("Source"))
-                                  if root_body is not None else None)
-            source = root_cache["source"]
+                root_cache.update(key=key, vals=_field_values(root_body, ROOT_FIELDS) if root_body is not None else {})
+            source = _first(root_cache["vals"].get("Source"))
+            for f in INHERITED_FROM_ROOT.get(t, ()):
+                if f in wanted and f not in fvals and root_cache["vals"].get(f):
+                    fvals[f] = list(root_cache["vals"][f])
         else:
             source = _first(fvals.get("Source"))
         if source is not None:
@@ -487,6 +493,7 @@ def _judgement_calls(conn, idx, extraction_id, case_id, gen) -> int:
     from services.phone.mappings import apply, loader
     loader.record_versions(conn, [m for k in idx.kinds.values() for m, *_ in k])  # a version loaded since start-up
     n_calls = 0
+    written = []
     for kind, col in (("activity_strength", "activity_mapping_row"), ("attribution", "attribution_mapping_rows")):
         if not idx.kinds[kind]:
             continue
@@ -532,7 +539,15 @@ def _judgement_calls(conn, idx, extraction_id, case_id, gen) -> int:
                          "st": status, "rb": (d or {}).get("by"), "rbe": (d or {}).get("by_email"),
                          "ra": (d or {}).get("at"), "rr": (d or {}).get("reason"),
                          "adj": (d or {}).get("decision_id"), "g": gen})
+                    written.append(apply.judgement_id(extraction_id, rid, m.id))
                     n_calls += 1
+    # a call this projection wrote earlier (an older mapping version, or a row that no longer touches any event) is
+    # no longer a reading of this phone: it touches no record now, so the readings queue and the phone's open count
+    # (both read records_touched > 0) stop showing it. A call a person decided keeps its count and its decision.
+    conn.execute(text(
+        "UPDATE phone_mapping_judgements SET records_touched = 0, updated_at = now() WHERE extraction_id = :e AND "
+        "rule_part IN ('activity', 'attribution') AND status = 'open' AND records_touched > 0 AND "
+        "NOT (id = ANY(CAST(:ids AS uuid[])))"), {"e": extraction_id, "ids": [str(x) for x in written]})
     return n_calls
 
 

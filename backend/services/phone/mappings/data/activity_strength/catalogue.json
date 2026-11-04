@@ -1,13 +1,13 @@
 {
  "kind": "activity_strength",
  "name": "catalogue",
- "version": 1,
+ "version": 2,
  "status": "applied_unconfirmed",
  "origin": "ai_draft",
  "review": {
   "reviewed_by": null,
   "reviewed_on": null,
-  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row.",
+  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row. Version 2 (04 decision 22): sensor records from a wearable are recorded by another device (3.2), from M9.",
   "registry_requirements": []
  },
  "body": {
@@ -1566,7 +1566,7 @@
     },
     "basis": "field_name",
     "reasoning": "Counted movement needs no interaction.",
-    "would_change": "M9 shows the source is a wearable (then other_device)."
+    "would_change": "A sensor record names a wearable (then sensor-wearable applies)."
    },
    {
     "row_id": "sensor-sample",
@@ -1581,7 +1581,61 @@
     },
     "basis": "field_name",
     "reasoning": "Sampled movement needs no interaction.",
-    "would_change": "M9."
+    "would_change": "A sensor record names a wearable (then sensor-sample-wearable applies)."
+   },
+   {
+    "row_id": "sensor-wearable",
+    "type": "ActivitySensorData",
+    "field": "From",
+    "predicates": [
+     {
+      "field": "DeviceName",
+      "op": "contains_any",
+      "value": [
+       "Watch",
+       "Fitbit",
+       "Garmin",
+       "Oura",
+       "WHOOP"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "other_device",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Counted by a paired wearable, not by the phone.",
+    "would_change": "A report shows a SourceDeviceType value that names the device kind (then that value)."
+   },
+   {
+    "row_id": "sensor-sample-wearable",
+    "type": "ActivitySensorDataSample",
+    "field": "DateSampled",
+    "predicates": [
+     {
+      "field": "DeviceName",
+      "op": "contains_any",
+      "value": [
+       "Watch",
+       "Fitbit",
+       "Garmin",
+       "Oura",
+       "WHOOP"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "other_device",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Sampled by a paired wearable, not by the phone.",
+    "would_change": "A report shows a SourceDeviceType value that names the device kind (then that value)."
    },
    {
     "row_id": "journey",

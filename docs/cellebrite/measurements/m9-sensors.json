@@ -1,0 +1,394 @@
+{
+ "measure": "M9 (04 section 13), pol_m9_sensors.py; counts only",
+ "reports": {
+  "P01": {
+   "seconds": 54.3
+  },
+  "P02": {
+   "seconds": 108.5
+  },
+  "P03": {
+   "seconds": 391.3
+  },
+  "P04": {
+   "seconds": 545.0
+  },
+  "P05": {
+   "seconds": 113.4
+  },
+  "P06": {
+   "seconds": 94.0
+  },
+  "P07": {
+   "seconds": 73.4
+  },
+  "P08": {
+   "seconds": 866.2
+  },
+  "P09": {
+   "seconds": 22.7
+  },
+  "P10": {
+   "seconds": 189.2
+  },
+  "P11": {
+   "m9_devicename_tokens": {
+    "ActivitySensorData | <no DeviceName>": 17082
+   },
+   "m9_fields_present": {
+    "ActivitySensorData.DistanceTraveled": 16904,
+    "ActivitySensorData.FlightsClimbed": 3590,
+    "ActivitySensorData.From": 17082,
+    "ActivitySensorData.MaxSpeed": 4455,
+    "ActivitySensorData.Source": 17082,
+    "ActivitySensorData.To": 17082,
+    "ActivitySensorData.TotalSampleCount": 17082,
+    "ActivitySensorData.UserMapping": 17082,
+    "ActivitySensorDataMeasurement.MeasuredVariableType": 41855,
+    "ActivitySensorDataMeasurement.Source": 41855,
+    "ActivitySensorDataMeasurement.Unit": 41855,
+    "ActivitySensorDataMeasurement.UserMapping": 41855,
+    "ActivitySensorDataSample.DateEnded": 113290,
+    "ActivitySensorDataSample.DateSampled": 113290,
+    "ActivitySensorDataSample.Quantity": 113290,
+    "ActivitySensorDataSample.Source": 113290,
+    "ActivitySensorDataSample.UserMapping": 113290
+   },
+   "m9_measuredvariabletype": {
+    "<other>": 2,
+    "DistanceTraveled": 16904,
+    "FlightsClimbed": 3590,
+    "Speed": 4455,
+    "Steps": 16904
+   },
+   "m9_measurement_devicename_tokens_x_parent_tokens": {
+    "<no DeviceName> | <no DeviceName>": 41855
+   },
+   "m9_measurements_per_record": {
+    "1": 171,
+    "2-9": 16911
+   },
+   "m9_nesting": {
+    "ActivitySensorData.Measurements -> ActivitySensorDataMeasurement": 41855,
+    "ActivitySensorDataMeasurement.Samples -> ActivitySensorDataSample": 113290,
+    "top -> ActivitySensorData": 17082
+   },
+   "m9_record_sourcedevicetype_x_tokens_x_source": {
+    "<absent> | <no DeviceName> | Health": 17082
+   },
+   "m9_record_to_minus_from": {
+    "1000-9999": 17082
+   },
+   "m9_sample_ended_minus_sampled": {
+    "0": 1862,
+    "1": 77,
+    "10-99": 15791,
+    "100-999": 76998,
+    "1000-9999": 6,
+    "10000-99999": 6,
+    "100000-999999": 28,
+    "2-9": 18522
+   },
+   "m9_sample_interval_by_variable": {
+    "DistanceTraveled | 10-99": 40,
+    "DistanceTraveled | 100-999": 29472,
+    "DistanceTraveled | 1000-9999": 16434,
+    "DistanceTraveled | 10000-99999": 1803,
+    "DistanceTraveled | 100000-999999": 12,
+    "DistanceTraveled | 1000000-9999999": 1,
+    "DistanceTraveled | 10000000-99999999": 2,
+    "DistanceTraveled | 2-9": 19,
+    "FlightsClimbed | 10-99": 279,
+    "FlightsClimbed | 100-999": 433,
+    "FlightsClimbed | 1000-9999": 1651,
+    "FlightsClimbed | 10000-99999": 2051,
+    "FlightsClimbed | 100000-999999": 108,
+    "FlightsClimbed | 1000000-9999999": 1,
+    "FlightsClimbed | 10000000-99999999": 2,
+    "FlightsClimbed | 2-9": 35,
+    "Speed | 0": 7,
+    "Speed | 10-99": 3842,
+    "Speed | 100-999": 4439,
+    "Speed | 1000-9999": 3535,
+    "Speed | 10000-99999": 1322,
+    "Speed | 100000-999999": 6,
+    "Speed | 1000000-9999999": 1,
+    "Steps | 10-99": 40,
+    "Steps | 100-999": 29482,
+    "Steps | 1000-9999": 16435,
+    "Steps | 10000-99999": 1803,
+    "Steps | 100000-999999": 12,
+    "Steps | 1000000-9999999": 1,
+    "Steps | 10000000-99999999": 2,
+    "Steps | 2-9": 14
+   },
+   "m9_sample_parent_variable": {
+    "<other>": 2,
+    "DistanceTraveled": 47784,
+    "FlightsClimbed": 4561,
+    "Speed": 13153,
+    "Steps": 47790
+   },
+   "m9_samples_by_root_sourcedevicetype_x_tokens": {
+    "<absent> | <no DeviceName>": 113290
+   },
+   "m9_source": {
+    "ActivitySensorData | Health": 17082,
+    "ActivitySensorDataMeasurement | Health": 41855,
+    "ActivitySensorDataSample | Health": 113290
+   },
+   "m9_sourcedevicetype": {
+    "ActivitySensorData | <absent>": 17082,
+    "ActivitySensorDataMeasurement | <absent>": 41855,
+    "ActivitySensorDataSample | <absent>": 113290
+   },
+   "m9_usermapping": {
+    "ActivitySensorData | Decoding": 17082,
+    "ActivitySensorDataMeasurement | Decoding": 41855,
+    "ActivitySensorDataSample | Decoding": 113290
+   },
+   "seconds": 899.1
+  },
+  "P12": {
+   "seconds": 40.2
+  },
+  "P13": {
+   "m9_devicename_tokens": {
+    "ActivitySensorData | <no DeviceName>": 1,
+    "ActivitySensorData | <no token>": 15310,
+    "ActivitySensorDataMeasurement | <no token>": 41721
+   },
+   "m9_fields_present": {
+    "ActivitySensorData.DeviceName": 15310,
+    "ActivitySensorData.DistanceTraveled": 9201,
+    "ActivitySensorData.FlightsClimbed": 2652,
+    "ActivitySensorData.From": 15311,
+    "ActivitySensorData.MaxHeartrate": 1,
+    "ActivitySensorData.MaxSpeed": 5355,
+    "ActivitySensorData.Source": 15311,
+    "ActivitySensorData.To": 15311,
+    "ActivitySensorData.TotalSampleCount": 15311,
+    "ActivitySensorData.UserMapping": 15311,
+    "ActivitySensorDataMeasurement.DeviceName": 41721,
+    "ActivitySensorDataMeasurement.MeasuredVariableType": 41721,
+    "ActivitySensorDataMeasurement.Source": 41721,
+    "ActivitySensorDataMeasurement.Unit": 41721,
+    "ActivitySensorDataMeasurement.UserMapping": 41721,
+    "ActivitySensorDataSample.DateEnded": 173851,
+    "ActivitySensorDataSample.DateSampled": 173851,
+    "ActivitySensorDataSample.Quantity": 173851,
+    "ActivitySensorDataSample.Source": 173851,
+    "ActivitySensorDataSample.UserMapping": 173851
+   },
+   "m9_measuredvariabletype": {
+    "<other>": 1,
+    "DistanceTraveled": 9201,
+    "EnergyBurned": 15311,
+    "FlightsClimbed": 2652,
+    "Speed": 5355,
+    "Steps": 9201
+   },
+   "m9_measurement_devicename_tokens_x_parent_tokens": {
+    "<no token> | <no DeviceName>": 4,
+    "<no token> | <no token>": 41717
+   },
+   "m9_measurements_per_record": {
+    "1": 6079,
+    "2-9": 9232
+   },
+   "m9_nesting": {
+    "ActivitySensorData.Measurements -> ActivitySensorDataMeasurement": 41721,
+    "ActivitySensorDataMeasurement.Samples -> ActivitySensorDataSample": 173851,
+    "top -> ActivitySensorData": 15311
+   },
+   "m9_record_sourcedevicetype_x_tokens_x_source": {
+    "<absent> | <no DeviceName> | Health": 1,
+    "<absent> | <no token> | Health": 15310
+   },
+   "m9_record_to_minus_from": {
+    "1000-9999": 15311
+   },
+   "m9_sample_ended_minus_sampled": {
+    "0": 171,
+    "1": 184,
+    "10-99": 40348,
+    "100-999": 94172,
+    "1000-9999": 14171,
+    "10000-99999": 2,
+    "2-9": 24803
+   },
+   "m9_sample_interval_by_variable": {
+    "DistanceTraveled | 10-99": 51,
+    "DistanceTraveled | 100-999": 19536,
+    "DistanceTraveled | 1000-9999": 7756,
+    "DistanceTraveled | 10000-99999": 905,
+    "DistanceTraveled | 2-9": 6,
+    "EnergyBurned | 0": 7617,
+    "EnergyBurned | 10-99": 13587,
+    "EnergyBurned | 100-999": 38199,
+    "EnergyBurned | 1000-9999": 13680,
+    "EnergyBurned | 100000-999999": 1,
+    "EnergyBurned | 2-9": 7,
+    "FlightsClimbed | 10-99": 2,
+    "FlightsClimbed | 100-999": 481,
+    "FlightsClimbed | 1000-9999": 1956,
+    "FlightsClimbed | 10000-99999": 1036,
+    "FlightsClimbed | 100000-999999": 62,
+    "HeartRate | 0": 155,
+    "HeartRate | 1": 8,
+    "HeartRate | 2-9": 2,
+    "Speed | 0": 75,
+    "Speed | 10-99": 15196,
+    "Speed | 100-999": 19169,
+    "Speed | 1000-9999": 4105,
+    "Speed | 10000-99999": 862,
+    "Speed | 100000-999999": 35,
+    "Steps | 10-99": 292,
+    "Steps | 100-999": 19835,
+    "Steps | 1000-9999": 7739,
+    "Steps | 10000-99999": 905,
+    "Steps | 2-9": 585
+   },
+   "m9_sample_parent_variable": {
+    "DistanceTraveled": 28255,
+    "EnergyBurned": 73092,
+    "FlightsClimbed": 3538,
+    "HeartRate": 166,
+    "Speed": 39443,
+    "Steps": 29357
+   },
+   "m9_samples_by_root_sourcedevicetype_x_tokens": {
+    "<absent> | <no DeviceName>": 176,
+    "<absent> | <no token>": 173675
+   },
+   "m9_source": {
+    "ActivitySensorData | Health": 15311,
+    "ActivitySensorDataMeasurement | Health": 41721,
+    "ActivitySensorDataSample | Health": 173851
+   },
+   "m9_sourcedevicetype": {
+    "ActivitySensorData | <absent>": 15311,
+    "ActivitySensorDataMeasurement | <absent>": 41721,
+    "ActivitySensorDataSample | <absent>": 173851
+   },
+   "m9_usermapping": {
+    "ActivitySensorData | Decoding": 15311,
+    "ActivitySensorDataMeasurement | Decoding": 41721,
+    "ActivitySensorDataSample | Decoding": 173851
+   },
+   "seconds": 791.7
+  },
+  "P14": {
+   "m9_devicename_tokens": {
+    "ActivitySensorData | <no DeviceName>": 13125
+   },
+   "m9_fields_present": {
+    "ActivitySensorData.DistanceTraveled": 13125,
+    "ActivitySensorData.FlightsClimbed": 13125,
+    "ActivitySensorData.From": 13125,
+    "ActivitySensorData.MaxHeartrate": 13125,
+    "ActivitySensorData.MaxSpeed": 13125,
+    "ActivitySensorData.Source": 13125,
+    "ActivitySensorData.SourceDeviceType": 13125,
+    "ActivitySensorData.To": 13125,
+    "ActivitySensorData.TotalSampleCount": 13125,
+    "ActivitySensorData.UserMapping": 13125,
+    "ActivitySensorDataMeasurement.AverageValue": 33606,
+    "ActivitySensorDataMeasurement.MaximumValue": 33606,
+    "ActivitySensorDataMeasurement.MeasuredVariableType": 33606,
+    "ActivitySensorDataMeasurement.TotalValue": 33606,
+    "ActivitySensorDataMeasurement.Unit": 33606,
+    "ActivitySensorDataSample.DateSampled": 137516,
+    "ActivitySensorDataSample.Quantity": 137516
+   },
+   "m9_measuredvariabletype": {
+    "DistanceTraveled": 6976,
+    "EnergyBurned": 13125,
+    "FlightsClimbed": 1864,
+    "Speed": 4664,
+    "Steps": 6977
+   },
+   "m9_measurement_devicename_tokens_x_parent_tokens": {
+    "<no DeviceName> | <no DeviceName>": 33606
+   },
+   "m9_measurements_per_record": {
+    "1": 6046,
+    "2-9": 7079
+   },
+   "m9_nesting": {
+    "ActivitySensorData.Measurements -> ActivitySensorDataMeasurement": 33606,
+    "ActivitySensorDataMeasurement.Samples -> ActivitySensorDataSample": 137516,
+    "top -> ActivitySensorData": 13125
+   },
+   "m9_record_sourcedevicetype_x_tokens_x_source": {
+    "Unknown | <no DeviceName> | Health": 13125
+   },
+   "m9_record_to_minus_from": {
+    "1000-9999": 13125
+   },
+   "m9_sample_ended_minus_sampled": {
+    "none": 137516
+   },
+   "m9_sample_interval_by_variable": {
+    "DistanceTraveled | 0": 3,
+    "DistanceTraveled | 10-99": 59,
+    "DistanceTraveled | 100-999": 15032,
+    "DistanceTraveled | 1000-9999": 5898,
+    "DistanceTraveled | 10000-99999": 802,
+    "DistanceTraveled | 100000-999999": 6,
+    "DistanceTraveled | 2-9": 7,
+    "EnergyBurned | 0": 8285,
+    "EnergyBurned | 10-99": 13281,
+    "EnergyBurned | 100-999": 38237,
+    "EnergyBurned | 1000-9999": 11407,
+    "EnergyBurned | 10000-99999": 2,
+    "EnergyBurned | 100000-999999": 2,
+    "EnergyBurned | 10000000-99999999": 1,
+    "FlightsClimbed | 100-999": 175,
+    "FlightsClimbed | 1000-9999": 1058,
+    "FlightsClimbed | 10000-99999": 913,
+    "FlightsClimbed | 100000-999999": 50,
+    "FlightsClimbed | 2-9": 1,
+    "Speed | 0": 9,
+    "Speed | 10-99": 6007,
+    "Speed | 100-999": 9253,
+    "Speed | 1000-9999": 4365,
+    "Speed | 10000-99999": 816,
+    "Speed | 100000-999999": 24,
+    "Steps | 0": 3,
+    "Steps | 10-99": 53,
+    "Steps | 100-999": 15042,
+    "Steps | 1000-9999": 5905,
+    "Steps | 10000-99999": 802,
+    "Steps | 100000-999999": 6,
+    "Steps | 2-9": 7
+   },
+   "m9_sample_parent_variable": {
+    "DistanceTraveled": 21808,
+    "EnergyBurned": 71216,
+    "FlightsClimbed": 2198,
+    "Speed": 20475,
+    "Steps": 21819
+   },
+   "m9_samples_by_root_sourcedevicetype_x_tokens": {
+    "Unknown | <no DeviceName>": 137516
+   },
+   "m9_source": {
+    "ActivitySensorData | Health": 13125,
+    "ActivitySensorDataMeasurement | <absent>": 33606,
+    "ActivitySensorDataSample | <absent>": 137516
+   },
+   "m9_sourcedevicetype": {
+    "ActivitySensorData | Unknown": 13125,
+    "ActivitySensorDataMeasurement | <absent>": 33606,
+    "ActivitySensorDataSample | <absent>": 137516
+   },
+   "m9_usermapping": {
+    "ActivitySensorData | Decoding": 13125,
+    "ActivitySensorDataMeasurement | <absent>": 33606,
+    "ActivitySensorDataSample | <absent>": 137516
+   },
+   "seconds": 567.5
+  }
+ }
+}

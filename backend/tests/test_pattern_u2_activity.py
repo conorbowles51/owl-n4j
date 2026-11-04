@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import pytest
 
 from sqlalchemy import text
 
@@ -235,7 +236,7 @@ def test_a_new_mapping_version_reclassifies_without_reading_records_again(hooks)
         path = os.path.join(str(hooks), "activity_strength", "catalogue.json")
         content = json.load(open(path))
         v2 = copy.deepcopy(content)
-        v2["version"] = 2
+        v2["version"] += 1
         for r in v2["body"]["rows"]:
             if r["row_id"] == "devev-display":
                 r["outputs"]["class"] = "interaction"
@@ -261,7 +262,7 @@ def test_a_new_mapping_version_reclassifies_without_reading_records_again(hooks)
         # a new version that changes no result writes no event, and the event reads the new version (the view takes
         # it from the projection state)
         v3 = copy.deepcopy(v2)
-        v3["version"] = 3
+        v3["version"] += 1
         write(str(hooks), v3)
         loader.use_data_dir(str(hooks))
         out = activity.project_stale(engine)
@@ -336,7 +337,7 @@ def test_an_event_that_no_longer_matches_a_row_shows_no_mapping_version(hooks):
             assert before.activity_mapping_version is not None
         path = os.path.join(str(hooks), "activity_strength", "catalogue.json")
         v2 = copy.deepcopy(json.load(open(path)))
-        v2["version"] = 2
+        v2["version"] += 1
         v2["body"]["rows"] = [r for r in v2["body"]["rows"] if r["row_id"] != "devev-display"]
         write(str(hooks), v2)
         loader.use_data_dir(str(hooks))
@@ -397,3 +398,103 @@ def test_strength_rules_without_a_database():
     assert s("unknown", "owner", [], "event_instant", "explicit", "Intact", False) == "none"
     assert A.context_flags(semantics="event_instant", offset_status="explicit", deleted_state="Intact",
                            decoding_confidence="High", actor="owner", user_mapping="Decoding") == []
+
+
+# ---- 04 decision 22: wearable (M9) ------------------------------------------------------------------------------
+
+def sensor(top, device_name=None, source_device_type=None):
+    """A sensor record with one measurement and one sample (records top..top+2), as the 14 server reports nest them
+    (ActivitySensorData.Measurements -> Measurement.Samples -> Sample, M9)."""
+    f = [fld("From", ("TimeStamp", "2023-03-14T15:07:12-04:00")), fld("To", ("TimeStamp", "2023-03-14T16:07:12-04:00")),
+         fld("Source", ("String", "Health"))]
+    if device_name is not None:
+        f.append(fld("DeviceName", ("String", device_name)))
+    if source_device_type is not None:
+        f.append(fld("SourceDeviceType", ("SampleSourceType", source_device_type)))
+    f.append(refs("Measurements", top + 1))
+    rec = model("ActivitySensorData", f)
+    meas = model("ActivitySensorDataMeasurement", [fld("MeasuredVariableType", ("MeasuredVariableType", "Steps")),
+                                                   refs("Samples", top + 2)])
+    sample = model("ActivitySensorDataSample", [fld("DateSampled", ("TimeStamp", "2023-03-14T15:07:12-04:00")),
+                                                fld("Quantity", ("Double", "12"))])
+    return ([(top, None, top, rec), (top + 1, top, top, meas), (top + 2, top + 1, top, sample)],
+            [ts(top, "0.0", "From", "ActivitySensorData"), ts(top + 2, "0.0", "DateSampled", "ActivitySensorDataSample")])
+
+
+@needs_template
+def test_a_sensor_record_naming_a_wearable_flags_it_and_its_samples_as_another_device(hooks):
+    """M9 found no wearable on the 14 server reports; the rule reads the device name the sensor record carries and
+    its samples take it from the record (a sample names no device). Fails on the old code: no row raised it."""
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = phone(c, case, [sensor(0, "Someone's apple WATCH"), sensor(3, "Pixel 7 Pro"), sensor(6),
+                                  sensor(9, "Garmin Forerunner")])
+        run(engine, ext)
+        with engine.connect() as c:
+            ev = events(c, ext)
+            for top in (0, 9):
+                rec, smp = ev[("ActivitySensorData", "From", top)], ev[("ActivitySensorDataSample", "DateSampled",
+                                                                       top + 2)]
+                # the record is an hourly bucket (bucketed); the sample is an instant: wearable is the only flag
+                assert rec.attribution_flags == ["wearable", "bucketed"] and smp.attribution_flags == ["wearable"]
+                assert (rec.strength, smp.strength) == ("none", "none")  # passive, not physical
+                assert rec.attribution_mapping_rows == ["attribution/catalogue/attr-sensor-wearable"]
+                assert smp.attribution_mapping_rows == ["attribution/catalogue/attr-sensor-sample-wearable"]
+                assert (rec.actor, smp.actor) == ("other_device", "other_device")
+                assert rec.activity_mapping_row == "activity_strength/catalogue/sensor-wearable"
+            for top in (3, 6):  # a phone's own name, and no name: the phone recorded it
+                rec, smp = ev[("ActivitySensorData", "From", top)], ev[("ActivitySensorDataSample", "DateSampled",
+                                                                       top + 2)]
+                assert "wearable" not in rec.attribution_flags and "wearable" not in smp.attribution_flags
+                assert (rec.actor, smp.actor) == ("owner", "owner")
+            calls = dict(c.execute(text(
+                "SELECT rule_id, records_touched FROM phone_mapping_judgements WHERE extraction_id = :e AND "
+                "rule_part = 'attribution'"), {"e": ext}).fetchall())
+            assert calls["attribution/catalogue/attr-sensor-wearable"] == 2
+            assert calls["attribution/catalogue/attr-sensor-sample-wearable"] == 2
+            # the sample row names DeviceName, which only the sensor record has: the registry check reads it there
+            assert [p for m in loader.loaded() for p in loader.registry_problems(c, m, requirements=False)] == []
+
+
+def test_contains_any_matches_words_without_case_and_refuses_a_bad_value():
+    from services.phone.mappings import rows as R
+    row = {"row_id": "w", "type": "T", "field": "F", "predicates": [{"field": "DeviceName", "op": "contains_any",
+                                                                     "value": ["Watch", "Oura"]}]}
+    assert R.match([row], "T", "F", {"fields": {"DeviceName": ["my apple watch"]}}) is row
+    assert R.match([row], "T", "F", {"fields": {"DeviceName": ["OURA ring"]}}) is row
+    assert R.match([row], "T", "F", {"fields": {"DeviceName": ["iPhone"]}}) is None
+    assert R.match([row], "T", "F", {"fields": {}}) is None
+    absent = {"row_id": "a", "type": "T", "field": "F", "predicates": [{"field": "DeviceName", "op": "absent"}]}
+    assert not R.could_both_match(row, absent)
+    for bad in (None, [], "Watch", [""], [3]):
+        with pytest.raises(loader.LoadError):
+            R._domain({"field": "DeviceName", "op": "contains_any", "value": bad})
+
+
+@needs_template
+def test_a_new_mapping_version_leaves_one_open_reading_per_rule(hooks):
+    """The projection's judgement calls are keyed by mapping version; after a new version the old version's open
+    calls touch nothing, so the readings queue shows each rule once (fails on the old code: both versions counted)."""
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = phone(c, case, [location(0, "Unknown")])
+        run(engine, ext)
+        path = os.path.join(str(hooks), "attribution", "catalogue.json")
+        v2 = copy.deepcopy(json.load(open(path)))
+        v2["version"] += 1
+        v2["review"]["basis"] += " (test version)"
+        write(str(hooks), v2)
+        loader.use_data_dir(str(hooks))
+        activity.project_stale(engine)
+        with engine.connect() as c:
+            rows = c.execute(text(
+                "SELECT rule_id, records_touched FROM phone_mapping_judgements WHERE extraction_id = :e AND "
+                "rule_id = 'attribution/catalogue/attr-location-unknown' ORDER BY records_touched"),
+                {"e": ext}).fetchall()
+            assert [r.records_touched for r in rows] == [0, 1]

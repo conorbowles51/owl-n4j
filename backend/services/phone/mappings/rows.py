@@ -12,6 +12,14 @@ from itertools import product
 from services.phone.mappings.loader import LoadError
 
 NUMERIC_OPS = ("lt", "le", "gt", "ge")
+
+# Fields a nested record is matched on from its top-level record when it does not carry them itself (04 decision 22,
+# M9 on the 14 server reports): a sensor sample names no device; the sensor record above it does (DeviceName on
+# 15,310 of 15,311 sensor records of one report, SourceDeviceType on all 13,125 of another; no Sample carries
+# either). A row on the nested type may name these fields; the registry check reads them on the top-level type.
+# Only these: a Party or a message never takes its chat's fields (that would move other rows' matches).
+INHERITED_FROM_ROOT = {"ActivitySensorDataSample": {"DeviceName": "ActivitySensorData",
+                                                    "SourceDeviceType": "ActivitySensorData"}}
 NEG_INF, POS_INF = Decimal("-Infinity"), Decimal("Infinity")
 
 
@@ -38,6 +46,12 @@ def _domain(p):
     if op == "absent":
         return ("absent",)
     if op == "present":
+        return ("any",)
+    if op == "contains_any":
+        # a free-text field (a device name) holding any of the listed words, compared without case. Its domain is
+        # not a finite set, so for the overlap check it counts as any present value (it can never meet `absent`)
+        if not isinstance(v, list) or not v or not all(isinstance(x, str) and x.strip() for x in v):
+            raise LoadError("predicate contains_any needs a list of words, got %r" % (v,))
         return ("any",)
     if op == "eq":
         return ("set", frozenset([_canon(v)]))
@@ -138,6 +152,9 @@ def _holds(p, facts):
         return not vals
     if op == "present":
         return bool(vals)
+    if op == "contains_any":
+        words = [w.casefold() for w in p["value"]]
+        return any(w in str(v).casefold() for v in vals for w in words)
     d = _domain(p)
     if d[0] == "set":
         return any(_canon(v) in d[1] or (isinstance(v, str) and _num(v) is not None and _num(v) in d[1])

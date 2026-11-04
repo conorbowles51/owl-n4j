@@ -1,13 +1,13 @@
 {
  "kind": "attribution",
  "name": "catalogue",
- "version": 1,
+ "version": 2,
  "status": "applied_unconfirmed",
  "origin": "ai_draft",
  "review": {
   "reviewed_by": null,
   "reviewed_on": null,
-  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row.",
+  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row. Version 2 (04 decision 22): wearable from M9 on the 14 server reports (no sensor record names a wearable in any of them; the rule reads the device name the sensor record carries).",
   "registry_requirements": []
  },
  "body": {
@@ -71,6 +71,58 @@
     "basis": "field_name",
     "reasoning": "Sent from a web or desktop session.",
     "would_change": "A document shows Web means this phone's browser."
+   },
+   {
+    "row_id": "attr-sensor-wearable",
+    "type": "ActivitySensorData",
+    "field": "From",
+    "predicates": [
+     {
+      "field": "DeviceName",
+      "op": "contains_any",
+      "value": [
+       "Watch",
+       "Fitbit",
+       "Garmin",
+       "Oura",
+       "WHOOP"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "flag": "wearable",
+     "group": "A"
+    },
+    "basis": "field_name",
+    "reasoning": "The sensor record names a watch, band or ring as the device that recorded it, so the phone itself did not.",
+    "would_change": "A report shows a SourceDeviceType value that names the device kind (then that value), or a phone whose own name holds one of these words."
+   },
+   {
+    "row_id": "attr-sensor-sample-wearable",
+    "type": "ActivitySensorDataSample",
+    "field": "DateSampled",
+    "predicates": [
+     {
+      "field": "DeviceName",
+      "op": "contains_any",
+      "value": [
+       "Watch",
+       "Fitbit",
+       "Garmin",
+       "Oura",
+       "WHOOP"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "flag": "wearable",
+     "group": "A"
+    },
+    "basis": "field_name",
+    "reasoning": "The sensor record names a watch, band or ring as the device that recorded it, so the phone itself did not. A sample takes the device name of the sensor record it sits in.",
+    "would_change": "A report shows a SourceDeviceType value that names the device kind (then that value), or a phone whose own name holds one of these words."
    }
   ]
  }

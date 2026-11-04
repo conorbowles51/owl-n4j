@@ -101,14 +101,14 @@ class TypeBody(BaseModel):
         return v
 
 
-OPS = ("eq", "in", "lt", "le", "gt", "ge", "present", "absent")
+OPS = ("eq", "in", "lt", "le", "gt", "ge", "present", "absent", "contains_any")
 
 
 class Predicate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     field: Optional[str] = None
     name: Optional[str] = None
-    op: Literal["eq", "in", "lt", "le", "gt", "ge", "present", "absent"]
+    op: Literal["eq", "in", "lt", "le", "gt", "ge", "present", "absent", "contains_any"]
     value: Any = None
 
 
@@ -240,10 +240,12 @@ def registry_problems(conn, m, requirements=True) -> list:
     if m.kind in ROW_KINDS:
         for r in m.body["rows"]:
             for p in r.get("predicates") or []:
+                from services.phone.mappings.rows import INHERITED_FROM_ROOT
+                ftype = INHERITED_FROM_ROOT.get(r["type"], {}).get(p["field"], r["type"])
                 rows = conn.execute(text("SELECT value_type, is_named_set FROM phone_schema_fields WHERE type_name = :t "
-                                         "AND field_name = :f"), {"t": r["type"], "f": p["field"]}).fetchall()
+                                         "AND field_name = :f"), {"t": ftype, "f": p["field"]}).fetchall()
                 if not rows:
-                    problems.append("%s: %s.%s is not in the registry" % (r["row_id"], r["type"], p["field"]))
+                    problems.append("%s: %s.%s is not in the registry" % (r["row_id"], ftype, p["field"]))
                     continue
                 if p["op"] in ("lt", "le", "gt", "ge") and not any(vt in NUMERIC_TYPES for vt, _ in rows):
                     problems.append("%s: %s on %s.%s, which is not numeric" % (r["row_id"], p["op"], r["type"], p["field"]))
