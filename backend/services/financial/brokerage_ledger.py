@@ -23,12 +23,13 @@ import hashlib
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from postgres.models.financial import (FinancialAccount, FinancialSourceDocument, FinancialStatementPeriod,
                                        FinancialTransaction)
@@ -124,7 +125,7 @@ def desired_rows(session, document) -> list:
             market_value_minor=None, trade_date=trade['trade_date'],
             trade_date_source='printed' if trade['trade_date'] else 'absent', execution_time=None,
             settlement_date=trade['settlement_date'], as_of_date=None, term_days=trade['term_days'],
-            rate_printed=trade['rate_printed'], proof_class=row.proof_class if row.proof_class != 'p4' else 'p3',
+            rate_printed=trade['rate_printed'], proof_class=row.proof_class,
             extraction_layer=row.extraction_layer, reader=reading.READER_MOVEMENTS, account_id=row.account_id,
             statement_period_id=row.statement_period_id, cash_transaction_id=row.id)
         provenance = dict(
@@ -154,7 +155,7 @@ def desired_rows(session, document) -> list:
             trade_date_source='printed' if holding.get('trade_date') else 'absent', execution_time=None,
             settlement_date=holding.get('settlement_date'), as_of_date=holding.get('as_of'),
             term_days=holding.get('term_days'), rate_printed=holding.get('rate_printed'),
-            proof_class=document.proof_class if document.proof_class != 'p4' else 'p3',
+            proof_class=document.proof_class,
             extraction_layer=1, reader=reading.READER_HOLDINGS, account_id=period and period.account_id,
             statement_period_id=period and period.id, cash_transaction_id=None)
         provenance = dict(
@@ -170,8 +171,24 @@ def desired_rows(session, document) -> list:
     return found
 
 
+def statement_pages(session, document):
+    """The pages of the file that print this statement, as its saved review recorded them, or None when the file
+    holds this one statement only (every page is then its own). A file of several statements whose pages are not
+    recorded reads no holdings for any of them (``[]``): a position table cannot be given to the wrong one."""
+    original = (document.metadata_ or {}).get('statement_import_original') or {}
+    pages = original.get('statement_page_numbers') or original.get('page_numbers')
+    if pages:
+        return sorted({int(p) for p in pages})
+    others = session.scalar(select(func.count()).select_from(FinancialSourceDocument).where(
+        FinancialSourceDocument.evidence_file_id == document.evidence_file_id,
+        FinancialSourceDocument.id != document.id, FinancialSourceDocument.status == 'admitted'))
+    return None if not others else []
+
+
 def _page_tables(session, document) -> list:
-    return _file_tables(session, document.case_id, document.evidence_file_id)
+    pages = statement_pages(session, document)
+    sources = _file_tables(session, document.case_id, document.evidence_file_id)
+    return sources if pages is None else [s for s in sources if s.get('page_number') in pages]
 
 
 def _file_tables(session, case_id, evidence_file_id) -> list:
@@ -203,9 +220,27 @@ def _carry(old: FinancialSecurityRow, values: dict):
 
 
 def reading_digest(row_or_values) -> str:
-    """What a confirmation is held against: the reading's values, not the row's identity."""
-    get = row_or_values.get if isinstance(row_or_values, dict) else (lambda k: getattr(row_or_values, k))
+    """What a confirmation is held against: the reading's values as read (never a correction), not the row's
+    identity."""
+    if isinstance(row_or_values, dict):
+        get = row_or_values.get
+    else:
+        corrections = row_or_values.corrections or {}
+        get = (lambda k: corrections[k]['read'] if k in corrections else getattr(row_or_values, k))
     return _digest({k: get(k) for k in _COLUMNS if k not in ('cash_transaction_id', 'statement_period_id')})
+
+
+def _to_column(field, value):
+    """A plain value (as stored in a correction) in the column's own type."""
+    if value is None:
+        return None
+    if field in ('quantity', 'price'):
+        return Decimal(str(value))
+    if field in ('trade_date', 'settlement_date'):
+        return date.fromisoformat(str(value))
+    if field.endswith('_minor'):
+        return int(value)
+    return str(value)
 
 
 def sync_document(session, document_id, *, force: bool = False) -> dict:
@@ -252,6 +287,8 @@ def _apply(session, *, case_id, evidence_file_id, source_document_id, readers, w
                                    source_document_id=source_document_id, reading_key=key, ledger_status='admitted',
                                    provenance=_plain(provenance), corrections=corrections, confirmation=confirmation,
                                    content_hash=digest, **values)
+        for field, entry in corrections.items():  # the corrected value is the one in effect
+            setattr(row, field, _to_column(field, entry['value']))
         if old is not None:
             old.ledger_status = 'superseded'
             old.superseded_by_id = row.id
@@ -314,6 +351,8 @@ def fund_rows(session, file) -> list:
             ['execution_time', 'isin'], not_read=item.get('not_read') or [], unread=item.get('unread'),
             unreadable=[], reading_origin=None,
             previous=item.get('previous'), balance_after=item.get('balance_after'),
+            # The investor's money: a purchase of units is paid (debit), a sale or redemption is received (credit).
+            money_direction=item.get('cash_direction') if item.get('side') in ('buy', 'sell') else None,
             period=[d.isoformat() for d in read['period']] if read['period'] else None,
             outside_money_ledger='An investment-fund statement: set aside from the money ledger (no cash lines); '
                                  'its unit movements and positions are read here.')
@@ -392,8 +431,14 @@ SORTS = ('date', 'instrument', 'amount')
 
 
 def _effective(row, field):
+    """The value in effect: the column holds the corrected value once corrected (searches, sorts and sums use
+    it); the value as read is ``corrections[field]['read']``."""
+    return _plain(getattr(row, field))
+
+
+def _as_read(row, field):
     entry = (row.corrections or {}).get(field)
-    return entry['value'] if entry else _plain(getattr(row, field))
+    return entry['read'] if entry else _plain(getattr(row, field))
 
 
 def label(row) -> dict:
@@ -427,6 +472,8 @@ def to_json(row, *, account_names=None, file_names=None) -> dict:
         citation=dict(file_id=str(row.evidence_file_id), page=(provenance.get('source') or {}).get('page'),
                       locator=provenance.get('locator'), printed_text=provenance.get('printed_text'),
                       cash_leg=provenance.get('cash_leg')),
+        # The investor's money on a trade: debit paid, credit received (the cash leg's, or a fund line's own sign).
+        direction=(provenance.get('cash_leg') or {}).get('direction') or provenance.get('money_direction'),
         checks=provenance.get('checks') or {}, not_printed=provenance.get('not_printed') or [],
         not_read=provenance.get('not_read') or [], unread=provenance.get('unread'),
         unreadable=provenance.get('unreadable') or [],
@@ -446,14 +493,21 @@ def query_rows(session, *, case_id, row_kind='trade', instrument=None, account_i
         raise SecurityRowError('sort is date, instrument or amount.')
     page = max(1, int(page or 1))
     page_size = max(1, min(int(page_size or 50), MAX_PAGE))
-    cash = FinancialTransaction
-    base = select(FinancialSecurityRow).outerjoin(cash, cash.id == FinancialSecurityRow.cash_transaction_id).where(
+    cash, statement = FinancialTransaction, FinancialSourceDocument
+    base = select(FinancialSecurityRow).outerjoin(cash, cash.id == FinancialSecurityRow.cash_transaction_id).outerjoin(
+        statement, statement.id == FinancialSecurityRow.source_document_id).where(
         FinancialSecurityRow.case_id == case_id, FinancialSecurityRow.row_kind == row_kind,
         FinancialSecurityRow.ledger_status == 'admitted')
-    hidden = session.scalar(select(func.count()).select_from(base.where(
-        FinancialSecurityRow.cash_transaction_id.is_not(None),
-        or_(cash.id.is_(None), cash.ledger_status != 'admitted')).subquery()))
-    query = base.where(or_(FinancialSecurityRow.cash_transaction_id.is_(None), cash.ledger_status == 'admitted'))
+    # A row counts only while its statement is in the ledger (not removed, set aside or replaced) and, for a trade,
+    # while its cash leg is: the others are not shown, and the counts say how many.
+    statement_out = and_(FinancialSecurityRow.source_document_id.is_not(None), or_(
+        statement.id.is_(None), statement.status != 'admitted',
+        statement.metadata_['financial_import_removal'].as_string().is_not(None)))
+    cash_out = and_(FinancialSecurityRow.cash_transaction_id.is_not(None),
+                    or_(cash.id.is_(None), cash.ledger_status != 'admitted'))
+    hidden_statement = session.scalar(select(func.count()).select_from(base.where(statement_out).subquery()))
+    hidden = session.scalar(select(func.count()).select_from(base.where(cash_out, ~statement_out).subquery()))
+    query = base.where(~statement_out, ~cash_out)
     if instrument:
         needle = f"%{str(instrument).strip().upper()}%"
         query = query.where(func.upper(FinancialSecurityRow.instrument).like(needle))
@@ -468,10 +522,13 @@ def query_rows(session, *, case_id, row_kind='trade', instrument=None, account_i
     if date_to:
         query = query.where(day <= date_to)
     total = session.scalar(select(func.count()).select_from(query.subquery()))
-    order = {'date': (day, FinancialSecurityRow.instrument, FinancialSecurityRow.reading_key),
-             'instrument': (FinancialSecurityRow.instrument, day, FinancialSecurityRow.reading_key),
-             'amount': (func.coalesce(FinancialSecurityRow.net_minor, FinancialSecurityRow.market_value_minor).desc(),
-                        FinancialSecurityRow.reading_key)}[sort]
+    # Ends on the row id: a total order, so paging never repeats or skips a row.
+    order = {'date': (day, FinancialSecurityRow.instrument, FinancialSecurityRow.reading_key, FinancialSecurityRow.id),
+             'instrument': (FinancialSecurityRow.instrument, day, FinancialSecurityRow.reading_key,
+                            FinancialSecurityRow.id),
+             'amount': (func.coalesce(FinancialSecurityRow.net_minor, FinancialSecurityRow.market_value_minor
+                                      ).desc().nulls_last(), FinancialSecurityRow.reading_key,
+                        FinancialSecurityRow.id)}[sort]
     rows = session.scalars(query.order_by(*order).offset((page - 1) * page_size).limit(page_size)).all()
     accounts = {a.id: a for a in session.scalars(select(FinancialAccount).where(
         FinancialAccount.id.in_({r.account_id for r in rows if r.account_id})))} if rows else {}
@@ -484,20 +541,53 @@ def query_rows(session, *, case_id, row_kind='trade', instrument=None, account_i
     return dict(row_kind=row_kind, total=total, returned=len(items), page=page, page_size=page_size,
                 next_page=page + 1 if page * page_size < total else None, items=items,
                 not_shown_cash_leg_not_in_ledger=hidden or 0,
+                not_shown_statement_not_in_ledger=hidden_statement or 0,
                 revision=revision.isoformat() if revision else None)
 
 
 ROW_KINDS_QUERY = ('trade', 'holding')
 
 
+def get_row(session, *, case_id, row_id) -> dict:
+    """One row of the case by id (a citation's target), with ``counts``: False and the reason when it is superseded,
+    its statement or its cash leg has left the ledger."""
+    from postgres.models.evidence import EvidenceFile
+    try:
+        row = session.get(FinancialSecurityRow, row_id if isinstance(row_id, uuid.UUID) else uuid.UUID(str(row_id)))
+    except ValueError:
+        row = None
+    if row is None or row.case_id != case_id:
+        raise SecurityRowError('Not in this case.', 404)
+    why = None
+    if row.ledger_status != 'admitted':
+        why = 'This reading was replaced by a newer one.'
+    elif row.source_document_id is not None:
+        statement = session.get(FinancialSourceDocument, row.source_document_id)
+        if statement is None or statement.status != 'admitted' or (statement.metadata_ or {}).get(
+                'financial_import_removal'):
+            why = 'Its statement is no longer in the ledger.'
+    if why is None and row.cash_transaction_id is not None:
+        cash = session.get(FinancialTransaction, row.cash_transaction_id)
+        if cash is None or cash.ledger_status != 'admitted':
+            why = 'Its cash line is no longer in the money ledger.'
+    account = session.get(FinancialAccount, row.account_id) if row.account_id else None
+    file = session.get(EvidenceFile, row.evidence_file_id)
+    names = {row.account_id: ' '.join(x for x in (account.institution_name, account.identifier_as_printed) if x)
+             } if account else {}
+    return dict(to_json(row, account_names=names, file_names={row.evidence_file_id: file.original_filename}
+                        if file else {}), counts=why is None, not_counted_because=why)
+
+
 def _parse(field, value):
     if value is None or value == '':
         return None
     if field in ('quantity', 'price'):
-        try:
-            return str(Decimal(str(value).replace(',', '')))
-        except Exception:
-            raise SecurityRowError(f'{field} must be a number.')
+        text_value = str(value).strip()
+        # Digits with an optional decimal point; commas only as thousands groups (a decimal comma is refused,
+        # never read as a thousands separator).
+        if not re.fullmatch(r'(\d{1,3}(,\d{3})+|\d+)(\.\d+)?', text_value):
+            raise SecurityRowError(f'{field} must be a number such as 10153 or 1,029.58 (a point for decimals).')
+        return _plain(Decimal(text_value.replace(',', '')))
     if field in ('trade_date', 'settlement_date'):
         try:
             return date.fromisoformat(str(value)).isoformat()
@@ -509,7 +599,7 @@ def _parse(field, value):
         except (TypeError, ValueError):
             raise SecurityRowError(f'{field} must be a whole number of minor units.')
     text_value = ' '.join(str(value).split())
-    if field == 'isin' and text_value and not __import__('re').fullmatch(r'[A-Z]{2}[A-Z0-9]{9}[0-9]', text_value):
+    if field == 'isin' and text_value and not re.fullmatch(r'[A-Z]{2}[A-Z0-9]{9}[0-9]', text_value):
         raise SecurityRowError('An ISIN is 12 characters: two letters, nine letters or digits, one check digit.')
     return text_value[:128]
 
@@ -537,7 +627,7 @@ def correct_row(session, *, case_id, row_id, field, value, reason, actor, commit
     if not reason:
         raise SecurityRowError('Say why the value is corrected.')
     row = _row_for_write(session, case_id, row_id)
-    read_value = _plain(getattr(row, field))
+    read_value = _as_read(row, field)
     new_value = _parse(field, value)
     if new_value == _effective(row, field):
         raise SecurityRowError('That is already the value shown.', 409)
@@ -556,6 +646,7 @@ def correct_row(session, *, case_id, row_id, field, value, reason, actor, commit
                                   at=datetime.now(timezone.utc).isoformat(), decision_id=str(event.id),
                                   previous=previous)
     row.corrections = corrections
+    setattr(row, field, _to_column(field, new_value))  # the value in effect; the value as read stays in corrections
     session.flush()
     result = to_json(row)
     if commit:

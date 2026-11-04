@@ -1723,3 +1723,13 @@ def get_security_rows(case_id: UUID = Query(...), kind: str = Query('trade'), in
                           date_from=date_from, date_to=date_to, sort=sort, page=page, page_size=page_size)
     except SecurityRowError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get('/security-rows/{row_id}')
+def get_security_row(row_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    """One trade or holding (the row a citation names), wherever it falls in the list, with whether it counts."""
+    from services.financial.brokerage_ledger import SecurityRowError, get_row
+    try:
+        return get_row(db, case_id=case_id, row_id=row_id)
+    except SecurityRowError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

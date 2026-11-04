@@ -284,6 +284,10 @@ def _decide(session, *, case_id, document_id, action, expected_revision,
     document.duplicate_review_required = after["duplicate_review_required"]
     for row in changed:
         row.ledger_status = target_status
+    session.flush()
+    # The statement's trades and holdings follow it: set aside with it, or back when it is restored (lx-brokerage).
+    from services.financial.brokerage_ledger import after_cash_rows_changed
+    after_cash_rows_changed(session, document.id)
     response = {"case_id": str(case_id), "document_id": str(document_id),
                 "action": action, "applied": True, "changed_rows": len(changed),
                 "adjudication_id": str(event.id)}

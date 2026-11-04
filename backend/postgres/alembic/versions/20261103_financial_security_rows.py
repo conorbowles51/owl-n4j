@@ -94,7 +94,7 @@ def upgrade():
         sa.CheckConstraint("holding_kind IS NULL OR holding_kind IN ('security', 'repo')",
                            name="ck_financial_security_rows_holding_kind"),
         sa.CheckConstraint("ledger_status IN ('admitted', 'superseded')", name="ck_financial_security_rows_status"),
-        sa.CheckConstraint("proof_class IN ('p0', 'p1', 'p2', 'p3')", name="ck_financial_security_rows_proof_class"),
+        sa.CheckConstraint("proof_class IN ('p0', 'p1', 'p2', 'p3', 'p4')", name="ck_financial_security_rows_proof_class"),
         sa.CheckConstraint("trade_date_source IN ('printed', 'absent')",
                            name="ck_financial_security_rows_trade_date_source"),
     )
@@ -102,8 +102,15 @@ def upgrade():
                     ["case_id", "row_kind", "ledger_status"])
     op.create_index("ix_financial_security_rows_document", "financial_security_rows", ["source_document_id"])
     op.create_index("ix_financial_security_rows_cash", "financial_security_rows", ["cash_transaction_id"])
-    op.create_index("uq_financial_security_rows_line", "financial_security_rows", ["evidence_file_id", "reading_key"],
-                    unique=True, postgresql_where=sa.text("ledger_status = 'admitted'"))
+    # One admitted row per printed line of a statement (a file can hold several statements, and a re-read statement
+    # is saved before the copy it replaces is set aside); a fund statement (no statement record) per printed line of
+    # its file.
+    op.create_index("uq_financial_security_rows_line", "financial_security_rows",
+                    ["evidence_file_id", "source_document_id", "reading_key"], unique=True,
+                    postgresql_where=sa.text("ledger_status = 'admitted' AND source_document_id IS NOT NULL"))
+    op.create_index("uq_financial_security_rows_file_line", "financial_security_rows",
+                    ["evidence_file_id", "reading_key"], unique=True,
+                    postgresql_where=sa.text("ledger_status = 'admitted' AND source_document_id IS NULL"))
     conn = op.get_bind()
     for name, (column, add) in NEW.items():
         have = _values(conn, name)

@@ -43,14 +43,20 @@ class FinancialSecurityRow(Base):
         CheckConstraint(f'holding_kind IS NULL OR holding_kind IN {_in(HOLDING_KINDS)}',
                         name='ck_financial_security_rows_holding_kind'),
         CheckConstraint(f'ledger_status IN {_in(STATUSES)}', name='ck_financial_security_rows_status'),
-        CheckConstraint("proof_class IN ('p0', 'p1', 'p2', 'p3')", name='ck_financial_security_rows_proof_class'),
+        CheckConstraint("proof_class IN ('p0', 'p1', 'p2', 'p3', 'p4')", name='ck_financial_security_rows_proof_class'),
         CheckConstraint("trade_date_source IN ('printed', 'absent')", name='ck_financial_security_rows_trade_date_source'),
         Index('ix_financial_security_rows_case_kind', 'case_id', 'row_kind', 'ledger_status'),
         Index('ix_financial_security_rows_document', 'source_document_id'),
         Index('ix_financial_security_rows_cash', 'cash_transaction_id'),
-        # One admitted row per printed line of a file.
-        Index('uq_financial_security_rows_line', 'evidence_file_id', 'reading_key', unique=True,
-              postgresql_where=text("ledger_status = 'admitted'"), sqlite_where=text("ledger_status = 'admitted'")),
+        # One admitted row per printed line of a statement: a file can hold several statements, and a re-read
+        # statement is saved before the copy it replaces is set aside. A fund statement (no statement record): per
+        # printed line of its file.
+        Index('uq_financial_security_rows_line', 'evidence_file_id', 'source_document_id', 'reading_key', unique=True,
+              postgresql_where=text("ledger_status = 'admitted' AND source_document_id IS NOT NULL"),
+              sqlite_where=text("ledger_status = 'admitted' AND source_document_id IS NOT NULL")),
+        Index('uq_financial_security_rows_file_line', 'evidence_file_id', 'reading_key', unique=True,
+              postgresql_where=text("ledger_status = 'admitted' AND source_document_id IS NULL"),
+              sqlite_where=text("ledger_status = 'admitted' AND source_document_id IS NULL")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

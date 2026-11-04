@@ -50,6 +50,8 @@ export type SecurityRow = {
   not_read: string[]
   /** Why a printed line could not be read with proof; its figures are then absent, never guessed. */
   unread?: string | null
+  /** The investor's money on a trade: debit paid, credit received. */
+  direction?: string | null
   checks: Record<string, boolean | string>
   corrections: Record<string, SecurityCorrection>
   origin: { kind: "reader" | "model" | "confirmed"; text: string }
@@ -64,6 +66,8 @@ export type SecurityRowPage = {
   next_page: number | null
   items: SecurityRow[]
   not_shown_cash_leg_not_in_ledger: number
+  /** Rows whose statement was removed, set aside or replaced: not shown, counted here. */
+  not_shown_statement_not_in_ledger?: number
   revision: string | null
 }
 
@@ -89,6 +93,21 @@ export function useSecurityRows(
       if (instrument.trim()) params.set("instrument", instrument.trim())
       return (await fetchAPI(`/api/financial/security-rows?${params}`)) as SecurityRowPage
     },
+  })
+}
+
+export type CitedSecurityRow = SecurityRow & { counts: boolean; not_counted_because: string | null }
+
+/** One row by id: the row a citation names, wherever it falls in the list. */
+export function useSecurityRow(caseId: string | undefined, rowId: string | null) {
+  return useQuery({
+    queryKey: ["financial-ledger", caseId, "security-row", rowId],
+    enabled: !!caseId && !!rowId,
+    retry: false,
+    queryFn: async () =>
+      (await fetchAPI(
+        `/api/financial/security-rows/${encodeURIComponent(rowId!)}?case_id=${encodeURIComponent(caseId!)}`
+      )) as CitedSecurityRow,
   })
 }
 

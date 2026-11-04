@@ -1,10 +1,11 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import {
   SECURITY_PAGE_SIZE,
+  useSecurityRow,
   useSecurityRowAction,
   useSecurityRows,
   type SecurityRow,
@@ -150,7 +151,14 @@ export function TradesView({ caseId }: { caseId: string }) {
   const [page, setPage] = useState(1)
   const { canEdit } = useFinancialAccess()
   const query = useSecurityRows(caseId, kind, instrument, page)
+  const cited = useSecurityRow(caseId, focus)
+  const citedKind = cited.data?.row_kind
+  useEffect(() => {
+    // A citation opens the list of its own kind (a holding's link shows Holdings).
+    if (citedKind) setKind(citedKind)
+  }, [citedKind])
   const data = query.data
+  const hiddenStatements = data?.not_shown_statement_not_in_ledger ?? 0
   const first = data ? (data.page - 1) * data.page_size + 1 : 0
   const last = data ? first + data.returned - 1 : 0
   const noun = kind === "trade" ? "trades" : "holdings"
@@ -192,6 +200,35 @@ export function TradesView({ caseId }: { caseId: string }) {
         these statements print no time of execution. A trade's cash moves in the money ledger on its settlement date.
       </p>
 
+      {focus && cited.data && (
+        <div role="region" aria-label="Cited row" className="rounded border border-amber-400 p-3 text-sm">
+          <p className="font-medium">
+            Cited {cited.data.row_kind}: {cited.data.instrument}
+            {cited.data.trade_date ? ` · traded ${cited.data.trade_date}` : ""}
+            {cited.data.as_of_date ? ` · held at ${cited.data.as_of_date}` : ""}
+            {cited.data.quantity ? ` · ${formatQuantity(cited.data.quantity)} units` : ""}
+            {cited.data.net_minor !== null
+              ? ` · ${formatMinor(cited.data.net_minor, cited.data.currency)}`
+              : cited.data.market_value_minor !== null
+                ? ` · ${formatMinor(cited.data.market_value_minor, cited.data.currency)}`
+                : ""}
+          </p>
+          <p className="text-muted-foreground">
+            {cited.data.origin.text} ·{" "}
+            <a className="underline" href={`/api/evidence/${encodeURIComponent(cited.data.evidence_file_id)}/file${cited.data.citation.page ? `#page=${cited.data.citation.page}` : ""}`}>
+              {cited.data.file ?? "source file"}
+              {cited.data.citation.page ? `, page ${cited.data.citation.page}` : ""}
+            </a>
+          </p>
+          {cited.data.citation.printed_text && <p className="text-muted-foreground">Printed: {cited.data.citation.printed_text}</p>}
+          {!cited.data.counts && <p className="font-medium">Not counted: {cited.data.not_counted_because}</p>}
+        </div>
+      )}
+      {focus && cited.error && (
+        <p role="alert" className="text-sm">
+          The cited row could not be opened: {cited.error instanceof Error ? cited.error.message : "error"}.
+        </p>
+      )}
       {query.isLoading && (
         <div role="status" className="rounded border p-3 text-sm">
           Reading the case's {noun} from its brokerage statements…
@@ -212,6 +249,8 @@ export function TradesView({ caseId }: { caseId: string }) {
             : `No ${noun} have been read in this case. Trades are read from brokerage statements in the money ledger.`}
           {data.not_shown_cash_leg_not_in_ledger > 0 &&
             ` ${data.not_shown_cash_leg_not_in_ledger} trade(s) are not shown because their cash line is no longer in the money ledger.`}
+          {hiddenStatements > 0 &&
+            ` ${hiddenStatements} ${noun} are not shown because their statement is no longer in the ledger.`}
         </p>
       )}
       {data && data.total > 0 && (
@@ -220,6 +259,7 @@ export function TradesView({ caseId }: { caseId: string }) {
             Showing {first}–{last} of {data.total} {noun}
             {data.not_shown_cash_leg_not_in_ledger > 0 &&
               ` · ${data.not_shown_cash_leg_not_in_ledger} not shown: their cash line is no longer in the money ledger`}
+            {hiddenStatements > 0 && ` · ${hiddenStatements} not shown: their statement is no longer in the ledger`}
           </p>
           <div className="overflow-x-auto rounded border">
             <table className="w-full text-sm">
@@ -298,7 +338,7 @@ export function TradesView({ caseId }: { caseId: string }) {
                     <td className="p-2 text-right tabular-nums whitespace-nowrap">
                       {kind === "trade" ? (
                         <Corrected row={row} field="net_minor">
-                          {row.citation.cash_leg?.direction === "debit" ? "−" : ""}
+                          {(row.direction ?? row.citation.cash_leg?.direction) === "debit" && row.net_minor !== null ? "−" : ""}
                           {formatMinor(row.net_minor, row.currency)}
                         </Corrected>
                       ) : (

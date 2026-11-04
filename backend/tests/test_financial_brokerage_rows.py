@@ -297,6 +297,124 @@ class BrokerageLedgerTests(DuplicateTestCase):
         assert elsewhere['data']['reason'] == nowhere['data']['reason'] == 'That account is not in this case.'
         assert call(self.other_case.id)['data']['total'] == 0
 
+    # --- release review findings (each test fails on the code before the fix) ---------------------------------
+
+    def _holding_sources(self, quantity='63,246', value='88,424.36', page=2, instrument='+TASA M1'):
+        return [dict(page_number=page, table_index=0, rows=[
+            dict(row_index=0, cells=cells('POSICION AL 31 DE MARZO DE 2025', 'POSICION AL 30 DE ABRIL DE 2025')),
+            dict(row_index=2, cells=cells(f'{instrument} 0) MXN)', '0) 0.0000000)', '0.00)',
+                                          f'{quantity}) 1.3981020) 0.00000)', f'{value})'))])]
+
+    def _second_statement(self, *, same_file=True, account=None):
+        from services.financial.runs import open_ingestion_run
+        run = open_ingestion_run(case_id=self.case.id, actor=self.user, session_factory=self.SessionLocal)
+        doc = self.make_document(run=run)
+        if same_file:
+            doc.evidence_file_id = self.doc.evidence_file_id
+        doc.proof_class = 'p3'
+        self.db.commit()
+        period = self.make_period(doc, account=account, run=run)
+        self.db.commit()
+        return doc, period
+
+    def test_a_re_read_statement_gets_its_rows_before_the_copy_it_replaces_is_set_aside(self):
+        from services.financial.brokerage_ledger import after_cash_rows_changed, query_rows
+        sources = self._holding_sources()
+        self.cash(INTERCAM_REPO_MATURITY, amount=102979554, direction='credit', day=date(2025, 4, 1))
+        self.sync(sources)
+        old_doc = self.doc
+        self.doc, self.period = self._second_statement()
+        self.cash(INTERCAM_REPO_MATURITY, amount=102979554, direction='credit', day=date(2025, 4, 1))
+        out = self.sync(sources)  # the writer saves the new reading first (same file, same printed lines)
+        assert (out['added'], out['trades'], out['holdings']) == (2, 1, 1)
+        old_doc.status = 'superseded'  # then sets the replaced copy aside
+        self.db.commit()
+        trades, holdings = (query_rows(self.db, case_id=self.case.id, row_kind=k) for k in ('trade', 'holding'))
+        assert (trades['total'], trades['not_shown_statement_not_in_ledger']) == (1, 1)
+        assert (holdings['total'], holdings['not_shown_statement_not_in_ledger']) == (1, 1)
+        assert {i['source_document_id'] for i in trades['items'] + holdings['items']} == {str(self.doc.id)}
+        after_cash_rows_changed(self.db, old_doc.id)
+        self.db.commit()
+        assert {r.source_document_id for r in self.admitted()} == {self.doc.id}
+
+    def test_holdings_come_only_from_the_statement_s_own_pages(self):
+        from services.financial import brokerage_ledger as BL
+        self.doc.metadata_ = dict(statement_import_original=dict(statement_page_numbers=[1]))
+        self.cash(INTERCAM_REPO_MATURITY, amount=102979554, direction='credit', day=date(2025, 4, 1))
+        sources = self._holding_sources(page=1) + self._holding_sources(page=2, instrument='+TASA M2')
+        with patch.object(BL, '_file_tables', return_value=sources):
+            BL.sync_document(self.db, self.doc.id)
+        self.db.commit()
+        assert [r.instrument for r in self.admitted() if r.row_kind == 'holding'] == ['+TASA M1']
+        # A second statement of the same file whose pages are not recorded reads no position table at all.
+        other, _ = self._second_statement()
+        assert BL.statement_pages(self.db, other) == []
+
+    def test_a_removed_statement_s_holdings_are_not_shown_and_its_cited_row_says_why(self):
+        from services.financial.brokerage_ledger import get_row, query_rows
+        self.cash(INTERCAM_REPO_MATURITY, amount=102979554, direction='credit', day=date(2025, 4, 1))
+        self.sync(self._holding_sources())
+        holding = self.db.query(FinancialSecurityRow).filter_by(row_kind='holding').one()
+        assert get_row(self.db, case_id=self.case.id, row_id=holding.id)['counts'] is True
+        self.doc.status = 'rejected'  # removed from Financial, no sync has run yet
+        self.db.commit()
+        listed = query_rows(self.db, case_id=self.case.id, row_kind='holding')
+        assert (listed['total'], listed['not_shown_statement_not_in_ledger']) == (0, 1)
+        cited = get_row(self.db, case_id=self.case.id, row_id=holding.id)
+        assert (cited['counts'], cited['not_counted_because']) == (False, 'Its statement is no longer in the ledger.')
+
+    def test_the_corrected_value_is_the_one_searched_and_summed_and_a_confirmation_survives_a_re_read(self):
+        from services.agent.brokerage_tools import get_trades
+        from services.financial.brokerage_ledger import SecurityRowError, confirm_row, correct_row, query_rows
+        repo = self.cash(INTERCAM_REPO_MATURITY, amount=102979554, direction='credit', day=date(2025, 4, 1))
+        self.sync()
+        (trade,) = self.admitted()
+        correct_row(self.db, case_id=self.case.id, row_id=trade.id, field='instrument', value='BPAG91 270507',
+                    reason='Series printed 270507 on page 3', actor=self.actor)
+        assert query_rows(self.db, case_id=self.case.id, instrument='270507')['total'] == 1
+        assert query_rows(self.db, case_id=self.case.id, instrument='270506')['total'] == 0
+        correct_row(self.db, case_id=self.case.id, row_id=trade.id, field='net_minor', value='102979555',
+                    reason='Printed net', actor=self.actor)
+        totals = get_trades(self.db, case_id=self.case.id)['totals_by_instrument']
+        assert [(t['instrument'], t['net_received_minor']) for t in totals] == [('BPAG91 270507', 102979555)]
+        confirm_row(self.db, case_id=self.case.id, row_id=trade.id, reason='Checked', actor=self.actor)
+        # The cash leg is re-read with the same printed line: the corrections and the confirmation carry.
+        repo.ledger_status = 'superseded'
+        self.cash(INTERCAM_REPO_MATURITY, amount=102979554, direction='credit', day=date(2025, 4, 1))
+        self.sync()
+        (current,) = self.admitted()
+        assert (current.instrument, current.net_minor, current.confirmation is not None) == (
+            'BPAG91 270507', 102979555, True)
+        # Back to the value as read: the correction goes and the column holds the reading again.
+        correct_row(self.db, case_id=self.case.id, row_id=current.id, field='instrument', value='BPAG91 270506',
+                    reason='Misread the scan', actor=self.actor)
+        assert current.instrument == 'BPAG91 270506' and 'instrument' not in current.corrections
+        for value, code in (('10,153.00', 409), ('99,99', 422)):
+            try:
+                correct_row(self.db, case_id=self.case.id, row_id=current.id, field='quantity', value=value,
+                            reason='x', actor=self.actor)
+                raise AssertionError(value)
+            except SecurityRowError as exc:
+                assert exc.status_code == code, (value, exc.status_code)
+
+    def test_holdings_of_one_instrument_in_two_accounts_are_kept_apart_and_a_p4_statement_stays_p4(self):
+        from services.agent.brokerage_tools import get_trades
+        self.doc.proof_class = 'p4'  # a statement's computed class is carried, never raised
+        self.cash(INTERCAM_REPO_MATURITY, amount=102979554, direction='credit', day=date(2025, 4, 1))
+        self.sync(self._holding_sources())
+        (holding,) = [r for r in self.admitted() if r.row_kind == 'holding']
+        assert holding.proof_class == 'p4'
+        second = self._account(self.case.id, identity_key='mx-intercam-00026069')
+        second.institution_name = 'Intercam Casa de Bolsa'
+        self.db.add(second)
+        self.db.commit()
+        self.doc, self.period = self._second_statement(same_file=False, account=second)
+        self.cash('', amount=100, direction='credit', day=date(2025, 4, 30))
+        self.sync(self._holding_sources(quantity='10,000', value='13,981.02'))
+        totals = get_trades(self.db, case_id=self.case.id, kind='holding')['totals_by_instrument']
+        assert sorted((t['account_id'] == str(second.id), t['latest_quantity'], t['latest_market_value_minor'])
+                      for t in totals) == [(False, '63246', 8842436), (True, '10000', 1398102)]
+
 
 FUND_TABLES = [dict(page_number=1, table_index=0, rows=[
     dict(row_index=0, cells=cells('ESTADO DE CUENTA FONDOS DE INVERSIÓN')),
@@ -366,4 +484,21 @@ class FundStatementTests(DuplicateTestCase):
         rows = self.db.query(FinancialSecurityRow).filter_by(ledger_status='admitted').all()
         assert {r.evidence_file_id for r in rows} == {first.id}
         assert all(r.proof_class == 'p3' and r.source_document_id is None for r in rows)
+
+    def test_a_fund_sale_is_money_received_and_a_reclassification_is_neither(self):
+        from postgres.models.evidence import EvidenceFile
+        from services.agent.brokerage_tools import get_trades
+        from services.financial import brokerage_ledger as BL
+        Base.metadata.create_all(self.engine, tables=[FinancialSecurityRow.__table__])
+        doc = self.make_document()
+        file = self.db.get(EvidenceFile, doc.evidence_file_id)
+        with patch.object(BL, '_file_tables', return_value=FUND_TABLES), \
+                patch.object(BL, '_text_content', return_value=''):
+            BL.sync_fund_statement(self.db, file.id)
+        self.db.commit()
+        data = get_trades(self.db, case_id=self.case.id)
+        (fund,) = data['totals_by_instrument']
+        # Bought 1,949,992.38 (COMPRA), received 500,032.35 (VENTA); the reclassification moves no money.
+        assert (fund['net_paid_minor'], fund['net_received_minor'], fund['money_direction_unknown']) == (
+            194999238, 50003235, 1)
 

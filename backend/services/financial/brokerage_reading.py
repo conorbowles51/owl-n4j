@@ -339,7 +339,7 @@ _REPO_LINE = re.compile(r'^\d{1,12}\s+\d{4}/\d{2}/\d{2}\b')
 _LEADING_INSTRUMENT = re.compile(r'^(?P<issuer>[+A-Z][A-Z0-9&.+\-]{1,11})\s+(?P<series>[A-Za-z0-9\-]{1,8})\b')
 
 
-def unread_line(row_kind, reader, text, as_of, why, *, instrument=None, holding_kind=None, **where):
+def unread_line(row_kind, reader, text, as_of, why, *, instrument=None, holding_kind=None, currency=None, **where):
     """A printed line of a trades or holdings table that the reader could not read with proof. It is kept (counted,
     shown with its printed text and the reason) and never summed: no units, price or value is taken from it."""
     if instrument is None:
@@ -348,7 +348,7 @@ def unread_line(row_kind, reader, text, as_of, why, *, instrument=None, holding_
             else None
     missing = ['quantity', 'price', 'value'] + (['instrument'] if instrument in (None, 'Not read') else [])
     return dict(row_kind=row_kind, reader=reader, unread=why, holding_kind=holding_kind, side=None, operation=None,
-                instrument=instrument or 'Not read', issuer=None, series=None, coupon=None, isin=None, currency=None,
+                instrument=instrument or 'Not read', issuer=None, series=None, coupon=None, isin=None, currency=currency,
                 quantity_printed=None, quantity=None, price_printed=None, price=None, market_value_minor=None,
                 gross_minor=None, commission_minor=None, premium_minor=None, tax_minor=None, net_minor=None,
                 trade_date=None, settlement_date=None, as_of=as_of if row_kind == 'holding' else None,
@@ -500,6 +500,7 @@ def fund_statement_rows(sources: Iterable[dict], *, extra_texts: Iterable[str] =
                             'holding', READER_FUNDS, f"{text} {rows[index + 1][2]}", period[1] if period else None,
                             'units x price does not equal the printed value',
                             instrument=f"{name.group('fund')} {name.group('series')}", holding_kind='security',
+                            currency=currency,
                             page_number=source.get('page_number'), table_index=source.get('table_index'),
                             row_index=rows[index + 1][0].get('row_index'),
                             printed_text=f"{text} {rows[index + 1][2]}", locator=_row_locator(cells + rows[index + 1][1])))
@@ -514,7 +515,7 @@ def fund_statement_rows(sources: Iterable[dict], *, extra_texts: Iterable[str] =
                 out['not_read'].append(unread_line(
                     'trade', READER_FUNDS, text, None,
                     'no fund heading above the line' if fund is None else 'units x price does not equal the amount',
-                    instrument=fund or 'Not read', page_number=source.get('page_number'),
+                    instrument=fund or 'Not read', currency=currency, page_number=source.get('page_number'),
                     table_index=source.get('table_index'), row_index=row.get('row_index'), printed_text=text,
                     locator=_row_locator(cells)))
                 continue
