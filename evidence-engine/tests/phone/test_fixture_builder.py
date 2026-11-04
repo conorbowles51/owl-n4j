@@ -276,3 +276,25 @@ def test_a_newer_report_of_c1_keeps_every_record_and_adds_three_later_messages(t
     old_c1 = next(p for p in a["phones"] if p["label"] == "C1")
     assert b["phones"][0]["extraction_date"] > old_c1["extraction_date"]
     assert b["phones"][0]["period_end"] == old_c1["period_end"]
+
+
+
+class TypedValuesTest(unittest.TestCase):
+    def test_typed_values_are_written_last_and_change_nothing_else(self):
+        """cb-vocab: a phone with extra invented typed and searched values holds them, and every other record is
+        the one the same phone has without them."""
+        people = fb.invent_people(10, seed=31)
+        base = dict(like="P09", scale=0.01, contacts=[p.key for p in people[1:]], seed=301)
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            fb.build_case(fb.CaseSpec("Synthetic", people, [fb.PhoneSpec("V1", **base)]), out / "a")
+            fb.build_case(fb.CaseSpec("Synthetic", people, [fb.PhoneSpec("V1", typed_values=(
+                ("Autofill", "Value", "893.33"), ("DictionaryWord", "Word", "corvane")), **base)]), out / "b")
+            a = (out / "a" / "V1" / "Report.xml").read_text()
+            b = (out / "b" / "V1" / "Report.xml").read_text()
+        self.assertIn("893.33", b)
+        self.assertIn("corvane", b)
+        self.assertNotIn("corvane", a)
+        ma, mb = re.findall(r"<model [^>]*>", a), re.findall(r"<model [^>]*>", b)
+        self.assertEqual(len(mb), len(ma) + 2)
+        self.assertTrue(set(ma) <= set(mb))

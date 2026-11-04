@@ -108,6 +108,9 @@ class PhoneSpec:
     # voice notes (cb-media): bytes of audio files given to the first present attachments, in order, as Audio files;
     # the caller supplies invented speech. Empty leaves every fixture exactly as before.
     voice_notes: tuple = ()
+    # extra invented typed and searched values (cb-vocab, 05 approaches 7 and 9): ``(model_type, field, text)`` for
+    # DictionaryWord Word, Autofill Value or SearchedItem Value, written last. Empty leaves every fixture as before.
+    typed_values: tuple = ()
     report_name: str = "Report.xml"
 
 
@@ -557,6 +560,14 @@ class PhoneBuild:
             # written last, so every other record keeps the ids and content it had before alerts existed
             model_types.setdefault("Notification", [])
             model_types["Notification"] = list(model_types["Notification"]) + self.bank_alerts()
+        for mtype, fname, text in self.spec.typed_values:
+            m = Model(self, mtype, False)
+            m.f(fname, "String", text)
+            if mtype == "Autofill":
+                m.f("Key", "String", "synthetic field")
+            model_types.setdefault(mtype, [])
+            model_types[mtype] = list(model_types[mtype]) + [m.xml()]
+            self.count.fact("typed_values")
         files_xml = self.tagged_files(out)
         top = sum(len(v) for v in model_types.values())
         spec = self.spec
@@ -975,6 +986,9 @@ def main(argv=None) -> int:
     ap.add_argument("out", type=Path)
     ap.add_argument("--scale", type=float, default=0.02)
     ap.add_argument("--like", default="P06")
+    ap.add_argument("--label", default="S1")
+    ap.add_argument("--typed", action="append", default=[],
+                    help="MODEL_TYPE:FIELD:TEXT, an extra invented typed or searched value (phone shape only)")
     a = ap.parse_args(argv)
     if a.shape == "phones-only":
         case = phones_only_case(a.scale)
@@ -988,7 +1002,8 @@ def main(argv=None) -> int:
     else:
         people = invent_people(40, seed=31)
         case = CaseSpec(f"Synthetic {a.like} at scale {a.scale}", people,
-                        [PhoneSpec("S1", like=a.like, scale=a.scale, contacts=[p.key for p in people[1:]], seed=301)])
+                        [PhoneSpec(a.label, like=a.like, scale=a.scale, contacts=[p.key for p in people[1:]], seed=301,
+                                   typed_values=tuple(tuple(t.split(":", 2)) for t in a.typed))])
     m = build_case(case, a.out)
     print(json.dumps({"case": m["case"], "phones": [{"label": p["label"], "top_level_total": p["top_level_total"],
                                                       "messages": p["facts"].get("messages", 0)} for p in m["phones"]],
