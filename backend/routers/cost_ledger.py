@@ -7,15 +7,32 @@ from typing import Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 from sqlalchemy import func, desc, text
 from sqlalchemy.orm import Session
 
 from postgres.session import get_db
 from postgres.models.cost_record import CostRecord, CostJobType
-from routers.auth import get_current_user
+from postgres.models.enums import GlobalRole
+from postgres.models.user import User
+from routers.users import get_current_db_user
 
 router = APIRouter(prefix="/api/cost-ledger", tags=["cost-ledger"])
+
+
+def authorize_costs(db: Session, user: User, case_id: Optional[str]) -> None:
+    """Who may read AI costs: an admin for any case or all cases; otherwise only someone who manages the case
+    (the case.delete permission, the case owner's, the same that archives it) and only for that case.
+
+    Before 4 Nov 2026 these routes checked only that someone was signed in: an ordinary user read all 107,338 cost
+    records of every case (measured on live)."""
+    if user.global_role in (GlobalRole.admin, GlobalRole.super_admin):
+        return
+    if not case_id:
+        raise HTTPException(status_code=403, detail="Admin privileges required for costs across cases")
+    from routers.case_access import authorize_case
+    authorize_case(db, case_id, user, ("case", "delete"))
 
 
 # --- Pydantic Schemas ---
@@ -67,11 +84,12 @@ def get_cost_ledger(
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
     offset: int = Query(0, ge=0, description="Number of records to skip"),
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
+    user: User = Depends(get_current_db_user),
 ):
     """
     Get cost ledger records with optional filtering.
     """
+    authorize_costs(db, user, case_id)
     query = db.query(CostRecord)
     
     # Apply filters
@@ -167,11 +185,12 @@ def get_cost_summary(
     start_date: Optional[str] = Query(None, description="Filter by start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter by end date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    user: dict = Depends(get_current_user),
+    user: User = Depends(get_current_db_user),
 ):
     """
     Get cost summary statistics.
     """
+    authorize_costs(db, user, case_id)
     try:
         # Helper to apply all filters to a query
         def apply_all_filters(query):
@@ -296,3 +315,42 @@ def get_cost_summary(
             status_code=500,
             detail=f"Failed to load cost summary: {error_detail}. Please ensure the cost_records table exists (run database migrations)."
         )
+
+
+@router.get("/case-report")
+def get_case_cost_report(
+    case_id: UUID = Query(..., description="The case to report"),
+    start_date: Optional[str] = Query(None, description="First day, YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="Last day, YYYY-MM-DD"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_db_user),
+):
+    """One case's AI costs, one line per document, conversation or kind of work (FEAT-007)."""
+    from services.case_cost_report import CostReportError, case_cost_report
+    authorize_costs(db, user, str(case_id))
+    try:
+        return case_cost_report(db, case_id, start_date=start_date, end_date=end_date)
+    except CostReportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/case-report.pdf")
+def get_case_cost_report_pdf(
+    case_id: UUID = Query(..., description="The case to report"),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_db_user),
+):
+    """The same report as a PDF, for billing a case."""
+    import re
+    from services.case_cost_report import CostReportError, case_cost_report, cost_report_pdf
+    authorize_costs(db, user, str(case_id))
+    try:
+        report = case_cost_report(db, case_id, start_date=start_date, end_date=end_date)
+        content = cost_report_pdf(report)
+    except CostReportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", report["case_title"] or "case").strip("-")[:80] or "case"
+    return Response(content=content, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="ai-costs-{name}.pdf"'})
