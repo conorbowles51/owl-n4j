@@ -1,10 +1,21 @@
 import { bankKey } from "../lib/account-selection"
 import type { PaymentProfile } from "../lib/investigator-workspace"
+import { statementFacts, type ProfileStatementFacts } from "../lib/people-first-view"
 
 export function ProfileStatementSummary({
   profile,
 }: {
   profile: PaymentProfile
+}) {
+  return <ProfileStatementSummaryView facts={statementFacts(profile)} />
+}
+
+/** The summary from its facts: worked out from a profile (ProfileStatementSummary) or answered by the server for
+ * the list of names and accounts (GET /ledger-people-view), the same facts either way. */
+export function ProfileStatementSummaryView({
+  facts: profile,
+}: {
+  facts: ProfileStatementFacts
 }) {
   const accounts = profile.accountDetails
   const banks = [
@@ -34,12 +45,8 @@ export function ProfileStatementSummary({
     (account) => !account.currency
   ).length
   const unknownTypes = accounts.filter((account) => !account.accountType).length
-  const missingDates = profile.statementPeriods.filter(
-    (period) => !period.start || !period.end
-  ).length
-  const coverageUnavailable = accounts.some(
-    (account) => account.statementPeriods === undefined
-  )
+  const missingDates = profile.statementMissingDates
+  const coverageUnavailable = accounts.some((account) => !account.coverage)
   return (
     <div
       role="group"
@@ -52,9 +59,9 @@ export function ProfileStatementSummary({
           ? `${banks.length} ${banks.length === 1 ? "bank" : "banks"}`
           : "Bank not recorded"}{" "}
         ·{" "}
-        {coverageUnavailable && !profile.sources.length
+        {coverageUnavailable && !profile.sources
           ? "Source count unavailable"
-          : `${profile.sources.length} ${coverageUnavailable ? "known " : ""}source ${profile.sources.length === 1 ? "document" : "documents"}`}
+          : `${profile.sources} ${coverageUnavailable ? "known " : ""}source ${profile.sources === 1 ? "document" : "documents"}`}
       </p>
       <p>
         Banks recorded: {banks.join(", ") || "Not recorded"}. Currencies
@@ -89,17 +96,17 @@ export function ProfileStatementSummary({
           ownership.
         </p>
       )}
-      {profile.statementPeriods.length > 0 ? (
+      {profile.statementPeriods > 0 ? (
         <p>
           Saved statement dates:{" "}
           {profile.statementFirst || "Start not recorded"} to{" "}
           {profile.statementLast || "end not recorded"} ·{" "}
-          {profile.statementPeriods.length} saved{" "}
-          {profile.statementPeriods.length === 1 ? "period" : "periods"}.
+          {profile.statementPeriods} saved{" "}
+          {profile.statementPeriods === 1 ? "period" : "periods"}.
           {missingDates > 0
             ? ` ${missingDates} periods have incomplete dates.`
             : ""}
-          {profile.statementPeriods.length > 1
+          {profile.statementPeriods > 1
             ? " This span may contain gaps."
             : ""}
         </p>
@@ -110,10 +117,10 @@ export function ProfileStatementSummary({
             : "No saved statement periods linked to these accounts."}
         </p>
       )}
-      {profile.statementPeriods.length > 0 && coverageUnavailable && (
+      {profile.statementPeriods > 0 && coverageUnavailable && (
         <p>Statement coverage is unavailable for some account references.</p>
       )}
-      {profile.kind === "owner" && profile.statementPeriods.length > 0 && (
+      {profile.kind === "owner" && profile.statementPeriods > 0 && (
         <p>
           These are account statement dates, not the dates of this person’s
           ownership or payments.

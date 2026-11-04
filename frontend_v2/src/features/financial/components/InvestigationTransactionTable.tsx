@@ -1,12 +1,11 @@
 import { Disclosure } from "./Disclosure"
 import { paymentInventory } from "../lib/payment-inventory"
-import { knownAccountGroup, type KnownPaymentAccount } from "../lib/known-payment-accounts"
+import { paymentTotalsFigures } from "../lib/payment-totals"
+import type { KnownPaymentAccount } from "../lib/known-payment-accounts"
 import { openPaymentParty } from "../lib/payment-party-navigation"
-import { paymentGroup } from "../lib/investigator-workspace"
-import { amountGroupName, amountOf, unnamedParty } from "../lib/transaction-analysis"
+import { amountGroupName, unnamedParty } from "../lib/transaction-analysis"
 import type { LedgerTransaction } from "../api"
 import { formatLedgerAmount } from "../lib/ledger-format"
-import { paymentAccountId } from "../lib/account-selection"
 import { Button } from "@/components/ui/button"
 import { memo, useMemo, useRef, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -33,57 +32,14 @@ export const PaymentTotals = memo(function PaymentTotals({
   knownAccounts?: KnownPaymentAccount[]
   caseId?: string
 }) {
-  const inventory = useMemo(() => paymentInventory(rows, knownAccounts), [rows, knownAccounts])
-  const totals = new Map<
-    string,
-    {
-      credit: bigint
-      debit: bigint
-      count: number
-      accounts: Set<string>
-      labels: Set<string>
-    }
-  >()
-  let unreadable = 0
-  for (const row of rows) {
-    const amount = amountOf(row)
-    if (amount === null) {
-      unreadable++
-      continue
-    }
-    const group = paymentGroup(row)
-    const total = totals.get(group) ?? {
-      credit: 0n,
-      debit: 0n,
-      count: 0,
-      accounts: new Set<string>(),
-      labels: new Set<string>(),
-    }
-    total[row.direction as "credit" | "debit"] += amount
-    total.count++
-    total.accounts.add(paymentAccountId(row))
-    if (row.canonical_account_label || row.account_label)
-      total.labels.add(row.canonical_account_label || row.account_label!)
-    totals.set(group, total)
-  }
-  for (const account of knownAccounts) {
-    if (!account.currency) continue
-    // A directory alias never creates a second payment group for an account
-    // whose actual rows already establish its currency/type in this scope.
-    const observed = [...totals].find(([group, total]) => group.startsWith(`${account.currency}:`) && total.accounts.has(account.id))?.[0]
-    const group = observed || knownAccountGroup(account)
-    const total = totals.get(group) ?? { credit: 0n, debit: 0n, count: 0, accounts: new Set<string>(), labels: new Set<string>() }
-    total.accounts.add(account.id)
-    total.labels.add(account.label)
-    totals.set(group, total)
-  }
+  const figures = useMemo(() => paymentTotalsFigures(rows, knownAccounts), [rows, knownAccounts])
   return (
     <PaymentTotalsView
       label={label}
-      payments={rows.length}
-      inventory={inventory}
-      totals={new Map([...totals].map(([group, total]) => [group, { ...total, accountCount: total.accounts.size }]))}
-      unreadable={unreadable}
+      payments={figures.payments}
+      inventory={figures.inventory}
+      totals={figures.totals}
+      unreadable={figures.unreadable}
       expandAccounts={expandAccounts}
       knownAccounts={knownAccounts}
       caseId={caseId}

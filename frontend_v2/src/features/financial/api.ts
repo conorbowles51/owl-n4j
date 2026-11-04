@@ -2,6 +2,7 @@ import { appendAccountSelection } from "./lib/account-selection"
 import { fetchAPI } from "@/lib/api-client"
 import type { OverviewPanels } from "./lib/overview-panels"
 import type { TrendsServerView } from "./lib/trends-view"
+import type { PeopleServerView } from "./lib/people-first-view"
 import { verifyBulkCorrectionResponse } from "./lib/bulk-correction-file"
 import type { DescriptionCorrection } from "./components/DescriptionCorrectionNote"
 
@@ -1716,6 +1717,33 @@ export const financialAPI = {
       }
     }
     return fetchAPI<TrendsServerView>(`/api/financial/ledger-trends-view?${qs}`)
+  },
+
+  /** The People & businesses list of names and accounts over the same payments as `getLedgerTransactions`, kept
+   * to `categories` and to the currency and account type `group` (none: all). */
+  getLedgerPeopleView: (params: {
+    caseId: string
+    sourceDocumentId?: string
+    accountIds?: string[]
+    accountHolders?: string[]
+    accountId?: string
+    ledgerStatus?: LedgerStatus
+    startDate?: string
+    endDate?: string
+    categories: string[]
+    group?: string
+  }) => {
+    const qs = new URLSearchParams({ case_id: params.caseId })
+    if (params.sourceDocumentId)
+      qs.set("source_document_id", params.sourceDocumentId)
+    appendAccountSelection(qs, params)
+    if (params.accountId) qs.set("account_id", params.accountId)
+    if (params.ledgerStatus) qs.set("ledger_status", params.ledgerStatus)
+    if (params.startDate) qs.set("start_date", params.startDate)
+    if (params.endDate) qs.set("end_date", params.endDate)
+    for (const category of params.categories) qs.append("categories", category)
+    if (params.group) qs.set("group", params.group)
+    return fetchAPI<PeopleServerView>(`/api/financial/ledger-people-view?${qs}`)
   },
 
   /** How many rows `getLedgerTransactions` returns for the same filters, counted without reading them. */

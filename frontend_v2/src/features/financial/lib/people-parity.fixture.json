@@ -1,0 +1,4998 @@
+{
+ "case_id": "00000000-0000-4000-8000-000000000999",
+ "rows": [
+  {
+   "key": "k01",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-11",
+   "to_name": "Shop",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ]
+  },
+  {
+   "key": "k02",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "250",
+   "ordering_date": "2021-02-03",
+   "to_name": "Shop",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ]
+  },
+  {
+   "key": "k03",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "credit",
+   "amount_minor": "50000",
+   "ordering_date": "2021-01-13",
+   "to_name": "Shop",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Income",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "from_name": "Employer SA"
+  },
+  {
+   "key": "k04",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000002",
+   "account_label": "1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-14",
+   "to_name": "  Shop  ",
+   "source_document_id": "00000000-0000-4000-8000-000000000202",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "canonical_account_id": "00000000-0000-4000-8000-000000000001",
+   "canonical_account_label": "BBVA ****1234 (joined)"
+  },
+  {
+   "key": "k05",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": null,
+   "to_name": null,
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "counterparty_raw": "RAW NAME"
+  },
+  {
+   "key": "k06",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-16",
+   "to_name": "",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "counterparty_raw": "raw ignored by ??",
+   "description": "TRASPASO A TERCEROS"
+  },
+  {
+   "key": "k07",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "12.50",
+   "ordering_date": "2021-01-17",
+   "to_name": null,
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "description": "SPEI ENVIADO banco"
+  },
+  {
+   "key": "k08",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "credit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-18",
+   "to_name": "Shop",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "from_name": null,
+   "description": "SPEI DEVUELTO 123"
+  },
+  {
+   "key": "k09",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-19",
+   "to_name": null,
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "description": "I.S.R. RETENIDO"
+  },
+  {
+   "key": "k10",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "credit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-10",
+   "to_name": "Shop",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "from_name": null,
+   "description": "IVA comision"
+  },
+  {
+   "key": "k11",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-11",
+   "to_name": null,
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "label_sources": {
+    "to_name": {
+     "source": "investigator"
+    }
+   }
+  },
+  {
+   "key": "k12",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-12",
+   "to_name": null,
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "label_sources": {
+    "to_name": {
+     "source": "missing",
+     "reason": "Layout prints no payee",
+     "explanation": "This bank omits payees on fees."
+    }
+   }
+  },
+  {
+   "key": "k13",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-13",
+   "to_name": null,
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "label_sources": {
+    "to_name": {
+     "source": "missing",
+     "reason": "Layout prints no payee"
+    }
+   }
+  },
+  {
+   "key": "k14",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-14",
+   "to_name": "   ",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "description": "ORDEN DE PAGO EXTRANJERO 9"
+  },
+  {
+   "key": "k15",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000003",
+   "account_label": "Amex card",
+   "account_institution": "Amex",
+   "currency": "USD",
+   "account_type": "credit_card",
+   "direction": "credit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-02-05",
+   "to_name": "Shop",
+   "source_document_id": "00000000-0000-4000-8000-000000000203",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000303",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000102",
+      "name": "Bob Lee"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-02-01",
+     "effective_to": null
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000102",
+     "name": "Bob Lee"
+    }
+   ],
+   "from_name": null,
+   "description": "ONLINE PAYMENT THANK YOU"
+  },
+  {
+   "key": "k16",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000003",
+   "account_label": "Amex card",
+   "account_institution": "Amex",
+   "currency": "USD",
+   "account_type": "credit_card",
+   "direction": "debit",
+   "amount_minor": "-5",
+   "ordering_date": "2021-01-20",
+   "to_name": "Hotel",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000303",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000102",
+      "name": "Bob Lee"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-02-01",
+     "effective_to": null
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000102",
+     "name": "Bob Lee"
+    }
+   ]
+  },
+  {
+   "key": "k17",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000004",
+   "account_label": null,
+   "account_institution": null,
+   "currency": "EUR",
+   "account_type": null,
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-13-01",
+   "to_name": "Shop",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    },
+    {
+     "id": "00000000-0000-4000-8000-000000000102",
+     "name": "Bob Lee"
+    }
+   ]
+  },
+  {
+   "key": "k18",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000006",
+   "account_label": "Unregistered acct",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-18",
+   "to_name": "Shop",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": null,
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000103",
+     "name": "Linked Co"
+    }
+   ]
+  },
+  {
+   "key": "k19",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000006",
+   "account_label": "Unregistered acct",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-19",
+   "to_name": "Ignored",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": null,
+   "account_holder_parties": null,
+   "counterparty_link": {
+    "kind": "party",
+    "id": "00000000-0000-4000-8000-000000000103",
+    "label": "Linked Co"
+   }
+  },
+  {
+   "key": "k20",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-10",
+   "to_name": "Payee",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "counterparty_link": {
+    "kind": "account",
+    "id": "00000000-0000-4000-8000-000000000002",
+    "label": null
+   }
+  },
+  {
+   "key": "k21",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "debit",
+   "amount_minor": "1000",
+   "ordering_date": "2021-01-11",
+   "to_name": null,
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "counterparty_link": {
+    "kind": "account",
+    "id": "00000000-0000-4000-8000-000000000007",
+    "label": "Outside account"
+   }
+  },
+  {
+   "key": "k22",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "credit",
+   "amount_minor": "x1",
+   "ordering_date": "2021-01-05T10:00:00",
+   "to_name": "Shop",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "from_name": "Employer SA",
+   "ordering_date_context": "statement_end_ordering_only"
+  },
+  {
+   "key": "k23",
+   "case_id": "00000000-0000-4000-8000-000000000999",
+   "account_id": "00000000-0000-4000-8000-000000000001",
+   "account_label": "BBVA ****1234",
+   "account_institution": "BBVA México",
+   "currency": "MXN",
+   "account_type": "checking",
+   "direction": "refund",
+   "amount_minor": "300",
+   "ordering_date": "2021-01-13",
+   "to_name": "Shop",
+   "source_document_id": "00000000-0000-4000-8000-000000000201",
+   "category": "Services",
+   "account_relationships": [
+    {
+     "id": "00000000-0000-4000-8000-000000000301",
+     "party": {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     "role": "holder",
+     "basis": "source",
+     "sources": [],
+     "effective_from": "2021-01-01",
+     "effective_to": "2021-01-31"
+    }
+   ],
+   "account_holder_parties": [
+    {
+     "id": "00000000-0000-4000-8000-000000000101",
+     "name": "Ana Ruiz"
+    }
+   ],
+   "from_name": "Shop"
+  }
+ ],
+ "directory": {
+  "case_id": "00000000-0000-4000-8000-000000000999",
+  "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "parties": [],
+  "history": [],
+  "applied": true,
+  "limitation": "",
+  "accounts": [
+   {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "holder_as_recorded": "Ana Ruiz",
+    "identifier_as_printed": "****1234",
+    "institution": "BBVA México",
+    "currency": "MXN",
+    "account_type": "checking",
+    "statement_periods": [
+     {
+      "id": "00000000-0000-4000-8000-000000000401",
+      "source_document_id": "00000000-0000-4000-8000-000000000201",
+      "start": "2021-01-01",
+      "end": "2021-01-31"
+     },
+     {
+      "id": "00000000-0000-4000-8000-000000000402",
+      "source_document_id": "00000000-0000-4000-8000-000000000201",
+      "start": "2021-02-01",
+      "end": null
+     }
+    ],
+    "party": null,
+    "relationships": [
+     {
+      "id": "00000000-0000-4000-8000-000000000301",
+      "party": {
+       "id": "00000000-0000-4000-8000-000000000101",
+       "name": "Ana Ruiz"
+      },
+      "role": "holder",
+      "basis": "source",
+      "sources": [],
+      "effective_from": "2021-01-01",
+      "effective_to": "2021-01-31"
+     }
+    ],
+    "holder_parties": [
+     {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     }
+    ]
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000002",
+    "canonical_id": "00000000-0000-4000-8000-000000000001",
+    "holder_as_recorded": null,
+    "identifier_as_printed": "1234",
+    "institution": null,
+    "currency": "MXN",
+    "account_type": null,
+    "statement_periods": [
+     {
+      "id": "00000000-0000-4000-8000-000000000402",
+      "source_document_id": "00000000-0000-4000-8000-000000000201",
+      "start": "2021-02-01",
+      "end": "2021-02-28"
+     },
+     {
+      "id": "00000000-0000-4000-8000-000000000403",
+      "source_document_id": "00000000-0000-4000-8000-000000000202",
+      "start": null,
+      "end": "2021-03-31"
+     }
+    ],
+    "party": null,
+    "relationships": [
+     {
+      "id": "00000000-0000-4000-8000-000000000301",
+      "party": {
+       "id": "00000000-0000-4000-8000-000000000101",
+       "name": "Ana Ruiz"
+      },
+      "role": "holder",
+      "basis": "source",
+      "sources": [],
+      "effective_from": "2021-01-01",
+      "effective_to": "2021-01-31"
+     },
+     {
+      "id": "00000000-0000-4000-8000-000000000302",
+      "party": {
+       "id": "00000000-0000-4000-8000-000000000101",
+       "name": "Ana Ruiz"
+      },
+      "role": "holder",
+      "basis": "source",
+      "sources": [],
+      "effective_from": null,
+      "effective_to": null
+     }
+    ],
+    "holder_parties": [
+     {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     }
+    ]
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000003",
+    "holder_as_recorded": null,
+    "identifier_as_printed": null,
+    "institution": "Amex",
+    "currency": "USD",
+    "account_type": "credit_card",
+    "party": null,
+    "relationships": [
+     {
+      "id": "00000000-0000-4000-8000-000000000303",
+      "party": {
+       "id": "00000000-0000-4000-8000-000000000102",
+       "name": "Bob Lee"
+      },
+      "role": "holder",
+      "basis": "source",
+      "sources": [],
+      "effective_from": "2021-02-01",
+      "effective_to": null
+     }
+    ],
+    "holder_parties": [
+     {
+      "id": "00000000-0000-4000-8000-000000000102",
+      "name": "Bob Lee"
+     }
+    ]
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000004",
+    "holder_as_recorded": "Ana and Bob",
+    "identifier_as_printed": "77",
+    "institution": "  ",
+    "currency": null,
+    "statement_periods": [],
+    "party": null,
+    "relationships": [
+     {
+      "id": "00000000-0000-4000-8000-000000000302",
+      "party": {
+       "id": "00000000-0000-4000-8000-000000000101",
+       "name": "Ana Ruiz"
+      },
+      "role": "holder",
+      "basis": "source",
+      "sources": [],
+      "effective_from": null,
+      "effective_to": null
+     },
+     {
+      "id": "00000000-0000-4000-8000-000000000303",
+      "party": {
+       "id": "00000000-0000-4000-8000-000000000102",
+       "name": "Bob Lee"
+      },
+      "role": "holder",
+      "basis": "source",
+      "sources": [],
+      "effective_from": "2021-02-01",
+      "effective_to": null
+     }
+    ],
+    "holder_parties": [
+     {
+      "id": "00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz"
+     },
+     {
+      "id": "00000000-0000-4000-8000-000000000102",
+      "name": "Bob Lee"
+     }
+    ]
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000005",
+    "holder_as_recorded": null,
+    "identifier_as_printed": null,
+    "institution": null,
+    "currency": null,
+    "party": null
+   }
+  ]
+ },
+ "scenarios": [
+  {
+   "ask": {},
+   "server": {
+    "complete": true,
+    "categories": [],
+    "group": "",
+    "row_count": 23,
+    "row_groups": [
+     "MXN:bank",
+     "USD:card",
+     "EUR:bank"
+    ],
+    "directory_groups": [
+     "MXN:bank",
+     "USD:card"
+    ],
+    "profiles": [
+     {
+      "id": "account:00000000-0000-4000-8000-000000000001",
+      "name": "BBVA México · ****1234 · Ana Ruiz",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 18,
+      "counterparty_payments": 1,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": "2021-01-10",
+      "last": "2021-02-03",
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": {
+       "payments": 18,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-10",
+        "last": "2021-02-03",
+        "undated": 2,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 10
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "52000",
+         "debit": "11250",
+         "count": 15,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 3
+      },
+      "amount": "63550",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 16,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": "2021-01-10",
+      "last": "2021-01-19",
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": {
+       "payments": 16,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         },
+         {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "label": "Account details not recorded",
+          "currencies": [
+           "EUR"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN",
+         "EUR"
+        ],
+        "first": "2021-01-10",
+        "last": "2021-01-19",
+        "undated": 1,
+        "unknown_banks": 1,
+        "unidentified_counterparties": 10
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "52000",
+         "debit": "10000",
+         "count": 13,
+         "accounts": 1
+        },
+        {
+         "group": "EUR:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 2
+      },
+      "amount": "63300",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000003",
+      "name": "Amex",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 2,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 2,
+      "first": "2021-01-20",
+      "last": "2021-02-05",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 2,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "label": "Amex card",
+          "currencies": [
+           "USD"
+          ]
+         }
+        ],
+        "banks": [
+         "Amex"
+        ],
+        "currencies": [
+         "USD"
+        ],
+        "first": "2021-01-20",
+        "last": "2021-02-05",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 1
+       },
+       "groups": [
+        {
+         "group": "USD:card",
+         "credit": "1000",
+         "debit": "0",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 1
+      },
+      "amount": "995",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000102",
+      "name": "Bob Lee",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 2,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": "2021-02-05",
+      "last": "2021-02-05",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 2,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "label": "Amex card",
+          "currencies": [
+           "USD"
+          ]
+         },
+         {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "label": "Account details not recorded",
+          "currencies": [
+           "EUR"
+          ]
+         }
+        ],
+        "banks": [
+         "Amex"
+        ],
+        "currencies": [
+         "USD",
+         "EUR"
+        ],
+        "first": "2021-02-05",
+        "last": "2021-02-05",
+        "undated": 1,
+        "unknown_banks": 1,
+        "unidentified_counterparties": 1
+       },
+       "groups": [
+        {
+         "group": "USD:card",
+         "credit": "1000",
+         "debit": "0",
+         "count": 1,
+         "accounts": 1
+        },
+        {
+         "group": "EUR:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "2000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000004",
+      "name": "   · 77 · Ana and Bob",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 1,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "label": "Account details not recorded",
+          "currencies": [
+           "EUR"
+          ]
+         }
+        ],
+        "banks": [],
+        "currencies": [
+         "EUR"
+        ],
+        "first": null,
+        "last": null,
+        "undated": 1,
+        "unknown_banks": 1,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "EUR:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000005",
+      "name": "Account reference 00000000 · details not recorded",
+      "kind": "account",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": null,
+        "number": null,
+        "accountType": null,
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:Shop",
+      "name": "Shop",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 5,
+      "counterparty_payments": 0,
+      "accounts": 3,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-11",
+      "last": "2021-02-03",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 5,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         },
+         {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "label": "Account details not recorded",
+          "currencies": [
+           "EUR"
+          ]
+         },
+         {
+          "id": "00000000-0000-4000-8000-000000000006",
+          "label": "Unregistered acct",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN",
+         "EUR"
+        ],
+        "first": "2021-01-11",
+        "last": "2021-02-03",
+        "undated": 1,
+        "unknown_banks": 1,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "2250",
+         "count": 3,
+         "accounts": 2
+        },
+        {
+         "group": "EUR:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 1
+      },
+      "amount": "3550",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:Employer SA",
+      "name": "Employer SA",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 2,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-13",
+      "last": "2021-01-13",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 2,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-13",
+        "last": "2021-01-13",
+        "undated": 1,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "50000",
+         "debit": "0",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 1
+      },
+      "amount": "50000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:  Shop  ",
+      "name": "  Shop  ",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-14",
+      "last": "2021-01-14",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234 (joined)",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-14",
+        "last": "2021-01-14",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:RAW NAME",
+      "name": "RAW NAME",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": null,
+        "last": null,
+        "undated": 1,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:",
+      "name": "Name not recorded",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": true,
+      "payments": 9,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [],
+      "sources": 2,
+      "first": "2021-01-10",
+      "last": "2021-02-05",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 9,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         },
+         {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "label": "Amex card",
+          "currencies": [
+           "USD"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México",
+         "Amex"
+        ],
+        "currencies": [
+         "MXN",
+         "USD"
+        ],
+        "first": "2021-01-10",
+        "last": "2021-02-05",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 9
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "2000",
+         "debit": "5000",
+         "count": 7,
+         "accounts": 1
+        },
+        {
+         "group": "USD:card",
+         "credit": "1000",
+         "debit": "0",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 1
+      },
+      "amount": "8000",
+      "unidentified_groups": [
+       {
+        "label": "Transfers to third parties",
+        "reason": "The description records a transfer to a third party, without naming the recipient. Its payment wording and reference remain available.",
+        "count": 1
+       },
+       {
+        "label": "Bank transfers with no named recipient",
+        "reason": "The description identifies the transfer route or bank, but no beneficiary name. A bank name alone is not treated as the recipient.",
+        "count": 1
+       },
+       {
+        "label": "Returned transfers",
+        "reason": "The description records a returned transfer. It does not name the original beneficiary; compare its reference with the outgoing payment.",
+        "count": 1
+       },
+       {
+        "label": "Tax entries",
+        "reason": "The description identifies tax withheld or tax on a commission, without a named recipient.",
+        "count": 2
+       },
+       {
+        "label": "Name cleared during review",
+        "reason": "An investigator left this name blank. Open the payment to review or add a name.",
+        "count": 1
+       },
+       {
+        "label": "Layout prints no payee",
+        "reason": "This bank omits payees on fees.",
+        "count": 2
+       },
+       {
+        "label": "Card payments with no named funding account",
+        "reason": "The payment reduces card debt. The description does not identify the person or account that funded it.",
+        "count": 1
+       }
+      ]
+     },
+     {
+      "id": "name:   ",
+      "name": "Name not recorded",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": true,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-14",
+      "last": "2021-01-14",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-14",
+        "last": "2021-01-14",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 1
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": [
+       {
+        "label": "Foreign payment orders",
+        "reason": "The description records a foreign payment order. Open its reference and original statement to identify the counterparty.",
+        "count": 1
+       }
+      ]
+     },
+     {
+      "id": "name:Hotel",
+      "name": "Hotel",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-20",
+      "last": "2021-01-20",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "label": "Amex card",
+          "currencies": [
+           "USD"
+          ]
+         }
+        ],
+        "banks": [
+         "Amex"
+        ],
+        "currencies": [
+         "USD"
+        ],
+        "first": "2021-01-20",
+        "last": "2021-01-20",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [],
+       "unreadable": 1
+      },
+      "amount": "-5",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000006",
+      "name": "Unregistered acct",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 2,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": null,
+        "accountType": "checking",
+        "registered": false,
+        "coverage": false
+       }
+      ],
+      "sources": 1,
+      "first": "2021-01-18",
+      "last": "2021-01-19",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 2,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000006",
+          "label": "Unregistered acct",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-18",
+        "last": "2021-01-19",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "2000",
+         "count": 2,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "2000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000103",
+      "name": "Linked Co",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 1,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": null,
+        "accountType": "checking",
+        "registered": false,
+        "coverage": false
+       }
+      ],
+      "sources": 1,
+      "first": "2021-01-18",
+      "last": "2021-01-18",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000006",
+          "label": "Unregistered acct",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-18",
+        "last": "2021-01-18",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000007",
+      "name": "Outside account",
+      "kind": "account",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 1,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": null,
+        "number": null,
+        "accountType": null,
+        "registered": false,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     }
+    ]
+   }
+  },
+  {
+   "ask": {
+    "group": "MXN:bank"
+   },
+   "server": {
+    "complete": true,
+    "categories": [],
+    "group": "MXN:bank",
+    "row_count": 23,
+    "row_groups": [
+     "MXN:bank",
+     "USD:card",
+     "EUR:bank"
+    ],
+    "directory_groups": [
+     "MXN:bank",
+     "USD:card"
+    ],
+    "profiles": [
+     {
+      "id": "account:00000000-0000-4000-8000-000000000001",
+      "name": "BBVA México · ****1234 · Ana Ruiz",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 18,
+      "counterparty_payments": 1,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": "2021-01-10",
+      "last": "2021-02-03",
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": {
+       "payments": 18,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-10",
+        "last": "2021-02-03",
+        "undated": 2,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 10
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "52000",
+         "debit": "11250",
+         "count": 15,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 3
+      },
+      "amount": "63550",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 15,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": "2021-01-10",
+      "last": "2021-01-19",
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": {
+       "payments": 15,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-10",
+        "last": "2021-01-19",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 10
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "52000",
+         "debit": "10000",
+         "count": 13,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 2
+      },
+      "amount": "62300",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000003",
+      "name": "Amex",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000102",
+      "name": "Bob Lee",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000004",
+      "name": "   · 77 · Ana and Bob",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000005",
+      "name": "Account reference 00000000 · details not recorded",
+      "kind": "account",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": null,
+        "number": null,
+        "accountType": null,
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:Shop",
+      "name": "Shop",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 4,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-11",
+      "last": "2021-02-03",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 4,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         },
+         {
+          "id": "00000000-0000-4000-8000-000000000006",
+          "label": "Unregistered acct",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-11",
+        "last": "2021-02-03",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "2250",
+         "count": 3,
+         "accounts": 2
+        }
+       ],
+       "unreadable": 1
+      },
+      "amount": "2550",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:Employer SA",
+      "name": "Employer SA",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 2,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-13",
+      "last": "2021-01-13",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 2,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-13",
+        "last": "2021-01-13",
+        "undated": 1,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "50000",
+         "debit": "0",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 1
+      },
+      "amount": "50000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:  Shop  ",
+      "name": "  Shop  ",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-14",
+      "last": "2021-01-14",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234 (joined)",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-14",
+        "last": "2021-01-14",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:RAW NAME",
+      "name": "RAW NAME",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": null,
+        "last": null,
+        "undated": 1,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:",
+      "name": "Name not recorded",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": true,
+      "payments": 8,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-10",
+      "last": "2021-01-19",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 8,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-10",
+        "last": "2021-01-19",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 8
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "2000",
+         "debit": "5000",
+         "count": 7,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 1
+      },
+      "amount": "7000",
+      "unidentified_groups": [
+       {
+        "label": "Transfers to third parties",
+        "reason": "The description records a transfer to a third party, without naming the recipient. Its payment wording and reference remain available.",
+        "count": 1
+       },
+       {
+        "label": "Bank transfers with no named recipient",
+        "reason": "The description identifies the transfer route or bank, but no beneficiary name. A bank name alone is not treated as the recipient.",
+        "count": 1
+       },
+       {
+        "label": "Returned transfers",
+        "reason": "The description records a returned transfer. It does not name the original beneficiary; compare its reference with the outgoing payment.",
+        "count": 1
+       },
+       {
+        "label": "Tax entries",
+        "reason": "The description identifies tax withheld or tax on a commission, without a named recipient.",
+        "count": 2
+       },
+       {
+        "label": "Name cleared during review",
+        "reason": "An investigator left this name blank. Open the payment to review or add a name.",
+        "count": 1
+       },
+       {
+        "label": "Layout prints no payee",
+        "reason": "This bank omits payees on fees.",
+        "count": 2
+       }
+      ]
+     },
+     {
+      "id": "name:   ",
+      "name": "Name not recorded",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": true,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-14",
+      "last": "2021-01-14",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-14",
+        "last": "2021-01-14",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 1
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": [
+       {
+        "label": "Foreign payment orders",
+        "reason": "The description records a foreign payment order. Open its reference and original statement to identify the counterparty.",
+        "count": 1
+       }
+      ]
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000006",
+      "name": "Unregistered acct",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 2,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": null,
+        "accountType": "checking",
+        "registered": false,
+        "coverage": false
+       }
+      ],
+      "sources": 1,
+      "first": "2021-01-18",
+      "last": "2021-01-19",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 2,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000006",
+          "label": "Unregistered acct",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-18",
+        "last": "2021-01-19",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "2000",
+         "count": 2,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "2000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000103",
+      "name": "Linked Co",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 1,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": null,
+        "accountType": "checking",
+        "registered": false,
+        "coverage": false
+       }
+      ],
+      "sources": 1,
+      "first": "2021-01-18",
+      "last": "2021-01-18",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000006",
+          "label": "Unregistered acct",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-18",
+        "last": "2021-01-18",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000007",
+      "name": "Outside account",
+      "kind": "account",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 1,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": null,
+        "number": null,
+        "accountType": null,
+        "registered": false,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     }
+    ]
+   }
+  },
+  {
+   "ask": {
+    "group": "USD:card"
+   },
+   "server": {
+    "complete": true,
+    "categories": [],
+    "group": "USD:card",
+    "row_count": 23,
+    "row_groups": [
+     "MXN:bank",
+     "USD:card",
+     "EUR:bank"
+    ],
+    "directory_groups": [
+     "MXN:bank",
+     "USD:card"
+    ],
+    "profiles": [
+     {
+      "id": "account:00000000-0000-4000-8000-000000000001",
+      "name": "BBVA México · ****1234 · Ana Ruiz",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": null,
+      "last": null,
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": null,
+      "last": null,
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000003",
+      "name": "Amex",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 2,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 2,
+      "first": "2021-01-20",
+      "last": "2021-02-05",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 2,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "label": "Amex card",
+          "currencies": [
+           "USD"
+          ]
+         }
+        ],
+        "banks": [
+         "Amex"
+        ],
+        "currencies": [
+         "USD"
+        ],
+        "first": "2021-01-20",
+        "last": "2021-02-05",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 1
+       },
+       "groups": [
+        {
+         "group": "USD:card",
+         "credit": "1000",
+         "debit": "0",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 1
+      },
+      "amount": "995",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000102",
+      "name": "Bob Lee",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 1,
+      "first": "2021-02-05",
+      "last": "2021-02-05",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "label": "Amex card",
+          "currencies": [
+           "USD"
+          ]
+         }
+        ],
+        "banks": [
+         "Amex"
+        ],
+        "currencies": [
+         "USD"
+        ],
+        "first": "2021-02-05",
+        "last": "2021-02-05",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 1
+       },
+       "groups": [
+        {
+         "group": "USD:card",
+         "credit": "1000",
+         "debit": "0",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000004",
+      "name": "   · 77 · Ana and Bob",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000005",
+      "name": "Account reference 00000000 · details not recorded",
+      "kind": "account",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": null,
+        "number": null,
+        "accountType": null,
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:",
+      "name": "Name not recorded",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": true,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-02-05",
+      "last": "2021-02-05",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "label": "Amex card",
+          "currencies": [
+           "USD"
+          ]
+         }
+        ],
+        "banks": [
+         "Amex"
+        ],
+        "currencies": [
+         "USD"
+        ],
+        "first": "2021-02-05",
+        "last": "2021-02-05",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 1
+       },
+       "groups": [
+        {
+         "group": "USD:card",
+         "credit": "1000",
+         "debit": "0",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": [
+       {
+        "label": "Card payments with no named funding account",
+        "reason": "The payment reduces card debt. The description does not identify the person or account that funded it.",
+        "count": 1
+       }
+      ]
+     },
+     {
+      "id": "name:Hotel",
+      "name": "Hotel",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-20",
+      "last": "2021-01-20",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "label": "Amex card",
+          "currencies": [
+           "USD"
+          ]
+         }
+        ],
+        "banks": [
+         "Amex"
+        ],
+        "currencies": [
+         "USD"
+        ],
+        "first": "2021-01-20",
+        "last": "2021-01-20",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [],
+       "unreadable": 1
+      },
+      "amount": "-5",
+      "unidentified_groups": null
+     }
+    ]
+   }
+  },
+  {
+   "ask": {
+    "group": "EUR:bank"
+   },
+   "server": {
+    "complete": true,
+    "categories": [],
+    "group": "EUR:bank",
+    "row_count": 23,
+    "row_groups": [
+     "MXN:bank",
+     "USD:card",
+     "EUR:bank"
+    ],
+    "directory_groups": [
+     "MXN:bank",
+     "USD:card"
+    ],
+    "profiles": [
+     {
+      "id": "account:00000000-0000-4000-8000-000000000001",
+      "name": "BBVA México · ****1234 · Ana Ruiz",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": null,
+      "last": null,
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": null,
+      "last": null,
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "label": "Account details not recorded",
+          "currencies": [
+           "EUR"
+          ]
+         }
+        ],
+        "banks": [],
+        "currencies": [
+         "EUR"
+        ],
+        "first": null,
+        "last": null,
+        "undated": 1,
+        "unknown_banks": 1,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "EUR:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000003",
+      "name": "Amex",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000102",
+      "name": "Bob Lee",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 1,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "label": "Account details not recorded",
+          "currencies": [
+           "EUR"
+          ]
+         }
+        ],
+        "banks": [],
+        "currencies": [
+         "EUR"
+        ],
+        "first": null,
+        "last": null,
+        "undated": 1,
+        "unknown_banks": 1,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "EUR:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000004",
+      "name": "   · 77 · Ana and Bob",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 1,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "label": "Account details not recorded",
+          "currencies": [
+           "EUR"
+          ]
+         }
+        ],
+        "banks": [],
+        "currencies": [
+         "EUR"
+        ],
+        "first": null,
+        "last": null,
+        "undated": 1,
+        "unknown_banks": 1,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "EUR:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000005",
+      "name": "Account reference 00000000 · details not recorded",
+      "kind": "account",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": null,
+        "number": null,
+        "accountType": null,
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:Shop",
+      "name": "Shop",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "label": "Account details not recorded",
+          "currencies": [
+           "EUR"
+          ]
+         }
+        ],
+        "banks": [],
+        "currencies": [
+         "EUR"
+        ],
+        "first": null,
+        "last": null,
+        "undated": 1,
+        "unknown_banks": 1,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "EUR:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     }
+    ]
+   }
+  },
+  {
+   "ask": {
+    "group": "GBP:bank"
+   },
+   "server": {
+    "complete": true,
+    "categories": [],
+    "group": "GBP:bank",
+    "row_count": 23,
+    "row_groups": [
+     "MXN:bank",
+     "USD:card",
+     "EUR:bank"
+    ],
+    "directory_groups": [
+     "MXN:bank",
+     "USD:card"
+    ],
+    "profiles": [
+     {
+      "id": "account:00000000-0000-4000-8000-000000000001",
+      "name": "BBVA México · ****1234 · Ana Ruiz",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": null,
+      "last": null,
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": null,
+      "last": null,
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000003",
+      "name": "Amex",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000102",
+      "name": "Bob Lee",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000004",
+      "name": "   · 77 · Ana and Bob",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000005",
+      "name": "Account reference 00000000 · details not recorded",
+      "kind": "account",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": null,
+        "number": null,
+        "accountType": null,
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     }
+    ]
+   }
+  },
+  {
+   "ask": {
+    "categories": [
+     "Income"
+    ]
+   },
+   "server": {
+    "complete": true,
+    "categories": [
+     "Income"
+    ],
+    "group": "",
+    "row_count": 1,
+    "row_groups": [
+     "MXN:bank"
+    ],
+    "directory_groups": [
+     "MXN:bank",
+     "USD:card"
+    ],
+    "profiles": [
+     {
+      "id": "account:00000000-0000-4000-8000-000000000001",
+      "name": "BBVA México · ****1234 · Ana Ruiz",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": "2021-01-13",
+      "last": "2021-01-13",
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-13",
+        "last": "2021-01-13",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "50000",
+         "debit": "0",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "50000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": "2021-01-13",
+      "last": "2021-01-13",
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-13",
+        "last": "2021-01-13",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "50000",
+         "debit": "0",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "50000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000003",
+      "name": "Amex",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000102",
+      "name": "Bob Lee",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000004",
+      "name": "   · 77 · Ana and Bob",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000005",
+      "name": "Account reference 00000000 · details not recorded",
+      "kind": "account",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": null,
+        "number": null,
+        "accountType": null,
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:Employer SA",
+      "name": "Employer SA",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-13",
+      "last": "2021-01-13",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-13",
+        "last": "2021-01-13",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "50000",
+         "debit": "0",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "50000",
+      "unidentified_groups": null
+     }
+    ]
+   }
+  },
+  {
+   "ask": {
+    "categories": [
+     "Services"
+    ],
+    "group": "MXN:bank"
+   },
+   "server": {
+    "complete": true,
+    "categories": [
+     "Services"
+    ],
+    "group": "MXN:bank",
+    "row_count": 22,
+    "row_groups": [
+     "MXN:bank",
+     "USD:card",
+     "EUR:bank"
+    ],
+    "directory_groups": [
+     "MXN:bank",
+     "USD:card"
+    ],
+    "profiles": [
+     {
+      "id": "account:00000000-0000-4000-8000-000000000001",
+      "name": "BBVA México · ****1234 · Ana Ruiz",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 17,
+      "counterparty_payments": 1,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": "2021-01-10",
+      "last": "2021-02-03",
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": {
+       "payments": 17,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-10",
+        "last": "2021-02-03",
+        "undated": 2,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 10
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "2000",
+         "debit": "11250",
+         "count": 14,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 3
+      },
+      "amount": "13550",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000101",
+      "name": "Ana Ruiz",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 14,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": "****1234",
+        "accountType": "checking",
+        "registered": true,
+        "coverage": true
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 2,
+      "first": "2021-01-10",
+      "last": "2021-01-19",
+      "statement_periods": 3,
+      "statement_periods_missing_dates": 1,
+      "statement_first": "2021-01-01",
+      "statement_last": "2021-03-31",
+      "totals": {
+       "payments": 14,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-10",
+        "last": "2021-01-19",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 10
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "2000",
+         "debit": "10000",
+         "count": 12,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 2
+      },
+      "amount": "12300",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000003",
+      "name": "Amex",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000102",
+      "name": "Bob Lee",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [
+       {
+        "currency": "USD",
+        "institution": "Amex",
+        "number": null,
+        "accountType": "credit_card",
+        "registered": true,
+        "coverage": false
+       },
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000004",
+      "name": "   · 77 · Ana and Bob",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": "  ",
+        "number": "77",
+        "accountType": null,
+        "registered": true,
+        "coverage": true
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000005",
+      "name": "Account reference 00000000 · details not recorded",
+      "kind": "account",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": null,
+        "number": null,
+        "accountType": null,
+        "registered": true,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:Shop",
+      "name": "Shop",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 4,
+      "counterparty_payments": 0,
+      "accounts": 2,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-11",
+      "last": "2021-02-03",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 4,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         },
+         {
+          "id": "00000000-0000-4000-8000-000000000006",
+          "label": "Unregistered acct",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-11",
+        "last": "2021-02-03",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "2250",
+         "count": 3,
+         "accounts": 2
+        }
+       ],
+       "unreadable": 1
+      },
+      "amount": "2550",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:  Shop  ",
+      "name": "  Shop  ",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-14",
+      "last": "2021-01-14",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234 (joined)",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-14",
+        "last": "2021-01-14",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:RAW NAME",
+      "name": "RAW NAME",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": null,
+        "last": null,
+        "undated": 1,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:",
+      "name": "Name not recorded",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": true,
+      "payments": 8,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-10",
+      "last": "2021-01-19",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 8,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-10",
+        "last": "2021-01-19",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 8
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "2000",
+         "debit": "5000",
+         "count": 7,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 1
+      },
+      "amount": "7000",
+      "unidentified_groups": [
+       {
+        "label": "Transfers to third parties",
+        "reason": "The description records a transfer to a third party, without naming the recipient. Its payment wording and reference remain available.",
+        "count": 1
+       },
+       {
+        "label": "Bank transfers with no named recipient",
+        "reason": "The description identifies the transfer route or bank, but no beneficiary name. A bank name alone is not treated as the recipient.",
+        "count": 1
+       },
+       {
+        "label": "Returned transfers",
+        "reason": "The description records a returned transfer. It does not name the original beneficiary; compare its reference with the outgoing payment.",
+        "count": 1
+       },
+       {
+        "label": "Tax entries",
+        "reason": "The description identifies tax withheld or tax on a commission, without a named recipient.",
+        "count": 2
+       },
+       {
+        "label": "Name cleared during review",
+        "reason": "An investigator left this name blank. Open the payment to review or add a name.",
+        "count": 1
+       },
+       {
+        "label": "Layout prints no payee",
+        "reason": "This bank omits payees on fees.",
+        "count": 2
+       }
+      ]
+     },
+     {
+      "id": "name:   ",
+      "name": "Name not recorded",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": true,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": "2021-01-14",
+      "last": "2021-01-14",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-14",
+        "last": "2021-01-14",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 1
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": [
+       {
+        "label": "Foreign payment orders",
+        "reason": "The description records a foreign payment order. Open its reference and original statement to identify the counterparty.",
+        "count": 1
+       }
+      ]
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000006",
+      "name": "Unregistered acct",
+      "kind": "account",
+      "nested_under_owner": true,
+      "unidentified": false,
+      "payments": 2,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": null,
+        "accountType": "checking",
+        "registered": false,
+        "coverage": false
+       }
+      ],
+      "sources": 1,
+      "first": "2021-01-18",
+      "last": "2021-01-19",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 2,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000006",
+          "label": "Unregistered acct",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-18",
+        "last": "2021-01-19",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "2000",
+         "count": 2,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "2000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "owner:00000000-0000-4000-8000-000000000103",
+      "name": "Linked Co",
+      "kind": "owner",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 1,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": "MXN",
+        "institution": "BBVA México",
+        "number": null,
+        "accountType": "checking",
+        "registered": false,
+        "coverage": false
+       }
+      ],
+      "sources": 1,
+      "first": "2021-01-18",
+      "last": "2021-01-18",
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000006",
+          "label": "Unregistered acct",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": "2021-01-18",
+        "last": "2021-01-18",
+        "undated": 0,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [
+        {
+         "group": "MXN:bank",
+         "credit": "0",
+         "debit": "1000",
+         "count": 1,
+         "accounts": 1
+        }
+       ],
+       "unreadable": 0
+      },
+      "amount": "1000",
+      "unidentified_groups": null
+     },
+     {
+      "id": "account:00000000-0000-4000-8000-000000000007",
+      "name": "Outside account",
+      "kind": "account",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 0,
+      "counterparty_payments": 1,
+      "accounts": 1,
+      "account_details": [
+       {
+        "currency": null,
+        "institution": null,
+        "number": null,
+        "accountType": null,
+        "registered": false,
+        "coverage": false
+       }
+      ],
+      "sources": 0,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": null,
+      "amount": "0",
+      "unidentified_groups": null
+     },
+     {
+      "id": "name:Employer SA",
+      "name": "Employer SA",
+      "kind": "name",
+      "nested_under_owner": false,
+      "unidentified": false,
+      "payments": 1,
+      "counterparty_payments": 0,
+      "accounts": 1,
+      "account_details": [],
+      "sources": 1,
+      "first": null,
+      "last": null,
+      "statement_periods": 0,
+      "statement_periods_missing_dates": 0,
+      "statement_first": null,
+      "statement_last": null,
+      "totals": {
+       "payments": 1,
+       "inventory": {
+        "accounts": [
+         {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "label": "BBVA ****1234",
+          "currencies": [
+           "MXN"
+          ]
+         }
+        ],
+        "banks": [
+         "BBVA México"
+        ],
+        "currencies": [
+         "MXN"
+        ],
+        "first": null,
+        "last": null,
+        "undated": 1,
+        "unknown_banks": 0,
+        "unidentified_counterparties": 0
+       },
+       "groups": [],
+       "unreadable": 1
+      },
+      "amount": "0",
+      "unidentified_groups": null
+     }
+    ]
+   }
+  }
+ ]
+}

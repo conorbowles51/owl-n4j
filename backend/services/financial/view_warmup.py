@@ -487,7 +487,8 @@ def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None, stoppe
             .order_by(func.count().desc(), Period.case_id))]
     warmed = failed = 0
     from routers.financial_ledger import (get_ledger_first_view, get_ledger_overview, get_ledger_overview_panels,
-                                          get_ledger_transactions, get_ledger_trends_view)
+                                          get_ledger_transactions, get_ledger_trends_view,
+                                          get_ledger_people_view)
     from routers.financial_statement_import import files as get_statement_files
     from routers.evidence import list_evidence
     from routers.financial_ledger import get_account_consolidations, get_account_parties
@@ -541,6 +542,12 @@ def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None, stoppe
         # Measured live 2026-10-30 17:52-18:00, first call after a start (load 12-19): d5b330d1 58 / 43 / 38 s,
         # 49494305 63 / 34 / 25 s; then 0.1-1.2 s. Saved copies do not outlive a release (new code identity).
         ('account parties', get_account_parties, {}),
+        # The People & businesses list (GET /ledger-people-view) as it opens: every currency and category. After the
+        # ledger and the account directory, whose kept copies it reads (computed alone: d5b330d1 106.7 s, 2026-11-04).
+        # d5b330d1: 5.2 s to compute over the downloaded ledger under load (2026-11-04).
+        ('people view', get_ledger_people_view, dict(source_document_id=None, account_id=None, ledger_status=None,
+                                                    start_date=None, end_date=None, group=None, account_ids=None,
+                                                    account_holders=None, categories=None)),
         ('account types', get_account_types, {}),
         ('account consolidations', get_account_consolidations, {}),
         # Its own cache (review_queue), saved to disk for the workers; first read after a start was 54.1 s on

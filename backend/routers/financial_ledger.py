@@ -1023,6 +1023,48 @@ def get_ledger_trends_view(
     return {"case_id": str(case_id), "available": True, **view}
 
 
+@router.get("/ledger-people-view")
+@cached_view('ledger-people-view')
+def get_ledger_people_view(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    source_document_id: UUID | None = None,
+    account_id: Optional[UUID] = None,
+    ledger_status: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    group: str | None = None,
+    db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None,
+    account_holders: Annotated[list[str] | None, Query()] = None,
+    categories: Annotated[list[str] | None, Query()] = None):
+    """The People & businesses list of names and accounts over exactly the rows ``/ledger`` answers for the same
+    query, restricted to ``categories`` and to the currency and account type ``group`` as the page restricts them,
+    grouped with the account directory ``/account-parties`` answers with: each profile in the order first met with
+    what its card shows and what the page filters and sorts on (services.financial.people_first_view; each figure
+    is the browser's own calculation over the same rows and directory).
+
+    The page draws its list from this instead of downloading every payment (d5b330d1: 64 MB; this answer about
+    2 MB). ``available`` is false (with the reason) where the browser's calculation would treat these rows in a way
+    the server does not reproduce; the page then reads every row and groups them as before."""
+    from fastapi.encoders import jsonable_encoder
+    from services.financial.people_first_view import people_view
+    from services.financial.trends_first_view import Unavailable
+    from services.financial.view_cache import kept_copy
+    transactions = _overview_ledger_rows(
+        db, case_id, source_document_id=source_document_id, account_id=account_id, account_ids=account_ids,
+        account_holders=account_holders, ledger_status=ledger_status, start_date=start_date, end_date=end_date)
+    directory = kept_copy('account-parties', dict(case_id=case_id))
+    if directory is None:
+        try:
+            directory = jsonable_encoder(account_parties(db, case_id=case_id))
+        except AccountPartyError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=str(exc))
+    try:
+        view = people_view(transactions, str(case_id), directory['accounts'], categories or [], group=group)
+    except Unavailable as e:
+        return {"case_id": str(case_id), "available": False, "reason": str(e)}
+    return {"case_id": str(case_id), "available": True, **view}
+
+
 def judgements_row_map(db, case_id):
     """The judgement row map ``/judgements/rows`` answers with (the ledger's marks), read in this view's snapshot."""
     from services.financial import judgements
