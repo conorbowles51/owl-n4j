@@ -16,6 +16,7 @@ import { candidateUrl } from "../lib/candidate-contract"
 import { correctionMoney } from "../lib/correction-contract"
 import { transferInputs, verifyTransferScenario } from "../lib/ledger-transfers"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
+import { GradedTransferPairs } from "./GradedTransferPairs"
 
 export function LedgerTransfersWorkbench({
   caseId,
@@ -317,8 +318,9 @@ function TransferScope({
           )}
           {load.data.candidates.length === 0 && (
             <p>
-              No matching pair in this scope. Missing evidence, currencies or
-              timing may prevent a match.
+              {load.data.graded?.pairs.length
+                ? "No pair within the chosen date tolerance. Every possible pair, at any strength, is listed below."
+                : "No matching pair in this scope. Missing evidence, currencies or timing may prevent a match."}
             </p>
           )}
           <ul className="space-y-3">
@@ -439,6 +441,7 @@ function TransferScope({
               </Button>
             </div>
           )}
+          <GradedTransferPairs key={load.data.snapshot_sha256} data={load.data} onSource={setSource} />
           {load.data.candidates.length > 0 && (
             <fieldset disabled={busy} className="space-y-2 rounded border p-3">
               <legend>Explain your selected transfers</legend>

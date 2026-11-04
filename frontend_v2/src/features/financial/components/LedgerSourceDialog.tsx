@@ -2,6 +2,7 @@ import { PaymentLabelsEditor } from "./PaymentLabelsEditor"
 import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
 import { unnamedParty } from "../lib/transaction-analysis"
 import { Disclosure } from "./Disclosure"
+import { PaymentOtherLegs } from "./PaymentOtherLegs"
 import { InAppLink } from "./InAppLink"
 import { InfoTip } from "./InfoTip"
 import { RowJudgementMarkers } from "./JudgementCalls"
@@ -245,6 +246,7 @@ export function LedgerSourceDialog({
                       </dd>
                     </div>
                   </dl>
+                  <PaymentOtherLegs caseId={caseId} transactionId={data.transaction.key} />
                 </DrawerSection>
                 <DrawerSection title="Category">
                   <dl className="text-sm">

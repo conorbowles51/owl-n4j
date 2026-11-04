@@ -276,11 +276,12 @@ def disputed_holders(holder, conflicts):
     return found
 
 
-def case_rows(session, case_id, *, dated_only=True, accounts=None):
+def case_rows(session, case_id, *, dated_only=True, accounts=None, amount=None):
     """Every current admitted payment of the case, reduced to what match_parties reads, with the other side's
     effective name as the Transactions table shows it (statement, person label or link, description).
     ``dated_only``: leave out payments dated only by their statement's end (they cannot be matched by date).
-    ``accounts``: the case's FinancialAccount rows, when the caller has already read them."""
+    ``accounts``: the case's FinancialAccount rows, when the caller has already read them.
+    ``amount``: ``(currency, amount_minor)`` to read only the payments of that currency and amount."""
     from sqlalchemy import text
     from services.financial.payment_labels import _inferred_labels
     listed = session.execute(text(_CASE_ACCOUNTS), dict(case_id=str(case_id))) if accounts is None else (
@@ -290,7 +291,9 @@ def case_rows(session, case_id, *, dated_only=True, accounts=None):
                 for id, canonical, holder, institution, identifier, account_type, conflicts in listed}
     rows = []
     for (id, account_id, document, amount, currency, direction, ordering, ordering_source, td, pd, vd, ed,
-         description, raw, labels, reviewed, date_basis) in session.execute(text(_CASE_ROWS), dict(case_id=str(case_id))):
+         description, raw, labels, reviewed, date_basis) in session.execute(
+            text(_CASE_ROWS + (' and t.currency = :currency and t.amount_minor = :amount' if amount else '')),
+            dict(case_id=str(case_id), **(dict(currency=amount[0], amount=int(amount[1])) if amount else {}))):
         direction = _plain(direction)
         if (dated_only and date_basis == 'statement_end_ordering_only') or direction not in ('credit', 'debit'):
             continue
@@ -361,3 +364,69 @@ def case_party_matches(session, case_id, *, accounts=None):
     found = match_parties(rows)
     found.update(printed_accounts(rows, frozenset(found)))
     return found
+
+
+OTHER_LEG_RULE = ('Every payment in another account of the case with the same currency and amount, in the other '
+                  'direction, within 365 days, is listed as a possible other leg, strongest first, with the strength '
+                  'of the transfer-pair rule (services.financial.linkage.GRADED_RULE). A reason the two lines cannot be '
+                  'one payment (a cash line, a different bank named, a round amount between strangers) is listed '
+                  'against it and keeps it at weak or below. A candidate is never used as the name: the name shown '
+                  'comes only from a single matching payment the deterministic rule resolves, as before.')
+
+
+def other_leg_candidates(session, case_id, transaction_id):
+    """Every possible other leg of one payment, graded (read-time; nothing is stored or named from it).
+
+    Returns ``{transaction_id, named_from, candidates, by_level, left_out, rule}``. ``named_from``: the matched
+    payment the shown name comes from (match_parties), or None. Each candidate: ``transaction_id``, ``account_id``,
+    ``date``, ``description``, ``holder``, ``institution``, ``identifier``, ``name``, ``level``, ``fits``,
+    ``reasons {match, substantiation, against}``, ``is_the_named_leg``."""
+    from sqlalchemy import text
+    from services.financial.linkage import graded_transfer_pairs
+    from services.match_strength import counts, rank
+    hit = session.execute(text(
+        "select currency, amount_minor from financial_transactions where id = :t and case_id = :c"),
+        dict(t=str(transaction_id), c=str(case_id))).first()
+    if hit is None:
+        return None
+    rows = case_rows(session, case_id, amount=(hit[0], hit[1]))
+    me = next((r for r in rows if r['id'] == str(transaction_id)), None)
+    if me is None:
+        # not a current admitted payment with a usable date: nothing can be compared, and it is said so
+        return dict(transaction_id=str(transaction_id), named_from=None, candidates=[], by_level=counts([]),
+                    left_out=dict(beyond_days=0), rule=OTHER_LEG_RULE,
+                    reason='This payment is not compared by date (it has no transaction date or is not admitted).')
+    named = match_parties(rows).get(me['id'])
+    by_id = {r['id']: r for r in rows}
+    obs = []
+    for r in rows:
+        o = _observation(r)
+        side = r.get('name')
+        from dataclasses import replace
+        obs.append(replace(o, counterparty_raw=side or None, holder_name=r.get('holder') or None))
+    graded = graded_transfer_pairs(obs, per_row=None, same_holder=lambda d, c: _related_holders(
+        by_id[str(d.transaction_id)]['holder'], by_id[str(c.transaction_id)]['holder']))
+    out = []
+    for p in graded['pairs']:
+        if me['id'] not in (p['debit_id'], p['credit_id']):
+            continue
+        other = by_id[p['credit_id'] if p['debit_id'] == me['id'] else p['debit_id']]
+        against = compatible(me, other)
+        level = p['level']
+        if against and rank(level) < rank('weak'):
+            level = 'weak'
+        out.append(dict(transaction_id=other['id'], account_id=other['account_id'],
+                        date=str(other['ordering_date']), direction=other['direction'],
+                        description=other['description'], holder=other['holder'],
+                        institution=other['institution'], identifier=other['identifier'], name=other.get('name'),
+                        gap_days=p['gap_days'], level=level, fits=p['fits'],
+                        reasons=dict(match=p['reasons']['match'], substantiation=p['reasons']['substantiation'],
+                                     against=[against] if against else []),
+                        is_the_named_leg=bool(named and named.get('matched_transaction_id') == other['id'])))
+    out.sort(key=lambda c: (not c['is_the_named_leg'], rank(c['level']), -(c['fits']['date'] + c['fits']['name']),
+                            c['gap_days'], c['transaction_id']))
+    beyond = sum(1 for r in rows if r['direction'] != me['direction'] and r['account_id'] != me['account_id']
+                 and abs((r['ordering_date'] - me['ordering_date']).days) > graded['left_out']['search_days'])
+    return dict(transaction_id=me['id'], named_from=(named or {}).get('matched_transaction_id'), candidates=out,
+                by_level=counts(out), left_out=dict(beyond_days=beyond, search_days=graded['left_out']['search_days']),
+                rule=OTHER_LEG_RULE)

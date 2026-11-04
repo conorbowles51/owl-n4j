@@ -68,6 +68,17 @@ window.  It is a proposal, and nothing may be merged on it automatically.
 Nothing in this module merges on anything, so what tier 2 really marks is a
 link that must not be treated as established.
 
+Every possible pair, graded
+---------------------------
+
+Beside the tiers, :func:`graded_transfer_pairs` lists every possible transfer (two rows in different accounts, one
+money out and one money in, the same currency and amount) within :data:`GRADED_SEARCH_DAYS`, strongest first, with a
+strength on the app's one scale (strong, moderate, weak, faint; services.match_strength) set by the stated rule
+:data:`GRADED_RULE`, and plain reasons in two parts: how well matched (days apart, names) and how substantiated
+(each the other's only possible partner, a shared bank reference, a shared holder).  No date window or name
+threshold hides a pair: a pair outside every tier is listed as weak or faint.  Pairs beyond the search bound are
+counted, not listed.  A graded pair asserts nothing and is never a link; the tiers below are unchanged by it.
+
 The tiers are **not nested**, and this is the difference from
 :class:`~postgres.models.enums.DuplicateMatchRung`, whose rungs are.  A pair
 sharing a UETR has not thereby been shown to agree on amount: the tiers read
@@ -1459,3 +1470,168 @@ def link_transactions(
         links=tuple(sorted(links, key=_link_sort_key)),
         conflicts=exact.conflicts,
     )
+
+
+# ---------------------------------------------------------------------------
+# Every possible transfer pair, graded (no cutoff hides one)
+# ---------------------------------------------------------------------------
+
+#: The search bound kept for cost: pairs further apart than this are counted, not listed.  Measured on BNB2
+#: (2026-11-04): 23,380 equal-amount cross-account pairs within it, 34,721 beyond it.
+GRADED_SEARCH_DAYS = 365
+#: At most this many pairs are listed for one payment, strongest first; the number beyond is counted.
+GRADED_PER_ROW = 50
+GRADED_RULE = (
+    "Every pair of payments in different accounts with the same currency and the same amount to the cent, one money "
+    "out and one money in, within %d days of each other, is listed with a strength set by this rule, never by a "
+    "model. Date: same day (3), within 3 days (2), within 31 days (1), further (0). Names (each payment's other side "
+    "against the other account's holder): both agree (3), one agrees (2), alike but under %.2f (1), otherwise (0). "
+    "Substantiated by: being each other's only possible partner, a shared bank reference, the two accounts sharing "
+    "a holder. Strong: within 3 days, a name agrees and at least one substantiation. Moderate: within 3 days with a "
+    "name or a substantiation, or within 31 days with a name. Weak: within 31 days, or with a name or a "
+    "substantiation. Faint: anything else. Pairs further apart than %d days are counted, not listed; a pair is a "
+    "possibility to check, never a link." % (GRADED_SEARCH_DAYS, NAME_SIMILARITY_THRESHOLD, GRADED_SEARCH_DAYS))
+
+
+def _graded_date_fit(gap: int) -> int:
+    return 3 if gap == 0 else 2 if gap <= 3 else 1 if gap <= 31 else 0
+
+
+def _graded_name_fit(left: LinkObservation, right: LinkObservation, similar=None) -> tuple[int, list]:
+    similar = similar or name_similarity
+    scores = [s for s in (similar(left.counterparty_raw, right.holder_name),
+                          similar(right.counterparty_raw, left.holder_name)) if s is not None]
+    agree = [s for s in scores if s >= NAME_SIMILARITY_THRESHOLD]
+    if len(agree) == 2:
+        return 3, scores
+    if agree:
+        return 2, scores
+    if scores and max(scores) >= 0.5:
+        return 1, scores
+    return 0, scores
+
+
+def graded_level(date_fit: int, name_fit: int, substantiation: int) -> str:
+    """The transfer-pair level of :data:`GRADED_RULE` on the app's one scale (services.match_strength)."""
+    if date_fit >= 2 and name_fit >= 2 and substantiation >= 1:
+        return "strong"
+    if (date_fit >= 2 and (name_fit >= 2 or substantiation >= 1)) or (date_fit >= 1 and name_fit >= 2):
+        return "moderate"
+    if date_fit >= 1 or name_fit >= 1 or substantiation >= 1:
+        return "weak"
+    return "faint"
+
+
+def graded_transfer_pairs(
+    observations: Iterable[LinkObservation],
+    *,
+    search_days: int = GRADED_SEARCH_DAYS,
+    per_row: Optional[int] = GRADED_PER_ROW,
+    same_holder: Optional[Callable[[LinkObservation, LinkObservation], bool]] = None,
+) -> dict:
+    """Every possible transfer pair, graded, strongest first, with what the search bound left out.
+
+    Tiers 0 to 2 are not touched: this lists, it asserts nothing, and a pair here is never a link.  Two rows are a
+    possible transfer when :func:`classify_relation` calls them ``counterparty`` (different accounts, opposite
+    directions) with the same currency and amount; the amount is equal by definition of a transfer's two legs.
+    ``same_holder``: whether the two accounts share a holder (substantiation), when the caller knows the holders.
+
+    Returns ``{pairs, left_out: {beyond_days, beyond_per_row}, by_level, rule}``.  Each pair: ``debit_id``,
+    ``credit_id``, ``gap_days``, ``compared_date_field``, ``like_for_like``, ``level``, ``fits``,
+    ``substantiation`` (count), ``name_similarity`` (the scores), ``reasons {match, substantiation}``.
+    """
+    from services.match_strength import LEVELS, counts, rank
+    rows = list(observations)
+    raw = []
+    beyond = 0
+    partners: dict[uuid.UUID, int] = {}
+    for block in _blocks(rows):
+        debits = [o for o in block if o.direction is TransactionDirection.debit]
+        credits = sorted((o for o in block if o.direction is TransactionDirection.credit),
+                         key=lambda o: o.ordering_date)
+        for d in debits:
+            for c in credits:
+                relation, _ = classify_relation(d, c)
+                if relation is not LinkRelation.counterparty:
+                    continue
+                agreement = compare_dates(d, c)
+                if agreement.gap_days > search_days:
+                    beyond += 1
+                    continue
+                raw.append((d, c, agreement))
+                partners[d.transaction_id] = partners.get(d.transaction_id, 0) + 1
+                partners[c.transaction_id] = partners.get(c.transaction_id, 0) + 1
+    pairs = []
+    # the same holder and name strings recur across thousands of pairs: compare each two strings once
+    seen_names: dict = {}
+
+    def similar(a, b):
+        key = (a, b)
+        if key not in seen_names:
+            seen_names[key] = name_similarity(a, b)
+        return seen_names[key]
+
+    same_holders: dict = {}
+    for d, c, agreement in raw:
+        gap = agreement.gap_days
+        date_fit = _graded_date_fit(gap)
+        name_fit, scores = _graded_name_fit(d, c, similar)
+        sub = []
+        if partners[d.transaction_id] == 1 and partners[c.transaction_id] == 1:
+            sub.append("each is the other's only possible partner")
+        shared = {(r.kind, r.value) for r in d.references} & {(r.kind, r.value) for r in c.references}
+        if shared:
+            sub.append("a shared bank reference")
+        if same_holder is not None:
+            hk = (d.account_id, c.account_id)
+            if hk not in same_holders:
+                same_holders[hk] = bool(same_holder(d, c))
+        if same_holder is not None and same_holders[(d.account_id, c.account_id)]:
+            sub.append("the two accounts share a holder")
+        lv = graded_level(date_fit, name_fit, len(sub))
+        when = ("same day" if gap == 0 else "%d day%s apart" % (gap, "" if gap == 1 else "s"))
+        if not agreement.like_for_like:
+            when += " (different kinds of date compared)"
+        names = {3: "both names agree with the other account's holder",
+                 2: "one name agrees with the other account's holder",
+                 1: "names alike but under %.2f (%s)" % (NAME_SIMILARITY_THRESHOLD,
+                                                        ", ".join("%.2f" % s for s in scores)),
+                 0: ("names differ (%s)" % ", ".join("%.2f" % s for s in scores)) if scores else
+                    "no name to compare"}[name_fit]
+        pairs.append(dict(
+            debit_id=str(d.transaction_id), credit_id=str(c.transaction_id), currency=d.currency,
+            amount_minor=str(d.amount.minor_units), gap_days=gap, compared_date_field=agreement.field,
+            like_for_like=agreement.like_for_like, level=lv,
+            fits=dict(amount=3, date=date_fit, name=name_fit), substantiation=len(sub),
+            name_similarity=[round(s, 3) for s in scores],
+            partners=dict(debit=partners[d.transaction_id], credit=partners[c.transaction_id]),
+            reasons=dict(match=["same amount and currency, money out of one account and into another", when, names],
+                         substantiation=sub)))
+    pairs.sort(key=lambda p: (rank(p["level"]), -(p["fits"]["date"] + p["fits"]["name"]), -p["substantiation"],
+                              p["gap_days"], p["debit_id"], p["credit_id"]))
+    beyond_cap = 0
+    if per_row is not None:
+        listed: dict[str, int] = {}
+        kept = []
+        for p in pairs:
+            if listed.get(p["debit_id"], 0) >= per_row and listed.get(p["credit_id"], 0) >= per_row:
+                beyond_cap += 1
+                continue
+            listed[p["debit_id"]] = listed.get(p["debit_id"], 0) + 1
+            listed[p["credit_id"]] = listed.get(p["credit_id"], 0) + 1
+            kept.append(p)
+        pairs = kept
+    assert all(p["level"] in LEVELS for p in pairs)
+    return dict(pairs=pairs, left_out=dict(beyond_days=beyond, beyond_per_row=beyond_cap, search_days=search_days,
+                                           per_row=per_row),
+                by_level=counts(pairs), rule=GRADED_RULE)
+
+
+def graded_left_out_words(left_out: dict) -> Optional[str]:
+    parts = []
+    if left_out.get("beyond_days"):
+        parts.append("%d more than %d days apart" % (left_out["beyond_days"], left_out["search_days"]))
+    if left_out.get("beyond_per_row"):
+        parts.append("%d beyond the %d strongest listed for both of their payments"
+                     % (left_out["beyond_per_row"], left_out["per_row"]))
+    return ("Not listed: possible pairs " + " and ".join(parts) + ".") if parts else None

@@ -77,6 +77,27 @@ export const transferInputs = lazySchema(() => z
         })
       )
       .max(1000),
+    // Every possible pair in the scope, graded on the app's one scale by a stated rule (never a model); listed,
+    // never selectable for a scenario unless it is also one of the candidates above.
+    graded: z
+      .object({
+        pairs: z.array(
+          z.object({
+            debit_id: z.string(),
+            credit_id: z.string(),
+            currency: z.string(),
+            amount_minor: money,
+            gap_days: count,
+            level: z.enum(["strong", "moderate", "weak", "faint"]),
+            within_tolerance: z.boolean().default(false),
+            reasons: z.object({ match: z.array(z.string()), substantiation: z.array(z.string()) }),
+          })
+        ),
+        by_level: z.record(z.string(), count),
+        rule: z.string(),
+        left_out_words: z.string().nullable().optional(),
+      })
+      .optional(),
   })
   .superRefine((data, ctx) => {
     const rows = new Map(data.rows.map((r) => [r.key, r]))

@@ -8,7 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from postgres.models.enums import DateSource, TransactionDirection, LinkRelation
 from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.working_totals import working_totals_from_readings
-from services.financial.linkage import LinkObservation, link_composite, link_exact_identifiers, references_from_bank_reference
+from services.financial.linkage import (LinkObservation, graded_left_out_words, graded_transfer_pairs, link_composite,
+    link_exact_identifiers, references_from_bank_reference)
 from services.financial.money import Money
 from services.financial.ledger_snapshot import MAX_EXPORT_BYTES
 
@@ -37,6 +38,7 @@ def ledger_transfer_candidates(export, *, population='working', tolerance_days=3
     exact_observations = []
     unscoped_references = []
     unavailable = []
+    graded_observations = []
     for row in rows:
         dates = {name: date.fromisoformat(row[name]) if row[name] else None for name in ('transaction_date', 'posted_date', 'value_date', 'effective_date')}
         observation = LinkObservation(transaction_id=UUID(row['key']), account_id=UUID(row.get('canonical_account_id') or row['account_id']),
@@ -57,7 +59,26 @@ def ledger_transfer_candidates(export, *, population='working', tolerance_days=3
             unavailable.append(row["key"])
         else:
             observations.append(observation)
+            # the graded list compares each payment's other side, as the Transactions table names it, with the other
+            # account's holder; and a shared bank reference substantiates a pair
+            other = row.get('from_name') if row['direction'] == 'credit' else row.get('to_name')
+            graded_observations.append(replace(observation, references=references,
+                                               counterparty_raw=other or None,
+                                               holder_name=row.get('account_holder') or None))
     linked = link_composite(observations, tolerance_days=tolerance_days)
+    # Every possible pair in the scope, graded on the app's one scale, whatever the tolerance chosen above: the
+    # candidates the tolerance admits stay the ones a scenario can select; the graded list hides nothing.
+    holders = {}
+    for row in rows:
+        holders.setdefault(row.get('canonical_account_id') or row['account_id'], row.get('account_holder') or '')
+    from services.financial.payment_party_matches import _related_holders
+    graded = graded_transfer_pairs(graded_observations, per_row=None, same_holder=lambda d, c: bool(
+        holders.get(str(d.account_id)) and holders.get(str(c.account_id))
+        and _related_holders(holders[str(d.account_id)], holders[str(c.account_id)])))
+    selectable = {(str(l.left_id), str(l.right_id)) for l in linked.links} | {(str(l.right_id), str(l.left_id)) for l in linked.links}
+    for p in graded['pairs']:
+        p['within_tolerance'] = (p['debit_id'], p['credit_id']) in selectable
+    graded['left_out_words'] = graded_left_out_words(graded['left_out'])
     by_id = {row['key']: row for row in rows}
     pairs = []
     for link in linked.links:
@@ -111,7 +132,7 @@ def ledger_transfer_candidates(export, *, population='working', tolerance_days=3
     return dict(case_id=ledger['case_id'], start_date=ledger['start_date'], end_date=ledger['end_date'],
         population=population, tolerance_days=tolerance_days, **stamp,
         rows=rows, candidates=pairs, reference_evidence=evidence, unscoped_reference_ids=unscoped_references, currencies=summary['currencies'], excluded_rows=summary['excluded_rows'],
-        date_unavailable_ids=unavailable, applied=False,
+        date_unavailable_ids=unavailable, applied=False, graded=graded,
         limitation='Recorded UUID references are compared as identifiers, not asserted UETRs. Native ACH traces require the same recorded effective date and routing prefix; unscoped bank/check references are not matched. Identifier equality alone does not prove payment identity. Equal amounts, currency and compatible dates across different accounts suggest possible transfers; they do not prove a match. Multiple possible partners remain explicit. Statement-end-only dates are not used as transaction timing. Original postings remain unchanged; any pairing is a separate investigator hypothesis.')
 
 

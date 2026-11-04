@@ -1306,6 +1306,12 @@ If **Payments may have changed** appears after another action in the case, selec
 
 Matching amounts and compatible dates suggest a possible pair. They do not prove that one funded the other. Supported identifier comparisons show their scope; an identifier match outside a supported date or format should not be treated as stronger evidence than the screen reports.
 
+### Every possible pair, graded
+
+Below the pairs you can select, **Every possible pair, graded** lists every outgoing and incoming payment in different accounts with the same currency and amount within 365 days of each other, at any distance in days, strongest first. Each pair shows a strength (**Strong**, **Moderate**, **Weak** or **Faint**) and its reasons in two parts: how well it matches (the days apart, and whether each payment's other side agrees with the other account's holder) and what substantiates it (each is the other's only possible partner, a shared bank reference, the two accounts share a holder). A fixed rule sets the strength; **How the strength is set** states it. Weak and faint pairs are listed so that nothing is missed by a cutoff; they are possibilities to check, not findings. The count per strength is shown, with the number of pairs further apart than 365 days, which are counted and not listed. Only the pairs inside **Maximum days between payments** can be selected for a scenario, and no graded pair changes a total.
+
+The same scale is used for phone alerts matched to payments, for a payment's possible other legs, and for phone identity suggestions.
+
 ### Calculate a separate pairing scenario
 
 1. Select the pairs you want to test. A posting can be used only once.

@@ -136,6 +136,9 @@ _INTERNAL_TOOL_MARKERS = (
     "get_contact_and_money_between",
     "get_money_signal_matches",
     "get_money_signal_leads",
+    "get_transfer_pairs",
+    "get_payment_other_legs",
+    "get_identity_suggestions",
 )
 
 _CROSS_TITLES = {"search_case": "Searched the case", "get_person_phones": "Read a person's phones",
@@ -181,6 +184,7 @@ _FINANCIAL_ANALYSIS_PROMPT = """Financial investigation:
 - Every ledger row carries provenance. provenance.origin is "processor" (printed on the statement and read by the processor), "model" (saved by a model for a person: a model reading, not a person's entry) or "person" (entered or reviewed and saved by a person); provenance.confirmation says whether a person has confirmed it. When an answer relies on a row that a model saved, that no person has confirmed, that carries a name a model read (provenance.model_read_names), or that has open judgement calls, say so beside the figure in plain words, e.g. "saved by Claude for <name>, not confirmed by a person" or "1 open judgement call: <rule_label> (<strength>)". The page's judgement_calls give each call's sentence. If provenance.judgement_calls.available is false, say the judgement calls could not be checked; never present such a row as having none.
 - A corrected row (provenance.correction) is used at its corrected value; state the original value beside it when it matters to the answer. Never add a p4 row (proof_class or source_proof_class "p4") into any total, and never add excluded rows (included_in_totals false) into totals; use the tools' totals.
 - Money between two parties comes only from get_money_between, or get_contact_and_money_between when the parties are people on the phones: both read the one money-between function the Graph screen's pair edge uses. Use get_money_between for ledger parties and accounts. Quote its p0 to p2 totals per currency, state its p3 figure beside them as not verified and never added in, and give phone readings of money as a count, never a sum. Name parties by the ids the tools return (party:<id>, account:<id>, or an identity:party:<id> group key), never by a printed name. Graph TRANSFERRED_TO relationships and graph transaction amounts are navigation, not a total: never sum them.
+- Possible matches come with a strength (strong, moderate, weak, faint) set by a stated rule: get_transfer_pairs for transfers between the case's accounts, get_payment_other_legs for one payment's possible other leg, get_identity_suggestions for phone identities that may be one person. Read every page (has_more, next_offset) before saying how many there are, mention every one with its strength and reasons, list weak and faint ones as weak or faint, and never treat one as a link, a confirmed name or corroboration, or add one into a total.
 - A counterparty group from analyze_financial_transactions with group_basis "exact_displayed_label" gathers payments by the name shown on the row, not by a reviewed identity: call it "payments labelled <name>", never money between two parties.
 - When a result gives open_judgement_calls (or a figure's rows carry open judgement calls), say beside the figure how many open judgement calls it rests on, e.g. "this rests on 3 open judgement calls no person has confirmed". Use get_judgement_calls to give their sentences and get_decisions for who decided a record and whether a model drafted it (made_by.kind "model": drafted by a model, not a person's own decision).
 - For securities (bought, sold, lent by repo, or held), use get_trades: it gives the instrument as printed, quantity, price, trade and settlement dates and the cash leg, each cited. A trade date is a day, never a time: no execution time is printed, so never state that an order was placed during a call; say it was placed on the same day and cite both. Say when a trade was read by a model and not confirmed (origin.kind "model").
@@ -228,7 +232,11 @@ _FINAL_ANSWER_SYSTEM_PROMPT = (
     "every line under its strength heading); list rejected pairings apart from every "
     "strength heading; state the search bound "
     "and what it left out when the result gives them; say for each pairing whether a person confirmed it or the rule "
-    "found it, never call a rule-found pairing confirmed, and leave rejected pairings out of every count."
+    "found it, never call a rule-found pairing confirmed, and leave rejected pairings out of every count. "
+    "The same holds for possible transfers between accounts, a payment's possible other legs and phone identity "
+    "suggestions: mention every one returned with its strength and its reasons, list weak and faint ones as weak or "
+    "faint rather than dropping them, give the count per strength and what the search bound left out, and never "
+    "call one a link, a confirmed name or corroboration, or add one into a total."
 )
 
 
@@ -375,6 +383,11 @@ def activity_for_tool_call(name: str | None, args: dict[str, Any] | None, call_i
                  "phone_colocation_results": "Read together-and-apart results",
                  "phone_record": "Opened a phone record"}.get(safe_name, "Read the phones")
         detail = "I'm reading this case's phone records in full, citing each record."
+    elif safe_name in ("get_transfer_pairs", "get_payment_other_legs", "get_identity_suggestions"):
+        title = {"get_transfer_pairs": "Read possible transfers between accounts",
+                 "get_payment_other_legs": "Read a payment's possible other legs",
+                 "get_identity_suggestions": "Read possible links between phone identities"}[safe_name]
+        detail = "I'm reading every possible match with its strength, weak and faint ones included."
     elif safe_name in _CROSS_TITLES:
         title = _CROSS_TITLES[safe_name]
         detail = "I'm reading this case's phones the way the screens do, and joining them to the ledger."

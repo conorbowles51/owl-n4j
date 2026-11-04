@@ -1117,7 +1117,7 @@ Behaviour rules, each a test in U9 (synthetic fixtures; lessons from v1):
 | NM-2 | Several contact names for one identity on one phone | The phone's name is the most frequent; a tie goes to the latest `TimeModified`, then the lowest `record_uid` |
 | NM-3 | No contact name on that phone | The most frequent name in records, same tie rule; with none, "(no name on this phone)" |
 | NM-4 | A contact or party name equal to the identifier, of phone shape or of JID shape | Never shown as a name, never a phone's name, never an owner name |
-| NM-5 | Names that differ between phones | Every name stays; the identity has no single "real" name, and no suggestion is made from the names alone (8.7) |
+| NM-5 | Names that differ between phones | Every name stays; the identity has no single "real" name, and a suggestion from the names alone is never more than faint (8.7) |
 
 ### 8.6 Owner identity of each phone
 
@@ -1161,8 +1161,10 @@ Behaviour rules, each a test in U9:
 ### 8.7 Persons, suggestions and scores
 
 A person is a dossier. Suggestions propose linking identities to a dossier, or to each other under a new
-dossier. **No suggestion is produced from names alone** (spec 03 U-3; v1 note
-`feedback_cellebrite_number_alongside_name.md`: names collide).
+dossier. Every possible link is listed with its strength; no score or rule hides one. **A name alone never makes a
+suggestion more than faint** (spec 03 U-3; v1 note `feedback_cellebrite_number_alongside_name.md`: names collide):
+two identities a phone saves under the same name, or an identity saved under a dossier's name, with no other reason,
+are listed as a faint `name_only` suggestion whose reasons say "the same name only: nothing else links them".
 
 | Reason | Fires when | Weight |
 |---|---|---|
@@ -1171,12 +1173,25 @@ dossier. **No suggestion is produced from names alone** (spec 03 U-3; v1 note
 | R3 `dossier_contact` | an identity's normalised value equals a contact of kind `phone` or `email` on a dossier (`frontend_v2/src/features/dossiers/api.ts:75-117` per spec 03 section 10.2), compared after the 8.2 normalisation | 0.9 |
 | R4 `financial_identifier` | an identity equals a reviewed financial account identifier of kind `phone_number` or `email` (8.9), whose account's holder party is linked to a dossier | 0.8 |
 | R5 `name_support` | only together with another reason: `fold()` of a name on any phone equals `fold()` of the dossier name or of a name of the other identity | adds 0.1 |
+| `name_only` | no other reason pairs them, and `fold()` of a name equals the other identity's name or the dossier name | 0.1 |
 
-Score = `1 - product(1 - w_i)` over distinct reasons (R5 counted once), rounded to two places. Suggestions
-with score at least 0.5 are listed, highest first, ties by identity key. Each lists its reasons and the
-records behind each reason. The weights are stated so they can be argued with; *reverse if* reviewing the
-first 100 suggestions on the 10-report case shows a reason accepted under half the time, in which case its
-weight drops below the threshold.
+Score = `1 - product(1 - w_i)` over distinct reasons (R5 counted once), rounded to two places. Every suggestion
+is listed, whatever its score, with a strength on the app's one scale (`services/match_strength.py`, the scale of
+phone money pairings in 05 4.3.8), set by this rule and never by a model:
+
+| Strength | Rule |
+|---|---|
+| strong | score at least 0.8 and at least two independent sources (two distinct reasons other than names, or one reason seen on two or more phones) |
+| moderate | score at least 0.5 |
+| weak | score at least 0.2 |
+| faint | below 0.2 (a name alone) |
+
+The list is strongest first, then by score, ties by identity key. Each suggestion lists its reasons and the records
+behind each, and its strength reasons in two parts: how well matched (the reasons and the score) and how
+substantiated (phones, records, or "no source beyond a saved name"). The People suggestions panel shows the count per
+strength and filters by it. The weights are stated so they can be argued with; *reverse if* reviewing the first 100
+suggestions on the 10-report case shows a reason accepted under half the time, in which case its weight drops a
+level.
 
 `phone_identity_suggestions`: `id`, `case_id`, `identity_ids uuid[]`, `dossier_id uuid null`, `reasons
 jsonb` (`[{"reason": "same_card", "records": ["record_uid"], "phones": ["C3"]}]`), `score numeric(3,2)`,

@@ -225,3 +225,29 @@ it("says why Find possible transfers is unavailable when From is after To", () =
   expect(screen.getByRole("button", { name: "Find possible transfers" })).toBeDisabled()
   expect(screen.getByRole("alert")).toHaveTextContent("The From date is after the To date.")
 })
+it("lists every possible pair graded, strongest first, with both parts of its reasons, beyond the tolerance too", async () => {
+  const graded = {
+    pairs: [
+      { debit_id: "d", credit_id: "c", currency: "GBP", amount_minor: "9007199254740993", gap_days: 0, level: "moderate",
+        within_tolerance: true, reasons: { match: ["same amount and currency, money out of one account and into another", "same day", "no name to compare"], substantiation: [] } },
+      { debit_id: "d", credit_id: "alternative", currency: "GBP", amount_minor: "9007199254740993", gap_days: 15, level: "weak",
+        within_tolerance: false, reasons: { match: ["same amount and currency, money out of one account and into another", "15 days apart", "no name to compare"], substantiation: ["each is the other's only possible partner"] } },
+    ],
+    by_level: { strong: 0, moderate: 1, weak: 1, faint: 0 },
+    rule: "Every pair ... is listed with a strength set by this rule, never by a model.",
+    left_out_words: "Not listed: possible pairs 3 more than 365 days apart.",
+  }
+  mount({ ...input, candidates: [input.candidates[0]], graded })
+  fireEvent.click(screen.getByRole("button", { name: "Find possible transfers" }))
+  const section = await screen.findByRole("region", { name: "Every possible pair, graded" })
+  expect(section).toHaveTextContent("0 strong · 1 moderate · 1 weak · 0 faint · Not listed: possible pairs 3 more than 365 days apart.")
+  const second = screen.getByRole("listitem", { name: "Graded pair 2" })
+  expect(second).toHaveTextContent("Weak")
+  expect(second).toHaveTextContent("How well matched: same amount and currency, money out of one account and into another; 15 days apart; no name to compare")
+  expect(second).toHaveTextContent("How substantiated: each is the other's only possible partner")
+  // only the candidate inside the tolerance can be selected
+  expect(screen.getByLabelText("Pair transfer 1")).toBeInTheDocument()
+  expect(screen.queryByLabelText("Pair transfer 2")).not.toBeInTheDocument()
+  fireEvent.change(screen.getByRole("combobox", { name: /Strength/ }), { target: { value: "weak" } })
+  expect(screen.getAllByRole("listitem", { name: /Graded pair/ })).toHaveLength(1)
+})

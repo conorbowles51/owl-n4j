@@ -217,3 +217,42 @@ class CoverageTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_other_legs_list_the_ambiguous_and_the_far_candidates_graded_and_never_name_them():
+    """lx-matchgrades C: an unnamed payment with two possible other legs is left unnamed by match_parties (as
+    before), and other_leg_candidates lists both, plus one 20 days away, each graded with its reasons."""
+    from datetime import date as _d
+    from unittest.mock import MagicMock, patch
+    from services.financial import payment_party_matches as P
+    base = dict(currency='MXN', amount_minor=1234567, ordering_date_source='transaction', posted_date=None,
+                value_date=None, effective_date=None, reason='', other_holders=[], name=None,
+                description='SPEI ENVIADO', identifier='1234567890', institution='BBVA Mexico')
+    rows = [
+        dict(base, id='00000000-0000-0000-0000-000000000001', account_id='00000000-0000-0000-0000-0000000000a1',
+             source_document_id='00000000-0000-0000-0000-0000000000d1', direction='debit', holder='ALPHA ONE SA',
+             ordering_date=_d(2024, 3, 1), transaction_date=_d(2024, 3, 1)),
+        dict(base, id='00000000-0000-0000-0000-000000000002', account_id='00000000-0000-0000-0000-0000000000a2',
+             source_document_id='00000000-0000-0000-0000-0000000000d2', direction='credit', holder='BRAVO DOS',
+             institution='Santander', ordering_date=_d(2024, 3, 1), transaction_date=_d(2024, 3, 1),
+             description='SPEI RECIBIDO'),
+        dict(base, id='00000000-0000-0000-0000-000000000003', account_id='00000000-0000-0000-0000-0000000000a3',
+             source_document_id='00000000-0000-0000-0000-0000000000d3', direction='credit', holder='CHARLIE TRES',
+             institution='Santander', ordering_date=_d(2024, 3, 2), transaction_date=_d(2024, 3, 2),
+             description='SPEI RECIBIDO'),
+        dict(base, id='00000000-0000-0000-0000-000000000004', account_id='00000000-0000-0000-0000-0000000000a4',
+             source_document_id='00000000-0000-0000-0000-0000000000d4', direction='credit', holder='DELTA CUATRO',
+             institution='Santander', ordering_date=_d(2024, 3, 21), transaction_date=_d(2024, 3, 21),
+             description='SPEI RECIBIDO'),
+    ]
+    assert P.match_parties(rows) == {}  # ambiguous: two legs within 3 days, nothing named (unchanged)
+    session = MagicMock()
+    session.execute.return_value.first.return_value = ('MXN', 1234567)
+    with patch.object(P, 'case_rows', return_value=rows):
+        out = P.other_leg_candidates(session, 'case', rows[0]['id'])
+    assert out['named_from'] is None
+    got = [(c['transaction_id'][-1], c['gap_days'], c['level']) for c in out['candidates']]
+    assert got == [('2', 0, 'weak'), ('3', 1, 'weak'), ('4', 20, 'weak')]
+    assert out['by_level'] == {'strong': 0, 'moderate': 0, 'weak': 3, 'faint': 0}
+    assert all(c['reasons']['match'] and not c['is_the_named_leg'] for c in out['candidates'])
+    assert '20 days apart' in out['candidates'][2]['reasons']['match']

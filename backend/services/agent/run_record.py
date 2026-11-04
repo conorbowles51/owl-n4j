@@ -59,6 +59,8 @@ CATEGORY_BY_TOOL = {
     # agent-allcases: reads of other cases (or of the identifier index over them), never this case's material.
     "identifier_in_other_cases": "other_cases", "list_my_cases": "other_cases",
     "find_identifier_across_cases": "other_cases", "read_in_case": "other_cases",
+    # lx-matchgrades: every possible match, graded (services.agent.match_tools)
+    "get_transfer_pairs": "ledger", "get_payment_other_legs": "ledger", "get_identity_suggestions": "phones",
 }
 OTHER_CASES_LABEL = "Other cases the person may open (identifier index or all-cases mode)"
 CATEGORY_LABELS = {

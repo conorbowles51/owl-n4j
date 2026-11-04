@@ -1841,3 +1841,16 @@ def get_security_row(row_id: UUID, case_id: UUID = Query(...), db: Session = Dep
         return get_row(db, case_id=case_id, row_id=row_id)
     except SecurityRowError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.get("/payment-other-legs")
+def get_payment_other_legs(case_id: UUID = Query(...), transaction_id: UUID = Query(...),
+                           db: Session = Depends(get_db)):
+    """Every possible other leg of one payment in another account of the case, graded on the app's one scale by a
+    stated rule, strongest first (read-time; nothing is stored, and no candidate is used as the payment's name)."""
+    from services.financial.payment_party_matches import other_leg_candidates
+    from services.match_strength import SCALE_WORDS
+    found = other_leg_candidates(db, case_id, transaction_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="That payment is not in this case.")
+    return {**found, "scale": SCALE_WORDS}

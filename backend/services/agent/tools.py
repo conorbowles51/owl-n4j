@@ -335,6 +335,11 @@ class PhonePageArgs(BaseModel):
     limit: int = Field(40, ge=1, le=100)
 
 
+def _match_tools(context):
+    from services.agent.match_tools import make_match_tools
+    return make_match_tools(context)
+
+
 def _cross_case_tools(context):
     from services.agent.all_cases import make_cross_case_tools
     return make_cross_case_tools(context)
@@ -3109,4 +3114,4 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "doc:// for files). Says 'Not in this case' when no dossier in this case matches."),
             args_schema=DossierArgs,
         ),
-    ] + _proposal_tools(context) + _cross_case_tools(context)
+    ] + _proposal_tools(context) + _cross_case_tools(context) + _match_tools(context)

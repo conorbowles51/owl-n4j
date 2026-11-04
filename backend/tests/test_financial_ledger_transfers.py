@@ -127,3 +127,30 @@ class LedgerTransferTests(_test_financial_ledger_summary.LedgerSummaryTests):
         self.assertTrue(any(p['relation']=='conflict' for p in result['reference_evidence']))
         with patch('services.financial.ledger_transfers.MAX_TRANSFER_PAIRS',1):
             with self.assertRaises(LedgerSummaryError): ledger_transfer_candidates(self.capture())
+
+    def test_a_pair_beyond_the_tolerance_is_listed_graded_and_never_selectable(self):
+        """Neil 2026-11-04: no cutoff hides a match. A pair 15 days apart is beyond every tolerance the workbench
+        offers (0 to 7 days); it is listed in ``graded`` as weak with its reasons, and a scenario cannot select it."""
+        from datetime import timedelta
+        debit, credit = self.pair()
+        credit.transaction_date += timedelta(days=15)
+        credit.ordering_date += timedelta(days=15)
+        credit.posted_date = credit.value_date = credit.effective_date = None
+        self.db.commit()
+        export = self.capture(); result = ledger_transfer_candidates(export, tolerance_days=7)
+        self.assertEqual(result['candidates'], [])
+        graded = result['graded']
+        self.assertEqual(len(graded['pairs']), 1)
+        p = graded['pairs'][0]
+        self.assertEqual((p['debit_id'], p['credit_id'], p['gap_days'], p['level']), (str(debit.id), str(credit.id), 15, 'weak'))
+        self.assertFalse(p['within_tolerance'])
+        self.assertIn('15 days apart', p['reasons']['match'])
+        self.assertEqual(graded['by_level'], {'strong': 0, 'moderate': 0, 'weak': 1, 'faint': 0})
+        with self.assertRaises(LedgerSummaryError):
+            evaluate_transfer_scenario(export, {**self.request(export, debit, credit), 'tolerance_days': 7})
+
+    def test_graded_list_holds_the_selectable_pair_too(self):
+        debit, credit = self.pair(); result = ledger_transfer_candidates(self.capture())
+        self.assertEqual(len(result['candidates']), 1)
+        self.assertEqual([(p['debit_id'], p['credit_id'], p['within_tolerance']) for p in result['graded']['pairs']],
+                         [(str(debit.id), str(credit.id), True)])
