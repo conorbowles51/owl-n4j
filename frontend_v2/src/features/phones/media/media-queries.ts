@@ -5,14 +5,22 @@ export const WINDOW = 200
 /** The category or state value standing for "none set". */
 export const NONE = "__none__"
 
-/** The grid's filter: the phone, plus the thread, category and state chosen (MediaPage and the start-up prefetch). */
-export function mediaFilter(caseId: string, extraction: string, thread: string | null, category: string, state: string): MediaFilter {
+/** Every phone in the case, in place of one phone's id. */
+export const EVERY_PHONE = "*"
+
+/**
+ * The grid's filter: the phone (or EVERY_PHONE), plus the thread, category and state chosen and, in `more`, only the
+ * app, person and date filters that are set (MediaPage and the start-up prefetch, which share one cache entry).
+ */
+export function mediaFilter(caseId: string, extraction: string, thread: string | null, category: string, state: string,
+  more: Pick<MediaFilter, "apps" | "participants" | "from_instant" | "to_instant"> = {}): MediaFilter {
   return {
     case_id: caseId,
-    phones: [extraction],
+    ...(extraction === EVERY_PHONE ? {} : { phones: [extraction] }),
     ...(thread ? { thread_key: thread } : {}),
     ...(category ? { categories: [category === NONE ? "" : category] } : {}),
     ...(state ? { verification: [state === NONE ? "" : state] } : {}),
+    ...more,
   }
 }
 
@@ -24,7 +32,7 @@ export const mediaIndexQuery = (filter: MediaFilter) => ({
 
 export const mediaPhoneIndexQuery = (caseId: string, extraction: string) => ({
   queryKey: ["phone-media-index", caseId, extraction],
-  queryFn: () => getMediaIndex({ case_id: caseId, phones: [extraction] }),
+  queryFn: () => getMediaIndex(mediaFilter(caseId, extraction, null, "", "")),
 })
 
 export const mediaWindowQuery = (filter: MediaFilter) => ({

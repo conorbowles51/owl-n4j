@@ -22,6 +22,11 @@ const api = vi.hoisted(() => ({
   translateDerivedText: vi.fn(),
   describeImageIndex: vi.fn().mockResolvedValue({ images: 0, eligible: 0, indexed: 0, indexed_contents: 0, waiting: 0, left_out: { not_in_population: 0, not_in_production: 0, empty_placeholder: 0, could_not_open: 0, could_not_open_by_reason: {} }, uncategorised_files: 0, model_installed: true, model_words: null, model: "siglip2-base-patch16-224", model_id: "m", revision_short: "75de2d5", population_words: "" }),
   getImageIndexJobs: vi.fn().mockResolvedValue({ case_id: "c", items: [] }),
+  getSettings: vi.fn().mockResolvedValue({ case_id: "c", time_zone: null, effective: { name: "UTC", basis: "default", note: null }, updated_at: null, updated_by: null, media_blur: { default_on: true, basis: "criminal_case", words: "On by default in a criminal case.", set: null } }),
+  getMediaFacets: vi.fn().mockResolvedValue({ apps: [{ app: "SyntheticApp", files: 1 }], participants: [{ key: "phone:+12025550143", label: "Synthetic Contact", files: 1 }] }),
+  getPhones: vi.fn().mockResolvedValue({ case_id: "c", total: 2, phones: [{ extraction_id: "e1", label: "C1" }, { extraction_id: "e2", label: "C2" }], case_zone: { name: "UTC", basis: "default", note: null } }),
+  checkMediaDownload: vi.fn(),
+  downloadMediaOriginals: vi.fn(),
 }))
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
 vi.mock("../collect-targets", () => ({ useCollectTargets: () => ({ targets: [{ kind: "dossier", id: "p1", label: "Synthetic Person" }, { kind: "note", id: "n1", label: "A note" }], note: null, loading: false, error: null }) }))
@@ -303,5 +308,110 @@ describe("Media (03 section 8)", () => {
     await client.invalidateQueries({ queryKey: ["phone-media-derived", "c", "f9"] })
     expect(await screen.findByText("Made from an earlier text: the original has been corrected since.")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Translate the corrected transcript" })).toBeInTheDocument()
+  })
+})
+
+describe("Media viewer tools (03 8.3)", () => {
+  const page = (entry = "/cases/c/phones/e1/records/media") => render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes><Route path="/cases/:id/phones/:extraction/records/media" element={<MediaPage />} /></Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+
+  it("moves to the next and previous file with the buttons and the arrow keys", async () => {
+    localStorage.clear()
+    page("/cases/c/phones/e1/records/media?file=f1")
+    const panel = await screen.findByRole("complementary", { name: "File" })
+    expect(await within(panel).findByText(/File 1 of 2/)).toBeInTheDocument()
+    expect(within(panel).getByRole("button", { name: "Previous" })).toBeDisabled()
+    fireEvent.keyDown(window, { key: "ArrowRight" })
+    expect(await within(panel).findByText(/File 2 of 2/)).toBeInTheDocument()
+    expect(within(panel).getByRole("button", { name: "Next" })).toBeDisabled()
+    fireEvent.click(within(panel).getByRole("button", { name: "Previous" }))
+    expect(await within(panel).findByText(/File 1 of 2/)).toBeInTheDocument()
+  })
+
+  it("filters by app, person and dates, sending them to the server", async () => {
+    localStorage.clear()
+    page()
+    const app = await screen.findByRole("combobox", { name: /App/ })
+    await screen.findByRole("option", { name: "SyntheticApp (1)" })
+    fireEvent.change(app, { target: { value: "SyntheticApp" } })
+    fireEvent.change(screen.getByRole("combobox", { name: /Person/ }), { target: { value: "phone:+12025550143" } })
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2023-03-14" } })
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2023-03-14" } })
+    await waitFor(() => expect(api.getMediaIndex).toHaveBeenCalledWith(expect.objectContaining({
+      apps: ["SyntheticApp"], participants: ["phone:+12025550143"],
+      from_instant: "2023-03-14T00:00:00.000Z", to_instant: "2023-03-15T00:00:00.000Z" })))
+    expect(screen.getByText(/whole days in UTC/)).toBeInTheDocument()
+    const phones = screen.getByRole("combobox", { name: /Phones/ })
+    await screen.findByRole("option", { name: "C2" })
+    expect(screen.queryByRole("option", { name: "C1" })).toBeNull()  // this phone is the first choice
+    fireEvent.change(phones, { target: { value: "*" } })
+    await waitFor(() => expect(api.getMediaFacets).toHaveBeenLastCalledWith({ case_id: "c" }))
+    fireEvent.change(phones, { target: { value: "e2" } })
+    await waitFor(() => expect(api.getMediaIndex).toHaveBeenLastCalledWith(expect.objectContaining({ phones: ["e2"] })))
+  })
+
+  it("blurs by the case default until the person chooses, and changes the thumbnail size", async () => {
+    localStorage.clear()
+    page()
+    const box = await screen.findByRole("checkbox", { name: "Blur pictures until opened" })
+    await screen.findByText(/On by default in a criminal case/)
+    expect(box).toBeChecked()
+    api.getSettings.mockResolvedValueOnce({ case_id: "c", time_zone: null, effective: { name: "UTC", basis: "default", note: null }, updated_at: null, updated_by: null, media_blur: { default_on: false, basis: "not_criminal", words: "Off by default: this is not a criminal case.", set: null } })
+    fireEvent.click(box)
+    expect(localStorage.getItem("loupe.media.blur")).toBe("off")
+    const size = screen.getByRole("combobox", { name: /Thumbnails/ })
+    fireEvent.change(size, { target: { value: "large" } })
+    expect(screen.getByRole("list", { name: "Files" }).className).toContain("14rem")
+    expect(localStorage.getItem("loupe.media.thumb")).toBe("large")
+  })
+
+  it("copies the chosen files' list without the clipboard API, and says when only some are loaded", async () => {
+    localStorage.clear()
+    const exec = vi.fn().mockReturnValue(true)
+    Object.defineProperty(document, "execCommand", { value: exec, configurable: true })
+    page()
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Choose synthetic-a.jpg" }))
+    fireEvent.click(screen.getByRole("button", { name: "Copy file list" }))
+    expect(exec).toHaveBeenCalledWith("copy")
+    expect(screen.getByText("Copied the list of 1 chosen file.")).toBeInTheDocument()
+    exec.mockReturnValue(false)
+    fireEvent.click(screen.getByRole("button", { name: "Clear the choice" }))
+    fireEvent.click(screen.getByRole("button", { name: "Copy file list" }))
+    expect(screen.getByText(/did not allow copying. The list of all 2 files is below/)).toBeInTheDocument()
+    expect((screen.getByRole("textbox", { name: "File list to copy" }) as HTMLTextAreaElement).value).toMatch(/^File\tPhone\tCategory\tTime\tState\tSHA-256\tMD5\nsynthetic-a.jpg\tC1\tImage\t/)
+  })
+
+  it("shows a refused download with its numbers and makes nothing", async () => {
+    localStorage.clear()
+    api.checkMediaDownload.mockResolvedValueOnce({ count: 3000, held: 3000, not_in_production: 0, bytes: 5, refusal: "These 3,000 files are 1 MB. A download holds at most 2,000 files and 1.0 GB, so nothing was made. Choose fewer (a phone, a category or dates) and download again.", max_files: 2000, max_bytes: 1 })
+    page()
+    const dl = await screen.findByRole("button", { name: "Download originals" })
+    await waitFor(() => expect(dl).toBeEnabled())
+    fireEvent.click(dl)
+    expect(await screen.findByRole("alert")).toHaveTextContent("so nothing was made")
+    expect(api.downloadMediaOriginals).not.toHaveBeenCalled()
+    expect(screen.queryByRole("button", { name: "Download the zip" })).toBeNull()
+  })
+
+  it("downloads the chosen originals after stating what the zip holds", async () => {
+    localStorage.clear()
+    api.checkMediaDownload.mockResolvedValueOnce({ count: 2, held: 1, not_in_production: 1, bytes: 2048, refusal: null, max_files: 2000, max_bytes: 1 })
+    api.downloadMediaOriginals.mockResolvedValueOnce({ blob: new Blob(["z"]), files: 2 })
+    const made = vi.fn().mockReturnValue("blob:x")
+    Object.defineProperty(URL, "createObjectURL", { value: made, configurable: true })
+    page()
+    const dl = await screen.findByRole("button", { name: "Download originals" })
+    await waitFor(() => expect(dl).toBeEnabled())
+    fireEvent.click(dl)
+    expect(await screen.findByText(/2 files, 2 KB, as a zip with manifest.csv/)).toBeInTheDocument()
+    expect(screen.getByText(/1 the report names are not in the production/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Download the zip" }))
+    expect(await screen.findByText("Downloaded 2 files with manifest.csv of their hashes.")).toBeInTheDocument()
+    expect(made).toHaveBeenCalled()
   })
 })

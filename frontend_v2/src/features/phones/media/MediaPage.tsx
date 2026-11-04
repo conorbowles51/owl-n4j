@@ -9,12 +9,12 @@ import { BatchReading } from "./BatchReading"
 import { ImageSearch } from "./ImageSearch"
 import { MachineTextPrompt } from "./MachineTextPrompt"
 import { useObjectUrl } from "./use-object-url"
-import { mediaFilter, mediaIndexQuery, mediaPhoneIndexQuery, mediaWindowQuery, NONE } from "./media-queries"
-import { acceptDerivedText, confirmDerivedText, correctDerivedText, getDerivedTexts, getMediaDetail, getTranslations, requestDerivedText, translateDerivedText, type DerivedText, type MediaFilter, type MediaItem } from "../api"
+import { EVERY_PHONE, mediaFilter, mediaIndexQuery, mediaPhoneIndexQuery, mediaWindowQuery, NONE } from "./media-queries"
+import { BLUR_KEY, THUMB_KEY, THUMB_SIZES, blurFor, copyText, dayStart, fileListText, saveBlob, sizeWords, storedThumbSize, useArrowKeys, type ThumbSize } from "./media-tools"
+import { acceptDerivedText, checkMediaDownload, confirmDerivedText, correctDerivedText, downloadMediaOriginals, getDerivedTexts, getMediaDetail, getMediaFacets, getPhones, getSettings, getTranslations, requestDerivedText, translateDerivedText, type DerivedText, type MediaDownloadFacts, type MediaFilter, type MediaItem } from "../api"
 import { noTimeWords } from "./no-time-words"
 
 const n = (v: number) => v.toLocaleString("en-US")
-const BLUR_KEY = "loupe.media.blur"
 
 const CONVERTED_WORDS = "Playing a converted copy. The original file is unchanged."
 
@@ -53,7 +53,7 @@ function MediaPlayer({ caseId, fileUid, original }: { caseId: string; fileUid: s
   )
 }
 
-function Thumb({ caseId, item, blur }: { caseId: string; item: MediaItem; blur: boolean }) {
+function Thumb({ caseId, item, blur, height = "h-28" }: { caseId: string; item: MediaItem; blur: boolean; height?: string }) {
   const ref = useRef<HTMLDivElement>(null)
   const [seen, setSeen] = useState(false)
   useEffect(() => {
@@ -66,7 +66,7 @@ function Thumb({ caseId, item, blur }: { caseId: string; item: MediaItem; blur: 
   const isImage = (item.category ?? "").toLowerCase().includes("image") || /\.(jpe?g|png|gif|webp|heic|bmp)$/i.test(item.filename)
   const shown = useObjectUrl(caseId, item.file_uid, seen && isImage && !item.missing, "thumbnail")
   return (
-    <div ref={ref} className="flex h-28 items-center justify-center overflow-hidden rounded bg-muted text-center text-[11px]">
+    <div ref={ref} className={`flex ${height} items-center justify-center overflow-hidden rounded bg-muted text-center text-[11px]`}>
       {item.missing ? (
         <span className="px-2">The report refers to a file that is not in the production.</span>
       ) : shown && "url" in shown ? (
@@ -376,7 +376,12 @@ export function DerivedTexts({ caseId, fileUid, category, filename = null }: { c
 
 /** The Media file panel: the file, its hashes and state, and every message that carried it. Also opened from Media
  * spread. */
-export function Detail({ caseId, fileUid, onClose, onStep, position }: { caseId: string; fileUid: string; onClose: () => void; onStep?: (by: 1 | -1) => void; position?: { at: number; of: number } }) {
+export function Detail({ caseId, fileUid, onClose, onPrev = null, onNext = null, position }: {
+  caseId: string; fileUid: string; onClose: () => void
+  /** Previous and next file in the grid's order (also the left and right arrow keys); null at either end. */
+  onPrev?: (() => void) | null; onNext?: (() => void) | null; position?: { at: number; of: number }
+}) {
+  useArrowKeys(!!(onPrev || onNext), onPrev, onNext)
   const d = useQuery({ queryKey: ["phone-media-detail", caseId, fileUid], queryFn: () => getMediaDetail(caseId, fileUid) })
   const file = useObjectUrl(caseId, fileUid, !!d.data && !d.data.missing)
   const x = d.data
@@ -385,15 +390,16 @@ export function Detail({ caseId, fileUid, onClose, onStep, position }: { caseId:
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold">File{position ? ` ${n(position.at)} of ${n(position.of)}` : ""}</h2>
         <span className="flex gap-1">
-          {onStep && position && (
+          {position && (
             <>
-              <Button size="sm" variant="ghost" disabled={position.at <= 1} onClick={() => onStep(-1)}>Previous</Button>
-              <Button size="sm" variant="ghost" disabled={position.at >= position.of} onClick={() => onStep(1)}>Next</Button>
+              <Button size="sm" variant="ghost" disabled={!onPrev} onClick={() => onPrev?.()} aria-keyshortcuts="ArrowLeft">Previous</Button>
+              <Button size="sm" variant="ghost" disabled={!onNext} onClick={() => onNext?.()} aria-keyshortcuts="ArrowRight">Next</Button>
             </>
           )}
           <Button size="sm" variant="ghost" onClick={onClose}>Close</Button>
         </span>
       </div>
+      {position && <p className="text-muted-foreground">Left and right arrow keys move too.</p>}
       {d.isLoading && <p role="status">Loading the file.</p>}
       {d.isError && <p role="alert">This file could not be loaded.</p>}
       {x && (
@@ -448,7 +454,6 @@ export default function MediaPage() {
     else next.delete("file")
     return next
   }, { replace: true })
-  const [blur, setBlur] = useState(() => localStorage.getItem(BLUR_KEY) !== "off")
   // Attachments (N) from a thread header (03 section 6.7, MD-1): the grid scoped to the files that thread carried
   const thread = params.get("thread")
   const threadTitle = params.get("thread_title")
@@ -459,9 +464,35 @@ export default function MediaPage() {
     for (const k of ["thread", "thread_title", "back"]) next.delete(k)
     return next
   }, { replace: true })
-  const filter: MediaFilter = mediaFilter(caseId, extraction, thread, category, state)
+  const [phone, setPhone] = useState("")
+  const [app, setApp] = useState("")
+  const [person, setPerson] = useState("")
+  const [fromDay, setFromDay] = useState("")
+  const [toDay, setToDay] = useState("")
+  const [size, setSize] = useState<ThumbSize>(storedThumbSize)
+  const [selected, setSelected] = useState<Set<string>>(() => new Set())
+  const [note, setNote] = useState<string | null>(null)
+  const [manual, setManual] = useState<string | null>(null)
+  const [plan, setPlan] = useState<MediaDownloadFacts | null>(null)
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+  const settings = useQuery({ queryKey: ["phone-settings", caseId], queryFn: () => getSettings(caseId), enabled: !!caseId })
+  const [ownBlur, setOwnBlur] = useState(() => localStorage.getItem(BLUR_KEY))
+  const blur = blurFor(ownBlur, settings.data?.media_blur?.default_on)
+  const from = dayStart(fromDay)
+  const to = dayStart(toDay, 1)
+  // the phone in the address, every phone in the case, or another phone of the case
+  const onPhone = phone || extraction
+  const filter: MediaFilter = mediaFilter(caseId, onPhone, thread, category, state, {
+    ...(app ? { apps: [app] } : {}), ...(person ? { participants: [person] } : {}),
+    ...(from ? { from_instant: from } : {}), ...(to ? { to_instant: to } : {}),
+  })
+  const filtered = !!(category || state || thread || app || person || from || to)
+  const scope = mediaFilter(caseId, onPhone, thread, "", "")
+  const facets = useQuery({ queryKey: ["phone-media-facets", scope], queryFn: () => getMediaFacets(scope), enabled: !!caseId })
+  const casePhones = useQuery({ queryKey: ["phones", caseId], queryFn: () => getPhones(caseId), enabled: !!caseId })
   const idx = useQuery({ ...mediaIndexQuery(filter), enabled: !!caseId })
-  const all = useQuery({ ...mediaPhoneIndexQuery(caseId, extraction), enabled: !!caseId })
+  const all = useQuery({ ...mediaPhoneIndexQuery(caseId, onPhone), enabled: !!caseId })
   const pages = useInfiniteQuery({ ...mediaWindowQuery(filter), enabled: !!caseId })
   const items = pages.data?.pages.flatMap((p) => p.items) ?? []
   const sentinel = useRef<HTMLDivElement>(null)
@@ -475,6 +506,44 @@ export default function MediaPage() {
     return () => io.disconnect()
   }, [pages])
   const total = idx.data?.total ?? 0
+  const at = open ? items.findIndex((it) => it.file_uid === open) : -1
+  const onPrev = at > 0 ? () => setOpen(items[at - 1].file_uid) : null
+  const onNext = at >= 0 && at < items.length - 1 ? () => setOpen(items[at + 1].file_uid)
+    : at >= 0 && pages.hasNextPage ? () => {
+      void pages.fetchNextPage().then((r) => {
+        const next = (r.data?.pages.flatMap((p) => p.items) ?? [])[at + 1]
+        if (next) setOpen(next.file_uid)
+      })
+    } : null
+  const chosen = selected.size ? items.filter((it) => selected.has(it.file_uid)) : []
+  const toggle = (uid: string) => setSelected((cur) => {
+    const next = new Set(cur)
+    if (next.has(uid)) next.delete(uid)
+    else next.add(uid)
+    return next
+  })
+  const copyList = () => {
+    const list = chosen.length ? chosen : items
+    const text = fileListText(list)
+    const what = chosen.length ? `${n(list.length)} chosen ${list.length === 1 ? "file" : "files"}`
+      : list.length < total ? `the ${n(list.length)} files loaded so far of ${n(total)}; scroll to load the rest first to copy them all` : `all ${n(list.length)} files`
+    if (copyText(text)) { setManual(null); setNote(`Copied the list of ${what}.`) }
+    else { setManual(text); setNote(`This browser did not allow copying. The list of ${what} is below to copy by hand.`) }
+  }
+  const askDownload = async () => {
+    setDownloadError(null)
+    try { setPlan(await checkMediaDownload(filter, [...selected])) } catch (e) { setDownloadError(e instanceof Error ? e.message : "The download could not be checked.") }
+  }
+  const doDownload = async () => {
+    setDownloading(true); setDownloadError(null)
+    try {
+      const r = await downloadMediaOriginals(filter, [...selected])
+      saveBlob(r.blob, "phone-originals.zip")
+      setPlan(null)
+      setNote(`Downloaded ${n(r.files)} ${r.files === 1 ? "file" : "files"} with manifest.csv of their hashes.`)
+    } catch (e) { setDownloadError(e instanceof Error ? e.message : "The download could not be made.") } finally { setDownloading(false) }
+  }
+  const setFilter = (fn: () => void) => { fn(); setSelected(new Set()); setPlan(null) }
   return (
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col gap-2 overflow-auto p-4">
@@ -493,37 +562,98 @@ export default function MediaPage() {
         )}
         {idx.data && (
           <p role="status" className="text-sm">
-            {n(total)} {total === 1 ? "file" : "files"}{category || state || thread ? ` match the filter (of ${n(all.data?.total ?? total)} on this phone)` : ""}.
+            {n(total)} {total === 1 ? "file" : "files"}{filtered ? ` match the filter (of ${n(all.data?.total ?? total)}${phone ? "" : " on this phone"})` : ""}.
             {idx.data.missing ? ` ${n(idx.data.missing)} the report refers to are not in the production.` : ""}
             {noTimeWords(idx.data.no_time_count, idx.data.no_message_count)}
+            {idx.data.outside_dates_no_time ? ` ${n(idx.data.outside_dates_no_time)} more have no time, so the dates leave them out.` : ""}
           </p>
         )}
         <div className="flex flex-wrap items-center gap-2 text-xs">
+          <label className="flex items-center gap-1">Phones
+            <select value={phone} onChange={(e) => setFilter(() => { setPhone(e.target.value); setApp(""); setPerson("") })} className="max-w-48 rounded border bg-background px-1 py-0.5">
+              <option value="">This phone</option>
+              <option value={EVERY_PHONE}>Every phone in the case</option>
+              {(casePhones.data?.phones ?? []).filter((p) => p.extraction_id !== extraction).map((p) => <option key={p.extraction_id} value={p.extraction_id}>{p.label}</option>)}
+            </select>
+          </label>
           <label className="flex items-center gap-1">Category
-            <select value={category} onChange={(e) => setCategory(e.target.value)} className="rounded border bg-background px-1 py-0.5">
+            <select value={category} onChange={(e) => setFilter(() => setCategory(e.target.value))} className="rounded border bg-background px-1 py-0.5">
               <option value="">All</option>
               {Object.entries(all.data?.by_category ?? {}).map(([k, v]) => <option key={k} value={k === "Uncategorised" ? NONE : k}>{k} ({n(v)})</option>)}
             </select>
           </label>
           <label className="flex items-center gap-1">State
-            <select value={state} onChange={(e) => setState(e.target.value)} className="rounded border bg-background px-1 py-0.5">
+            <select value={state} onChange={(e) => setFilter(() => setState(e.target.value))} className="rounded border bg-background px-1 py-0.5">
               <option value="">All</option>
               {Object.entries(all.data?.verification ?? {}).map(([k, v]) => <option key={k} value={k === "unchecked" ? NONE : k}>{k} ({n(v)})</option>)}
             </select>
           </label>
+          <label className="flex items-center gap-1">App
+            <select value={app} onChange={(e) => setFilter(() => setApp(e.target.value))} className="rounded border bg-background px-1 py-0.5">
+              <option value="">All</option>
+              {(facets.data?.apps ?? []).map((a) => <option key={a.app} value={a.app}>{a.app} ({n(a.files)})</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-1">Person
+            <select value={person} onChange={(e) => setFilter(() => setPerson(e.target.value))} className="max-w-48 rounded border bg-background px-1 py-0.5">
+              <option value="">All</option>
+              {(facets.data?.participants ?? []).map((p) => <option key={p.key} value={p.key}>{p.label} ({n(p.files)})</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-1">From
+            <input type="date" aria-label="From" value={fromDay} onChange={(e) => setFilter(() => setFromDay(e.target.value))} className="rounded border bg-background px-1 py-0.5" />
+          </label>
+          <label className="flex items-center gap-1">To
+            <input type="date" aria-label="To" value={toDay} onChange={(e) => setFilter(() => setToDay(e.target.value))} className="rounded border bg-background px-1 py-0.5" />
+          </label>
+          {(fromDay || toDay) && <span className="text-muted-foreground">Dates are whole days in UTC, by the time of the message that carried the file.</span>}
+          <label className="flex items-center gap-1">Thumbnails
+            <select value={size} onChange={(e) => { const v = e.target.value as ThumbSize; setSize(v); localStorage.setItem(THUMB_KEY, v) }} className="rounded border bg-background px-1 py-0.5">
+              {(Object.keys(THUMB_SIZES) as ThumbSize[]).map((k) => <option key={k} value={k}>{THUMB_SIZES[k].label}</option>)}
+            </select>
+          </label>
           <label className="flex items-center gap-1">
-            <input type="checkbox" checked={blur} onChange={(e) => { setBlur(e.target.checked); localStorage.setItem(BLUR_KEY, e.target.checked ? "on" : "off") }} />
+            <input type="checkbox" checked={blur} onChange={(e) => { const v = e.target.checked ? "on" : "off"; setOwnBlur(v); localStorage.setItem(BLUR_KEY, v) }} />
             Blur pictures until opened
           </label>
+          {settings.data?.media_blur && <span className="text-muted-foreground">Case default: {settings.data.media_blur.default_on ? "on" : "off"}. {settings.data.media_blur.words}</span>}
         </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs" aria-label="Files to copy or download">
+          <span>{selected.size ? `${n(selected.size)} chosen.` : "Choose files with their boxes, or act on every file the filter shows."}</span>
+          {selected.size > 0 && <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear the choice</Button>}
+          <Button size="sm" variant="outline" onClick={copyList} disabled={!items.length}>Copy file list</Button>
+          <Button size="sm" variant="outline" onClick={() => void askDownload()} disabled={!total || downloading}>Download originals</Button>
+        </div>
+        {note && <p role="status" className="text-xs">{note}</p>}
+        {manual && <textarea aria-label="File list to copy" readOnly className="h-32 w-full rounded border p-1 font-mono text-[11px]" value={manual} onFocus={(e) => e.currentTarget.select()} />}
+        {plan && (
+          <div className="flex flex-col gap-1 rounded border p-2 text-xs" aria-label="Download originals">
+            {plan.refusal ? <p role="alert">{plan.refusal}</p> : (
+              <>
+                <p>
+                  {n(plan.count)} {plan.count === 1 ? "file" : "files"}, {sizeWords(plan.bytes)}, as a zip with manifest.csv of every file's hashes.
+                  {plan.not_in_production ? ` ${n(plan.not_in_production)} the report names are not in the production; the manifest lists them.` : ""}
+                </p>
+                <div className="flex gap-1">
+                  <Button size="sm" disabled={downloading} onClick={() => void doDownload()}>{downloading ? "Preparing the zip" : "Download the zip"}</Button>
+                  <Button size="sm" variant="ghost" disabled={downloading} onClick={() => setPlan(null)}>Cancel</Button>
+                </div>
+              </>
+            )}
+            {plan.refusal && <Button size="sm" variant="ghost" className="self-start" onClick={() => setPlan(null)}>Close</Button>}
+          </div>
+        )}
+        {downloadError && <p role="alert" className="text-xs">{downloadError}</p>}
         {pages.isError && <p role="alert" className="text-sm">The files could not be loaded.</p>}
-        <BatchReading caseId={caseId} filter={filter} scopeWords={[category && `${category === NONE ? "uncategorised" : category} files`, state && `${state === NONE ? "unchecked" : state} files`].filter(Boolean).join(", ") || "this phone"} />
+        <BatchReading caseId={caseId} filter={filter} scopeWords={[category && `${category === NONE ? "uncategorised" : category} files`, state && `${state === NONE ? "unchecked" : state} files`].filter(Boolean).join(", ") || (phone === EVERY_PHONE ? "every phone in the case" : "this phone")} />
         <ImageSearch caseId={caseId} blur={blur} onOpen={setOpen} />
-        <ul aria-label="Files" className="grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-2">
+        <ul aria-label="Files" className={`grid ${THUMB_SIZES[size].grid} gap-2`}>
           {items.map((it) => (
-            <li key={it.file_uid}>
+            <li key={it.file_uid} className="relative">
+              <input type="checkbox" aria-label={`Choose ${it.filename}`} checked={selected.has(it.file_uid)} onChange={() => toggle(it.file_uid)}
+                className="absolute left-2 top-2 z-10" />
               <button type="button" onClick={() => setOpen(it.file_uid)} className="flex w-full flex-col gap-1 rounded border p-1 text-left text-[11px] hover:bg-muted/40">
-                <Thumb caseId={caseId} item={it} blur={blur && open !== it.file_uid} />
+                <Thumb caseId={caseId} item={it} blur={blur && open !== it.file_uid} height={THUMB_SIZES[size].height} />
                 <span className="truncate font-medium">{it.filename}</span>
                 <span className="truncate text-muted-foreground">{it.phone_label} · {it.taken_or_sent.full}</span>
                 <span className="truncate">{it.verification_words}{it.message_count ? ` · ${n(it.message_count)} ${it.message_count === 1 ? "message" : "messages"}` : ""}</span>
@@ -540,22 +670,8 @@ export default function MediaPage() {
         <div ref={sentinel} />
         {pages.isFetchingNextPage && <p role="status" className="text-xs">Loading more files ({n(items.length)} of {n(total)} shown).</p>}
       </div>
-      {open && (
-        <Detail
-          caseId={caseId}
-          fileUid={open}
-          onClose={() => setOpen(null)}
-          position={items.some((i) => i.file_uid === open) ? { at: items.findIndex((i) => i.file_uid === open) + 1, of: total } : undefined}
-          onStep={(by) => {
-            const at = items.findIndex((i) => i.file_uid === open) + by
-            if (at >= 0 && at < items.length) setOpen(items[at].file_uid)
-            else if (at === items.length && pages.hasNextPage) void pages.fetchNextPage().then((r) => {
-              const more = r.data?.pages.flatMap((p) => p.items) ?? []
-              if (more[at]) setOpen(more[at].file_uid)
-            })
-          }}
-        />
-      )}
+      {open && <Detail caseId={caseId} fileUid={open} onClose={() => setOpen(null)} onPrev={onPrev} onNext={onNext}
+        position={at >= 0 ? { at: at + 1, of: total } : undefined} />}
     </div>
   )
 }

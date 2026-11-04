@@ -151,7 +151,7 @@ export async function revealValue(caseId: string, recordUid: string, fieldPath: 
 }
 
 export async function getSettings(caseId: string) {
-  return fetchAPI<{ case_id: string; time_zone: string | null; effective: { name: string; basis: string; note: string | null }; updated_at: string | null; updated_by: string | null }>(
+  return fetchAPI<{ case_id: string; time_zone: string | null; effective: { name: string; basis: string; note: string | null }; updated_at: string | null; updated_by: string | null; media_blur?: MediaBlurDefault }>(
     `/api/phones/settings?case_id=${encodeURIComponent(caseId)}`,
   )
 }
@@ -479,13 +479,24 @@ export interface MediaFilter {
   verification?: string[]
   linked_to_message?: boolean | null
   thread_key?: string
+  /** Carried by a message of one of these apps, or with one of these people (identity keys). */
+  apps?: string[]
+  participants?: string[]
+  /** The carrying message's time, as instants with an offset; files with no time fall outside a dated window. */
+  from_instant?: string
+  to_instant?: string
 }
-export interface MediaIndex { total: number; no_time_count: number; no_message_count?: number; missing: number; by_category: Record<string, number>; verification: Record<string, number> }
+export interface MediaIndex {
+  total: number; no_time_count: number; no_message_count?: number; missing: number; by_category: Record<string, number>; verification: Record<string, number>
+  /** With dates set: the files left out because no message gives them a time. */
+  outside_dates_no_time?: number
+}
 export interface MediaItem {
   file_uid: string; extraction_id: string; phone_label: string; category: string | null; filename: string; size: number | null
   taken_or_sent: { instant: string | null; full: string; basis: string }
   verification: string | null; verification_words: string; missing: boolean; deleted_state: string | null; is_carved: boolean
   message_count: number; thumbnail_url: string | null
+  hashes?: { md5: string | null; sha256: string | null }
   /** The machine text in use for each kind, with its one origin mark (07 4.6); null when there is none. */
   machine_text?: { kind: "ocr" | "transcript"; state: "machine" | "confirmed" | "corrected" | "pending"; short: string; words: string | null }[] | null
 }
@@ -494,6 +505,45 @@ export interface MediaDetail {
   hashes: Record<string, string | null>; verification: string | null; verification_words: string; missing: boolean
   missing_words: string | null; deleted_state: string | null; is_carved: boolean; message_count: number
   messages: { record_uid: string; message_record_uid: string; kind: string | null; instant: string | null; mechanism: string; mechanism_words: string }[]
+}
+
+export interface MediaFacets { apps: { app: string; files: number }[]; participants: { key: string; label: string; files: number }[] }
+/** Every app and person whose messages carried the files in scope, with file counts (03 8.3 filters). */
+export async function getMediaFacets(filter: MediaFilter) {
+  return fetchAPI<MediaFacets>("/api/phones/media/facets", { method: "POST", body: filter, read: true })
+}
+
+export interface MediaDownloadFacts { count: number; held: number; not_in_production: number; bytes: number; refusal: string | null; max_files: number; max_bytes: number }
+/** What Download originals would hold, or why it is refused (03 8.3). */
+export async function checkMediaDownload(filter: MediaFilter, fileUids: string[]) {
+  return fetchAPI<MediaDownloadFacts>("/api/phones/media/download", { method: "POST", body: { filter, file_uids: fileUids, check_only: true }, read: true })
+}
+/** The originals as a zip with manifest.csv of their hashes. A refusal or an unreadable file throws with the
+ * server's words; nothing partial is returned. */
+export async function downloadMediaOriginals(filter: MediaFilter, fileUids: string[]) {
+  const token = localStorage.getItem("authToken")
+  const response = await fetch("/api/phones/media/download", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    credentials: "include",
+    body: JSON.stringify({ filter, file_uids: fileUids }),
+  })
+  if (!response.ok) {
+    let words = "The download could not be made."
+    try {
+      words = ((await response.json()) as { detail?: string }).detail ?? words
+    } catch {
+      /* not JSON */
+    }
+    throw new Error(words)
+  }
+  return { blob: await response.blob(), files: Number(response.headers.get("X-Files") ?? 0) }
+}
+
+export interface MediaBlurDefault { default_on: boolean; basis: "case_setting" | "criminal_case" | "not_criminal"; words: string; set: boolean | null }
+/** Set (true or false) or clear (null: follow the kind of case) the case default for blurring media. */
+export async function putMediaBlur(caseId: string, defaultOn: boolean | null) {
+  return fetchAPI<MediaBlurDefault>("/api/phones/settings/media-blur", { method: "PUT", body: { case_id: caseId, default_on: defaultOn } })
 }
 
 /** Media (03 section 8.2). */

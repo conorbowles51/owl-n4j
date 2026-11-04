@@ -36,6 +36,7 @@ import { useCase, useUpdateCase } from "../hooks/use-cases"
 import { AddressLookupSetting } from "./AddressLookupSetting"
 import { CaseCostsSection } from "./CaseCostsSection"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
+import { MediaBlurSetting } from "./MediaBlurSetting"
 
 const STATUS_OPTIONS: Array<{
   value: CaseStatus
@@ -364,6 +365,7 @@ export function CaseSettingsPage() {
 
         <AddressLookupSetting caseData={caseData} />
         {canSeeCosts && <CaseCostsSection caseId={caseData.id} caseTitle={caseData.title} />}
+        <MediaBlurSetting caseId={caseData.id} />
       </div>
     </div>
   )

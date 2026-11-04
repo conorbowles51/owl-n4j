@@ -26,6 +26,9 @@ vi.mock("../hooks/use-cases", () => ({
 vi.mock("./AddressLookupSetting", () => ({
   AddressLookupSetting: () => <div>Address lookup</div>,
 }))
+vi.mock("./MediaBlurSetting", () => ({
+  MediaBlurSetting: () => <div>Blur phone pictures</div>,
+}))
 
 const storyCase: Case = {
   id: "case-1",
