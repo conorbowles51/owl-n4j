@@ -1,3 +1,17 @@
+## 4 November: Bluetooth sightings and SIM country codes in Together (cb-coloc-rest)
+
+- **Own Bluetooth identity.** Each phone's Bluetooth address (`Bluetooth MAC Address`,
+  `DeviceInfoBluetoothDeviceAddress`) and name (`DeviceInfoBluetoothDeviceName`, else `DeviceInfoDeviceName`) from the
+  report header are header identity sightings (kind `other`, subkind `bluetooth_address` / `bluetooth_name`,
+  `field_path` `metadata:<item>`), read by `identities.own_bluetooth`. The identity stage carries `stage_version` 2
+  (`sweep.interpreter_version`), so every phone is read again once after release.
+- **Together basis `bluetooth`** (`colocation._bluetooth_pairs`): a `DeviceConnectivity` Bluetooth record naming the
+  other phone's address or name, compatible at 30 m; `name_match` never tight; `Detected` is `nearby_not_connected`.
+  Run counts carry `analysis_version` 2 and `flag:*` counts; the Together view lists the kinds of evidence in words.
+- **`mcc_inferred`** (`places.resolve_tower_key`, `tower_rows`, migration `20261104_pol_mcc_inferred`): a tower with
+  no MCC takes the SIM's when exactly one is stated; reasons `mcc_unknown_no_sim`, `mcc_unknown_several_sims`.
+  Shared-cell comparison is a keyed join (`colocation.cell_matches`). Decision 46 in 04; measurements
+  `docs/cellebrite/measurements/coloc-rest-a.jsonl`. Follow-up: default device names (followups m110415502629705).
 ## 4 November: text places placed on the map by a person (cb-textplaces, 04 6.5)
 
 - **Backend** `services/pattern_of_life/text_places.py`, routes `/api/pattern/{case}/text-places` (list, paged with
