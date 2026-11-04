@@ -16,7 +16,27 @@ update_deploy_checkout() {
         echo "Unresolved index conflicts exist; resolve them before deployment." >&2
         return 1
     fi
-    git fetch --no-write-fetch-head origin "+refs/heads/${branch}:refs/remotes/origin/${branch}" || return 1
+    # GitHub refuses a good key on and off (4 Nov 2026: 3 of 6 tries 'Permission denied (publickey)' with the same key
+    # and address); one refusal must not fail a release after a ten-minute prepare. Retry with a growing pause.
+    local delay fetched=false
+    for delay in ${GIT_UPDATE_FETCH_DELAYS-5 15 30} last; do
+        if git fetch --no-write-fetch-head origin "+refs/heads/${branch}:refs/remotes/origin/${branch}"; then
+            fetched=true; break
+        fi
+        [ "${delay}" = last ] && break
+        echo "Fetch of ${branch} failed; retrying in ${delay}s." >&2
+        sleep "${delay}"
+    done
+    if [ "${fetched}" = false ]; then
+        # A pinned release whose commit deploy-now.sh already fetched onto origin/<branch> needs nothing new from GitHub.
+        if [ -n "${DEPLOY_TARGET_SHA:-}" ] && git rev-parse --verify --quiet "${DEPLOY_TARGET_SHA}^{commit}" >/dev/null &&
+            git merge-base --is-ancestor "${DEPLOY_TARGET_SHA}" "refs/remotes/origin/${branch}" 2>/dev/null; then
+            echo "Fetch of ${branch} failed every try; pinned ${DEPLOY_TARGET_SHA} is already on origin/${branch}, continuing." >&2
+        else
+            echo "Fetch of ${branch} failed every try." >&2
+            return 1
+        fi
+    fi
     target="$(git rev-parse --verify "refs/remotes/origin/${branch}^{commit}")" || return 1
     if [ -n "${DEPLOY_TARGET_SHA:-}" ]; then
         local pinned

@@ -63,4 +63,36 @@ fi
 test "$(git rev-parse HEAD)" = "${pinned}"
 update_deploy_checkout main
 test "$(git rev-parse HEAD)" = "$(git -C "${scratch}/writer" rev-parse HEAD)"
+# A refused fetch (GitHub 'Permission denied (publickey)' on and off) is retried, not a failed release.
+cd "${scratch}/writer"
+echo flaky >> file
+git commit -qam flaky
+git push -q origin main
+flaky_target="$(git rev-parse HEAD)"
+cd "${scratch}/pinned"
+fetch_failures=2
+git() {
+    if [ "$1" = fetch ] && [ "${fetch_failures}" -gt 0 ]; then
+        fetch_failures=$((fetch_failures - 1)); echo 'git@github.com: Permission denied (publickey).' >&2; return 128
+    fi
+    command git "$@"
+}
+GIT_UPDATE_FETCH_DELAYS="0 0" update_deploy_checkout main
+test "$(git rev-parse HEAD)" = "${flaky_target}"
+test "${fetch_failures}" = 0
+# Every try refused: a pinned commit already on origin/<branch> still releases; an unpinned update fails.
+cd "${scratch}/writer"
+echo offline >> file
+git commit -qam offline
+git push -q origin main
+cd "${scratch}/pinned"
+command git fetch -q origin
+offline_target="$(command git -C "${scratch}/writer" rev-parse HEAD)"
+fetch_failures=99
+if GIT_UPDATE_FETCH_DELAYS="0" update_deploy_checkout main; then echo 'Expected unpinned update to fail offline'; exit 1; fi
+test "$(git rev-parse HEAD)" = "${flaky_target}"
+DEPLOY_TARGET_SHA="${offline_target}" GIT_UPDATE_FETCH_DELAYS="0" update_deploy_checkout main
+test "$(git rev-parse HEAD)" = "${offline_target}"
+unset -f git
 echo 'Git update regression checks passed'
+
