@@ -1321,8 +1321,11 @@ def stream_index(body: dict, db: Session = Depends(get_db), user: User = Depends
         raise _failure(LIST_FAILED, exc)
     if (f.text.query or "").strip():  # searches run, for the review coverage summary (07 J-13 step 6)
         from services.phone import review_share
+        # the thread list records a Conversations search; here only a search inside open threads (find in
+        # thread) and other screens' streams, so one search is not counted twice
         review_share.record_search(db, f.case_id, user, f.text.query, exact=f.text.exact_characters,
-                                   surface="conversations", hits=(out.get("counts") or {}).get("events"))
+                                   surface="thread" if f.threads else "stream",
+                                   hits=(out.get("counts") or {}).get("events"))
     return out
 
 
@@ -1442,9 +1445,15 @@ def conversation_threads(body: dict, sort: str = Query("recent", pattern="^(rece
     """Every thread with events under the filter, in one response (6.3, C-5), with its review mark."""
     f = _filter(body, db, user)
     try:
-        return streams.thread_list(db.connection(), f, sort=sort)
+        out = streams.thread_list(db.connection(), f, sort=sort)
     except Exception as exc:  # noqa: BLE001
         raise _failure("The conversation list could not be loaded.", exc)
+    if (f.text.query or "").strip():  # a Conversations search starts here (07 J-13 step 6, searches run)
+        from services.phone import review_share
+        review_share.record_search(db, f.case_id, user, f.text.query, exact=f.text.exact_characters,
+                                   surface="conversations", hits=sum(int(t.get("event_count") or 0)
+                                                                     for t in out.get("items") or []))
+    return out
 
 
 @router.post("/conversations/participants")

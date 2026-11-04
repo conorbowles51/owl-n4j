@@ -286,12 +286,18 @@ def test_searches_run_and_terms_are_in_the_coverage_summary(api):
     assert c.post("/api/phones/streams/index", json=f).status_code == 200
     assert c.post("/api/phones/streams/index", json={"case_id": api["case"]}).status_code == 200  # no text: no row
     assert c.get("/api/search", params={"case_id": api["case"], "q": "pie", "groups": "messages"}).status_code == 200
+    # a Conversations search: the thread list under the text filter (once), then the open thread's messages
+    tl = c.post("/api/phones/conversations/threads", json={"case_id": api["case"], "text": {"query": "first"}})
+    assert tl.status_code == 200
+    key = tl.json()["items"][0]["thread_key"]
+    c.post("/api/phones/streams/index", json={"case_id": api["case"], "threads": [key], "text": {"query": "first"}})
     cov = coverage(api)
     runs = {s["query"]: s for s in cov["searches"]}
-    assert set(runs) == {"apple", "pie"}
+    assert set(runs) == {"apple", "pie", "first"}
     assert runs["apple"]["runs"] == 2 and runs["apple"]["last_hits"] == 2 and runs["apple"]["people"] == ["synthetic"]
     assert runs["pie"]["surfaces"] == ["search"]
-    assert cov["terms"] == ["apple", "pie"]
+    assert sorted(runs["first"]["surfaces"]) == ["conversations", "thread"] and runs["first"]["runs"] == 2
+    assert cov["terms"] == ["apple", "first", "pie"]
     assert any('"apple"' in line for line in cov["cover"])
 
 
