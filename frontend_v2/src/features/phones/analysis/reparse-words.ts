@@ -44,6 +44,10 @@ export function reparseWords(r: ApproachResult) {
     return { title: `${name(m.compared, 2)[0].toUpperCase()}${name(m.compared, 2).slice(1)}: not compared`,
       line: String(m.reason || "The tool wrote nothing of this kind for this phone, so these records are not compared.") }
   }
+  if (r.kind === "count_differs" && m.report_unit === "url") {
+    return { title: `Web history: ${n(m.report_count)} addresses in the report (${n(m.report_records)} visits), ${n(m.reparse_count)} ${readBy}`,
+      line: "The tool keeps one row for each web address with its last visit, so the report's visits are compared one address at a time, the latest visit standing for the address. The tabs list each address on one side only, and each pair whose time differs." }
+  }
   if (r.kind === "count_differs") {
     return { title: `${name(m.compared, 2)}: ${n(m.report_count)} in the report, ${n(m.reparse_count)} ${readBy}`,
       line: "The totals differ. The tabs list each record on one side only, and each pair whose time or content differs." }

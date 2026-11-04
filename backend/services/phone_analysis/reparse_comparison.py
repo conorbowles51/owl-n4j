@@ -6,7 +6,11 @@ pinned tool read (``phone_reparse_rows``) are compared with the report's records
 - sms, calls and WhatsApp messages: key (other party's identity, instant to the second, and the body for messages or
   direction and duration for calls), approach 12's natural key for these types (15.3 step 3);
 - contacts: key (the sorted identities on the card), with the name compared;
-- web history: key (URL, instant to the second).
+- web history: key (URL, instant to the second), over the report's records of the apps the tool read (its rows'
+  ``browser_name``); when the tool has one row per URL (ALEAPP's Chrome history: the URL's last visit and visit
+  count), the report's visits are taken one item per URL with the latest visit, so an earlier visit to a URL the tool
+  read is not "only in the report". Measured on P12: 1,246 of the report's 1,789 web history records were another
+  app's, and its 509 Chrome visits were 301 URLs.
 
 Each kind: exact key, one to one, is ``present_in_both``; same party and content at another instant is
 ``time_differs`` (both instants, both original strings, the difference in hours); same party and instant with
@@ -28,7 +32,7 @@ from collections import defaultdict
 from sqlalchemy import text
 
 CODE = "reparse_comparison"
-VERSION = "17.3-2"
+VERSION = "17.3-3"
 PARAMETERS = {
     "time_window_hours": {"default": 26, "min": 0, "max": 48},
 }
@@ -150,16 +154,50 @@ def _web(conn, ext):
     rows = defaultdict(dict)
     for r in conn.execute(text(
             "SELECT t.record_uid::text AS uid, t.field_path, t.value FROM pv_text t WHERE t.extraction_id = :e AND "
-            "t.model_type = 'VisitedPage' AND t.field_path IN ('Url', 'Title')"), {"e": ext}):
+            "t.model_type = 'VisitedPage' AND t.field_path IN ('Url', 'Title', 'Source')"), {"e": ext}):
         rows[r.uid][r.field_path] = r.value
     times = {r.uid: (r.instant, r.original_text) for r in conn.execute(text(
         "SELECT DISTINCT ON (t.record_uid) t.record_uid::text AS uid, t.instant, t.original_text FROM pv_time t JOIN "
         "pv_record p ON p.record_uid = t.record_uid WHERE t.extraction_id = :e AND p.model_type = 'VisitedPage' "
         "ORDER BY t.record_uid, (t.field_path = 'LastVisited') DESC"), {"e": ext})}
     return [{"record_uid": u, "party": (v.get("Url") or "").strip(), "instant": times.get(u, (None, None))[0],
-             "instant_text": times.get(u, (None, None))[1], "content": "", "shown": {"url": v.get("Url"),
-                                                                                  "title": v.get("Title")}}
+             "instant_text": times.get(u, (None, None))[1], "content": "", "app": (v.get("Source") or "").strip(),
+             "shown": {"url": v.get("Url"), "title": v.get("Title")}}
             for u, v in rows.items() if v.get("Url")]
+
+
+def _app(name) -> str:
+    return " ".join(str(name or "").split()).casefold()
+
+
+def web_scope(rep: list, tool: list):
+    """The report's web history records the tool could have read, and the rest counted by app.
+
+    Compared: records whose app is one the tool's rows name (``browser_name``, else the mapping's app). When the
+    tool's rows are one per (app, URL), the report's records are taken one per (app, URL), the latest visit standing
+    for the URL with the number of visits shown; otherwise each record stands alone."""
+    apps = {_app(t.get("browser") or t.get("app")) for t in tool} - {""}
+    keep, other = [], defaultdict(int)
+    for r in rep:
+        if _app(r.get("app")) in apps:
+            keep.append(r)
+        else:
+            other[r.get("app") or "no app named"] += 1
+    keys = [(_app(t.get("browser") or t.get("app")), t["party"]) for t in tool]
+    if len(set(keys)) != len(keys):
+        return keep, dict(other)
+    latest = {}
+    for r in keep:
+        k = (_app(r["app"]), r["party"])
+        r = dict(r, visits=1)
+        cur = latest.get(k)
+        if cur is None:
+            latest[k] = r
+        else:
+            newer = r if (_sec(r["instant"]) or float("-inf")) > (_sec(cur["instant"]) or float("-inf")) else cur
+            latest[k] = dict(newer, visits=cur["visits"] + 1,
+                             shown=dict(newer["shown"], visits=cur["visits"] + 1))
+    return list(latest.values()), dict(other)
 
 
 def report_side(conn, ext, kind):
@@ -184,10 +222,14 @@ def tool_side(conn, run_id, kind):
             party, content = "|".join(ids), _h(str(roles.get("name") or "").casefold())
         elif kind == "web_history":
             party, content = str(roles.get("url") or "").strip(), ""
+            browser = str(((r.values or {}).get("row") or {}).get("browser_name") or "").strip()
         else:
             party = _identity(roles.get("party"))
             content = _content(kind, roles.get("body"), roles.get("direction"), roles.get("duration"))
+        if kind != "web_history":
+            browser = ""
         out.append({"locator": "reparse:%s:%s:%s" % (run_id, r.artefact, r.row_index), "artefact": r.artefact,
+                    "browser": browser, "app": str((r.values or {}).get("app") or ""),
                     "row_index": r.row_index, "party": party, "instant": r.instant, "instant_text": r.instant_text,
                     "content": content, "shown": roles})
     return out
@@ -269,6 +311,26 @@ def run(conn, case_id, params, ctx) -> list:
                                                                    "role": "count"}]})
                 continue
             rep, tool = report_side(conn, ext, kind), tool_side(conn, run_id, kind)
+            if kind == "web_history":
+                all_rep = len(rep)
+                rep, other = web_scope(rep, tool)
+                if other:
+                    n_other = sum(other.values())
+                    c = counts["by_kind"].setdefault(kind, defaultdict(int))
+                    c["not_compared"] += n_other
+                    read = sorted({t.get("browser") or t.get("app") for t in tool} - {""})
+                    results.append({"kind": "not_compared", "strength": "observation",
+                                    "measures": dict(tool_meta, compared=kind, report_count=n_other,
+                                                     report_total=all_rep, by_app=other, reason=(
+                                        "%s %s read web history from %s only, so the report's %s web history records "
+                                        "from other apps (%s) are not compared." % (
+                                            tool_meta["tool"], tool_meta["version"], ", ".join(read) or "no app",
+                                            format(n_other, ","), ", ".join(
+                                                "%s %s" % (a, format(v, ",")) for a, v in
+                                                sorted(other.items(), key=lambda x: (-x[1], x[0])))))),
+                                    "directions": {}, "records": [{"extraction_id": ext, "record_uid": None,
+                                                                   "field_path": "not_compared:%s:%s" % (run_id, kind),
+                                                                   "role": "count"}]})
             if not rep and not tool:
                 continue
             m = compare(rep, tool, params["time_window_hours"])
@@ -278,7 +340,7 @@ def run(conn, case_id, params, ctx) -> list:
             if len(rep) != len(tool):
                 results.append({"kind": "count_differs", "strength": "observation",
                                 "measures": dict(tool_meta, compared=kind, report_count=len(rep),
-                                                 reparse_count=len(tool)),
+                                                 reparse_count=len(tool), **_unit(rep)),
                                 "directions": {}, "records": [{"extraction_id": ext, "record_uid": None,
                                                                "field_path": "count:%s:%s" % (run_id, kind),
                                                                "role": "count"}]})
@@ -318,6 +380,13 @@ def run(conn, case_id, params, ctx) -> list:
     _last.update({"phones": counts["phones"],
                   "compared": {k: dict(v) for k, v in counts["by_kind"].items()}})
     return results
+
+
+def _unit(rep) -> dict:
+    """Web history taken one item per URL says so, with the report's visits behind those URLs."""
+    if rep and all("visits" in r for r in rep):
+        return {"report_unit": "url", "report_records": sum(r["visits"] for r in rep)}
+    return {}
 
 
 def _side(x) -> dict:

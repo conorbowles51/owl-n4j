@@ -29,4 +29,10 @@ describe("re-parse wording", () => {
     expect(w.title).toBe("WhatsApp messages: not compared")
     expect(w.line).toBe("ALEAPP v2026.4.5 wrote no WhatsApp messages for this phone, so the report's 312 WhatsApp messages are not compared.")
   })
+  it("gives web history totals as addresses with the visits behind them when the tool keeps one row per address", () => {
+    const w = reparseWords(r("count_differs", { ...base, compared: "web_history", report_count: 301, report_records: 509,
+      reparse_count: 896, report_unit: "url" }))
+    expect(w.title).toMatch(/^Web history: 301 addresses in the report \(509 visits\), 896 read by ALEAPP/)
+  })
 })
+

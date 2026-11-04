@@ -134,3 +134,38 @@ def test_a_kind_the_tool_wrote_nothing_for_is_not_compared_rather_than_only_in_t
                                     "messages are not compared.")]
     assert sorted(r.kind for r in rows if r.measures["compared"] == "call") == [
         "count_differs", "only_in_reparse", "present_in_both"]
+
+
+def test_web_history_compares_the_tools_apps_one_item_per_url():
+    """Measured on P12: the report's web history held another app's records and one record per visit, while
+    ALEAPP's Chrome history has one row per URL; compared as they were, 1,488 of 1,789 were "only in the report"."""
+    from datetime import datetime, timezone
+    from services.phone_analysis.reparse_comparison import web_scope, compare, _unit
+
+    def t(h):
+        return datetime(2024, 1, 1, h, tzinfo=timezone.utc)
+
+    def rep(uid, url, h, app="Chrome"):
+        return {"record_uid": uid, "party": url, "instant": t(h), "instant_text": None, "content": "", "app": app,
+                "shown": {"url": url}}
+
+    def tool(i, url, h, browser="Chrome"):
+        return {"locator": "reparse:r:get_chrome:%d" % i, "artefact": "get_chrome", "row_index": i, "party": url,
+                "instant": t(h), "instant_text": None, "content": "", "browser": browser, "app": "Chrome",
+                "shown": {"url": url}}
+
+    report = [rep("a1", "u1", 1), rep("a2", "u1", 3), rep("a3", "u1", 2), rep("b1", "u2", 4),
+              rep("g1", "u9", 5, app="Mail"), rep("g2", "u8", 6, app="Mail")]
+    tools = [tool(0, "u1", 3), tool(1, "u2", 4), tool(2, "u3", 7)]
+    kept, other = web_scope(report, tools)
+    assert other == {"Mail": 2}
+    by_url = {r["party"]: r for r in kept}
+    assert sorted(by_url) == ["u1", "u2"]
+    assert by_url["u1"]["record_uid"] == "a2" and by_url["u1"]["visits"] == 3 and by_url["u1"]["shown"]["visits"] == 3
+    m = compare(kept, tools, 26)
+    assert len(m["present"]) == 2 and m["only_report"] == [] and [tools[j]["party"] for j in m["only_tool"]] == ["u3"]
+    assert _unit(kept) == {"report_unit": "url", "report_records": 4}
+    # a tool with one row per visit (the same URL twice) is compared visit by visit
+    kept2, _ = web_scope(report, tools + [tool(3, "u1", 1)])
+    assert len(kept2) == 4 and _unit(kept2) == {}
+
