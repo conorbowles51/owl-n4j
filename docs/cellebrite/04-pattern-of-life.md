@@ -667,7 +667,8 @@ time:
   `transaction` (a card payment place, 8.5);
 - `presence_basis`: which rule decided `presence`;
 - `source_kind`: `gps`, `device_location`, `app_location`, `account_location`, `wifi_position`,
-  `wifi_case_anchor`, `cell_reference`, `media_exif`, `calendar`, `checkin`, `journey`, `manual`. This is
+  `wifi_case_anchor`, `cell_reference`, `media_exif`, `calendar`, `checkin`, `journey`, `manual`, `person_placed`
+  (a written place a person placed, 6.5). This is
   a column derived here, separate from 02's point `source_kind` (02 section 5.4: `device_location`,
   `wifi`, `other:<ParentType>`; cell towers `not_positionable`), which it never replaces. Each value comes
   from 02's as follows, the choice inside a row made by the reviewed rows of 04-U1 from the record's own
@@ -753,6 +754,31 @@ offline GeoNames backend of `backend/services/geocoder.py` producing a suggestio
 Reverse geocoding for display uses `geocoder.reverse_geocode` only when the configured backend is
 in-house: GeoNames (offline) or Nominatim at a host on the deployment's own network. The pattern service
 checks this at startup and disables reverse geocoding otherwise, logging why.
+
+
+**Built (cb-textplaces, commits 7e91819d and c7e82667).** Text places are the String values `CalendarEntry.Location`,
+`SocialMediaActivity.Title` on a record whose `SocialActivityType` is `CheckIn`, and `Location.PositionAddress`,
+`Location.Description` and `Location.Name` (a Location in the `Media Locations` category excluded: its Name is a
+file name), on a record of the current interpretation that has no point. `GET /api/pattern/{case}/text-places` lists
+them with true totals; `POST /api/pattern/{case}/text-places` (point, radius 1 m to 50 km, reason) records
+`place_text_place` on the `phone_record` subject with the person as Actor and `POST .../text-places/remove` records
+`remove_text_place`. Each placement is a `pol_text_place` row that keeps the text as it stood and any GeoNames
+candidate the person started from; earlier rows stay with the decision that ended them (`.../text-places/history`).
+A placement is a `pol_place_observation` with `source_kind = 'person_placed'`, `radius_basis = 'manual'`,
+`decision_id`, the record's own time, and the kind `classify_point` gives the record: `planned` for a calendar entry,
+`declared` otherwise, `searched` for a searched Location, and never `presence`. Observations are rewritten from the
+current placements on every placement and removal and on every places rebuild, and
+`pol_projection_state.text_places_version` is raised by each change. Suggestions (`.../text-places/suggestions`)
+come from `geocoder.forward_candidates`, which reads a SQLite index built once on the server from GeoNames
+`cities1000.txt` (`python -m services.geocoder build-forward-index`; 171,771 places, CC BY 4.0, attribution shown with
+every list). They are off with the reason when a configured backend is not in house or the index is missing; with no
+backend configured nothing is configured to leave the server and they are on. Screen: "Text places" under Places
+over time on the Patterns screen.
+
+Measured on the four phones in the restricted reference cases (2026-11-04, current generation): 3 calendar locations
+without a coordinate on one phone, 0 check-ins, 49 written Location descriptions without a coordinate on another
+(all with a time), 1 media Location whose Name is a file name (excluded). The offline list had at least one
+candidate for 3 of 3 calendar locations and 36 of 49 descriptions.
 
 ---
 
@@ -1748,6 +1774,20 @@ Each is a decision with its reasoning and what would reverse it.
     cache). Timings run on the scratch database under `nice 15` and idle-class I/O on the shared server, with the
     server's load average stated, so they are upper bounds for the live server. *Reverse if* the live server's own timings differ in
     kind; they then replace these.
+
+42. **A person-placed text place has `source_kind = 'person_placed'`.** 6.1 names `manual` for a place a person
+    records on a payment (8.5); a written place on a phone record is a different source (the record's own text), so it
+    is named apart and keeps `record_type` and `field_path` of the record. Reverse if the two should be one value.
+43. **A placed written place is never presence.** It says where the text points (a meeting planned, an address
+    written), not where the phone was; a Location record's text place is `declared` unless the record is `Searched`.
+    Reverse if a reviewed row shows a Location source whose written address is a fix of the device.
+44. **Suggestions are on when no geocoder backend is configured.** They read only a file on the server, so nothing
+    can leave it; only a configured backend outside the deployment's network turns them off. Reverse if Neil rules
+    that suggestions need the deployment to opt in (`GEOCODER=geonames`).
+45. **The suggestion list is GeoNames `cities1000` in a SQLite index, not the `reverse_geocoder` package's copy.**
+    The package's file has no population, and holding the list in each worker measured 98 MB and 16 s to load on this
+    server; the index answers in 1 to 6 ms and holds nothing in memory. Reverse if the index cannot be kept on a
+    deployment (then the package copy, without population).
 
 ## 15. Not yet established
 

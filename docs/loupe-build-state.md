@@ -1,3 +1,19 @@
+## 4 November: text places placed on the map by a person (cb-textplaces, 04 6.5)
+
+- **Backend** `services/pattern_of_life/text_places.py`, routes `/api/pattern/{case}/text-places` (list, paged with
+  true totals; `suggestions`; `history`; POST place; POST `remove`). Decisions `place_text_place` /
+  `remove_text_place` on the `phone_record` subject; table `pol_text_place` and
+  `pol_projection_state.text_places_version` (migration `20261104_pol_text_places`). A placement is a
+  `person_placed` observation, kind planned or declared, never presence; `places.build` re-projects them.
+- **Suggestions** `geocoder.forward_candidates`: GeoNames `cities1000` in a SQLite index at
+  `$LOUPE_REFERENCE_DATA_DIR/geonames/geonames-forward.sqlite` (default `/mnt/owl-data/reference-data`), built by
+  `python -m services.geocoder build-forward-index`. The live server has it (171,771 places, files and sha256 in
+  `SOURCE.txt` beside it). Without the index suggestions are off and say so; placing still works.
+- **Screen** "Text places" under Patterns, Places over time (`TextPlaces.tsx`; the map picker `TextPlacePicker.tsx`
+  loads only when a person opens Place on map).
+- `geo_rescan_service`'s address lookup is not used for phones: unset `GEOCODER_SEARCH_URL` sends to the public
+  OpenStreetMap service, which standing decision 8 forbids for phone text.
+- Decisions 04 section 14 items 42 to 45.
 ## 4 November: phone registry admin page (cb-registry-admin, 02 3.4 and 6.8), 765bd03e
 
 - **Admin > Phone registry** (`frontend_v2/src/features/admin/components/PhoneRegistryPage.tsx`, words and calls in
