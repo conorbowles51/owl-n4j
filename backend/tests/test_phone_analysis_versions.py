@@ -19,7 +19,7 @@ RECORDED = {
     "deletion_timeline": ("3.3", "24a4e51aa9a12535"),
     "relationships": ("11.2", "d2415dadbd83d048"),
     "awareness": ("4.2-aware", "df94b163fc26e199"),
-    "device_users": ("5.2-use", "cd7bf7201f8f4b6b"),
+    "device_users": ("5.3-together", "9be6f9bcc8014206"),
     "typed_words": ("7.3", "e323b05b2b998e4a"),
     "intent": ("9.3", "1eb9c37ead0b9301"),
     "common_contacts": ("14.1", "46ee93fe71781001"),

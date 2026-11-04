@@ -141,3 +141,96 @@ def test_owner_numbers_count_only_the_current_generation_and_extracted_tier(engi
     with engine.connect() as c:
         assert U._indicators(c, x)["owner_numbers"] == 1
         assert len([k for k in U.markers(c, x) if k[0] == "owner_number"]) == 1
+
+
+# ---- steps 2 and 4 (05 8.8 tests 1 and 2; cb-gated-aware F) -------------------------------------------------------
+
+def _obs(t, lat, lon, radius=20.0, synced=False, uid=None):
+    return {"id": 1, "record_uid": uid, "lat": lat, "lon": lon, "radius_m": radius, "start": t, "end": t,
+            "offset_status": "explicit", "attribution_flags": ["synced_from_account"] if synced else []}
+
+
+def test_together_and_apart_by_hand():
+    """8.8.1: fixes 30 m apart with radii 20 m each in one bin: together; 2 km apart: apart."""
+    t = at(2023, 3, 1, 10)
+    lat, lon = 38.9, -77.03
+    v = U.bin_verdicts([_obs(t, lat, lon, uid="a")], [_obs(t, lat + 30 / 111_320, lon, uid="b")], PARAMS)
+    (b,) = v.values()
+    assert b["verdict"] == "together" and not b["assumed"] and b["tight"]
+    v = U.bin_verdicts([_obs(t, lat, lon, uid="a")], [_obs(t, lat + 2000 / 111_320, lon, uid="b")], PARAMS)
+    assert [x["verdict"] for x in v.values()] == ["apart"]
+
+
+def _place(c, case, ext, ordinal, t, lat, lon, radius=20.0, synced=False):
+    uid = record(c, case, ext, ordinal, "Location")
+    c.execute(text(
+        "INSERT INTO pol_place_observation (case_id, extraction_id, record_uid, kind, source_kind, lat, lon, radius_m, "
+        "radius_basis, start_utc, end_utc, offset_status, time_semantics, attribution_flags) VALUES (:c, :e, :r, "
+        "'presence', 'gps', :la, :lo, :rad, 'stated', :t, :t, 'explicit', 'observed', CAST(:f AS text[]))"),
+        {"c": case, "e": ext, "r": uid, "la": lat, "lo": lon, "rad": radius, "t": t,
+         "f": ["synced_from_account"] if synced else []})
+    return uid
+
+
+def _event(c, case, ext, ordinal, t):
+    rec = record(c, case, ext, ordinal, "DeviceEvent")
+    c.execute(text(
+        "INSERT INTO pol_activity_event (case_id, extraction_id, record_uid, root_record_uid, record_type, "
+        "time_field, field_path, instant_utc, offset_status, instant_basis, original, time_semantics, stream_key, "
+        "family, activity_class, class_basis, actor) VALUES (:c, :e, :r, :r, 'DeviceEvent', 'StartTime', "
+        "'StartTime', :t, 'explicit', 'synthetic', :o, 'event_instant', 'synthetic', 'device_events', "
+        "'interaction', 'reviewed_mapping', 'owner')"), {"c": case, "e": ext, "r": rec, "t": t, "o": t.isoformat()})
+
+
+@needs_template
+def test_ten_co_placed_bins_give_a_weak_co_location_and_a_synced_point_does_not_place(engine):
+    """cb-gated-aware F and 8.8.2: 10 together bins (under the 200 of the plan) are a weak result, not nothing. A bin
+    with only a Synced point is not placed by default. Fails on 5.2-use, which gives no co-location result."""
+    t = at(2023, 3, 1, 10)
+    lat, lon = 38.9, -77.03
+    with engine.begin() as c:
+        case = make_case(c)
+        x, _ = phone(c, case, label="C1", events=[])
+        y, _ = phone(c, case, label="C2", owner="phone:+12025550111", events=[])
+        for i in range(10):
+            _place(c, case, x, 100 + i, t + timedelta(hours=i), lat, lon)
+            _place(c, case, y, 100 + i, t + timedelta(hours=i, minutes=2), lat + 30 / 111_320, lon)
+        _place(c, case, x, 200, t + timedelta(days=1), lat, lon)
+        _place(c, case, y, 200, t + timedelta(days=1), lat, lon, synced=True)
+    with engine.connect() as c:
+        res, counts = U.analyse(c, case, PARAMS)
+        res_synced, _ = U.analyse(c, case, dict(PARAMS, include_synced=True))
+        cov = F.coverage(c, case, "device_users")
+    (co,) = [r for r in res if r["kind"] == "co_location"]
+    m = co["measures"]
+    assert m["bins_both_placed"] == 10 and m["together"] == 10 and m["apart"] == 0 and m["C"] == 1.0
+    assert co["strength"] == "weak"
+    assert any(d["detail"].startswith("Weak: 10 decided quarter hours.") for d in co["directions"]["supports"])
+    (co2,) = [r for r in res_synced if r["kind"] == "co_location"]
+    assert co2["measures"]["bins_both_placed"] == 11
+    assert counts["co_location_weak"] == 1
+    assert cov["totals"]["most_co_placed_bins"] == 10
+    assert "the most here is 10" in cov["notes"][1] and "Rule of thumb (no measurement behind it)" in cov["notes"][1]
+
+
+@needs_template
+def test_use_while_apart_lists_the_bins_with_both_phones_records(engine):
+    """8.3 step 4: an apart bin in which X's owner used X."""
+    t = at(2023, 3, 1, 10)
+    lat, lon = 38.9, -77.03
+    with engine.begin() as c:
+        case = make_case(c)
+        x, _ = phone(c, case, label="C1", events=[])
+        y, _ = phone(c, case, label="C2", owner="phone:+12025550111", events=[])
+        px = _place(c, case, x, 100, t, lat, lon)
+        py = _place(c, case, y, 100, t, lat + 2000 / 111_320, lon)
+        _event(c, case, x, 300, t + timedelta(minutes=5))
+    with engine.connect() as c:
+        res, _ = U.analyse(c, case, PARAMS)
+    (co,) = [r for r in res if r["kind"] == "co_location"]
+    assert co["measures"]["apart"] == 1 and co["measures"]["C"] == 0.0 and co["strength"] == "weak"
+    (u,) = [r for r in res if r["kind"] == "use_while_apart"]
+    assert u["measures"]["used_phone"] == "C1" and len(u["measures"]["bins"]) == 1
+    roles = {(r["role"], r["record_uid"]) for r in u["records"]}
+    assert ("place_used", px) in roles and ("place_other", py) in roles
+    assert any(r == "used" for r, _ in roles)
