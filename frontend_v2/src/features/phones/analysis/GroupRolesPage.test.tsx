@@ -14,7 +14,7 @@ vi.mock("@/features/pattern/components/CollectBar", () => ({ CollectBar: () => <
 import GroupRolesPage, { WHAT_IT_DOES } from "./GroupRolesPage"
 import { groupWords } from "./group-words"
 import AnalysesPage from "./AnalysesPage"
-import { ANALYSES } from "./analyses-list"
+import { ANALYSES, NOT_BUILT } from "./analyses-list"
 
 const NOTES = ["Owner read or play times on 0 of 1 phones; the read results below rest on 0 timed incoming messages (0 played), out of 74 incoming.",
   "Rule of thumb (no measurement behind it): the plan asked for owner read times on a fifth of incoming messages on 5 phones before comparing read times; 0 of 1 phones here meet it."]
@@ -91,10 +91,12 @@ describe("Export from a result", () => {
 })
 
 describe("Phone analyses index", () => {
-  it("links every built analysis and states the ones not built with the measured reason", () => {
+  it("links every built analysis and states any not built with the measured reason", () => {
     mount("/cases/c1/phone-analyses", <AnalysesPage />, "/cases/:id/phone-analyses")
     for (const a of ANALYSES) expect(screen.getByRole("link", { name: a.title })).toHaveAttribute("href", `/cases/c1/${a.path}`)
-    expect(within(screen.getByRole("region", { name: "Not built" })).getAllByRole("listitem").length).toBeGreaterThan(0)
+    const notBuilt = screen.queryByRole("region", { name: "Not built" })
+    if (NOT_BUILT.length) expect(within(notBuilt as HTMLElement).getAllByRole("listitem")).toHaveLength(NOT_BUILT.length)
+    else expect(notBuilt).toBeNull()
     expect(document.body.textContent).not.toMatch(/—/)
   })
 })
