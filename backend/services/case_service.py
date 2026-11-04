@@ -516,12 +516,13 @@ def purge_case(db: Session, case_id: UUID, *, reason: str = "retention") -> dict
         db.commit()
     from postgres import soft_delete
     soft_delete.forget()
-    return details
-
-    # The case's graph goes only once its rows are gone for good (a failed delete keeps both). Before, a deleted
-    # case's nodes stayed in Neo4j: 7 deleted cases held 1,548 nodes on live, 3 Nov (followups m110323033215300).
+    # The case's graph goes only once its rows are gone for good (a failed purge keeps both; a case in Deleted items
+    # keeps its graph for a restore). Before, a deleted case's nodes stayed in Neo4j: 7 deleted cases held 1,548
+    # nodes on live, 3 Nov (followups m110323033215300).
     graph = remove_case_graph(str(case_id))
-    activity_trail.record("case_graph_removed", db=db, commit=True, user=user, case_id=case_id, details=graph)
+    activity_trail.record("case_graph_removed", db=db, commit=True, system=True, case_id=case_id, details=graph)
+    details.update(graph)
+    return details
 
 
 def remove_case_graph(case_id: str) -> dict:

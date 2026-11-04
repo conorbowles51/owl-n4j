@@ -10,7 +10,7 @@ phone-file index counts live rows only, so a phone file whose row is in Deleted 
 from alembic import op
 
 revision = "20261104_casebin"
-down_revision = "20261103_phone_search_runs"
+down_revision = "20261104_address_lookup_mode"
 branch_labels = None
 depends_on = None
 

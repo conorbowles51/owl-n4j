@@ -152,26 +152,39 @@ class CaseDeletionTests(TrailBase):
             self.assertIsNone(db.get(Case, self.f.case.id))
         return graph
 
-    def test_deleting_a_case_removes_its_graph_after_the_rows_and_records_it(self):
+    def purge(self, graph):
+        from services import case_service
+        from services.neo4j import neo4j_service
+        with self.f.SessionLocal() as db, patch.object(neo4j_service, 'delete_case_data', graph):
+            return case_service.purge_case(db, self.f.case.id)
+
+    def test_a_deleted_case_keeps_its_graph_until_the_purge_removes_it_after_the_rows(self):
         # followups m110323033215300: a deleted case's nodes stayed in Neo4j (7 deleted cases, 1,548 nodes live).
+        # In Deleted items the graph stays for a restore; the 30-day purge removes it once the rows are gone.
         from postgres.models.case import Case
+        from postgres.soft_delete import showing_deleted
+        graph = self.delete()
+        graph.assert_not_called()
+        self.assertEqual(self.events('case_graph_removed'), [])
         seen = []
 
-        def graph(case_id):
-            with self.f.SessionLocal() as other:
+        def remove(case_id):
+            with self.f.SessionLocal() as other, showing_deleted(other):
                 seen.append(other.get(Case, self.f.case.id))  # the case's rows are already gone
             return dict(nodes_deleted=12, relationships_deleted=30)
-        self.delete(Mock(side_effect=graph))
+        details = self.purge(Mock(side_effect=remove))
         self.assertEqual(seen, [None])
+        self.assertEqual((details['nodes_removed'], details['relationships_removed']), (12, 30))
         [event] = self.events('case_graph_removed')
         self.assertEqual((event.case_id, event.details), (self.f.case.id,
                                                           dict(nodes_removed=12, relationships_removed=30)))
 
-    def test_a_graph_that_cannot_be_reached_still_deletes_the_case_and_says_so(self):
-        self.delete(Mock(side_effect=RuntimeError('graph down')))
+    def test_a_graph_that_cannot_be_reached_still_purges_the_case_and_says_so(self):
+        self.delete()
+        self.purge(Mock(side_effect=RuntimeError('graph down')))
         [event] = self.events('case_graph_removed')
         self.assertEqual(event.details, dict(graph_cleanup_error='graph down'))
-        self.assertEqual(len(self.events('case_deleted')), 1)
+        self.assertEqual((len(self.events('case_deleted')), len(self.events('case_purged'))), (1, 1))
 
     def test_deleting_a_case_records_who_when_and_what_it_held(self):
         title = self.f.case.title
