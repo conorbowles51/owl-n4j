@@ -16,6 +16,10 @@ class Case(Base, TimestampMixin):
             "status IN ('active', 'on_hold', 'closed')",
             name="ck_cases_status",
         ),
+        CheckConstraint(
+            "address_lookup_mode IS NULL OR address_lookup_mode IN ('auto', 'flag')",
+            name="ck_cases_address_lookup_mode",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -28,6 +32,8 @@ class Case(Base, TimestampMixin):
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     # Region for phone numbers written without + (docs/cellebrite/02 section 8.3); null means the US default.
     phone_default_region: Mapped[str | None] = mapped_column(String(2), nullable=True)
+    # 'auto' or 'flag' (services.address_lookup); null means the system default.
+    address_lookup_mode: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
     created_by_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

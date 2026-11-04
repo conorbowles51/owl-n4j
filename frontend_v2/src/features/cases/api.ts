@@ -4,6 +4,18 @@ import type { CaseProcessingProfile } from "@/types/evidence.types"
 
 export type CaseListViewMode = "my_cases" | "all_cases"
 
+export type AddressLookupMode = "auto" | "flag"
+
+export interface AddressLookupState {
+  /** The mode in force: the case's own, or the system default when none is set. */
+  mode: AddressLookupMode
+  chosen: AddressLookupMode | null
+  default_mode: AddressLookupMode
+  words: string
+  /** Addresses never looked up yet (null when the graph did not answer). */
+  waiting: number | null
+}
+
 export const casesAPI = {
   list: (viewMode?: CaseListViewMode, includeArchived = false) => {
     const qs = new URLSearchParams()
@@ -45,6 +57,12 @@ export const casesAPI = {
       method: "PUT",
       body: data,
     }),
+
+  getAddressLookup: (caseId: string) =>
+    fetchAPI<AddressLookupState>(`/api/cases/${caseId}/address-lookup`),
+
+  setAddressLookup: (caseId: string, mode: AddressLookupMode | null) =>
+    fetchAPI<AddressLookupState>(`/api/cases/${caseId}/address-lookup`, { method: "PUT", body: { mode } }),
 
   delete: (caseId: string) =>
     fetchAPI<void>(`/api/cases/${caseId}`, { method: "DELETE" }),

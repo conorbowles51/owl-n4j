@@ -17,6 +17,11 @@ vi.mock("../hooks/use-cases", () => ({
   }),
 }))
 
+// The address lookup card reads its own setting; it has its own tests (AddressLookupSetting.test.tsx).
+vi.mock("./AddressLookupSetting", () => ({
+  AddressLookupSetting: () => <div>Address lookup</div>,
+}))
+
 const storyCase: Case = {
   id: "case-1",
   title: "Operation Lantern",

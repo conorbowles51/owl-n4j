@@ -471,3 +471,93 @@ def delete_existing_case(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied - case.delete permission required",
         )
+
+
+# --- Address lookup mode (services.address_lookup; Neil 2026-11-04) ---
+
+
+class AddressLookupModeRequest(BaseModel):
+    """'auto', 'flag', or null for the system default."""
+
+    mode: str | None = None
+
+    @field_validator("mode")
+    @classmethod
+    def _known_mode(cls, value: str | None) -> str | None:
+        from services.address_lookup import MODES
+
+        if value is not None and value not in MODES:
+            raise ValueError("mode must be 'auto', 'flag' or null (the system default)")
+        return value
+
+
+def _address_lookup_state(case: Case) -> dict:
+    from services.address_lookup import MODE_WORDS, default_mode
+    from services.neo4j_service import neo4j_service
+
+    default = default_mode()
+    effective = case.address_lookup_mode or default
+    try:
+        waiting, _ = neo4j_service.addresses_waiting(str(case.id), limit=0)
+    except Exception:
+        waiting = None  # the graph is not answering; the setting still shows
+    return {
+        "mode": effective,
+        "chosen": case.address_lookup_mode,
+        "default_mode": default,
+        "words": MODE_WORDS[effective],
+        "waiting": waiting,
+    }
+
+
+@router.get("/{case_id}/address-lookup")
+def get_address_lookup_mode(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """The case's address lookup mode and how many addresses are waiting for a lookup."""
+    try:
+        case, _ = check_case_access(db, case_id, current_user, required_permission=("case", "view"))
+    except CaseNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    return _address_lookup_state(case)
+
+
+@router.put("/{case_id}/address-lookup")
+def set_address_lookup_mode(
+    case_id: UUID,
+    request: AddressLookupModeRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Set the case's address lookup mode. The case's owner (or an admin) only: switching to automatic sends the
+    case's waiting addresses to the outside address service."""
+    try:
+        case, _ = check_case_access(db, case_id, current_user, required_permission=("case", "delete"))
+    except CaseNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the case's owner or an admin can change how addresses are looked up",
+        )
+    before = case.address_lookup_mode
+    case.address_lookup_mode = request.mode
+    db.commit()
+    db.refresh(case)
+    state = _address_lookup_state(case)
+    from services.system_log_service import LogOrigin, LogType, system_log_service
+
+    system_log_service.log(
+        log_type=LogType.GRAPH_OPERATION,
+        origin=LogOrigin.FRONTEND,
+        action="Address Lookup Mode Changed",
+        details={"case_id": str(case_id), "from": before, "to": request.mode, "in_force": state["mode"],
+                 "waiting": state["waiting"]},
+        user=current_user.email,
+        success=True,
+    )
+    return state

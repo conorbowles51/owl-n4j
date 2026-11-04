@@ -44,6 +44,8 @@ NOT_LOOKED_UP_MESSAGE = (
     "automatically."
 )
 LOOKUP_SERVICE_NAME = "OpenStreetMap address service (nominatim.openstreetmap.org)"
+# requested_by for lookups made on their own because the case's address lookup is automatic (services.address_lookup).
+AUTOMATIC = "automatic"
 
 
 def held_on_this_server(url: str) -> bool:
@@ -180,8 +182,9 @@ def _location_granularity(result: Dict) -> Optional[str]:
 def geocode_with_cache(location: str, *, requested_by: Optional[str] = None) -> Optional[Dict]:
     """Geocode a location string, using the shared Nominatim cache.
 
-    requested_by names the person who clicked Look up for this address. Without it nothing is sent to an outside
-    geocoder: the address is placed from the cache or not at all. With it, exactly one request is sent when the cache
+    requested_by names the person who clicked Look up for this address, or is AUTOMATIC for a case whose address
+    lookup is automatic (services.address_lookup checks the case's mode before each call). Without it nothing is sent
+    to an outside geocoder: the address is placed from the cache or not at all. With it, exactly one request is sent when the cache
     holds no success (an earlier failure is asked again: the person asked for a fresh lookup). A geocoder that does not
     answer raises GeocoderUnavailable when a person asked (so they are told), and is never cached as "no match".
     """
@@ -190,6 +193,10 @@ def geocode_with_cache(location: str, *, requested_by: Optional[str] = None) -> 
     normalized = location.lower().strip()
     cache_key = hashlib.md5(normalized.encode("utf-8")).hexdigest()
     cached, cached_result = _get_cached_geocode(cache_key)
+    if cached and requested_by == AUTOMATIC:
+        # A case in automatic mode: one request per new address; an address the service answered before is not
+        # asked again (a person can still click Look up for a fresh answer).
+        return cached_result
     if cached and cached_result and cached_result.get("requested_by") and not requested_by:
         # Found by a lookup a person asked for: it is placed only on that person's entity, as a machine placement.
         # An automatic path does not reuse it as a settled result elsewhere.

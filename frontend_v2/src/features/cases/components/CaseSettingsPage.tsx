@@ -33,6 +33,7 @@ import type {
   CaseStatus,
 } from "@/types/case.types"
 import { useCase, useUpdateCase } from "../hooks/use-cases"
+import { AddressLookupSetting } from "./AddressLookupSetting"
 
 const STATUS_OPTIONS: Array<{
   value: CaseStatus
@@ -355,6 +356,8 @@ export function CaseSettingsPage() {
             </span>
           </CardFooter>
         </Card>
+
+        <AddressLookupSetting caseData={caseData} />
       </div>
     </div>
   )

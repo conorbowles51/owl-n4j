@@ -72,6 +72,8 @@ class Neo4jServiceFacade:
     update_graph_node = staticmethod(graph_edit_service.update_node)
     update_geocoded_location = staticmethod(graph_edit_service.update_geocoded_location)
     flagged_address = staticmethod(graph_edit_service.flagged_address)
+    addresses_waiting = staticmethod(graph_edit_service.addresses_waiting)
+    lookup_address = staticmethod(graph_edit_service.lookup_address)
     apply_looked_up_location = staticmethod(graph_edit_service.apply_looked_up_location)
     record_lookup_outcome = staticmethod(graph_edit_service.record_lookup_outcome)
     confirm_looked_up_location = staticmethod(graph_edit_service.confirm_looked_up_location)

@@ -2488,7 +2488,7 @@ def look_up_flagged_addresses(body: LookupFlaggedRequest, user: dict = Depends(g
         if why_not:
             results.append({"key": node_key, "outcome": "skipped", "message": why_not})
             continue
-        address = str(current["properties"]["location_raw"]).strip()
+        address = neo4j_service.lookup_address(current["properties"])
         try:
             found = geocode_with_cache(address, requested_by=username)
         except GeocoderUnavailable as e:

@@ -60,6 +60,7 @@ export interface LocationConfidenceInput {
   geocoding_status?: string | null
   manual_fields?: string[] | null
   geocoding_lookup_outcome?: string | null
+  geocoding_lookup_mode?: string | null
 }
 
 /** Status of a pin placed by an address lookup a person asked for: a machine placement until a person confirms it. */
@@ -73,9 +74,16 @@ export function isUnconfirmedLookup(input: LocationConfidenceInput): boolean {
 /** Flagged addresses that can be sent to the address service when a person clicks Look up. */
 const LOOKUP_STATUSES = new Set(["ambiguous", "unverified", "failed", "not_run"])
 
-export function canLookUp(input: LocationConfidenceInput & { location_raw?: string | null }): boolean {
+/** The address a lookup sends: the one read from the evidence, else the query ingestion prepared. */
+export function lookupAddress(input: { location_raw?: string | null; geocoding_query?: string | null }): string {
+  return (input.location_raw || input.geocoding_query || "").trim()
+}
+
+export function canLookUp(
+  input: LocationConfidenceInput & { location_raw?: string | null; geocoding_query?: string | null }
+): boolean {
   if (isManuallyPlaced(input)) return false
-  return LOOKUP_STATUSES.has(input.geocoding_status?.toLowerCase() ?? "") && !!input.location_raw?.trim()
+  return LOOKUP_STATUSES.has(input.geocoding_status?.toLowerCase() ?? "") && !!lookupAddress(input)
 }
 
 export function isManuallyPlaced(input: LocationConfidenceInput): boolean {
@@ -110,7 +118,11 @@ export function needsReview(input: LocationConfidenceInput): boolean {
 /** Human-readable reason a location is in the review queue. */
 export function reviewReason(input: LocationConfidenceInput): string {
   const status = input.geocoding_status?.toLowerCase()
-  if (status === LOOKED_UP_STATUS) return "Placed by address lookup · not confirmed"
+  if (status === LOOKED_UP_STATUS) {
+    return input.geocoding_lookup_mode === "auto"
+      ? "Placed by automatic address lookup · not confirmed"
+      : "Placed by address lookup · not confirmed"
+  }
   const outcome = input.geocoding_lookup_outcome?.toLowerCase()
   if (outcome === "no_match") return "Looked up: no match found"
   if (outcome === "unavailable") return "Looked up: the address service did not answer"

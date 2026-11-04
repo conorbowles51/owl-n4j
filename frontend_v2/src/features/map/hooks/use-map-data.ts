@@ -41,6 +41,7 @@ export interface MapLocation {
   geocoding_lookup_service?: string | null
   geocoding_confirmed_by_name?: string | null
   geocoding_confirmed_at?: string | null
+  geocoding_lookup_mode?: string | null
   summary?: string
   date?: string
   connections?: { key: string; name: string; type: string; relationship: string }[]
@@ -188,6 +189,7 @@ export interface ReviewQueueItem {
   geocoding_requested_by_name?: string | null
   geocoding_requested_at?: string | null
   geocoding_lookup_outcome?: string | null
+  geocoding_query?: string | null
 }
 
 /** Locations flagged at ingestion (no coordinates, so no pin). */

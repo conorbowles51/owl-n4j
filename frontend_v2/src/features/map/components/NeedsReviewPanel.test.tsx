@@ -20,6 +20,11 @@ vi.mock("../hooks/use-map-data", () => ({
   useMapReviewQueue: () => ({ data: flagged }),
 }))
 
+const lookupSetting = vi.fn()
+vi.mock("@/features/cases/api", () => ({
+  casesAPI: { getAddressLookup: (...args: unknown[]) => lookupSetting(...args) },
+}))
+
 vi.mock("@/features/graph/api", () => ({
   graphAPI: {
     lookUpFlaggedAddresses: (...args: unknown[]) => lookUp(...args),
@@ -41,6 +46,8 @@ describe("NeedsReviewPanel address lookups", () => {
     confirm.mockReset()
     fetchSpy.mockReset()
     vi.stubGlobal("fetch", fetchSpy)
+    lookupSetting.mockReset()
+    lookupSetting.mockResolvedValue({ mode: "flag", chosen: "flag", default_mode: "auto", words: "", waiting: 0 })
     lookUp.mockImplementation((_case: string, keys: string[]) =>
       Promise.resolve({
         results: keys.map((key) => ({ key, outcome: "no_match", message: "No match found for this address." })),
@@ -77,6 +84,13 @@ describe("NeedsReviewPanel address lookups", () => {
     expect(lookUp.mock.calls[1][1]).toHaveLength(2)
     const sent = lookUp.mock.calls.flatMap((call) => call[1] as string[])
     expect(new Set(sent).size).toBe(12)
+  })
+
+  it("says when the case looks addresses up automatically", async () => {
+    lookupSetting.mockResolvedValue({ mode: "auto", chosen: null, default_mode: "auto", words: "", waiting: 4 })
+    renderPanel()
+    await screen.findByText(/looked up automatically \(4 waiting, one a second\)/)
+    expect(lookUp).not.toHaveBeenCalled()
   })
 
   it("Cancel sends nothing", () => {

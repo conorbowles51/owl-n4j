@@ -421,9 +421,37 @@ class GraphEditService:
             return current, "Already has a pin."
         if str(props.get("geocoding_status") or "") not in self.FLAGGED_STATUSES:
             return current, "Not flagged for an address lookup."
-        if not str(props.get("location_raw") or "").strip():
+        if not self.lookup_address(props):
             return current, "No address recorded."
         return current, None
+
+    @staticmethod
+    def lookup_address(props: dict[str, Any]) -> str:
+        """The address to send for a flagged entity: the address read from the evidence, else the query ingestion
+        would have sent."""
+        return str(props.get("location_raw") or props.get("geocoding_query") or "").strip()
+
+    def addresses_waiting(self, case_id: str, limit: int = 50) -> tuple[int, list[dict[str, Any]]]:
+        """Entities of a case whose address was never looked up (status not_run, no pin, not placed by a person):
+        how many, and the first ``limit`` of them (key and address)."""
+        where = f"""
+            WHERE n.case_id = $case_id
+              AND {active_node_predicate('n')}
+              AND n.geocoding_status = 'not_run'
+              AND (n.latitude IS NULL OR n.longitude IS NULL)
+              AND NONE(field IN coalesce(n.manual_fields, [])
+                       WHERE field IN ['latitude', 'longitude', 'location_name', 'location_formatted'])
+              AND trim(coalesce(n.location_raw, n.geocoding_query, '')) <> ''
+        """
+        with driver.session() as session:
+            total = session.run(f"MATCH (n) {where} RETURN count(n) AS c", case_id=case_id).single()["c"]
+            rows = session.run(
+                f"""MATCH (n) {where}
+                RETURN n.key AS key, trim(coalesce(n.location_raw, n.geocoding_query)) AS address
+                ORDER BY n.key LIMIT $limit""",
+                case_id=case_id, limit=limit,
+            ).data()
+        return int(total or 0), rows
 
     def apply_looked_up_location(
         self,
@@ -435,6 +463,7 @@ class GraphEditService:
         requested_by: str,
         requested_by_name: str | None,
         service: str,
+        mode: str = "flag",
     ) -> dict[str, Any]:
         requested_at = datetime.now(timezone.utc).isoformat()
         updates: dict[str, Any] = {
@@ -449,6 +478,8 @@ class GraphEditService:
             "geocoding_requested_by_name": requested_by_name,
             "geocoding_requested_at": requested_at,
             "geocoding_lookup_outcome": "placed",
+            # 'flag': a person clicked Look up; 'auto': sent on its own because the case's lookup is automatic
+            "geocoding_lookup_mode": mode,
         }
         if result.get("confidence"):
             updates["geocoding_confidence"] = result["confidence"]
@@ -477,6 +508,7 @@ class GraphEditService:
 
     def record_lookup_outcome(
         self, node_key: str, *, case_id: str, outcome: str, requested_by: str, requested_by_name: str | None,
+        status: str | None = None,
     ) -> None:
         """A lookup a person asked for found nothing (or the service did not answer): say so on the node; it stays
         flagged."""
@@ -489,8 +521,10 @@ class GraphEditService:
                 SET n.geocoding_lookup_outcome = $outcome,
                     n.geocoding_requested_by = $requested_by,
                     n.geocoding_requested_by_name = $requested_by_name,
-                    n.geocoding_requested_at = $requested_at
+                    n.geocoding_requested_at = $requested_at,
+                    n.geocoding_status = coalesce($status, n.geocoding_status)
                 """,
+                status=status,
                 key=node_key,
                 case_id=case_id,
                 outcome=outcome,

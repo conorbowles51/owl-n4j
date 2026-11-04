@@ -134,8 +134,11 @@ export function EntityPopup({
             )}
             {location.geocoding_status === "looked_up" && (
               <p>
-                Placed by address lookup
-                {location.geocoding_requested_by_name ? `, asked by ${location.geocoding_requested_by_name}` : ""}
+                {location.geocoding_lookup_mode === "auto"
+                  ? "Placed by automatic address lookup"
+                  : `Placed by address lookup${
+                      location.geocoding_requested_by_name ? `, asked by ${location.geocoding_requested_by_name}` : ""
+                    }`}
                 {location.geocoding_requested_at && !Number.isNaN(Date.parse(location.geocoding_requested_at))
                   ? ` on ${new Date(location.geocoding_requested_at).toLocaleString()}`
                   : ""}

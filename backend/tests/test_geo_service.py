@@ -61,6 +61,7 @@ class GeoServiceReviewQueueTests(unittest.TestCase):
                     "geocoding_requested_by_name": None,
                     "geocoding_requested_at": None,
                     "geocoding_lookup_outcome": None,
+                    "geocoding_query": None,
                 }
             ],
         )

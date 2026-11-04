@@ -1,10 +1,11 @@
 import { useRef, useState } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { CheckCircle2, MapPinOff, Search } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { ApiError } from "@/lib/api-client"
 import { useGraphStore } from "@/stores/graph.store"
 import { graphAPI } from "@/features/graph/api"
+import { casesAPI } from "@/features/cases/api"
 import { useMapStore } from "../stores/map.store"
 import { useMapReviewQueue, type MapLocation } from "../hooks/use-map-data"
 import {
@@ -13,6 +14,7 @@ import {
   canLookUp,
   getConfidenceTier,
   isUnconfirmedLookup,
+  lookupAddress,
   needsReview,
   reviewReason,
 } from "@/lib/location-confidence"
@@ -53,6 +55,13 @@ export function NeedsReviewPanel({ caseId, locations }: NeedsReviewPanelProps) {
   const selectNodes = useGraphStore((s) => s.selectNodes)
   const flyTo = useMapStore((s) => s.flyTo)
   const queryClient = useQueryClient()
+  const { data: lookupSetting } = useQuery({
+    queryKey: ["cases", caseId, "address-lookup"],
+    queryFn: () => casesAPI.getAddressLookup(caseId),
+    refetchInterval: (query) =>
+      query.state.data?.mode === "auto" && (query.state.data?.waiting ?? 0) > 0 ? 10000 : false,
+  })
+  const automatic = lookupSetting?.mode === "auto"
 
   const [outcomes, setOutcomes] = useState<Record<string, string>>({})
   const [busyKeys, setBusyKeys] = useState<Set<string>>(new Set())
@@ -166,6 +175,17 @@ export function NeedsReviewPanel({ caseId, locations }: NeedsReviewPanelProps) {
         </Badge>
       </div>
 
+      {lookupSetting && (
+        <p className="border-b border-border px-3 py-1.5 text-[10px] text-muted-foreground" role="status">
+          {automatic
+            ? `Addresses in this case are looked up automatically${
+                lookupSetting.waiting ? ` (${lookupSetting.waiting} waiting, one a second)` : ""
+              }.`
+            : "Addresses in this case are looked up only when someone clicks Look up."}{" "}
+          Change this in Case settings.
+        </p>
+      )}
+
       {(lookable.length > 0 || running || summary) && (
         <div className="space-y-1 border-b border-border px-3 py-2 text-[10px] text-muted-foreground">
           {running ? (
@@ -209,7 +229,10 @@ export function NeedsReviewPanel({ caseId, locations }: NeedsReviewPanelProps) {
           ) : (
             lookable.length > 0 && (
               <div className="flex items-center gap-2">
-                <span>{lookable.length} flagged addresses not placed. Nothing is looked up until you ask.</span>
+                <span>
+                  {lookable.length} flagged address{lookable.length === 1 ? "" : "es"} not placed.
+                  {automatic ? " Look up asks the service again." : " Nothing is looked up until you ask."}
+                </span>
                 <button
                   type="button"
                   onClick={() => setAskingAll(true)}
@@ -259,7 +282,9 @@ export function NeedsReviewPanel({ caseId, locations }: NeedsReviewPanelProps) {
                 </span>
                 {lookedUp && (
                   <span className="truncate text-[10px] text-muted-foreground">
-                    Asked by {loc.geocoding_requested_by_name || "a person"}
+                    {loc.geocoding_lookup_mode === "auto"
+                      ? "Looked up automatically"
+                      : `Asked by ${loc.geocoding_requested_by_name || "a person"}`}
                     {loc.geocoding_requested_at ? ` on ${formatWhen(loc.geocoding_requested_at)}` : ""}
                   </span>
                 )}
@@ -300,7 +325,7 @@ export function NeedsReviewPanel({ caseId, locations }: NeedsReviewPanelProps) {
               </span>
               <span className="truncate text-[10px] text-muted-foreground">
                 {reviewReason(item)}
-                {item.location_raw ? ` - "${item.location_raw}"` : ""} - no pin
+                {lookupAddress(item) ? ` - "${lookupAddress(item)}"` : ""} - no pin
               </span>
               {outcomes[item.key] && <span className="text-[10px] text-foreground">{outcomes[item.key]}</span>}
             </button>

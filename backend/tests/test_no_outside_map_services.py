@@ -142,6 +142,7 @@ class LookUpFlaggedAddressesTests(unittest.TestCase):
         real = GraphEditService.__new__(GraphEditService)
         real._fetch_node = lambda key, case_id: nodes.get(key)
         neo.flagged_address.side_effect = real.flagged_address
+        neo.lookup_address.side_effect = real.lookup_address
         neo.apply_looked_up_location.side_effect = lambda key, **kw: {
             "latitude": kw["result"]["latitude"], "longitude": kw["result"]["longitude"],
             "geocoding_formatted_address": kw["result"]["formatted_address"], "geocoding_requested_at": "now"}
