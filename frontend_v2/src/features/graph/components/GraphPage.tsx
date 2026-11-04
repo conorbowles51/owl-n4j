@@ -361,7 +361,7 @@ export function GraphPage() {
                   </div>
                 </div>
               )}
-              <GraphLegend nodes={displayData.nodes} />
+              <GraphLegend nodes={displayData.nodes} allNodes={graphData.nodes} />
             </div>
           </ResizablePanel>
 

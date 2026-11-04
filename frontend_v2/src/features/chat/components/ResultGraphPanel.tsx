@@ -366,6 +366,24 @@ export function ResultGraphPanel() {
               enableZoomInteraction
             />
 
+            {/* What bright and faded mean (BUG-013): the answer names some of the entities searched; the rest are
+                faded, and expanded neighbours are always faded. */}
+            <div
+              className="pointer-events-none absolute bottom-2 left-2 rounded-md border border-border bg-background/90 px-2 py-1.5 text-[11px] leading-snug text-muted-foreground"
+              data-testid="result-graph-key"
+            >
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block size-2.5 rounded-full bg-foreground" aria-hidden="true" />
+                Named in the answer ({displayGraph.nodes.filter((n) => n.mentioned).length})
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block size-2.5 rounded-full bg-foreground opacity-50" aria-hidden="true" />
+                Faded: found while searching, not named in the answer (
+                {displayGraph.nodes.filter((n) => !n.mentioned).length})
+              </span>
+              <span className="block">Larger dots: higher confidence. Click a dot to see why it was found.</span>
+            </div>
+
             {/* Context menu overlay */}
             {contextMenu && (
               <div
