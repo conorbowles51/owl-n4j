@@ -147,6 +147,8 @@ class CaseDeletionTests(TrailBase):
         with self.f.SessionLocal() as db, patch.object(neo4j_service, 'delete_case_data', graph):
             user = db.merge(self.f.user)
             case_service.delete_case(db, self.f.case.id, user)
+        # Moved to Deleted items: no read sees it, the row is kept for a restore (tests/test_casebin.py).
+        with self.f.SessionLocal() as db:
             self.assertIsNone(db.get(Case, self.f.case.id))
         return graph
 

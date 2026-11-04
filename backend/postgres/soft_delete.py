@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from functools import lru_cache
 
@@ -36,7 +37,9 @@ SHOW_DELETED = "loupe_show_deleted"
 REFRESH_SECONDS = 5.0
 
 _lock = threading.Lock()
-_known = {"cases": frozenset(), "files": frozenset(), "at": None}
+# Per database (engine URL): {"cases", "files", "at"}. One process can talk to more than one database (tests,
+# scripts), and one database's deleted ids mean nothing in another.
+_known: dict = {}
 
 
 @contextmanager
@@ -56,16 +59,23 @@ def showing_deleted(session: Session):
 def forget():
     """Read the deleted ids again before the next query (called after a delete, restore or purge commits)."""
     with _lock:
-        _known["at"] = None
+        _known.clear()
+
+
+def _as_uuid(value):
+    # Postgres returns UUIDs; SQLite test databases store them as 32-character text (postgres/base.py).
+    return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
 
 
 def _deleted_ids(session):
-    """(deleted case ids, deleted evidence file ids), at most REFRESH_SECONDS old."""
+    """(deleted case ids, deleted evidence file ids) of the session's database, at most REFRESH_SECONDS old."""
     now = time.monotonic()
-    with _lock:
-        if _known["at"] is not None and now - _known["at"] < REFRESH_SECONDS:
-            return _known["cases"], _known["files"]
     connection = session.connection()
+    key = str(connection.engine.url)
+    with _lock:
+        known = _known.get(key)
+        if known is not None and now - known["at"] < REFRESH_SECONDS:
+            return known["cases"], known["files"]
     sql = text("SELECT 'c', id FROM cases WHERE deleted_at IS NOT NULL "
                "UNION ALL SELECT 'f', id FROM evidence_files WHERE deleted_at IS NOT NULL")
     if connection.dialect.name == "postgresql":
@@ -76,10 +86,10 @@ def _deleted_ids(session):
             rows = connection.execute(sql).all()
         except Exception:
             rows = []
-    cases = frozenset(row[1] for row in rows if row[0] == "c")
-    files = frozenset(row[1] for row in rows if row[0] == "f")
+    cases = frozenset(_as_uuid(row[1]) for row in rows if row[0] == "c")
+    files = frozenset(_as_uuid(row[1]) for row in rows if row[0] == "f")
     with _lock:
-        _known.update(cases=cases, files=files, at=now)
+        _known[key] = dict(cases=cases, files=files, at=now)
     return cases, files
 
 
