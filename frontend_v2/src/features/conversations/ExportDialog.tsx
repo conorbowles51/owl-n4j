@@ -22,7 +22,8 @@ export function ExportDialog(props: {
   source?: ExportSource; note?: string | null
 }) {
   const { caseId, filter, words, open, onOpenChange, source = "stream", note } = props
-  const [title, setTitle] = useState(words)
+  // the scope words read mid-sentence ("All 3 messages, the Case Timeline phone lens"); the cover title starts with a capital
+  const [title, setTitle] = useState(words.charAt(0).toUpperCase() + words.slice(1))
   const [exportId, setExportId] = useState<string | null>(null)
   const [format, setFormat] = useState<"pdf" | "rsmf">("pdf")
   const noun = format === "rsmf" ? "RSMF file" : "PDF"

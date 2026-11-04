@@ -40,6 +40,8 @@ it("exports the lens: the dialog states the lens total and hidden entries, and t
   fireEvent.click(button)
   expect(await screen.findByText(/All 4 messages and 1 other record, the Case Timeline phone lens \(Messages, Calls, Emails/)).toBeInTheDocument()
   expect(screen.getAllByText("2 device events and sensor readings hidden.").length).toBeGreaterThanOrEqual(1)
+  // the scope reads mid-sentence; the cover title it seeds starts with a capital
+  expect(screen.getByDisplayValue(/^The Case Timeline phone lens \(Messages/)).toBeInTheDocument()
   const describe = net.calls.find((c) => c.url.endsWith("/exports/describe"))!
   expect(describe.body.source).toBe("timeline_lens")
   expect((describe.body.filter as { lens_kinds: string[] }).lens_kinds).toEqual(["messages", "calls", "emails", "media", "locations"])
