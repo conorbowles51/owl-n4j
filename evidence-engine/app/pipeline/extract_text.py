@@ -1275,7 +1275,15 @@ async def extract_text(
         )
         if "\x00" in text:
             raise ValueError(f"{ext} file contains binary data and cannot be ingested as text")
-        doc = ExtractedDocument(text=text, metadata={"file_type": "text"})
+        # A WhatsApp chat export or an SMS Backup & Restore XML: one message per line with its time, sender and
+        # conversation (FEAT-013); anything else stays plain text.
+        from app.pipeline.message_exports import read_message_export
+        message_export = read_message_export(text, file_name)
+        if message_export is not None:
+            doc = ExtractedDocument(text=message_export[0],
+                                    metadata={"file_type": "text", "message_export": message_export[1]})
+        else:
+            doc = ExtractedDocument(text=text, metadata={"file_type": "text"})
     else:
         raise ValueError(f"Unsupported file type: {ext or '(no extension)'}")
 
