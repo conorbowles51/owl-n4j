@@ -160,4 +160,5 @@ def test_grading_rule():
     from services.phone import media_spread as S
     assert [S._level_of(d, False) for d in (0, 2, 3, 4, 5, 6, 7, 10)] == [
         "strong", "strong", "moderate", "moderate", "weak", "weak", "faint", "faint"]
-    assert S._level_of(0, True) == "moderate" and S._level_of(9, True) == "faint"
+    # a nearly plain picture is faint at any distance (measured: plain pictures pair at distance 0 by the hundred)
+    assert S._level_of(0, True) == "faint" and S._level_of(4, True) == "faint" and S._level_of(9, True) == "faint"

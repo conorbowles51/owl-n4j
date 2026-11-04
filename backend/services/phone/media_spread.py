@@ -486,9 +486,11 @@ def _group(g, copies, messages, times, lines, labels, zone, case_phones) -> dict
 #
 # Strength (one scale with approach 1's matches; a rule computes it). d is the larger of the pHash and dHash Hamming
 # distances (bits that differ out of 64): d <= 2 strong, <= 4 moderate, <= 6 weak (05 11.3's "visually similar" rule:
-# both distances 6 or less), <= 10 faint (beyond the spec's rule, listed so nothing near is missed). One level lower,
-# never below faint, when either picture is nearly flat (its dHash has 4 or fewer, or 60 or more, bits set): simple
-# pictures match by chance. Rules of thumb: no measurement on a case set the levels.
+# both distances 6 or less), <= 10 faint (beyond the spec's rule, listed so nothing near is missed). Faint, whatever
+# the distance, when either picture is nearly flat (its dHash has 4 or fewer, or 60 or more, bits set): a plain picture
+# hashes near zero whatever its colour, so distance says little (measured on the two-phone reference case: 501 of 509
+# pairs were plain pictures at distance 0, from 64 files, and sat above every other pair at one level lower). Rules
+# of thumb otherwise: no measurement on a case set the levels.
 
 PERCEPTUAL_LEVELS = ((2, "strong"), (4, "moderate"), (6, "weak"), (10, "faint"))
 PERCEPTUAL_MAX = PERCEPTUAL_LEVELS[-1][0]
@@ -498,17 +500,16 @@ PERCEPTUAL_WORDS = ("Pictures that look nearly the same on two phones although t
                     "app re-compressed. A near-identical picture is a lead to look at, not proof that it is the same "
                     "file. Pairs whose files are identical are in the list above, not here.")
 PERCEPTUAL_RULE_WORDS = ("Strength by the number of the 64 bits that differ between the two pictures' hashes (the "
-                         "larger of two hashes): 0 to 2 strong, 3 to 4 moderate, 5 to 6 weak, 7 to 10 faint; one level "
-                         "lower for a nearly plain picture. These levels are rules of thumb, not measured on this case.")
+                         "larger of two hashes): 0 to 2 strong, 3 to 4 moderate, 5 to 6 weak, 7 to 10 faint; faint "
+                         "whenever one picture is nearly plain. These levels are rules of thumb, not measured on this case.")
 SIMPLE_WORDS = "One of the pictures is nearly plain; plain pictures look alike by chance."
 _perc_cache: dict = {}
 
 
 def _level_of(d, simple):
-    i = next(k for k, (m, _) in enumerate(PERCEPTUAL_LEVELS) if d <= m)
     if simple:
-        i = min(i + 1, len(PERCEPTUAL_LEVELS) - 1)
-    return PERCEPTUAL_LEVELS[i][1]
+        return PERCEPTUAL_LEVELS[-1][1]
+    return next(lv for m, lv in PERCEPTUAL_LEVELS if d <= m)
 
 
 def _perceptual_rows(conn, case_id):
@@ -577,7 +578,7 @@ def perceptual_pairs_all(conn, case_id) -> dict:
         match = ["%d of 64 bits differ in the picture hash and %d in the edge hash; %s by the rule (%s)." % (
             dp, dd, level, "0 to 2 strong, 3 to 4 moderate, 5 to 6 weak, 7 to 10 faint")]
         if simple:
-            match.append("One level lower: " + SIMPLE_WORDS)
+            match.append("Faint: " + SIMPLE_WORDS)
         items.append({"level": level, "distance": d, "phash_distance": dp, "dhash_distance": dd, "simple": simple,
                       "a": {"file_uid": x.file_uid, "extraction_id": x.extraction_id, "md5": x.md5,
                             "filename": _filename(x.local_path), "category": x.category,

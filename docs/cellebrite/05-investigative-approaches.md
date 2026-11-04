@@ -1498,8 +1498,9 @@ no live case holds two real phones.
 section of Media spread):** the gate above is not a build condition (Neil, 2026-11-04). Each population picture gets a
 64-bit pHash and dHash computed on the server with Pillow (no outside service, no new library) in the phone worker's
 after-pass at the lowest priority, resumable. Pairs across two phones are graded by the larger Hamming distance: 0 to 2
-strong, 3 to 4 moderate, 5 to 6 weak (step 3's visually-similar rule), 7 to 10 faint, one level lower for a nearly
-plain picture; identical files stay in the exact tier, which is unchanged. The section states the counts by strength,
+strong, 3 to 4 moderate, 5 to 6 weak (step 3's visually-similar rule), 7 to 10 faint, and faint at any distance when
+either picture is nearly plain (a plain picture hashes near zero whatever its colour: on the two-phone reference case
+501 of 509 pairs were plain pictures at distance 0, made from 64 files); identical files stay in the exact tier, which is unchanged. The section states the counts by strength,
 how many pictures were compared and why others were not, and labels the levels rules of thumb. Measured CPU on the
 live reference phones: 4.7 to 12.1 seconds per 1,000 pictures, peak memory 128 MB or less. A one-phone case is not
 hashed (nothing to compare across phones), and says so.
