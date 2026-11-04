@@ -148,6 +148,32 @@ describe("AISettingsPage", () => {
     expect(screen.getByText("Down")).toBeInTheDocument()
   })
 
+  it("says Audio transcription is down with its own consequence when the OpenAI account refuses calls", async () => {
+    api.get.mockResolvedValue({
+      ...settings,
+      supporting_services: [
+        {
+          id: "transcription", label: "Audio transcription", provider: "openai", status: "down",
+          description: "Transcribes uploaded audio before ingestion.",
+          health: {
+            status: "down",
+            reason: "the OpenAI account has no credits left (429 insufficient quota); found by the search embedding calls, which use the same account",
+            down_since: "2026-11-04T05:10:00+00:00",
+            last_success_at: "2026-09-17T15:05:45+00:00",
+            consequence: "Audio uploaded now cannot be transcribed until the account works again.",
+          },
+        },
+      ],
+    })
+    render(<MemoryRouter><AISettingsPage /></MemoryRouter>)
+
+    const line = await screen.findByTestId("service-down-transcription")
+    expect(line).toHaveTextContent("Down: the OpenAI account has no credits left")
+    expect(line).toHaveTextContent("Audio uploaded now cannot be transcribed until the account works again.")
+    expect(line).not.toHaveTextContent("Document searches")
+    expect(screen.queryByText("Ready")).not.toBeInTheDocument()
+  })
+
   it("submits a new key once and never renders it back", async () => {
     render(<MemoryRouter><AISettingsPage /></MemoryRouter>)
     await screen.findByText("Provider connections")

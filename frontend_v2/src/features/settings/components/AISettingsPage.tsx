@@ -150,7 +150,7 @@ function serviceDownSentence(health: AIServiceHealth) {
   if (since) parts.push(`Failing since ${since}${health.failures_since_down ? ` (${health.failures_since_down} failed calls)` : ""}.`)
   const ok = formatWhen(health.last_success_at)
   parts.push(ok ? `Last call that worked: ${ok}.` : "No call that worked is recorded.")
-  parts.push("Document searches use the words instead and say so.")
+  parts.push(health.consequence || "Document searches use the words instead and say so.")
   return parts.join(" ")
 }
 

@@ -20,7 +20,8 @@ export interface AISupportingService {
   provider: string
   status: "ready" | "needs_key" | "down"
   description: string
-  /** Meaning search only: the state its last calls left (up, down with why and since when). */
+  /** The state the last calls left (up, down with why and since when). Transcription: the OpenAI account's state, as
+   *  the search embedding calls found it. */
   health?: AIServiceHealth
 }
 
@@ -32,6 +33,8 @@ export interface AIServiceHealth {
   last_success_at?: string | null
   failures_since_down?: number
   backfill_pending?: boolean
+  /** What the outage means for this service; absent for search embeddings (searches use the words instead). */
+  consequence?: string | null
 }
 
 export interface AISettings {

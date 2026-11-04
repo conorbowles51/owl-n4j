@@ -160,6 +160,46 @@ def _provider_usage(configuration: dict[str, dict[str, Any]]) -> dict[str, list[
     return usage
 
 
+# Refusals that hold for every call on the OpenAI account, not only the call that met them (followups
+# m11040644368621): transcription uses the same account as the search embeddings, so it is refused the same way.
+OPENAI_ACCOUNT_CODES = {
+    "quota": "the OpenAI account has no credits left (429 insufficient quota)",
+    "key_rejected": "OpenAI rejected the saved API key",
+    "not_configured": "OpenAI is not connected",
+}
+
+
+def _last_transcription(db: Session | None):
+    from sqlalchemy import text
+    try:
+        if db is None:
+            from postgres.session import get_background_session
+            with get_background_session() as session:
+                return session.execute(text(
+                    "SELECT max(created_at) FROM cost_records WHERE operation_kind = 'transcription'")).scalar()
+        return db.execute(text(
+            "SELECT max(created_at) FROM cost_records WHERE operation_kind = 'transcription'")).scalar()
+    except Exception:  # noqa: BLE001 - a report; the page still answers
+        return None
+
+
+def _openai_account_down(db: Session | None, meaning: dict[str, Any]) -> dict[str, Any] | None:
+    """The transcription row's health when the search embeddings found the OpenAI account refusing every call."""
+    reason = OPENAI_ACCOUNT_CODES.get(meaning.get("reason_code") or "")
+    if meaning.get("status") != "down" or not reason:
+        return None
+    last = _last_transcription(db)
+    return {
+        "status": "down",
+        "reason_code": meaning.get("reason_code"),
+        "reason": reason + "; found by the search embedding calls, which use the same account",
+        "down_since": meaning.get("down_since"),
+        "last_failure_at": meaning.get("last_failure_at"),
+        "last_success_at": last.isoformat() if hasattr(last, "isoformat") else last,
+        "consequence": "Audio uploaded now cannot be transcribed until the account works again.",
+    }
+
+
 def _supporting_services(db: Session) -> list[dict[str, Any]]:
     openai_ready = credential_store.get_connection(db, "openai").configured
     embedding_provider = "openai" if EMBEDDING_PROVIDER == "openai" else "local"
@@ -171,6 +211,12 @@ def _supporting_services(db: Session) -> list[dict[str, Any]]:
     embeddings_status = "ready" if embedding_provider != "openai" or openai_ready else "needs_key"
     if embeddings_status == "ready" and meaning.get("status") == "down":
         embeddings_status = "down"
+    transcription_status = "ready" if openai_ready else "needs_key"
+    transcription_health = None
+    if transcription_status == "ready" and embedding_provider == "openai":
+        transcription_health = _openai_account_down(db, meaning)
+        if transcription_health:
+            transcription_status = "down"
     return [
         {
             "id": "embeddings",
@@ -185,8 +231,9 @@ def _supporting_services(db: Session) -> list[dict[str, Any]]:
             "id": "transcription",
             "label": "Audio transcription",
             "provider": "openai",
-            "status": "ready" if openai_ready else "needs_key",
+            "status": transcription_status,
             "description": "Transcribes uploaded audio before ingestion.",
+            **({"health": transcription_health} if transcription_health else {}),
         },
         {
             "id": "pdf_ocr",

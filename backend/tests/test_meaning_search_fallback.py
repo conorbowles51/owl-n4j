@@ -303,6 +303,40 @@ class HealthTests(Fixture):
         self.assertEqual(embeddings["health"]["reason"], QUOTA_REASON)
 
 
+    def _transcription(self, health, *, last_transcription=None):
+        from routers import ai_settings
+
+        class Connection:
+            configured = True
+
+        with patch.object(ai_settings.credential_store, "get_connection", return_value=Connection()), patch.object(
+                meaning_search, "health", return_value=health), patch.object(
+                ai_settings, "_last_transcription", return_value=last_transcription), patch.object(
+                ai_settings, "EMBEDDING_PROVIDER", "openai"):
+            services = ai_settings._supporting_services(None)
+        return next(s for s in services if s["id"] == "transcription")
+
+    def test_ai_settings_reports_transcription_down_when_the_openai_account_has_no_credits(self):
+        """followups m11040644368621: on live the row said Ready while every OpenAI call was refused."""
+        from datetime import datetime, timezone
+        down = {"status": "down", "reason_code": "quota", "reason": QUOTA_REASON,
+                "down_since": "2026-11-04T05:00:00+00:00", "last_failure_at": "2026-11-04T06:42:00+00:00"}
+        row = self._transcription(down, last_transcription=datetime(2026, 9, 17, 15, 5, tzinfo=timezone.utc))
+        self.assertEqual(row["status"], "down")
+        self.assertIn("no credits left", row["health"]["reason"])
+        self.assertIn("search embedding calls", row["health"]["reason"])
+        self.assertEqual(row["health"]["last_success_at"], "2026-09-17T15:05:00+00:00")
+        self.assertIn("cannot be transcribed", row["health"]["consequence"])
+        self.assertNotIn("failures_since_down", row["health"])  # those were embedding calls, not transcriptions
+
+    def test_transcription_stays_ready_when_the_outage_is_not_account_wide(self):
+        for health in ({"status": "up"}, {"status": "down", "reason_code": "rate_limited", "reason": "429"},
+                       {"status": "down", "reason_code": "error", "reason": "timeout"}):
+            row = self._transcription(health)
+            self.assertEqual(row["status"], "ready", health)
+            self.assertNotIn("health", row)
+
+
 class GapBackfillTests(Fixture):
     def _patches(self):
         import scripts.backfill_chunk_embeddings as backfill
