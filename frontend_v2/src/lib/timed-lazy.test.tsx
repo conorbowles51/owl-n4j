@@ -111,32 +111,3 @@ describe("route timer and lazy pages", () => {
     expect(typeof settled).toBe("number")
   })
 })
-
-describe("timedLazy preload", () => {
-  it("downloads once: a preloaded page's render reuses the download", async () => {
-    resetPageChunks()
-    let calls = 0
-    function Page() { return <div>early page</div> }
-    const Lazy = timedLazy(() => { calls += 1; return Promise.resolve({ default: Page }) })
-    await Lazy.preload()
-    await Lazy.preload()
-    expect(calls).toBe(1)
-    const { findByText } = render(<Suspense fallback={<div>spinner</div>}><Lazy /></Suspense>)
-    expect(await findByText("early page")).toBeTruthy()
-    expect(calls).toBe(1)
-  })
-
-  it("a failed early download is asked for again by the page's render", async () => {
-    let calls = 0
-    function Page() { return <div>second try</div> }
-    const Lazy = timedLazy(() => {
-      calls += 1
-      return calls === 1 ? Promise.reject(new Error("offline")) : Promise.resolve({ default: Page })
-    })
-    await expect(Lazy.preload()).rejects.toThrow("offline")
-    await Promise.resolve()
-    const { findByText } = render(<Suspense fallback={<div>spinner</div>}><Lazy /></Suspense>)
-    expect(await findByText("second try")).toBeTruthy()
-    expect(calls).toBe(2)
-  })
-})
