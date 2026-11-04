@@ -9,6 +9,7 @@ import { getNodeColor, getCanvasColors } from "@/lib/theme"
 import { useTheme } from "@/lib/theme-context"
 import type { GraphData } from "@/types/graph.types"
 import type { LayoutMessage } from "../lib/warmup-layout"
+import { normaliseLinks, registerCanvasGraphSource } from "../lib/graph-snapshot"
 
 /* ------------------------------------------------------------------ */
 /*  Types for react-force-graph-2d                                     */
@@ -156,6 +157,20 @@ export function GraphCanvas({ data, graphRef: externalRef, onLayoutProgress }: G
 
     return { nodes, links }
   }, [data, hiddenNodeKeys, pinnedNodeKeys])
+
+  // A snapshot keeps where each node sits on screen: the layout writes x/y onto these node objects in place.
+  const fgDataRef = useRef(fgData)
+  useEffect(() => {
+    fgDataRef.current = fgData
+  }, [fgData])
+  useEffect(
+    () =>
+      registerCanvasGraphSource(() => ({
+        nodes: fgDataRef.current.nodes.map((n) => ({ key: String(n.key), x: n.x, y: n.y })),
+        links: normaliseLinks(fgDataRef.current.links),
+      })),
+    [],
+  )
 
   /* ---- Adaptive force simulation tuning ---- */
   const nodeCount = fgData.nodes.length

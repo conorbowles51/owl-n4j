@@ -19,6 +19,7 @@ import {
   Pin,
   ShieldAlert,
   UserRoundCheck,
+  Camera,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { HowThisWasFound } from "./HowThisWasFound"
@@ -33,6 +34,8 @@ import {
 import { DossierSourceViewer, type DossierSource } from "@/features/dossiers/components/DossierSourceViewer"
 import { CaseContextSection } from "./CaseContextSection"
 import { CaseBriefPanel } from "./CaseBriefPanel"
+import { SnapshotsSection } from "@/features/cases/components/SnapshotsSection"
+import { CaseFileSummaries } from "./CaseFileSummaries"
 
 interface CanonicalWorkspaceOverviewProps {
   caseId: string
@@ -437,6 +440,26 @@ export function CanonicalWorkspaceOverview({
         ) : (
           <EmptyState icon={Pin} title="No pinned evidence" description="Pin selected material from Evidence to keep it in the team’s shared view." className="py-10" />
         )}
+      </section>
+      <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div>
+            <div className="flex items-center gap-2"><FileText className="size-4 text-muted-foreground" /><h2 className="text-sm font-semibold">Case files</h2></div>
+            <p className="mt-0.5 text-xs text-muted-foreground">Each file's AI summary, inline. Open a file to read it.</p>
+          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={() => navigate(`/cases/${caseId}/evidence`)}>Open Evidence</Button>
+        </div>
+        <CaseFileSummaries caseId={caseId} onOpen={(file) => setSource({ evidenceId: file.id, name: file.original_filename })} />
+      </section>
+      <section className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div>
+            <div className="flex items-center gap-2"><Camera className="size-4 text-muted-foreground" /><h2 className="text-sm font-semibold">Snapshots</h2></div>
+            <p className="mt-0.5 text-xs text-muted-foreground">Your saved views of the graph for this case, each with a report of its own entities, events and sources.</p>
+          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={() => navigate(`/cases/${caseId}/graph`)}>Open Graph</Button>
+        </div>
+        <div className="px-4 py-3"><SnapshotsSection caseId={caseId} canEdit={canEdit} /></div>
       </section>
       {source && <DossierSourceViewer caseId={caseId} source={source} onClose={() => setSource(null)} />}
     </div>

@@ -1,10 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { snapshotsAPI, type SnapshotCreateData } from "../snapshots-api"
 
-export function useSnapshots() {
+export function useSnapshots(caseId?: string) {
   return useQuery({
-    queryKey: ["snapshots"],
-    queryFn: () => snapshotsAPI.list(),
+    queryKey: caseId ? ["snapshots", "case", caseId] : ["snapshots"],
+    queryFn: () => snapshotsAPI.list(caseId),
   })
 }
 

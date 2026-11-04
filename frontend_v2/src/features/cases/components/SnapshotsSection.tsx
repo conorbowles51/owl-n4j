@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react"
+import { toast } from "sonner"
 import {
   Camera,
   Trash2,
@@ -6,6 +7,7 @@ import {
   ChevronRight,
   Clock,
   Search,
+  FileDown,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,7 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useSnapshots, useDeleteSnapshot } from "../hooks/use-snapshots"
-import type { Snapshot } from "../snapshots-api"
+import { PRIVILEGE_MARKING_LABELS, snapshotsAPI, type PrivilegeMarking, type Snapshot } from "../snapshots-api"
 
 interface SnapshotsSectionProps {
   caseId: string
@@ -23,7 +25,7 @@ interface SnapshotsSectionProps {
 const PAGE_SIZE = 10
 
 export function SnapshotsSection({ caseId, canEdit = true }: SnapshotsSectionProps) {
-  const { data: snapshots, isLoading } = useSnapshots()
+  const { data: snapshots, isLoading } = useSnapshots(caseId)
   const deleteMutation = useDeleteSnapshot()
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [search, setSearch] = useState("")
@@ -96,7 +98,7 @@ export function SnapshotsSection({ caseId, canEdit = true }: SnapshotsSectionPro
           icon={Camera}
           title="No snapshots"
           description={
-            search ? "No matches" : "Save a snapshot from the graph workspace"
+            search ? "No matches" : "Save one from the Graph page with Save snapshot in its toolbar"
           }
           className="py-4"
         />
@@ -225,6 +227,7 @@ function SnapshotRow({
               <span>{snapshot.timeline_count} timeline events</span>
             )}
           </div>
+          <SnapshotReportExport snapshot={snapshot} />
           {canEdit && <div className="mt-2 flex gap-2">
             <Button
               variant="danger"
@@ -242,6 +245,51 @@ function SnapshotRow({
           </div>}
         </div>
       )}
+    </div>
+  )
+}
+
+function SnapshotReportExport({ snapshot }: { snapshot: Snapshot }) {
+  const [marking, setMarking] = useState<PrivilegeMarking>("unmarked")
+  const [busy, setBusy] = useState(false)
+  const exportReport = async () => {
+    setBusy(true)
+    try {
+      const { blob, filename } = await snapshotsAPI.report(snapshot.id, marking)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = filename
+      link.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      toast.success(`Report downloaded: ${filename}`)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Report not produced")
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+        Marking
+        <select
+          aria-label="Report privilege marking"
+          className="rounded border border-border bg-background px-1 py-0.5 text-[11px] text-foreground"
+          value={marking}
+          disabled={busy}
+          onChange={(e) => setMarking(e.target.value as PrivilegeMarking)}
+        >
+          {(Object.keys(PRIVILEGE_MARKING_LABELS) as PrivilegeMarking[]).map((value) => (
+            <option key={value} value={value}>{PRIVILEGE_MARKING_LABELS[value]}</option>
+          ))}
+        </select>
+      </label>
+      <Button variant="secondary" size="sm" className="h-6 text-xs" onClick={exportReport} disabled={busy}>
+        <FileDown className="size-3" />
+        {busy ? "Preparing report…" : "Export report (PDF)"}
+      </Button>
+      <span className="text-[10px] text-muted-foreground">Marking is your choice, not a legal privilege determination.</span>
     </div>
   )
 }

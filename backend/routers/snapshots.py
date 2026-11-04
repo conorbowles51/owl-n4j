@@ -8,11 +8,20 @@ import asyncio
 import time
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends
+from uuid import UUID
+from urllib.parse import quote
+
+from fastapi import APIRouter, HTTPException, Depends, Query, Response
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from postgres.models.user import User
+from postgres.session import get_db
+from routers.users import get_current_db_user
+from services.case_service import CaseAccessDenied, CaseNotFound, get_case_if_allowed
 from services.snapshot_storage import snapshot_storage
+from services import snapshot_report
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
@@ -109,8 +118,42 @@ def restore_removed_snapshot(removed_id: str, user: dict = Depends(get_current_u
         return out
 
 
+def _case_for(db: Session, case_id: str | None, db_user: User):
+    if not case_id:
+        return None
+    try:
+        return get_case_if_allowed(db=db, case_id=UUID(str(case_id)), user=db_user)
+    except (CaseNotFound, ValueError):
+        raise HTTPException(status_code=404, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(status_code=403, detail="You do not have access to this case")
+
+
+def snapshot_events(db: Session, case_id: str, subgraph: dict) -> list[dict]:
+    """The timeline events among the snapshot's own entities, frozen as they read now (never the whole case's)."""
+    from services.timeline_view_service import _fetch_current_events
+
+    keys = []
+    for node in subgraph.get("nodes") or []:
+        key = str((node or {}).get("key") or (node or {}).get("id") or "")
+        if key and key not in keys:
+            keys.append(key)
+    if not keys:
+        return []
+    return snapshot_report.frozen_events(_fetch_current_events(db, case_id, keys, require_all=False))
+
+
+class SnapshotReportRequest(BaseModel):
+    privilege_marking: str = "unmarked"
+
+
 @router.post("", response_model=SnapshotResponse)
-def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_current_user)):
+def create_snapshot(
+    snapshot: SnapshotCreate,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    db_user: User = Depends(get_current_db_user),
+):
     """
     Create a new snapshot.
     
@@ -119,6 +162,12 @@ def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_current_u
     """
     snapshot_id = f"snapshot_{datetime.now().isoformat().replace(':', '-').replace('.', '-')}"
     timestamp = datetime.now().isoformat()
+    case = _case_for(db, snapshot.case_id, db_user)
+    timeline = snapshot.timeline
+    if timeline is None and case is not None:
+        # Saved from the graph: the snapshot keeps the events among its own entities, so its report prints
+        # those and only those (BUG-012: the old report printed every event in the case).
+        timeline = snapshot_events(db, str(case.id), snapshot.subgraph or {})
     
     # Store the full snapshot data
     snapshot_data = {
@@ -126,7 +175,7 @@ def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_current_u
         "name": snapshot.name,
         "notes": snapshot.notes,
         "subgraph": snapshot.subgraph,
-        "timeline": snapshot.timeline or [],
+        "timeline": timeline or [],
         "overview": snapshot.overview or {},
         "citations": snapshot.citations or {},
         "chat_history": snapshot.chat_history or [],
@@ -137,7 +186,7 @@ def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_current_u
         "owner": user["username"],
         "case_id": snapshot.case_id,
         "case_version": snapshot.case_version,
-        "case_name": snapshot.case_name,
+        "case_name": snapshot.case_name or (case.title if case is not None else None),
     }
     
     # Save to persistent storage (will automatically chunk if too large)
@@ -174,7 +223,7 @@ def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_current_u
 
 
 @router.get("", response_model=List[SnapshotResponse])
-def list_snapshots(user: dict = Depends(get_current_user)):
+def list_snapshots(user: dict = Depends(get_current_user), case_id: Optional[str] = Query(None)):
     """List all snapshots for the current user."""
     snapshots = []
     all_snapshots = snapshot_storage.get_all()
@@ -182,6 +231,8 @@ def list_snapshots(user: dict = Depends(get_current_user)):
     for snapshot_id, snapshot_data in all_snapshots.items():
         # Enforce ownership
         if snapshot_data.get("owner") != user["username"]:
+            continue
+        if case_id and str(snapshot_data.get("case_id") or "") != case_id:
             continue
 
         node_count = len(snapshot_data.get("subgraph", {}).get("nodes", []))
@@ -206,6 +257,36 @@ def list_snapshots(user: dict = Depends(get_current_user)):
     # Sort by created_at descending (newest first)
     snapshots.sort(key=lambda x: x.created_at, reverse=True)
     return snapshots
+
+
+@router.post("/{snapshot_id}/report")
+def snapshot_report_pdf(
+    snapshot_id: str,
+    request: SnapshotReportRequest,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    db_user: User = Depends(get_current_db_user),
+):
+    """The snapshot as a PDF: its graph, its own events with their sources, and the chosen privilege marking."""
+    snapshot = snapshot_storage.get(snapshot_id)
+    if snapshot is None or snapshot.get("owner") != user["username"]:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    case = _case_for(db, snapshot.get("case_id"), db_user)
+    try:
+        content = snapshot_report.render_snapshot_report_pdf(
+            snapshot,
+            case_name=(case.title if case is not None else snapshot.get("case_name")) or "",
+            generated_by=db_user.name or db_user.email,
+            privilege_marking=request.privilege_marking,
+        )
+    except snapshot_report.SnapshotReportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    filename = snapshot_report.report_filename(snapshot)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"; filename*=UTF-8\'\'{quote(filename)}'},
+    )
 
 
 @router.get("/{snapshot_id}", response_model=SnapshotData)

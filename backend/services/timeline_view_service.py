@@ -677,6 +677,9 @@ def _render_pdf_html(
     generated_by: str,
     footer_label: str,
     notes_by_event: dict[str, list[dict[str, str | None]]],
+    eyebrow: str = "Timeline Chronology",
+    preface_html: str = "",
+    extra_css: str = "",
 ) -> str:
     generated_at = datetime.now().strftime("%B %d, %Y at %I:%M %p")
     dates = [str(event.get("date") or "")[:10] for event in events if event.get("date")]
@@ -957,11 +960,12 @@ def _render_pdf_html(
                 font-size: 10px;
                 overflow-wrap: anywhere;
             }}
+            {extra_css}
         </style>
     </head>
     <body>
         <section class="cover">
-            <div class="eyebrow">Timeline Chronology</div>
+            <div class="eyebrow">{html.escape(eyebrow)}</div>
             <h1>{html.escape(title)}</h1>
             <div class="case-name">{html.escape(case_name)}</div>
             <div class="summary-grid">
@@ -971,6 +975,7 @@ def _render_pdf_html(
                 <div class="summary-card"><span>Generated</span><strong>{html.escape(generated_at)}</strong></div>
             </div>
         </section>
+        {preface_html}
         {''.join(day_sections)}
         {appendix}
     </body>

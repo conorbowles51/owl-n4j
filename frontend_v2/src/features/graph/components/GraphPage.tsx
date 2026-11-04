@@ -33,6 +33,7 @@ import { graphAPI } from "../api"
 import { useUIStore } from "@/stores/ui.store"
 import { SubgraphView } from "./SubgraphView"
 import type { NodeDetail } from "@/types/graph.types"
+import { SaveSnapshotDialog } from "./SaveSnapshotDialog"
 import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
 import { SignificantEmptyState } from "@/features/significant/components/SignificantEmptyState"
 
@@ -99,6 +100,7 @@ export function GraphPage() {
   const [mergeOpen, setMergeOpen] = useState(false)
   const [expandOpen, setExpandOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
+  const [snapshotOpen, setSnapshotOpen] = useState(false)
 
   /* ---- Side panel (store-driven) ---- */
   const graphPanelCollapsed = useUIStore((s) => s.graphPanelCollapsed)
@@ -305,6 +307,7 @@ export function GraphPage() {
         graph3dRef={graph3dRef}
         onOpenAddNode={() => setAddNodeOpen(true)}
         onOpenCreateRelationship={() => setCreateRelOpen(true)}
+        onSaveSnapshot={() => setSnapshotOpen(true)}
         onOpenForceControls={() => toggleToolOverlay("force-controls")}
         onOpenAnalysis={() => toggleToolOverlay("analysis")}
         onOpenSimilarEntities={() => toggleToolOverlay("similar")}
@@ -428,6 +431,9 @@ export function GraphPage() {
         caseId={caseId!}
         onSaved={refreshGraph}
       />
+      {displayData && (
+        <SaveSnapshotDialog caseId={caseId!} shown={displayData} open={snapshotOpen} onOpenChange={setSnapshotOpen} />
+      )}
       <CreateRelationshipDialog
         open={createRelOpen}
         onOpenChange={setCreateRelOpen}

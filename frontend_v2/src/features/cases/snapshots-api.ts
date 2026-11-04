@@ -25,6 +25,14 @@ export interface SnapshotCreateData {
   [key: string]: unknown
 }
 
+export type PrivilegeMarking = "unmarked" | "confidential" | "privileged_confidential"
+
+export const PRIVILEGE_MARKING_LABELS: Record<PrivilegeMarking, string> = {
+  unmarked: "No privilege marking",
+  confidential: "Confidential",
+  privileged_confidential: "Privileged and confidential",
+}
+
 export const snapshotsAPI = {
   create: (snapshot: SnapshotCreateData) =>
     fetchAPI<Snapshot>("/api/snapshots", {
@@ -32,10 +40,28 @@ export const snapshotsAPI = {
       body: snapshot,
     }),
 
-  list: () => fetchAPI<Snapshot[]>("/api/snapshots"),
+  list: (caseId?: string) =>
+    fetchAPI<Snapshot[]>(caseId ? `/api/snapshots?case_id=${encodeURIComponent(caseId)}` : "/api/snapshots"),
 
   get: (snapshotId: string) =>
     fetchAPI<Snapshot>(`/api/snapshots/${snapshotId}`),
+
+  /** The snapshot report PDF: its graph, its own events with their sources, and the chosen privilege marking. */
+  report: async (snapshotId: string, privilegeMarking: PrivilegeMarking): Promise<{ blob: Blob; filename: string }> => {
+    const token = localStorage.getItem("authToken")
+    const response = await fetch(`/api/snapshots/${encodeURIComponent(snapshotId)}/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      credentials: "include",
+      body: JSON.stringify({ privilege_marking: privilegeMarking }),
+    })
+    if (!response.ok) {
+      const detail = await response.json().then((b) => b?.detail).catch(() => null)
+      throw new Error(typeof detail === "string" ? detail : `Report not produced (${response.status})`)
+    }
+    const match = /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") ?? "")
+    return { blob: await response.blob(), filename: match?.[1] ?? "snapshot-report.pdf" }
+  },
 
   delete: (snapshotId: string) =>
     fetchAPI<void>(`/api/snapshots/${snapshotId}`, { method: "DELETE" }),

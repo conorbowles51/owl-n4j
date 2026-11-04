@@ -18,6 +18,7 @@ import {
   X,
   HelpCircle,
   Box,
+  Camera,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -42,6 +43,7 @@ interface GraphToolbarProps {
   onOpenAnalysis?: () => void
   onOpenSimilarEntities?: () => void
   onOpenRecycleBin?: () => void
+  onSaveSnapshot?: () => void
   onOpenCypher?: () => void
   scope: CaseLayer
   filteredNodes: number
@@ -60,6 +62,7 @@ export function GraphToolbar({
   onOpenAnalysis,
   onOpenSimilarEntities,
   onOpenRecycleBin,
+  onSaveSnapshot,
   onOpenCypher,
   scope,
   filteredNodes,
@@ -327,6 +330,15 @@ export function GraphToolbar({
           Relationship
         </Button>
       </div>
+
+      {onSaveSnapshot && (
+        <div className="flex items-center gap-0.5 border-l border-border pl-2">
+          <Button variant="ghost" size="sm" className="text-xs" onClick={onSaveSnapshot}>
+            <Camera className="size-3.5" />
+            Save snapshot
+          </Button>
+        </div>
+      )}
 
       {/* Tools */}
       <div className="flex items-center gap-0.5 border-l border-border pl-2">

@@ -111,6 +111,12 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock("./CaseBriefPanel", () => ({
   CaseBriefPanel: ({ caseId }: { caseId: string }) => <div data-testid="case-brief-panel">{caseId}</div>,
 }))
+vi.mock("./CaseFileSummaries", () => ({
+  CaseFileSummaries: ({ caseId }: { caseId: string }) => <div data-testid="case-file-summaries">{caseId}</div>,
+}))
+vi.mock("@/features/cases/components/SnapshotsSection", () => ({
+  SnapshotsSection: ({ caseId }: { caseId: string }) => <div data-testid="snapshots-section">{caseId}</div>,
+}))
 vi.mock("./HowThisWasFound", () => ({
   HowThisWasFound: ({ entryId }: { entryId: string }) => <div data-testid="how-this-was-found">{entryId}</div>,
 }))
@@ -212,5 +218,14 @@ describe("CanonicalWorkspaceOverview", () => {
 
     expect(screen.getByText("Nothing critical needs attention")).toBeInTheDocument()
     expect(screen.getByText("You’re caught up")).toBeInTheDocument()
+  })
+
+  it("shows this case's snapshots in the Workspace (BUG-009: snapshots were not shown there)", () => {
+    renderOverview(true)
+    expect(screen.getByRole("heading", { name: "Snapshots" })).toBeInTheDocument()
+    expect(screen.getByTestId("snapshots-section")).toHaveTextContent("case-1")
+    // FEAT-001: file summaries inline in the Workspace
+    expect(screen.getByRole("heading", { name: "Case files" })).toBeInTheDocument()
+    expect(screen.getByTestId("case-file-summaries")).toHaveTextContent("case-1")
   })
 })
