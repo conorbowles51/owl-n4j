@@ -48,6 +48,8 @@ def _batch_added(db, case_id, batch_id):
                     sent_from=batch_sources(db, case_id=case_id, batch_ids=[batch_id]).get(str(batch_id)))
     except Exception:
         logger.exception('Batch provenance unavailable')
+        # Shown without it, not kept by the view cache: the next open reads it again.
+        not_kept()
         return None
 
 
@@ -1177,6 +1179,10 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
 
 
 @router.get('/batches/{batch_id}')
+# Computed from stored projections only (no PDF reading, no writes): 14-53 s on d5b330d1 batch 30231f0a on every open
+# (live, 3 Nov), 0.12 s from the kept copy, byte-identical (read-only dry run on the live database). Kept only while
+# every row it read is unchanged, and only when built from the review queue's current view (_as_the_queue_lists).
+@cached_view('batch-detail')
 def get_financial_batch(batch_id: UUID, case_id: UUID = Query(...), offset: int = Query(0,ge=0), limit: int = Query(100,ge=1,le=500),only_problems: bool = Query(False),review_group: str | None = Query(None),db: Session = Depends(get_db)):
     try:
         view = import_batches.batch_status(db,case_id=case_id,batch_id=batch_id,offset=offset,limit=limit,only_problems=only_problems,review_group=review_group)

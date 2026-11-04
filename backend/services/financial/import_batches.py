@@ -1891,11 +1891,18 @@ def _as_the_queue_lists(session, case_id, items, files):
     if not open_items and not unread:
         return None
     from services.financial.review_queue import current_view, _rechecked_by_recovery, REREAD_BUCKETS
+    from services.financial.view_cache import not_kept
     try:
         view, updating = current_view(session, case_id, latest=True)
     except Exception:
         session.rollback()
+        not_kept()
         return None
+    # The batch page is a cached view (GET /batches/{batch_id}); the queue's view is the queue's own cache, not a
+    # row: at the same rows it can be missing or an earlier copy (updating) now and current later. A page built
+    # without the current queue view is shown as it is and not kept, so the next open uses the current one.
+    if view is None or updating:
+        not_kept()
     if view is None:
         return None
     by_statement, by_file = {}, {}
