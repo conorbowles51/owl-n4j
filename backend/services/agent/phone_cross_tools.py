@@ -483,6 +483,29 @@ def _pair_out(p):
             "how_substantiated": (p.get("reasons") or {}).get("substantiation") or []}
 
 
+def _line(it, p):
+    alert = "%s %s on %s, %s" % (it.get("source") or "record", " ".join(x for x in (it.get("amount_text") or "",
+                                 {"debit": "out", "credit": "in"}.get(it.get("direction") or "", "")) if x),
+                                 it.get("phone") or "a phone", (it.get("instant") or "")[:10])
+    return "%s | %s | payment %s, %s, %s | %s | %s" % (
+        (p.get("strength") or "").capitalize(), alert, p.get("ref") or p["payment"], p.get("amount") or "",
+        p.get("date") or "", "; ".join(p.get("how_well_matched") or []) or "no longer found by the rule",
+        p.get("decision_words") or p["status"])
+
+
+def match_lines(items) -> dict:
+    """One ready line per pairing on this page, grouped by strength (strongest first) with rejected ones apart: the
+    answer copies them, so no pairing is dropped or summarised (05 4.3.8)."""
+    out = {lv: [] for lv in LEVELS}
+    out["rejected"] = []
+    for it in items:
+        for p in it.get("pairings") or []:
+            out.setdefault(p.get("strength") or "faint", []).append(_line(it, p))
+        for p in it.get("rejected_pairings") or []:
+            out["rejected"].append(_line(it, p))
+    return out
+
+
 def money_signal_matches(conn, case_id, *, outcome=None, strength=None, offset=0, limit=DEFAULT_LIMIT) -> dict:
     """Every phone money reading of approach 1's last run that pairs with a ledger row at any strength (strong,
     moderate, weak, faint; 05 4.3.8), strongest first, each with its candidate payments (txn://), the strength by rule
@@ -582,15 +605,17 @@ def money_signal_matches(conn, case_id, *, outcome=None, strength=None, offset=0
     if old_run:
         limitation = " ".join(x for x in (limitation, "The last run predates match strengths; run Money on the phones "
                                           "again to list every candidate payment with its strength.") if x)
-    return _paged(tool, case_id, items, offset, limit, "readings", run_id=str(run.id), by_outcome=by_outcome,
+    out = _paged(tool, case_id, items, offset, limit, "readings", run_id=str(run.id), by_outcome=by_outcome,
                   by_strength=by_level, confirmed_by_person=confirmed, rejected_by_person=rejected,
                   readings_with_every_pairing_rejected=all_rejected,
                   search=MP.search_words(), coverage=cov, limitation=limitation,
                   note="Mention every pairing with its strength and reasons, one line each, weak and faint ones as weak "
                        "or faint; never replace them with examples or a count, and never say they are only in the tool "
-                       "output. rejected_pairings are not matches: list them apart, never under a strength. Say which are confirmed by a person and which are found by the rule; never "
+                       "output. Copy every line of match_lines under its strength heading (Strong, Moderate, Weak, Faint) and the rejected lines apart; rejected_pairings are not matches: list them apart, never under a strength. Say which are confirmed by a person and which are found by the rule; never "
                        "call a rule-found pairing confirmed. Rejected pairings are not evidence of a match and are "
                        "not counted. A reading is what a phone shows (p4), never summed; a row keeps its class.")
+    out["match_lines"] = match_lines(out.get("items") or [])
+    return out
 
 
 def _lead_alert_days(conn, case_id, run_id, record_uids):

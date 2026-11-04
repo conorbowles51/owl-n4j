@@ -241,6 +241,12 @@ def test_the_agent_lists_every_pairing_with_strength_and_who_decided_and_leaves_
         st = {x["payment"]: x["status"] for x in after["items"][0]["pairings"]}
         assert st == {str(late): "confirmed by a person"}
         assert [x["payment"] for x in after["items"][0]["rejected_pairings"]] == [str(exact)]
+        lines = after["match_lines"]
+        assert len(lines["weak"]) == 1 and lines["strong"] == [] and len(lines["rejected"]) == 1
+        assert lines["weak"][0].startswith("Weak | notification $50.00 out on ")
+        assert "payment 8 days after the phone record" in lines["weak"][0]
+        assert lines["weak"][0].endswith("| confirmed by Synthetic Reviewer %s" % lines["weak"][0][-10:])
+        assert lines["rejected"][0].endswith("rejected by Synthetic Reviewer: Refund, not the purchase")
         assert "never call a rule-found pairing confirmed" in after["note"]
         assert "1 confirmed by a person, 1 rejected by a person" in after["coverage"]
 
