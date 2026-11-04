@@ -70,7 +70,9 @@ vi.mock("../hooks/use-financial-data", () => ({
   useUnlinkSubTransaction: () => idleMutation,
 }))
 
-vi.mock("../hooks/use-ledger-transactions", () => ({
+// The real query factory (InvestigatorPeople reads the cache by its key since 86ea71f6); only the hook is faked.
+vi.mock("../hooks/use-ledger-transactions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../hooks/use-ledger-transactions")>()),
   useLedgerTransactions: ledger.useLedgerTransactions,
 }))
 // The page's ledger fixtures stand for every row (the full ledger path): the Transactions first view is not
