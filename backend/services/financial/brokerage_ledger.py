@@ -509,7 +509,7 @@ def query_rows(session, *, case_id, row_kind='trade', instrument=None, account_i
                date_to=None, side=None, page=1, page_size=50, sort='date'):
     """One page of a case's admitted security rows, with the total. A trade whose cash leg is no longer in the money
     ledger (set aside, superseded and not yet re-read) is not shown: the counts say how many."""
-    from sqlalchemy import and_, func, or_
+    from sqlalchemy import and_, false, func, or_
     from postgres.models.evidence import EvidenceFile
     if row_kind not in ROW_KINDS_QUERY:
         raise SecurityRowError('row_kind is trade or holding.')
@@ -517,20 +517,29 @@ def query_rows(session, *, case_id, row_kind='trade', instrument=None, account_i
         raise SecurityRowError('sort is date, instrument or amount.')
     page = max(1, int(page or 1))
     page_size = max(1, min(int(page_size or 50), MAX_PAGE))
-    cash, statement = FinancialTransaction, FinancialSourceDocument
-    base = select(FinancialSecurityRow).outerjoin(cash, cash.id == FinancialSecurityRow.cash_transaction_id).outerjoin(
-        statement, statement.id == FinancialSecurityRow.source_document_id).join(
-        EvidenceFile, EvidenceFile.id == FinancialSecurityRow.evidence_file_id).where(
-        FinancialSecurityRow.case_id == case_id, FinancialSecurityRow.row_kind == row_kind,
-        FinancialSecurityRow.ledger_status == 'admitted')
-    # A row counts only while its statement is in the ledger (not removed, set aside or replaced) and, for a trade,
-    # while its cash leg is: the others are not shown, and the counts say how many.
-    statement_out = or_(and_(FinancialSecurityRow.source_document_id.is_not(None), or_(
-        statement.id.is_(None), statement.status != 'admitted',
-        statement.metadata_['financial_import_removal'].as_string().is_not(None))),
-        and_(FinancialSecurityRow.source_document_id.is_(None),
-             EvidenceFile.metadata_['financial_import_removal'].as_string().is_not(None)))
-    cash_out = and_(FinancialSecurityRow.cash_transaction_id.is_not(None),
+    cash, row_table = FinancialTransaction, FinancialSecurityRow
+    # The statements and files of the case's rows that are out of the ledger, worked out once over those few
+    # records (a statement's metadata is large: checking it per row cost about 0.6 s a query on BNB2's 627 trades).
+    statements = select(row_table.source_document_id).where(row_table.case_id == case_id,
+                                                             row_table.source_document_id.is_not(None)).distinct()
+    out_statements = list(session.scalars(select(FinancialSourceDocument.id).where(
+        FinancialSourceDocument.id.in_(statements), or_(
+            FinancialSourceDocument.status != 'admitted',
+            FinancialSourceDocument.metadata_['financial_import_removal'].as_string().is_not(None)))))
+    fund_files = select(row_table.evidence_file_id).where(row_table.case_id == case_id,
+                                                          row_table.source_document_id.is_(None)).distinct()
+    out_files = list(session.scalars(select(EvidenceFile.id).where(
+        EvidenceFile.id.in_(fund_files),
+        EvidenceFile.metadata_['financial_import_removal'].as_string().is_not(None))))
+    base = select(row_table).outerjoin(cash, cash.id == row_table.cash_transaction_id).where(
+        row_table.case_id == case_id, row_table.row_kind == row_kind, row_table.ledger_status == 'admitted')
+    # A row counts only while its statement is in the ledger (not removed, set aside or replaced), a fund statement's
+    # while its file is in Financial, and a trade while its cash leg is: the others are not shown, and the counts
+    # say how many.
+    statement_out = or_(row_table.source_document_id.in_(out_statements) if out_statements else false(),
+                        and_(row_table.source_document_id.is_(None), row_table.evidence_file_id.in_(out_files))
+                        if out_files else false())
+    cash_out = and_(row_table.cash_transaction_id.is_not(None),
                     or_(cash.id.is_(None), cash.ledger_status != 'admitted'))
     hidden_statement = session.scalar(select(func.count()).select_from(base.where(statement_out).subquery()))
     hidden = session.scalar(select(func.count()).select_from(base.where(cash_out, ~statement_out).subquery()))
