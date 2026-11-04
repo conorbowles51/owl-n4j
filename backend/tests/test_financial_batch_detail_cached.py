@@ -164,3 +164,32 @@ def test_reopening_an_unchanged_batch_of_d5b330d1_size_computes_nothing(big_batc
             changed = route(**kwargs, db=db)
         assert len(calls) == 2
         assert bytes(changed.body) != bytes(first.body)
+
+
+def test_the_refresh_builds_the_current_queue_view_before_the_batch_page(monkeypatch):
+    """A write to a batch changes the review queue too. Refreshed before the queue, the page is never kept (it needs
+    the queue's current view), the ask fails and the page shows its previous copy until the 10-minute limit."""
+    import json
+    from uuid import UUID
+    from services.financial import review_queue, view_refresh
+    order = []
+
+    def page(batch_id: UUID, case_id: UUID, db=None):
+        order.append('page')
+
+    class Session:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def rollback(self):
+            pass
+
+    case, batch = uuid.uuid4(), uuid.uuid4()
+    monkeypatch.setitem(view_cache.handlers, 'batch-detail', page)
+    monkeypatch.setattr(review_queue, 'refresh', lambda db, case_id: order.append(('queue', case_id)) or True)
+    key = view_cache.view_key('batch-detail', dict(batch_id=batch, case_id=case))
+    view_refresh._refresh_one('batch-detail', json.loads(key[1]), dict(key=list(key)), lambda: Session())
+    assert order == [('queue', case), 'page']

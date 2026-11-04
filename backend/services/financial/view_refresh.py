@@ -34,6 +34,8 @@ POLL_SECONDS = 1.0
 IDLE_EXIT_SECONDS = 120
 CHILD_FLAG = '--refresh-child'
 # Route modules whose cached views can be asked for (importing them registers their handlers).
+# Cached views built from the review queue's current view (kept only when it is current): refreshed after it.
+AFTER_THE_QUEUE = frozenset({'batch-detail'})
 ROUTE_MODULES = ('routers.financial_ledger', 'routers.financial_statement_import', 'routers.evidence', 'routers.financial')
 
 
@@ -191,6 +193,21 @@ def _refresh_one(name, parameters, ask_, session_factory):
     if view_cache.view_key(name, arguments) != tuple(ask_['key']):
         raise ValueError('the parameters of %s no longer give the same key' % name)
     view_cache.clear()  # never answered from this process's memory: the workers read only the saved copy
+    if name in AFTER_THE_QUEUE:
+        # The batch page is kept only when built from the review queue's current view (import_batches.
+        # _as_the_queue_lists); the write that changed the batch changed the queue too, so build that first, or this
+        # refresh is never kept and its ask fails while the page shows its previous copy until the time limit.
+        from uuid import UUID
+        from services.financial import review_queue
+        token = view_cache.always_save.set(True)
+        try:
+            with (session_factory or _get_session_local())() as db:
+                try:
+                    review_queue.refresh(db, UUID(str(arguments['case_id'])))
+                finally:
+                    db.rollback()
+        finally:
+            view_cache.always_save.reset(token)
     before = dict(view_cache.stats)
     token = view_cache.always_save.set(True)
     try:
