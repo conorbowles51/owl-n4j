@@ -7,7 +7,7 @@ clicks Look up). Empty means the system default (ADDRESS_LOOKUP_DEFAULT, 'auto' 
 from alembic import op
 
 revision = "20261104_address_lookup_mode"
-down_revision = "20261104_removed_records"
+down_revision = "20261104_phone_match_undo"
 branch_labels = None
 depends_on = None
 
