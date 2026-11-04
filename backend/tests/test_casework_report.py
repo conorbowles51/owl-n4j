@@ -61,3 +61,38 @@ def test_pdf_renders():
                                         privilege_marking="confidential")
     text = "".join(p.extract_text() for p in pypdf.PdfReader(io.BytesIO(pdf)).pages)
     assert "Key payment" in text and "Confidential" in text
+
+
+def test_links_saved_without_a_label_print_the_current_name_never_a_bare_id():
+    from services import casework_report as cr
+
+    entries = {"findings": [{"title": "F", "links": [
+        {"target_type": "evidence", "target_id": "e-1", "target_label": None, "relationship": "context"},
+        {"target_type": "graph_entity", "target_id": "k-1", "target_label": "", "relationship": "supports"},
+        {"target_type": "graph_entity", "target_id": "k-gone", "target_label": None},
+        {"target_type": "evidence", "target_id": "e-2", "target_label": "Saved name.pdf"},
+    ]}]}
+    asked = {}
+
+    def lookup(target_type, ids):
+        asked[target_type] = set(ids)
+        return {"e-1": "BBVA Nov 2022.pdf", "k-1": "Jane Roe"}
+
+    cr.fill_missing_link_labels(entries, lookup)
+    labels = [link["target_label"] for link in entries["findings"][0]["links"]]
+    assert labels == ["BBVA Nov 2022.pdf", "Jane Roe", "k-gone (name not found)", "Saved name.pdf"]
+    assert asked == {"evidence": {"e-1"}, "graph_entity": {"k-1", "k-gone"}}  # saved labels are not looked up
+    html = cr.render_casework_report_html(entries, sections=["findings"], case_name="C", generated_by="J")
+    assert "BBVA Nov 2022.pdf" in html and "Jane Roe" in html
+
+
+def test_an_unreachable_store_keeps_every_link_with_its_id():
+    from services import casework_report as cr
+
+    entries = {"notes": [{"title": "N", "links": [{"target_type": "graph_entity", "target_id": "k-1"}]}]}
+
+    def broken(target_type, ids):
+        raise RuntimeError("graph store unreachable")
+
+    cr.fill_missing_link_labels(entries, broken)
+    assert entries["notes"][0]["links"][0]["target_label"] == "k-1 (name not found)"

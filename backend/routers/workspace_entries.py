@@ -382,6 +382,49 @@ class CaseworkReportRequest(BaseModel):
     privilege_marking: str = "unmarked"
 
 
+def _link_names(db: Session, case_id: UUID, target_type: str, ids: set[str]) -> dict[str, str]:
+    """Current names of linked items in this case, for links saved without a label (casework report)."""
+    def uuids() -> list[UUID]:
+        out = []
+        for value in ids:
+            try:
+                out.append(UUID(value))
+            except ValueError:
+                pass
+        return out
+
+    if target_type == "graph_entity":
+        from services.neo4j.driver import driver
+
+        with driver.session() as session:
+            rows = session.run(
+                "MATCH (n) WHERE n.case_id = $case_id AND n.key IN $keys RETURN n.key AS key, n.name AS name",
+                case_id=str(case_id), keys=sorted(ids),
+            )
+            return {r["key"]: r["name"] for r in rows if r["name"]}
+    if target_type == "evidence":
+        from postgres.models.evidence import EvidenceFile
+
+        rows = db.query(EvidenceFile.id, EvidenceFile.original_filename).filter(
+            EvidenceFile.case_id == case_id, EvidenceFile.id.in_(uuids())
+        )
+    elif target_type == "entry":
+        from postgres.models.workspace_entry import WorkspaceEntry
+
+        rows = db.query(WorkspaceEntry.id, WorkspaceEntry.title).filter(
+            WorkspaceEntry.case_id == case_id, WorkspaceEntry.id.in_(uuids())
+        )
+    elif target_type == "dossier":
+        from postgres.models.case_profile import CaseProfile
+
+        rows = db.query(CaseProfile.id, CaseProfile.display_name).filter(
+            CaseProfile.case_id == case_id, CaseProfile.id.in_(uuids())
+        )
+    else:
+        return {}
+    return {str(row[0]): row[1] for row in rows.all() if row[1]}
+
+
 @router.post("/{case_id}/report", dependencies=[Depends(require_case_view)])
 def casework_report_pdf(
     case_id: UUID,
@@ -408,6 +451,7 @@ def casework_report_pdf(
             )
             for section in sections
         }
+        casework_report.fill_missing_link_labels(entries, lambda t, ids: _link_names(db, case_id, t, ids))
         case = db.query(Case).filter(Case.id == case_id).first()
         content = casework_report.render_casework_report_pdf(
             entries,

@@ -63,6 +63,37 @@ def collect_entries(list_page: Callable[[str, int, int], dict[str, Any]], entry_
     return entries
 
 
+UNRESOLVED_LABEL = "name not found"
+
+
+def fill_missing_link_labels(
+    entries_by_section: dict[str, list[dict[str, Any]]],
+    lookup: Callable[[str, set[str]], dict[str, str]],
+) -> None:
+    """Links saved without a label (most graph-entity links, some evidence links) get the current name of what they
+    point to: one lookup per target type, scoped to the case by the caller. A target that cannot be named keeps its
+    id, marked as unnamed, so a link is never dropped from the report. A label saved on the link is never replaced."""
+    wanted: dict[str, set[str]] = {}
+    for entries in entries_by_section.values():
+        for entry in entries:
+            for link in entry.get("links") or []:
+                if not link.get("target_label") and link.get("target_id"):
+                    wanted.setdefault(str(link.get("target_type") or ""), set()).add(str(link["target_id"]))
+    names: dict[str, dict[str, str]] = {}
+    for target_type, ids in wanted.items():
+        try:
+            names[target_type] = lookup(target_type, ids) or {}
+        except Exception:  # a store being unreachable must not lose the report; the ids still print
+            names[target_type] = {}
+    for entries in entries_by_section.values():
+        for entry in entries:
+            for link in entry.get("links") or []:
+                if not link.get("target_label") and link.get("target_id"):
+                    target_id = str(link["target_id"])
+                    name = names.get(str(link.get("target_type") or ""), {}).get(target_id)
+                    link["target_label"] = name or f"{target_id} ({UNRESOLVED_LABEL})"
+
+
 def _sort(section: str, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if section == "findings":
         return sorted(entries, key=lambda e: (_SIGNIFICANCE_RANK.get(e.get("significance"), 3), str(e.get("title") or "")))
