@@ -2,7 +2,7 @@
  * Phone registry admin (02 sections 3.4 and 6.8): types, API calls and the words the page shows.
  * The registry is global, so every call is admin only (the server answers 403 to anyone else).
  */
-import { fetchAPI } from "@/lib/api-client"
+import { ApiError, fetchAPI } from "@/lib/api-client"
 
 export type FlagState = "open" | "acknowledged" | "mapping_needed" | "mapped" | "dismissed"
 export type ProposalState = "draft" | "exported" | "rejected"
@@ -72,6 +72,12 @@ export interface ProposalPage {
   offset: number
   counts: Record<ProposalState, number>
   proposals: MappingProposal[]
+}
+
+/** Retry a failed read up to 3 times, but never a refusal: a non-admin sees the admin-only message at once. */
+export function retryUnlessRefused(failures: number, err: unknown): boolean {
+  if (err instanceof ApiError && (err.status === 401 || err.status === 403)) return false
+  return failures < 3
 }
 
 export const FLAG_PAGE = 100

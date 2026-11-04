@@ -17,6 +17,7 @@ import {
   rangeWords,
   readingWords,
   registryApi,
+  retryUnlessRefused,
   saveFile,
   type FlagAction,
   type FlagState,
@@ -154,6 +155,7 @@ function FlagsTab() {
     queryKey: ["admin", "phone-registry", "flags", state, offset],
     queryFn: () => registryApi.flags(state, offset),
     placeholderData: (prev) => prev,
+    retry: retryUnlessRefused,
   })
   const pick = (s: FlagState | undefined) => {
     setState(s)
@@ -307,6 +309,7 @@ function ProposalsTab() {
     queryKey: ["admin", "phone-registry", "proposals", state, origin, offset],
     queryFn: () => registryApi.proposals(state, origin, offset),
     placeholderData: (prev) => prev,
+    retry: retryUnlessRefused,
   })
   if (q.error) return <p className="text-sm text-destructive">{errorWords(q.error)}</p>
   const data = q.data

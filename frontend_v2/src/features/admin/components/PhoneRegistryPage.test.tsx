@@ -106,10 +106,12 @@ describe("PhoneRegistryPage", () => {
     expect(post.opts).toMatchObject({ method: "POST", body: { to: "dismissed", reason: "known vocabulary" } })
   })
 
-  it("tells a non-admin the page is for administrators", async () => {
+  it("tells a non-admin the page is for administrators at once, without retrying the refusal", async () => {
+    client = new QueryClient() // the app's default retries, so a retried 403 would delay the message by seconds
     vi.mocked(fetchAPI).mockRejectedValue(new ApiError("Forbidden", 403))
     renderPage()
-    expect(await screen.findByText("Only an administrator can see the phone registry.")).toBeTruthy()
+    expect(await screen.findByText("Only an administrator can see the phone registry.", {}, { timeout: 900 })).toBeTruthy()
+    expect(vi.mocked(fetchAPI).mock.calls.filter(([u]) => String(u).startsWith("/api/phones/registry/flags")).length).toBe(1)
   })
 
   it("lists proposals with the original reading beside the correction, the deciding person, Reject and Download", async () => {
