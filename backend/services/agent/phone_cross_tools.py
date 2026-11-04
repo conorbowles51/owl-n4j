@@ -753,7 +753,7 @@ ANALYSES = ("deletion_timeline", "relationships", "awareness", "device_users")
 
 
 def analysis_results(conn, case_id, approach, *, kind=None, phone=None, start=None, end=None, offset=0,
-                     limit=DEFAULT_LIMIT) -> dict:
+                     limit=DEFAULT_LIMIT, strength=None) -> dict:
     """The last completed run of a phone analysis (approaches 2 to 13 that are built), its results under a filter
     with the exact total, each with its records cited."""
     from services.phone_analysis import approaches, framework as F
@@ -778,8 +778,12 @@ def analysis_results(conn, case_id, approach, *, kind=None, phone=None, start=No
                      next_offset=None, items=[], coverage="%s has not been run in this case." % approach,
                      limitation="Run it from the phone analyses screen; until then there is nothing to read.")
     lim = _limit(limit)
-    res = F.results(conn, case_id, run.id, kind=kind, start=_iso(_instant(start)), end=_iso(_instant(end, end=True)),
-                    phone=ext, offset=max(0, int(offset or 0)), limit=lim)
+    res = F.results(conn, case_id, run.id, kind=kind, strength=strength, start=_iso(_instant(start)),
+                    end=_iso(_instant(end, end=True)), phone=ext, offset=max(0, int(offset or 0)), limit=lim)
+    # every strength under the same filter, so weak and faint results are counted, never silently left out
+    where, fp = F._filters(case_id, run.id, kind, None, _iso(_instant(start)), _iso(_instant(end, end=True)), ext)
+    by_strength = {str(r[0]): int(r[1]) for r in conn.execute(text(
+        "SELECT r.strength, count(*) FROM phone_analysis_results r WHERE %s GROUP BY 1 ORDER BY 1" % where), fp)}
     items = []
     for r in res["items"]:
         recs = [x for x in conn.execute(text(
@@ -793,9 +797,12 @@ def analysis_results(conn, case_id, approach, *, kind=None, phone=None, start=No
     cov = F.coverage(conn, case_id, approach)
     return _base(tool, case_id, approach=approach, version=run.approach_version, run_id=str(run.id),
                  total_matching=res["total"], returned=len(items), has_more=nxt is not None, next_offset=nxt,
-                 items=items, kinds=list(getattr(module, "KINDS", ())),
-                 coverage="%s, last completed run: %d results%s. %s" % (approach, res["total"], (
-                     " of kind %s" % kind) if kind else "", cov.get("sentence") or ""),
+                 items=items, kinds=list(getattr(module, "KINDS", ())), by_strength=by_strength,
+                 coverage_notes=list(cov.get("notes") or []),
+                 coverage="%s, last completed run: %d results%s%s. %s%s" % (
+                     approach, res["total"], (" of kind %s" % kind) if kind else "",
+                     (" of strength %s" % strength) if strength else "", cov.get("sentence") or "",
+                     (" " + " ".join(cov.get("notes") or [])) if cov.get("notes") else ""),
                  limitation=("Only %d of %d are in this result; read on with offset %d." % (len(items), res["total"], nxt))
                  if nxt is not None else None,
                  note="Each result is a lead for enquiry with what supports and what undercuts it; the analysis "
@@ -1398,7 +1405,12 @@ class StatementArgs(_Page):
 
 class AnalysisArgs(_Page):
     approach: Literal["message_reconciliation", "deletion_timeline", "relationships", "awareness", "device_users"]
-    kind: str | None = None
+    kind: str | None = Field(None, description=(
+        "awareness: group_roles, read_events, reply_latency, read_without_reply, unread. device_users: "
+        "shared_markers, complementary_use, more_than_one_user, co_location, use_while_apart."))
+    strength: str | None = Field(None, description=(
+        "Only results of this strength. Read, reply, unread, co-location and use-while-apart results are graded "
+        "strong, moderate, weak or faint by a stated rule; by_strength gives the count of each."))
     phone: str | None = None
     start: str | None = None
     end: str | None = None
@@ -1467,8 +1479,10 @@ TOOLS = [
      "item cited."),
     ("get_analysis_results", "analysis_results", AnalysisArgs,
      "Results of a phone analysis's last run: message_reconciliation (messages across phones: copies matched, "
-     "deleted on one side), deletion_timeline, relationships, awareness or device_users, with "
-     "exact totals and records cited."),
+     "deleted on one side), deletion_timeline, relationships, awareness (read and play times, reply times, read "
+     "with no reply, unread, group roles) or device_users (shared markers, use in turn, together or apart, used "
+     "while apart, signs of more than one user), with exact totals, the count per strength (by_strength) and "
+     "records cited. List weak and faint results as such; coverage_notes give the counts they rest on."),
     ("draft_control_claim", "control_claim", ControlArgs,
      "Draft 'P had the means to operate account A from t1 to t2' as two evidenced links (account to phone: codes, "
      "alerts, app, use; phone to person: the reviewed owner link, with strands against). A proposal, model drafted "
