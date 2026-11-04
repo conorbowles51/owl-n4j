@@ -125,6 +125,41 @@ class AllCasesTests(DuplicateTestCase):
             out = self.tools(self.context(all_cases=True, user=user))["list_my_cases"].invoke({})
             self.assertEqual({c["case_name"] for c in out["data"]["cases"]}, expected)
 
+    def test_listing_cases_reads_memberships_and_titles_in_one_query_however_many_cases(self):
+        # followups m110400240617959: check_case_access per membership made each list/find/count linear in cases.
+        from sqlalchemy import event
+
+        def selects(tool, args):
+            seen = []
+            listener = lambda conn, cursor, statement, *rest: seen.append(statement)
+            event.listen(self.engine, "before_cursor_execute", listener)
+            try:
+                out = self.tools(self.context(all_cases=True))[tool].invoke(args)
+            finally:
+                event.remove(self.engine, "before_cursor_execute", listener)
+            self._seen = [s for s in seen if s.lstrip().upper().startswith("SELECT")]
+            return out, len(self._seen)
+
+        _, before = selects("list_my_cases", {})
+        _, find_before = selects("find_identifier_across_cases", {"identifier": NUMBER})
+        for n in range(6):
+            case = Case(id=uuid.uuid4(), title=f"Matter extra {n}", created_by_user_id=self.user.id,
+                        owner_user_id=self.user.id)
+            self.db.add(case)
+            self.db.flush()
+            self.db.add(CaseMembership(case_id=case.id, user_id=self.user.id, permissions=VIEW if n else {},
+                                       membership_role=CaseMembershipRole.collaborator, added_by_user_id=self.user.id))
+        self.db.commit()
+        out, after = selects("list_my_cases", {})
+        self.assertEqual(after, before)
+        [membership_read] = [s for s in self._seen if "case_memberships" in s]  # one read, joined to the cases
+        self.assertIn("JOIN cases", membership_read)
+        names = {c["case_name"] for c in out["data"]["cases"]}
+        self.assertEqual(len(names), 2 + 5)  # the membership without case.view is not listed
+        self.assertNotIn("Matter extra 0", names)
+        _, find_after = selects("find_identifier_across_cases", {"identifier": NUMBER})
+        self.assertEqual(find_after, find_before)
+
     def test_find_names_each_case_and_masks_account_numbers(self):
         ctx = self.context(all_cases=True)
         out = self.tools(ctx)["find_identifier_across_cases"].invoke({"identifier": NUMBER})

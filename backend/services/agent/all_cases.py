@@ -76,21 +76,25 @@ def lookup_keys(identifier: str) -> dict[str, Any]:
     return keys
 
 
-def openable_case_ids(db, user) -> list[uuid.UUID]:
-    """The cases the person is a member of with case view permission, each passing the case access check now."""
+def openable_cases(db, user) -> dict[str, str]:
+    """The cases the person is a member of with case view permission, id -> title, in ONE query (memberships joined to
+    the cases). For a member with view permission, ``check_case_access`` asks exactly this: the case exists and the
+    membership grants case.view (super admins get no more, since only member cases are listed). Before, every list,
+    find and count ran check_case_access per membership (2 queries each) and then read the titles again (followups
+    m110400240617959: 661 ms for 11 memberships under load). ``read_in_case`` keeps its per-call check (may_open)."""
+    from postgres.models.case import Case
     from postgres.models.case_membership import CaseMembership
-    from services.case_service import check_case_access, has_permission
+    from services.case_service import has_permission
 
-    out: list[uuid.UUID] = []
-    for membership in db.query(CaseMembership).filter(CaseMembership.user_id == user.id).all():
-        if not has_permission(membership, "case", "view"):
-            continue
-        try:
-            check_case_access(db, membership.case_id, user, required_permission=("case", "view"))
-        except Exception:
-            continue
-        out.append(membership.case_id)
-    return out
+    rows = (db.query(CaseMembership, Case.title).join(Case, Case.id == CaseMembership.case_id)
+            .filter(CaseMembership.user_id == user.id).all())
+    return {str(membership.case_id): title for membership, title in rows
+            if has_permission(membership, "case", "view")}
+
+
+def openable_case_ids(db, user) -> list[uuid.UUID]:
+    """The ids of ``openable_cases``."""
+    return [uuid.UUID(cid) for cid in openable_cases(db, user)]
 
 
 def may_open(db, user, case_id) -> bool:
@@ -329,8 +333,7 @@ def make_cross_case_tools(context) -> list:
     def list_my_cases():
         with session() as db:
             user = _user(db, context.user_id)
-            ids = openable_case_ids(db, user) if user else []
-            titles = case_titles(db, ids)
+            titles = openable_cases(db, user) if user else {}
         cases = sorted(({"case_id": cid, "case_name": titles.get(cid), "this_case": cid == str(context.case_id)}
                         for cid in titles), key=lambda c: (not c["this_case"], c["case_name"] or ""))
         return context.result("list_my_cases", {"total": len(cases), "returned": len(cases), "cases": cases},
@@ -339,9 +342,9 @@ def make_cross_case_tools(context) -> list:
     def find_identifier_across_cases(identifier: str):
         with session() as db:
             user = _user(db, context.user_id)
-            ids = openable_case_ids(db, user) if user else []
+            titles = openable_cases(db, user) if user else {}
+            ids = [uuid.UUID(cid) for cid in titles]
             found = find_identifier(db, identifier, ids)
-            titles = case_titles(db, ids)
         matches = found["matches"]
         for m in matches:
             m["case_name"] = titles.get(m["case_id"])
