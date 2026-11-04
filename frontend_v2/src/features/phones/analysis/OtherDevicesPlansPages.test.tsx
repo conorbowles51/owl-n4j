@@ -33,7 +33,7 @@ describe("Devices and accounts across phones (AP-1, 05 9.8)", () => {
     const row = { ...base, id: "k1", kind: "shared_key", strength: "moderate",
       measures: { key_kind: "saved_login", value: null, phones: [{ phone_label: "C1", records: 1, events: 1, natures: [], nearby_only: false, first: null, last: null },
         { phone_label: "C2", records: 1, events: 1, natures: [], nearby_only: false, first: null, last: null }],
-        reasons: { match: ["Same saved-login account on one service on 2 phones: moderate."], substantiation: ["1 records or events behind it on each phone (1, 1)."] } } }
+        reasons: { match: ["Same saved-login account on one service on 2 phones: moderate."], substantiation: ["Records or events behind it on each phone: 1, 1."] } } }
     client.runs.mockResolvedValue({ items: [run] })
     client.coverage.mockResolvedValue({ sentence: run.coverage.sentence })
     client.results.mockResolvedValue({ total: 1, offset: 0, limit: 100, items: [row] })

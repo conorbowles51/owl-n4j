@@ -62,7 +62,7 @@ from sqlalchemy import text
 from services.phone_analysis import fields as FV
 
 CODE = "other_devices"
-VERSION = "6.1"
+VERSION = "6.2"
 PARAMETERS = {}
 VERSION_SOURCES = ("device_users",)  # approach 5's markers are read as they are
 KINDS = ("shared_key", "service_without_app", "remote_session", "phone_inventory")
@@ -292,8 +292,7 @@ def grade(kind, per_phone, case_phones) -> tuple:
     level = LEVELS.index(base)
     match = ["Same %s on %d phones: %s, matched by %s." % (KEY_KINDS[kind][1], len(per_phone), base,
                                                             STRENGTH_RULE[base])]
-    subst = ["%d records or events behind it on each phone (%s)." % (
-        min(i["events"] for i in per_phone), ", ".join(str(i["events"]) for i in per_phone))]
+    subst = ["Records or events behind it on each phone: %s." % ", ".join(str(i["events"]) for i in per_phone)]
     under = []
     if kind in ("bluetooth_name", "bluetooth_address"):
         nearby = sum(1 for i in per_phone if i["natures"] and not _connected(i["natures"]))

@@ -59,6 +59,7 @@ def test_shared_bssid_strong_ssid_weak_only(engine):
                    for r in shared)
     b = by[("wifi_bssid", "aa:bb:cc:00:11:22")]
     assert b["measures"]["reasons"]["match"] and b["measures"]["reasons"]["substantiation"]
+    assert b["measures"]["reasons"]["substantiation"][0].startswith("Records or events behind it on each phone: ")
     assert counts["shared_strong"] == 1 and counts["shared_weak"] == 1
 
 
