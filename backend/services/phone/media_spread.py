@@ -12,7 +12,7 @@ Rules carried here:
   whole-index overlap. Files with no MD5, an empty placeholder or the MD5 of zero bytes are never grouped.
 - **Exact tier (step 2).** Copies are grouped by MD5 (lower case). A group whose population copies sit on two or
   more phones is a spread item. Where two copies both carry a SHA-256 and the SHA-256 values differ, the group is
-  kept (the MD5 is equal) and flagged. The perceptual tier (step 3) is not built here: it waits on its own gate.
+  kept (the MD5 is equal) and flagged. The perceptual tier (step 3) is at the end of this module.
 - **Order (step 4).** Per copy and per phone, the earliest of the message time, the file-system modify time and
   the EXIF capture time that has a real instant, with the field named. A time the report wrote without an offset
   is shown as written and never placed in a zone (01 decision D17), so it does not take part in the order.
@@ -477,3 +477,167 @@ def _group(g, copies, messages, times, lines, labels, zone, case_phones) -> dict
         "camera_original_candidates": sum(1 for c in shown if c["camera_original_candidate"] is True),
         "phones": order, "tier": "exact",
     }
+
+
+# ---- perceptual tier (05 section 11.3 step 3; cb-gated-spread D) ---------------------------------------------------
+# Pictures that look the same on two phones although their bytes differ (a messaging app re-compressed one). The hashes
+# are computed on this server by ``phone_analysis.perceptual_hash`` in the phone worker's after-pass. The exact tier
+# above is unchanged; a pair whose MD5 values are equal is in the exact tier and is not listed again here.
+#
+# Strength (one scale with approach 1's matches; a rule computes it). d is the larger of the pHash and dHash Hamming
+# distances (bits that differ out of 64): d <= 2 strong, <= 4 moderate, <= 6 weak (05 11.3's "visually similar" rule:
+# both distances 6 or less), <= 10 faint (beyond the spec's rule, listed so nothing near is missed). One level lower,
+# never below faint, when either picture is nearly flat (its dHash has 4 or fewer, or 60 or more, bits set): simple
+# pictures match by chance. Rules of thumb: no measurement on a case set the levels.
+
+PERCEPTUAL_LEVELS = ((2, "strong"), (4, "moderate"), (6, "weak"), (10, "faint"))
+PERCEPTUAL_MAX = PERCEPTUAL_LEVELS[-1][0]
+PERCEPTUAL_PAIR_LIMIT = 200_000
+PERCEPTUAL_CHUNK = 1024
+PERCEPTUAL_WORDS = ("Pictures that look nearly the same on two phones although the files differ, for example a copy an "
+                    "app re-compressed. A near-identical picture is a lead to look at, not proof that it is the same "
+                    "file. Pairs whose files are identical are in the list above, not here.")
+PERCEPTUAL_RULE_WORDS = ("Strength by the number of the 64 bits that differ between the two pictures' hashes (the "
+                         "larger of two hashes): 0 to 2 strong, 3 to 4 moderate, 5 to 6 weak, 7 to 10 faint; one level "
+                         "lower for a nearly plain picture. These levels are rules of thumb, not measured on this case.")
+SIMPLE_WORDS = "One of the pictures is nearly plain; plain pictures look alike by chance."
+_perc_cache: dict = {}
+
+
+def _level_of(d, simple):
+    i = next(k for k, (m, _) in enumerate(PERCEPTUAL_LEVELS) if d <= m)
+    if simple:
+        i = min(i + 1, len(PERCEPTUAL_LEVELS) - 1)
+    return PERCEPTUAL_LEVELS[i][1]
+
+
+def _perceptual_rows(conn, case_id):
+    return conn.execute(text(
+        "SELECT h.file_uid::text AS file_uid, h.extraction_id::text AS extraction_id, h.phash, h.dhash, "
+        "lower(coalesce(f.md5, '')) AS md5, f.local_path, f.category FROM phone_file_perceptual_hashes h JOIN pv_file f "
+        "ON f.file_uid = h.file_uid JOIN phone_extractions x ON x.id = h.extraction_id AND x.standing = 'active' WHERE "
+        "h.case_id = :c AND h.state = 'done' ORDER BY h.extraction_id, f.md5, h.file_uid"), {"c": str(case_id)}).fetchall()
+
+
+def perceptual_pairs_all(conn, case_id) -> dict:
+    """Every near-identical pair across two phones of the case, strongest first, with counts by strength. Copies of one
+    picture on one phone (same MD5) are compared once and their count kept."""
+    import numpy as np
+    from services.phone_analysis import perceptual_hash as PH
+    rows = _perceptual_rows(conn, case_id)
+    sig = (len(rows), str(max((r.file_uid for r in rows), default="")),
+           int(conn.execute(text("SELECT coalesce(sum(hashtext(file_uid::text || coalesce(phash, 0)::text)), 0) FROM "
+                                 "phone_file_perceptual_hashes WHERE case_id = :c AND state = 'done'"),
+                            {"c": str(case_id)}).scalar() or 0))
+    hit = _perc_cache.get(str(case_id))
+    if hit and hit[0] == sig:
+        return hit[1]
+    per = defaultdict(list)
+    copies = defaultdict(int)
+    seen = set()
+    for r in rows:
+        copies[(r.extraction_id, r.md5 or r.file_uid)] += 1
+        k = (r.extraction_id, r.md5 or r.file_uid)
+        if k in seen:
+            continue
+        seen.add(k)
+        per[r.extraction_id].append(r)
+    exts = sorted(per)
+    pairs, stopped, not_compared = [], False, 0
+    for ai, a in enumerate(exts):
+        A = per[a]
+        ap = np.array([PH.to_unsigned(r.phash) for r in A], dtype=np.uint64)
+        ad = np.array([PH.to_unsigned(r.dhash) for r in A], dtype=np.uint64)
+        for b in exts[ai + 1:]:
+            if stopped:
+                not_compared += 1
+                continue
+            B = per[b]
+            bp = np.array([PH.to_unsigned(r.phash) for r in B], dtype=np.uint64)
+            bd = np.array([PH.to_unsigned(r.dhash) for r in B], dtype=np.uint64)
+            bmd5 = np.array([r.md5 for r in B], dtype=object)
+            for s in range(0, len(A), PERCEPTUAL_CHUNK):
+                dp = np.bitwise_count(ap[s:s + PERCEPTUAL_CHUNK, None] ^ bp[None, :])
+                dd = np.bitwise_count(ad[s:s + PERCEPTUAL_CHUNK, None] ^ bd[None, :])
+                ii, jj = np.nonzero((dp <= PERCEPTUAL_MAX) & (dd <= PERCEPTUAL_MAX))
+                for i, j in zip(ii.tolist(), jj.tolist()):
+                    x, y = A[s + i], B[j]
+                    if x.md5 and x.md5 == bmd5[j]:
+                        continue  # identical files: the exact tier
+                    pairs.append((x, y, int(dp[i, j]), int(dd[i, j])))
+                if len(pairs) > PERCEPTUAL_PAIR_LIMIT:
+                    stopped = True
+                    break
+    items = []
+    for x, y, dp, dd in pairs:
+        d = max(dp, dd)
+        simple = any(bin(PH.to_unsigned(r.dhash)).count("1") <= 4 or bin(PH.to_unsigned(r.dhash)).count("1") >= 60
+                     for r in (x, y))
+        level = _level_of(d, simple)
+        match = ["%d of 64 bits differ in the picture hash and %d in the edge hash; %s by the rule (%s)." % (
+            dp, dd, level, "0 to 2 strong, 3 to 4 moderate, 5 to 6 weak, 7 to 10 faint")]
+        if simple:
+            match.append("One level lower: " + SIMPLE_WORDS)
+        items.append({"level": level, "distance": d, "phash_distance": dp, "dhash_distance": dd, "simple": simple,
+                      "a": {"file_uid": x.file_uid, "extraction_id": x.extraction_id, "md5": x.md5,
+                            "filename": _filename(x.local_path), "category": x.category,
+                            "copies_on_phone": copies[(x.extraction_id, x.md5 or x.file_uid)]},
+                      "b": {"file_uid": y.file_uid, "extraction_id": y.extraction_id, "md5": y.md5,
+                            "filename": _filename(y.local_path), "category": y.category,
+                            "copies_on_phone": copies[(y.extraction_id, y.md5 or y.file_uid)]},
+                      "reasons": {"match": match, "substantiation": [
+                          "Copies on each phone: %d and %d." % (copies[(x.extraction_id, x.md5 or x.file_uid)],
+                                                               copies[(y.extraction_id, y.md5 or y.file_uid)])]}})
+    order = {lv: i for i, (_, lv) in enumerate(PERCEPTUAL_LEVELS)}
+    items.sort(key=lambda it: (order[it["level"]], it["distance"], it["a"]["extraction_id"], it["b"]["extraction_id"],
+                               it["a"]["file_uid"], it["b"]["file_uid"]))
+    by = {lv: 0 for _, lv in PERCEPTUAL_LEVELS}
+    for it in items:
+        by[it["level"]] += 1
+    out = {"items": items, "by_strength": by, "pictures_compared": len(rows),
+           "stopped_words": ("The comparison stopped at %s pairs; %d pairs of phones were not compared. Narrow it to two "
+                             "phones to see the rest." % ("{:,}".format(PERCEPTUAL_PAIR_LIMIT), not_compared))
+           if stopped else None}
+    if len(_perc_cache) > 16:
+        _perc_cache.clear()
+    _perc_cache[str(case_id)] = (sig, out)
+    return out
+
+
+def perceptual(conn, case_id, strength=None, offset=0, limit=50) -> dict:
+    """One page of near-identical pairs with the total under the filter, counts by strength, how many pictures were
+    hashed and why others were not (true counts, never a clipped list presented as whole)."""
+    from services.phone_analysis import perceptual_hash as PH
+    from services.phone.readings import phone_labels
+    if strength and strength not in {lv for _, lv in PERCEPTUAL_LEVELS}:
+        raise ValueError("strength must be strong, moderate, weak or faint")
+    allp = perceptual_pairs_all(conn, case_id)
+    items = [it for it in allp["items"] if not strength or it["level"] == strength]
+    offset, limit = max(0, int(offset)), max(1, min(WINDOW_MAX, int(limit)))
+    page = items[offset:offset + limit]
+    labels = phone_labels(conn, case_id)
+    uids = sorted({it[s]["file_uid"] for it in page for s in ("a", "b")})
+    msgs = _messages(conn, case_id, uids) if uids else {}
+    zone = case_zone(conn, case_id)["name"] if page else None
+    shown = []
+    for it in page:
+        it = {**it, "a": dict(it["a"]), "b": dict(it["b"])}
+        for s in ("a", "b"):
+            c = it[s]
+            c["phone_label"] = labels.get(c["extraction_id"], "A phone")
+            ms = msgs.get(c["file_uid"], [])
+            c["roles"] = sorted({{"outgoing": "sent", "incoming": "received"}.get(m["direction"], "direction_unknown")
+                                 for m in ms if m["kind"]})
+            c["messages"] = [{"message_record_uid": m["message_record_uid"],
+                              "role": {"outgoing": "sent", "incoming": "received"}.get(m["direction"],
+                                                                                        "direction_unknown"),
+                              "full": T.format_full(m["instant"], zone) if m["instant"] is not None else T.NO_TIME,
+                              "app": m["app"], "deleted": m["deleted"]} for m in ms[:5]]
+            c["messages_total"] = len(ms)
+        it["label"] = "Lead for enquiry"
+        shown.append(it)
+    return {"case_id": str(case_id), "tier": "perceptual", "total": len(items), "offset": offset, "limit": limit,
+            "items": shown, "by_strength": allp["by_strength"], "total_all": len(allp["items"]),
+            "hashing": PH.describe(conn, case_id), "pictures_compared": allp["pictures_compared"],
+            "stopped_words": allp["stopped_words"], "words": PERCEPTUAL_WORDS, "rule_words": PERCEPTUAL_RULE_WORDS,
+            "clock_words": CLOCK_WORDS}

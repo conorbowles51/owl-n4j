@@ -424,6 +424,12 @@ def _loop(engine, stop):
             busy = busy + image_search.run_pending(engine)
         except Exception:  # noqa: BLE001
             log.exception("phone image indexing step failed")
+        # perceptual hashes of pictures in cases with two or more phones (05 11.3 step 3): one draw per turn
+        try:
+            from services.phone_analysis import perceptual_hash
+            busy = busy + perceptual_hash.run_pending(engine)
+        except Exception:  # noqa: BLE001
+            log.exception("phone perceptual hash step failed")
         stop.wait(0 if busy else IDLE_SECONDS)
 
 

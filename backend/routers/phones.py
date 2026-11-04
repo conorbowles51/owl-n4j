@@ -464,6 +464,18 @@ def phone_media_spread_window(case_id: UUID = Query(...), phones: list[UUID] = Q
     return media_spread.window(db.connection(), case_id, {"phones": phones, "common": common}, offset, limit)
 
 
+@router.get("/media-spread/perceptual")
+def phone_media_spread_perceptual(case_id: UUID = Query(...),
+                                  strength: Literal["strong", "moderate", "weak", "faint"] | None = Query(None),
+                                  offset: int = Query(0, ge=0), limit: int = Query(50, ge=1, le=100),
+                                  db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Near-identical pictures across phones (05 section 11.3 step 3): one page of pairs graded strong to faint, the
+    total under the filter, counts by strength and the hashing counts."""
+    from services.phone import media_spread
+    authorize_case(db, case_id, user, ("case", "view"))
+    return media_spread.perceptual(db.connection(), case_id, strength, offset, limit)
+
+
 @router.get("/media/{file_uid}/content")
 def phone_media_content(file_uid: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db),
                         user: User = Depends(get_current_db_user), range_header: Optional[str] = Header(
