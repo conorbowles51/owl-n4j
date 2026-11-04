@@ -1,3 +1,18 @@
+## 4 November: phone registry admin page (cb-registry-admin, 02 3.4 and 6.8), eb0584fa
+
+- **Admin > Phone registry** (`frontend_v2/src/features/admin/components/PhoneRegistryPage.tsx`, words and calls in
+  `features/admin/phone-registry.ts`). Flags tab: state buttons with true counts, pages of 100 with the range and
+  total, the 3.4 transitions with a typed reason, what each flag is about and the raising phone linked. Proposals
+  tab: origin, case, original reading beside the correction, deciding person, Download file and Reject.
+- **API** (`routers/phones.py`, admin only): flags list paged (`limit`/`offset`, `total`, `counts`);
+  `GET /registry/proposals`, `POST /registry/proposals/{id}/reject`, `GET /registry/proposals/{id}/export`
+  (`services/phone/proposals.py`). New table `phone_mapping_proposal_events` (migration
+  `20261104_proposal_events`), event written before the state changes. Decisions 02 section 14 items 58 to 60.
+- **Backlog** (3.4): the phone summary's "What Loupe reads" lists the flags in `mapping_needed` that touch the phone
+  (`registry.mapping_backlog`, profile key `mapping_backlog`).
+- Live 4 Nov: 501 flags (500 open, all in the set `DecodingSourceOptions`; 1 acknowledged), 0 proposals. AI mapping
+  drafts (6.8 step 2) are not built: they wait on the local-model decision.
+
 ## 4 November: reading, replies, together and apart, built and graded (cb-gated-aware)
 
 - **Approach 4 steps 1 to 4** (`awareness` 4.2-aware, screen "Reading, replies and group roles"): read and play

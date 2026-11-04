@@ -292,6 +292,12 @@ Every transition writes a `phone_schema_flag_events` row before the state change
 `POST /api/phones/registry/flags/{id}/transition {"to", "reason"}`; admin role only, because the registry is
 global (the role check reuses the existing admin dependency used by `routers/admin_ai_costs.py`).
 
+**Built (cb-registry-admin, eb0584fa):** Admin > Phone registry lists the flags by state with each state's true
+count, a page of at most 200 (default 100) with "Showing a to b of n", the transitions above (each with a typed
+reason), what each flag is about and the phone that raised it, linked. The list endpoint takes `limit` and `offset`
+and returns `total` and `counts` on every page. The backlog of `mapping_needed` flags is shown on each phone's
+summary under "What Loupe reads" (the coverage map's display, 7.3), as `mapping_backlog` in the profile.
+
 ### 3.5 Seeding from the catalogue
 
 The seed is a derived, structure-only file committed to the repo:
@@ -778,6 +784,11 @@ For each extraction and each reviewed `type` mapping whose `applies_to` occurs i
 5. Case corrections appear in the admin list as proposals: each `correct_phone_reading` decision writes a
    `phone_mapping_proposals` row with `origin = case_correction` and its `decision_id`. Only an admin turns
    one into a global change, through steps 3 and 4. The admin list also holds registry flags (3.4).
+   **Built (cb-registry-admin, eb0584fa):** `GET /api/phones/registry/proposals?state=&origin=` (paged, total and
+   per-state counts; case, original reading beside the correction, deciding person),
+   `POST /registry/proposals/{id}/reject {reason}` and `GET /registry/proposals/{id}/export` (admin only).
+   State changes go to `phone_mapping_proposal_events`, written before the state changes. The AI draft endpoint
+   (step 2) is not built: it waits on the local-model decision.
 
 **Case review (the Needs a decision page, readings group; 07 section 5).**
 
@@ -1905,6 +1916,20 @@ Each with its reason and what would reverse it.
     like the owner row of 5.3. C6 has 74,147 such parties among 341,053; without the rule its pair edges are 653,
     with it 4,227 (C3 462 to 505, C8 115 to 145, C9 149 to 152). *Reverse if* a report marks the owner flag on a
     party that is not the phone's own side.
+58. **A proposal's file is the recorded version with the correction written in** (cb-registry-admin,
+    `services/phone/proposals.py`). It is `status: draft` (never applied as downloaded), `origin: human`, no
+    reviewer, and one version above the highest recorded, so a person edits, reviews and commits it (6.8 step 3).
+    Event time, roles and timestamp-meaning rows are written in; a rule the file cannot express is refused (409)
+    rather than downloaded unchanged. *Reverse if* corrections arrive for rule parts the closed lists do not offer
+    today (end time, text, thread): then each needs its own writer.
+59. **Proposal states: `draft` to `exported` (first download) or `rejected`; `exported` to `rejected`.** A rejected
+    proposal is not downloaded and is not reopened; a second download writes no event. *Reverse if* an admin needs
+    to undo a rejection: add `rejected` to `draft` with a reason, as 3.4 does for flags.
+60. **The flags list shows a new set value's value.** The registry holds structure only (3.1) and a set value is
+    vocabulary; the admin must see it to judge the flag. On live (4 Nov) all 500 set-value flags are in one set,
+    `DecodingSourceOptions` (499 new values and its overflow; longest value 40 characters, none holding a run of
+    five or more digits). *Reverse if* a set is found to carry case values (for
+    example an identifier typed as a named set): then that set's values are hidden and the set is flagged.
 
 ## 15. Not yet established
 
