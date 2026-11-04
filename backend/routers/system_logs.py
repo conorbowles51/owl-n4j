@@ -8,7 +8,8 @@ from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 
 from services.system_log_service import system_log_service, LogType, LogOrigin
-from routers.auth import get_current_user
+from routers.users import require_admin, require_super_admin
+from postgres.models.user import User
 
 router = APIRouter(prefix="/api/system-logs", tags=["system-logs"])
 
@@ -53,7 +54,7 @@ def get_logs(
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     user: Optional[str] = Query(None, description="Filter by user"),
     success_only: Optional[bool] = Query(None, description="Filter by success status"),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     """
     Get system logs with filtering.
@@ -124,7 +125,7 @@ def get_logs(
 
 
 @router.get("/statistics", response_model=LogStatisticsResponse)
-def get_log_statistics(current_user: dict = Depends(get_current_user)):
+def get_log_statistics(current_user: User = Depends(require_admin)):
     """
     Get log statistics.
     
@@ -139,16 +140,19 @@ def get_log_statistics(current_user: dict = Depends(get_current_user)):
 
 
 @router.delete("")
-def clear_logs(current_user: dict = Depends(get_current_user)):
+def clear_logs(current_user: User = Depends(require_super_admin)):
     """
-    Clear all system logs.
-    
-    Args:
-        current_user: Current authenticated user
+    Clear all system logs. Super administrators only: the rows include every user's actions across all cases,
+    among them the records of other deletions (followups m110322290610206). The clear itself is recorded.
     """
     try:
-        system_log_service.clear_logs()
-        return {"message": "Logs cleared successfully"}
+        removed = system_log_service.clear_logs()
+        system_log_service.log(
+            log_type=LogType.SYSTEM, origin=LogOrigin.BACKEND, action="System logs cleared",
+            details={"rows_removed": removed, "user_id": str(current_user.id)},
+            user=current_user.email,
+        )
+        return {"message": "Logs cleared successfully", "rows_removed": removed}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

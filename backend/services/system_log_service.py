@@ -263,15 +263,17 @@ class SystemLogService:
                 "success_rate": 0.0,
             }
 
-    def clear_logs(self, *, db: Session | None = None) -> None:
-        """Clear all logs."""
+    def clear_logs(self, *, db: Session | None = None) -> int | None:
+        """Clear all logs. Returns the number of rows removed (None when the clear failed)."""
         with self._lock:
             try:
                 with self._session_scope(db) as session:
-                    session.execute(delete(SystemLog))
+                    removed = session.execute(delete(SystemLog)).rowcount
                     session.flush()
+                    return removed
             except Exception as exc:
                 print(f"[SystemLog] Error clearing logs: {exc}")
+                return None
 
 
 system_log_service = SystemLogService()
