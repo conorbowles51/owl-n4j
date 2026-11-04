@@ -1,6 +1,6 @@
 import { Suspense } from "react"
-import { timedLazy as lazy } from "@/lib/timed-lazy"
 import { Routes, Route, Navigate } from "react-router-dom"
+import { pages } from "./route-pages"
 import { PageLoading } from "./page-loading"
 import { LoginPage } from "@/features/auth/components/LoginPage"
 import { ProtectedRoute } from "@/features/auth/components/ProtectedRoute"
@@ -9,168 +9,61 @@ import { CaseLayout } from "./layouts/CaseLayout"
 import { AdminLayout } from "./layouts/AdminLayout"
 import { CaseManagementPage } from "@/features/cases/components/CaseManagementPage"
 
-// Lazy-loaded heavy views
-const EvidenceExplorer = lazy(() =>
-  import("@/features/evidence/components/EvidenceExplorer").then((m) => ({
-    default: m.EvidenceExplorer,
-  }))
-)
-const GraphPage = lazy(() =>
-  import("@/features/graph/components/GraphPage").then((m) => ({
-    default: m.GraphPage,
-  }))
-)
-const TimelinePage = lazy(() =>
-  import("@/features/timeline/components/TimelinePage").then((m) => ({
-    default: m.TimelinePage,
-  }))
-)
-const MapPage = lazy(() =>
-  import("@/features/map/components/MapPage").then((m) => ({
-    default: m.MapPage,
-  }))
-)
-const TablePage = lazy(() =>
-  import("@/features/table/components/TablePage").then((m) => ({
-    default: m.TablePage,
-  }))
-)
-const FinancialPage = lazy(() =>
-  import("@/features/financial/components/FinancialPage").then((m) => ({
-    default: m.FinancialPage,
-  }))
-)
-const PhonePrototypePage = lazy(() => import("@/features/phones/prototype/PhonePrototypePage"))
-const PhoneGuidePage = lazy(() => import("@/features/phones/PhoneGuidePage"))
-const MoneySignalsPage = lazy(() => import("@/features/phones/analysis/MoneySignalsPage"))
-const DeletionTimelinePage = lazy(() => import("@/features/phones/analysis/DeletionTimelinePage"))
-const RelationshipsPage = lazy(() => import("@/features/phones/analysis/RelationshipsPage"))
-const DeviceUsersPage = lazy(() => import("@/features/phones/analysis/DeviceUsersPage"))
-const ReparsePage = lazy(() => import("@/features/phones/analysis/ReparsePage"))
-const IncidentWindowPage = lazy(() => import("@/features/phones/analysis/IncidentWindowPage"))
-const MessagesAcrossPhonesPage = lazy(() => import("@/features/phones/analysis/MessagesAcrossPhonesPage"))
-const GroupRolesPage = lazy(() => import("@/features/phones/analysis/GroupRolesPage"))
-const TypedWordsPage = lazy(() => import("@/features/phones/analysis/TypedWordsPage"))
-const IntentPage = lazy(() => import("@/features/phones/analysis/IntentPage"))
-const CommonContactsPage = lazy(() => import("@/features/phones/analysis/CommonContactsPage"))
-const ContactMatrixPage = lazy(() => import("@/features/phones/analysis/ContactMatrixPage"))
-const NumberSwitchingPage = lazy(() => import("@/features/phones/analysis/NumberSwitchingPage"))
-const ExtractionComparisonPage = lazy(() => import("@/features/phones/analysis/ExtractionComparisonPage"))
-const AnalysesPage = lazy(() => import("@/features/phones/analysis/AnalysesPage"))
-const PatternsPage = lazy(() =>
-  import("@/features/pattern/components/PatternsPage").then((m) => ({ default: m.PatternsPage }))
-)
-const PhoneReviewPage = lazy(() => import("@/features/phones/review/PhoneReviewPage"))
-const ConversationsPage = lazy(() => import("@/features/conversations/ConversationsPage"))
-const MediaPage = lazy(() => import("@/features/phones/media/MediaPage"))
-const MediaSpreadPage = lazy(() => import("@/features/phones/media/MediaSpreadPage"))
-const PhonesIndexPage = lazy(() => import("@/features/conversations/PhoneRoutes").then((m) => ({ default: m.PhonesIndexPage })))
-const PhoneRecordsRoute = lazy(() => import("@/features/conversations/PhoneRoutes").then((m) => ({ default: m.PhoneRecordsRoute })))
-const SearchResultsPage = lazy(() => import("@/features/search/components/SearchResultsPage"))
-const KeywordListsPage = lazy(() => import("@/features/search/components/KeywordListsPage"))
-const RecordByIdRoute = lazy(() => import("@/features/conversations/PhoneRoutes").then((m) => ({ default: m.RecordByIdRoute })))
-const PhoneSummaryPage = lazy(() => import("@/features/phones/summary/PhoneSummaryPage"))
-const DossiersPage = lazy(() =>
-  import("@/features/dossiers/components/DossiersPage").then((m) => ({
-    default: m.DossiersPage,
-  }))
-)
-
-// Lazy-loaded feature pages
-const ChatPage = lazy(() =>
-  import("@/features/chat/components/ChatPage").then((m) => ({
-    default: m.ChatPage,
-  }))
-)
-const AgentPage = lazy(() =>
-  import("@/features/agent/components/AgentPage").then((m) => ({
-    default: m.AgentPage,
-  }))
-)
-const WorkspacePage = lazy(() =>
-  import("@/features/workspace/components/WorkspacePage").then((m) => ({
-    default: m.WorkspacePage,
-  }))
-)
-const ReportsPage = lazy(() =>
-  import("@/features/reports/components/ReportsPage").then((m) => ({
-    default: m.ReportsPage,
-  }))
-)
-const TriagePage = lazy(() =>
-  import("@/features/triage/components/TriagePage").then((m) => ({
-    default: m.TriagePage,
-  }))
-)
-const CaseSettingsPage = lazy(() =>
-  import("@/features/cases/components/CaseSettingsPage").then((m) => ({
-    default: m.CaseSettingsPage,
-  }))
-)
-
-// Lazy-loaded admin pages
-const AdminDashboardPage = lazy(() =>
-  import("@/features/admin/components/AdminDashboardPage").then((m) => ({
-    default: m.AdminDashboardPage,
-  }))
-)
-const UserManagementPage = lazy(() =>
-  import("@/features/admin/components/UserManagementPage").then((m) => ({
-    default: m.UserManagementPage,
-  }))
-)
-const ProfileManagementPage = lazy(() =>
-  import("@/features/admin/components/ProfileManagementPage").then((m) => ({
-    default: m.ProfileManagementPage,
-  }))
-)
-const SystemLogsPage = lazy(() =>
-  import("@/features/admin/components/SystemLogsPage").then((m) => ({
-    default: m.SystemLogsPage,
-  }))
-)
-const BackgroundTasksPage = lazy(() =>
-  import("@/features/admin/components/BackgroundTasksPage").then((m) => ({
-    default: m.BackgroundTasksPage,
-  }))
-)
-const ActivityPage = lazy(() =>
-  import("@/features/admin/components/ActivityPage").then((m) => ({
-    default: m.ActivityPage,
-  }))
-)
-const SpeedPage = lazy(() =>
-  import("@/features/admin/components/SpeedPage").then((m) => ({
-    default: m.SpeedPage,
-  }))
-)
-const AICostsPage = lazy(() =>
-  import("@/features/admin/components/AICostsPage").then((m) => ({
-    default: m.AICostsPage,
-  }))
-)
-const PhoneRegistryPage = lazy(() =>
-  import("@/features/admin/components/PhoneRegistryPage").then((m) => ({
-    default: m.PhoneRegistryPage,
-  }))
-)
-const PlatformUpdatesPage = lazy(() =>
-  import("@/features/admin/components/PlatformUpdatesPage").then((m) => ({
-    default: m.PlatformUpdatesPage,
-  }))
-)
-
-// Lazy-loaded settings
-const SettingsPage = lazy(() =>
-  import("@/features/settings/components/SettingsPage").then((m) => ({
-    default: m.SettingsPage,
-  }))
-)
-const AISettingsPage = lazy(() =>
-  import("@/features/settings/components/AISettingsPage").then((m) => ({
-    default: m.AISettingsPage,
-  }))
-)
+const {
+  EvidenceExplorer,
+  GraphPage,
+  TimelinePage,
+  MapPage,
+  TablePage,
+  FinancialPage,
+  PhonePrototypePage,
+  PhoneGuidePage,
+  MoneySignalsPage,
+  DeletionTimelinePage,
+  RelationshipsPage,
+  DeviceUsersPage,
+  ReparsePage,
+  IncidentWindowPage,
+  MessagesAcrossPhonesPage,
+  GroupRolesPage,
+  TypedWordsPage,
+  IntentPage,
+  CommonContactsPage,
+  ContactMatrixPage,
+  NumberSwitchingPage,
+  ExtractionComparisonPage,
+  AnalysesPage,
+  PatternsPage,
+  PhoneReviewPage,
+  ConversationsPage,
+  MediaPage,
+  MediaSpreadPage,
+  PhonesIndexPage,
+  PhoneRecordsRoute,
+  SearchResultsPage,
+  KeywordListsPage,
+  RecordByIdRoute,
+  PhoneSummaryPage,
+  DossiersPage,
+  ChatPage,
+  AgentPage,
+  WorkspacePage,
+  ReportsPage,
+  TriagePage,
+  CaseSettingsPage,
+  AdminDashboardPage,
+  UserManagementPage,
+  ProfileManagementPage,
+  SystemLogsPage,
+  BackgroundTasksPage,
+  ActivityPage,
+  SpeedPage,
+  AICostsPage,
+  PhoneRegistryPage,
+  PlatformUpdatesPage,
+  SettingsPage,
+  AISettingsPage,
+} = pages
 
 function LazyPage({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageLoading />}>{children}</Suspense>
