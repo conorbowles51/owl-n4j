@@ -3,7 +3,7 @@ import { useQuery, useQueryClient, type QueryKey } from "@tanstack/react-query"
 import { financialAPI } from "../api"
 import { useInvestigationScope } from "../stores/investigation-scope"
 import { usePaymentCategory } from "./use-payment-categories"
-import { orderOverviewPanels } from "../lib/overview-panels"
+import { figureKeys, orderOverviewPanels, type PanelFigure } from "../lib/overview-panels"
 
 /**
  * The Overview's headline figures for the scope and categories the page shows, from the server: the same figures
@@ -65,26 +65,20 @@ function useRefreshWhenShown(
 
 /**
  * The Overview's lower panels for the scope and categories the page shows, from the server (the same figures the
- * page would work out from every payment), ordered as the page orders them. Under the case's "financial-ledger"
- * key, so every write that refreshes the ledger refreshes these too. Figures for other categories are never shown
- * as these; while the scope changes the previous answer stays up, as the ledger's does.
+ * page would work out from every payment), ordered as the page orders them, each list of payment keys given as its
+ * length (GET /ledger-overview-panel-figures; the keys are read when a figure is opened: usePanelFigureKeys). Under
+ * the case's "financial-ledger" key, so every write that refreshes the ledger refreshes these too. Figures for
+ * other categories are never shown as these; while the scope changes the previous answer stays up, as the
+ * ledger's does.
  */
 export function useLedgerOverviewPanels(caseId: string, active = true) {
   const [categories] = usePaymentCategory(caseId)
   const [params] = useInvestigationScope(caseId)
-  const queryKey = ["financial-ledger", caseId, "overview-panels", params ?? null, categories]
+  const queryKey = ["financial-ledger", caseId, "overview-panel-figures", params ?? null, categories]
   const query = useQuery({
     queryKey,
     queryFn: async () => {
-      const result = await financialAPI.getLedgerOverviewPanels({
-        caseId,
-        accountId: params?.accountId,
-        accountIds: params?.accountIds,
-        accountHolders: params?.accountHolders,
-        startDate: params?.startDate,
-        endDate: params?.endDate,
-        categories,
-      })
+      const result = await financialAPI.getLedgerOverviewPanelFigures({ caseId, ...panelScope(params), categories })
       if (result.case_id !== caseId) throw Error("The payments came from a different case.")
       return orderOverviewPanels(result)
     },
@@ -96,4 +90,48 @@ export function useLedgerOverviewPanels(caseId: string, active = true) {
   })
   useRefreshWhenShown(query, queryKey, active)
   return query
+}
+
+const panelScope = (params: ReturnType<typeof useInvestigationScope>[0]) => ({
+  accountId: params?.accountId,
+  accountIds: params?.accountIds,
+  accountHolders: params?.accountHolders,
+  startDate: params?.startDate,
+  endDate: params?.endDate,
+})
+
+/**
+ * Reads the payment keys behind one figure of the Overview's panels, for the scope and categories the page shows:
+ * from the whole panels answer (GET /ledger-overview-panels), read on the first open and kept under the case's
+ * "financial-ledger" key, so a write reads it again. When the keys found are not as many as the figure drawn
+ * (`drawn`), the panels changed since they were drawn: the whole answer is read again once, and if it still
+ * differs the drawn figures are read again and this resolves null, so the page never opens a list its drawn count
+ * contradicts. Resolves null too when the figure is no longer in the panels.
+ */
+export function usePanelFigureKeys(caseId: string) {
+  const [categories] = usePaymentCategory(caseId)
+  const [params] = useInvestigationScope(caseId)
+  const client = useQueryClient()
+  return async (figure: PanelFigure, drawn: number): Promise<string[] | null> => {
+    const queryKey = ["financial-ledger", caseId, "overview-panels", params ?? null, categories]
+    const read = (staleTime: number) =>
+      client.fetchQuery({
+        queryKey,
+        staleTime,
+        queryFn: async () => {
+          const result = await financialAPI.getLedgerOverviewPanels({ caseId, ...panelScope(params), categories })
+          if (result.case_id !== caseId) throw Error("The payments came from a different case.")
+          return result
+        },
+      })
+    let keys = figureKeys(await read(Infinity), figure)
+    if (keys?.length !== drawn) {
+      keys = figureKeys(await read(0), figure)
+      if (keys?.length !== drawn) {
+        void client.invalidateQueries({ queryKey: ["financial-ledger", caseId, "overview-panel-figures"] })
+        return null
+      }
+    }
+    return keys
+  }
 }

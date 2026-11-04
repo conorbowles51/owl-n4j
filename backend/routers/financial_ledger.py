@@ -951,6 +951,33 @@ def get_ledger_overview_panels(
     return {"case_id": str(case_id), **overview_panels(transactions, str(case_id), categories or [])}
 
 
+@router.get("/ledger-overview-panel-figures")
+@cached_view('ledger-overview-panel-figures')
+def get_ledger_overview_panel_figures(
+    case_id: UUID = Query(..., description="REQUIRED: Case ID"),
+    source_document_id: UUID | None = None,
+    account_id: Optional[UUID] = None,
+    ledger_status: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    db: Session = Depends(get_db), account_ids: Annotated[list[UUID] | None, Query()] = None,
+    account_holders: Annotated[list[str] | None, Query()] = None,
+    categories: Annotated[list[str] | None, Query()] = None):
+    """``/ledger-overview-panels`` for the same query with each list of payment keys replaced by its count
+    (services.financial.overview_panels.panel_figures): what the Overview draws first. The page reads the whole
+    answer only when a figure is opened (d5b330d1: 2.9 MB whole, the key lists 2.5 MB of it). Made from the kept
+    copy of the whole answer when one is current, so both come from the same rows."""
+    from services.financial.overview_panels import panel_figures
+    from services.financial.view_cache import kept_copy
+    scope = dict(case_id=case_id, source_document_id=source_document_id, account_id=account_id,
+                 ledger_status=ledger_status, start_date=start_date, end_date=end_date, account_ids=account_ids,
+                 account_holders=account_holders, categories=categories)
+    panels = kept_copy('ledger-overview-panels', scope)
+    if panels is None:
+        panels = get_ledger_overview_panels(db=db, **scope)
+    return panel_figures(panels)
+
+
 @router.get("/ledger-first-view")
 @cached_view('ledger-first-view')
 def get_ledger_first_view(

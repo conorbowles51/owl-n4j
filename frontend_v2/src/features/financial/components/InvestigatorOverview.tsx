@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { ArrowRight, Files, BookOpenCheck, WalletCards } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
@@ -13,7 +13,8 @@ import { InvestigatorFindingEditor } from "./InvestigatorFindingEditor"
 import { OverviewStatementCoverage } from "./OverviewStatementCoverage"
 import { useFinancialAccess } from "../hooks/use-financial-access"
 import { useJudgementCounts } from "../hooks/use-judgements"
-import { useLedgerOverview, useLedgerOverviewPanels } from "../hooks/use-ledger-overview"
+import { useLedgerOverview, useLedgerOverviewPanels, usePanelFigureKeys } from "../hooks/use-ledger-overview"
+import { unnamedFigureId, type FigureGroup, type PanelFigure } from "../lib/overview-panels"
 import { compactMoney, minorToNumber } from "../lib/category-palette"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { overviewFigures } from "../lib/overview-figures"
@@ -27,6 +28,16 @@ const plural = (count: number, one: string, many = `${one}s`) => `${n(count)} ${
 const monthName = (day: string) =>
   new Date(`${day}T00:00:00Z`).toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" })
 type Step = { name: string; detail: string; done: boolean }
+/** How many payments a figure of the connections panel shows. */
+function drawnCount(groups: FigureGroup[], figure: PanelFigure): number {
+  if (figure.list === "comparisons") return 0
+  const group = groups.find((item) => item.group === figure.group)
+  if (figure.list === "account") return group?.accounts.find((item) => item.id === figure.id)?.count ?? 0
+  if (figure.list === "unnamed")
+    return group?.unnamed.find((item) => unnamedFigureId(item) === figure.id)?.count ?? 0
+  return group?.names.find((item) => item.id === figure.id)?.[figure.list].count ?? 0
+}
+
 // A query keeps its last answer when a background refetch fails (isError is then true with data still held).
 // Everything here is shown from the answer held; "could not be loaded" is only for a query that has none.
 const held = (query: { data: unknown }) => query.data !== undefined
@@ -78,6 +89,31 @@ export function InvestigatorOverview({
   const [open, setOpen] = useState<{ ids: string[]; title: string } | null>(
     null
   )
+  // The panels draw counts; the payments behind a figure are read when it is opened (usePanelFigureKeys). The
+  // line below says so while they are read, and names a failure with a retry.
+  const figureKeys = usePanelFigureKeys(caseId)
+  const [opening, setOpening] = useState<
+    { figure: PanelFigure; title: string; drawn: number; error?: string } | null
+  >(null)
+  const openingNow = useRef<PanelFigure | null>(null)
+  const openFigure = (figure: PanelFigure, title: string, drawn: number) => {
+    openingNow.current = figure
+    setOpening({ figure, title, drawn })
+    const failed = (error: string) => {
+      if (openingNow.current === figure) setOpening({ figure, title, drawn, error })
+    }
+    figureKeys(figure, drawn).then(
+      (ids) => {
+        if (openingNow.current !== figure) return
+        if (ids === null) return failed("these figures changed since they were drawn and are being updated; choose it again")
+        openingNow.current = null
+        setOpening(null)
+        setOpen({ ids, title })
+      },
+      (error: unknown) => failed(error instanceof Error ? error.message : String(error))
+    )
+  }
+
   const [finding, setFinding] = useState(false)
   const navigate = useFinancialStore((state) => state.setMainView)
   const go = useNavigate()
@@ -364,7 +400,7 @@ export function InvestigatorOverview({
               <MoneyConnectionsView
                 payments={panels.data.connections.payments}
                 groups={panels.data.connections.groups}
-                onOpen={(ids, title) => setOpen({ ids, title })}
+                onOpen={(figure, title) => openFigure(figure, title, drawnCount(panels.data!.connections.groups, figure))}
               />
             ) : (
               <section className="space-y-3 rounded-[14px] bg-card p-6" style={card}>
@@ -401,10 +437,11 @@ export function InvestigatorOverview({
                 <div className="flex flex-wrap gap-2">
                   <Button
                     onClick={() =>
-                      setOpen({
-                        ids: comparisons.keys,
-                        title: "Receipts and subsequent payments",
-                      })
+                      openFigure(
+                        { list: "comparisons" },
+                        "Receipts and subsequent payments",
+                        comparisons.count
+                      )
                     }
                   >
                     View these payments
@@ -578,6 +615,35 @@ export function InvestigatorOverview({
         </div>
       </>)}
       <OverviewStatementCoverage caseId={caseId} active={active} />
+      {opening && (
+        <div
+          role={opening.error ? "alert" : "status"}
+          className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-lg border bg-card p-3 text-sm shadow"
+        >
+          {opening.error ? (
+            <>
+              <span>
+                The payments behind “{opening.title}” could not be read: {opening.error}.
+              </span>
+              <Button size="sm" variant="outline" onClick={() => openFigure(opening.figure, opening.title, opening.drawn)}>
+                Try again
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  openingNow.current = null
+                  setOpening(null)
+                }}
+              >
+                Close
+              </Button>
+            </>
+          ) : (
+            <span>Reading the {opening.drawn.toLocaleString("en-US")} payments behind “{opening.title}”…</span>
+          )}
+        </div>
+      )}
       {open && (
         <PaymentComparison
           caseId={caseId}

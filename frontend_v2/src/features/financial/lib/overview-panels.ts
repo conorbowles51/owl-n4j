@@ -60,9 +60,65 @@ export interface OverviewPanels {
   comparisons: { pairs: number; keys: string[] }
 }
 
+/** A list of payment keys given as its length (what a panel draws). */
+export type Counted<T> = Omit<T, "keys"> & { count: number }
+
+/** A connection group as the panel draws it: every list of payment keys given as its length. */
+export interface FigureGroup {
+  group: string
+  credit_total: PanelTotal
+  debit_total: PanelTotal
+  names: { id: string; name: string; credit: Counted<PanelSide>; debit: Counted<PanelSide> }[]
+  accounts: Counted<PanelGroup["accounts"][number]>[]
+  unnamed: Counted<PanelGroup["unnamed"][number]>[]
+}
+
+/**
+ * What the Overview draws first (GET /api/financial/ledger-overview-panel-figures): the panels answer with each
+ * list of payment keys given as its length. On d5b330d1 the key lists are 2.5 MB of the 2.9 MB whole answer; the
+ * page reads the whole answer only when a figure is opened (figureKeys).
+ */
+export interface OverviewPanelFigures extends Omit<OverviewPanels, "connections" | "comparisons"> {
+  connections: { payments: number; groups: FigureGroup[] }
+  comparisons: { pairs: number; count: number }
+}
+
+/** One figure of the panels whose payments can be opened. An unnamed group is named by direction and kind. */
+export type PanelFigure =
+  | { list: "credit" | "debit" | "account" | "unnamed"; group: string; id: string }
+  | { list: "comparisons" }
+
+export const unnamedFigureId = (item: { direction: string; kind: string }) => `${item.direction}:${item.kind}`
+
+/** The connection groups with each key list given as its length: the panel's figures from the whole groups. */
+export function countFigures(groups: PanelGroup[]): FigureGroup[] {
+  const counted = <T extends { keys: string[] }>({ keys, ...rest }: T) => ({ ...rest, count: keys.length })
+  return groups.map((group) => ({
+    ...group,
+    names: group.names.map((name) => ({ ...name, credit: counted(name.credit), debit: counted(name.debit) })),
+    accounts: group.accounts.map(counted),
+    unnamed: group.unnamed.map(counted),
+  }))
+}
+
+/** The payment keys behind `figure` in the whole panels, or null when the figure is not there (the panels changed
+ * since it was drawn). */
+export function figureKeys(
+  panels: { connections: { groups: PanelGroup[] }; comparisons?: { keys: string[] } },
+  figure: PanelFigure
+): string[] | null {
+  if (figure.list === "comparisons") return panels.comparisons?.keys ?? null
+  const group = panels.connections.groups.find((item) => item.group === figure.group)
+  if (!group) return null
+  if (figure.list === "account") return group.accounts.find((item) => item.id === figure.id)?.keys ?? null
+  if (figure.list === "unnamed")
+    return group.unnamed.find((item) => unnamedFigureId(item) === figure.id)?.keys ?? null
+  return group.names.find((item) => item.id === figure.id)?.[figure.list].keys ?? null
+}
+
 /** The panels as the page shows them: inventory accounts, banks, currencies and connection groups in the page's
  * own order (the same calls the page made over every payment). */
-export function orderOverviewPanels(panels: OverviewPanels): OverviewPanels {
+export function orderOverviewPanels<T extends OverviewPanels | OverviewPanelFigures>(panels: T): T {
   const inventory = panels.totals.inventory
   return {
     ...panels,
@@ -79,7 +135,7 @@ export function orderOverviewPanels(panels: OverviewPanels): OverviewPanels {
       ...panels.connections,
       groups: [...panels.connections.groups].sort((a, b) => (a.group < b.group ? -1 : a.group > b.group ? 1 : 0)),
     },
-  }
+  } as T
 }
 
 const sumOf = (payments: LedgerTransaction[]): PanelTotal => {

@@ -59,6 +59,7 @@ export function requestsSince(since: number): RequestState[] {
 const WORDS: [string, string][] = [
   ["/api/financial/ledger-first-view", "the payments overview"],
   ["/api/financial/ledger-overview-panels", "the overview panels"],
+  ["/api/financial/ledger-overview-panel-figures", "the overview panels"],
   ["/api/financial/ledger-overview", "the overview"],
   ["/api/financial/ledger-working-summary", "the working summary"],
   ["/api/financial/ledger-working-analysis", "the working analysis"],

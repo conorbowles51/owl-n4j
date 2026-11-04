@@ -487,6 +487,7 @@ def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None, stoppe
             .order_by(func.count().desc(), Period.case_id))]
     warmed = failed = 0
     from routers.financial_ledger import (get_ledger_first_view, get_ledger_overview, get_ledger_overview_panels,
+                                          get_ledger_overview_panel_figures,
                                           get_ledger_transactions, get_ledger_trends_view,
                                           get_ledger_people_view)
     from routers.financial_statement_import import files as get_statement_files
@@ -524,6 +525,11 @@ def _warm_cases_now(share, stop_if_preparing, claims=None, deadline=None, stoppe
                                                              ledger_status=None, start_date=None, end_date=None,
                                                              account_ids=None, account_holders=None,
                                                              categories=None)),
+        # What the Overview asks for first (GET /ledger-overview-panel-figures): the panels just kept, key lists
+        # counted.
+        ('overview panel figures', get_ledger_overview_panel_figures, dict(
+            source_document_id=None, account_id=None, ledger_status=None, start_date=None, end_date=None,
+            account_ids=None, account_holders=None, categories=None)),
         # The Transactions page's first view (GET /ledger-first-view), first page at the table's default size.
         ('transactions first view', get_ledger_first_view, dict(source_document_id=None, account_id=None,
                                                                 ledger_status=None, start_date=None, end_date=None,

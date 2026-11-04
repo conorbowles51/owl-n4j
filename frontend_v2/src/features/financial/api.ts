@@ -1,6 +1,6 @@
 import { appendAccountSelection } from "./lib/account-selection"
 import { fetchAPI } from "@/lib/api-client"
-import type { OverviewPanels } from "./lib/overview-panels"
+import type { OverviewPanelFigures, OverviewPanels } from "./lib/overview-panels"
 import type { TrendsServerView } from "./lib/trends-view"
 import type { PeopleServerView } from "./lib/people-first-view"
 import { verifyBulkCorrectionResponse } from "./lib/bulk-correction-file"
@@ -1341,6 +1341,31 @@ export interface LedgerOverviewTotals {
   currencies: { currency: string; payments: number; credit: string; debit: string }[]
 }
 
+/** The scope and categories of the Overview's lower panels, as both of their routes take them. */
+export interface OverviewPanelScope {
+  caseId: string
+  sourceDocumentId?: string
+  accountIds?: string[]
+  accountHolders?: string[]
+  accountId?: string
+  ledgerStatus?: LedgerStatus
+  startDate?: string
+  endDate?: string
+  categories: string[]
+}
+
+function overviewPanelQuery(params: OverviewPanelScope) {
+  const qs = new URLSearchParams({ case_id: params.caseId })
+  if (params.sourceDocumentId) qs.set("source_document_id", params.sourceDocumentId)
+  appendAccountSelection(qs, params)
+  if (params.accountId) qs.set("account_id", params.accountId)
+  if (params.ledgerStatus) qs.set("ledger_status", params.ledgerStatus)
+  if (params.startDate) qs.set("start_date", params.startDate)
+  if (params.endDate) qs.set("end_date", params.endDate)
+  for (const category of params.categories) qs.append("categories", category)
+  return qs
+}
+
 export const financialAPI = {
   getTransactions: (params: {
     caseId: string
@@ -1624,28 +1649,16 @@ export const financialAPI = {
    * page's categories (GET /api/financial/ledger-overview-panels): totals, connections and money in then out, each
    * with the keys of its payments, so the Overview does not download every payment to draw them.
    */
-  getLedgerOverviewPanels: (params: {
-    caseId: string
-    sourceDocumentId?: string
-    accountIds?: string[]
-    accountHolders?: string[]
-    accountId?: string
-    ledgerStatus?: LedgerStatus
-    startDate?: string
-    endDate?: string
-    categories: string[]
-  }) => {
-    const qs = new URLSearchParams({ case_id: params.caseId })
-    if (params.sourceDocumentId)
-      qs.set("source_document_id", params.sourceDocumentId)
-    appendAccountSelection(qs, params)
-    if (params.accountId) qs.set("account_id", params.accountId)
-    if (params.ledgerStatus) qs.set("ledger_status", params.ledgerStatus)
-    if (params.startDate) qs.set("start_date", params.startDate)
-    if (params.endDate) qs.set("end_date", params.endDate)
-    for (const category of params.categories) qs.append("categories", category)
-    return fetchAPI<OverviewPanels>(`/api/financial/ledger-overview-panels?${qs}`)
-  },
+  getLedgerOverviewPanels: (params: OverviewPanelScope) =>
+    fetchAPI<OverviewPanels>(`/api/financial/ledger-overview-panels?${overviewPanelQuery(params)}`),
+
+  /**
+   * The same panels with each list of payment keys given as its length (GET
+   * /api/financial/ledger-overview-panel-figures): what the Overview draws first. The whole answer
+   * (getLedgerOverviewPanels) is read when a figure is opened.
+   */
+  getLedgerOverviewPanelFigures: (params: OverviewPanelScope) =>
+    fetchAPI<OverviewPanelFigures>(`/api/financial/ledger-overview-panel-figures?${overviewPanelQuery(params)}`),
 
   /**
    * The Transactions page's first view over exactly the rows `getLedgerTransactions` returns for the same filters:

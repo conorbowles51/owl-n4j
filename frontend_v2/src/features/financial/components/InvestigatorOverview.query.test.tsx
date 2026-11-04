@@ -81,6 +81,7 @@ vi.mock("../hooks/use-ledger-overview", () => ({
     isSuccess: state.totals === "ready",
     refetch: vi.fn(),
   }),
+  usePanelFigureKeys: () => vi.fn(),
   useLedgerOverviewPanels: () => ({
     data: (state.panels === "ready" || state.panels === "stale") ? panels : undefined,
     isPending: state.panels === "pending",

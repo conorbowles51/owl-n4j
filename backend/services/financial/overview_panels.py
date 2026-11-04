@@ -442,3 +442,26 @@ def overview_panels(transactions, case_id: str, categories) -> dict:
         'connections': money_connections(rows),
         'comparisons': nearby_payments(rows),
     }
+
+
+def panel_figures(panels: dict) -> dict:
+    """``panels`` (an overview_panels answer, as the route returns it) with every list of payment keys replaced by
+    its length under ``count``: what the Overview draws. On d5b330d1 the key lists are 2.5 MB of the 2.9 MB answer
+    and are needed only when a figure is opened; the page then reads the whole answer. Nothing else changes."""
+    def counted(item: dict) -> dict:
+        out = {k: v for k, v in item.items() if k != 'keys'}
+        out['count'] = len(item['keys'])
+        return out
+
+    connections = panels.get('connections') or {}
+    groups = [
+        {**group,
+         'names': [{**name, 'credit': counted(name['credit']), 'debit': counted(name['debit'])}
+                   for name in group['names']],
+         'accounts': [counted(account) for account in group['accounts']],
+         'unnamed': [counted(item) for item in group['unnamed']]}
+        for group in connections.get('groups', [])]
+    figures = {**panels, 'connections': {**connections, 'groups': groups}}
+    if 'comparisons' in panels:
+        figures['comparisons'] = counted(panels['comparisons'])
+    return figures

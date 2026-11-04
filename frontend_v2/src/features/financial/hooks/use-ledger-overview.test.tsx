@@ -37,7 +37,7 @@ function wrapper(client: QueryClient) {
 // The Overview stays mounted behind other tabs. A name or category saved there patches the ledger's rows and only
 // marks the Overview's figures out of date (refetchType "none"): they must be fetched again when it is shown.
 it.each([
-  ["panels", "getLedgerOverviewPanels", useLedgerOverviewPanels, "overview-panels"],
+  ["panels", "getLedgerOverviewPanelFigures", useLedgerOverviewPanels, "overview-panel-figures"],
   ["top card", "getLedgerOverview", useLedgerOverview, "overview"],
 ] as const)("fetches the %s again when the Overview is shown after a save elsewhere", async (_name, method, hook, part) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 120000 } } })
@@ -62,7 +62,7 @@ it.each([
 // A failed fetch marks a query out of date too: that must never turn into requests on every render.
 it("asks once per showing when the server keeps failing, never in a loop", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 120000 } } })
-  const api = vi.spyOn(financialAPI, "getLedgerOverviewPanels").mockRejectedValue(Error("down"))
+  const api = vi.spyOn(financialAPI, "getLedgerOverviewPanelFigures").mockRejectedValue(Error("down"))
   const view = renderHook(({ active }) => useLedgerOverviewPanels("case", active), { initialProps: { active: true }, wrapper: wrapper(client) })
   await waitFor(() => expect(view.result.current.isError).toBe(true))
   for (let i = 0; i < 3; i++) view.rerender({ active: true })

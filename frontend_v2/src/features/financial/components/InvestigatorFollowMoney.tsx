@@ -20,7 +20,17 @@ import {
   type FinancialMainView,
 } from "../stores/financial.store"
 import { nearbyPayments } from "../lib/investigator-workspace"
-import { connectionGroupsInSteps, groupingFailureWords, type PanelGroup, type PanelTotal } from "../lib/overview-panels"
+import {
+  connectionGroupsInSteps,
+  countFigures,
+  figureKeys,
+  groupingFailureWords,
+  unnamedFigureId,
+  type FigureGroup,
+  type PanelFigure,
+  type PanelGroup,
+  type PanelTotal,
+} from "../lib/overview-panels"
 import { formatLedgerAmount } from "../lib/ledger-format"
 import { useFinancialDraft } from "../stores/financial-drafts"
 import {
@@ -51,7 +61,9 @@ export function MoneyConnections({
   // The grouping itself runs in steps that give the browser a turn (connectionGroupsInSteps): in one piece it held
   // the main thread 0.6 s on d5b330d1 with the host idle and 1.2-1.6 s with it busy (2026-11-01). The line below says
   // which step it is on, from the true count of steps.
-  const [grouped, setGrouped] = useState<{ rows: LedgerTransaction[]; groups: PanelGroup[] } | null>(null)
+  const [grouped, setGrouped] = useState<
+    { rows: LedgerTransaction[]; groups: PanelGroup[]; figures: FigureGroup[] } | null
+  >(null)
   const [step, setStep] = useState<{ rows: LedgerTransaction[]; done: number; total: number } | null>(null)
   // A grouping that fails says so for this row list and offers to run it again; it never sits on "Grouping…".
   const [failure, setFailure] = useState<{ rows: LedgerTransaction[]; message: string } | null>(null)
@@ -63,7 +75,7 @@ export function MoneyConnections({
     const timer = setTimeout(() => {
       connectionGroupsInSteps(rows, (done, total) => setStep({ rows, done, total }), signal).then(
         (groups) => {
-          if (groups && !signal.cancelled) setGrouped({ rows, groups })
+          if (groups && !signal.cancelled) setGrouped({ rows, groups, figures: countFigures(groups) })
         },
         (error: unknown) => {
           if (!signal.cancelled) setFailure({ rows, message: groupingFailureWords(error) })
@@ -114,8 +126,10 @@ export function MoneyConnections({
   return (
     <MoneyConnectionsView
       payments={rows.length}
-      groups={grouped.groups}
-      onOpen={onOpen}
+      groups={grouped.figures}
+      onOpen={(figure, title) =>
+        onOpen(figureKeys({ connections: { groups: grouped.groups } }, figure) ?? [], title)
+      }
       choice={choice}
       pageChoice={pageChoice}
     />
@@ -123,7 +137,8 @@ export function MoneyConnections({
 }
 
 /** The connections panel from its figures: worked out from every payment (MoneyConnections) or answered by the
- * server for the Overview (GET /ledger-overview-panels), the same figures either way. */
+ * server for the Overview (GET /ledger-overview-panel-figures), the same figures either way. Each list of payments
+ * is drawn from its count; `onOpen` is given the figure chosen and finds its payments. */
 export function MoneyConnectionsView({
   payments: paymentCount,
   groups: figures,
@@ -132,8 +147,8 @@ export function MoneyConnectionsView({
   pageChoice,
 }: {
   payments: number
-  groups: PanelGroup[]
-  onOpen: (ids: string[], title: string) => void
+  groups: FigureGroup[]
+  onOpen: (figure: PanelFigure, title: string) => void
   /** The chosen group and page, when the caller keeps them (MoneyConnections). */
   choice?: [string, (value: string) => void]
   pageChoice?: [number, (value: number) => void]
@@ -153,7 +168,7 @@ export function MoneyConnectionsView({
   const list = visibleNames.slice(page * 6, (page + 1) * 6)
   const card = group?.endsWith(":card")
   const unnamed = current?.unnamed ?? []
-  const unnamedCount = unnamed.reduce((sum, item) => sum + item.keys.length, 0)
+  const unnamedCount = unnamed.reduce((sum, item) => sum + item.count, 0)
   const totalLabel = (total: PanelTotal | undefined) => {
     if (total === null || total === undefined) return "Amount needs checking"
     return `${formatLedgerAmount(total, group?.split(":")[0] || "").text} ${group?.split(":")[0]}`
@@ -224,12 +239,12 @@ export function MoneyConnectionsView({
             {list.map((profile) => {
               const payments = profile.credit
               return (
-                payments.keys.length > 0 && (
+                payments.count > 0 && (
                   <button
                     key={profile.id}
                     onClick={() =>
                       onOpen(
-                        payments.keys,
+                        { list: "credit", group: group!, id: profile.id },
                         `Payments from ${profile.name}`
                       )
                     }
@@ -245,13 +260,13 @@ export function MoneyConnectionsView({
                       </span>
                     )}
                     <span className="finance-amount text-xs">
-                      {payments.keys.length} payments · {totalLabel(payments.total)}
+                      {payments.count} payments · {totalLabel(payments.total)}
                     </span>
                   </button>
                 )
               )
             })}
-            {!list.some((profile) => profile.credit.keys.length > 0) && (
+            {!list.some((profile) => profile.credit.count > 0) && (
               <p className="text-sm text-muted-foreground">
                 No incoming payments for these names
               </p>
@@ -273,7 +288,7 @@ export function MoneyConnectionsView({
                   key={account.id}
                   className="block text-left text-sm font-semibold hover:underline break-words"
                   onClick={() =>
-                    onOpen(account.keys, account.name)
+                    onOpen({ list: "account", group: group!, id: account.id }, account.name)
                   }
                 >
                   {account.name}
@@ -291,12 +306,12 @@ export function MoneyConnectionsView({
             {list.map((profile) => {
               const payments = profile.debit
               return (
-                payments.keys.length > 0 && (
+                payments.count > 0 && (
                   <button
                     key={profile.id}
                     onClick={() =>
                       onOpen(
-                        payments.keys,
+                        { list: "debit", group: group!, id: profile.id },
                         `Payments to ${profile.name}`
                       )
                     }
@@ -312,13 +327,13 @@ export function MoneyConnectionsView({
                       </span>
                     )}
                     <span className="finance-amount text-xs">
-                      {payments.keys.length} payments · {totalLabel(payments.total)}
+                      {payments.count} payments · {totalLabel(payments.total)}
                     </span>
                   </button>
                 )
               )
             })}
-            {!list.some((profile) => profile.debit.keys.length > 0) && (
+            {!list.some((profile) => profile.debit.count > 0) && (
               <p className="text-sm text-muted-foreground">
                 No outgoing payments for these names
               </p>
@@ -368,15 +383,15 @@ export function MoneyConnectionsView({
                 className="rounded border bg-background p-3 text-left hover:bg-muted/50"
                 onClick={() =>
                   onOpen(
-                    item.keys,
+                    { list: "unnamed", group: group!, id: unnamedFigureId(item) },
                     item.label
                   )
                 }
               >
                 <strong className="block text-sm">{item.label}</strong>
                 <span className="block text-sm">
-                  {item.keys.length}{" "}
-                  {item.keys.length === 1 ? "payment" : "payments"} ·{" "}
+                  {item.count}{" "}
+                  {item.count === 1 ? "payment" : "payments"} ·{" "}
                   {totalLabel(item.total)} ·{" "}
                   {card
                     ? item.direction === "credit"

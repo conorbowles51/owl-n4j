@@ -8,6 +8,7 @@ which ``test_financial_transaction_query`` already covers.
 """
 
 import unittest
+import json
 import uuid
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -293,6 +294,60 @@ class GetLedgerOverviewTests(unittest.IsolatedAsyncioTestCase):
                 start_date=None, end_date=None, db="fake-session", account_ids=None, account_holders=None,
                 categories=None)
         self.assertEqual(ctx.exception.status_code, 400)
+
+    async def test_the_panel_figures_are_the_kept_panels_with_each_key_list_counted(self):
+        import inspect
+        from services.financial import view_cache
+        from services.financial.overview_panels import overview_panels
+        case_id, asked = uuid.uuid4(), []
+        rows = [
+            {"key": "a", "case_id": str(case_id), "account_id": "x", "currency": "MXN", "direction": "credit",
+             "amount_minor": "500", "category": "Fees", "ordering_date": "2025-01-02", "from_name": "Ana"},
+            {"key": "b", "case_id": str(case_id), "account_id": "x", "currency": "MXN", "direction": "debit",
+             "amount_minor": "200", "category": None, "ordering_date": "2025-01-03", "to_name": "Shop",
+             "row_index": 1},
+            {"key": "c", "case_id": str(case_id), "account_id": "x", "currency": "MXN", "direction": "debit",
+             "amount_minor": "70", "category": None, "ordering_date": "2025-01-04", "description": "POS 1234"}]
+        whole = {"case_id": str(case_id), **overview_panels(rows, str(case_id), [])}
+        filters = dict(source_document_id=None, account_id=None, ledger_status=None, start_date=None, end_date=None,
+                       account_ids=None, account_holders=None, categories=None)
+        with patch.object(view_cache, "kept_copy", side_effect=lambda name, kw: asked.append((name, kw)) or whole), \
+                patch.object(financial_ledger, "list_transactions") as list_call:
+            figures = financial_ledger.get_ledger_overview_panel_figures(case_id=case_id, db="fake-session", **filters)
+        list_call.assert_not_called()
+        panels = inspect.signature(inspect.unwrap(financial_ledger.get_ledger_overview_panels)).parameters
+        self.assertEqual(asked, [("ledger-overview-panels", dict(filters, case_id=case_id))])
+        self.assertEqual(set(asked[0][1]), set(panels) - {"db"}, "the same cached-view key as /ledger-overview-panels")
+
+        def counted(value):
+            if isinstance(value, dict):
+                return {("count" if k == "keys" else k): (len(v) if k == "keys" else counted(v))
+                        for k, v in value.items()}
+            return [counted(v) for v in value] if isinstance(value, list) else value
+        self.assertEqual(figures, counted(whole))
+        self.assertNotIn('"keys"', json.dumps(figures))
+        group = figures["connections"]["groups"][0]
+        self.assertEqual([(n["name"], n["credit"]["count"], n["debit"]["count"]) for n in group["names"]],
+                         [("Ana", 1, 0), ("Shop", 0, 1)])
+        self.assertEqual([item["count"] for item in group["unnamed"]], [1])
+        self.assertEqual(figures["comparisons"], {"pairs": whole["comparisons"]["pairs"],
+                                                  "count": len(whole["comparisons"]["keys"])})
+
+    async def test_the_panel_figures_compute_the_panels_when_none_are_kept(self):
+        from services.financial import view_cache
+        case_id = uuid.uuid4()
+        payload = {"key": "a", "case_id": str(case_id), "account_id": "x", "currency": "MXN",
+                   "direction": "credit", "amount_minor": "500", "category": "Fees", "ordering_date": "2025-01-02",
+                   "from_name": "Ana"}
+        with patch.object(view_cache, "kept_copy", return_value=None), \
+                patch.object(financial_ledger, "list_transactions", return_value=[SimpleNamespace(account=None)]), \
+                patch.object(financial_ledger, "to_view", return_value=SimpleNamespace(to_json=lambda: payload)):
+            figures = financial_ledger.get_ledger_overview_panel_figures(
+                case_id=case_id, source_document_id=None, account_id=None, ledger_status=None, start_date=None,
+                end_date=None, db="fake-session", account_ids=None, account_holders=None, categories=None)
+        self.assertEqual(figures["totals"]["payments"], 1)
+        self.assertEqual(figures["connections"]["groups"][0]["names"][0]["credit"],
+                         {"count": 1, "total": "500", "suggested": False})
 
 
 class GetCaseDecisionsTests(unittest.IsolatedAsyncioTestCase):

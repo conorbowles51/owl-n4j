@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react"
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 import { afterEach, expect, it, vi } from "vitest"
 import { InvestigatorOverview } from "./InvestigatorOverview"
@@ -51,11 +51,12 @@ const panels = {
     unreadable: 0,
   },
   connections: { payments: 3, groups: [] },
-  comparisons: { pairs: 1, keys: ["a", "b"] },
+  comparisons: { pairs: 1, count: 2 },
 }
 // "stale": a background refetch failed while the query still holds its last answer (isError with data).
 type Status = "ready" | "pending" | "error" | "stale"
 const state = vi.hoisted(() => ({
+  figureKeys: (() => Promise.resolve(null)) as (...args: unknown[]) => Promise<string[] | null>,
   panels: "ready" as Status,
   totals: "ready" as Status,
   register: "ready" as Status,
@@ -81,6 +82,7 @@ vi.mock("../hooks/use-ledger-overview", () => ({
     isSuccess: state.totals === "ready",
     refetch: vi.fn(),
   }),
+  usePanelFigureKeys: () => state.figureKeys,
   useLedgerOverviewPanels: () => ({
     data: (state.panels === "ready" || state.panels === "stale") ? panels : undefined,
     isPending: state.panels === "pending",
@@ -206,8 +208,31 @@ it("draws the lower panels from the server's figures without reading every payme
   expect(state.loadedEveryPayment).toBe(false)
   expect(screen.getByText("3 totalled · MXN in 500000")).toBeTruthy()
   expect(screen.getByRole("heading", { name: /1 times money arrived/ })).toBeTruthy()
+})
+
+// The panels draw counts; the payments behind a figure are read when it is opened, with a line while they are
+// read and a retry when that fails.
+it("reads the payments behind a figure when it is opened, says so meanwhile, and offers a retry", async () => {
+  let answer: (keys: string[] | null) => void = () => {}
+  const read = vi.fn(() => new Promise<string[] | null>((resolve) => { answer = resolve }))
+  state.figureKeys = read
+  render(
+    <MemoryRouter>
+      <InvestigatorOverview caseId="case" />
+    </MemoryRouter>
+  )
   fireEvent.click(screen.getByRole("button", { name: "View these payments" }))
+  expect(read).toHaveBeenCalledWith({ list: "comparisons" }, 2)
+  expect(screen.getByText("Reading the 2 payments behind “Receipts and subsequent payments”…")).toBeTruthy()
+  await act(async () => answer(["a", "b"]))
   expect(screen.getByText("Receipts and subsequent payments: a,b")).toBeTruthy()
+  expect(screen.queryByText(/Reading the 2 payments/)).toBeNull()
+  read.mockImplementation(() => Promise.reject(Error("down")))
+  fireEvent.click(screen.getByRole("button", { name: "View these payments" }))
+  expect(await screen.findByText("The payments behind “Receipts and subsequent payments” could not be read: down.")).toBeTruthy()
+  read.mockImplementation(() => Promise.resolve(null))
+  fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+  expect(await screen.findByText(/these figures changed since they were drawn/)).toBeTruthy()
 })
 
 it("says so when the panels fail, and never draws them from an incomplete answer", () => {
