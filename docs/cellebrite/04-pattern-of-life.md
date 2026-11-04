@@ -756,7 +756,8 @@ in-house: GeoNames (offline) or Nominatim at a host on the deployment's own netw
 checks this at startup and disables reverse geocoding otherwise, logging why.
 
 
-**Built (cb-textplaces, commits 7e91819d and c7e82667).** Text places are the String values `CalendarEntry.Location`,
+**Built and live (cb-textplaces, commits 98d1eb02, 57c9196d, b094748e, 0349ca36; live 0349ca36, checked signed in
+over http 2026-11-04).** Text places are the String values `CalendarEntry.Location`,
 `SocialMediaActivity.Title` on a record whose `SocialActivityType` is `CheckIn`, and `Location.PositionAddress`,
 `Location.Description` and `Location.Name` (a Location in the `Media Locations` category excluded: its Name is a
 file name), on a record of the current interpretation that has no point. `GET /api/pattern/{case}/text-places` lists
@@ -778,7 +779,9 @@ over time on the Patterns screen.
 Measured on the four phones in the restricted reference cases (2026-11-04, current generation): 3 calendar locations
 without a coordinate on one phone, 0 check-ins, 49 written Location descriptions without a coordinate on another
 (all with a time), 1 media Location whose Name is a file name (excluded). The offline list had at least one
-candidate for 3 of 3 calendar locations and 36 of 49 descriptions.
+candidate for 3 of 3 calendar locations and 36 of 49 descriptions. Live (0349ca36): the same 3 and 49 listed, suggestions for 3 of 3 and 36 of 49
+(median 0.3 s each); a placement in the synthetic phones-only case became one `planned` observation (750 m,
+`manual`) and its removal through the screen took it away, both decisions kept in the history.
 
 ---
 

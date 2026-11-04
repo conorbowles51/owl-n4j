@@ -12,7 +12,7 @@
   no MCC takes the SIM's when exactly one is stated; reasons `mcc_unknown_no_sim`, `mcc_unknown_several_sims`.
   Shared-cell comparison is a keyed join (`colocation.cell_matches`). Decision 46 in 04; measurements
   `docs/cellebrite/measurements/coloc-rest-a.jsonl`. Follow-up: default device names (followups m110415502629705).
-## 4 November: text places placed on the map by a person (cb-textplaces, 04 6.5)
+## 4 November: text places placed on the map by a person (cb-textplaces, 04 6.5), live 0349ca36
 
 - **Backend** `services/pattern_of_life/text_places.py`, routes `/api/pattern/{case}/text-places` (list, paged with
   true totals; `suggestions`; `history`; POST place; POST `remove`). Decisions `place_text_place` /
