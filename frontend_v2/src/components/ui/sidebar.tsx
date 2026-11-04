@@ -42,7 +42,6 @@ import {
 } from "@/components/ui/tooltip"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { applySwitchesFromSearch, useSwitch } from "@/lib/ui-switches"
-import { getPhones } from "@/features/phones/api"
 
 interface NavItem {
   label: string
@@ -283,7 +282,8 @@ export function AppSidebar() {
   const user = useAuthStore((s) => s.user)
   const role = user?.global_role ?? user?.role
   const canSeeAdmin = role === "admin" || role === "super_admin"
-  const phones = useQuery({ queryKey: ["phones", caseId], queryFn: () => getPhones(caseId!), enabled: !!caseId, staleTime: 60_000 })
+  const phones = useQuery({ queryKey: ["phones", caseId], // The phones API module (and its schema library) loads with this query, not with the shell.
+    queryFn: () => import("@/features/phones/api").then((m) => m.getPhones(caseId!)), enabled: !!caseId, staleTime: 60_000 })
   const hasPhones = (phones.data?.phones.length ?? 0) > 0
 
   const toggleButton = (

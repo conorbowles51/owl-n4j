@@ -8,9 +8,13 @@ import { AppLayout } from "./layouts/AppLayout"
 import { CaseLayout } from "./layouts/CaseLayout"
 import { AdminLayout } from "./layouts/AdminLayout"
 import { CaseManagementPage } from "@/features/cases/components/CaseManagementPage"
-import { EvidenceExplorer } from "@/features/evidence/components/EvidenceExplorer"
 
 // Lazy-loaded heavy views
+const EvidenceExplorer = lazy(() =>
+  import("@/features/evidence/components/EvidenceExplorer").then((m) => ({
+    default: m.EvidenceExplorer,
+  }))
+)
 const GraphPage = lazy(() =>
   import("@/features/graph/components/GraphPage").then((m) => ({
     default: m.GraphPage,
@@ -227,7 +231,7 @@ export function AppRoutes() {
             <Route path="phone-analyses" element={<LazyPage><AnalysesPage /></LazyPage>} />
             <Route path="profiles" element={<Navigate to="../dossiers" replace />} />
             <Route path="dossiers" element={<LazyPage><DossiersPage /></LazyPage>} />
-            <Route path="evidence" element={<EvidenceExplorer />} />
+            <Route path="evidence" element={<LazyPage><EvidenceExplorer /></LazyPage>} />
             <Route path="chat" element={<LazyPage><ChatPage /></LazyPage>} />
             <Route path="agent" element={<LazyPage><AgentPage /></LazyPage>} />
             <Route path="workspace" element={<LazyPage><WorkspacePage /></LazyPage>} />

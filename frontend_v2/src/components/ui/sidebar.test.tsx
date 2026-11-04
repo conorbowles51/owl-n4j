@@ -74,7 +74,11 @@ describe("AppSidebar case navigation", () => {
     unmount()
     phones.list = [{ extraction_id: "e1", label: "C1" }]
     sidebar()
-    const group = await screen.findByRole("region", { name: "Phones" })
+    // The phones query loads its API module on first use (lx-shell), so the group arrives after a module load: wait
+    // for it with a cheap text query (a role query over the whole sidebar takes seconds on a loaded machine), then
+    // check the group once.
+    await screen.findByText("Phone summary", undefined, { timeout: 15_000 })
+    const group = screen.getByRole("region", { name: "Phones" })
     expect(within(group).getAllByRole("link").map((l) => l.textContent?.replace(/Ctrl\+\d/, ""))).toEqual([
       "Phone summary", "Conversations", "Patterns", "Money on the phones", "Analyses", "Needs a decision",
     ])

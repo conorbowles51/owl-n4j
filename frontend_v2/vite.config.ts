@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite"
 import path from "path"
 import fs from "fs"
 import { buildDisplayName, generateBuildId } from "./build-name.js"
+import { bundleBudgetPlugin } from "./scripts/bundle-budget.js"
 
 const buildId = generateBuildId()
 const buildName = buildDisplayName(buildId)
@@ -64,7 +65,8 @@ const buildIdentityPlugin: import("vite").Plugin = {
 }
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), buildIdentityPlugin],
+  // bundleBudgetPlugin: the release build fails when the main script outgrows the shell limit (scripts/bundle-budget.js).
+  plugins: [react(), tailwindcss(), buildIdentityPlugin, bundleBudgetPlugin()],
   // Pre-bundle dependencies used by lazy views so their first activation does
   // not invalidate the running dev server.
   optimizeDeps: {

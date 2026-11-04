@@ -1,5 +1,6 @@
-import { FinancialAccessProvider } from "@/features/financial/components/FinancialAccessProvider"
-import { useState } from "react"
+import { lazy, Suspense, useState } from "react"
+import { ErrorBoundary } from "@/components/ui/error-boundary"
+import { LazyPanel } from "@/components/ui/lazy-panel"
 import {
   Info,
   Loader2,
@@ -19,11 +20,37 @@ import { useUIStore } from "@/stores/ui.store"
 import { useGraphStore } from "@/stores/graph.store"
 import { useEvidenceStore } from "@/features/evidence/evidence.store"
 import { cn } from "@/lib/cn"
-import { NodeDetailSheet } from "@/features/graph/components/NodeDetailSheet"
-import { EditNodeDialog } from "@/features/graph/components/EditNodeDialog"
-import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
-import { NotebookPanel } from "@/features/notebook/components/NotebookPanel"
-import { StatementFilesPanel } from "@/features/financial/components/StatementFilesPanel"
+import { LoadingWords } from "@/components/ui/loading-spinner"
+
+// Each panel's code loads when the panel is first shown, not with the app shell: the node editor alone brings the
+// map library (about 1 MB), and the statement panel, chat and notebook bring their own (lx-shell bundle report).
+const NodeDetailSheet = lazy(() =>
+  import("@/features/graph/components/NodeDetailSheet").then((m) => ({ default: m.NodeDetailSheet }))
+)
+const EditNodeDialog = lazy(() =>
+  import("@/features/graph/components/EditNodeDialog").then((m) => ({ default: m.EditNodeDialog }))
+)
+const ChatSidePanel = lazy(() =>
+  import("@/features/chat/components/ChatSidePanel").then((m) => ({ default: m.ChatSidePanel }))
+)
+const NotebookPanel = lazy(() =>
+  import("@/features/notebook/components/NotebookPanel").then((m) => ({ default: m.NotebookPanel }))
+)
+// The statement panel and its access check (which brings the schema library) load together, on Financial only.
+const StatementFilesWithAccess = lazy(async () => {
+  const [access, panel] = await Promise.all([
+    import("@/features/financial/components/FinancialAccessProvider"),
+    import("@/features/financial/components/StatementFilesPanel"),
+  ])
+  function StatementFiles({ caseId }: { caseId: string }) {
+    return (
+      <access.FinancialAccessProvider caseId={caseId} quietFailure>
+        <panel.StatementFilesPanel key={caseId} caseId={caseId} />
+      </access.FinancialAccessProvider>
+    )
+  }
+  return { default: StatementFiles }
+})
 
 /**
  * Collapsed icon rail for non-graph case views.
@@ -185,6 +212,8 @@ export function CaseSidePanelContent() {
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const hasSelection = selectedNodeKeys.size > 0
   const [editNodeKey, setEditNodeKey] = useState<string | null>(null)
+  // The editor's code is fetched on the first edit and then stays mounted, so closing keeps its close animation.
+  const [editorWanted, setEditorWanted] = useState(false)
 
   return (
     <div className="flex h-full flex-col border-l border-border bg-panel-raised">
@@ -250,16 +279,20 @@ export function CaseSidePanelContent() {
       <div className="flex-1 overflow-hidden">
         {isFinancialRoute && caseId && (
           <div className="h-full" hidden={tab !== "detail"}>
-            <FinancialAccessProvider caseId={caseId} quietFailure>
-              <StatementFilesPanel key={caseId} caseId={caseId} />
-            </FinancialAccessProvider>
+            <LazyPanel>
+              <StatementFilesWithAccess key={caseId} caseId={caseId} />
+            </LazyPanel>
           </div>
         )}
+        <LazyPanel>
         {tab === "detail" ? (
           isFinancialRoute ? null : hasSelection ? (
             <NodeDetailSheet
               caseId={caseId!}
-              onEditNode={(nodeKey) => setEditNodeKey(nodeKey)}
+              onEditNode={(nodeKey) => {
+                setEditorWanted(true)
+                setEditNodeKey(nodeKey)
+              }}
             />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
@@ -277,14 +310,27 @@ export function CaseSidePanelContent() {
         ) : (
           caseId && <NotebookPanel caseId={caseId} />
         )}
+        </LazyPanel>
       </div>
 
-      <EditNodeDialog
-        open={!!editNodeKey}
-        onOpenChange={(open) => !open && setEditNodeKey(null)}
-        nodeKey={editNodeKey}
-        caseId={caseId!}
-      />
+      {editorWanted && (
+        <ErrorBoundary level="section">
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
+              <LoadingWords className="rounded-md bg-background p-4 shadow">Opening the editor…</LoadingWords>
+            </div>
+          }
+        >
+          <EditNodeDialog
+            open={!!editNodeKey}
+            onOpenChange={(open) => !open && setEditNodeKey(null)}
+            nodeKey={editNodeKey}
+            caseId={caseId!}
+          />
+        </Suspense>
+        </ErrorBoundary>
+      )}
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react"
 import { Outlet, useMatch, useParams } from "react-router-dom"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
 import {
@@ -7,9 +8,27 @@ import {
 } from "@/components/ui/resizable"
 import { useUIStore } from "@/stores/ui.store"
 import { CaseSidePanelRail, CaseSidePanelContent } from "./CaseSidePanel"
-import { EvidenceContextSidebar } from "@/features/evidence/components/EvidenceContextSidebar"
+import { LazyPanel } from "@/components/ui/lazy-panel"
 import { useMediaQuery } from "@/hooks/use-media-query"
-import { SearchDialog } from "@/features/search/components/SearchDialog"
+
+// Case search (Ctrl/Cmd+K) has nothing on screen until it is opened, so its code (search, phones and their schema
+// library) loads just after the case page instead of inside the app shell.
+const SearchDialog = lazy(() =>
+  import("@/features/search/components/SearchDialog").then((m) => ({ default: m.SearchDialog }))
+)
+
+// Shown only on the Evidence page; its code loads with that page, not with every case page.
+const LazyEvidenceContextSidebar = lazy(() =>
+  import("@/features/evidence/components/EvidenceContextSidebar").then((m) => ({ default: m.EvidenceContextSidebar }))
+)
+
+function EvidenceContextSidebar({ caseId }: { caseId: string }) {
+  return (
+    <LazyPanel>
+      <LazyEvidenceContextSidebar caseId={caseId} />
+    </LazyPanel>
+  )
+}
 
 export function CaseLayout() {
   const { id: caseId } = useParams()
@@ -24,7 +43,19 @@ export function CaseLayout() {
 
   return (
     <div className="flex h-full">
-      {caseId && <SearchDialog caseId={caseId} />}
+      {caseId && (
+        <ErrorBoundary
+          fallback={
+            <p role="alert" className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md bg-background px-3 py-2 text-xs shadow">
+              Case search (Ctrl+K) did not load. Reload the page to use it.
+            </p>
+          }
+        >
+          <Suspense fallback={null}>
+            <SearchDialog caseId={caseId} />
+          </Suspense>
+        </ErrorBoundary>
+      )}
       <div className="flex flex-1 flex-col overflow-hidden">
         <div className="flex flex-1 overflow-hidden">
           {showCaseSidePanel ? (

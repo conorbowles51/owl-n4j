@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { lazy, useEffect } from "react"
 import { Outlet, useMatch } from "react-router-dom"
 import { AppSidebar } from "@/components/ui/sidebar"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
@@ -8,10 +8,16 @@ import {
   ResizableHandle,
 } from "@/components/ui/resizable"
 import { useUIStore } from "@/stores/ui.store"
-import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
+import { LazyPanel } from "@/components/ui/lazy-panel"
 import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts"
 import { useRouteSpeed } from "@/lib/route-speed"
 import { FinancialViewUpdatingNotice } from "@/components/FinancialViewUpdatingNotice"
+
+// The app-level chat panel opens only on request; its code (chat, document viewer, markdown) loads then, not with
+// the shell.
+const ChatSidePanel = lazy(() =>
+  import("@/features/chat/components/ChatSidePanel").then((m) => ({ default: m.ChatSidePanel }))
+)
 
 export function AppLayout() {
   const chatPanelOpen = useUIStore((s) => s.chatPanelOpen)
@@ -83,7 +89,9 @@ export function AppLayout() {
           <>
             <ResizableHandle withHandle />
             <ResizablePanel id="chat-panel" order={2} defaultSize="25" minSize="20" maxSize="45">
-              <ChatSidePanel caseId={currentCaseId} />
+              <LazyPanel words="Opening the chat…">
+                <ChatSidePanel caseId={currentCaseId} />
+              </LazyPanel>
             </ResizablePanel>
           </>
         )}
