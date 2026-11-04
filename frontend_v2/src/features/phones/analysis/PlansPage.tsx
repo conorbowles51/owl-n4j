@@ -11,10 +11,10 @@ import { TABS, plansWords } from "./plans-words"
  * count gate (Neil, 2026-11-04).
  */
 export const WHAT_IT_DOES =
-  "What the phones' calendars, check-ins and notes say was planned or reported, and, where the phone itself places an entry or check-in, whether the phone's own location at that time agrees. A calendar entry is a plan, not attendance; a check-in can be made from elsewhere."
+  "What the phones' calendars, check-ins and notes say was planned or reported, and, where the phone itself places an entry or check-in or a person has placed its written place on the map, whether the phone's own location at that time agrees. A calendar entry is a plan, not attendance; a check-in can be made from elsewhere."
 
 export const OLD_RULE = "The plan first compared plans with location only once a case had 20 placed entries."
-export const RULE = "Strength: both sides stating their accuracy strong, one accuracy assumed moderate, locations that disagree weak, not compared faint. These levels are rules of thumb, not measured on this case. A place written as text is not placed: no offline place list is installed."
+export const RULE = "Strength: both sides stating their accuracy strong, one accuracy assumed moderate, locations that disagree weak, not compared faint. These levels are rules of thumb, not measured on this case. A place written as text is compared only once a person places it on the map (Patterns, Text places); that placement is named as theirs and is at most moderate."
 
 export default function PlansPage() {
   const { id: caseId = "" } = useParams()

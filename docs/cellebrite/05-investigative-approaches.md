@@ -1633,10 +1633,13 @@ record; notes 0 to 13. Gate **fail** (3 placed items < 20).
 against location"):** every calendar entry, check-in and note is listed; repeating entries expand by their stored rule
 (the start is always an occurrence; occurrences run to `RepeatUntil` or the phone's last record); an entry or check-in
 the phone itself places (04's `planned` and `declared` observations) is compared with the phone's presence
-observations in its window: `consistent`, `inconsistent`, `mixed` or `no_data`. A place written as text is shown as
-written and not geocoded (no offline forward geocoder or case place list is installed; reverse if one is). The gate
-above is not a build condition (Neil, 2026-11-04). Strength: both sides stating a radius strong, one radius assumed
-moderate, disagreeing observations weak, not compared faint, a rule of thumb stated on screen with the true counts.
+observations in its window: `consistent`, `inconsistent`, `mixed` or `no_data`. A place written as text is compared
+once a person places it on the map (04 6.5 text places, observations of source `person_placed`, the case's own place
+list of 13.3): the result names that person as the one who placed it, never the phone, and is at most moderate. The
+offline place list only suggests a point; nothing is placed without a person. A place written as text that no person
+has placed is shown as written and not compared. The gate above is not a build condition (Neil, 2026-11-04).
+Strength: both sides stating a radius strong, one radius assumed moderate, a place set by a person at most moderate,
+disagreeing observations weak, not compared faint, a rule of thumb stated on screen with the true counts.
 Live on 2026-11-04: 85 calendar entries across the live cases, 0 placed by the phone (6 with a text place), 0
 check-ins.
 

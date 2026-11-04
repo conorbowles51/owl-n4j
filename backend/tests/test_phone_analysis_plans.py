@@ -123,3 +123,44 @@ def test_runs_through_the_framework(engine):
     # the unplaced weekly entry once (3 occurrences counted), the placed daily entry once per occurrence (3)
     assert page["total"] == 4
     assert sorted(i["kind"] for i in page["items"]) == ["no_data", "no_data", "no_data", "no_place"]
+
+
+@needs_template
+def test_a_person_placed_text_place_is_compared_and_named_as_theirs(engine):
+    """Fails on 10.2, which called every placement "the phone's own coordinates" and graded it strong: a calendar
+    entry whose written place a person set on the map (04 6.5 text places, source person_placed) is compared, its
+    placement is named as that person's, and it is at most moderate. A phone-placed entry beside it is unchanged."""
+    import uuid
+    t = at(2023, 3, 6, 10)
+    dec = uuid.uuid4()
+    with engine.begin() as c:
+        case = make_case(c)
+        x, _ = phone(c, case, label="C1", events=[])
+        e1 = record(c, case, x, 100, "CalendarEntry", fields=[("Location", "String", "Market Square")],
+                    times=[("StartDate", t), ("EndDate", t + timedelta(hours=1))])
+        e2 = record(c, case, x, 101, "CalendarEntry", fields=[("Subject", "String", "Meeting")],
+                    times=[("StartDate", t), ("EndDate", t + timedelta(hours=1))])
+        c.execute(text(
+            "INSERT INTO pol_text_place (id, case_id, extraction_id, record_uid, field_path, model_type, place_text, "
+            "lat, lon, radius_m, reason, decision_id, actor_name, actor_email) VALUES (:i, :c, :e, :u, 'Location', "
+            "'CalendarEntry', 'Market Square', 40.0, -75.0, 200, 'test', :d, 'Test Person', 'test@loupe.invalid')"),
+            {"i": uuid.uuid4(), "c": case, "e": x, "u": e1, "d": dec})
+        c.execute(text(
+            "INSERT INTO pol_place_observation (case_id, extraction_id, record_uid, record_type, kind, source_kind, lat, "
+            "lon, radius_m, radius_basis, start_utc, end_utc, offset_status, time_semantics, decision_id) VALUES (:c, "
+            ":e, :u, 'CalendarEntry', 'planned', 'person_placed', 40.0, -75.0, 200, 'manual', :t, :t, 'explicit', "
+            "'event_instant', :d)"), {"c": case, "e": x, "u": e1, "t": t, "d": dec})
+        _obs(c, case, x, e2, "planned", 40.0, -75.0, 25.0, t)
+        _obs(c, case, x, None, "presence", 40.0002, -75.0, 30.0, t + timedelta(minutes=10))
+    with engine.connect() as c:
+        res, counts = P.analyse(c, case, PARAMS)
+    by_uid = {str(r["records"][0]["record_uid"]): r for r in res}
+    person, own = by_uid[str(e1)], by_uid[str(e2)]
+    assert (person["kind"], person["strength"]) == ("consistent", "moderate")
+    assert person["measures"]["placed_by"] == "person" and person["measures"]["placed_by_name"] == "Test Person"
+    assert [s["code"] for s in person["directions"]["supports"]][0] == "placed_by_person"
+    assert "Test Person" in person["directions"]["supports"][0]["detail"]
+    assert "phone's own" not in person["directions"]["supports"][0]["detail"]
+    assert "person_placed" in [u["code"] for u in person["directions"]["undercuts"]]
+    assert (own["kind"], own["strength"]) == ("consistent", "strong") and own["measures"]["placed_by"] == "phone"
+    assert counts["calendar_placed"] == 2 and counts["calendar_placed_by_person"] == 1

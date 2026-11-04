@@ -14,10 +14,13 @@ Method (13.3):
    rule, ``RepeatUntil``). Occurrences run to ``RepeatUntil`` or, without it, to the last instant the phone records
    (its extraction), never further. A day of the month or year that a period lacks (31 April, 29 February) is
    skipped, as RFC 5545 does.
-2. Places: an item is placed only by coordinates the phone itself holds for that record (04's place observations of
-   kind ``planned`` for a calendar entry and ``declared`` for a check-in). A place written as text (calendar
-   ``Location``) is shown as written and not geocoded: no offline forward geocoder or case place list is installed
-   (standing decision 8). Reverse if a case place list or an in-house forward geocoder is added.
+2. Places: an item is placed by 04's place observations of kind ``planned`` for a calendar entry and ``declared``
+   for a check-in: the coordinates the phone itself holds for that record, or, for a place written as text, the
+   point and radius a person set on the map (04 6.5 text places, source ``person_placed``; the case's own place
+   list of 13.2). A person's placement is named as theirs, never called the phone's, and its strength is at most
+   moderate (the point is a person's reading of the text, a rule of thumb). The offline place list only suggests;
+   nothing is placed without a person. A place written as text that no person has placed is shown as written and
+   not compared.
 3. Each dated, placed item (each occurrence) is compared with 04's presence observations of the same phone that
    overlap its window (the calendar entry from start to end, one hour when the end is not recorded; a check-in one
    hour either side of its time). Per observation: distance against the sum of the two uncertainty radii (04's
@@ -51,20 +54,22 @@ from sqlalchemy import text
 from services.phone_analysis import fields as FV
 
 CODE = "plans"
-VERSION = "10.2"
+VERSION = "10.3"
 PARAMETERS = {
     "checkin_window_minutes": {"default": 60, "min": 5, "max": 1440},
     "assumed_radius_m": {"default": 1000, "min": 50, "max": 50000},
 }
 KINDS = ("consistent", "inconsistent", "mixed", "no_data", "place_as_text", "no_place", "note")
 LEVELS = ("strong", "moderate", "weak", "faint")
-SUPPORTS = ("placed_by_phone", "fixes_in_window", "within_radii", "amount_read", "case_terms", "occurrence")
+SUPPORTS = ("placed_by_phone", "placed_by_person", "fixes_in_window", "within_radii", "amount_read", "case_terms", "occurrence")
 UNDERCUTS = ("plan_not_attendance", "shared_calendar", "checkin_elsewhere", "place_text_ambiguous",
-             "radius_assumed", "no_location_in_window", "synced_attribution", "offset_absent")
+             "radius_assumed", "no_location_in_window", "synced_attribution", "offset_absent", "person_placed")
 DIRECTION_CODES = SUPPORTS + UNDERCUTS
 DEFAULT_END = timedelta(hours=1)
 RULE_OF_THUMB = ("The strength levels are rules of thumb: both sides stating a radius is strong, one radius assumed "
-                 "moderate, disagreeing locations weak, not compared faint; no measurement on this case set them.")
+                 "moderate, disagreeing locations weak, not compared faint, and a place set by a person at most "
+                 "moderate; no measurement on this case set them.")
+PERSON_PLACED = "person_placed"  # text_places.SOURCE_KIND
 SIGNALS = [
     {"code": "calendar", "label": "Calendar entries"},
     {"code": "checkins", "label": "Social check-ins"},
@@ -80,6 +85,7 @@ UNDERCUT_WORDS = {
     "no_location_in_window": "The phone holds no location record in this window, so nothing is compared.",
     "synced_attribution": "A location used is attributed to a synced account, not this device.",
     "offset_absent": "A time used was written without a time zone.",
+    "person_placed": "The point is a person's reading of the place written as text, not a coordinate the phone holds.",
 }
 WEEKDAYS = {name: i for i, name in enumerate(("monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
                                               "sunday"))}
@@ -188,15 +194,28 @@ def coverage(conn, case_id) -> dict:
 
 
 def _placed(conn, ext, kinds) -> dict:
-    """``{record_uid: {lat, lon, radius_m}}`` from 04's observations of the given kinds (the record's own
-    coordinates)."""
+    """``{record_uid: {lat, lon, radius_m, person}}`` from 04's observations of the given kinds: the record's own
+    coordinates first, else a person's placement of its written place (``person`` is then the name recorded with
+    that placement's decision, or "a person" when none is recorded)."""
     out = {}
     for r in conn.execute(text(
-            "SELECT record_uid::text AS u, lat, lon, radius_m FROM pol_place_observation WHERE extraction_id = :e AND "
-            "kind = ANY(:k) AND lat IS NOT NULL AND lon IS NOT NULL ORDER BY id"), {"e": ext, "k": list(kinds)}):
+            "SELECT o.record_uid::text AS u, o.lat, o.lon, o.radius_m, o.source_kind, "
+            "(SELECT coalesce(nullif(t.actor_name, ''), t.actor_email) FROM pol_text_place t WHERE t.decision_id = "
+            "o.decision_id AND o.decision_id IS NOT NULL ORDER BY t.id DESC LIMIT 1) AS actor "
+            "FROM pol_place_observation o WHERE o.extraction_id = :e AND o.kind = ANY(:k) AND o.lat IS NOT NULL AND "
+            "o.lon IS NOT NULL ORDER BY (o.source_kind = :p), o.id"),
+            {"e": ext, "k": list(kinds), "p": PERSON_PLACED}):
+        person = (r.actor or "a person") if r.source_kind == PERSON_PLACED else None
         out.setdefault(r.u, {"lat": float(r.lat), "lon": float(r.lon),
-                             "radius_m": float(r.radius_m) if r.radius_m is not None else None})
+                             "radius_m": float(r.radius_m) if r.radius_m is not None else None, "person": person})
     return out
+
+
+def _by_person(cmp_, place):
+    """A person's placement is at most moderate (rule of thumb): the point is their reading of the text."""
+    if place is not None and place.get("person") and cmp_.get("strength") == "strong":
+        cmp_["strength"] = "moderate"
+    return cmp_
 
 
 def _fixes(conn, ext, a, b) -> list:
@@ -240,13 +259,19 @@ def _item_result(ext, label, uid, source, when, end, place, cmp_, text_place, pa
     if source == "calendar" and extra.get("account"):
         under.append(_d("shared_calendar", UNDERCUT_WORDS["shared_calendar"]))
     supports = []
+    person = place.get("person") if place is not None else None
+    placed_words = ("Placed on the map by %s from the place written as text (radius %s m), not by the phone's "
+                    "coordinates." % (person, "{:,}".format(int(place["radius_m"] or 0))) if person else
+                    "Placed by the phone's own coordinates for this record.")
+    if person:
+        under.append(_d("person_placed", UNDERCUT_WORDS["person_placed"]))
     if cmp_ is not None:
         kind, level = cmp_["kind"], cmp_["strength"]
         if kind == "no_data":
             under.append(_d("no_location_in_window", UNDERCUT_WORDS["no_location_in_window"]))
-            match = ["Placed by the phone's own coordinates for this record; not compared: no location in the window."]
+            match = [placed_words[:-1] + "; not compared: no location in the window."]
         else:
-            supports.append(_d("placed_by_phone", "Placed by the phone's own coordinates for this record."))
+            supports.append(_d("placed_by_person" if person else "placed_by_phone", placed_words))
             supports.append(_d("fixes_in_window", "%d location records in the window: %d within the radii, %d "
                                                   "outside." % (cmp_["fixes"], cmp_["within"], cmp_["outside"])))
             match = ["%s: %d of %d location records in the window are within the two radii; the nearest is %s m "
@@ -270,6 +295,8 @@ def _item_result(ext, label, uid, source, when, end, place, cmp_, text_place, pa
         subst = ["Not compared."]
     measures = {"phone_label": label, "source": source, "start": _iso(when), "end": _iso(end),
                 "place_text": text_place, "placed": place is not None,
+                "placed_by": ("person" if person else "phone") if place is not None else None,
+                "placed_by_name": person,
                 "comparison": cmp_, "reasons": {"match": match, "substantiation": subst},
                 "rule_of_thumb": RULE_OF_THUMB}
     measures.update(extra)
@@ -330,9 +357,11 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                 counts["calendar_text_place" if text_place else "calendar_no_place"] += 1
                 continue
             counts["calendar_placed"] += 1
+            if place.get("person"):
+                counts["calendar_placed_by_person"] += 1
             for k, o in enumerate(occ):
                 fixes = _fixes(conn, ext, o, o + length)
-                cmp_ = compare(place, fixes, params["assumed_radius_m"])
+                cmp_ = _by_person(compare(place, fixes, params["assumed_radius_m"]), place)
                 cmp_["synced"] = any(f["synced"] for f in fixes)
                 out.append(_item_result(ext, label, uid, "calendar", o, o + length, place, cmp_, text_place, params,
                                         dict(extra, occurrence_index=k + 1)))
@@ -355,8 +384,10 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                 out.append(_item_result(ext, label, uid, "checkin", when, None, None, None, None, params, extra))
                 continue
             counts["checkins_placed"] += 1
+            if place.get("person"):
+                counts["checkins_placed_by_person"] += 1
             fixes = [f for f in _fixes(conn, ext, when - win, when + win) if f["record_uid"] != uid]
-            cmp_ = compare(place, fixes, params["assumed_radius_m"])
+            cmp_ = _by_person(compare(place, fixes, params["assumed_radius_m"]), place)
             cmp_["synced"] = any(f["synced"] for f in fixes)
             out.append(_item_result(ext, label, uid, "checkin", when, None, place, cmp_, None, params, extra))
         # ---- notes
