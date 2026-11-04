@@ -94,23 +94,29 @@ built; numbers, reverse-ifs and decisions are in 05. Screens are checked signed 
 - **Scheduled:** the J-5c and J-14b journey run is queued through `suite-slot.sh`; check m110401064913177 at 04:00
   UTC reads its log.
 
-## 3 November: source database view and independent re-parse, stage J (cb-stagej), in progress
+## 4 November: source database view and independent re-parse, stage J (cb-stagej), in progress, live 7441c2a7
 
-- **Live (da4c03f9, 21:09 UTC):** record view source panel (05 17.2): states in words (verified, absent, MD5
-  mismatch, zero bytes, unresolved, row not named); "Open source row" opens a read-only copy through the engine
-  (`evidence-engine/app/phone/source_db.py`: copy with WAL/journal siblings, `mode=ro&immutable=1`, or `mode=ro` when a
-  non-empty WAL holds rows, authorizer denying every write, 5 s statement limit, 500-row pages). Backend resolver
-  `backend/services/phone/source_db.py`. Re-parse (05 17.3): ALEAPP v2026.4.5 / iLEAPP v2026.4.6 at pinned commits in
-  the engine image under `/opt/leapp`; runner `evidence-engine/app/pipeline/reparse/`; tables `phone_reparse_runs`,
-  `phone_reparse_rows` (migration `20261103_phone_reparse`); approach `reparse_comparison`; page phone analyses "Read
-  again by an independent tool".
-- **Pushed after it:** run records hold LAVA column names per artefact; refusal shown as an alert; upload page
-  refuses a file over 8 GB before hashing (a 9.8 GB ZIP was hashed 18 min and then refused with 422).
-- **Upload limit, fact:** an upload group member is capped at 8 GiB (`evidence_upload_groups.py` Member.size, 01 4.1),
-  so reference reports over 8 GiB go as folders, not ZIPs.
-- **Not yet done:** item A counts on the seven reports (loading in progress, P12 first), C open-time measurement,
-  E runs on P12/P11, F comparisons, D signed-in check with screenshots, STATUS. Progress:
-  `headless/cb-stagej-progress.md`.
+- **Live:** record view source panel (05 17.2) in words for each state; "Open source row" opens a read-only copy
+  through the engine (`evidence-engine/app/phone/source_db.py`: copy with WAL/journal siblings, `mode=ro&immutable=1`,
+  or `mode=ro` when a non-empty WAL holds rows, authorizer denying every write, 5 s limit, 500-row pages). Resolver
+  `backend/services/phone/source_db.py`. Re-parse (05 17.3): ALEAPP v2026.4.5 / iLEAPP v2026.4.6 pinned under
+  `/opt/leapp` in the engine image; runner `evidence-engine/app/pipeline/reparse/`; tables `phone_reparse_runs`,
+  `phone_reparse_rows`; approach `reparse_comparison` (VERSION 17.3-2).
+- **Fact, measured on P12:** the nodeInfo `offset` is a **byte position in the database file** (inside a table-leaf
+  cell), not a rowid; `tableName` can be a comma-separated list ("visits, urls"); `size` is never numeric. The opener
+  walks the b-tree from the position to the owning row and shows the bytes there raw when the position is in unused
+  space (05 section 19 row).
+- **Fact:** A3's "files" column counts verified Database files reached by records (an extraInfo whose source_id is a
+  record's source_model_id), not files referenced by any node (P12: 15 vs 280). `record_count` gives both.
+- **Fact:** ALEAPP reads WhatsApp only under `com.whatsapp`, not WhatsApp Business; a kind the tool wrote no table
+  for is "not compared", never "only in the report".
+- **Fact:** an upload group member is capped at 8 GiB, so every reference report goes as a folder. The engine's
+  psycopg connections are autocommit, so named (server-side) cursors fail; page with keysets.
+- **Measured on P12:** A 1,306 records / 15 files = A3. C open+read median 2.45 ms, p95 5.5 ms (20 records). E run
+  402 s, peak RSS 284 MB, phone worker up to 877 MiB of 1 GiB.
+- **Not yet done:** A, C, D, E, F on P07, P03, P02, P11, P13, P08 (loading one at a time through
+  `frontend_v2/journeys/live-phone-upload.mjs`, driver `/mnt/owl-data/tmp/cb-stagej/scripts/load_all.sh`); F counts
+  on P12; gate comparison. Progress: `headless/cb-stagej-progress.md`.
 
 ## 3 November: phone media, stage I (cb-media): local OCR, transcription, translation, image search, media spread
 
