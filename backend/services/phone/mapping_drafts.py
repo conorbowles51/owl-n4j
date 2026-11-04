@@ -217,9 +217,8 @@ def prompt(inp) -> str:
                                        json.dumps(inp["existing_mapping"]["body"], ensure_ascii=False,
                                                   separators=(",", ":")))
          if inp["existing_mapping"] else "") +
-        '\n\nAnswer with one JSON object: {"body": <the mapping body>, "registry_requirements": [[type, field, '
-        'kind, value_type], ...] for the fields the mapping depends on, "notes": "one or two sentences on what you '
-        'were unsure of"}.')
+        '\n\nAnswer with one JSON object: {"body": <the mapping body>, "notes": "one or two sentences on what you '
+        'were unsure of"}. Loupe works out which registry rows the mapping depends on from the fields you name.')
 
 
 # ---- validation ------------------------------------------------------------------------------------------------
@@ -347,7 +346,7 @@ def validate(conn, inp, answer, model_label) -> tuple[dict | None, list]:
     if not isinstance(answer, dict) or not isinstance(answer.get("body"), dict):
         return None, ["the answer has no body object"]
     kind, name = inp["kind"], inp["name"]
-    reqs = answer.get("registry_requirements") or []
+    reqs = []  # computed from the body once it is valid (requirements_for)
     notes = str(answer.get("notes") or "").strip()[:1000]
     envelope = {
         "kind": kind, "name": name, "version": 1, "status": "draft", "origin": "ai_draft",
@@ -368,17 +367,58 @@ def validate(conn, inp, answer, model_label) -> tuple[dict | None, list]:
         return envelope, ["not a valid mapping: %s" % "; ".join(
             "%s: %s" % (".".join(str(x) for x in e["loc"]), e["msg"]) for e in exc.errors()[:8])]
     problems = []
-    m = loader.Mapping(kind, name, 1, "draft", "ai_draft", None, None, envelope, "0" * 64, uuid.uuid4(), "draft")
     if kind == "type":
         problems += type_body_problems(conn, answer["body"])
     else:
         problems += attribution_problems(conn, name, answer["body"])
+    # The requirements are the registry's own rows for the fields the draft names (6.4), computed here: the model's
+    # list is not trusted (measured on live 4 Nov: it listed nested containers, which are not value fields).
+    envelope["review"]["registry_requirements"] = requirements_for(conn, kind, name, answer["body"])
+    m = loader.Mapping(kind, name, 1, "draft", "ai_draft", None, None, envelope, "0" * 64, uuid.uuid4(), "draft")
+    if kind != "type":
         try:
             row_rules.check_static(m)
         except Exception as exc:  # noqa: BLE001 - the loader's own refusal, shown as the reason
             problems.append(str(exc))
     problems += loader.registry_problems(conn, m, requirements=True)
     return envelope, problems
+
+
+def _requirement(conn, type_name, field, want=None):
+    """The registry row a named field stands on: the one with the wanted value type, else the most observed."""
+    r = conn.execute(text(
+        "SELECT type_name, field_name, field_kind, value_type FROM phone_schema_fields WHERE type_name = :t AND "
+        "field_name = :f ORDER BY (value_type = :w) DESC, observed_value_count DESC, seed_value_count DESC, id "
+        "LIMIT 1"), {"t": type_name, "f": field, "w": want or ""}).one_or_none()
+    return [r.type_name, r.field_name, r.field_kind, r.value_type] if r else None
+
+
+def requirements_for(conn, kind, name, body) -> list:
+    """Every value field of the type the draft names directly (time fields with their wanted value type), or for an
+    attribution draft the field carrying the set on each row's type. Sorted, without repeats."""
+    from services.phone.mappings.loader import RowsBody, TypeBody
+    wanted = []
+    if kind == "type":
+        b = TypeBody.model_validate(body)
+        t = b.applies_to
+        wanted += [(t, b.event_time.field, "TimeStamp"), (t, b.end_time.field, "TimeStamp"),
+                   (t, b.end_time.duration_field, "TimeSpan")]
+        wanted += [(t, f.get("field"), "TimeStamp") for f in b.other_times if isinstance(f, dict)]
+        named = [b.participants.direction_field, b.app_field, b.account_field, b.thread.group_field]
+        named += list(b.text_fields) + list(b.status_fields.values())
+        if b.place and b.place.get("text_field"):
+            named.append(b.place["text_field"])
+        wanted += [(t, f, None) for f in named]
+    else:
+        for r in RowsBody.model_validate(body).rows:
+            wanted += [(r.type, r.field, "TimeStamp")] + [(r.type, p.field, None) for p in r.predicates if p.field]
+    out = []
+    for t, f, want in wanted:
+        if f:
+            req = _requirement(conn, t, f, want)
+            if req and req not in out:
+                out.append(req)
+    return sorted(out)
 
 
 # ---- runs ------------------------------------------------------------------------------------------------------

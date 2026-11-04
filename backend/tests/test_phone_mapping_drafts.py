@@ -229,6 +229,27 @@ def test_a_valid_answer_is_stored_as_an_ai_draft_proposal_and_exports_as_a_draft
 
 
 @needs_template
+def test_requirements_are_computed_from_the_named_fields_not_taken_from_the_model():
+    """Measured on live 4 Nov: deepseek-v4-pro listed nested containers (Call.Parties, multiModelField Party) as
+    requirements; they are not value fields, so the old code refused 2 good drafts of 3."""
+    call = _shipped("type", "Call")
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            _registry_with_a_phone(c)
+        out = _run(engine, "Call", _ask({"body": call["body"], "registry_requirements": [
+            ["Call", "Parties", "multiModelField", "Party"], ["Call", "Nope", "field", "String"]]}))
+        assert out["status"] == "drafted", out["error"]
+        with engine.begin() as c:
+            reqs = c.execute(text("SELECT content->'review'->'registry_requirements' FROM phone_mapping_proposals "
+                                  "WHERE id = :i"), {"i": out["proposal_id"]}).scalar()
+        reqs = [tuple(r) for r in reqs]
+        assert ("Call", "TimeStamp", "field", "TimeStamp") in reqs and ("Call", "Duration", "field", "TimeSpan") in reqs
+        assert ("Call", "Direction", "field", "ModelDirections") in reqs and ("Call", "Source", "field", "String") in reqs
+        assert not [r for r in reqs if r[1] in ("Parties", "Nope")]
+        assert set(tuple(r) for r in call["review"]["registry_requirements"]) <= set(reqs)
+
+
+@needs_template
 def test_an_answer_naming_fields_the_registry_lacks_is_kept_as_a_rejected_proposal_with_the_reason():
     from services.phone import proposals
     call = _shipped("type", "Call")
