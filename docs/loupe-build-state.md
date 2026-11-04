@@ -1,3 +1,26 @@
+## 4 November: share a phone review and know what is left (cb-review, 07 J-13), live 88b8ded6
+
+- **Split for review (J-13 step 1).** Conversations' "Split for review…" splits the threads under the current filter
+  into one Workspace task per chosen member (owners and editors), by thread or by person
+  (`backend/services/phone/review_share.py` `plan_split`/`create_split`; routes
+  `POST /api/phones/conversations/review/split/preview` and `.../split`). Counts first; 409 and nothing made when the
+  threads changed. Threads already fully reviewed or in an open review task are left out and counted. Each task links
+  its threads (`case_task_links`, `phone_thread`, anchor `review_split`); marks stay on the one review task
+  (`review_marks`), and `after_mark` moves a split task to in progress / done.
+- **Second pass (step 5).** `POST .../review/second-pass` draws 10% (rounded up) of fully reviewed threads not first
+  reviewed by the second person, seed stored; `.../second-pass/result` stores agrees / disagrees+note beside a copy of
+  the first mark. Phone summary "Second pass…"; the open thread's bar has Agrees / Disagrees.
+- **"[name] is also reviewing this thread."** `POST .../conversations/presence` on `presence_sessions`; beat on open
+  and every 45 s while visible (`use-thread-presence.ts`), expiry 100 s, leave on close.
+- **Coverage summary (step 6).** `GET .../review/coverage`: counts from `streams.thread_list` (equals the marks), who
+  reviewed what, every unreviewed thread, tasks, second-pass results, searches run (`phone_search_runs`, migration
+  `20261103_phone_search_runs`, written by `/streams/index` with text and `/api/search`), terms and cb-keywords' lists
+  (`for_coverage`). The export cover prints it for the exported threads (`exports/jobs.py`, `pdf.build_html(review=)`),
+  with an appendix of each thread's state. Decisions UXD-51 to UXD-55 in 07.
+- Measured live: beat 34 to 165 ms (5 beats), 2 beats in 100 s open; coverage on the 3 reference phone cases 277 to
+  584 ms, equal to the marks; gate counts identical on the 8 non-synthetic cases. Release lesson: the build's eslint
+  rule refuses a component file that exports a hook or constant (b2ab65e1 and 4c94a32e NOT RELEASED for it).
+
 ## 4 November: saved keyword lists, investigator terms, gaps the other phone fills (cb-keywords), live b1e75bf7
 
 - **Keyword lists (03 11.2, D-44; 07 J-6, section 14).** "Save as keyword list" in the search dialog saves the

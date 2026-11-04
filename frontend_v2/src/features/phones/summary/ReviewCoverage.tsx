@@ -51,7 +51,7 @@ export function ReviewCoverage({ caseId, extraction }: { caseId: string; extract
       )}
       {c.splits.length > 0 && (
         <div>
-          <p className="font-medium">Review tasks</p>
+          <p className="font-medium">Review tasks in this case (every phone)</p>
           <ul className="list-disc pl-4" data-testid="review-tasks">
             {c.splits.map((s) => <li key={s.task_id}>{s.words}</li>)}
           </ul>
