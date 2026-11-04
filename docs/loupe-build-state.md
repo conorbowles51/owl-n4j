@@ -19,7 +19,7 @@
 
 ## 3 November: investigative approaches, stage H (cb-approaches)
 
-**Live:** LIVE_SHA. Each approach was measured with `phone_analysis.measurements` on the reference cases before it was
+**Live:** 3651e846 (released 4 Nov 00:51 UTC). Each approach was measured with `phone_analysis.measurements` on the reference cases before it was
 built; numbers, reverse-ifs and decisions are in 05. Screens are checked signed in over http on both synthetic cases.
 
 - **Built, gate passed:** 2 Messages across phones (and its badge per message in Conversations, 5.4), 3 Deleted and
@@ -40,6 +40,9 @@ built; numbers, reverse-ifs and decisions are in 05. Screens are checked signed 
   about a replaced report reads the tables at the current interpretation (`replaced_links.keys_any`, held equal to
   approach 12's keys by a test). A new analysis module's source change needs its VERSION and fingerprint in
   `test_phone_analysis_versions.py`; helpers that do not change results belong outside the module.
+- **Scheduled:** the J-5c and J-14b journey run is queued through `suite-slot.sh`; check m110401064913177 at 04:00
+  UTC reads its log.
+
 ## 3 November: source database view and independent re-parse, stage J (cb-stagej), in progress
 
 - **Live (da4c03f9, 21:09 UTC):** record view source panel (05 17.2): states in words (verified, absent, MD5
