@@ -26,8 +26,12 @@ export const TERM_KINDS = Object.keys(TERM_WORDS)
  */
 export function kindCountWords(counts: Record<string, unknown> | null | undefined): { items: { kind: string; words: string; count: number }[]; missing: string } {
   const c = counts || {}
+  if (!Array.isArray(c.vocabulary_not_included)) {
+    // a run made before every kind was compared: it carries no per-kind counts and left kinds out
+    return { items: [], missing: "This run was made before the case's entities, ledger amounts and places were compared, so they are not in it. Run it again to compare them." }
+  }
   const items = TERM_KINDS.map((k) => ({ kind: k, words: TERM_WORDS[k], count: Number(c["hits_" + k] ?? 0) }))
-  const left = (c.vocabulary_not_included as string[] | undefined) || []
+  const left = c.vocabulary_not_included as string[]
   const missing = left.length ? `This run could not compare: ${left.join(", ")}.` : "Nothing in the case's vocabulary was left out of this run."
   return { items, missing }
 }

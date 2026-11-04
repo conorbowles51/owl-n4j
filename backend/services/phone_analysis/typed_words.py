@@ -122,9 +122,10 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
             mt, m = hits[uid]
             kinds = sorted({k for k, _ in m})
             n_else, links = 0, []
+            amounts = {t for k, t in m if k == "ledger_amount"}
             for tok in sorted({t for _, t in m}):
                 if tok not in seen:
-                    seen[tok] = V.elsewhere(conn, ext, tok, LINK_LIMIT)
+                    seen[tok] = V.elsewhere(conn, ext, tok, LINK_LIMIT, whole=tok in amounts)
                 n, u = seen[tok]
                 n_else += n
                 links += [x for x in u if x not in links]

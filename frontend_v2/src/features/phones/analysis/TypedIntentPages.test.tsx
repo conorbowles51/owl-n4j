@@ -114,4 +114,16 @@ describe("Kinds of term with their counts (05 10.3 step 1, cb-vocab)", () => {
     mount(<IntentPage />, "phone-analyses/searches")
     expect(await screen.findByTestId("kind-counts")).toHaveTextContent("This run could not compare: Loupe case entities and the case's places (the case graph could not be read).")
   })
+
+  it("does not call an older run whole", async () => {
+    keyDates.mockResolvedValue({ total: 0, items: [] })
+    client.runs.mockResolvedValue({ items: [run("intent", { search_hit: 0, page_hit: 0 })] })
+    client.coverage.mockResolvedValue({ sentence: "Coverage sentence." })
+    client.results.mockResolvedValue({ total: 0, offset: 0, limit: 100, items: [] })
+    mount(<IntentPage />, "phone-analyses/searches")
+    const box = await screen.findByTestId("kind-counts")
+    expect(box).toHaveTextContent("This run was made before the case's entities, ledger amounts and places were compared")
+    expect(box).not.toHaveTextContent("Nothing in the case's vocabulary was left out")
+    expect(box.querySelector("[data-kind]")).toBeNull()
+  })
 })

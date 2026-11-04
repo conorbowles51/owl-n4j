@@ -283,7 +283,8 @@ def test_case_entities_amounts_and_places_reach_typed_words_and_intent(engine, m
     is not vocabulary (the corrected value is the one read)."""
     from tests.test_phone_analysis_money_signals import Ledger
     monkeypatch.setattr(V, "_graph_rows", lambda case_id: [
-        ["Person", "Brannock Ostravel", ["Branny"], []], ["Location", "Kelderwick Quay", [], []]])
+        ["Person", "Brannock Ostravel", ["Branny"], []], ["Location", "Kelderwick Quay", [], []],
+        ["Other", 4417, "Tamsquill", None]])  # a numeric name is skipped; a single alias string is one alias
     with engine.begin() as c:
         case = make_case(c)
         ext, _ = phone(c, case, contacts={"phone:+12025550199": "Velmora Ashgrove"},
@@ -294,14 +295,16 @@ def test_case_entities_amounts_and_places_reach_typed_words_and_intent(engine, m
         old = led.txn(acct, 777700, at(2023, 1, 3, 0).date())
         new = led.txn(acct, 777800, at(2023, 1, 3, 0).date())
         led.supersede(old, new)
+        record(c, case, ext, 799, "InstantMessage", texts=[("Body", "ref 21,234.567 sent")])  # not the amount
         w1 = record(c, case, ext, 800, "DictionaryWord", texts=[("Word", "branny")])
+        w3 = record(c, case, ext, 805, "DictionaryWord", texts=[("Word", "tamsquill")])
         w2 = record(c, case, ext, 801, "DictionaryWord", texts=[("Word", "velmora")])
         a1 = record(c, case, ext, 802, "Autofill", texts=[("Key", "amount"), ("Value", "1,234.56")],
                     fields=[("Key", "String", "amount")], times=[("TimeStamp", at(2023, 1, 6, 9))])
         a2 = record(c, case, ext, 803, "Autofill", texts=[("Key", "amount"), ("Value", "7,777.00")],
                     fields=[("Key", "String", "amount")])
         s = record(c, case, ext, 804, "SearchedItem", texts=[("Value", "ferry to Kelderwick Quay")])
-        for u in (w1, w2):
+        for u in (w1, w2, w3):
             _sensitive(c, u)
         for u in (a1, a2):
             c.execute(text("UPDATE phone_texts SET is_sensitive = true WHERE record_uid = CAST(:u AS uuid) AND "
@@ -310,13 +313,14 @@ def test_case_entities_amounts_and_places_reach_typed_words_and_intent(engine, m
         res, counts = T.analyse(c, case, {})
         ires, icounts = I.analyse(c, case, {})
     by = {r["records"][0]["record_uid"]: r for r in res}
-    assert set(by) == {w1, w2, a1}  # a2: the superseded amount is not vocabulary
+    assert set(by) == {w1, w2, w3, a1}  # a2: the superseded amount is not vocabulary
+    assert by[a1]["kind"] == "typed_not_in_extraction"  # "21,234.567" in a message is not the amount
     assert by[w1]["measures"]["term_kinds"] == ["case_entity"] and by[w1]["kind"] == "typed_not_in_extraction"
     assert by[a1]["measures"]["term_kinds"] == ["ledger_amount"]
     assert any(d["code"] == "amount_form" for d in by[a1]["directions"]["undercuts"])
     assert by[w2]["measures"]["term_kinds"] == ["contact_name"]
-    assert counts["hits_case_entity"] == 1 and counts["hits_ledger_amount"] == 1 and counts["hits_contact_name"] == 1
-    assert counts["not_elsewhere_case_entity"] == 1 and counts["vocabulary_not_included"] == []
+    assert counts["hits_case_entity"] == 2 and counts["hits_ledger_amount"] == 1 and counts["hits_contact_name"] == 1
+    assert counts["not_elsewhere_case_entity"] == 2 and counts["vocabulary_not_included"] == []
     assert not any(d["code"] == "vocabulary_partial" for r in res + ires for d in r["directions"]["undercuts"])
     assert [r["records"][0]["record_uid"] for r in ires] == [s]
     assert ires[0]["measures"]["term_kinds"] == ["place"] and icounts["hits_place"] == 1
@@ -326,7 +330,7 @@ def test_case_entities_amounts_and_places_reach_typed_words_and_intent(engine, m
     monkeypatch.setattr(V, "_graph_rows", lambda case_id: (_ for _ in ()).throw(RuntimeError("down")))
     with engine.connect() as c:
         res2, counts2 = T.analyse(c, case, {})
-    assert {r["records"][0]["record_uid"] for r in res2} == {w2, a1}
+    assert {r["records"][0]["record_uid"] for r in res2} == {w2, a1}  # graph kinds gone, stated below
     assert counts2["vocabulary_not_included"] and all(
         any(d["code"] == "vocabulary_partial" and "could not be read" in d["detail"] for d in r["directions"]["undercuts"])
         for r in res2)

@@ -20,7 +20,7 @@ RECORDED = {
     "relationships": ("11.2", "d2415dadbd83d048"),
     "awareness": ("4.1-groups", "9cedd74c445622e5"),
     "device_users": ("5.2-use", "cd7bf7201f8f4b6b"),
-    "typed_words": ("7.3", "ce61a9d600dfb19d"),
+    "typed_words": ("7.3", "e323b05b2b998e4a"),
     "intent": ("9.3", "1eb9c37ead0b9301"),
     "common_contacts": ("14.1", "46ee93fe71781001"),
     "reparse_comparison": ("17.3-1", "b27a8eff1720fac7"),

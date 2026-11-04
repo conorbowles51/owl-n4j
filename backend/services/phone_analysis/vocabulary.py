@@ -123,7 +123,8 @@ def build(conn, case_id, ledger=True, graph=True) -> dict:
         if note:
             missing.append(note)
         for label, name, aliases, place_values in rows:
-            values = [name] + [a for a in (aliases or []) if isinstance(a, str)]
+            aliases = [aliases] if isinstance(aliases, str) else (aliases or [])
+            values = [v for v in [name] + list(aliases) if isinstance(v, str)]
             if label in PLACE_LABELS:
                 for v in values:
                     _add_place(places, v)
@@ -369,13 +370,18 @@ def tokens_of(value, vocab) -> list:
 ELSEWHERE_TYPES = ("InstantMessage", "Email", "Note", "SearchedItem", "CalendarEntry", "ReplyMessageData")
 
 
-def elsewhere(conn, extraction_id, token, limit=20) -> tuple:
+def elsewhere(conn, extraction_id, token, limit=20, whole=False) -> tuple:
     """``(count, [record_uid...])``: the phone's own messages, emails, notes, searches and calendar entries (10.3
-    step 3) whose non-sensitive text holds the token; at most ``limit`` record ids, the count is the full count."""
+    step 3) whose non-sensitive text holds the token; at most ``limit`` record ids, the count is the full count.
+    ``whole``: the token must stand as whole folded words (an amount, so "1 234 56" is not found inside
+    "21 234 567")."""
     p = {"e": str(extraction_id), "t": list(ELSEWHERE_TYPES),
          "p": "%" + token.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"}
     where = ("extraction_id = :e AND model_type = ANY(:t) AND NOT coalesce(is_sensitive, false) AND value_folded "
              "LIKE :p")
+    if whole:
+        p["w"] = "(^| )" + re.escape(token).replace("\\ ", " ") + "( |$)"
+        where += " AND value_folded ~ :w"
     n = int(conn.execute(text("SELECT count(DISTINCT record_uid) FROM pv_text WHERE " + where), p).scalar() or 0)
     if not n:
         return 0, []
