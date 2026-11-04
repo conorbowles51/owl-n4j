@@ -216,7 +216,8 @@ def list_groups(case_id: UUID, user: User = Depends(get_current_db_user), db: Se
     groups = db.scalars(select(EvidenceUploadGroup).where(EvidenceUploadGroup.case_id == case_id,
         EvidenceUploadGroup.user_id == user.id, EvidenceUploadGroup.status != 'completed')
         .options(defer(EvidenceUploadGroup.manifest)).order_by(EvidenceUploadGroup.created_at))
-    return [summary(db, group) for group in groups]
+    # A selection being registered says how far it has come (the uploads panel shows it).
+    return [dict(summary(db, group), registration=_registration_state(db, group.id)) for group in groups]
 
 
 @router.get('/{identity}')
@@ -285,7 +286,11 @@ def place_verified(source, target, expected_hash, expected_size):
     """Put a verified upload in the payload as a second name for the same bytes (a hard link: assembly always writes
     a new file and nothing writes into one, so the bytes cannot change under either name), checked again through the
     new name. Where a link is not possible the file is copied and verified. A copy wrote and flushed every file once
-    more: 4.0 ms a file against 0.2 ms for the check and link, and every upload was stored twice."""
+    more: 4.0 ms a file against 0.2 ms for the check and link, and every upload was stored twice.
+
+    ``source`` has just been read and checked against its fingerprint (``verified_source``); a new name that is the
+    same file on the same disk (same device and inode) holds those bytes, so it is not read and hashed a second time.
+    Any other file under the new name is read and checked in full."""
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary = target.parent / (PARTIAL_PREFIX + uuid4().hex)
     try:
@@ -293,7 +298,9 @@ def place_verified(source, target, expected_hash, expected_size):
     except OSError:
         return copy_verified(source, target, expected_hash, expected_size)
     try:
-        if not matches(temporary, expected_hash, expected_size):
+        linked, original = os.stat(temporary), os.stat(source)
+        same = (linked.st_dev, linked.st_ino) == (original.st_dev, original.st_ino) and linked.st_size == expected_size
+        if not same and not matches(temporary, expected_hash, expected_size):
             raise HTTPException(409, 'A saved upload failed verification. No evidence was registered.')
         os.replace(temporary, target)
     finally:
@@ -387,11 +394,13 @@ def outside_report(source, root, found, container_path):
     return extract_archive(source, root, keep)
 
 
-def prepare_payload(group, rows, detect):
+def prepare_payload(group, rows, detect, progress=None):
     """Verified copy into the payload root. ``detect(case_relative_path)`` is the engine's phone classification
     (01 section 2.5). A phone container is never unpacked here: a zip or UFDR holding a phone report, readable or
     protected, is copied whole (01 section 4.2 step 3); an ordinary zip is unpacked as before. Returns the ordinary
-    members and the phone containers."""
+    members and the phone containers. ``progress(phase, done)``, when given, hears each file checked and placed and
+    the phone check starting."""
+    progress = progress or (lambda phase, done: None)
     root = payload_root(group)
     remove_partials(root)
     prepared = []
@@ -413,6 +422,8 @@ def prepare_payload(group, rows, detect):
         target = root / safe_path(member['path'])
         place_verified(source, target, member['sha256'], member['size'])
         prepared.append(dict(path=member['path'], size=member['size'], sha256=member['sha256'], stored_path=str(target)))
+        progress('checking', len(prepared))
+    progress('phones', len(prepared))
     found = detect(case_relative(group, root))
     phones = []
     for r in (found.get('roots') or []) if found.get('outcome') != NOT_A_PHONE_REPORT else []:
@@ -439,19 +450,27 @@ def register_payload(db, group, user, prepared):
     the capture job records its container row and hashes and stops with the explanation (2.4, decision D35).
     A protected container also opens a Workspace task, linked to its evidence row (07 J-1a)."""
     files, dispatch, notices = [], [], []
+    folders = {}
+
+    def folder_of(relative_path):
+        # One lookup per folder, not per file: a 5,000-file folder looked its four subfolders up 5,000 times.
+        if relative_path not in folders:
+            folders[relative_path] = folder_for_path(db, group, user, relative_path)
+        return folders[relative_path]
+    entries = []
     for member in prepared['members']:
         path = PurePosixPath(member['path'])
-        folder = folder_for_path(db, group, user, str(path.parent))
-        records = EvidenceDBStorage.add_files(db, case_id=group.case_id, folder_id=folder,
-            owner=user.email, created_by_id=user.id, files_data=[dict(
-                original_filename=path.name, stored_path=member['stored_path'], sha256=member['sha256'], size=member['size'],
-                metadata={'upload_group_id': str(group.id), 'relative_path': member['path'],
-                    **({'original_archive_sha256': group.manifest[0]['sha256']} if group.kind == 'archive' else {})})])
-        db.flush()
-        files.extend(str(record.id) for record in records)
+        entries.append((folder_of(str(path.parent)), dict(
+            original_filename=path.name, stored_path=member['stored_path'], sha256=member['sha256'], size=member['size'],
+            metadata={'upload_group_id': str(group.id), 'relative_path': member['path'],
+                **({'original_archive_sha256': group.manifest[0]['sha256']} if group.kind == 'archive' else {})})))
+    # One evidence row and one activity event per file, as before, written together.
+    records = EvidenceDBStorage.add_files_each(db, case_id=group.case_id, entries=entries, owner=user.email,
+                                               created_by_id=user.id)
+    files.extend(str(record.id) for record in records)
     payload = PurePosixPath('_upload_groups', str(group.id), 'payload')
     for phone in prepared['phones']:
-        folder = folder_for_path(db, group, user, str(PurePosixPath(phone['path']).parent))
+        folder = folder_of(str(PurePosixPath(phone['path']).parent))
         [record] = EvidenceDBStorage.add_files(db, case_id=group.case_id, folder_id=folder, owner=user.email,
             created_by_id=user.id, files_data=[dict(
                 original_filename=phone['name'], stored_path=phone['stored_path'], sha256=phone['sha256'],
@@ -543,6 +562,9 @@ def discard_group(db, identity, user):
     result = dict(id=str(group.id), status='discarded', file_count=len(rows),
                   saved_count=sum(1 for row in rows if row.status in STAGED))
     db.execute(delete(S).where(S.group_id == group.id))
+    if db.get_bind().dialect.name == 'postgresql':
+        from postgres.models.evidence_upload import EvidenceUploadRegistration
+        db.execute(delete(EvidenceUploadRegistration).where(EvidenceUploadRegistration.group_id == group.id))
     db.execute(delete(EvidenceUploadGroup).where(EvidenceUploadGroup.id == group.id))
     db.commit()
     return result
@@ -678,25 +700,145 @@ async def group_action(identity: UUID, action: str, user: User = Depends(get_cur
         return await run_in_threadpool(discard_group, db, identity, user)
     if action not in {'pause', 'resume', 'complete'}:
         raise HTTPException(404, 'Unknown upload action')
-    # Async for the engine calls; every database step runs in the thread pool, in the same order and transaction
-    # (the group row stays locked from the first step to the commit that ends it).
+    if action == 'complete':
+        return await start_registration(identity, user, db)
+
+    def change():
+        group = get_group(db, identity, user, lock=True)
+        if group.status == 'completed': return snapshot(db, group)
+        if group.receipt:
+            raise HTTPException(409, 'Files are saved. Finish registration to reconnect their processing jobs.')
+        group.status = 'paused' if action == 'pause' else 'uploading'
+        for row in members(db, group):
+            if row.status != 'staged': row.status = group.status
+        db.commit()
+        return snapshot(db, group)
+    return await run_in_threadpool(change)
+
+
+# --- registration (lx-uploadfollow C) ----------------------------------------------------------------------------
+# Registration runs as a task of the server process, not inside the page's request: a 5,000-file folder took 173.6 s
+# in one request on the live box, and the page's 60-minute wait would have bounded a selection's size. The request
+# that starts it waits up to COMPLETE_WAIT_SECONDS and answers with the receipt when registration is done by then;
+# otherwise with how far it has come, and the page asks GET /{id}/registration until the receipt is there.
+# Nothing of a registration is half-done: its evidence rows and the receipt commit together, so a server restart
+# mid-registration leaves no rows, its heartbeat stops moving, and the page starts it again.
+COMPLETE_WAIT_SECONDS = 25
+HEARTBEAT_SECONDS = 3
+STALE_SECONDS = 30
+KEEP_FINISHED_SECONDS = 600
+_running = {}  # group id -> Registration, in this server process
+
+
+class Registration:
+    def __init__(self, identity, total):
+        self.identity, self.phase, self.done, self.total = identity, 'starting', 0, total
+        self.error, self.task, self.finished_at = None, None, None
+
+    def state(self):
+        if self.task is not None and self.task.done():
+            if self.error is not None:
+                return dict(state='failed', phase=self.phase, done=self.done, total=self.total, error=self.error)
+            return dict(state='done', phase=self.phase, done=self.done, total=self.total)
+        return dict(state='running', phase=self.phase, done=self.done, total=self.total)
+
+
+def _registration_store(bind, registration, *, finished=False):
+    """The registration's progress, written in a transaction of its own (the registration's own transaction holds
+    the selection until its commit). PostgreSQL only: the row is how the other server process answers the page; a
+    single-process test database has only this process."""
+    if bind.dialect.name != 'postgresql':
+        return
+    from sqlalchemy.dialects.postgresql import insert
+    from postgres.models.evidence_upload import EvidenceUploadRegistration as R
+    values = dict(phase=registration.phase, done=registration.done, total=registration.total,
+                  error=registration.error, heartbeat_at=func.now(), finished_at=func.now() if finished else None)
+    try:
+        with bind.connect() as connection:
+            statement = insert(R).values(group_id=registration.identity, **values)
+            if registration.phase == 'starting':
+                values['started_at'] = func.now()  # a new run of a selection that stopped before
+            connection.execute(statement.on_conflict_do_update(index_elements=[R.group_id], set_=values))
+            connection.commit()
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('Upload registration progress could not be stored (registration is '
+                                              'unaffected)')
+
+
+def _stored_registration(db, identity):
+    """Another server process's registration of this selection, as the page sees it: running while its heartbeat
+    moves; ``stopped`` when the heartbeat has stood still for STALE_SECONDS (that process ended)."""
+    if db.get_bind().dialect.name != 'postgresql':
+        return None
+    from postgres.models.evidence_upload import EvidenceUploadRegistration as R
+    row = db.execute(select(R, (func.extract('epoch', func.now() - R.heartbeat_at)).label('age'))
+                     .where(R.group_id == identity)).first()
+    if row is None:
+        return None
+    record, age = row
+    state = dict(phase=record.phase, done=record.done, total=record.total)
+    if record.finished_at is not None:
+        return dict(state, state='failed' if record.error else 'done', **({'error': record.error} if record.error else {}))
+    return dict(state, state='running' if age < STALE_SECONDS else 'stopped')
+
+
+def _registration_state(db, identity):
+    here = _running.get(identity)
+    if here is not None:
+        return here.state()
+    return _stored_registration(db, identity) or dict(state='idle')
+
+
+def _forget_finished():
+    now = __import__('time').monotonic()
+    for identity, registration in list(_running.items()):
+        if registration.finished_at is not None and now - registration.finished_at > KEEP_FINISHED_SECONDS:
+            _running.pop(identity, None)
+
+
+async def _register(registration, identity, user, bind):
+    """The finish of a selection, as the request did it before: in its own session, the selection held alone from
+    the first step to the commit that ends it."""
+    db = Session(bind=bind)
+    beating = True
+
+    async def heartbeat():
+        while beating:
+            await run_in_threadpool(_registration_store, bind, registration)
+            await __import__('asyncio').sleep(HEARTBEAT_SECONDS)
+    beat = __import__('asyncio').create_task(heartbeat())
+    try:
+        current = await run_in_threadpool(lambda: db.get(User, user.id) or user)
+        return await _complete(db, identity, current, registration)
+    except HTTPException as exc:
+        registration.error = dict(status_code=exc.status_code, detail=exc.detail)
+        raise
+    except Exception as exc:
+        registration.error = dict(status_code=500, detail='Registration stopped with an error. Choose Finish '
+                                  'registration to try again; files will not be uploaded again.')
+        raise HTTPException(500, registration.error['detail']) from exc
+    finally:
+        beating = False
+        beat.cancel()
+        registration.finished_at = __import__('time').monotonic()
+        await run_in_threadpool(_registration_store, bind, registration, finished=True)
+        await run_in_threadpool(db.close)
+
+
+async def _complete(db, identity, user, registration):
+    def progress(phase, done):
+        registration.phase, registration.done = phase, done
 
     def start():
         group = get_group(db, identity, user, lock=True)
         if group.status == 'completed': return None, None, snapshot(db, group)
         rows = members(db, group)
-        if action in {'pause', 'resume'}:
-            if group.receipt:
-                raise HTTPException(409, 'Files are saved. Finish registration to reconnect their processing jobs.')
-            group.status = 'paused' if action == 'pause' else 'uploading'
-            for row in rows:
-                if row.status != 'staged': row.status = group.status
-            db.commit()
-            return None, None, snapshot(db, group)
         if group.status == 'paused':
             raise HTTPException(409, 'Resume this selection before completing it')
         if not group.receipt and any(row.status != 'staged' for row in rows):
             raise HTTPException(409, 'Some files have not finished uploading. Resume the selection to send the missing parts.')
+        registration.total = len(group.manifest)
         return group, rows, None
 
     group, rows, answer = await run_in_threadpool(start)
@@ -704,7 +846,7 @@ async def group_action(identity: UUID, action: str, user: User = Depends(get_cur
         return answer
     if not group.receipt:
         try:
-            prepared = await run_in_threadpool(prepare_payload, group, rows, engine_detector(group.case_id))
+            prepared = await run_in_threadpool(prepare_payload, group, rows, engine_detector(group.case_id), progress)
         except HTTPException as exc:
             if exc.status_code == 409:
                 def mark_unfinished():
@@ -714,6 +856,7 @@ async def group_action(identity: UUID, action: str, user: User = Depends(get_cur
                     db.commit()
                 await run_in_threadpool(mark_unfinished)
             raise
+        progress('saving', registration.total)
 
         def register():
             group.receipt = register_payload(db, group, user, prepared)
@@ -730,6 +873,7 @@ async def group_action(identity: UUID, action: str, user: User = Depends(get_cur
         SimpleNamespace(id=group.id, case_id=group.case_id, receipt=group.receipt),
         SimpleNamespace(email=user.email, id=user.id)))
     if dispatch is not None:
+        progress('queueing', registration.total)
         try:
             jobs = await dispatch_reports(*dispatch)
         except Exception as exc:
@@ -746,3 +890,53 @@ async def group_action(identity: UUID, action: str, user: User = Depends(get_cur
             return snapshot(db, group)
         return await run_in_threadpool(finish)
     return await run_in_threadpool(snapshot, db, group)
+
+
+def _progress_answer(db, identity, user, registration=None):
+    group = get_group(db, identity, user)
+    return dict(summary(db, group), registration=registration or _registration_state(db, identity))
+
+
+async def start_registration(identity, user, db):
+    import asyncio
+
+    def check():
+        # The same refusals the registration makes under the selection's lock, answered at once.
+        group = get_group(db, identity, user)
+        if group.status == 'completed':
+            return snapshot(db, group), None
+        if group.status == 'paused':
+            raise HTTPException(409, 'Resume this selection before completing it')
+        S = EvidenceUploadSession
+        if not group.receipt and db.scalar(select(func.count()).where(S.group_id == group.id, S.status != 'staged')):
+            raise HTTPException(409, 'Some files have not finished uploading. Resume the selection to send the missing parts.')
+        stored = _stored_registration(db, identity)
+        # This request's reads end here: the registration has a session of its own.
+        db.rollback()
+        return None, stored
+    answer, stored = await run_in_threadpool(check)
+    if answer is not None:
+        return answer
+    _forget_finished()
+    registration = _running.get(identity)
+    if registration is None or registration.task.done():
+        if registration is None and stored is not None and stored['state'] == 'running':
+            # Another server process is registering it now.
+            return await run_in_threadpool(_progress_answer, db, identity, user, stored)
+        registration = Registration(identity, 0)
+        registration.task = asyncio.create_task(_register(registration, identity, user, db.get_bind()))
+        # A failure is told to the page through GET /registration, whether or not this request is still waiting.
+        registration.task.add_done_callback(lambda task: task.cancelled() or task.exception())
+        _running[identity] = registration
+    done, _ = await asyncio.wait({registration.task}, timeout=COMPLETE_WAIT_SECONDS)
+    if done:
+        return registration.task.result()
+    return await run_in_threadpool(_progress_answer, db, identity, user)
+
+
+@router.get('/{identity}/registration')
+def read_registration(identity: UUID, user: User = Depends(get_current_db_user), db: Session = Depends(get_db)):
+    """How far registration has come: the selection's counts (and its receipt once registered) and ``registration``
+    {state: idle | running | done | failed | stopped, phase, done, total, error}. ``stopped`` and ``idle`` on a
+    selection that is not registered mean nothing is registering it: Finish registration starts it again."""
+    return _progress_answer(db, identity, user)

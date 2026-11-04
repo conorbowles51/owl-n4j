@@ -40,3 +40,18 @@ class EvidenceUploadSession(Base):
     status: Mapped[str] = mapped_column(String(20), default='uploading')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class EvidenceUploadRegistration(Base):
+    """How far a selection's registration has come, written from outside its transaction so any server process can
+    answer the page. ``heartbeat_at`` moves every few seconds while it runs; one left behind means it stopped."""
+    __tablename__ = 'evidence_upload_registrations'
+    # No foreign key: the registration holds its selection's row FOR UPDATE, and a key check would wait on it.
+    group_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    phase: Mapped[str] = mapped_column(String(20))
+    done: Mapped[int] = mapped_column(Integer, default=0)
+    total: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[dict | None] = mapped_column(JSONB().with_variant(JSON(), 'sqlite'), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

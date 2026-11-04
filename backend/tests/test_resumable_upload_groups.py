@@ -131,19 +131,19 @@ def test_final_registration_failure_rolls_back_and_same_named_later_upload_prese
     f = groups
     content = {'Folder/one.txt': b'original', 'Folder/two.txt': b'other'}
     state, _ = start(f, content); stage(f, state, content)
-    original = EvidenceDBStorage.add_files
+    original = EvidenceDBStorage.add_files_each
     calls = []
     def interrupted(*args, **kwargs):
-        calls.append(1)
-        result = original(*args, **kwargs)
-        if len(calls) == 2: raise HTTPException(503, 'Synthetic registration interruption')
-        return result
-    monkeypatch.setattr(EvidenceDBStorage, 'add_files', interrupted)
+        # The rows are written (flushed) when the interruption comes.
+        calls.append(original(*args, **kwargs))
+        raise HTTPException(503, 'Synthetic registration interruption')
+    monkeypatch.setattr(EvidenceDBStorage, 'add_files_each', interrupted)
     assert control(f, state, 'complete').status_code == 503
+    assert len(calls[0]) == 2
     with Session(f.engine) as db:
         assert not list(db.scalars(select(EvidenceFile)))
         assert db.get(EvidenceUploadGroup, UUID(state['id'])).receipt is None
-    monkeypatch.setattr(EvidenceDBStorage, 'add_files', original)
+    monkeypatch.setattr(EvidenceDBStorage, 'add_files_each', original)
     assert control(f, state, 'complete').json()['status'] == 'completed'
     later = {'Folder/one.txt': b'changed separately uploaded original'}
     newer, _ = start(f, later); stage(f, newer, later)
@@ -341,7 +341,7 @@ def test_the_polled_list_counts_without_loading_members_and_a_group_lock_leaves_
     assert full['staged_count'] == 1 and full['file_count'] == 3
     assert full['received_bytes'] == len(content['Bundle/saved.txt']) + 32
     listed = f.client.get('/api/evidence-upload-groups', params={'case_id': str(f.case)}).json()
-    assert listed == [full]
+    assert listed == [dict(full, registration={'state': 'idle'})]
 
 
 def test_an_unfinished_selection_can_be_discarded_and_a_registered_one_cannot(groups):

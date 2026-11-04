@@ -16,6 +16,8 @@ export interface UploadProgress {
   kind: "folder" | "archive" | "files"
   /** Files finished in this phase, for a selection of many files (see {@link addFileCost}). */
   fit?: FileCostFit
+  /** While registering: the server's step (checking each file, looking for phone reports, saving the rows). */
+  registrationPhase?: "starting" | "checking" | "phones" | "saving" | "queueing"
 }
 
 /**
@@ -110,9 +112,26 @@ export function describeUploadProgress(p: UploadProgress, now: number): string {
           : "choose the same files again to continue"
     return `Sending ${formatBytesOf(p.bytesDone, p.bytesTotal)}, ${time}. If this tab closes, ${again}.`
   }
-  return p.filesTotal > 1
-    ? `All ${n(p.filesTotal)} files arrived. Saving them to the case and checking for phone reports.`
-    : "The file arrived. Saving it to the case and checking for a phone report."
+  return describeRegistration(p)
+}
+
+/** Registration in words: the count the server reports, and what it is doing with the files. */
+function describeRegistration(p: UploadProgress) {
+  const step =
+    p.registrationPhase === "phones"
+      ? p.filesTotal > 1 ? "checking for phone reports" : "checking for a phone report"
+      : p.registrationPhase === "saving"
+        ? "saving them to the case"
+        : p.registrationPhase === "queueing"
+          ? "starting the phone report reading"
+          : "checking each against its fingerprint"
+  if (p.filesTotal <= 1)
+    return p.registrationPhase
+      ? `Registering the file: ${step.replace("them", "it").replace("each", "it")}.`
+      : "The file arrived. Saving it to the case and checking for a phone report."
+  if (!p.registrationPhase)
+    return `All ${n(p.filesTotal)} files arrived. Saving them to the case and checking for phone reports.`
+  return `Registering ${n(p.filesDone)} of ${n(p.filesTotal)} files: ${step}.`
 }
 
 export function percentOf(p: UploadProgress) {

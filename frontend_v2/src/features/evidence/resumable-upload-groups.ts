@@ -1,4 +1,4 @@
-import { fetchAPI } from "@/lib/api-client"
+import { ApiError, fetchAPI } from "@/lib/api-client"
 import type { EvidenceUploadOptions, UploadResponse } from "./api"
 import { addFileCost, type UploadProgress } from "./upload-progress"
 import {
@@ -24,7 +24,20 @@ export interface UploadGroup {
   received_bytes: number
   members?: (UploadSession & { path: string })[]
   receipt: { file_ids: string[]; job_ids: string[]; message: string } | null
+  /** While the server registers the selection (it answers ``complete`` before it is done for a large one). */
+  registration?: Registration
 }
+
+/** Registration on the server (backend/routers/evidence_upload_groups.py read_registration). ``stopped`` (its server
+ * process ended) and ``idle`` on a selection that is not registered mean nothing is registering it. */
+export interface Registration {
+  state: "idle" | "running" | "done" | "failed" | "stopped"
+  phase?: RegistrationPhase
+  done?: number
+  total?: number
+  error?: { status_code: number; detail: string }
+}
+export type RegistrationPhase = "starting" | "checking" | "phones" | "saving" | "queueing"
 const endpoint = "/api/evidence-upload-groups"
 /** The largest single file an upload group accepts (the server's limit: 2,048 parts of 4 MiB). */
 export const MAX_FILE_BYTES = 8 * 1024 ** 3
@@ -347,22 +360,81 @@ function runGroup(
     if (failure !== null) throw failure
     await whilePaused(transfer)
     transfer.completing = true
-    onProgress?.({ ...sent, phase: "registering", bytesDone: sent.bytesTotal })
-    checkSession()
-    try {
-      return await fetchAPI<UploadGroup>(`${endpoint}/${state.id}/complete`, {
-        method: "POST",
-        timeout: 60 * 60 * 1000,
+    const registering = (done: number, registrationPhase?: RegistrationPhase) =>
+      onProgress?.({
+        ...sent,
+        phase: "registering",
+        bytesDone: sent.bytesTotal,
+        filesDone: done,
+        filesTotal: state.file_count,
+        registrationPhase,
       })
-    } catch (error) {
-      const receipt = await fetchAPI<UploadGroup>(
-        `${endpoint}/${state.id}`
-      ).catch(() => null)
-      if (receipt?.status === "completed") return receipt
-      throw error
-    }
+    registering(0)
+    checkSession()
+    return await registerGroup(state.id, (step) => registering(step.done ?? 0, step.phase))
   })().finally(() => active.delete(state.id))
   return transfer.promise
+}
+
+/** How often the page asks how far registration has come. */
+export const REGISTRATION_POLL_MS = 2000
+/** How long the page keeps asking through failed requests (a server restart) before it gives up. */
+export const REGISTRATION_UNREACHABLE_MS = 5 * 60 * 1000
+/** Times a registration that stopped on the server (a restart) is started again before the page gives up. */
+export const REGISTRATION_RESTARTS = 3
+export const REGISTRATION_STOPPED =
+  "Registration stopped on the server more than once. Choose Finish registration to try again; files will not be uploaded again."
+
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+/** Registers a selection whose files are all saved and resolves with its receipt. The server answers ``complete``
+ * at once for a large selection and registers it in the background, so no request timeout bounds a selection's
+ * size; the page asks how far it has come until the receipt is there, and starts it again when it stopped (a
+ * server restart leaves no half-registered selection: its rows and receipt commit together). */
+export async function registerGroup(
+  id: string,
+  onStep?: (registration: Registration) => void,
+  wait: (ms: number) => Promise<void> = pause
+): Promise<UploadGroup> {
+  const start = async (): Promise<UploadGroup> => {
+    try {
+      return await fetchAPI<UploadGroup>(`${endpoint}/${id}/complete`, { method: "POST", timeout: 2 * 60 * 1000 })
+    } catch (error) {
+      // A refusal (a file that changed, a paused selection) is the answer; a lost answer is not.
+      if (error instanceof ApiError && error.status < 500 && error.status !== 408) throw error
+      const now = await fetchAPI<UploadGroup>(`${endpoint}/${id}/registration`).catch(() => null)
+      if (now?.status === "completed" || now?.registration?.state === "running") return now
+      throw error
+    }
+  }
+  let answer = await start()
+  let restarts = 0
+  let unreachableSince: number | null = null
+  for (;;) {
+    if (answer.status === "completed") return answer
+    const registration = answer.registration
+    if (registration?.state === "failed")
+      throw new Error(
+        registration.error?.detail ||
+          "Registration stopped with an error. Choose Finish registration to try again; files will not be uploaded again."
+      )
+    if (registration?.state === "running") onStep?.(registration)
+    else {
+      // Nothing is registering it now (stopped, or done while its receipt was still being written): start it again.
+      if (restarts++ >= REGISTRATION_RESTARTS) throw new Error(REGISTRATION_STOPPED)
+      answer = await start()
+      continue
+    }
+    await wait(REGISTRATION_POLL_MS)
+    try {
+      answer = await fetchAPI<UploadGroup>(`${endpoint}/${id}/registration`)
+      unreachableSince = null
+    } catch (error) {
+      if (error instanceof ApiError && error.status < 500 && error.status !== 408) throw error
+      unreachableSince ??= Date.now()
+      if (Date.now() - unreachableSince > REGISTRATION_UNREACHABLE_MS) throw error
+    }
+  }
 }
 
 export async function uploadFolderOrArchive(

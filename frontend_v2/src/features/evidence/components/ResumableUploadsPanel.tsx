@@ -35,6 +35,8 @@ function GroupRow({ group }: { group: UploadGroup }) {
   const attached = hasLocalUploadGroup(group.id)
   const completing = isCompletingUploadGroup(group.id)
   const allSaved = group.staged_count === group.file_count
+  // Registered on the server, perhaps for another tab or after this tab was closed.
+  const registering = group.registration?.state === "running" ? group.registration : null
   const refresh = () => {
     for (const key of [
       "resumable-upload-groups",
@@ -64,7 +66,9 @@ function GroupRow({ group }: { group: UploadGroup }) {
     <div className="rounded-lg border p-3 space-y-2">
       <p className="text-sm font-medium break-words">{group.name}</p>
       <p className="text-xs">
-        {completing
+        {registering
+          ? `Registering ${(registering.done ?? 0).toLocaleString("en-US")} of ${(registering.total || group.file_count).toLocaleString("en-US")} files`
+          : completing
           ? "Files received. Finishing registration"
           : group.status === "dispatching"
             ? "Files saved. Starting the reading. If this message stays, choose Finish registration"

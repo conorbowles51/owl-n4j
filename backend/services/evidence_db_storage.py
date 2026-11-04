@@ -122,6 +122,58 @@ def _record_upload(db, case_id, folder_id, created_by_id, files, kind=None):
                      file_count=len(files), files=activity_trail.file_entries(files)))
 
 
+def _record_upload_each(db, case_id, created_by_id, files):
+    """One activity-trail event per file, the event ``_record_upload`` writes for a one-file registration, all in
+    one savepoint. Never raises, as ``activity_trail.record``."""
+    if not files:
+        return
+    from services import activity_trail
+    from postgres.models.user import User
+    user = db.get(User, created_by_id) if created_by_id else None
+    try:
+        events = [activity_trail.build('evidence_upload', user=user, case_id=case_id,
+            details=dict(folder_id=str(f.folder_id) if f.folder_id else None, kind=None, file_count=1,
+                         files=activity_trail.file_entries([f]))) for f in files]
+        with db.begin_nested():
+            db.add_all(events)
+            db.flush()
+    except Exception:
+        activity_trail.log.exception('Activity trail: could not record evidence_upload (the action itself is '
+                                     'unaffected)')
+        return
+    for event in events:
+        activity_trail.log.info('activity %s user=%s address=%s case=%s', event.action, event.user_email or '-',
+                                event.source_address or '-', event.case_id or '-')
+
+
+def _new_file(case_id, folder_id, fd, is_dup, dup_of_id, owner, created_by_id):
+    ef = EvidenceFile(
+        case_id=case_id,
+        folder_id=folder_id,
+        original_filename=fd["original_filename"],
+        stored_path=str(fd["stored_path"]),
+        size=fd.get("size", 0),
+        sha256=fd["sha256"],
+        status="unprocessed",
+        is_duplicate=is_dup,
+        duplicate_of_id=dup_of_id,
+        owner=owner,
+        created_by_id=created_by_id,
+        legacy_id=fd.get("legacy_id"),
+        source_type=fd.get("source_type"),
+        cellebrite_report_key=fd.get("cellebrite_report_key"),
+        cellebrite_file_id=fd.get("cellebrite_file_id"),
+        cellebrite_model_id=fd.get("cellebrite_model_id"),
+        cellebrite_category=fd.get("cellebrite_category"),
+        tags=_clean_string_list(fd.get("tags")),
+        metadata_=fd.get("metadata") or {},
+    )
+    # A PDF waits for the statement check (financial auto-read); a marker only.
+    from services.financial.auto_read import mark_registered
+    mark_registered(ef)
+    return ef
+
+
 class EvidenceDBStorage:
     """Postgres-backed evidence storage service. All methods require a db session."""
 
@@ -573,36 +625,49 @@ class EvidenceDBStorage:
                 if existing:
                     is_dup = True
                     dup_of_id = existing.id
-
-            ef = EvidenceFile(
-                case_id=case_id,
-                folder_id=folder_id,
-                original_filename=fd["original_filename"],
-                stored_path=str(fd["stored_path"]),
-                size=fd.get("size", 0),
-                sha256=sha256,
-                status="unprocessed",
-                is_duplicate=is_dup,
-                duplicate_of_id=dup_of_id,
-                owner=owner,
-                created_by_id=created_by_id,
-                legacy_id=fd.get("legacy_id"),
-                source_type=fd.get("source_type"),
-                cellebrite_report_key=fd.get("cellebrite_report_key"),
-                cellebrite_file_id=fd.get("cellebrite_file_id"),
-                cellebrite_model_id=fd.get("cellebrite_model_id"),
-                cellebrite_category=fd.get("cellebrite_category"),
-                tags=_clean_string_list(fd.get("tags")),
-                metadata_=fd.get("metadata") or {},
-            )
-            # A PDF waits for the statement check (financial auto-read); a marker only.
-            from services.financial.auto_read import mark_registered
-            mark_registered(ef)
+            ef = _new_file(case_id, folder_id, fd, is_dup, dup_of_id, owner, created_by_id)
             db.add(ef)
             created.append(ef)
 
         db.flush()
         _record_upload(db, case_id, folder_id, created_by_id, created)
+        return created
+
+    @staticmethod
+    def add_files_each(
+        db: Session,
+        case_id: uuid.UUID,
+        entries: Sequence[tuple],
+        owner: Optional[str] = None,
+        created_by_id: Optional[uuid.UUID] = None,
+    ) -> List[EvidenceFile]:
+        """The rows and activity events of one ``add_files`` call per ``(folder_id, file_data)`` entry, in order,
+        written together: one duplicate lookup per 500 fingerprints, one flush for the rows and one for the events.
+        A folder of 5,000 files registered one call at a time made 10 database round trips a file (measured on
+        the live schema: per-file duplicate lookup, insert, and an activity event in its own savepoint).
+
+        A file is a duplicate of a row already stored with its fingerprint, or else of the first earlier entry
+        here with it (as one call per entry finds the earlier entry's flushed row)."""
+        stored: Dict[str, uuid.UUID] = {}
+        wanted = sorted({fd["sha256"] for _, fd in entries if not fd.get("is_duplicate", False)})
+        for at in range(0, len(wanted), 500):
+            for file_id, sha256 in db.execute(select(EvidenceFile.id, EvidenceFile.sha256)
+                                              .where(EvidenceFile.sha256.in_(wanted[at:at + 500]))):
+                stored.setdefault(sha256, file_id)
+        created: List[EvidenceFile] = []
+        for folder_id, fd in entries:
+            sha256 = fd["sha256"]
+            is_dup = fd.get("is_duplicate", False)
+            dup_of_id = fd.get("duplicate_of_id")
+            if not is_dup and sha256 in stored:
+                is_dup, dup_of_id = True, stored[sha256]
+            ef = _new_file(case_id, folder_id, fd, is_dup, dup_of_id, owner, created_by_id)
+            ef.id = uuid.uuid4()
+            stored.setdefault(sha256, ef.id)
+            db.add(ef)
+            created.append(ef)
+        db.flush()
+        _record_upload_each(db, case_id, created_by_id, created)
         return created
 
     @staticmethod
