@@ -6,6 +6,7 @@ export const REASON_WORDS: Record<string, string> = {
   dossier_contact: "a contact detail on this person's dossier",
   name_support: "the same name",
   financial_identifier: "an account identifier on a statement",
+  name_only: "the same name only (nothing else links them)",
 }
 
 /** The standard reason a link stores (07 4.11): built from the reasons shown. */

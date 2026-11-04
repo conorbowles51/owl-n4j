@@ -1084,7 +1084,9 @@ def identity_suggestions(case_id: UUID = Query(...), db: Session = Depends(get_d
     decided = identity_decisions.decided_count(conn, case_id)
     db.commit()
     # "12 of 36 decided" (07 J-7): decided suggestions against decided plus open
-    return {"case_id": str(case_id), "total": len(out), "decided": decided, "suggestions": out}
+    from services.match_strength import SCALE_WORDS, counts
+    return {"case_id": str(case_id), "total": len(out), "decided": decided, "suggestions": out,
+            "by_level": counts(out), "scale": SCALE_WORDS}
 
 
 @router.get("/identities/{identity_key:path}")

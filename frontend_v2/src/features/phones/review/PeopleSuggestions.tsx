@@ -4,7 +4,8 @@ import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { register } from "@/lib/keymap"
 import { recordPath } from "@/lib/record-links"
-import { identitiesAPI, type IdentitySuggestion } from "./identities.api"
+import { LevelBadge } from "../analysis/MoneyPairings"
+import { identitiesAPI, type IdentitySuggestion, type MatchLevel } from "./identities.api"
 import { REASON_WORDS, standardReason } from "./suggestion-reasons"
 const fmt = (n: number) => n.toLocaleString("en-US")
 
@@ -13,14 +14,16 @@ function errorWords(e: unknown) {
 }
 
 /**
- * People suggestions (07 J-7): a docked, non-modal panel that steps through one suggestion at a time, highest
- * score first, with a filter by reason. Each shows the name saved on each phone with its number, the reasons and
+ * People suggestions (07 J-7): a docked, non-modal panel that steps through one suggestion at a time, strongest
+ * first, with a filter by reason and by strength. Every suggestion is listed, faint ones too, each with its strength
+ * by a stated rule and the reasons for it (how well matched, how substantiated). Each shows the name saved on each phone with its number, the reasons and
  * up to 3 example records per reason with their counts. Keys: y Link, x Not the same person, s Skip, j/k move.
  */
 export function PeopleSuggestions({ caseId }: { caseId: string }) {
   const client = useQueryClient()
   const sugg = useQuery({ queryKey: ["phone-identity-suggestions", caseId], queryFn: () => identitiesAPI.suggestions(caseId) })
   const [reason, setReason] = useState("")
+  const [level, setLevel] = useState<"" | MatchLevel>("")
   const [at, setAt] = useState(0)
   const [name, setName] = useState("")
   const [note, setNote] = useState("")
@@ -30,7 +33,11 @@ export function PeopleSuggestions({ caseId }: { caseId: string }) {
 
   const all = useMemo(() => sugg.data?.suggestions ?? [], [sugg.data])
   const reasons = useMemo(() => [...new Set(all.flatMap((s) => s.reasons.map((r) => r.reason)))].sort(), [all])
-  const list = useMemo(() => (reason ? all.filter((s) => s.reasons.some((r) => r.reason === reason)) : all), [all, reason])
+  const list = useMemo(
+    () => all.filter((s) => (!reason || s.reasons.some((r) => r.reason === reason)) && (!level || s.level === level)),
+    [all, reason, level],
+  )
+  const byLevel = sugg.data?.by_level
   const s = list[Math.min(at, Math.max(0, list.length - 1))] as IdentitySuggestion | undefined
   const details = useQueries({
     queries: (s?.identities ?? []).map((i) => ({
@@ -131,15 +138,38 @@ export function PeopleSuggestions({ caseId }: { caseId: string }) {
             </select>
           </label>
         )}
+        {byLevel && all.length > 0 && (
+          <label className="flex items-center gap-1 text-sm">
+            Strength
+            <select value={level} onChange={(e) => { setLevel(e.target.value as "" | MatchLevel); setAt(0) }} className="rounded border bg-background px-1 py-0.5">
+              <option value="">Every strength</option>
+              {(["strong", "moderate", "weak", "faint"] as const).map((lv) => (
+                <option key={lv} value={lv}>{`${lv[0].toUpperCase()}${lv.slice(1)} (${fmt(byLevel[lv] ?? 0)})`}</option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
+      {sugg.data?.scale && all.length > 0 && <p className="text-xs text-muted-foreground">{sugg.data.scale}</p>}
       {sugg.isLoading && <p role="status" className="text-sm">Loading the suggestions.</p>}
       {sugg.isError && <p role="alert" className="text-sm">The suggestions could not be loaded. {errorWords(sugg.error)}</p>}
       {sugg.data && !s && <p className="text-sm">No suggestions are waiting. New ones appear when a phone is added or a dossier gains a contact detail.</p>}
       {s && (
         <>
           <p className="text-sm text-muted-foreground">
-            Suggestion {fmt(Math.min(at, list.length - 1) + 1)} of {fmt(list.length)}, highest score first.
+            Suggestion {fmt(Math.min(at, list.length - 1) + 1)} of {fmt(list.length)}, strongest first.
           </p>
+          {s.level && (
+            <div aria-label="Strength" className="flex flex-col gap-1 text-sm">
+              <p className="flex items-center gap-2"><LevelBadge level={s.level} /> match</p>
+              {s.strength_reasons && (
+                <ul className="pl-3 text-xs text-muted-foreground">
+                  <li>How well matched: {s.strength_reasons.match.join("; ")}</li>
+                  <li>How substantiated: {s.strength_reasons.substantiation.join("; ") || "nothing beyond the match"}</li>
+                </ul>
+              )}
+            </div>
+          )}
           <ul aria-label="Names on each phone" className="flex flex-col gap-1 text-sm">
             {s.identities.map((i, k) => {
               const d = details[k]?.data
@@ -159,7 +189,9 @@ export function PeopleSuggestions({ caseId }: { caseId: string }) {
               <div key={r.reason}>
                 <p>
                   {REASON_WORDS[r.reason] ?? r.reason}
-                  {r.phones.length ? ` (on ${r.phones.join(", ")})` : ""}: {fmt(r.record_count)} {r.record_count === 1 ? "record" : "records"}
+                  {r.names?.length ? ` (${r.names.join(", ")})` : ""}
+                  {r.phones.length ? ` (on ${r.phones.join(", ")})` : ""}
+                  {r.reason === "name_only" ? "" : `: ${fmt(r.record_count)} ${r.record_count === 1 ? "record" : "records"}`}
                 </p>
                 {r.records.length > 0 && (
                   <ul className="flex flex-wrap gap-2 pl-3 text-xs">

@@ -10,9 +10,14 @@ ledger and are never its source.
 Suggestions (8.7) never rest on names alone: R5 ``name_support`` only adds to another reason. Weights: R1
 ``same_card`` 0.6 on one phone, 0.8 on two or more; R2 ``owner_accounts`` 0.7; R3 ``dossier_contact`` 0.9; R5 adds
 0.1; R4 ``financial_identifier`` 0.8 (a reviewed account identifier of kind ``phone_number`` or ``email``, 02-U11,
-whose account's holder is linked to a dossier). Score = 1 - product(1 - w); listed at 0.5 or more, highest first,
-ties by identity key. A pair with a recorded rejection is not
-suggested again; a WhatsApp group is never a person.
+whose account's holder is linked to a dossier). Score = 1 - product(1 - w).
+
+Every suggestion is listed, whatever its score (Neil 2026-11-04: "We don't want to miss things based on an arbitrary
+cutoff."), with a strength on the app's one scale (services.match_strength) by a stated rule (:func:`strength`):
+strong at 0.8 or more with two or more independent sources, moderate at ``THRESHOLD`` (0.5) or more, weak at 0.2 or
+more, faint below. A name seen on both sides with nothing else is listed as a faint ``name_only`` suggestion
+(weight 0.1): names alone never make it more than faint, and its reasons say so. Strongest first, then by score, ties
+by identity key. A pair with a recorded rejection is not suggested again; a WhatsApp group is never a person.
 """
 from __future__ import annotations
 
@@ -28,8 +33,10 @@ from services.phone import identifiers
 
 SUGGESTION_NS = uuid.UUID("2f7a9c41-0d6b-4e3a-9a52-8c1e7b3d5f60")
 WEIGHTS = {"same_card": (0.6, 0.8), "owner_accounts": 0.7, "dossier_contact": 0.9, "financial_identifier": 0.8,
-           "name_support": 0.1}
+           "name_support": 0.1, "name_only": 0.1}
+#: The boundary between a moderate and a weak suggestion (never a cutoff: every suggestion is listed).
 THRESHOLD = 0.5
+STRONG_AT, WEAK_AT = 0.8, 0.2
 CHANGED = ("Someone else changed this person while you were reviewing. Their change is shown below. Your choice was "
            "not saved. Choose again.")
 TYPED_REQUIRED = ("unlink_phone_identity", "split")
@@ -133,6 +140,13 @@ def financial_identifier_dossiers(session, case_id) -> list:
 
 def compute_suggestions(conn, case_id) -> dict:
     """Recompute the open suggestions of a case from the current sightings, links and dossier contacts."""
+    rows = candidate_rows(conn, case_id)
+    conn.execute(text("DELETE FROM phone_identity_suggestions WHERE case_id = :c AND state = 'open'"), {"c": case_id})
+    return _store(conn, case_id, rows)
+
+
+def candidate_rows(conn, case_id) -> list:
+    """Every suggestion of the case, strongest first (reads only; ``compute_suggestions`` stores them)."""
     from sqlalchemy.orm import Session
     from services.dossier_service import contacts_for_suggestions
     from services.phone.readings import phone_labels
@@ -250,12 +264,19 @@ def compute_suggestions(conn, case_id) -> dict:
         if support:
             reasons = reasons + [{"reason": "name_support", "weight": WEIGHTS["name_support"], "records": [],
                                   "record_count": 0, "phones": []}]
-        score = _score(reasons)
-        if score < THRESHOLD:
-            continue
-        rows.append({"ids": list(ids), "dossier": dossier, "reasons": reasons, "score": score})
-    rows.sort(key=lambda r: (-r["score"], min(ident[i].identity_key for i in r["ids"])))
-    conn.execute(text("DELETE FROM phone_identity_suggestions WHERE case_id = :c AND state = 'open'"), {"c": case_id})
+        rows.append({"ids": list(ids), "dossier": dossier, "reasons": reasons, "score": _score(reasons)})
+
+    # A name on both sides and nothing else: listed as faint, never more (R5 never makes a suggestion stronger alone)
+    if not dossier_names:
+        for d, name in conn.execute(text("SELECT id::text, display_name FROM case_profiles WHERE case_id = :c"),
+                                    {"c": case_id}):
+            dossier_names[d] = F.fold(name)
+    rows.extend(name_only_rows(persons, names, found, linked, rejected, dossier_names))
+    rows.sort(key=lambda r: (_rank(r["score"], r["reasons"]), -r["score"], min(ident[i].identity_key for i in r["ids"])))
+    return rows
+
+
+def _store(conn, case_id, rows) -> dict:
     decided = {(tuple(sorted(str(x) for x in r[0])), str(r[1]) if r[1] else None) for r in conn.execute(text(
         "SELECT identity_ids, dossier_id FROM phone_identity_suggestions WHERE case_id = :c"), {"c": case_id})}
     n = 0
@@ -280,11 +301,93 @@ def suggestions(conn, case_id) -> list:
         idents = [dict(x._mapping) for x in conn.execute(text(
             "SELECT id::text, identity_key, kind, value_display FROM phone_identities WHERE id = ANY(:i) ORDER BY "
             "identity_key"), {"i": list(r.identity_ids)})]
+        lv, words = strength(float(r.score), r.reasons or [])
         out.append({"id": str(r.id), "identities": idents, "dossier_id": str(r.dossier_id) if r.dossier_id else None,
-                    "reasons": r.reasons, "score": float(r.score),
+                    "reasons": r.reasons, "score": float(r.score), "level": lv, "strength_reasons": words,
                     "expected_revision": links_revision(conn, r.identity_ids)})
-    out.sort(key=lambda x: (-x["score"], min((i["identity_key"] for i in x["identities"]), default="")))  # 8.7
+    # 8.7: strongest first, then by score, ties by identity key
+    out.sort(key=lambda x: (_rank(x["score"], x["reasons"]), -x["score"],
+                            min((i["identity_key"] for i in x["identities"]), default="")))
     return out
+
+
+def name_only_rows(persons, names, found, linked, rejected, dossier_names) -> list:
+    """Suggestions resting on a name alone: two identities a phone saves under the same name, or an identity saved
+    under a dossier's name, when no other reason pairs them. Weight 0.1, so always faint."""
+    out = []
+    taken = set(found)
+    by_name = defaultdict(set)
+    for i, ns in names.items():
+        if i in persons:
+            for n in ns:
+                if n:
+                    by_name[n].add(i)
+    pairs = {}
+    for n, ids in by_name.items():
+        ids = sorted(ids)
+        for a in range(len(ids)):
+            for b in range(a + 1, len(ids)):
+                x, y = ids[a], ids[b]
+                if ((x, y), None) in taken or (linked.get(x) and linked.get(x) == linked.get(y)):
+                    continue
+                if (x, "identity:" + y) in rejected or (y, "identity:" + x) in rejected:
+                    continue
+                pairs.setdefault((x, y), set()).add(n)
+    for (x, y), ns in pairs.items():
+        out.append({"ids": [x, y], "dossier": None, "score": _score([{"weight": WEIGHTS["name_only"]}]),
+                    "reasons": [{"reason": "name_only", "weight": WEIGHTS["name_only"], "records": [],
+                                 "record_count": 0, "phones": [], "names": sorted(ns)[:3]}]})
+    by_dossier = defaultdict(list)
+    for d, n in dossier_names.items():
+        if n:
+            by_dossier[n].append(d)
+    for n, ids in by_name.items():
+        for d in by_dossier.get(n, ()):
+            for i in sorted(ids):
+                if ((i,), d) in taken or linked.get(i) == d or (i, d) in rejected:
+                    continue
+                out.append({"ids": [i], "dossier": d, "score": _score([{"weight": WEIGHTS["name_only"]}]),
+                            "reasons": [{"reason": "name_only", "weight": WEIGHTS["name_only"], "records": [],
+                                         "record_count": 0, "phones": [], "names": [n]}]})
+    return out
+
+
+_MATCH_WORDS = {"same_card": "listed together on one contact card", "owner_accounts": "the phone's own account",
+                "dossier_contact": "a contact detail on the person's dossier",
+                "financial_identifier": "an account identifier on a reviewed statement",
+                "name_support": "the same name, seen apart from the other reason",
+                "name_only": "the same name only: nothing else links them"}
+
+
+def strength(score, reasons):
+    """``(level, {match, substantiation})`` by the stated rule (module docstring); never a model's call."""
+    from services.match_strength import LEVELS
+    kinds = sorted({r.get("reason") for r in reasons if r.get("reason")})
+    phones = {p for r in reasons for p in (r.get("phones") or [])}
+    records = sum(int(r.get("record_count") or 0) for r in reasons)
+    sources = len([k for k in kinds if k not in ("name_support", "name_only")]) + (1 if len(phones) > 1 else 0)
+    if score >= STRONG_AT and sources >= 2:
+        lv = "strong"
+    elif score >= THRESHOLD:
+        lv = "moderate"
+    elif score >= WEAK_AT:
+        lv = "weak"
+    else:
+        lv = "faint"
+    assert lv in LEVELS
+    sub = []
+    if phones:
+        sub.append("seen on %d phone%s" % (len(phones), "" if len(phones) == 1 else "s"))
+    if records:
+        sub.append("%d record%s" % (records, "" if records == 1 else "s"))
+    if not sources:
+        sub.append("no source beyond a saved name")
+    return lv, {"match": [_MATCH_WORDS.get(k, k) for k in kinds] + ["score %.2f" % score], "substantiation": sub}
+
+
+def _rank(score, reasons):
+    from services.match_strength import rank
+    return rank(strength(score, reasons)[0])
 
 
 def decided_count(conn, case_id) -> int:

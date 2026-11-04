@@ -59,14 +59,20 @@ def _user(db, uid):
 
 
 @needs_template
-def test_no_suggestion_from_names_alone_and_one_from_a_shared_card(people):
+def test_names_alone_are_a_faint_suggestion_and_a_shared_card_is_moderate(people):
     with fresh_engine() as engine:
-        # the same saved name for two different numbers on two phones: names alone, no suggestion
+        # the same saved name for two different numbers on two phones: listed, faint, saying it is the name only
+        # (Neil 2026-11-04: no cutoff hides a match; the old rule listed nothing)
         case, _, _, _ = _setup(engine, [_contact(0, "Same Name", "+12025550143")],
                                [_contact(0, "Same Name", "+12025550144")])
         with engine.begin() as c:
             idd.compute_suggestions(c, case)
-            assert idd.suggestions(c, case) == []
+            s = idd.suggestions(c, case)
+        assert len(s) == 1 and [i["identity_key"] for i in s[0]["identities"]] == [A, B]
+        assert [r["reason"] for r in s[0]["reasons"]] == ["name_only"] and s[0]["score"] == 0.1
+        assert s[0]["level"] == "faint"
+        assert "the same name only: nothing else links them" in s[0]["strength_reasons"]["match"]
+        assert s[0]["strength_reasons"]["substantiation"] == ["no source beyond a saved name"]
     with fresh_engine() as engine:
         case, _, _, _ = _setup(engine, [_card(0, "Synthetic Two", "+12025550143", "+12025550144")])
         with engine.begin() as c:
@@ -74,6 +80,7 @@ def test_no_suggestion_from_names_alone_and_one_from_a_shared_card(people):
             s = idd.suggestions(c, case)
         assert len(s) == 1 and [i["identity_key"] for i in s[0]["identities"]] == [A, B]
         assert [r["reason"] for r in s[0]["reasons"]] == ["same_card"] and s[0]["score"] == 0.6
+        assert s[0]["level"] == "moderate"
 
 
 @needs_template
@@ -205,3 +212,19 @@ def test_the_decisions_migration_round_trips():
         with engine.connect() as c:
             assert c.execute(text("SELECT count(*) FROM information_schema.columns WHERE table_name = 'adjudications' "
                                   "AND column_name = 'reason_kind'")).scalar() == 1
+
+
+def test_strength_rule_lists_every_score_on_the_one_scale():
+    """A 0.45 suggestion is weak, not dropped; the levels are the app's one scale (services.match_strength)."""
+    from services.match_strength import LEVELS
+    from services.phone_analysis.money_pairings import LEVELS as PHONE_LEVELS
+    assert LEVELS == PHONE_LEVELS == ("strong", "moderate", "weak", "faint")
+    r = lambda k, w, phones=(): {"reason": k, "weight": w, "records": [], "record_count": 1, "phones": list(phones)}
+    assert idd.strength(0.45, [r("owner_accounts", 0.45)])[0] == "weak"
+    assert idd.strength(0.6, [r("same_card", 0.6, ["P1"])])[0] == "moderate"
+    assert idd.strength(0.8, [r("same_card", 0.8, ["P1", "P2"])])[0] == "strong"
+    assert idd.strength(0.9, [r("dossier_contact", 0.9)])[0] == "moderate"  # one source only
+    assert idd.strength(0.1, [r("name_only", 0.1)])[0] == "faint"
+    # nothing in the module drops a suggestion on its score
+    import inspect
+    assert "< THRESHOLD" not in inspect.getsource(idd)

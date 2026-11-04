@@ -29,6 +29,7 @@ export interface SuggestionReason {
   records: string[]
   record_count: number
   phones: string[]
+  names?: string[]
 }
 
 export interface IdentitySuggestion {
@@ -37,8 +38,13 @@ export interface IdentitySuggestion {
   dossier_id: string | null
   identities: { id: string; identity_key: string; kind: string; value_display: string }[]
   reasons: SuggestionReason[]
+  /** strength on the app's one scale, by a stated rule (never a model) */
+  level?: MatchLevel
+  strength_reasons?: { match: string[]; substantiation: string[] }
   expected_revision: string
 }
+
+export type MatchLevel = "strong" | "moderate" | "weak" | "faint"
 
 export type IdentityDecisionKind =
   | "link_phone_identity"
@@ -65,7 +71,7 @@ export const identitiesAPI = {
   get: (caseId: string, key: string) =>
     fetchAPI<IdentityDetail>(`/api/phones/identities/${encodeURIComponent(key)}?${q(caseId)}`),
   suggestions: (caseId: string) =>
-    fetchAPI<{ case_id: string; total: number; decided?: number; suggestions: IdentitySuggestion[] }>(`/api/phones/identity-suggestions?${q(caseId)}`),
+    fetchAPI<{ case_id: string; total: number; decided?: number; suggestions: IdentitySuggestion[]; by_level?: Record<MatchLevel, number>; scale?: string }>(`/api/phones/identity-suggestions?${q(caseId)}`),
   decide: (caseId: string, body: IdentityDecisionBody) =>
     fetchAPI<{ decisions: string[]; dossier_id: string | null; revision: string }>("/api/phones/identity-decisions", {
       method: "POST",

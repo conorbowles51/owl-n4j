@@ -44,4 +44,32 @@ describe("People suggestions (07 J-7)", () => {
     })
     expect(await screen.findByText("Linked as one person, Ana Synthetic.")).toBeInTheDocument()
   })
+
+  it("lists a faint name-only suggestion with its strength and both parts of its reasons, and filters by strength", async () => {
+    const faint = {
+      ...SUGG, id: "s2", score: 0.1, level: "faint",
+      reasons: [{ reason: "name_only", weight: 0.1, records: [], record_count: 0, phones: [], names: ["ana synthetic"] }],
+      strength_reasons: { match: ["the same name only: nothing else links them", "score 0.10"], substantiation: ["no source beyond a saved name"] },
+    }
+    const moderate = { ...SUGG, score: 0.6, level: "moderate", strength_reasons: { match: ["listed together on one contact card", "score 0.60"], substantiation: ["seen on 1 phone", "4 records"] } }
+    mocks.suggestions.mockResolvedValue({
+      case_id: "c", total: 2, decided: 0, suggestions: [moderate, faint],
+      by_level: { strong: 0, moderate: 1, weak: 0, faint: 1 }, scale: "Strength is set by a stated rule, never by a model.",
+    })
+    mocks.get.mockImplementation((_c: string, key: string) => Promise.resolve(detail(key, "Ana Synthetic")))
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <MemoryRouter><PeopleSuggestions caseId="c" /></MemoryRouter>
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByText("Suggestion 1 of 2, strongest first.")).toBeInTheDocument()
+    expect(screen.getByLabelText("Strength", { selector: "div" })).toHaveTextContent("Moderate")
+    fireEvent.change(screen.getByRole("combobox", { name: /Strength/ }), { target: { value: "faint" } })
+    expect(await screen.findByText("Suggestion 1 of 1, strongest first.")).toBeInTheDocument()
+    const strength = screen.getByLabelText("Strength", { selector: "div" })
+    expect(strength).toHaveTextContent("Faint")
+    expect(strength).toHaveTextContent("How well matched: the same name only: nothing else links them; score 0.10")
+    expect(strength).toHaveTextContent("How substantiated: no source beyond a saved name")
+    expect(screen.getByRole("region", { name: "Reasons" })).toHaveTextContent("the same name only (nothing else links them) (ana synthetic)")
+  })
 })
