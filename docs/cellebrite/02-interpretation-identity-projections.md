@@ -788,7 +788,7 @@ For each extraction and each reviewed `type` mapping whose `applies_to` occurs i
    per-state counts; case, original reading beside the correction, deciding person),
    `POST /registry/proposals/{id}/reject {reason}` and `GET /registry/proposals/{id}/export` (admin only).
    State changes go to `phone_mapping_proposal_events`, written before the state changes.
-   **Built (cb-mapdrafts, 7a5b1e53 and the admin page commit after it):** step 2 runs on the `phone_mapping_draft`
+   **Built (cb-mapdrafts, 5504d6a5, 6a3552e4, 8c48254b; admin page c75c0a94):** step 2 runs on the `phone_mapping_draft`
    workload of the model policy (DeepSeek `deepseek-v4-pro`, thinking at max, decision 61), not a local model.
    `POST /api/phones/registry/mapping-drafts {"type_name"}` answers 202 with a run
    (`phone_mapping_draft_runs`: state, model, seconds, tokens, cost); `GET /registry/mapping-drafts` lists runs

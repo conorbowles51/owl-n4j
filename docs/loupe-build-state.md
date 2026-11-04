@@ -66,7 +66,7 @@
 
 ## 4 November: AI mapping drafts on DeepSeek (cb-mapdrafts, 02 6.8 step 2)
 
-- **Built** (7a5b1e53 backend; admin page in the commit after it): `POST /api/phones/registry/mapping-drafts
+- **Built** (5504d6a5, 6a3552e4, 8c48254b backend; c75c0a94 admin page; live bc6d5311): `POST /api/phones/registry/mapping-drafts
   {"type_name"}` (admin) drafts a mapping from the registry's structure only on the `phone_mapping_draft` workload
   (`deepseek-v4-pro`, thinking at max; `LLMExecutionContext.call(reasoning_effort=)`). Record type: `type` mapping;
   named set: `attribution` rows. Runs in the background (`phone_mapping_draft_runs`, migration
@@ -74,6 +74,10 @@
   reason; no answer: run `failed`. Cost recorded (`cost_records`, AI assistant). Export basis "Drafted by <model> ·
   not reviewed". The applier reads neither proposals nor draft runs (test). Decisions 02 section 14 items 61 to 63.
 - Admin > Phone registry: "Draft a mapping for <name>" on flags waiting for a mapping; AI drafts tab.
+- Measured on the live registry, read-only, nothing stored: 4 of 4 drafts schema-valid (Call, InstantMessage,
+  Location, DecodingSourceOptions), 45 to 63 s, $0.005 to $0.008 each; DecodingSourceOptions drew 0 rows.
+- Not seen on live with a real admin: the jobs login gets 403 on page and API. The admin view was checked on the live
+  bundle with its API answers mocked, and one real DeepSeek draft ran through store and export on a test database.
 - Live registry finding (sent to followups): the set `DecodingSourceOptions` holds 499 synthetic test values, the
   source of the 500 open flags; a draft of that set is fed them until the set is cleaned.
 
