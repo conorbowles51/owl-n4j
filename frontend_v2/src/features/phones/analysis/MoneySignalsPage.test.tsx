@@ -12,7 +12,9 @@ const api = vi.hoisted(() => ({
 }))
 vi.mock("./money-api", () => api)
 const perms = vi.hoisted(() => ({ canEdit: true }))
-vi.mock("@/hooks/use-permissions", () => ({ usePermissions: () => ({ canEdit: perms.canEdit }) }))
+vi.mock("@/features/cases/members-api", () => ({ caseMembersAPI: { getMyMembership: () =>
+  Promise.resolve({ user_id: "u1", user_name: "Synthetic Reviewer", user_email: "", preset: perms.canEdit ? "owner" : "viewer",
+    permissions: { case: { view: true, edit: perms.canEdit } } }) } }))
 vi.mock("@/features/pattern/components/CollectBar", () => ({ CollectBar: () => <div>Add to…</div> }))
 
 import MoneySignalsPage, { WHAT_IT_DOES } from "./MoneySignalsPage"

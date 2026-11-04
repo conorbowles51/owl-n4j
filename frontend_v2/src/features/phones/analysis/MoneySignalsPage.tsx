@@ -10,7 +10,7 @@ import { moneyAPI, type AnalysisDecisionKind, type AnalysisResult, type Analysis
 import { DECISION_WORDS } from "./decision-words"
 import { amountWords } from "./money-words"
 import { LevelBadge, MoneyPairings } from "./MoneyPairings"
-import { usePermissions } from "@/hooks/use-permissions"
+import { caseMembersAPI } from "@/features/cases/members-api"
 
 /**
  * Approach 1, money signals on the phone (05 section 4), in the shared results layout (05 section 3.9, AP-1): what it
@@ -181,7 +181,11 @@ export default function MoneySignalsPage() {
   const [strength, setStrength] = useState("")
   const [offset, setOffset] = useState(0)
   const presence = useFinancialPresence(caseId)
-  const { canEdit } = usePermissions(caseId)
+  // case edit permission as the server grants it (members/me permissions.case.edit); when the membership cannot be
+  // read (a super admin outside the case) the buttons show and the server decides
+  const membership = useQuery({ queryKey: ["case-membership-mapped", caseId], queryFn: () => caseMembersAPI.getMyMembership(caseId), enabled: !!caseId, retry: false })
+  const caseRights = (membership.data?.permissions as { case?: { edit?: boolean } } | undefined)?.case
+  const canEdit = membership.isError ? true : !!caseRights?.edit
   const orphaned = useQuery({ queryKey: ["money-orphaned", caseId], queryFn: () => moneyAPI.orphaned(caseId), enabled: !!caseId })
   const runs = useQuery({ queryKey: ["money-runs", caseId], queryFn: () => moneyAPI.runs(caseId), enabled: !!caseId })
   const coverage = useQuery({ queryKey: ["money-coverage", caseId], queryFn: () => moneyAPI.coverage(caseId), enabled: !!caseId })
