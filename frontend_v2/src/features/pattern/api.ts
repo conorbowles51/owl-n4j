@@ -234,7 +234,6 @@ export interface PlaceObservation {
   lat: number
   lon: number
   presence_basis?: string | null
-  attribution_flags?: string[]
   radius_m: number | null
   radius_basis: string
   start_utc: string
