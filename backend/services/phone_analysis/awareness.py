@@ -30,7 +30,7 @@ Decisions (05 section 19, 19.S7-a to 19.S7-f):
   is not established. Group messages with an owner read time are counted in the coverage notes. Reverse with 19.S7-a.
 - 19.S7-e The owner's read time on an incoming message is a date_read or date_played on a Party the projection marks
   as the phone owner (02 5.3). Messages without a time or with no direction are left out of steps 2 and 3 and
-  counted.
+  counted. Step 3's window runs from the later of the message's time and the owner's read time.
 - 19.S7-f Strength (``grading``): substantiation from the count behind the result (some 3, well 10; 10 is the reply
   pairs per conversation M-4b counts), fit from the interpretation level of the records (reviewed or applied mapping
   2, generic 1). Both counts are rules of thumb. Reverse if a measured error rate gives other counts.
@@ -303,8 +303,11 @@ def without_reply(seq, window: timedelta) -> list:
     for ev in seq:
         if ev["direction"] != "incoming" or not _owner_time(ev):
             continue
+        # the window runs from the later of arrival and the owner's read time (19.S7-e): a message read late and
+        # answered soon after is answered
+        start = max(ev["t"], _owner_time(ev))
         j = bisect.bisect_right(outs, ev["t"])
-        if j >= len(outs) or outs[j] > ev["t"] + window:
+        if j >= len(outs) or outs[j] > start + window:
             found.append(ev)
     return found
 

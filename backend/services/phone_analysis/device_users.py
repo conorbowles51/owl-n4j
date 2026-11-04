@@ -243,8 +243,8 @@ def notes(t, pairs) -> list:
             if best and best[1] else "")
     return [
         "Place observations on %s of %s phones (%s observations, Synced points left out). Quarter hours in which both "
-        "phones of a pair were placed: %s over %s of %s pairs%s. Where they were together or apart rests on these "
-        "only." % (_fmt(t["phones_placed"]), _fmt(t["phones"]), _fmt(t["observations"]), _fmt(t["co_placed_bins"]),
+        "phones of a pair have a place observation: %s over %s of %s pairs%s. A quarter hour in which both report "
+        "the same WiFi network also counts in the results." % (_fmt(t["phones_placed"]), _fmt(t["phones"]), _fmt(t["observations"]), _fmt(t["co_placed_bins"]),
                    _fmt(t["pairs_co_placed"]), _fmt(t["pairs"]), most),
         "Rule of thumb (no measurement behind it): the plan asked for 200 such quarter hours for a pair before "
         "comparing places; the most here is %s. Every pair with a shared quarter hour is listed whatever the count, "

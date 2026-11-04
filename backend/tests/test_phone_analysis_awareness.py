@@ -137,6 +137,10 @@ def test_read_without_reply_and_its_window():
            {"direction": "outgoing", "t": t + timedelta(days=3)}]
     assert len(A.without_reply(seq, timedelta(hours=48))) == 1
     assert A.without_reply(seq, timedelta(hours=96)) == []
+    # read two days after arrival and answered an hour later: answered, the window runs from the read time
+    late = [{"direction": "incoming", "t": t, "owner_read": t + timedelta(days=2), "owner_played": None},
+            {"direction": "outgoing", "t": t + timedelta(days=2, hours=1)}]
+    assert A.without_reply(late, timedelta(hours=48)) == []
 
 
 @needs_template
