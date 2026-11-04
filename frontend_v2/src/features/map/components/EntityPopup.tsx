@@ -136,7 +136,7 @@ export function EntityPopup({
               <p>
                 Placed by address lookup
                 {location.geocoding_requested_by_name ? `, asked by ${location.geocoding_requested_by_name}` : ""}
-                {location.geocoding_requested_at
+                {location.geocoding_requested_at && !Number.isNaN(Date.parse(location.geocoding_requested_at))
                   ? ` on ${new Date(location.geocoding_requested_at).toLocaleString()}`
                   : ""}
                 {isUnconfirmedLookup(location)

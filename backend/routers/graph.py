@@ -2370,7 +2370,21 @@ def geocode_node(
         try:
             result = geocode_with_cache(body.address, requested_by=user.get("username", "unknown"))
         except GeocoderUnavailable as e:
-            return {"success": False, "error": str(e), "address": body.address}
+            result, unavailable = None, str(e)
+        else:
+            unavailable = None
+        if not apply:
+            system_log_service.log(
+                log_type=LogType.GRAPH_OPERATION,
+                origin=LogOrigin.FRONTEND,
+                action="Address Looked Up",
+                details={"case_id": body.case_id, "node_key": node_key, "from": "edit dialog",
+                         "outcome": "unavailable" if unavailable else ("found" if result else "no_match")},
+                user=user.get("username", "unknown"),
+                success=True,
+            )
+        if unavailable:
+            return {"success": False, "error": unavailable, "address": body.address}
         if not result:
             return {"success": False, "error": "No match found for this address.", "address": body.address}
 
@@ -2485,9 +2499,19 @@ class ConfirmLookupRequest(BaseModel):
 def confirm_looked_up_location(node_key: str, body: ConfirmLookupRequest, user: dict = Depends(get_current_user)):
     """A person confirms a pin placed by an address lookup; it becomes their placement."""
     try:
-        return neo4j_service.confirm_looked_up_location(
+        confirmed = neo4j_service.confirm_looked_up_location(
             node_key, case_id=body.case_id, confirmed_by=user.get("username", "unknown"),
             confirmed_by_name=user.get("name") or user.get("full_name") or user.get("email"),
         )
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    system_log_service.log(
+        log_type=LogType.GRAPH_OPERATION,
+        origin=LogOrigin.FRONTEND,
+        action="Looked-up Location Confirmed",
+        details={"case_id": body.case_id, "node_key": node_key, "latitude": confirmed["latitude"],
+                 "longitude": confirmed["longitude"]},
+        user=user.get("username", "unknown"),
+        success=True,
+    )
+    return confirmed

@@ -96,7 +96,7 @@ export function NeedsReviewPanel({ caseId, locations }: NeedsReviewPanelProps) {
   }
 
   const lookUpAll = async () => {
-    const keys = lookable.map((item) => item.key)
+    const keys = lookable.map((item) => item.key).filter((key) => !busyKeys.has(key))
     setAskingAll(false)
     setSummary(null)
     stopRef.current = false
@@ -213,6 +213,7 @@ export function NeedsReviewPanel({ caseId, locations }: NeedsReviewPanelProps) {
                 <button
                   type="button"
                   onClick={() => setAskingAll(true)}
+                  disabled={busyKeys.size > 0}
                   className="ml-auto shrink-0 rounded border border-border px-1.5 py-0.5 text-foreground hover:bg-muted"
                 >
                   Look up all {lookable.length}

@@ -485,6 +485,7 @@ class GraphEditService:
                 f"""
                 MATCH (n {{key: $key, case_id: $case_id}})
                 WHERE {active_node_predicate('n')}
+                  AND (n.latitude IS NULL OR n.longitude IS NULL)
                 SET n.geocoding_lookup_outcome = $outcome,
                     n.geocoding_requested_by = $requested_by,
                     n.geocoding_requested_by_name = $requested_by_name,

@@ -40,7 +40,8 @@ NOMINATIM_URL = os.environ.get("GEOCODER_SEARCH_URL", "").strip() or PUBLIC_NOMI
 # Nominatim's usage policy: identify the application; no personal contact details are sent.
 USER_AGENT = "InvestigationConsole/1.0"
 NOT_LOOKED_UP_MESSAGE = (
-    "Address not looked up: addresses are sent to the outside address service only when a person clicks Look up."
+    "Places not already in the address cache were not looked up: nothing is sent to the outside address service "
+    "automatically."
 )
 LOOKUP_SERVICE_NAME = "OpenStreetMap address service (nominatim.openstreetmap.org)"
 
@@ -94,6 +95,8 @@ def _get_cached_geocode(cache_key: str) -> tuple[bool, Optional[Dict]]:
             "formatted_address": entry.formatted_address,
             "confidence": entry.confidence,
             "location_granularity": (entry.raw_response or {}).get("location_granularity"),
+            # set when the result came from a lookup a person asked for: a machine reading not yet confirmed
+            "requested_by": (entry.raw_response or {}).get("requested_by"),
         }
 
 
@@ -187,6 +190,10 @@ def geocode_with_cache(location: str, *, requested_by: Optional[str] = None) -> 
     normalized = location.lower().strip()
     cache_key = hashlib.md5(normalized.encode("utf-8")).hexdigest()
     cached, cached_result = _get_cached_geocode(cache_key)
+    if cached and cached_result and cached_result.get("requested_by") and not requested_by:
+        # Found by a lookup a person asked for: it is placed only on that person's entity, as a machine placement.
+        # An automatic path does not reuse it as a settled result elsewhere.
+        return None
     if cached and (cached_result or not requested_by):
         return cached_result
     if not requested_by and not automatic_lookup_allowed():
@@ -200,22 +207,24 @@ def geocode_with_cache(location: str, *, requested_by: Optional[str] = None) -> 
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
+        if data:
+            r = data[0]
+            importance = float(r.get("importance") or 0)
+            latitude, longitude = float(r["lat"]), float(r["lon"])
     except Exception as e:
-        print(f"[GeoRescan] Geocoder did not answer for '{location}': {type(e).__name__}")
+        print(f"[GeoRescan] Geocoder did not answer usably for '{location}': {type(e).__name__}")
         if requested_by:
-            raise GeocoderUnavailable(f"The address service did not answer ({type(e).__name__}).") from e
+            raise GeocoderUnavailable(f"The address service did not answer usably ({type(e).__name__}).") from e
         return None
     if not data:
         _save_geocode_cache(cache_key, location, None, requested_by=requested_by)
         return None
-    r = data[0]
-    importance = float(r.get("importance", 0))
     confidence = "high" if importance > 0.7 else ("medium" if importance > 0.4 else "low")
     result = {
         "provider": "nominatim",
         "query": location.strip(),
-        "latitude": float(r["lat"]),
-        "longitude": float(r["lon"]),
+        "latitude": latitude,
+        "longitude": longitude,
         "formatted_address": r.get("display_name", location),
         "confidence": confidence,
         "location_granularity": _location_granularity(r),

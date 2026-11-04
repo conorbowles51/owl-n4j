@@ -101,13 +101,31 @@ class GeocodingSendsOnlyWhenAPersonAsksTests(unittest.TestCase):
                 geo_rescan_service.geocode_with_cache("12 Main St", requested_by="investigator")
         self.save.assert_not_called()
 
+    def test_a_result_a_person_asked_for_is_not_reused_as_settled_by_an_automatic_path(self):
+        asked = {"provider": "nominatim", "latitude": 51.5, "longitude": -0.12, "formatted_address": "London",
+                 "confidence": "high", "requested_by": "investigator"}
+        with patch.object(geo_rescan_service, "_get_cached_geocode", return_value=(True, asked)), \
+                patch.object(geo_rescan_service.urllib.request, "urlopen") as sent:
+            self.assertIsNone(geo_rescan_service.geocode_with_cache("London"))
+            self.assertEqual(geo_rescan_service.geocode_with_cache("London", requested_by="other")["latitude"], 51.5)
+        sent.assert_not_called()
+
+    def test_an_unreadable_reply_is_said_not_crashed(self):
+        with patch.object(geo_rescan_service.urllib.request, "urlopen", return_value=_answer([{"display_name": "x"}])):
+            with self.assertRaises(geo_rescan_service.GeocoderUnavailable):
+                geo_rescan_service.geocode_with_cache("12 Main St", requested_by="investigator")
+            self.assertIsNone(geo_rescan_service.geocode_with_cache("12 Main St"))
+        self.save.assert_not_called()
+
     def test_the_address_box_sends_on_its_button_and_says_no_match(self):
-        with patch.object(geo_rescan_service.urllib.request, "urlopen", return_value=_answer([])) as sent:
+        with patch.object(graph, "system_log_service") as log, \
+                patch.object(geo_rescan_service.urllib.request, "urlopen", return_value=_answer([])) as sent:
             result = graph.geocode_node("loc-1", graph.GeocodeNodeRequest(case_id="case-1", address="12 Main St"),
                                         apply=False, user={"username": "investigator"})
         self.assertEqual(sent.call_count, 1)
         self.assertFalse(result["success"])
         self.assertEqual(result["error"], "No match found for this address.")
+        self.assertEqual(log.log.call_args.kwargs["details"]["outcome"], "no_match")
 
 
 class LookUpFlaggedAddressesTests(unittest.TestCase):
