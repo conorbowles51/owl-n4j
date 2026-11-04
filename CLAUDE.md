@@ -154,9 +154,13 @@ every router, so `routers.graph` pulls `openai` and `routers.agent` pulls
 ### Backend financial suite, from the repo root
 
 ```
-cd backend && env PYTHONPYCACHEPREFIX=/tmp/pyc_st PYTHONDONTWRITEBYTECODE=1 \
-  PYTHONHASHSEED=0 python3 -m unittest discover -s tests -p 'test_financial_*.py' -t .
+cd backend && env PYTHONHASHSEED=0 python3 -m unittest discover -s tests -p 'test_financial_*.py' -t .
 ```
+
+Bytecode is written (to the git-ignored `__pycache__` folders, as the pytest command below does). Do not add
+`PYTHONDONTWRITEBYTECODE=1` or a `PYTHONPYCACHEPREFIX`: test subprocesses inherit them, and every child that
+imports the backend then compiles it, and the venv's packages, from source again. Measured on the server
+(5 subprocess-heavy modules, interleaved): 638 / 199 / 215 s with them, 150 / 176 / 97 s without.
 
 Baseline after the bootstrap: **Ran 3057 tests, OK (skipped=12)**. There are **no
 expected failures**. Any failure is yours.
