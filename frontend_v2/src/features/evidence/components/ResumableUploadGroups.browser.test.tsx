@@ -764,3 +764,40 @@ it("small files go many to a request, each once, and a file the server refuses i
   )
   expect(saved.length).toBe(19)
 })
+
+it("a sign-in change during a batched upload stops new batches and keeps what was saved", { timeout: 120_000 }, async () => {
+  // 400 files of 64 KB: seven batches of up to 64 files; four are sent at once
+  const files = Array.from({ length: 400 }, (_, i) => file(`Phone/s${i}.db`, 65536, i % 251))
+  let group: (Omit<UploadGroup, "members"> & { members: { id: string; path: string; status: string }[] }) | undefined
+  let batches = 0
+  localStorage.setItem("authToken", "first-user")
+  vi.mocked(fetchAPI).mockImplementation(async (url, options) => {
+    const method = options?.method ?? "GET"
+    if (url.startsWith("/api/evidence-upload-groups?")) return group ? [group] : []
+    if (url === "/api/evidence-upload-groups" && method === "POST") {
+      const body = options!.body as { id: string; members: { path: string; size: number }[] }
+      group = {
+        id: body.id, case_id: "case", name: "Phone", kind: "folder", status: "uploading", file_count: 400,
+        staged_count: 0, size: 400 * 65536, received_bytes: 0, replace_existing: false, folder_id: null, receipt: null,
+        members: body.members.map((m, i) => ({ id: `s-${i}`, path: m.path, status: "uploading", size: m.size, chunk_size: CHUNK })),
+      }
+      return group
+    }
+    if (group && url === `/api/evidence-upload-groups/${group.id}/files`) {
+      batches++
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      localStorage.setItem("authToken", "second-user") // someone else signs in on this browser while four are sent
+      const head = JSON.parse((await (options!.body as unknown as Blob).slice(0, 64 * 1024).text()).split("\n")[0]) as {
+        files: { id: string }[]
+      }
+      return { files: head.files.map(({ id }) => ({ id, status: "staged" })) }
+    }
+    throw Error(`Unexpected request: ${method} ${url}`)
+  })
+  try {
+    await expect(uploadFolderOrArchive("case", files, { isFolder: true })).rejects.toThrow("The signed-in session changed")
+    expect(batches).toBe(SEND_AT_ONCE)
+  } finally {
+    localStorage.removeItem("authToken")
+  }
+})

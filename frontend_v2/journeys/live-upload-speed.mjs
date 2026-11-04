@@ -10,6 +10,8 @@
 //     [--pause-at <n>]     when <n> files are saved, press Pause upload, wait 20 s, press Resume upload
 //     [--beside <n>]       open the case's Evidence page in a second tab <n> times during sending, and <n> times before
 //                          the pick, timing each until its file list shows
+//     [--discard-only]     discard an unfinished upload of this folder with the uploads panel's Discard upload
+//     [--delete-only]      remove the uploaded folder from Evidence with the folder tree's Delete
 //     [--minutes 120]
 import { writeFileSync } from "node:fs"
 import { basename } from "node:path"
@@ -87,6 +89,43 @@ async function timeEvidencePage(context) {
 
 try {
   const { context } = await signIn(browser, login)
+  if (flag("discard-only")) {
+    // an unfinished upload of this folder, discarded with the uploads panel's own Discard upload
+    const page = await context.newPage()
+    await page.goto(`${login.url}/cases/${caseId}/evidence?panel=processing`, { waitUntil: "domcontentloaded" })
+    const target = page.locator("div.rounded-lg").filter({ has: page.getByText(name, { exact: true }) }).last()
+    await target.getByRole("button", { name: "Discard upload" }).click({ timeout: 120000 })
+    await target.getByRole("alertdialog", { name: "Discard this upload" }).getByRole("button", { name: "Discard upload" }).click()
+    const toast = await page.getByText(/Upload discarded\. [\d,]+ saved files? (was|were) removed/).first().textContent({ timeout: 300000 })
+    result.events.push({ at: Date.now(), what: toast })
+    console.log(toast)
+    result.pickedAt = Date.now()
+    throw Object.assign(new Error("done"), { done: true })
+  }
+  if (flag("delete-only")) {
+    // the uploaded folder, removed through the folder tree's own Delete and its confirmation
+    const page = await context.newPage()
+    await page.goto(`${login.url}/cases/${caseId}/evidence`, { waitUntil: "domcontentloaded" })
+    const node = page.getByText(name, { exact: true }).first()
+    await node.waitFor({ timeout: 120000 })
+    await node.click({ button: "right" })
+    console.log("folder opened its menu")
+    await page.screenshot({ path: `${out}.menu.png` })
+    await page.getByRole("menuitem", { name: "Delete", exact: true }).click({ timeout: 30000 })
+    console.log("Delete chosen")
+    await page.waitForTimeout(3000)
+    await page.screenshot({ path: `${out}.dialog.png` })
+    const dialog = page.getByRole("dialog")
+    const warning = await dialog.getByText(/files? will be permanently deleted/).textContent({ timeout: 30000 }).catch(() => "")
+    console.log(`delete dialog: ${warning}`)
+    await dialog.getByRole("button", { name: "Delete Folder" }).click({ timeout: 60000 })
+    console.log("Delete Folder pressed")
+    await page.getByText(name, { exact: true }).first().waitFor({ state: "detached", timeout: 30 * 60_000 })
+    result.events.push({ at: Date.now(), what: `deleted (${warning})` })
+    console.log("folder deleted")
+    result.pickedAt = Date.now()
+    throw Object.assign(new Error("done"), { done: true })
+  }
   for (let i = 0; i < beside; i++) result.beside.before.push(await timeEvidencePage(context))
   if (beside) console.log(`evidence page before upload (ms): ${result.beside.before.join(", ")}`)
   const page = await context.newPage()
@@ -122,7 +161,7 @@ try {
     if (discard && groupComplete && groupComplete.st === 0) {
       result.events.push({ at: Date.now(), what: "sent; registration refused in the browser" })
       console.log(`${secs()} s every file sent; discarding`)
-      await page.reload({ waitUntil: "domcontentloaded" })
+      await page.goto(`${login.url}/cases/${caseId}/evidence?panel=processing`, { waitUntil: "domcontentloaded" })
       const target = page.locator("div.rounded-lg").filter({ has: page.getByText(name, { exact: true }) }).last()
       await target.getByRole("button", { name: "Discard upload" }).click({ timeout: 60000 })
       await target.getByRole("alertdialog", { name: "Discard this upload" }).getByRole("button", { name: "Discard upload" }).click()
@@ -164,7 +203,7 @@ try {
   if (!failed && !result.events.length) failed = `not finished within ${minutes} min`
   result.log = await page.evaluate(() => window.__uploadLog)
 } catch (e) {
-  failed = String(e?.message ?? e).split("\n")[0].slice(0, 300)
+  if (!e?.done) failed = String(e?.message ?? e).split("\n")[0].slice(0, 300)
 } finally {
   await browser.close()
 }
