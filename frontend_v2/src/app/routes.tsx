@@ -1,7 +1,7 @@
 import { Suspense } from "react"
 import { timedLazy as lazy } from "@/lib/timed-lazy"
 import { Routes, Route, Navigate } from "react-router-dom"
-import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { PageLoading } from "./page-loading"
 import { LoginPage } from "@/features/auth/components/LoginPage"
 import { ProtectedRoute } from "@/features/auth/components/ProtectedRoute"
 import { AppLayout } from "./layouts/AppLayout"
@@ -166,14 +166,6 @@ const AISettingsPage = lazy(() =>
     default: m.AISettingsPage,
   }))
 )
-
-function PageLoading() {
-  return (
-    <div className="flex h-full items-center justify-center">
-      <LoadingSpinner size="lg" />
-    </div>
-  )
-}
 
 function LazyPage({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<PageLoading />}>{children}</Suspense>

@@ -5,7 +5,8 @@ import { requestWords } from "@/lib/request-progress"
 // panel (LoadProgress: the step in words, true counts, time left), never a bare spinner. Spinners inside a
 // button next to its own words are not page waits. The screens the phone units add phone data to and replace the
 // spinner on (spec 07 finding 1: the route fallback in unit 03-1, Map and Table) are those units' own.
-const sources = import.meta.glob(["../**/*.tsx", "!../**/*.test.tsx", "!../app/routes.tsx",
+// routes.tsx is covered too: its lazy-page fallback is the shared loading panel (app/page-loading.tsx).
+const sources = import.meta.glob(["../**/*.tsx", "!../**/*.test.tsx",
   "!../features/map/components/MapPage.tsx", "!../features/table/components/TablePage.tsx"], {
   query: "?raw",
   import: "default",
