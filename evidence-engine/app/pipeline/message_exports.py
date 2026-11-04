@@ -4,11 +4,12 @@ Phone reports (Cellebrite UFDR or report folders) have their own reader. A text-
 phone app and uploads as a document did not: a WhatsApp ``_chat.txt`` or an "SMS Backup & Restore" XML was read as
 raw text, so the reader saw neither who sent each message, nor when, nor which conversation it belonged to.
 
-This module recognises those two common formats and rewrites them as one message per line with its time and sender,
-grouped by conversation, headed by the participants, the message count and the period. Nothing is inferred: a
-WhatsApp date is kept exactly as printed (the export does not say whether 03/04 is March or April), an SMS time is the
-phone's own epoch time written out in UTC, and a sender is the name or number the export records. A file that is not
-clearly one of these formats is left to the plain-text reader unchanged.
+This module recognises those two formats and rewrites them as one message per line with its time and sender, grouped
+by conversation, headed by the participants, the message count and the period. Nothing is inferred and nothing is
+dropped: a WhatsApp date is kept exactly as printed (the export does not say whether 03/04 is March or April), text
+before the first message is kept, an SMS time is the phone's own epoch time written out in UTC, a picture or group
+message keeps its text and counts its attachments, and a sender is the name or number the export records. A file that
+is not clearly one of these formats is left to the plain-text reader unchanged.
 
 Pure Python with no app imports, so it can be tested on its own.
 """
@@ -19,46 +20,47 @@ from collections import Counter, OrderedDict
 from datetime import datetime, timezone
 from xml.etree import ElementTree
 
-# "[03/04/2024, 14:05:09] Name: text"  (iOS)   or   "03/04/2024, 14:05 - Name: text"  (Android)
-_WHATSAPP_LINE = re.compile(
-    r"^‎?\[?(?P<date>\d{1,2}[./-]\d{1,2}[./-]\d{2,4}),?\s+"
-    r"(?P<time>\d{1,2}:\d{2}(?::\d{2})?(?:[\s ]?[APap]\.?[Mm]\.?)?)\]?\s*(?:-\s+)?"
-    r"(?P<sender>[^:\n]{1,80}?):\s(?P<text>.*)$"
-)
-_WHATSAPP_SYSTEM = re.compile(
-    r"^‎?\[?(?P<date>\d{1,2}[./-]\d{1,2}[./-]\d{2,4}),?\s+"
-    r"(?P<time>\d{1,2}:\d{2}(?::\d{2})?(?:[\s ]?[APap]\.?[Mm]\.?)?)\]?\s*(?:-\s+)?(?P<text>[^:]*)$"
-)
+# Only the two shapes WhatsApp writes: "[date, time] " (iOS) or "date, time - " (Android). A plain log line such as
+# "03/04/2024 09:15 Subject: left" has neither the comma nor the bracket or dash, so it is not taken for a chat.
+_DATE = r"\d{1,2}[./-]\d{1,2}[./-]\d{2,4}"
+_TIME = r"\d{1,2}:\d{2}(?::\d{2})?(?:[\s ]?[APap]\.?[Mm]\.?)?"
+_STAMP = (r"^‎?(?:\[(?P<bdate>" + _DATE + r"),\s(?P<btime>" + _TIME + r")\]\s"
+          r"|(?P<adate>" + _DATE + r"),\s(?P<atime>" + _TIME + r")\s-\s)")
+_WHATSAPP_LINE = re.compile(_STAMP + r"(?P<sender>[^:\n]{1,80}?):\s(?P<text>.*)$")
+_WHATSAPP_NOTICE = re.compile(_STAMP + r"(?P<text>[^:]*)$")
+NOTICE = "(WhatsApp notice)"
 MIN_MESSAGES = 3
 MIN_SHARE_OF_LINES = 0.6
 
 
+def _stamp(match) -> str:
+    return f"{match['bdate'] or match['adate']} {match['btime'] or match['atime']}".replace(" ", " ")
+
+
 def _whatsapp(text: str):
     lines = [line.rstrip("\r") for line in text.split("\n")]
-    filled = [line for line in lines if line.strip()]
-    if not filled:
-        return None
-    messages, starts = [], 0
+    messages, preamble, continuation = [], [], 0
     for line in lines:
         match = _WHATSAPP_LINE.match(line)
+        notice = None if match else _WHATSAPP_NOTICE.match(line)
         if match:
-            starts += 1
-            messages.append(dict(when=f"{match['date']} {match['time']}".replace(" ", " "),
-                                 sender=match["sender"].strip().lstrip("‎"), text=match["text"].strip()))
-        elif _WHATSAPP_SYSTEM.match(line):
-            starts += 1
-            system = _WHATSAPP_SYSTEM.match(line)
-            messages.append(dict(when=f"{system['date']} {system['time']}".replace(" ", " "),
-                                 sender="(WhatsApp notice)", text=system["text"].strip()))
+            messages.append(dict(when=_stamp(match), sender=match["sender"].strip().lstrip("‎"),
+                                 text=match["text"].strip()))
+        elif notice:
+            messages.append(dict(when=_stamp(notice), sender=NOTICE, text=notice["text"].strip()))
         elif messages and line.strip():
+            continuation += 1
             messages[-1]["text"] += "\n    " + line.strip()  # a message running over several lines
-    real = [m for m in messages if m["sender"] != "(WhatsApp notice)"]
-    # Continuation lines count with the message they belong to; the share is of message starts among non-empty
-    # lines that are not continuations of a recognised message.
-    if len(real) < MIN_MESSAGES or starts / max(1, len([line for line in filled if not line.startswith(" ")])) < MIN_SHARE_OF_LINES:
+        elif line.strip():
+            preamble.append(line.strip())  # text before the first message is kept, never dropped
+    real = [m for m in messages if m["sender"] != NOTICE]
+    if len(real) < MIN_MESSAGES or len({m["sender"] for m in real}) < 2:
+        return None  # a conversation has at least three messages from at least two people
+    if len(messages) / max(1, len(messages) + len(preamble)) < MIN_SHARE_OF_LINES:
         return None
     senders = Counter(m["sender"] for m in real)
-    body = [f"[{m['when']}] {m['sender']}: {m['text']}" for m in messages]
+    body = (["Text before the first message:", *preamble, ""] if preamble else []) + [
+        f"[{m['when']}] {m['sender']}: {m['text']}" for m in messages]
     header = [
         f"Text message export (WhatsApp chat export): {len(real)} messages, "
         f"first {messages[0]['when']}, last {messages[-1]['when']} (dates exactly as printed in the export).",
@@ -69,16 +71,29 @@ def _whatsapp(text: str):
     ]
     meta = dict(format="whatsapp_chat_txt", messages=len(real), notices=len(messages) - len(real),
                 participants=[name for name, _ in senders.most_common()], conversations=1,
-                first=messages[0]["when"], last=messages[-1]["when"], dates="as printed")
+                first=messages[0]["when"], last=messages[-1]["when"], dates="as printed",
+                lines_before_first_message=len(preamble))
     return "\n".join(header + body), meta
 
 
+def _join_surrogates(text: str) -> str:
+    """SMS Backup & Restore writes an emoji as two surrogate character references, which XML rejects; join them."""
+    def joined(match):
+        high, low = int(match[1]), int(match[2])
+        if 0xD800 <= high <= 0xDBFF and 0xDC00 <= low <= 0xDFFF:
+            return chr(0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00))
+        return match[0]
+    return re.sub(r"&#(\d{5});&#(\d{5});", joined, text)
+
+
+DIRECTIONS = {"1": "received", "2": "sent", "3": "draft", "4": "outbox", "5": "failed", "6": "queued"}
+
+
 def _sms_backup(text: str):
-    head = text.lstrip()[:400].lower()
-    if "<smses" not in head and "<sms " not in head[:400]:
+    if "<smses" not in text.lstrip()[:400].lower():
         return None
     try:
-        root = ElementTree.fromstring(text.encode("utf-8", errors="replace"))
+        root = ElementTree.fromstring(_join_surrogates(text).encode("utf-8", errors="replace"))
     except ElementTree.ParseError:
         return None
     if root.tag != "smses":
@@ -87,7 +102,7 @@ def _sms_backup(text: str):
     names: dict = {}
     skipped = Counter()
     for item in root:
-        if item.tag != "sms":
+        if item.tag not in ("sms", "mms"):
             skipped[item.tag] += 1
             continue
         address = (item.get("address") or "").strip() or "(no number recorded)"
@@ -96,11 +111,27 @@ def _sms_backup(text: str):
             names[address] = contact
         try:
             when = datetime.fromtimestamp(int(item.get("date")) / 1000, tz=timezone.utc)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError, OSError):
             when = None
-        kind = item.get("type")
-        direction = {"1": "received", "2": "sent", "3": "draft", "4": "outbox", "5": "failed", "6": "queued"}.get(kind, "type " + str(kind))
-        threads.setdefault(address, []).append(dict(when=when, direction=direction, text=item.get("body") or ""))
+        if item.tag == "sms":
+            kind, body = item.get("type"), item.get("body") or ""
+        else:
+            # A picture or group message: its text parts are kept; attachments are counted and named, not read.
+            kind = item.get("msg_box")
+            parts = list(item.find("parts") if item.find("parts") is not None else [])
+            texts = [p.get("text") for p in parts if (p.get("ct") or "").startswith("text/plain") and p.get("text")]
+            files = [p.get("ct") for p in parts
+                     if p.get("ct") and not p.get("ct").startswith(("text/plain", "application/smil"))]
+            body = " ".join(texts)
+            if files:
+                body = (body + " " if body else "") + f"[{len(files)} attachment(s) not read: {', '.join(files)}]"
+            if not body:
+                body = "[picture or group message with no text]"
+        subject = (item.get("subject") or "").strip()
+        if subject and subject.lower() != "null":
+            body = f"(subject: {subject}) {body}"
+        direction = DIRECTIONS.get(kind, "type " + str(kind))
+        threads.setdefault(address, []).append(dict(when=when, direction=direction, text=body))
     count = sum(len(v) for v in threads.values())
     if count < MIN_MESSAGES:
         return None
@@ -112,17 +143,18 @@ def _sms_backup(text: str):
         messages.sort(key=lambda m: (m["when"] is None, m["when"] or datetime.min.replace(tzinfo=timezone.utc)))
         body += ["", f"Conversation with {label(address)}: {len(messages)} messages"]
         for m in messages:
-            who = f"Phone owner to {label(address)}" if m["direction"] == "sent" else (
-                f"{label(address)} to phone owner" if m["direction"] == "received" else f"{m['direction']}, {label(address)}")
+            who = (f"Phone owner to {label(address)}" if m["direction"] == "sent" else
+                   f"{label(address)} to phone owner" if m["direction"] == "received" else
+                   f"{m['direction']}, {label(address)}")
             body.append(f"[{stamp(m['when'])}] {who}: {m['text']}")
     header = [
-        f"Text message export (SMS Backup & Restore): {count} text messages in {len(threads)} conversations"
+        f"Text message export (SMS Backup & Restore): {count} messages in {len(threads)} conversations"
         + (f", first {stamp(min(times))}, last {stamp(max(times))}" if times else "") + ".",
         "Times are the phone's recorded times written in UTC. 'Phone owner' is the phone the backup was taken from.",
     ]
     if skipped:
         header.append("Not shown here: " + ", ".join(f"{n} {tag} item(s)" for tag, n in sorted(skipped.items()))
-                      + " (picture messages and other items are not read by this step).")
+                      + " (items other than text and picture messages are not read by this step).")
     meta = dict(format="sms_backup_restore_xml", messages=count, conversations=len(threads),
                 participants=[label(a) for a in threads], first=stamp(min(times)) if times else None,
                 last=stamp(max(times)) if times else None, not_read=dict(skipped))

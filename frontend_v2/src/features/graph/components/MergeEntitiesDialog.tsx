@@ -50,8 +50,8 @@ export function MergeEntitiesDialog({
   const [preferredType, setPreferredType] = useState("")
   const preferredNameId = useId()
   const preferredTypeId = useId()
-  // More than the server's limit: the first 25, in the order shown, are merged; the rest stay selected for a second
-  // merge, and the dialog says how many are left out.
+  // More than the server's limit: the first 25, in the order shown, are merged and the dialog says how many are
+  // left out (the table clears the selection when a merge finishes, so they are selected again for a second merge).
   const merged = entities.slice(0, MAX_MERGE_ENTITIES)
   const leftOut = entities.length - merged.length
   const types = Array.from(new Set(merged.map((e) => e.type).filter(Boolean)))
@@ -145,8 +145,8 @@ export function MergeEntitiesDialog({
           {leftOut > 0 && (
             <p role="status" className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-900 dark:text-amber-200">
               One merge takes up to {MAX_MERGE_ENTITIES} entities. These {MAX_MERGE_ENTITIES} will be merged;{" "}
-              {leftOut.toLocaleString()} more {leftOut === 1 ? "is" : "are"} left out of this merge. Merge{" "}
-              {leftOut === 1 ? "it" : "them"} in a second step.
+              {leftOut.toLocaleString()} more {leftOut === 1 ? "is" : "are"} left out of this merge. Select{" "}
+              {leftOut === 1 ? "it" : "them"} again and merge in a second step.
             </p>
           )}
 

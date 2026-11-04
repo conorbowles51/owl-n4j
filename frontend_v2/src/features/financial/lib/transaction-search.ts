@@ -66,7 +66,7 @@ export function parseTransactionSearch(query: string): Node | null {
     throw Error("Remove the unmatched closing parenthesis.")
   return result
 }
-/** "#412" or "no. 412" finds payment number 412 and nothing else; a bare number still searches every field. */
+/** "#412" or "no. 412" finds payment number 412 (and text that literally contains "#412"); a bare number searches the other fields only. */
 const PAYMENT_NUMBER = /^(#|no\.?\s*)\d+$/
 export function transactionSearch(query: string, mode: string = "text") {
   let tree: Node | null
@@ -89,13 +89,16 @@ export function transactionSearch(query: string, mode: string = "text") {
       ])
     )
     values.category ||= "Uncategorized"
+    // The payment number is searched only as "#412" or "number:412", never inside a plain term, so an amount
+    // or reference search does not also hit every payment whose number contains those digits.
+    const numberText = values.number
+    delete values.number
     values.amount = correctionMoney(
       String(row.amount_minor),
       row.currency
     ).split(" ")[0]
     const all = [
       ...Object.values(values),
-      row.txn_number != null ? `#${row.txn_number} no. ${row.txn_number}` : "",
       row.ref_id,
       row.key,
       row.counterparty_raw,
@@ -108,10 +111,12 @@ export function transactionSearch(query: string, mode: string = "text") {
     const evaluate = (node: Node): boolean =>
       "term" in node
         ? !node.field && PAYMENT_NUMBER.test(node.term)
-          ? String(row.txn_number ?? "") === node.term.replace(/^(#|no\.?\s*)/, "")
-          : (node.field ? values[node.field].toLowerCase() : all).includes(
-              node.term
-            )
+          ? numberText === node.term.replace(/^(#|no\.?\s*)/, "") || all.includes(node.term)
+          : node.field === "number"
+            ? numberText === node.term
+            : (node.field ? values[node.field].toLowerCase() : all).includes(
+                node.term
+              )
         : node.op === "NOT"
           ? !evaluate(node.value)
           : node.op === "AND"

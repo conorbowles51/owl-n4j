@@ -64,6 +64,8 @@ def _current(session, document, *, lock=True):
 def read_recovery(session, *, case_id, source_id):
     document, period, account = _load(session, case_id, source_id, lock=True)
     rows = _current(session, document)
+    from services.financial.transaction_numbers import attach_numbers
+    attach_numbers(session, rows)
     details = _view(document, period, account)
     unresolved = [item for item in (document.metadata_ or {}).get('statement_incomplete_records', [])
         if not item.get('resolved_transaction_id')]

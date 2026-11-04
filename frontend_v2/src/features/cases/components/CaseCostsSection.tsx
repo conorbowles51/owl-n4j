@@ -100,8 +100,8 @@ export function CaseCostsSection({ caseId, caseTitle }: { caseId: string; caseTi
                     </tr>
                   </thead>
                   <tbody>
-                    {data.lines.map((line) => (
-                      <tr key={`${line.kind}:${line.label}`} className="border-t align-top">
+                    {data.lines.map((line, index) => (
+                      <tr key={line.evidence_file_id ?? `${line.kind}:${line.label}:${index}`} className="border-t align-top">
                         <td className="p-2 whitespace-nowrap">{line.kind}</td>
                         <td className="p-2 break-words" title={line.models.join(", ")}>
                           {line.label}

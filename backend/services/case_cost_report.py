@@ -143,6 +143,15 @@ def case_cost_report(db, case_id: UUID, *, start_date: str | None = None, end_da
                 generated_at=datetime.now(timezone.utc).isoformat())
 
 
+def css_text(value) -> str:
+    """Text for a CSS string (the PDF footer): not HTML-escaped, which CSS would print literally; quotes, backslashes,
+    angle brackets and line breaks written as CSS escapes so the stylesheet cannot be broken out of."""
+    out = []
+    for char in str(value or ""):
+        out.append(f"\\{ord(char):x} " if char in '"\\<>&\n\r' or ord(char) < 32 else char)
+    return "".join(out)
+
+
 def _money(value: str) -> str:
     return f"${Decimal(value).quantize(Decimal('0.01')):,}"
 
@@ -160,7 +169,7 @@ def cost_report_html(report: dict) -> str:
         for line in report["lines"])
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI costs · {esc(report['case_title'])}</title>
 <style>@page {{ size: A4 landscape; margin: 14mm;
-  @bottom-left {{ content: "Loupe · AI costs · {esc(report['case_title'])}"; font: 8pt sans-serif; color: #556; }}
+  @bottom-left {{ content: "Loupe · AI costs · {css_text(report['case_title'])}"; font: 8pt sans-serif; color: #556; }}
   @bottom-right {{ content: "Page " counter(page) " of " counter(pages); font: 8pt sans-serif; color: #556; }} }}
 body {{ font: 9pt sans-serif; color: #1e293b; }} h1 {{ font-size: 18pt; margin: 0 0 4pt; }}
 table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }} thead {{ display: table-header-group; }}
@@ -171,7 +180,8 @@ tfoot td {{ font-weight: bold; }}</style></head><body>
 <h1>AI costs: {esc(report['case_title'])}</h1>
 <p>Case {esc(report['case_id'])} · {esc(period)} · generated {esc(report['generated_at'][:16].replace('T', ' '))} UTC.</p>
 <p>One line per document, conversation or kind of work. Each line folds the individual model calls recorded for it;
-the number of calls is shown. Line totals add up to the case total.</p>
+the number of calls is shown. Each line is shown to the cent; the total is the exact sum of every call, rounded once,
+so the printed lines can differ from it by a few cents. Dates are UTC days.</p>
 <table><colgroup><col style="width:13%"><col style="width:10%"><col style="width:30%"><col style="width:6%">
 <col style="width:12%"><col style="width:12%"><col style="width:8%"><col style="width:9%"></colgroup>
 <thead><tr><th>Case</th><th>Work</th><th>Document or item</th><th>Calls</th><th>Dates</th><th>Models</th><th>Tokens</th>

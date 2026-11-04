@@ -207,6 +207,8 @@ def preview_trail(session, *, case_id, request):
                 raise TrailError('A payment is already allocated in another saved trail. The combined allocations would exceed its amount.', 409)
         residual = str(credit.amount_minor - requested[str(request.credit_id)] - sum(
             consumed.get(a, 0) for a in _ancestors(session, case_id, [str(request.credit_id)])))
+    from services.financial.transaction_numbers import attach_numbers
+    attach_numbers(session, list(rows.values()))
     snapshots = [to_view(rows[id], account=rows[id].account, account_parties=accounts).to_json() for id in ids]
     ownership = {str(r.account_id): accounts[str(r.account_id)] for r in rows.values()}
     context = None
@@ -221,6 +223,7 @@ def preview_trail(session, *, case_id, request):
                 FinancialTransaction.superseded_by_id.is_(None), FinancialSourceDocument.status == 'admitted',
                 FinancialTransaction.ordering_date >= credit.ordering_date, FinancialTransaction.ordering_date <= upper)
             .order_by(FinancialTransaction.ordering_date,FinancialTransaction.id)))
+        attach_numbers(session, sequence)
         sequence_views = [to_view(r,account=r.account,account_parties=accounts).to_json() for r in sequence]
         context = dict(currency=credit.currency,
             opening_balance_minor=str(period.opening_balance_minor) if period and period.opening_balance_minor is not None else None,

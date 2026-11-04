@@ -129,7 +129,7 @@ export function GraphLegend({ nodes, allNodes = nodes }: GraphLegendProps) {
                     className="rounded p-0.5 text-muted-foreground hover:bg-muted/50 hover:text-amber-600"
                     onClick={() => spotlightAllOfType(type)}
                     aria-label={`Put all ${total} ${type} in the spotlight`}
-                    title={`Put all ${total} ${type} in this case in the spotlight${total > count ? `, including ${total - count} hidden by the filter` : ""}`}
+                    title={`Put all ${total} ${type} loaded for this case in the spotlight${total > count ? `, including ${total - count} hidden by the filter` : ""}`}
                   >
                     <Focus className="size-3" />
                   </button>

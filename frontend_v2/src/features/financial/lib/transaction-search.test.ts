@@ -72,6 +72,13 @@ describe("payment numbers (FEAT-006)", () => {
   it("searches the number as a field in boolean mode", () =>
     expect(transactionSearch("number:412 AND loan", "boolean").matches(numbered)).toBe(true)
   )
+  it("a bare number or an amount does not match on the payment number", () => {
+    expect(transactionSearch("412").matches({ ...numbered, description: "rent", amount_minor: "100" })).toBe(false)
+    expect(transactionSearch("no.").matches({ ...numbered, description: "rent" })).toBe(false)
+  })
+  it("#1234 written in a description is still found", () =>
+    expect(transactionSearch("#1234").matches({ ...row, description: "Cheque #1234", txn_number: 9 })).toBe(true)
+  )
   it("a row not numbered yet is not found by a number", () =>
     expect(transactionSearch("#412").matches({ ...row, txn_number: null })).toBe(false)
   )

@@ -135,6 +135,18 @@ def _paths(a, b, prefix=''):
     return result
 
 
+def _numbers_comparable(before, after):
+    """An export taken before payments had printable numbers (FEAT-006, 4 Nov 2026) has no txn_number; adding the
+    number is not a change to the payment, so it is left out of the comparison when either side lacks it."""
+    def numbered(readings):
+        return any('txn_number' in (reading.get('row') or {}) for reading in readings)
+    if numbered(before) and numbered(after):
+        return before, after
+    strip = lambda readings: [{**reading, 'row': {k: v for k, v in (reading.get('row') or {}).items() if k != 'txn_number'}}
+                              for reading in readings]  # noqa: E731
+    return strip(before), strip(after)
+
+
 def _changes(before, after, key):
     a, b = _index(before, key), _index(after, key)
     changed = []
@@ -174,7 +186,7 @@ def compare_ledger_exports(before, after, *, expected_case_id=None):
         before=dict(archive_sha256=first['archive_sha256'], snapshot_sha256=first['manifest']['document_sha256'], generated_at=first['manifest'].get('generated_at'), code_version=first['manifest'].get('code_version')),
         after=dict(archive_sha256=second['archive_sha256'], snapshot_sha256=second['manifest']['document_sha256'], generated_at=second['manifest'].get('generated_at'), code_version=second['manifest'].get('code_version')),
         scope=dict(changed=scope_changed, before=scope(a), after=scope(b)),
-        readings=_changes(a['ledger']['readings'], b['ledger']['readings'], lambda reading:reading['row']['key']),
+        readings=_changes(*_numbers_comparable(a['ledger']['readings'], b['ledger']['readings']), lambda reading:reading['row']['key']),
         decisions=_changes(a.get('decisions', []), b.get('decisions', []), lambda record:record['id']),
         pdf_review_history=reviews,
         ledger_summary_fields_changed=summary_paths[:100], ledger_summary_field_change_count=len(summary_paths), ledger_summary_paths_truncated=len(summary_paths) > 100,
