@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { getPhoneMapPoints, getPhoneMapSummary } from "@/features/phones/api"
 import { PhoneLayerPanel } from "./PhoneLayer"
-import { useParams } from "react-router-dom"
+import { useParams, useSearchParams } from "react-router-dom"
 import { MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { LoadProgress } from "@/features/financial/components/LoadProgress"
@@ -46,7 +46,10 @@ export function MapPage() {
   const setProximityRadius = useMapStore((s) => s.setProximityRadius)
 
   const { anchor, results } = useProximityAnalysis(safeLocations)
-  const phones = usePhoneLayer(caseId, isLoading ? null : safeLocations.length)
+  // Show on Map from a record (03 section 3.6): ?phone_point=<lon>,<lat> opens the phone layer centred on it
+  const [params] = useSearchParams()
+  const focusPoint = parsePoint(params.get("phone_point"))
+  const phones = usePhoneLayer(caseId, isLoading ? null : safeLocations.length, !!focusPoint)
 
   // Auto-expand CaseLayout's side panel to detail tab when a node is selected from the map
   const expandGraphPanelTo = useUIStore((s) => s.expandGraphPanelTo)
@@ -135,7 +138,13 @@ export function MapPage() {
           phoneItems={phones.on ? phones.points.data?.items : undefined}
           onView={phones.setView}
           fitTo={phones.on ? phones.summary.data?.bbox ?? null : null}
+          focusPoint={focusPoint}
         />
+        {focusPoint && (
+          <p role="status" className="absolute left-2 top-2 z-10 rounded border bg-card px-2 py-1 text-xs shadow-sm">
+            Centred on the position of the record you opened ({focusPoint[1].toFixed(5)}, {focusPoint[0].toFixed(5)}).
+          </p>
+        )}
         {phones.summary.data && phones.summary.data.total > 0 && (
           <button
             type="button"
@@ -180,7 +189,12 @@ export function MapPage() {
  * The Map phone layer's state (03 section 13.3): on at first use when the case has no other located items, off
  * otherwise; that choice is stored for this person and case at first use and never recomputed (07 4.12).
  */
-function usePhoneLayer(caseId: string | undefined, graphLocations: number | null) {
+function parsePoint(v: string | null): [number, number] | null {
+  const m = v?.split(",").map(Number)
+  return m && m.length === 2 && m.every(Number.isFinite) && Math.abs(m[0]) <= 180 && Math.abs(m[1]) <= 90 ? [m[0], m[1]] : null
+}
+
+function usePhoneLayer(caseId: string | undefined, graphLocations: number | null, forced = false) {
   const key = `loupe.map.phones.${caseId}`
   const [stored, setStored] = useState<string | null>(() => (caseId ? localStorage.getItem(key) : null))
   const [view, setView] = useState<{ bbox: number[]; zoom: number } | null>(null)
@@ -196,7 +210,8 @@ function usePhoneLayer(caseId: string | undefined, graphLocations: number | null
     localStorage.setItem(key, first)
     setStored(first)
   }, [caseId, key, stored, graphLocations, summary.data])
-  const on = stored === "on"
+  // a Show on Map link shows the layer for this visit without changing the stored choice
+  const on = stored === "on" || forced
   const points = useQuery({
     queryKey: ["phone-map-points", caseId, view?.bbox.map((v) => v.toFixed(4)).join(","), view ? Math.round(view.zoom) : null],
     queryFn: ({ signal }) => getPhoneMapPoints(caseId!, view!.bbox, view!.zoom, {}, signal),

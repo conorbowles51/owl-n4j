@@ -54,6 +54,11 @@ export async function lensWindow(filter: LensFilter, snapshot: string, day: stri
   return StreamWindowSchema.parse(await stale(fetchAPI("/api/phones/timeline/window", { method: "POST", body: { filter, snapshot, day, offset, limit }, read: true })))
 }
 
+/** Show on Timeline (03 section 3.6): the day and offset of a record's entry in the lens, in window order. */
+export async function lensLocateRecord(filter: LensFilter, snapshot: string, recordUid: string): Promise<{ day: string | null; offset: number; entry_uid: string }> {
+  return fetchAPI("/api/phones/timeline/locate", { method: "POST", body: { filter, snapshot, record_uid: recordUid }, read: true })
+}
+
 export async function lensBuckets(filter: LensFilter, snapshot: string, start: string, end: string, bucket: "hour" | "day" | "week"): Promise<LensBuckets> {
   return BucketsSchema.parse(await stale(fetchAPI("/api/phones/timeline/buckets", { method: "POST", body: { filter, snapshot, start, end, bucket }, read: true })))
 }

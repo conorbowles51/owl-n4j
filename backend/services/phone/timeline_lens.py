@@ -362,6 +362,41 @@ def window(conn, f: TimelineLensFilter, *, snapshot_token, day, offset=0, limit=
     return streams.envelope(conn, f, items=items)
 
 
+def locate_record(conn, f: TimelineLensFilter, *, snapshot_token, record_uid) -> dict:
+    """Where a phone record sits in the lens (``Show on Timeline``, 03 section 3.6): its entry's day and offset in
+    the same order ``window`` lists, so the lens opens on that row. A record whose entry the lens's kinds leave out
+    raises ``NotInCase``; the caller says so rather than opening somewhere else."""
+    if snapshot(conn, f) != snapshot_token:
+        raise streams.StaleSnapshot()
+    zone = streams.resolve_zone(conn, f)
+    zn = "UTC" if T.is_utc(zone["name"]) else zone["name"]
+    targets = [r[0] for r in conn.execute(text(
+        "SELECT event_uid FROM pv_comm_event WHERE case_id = :c AND record_uid = CAST(:r AS uuid) UNION ALL "
+        "SELECT entry_uid FROM pv_timeline_entry WHERE case_id = :c AND record_uid = CAST(:r AS uuid)"),
+        {"c": f.case_id, "r": str(record_uid)})]
+    if not targets:
+        raise streams.NotInCase("record has no timeline entry")
+    sql, p = _union(conn, f, zone)
+    p.update(targets=targets, zone=zn)
+    hit = conn.execute(text("WITH u AS (%s) SELECT uid, src, instant FROM u WHERE uid = ANY(CAST(:targets AS uuid[])) "
+                            "ORDER BY instant, src, uid LIMIT 1" % sql), p).first()
+    if hit is None:
+        raise streams.NotInCase("record not in this lens")
+    p.update(ti=hit.instant, ts=hit.src, tu=hit.uid)
+    tie = "(src < :ts OR (src = :ts AND uid %s CAST(:tu AS uuid)))" % (">" if f.sort == "newest_first" else "<")
+    if hit.instant is None:
+        day, cond = None, "instant IS NULL AND %s" % tie
+    else:
+        day = T.day_of(hit.instant, zone["name"])
+        start, end = T.day_bounds(day, zone["name"])
+        p.update(d0=start, d1=end)
+        cmp = ">" if f.sort == "newest_first" else "<"
+        cond = ("instant >= CAST(:d0 AS timestamptz) AND instant < CAST(:d1 AS timestamptz) AND (instant %s "
+                "CAST(:ti AS timestamptz) OR (instant = CAST(:ti AS timestamptz) AND %s))" % (cmp, tie))
+    n = conn.execute(text("WITH u AS (%s) SELECT count(*) FROM u WHERE %s" % (sql, cond)), p).scalar()
+    return {"day": day.isoformat() if day else None, "offset": int(n), "entry_uid": str(hit.uid)}
+
+
 def _no_data_hours(conn, ext, start, end) -> set:
     from services.pattern_of_life import availability
     try:

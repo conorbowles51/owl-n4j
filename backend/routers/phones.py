@@ -1455,6 +1455,27 @@ def timeline_lens_window(body: LensWindowBody, db: Session = Depends(get_db),
         raise _failure("The phone entries could not be loaded.", exc)
 
 
+class LensLocateBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filter: dict
+    snapshot: str = Field(min_length=1, max_length=64)
+    record_uid: UUID
+
+
+@router.post("/timeline/locate")
+def timeline_lens_locate(body: LensLocateBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Show on Timeline (03 section 3.6): the day and offset of a record's entry in the lens."""
+    from services.phone import timeline_lens
+    f = _lens_filter(body.filter, db, user)
+    try:
+        return timeline_lens.locate_record(db.connection(), f, snapshot_token=body.snapshot,
+                                           record_uid=str(body.record_uid))
+    except streams.StaleSnapshot:
+        raise HTTPException(status_code=409, detail="stale_snapshot")
+    except streams.NotInCase:
+        raise HTTPException(status_code=404, detail="This record has no entry in the phone lens with the kinds shown.")
+
+
 class LensBucketsBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     filter: dict

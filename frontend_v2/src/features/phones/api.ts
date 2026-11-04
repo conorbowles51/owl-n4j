@@ -103,6 +103,27 @@ export async function getRecord(caseId: string, recordUid: string, zone?: string
   return RecordDetailSchema.parse(await fetchAPI(`/api/phones/records/${encodeURIComponent(recordUid)}?${q}`))
 }
 
+/** Correct this value (03 section 3.6, 02 section 10.4): a correct_phone_value decision with the person's reason; the
+ * original stays recorded and shown beside the corrected value. */
+export async function correctRecordValue(
+  caseId: string,
+  recordUid: string,
+  body: { field_path: string; value_index: number; corrected_text: string; reason: string; expected_revision?: string },
+) {
+  return fetchAPI<Record<string, unknown>>(`/api/phones/records/${encodeURIComponent(recordUid)}/corrections`, {
+    method: "POST",
+    body: { case_id: caseId, ...body },
+  })
+}
+
+/** Used in this case (03 section 3.6 item 8, 07 section 6.5): the reverse lookup of one record's collections. */
+export async function getRecordUses(caseId: string, recordUid: string) {
+  const r = await fetchAPI<{
+    results: { target_id: string; summary: string | null; counts: Record<string, number>; uses: { kind: string; container_id: string; container_label: string | null; via: string; relationship: string | null }[] }[]
+  }>(`/api/workspace/${encodeURIComponent(caseId)}/collections?target_type=phone_record&target_ids[]=${encodeURIComponent(recordUid)}`, { read: true })
+  return r.results[0] ?? { target_id: recordUid, summary: null, counts: {}, uses: [] }
+}
+
 /** 05 section 17.2: the app database the report names as this record's source, read-only; ``browse`` pages a table. */
 export async function getSourceDatabase(caseId: string, recordUid: string, source: number, browse?: string, page = 1): Promise<SourceDatabase> {
   const q = new URLSearchParams({ case_id: caseId, source: String(source), page: String(page) })

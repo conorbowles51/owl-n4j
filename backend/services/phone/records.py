@@ -182,8 +182,53 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
         # 05 section 17.3: the same record as an independent tool read it, beside the report's, never merged
         "reparse": reparse_comparison.reparse_for_record(conn, case_id, record_uid),
         "corrections": corr, "interpretation_level": loc.interpretation_level, "zone": zone,
+        # 03 section 3.6 item 7: Show on Map only when positioned, Show on Timeline only when the record has an entry,
+        # Correct this value over exactly the values the correction route accepts (02 section 10.4)
+        "position": _position(conn, case_id, record_uid),
+        "on_timeline": _on_timeline(conn, case_id, record_uid),
+        "correctable": correctable_values(conn, record_uid),
         "readings": _open_readings(conn, case_id, ext, loc.model_type, label),
     }
+
+
+def _position(conn, case_id, record_uid):
+    """The record's own position (``pv_location_point``), or None: Show on Map is offered only when positioned."""
+    r = conn.execute(text(
+        "SELECT point_uid, lat, lon FROM pv_location_point WHERE case_id = :c AND (record_uid = CAST(:u AS uuid) OR "
+        "coordinate_record_uid = CAST(:u AS uuid)) ORDER BY point_uid LIMIT 1"), {"c": case_id, "u": str(record_uid)}).first()
+    return {"point_uid": str(r.point_uid), "lat": float(r.lat), "lon": float(r.lon)} if r is not None else None
+
+
+def _on_timeline(conn, case_id, record_uid) -> bool:
+    return conn.execute(text(
+        "SELECT EXISTS (SELECT 1 FROM pv_comm_event WHERE case_id = :c AND record_uid = CAST(:u AS uuid)) OR EXISTS "
+        "(SELECT 1 FROM pv_timeline_entry WHERE case_id = :c AND record_uid = CAST(:u AS uuid))"),
+        {"c": case_id, "u": str(record_uid)}).scalar() is True
+
+
+def correctable_values(conn, record_uid) -> list:
+    """The record's own times and text values at the current reading that ``corrections.correct_value`` accepts,
+    each with the machine text and the correction in effect (the original always kept). Sensitive values are left
+    out: they stay hidden and cannot be corrected (05 section 3.8)."""
+    from services.phone import corrections
+    current = {}
+    for r in conn.execute(text(
+            "SELECT field_path, value_index, corrected_text FROM phone_value_corrections WHERE record_uid = "
+            "CAST(:u AS uuid) AND superseded_by_id IS NULL AND corrected_text IS DISTINCT FROM machine_text"),
+            {"u": str(record_uid)}):
+        current[(r.field_path, r.value_index)] = r.corrected_text
+    out = []
+    for r in conn.execute(text(
+            "SELECT v.field_path, v.value_index, 'TimeStamp' AS value_type, v.original_text AS machine FROM "
+            "phone_time_values v JOIN phone_interpretation_state s ON s.extraction_id = v.extraction_id AND "
+            "s.generation = v.generation WHERE v.record_uid = CAST(:u AS uuid) UNION ALL SELECT x.field_path, "
+            "x.value_index, 'String', x.value FROM phone_texts x JOIN phone_interpretation_state s ON s.extraction_id = "
+            "x.extraction_id AND s.generation = x.generation WHERE x.record_uid = CAST(:u AS uuid) AND NOT x.is_sensitive "
+            "ORDER BY 1, 2"), {"u": str(record_uid)}):
+        out.append({"field_path": r.field_path, "value_index": int(r.value_index), "value_type": r.value_type,
+                    "machine_text": r.machine, "corrected_text": current.get((r.field_path, r.value_index)),
+                    "revision": corrections.revision(conn, str(record_uid), r.field_path, r.value_index)})
+    return out
 
 
 def _file_attr(body, name):

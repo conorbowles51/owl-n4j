@@ -53,6 +53,8 @@ export function TimelinePage() {
     id: string
   } | null>(null)
   const requestedKey = new URLSearchParams(location.search).get("event")
+  // Show on Timeline from a phone record (03 section 3.6): the lens opens on that record for this visit
+  const phoneRecord = new URLSearchParams(location.search).get("phone_record")
   const returnTo =
     typeof location.state?.financialReturnTo === "string" &&
     location.state.financialReturnTo.startsWith(`/cases/${caseId}/financial`)
@@ -67,7 +69,8 @@ export function TimelinePage() {
   const caseName = useCase(caseId ?? "").data?.title ?? "This case"
   // the first-use choice is stored only from a complete load of the whole case, never from a failed read or a layer
   const lens = usePhoneLens(caseId ?? "", events.length > 0, phoneCount > 0, !isLoading && !error && caseLayer !== "significant")
-  const lensToggle = phoneCount > 0 ? <PhoneLensToggle on={lens.on} onChange={lens.setOn} phones={phoneCount} /> : undefined
+  const lensOn = lens.on || (!!phoneRecord && phoneCount > 0)
+  const lensToggle = phoneCount > 0 ? <PhoneLensToggle on={lensOn} onChange={lens.setOn} phones={phoneCount} /> : undefined
 
   const searchInputRef = useRef<HTMLInputElement>(null)
   const [exportOpen, setExportOpen] = useState(false)
@@ -329,8 +332,8 @@ export function TimelinePage() {
         <div className="flex h-full flex-col">
           {windowBar}
           <div className="flex items-center justify-end gap-2 border-b px-4 py-1.5">{lensToggle}</div>
-          {lens.on ? (
-            <PhoneLens caseId={caseId} caseName={caseName} note={lens.note} />
+          {lensOn ? (
+            <PhoneLens caseId={caseId} caseName={caseName} note={lens.note} focusRecord={phoneRecord} />
           ) : (
             <EmptyState icon={Clock} title="No timeline events" description="This case's phone entries are hidden. Turn on Phones to show them." />
           )}
@@ -450,13 +453,13 @@ export function TimelinePage() {
 
         {/* Center: event stream */}
         <ResizablePanel defaultSize="80" minSize="30">
-          {lens.on || undatedEvents.length > 0 ? (
+          {lensOn || undatedEvents.length > 0 ? (
             <div className="flex h-full min-h-0 flex-col">
               <div className="min-h-0 flex-1 overflow-hidden">{eventStream}</div>
               {undatedEvents.length > 0 && <UndatedEvents events={undatedEvents} />}
-              {lens.on && caseId && (
+              {lensOn && caseId && (
                 <div className="flex min-h-0 flex-1 flex-col border-t">
-                  <PhoneLens caseId={caseId} caseName={caseName} note={lens.note} />
+                  <PhoneLens caseId={caseId} caseName={caseName} note={lens.note} focusRecord={phoneRecord} />
                 </div>
               )}
             </div>

@@ -46,6 +46,8 @@ interface MapCanvasProps {
   onView?: (bbox: number[], zoom: number) => void
   /** Fit to this [w, s, e, n] once when there are no graph locations to fit to. */
   fitTo?: number[] | null
+  /** Show on Map (03 section 3.6): open centred on this phone position, [lon, lat], before any fit. */
+  focusPoint?: [number, number] | null
 }
 
 const LOCATION_INTERACTIVE_LAYER_IDS = [
@@ -85,7 +87,7 @@ function getPointDistance(a: ScreenPoint, b: ScreenPoint) {
   return Math.hypot(a.x - b.x, a.y - b.y)
 }
 
-export function MapCanvas({ locations, phoneItems, onView, fitTo }: MapCanvasProps) {
+export function MapCanvas({ locations, phoneItems, onView, fitTo, focusPoint }: MapCanvasProps) {
   const mapRef = useRef<MapRef>(null)
   const boxDragRef = useRef<BoxDragState | null>(null)
   const secondaryPanRef = useRef<SecondaryPanState | null>(null)
@@ -522,7 +524,9 @@ export function MapCanvas({ locations, phoneItems, onView, fitTo }: MapCanvasPro
       onLoad={(e) => {
         handleLoad()
         const map = e.target
-        if (fitTo && locations.length === 0) {
+        if (focusPoint) {
+          map.jumpTo({ center: focusPoint, zoom: 15 })
+        } else if (fitTo && locations.length === 0) {
           const [w, s, ea, n] = fitTo
           map.fitBounds([[w, s], [ea === w ? ea + 0.01 : ea, n === s ? n + 0.01 : n]], { padding: 60, maxZoom: 15, duration: 0 })
         }

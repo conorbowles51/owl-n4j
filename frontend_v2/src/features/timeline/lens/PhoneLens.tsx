@@ -1,11 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { ExportDialog } from "@/features/conversations/ExportDialog"
 import { Lanes, type LaneRow } from "@/features/pattern/components/Lanes"
 import { StreamList } from "@/features/phones/components/StreamList"
 import { useStream } from "@/features/phones/hooks/use-stream"
-import { DEFAULT_LENS_KINDS, LENS_KINDS, LENS_SOURCE, lensBuckets, type LaneBy, type LensFilter, type LensKind } from "./lens-api"
+import { DEFAULT_LENS_KINDS, LENS_KINDS, LENS_SOURCE, lensBuckets, lensLocateRecord, type LaneBy, type LensFilter, type LensKind } from "./lens-api"
 
 const n = (x: number) => x.toLocaleString("en-US")
 const KIND_LABELS: Record<LensKind, string> = {
@@ -123,7 +123,7 @@ export function LensList({ caseId, caseName, filter, filterWords }: { caseId: st
  * line, the whole result under filters (no "Load more"), and one Lanes view to compare phones, people or kinds.
  * The stream and the lanes list rows through the one phone list, so copy gives the same text in both (T-4).
  */
-export function PhoneLens({ caseId, caseName, note }: { caseId: string; caseName: string; note?: string | null }) {
+export function PhoneLens({ caseId, caseName, note, focusRecord }: { caseId: string; caseName: string; note?: string | null; focusRecord?: string | null }) {
   const [kinds, setKinds] = useState<LensKind[]>(DEFAULT_LENS_KINDS)
   const [laneBy, setLaneBy] = useState<LaneBy>("phone")
   const [mode, setMode] = useState<"stream" | "lanes">("stream")
@@ -135,6 +135,25 @@ export function PhoneLens({ caseId, caseName, note }: { caseId: string; caseName
   const kindWords = kinds.map((k) => KIND_LABELS[k]).join(", ")
   const days = stream.index?.items ?? []
   const [exportOpen, setExportOpen] = useState(false)
+  // Show on Timeline from a record panel: find the record's entry once the index is in, then open the list on it
+  const [jump, setJump] = useState<{ day: string | null; seq: number; offset?: number } | null>(null)
+  const [focusNote, setFocusNote] = useState<string | null>(null)
+  const snapshot = stream.index?.snapshot
+  useEffect(() => {
+    if (!focusRecord || !snapshot) return
+    let live = true
+    lensLocateRecord(filter, snapshot, focusRecord)
+      .then((loc) => {
+        if (!live) return
+        setMode("stream")
+        setJump({ day: loc.day, offset: loc.offset, seq: Date.now() })
+        setFocusNote("Showing the record you opened.")
+      })
+      .catch((e) => live && setFocusNote(e instanceof Error && e.message ? e.message : "The record you opened has no entry in the phone lens with the kinds shown."))
+    return () => {
+      live = false
+    }
+  }, [focusRecord, snapshot]) // eslint-disable-line react-hooks/exhaustive-deps -- once per record and result
   return (
     <section aria-label="Phone entries" className="flex min-h-0 flex-1 flex-col gap-2 p-3">
       <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -154,6 +173,7 @@ export function PhoneLens({ caseId, caseName, note }: { caseId: string; caseName
         </label>
       </div>
       {note && <p role="note" className="text-xs">{note}</p>}
+      {focusNote && <p role="status" className="text-xs">{focusNote}</p>}
       {idx?.hidden && (idx.hidden.count > 0 || hiddenShown) && (
         <p className="flex items-center gap-2 text-xs text-muted-foreground">
           {hiddenShown ? "Device events and sensor readings are shown." : idx.hidden.words}
@@ -187,6 +207,7 @@ export function PhoneLens({ caseId, caseName, note }: { caseId: string; caseName
           zoneBasis={stream.index?.zone.basis}
           noun={{ one: "phone entry", many: "phone entries" }}
           className="min-h-0 flex-1"
+          jumpTo={jump}
         />
       ) : stream.index && days.length ? (
         <LensLanes caseId={caseId} caseName={caseName} filter={filter} snapshot={stream.index.snapshot} firstDay={days[0].day < days[days.length - 1].day ? days[0].day : days[days.length - 1].day}

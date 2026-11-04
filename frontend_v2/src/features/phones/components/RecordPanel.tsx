@@ -9,6 +9,7 @@ import type { RecordDetail, RecordFieldData } from "../schemas"
 import { DockedPanel } from "../ui/DockedPanel"
 import { FILE_OUTCOME_BADGE } from "../lib/badges"
 import { SourceDatabasePanel } from "./SourceDatabasePanel"
+import { RecordActions } from "./RecordActions"
 
 /**
  * The record behind a line (03 section 3.6): the phone, record type, record id and report with its SHA-256; the
@@ -275,6 +276,7 @@ export function RecordDetailView({
           </Button>
         )}
       </div>
+      {caseId && <RecordActions detail={d} caseId={caseId} />}
     </div>
   )
 }

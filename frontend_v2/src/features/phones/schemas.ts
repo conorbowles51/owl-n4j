@@ -302,6 +302,13 @@ export const RecordDetailSchema = z.object({
   as_text: z.string(),
   // Open readings of this record's type on its phone (07 J-8b); answered on Needs a decision.
   readings: z.array(z.object({ id: z.string(), sentence: z.string() })).optional(),
+  // 03 section 3.6 item 7: Show on Map only when positioned; Show on Timeline only when it has an entry
+  position: z.object({ point_uid: z.string(), lat: z.number(), lon: z.number() }).nullable().optional(),
+  on_timeline: z.boolean().optional(),
+  // the values Correct this value accepts (02 section 10.4), each with the machine text kept
+  correctable: z
+    .array(z.object({ field_path: z.string(), value_index: z.number(), value_type: z.string(), machine_text: z.string().nullable(), corrected_text: z.string().nullable(), revision: z.string() }))
+    .optional(),
 })
 export type RecordDetail = z.infer<typeof RecordDetailSchema>
 
