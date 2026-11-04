@@ -605,10 +605,11 @@ def get_account_history(case_id: UUID = Query(...), account_id: UUID | None = Qu
 # Of the statement batches it reads their id, case and status only (proved by test_financial_batch_stamp_views).
 @cached_view('ledger-accounts', columns={'financial_import_batches': ('id', 'case_id', 'status')})
 def get_candidate_accounts(case_id: UUID = Query(...), search: str = Query("", max_length=128), offset: int = 0,
-                                  db: Session = Depends(get_db)):
+                                  db: Session = Depends(get_db), whole: bool = False):
+    """Accounts 100 at a time from ``offset``; ``whole``: every account in one answer (the account filters)."""
     try:
         return list_candidate_accounts(db, case_id=case_id, search=search, offset=offset,
-            include_pending=True, include_statement_periods=True)
+            include_pending=True, include_statement_periods=True, **({'whole': True} if whole else {}))
     except CandidateStoreError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except Exception:

@@ -7,7 +7,7 @@ same mapping snapshot, not overlapping mappings or transactions across revisions
 """
 from copy import deepcopy
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceTableGeometry
 from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialExtractionCandidate, FinancialCandidateReview, FinancialCandidateFinalization
@@ -75,9 +75,17 @@ def list_candidate_mappings(session, *, case_id, limit=25, offset=0):
 
 
 def list_candidate_accounts(session, *, case_id, search="", limit=100, offset=0, include_pending=False,
-        include_statement_periods=False):
+        include_statement_periods=False, whole=False):
+    """Accounts of a case, 100 at a time from ``offset`` (``has_more`` when more follow). ``whole``: every account in
+    one answer, the same items the pages give one after another (the account filters read the whole directory; on
+    d5b330d1 that was three requests in a row, each waiting for the last)."""
     if not isinstance(search, str) or len(search)>128 or type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or offset < 0:
         raise CandidateStoreError("Invalid account search.", 422)
+    if whole:
+        if offset:
+            raise CandidateStoreError("Invalid account search.", 422)
+        limit = session.scalar(select(func.count()).select_from(FinancialAccount).where(
+            FinancialAccount.case_id == case_id)) or 1
     query = select(FinancialAccount).where(FinancialAccount.case_id == case_id)
     if search.strip():
         query = query.where(or_(*(field.icontains(search.strip(), autoescape=True) for field in (

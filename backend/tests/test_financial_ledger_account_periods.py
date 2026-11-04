@@ -53,6 +53,32 @@ class LedgerAccountPeriodTests(DuplicateTestCase):
         self.assertEqual(sources, {str(self.account.id):[str(first.id)], str(alias.id):[str(second.id)]})
         self.assertEqual(len({period['id'] for account in accounts for period in account['statement_periods']}), 2)
 
+    def test_the_whole_directory_in_one_answer_is_the_pages_one_after_another(self):
+        first = self.make_copy(rows=())
+        for n in range(205):
+            self.db.add(self._account(self.case.id, identity_key='synthetic-%03d' % n))
+        self.db.commit()
+        other = self._account(self.case.id, identity_key='synthetic-last')
+        self.db.add(other); self.db.commit()
+        last = self.make_copy(rows=(), account=other, bounds=PeriodBounds.printed(FEB, FEB_28))
+        pages, offset = [], 0
+        while True:
+            page = self.directory(offset=offset)
+            pages.append(page)
+            if not page['has_more']:
+                break
+            offset += len(page['items'])
+        self.assertEqual(len(pages), 3)
+        whole = self.directory(whole=True)
+        self.assertFalse(whole['has_more'])
+        self.assertEqual(whole['items'], [item for page in pages for item in page['items']])
+        self.assertEqual({k: v for k, v in whole.items() if k != 'items'},
+                         {k: v for k, v in pages[0].items() if k not in ('items', 'has_more')} | {'has_more': False})
+        periods = {p['source_document_id'] for a in whole['items'] for p in a['statement_periods']}
+        self.assertEqual(periods, {str(first.id), str(last.id)})
+        with self.assertRaises(CandidateStoreError):
+            self.directory(whole=True, offset=100)
+
     def test_only_current_case_owned_admitted_periods_are_exposed(self):
         current = self.make_copy(rows=())
         foreign = self.make_copy(rows=(), case=self.other_case, run=self.other_run, account=self.other_account)

@@ -15,7 +15,9 @@ export function useLedgerAccountDirectory(caseId: string | undefined) {
       let pendingTruncated = false
       for (;;) {
         const data = candidateAccounts.parse(await fetchAPI(
-          `${candidateUrl("ledger-accounts", caseId!)}&offset=${offset}`
+          // The first request asks for every account at once (one request, not one per 100 accounts after each
+          // other); more pages follow only if accounts were added while it was answered.
+          `${candidateUrl("ledger-accounts", caseId!)}&offset=${offset}${offset === 0 ? "&whole=true" : ""}`
         ))
         assertCandidateScope(data, caseId!)
         items.push(...data.items)
