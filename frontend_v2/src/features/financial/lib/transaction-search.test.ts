@@ -76,6 +76,11 @@ describe("payment numbers (FEAT-006)", () => {
     expect(transactionSearch("412").matches({ ...numbered, description: "rent", amount_minor: "100" })).toBe(false)
     expect(transactionSearch("no.").matches({ ...numbered, description: "rent" })).toBe(false)
   })
+  it("#1 does not match longer numbers written in the text", () => {
+    expect(transactionSearch("#1").matches({ ...row, description: "Store #1234", txn_number: 9 })).toBe(false)
+    expect(transactionSearch("#12").matches({ ...row, description: "Store #12 Main St", txn_number: 9 })).toBe(true)
+    expect(transactionSearch("#1").matches({ ...row, description: "Store #1234 and #1", txn_number: 9 })).toBe(true)
+  })
   it("#1234 written in a description is still found", () =>
     expect(transactionSearch("#1234").matches({ ...row, description: "Cheque #1234", txn_number: 9 })).toBe(true)
   )

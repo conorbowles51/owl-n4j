@@ -68,6 +68,14 @@ export function parseTransactionSearch(query: string): Node | null {
 }
 /** "#412" or "no. 412" finds payment number 412 (and text that literally contains "#412"); a bare number searches the other fields only. */
 const PAYMENT_NUMBER = /^(#|no\.?\s*)\d+$/
+/** The term in the text with no digit straight after it: "#1" is not found in "Store #1234". */
+function hasWholeNumber(text: string, term: string) {
+  for (let at = text.indexOf(term); at >= 0; at = text.indexOf(term, at + 1)) {
+    const next = text[at + term.length]
+    if (next === undefined || next < "0" || next > "9") return true
+  }
+  return false
+}
 export function transactionSearch(query: string, mode: string = "text") {
   let tree: Node | null
   try {
@@ -111,7 +119,7 @@ export function transactionSearch(query: string, mode: string = "text") {
     const evaluate = (node: Node): boolean =>
       "term" in node
         ? !node.field && PAYMENT_NUMBER.test(node.term)
-          ? numberText === node.term.replace(/^(#|no\.?\s*)/, "") || all.includes(node.term)
+          ? numberText === node.term.replace(/^(#|no\.?\s*)/, "") || hasWholeNumber(all, node.term)
           : node.field === "number"
             ? numberText === node.term
             : (node.field ? values[node.field].toLowerCase() : all).includes(

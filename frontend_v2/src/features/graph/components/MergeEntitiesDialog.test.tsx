@@ -42,3 +42,10 @@ it("over 25 selected: says how many are left out and merges the first 25", async
   expect(merge.mock.calls[0][1]).toEqual(entities.slice(0, 25).map((e) => e.key))
   expect(merge.mock.calls[0][3]).toBeUndefined()
 })
+
+it("keeps the dialog on screen with 25 entities: the body and the entity list scroll, the merge button stays (FEAT-004)", () => {
+  open(Array.from({ length: 25 }, (_, i) => node(i)))
+  expect(screen.getByRole("dialog").className).toContain("max-h-[calc(100dvh-2rem)]")
+  expect(screen.getByTestId("merge-body").className).toContain("overflow-y-auto")
+  expect(screen.getByTestId("merge-entities").className).toContain("overflow-y-auto")
+})

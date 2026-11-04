@@ -109,7 +109,7 @@ export function MergeEntitiesDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
             <GitMerge className="h-5 w-5" />
@@ -117,9 +117,9 @@ export function MergeEntitiesDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          {/* Entity cards */}
-          <div className="flex flex-wrap gap-2">
+        <div data-testid="merge-body" className="min-h-0 space-y-4 overflow-y-auto py-2 pr-1">
+          {/* Entity cards: their own scroll, so the options and the merge button stay on screen with 25 selected */}
+          <div data-testid="merge-entities" className="flex max-h-44 flex-wrap gap-2 overflow-y-auto">
             {merged.map((entity) => (
               <button
                 key={entity.key}
