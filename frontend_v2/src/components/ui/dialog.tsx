@@ -3,6 +3,7 @@ import { XIcon } from "lucide-react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/cn"
+import { useTypedContentGuard } from "@/components/ui/typed-content-guard"
 import { Button } from "@/components/ui/button"
 
 function Dialog({
@@ -49,10 +50,18 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  guardTypedContent = true,
+  onInputCapture,
+  onPointerDownOutside,
+  onInteractOutside,
+  onEscapeKeyDown,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  /** Ask before an outside click or Escape closes a window the person has typed into (default on). */
+  guardTypedContent?: boolean
   showCloseButton?: boolean
 }) {
+  const guard = useTypedContentGuard(guardTypedContent, { onInputCapture, onPointerDownOutside, onInteractOutside, onEscapeKeyDown })
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
@@ -63,6 +72,7 @@ function DialogContent({
           className
         )}
         {...props}
+        {...guard}
       >
         {children}
         {showCloseButton && (

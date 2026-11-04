@@ -11,6 +11,12 @@ export const ENTRY_LABELS: Record<CaseworkEntryType, string> = {
   theory: "Theory",
 }
 
+export const ENTRY_PLURAL_LABELS: Record<CaseworkEntryType, string> = {
+  note: "Notes",
+  finding: "Findings",
+  theory: "Theories",
+}
+
 export const RELATIONSHIP_LABELS: Record<LinkRelationship, string> = {
   unclassified: "Unclassified",
   supports: "Supports",

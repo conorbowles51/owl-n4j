@@ -42,6 +42,7 @@ import type {
 import {
   caseworkTitle,
   ENTRY_LABELS,
+  ENTRY_PLURAL_LABELS,
   FINDING_STATES,
   formatCaseworkDate,
   THEORY_STATES,
@@ -151,7 +152,7 @@ export function CaseworkListView({
         <div>
           <div className="flex items-center gap-2">
             {entryType === "finding" ? <ShieldCheck className="size-5 text-muted-foreground" /> : entryType === "note" ? <FileText className="size-5 text-muted-foreground" /> : <Lightbulb className="size-5 text-muted-foreground" />}
-            <h2 className="font-display text-xl font-semibold">{ENTRY_LABELS[entryType]}s</h2>
+            <h2 className="font-display text-xl font-semibold">{ENTRY_PLURAL_LABELS[entryType]}</h2>
           </div>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             {entryType === "finding"
@@ -168,7 +169,7 @@ export function CaseworkListView({
         <div className="flex flex-wrap gap-2">
           <div className="relative min-w-[220px] flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${ENTRY_LABELS[entryType].toLowerCase()}s`} className="h-8 pl-8 text-xs" />
+            <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${ENTRY_PLURAL_LABELS[entryType].toLowerCase()}`} className="h-8 pl-8 text-xs" />
           </div>
           {entryType !== "note" && <Select value={lifecycle} onValueChange={setLifecycle}>
             <SelectTrigger size="sm" className="w-[145px] max-sm:w-full"><SelectValue placeholder="Lifecycle" /></SelectTrigger>
@@ -211,7 +212,7 @@ export function CaseworkListView({
       ) : entries.length === 0 ? (
         <div className="flex min-h-72 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card/40 px-6 text-center">
           {entryType === "finding" ? <ShieldCheck className="size-9 text-muted-foreground/40" /> : entryType === "note" ? <FileText className="size-9 text-muted-foreground/40" /> : <Lightbulb className="size-9 text-muted-foreground/40" />}
-          <h3 className="mt-3 text-sm font-semibold">No matching {ENTRY_LABELS[entryType].toLowerCase()}s</h3>
+          <h3 className="mt-3 text-sm font-semibold">No matching {ENTRY_PLURAL_LABELS[entryType].toLowerCase()}</h3>
           <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">Adjust the filters or capture new casework from here or the persistent Notebook.</p>
           {canEdit && <Button className="mt-4" size="sm" variant="secondary" onClick={() => setCreateOpen(true)}><Plus className="size-3.5" /> New {ENTRY_LABELS[entryType].toLowerCase()}</Button>}
         </div>

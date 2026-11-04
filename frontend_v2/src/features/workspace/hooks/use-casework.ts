@@ -53,6 +53,9 @@ function useRefreshCasework(caseId: string) {
   return () => Promise.all([
     queryClient.invalidateQueries({ queryKey: caseworkKeys.all(caseId) }),
     queryClient.invalidateQueries({ queryKey: ["workspace", caseId, "overview"] }),
+    // The graph's per-entity Notebook card reads the same entries through the notebook queries; without this a
+    // note saved here stays missing from that card until its cache expires (BUG-007, "notes disappearing").
+    queryClient.invalidateQueries({ queryKey: ["notebook", caseId] }),
   ])
 }
 
