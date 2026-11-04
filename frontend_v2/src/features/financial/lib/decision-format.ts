@@ -142,6 +142,9 @@ const SUBJECT_COPY: Record<AdjudicationSubject, TermCopy> = {
   phone_derived_text: {
     label: "Machine text from a phone",
     description: "Text a machine made from a phone file, such as a transcript of a voice note or text read from an image, corrected or confirmed by a person. Not part of the financial ledger.",
+  },  security_row: {
+    label: "Brokerage statement row",
+    description: "One trade or holding read from a brokerage statement, corrected or confirmed by a person.",
   },
 }
 
@@ -325,6 +328,16 @@ const DECISION_COPY: Record<AdjudicationDecision, TermCopy> = {
     description:
       "A person said how one kind of record on one phone should be read instead, with a reason. The phone is read again; the records captured from the report are unchanged.",
   },
+  correct_security_row: {
+    label: "Brokerage row value corrected",
+    description:
+      "A person corrected a value of a trade or holding read from a brokerage statement, with a reason. The value as read stays visible beside it, and only the corrected value is used.",
+  },
+  confirm_security_row: {
+    label: "Brokerage row reading confirmed",
+    description:
+      "A person confirmed a value of a trade or holding as read from a brokerage statement. Until then a model's reading is shown as the model's.",
+  },
   confirm_phone_result: {
     label: "Phone analysis result confirmed",
     description:
@@ -440,6 +453,8 @@ const DECISION_VARIANT: Record<AdjudicationDecision, BadgeVariant> = {
   mark_not_duplicate: "info",
   confirm_phone_reading: "info",
   correct_phone_reading: "info",
+  correct_security_row: "info",
+  confirm_security_row: "info",
   confirm_phone_result: "info",
   reject_phone_result: "slate",
   not_pursue_phone_result: "slate",
@@ -505,6 +520,8 @@ const CHANGED_STORED_STATE: Record<AdjudicationDecision, boolean> = {
   mark_not_duplicate: true,
   confirm_phone_reading: true,
   correct_phone_reading: true,
+  correct_security_row: true,
+  confirm_security_row: true,
   confirm_phone_result: true,
   reject_phone_result: true,
   not_pursue_phone_result: true,
