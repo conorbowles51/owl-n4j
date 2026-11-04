@@ -130,7 +130,8 @@ def build(rows: list, *, title: str, contains: list, read_file=None) -> tuple[by
         if used[eid] > 1:
             eid = "%s-%d" % (eid, used[eid])
         ev = {"id": eid, "type": "message", "conversation": conv_of[ckey],
-              "body": _call_body(row) if row.get("kind") == "call" else (row.get("body") or ""),
+              "body": (_call_body(row) if row.get("kind") == "call" else (row.get("body") or "")) + "".join(
+                  "\nSensitive field %s: %s" % (v["field"], v["value"] or "") for v in row.get("sensitive") or []),
               "deleted": "Deleted" in flags}
         if sender:
             ev["participant"] = sender

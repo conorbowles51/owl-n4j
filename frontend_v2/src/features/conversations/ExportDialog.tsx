@@ -26,11 +26,13 @@ export function ExportDialog(props: {
   const [title, setTitle] = useState(words.charAt(0).toUpperCase() + words.slice(1))
   const [exportId, setExportId] = useState<string | null>(null)
   const [format, setFormat] = useState<"pdf" | "rsmf">("pdf")
+  // 03 section 3.10: sensitive values stay out of an export unless this is ticked; the cover records the choice
+  const [includeSensitive, setIncludeSensitive] = useState(false)
   const noun = format === "rsmf" ? "RSMF file" : "PDF"
   const [machineSettled, setMachineSettled] = useState(false)
   const facts = useQuery({ queryKey: ["export-facts", caseId, source, filter], queryFn: () => describeExport(caseId, filter, source), enabled: open, retry: false })
   const start = useMutation({
-    mutationFn: () => createExport(caseId, filter, { title: title.trim() || words, words }, format, source),
+    mutationFn: () => createExport(caseId, filter, { title: title.trim() || words, words, ...(includeSensitive ? { include_sensitive: true } : {}) }, format, source),
     onSuccess: (r) => setExportId(r.export_id),
   })
   const job = useQuery({
@@ -60,7 +62,12 @@ export function ExportDialog(props: {
           <div className="flex flex-col gap-2 text-sm">
             <p>
               All {kinds}
-              {words ? `, ${words}` : ""}, on {plural(f.phones, "phone", "phones")}, times in {f.zone}. {f.left_out}
+              {words ? `, ${words}` : ""}, on {plural(f.phones, "phone", "phones")}, times in {f.zone}.{" "}
+              {includeSensitive
+                ? `Sensitive fields included: ${fmt(f.sensitive_values ?? 0)} ${(f.sensitive_values ?? 0) === 1 ? "value" : "values"} (saved passwords, card numbers and the like) will be printed.`
+                : f.sensitive_values
+                  ? `${f.left_out.replace(/\.$/, "")}: ${fmt(f.sensitive_values)} sensitive ${f.sensitive_values === 1 ? "value" : "values"} on these rows ${f.sensitive_values === 1 ? "is" : "are"} not printed.`
+                  : f.left_out}
             </p>
             {f.hidden && <p>{f.hidden}</p>}
             {note && <p>{note}</p>}
@@ -88,6 +95,10 @@ export function ExportDialog(props: {
                 <input type="radio" name="export-format" checked={format === "rsmf"} onChange={() => { setFormat("rsmf"); setExportId(null) }} /> RSMF for a review platform
               </label>
             </fieldset>
+            <label className="flex items-center gap-1 text-xs">
+              <input type="checkbox" checked={includeSensitive} disabled={!!exportId && !!running} onChange={(e) => { setIncludeSensitive(e.target.checked); setExportId(null) }} />
+              Include sensitive fields
+            </label>
             {format === "pdf" && f.machine_text && f.machine_text.unconfirmed > 0 && !exportId && (
               <MachineTextPrompt caseId={caseId} facts={f.machine_text} onSettled={setMachineSettled} />
             )}

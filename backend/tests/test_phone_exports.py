@@ -236,3 +236,29 @@ def test_a_pdf_too_large_for_its_memory_cap_fails_in_its_own_process(monkeypatch
 def test_a_title_of_punctuation_still_names_the_file(world):
     state, _, _ = _export(world, title="?!.")
     assert state["file"]["filename"] == "phone-messages.pdf"
+
+
+def test_sensitive_fields_stay_out_unless_the_option_is_ticked_and_the_cover_says_which(world):
+    """03 section 3.10 and 12.2: Include sensitive fields. A synthetic saved value on one exported record."""
+    with world["engine"].begin() as c:
+        rec, gen = c.execute(text(
+            "SELECT ev.record_uid, ev.generation FROM phone_comm_events ev WHERE ev.extraction_id = :e "
+            "ORDER BY ev.sort_instant LIMIT 1"), {"e": world["ext"]}).first()
+        c.execute(text(
+            "INSERT INTO phone_texts (case_id, extraction_id, document_index, ordinal, record_uid, root_record_uid, "
+            "locator, model_type, generation, text_uid, body_path, field_name, field_path, value_index, value, "
+            "value_folded, effective_value, is_sensitive) VALUES (:c, :e, 0, 990001, :r, :r, 'sens', 'InstantMessage', "
+            ":g, :t, '0', 'Password', 'Password', 0, 'synthetic-secret-1', 'synthetic-secret-1', 'synthetic-secret-1', "
+            "true)"), {"c": world["case"], "e": world["ext"], "r": rec, "g": gen, "t": uuid.uuid4()})
+    from services.phone.exports import jobs
+    with world["engine"].connect() as c:
+        assert jobs.describe(c, world["case"], {"zone": {"mode": "case"}})["sensitive_values"] == 1
+    state, _, txt = _export(world)
+    words = " ".join(txt.split())
+    assert "synthetic-secret-1" not in _flat(txt)
+    assert "Saved passwords and card numbers left out: 1 sensitive value on these rows is not printed." in words
+    assert state["counts"]["sensitive_values"] == 1 and state["counts"]["sensitive_included"] is False
+    state, _, txt = _export(world, include_sensitive=True)
+    assert "SensitivefieldPassword:synthetic-secret-1" in _flat(txt)
+    assert "Sensitive fields included, as the export option was ticked: 1 value" in " ".join(txt.split())
+    assert state["counts"]["sensitive_included"] is True and state["counts"]["total"] == 4

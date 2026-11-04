@@ -89,12 +89,18 @@ def describe_lens(conn, case_id, filter_body: dict) -> dict:
             other.p).one()
         others, other_unconfirmed = int(r.n), int(r.u)
         phones |= set(r.p or []) - {None}
+        other_sensitive = int(conn.execute(text(
+            "SELECT count(*) FROM pv_text x WHERE x.is_sensitive AND x.record_uid IN (SELECT t.record_uid FROM "
+            "pv_timeline_entry t WHERE %s)" % other.where), other.p).scalar() or 0)
+    else:
+        other_sensitive = 0
     zone = streams.resolve_zone(conn, f)
     total = comm["total"] + others
     return {"case_id": str(case_id), "total": total, "messages": comm["messages"], "calls": comm["calls"],
             "other": total - comm["messages"] - comm["calls"], "unconfirmed": comm["unconfirmed"] + other_unconfirmed,
             "phones": len(phones), "collapsed_copies": comm["collapsed_copies"], "zone": zone["display_name"],
-            "left_out": LEFT_OUT, "limits": comm["limits"], "snapshot": snapshot(conn, f),
+            "left_out": LEFT_OUT, "sensitive_values": comm.get("sensitive_values", 0) + other_sensitive,
+            "limits": comm["limits"], "snapshot": snapshot(conn, f),
             "hidden": TL.hidden_counts(conn, f)["words"]}
 
 
@@ -117,10 +123,15 @@ def describe(conn, case_id, filter_body: dict) -> dict:
         % (q.matched_sql(), shown, shown, shown, shown, shown, shown)), q.params).one()
     zone = streams.resolve_zone(conn, f)
     total = int(r.total)
+    # the sensitive values on the rows the export prints: left out unless Include sensitive fields is ticked (3.10)
+    sens = int(conn.execute(text(
+        "WITH m AS (%s) SELECT count(*) FROM pv_text x WHERE x.is_sensitive AND x.record_uid IN (SELECT record_uid "
+        "FROM m WHERE %s)" % (q.matched_sql(), shown)), q.params).scalar() or 0)
     return {"case_id": str(case_id), "total": total, "messages": int(r.messages), "calls": int(r.calls),
             "other": total - int(r.messages) - int(r.calls), "unconfirmed": int(r.unconfirmed),
             "phones": int(r.phones), "collapsed_copies": int(r.collapsed), "zone": zone["display_name"],
-            "left_out": LEFT_OUT, "limits": streams.limits_for(conn, f), "snapshot": snapshot(conn, f)}
+            "left_out": LEFT_OUT, "sensitive_values": sens, "limits": streams.limits_for(conn, f),
+            "snapshot": snapshot(conn, f)}
 
 
 # ---- machine-generated text on the attachments in scope (07 5 Media, M-7) -------------------------------------------
@@ -424,6 +435,15 @@ def draw(engine, export_id, claimed=None) -> dict:
                     a["machine_texts"] = texts.get(a.get("file_uid") or "", [])
                     machine["total"] += len(a["machine_texts"])
                     machine["unconfirmed"] += sum(1 for t in a["machine_texts"] if not t["origin"]["confirmed"])
+        # 03 section 3.10: sensitive values stay out unless the export option Include sensitive fields is ticked,
+        # which the cover and the counts record; either way their number is stated
+        sens = sensitive_values(conn, e.case_id, [r.get("record_uid") for _, rows in out_days for r in rows])
+        include_sensitive = bool(options.get("include_sensitive"))
+        sensitive_total = sum(len(v) for v in sens.values())
+        if include_sensitive:
+            for _, rows in out_days:
+                for r in rows:
+                    r["sensitive"] = sens.get(r.get("record_uid") or "", [])
         phones = sorted(set(phone_labels(conn, e.case_id).get(p, "") for p in (f.phones or [])) - {""})
         # the review coverage of the threads this export prints (07 J-13 step 6, CO-20): the marks' own counts
         from services.phone import review_share
@@ -441,7 +461,7 @@ def draw(engine, export_id, claimed=None) -> dict:
         "%s of these %s rows rely on readings not yet confirmed by a person; each such row says so."
         % ("{:,}".format(facts["unconfirmed"]), "{:,}".format(total)) if facts["unconfirmed"] else
         "Every row rests on readings confirmed by a person.",
-        LEFT_OUT,
+        sensitive_words(include_sensitive, sensitive_total),
     ]
     fmt = e.format or "pdf"
     if machine["total"] and fmt == "rsmf":
@@ -498,8 +518,38 @@ def draw(engine, export_id, claimed=None) -> dict:
               "unconfirmed": facts["unconfirmed"], "phones": facts["phones"], "snapshot": snap,
               "machine_texts": machine["total"], "machine_texts_unconfirmed": machine["unconfirmed"],
               "machine_translations": translations["total"], "machine_translations_stale": translations["stale"],
-              "review": review_cov["counts"], **extra}
+              "review": review_cov["counts"], "sensitive_values": sensitive_total,
+              "sensitive_included": include_sensitive, **extra}
     return _store(engine, e, export_id, data, fmt, options, counts, snap, claimed, "phone-messages")
+
+
+def sensitive_values(conn, case_id, record_uids) -> dict:
+    """The sensitive values (saved passwords, card numbers, autofill and the like; 05 section 3.8) of the exported
+    records at their current reading: {record_uid: [{"field", "value"}]}."""
+    uids = sorted({str(u) for u in record_uids if u})
+    out: dict = {}
+    if not uids:
+        return out
+    for r in conn.execute(text(
+            "SELECT record_uid::text AS u, field_path, value FROM pv_text WHERE case_id = CAST(:c AS uuid) AND "
+            "is_sensitive AND record_uid = ANY(CAST(:u AS uuid[])) ORDER BY record_uid, field_path"),
+            {"c": str(case_id), "u": uids}):
+        out.setdefault(r.u, []).append({"field": r.field_path, "value": r.value})
+    return out
+
+
+def sensitive_words(included: bool, n: int) -> str:
+    """The cover line for sensitive fields: left out by default, included only when the option was ticked."""
+    if included:
+        return ("Sensitive fields included, as the export option was ticked: %s %s (saved passwords, card numbers "
+                "and the like) printed under %s record." % ("{:,}".format(n), "value" if n == 1 else "values",
+                                                           "its" if n == 1 else "their")) if n else \
+            "Sensitive fields included, as the export option was ticked; none of these rows has one."
+    if n:
+        return "%s: %s %s on these rows %s not printed." % (LEFT_OUT.rstrip("."), "{:,}".format(n),
+                                                               "sensitive value" if n == 1 else "sensitive values",
+                                                               "is" if n == 1 else "are")
+    return LEFT_OUT
 
 
 def _store(engine, e, export_id, data, fmt, options, counts, snap, claimed, default_name):

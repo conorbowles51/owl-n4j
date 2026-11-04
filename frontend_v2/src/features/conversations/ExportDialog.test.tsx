@@ -120,4 +120,16 @@ describe("Export for counsel", () => {
     await waitFor(() => expect(api.downloadExport).toHaveBeenCalledWith("case-1", "x3", "between A and B.rsmf"))
     expect(document.body.textContent).not.toMatch(/—/)
   })
+
+  it("leaves sensitive fields out unless Include sensitive fields is ticked, and says how many (03 section 3.10)", async () => {
+    api.describeExport.mockResolvedValue({ ...facts, unconfirmed: 0, sensitive_values: 2 })
+    api.createExport.mockResolvedValue({ export_id: "x1" })
+    api.getExport.mockResolvedValue(state({ state: "queued" }))
+    show()
+    expect(await screen.findByText(/Saved passwords and card numbers left out: 2 sensitive values on these rows are not printed\./)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("checkbox", { name: "Include sensitive fields" }))
+    expect(screen.getByText(/Sensitive fields included: 2 values \(saved passwords, card numbers and the like\) will be printed\./)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Export PDF" }))
+    await waitFor(() => expect(api.createExport).toHaveBeenCalledWith("case-1", { case_id: "case-1" }, expect.objectContaining({ include_sensitive: true }), "pdf", "stream"))
+  })
 })

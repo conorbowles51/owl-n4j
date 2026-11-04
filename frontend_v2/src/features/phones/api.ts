@@ -266,7 +266,7 @@ export async function getLinkedIdentities(caseId: string, key: string) {
 
 export const ExportFactsSchema = z.object({
   total: z.number(), messages: z.number(), calls: z.number(), other: z.number(), unconfirmed: z.number(), phones: z.number(),
-  collapsed_copies: z.number(), zone: z.string(), left_out: z.string(), limits: z.array(z.object({ message: z.string() }).passthrough()),
+  collapsed_copies: z.number(), zone: z.string(), left_out: z.string(), sensitive_values: z.number().optional(), limits: z.array(z.object({ message: z.string() }).passthrough()),
   /** Machine text on the attachments in scope (07 5 Media, M-7): confirm it or keep it marked before exporting. */
   machine_text: z.object({
     total: z.number(), unconfirmed: z.number(), items_cap: z.number(),
