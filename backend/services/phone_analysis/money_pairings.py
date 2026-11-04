@@ -502,7 +502,7 @@ def decide(db, case_id, record_uid, field_path, transaction_id, decision, note, 
     layout = "%s|amount%s|date%s|account%s" % (lvl or "", fits.get("amount", ""), fits.get("date", ""),
                                                fits.get("account", ""))
     subj = {"type": "phone_money_match", "id": key}
-    link = "/cases/%s/phones/analysis/money" % case_id
+    link = "/cases/%s/phone-money" % case_id
     if decision == "confirmed":
         manual_changes.record_confirmation(db, MANUAL_KIND, case_id, subj, {"state": "confirmed", "level": lvl},
                                            actor, reason=note, link=link, field="pairing",

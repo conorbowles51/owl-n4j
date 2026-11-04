@@ -165,8 +165,10 @@ def test_a_decision_survives_a_rerun_rejected_is_left_out_of_counts_and_undo_res
                                                   "created_at, subject_sequence"), {"c": case})]
             assert sorted(kinds) == sorted(["confirm_phone_result", "reject_phone_result",
                                             "undo_phone_result_decision"])
-            feed = [(r.kind, r.change_type) for r in c.execute(text(
-                "SELECT kind, change_type FROM manual_changes WHERE case_id = :c ORDER BY created_at"), {"c": case})]
+            rows = c.execute(text("SELECT kind, change_type, link FROM manual_changes WHERE case_id = :c ORDER BY "
+                                  "created_at"), {"c": case}).fetchall()
+            feed = [(r.kind, r.change_type) for r in rows]
+        assert {r.link for r in rows} == {"/cases/%s/phone-money" % case}  # the matches screen's route
         assert ("phone_money_match", "confirm") in feed and ("phone_money_match", "set_aside") in feed
         assert ("phone_money_match_undo", "change") in feed
         assert "Different merchant" not in inbox.read_text()
