@@ -11,7 +11,7 @@ import asyncio
 import hashlib
 from pathlib import Path
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from postgres.base import Base
@@ -139,13 +139,37 @@ class CaseDeletionTests(TrailBase):
                                      added_by_user_id=self.f.user.id))
         self.f.db.commit()
 
-    def delete(self):
+    def delete(self, graph=None):
         from postgres.models.case import Case
         from services import case_service
-        with self.f.SessionLocal() as db:
+        from services.neo4j import neo4j_service
+        graph = graph or Mock(return_value=dict(nodes_deleted=0, relationships_deleted=0))
+        with self.f.SessionLocal() as db, patch.object(neo4j_service, 'delete_case_data', graph):
             user = db.merge(self.f.user)
             case_service.delete_case(db, self.f.case.id, user)
             self.assertIsNone(db.get(Case, self.f.case.id))
+        return graph
+
+    def test_deleting_a_case_removes_its_graph_after_the_rows_and_records_it(self):
+        # followups m110323033215300: a deleted case's nodes stayed in Neo4j (7 deleted cases, 1,548 nodes live).
+        from postgres.models.case import Case
+        seen = []
+
+        def graph(case_id):
+            with self.f.SessionLocal() as other:
+                seen.append(other.get(Case, self.f.case.id))  # the case's rows are already gone
+            return dict(nodes_deleted=12, relationships_deleted=30)
+        self.delete(Mock(side_effect=graph))
+        self.assertEqual(seen, [None])
+        [event] = self.events('case_graph_removed')
+        self.assertEqual((event.case_id, event.details), (self.f.case.id,
+                                                          dict(nodes_removed=12, relationships_removed=30)))
+
+    def test_a_graph_that_cannot_be_reached_still_deletes_the_case_and_says_so(self):
+        self.delete(Mock(side_effect=RuntimeError('graph down')))
+        [event] = self.events('case_graph_removed')
+        self.assertEqual(event.details, dict(graph_cleanup_error='graph down'))
+        self.assertEqual(len(self.events('case_deleted')), 1)
 
     def test_deleting_a_case_records_who_when_and_what_it_held(self):
         title = self.f.case.title

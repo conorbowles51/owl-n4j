@@ -407,6 +407,23 @@ def delete_case(db: Session, case_id: UUID, user: User) -> None:
     db.delete(case)
     db.commit()
 
+    # The case's graph goes only once its rows are gone for good (a failed delete keeps both). Before, a deleted
+    # case's nodes stayed in Neo4j: 7 deleted cases held 1,548 nodes on live, 3 Nov (followups m110323033215300).
+    graph = remove_case_graph(str(case_id))
+    activity_trail.record("case_graph_removed", db=db, commit=True, user=user, case_id=case_id, details=graph)
+
+
+def remove_case_graph(case_id: str) -> dict:
+    """Delete every node and relationship of the case from the graph. Never raises: returns the counts, or the
+    error, for the activity trail."""
+    try:
+        from services.neo4j import neo4j_service
+        out = neo4j_service.delete_case_data(case_id)
+        return dict(nodes_removed=out.get("nodes_deleted"), relationships_removed=out.get("relationships_deleted"))
+    except Exception as exc:  # noqa: BLE001 - the case is already deleted; the trail says the graph was not
+        print(f"[CaseService] Warning: graph cleanup failed for case {case_id}: {exc}")
+        return dict(graph_cleanup_error=str(exc)[:200])
+
 
 # Records a person would miss, counted just before a case is deleted (each table has an index on case_id; all
 # ten together took 63 ms on the largest live case, 28,075 transactions). Not every table that cascades: the

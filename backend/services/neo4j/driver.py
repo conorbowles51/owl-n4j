@@ -269,19 +269,21 @@ class Neo4jDriver:
             node_count = node_count_result.single()["count"]
 
             rel_count_result = session.run(
-                "MATCH ()-[r {case_id: $case_id}]-() RETURN count(r) AS count",
+                "MATCH ()-[r {case_id: $case_id}]->() RETURN count(r) AS count",
                 case_id=case_id,
             )
             rel_count = rel_count_result.single()["count"]
 
+            # DETACH, in batches: a node can also hold a relationship without the case id (a plain DELETE then
+            # fails part-way), and the largest live case has 35,694 nodes.
             session.run(
-                "MATCH ()-[r {case_id: $case_id}]-() DELETE r",
+                "MATCH ()-[r {case_id: $case_id}]->() CALL { WITH r DELETE r } IN TRANSACTIONS OF 5000 ROWS",
                 case_id=case_id,
-            )
+            ).consume()
             session.run(
-                "MATCH (n {case_id: $case_id}) DELETE n",
+                "MATCH (n {case_id: $case_id}) CALL { WITH n DETACH DELETE n } IN TRANSACTIONS OF 1000 ROWS",
                 case_id=case_id,
-            )
+            ).consume()
 
             return {
                 "success": True,
