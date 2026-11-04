@@ -412,6 +412,64 @@ class MediaFilter(BaseModel):
     verification: list[str] = Field(default_factory=list)
     linked_to_message: Optional[bool] = None
     thread_key: Optional[str] = Field(None, max_length=512)
+    apps: list[str] = Field(default_factory=list, max_length=200)
+    participants: list[str] = Field(default_factory=list, max_length=200)
+    from_instant: Optional[datetime] = None
+    to_instant: Optional[datetime] = None
+
+
+class MediaDownloadBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filter: MediaFilter
+    file_uids: list[UUID] = Field(default_factory=list, max_length=5000)
+    check_only: bool = False
+
+
+@router.post("/media/facets")
+def phone_media_facets(f: MediaFilter, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The apps and people whose messages carried the files in scope, with file counts (03 8.3 filters)."""
+    from services.phone import media
+    authorize_case(db, f.case_id, user, ("case", "view"))
+    return media.facets(db.connection(), f.case_id, f.model_dump(exclude={"case_id"}))
+
+
+@router.post("/media/download")
+def phone_media_download(body: MediaDownloadBody, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_db_user)):
+    """Download originals (03 8.3): the chosen files (or every file the filter shows) as a zip, stored as they are,
+    with manifest.csv of their hashes. Too many files or bytes is refused with the numbers (413), never cut; a file
+    that cannot be read is refused before the first byte (409). ``check_only`` answers what the zip would hold."""
+    from fastapi.responses import StreamingResponse
+    from services.phone import media
+    from services.phone.readings import phone_labels
+    f = body.filter
+    authorize_case(db, f.case_id, user, ("case", "view"))
+    if (f.from_instant and f.from_instant.tzinfo is None) or (f.to_instant and f.to_instant.tzinfo is None):
+        raise HTTPException(status_code=422, detail="Dates are sent as instants with an offset.")
+    conn = db.connection()
+    try:
+        plan = media.download_plan(conn, f.case_id, f.model_dump(exclude={"case_id"}), body.file_uids or None)
+    except media.DownloadRefused as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    facts = {k: plan[k] for k in ("count", "held", "not_in_production", "bytes", "refusal")}
+    facts.update(max_files=media.DOWNLOAD_MAX_FILES, max_bytes=media.DOWNLOAD_MAX_BYTES)
+    if body.check_only:
+        return facts
+    if plan["refusal"]:
+        raise HTTPException(status_code=413, detail=plan["refusal"])
+    try:
+        openers = media.download_openers(conn, f.case_id, plan)
+    except media.ContentRefused as exc:
+        raise HTTPException(status_code=409, detail="A file could not be read (%s); nothing was downloaded." % exc)
+    labels = phone_labels(conn, f.case_id)
+    from services.system_log_service import LogOrigin, LogType, system_log_service
+    system_log_service.log(log_type=LogType.CASE_OPERATION, origin=LogOrigin.BACKEND, action="Download phone originals",
+                           details={"case_id": str(f.case_id), "files": plan["count"], "bytes": plan["bytes"]},
+                           user=user.email, success=True, db=db)
+    return StreamingResponse(media.download_stream(plan, labels, openers), media_type="application/zip",
+                             headers={"Content-Disposition": 'attachment; filename="phone-originals.zip"',
+                                      "X-Files": str(plan["count"]), "X-Files-Not-In-Production":
+                                          str(plan["not_in_production"]), "X-Content-Type-Options": "nosniff"})
 
 
 class MediaWindowBody(BaseModel):
@@ -1490,7 +1548,51 @@ def get_settings(case_id: UUID = Query(...), db: Session = Depends(get_db), user
         "WHERE s.case_id = :c"), {"c": case_id}).first()
     zone = streams.case_zone(db.connection(), case_id)
     return {"case_id": str(case_id), "time_zone": row.time_zone if row else None, "effective": zone,
-            "updated_at": time_display.iso(row.updated_at) if row else None, "updated_by": row.name if row else None}
+            "updated_at": time_display.iso(row.updated_at) if row else None, "updated_by": row.name if row else None,
+            "media_blur": media_blur_default(db.connection(), case_id)}
+
+
+def media_blur_default(conn, case_id) -> dict:
+    """The case default for blurring media thumbnails (03 8.3, 07 4.11): the case setting when a person set one,
+    else on in a criminal case (case context template ``criminal_defense``), else off (07 UXD-26)."""
+    from sqlalchemy import text as sql
+    row = conn.execute(sql("SELECT s.media_blur_default, s.updated_at, u.name FROM case_phone_settings s LEFT JOIN "
+                           "users u ON u.id = s.updated_by WHERE s.case_id = :c"), {"c": case_id}).first()
+    if row is not None and row.media_blur_default is not None:
+        return {"default_on": bool(row.media_blur_default), "basis": "case_setting",
+                "words": "Set for this case by %s." % (row.name or "a person"), "set": bool(row.media_blur_default)}
+    criminal = conn.execute(sql("SELECT active_template_key = 'criminal_defense' FROM case_contexts WHERE case_id = :c "
+                                "ORDER BY updated_at DESC LIMIT 1"), {"c": case_id}).scalar()
+    if criminal:
+        return {"default_on": True, "basis": "criminal_case", "words": "On by default in a criminal case.", "set": None}
+    return {"default_on": False, "basis": "not_criminal", "words": "Off by default: this is not a criminal case.",
+            "set": None}
+
+
+class MediaBlurSetting(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    default_on: Optional[bool] = None
+
+
+@router.put("/settings/media-blur")
+def put_media_blur(body: MediaBlurSetting, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Set (true or false) or clear (null: follow the case kind) the case default for blurring media thumbnails."""
+    authorize_case(db, body.case_id, user, ("case", "edit"))
+    from sqlalchemy import text as sql
+    from services.system_log_service import LogOrigin, LogType, system_log_service
+    conn = db.connection()
+    old = media_blur_default(conn, body.case_id)
+    conn.execute(sql(
+        "INSERT INTO case_phone_settings (case_id, media_blur_default, updated_by, updated_at) VALUES (:c, :b, :u, "
+        "now()) ON CONFLICT (case_id) DO UPDATE SET media_blur_default = EXCLUDED.media_blur_default, updated_by = "
+        "EXCLUDED.updated_by, updated_at = now()"), {"c": body.case_id, "b": body.default_on, "u": user.id})
+    system_log_service.log(log_type=LogType.CASE_OPERATION, origin=LogOrigin.BACKEND,
+                           action="Set phone media blur default",
+                           details={"case_id": str(body.case_id), "changes": {"media_blur_default": {
+                               "from": old["set"], "to": body.default_on}}}, user=user.email, success=True, db=db)
+    db.commit()
+    return media_blur_default(db.connection(), body.case_id)
 
 
 @router.put("/settings")

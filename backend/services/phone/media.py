@@ -87,6 +87,27 @@ def _where(f: dict, p: dict) -> str:
         # Attachments (N) in a thread header (03 section 6.7, MD-1): the files the thread's messages carried
         w.append("f.file_uid IN (SELECT r.file_uid FROM (%s) r WHERE r.file_uid IS NOT NULL)" % _THREAD_REFS)
         p["tk"] = f["thread_key"]
+    # carried by a message of one of these apps, or with one of these people (03 8.3 filter bar): the same resolved,
+    # unambiguous attachment links that give a file its time
+    carried = ("EXISTS (SELECT 1 FROM pv_attachment_link l2 JOIN phone_record_summaries s2 ON s2.record_uid = "
+               "l2.record_uid JOIN phone_comm_events ev2 ON ev2.record_uid = coalesce(s2.root_record_uid, "
+               "l2.record_uid) AND ev2.generation = s2.generation WHERE l2.case_id = :c AND l2.file_uid = f.file_uid "
+               "AND l2.resolved AND NOT coalesce(l2.ambiguous, false) AND %s)")
+    if f.get("apps"):
+        w.append(carried % "ev2.app = ANY(:apps)")
+        p["apps"] = list(f["apps"])
+    if f.get("participants"):
+        w.append(carried % ("EXISTS (SELECT 1 FROM phone_participations pp WHERE pp.record_uid = ev2.record_uid AND "
+                            "pp.generation = ev2.generation AND pp.identity_key = ANY(:people))"))
+        p["people"] = list(f["participants"])
+    # a file's time is its first carrying message's (``c.first_at``); a dated window leaves out files with no time,
+    # and the index counts them (``outside_dates_no_time``)
+    if f.get("from_instant"):
+        w.append("c.first_at >= CAST(:mfrom AS timestamptz)")
+        p["mfrom"] = f["from_instant"]
+    if f.get("to_instant"):
+        w.append("c.first_at < CAST(:mto AS timestamptz)")
+        p["mto"] = f["to_instant"]
     if f.get("linked_to_message") is True:
         w.append("c.file_uid IS NOT NULL")
     elif f.get("linked_to_message") is False:
@@ -109,9 +130,41 @@ def index(conn, case_id, f: dict | None = None) -> dict:
         "SELECT f.category, count(*) " + base + " GROUP BY 1 ORDER BY 2 DESC, 1"), p)}
     by_ver = {r[0] or "unchecked": int(r[1]) for r in conn.execute(text(
         "SELECT f.verification, count(*) " + base + " GROUP BY 1 ORDER BY 2 DESC, 1"), p)}
-    return {"case_id": str(case_id), "total": int(total), "no_time_count": int(no_time),
-            "no_message_count": int(no_message), "missing": int(missing),
-            "by_category": by_cat, "verification": by_ver}
+    out = {"case_id": str(case_id), "total": int(total), "no_time_count": int(no_time),
+           "no_message_count": int(no_message), "missing": int(missing), "by_category": by_cat, "verification": by_ver}
+    if f.get("from_instant") or f.get("to_instant"):
+        g = {k: v for k, v in f.items() if k not in ("from_instant", "to_instant")}
+        q = {"c": str(case_id)}
+        out["outside_dates_no_time"] = int(conn.execute(text(
+            "SELECT count(*) " + _base(_where(g, q)) + " AND c.first_at IS NULL"), q).scalar() or 0)
+    return out
+
+
+def facets(conn, case_id, f: dict | None = None) -> dict:
+    """The apps and the people (other than the phone's owner) whose messages carried the files in scope, each with
+    its file count, for the app and participant filters (03 8.3). Every value is listed; none is cut."""
+    from services.phone.graph_projection import _identity_labels
+    f = {k: v for k, v in dict(f or {}).items() if k not in ("apps", "participants")}
+    p = {"c": str(case_id)}
+    carried = ("FROM pv_attachment_link l2 JOIN phone_record_summaries s2 ON s2.record_uid = l2.record_uid JOIN "
+               "phone_comm_events ev2 ON ev2.record_uid = coalesce(s2.root_record_uid, l2.record_uid) AND "
+               "ev2.generation = s2.generation JOIN (SELECT f.file_uid " + _base(_where(f, p)) + ") sc ON sc.file_uid "
+               "= l2.file_uid WHERE l2.case_id = :c AND l2.resolved AND NOT coalesce(l2.ambiguous, false)")
+    apps = [{"app": r[0], "files": int(r[1])} for r in conn.execute(text(
+        "SELECT ev2.app, count(DISTINCT l2.file_uid) " + carried + " AND ev2.app IS NOT NULL GROUP BY 1 "
+        "ORDER BY 2 DESC, 1"), p)]
+    labels = _identity_labels(conn, case_id)
+    people = []
+    for r in conn.execute(text(
+            "SELECT pp.identity_key, count(DISTINCT l2.file_uid) AS files, mode() WITHIN GROUP (ORDER BY "
+            "coalesce(nullif(pp.name_in_record, ''), pp.identifier_raw)) AS seen " + carried.replace(
+                " WHERE l2.case_id", " JOIN phone_participations pp ON pp.record_uid = ev2.record_uid AND "
+                "pp.generation = ev2.generation WHERE l2.case_id") +
+            " AND pp.identity_key IS NOT NULL AND NOT coalesce(pp.is_phone_owner, false) GROUP BY 1 "
+            "ORDER BY 2 DESC, 1"), p):
+        people.append({"key": r.identity_key, "label": labels.get(r.identity_key) or r.seen or r.identity_key,
+                       "files": int(r.files)})
+    return {"case_id": str(case_id), "apps": apps, "participants": people}
 
 
 def window(conn, case_id, f: dict | None = None, offset: int = 0, limit: int = 200) -> dict:
@@ -123,7 +176,7 @@ def window(conn, case_id, f: dict | None = None, offset: int = 0, limit: int = 2
     items = []
     for r in conn.execute(text(
             "SELECT f.file_uid, f.extraction_id, f.category, f.local_path, f.size, f.verification, f.deleted_state, "
-            "f.is_carved, c.first_at, coalesce(c.messages, 0) AS messages " + _base(_where(f, p)) +
+            "f.is_carved, c.first_at, coalesce(c.messages, 0) AS messages, f.md5, f.sha256 " + _base(_where(f, p)) +
             " ORDER BY c.first_at NULLS LAST, f.document_index, f.ordinal, f.file_uid OFFSET :o LIMIT :l"), p):
         ext = str(r.extraction_id)
         name = (r.local_path or "").replace("\\", "/").rsplit("/", 1)[-1] or "File not named in the report"
@@ -136,7 +189,8 @@ def window(conn, case_id, f: dict | None = None, offset: int = 0, limit: int = 2
             "verification": r.verification, "verification_words": OUTCOME_WORDS.get(r.verification or "",
                                                                                      "Not checked"),
             "missing": r.verification == "missing", "deleted_state": r.deleted_state, "is_carved": bool(r.is_carved),
-            "message_count": int(r.messages), "thumbnail_url": None, "machine_text": None})
+            "message_count": int(r.messages), "thumbnail_url": None, "machine_text": None,
+            "hashes": {"md5": (r.md5 or "").strip() or None, "sha256": (r.sha256 or "").strip() or None}})
     _machine_marks(conn, case_id, items)
     return {"case_id": str(case_id), "offset": p["o"], "limit": p["l"], "items": items}
 
@@ -200,7 +254,7 @@ class ContentRefused(LookupError):
     pass
 
 
-def content(conn, case_id, file_uid):
+def content(conn, case_id, file_uid, max_bytes=None):
     """(filename, size, opener) for one phone file's bytes, read in place from its container (01 D6): a folder
     upload from disk under the case's data root, a zip by its member. A file absent from the production, or
     larger than ``CONTENT_MAX_BYTES``, is refused with words."""
@@ -215,7 +269,7 @@ def content(conn, case_id, file_uid):
         raise ContentRefused("This file is not in this case.")
     if r.verification == "missing" or not r.disk_relpath:
         raise ContentRefused(MISSING_WORDS)
-    if r.disk_size and r.disk_size > CONTENT_MAX_BYTES:
+    if r.disk_size and r.disk_size > (CONTENT_MAX_BYTES if max_bytes is None else max_bytes):
         raise ContentRefused("This file is %s MB, too large to show here. Download the original instead."
                              % "{:,}".format(int(r.disk_size) // (1024 * 1024)))
     conts = conn.execute(text(
@@ -319,3 +373,140 @@ def _in_container(conn, c, case_root, extraction_id, disk_relpath):
             return member
         return size, opener
     raise ContentRefused("Files in a %s container are not shown yet." % c.container_kind)
+
+
+# ---- Download originals (03 8.3): a zip of the chosen files with a manifest of hashes ----------------------------------
+
+# The download is built in the browser's memory, so it is held to what a browser keeps comfortably; a larger choice
+# is refused with its numbers, never cut. Reverse if measured downloads need more (then stream to a file).
+DOWNLOAD_MAX_FILES = 2_000
+DOWNLOAD_MAX_BYTES = 1024 * 1024 * 1024
+
+
+class DownloadRefused(ValueError):
+    pass
+
+
+def _size_words(n):
+    return ("%.1f GB" % (n / 1024 ** 3)) if n >= 1024 ** 3 else ("{:,} MB".format(max(1, n // (1024 ** 2))))
+
+
+def download_plan(conn, case_id, f: dict | None = None, file_uids=None) -> dict:
+    """The files a download holds (the filter's, or the chosen files within it), their total bytes, and the refusal
+    when it is too large. Missing files are listed in the manifest as not in the production, never left out."""
+    f, p = dict(f or {}), {"c": str(case_id)}
+    where = _where(f, p)
+    if file_uids:
+        where += " AND f.file_uid::text = ANY(:uids)"
+        p["uids"] = [str(u) for u in file_uids]
+    rows = [dict(r._mapping) for r in conn.execute(text(
+        "SELECT f.file_uid, f.extraction_id, f.category, f.local_path, coalesce(f.disk_size, f.size) AS size, "
+        "f.verification, f.md5, f.sha256, f.declared_md5, f.declared_sha256, c.first_at " + _base(where) +
+        " ORDER BY f.extraction_id, f.document_index, f.ordinal, f.file_uid"), p)]
+    if file_uids and len(rows) != len(set(str(u) for u in file_uids)):
+        raise DownloadRefused("Some chosen files are not in this case's media as filtered; choose again.")
+    held = [r for r in rows if r["verification"] != "missing"]
+    total_bytes = sum(int(r["size"] or 0) for r in held)
+    refusal = None
+    if not rows:
+        refusal = "There are no files to download."
+    elif len(rows) > DOWNLOAD_MAX_FILES or total_bytes > DOWNLOAD_MAX_BYTES:
+        refusal = ("These %s files are %s. A download holds at most %s files and %s, so nothing was made. Choose "
+                   "fewer (a phone, a category or dates) and download again." % (
+                       "{:,}".format(len(rows)), _size_words(total_bytes), "{:,}".format(DOWNLOAD_MAX_FILES),
+                       _size_words(DOWNLOAD_MAX_BYTES)))
+    return {"files": rows, "count": len(rows), "held": len(held), "not_in_production": len(rows) - len(held),
+            "bytes": total_bytes, "refusal": refusal}
+
+
+MANIFEST_HEADER = ["file_in_zip", "phone", "original_path", "category", "time", "state", "size_bytes", "stated_md5",
+                   "stated_sha256", "sha256_of_the_file_in_this_zip", "sha256_matches"]
+
+
+def download_openers(conn, case_id, plan) -> dict:
+    """{file_uid: opener} for every held file of the plan, resolved before the first byte is sent: a file that cannot
+    be read raises ContentRefused here, so a partial zip is never delivered. The openers read from disk only."""
+    out = {}
+    for r in plan["files"]:
+        if r["verification"] != "missing":
+            # a download carries the original whatever its size (the inline limit is for the viewer)
+            out[str(r["file_uid"])] = content(conn, case_id, r["file_uid"], max_bytes=float("inf"))[2]
+    return out
+
+
+def download_stream(plan, labels, openers):
+    """Yield the zip's bytes: each held file stored as it is, then ``manifest.csv`` with every file's hashes (the
+    SHA-256 is computed while the file is written, so the manifest describes exactly the bytes in the zip). Uses no
+    database connection: ``openers`` come from ``download_openers``."""
+    import csv
+    import hashlib
+    import io
+    import posixpath
+    import zipfile
+
+    class Sink:
+        def __init__(self):
+            self.buf = bytearray()
+            self.pos = 0
+
+        def write(self, b):
+            self.buf += b
+            self.pos += len(b)
+            return len(b)
+
+        def tell(self):
+            return self.pos
+
+        def flush(self):
+            pass
+
+        def take(self):
+            out = bytes(self.buf)
+            self.buf.clear()
+            return out
+
+    sink = Sink()
+    zf = zipfile.ZipFile(sink, "w", zipfile.ZIP_STORED, allowZip64=True)
+    rows = []
+    used = set()
+    for r in plan["files"]:
+        phone = labels.get(str(r["extraction_id"]), "phone")
+        base = posixpath.basename((r["local_path"] or "").replace("\\", "/")) or "file"
+        folder = "".join(ch if ch.isalnum() or ch in "-_ ." else "_" for ch in phone)
+        name = "%s/%s" % (folder, base)
+        k = 1
+        while name in used:
+            k += 1
+            stem, ext = posixpath.splitext(base)
+            name = "%s/%s (%d)%s" % (folder, stem, k, ext)
+        used.add(name)
+        stated_sha = (r["sha256"] or r["declared_sha256"] or "").strip().lower() or None
+        if r["verification"] == "missing":
+            rows.append([name, phone, r["local_path"] or "", r["category"] or "", T.iso(r["first_at"]) or "",
+                         "not in the production", "", (r["md5"] or "").strip(), stated_sha or "", "", ""])
+            continue
+        opener = openers[str(r["file_uid"])]
+        h = hashlib.sha256()
+        size = 0
+        with opener() as fh, zf.open(zipfile.ZipInfo(name), "w", force_zip64=True) as out:
+            while True:
+                chunk = fh.read(1024 * 1024)
+                if not chunk:
+                    break
+                h.update(chunk)
+                size += len(chunk)
+                out.write(chunk)
+                if len(sink.buf) >= 4 * 1024 * 1024:
+                    yield sink.take()
+        got = h.hexdigest()
+        rows.append([name, phone, r["local_path"] or "", r["category"] or "", T.iso(r["first_at"]) or "",
+                     OUTCOME_WORDS.get(r["verification"] or "", "Not checked"), str(size), (r["md5"] or "").strip(),
+                     stated_sha or "", got, ("yes" if got == stated_sha else "no") if stated_sha else "no hash stated"])
+        yield sink.take()
+    text_out = io.StringIO()
+    w = csv.writer(text_out)
+    w.writerow(MANIFEST_HEADER)
+    w.writerows(rows)
+    zf.writestr("manifest.csv", text_out.getvalue().encode("utf-8"))
+    zf.close()
+    yield sink.take()

@@ -237,3 +237,169 @@ def test_g_an_export_that_prints_locations_carries_the_investigative_label():
         "Locations in this export: investigative location, not cell-site opinion. A position is what the phone "
         "recorded, read by an investigator.")
     assert jobs.place_words(["messages", "calls"]) is None
+
+
+# ---- I: the media viewer's filters, Download originals and the case blur default (03 8.3) -------------------------
+
+from tests.test_phone_media import LINKED, LOOSE, MISSING, world  # noqa: E402,F401 (fixture)
+
+
+def _phones_client(engine, case):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from sqlalchemy.orm import sessionmaker
+
+    from postgres.models.enums import GlobalRole
+    from postgres.models.user import User
+    from postgres.session import get_db
+    from routers.phones import router
+    from routers.users import get_current_db_user
+    with engine.connect() as c:
+        owner, email = c.execute(text("SELECT u.id, u.email FROM cases k JOIN users u ON u.id = k.owner_user_id "
+                                      "WHERE k.id = :c"), {"c": case}).one()
+    Session = sessionmaker(bind=engine)
+    app = FastAPI()
+    app.include_router(router)
+
+    def db():
+        s = Session()
+        try:
+            yield s
+        finally:
+            s.close()
+    app.dependency_overrides[get_db] = db
+    app.dependency_overrides[get_current_db_user] = lambda: User(id=owner, email=email, name="synthetic",
+                                                                 global_role=GlobalRole.user)
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _carrier(c, case):
+    """(app, identity_key) of the message carrying LINKED; the app is set when the synthetic call has none."""
+    row = c.execute(text(
+        "SELECT ev.record_uid, ev.app, ev.generation FROM pv_attachment_link l JOIN phone_record_summaries s ON "
+        "s.record_uid = l.record_uid JOIN phone_comm_events ev ON ev.record_uid = coalesce(s.root_record_uid, "
+        "l.record_uid) AND ev.generation = s.generation WHERE l.case_id = :c AND l.file_uid = :f"),
+        {"c": case, "f": LINKED}).one()
+    if not row.app:
+        c.execute(text("UPDATE phone_comm_events SET app = 'SyntheticApp' WHERE record_uid = :r"), {"r": row.record_uid})
+    key = c.execute(text("SELECT identity_key FROM phone_participations WHERE record_uid = :r AND generation = :g AND "
+                         "identity_key IS NOT NULL AND NOT coalesce(is_phone_owner, false) LIMIT 1"), {"r": row.record_uid, "g": row.generation}).scalar()
+    return row.app or "SyntheticApp", key
+
+
+@needs_template
+def test_i_the_app_participant_and_date_filters_keep_only_the_files_carried_that_way(world):
+    from services.phone import media
+    engine, case, _, ext = world
+    with engine.begin() as c:
+        app, key = _carrier(c, case)
+    with engine.connect() as c:
+        everything = media.index(c, case, {})["total"]
+        assert everything == 3
+        assert [i["file_uid"] for i in media.window(c, case, {"apps": [app]})["items"]] == [LINKED]
+        assert media.index(c, case, {"apps": ["NoSuchApp"]})["total"] == 0
+        assert key is not None
+        assert [i["file_uid"] for i in media.window(c, case, {"participants": [key]})["items"]] == [LINKED]
+        assert media.index(c, case, {"participants": ["nobody"]})["total"] == 0
+        when = media.window(c, case, {})["items"][0]["taken_or_sent"]
+        assert when["basis"] == "message_time"
+        t = when["instant"] if "instant" in when else when.get("utc")
+        assert t, when
+        from datetime import datetime
+        at = datetime.fromisoformat(t.replace("Z", "+00:00"))
+        inside = media.index(c, case, {"from_instant": at - timedelta(minutes=1), "to_instant": at + timedelta(minutes=1)})
+        assert inside["total"] == 1 and inside["outside_dates_no_time"] == 2  # the two untimed files are counted
+        assert media.index(c, case, {"from_instant": at + timedelta(minutes=1)})["total"] == 0
+        assert media.window(c, case, {})["items"][0]["hashes"] == {"md5": None, "sha256": None}
+        fac = media.facets(c, case, {"phones": [ext]})
+        assert fac["apps"] == [{"app": app, "files": 1}]
+        assert [(x["key"], x["files"]) for x in fac["participants"]] == [(key, 1)]
+        assert media.facets(c, case, {"categories": ["none"]}) == {"case_id": str(case), "apps": [], "participants": []}
+
+
+def _on_disk(engine, case, ext, tmp_path, monkeypatch, data=b"synthetic bytes"):
+    import hashlib
+    monkeypatch.setattr("config.EVIDENCE_DATA_ROOT", str(tmp_path))
+    (tmp_path / str(case) / "up" / "root" / "chats").mkdir(parents=True)
+    (tmp_path / str(case) / "up" / "root" / "chats" / "synthetic-a.jpg").write_bytes(data)
+    with engine.begin() as c:
+        c.execute(text("UPDATE phone_files SET disk_relpath = 'chats/synthetic-a.jpg', disk_size = :n, disk_sha256 = :h "
+                       "WHERE file_uid = :f"), {"f": LINKED, "n": len(data), "h": hashlib.sha256(data).hexdigest()})
+        cid = c.execute(text("SELECT first_container_id FROM phone_extractions WHERE id = :e"), {"e": ext}).scalar()
+        c.execute(text("UPDATE phone_extraction_containers SET container_kind = 'folder', stored_path = 'up' WHERE "
+                       "id = :i"), {"i": cid})
+        c.execute(text("DELETE FROM phone_extraction_container_links WHERE extraction_id = :e"), {"e": ext})
+        c.execute(text("INSERT INTO phone_extraction_container_links (extraction_id, container_id, root_path) VALUES "
+                       "(:e, :i, 'root')"), {"e": ext, "i": cid})
+    return hashlib.sha256(data).hexdigest()
+
+
+@needs_template
+def test_i_download_originals_is_a_zip_of_the_files_with_a_manifest_whose_hashes_match(world, tmp_path, monkeypatch):
+    import csv
+    import io
+    import zipfile
+    engine, case, _, ext = world
+    sha = _on_disk(engine, case, ext, tmp_path, monkeypatch)
+    with _phones_client(engine, case) as cl:
+        body = {"filter": {"case_id": str(case)}, "file_uids": [LINKED, MISSING]}
+        r = cl.post("/api/phones/media/download", json=dict(body, check_only=True))
+        assert r.status_code == 200, r.text
+        facts = r.json()
+        assert (facts["count"], facts["held"], facts["not_in_production"], facts["refusal"]) == (2, 1, 1, None)
+        r = cl.post("/api/phones/media/download", json=body)
+        assert r.status_code == 200, r.text
+        assert r.headers["x-files"] == "2" and r.headers["x-files-not-in-production"] == "1"
+        z = zipfile.ZipFile(io.BytesIO(r.content))
+        assert z.testzip() is None
+        names = z.namelist()
+        assert names[-1] == "manifest.csv" and len(names) == 2
+        assert z.read(names[0]) == b"synthetic bytes"
+        rows = list(csv.reader(io.StringIO(z.read("manifest.csv").decode("utf-8"))))
+        assert rows[0][0] == "file_in_zip" and len(rows) == 3
+        held = next(x for x in rows[1:] if x[0] == names[0])
+        assert (held[9], held[10]) == (sha, "yes")
+        gone = next(x for x in rows[1:] if x[0] != names[0])
+        assert gone[5] == "not in the production" and gone[9] == ""
+        # a file that cannot be read refuses the whole download before any byte
+        r = cl.post("/api/phones/media/download", json={"filter": {"case_id": str(case)}})
+        assert r.status_code == 409 and "nothing was downloaded" in r.json()["detail"], r.text
+
+
+@needs_template
+def test_i_a_download_over_the_limit_is_refused_with_its_numbers_and_nothing_is_made(world, monkeypatch):
+    from services.phone import media
+    engine, case, _, _ext = world
+    monkeypatch.setattr(media, "DOWNLOAD_MAX_FILES", 2)
+    with _phones_client(engine, case) as cl:
+        r = cl.post("/api/phones/media/download", json={"filter": {"case_id": str(case)}})
+        assert r.status_code == 413, r.text
+        words = r.json()["detail"]
+        assert words.startswith("These 3 files are") and "at most 2 files" in words and "nothing was made" in words
+        r = cl.post("/api/phones/media/download", json={"filter": {"case_id": str(case)}, "check_only": True})
+        assert r.status_code == 200 and r.json()["refusal"] == words
+        # a chosen file outside the filter is refused, never silently dropped
+        r = cl.post("/api/phones/media/download", json={"filter": {"case_id": str(case), "categories": ["none"]},
+                                                        "file_uids": [LINKED]})
+        assert r.status_code == 422
+
+
+@needs_template
+def test_i_media_blur_is_on_by_default_in_a_criminal_case_and_a_case_setting_overrides_it(world):
+    engine, case, other, _ext = world
+    with _phones_client(engine, case) as cl:
+        got = cl.get("/api/phones/settings", params={"case_id": str(case)}).json()["media_blur"]
+        assert (got["default_on"], got["basis"]) == (False, "not_criminal")
+        with engine.begin() as c:
+            c.execute(text("INSERT INTO case_contexts (id, case_id, active_template_key, created_at, updated_at) "
+                           "VALUES (gen_random_uuid(), :c, 'criminal_defense', now(), now())"), {"c": case})
+        got = cl.get("/api/phones/settings", params={"case_id": str(case)}).json()["media_blur"]
+        assert (got["default_on"], got["basis"], got["words"]) == (True, "criminal_case",
+                                                                   "On by default in a criminal case.")
+        r = cl.put("/api/phones/settings/media-blur", json={"case_id": str(case), "default_on": False})
+        assert r.status_code == 200, r.text
+        assert (r.json()["default_on"], r.json()["basis"], r.json()["set"]) == (False, "case_setting", False)
+        r = cl.put("/api/phones/settings/media-blur", json={"case_id": str(case), "default_on": None})
+        assert r.json()["basis"] == "criminal_case"  # cleared: follows the case kind again
+        r = cl.put("/api/phones/settings/media-blur", json={"case_id": str(other), "default_on": True})
+        assert r.status_code in (403, 404)
