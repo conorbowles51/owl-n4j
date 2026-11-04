@@ -600,7 +600,7 @@ STATEMENT_SECTIONS = ('queue', 'files', 'accounts', 'batches', 'remove', 'judgem
 # "admin/<view>" and so on; a Financial view is also reported in detail by its own page-speed hook.
 CASE_ROUTES = ('graph', 'timeline', 'map', 'table', 'financial', 'dossiers', 'evidence', 'chat',
                'agent', 'workspace', 'reports', 'settings', 'phone-review', 'phone-patterns', 'conversations',
-               'search')
+               'search', 'keyword-lists')
 # Phone pages below /cases/:id (07 4.13 and 10.2), so they are timed as themselves, never as "other".
 PHONE_PAGES = ('phones', 'phones/summary', 'phone-review', 'phone-patterns', 'phone-analyses', 'phone-money',
                'phones-prototype/summary', 'phones-prototype/conversations', 'phones-prototype/needs-a-decision')

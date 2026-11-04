@@ -15,13 +15,13 @@ from services.phone_analysis.approaches import BUILT
 
 RECORDED = {
     "money_signals": ("1a.1", "bd3641f548e85576"),
-    "message_reconciliation": ("2.3", "ffedaf987c223271"),
-    "deletion_timeline": ("3.2", "3899f38f95baea84"),
+    "message_reconciliation": ("2.3", "a53b042ce1e90307"),
+    "deletion_timeline": ("3.3", "24a4e51aa9a12535"),
     "relationships": ("11.2", "d2415dadbd83d048"),
     "awareness": ("4.1-groups", "9cedd74c445622e5"),
     "device_users": ("5.2-use", "cd7bf7201f8f4b6b"),
-    "typed_words": ("7.1", "ebdc62fe49dc2742"),
-    "intent": ("9.1", "3a46cb8858a18271"),
+    "typed_words": ("7.2", "4789baa42ec7d093"),
+    "intent": ("9.2", "4589b2451c82d604"),
     "common_contacts": ("14.1", "46ee93fe71781001"),
     "reparse_comparison": ("17.3-1", "b27a8eff1720fac7"),
     "contact_matrix": ("15.1", "49cad534aa52a2bf"),
