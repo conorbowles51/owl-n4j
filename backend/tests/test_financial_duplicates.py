@@ -38,6 +38,7 @@ from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import sessionmaker
 
 from postgres.base import Base
+from tests.sqlite_schema_template import copy_empty_schema
 from postgres.models.case import Case
 from postgres.models.enums import (
     AdjudicationDecision,
@@ -143,6 +144,8 @@ class DuplicateTestCase(unittest.TestCase):
 
     def setUp(self):
         self._directory = tempfile.mkdtemp(prefix="loupe-duplicates-")
+        # The empty schema is built once per process and copied (same DDL, a database of this test's own).
+        copy_empty_schema(Path(self._directory) / "ledger.db", Base.metadata, TABLES)
         self.engine = create_engine(
             f"sqlite+pysqlite:///{Path(self._directory) / 'ledger.db'}",
             future=True,
@@ -155,7 +158,6 @@ class DuplicateTestCase(unittest.TestCase):
             cursor.execute("PRAGMA synchronous=OFF")
             cursor.close()
 
-        Base.metadata.create_all(self.engine, tables=TABLES)
         self.SessionLocal = sessionmaker(
             bind=self.engine, autoflush=False, autocommit=False
         )
