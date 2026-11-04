@@ -50,6 +50,7 @@ import { useChatStore } from "@/features/chat/stores/chat.store"
 import { useUIStore } from "@/stores/ui.store"
 import { TimeStrip, type StripDay } from "@/features/phones/ui/TimeStrip"
 import { GoToDate } from "@/features/phones/components/GoToDate"
+import { useNotebookStore } from "@/features/notebook/notebook.store"
 
 /**
  * Conversations (03 section 6; 07 sections 5 and 6.1): the threads of the case's phones, or the people in them, on
@@ -250,6 +251,18 @@ export function ConversationsPage() {
       selected_total: selection.all && stream.status === "ready" ? stream.total : ids.length,
     })
     useUIStore.getState().expandGraphPanelTo("chat")
+  }
+  // CO-6: a note about the selected messages opens in the Notebook with them linked and pinned beside the composer
+  const writeNote = () => {
+    const ids: string[] = []
+    for (const r of selection.rows) if (!ids.includes(r.record_uid)) ids.push(r.record_uid)
+    const selected = selection.all && stream.status === "ready" ? stream.total : selection.rows.length
+    const linked = links.length === 1 && links[0].target_type === "phone_selection" ? (freeze.data?.event_count ?? 0) : selection.rows.length
+    useNotebookStore.getState().startDraft(
+      links.map((l) => ({ target_type: l.target_type, target_id: l.target_id, target_label: l.label ?? null })),
+      { caseId, selected, linked, recordIds: ids },
+    )
+    useUIStore.getState().expandGraphPanelTo("notebook")
   }
   const addNoun = selection.all && stream.total > SELECTION_AS_ONE ? "selection" : links.length > selection.rows.length ? "records (messages and their copies)" : "messages"
   const addDisabled = selection.all && stream.total > SELECTION_AS_ONE && freeze.isError ? failureText(freeze.error, "The whole result could not be prepared for adding.") : undefined
@@ -635,6 +648,10 @@ export function ConversationsPage() {
                 <GoToDate days={stream.index.items} where={view.thread && !view.people.length ? "in this thread" : "in these results"} open={goOpen} onOpenChange={setGoOpen}
                   onGo={(day) => { setGoOpen(false); setJump({ day, seq: Date.now() }) }} />
               )}
+              <Button size="sm" variant="outline" disabled={links.length === 0} onClick={writeNote}
+                title={selection.rows.length === 0 ? "Select messages to write a note about them" : undefined}>
+                Write a note about these
+              </Button>
               {streamFilter && (
                 <Button size="sm" variant="outline" disabled={saveThisView.isPending} onClick={() => saveThisView.mutate()}>
                   Save this view

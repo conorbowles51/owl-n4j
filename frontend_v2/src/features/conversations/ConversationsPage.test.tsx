@@ -2,7 +2,9 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { useEffect } from "react"
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom"
+import { act } from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { useNotebookStore } from "@/features/notebook/notebook.store"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { dispatchKey, resetKeymapForTest } from "@/lib/keymap"
 
@@ -255,6 +257,21 @@ describe("Conversations", () => {
     await waitFor(() => expect(streamFilters.at(-1)).toMatchObject({ include_no_time: false }))
     fireEvent.click(screen.getByRole("button", { name: "Include those with no time" }))
     await waitFor(() => expect(seen.search).not.toContain("notime"))
+  })
+
+  it("Write a note about these opens the Notebook with the selection linked, counted and pinned (CO-6)", async () => {
+    page()
+    await waitFor(() => expect(seen.search).toContain("thread=t1"))
+    const write = await screen.findByRole("button", { name: "Write a note about these" })
+    expect(write).toBeDisabled()
+    const row = (n: number, copies: string[] = []) => ({ event_uid: `ev${n}`, record_uid: `r${n}`, copies: { record_uids: copies }, line: `synthetic ${n}`, thread: { thread_key: "t1" } })
+    const onSel = (listProps.last as unknown as { onSelectionChange: (rows: unknown[], all: boolean) => void }).onSelectionChange
+    act(() => onSel([row(1, ["r1b"]), row(2)], false))
+    fireEvent.click(screen.getByRole("button", { name: "Write a note about these" }))
+    const st = useNotebookStore.getState()
+    expect(st.draftPhone).toEqual({ caseId: "case-1", selected: 2, linked: 2, recordIds: ["r1", "r2"] })
+    expect(st.draftLinks.map((l) => l.target_id)).toEqual(["r1", "r1b", "r2"])
+    expect(st.draftLinks.every((l) => l.target_type === "phone_record")).toBe(true)
   })
 
   it("Ask about these messages waits for a selection, so a conversation is never named when none of it is sent", async () => {

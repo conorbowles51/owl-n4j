@@ -32,6 +32,7 @@ import {
 import { useCurrentCaseworkLinks } from "@/features/workspace/hooks/use-current-casework-links"
 import type { NotebookLinkInput } from "../api"
 import { useNotebookStore } from "../notebook.store"
+import { PhonePrefill } from "@/features/phones/components/PinnedRecords"
 
 interface NotebookPanelProps {
   caseId: string
@@ -74,6 +75,7 @@ export function NotebookPanel({ caseId }: NotebookPanelProps) {
   const clearActiveNote = useNotebookStore((state) => state.clearActiveNote)
   const draftIntentId = useNotebookStore((state) => state.draftIntentId)
   const draftLinks = useNotebookStore((state) => state.draftLinks)
+  const draftPhone = useNotebookStore((state) => state.draftPhone)
   const currentSelection = useCurrentCaseworkLinks(caseId)
 
   const params = useMemo(
@@ -171,6 +173,11 @@ export function NotebookPanel({ caseId }: NotebookPanelProps) {
             ) : editingEntryId && !editingQuery.data ? (
               <div className="rounded-lg border border-destructive/30 p-4 text-center text-xs text-muted-foreground">This casework entry could not be loaded.<Button variant="ghost" size="sm" className="mt-2" onClick={closeComposer}>Close</Button></div>
             ) : (
+              <>
+              {!editingEntryId && draftPhone && draftPhone.caseId === caseId && (
+                // CO-6: the prefill says how many were selected and how many will be linked, and pins the records
+                <PhonePrefill caseId={caseId} selected={draftPhone.selected} linked={draftPhone.linked} recordIds={draftPhone.recordIds} />
+              )}
               <CaseworkEditor
                 key={editingQuery.data ? `${editingQuery.data.id}:${editingQuery.data.version}` : `${newType}:${draftIntentId}`}
                 caseId={caseId}
@@ -184,6 +191,7 @@ export function NotebookPanel({ caseId }: NotebookPanelProps) {
                 onCancel={closeComposer}
                 onSaved={closeComposer}
               />
+              </>
             )}
           </div>
         </ScrollArea>

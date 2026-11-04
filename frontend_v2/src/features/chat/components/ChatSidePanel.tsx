@@ -15,6 +15,7 @@ import { useGraphStore } from "@/stores/graph.store"
 import { evidenceAPI } from "@/features/evidence/api"
 import { ActiveAIModel } from "@/features/settings/components/ActiveAIModel"
 import { useCaseLayer } from "@/features/significant/stores/case-layer.store"
+import { PinnedRecords } from "@/features/phones/components/PinnedRecords"
 
 type ContextMode = "full" | "selection"
 
@@ -250,6 +251,11 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
               {phoneContext.record_ids.length > 50 ? " Only the first 50 are read with the question." : ""}
             </span>
             <button type="button" className="underline" onClick={() => setPhoneContext(null)}>Clear</button>
+          </div>
+        )}
+        {phoneContext && phoneContext.caseId === caseId && phoneContext.record_ids.length > 0 && (
+          <div className="mb-2">
+            <PinnedRecords caseId={caseId} recordIds={phoneContext.record_ids} total={phoneContext.selected_total ?? undefined} />
           </div>
         )}
         <div className="flex items-end gap-2">
