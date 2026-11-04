@@ -8,7 +8,7 @@ embeddings) had failed with 429 insufficient quota on every call since 2026-10-2
 from alembic import op
 
 revision = "20261104_meaning_search_health"
-down_revision = "20261104_address_lookup_mode"
+down_revision = "20261103_financial_security_rows"
 branch_labels = None
 depends_on = None
 
