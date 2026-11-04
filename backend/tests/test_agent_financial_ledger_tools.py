@@ -9,6 +9,7 @@ from uuid import UUID
 from sqlalchemy import event
 
 from postgres.base import Base
+from postgres.models.financial_transaction_number import FinancialTransactionNumber
 from postgres.models.enums import LedgerStatus, TransactionDirection
 from postgres.models.financial_candidates import (
     FinancialCandidateMapping, FinancialExtractionCandidate,
@@ -23,7 +24,7 @@ class LedgerToolFixture(DuplicateTestCase):
         super().setUp()
         Base.metadata.create_all(self.engine, tables=[model.__table__ for model in (
             FinancialCandidateMapping, FinancialExtractionCandidate,
-            FinancialCandidateReview, FinancialCandidateFinalization)])
+            FinancialCandidateReview, FinancialCandidateFinalization, FinancialTransactionNumber)])
         self.account.account_type = 'bank'
         self.account.currency = 'EUR'
         self.account.holder_name = 'Synthetic company'
@@ -347,7 +348,8 @@ class FinancialAgentLedgerTests(LedgerToolFixture):
         # Every read is once per case, none per row. 9 at e886aff6, then one each: matched names across accounts
         # (a6f9ec57), the case's accounts for the party state (6da5b5b4), the judgement calls' row map (340f9292).
         # The case's accounts are then read once for the party state, the matched names and the coverage: 12 -> 10.
-        self.assertLessEqual(len(large_queries), 10)
+        # Then the payments' printable numbers, one read per case (services/financial/transaction_numbers.py): 11.
+        self.assertLessEqual(len(large_queries), 11)
         # Whole-case reads of the accounts (ORM or the matcher's raw SQL); the read of the rows' own accounts by id is not one.
         case_account_reads = [sql for sql in large_queries if re.search(
             r'from financial_accounts( a)? where (financial_accounts|a)\.case_id', ' '.join(sql.lower().split()))]

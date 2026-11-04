@@ -592,9 +592,18 @@ _HAS_TABLE = {}
 
 
 def _table_ready(connection, name='financial_payment_categories'):
-    key = (id(connection.engine), str(connection.engine.url), name)
+    """Whether the table exists, cached per engine. The first check on an engine records every table present in
+    one inspection, so later checks for other optional tables (payment numbers, ...) run no SQL inside a read."""
+    engine_key = (id(connection.engine), str(connection.engine.url))
+    key = (*engine_key, name)
     if key not in _HAS_TABLE:
-        _HAS_TABLE[key] = inspect(connection).has_table(name)
+        inspector = inspect(connection)
+        if (*engine_key, None) not in _HAS_TABLE:
+            _HAS_TABLE[(*engine_key, None)] = True
+            for present in inspector.get_table_names():
+                _HAS_TABLE[(*engine_key, present)] = True
+        if key not in _HAS_TABLE:
+            _HAS_TABLE[key] = inspector.has_table(name)
     return _HAS_TABLE[key]
 
 
