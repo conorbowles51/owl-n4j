@@ -253,18 +253,23 @@ def compute(current: dict) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 def deposits(session, calc) -> dict:
+    """Deposits in the chosen categories, summed from verified rows. Dated by the ledger's ordering date (the
+    transaction date, else the posted, value or effective date), so a row printed with only a posted date stays in
+    a dated period; only rows of an admitted statement count, as in the money trails (followups m1104002352354)."""
+    from postgres.models.financial import FinancialSourceDocument as D
     from postgres.models.financial import FinancialTransaction as T
     from postgres.models.financial_payment_category import FinancialPaymentCategory as C
     if not calc.deposit_categories:
         return dict(categories=[], verified_minor=0, verified_rows=0, left_out_rows=0, left_out_classes={},
                     note='No deposit category chosen.')
     query = (select(T.amount_minor, T.proof_class, T.currency).join(C, C.transaction_id == T.id)
+             .join(D, D.id == T.source_document_id)
              .where(T.case_id == calc.case_id, T.ledger_status == 'admitted', T.superseded_by_id.is_(None),
-                    T.direction == 'credit', C.category.in_(list(calc.deposit_categories))))
+                    D.status == 'admitted', T.direction == 'credit', C.category.in_(list(calc.deposit_categories))))
     if calc.period_start:
-        query = query.where(T.transaction_date >= calc.period_start)
+        query = query.where(T.ordering_date >= calc.period_start)
     if calc.period_end:
-        query = query.where(T.transaction_date <= calc.period_end)
+        query = query.where(T.ordering_date <= calc.period_end)
     verified, rows, left, classes, other_currency = 0, 0, 0, {}, 0
     for amount, proof, currency in session.execute(query):
         if (currency or '').upper() != calc.currency:

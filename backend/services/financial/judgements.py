@@ -1432,6 +1432,12 @@ def model_work_statements_view(session, case_id):
 def reopen(session, *, case_id, judgement_id, actor):
     _require_person(actor)
     row = _get(session, case_id, judgement_id)
+    if (row.rule_id.startswith('proposal.') and row.status == 'confirmed'
+            and ((row.evidence or {}).get('applied') or {}).get('changed')):
+        # Reopening would show the call open while the accepted value stays on the payment (followups
+        # m1104002352354). The value is changed where a person sets it, which keeps its history.
+        raise JudgementError("This proposal was accepted and applied to the payment. Change the payment's category "
+                             "or other side on the payment itself; the earlier value stays in its history.", 409)
     row.status, row.resolved_by, row.resolved_by_email, row.resolved_at = 'open', None, None, None
     row.resolution_reason, row.adjudication_id = None, None
     session.commit()

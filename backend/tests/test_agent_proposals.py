@@ -212,6 +212,23 @@ class LedgerProposalTests(_Fixture):
         with self.assertRaisesRegex(judgements.JudgementError, 'accept it from the proposal'):
             judgements.confirm(self.db, case_id=self.f.case.id, judgement_id=UUID(item['id']), actor=self.f.actor)
 
+    def test_an_accepted_and_applied_proposal_cannot_be_reopened_but_a_missing_month_can(self):
+        # followups m1104002352354: reopening left the applied category in place while the call showed open.
+        item = self._category()
+        proposals.confirm(self.db, case_id=self.f.case.id, judgement_id=UUID(item['id']), actor=self.f.actor,
+                          user=self.user)
+        with self.assertRaisesRegex(judgements.JudgementError, 'accepted and applied'):
+            judgements.reopen(self.db, case_id=self.f.case.id, judgement_id=UUID(item['id']), actor=self.f.actor)
+        self.db.rollback()
+        self.assertEqual(self.db.get(FinancialPaymentCategory, self.row.id).category, 'Travel')
+        with mock.patch('services.financial.continuity.read_account_continuity', return_value=self._gap()):
+            lead = proposals.propose_missing_month(self.db, case_id=self.f.case.id, account_id=self.account.id,
+                                                   month='2024-02', why='gap', origin=_origin())
+        proposals.confirm(self.db, case_id=self.f.case.id, judgement_id=UUID(lead['id']), actor=self.f.actor,
+                          user=self.user)
+        self.assertEqual(judgements.reopen(self.db, case_id=self.f.case.id, judgement_id=UUID(lead['id']),
+                                           actor=self.f.actor)['status'], 'open')
+
     # -- corrections and rejections feed the lessons ---------------------------------------------------------------
 
     def test_a_person_choosing_another_category_corrects_the_proposal_and_reaches_the_inbox(self):

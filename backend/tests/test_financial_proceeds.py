@@ -148,6 +148,34 @@ class CalculationTests(unittest.TestCase):
         self.assertEqual(dep['left_out_rows'], len([r for r in credits if r.proof_class not in P.VERIFIED_CLASSES
                                                     and r.currency == currency]))
 
+    def test_deposits_use_the_ordering_date_and_only_admitted_statements(self):
+        # followups m1104002352354: a row with only a posted date dropped out of a dated period, and a row of a
+        # statement that is not admitted was summed.
+        from postgres.models.financial import FinancialSourceDocument
+        from services.financial.payment_categories import record_person_choice
+        credits = [r for r in self.fx.rows if r.direction == 'credit']
+        self.assertTrue(credits)
+        currency = credits[0].currency
+        credits = [r for r in credits if r.currency == currency]
+        for row in credits:
+            record_person_choice(self.db, row, 'Cash deposit', self.actor)
+        posted_only = credits[0]
+        day = posted_only.ordering_date
+        posted_only.posted_date, posted_only.transaction_date = day, None
+        self.db.commit()
+        expected = [r for r in credits if r.ordering_date == day]
+        calc = P.create(self.db, case_id=self.case.id, title='x', currency=currency, actor=self.actor,
+                        period_start=day, period_end=day, deposit_categories=['Cash deposit'])
+        counted = lambda c: c['deposits']['verified_rows'] + c['deposits']['left_out_rows']
+        self.assertEqual(counted(calc), len(expected))
+        document = self.db.get(FinancialSourceDocument, posted_only.source_document_id)
+        document.status, document.quarantine_reason = 'quarantined', 'balance_break'
+        self.db.commit()
+        calc = P.create(self.db, case_id=self.case.id, title='y', currency=currency, actor=self.actor,
+                        deposit_categories=['Cash deposit'])
+        on_document = [r for r in credits if r.source_document_id == posted_only.source_document_id]
+        self.assertEqual(counted(calc), len(credits) - len(on_document))
+
 
 if __name__ == '__main__':
     unittest.main()
