@@ -14,7 +14,7 @@ financial_transactions; the migration numbers whatever is present).
 from alembic import op
 
 revision = "20261104_transaction_numbers"
-down_revision = "20261104_meaning_search_health"
+down_revision = "20261104_pol_mcc_inferred"
 branch_labels = None
 depends_on = None
 
