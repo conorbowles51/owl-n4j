@@ -124,7 +124,7 @@ it("says plainly when the case has no trades", async () => {
   vi.mocked(fetchAPI).mockResolvedValue({ row_kind: "trade", total: 0, returned: 0, page: 1, page_size: 50,
     next_page: null, items: [], not_shown_cash_leg_not_in_ledger: 0, revision: null })
   view()
-  expect(await screen.findByText(/No trades have been read in this case/)).toBeTruthy()
+  expect(await screen.findByText(/No trades are in the money ledger for this case/)).toBeTruthy()
 })
 
 it("shows a printed line that could not be read, with its reason and printed text, and no figures", async () => {

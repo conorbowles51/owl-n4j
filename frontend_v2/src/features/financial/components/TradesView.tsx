@@ -249,7 +249,7 @@ export function TradesView({ caseId }: { caseId: string }) {
         <p className="rounded border p-3 text-sm">
           {instrument.trim()
             ? `No ${noun} match “${instrument.trim()}”.`
-            : `No ${noun} have been read in this case. Trades are read from brokerage statements in the money ledger.`}
+            : `No ${noun} are in the money ledger for this case. They are read from the brokerage statements in the ledger, and a statement removed from Financial takes its ${noun} with it.`}
           {data.not_shown_cash_leg_not_in_ledger > 0 &&
             ` ${data.not_shown_cash_leg_not_in_ledger} trade(s) are not shown because their cash line is no longer in the money ledger.`}
           {hiddenStatements > 0 &&
