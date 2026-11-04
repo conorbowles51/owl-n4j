@@ -227,14 +227,15 @@ def _records(session, case_id, ids: Iterable[str]) -> set[str] | None:
     wanted = sorted(set(ids))
     if not wanted:
         return set()
-    bind = session.get_bind()
+    # the session's own connection: a table made inside its transaction is seen, and no second connection is opened
+    bind = session.connection()
     if not inspect(bind).has_table("pv_record"):
         return None
     if bind.dialect.name == "postgresql":
         rows = session.execute(text("SELECT record_uid FROM pv_record WHERE case_id = :c AND record_uid = "
                                     "ANY(CAST(:u AS uuid[]))"), {"c": str(case_id), "u": wanted})
     else:
-        rows = session.execute(text("SELECT record_uid FROM pv_record WHERE case_id = :c AND record_uid IN (%s)"
+        rows = session.execute(text("SELECT record_uid FROM pv_record WHERE case_id = :c AND lower(record_uid) IN (%s)"
                                     % ",".join(f":u{i}" for i in range(len(wanted)))),
                                {"c": str(case_id), **{f"u{i}": value for i, value in enumerate(wanted)}})
     return {str(row[0]).lower() for row in rows}
