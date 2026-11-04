@@ -124,6 +124,29 @@ def test_the_release_warm_up_unit_has_the_service_identity(monkeypatch):
     assert view_cache._identity_now() != service
 
 
+def test_a_variable_only_the_prepare_unit_gets_never_changes_the_identity(monkeypatch):
+    """followups m110406413213046: from ac705ec4 (2 Nov) the prepare unit was given LOUPE_PREPARE_STARTED, which the
+    service never has; hashed into the identity, every prepared copy was saved under an identity the service never
+    looked up (live 4 Nov: prepared 3997210de337, service d2d1ebd42884; prepared 0b9e01e17766, service 76059d1528ec),
+    so the first visit after each release computed the view in the request (d5b330d1 Trends 47 s)."""
+    monkeypatch.delenv('LOUPE_PREPARE_STARTED', raising=False)
+    service = view_cache._identity_now()
+    assert service is not None
+    monkeypatch.setenv('LOUPE_PREPARE_STARTED', '1793772442.125')
+    assert view_cache._identity_now() == service
+
+
+def test_every_variable_the_prepare_adds_to_the_service_environment_is_left_out_of_the_identity():
+    settings = view_prepare.service_settings(FakeSystem())
+    argv = view_prepare.prepare_command(settings, started=1793772442.125)
+    service = {assignment.split('=', 1)[0] for assignment in settings['environment']}
+    prefix = '--property=Environment='
+    added = {arg[len(prefix):].strip('"').split('=', 1)[0] for arg in argv if arg.startswith(prefix)}
+    added = {name for name in added if name not in service}
+    assert added == {'LOUPE_PREPARE_STARTED'}
+    assert added <= view_cache._VOLATILE_ENVIRONMENT
+
+
 def test_a_prepare_records_the_code_it_computes_and_follows_a_later_fetch(tmp_path):
     state = tmp_path / 'state.json'
     system = FakeSystem(commit='5f7e69f3' + '0' * 32)

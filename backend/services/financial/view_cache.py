@@ -658,7 +658,11 @@ def _memo_dir():
 # restart (view_warmup --prepare), would otherwise save its views under an identity the service never looks up.
 _VOLATILE_ENVIRONMENT = frozenset(('INVOCATION_ID', 'JOURNAL_STREAM', 'SYSTEMD_EXEC_PID', 'MANAGERPID', 'LISTEN_PID',
     'LISTEN_FDS', 'LISTEN_FDNAMES', 'WATCHDOG_PID', 'WATCHDOG_USEC', 'NOTIFY_SOCKET', '_', 'OLDPWD', 'SHLVL', 'PWD',
-    'MEMORY_PRESSURE_WATCH', 'MEMORY_PRESSURE_WRITE'))
+    'MEMORY_PRESSURE_WATCH', 'MEMORY_PRESSURE_WRITE',
+    # Set only for the release's prepare unit (view_prepare.prepare_command: when its cap started). Hashed, it gave
+    # the prepare an identity the started service never has, so from 2 Nov 06:45 to 4 Nov no prepared copy was
+    # found and the first visit after each release computed the view in the request (followups m110406413213046).
+    'LOUPE_PREPARE_STARTED'))
 
 
 def _identity_now():
