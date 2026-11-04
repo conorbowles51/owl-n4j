@@ -1,4 +1,4 @@
-## 4 November: share a phone review and know what is left (cb-review, 07 J-13), live 88b8ded6
+## 4 November: share a phone review and know what is left (cb-review, 07 J-13), live 45603ac4
 
 - **Split for review (J-13 step 1).** Conversations' "Split for review…" splits the threads under the current filter
   into one Workspace task per chosen member (owners and editors), by thread or by person
@@ -14,7 +14,7 @@
   and every 45 s while visible (`use-thread-presence.ts`), expiry 100 s, leave on close.
 - **Coverage summary (step 6).** `GET .../review/coverage`: counts from `streams.thread_list` (equals the marks), who
   reviewed what, every unreviewed thread, tasks, second-pass results, searches run (`phone_search_runs`, migration
-  `20261103_phone_search_runs`, written by `/streams/index` with text and `/api/search`), terms and cb-keywords' lists
+  `20261103_phone_search_runs`, written once per Conversations search by `/conversations/threads` with text, by `/streams/index` for a search inside open threads, and by `/api/search`), terms and cb-keywords' lists
   (`for_coverage`). The export cover prints it for the exported threads (`exports/jobs.py`, `pdf.build_html(review=)`),
   with an appendix of each thread's state. Decisions UXD-51 to UXD-55 in 07.
 - Measured live: beat 34 to 165 ms (5 beats), 2 beats in 100 s open; coverage on the 3 reference phone cases 277 to
