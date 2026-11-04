@@ -2081,6 +2081,15 @@ or start within the gap of the end or start of a phone's data is not counted (16
 tests 1 to 3 in `test_phone_analysis_number_switching.py`. The identity-link action of 03 section 10 is not offered
 from the row yet.
 
+**Every possible pair, graded (version 16.2).** A pair at the defaults is a `switch_candidate`, moderate, or strong
+when a saved contact entry or a same name on a phone also holds both. A pair under the threshold or the 5-shared
+minimum that shares at least one counterpart besides the phones' owners is a `switch_possible` on its own tab: weak
+with two or more such counterparts or a saved entry or same name, faint with one. Every number on a phone is in contact
+with that phone's owner, so a pair sharing only an owner shares nothing that tells it apart; such pairs and pairs
+sharing nothing are counted and stated under the run ("Counted, not listed: ..."). Live, at the defaults: 88e01b57
+lists 6 faint pairs (44,278 share only an owner, 3,207 nothing); d9945277, 4aa79795, 574a9752 and 7006c0ab list none
+(23, 0, 1,517 and 1,517 share only an owner).
+
 ### 16c.7 Dependencies
 
 02 (identities, identity decisions), 04 (availability bands).

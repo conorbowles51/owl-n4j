@@ -25,7 +25,7 @@ RECORDED = {
     "common_contacts": ("14.1", "46ee93fe71781001"),
     "reparse_comparison": ("17.3-3", "d48da93ea48deb92"),
     "contact_matrix": ("15.1", "49cad534aa52a2bf"),
-    "number_switching": ("16.1", "2189f1b2740ec40b"),
+    "number_switching": ("16.2", "a70e7b04ce0370c5"),
     "extraction_comparison": ("12.1", "919fdb03776732f1"),
     "other_devices": ("6.1", "29e6a84e3f06008d"),
     "plans": ("10.2", "68845cb09f2a4cc5"),

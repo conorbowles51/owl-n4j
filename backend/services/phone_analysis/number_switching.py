@@ -12,6 +12,14 @@ end of the data of a phone it appears on has not stopped: the phone's data stopp
 within the gap of the start of a phone's data is not a start.
 
 Gate (16c.6) passed: on the 10-report corpus case 3 pairs reach the defaults against 0 in 20 shuffled runs.
+
+Every possible pair, graded (Neil 2026-11-04: "We don't want to miss things based on an arbitrary cutoff."). A pair
+that reaches the similarity threshold and the minimum shared counterparts is a ``switch_candidate`` (moderate; strong
+when a saved contact entry or a same name on a phone also holds both). A pair that misses either but shares at least
+one counterpart besides the phones' owners is a ``switch_possible``, listed as weak (two or more such counterparts, or
+a saved entry or same name) or faint (one). Every number on a phone is in contact with that phone's owner, so a pair
+whose only shared counterpart is an owner shares nothing that tells them apart: such pairs, and pairs sharing nothing,
+are counted (``share_only_owners``, ``share_nothing``) and stated, not listed.
 """
 from __future__ import annotations
 
@@ -27,14 +35,14 @@ from services.phone_analysis.contact_matrix import _events
 from services.phone_analysis.message_reconciliation import _people
 
 CODE = "number_switching"
-VERSION = "16.1"
+VERSION = "16.2"
 PARAMETERS = {
     "gap_days": {"default": 14, "min": 1, "max": 120},
     "window_days": {"default": 90, "min": 7, "max": 730},
     "threshold": {"default": 0.5, "min": 0.1, "max": 1.0},
     "min_shared": {"default": 5, "min": 1, "max": 100},
 }
-KINDS = ("switch_candidate",)
+KINDS = ("switch_candidate", "switch_possible")
 SUPPORTS = ("similar_counterparts", "saved_together", "same_name", "never_same_day")
 UNDERCUTS = ("changed_together", "group_chat_counterparts", "short_span", "identity_unreviewed", "not_merged")
 DIRECTION_CODES = SUPPORTS + UNDERCUTS
@@ -115,8 +123,6 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
     out = []
     for x in sorted(stopped, key=str):
         bx = window_set(x, last[x] - window, last[x])
-        if len(bx) < params["min_shared"]:
-            continue
         i, j = bisect.bisect_right(keys, last[x]), bisect.bisect_right(keys, last[x] + gap)
         for _s, _k, y in by_start[i:j]:
             if y == x:
@@ -125,9 +131,14 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
             ay = window_set(y, first[y], first[y] + window)
             shared = bx & ay
             jac = len(shared) / len(bx | ay) if bx | ay else 0.0
+            besides = {s for s in shared if not (isinstance(s, tuple) and s[0] == "owner")}
+            kind = "switch_candidate"
             if jac < params["threshold"] or len(shared) < params["min_shared"]:
-                continue
-            counts["switch_candidate"] += 1
+                if not besides:
+                    counts["share_only_owners" if shared else "share_nothing"] += 1
+                    continue
+                kind = "switch_possible"
+            counts[kind] += 1
             supports = [_d("similar_counterparts", "%d of their counterparts are shared (similarity %.2f)." % (
                 len(shared), jac))]
             card = sorted(c for c, ps in cards.items() if x in ps and y in ps)
@@ -156,13 +167,16 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                      for c in card[:1] if c not in (lx[2], fy[2])]
             if recs[1]["record_uid"] == recs[0]["record_uid"]:
                 recs.pop(1)
+            lv, why = _grade(kind, len(shared), len(besides), jac, [s["code"] for s in supports[1:]], params)
+            counts["level_" + lv] += 1
             out.append({
-                "kind": "switch_candidate", "strength": "with_markers" if len(supports) > 1 else "overlap_only",
+                "kind": kind, "strength": "with_markers" if len(supports) > 1 else "overlap_only",
                 "measures": {"from": str(x), "to": str(y), "from_display": display.get(x) or str(x),
                              "to_display": display.get(y) or str(y), "last_of_first": last[x],
                              "first_of_second": first[y], "gap_days": round((first[y] - last[x]).total_seconds() /
                                                                             86400, 1),
-                             "similarity": round(jac, 3), "shared": len(shared), "first_counterparts": len(bx),
+                             "similarity": round(jac, 3), "shared": len(shared), "shared_besides_owners": len(besides),
+                             "level": lv, "strength_reasons": why, "first_counterparts": len(bx),
                              "second_counterparts": len(ay), "markers": [s["code"] for s in supports[1:]],
                              "extraction_ids": sorted(phones_of[x] | phones_of[y])},
                 "directions": {"supports": supports, "undercuts": undercuts},
@@ -170,6 +184,35 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
     if ctx is not None:
         ctx.progress(len(phones), len(phones))
     return out, dict(counts)
+
+
+def _grade(kind, shared, besides, jac, markers, params):
+    """The one strength scale (services.match_strength), set by this rule, never by a model: how well matched (the
+    shared counterparts and similarity against the defaults) and how substantiated (a saved entry or same name)."""
+    independent = [m for m in markers if m in ("saved_together", "same_name")]
+    match = ["%d shared counterparts, %d besides the phones' owners (similarity %.2f)" % (shared, besides, jac)]
+    if kind == "switch_candidate":
+        match.append("reaches similarity %.2f and %d shared" % (params["threshold"], params["min_shared"]))
+        lv = "strong" if independent else "moderate"
+    else:
+        match.append("under similarity %.2f or %d shared" % (params["threshold"], params["min_shared"]))
+        lv = "weak" if besides >= 2 or independent else "faint"
+    words = {"saved_together": "one saved contact entry holds both", "same_name": "named the same on a phone",
+             "never_same_day": "never active on the same day"}
+    return lv, {"match": match, "substantiation": [words[m] for m in markers]}
+
+
+def counts_words(counts) -> str:
+    """The pairs not listed, stated with their count."""
+    def n(k):
+        v = counts.get(k) or 0
+        return "%s more %s" % ("{:,}".format(v), "pair shares" if v == 1 else "pairs share")
+    parts = []
+    if counts.get("share_only_owners"):
+        parts.append("%s only a phone's owner (every number on a phone does)" % n("share_only_owners"))
+    if counts.get("share_nothing"):
+        parts.append("%s no counterpart" % n("share_nothing"))
+    return "; ".join(parts)
 
 
 def run(conn, case_id, params, ctx) -> list:

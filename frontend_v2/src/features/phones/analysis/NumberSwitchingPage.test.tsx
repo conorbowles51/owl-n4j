@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { switchWords } from "./switch-words"
+import { switchLeftOutWords, switchWords } from "./switch-words"
 
 /** 05 16c.8 on the screen: the pair, the gap, the shared counterparts, and that nothing is joined. Invented data only. */
 describe("Possible number changes words", () => {
@@ -10,5 +10,15 @@ describe("Possible number changes words", () => {
     expect(w.line).toContain("7 shared counterparts (8 before, 7 after; similarity 0.875).")
     expect(w.line).toContain("Also: never active on the same day.")
     expect(w.line).toContain("Nothing is joined")
+  })
+
+  it("states the strength and why, and counts the pairs not listed", () => {
+    const w = switchWords({ measures: { from_display: "a", to_display: "b", last_of_first: "2023-01-31T12:00:00Z", first_of_second: "2023-02-05T12:00:00Z",
+      gap_days: 5, similarity: 0.4, shared: 2, first_counterparts: 2, second_counterparts: 5, markers: [], level: "faint", shared_besides_owners: 1,
+      strength_reasons: { match: ["2 shared counterparts, 1 besides the phones' owners (similarity 0.40)", "under similarity 0.50 or 5 shared"], substantiation: [] } } } as never)
+    expect(w.line.startsWith("Faint: 2 shared counterparts, 1 besides the phones' owners")).toBe(true)
+    expect(switchLeftOutWords({ share_only_owners: 44278, share_nothing: 1 })).toBe(
+      "Counted, not listed: 44,278 more pairs share only a phone's owner (every number on a phone does); 1 more pair shares no counterpart.")
+    expect(switchLeftOutWords({})).toBe("")
   })
 })
