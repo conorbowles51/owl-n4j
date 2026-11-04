@@ -39,6 +39,26 @@ describe("registering a selection", () => {
     expect(api.fetchAPI.mock.calls.filter(([url]) => url.endsWith("/complete"))).toHaveLength(1)
   })
 
+  it("reports the count while the first request is still waiting on the server", async () => {
+    vi.useFakeTimers()
+    try {
+      api.fetchAPI.mockReset()
+      let answer: (group: unknown) => void = () => {}
+      api.fetchAPI.mockImplementation((url: string) =>
+        url.endsWith("/complete") ? new Promise((resolve) => (answer = resolve)) : Promise.resolve(running(700)))
+      const steps: (number | undefined)[] = []
+      const pending = registerGroup("g-1", (step) => steps.push(step.done), noWait)
+      await vi.advanceTimersByTimeAsync(2100)
+      expect(steps).toEqual([700])
+      answer(group("completed"))
+      expect((await pending).status).toBe("completed")
+      await vi.advanceTimersByTimeAsync(6000)
+      expect(steps).toEqual([700])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("returns at once when the server registered it within its answer", async () => {
     api.fetchAPI.mockReset()
     api.fetchAPI.mockResolvedValueOnce(group("completed"))

@@ -397,6 +397,14 @@ export async function registerGroup(
   wait: (ms: number) => Promise<void> = pause
 ): Promise<UploadGroup> {
   const start = async (): Promise<UploadGroup> => {
+    // The server holds this answer up to 25 s; the count moves meanwhile.
+    const whileWaiting = setInterval(() => {
+      void fetchAPI<UploadGroup>(`${endpoint}/${id}/registration`)
+        .then((now) => {
+          if (now.registration?.state === "running") onStep?.(now.registration)
+        })
+        .catch(() => {})
+    }, REGISTRATION_POLL_MS)
     try {
       return await fetchAPI<UploadGroup>(`${endpoint}/${id}/complete`, { method: "POST", timeout: 2 * 60 * 1000 })
     } catch (error) {
@@ -405,6 +413,8 @@ export async function registerGroup(
       const now = await fetchAPI<UploadGroup>(`${endpoint}/${id}/registration`).catch(() => null)
       if (now?.status === "completed" || now?.registration?.state === "running") return now
       throw error
+    } finally {
+      clearInterval(whileWaiting)
     }
   }
   let answer = await start()
