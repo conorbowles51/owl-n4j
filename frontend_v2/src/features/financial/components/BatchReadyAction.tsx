@@ -12,6 +12,7 @@ export function BatchReadyAction({
   pending,
   accepted,
   refreshRequired = false,
+  updating = false,
   onConfirm,
 }: {
   available: number
@@ -24,6 +25,8 @@ export function BatchReadyAction({
   pending: boolean
   accepted: boolean
   refreshRequired?: boolean
+  /** The batch on screen is a previous copy being updated: the server refuses an import against it. */
+  updating?: boolean
   onConfirm: () => void
 }) {
   const statements = `${available} ${available === 1 ? "statement" : "statements"}`
@@ -54,7 +57,9 @@ export function BatchReadyAction({
         </div>
         <Button
           className="h-auto whitespace-normal py-2"
-          disabled={!canEdit || !available || pending || paused || refreshRequired}
+          disabled={
+            !canEdit || !available || pending || paused || refreshRequired || updating
+          }
           onClick={onConfirm}
         >
           {pending
@@ -95,6 +100,12 @@ export function BatchReadyAction({
       {paused && (
         <p className="text-sm">
           Resume batch preparation before saving ready statements.
+        </p>
+      )}
+      {updating && !pending && (
+        <p className="text-sm">
+          This batch is shown from an earlier copy while it updates. Saving
+          becomes available when the current copy has loaded.
         </p>
       )}
       {!canEdit && (

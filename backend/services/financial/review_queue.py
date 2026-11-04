@@ -1133,7 +1133,11 @@ def _ask_refresh(session, key, case_id):
             import logging
             logging.getLogger(__name__).warning('Review queue refresh could not be asked for', exc_info=True)
     if asked is None:
-        _refresh_in_background(session.get_bind(), key, case_id)
+        # The engine, never the session's bind as such: inside a cached view the bind is the view's own snapshot
+        # Connection, which the request closes while the background thread would still use it (followups
+        # m110400290612685).
+        bind = session.get_bind()
+        _refresh_in_background(getattr(bind, 'engine', bind), key, case_id)
         return True
     return time.time() - asked < view_cache.UPDATING_MAX_SECONDS
 

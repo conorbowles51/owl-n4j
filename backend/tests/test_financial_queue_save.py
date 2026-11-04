@@ -703,3 +703,20 @@ def test_the_already_saved_check_reads_only_keys_not_whole_file_rows_or_summarie
         assert column is not EvidenceFile.metadata_.expression and column is not FinancialImportBatchItem.summary.expression
         assert getattr(column, 'entity_namespace', None) is not EvidenceFile or getattr(column, 'key', '') != 'metadata'
     assert not any(getattr(c, 'name', None) in ('metadata', 'summary') for c in selected)
+
+
+def test_a_refresh_that_cannot_be_asked_for_builds_on_the_engine_not_the_requests_connection(monkeypatch):
+    # followups m110400290612685: inside a cached view session.get_bind() is the view's snapshot Connection, which
+    # the request closes while the background thread would still be using it.
+    from unittest import mock
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from services.financial import review_queue as rq, view_refresh
+    engine = create_engine('sqlite://')
+    started = []
+    monkeypatch.setattr(rq, '_refresh_in_background', lambda bind, key, case_id: started.append(bind))
+    monkeypatch.setattr(view_refresh, 'ask', mock.Mock(return_value=None))
+    with engine.connect() as connection, Session(bind=connection) as session:
+        assert rq._ask_refresh(session, 'k', 'c') is True
+    assert started == [engine]
+

@@ -17,12 +17,16 @@ import { BatchLayoutMemory } from "./BatchLayoutMemory"
 import { BatchReviewSummary } from "./BatchReviewSummary"
 import { batchReviewSummarySchema } from "../lib/batch-review-summary"
 import { BulkStatementDetails } from "./BulkStatementDetails"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link, useSearchParams } from "react-router-dom"
 import { z } from "zod"
 import { Button } from "@/components/ui/button"
 import { fetchAPI } from "@/lib/api-client"
+import {
+  subscribeUpdatingViews,
+  updatingViews,
+} from "@/lib/financial-view-updates"
 import { randomRequestId } from "@/lib/browser-crypto"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useStatementWorkspace } from "../stores/statement-workspace"
@@ -245,6 +249,12 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
   const [retryError, setRetryError] = useState("")
   const retryInFlight = useRef(false)
   const prefix = `/api/financial/statement-import/batches`
+  // The batch on screen is a previous copy being updated (lib/financial-view-updates): an import would send that
+  // copy's ready revision, which the server refuses, so Import waits for the current copy.
+  const views = useSyncExternalStore(subscribeUpdatingViews, updatingViews)
+  const batchUpdating = [...views.keys()].some((endpoint) =>
+    endpoint.startsWith(`${prefix}/${batchId}?`)
+  )
   const query = useQuery({
     queryKey: [
       "financial-batch",
@@ -989,6 +999,7 @@ export function FinancialBatchPanel({ caseId }: { caseId: string }) {
         summary={batch.statement_summary}
         filtered={!!reviewGroup || onlyProblems}
         refreshRequired={query.isError}
+        updating={batchUpdating}
         canEdit={accessCanEdit}
         paused={paused}
         pending={confirm.isPending}

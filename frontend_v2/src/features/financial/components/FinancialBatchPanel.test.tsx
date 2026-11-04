@@ -14,6 +14,10 @@ import {
 import { MemoryRouter, useLocation } from "react-router-dom"
 import { beforeEach, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
+import {
+  clearUpdatingViews,
+  noteViewAnswer,
+} from "@/lib/financial-view-updates"
 import { FinancialBatchPanel } from "./FinancialBatchPanel"
 import { useBatchReview } from "../lib/batch-review-context"
 import { useInvestigationScopeStore } from "../stores/investigation-scope"
@@ -1308,4 +1312,29 @@ it("says which files are only copies before anything is opened and badges each c
   expect(
     screen.getByText("Copy of Kept.pdf p.4 · nothing to review")
   ).toBeInTheDocument()
+})
+
+// followups m110400290612685: Import sent the ready revision of the copy on screen; on a copy being updated the
+// server refuses it, so Import waits until the current copy has loaded.
+it("does not offer Import while the batch on screen is an earlier copy being updated", async () => {
+  const endpoint =
+    "/api/financial/statement-import/batches/batch?case_id=case&offset=0&only_problems=false"
+  act(() => noteViewAnswer(endpoint, "2026-11-04T01:00:00Z"))
+  try {
+    mount()
+    const importButton = await screen.findByRole("button", {
+      name: /^Import \d+ transactions/,
+    })
+    expect(importButton).toBeDisabled()
+    expect(
+      screen.getByText(/shown from an earlier copy while it updates/)
+    ).toBeVisible()
+    act(() => noteViewAnswer(endpoint, undefined))
+    await waitFor(() => expect(importButton).toBeEnabled())
+    expect(
+      screen.queryByText(/shown from an earlier copy while it updates/)
+    ).toBeNull()
+  } finally {
+    act(() => clearUpdatingViews())
+  }
 })
