@@ -131,3 +131,23 @@ def test_snapshot_saves_even_when_events_cannot_be_read(monkeypatch):
     body = router.SnapshotCreate(name="s", notes="", case_id=case.id, subgraph={"nodes": [{"key": "p1"}], "links": []})
     out = router.create_snapshot(body, user={"username": "u"}, db=None, db_user=None)
     assert out.node_count == 1 and out.timeline_count == 0 and len(stored) == 1
+
+
+def test_ledger_payment_events_cite_their_statement_file_and_page():
+    from routers import snapshots as router
+
+    class Q:
+        def __init__(self, rows): self.rows = rows
+        def join(self, *a, **k): return self
+        def filter(self, *a, **k): return self
+        def all(self): return self.rows
+
+    tx = "fc8d264d-5c6c-4329-96b0-6f79ab315b4f"
+    db = types.SimpleNamespace(query=lambda *a: Q([(tx, {"locator": {"page": 3}}, "BBVA Nov 2022.pdf")]))
+    events = [
+        {"key": "TX-1", "ledger_transaction_id": tx, "source_references": [], "source_files": []},
+        {"key": "EV-2", "source_references": ["memo.pdf p.1"]},
+    ]
+    router.cite_ledger_sources(db, "cded78d0-e659-44cc-940d-d8f8c8012760", events)
+    assert events[0]["source_references"] == ["BBVA Nov 2022.pdf, p.3"]
+    assert events[1]["source_references"] == ["memo.pdf p.1"]  # an event's own source is never replaced

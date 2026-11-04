@@ -140,7 +140,41 @@ def snapshot_events(db: Session, case_id: str, subgraph: dict) -> list[dict]:
             keys.append(key)
     if not keys:
         return []
-    return snapshot_report.frozen_events(_fetch_current_events(db, case_id, keys, require_all=False))
+    events = _fetch_current_events(db, case_id, keys, require_all=False)
+    cite_ledger_sources(db, case_id, events)
+    return snapshot_report.frozen_events(events)
+
+
+def cite_ledger_sources(db: Session, case_id: str, events: list[dict]) -> None:
+    """A ledger payment's source is the statement it was read from: name that file and page (FEAT-008)."""
+    ids = []
+    for event in events:
+        tx = event.get("ledger_transaction_id")
+        if tx and not (event.get("source_references") or event.get("source_files")):
+            try:
+                ids.append(UUID(str(tx)))
+            except ValueError:
+                continue
+    if not ids:
+        return
+    from postgres.models.evidence import EvidenceFile
+    from postgres.models.financial import FinancialSourceDocument, FinancialTransaction
+
+    rows = (
+        db.query(FinancialTransaction.id, FinancialTransaction.provenance, EvidenceFile.original_filename)
+        .join(FinancialSourceDocument, FinancialSourceDocument.id == FinancialTransaction.source_document_id)
+        .join(EvidenceFile, EvidenceFile.id == FinancialSourceDocument.evidence_file_id)
+        .filter(FinancialTransaction.id.in_(ids), FinancialTransaction.case_id == UUID(str(case_id)))
+        .all()
+    )
+    found = {}
+    for tx_id, provenance, filename in rows:
+        page = ((provenance or {}).get("locator") or {}).get("page")
+        found[str(tx_id)] = f"{filename}, p.{page}" if page else str(filename)
+    for event in events:
+        ref = found.get(str(event.get("ledger_transaction_id") or ""))
+        if ref and not (event.get("source_references") or event.get("source_files")):
+            event["source_references"] = [ref]
 
 
 class SnapshotReportRequest(BaseModel):
