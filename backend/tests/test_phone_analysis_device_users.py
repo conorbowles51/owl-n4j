@@ -43,9 +43,9 @@ def _use(c, case, ext, start_hour, end_hour, days, base):
         c.execute(text(
             "INSERT INTO pol_activity_event (case_id, extraction_id, record_uid, root_record_uid, record_type, "
             "time_field, field_path, instant_utc, offset_status, instant_basis, original, time_semantics, stream_key, "
-            "family, activity_class, class_basis, actor) VALUES (:c, :e, :r, :r, 'DeviceEvent', 'StartTime', "
+            "family, activity_class, class_basis, class_level, actor) VALUES (:c, :e, :r, :r, 'DeviceEvent', 'StartTime', "
             "'StartTime', :t, 'explicit', 'synthetic', :o, 'event_instant', 'synthetic', 'device_events', "
-            "'interaction', 'reviewed_mapping', 'owner')"), {"c": case, "e": ext, "r": rec, "t": t, "o": t.isoformat()})
+            "'interaction', 'reviewed_mapping', 'applied_unconfirmed', 'owner')"), {"c": case, "e": ext, "r": rec, "t": t, "o": t.isoformat()})
 
 
 def test_complementary_use_by_hand():
@@ -61,7 +61,7 @@ def test_complementary_use_by_hand():
 @needs_template
 def test_pair_with_the_same_iccid_and_alternating_use(engine):
     """8.8.3 and 8.8.4 end to end: same ICCID in both reports' metadata is a strong marker; alternating use over 14
-    days is measured; values are never in the result."""
+    days through an applied mapping is strong on the one scale; values are never in the result."""
     base = at(2023, 1, 2, 0)
     with engine.begin() as c:
         case = make_case(c)
@@ -79,13 +79,48 @@ def test_pair_with_the_same_iccid_and_alternating_use(engine):
     (u,) = [r for r in res if r["kind"] == "complementary_use"]
     assert u["measures"]["days"] == 14 and u["measures"]["phi"] < 0 and u["measures"]["switches_per_day"] == 1.0
     assert u["measures"]["phones"] == ["C1", "C2"]
+    assert u["strength"] == "strong" and u["measures"]["strength_basis"] == {"count": 14, "substantiation": 2, "fit": 2}
+    assert counts["complementary_use_strong"] == 1 and counts["shared_markers_strong"] == 1
     F.register(U)
     with engine.begin() as c:
-        run, _ = F.request_run(c, case, "device_users", {"min_days": 15}, "synthetic@example.org")
+        with pytest.raises(F.AnalysisError):  # no cutoff is left to set (19.S8-b)
+            F.request_run(c, case, "device_users", {"min_days": 15}, "synthetic@example.org")
+    with engine.begin() as c:
+        run, _ = F.request_run(c, case, "device_users", {}, "synthetic@example.org")
     assert F.execute(engine, uuid.UUID(run["id"]))["status"] == "completed"
     with engine.connect() as c:
         page = F.results(c, case, run["id"])
-    assert {i["kind"] for i in page["items"]} == {"shared_markers"}  # 14 days < 15: no use result
+    assert {i["kind"] for i in page["items"]} == {"shared_markers", "complementary_use"}
+
+
+@needs_template
+def test_a_pair_with_one_or_three_shared_days_is_listed_graded_not_hidden(engine):
+    """Neil 2026-11-04: no cutoff hides a candidate. One shared day is weak (few records), three are moderate."""
+    base = at(2023, 1, 2, 0)
+    with engine.begin() as c:
+        case = make_case(c)
+        x, _ = phone(c, case, label="C1", events=[])
+        y, _ = phone(c, case, label="C2", owner="phone:+12025550111", events=[])
+        z, _ = phone(c, case, label="C3", owner="phone:+12025550122", events=[])
+        _use(c, case, x, 9, 12, 3, base)
+        _use(c, case, y, 12, 15, 1, base)
+        _use(c, case, z, 12, 15, 3, base)
+    with engine.connect() as c:
+        res, counts = U.analyse(c, case, PARAMS)
+    use = {tuple(r["measures"]["phones"]): r for r in res if r["kind"] == "complementary_use"}
+    assert use[("C1", "C2")]["measures"]["days"] == 1 and use[("C1", "C2")]["strength"] == "weak"
+    assert "few_records" in {d["code"] for d in use[("C1", "C2")]["directions"]["undercuts"]}
+    assert use[("C1", "C3")]["measures"]["days"] == 3 and use[("C1", "C3")]["strength"] == "moderate"
+    assert use[("C2", "C3")]["strength"] == "weak"
+    assert counts["complementary_use_weak"] == 2 and counts["complementary_use_moderate"] == 1
+
+
+def test_marker_strength_uses_the_one_scale():
+    """19.S8-c: an account or saved login in common is moderate (the scale's word), never medium."""
+    from services.phone_analysis.money_pairings import LEVELS
+    assert U.STRENGTH["account"] == U.STRENGTH["saved_login"] == "moderate"
+    assert set(U.STRENGTH.values()) <= set(LEVELS)
+    assert "marker_moderate" in U.DIRECTION_CODES and "marker_medium" not in U.DIRECTION_CODES
 
 
 @needs_template

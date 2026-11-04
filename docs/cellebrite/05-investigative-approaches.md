@@ -1191,8 +1191,8 @@ passwords); `SIMData` 87 on 9 (`Name`, `Value`, `Category`); report metadata `IC
 1. **Shared identity markers** between phones X and Y (counts of equal normalised values, by kind): owner
    identifiers, account usernames, saved-login account names, SIM identifiers (ICCID or IMSI in metadata or
    SIMData), Bluetooth peer names and addresses, WiFi BSSIDs. Each kind is listed with its count; strength
-   per kind: `strong` (same SIM ICCID or IMSI; same owner E.164), `medium` (same account username on a
-   service), `weak` (same BSSID, same Bluetooth peer name).
+   per kind on the one scale: `strong` (same SIM ICCID or IMSI; same owner E.164), `moderate` (same account
+   username on a service), `weak` (same BSSID, same Bluetooth peer name).
 2. **Co-location.** 15-minute bins. In a bin a phone is placed if it has a presence observation (04 section
    6.1; Synced points excluded unless the run includes them). Together and apart per bin come from 04
    section 8.4's verdict function, the one implementation: radius `2 × accuracy` (04 section 6.2), an
@@ -1232,8 +1232,9 @@ M-5a: per phone pair, bins where both are placed; M-5b: pairs with any strong ma
 least 7 days of overlapping interaction data. The plan's figures (200 co-placed bins for a pair; 14 days of
 overlapping interaction data) are rules of thumb: no measured error rate stands behind them. The 200 decides nothing:
 steps 2 and 4 run on every pair with at least one co-placed bin, each result graded strong, moderate, weak or faint by
-a stated rule with its reasons (decision 19.S8-g). Complementary use lists pairs with at least `min_days` such days
-(19.S8-b).
+a stated rule with its reasons (decision 19.S8-g). Complementary use lists every pair with at least one such day,
+graded on the same scale from the shared days (3 some, 14 well; rules of thumb) and the mapping level of the use
+records (19.S8-b).
 
 **Server corpus (stage A3, `measurements/a3/README.md` section 9):** M-5a: the most co-placed 15-minute bins for any
 pair is 43 (P03 and P04), and no pair shares a BSSID in a bin; M-5b: one pair has a strong marker (P04 and P06: 2 owner
@@ -2371,8 +2372,8 @@ recorded first (3.3 `phone_analysis_measurements` and in this file), then build,
 | 19.S7-e The owner's read time on an incoming message is a date_read or date_played on a party the projection marks as the phone owner; messages with no time or no direction are left out of steps 2 and 3 and counted. Step 3's window runs from the later of the message's time and the owner's read time | 7.3 step 1: the time belongs to the Party record it sits on (02 5.3) | 02 maps read times to another party per app |
 | 19.S7-f Strength of steps 1 to 4: substantiation from the count behind the result (some 3, well 10; 10 is the reply pairs per conversation M-4b counts), fit from the records' interpretation level (reviewed or applied mapping 2, generic 1, none 0); strong when both are 2, moderate when both are at least 1, weak when either is, faint otherwise. A result is never dropped for its level | one scale across the app (strong, moderate, weak, faint); the counts are rules of thumb | a measured error rate gives other counts |
 | 19.S8-a "Bins where both phones have data" (8.3 step 3) are the bins of days on which both phones hold at least one owner interaction event | 04's availability bands come from observing streams only and the live reference phones hold none, so a band test would drop every bin; this is the day rule M-5c measured | 04's bands cover the phones of a case |
-| 19.S8-b A pair is listed for complementary use when it shares at least `min_days` such days (default 14, the gate's own figure) | fewer days give rates that move with a single day | |
-| 19.S8-c Marker strength: same owner number, ICCID or IMSI strong; same account username or saved-login account on one service medium; same WiFi BSSID weak. Values are compared as SHA-256 digests inside the backend and never returned; the result gives counts by kind and the records on each side | 8.3 step 1; identifiers stay in the records, where the record panel shows them | |
+| 19.S8-b Every pair that shares at least one such day is listed for complementary use, graded strong, moderate, weak or faint: substantiation from the shared days (3 some, 14 well, the old gate's figure; rules of thumb), fit from the mapping level of both phones' use records. One or two days are listed as weak with "only N days" against them | no cutoff hides a candidate (2026-11-04); fewer days give rates that move with a single day, which the grade says | a measured error rate for few shared days |
+| 19.S8-c Marker strength: same owner number, ICCID or IMSI strong; same account username or saved-login account on one service moderate (the one scale's word); same WiFi BSSID weak. Values are compared as SHA-256 digests inside the backend and never returned; the result gives counts by kind and the records on each side | 8.3 step 1; identifiers stay in the records, where the record panel shows them | |
 | 19.S8-d Every shared-markers result carries its own pair locator on each phone | a phone's one SIM record can be the only record behind two pairs (its other sides hold the value in the report header only), and two results on the same records cannot be stored | |
 | 19.S8-e Owner numbers are read from the current-generation owner candidates. The indicator "owner phone numbers" counts header (tier 1) numbers; the shared-number marker uses the numbers 02 computes the owner from (tier 1, else tier 2's top) | tier 2 numbers are inferred from account fields and owner parties, so several are expected on one phone used by one person | 02 changes how it computes the owner |
 | 19.S8-f For steps 2 and 4 an observation is in the bin of its start time (the M-5a rule). Within a bin every observation of X is compared with every observation of Y by 04's verdict with its window set to the bin; the bin is together when some pair is compatible and none separated, apart when some pair is separated and none compatible, else indeterminate (conflicts counted). A bin where both report the same BSSID is together | 8.3 step 2 and 04 8.4, the one implementation (C10) | 04 defines a per-bin verdict |

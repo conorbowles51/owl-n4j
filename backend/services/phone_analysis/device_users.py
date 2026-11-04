@@ -27,10 +27,12 @@ Decisions (05 section 19, 19.S8-a to 19.S8-c):
   interaction event: 04's availability bands come from observing streams only, and the live reference phones hold
   none, so a band test would drop every bin. The day rule is the one M-5c measured. Reverse if 04's bands cover the
   phones of a case.
-- 19.S8-b A pair is listed for complementary use when it shares at least ``min_days`` such days (default 14, the
-  gate's own figure).
+- 19.S8-b Every pair that shares at least one such day is listed for complementary use, graded on the one scale
+  (Neil 2026-11-04: no cutoff hides a candidate): substantiation from the shared days (``USE_SOME`` 3, ``USE_WELL``
+  14, the old gate's figure; rules of thumb), fit from the mapping level of the interaction records on both phones
+  (``grading.fit_of_levels``). Reverse if a measured error rate for few shared days exists.
 - 19.S8-c Marker strength: same owner number, ICCID or IMSI strong; same account username on one service or same
-  saved-login account on one service medium; same WiFi BSSID weak (families share networks).
+  saved-login account on one service moderate (the one scale's word); same WiFi BSSID weak (families share networks).
 - 19.S8-f An observation is in the bin of its start time (the M-5a rule). Within a bin every observation of X is
   compared with every observation of Y, with the verdict's time window set to the bin; the bin is together when some
   pair is compatible and none separated, apart when some pair is separated and none compatible, and indeterminate
@@ -51,23 +53,22 @@ from services.phone_analysis import fields as FV
 from services.phone_analysis import grading as G
 
 CODE = "device_users"
-VERSION = "5.3-together"
+VERSION = "5.4-graded-use"
 VERSION_SOURCES = ("grading",)
 PARAMETERS = {
-    "min_days": {"default": 14, "min": 1, "max": 365},
     "bin_minutes": {"default": 15, "choices": [15]},
     "include_synced": {"default": False, "choices": [False, True]},
     "assumed_radius_m": {"default": 1000, "min": 10, "max": 50000},
 }
 KINDS = ("shared_markers", "complementary_use", "more_than_one_user", "co_location", "use_while_apart")
-SUPPORTS = ("marker_strong", "marker_medium", "marker_weak", "use_counts", "indicator", "bins_compared",
+SUPPORTS = ("marker_strong", "marker_moderate", "marker_weak", "use_counts", "indicator", "bins_compared",
             "used_while_apart", "strength_rule")
 UNDERCUTS = ("shared_network_weak", "interaction_mapping", "clock_offset_small", "selective_extraction",
              "synced_attribution", "sim_moved", "app_accounts_counted_once", "sparse_location", "assumed_radius",
              "broad_radius", "few_records", "offset_absent")
 DIRECTION_CODES = SUPPORTS + UNDERCUTS
-STRENGTH = {"owner_number": "strong", "iccid": "strong", "imsi": "strong", "account": "medium",
-            "saved_login": "medium", "wifi_bssid": "weak"}
+STRENGTH = {"owner_number": "strong", "iccid": "strong", "imsi": "strong", "account": "moderate",
+            "saved_login": "moderate", "wifi_bssid": "weak"}
 KIND_WORDS = {"owner_number": ("owner phone number", "owner phone numbers"),
               "iccid": ("SIM card number (ICCID)", "SIM card numbers (ICCID)"),
               "imsi": ("SIM subscriber number (IMSI)", "SIM subscriber numbers (IMSI)"),
@@ -81,6 +82,10 @@ SIGNALS = [
 ]
 COLOC_SOME, COLOC_WELL = 20, 200
 APART_SOME, APART_WELL = 3, 10
+USE_SOME, USE_WELL = 3, 14
+USE_FIT_WORDS = {2: "Every use record was read through a reviewed or applied mapping of the app",
+                 1: "Some use records were read through generic interpretation, not a mapping of the app",
+                 0: "No mapping of the app behind the use records"}
 _last = {"counts": {}}
 _BSSID = re.compile(r"[^0-9a-f]")
 
@@ -161,6 +166,13 @@ def _interaction_bins(conn, ext, minutes=15):
         t = r[0]
         out[t.date()].add((t.hour * 60 + t.minute) // minutes)
     return out
+
+
+def _interaction_levels(conn, ext) -> list:
+    """The mapping levels of the phone's owner interaction records (the fit of complementary use, 19.S8-b)."""
+    return [r[0] for r in conn.execute(text(
+        "SELECT DISTINCT class_level FROM pol_activity_event WHERE extraction_id = :e AND activity_class = "
+        "'interaction' AND actor = 'owner' AND instant_utc IS NOT NULL"), {"e": ext})]
 
 
 def complementary(bx: dict, by: dict, minutes=15) -> dict:
@@ -470,6 +482,7 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
     ids_ = sorted(phones, key=lambda e: (str(phones[e]), e))  # pairs read in label order (C1 before C2)
     mk = {e: markers(conn, e) for e in ids_}
     bins = {e: _interaction_bins(conn, e, params["bin_minutes"]) for e in ids_}
+    use_levels = {e: _interaction_levels(conn, e) for e in ids_ if bins[e]}
     include_synced = bool(params.get("include_synced", False))
     obs = {e: _observations(conn, e, include_synced) for e in ids_}
     inter = {e: _interactions(conn, e) for e in ids_}
@@ -523,7 +536,7 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                             if uid:
                                 recs.append({"extraction_id": e, "record_uid": uid, "field_path": k[0],
                                              "role": "marker_" + k[0]})
-                best = min((STRENGTH[k] for k in by_kind), key=["strong", "medium", "weak"].index)
+                best = min((STRENGTH[k] for k in by_kind), key=["strong", "moderate", "weak"].index)
                 # the pair's own anchor always: two pairs can rest on one phone's same marker record (19.S8-d)
                 for e in (x, y):
                     rec = next(iter(conn.execute(text("SELECT record_uid::text FROM pv_record WHERE extraction_id "
@@ -544,7 +557,7 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                                                          "share WiFi networks.")] if "wifi_bssid" in by_kind else [])},
                         "period_start": None, "period_end": None, "records": recs})
             c = complementary(bins[x], bins[y], params["bin_minutes"])
-            if c["days"] >= params["min_days"]:
+            if c["days"] >= 1:  # every pair with a shared day, graded (19.S8-b)
                 counts["pairs_with_use"] += 1
                 anchor = []
                 for e in (x, y):
@@ -554,22 +567,31 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                     if rec:
                         anchor.append({"extraction_id": e, "record_uid": rec[0], "field_path": "pair:use:%s" %
                                        (y if e == x else x), "role": "first_interaction"})
+                fit = G.fit_of_levels(use_levels.get(x, []) + use_levels.get(y, []))
+                subst = G.substantiation(c["days"], USE_SOME, USE_WELL)
+                undercuts = [_d("interaction_mapping", "What counts as use depends on 04's activity mapping."),
+                             _d("clock_offset_small", "The two phones' clocks may differ; at quarter-hour bins that is "
+                                "mostly negligible.")]
+                if subst == 0:
+                    undercuts.append(_d("few_records", "Only %d %s with activity on both." %
+                                        (c["days"], "day" if c["days"] == 1 else "days")))
                 out.append({
-                    "kind": "complementary_use", "strength": "measured",
-                    "measures": dict(c, phones=[phones[x], phones[y]]),
-                    "directions": {"supports": [_d("use_counts", "Over %d days with activity on both: %d quarter hours "
+                    "kind": "complementary_use", "strength": G.level(subst, fit),
+                    "measures": dict(c, phones=[phones[x], phones[y]],
+                                     strength_basis={"count": c["days"], "substantiation": subst, "fit": fit}),
+                    "directions": {"supports": [_d("use_counts", "Over %d %s with activity on both: %d quarter hours "
                                                    "with both in use, %d only %s, %d only %s." %
-                                                   (c["days"], c["both"], c["only_x"], phones[x], c["only_y"],
-                                                    phones[y]))],
-                                   "undercuts": [_d("interaction_mapping", "What counts as use depends on 04's "
-                                                    "activity mapping."),
-                                                 _d("clock_offset_small", "The two phones' clocks may differ; at "
-                                                    "quarter-hour bins that is mostly negligible.")]},
+                                                   (c["days"], "day" if c["days"] == 1 else "days", c["both"],
+                                                    c["only_x"], phones[x], c["only_y"], phones[y])),
+                                                _d("strength_rule", G.reasons(c["days"], ("shared day", "shared days"),
+                                                                              USE_SOME, USE_WELL, fit,
+                                                                              USE_FIT_WORDS))],
+                                   "undercuts": undercuts},
                     "period_start": None, "period_end": None, "records": anchor})
             out.extend(place_results(x, y, phones, bin_verdicts(obs[x], obs[y], params, wifi.get((x, y), {})),
                                      inter, counts))
     for r in out:
-        if r["kind"] in ("co_location", "use_while_apart"):
+        if r["kind"] in ("shared_markers", "complementary_use", "co_location", "use_while_apart"):
             counts["%s_%s" % (r["kind"], r["strength"])] += 1
     if ctx is not None:
         ctx.progress(len(ids_), len(ids_))

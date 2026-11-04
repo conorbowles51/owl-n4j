@@ -21,6 +21,13 @@ const MARK = { id: "m1", kind: "shared_markers", strength: "strong", label: "Lea
   measures: { phones: ["C1", "C2"], by_kind: { iccid: 1 } }, directions: { supports: [], undercuts: [] } }
 
 describe("Who used which phone (AP-1, 05 8.8)", () => {
+  it("words a moderate marker in the one scale's word, also for runs stored as medium", () => {
+    for (const strength of ["moderate", "medium"]) {
+      const w = deviceWords({ ...MARK, strength, measures: { phones: ["C1", "C2"], by_kind: { account: 2 } } })
+      expect(w.line).toContain("Strongest kind: moderate.")
+    }
+  })
+
   it("lays out the parts and the counts behind together and apart", async () => {
     client.runs.mockResolvedValue({ items: [RUN] })
     client.coverage.mockResolvedValue({ sentence: RUN.coverage.sentence, notes: [NOTE] })
@@ -33,7 +40,7 @@ describe("Who used which phone (AP-1, 05 8.8)", () => {
     expect(Array.from(document.querySelectorAll("[data-part]")).map((e) => e.getAttribute("data-part"))).toEqual(["what", "run", "coverage", "results"])
     expect(screen.getByText(WHAT_IT_DOES)).toBeInTheDocument()
     expect(within(screen.getByTestId("device-user-result-notes")).getByText(NOTE)).toBeInTheDocument()
-    expect(screen.getByTestId("device-user-result-strengths").textContent).toBe("By strength: Together or apart: none; Used while apart: none.")
+    expect(screen.getByTestId("device-user-result-strengths").textContent).toBe("By strength: In common: none; Used in turn: none; Together or apart: none; Used while apart: none.")
     expect(screen.getByTestId("device-user-result-total").textContent).toBe("1 result.")
     expect(within(row).getByText("Lead for enquiry")).toBeInTheDocument()
     expect(row).toHaveTextContent("C1 and C2 have 1 SIM card number in common")
@@ -43,6 +50,9 @@ describe("Who used which phone (AP-1, 05 8.8)", () => {
     const w = deviceWords({ ...MARK, kind: "complementary_use", strength: "measured",
       measures: { phones: ["C1", "C2"], days: 14, both: 0, only_x: 168, only_y: 168, neither: 1008, phi: -0.14, switches_per_day: 1, first_day: "2023-01-02", last_day: "2023-01-15" } })
     expect(w.title).toBe("C1 and C2: 14 days with use on both")
+    const g = deviceWords({ ...MARK, kind: "complementary_use", strength: "weak",
+      measures: { phones: ["C1", "C2"], days: 1, both: 0, only_x: 4, only_y: 4, neither: 88, phi: -0.1, switches_per_day: 1, first_day: "2023-01-02", last_day: "2023-01-02" } })
+    expect(g.title).toBe("Weak. C1 and C2: 1 day with use on both")
     expect(JSON.stringify(w) + WHAT_IT_DOES).not.toMatch(/same person|used by one person|—|owner used/)
   })
 

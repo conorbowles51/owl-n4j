@@ -1,7 +1,10 @@
 """cb-gated-aware F: building approach 4 steps 1 to 4 and approach 5 steps 2 and 4 changes nothing that was already
 shown. Group roles (awareness 4.1-groups) and shared markers, complementary use and signs of more than one user
 (device_users 5.2-use) on one fixture equal the output the old code gave (``EXPECTED``, recorded from 9395ef45 with
-extraction ids replaced by phone labels). Invented data only."""
+extraction ids replaced by phone labels). device_users 5.4 changes one of them on purpose: complementary use is
+graded on the one scale and listed from one shared day (Neil 2026-11-04, no cutoff hides a candidate), so
+``EXPECTED`` is the 9395ef45 output with that result graded strong; the other three are byte for byte as before.
+Invented data only."""
 from __future__ import annotations
 
 import hashlib
@@ -21,7 +24,7 @@ from tests.test_phone_analysis_device_users import _iccid, _use
 
 OLD_KINDS = {"group_roles", "shared_markers", "complementary_use", "more_than_one_user"}
 EXPECTED = ("1bd3b9b5b8459ab70b5c93c5f768aeb315ad8f5bf48ee6176b8ff4e734b4ac18"
-            "5b697814f13267478198b0aa928ee9b28a15ddff62397cf4b3d472c33edd7d09")
+            "6a7fc8b7a83867bbcc50a33814a360dfd1989a8e12fa26349dee3c6eba280e84")
 UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 

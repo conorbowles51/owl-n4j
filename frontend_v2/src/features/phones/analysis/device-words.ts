@@ -1,5 +1,5 @@
 import type { ApproachResult } from "./analysis-api"
-import { LEVEL_WORDS } from "./strength-words"
+import { LEVEL_WORDS, isLevel } from "./strength-words"
 
 export const TABS = [
   { kind: "shared_markers", label: "In common" },
@@ -10,14 +10,15 @@ export const TABS = [
 ]
 
 /** The tabs graded on the one scale. */
-export const GRADED_TABS = TABS.filter((t) => t.kind === "co_location" || t.kind === "use_while_apart")
+export const GRADED_TABS = TABS.filter((t) => t.kind !== "more_than_one_user")
 
 const KIND_WORDS: Record<string, [string, string]> = {
   owner_number: ["owner phone number", "owner phone numbers"], iccid: ["SIM card number", "SIM card numbers"],
   imsi: ["SIM subscriber number", "SIM subscriber numbers"], account: ["account username on one service", "account usernames on one service"],
   saved_login: ["saved-login account on one service", "saved-login accounts on one service"], wifi_bssid: ["WiFi access point", "WiFi access points"],
 }
-const STRENGTH_WORDS: Record<string, string> = { strong: "strong", medium: "medium", weak: "weak (families and workplaces share networks)" }
+// "medium" is the word of runs before 5.4; it is the one scale's "moderate"
+const STRENGTH_WORDS: Record<string, string> = { strong: "strong", moderate: "moderate", medium: "moderate", weak: "weak (families and workplaces share networks)" }
 
 type M = Record<string, unknown>
 const n = (v: unknown) => Number(v ?? 0).toLocaleString("en-US")
@@ -31,7 +32,8 @@ export function deviceWords(r: ApproachResult) {
   }
   if (r.kind === "complementary_use") {
     const [x, y] = (m.phones as string[]) || ["", ""]
-    return { title: `${pair}: ${n(m.days)} days with use on both`,
+    const lead = isLevel(r.strength) ? `${LEVEL_WORDS[r.strength]}. ` : ""
+    return { title: `${lead}${pair}: ${n(m.days)} ${Number(m.days) === 1 ? "day" : "days"} with use on both`,
       line: `Quarter hours with both in use ${n(m.both)}, only ${x} ${n(m.only_x)}, only ${y} ${n(m.only_y)}, neither ${n(m.neither)}. Phi ${m.phi ?? "not computed"}; ${m.switches_per_day ?? 0} switches a day from one phone to the other within an hour. From ${m.first_day} to ${m.last_day}.` }
   }
   if (r.kind === "co_location") {
