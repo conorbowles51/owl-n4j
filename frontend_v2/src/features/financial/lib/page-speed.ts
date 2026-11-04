@@ -10,7 +10,7 @@ import { viewDetail, type ViewDetail } from "@/lib/browser-timing"
  * browser's navigation start (performance time origin). "Switched to" (VIEW): the view or case
  * changed inside the app, so the time runs from that change. Either way it ends at the first
  * frame painted after every request the view started has returned. A view the person leaves
- * before that (another view, case or page, or closing the tab) is recorded as LEFT with how long they
+ * before that (another view, case or page, closing the tab or hiding it) is recorded as LEFT with how long they
  * waited, so the slowest loads are not lost. Timings are queued and posted in small batches; a failed post is dropped, never
  * retried and never shown. A post waits until no other API request is in flight (checked each second, for up to a
  * minute) and goes at low priority, so it never takes one of the browser's six connections from a request the person
@@ -178,9 +178,21 @@ export function useViewSpeed(caseId: string | null, page: string | null, channel
       signal.cancelled = true
       flushPageViews(true)
     }
+    // Hiding the tab before the data is shown is leaving: a hidden tab paints no frames, so the clock would
+    // otherwise run until the person came back (measured 4 Nov: a 1.5 s evidence page opening recorded as 220 s).
+    // A view hidden before its first frame was never timed; either way it is not timed after it is shown again.
+    const hidden = () => {
+      if (document.visibilityState !== "hidden" || signal.cancelled) return
+      leave()
+      measuring.armed = true // never inherited by the next view
+      signal.cancelled = true
+      cancelAnimationFrame(frame)
+    }
     window.addEventListener("pagehide", unload)
+    document.addEventListener("visibilitychange", hidden)
     return () => {
       window.removeEventListener("pagehide", unload)
+      document.removeEventListener("visibilitychange", hidden)
       leave()
       signal.cancelled = true
       cancelAnimationFrame(frame)

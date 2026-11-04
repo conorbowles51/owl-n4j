@@ -143,4 +143,27 @@ describe("page speed", () => {
     flushPageViews()
     expect(vi.mocked(fetchAPI)).toHaveBeenCalledTimes(1)
   })
+
+  it("hiding the tab mid-load records LEFT with the time until hidden, not the time until the person returns", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const wrapper = ({ children }: { children: ReactNode }) => createElement(QueryClientProvider, { client }, children)
+    let release: (value: number) => void = () => {}
+    void client.fetchQuery({ queryKey: ["financial", "slow"], queryFn: () => new Promise<number>((r) => { release = r }) })
+    const view = renderHook(() => useFinancialViewSpeed("c1", "financial/ledger"), { wrapper })
+    await new Promise((r) => setTimeout(r, 50))
+    const state = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden")
+    document.dispatchEvent(new Event("visibilitychange"))
+    await new Promise((r) => setTimeout(r, 200)) // away from the tab
+    state.mockReturnValue("visible")
+    document.dispatchEvent(new Event("visibilitychange"))
+    release(1)
+    await new Promise((r) => setTimeout(r, 80))
+    view.unmount()
+    flushPageViews()
+    const views = vi.mocked(fetchAPI).mock.calls.flatMap(
+      ([, options]) => (options as { body: { views: { method: string; ms: number }[] } }).body.views)
+    expect(views.map((v) => v.method)).toEqual(["LEFT"])
+    expect(views[0].ms).toBeLessThan(200)
+    state.mockRestore()
+  })
 })
