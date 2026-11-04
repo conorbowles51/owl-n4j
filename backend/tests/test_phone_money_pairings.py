@@ -237,7 +237,8 @@ def test_the_agent_lists_every_pairing_with_strength_and_who_decided_and_leaves_
         assert after["by_strength"] == {"strong": 0, "moderate": 0, "weak": 1, "faint": 0}
         assert after["confirmed_by_person"] == 1 and after["rejected_by_person"] == 1
         st = {x["payment"]: x["status"] for x in after["items"][0]["pairings"]}
-        assert st == {str(exact): "rejected by a person", str(late): "confirmed by a person"}
+        assert st == {str(late): "confirmed by a person"}
+        assert [x["payment"] for x in after["items"][0]["rejected_pairings"]] == [str(exact)]
         assert "never call a rule-found pairing confirmed" in after["note"]
         assert "1 confirmed by a person, 1 rejected by a person" in after["coverage"]
 
@@ -246,6 +247,7 @@ def test_the_final_answer_prompt_carries_the_strength_and_confirmation_wording()
     from services.agent.graph import _final_answer_system_prompt
     s = _final_answer_system_prompt()
     assert "never call a rule-found pairing confirmed" in s and "weak and faint" in s
+    assert "never replace them with examples" in s and "list rejected pairings apart" in s
 
 
 def test_before_a_rerun_a_corrected_row_keeps_its_decision_and_every_reader_leaves_a_rejected_match_out():

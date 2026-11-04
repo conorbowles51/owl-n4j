@@ -255,7 +255,12 @@ def test_a_control_claim_is_two_evidenced_links_a_model_draft_and_never_a_holder
             assert "never a finding that the person is the account holder" in out["not_a_holder_finding"]
             assert kinds == ["alert", "code"]
             code = next(s for s in out["items"] if s["kind"] == "code")
-            assert "482" not in str(out) and "913" not in str(out) and "••• •••" in code["quote"]
+            # the code's digits appear in no text the tool returns (ids are random hex and may hold any digits)
+            import re as _re
+            texts = " ".join(str(v) for s in out["items"] for k, v in s.items() if k not in ("rec", "extraction_id",
+                                                                                         "result_id", "at"))
+            assert not _re.search(r"482\D?913", texts + " " + out["claim"]) and "••• •••" in code["quote"]
+            assert "482" not in code["quote"] and "913" not in code["quote"]
             assert all(s["correlated_group"].startswith("handset") for s in out["items"]
                        if s["link"] == "account_to_device")
             person = [s for s in out["items"] if s["link"] == "device_to_person"]

@@ -563,7 +563,9 @@ def money_signal_matches(conn, case_id, *, outcome=None, strength=None, offset=0
                 row["status"] = "rejected by a person"
         if m.get("pairings_left_out_words"):
             left_words.append(m["pairings_left_out_words"])
-        items.append(dict(it, best_strength=best, pairings=pairs,
+        # rejected pairings sit in their own list, so no reading of the matches can count one as a match
+        items.append(dict(it, best_strength=best, pairings=live,
+                          rejected_pairings=[p for p in pairs if p["status"] == "rejected by a person"],
                           pairings_left_out=m.get("pairings_left_out") or {},
                           pairings_left_out_words=m.get("pairings_left_out_words")))
     total_pairs = sum(by_level.values())
@@ -584,8 +586,9 @@ def money_signal_matches(conn, case_id, *, outcome=None, strength=None, offset=0
                   by_strength=by_level, confirmed_by_person=confirmed, rejected_by_person=rejected,
                   readings_with_every_pairing_rejected=all_rejected,
                   search=MP.search_words(), coverage=cov, limitation=limitation,
-                  note="Mention every pairing with its strength and reasons, weak and faint ones as weak or faint, "
-                       "never dropped. Say which are confirmed by a person and which are found by the rule; never "
+                  note="Mention every pairing with its strength and reasons, one line each, weak and faint ones as weak "
+                       "or faint; never replace them with examples or a count, and never say they are only in the tool "
+                       "output. rejected_pairings are not matches: list them apart, never under a strength. Say which are confirmed by a person and which are found by the rule; never "
                        "call a rule-found pairing confirmed. Rejected pairings are not evidence of a match and are "
                        "not counted. A reading is what a phone shows (p4), never summed; a row keeps its class.")
 

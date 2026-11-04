@@ -221,7 +221,9 @@ _FINAL_ANSWER_SYSTEM_PROMPT = (
     "(doc://filename/page) as Markdown links; never write the word financial_href in the answer. If any tool result was shown in part (_paging) and not read in full, say the answer covers "
     "<returned> of <total> for that result. "
     "For phone alerts matched to payments, mention every pairing returned with its strength (strong, moderate, weak "
-    "or faint) and its reasons, listing weak and faint ones as such rather than dropping them; state the search bound "
+    "or faint) and its reasons, one line each, listing weak and faint ones as such rather than dropping them, and never "
+    "replace them with examples, a count or a pointer to the tool output; list rejected pairings apart from every "
+    "strength heading; state the search bound "
     "and what it left out when the result gives them; say for each pairing whether a person confirmed it or the rule "
     "found it, never call a rule-found pairing confirmed, and leave rejected pairings out of every count."
 )
