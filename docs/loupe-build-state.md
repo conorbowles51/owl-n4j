@@ -94,7 +94,7 @@ built; numbers, reverse-ifs and decisions are in 05. Screens are checked signed 
 - **Scheduled:** the J-5c and J-14b journey run is queued through `suite-slot.sh`; check m110401064913177 at 04:00
   UTC reads its log.
 
-## 4 November: source database view and independent re-parse, stage J (cb-stagej), in progress, live 7441c2a7
+## 4 November: source database view and independent re-parse, stage J (cb-stagej), in progress, live 8a918dc7
 
 - **Live:** record view source panel (05 17.2) in words for each state; "Open source row" opens a read-only copy
   through the engine (`evidence-engine/app/phone/source_db.py`: copy with WAL/journal siblings, `mode=ro&immutable=1`,
@@ -114,6 +114,11 @@ built; numbers, reverse-ifs and decisions are in 05. Screens are checked signed 
   psycopg connections are autocommit, so named (server-side) cursors fail; page with keysets.
 - **Measured on P12:** A 1,306 records / 15 files = A3. C open+read median 2.45 ms, p95 5.5 ms (20 records). E run
   402 s, peak RSS 284 MB, phone worker up to 877 MiB of 1 GiB.
+- **Fact, measured on P12:** ALEAPP's Chrome history has one row per web address (last visit, visit count), the
+  report one record per visit and also other apps' visited pages; the comparison (17.3-3) compares only the apps the
+  tool's rows name (`browser_name`) and takes the report one item per address when the tool's rows are. P12 live:
+  same 301, only the tool 595, only the report 33, another app's 1,246 not compared.
+- **Live journey for F:** `frontend_v2/journeys/live-reparse-compare.mjs` presses Run and prints each tab's count.
 - **Not yet done:** A, C, D, E, F on P07, P03, P02, P11, P13, P08 (loading one at a time through
   `frontend_v2/journeys/live-phone-upload.mjs`, driver `/mnt/owl-data/tmp/cb-stagej/scripts/load_all.sh`); F counts
   on P12; gate comparison. Progress: `headless/cb-stagej-progress.md`.
