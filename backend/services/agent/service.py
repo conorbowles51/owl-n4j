@@ -766,7 +766,7 @@ class AgentService:
         if not request.workflow_id:
             return mandate_block
         from services.agent import workflows
-        return "\n\n".join(x for x in (mandate_block, workflows.render_block(workflows.get(request.workflow_id))) if x)
+        return "\n\n".join(x for x in (mandate_block, workflows.render_block(workflows.get(request.workflow_id), budget=DEFAULT_AGENT_MAX_TOOL_CALLS)) if x)
 
     @staticmethod
     def _name_other_cases(db: Session, run, result: dict[str, Any], case_id) -> str:

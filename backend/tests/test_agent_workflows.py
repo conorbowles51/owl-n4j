@@ -183,3 +183,13 @@ def test_person_only_tools_need_a_dossier():
     tools = W.registered_tool_names() | PENDING_ON_SIBLING_BRANCHES
     r = W.assess(W.get("carer-abuse"), dict(ALL, dossiers=0), tools)
     assert r["status"] == "partial" and "draft_control_claim" in [s["tool"] for s in r["steps"] if not s["runs"]]
+
+
+def test_block_states_the_budget_and_when_to_stop():
+    block = W.render_block(W.get("hidden-assets"), tools=set(), budget=28)
+    assert "allows 28 tool calls" in block and "Once 24 calls are made, stop calling tools" in block
+    assert "'not run: tool budget'" in block and "run_readonly_cypher" in block
+    from services.agent.schemas import AgentMessageRequest
+    from services.agent.service import AgentService, DEFAULT_AGENT_MAX_TOOL_CALLS
+    req = AgentMessageRequest(message="go", case_id=uuid.uuid4(), workflow_id="hidden-assets")
+    assert "allows %d tool calls" % DEFAULT_AGENT_MAX_TOOL_CALLS in AgentService._prompt_block("", req)

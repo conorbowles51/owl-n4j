@@ -488,14 +488,25 @@ def registered_tool_names() -> frozenset[str]:
     return _TOOL_NAMES["names"]
 
 
-def render_block(w: Workflow, tools: Iterable[str] | None = None) -> str:
+# Tools that orient on the graph rather than answer a step. Live on 4 Nov 2026 the first three workflow runs spent
+# their 28-call budget on these and on finding the people named, and ended asking to continue with no answer.
+ORIENTATION_TOOLS = ("get_case_overview", "inspect_graph_schema", "run_readonly_cypher", "search_graph_entities",
+                     "get_entity_details", "get_entity_neighborhood", "phone_find_people")
+
+
+def render_block(w: Workflow, tools: Iterable[str] | None = None, budget: int = 28) -> str:
     """The workflow plan as the agent's prompt sees it. ``tools``: the registered names (a step whose tool is not
     among them is marked 'not in this build' and must be reported under Not examined)."""
     have = frozenset(tools) if tools is not None else registered_tool_names()
     lines = ["Guided workflow %d: %s." % (w.number, w.title),
              "The question: %s" % w.question,
              "Follow these steps in order. Use each step's results to choose the next step's arguments. A step marked "
-             "optional runs when the case holds its data; say so when it does not."]
+             "optional runs when the case holds its data; say so when it does not.",
+             "Budget: this run allows %d tool calls in all, each call counted, calls made together included. Spend "
+             "at most 3 calls finding the people, phones or accounts the question names. Do not call %s unless a "
+             "step's own result requires it. Once %d calls are made, stop calling tools and write the answer from "
+             "what you have; every step not run goes under 'Not examined' with the words 'not run: tool budget'."
+             % (budget, ", ".join(ORIENTATION_TOOLS), max(1, budget - 4))]
     for i, s in enumerate(w.steps, 1):
         mark = []
         if s.optional:
