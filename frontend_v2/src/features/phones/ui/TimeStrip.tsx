@@ -1,4 +1,4 @@
-import { useMemo, useState, type KeyboardEvent } from "react"
+import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import { cn } from "@/lib/cn"
 import { dayWords, stripSummary } from "./strip-words"
 
@@ -13,6 +13,8 @@ export interface StripDay {
   /** Records that day, or null when the phone holds no data for it. */
   count: number | null
 }
+
+const COUNT = new Intl.NumberFormat("en-US")
 
 export const STRIP_DEFAULT_PX = 48
 export const STRIP_MIN_PX = 32
@@ -40,6 +42,39 @@ export function TimeStrip({
   const max = useMemo(() => Math.max(1, ...days.map((d) => d.count ?? 0)), [days])
   const summary = stripSummary(days, noun)
   const current = days[cursor]
+  // The bars (one per day, each with its day in words) are drawn again only when the days, the cursor or the noun
+  // change, not on every render of the page around the strip (a conversation list re-renders as each window of
+  // messages arrives). The newest onPickDay is read when a bar is pressed.
+  const pickDay = useRef(onPickDay)
+  useLayoutEffect(() => {
+    pickDay.current = onPickDay
+  })
+  const bars = useMemo(
+    () =>
+      days.map((d, i) =>
+        d.count === null ? (
+          <rect key={d.date} x={i} y={0} width={1} height={100} fill="url(#strip-nodata)" onClick={() => setCursor(i)}>
+            <title>{`${dayWords(d.date)}: no data`}</title>
+          </rect>
+        ) : (
+          <rect
+            key={d.date}
+            x={i + 0.1}
+            width={0.8}
+            y={100 - (d.count / max) * 100}
+            height={Math.max(d.count ? 2 : 0, (d.count / max) * 100)}
+            className={cn(i === cursor ? "fill-primary" : "fill-foreground/60")}
+            onClick={() => {
+              setCursor(i)
+              pickDay.current?.(d.date)
+            }}
+          >
+            <title>{`${dayWords(d.date)}: ${COUNT.format(d.count)} ${noun}`}</title>
+          </rect>
+        )
+      ),
+    [days, max, cursor, noun]
+  )
 
   const onKey = (e: KeyboardEvent<SVGSVGElement>) => {
     const step = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : e.key === "PageDown" ? 7 : e.key === "PageUp" ? -7 : 0
@@ -77,7 +112,7 @@ export function TimeStrip({
             aria-valuemin={0}
             aria-valuemax={days.length - 1}
             aria-valuenow={cursor}
-            aria-valuetext={current ? `${dayWords(current.date)}: ${current.count === null ? "no data" : `${current.count.toLocaleString("en-US")} ${noun}`}` : "no days"}
+            aria-valuetext={current ? `${dayWords(current.date)}: ${current.count === null ? "no data" : `${COUNT.format(current.count)} ${noun}`}` : "no days"}
             onKeyDown={onKey}
             viewBox={`0 0 ${Math.max(1, days.length)} 100`}
             preserveAspectRatio="none"
@@ -89,28 +124,7 @@ export function TimeStrip({
                 <rect width="0.6" height="8" className="fill-muted-foreground" />
               </pattern>
             </defs>
-            {days.map((d, i) =>
-              d.count === null ? (
-                <rect key={d.date} x={i} y={0} width={1} height={100} fill="url(#strip-nodata)" onClick={() => setCursor(i)}>
-                  <title>{`${dayWords(d.date)}: no data`}</title>
-                </rect>
-              ) : (
-                <rect
-                  key={d.date}
-                  x={i + 0.1}
-                  width={0.8}
-                  y={100 - (d.count / max) * 100}
-                  height={Math.max(d.count ? 2 : 0, (d.count / max) * 100)}
-                  className={cn(i === cursor ? "fill-primary" : "fill-foreground/60")}
-                  onClick={() => {
-                    setCursor(i)
-                    onPickDay?.(d.date)
-                  }}
-                >
-                  <title>{`${dayWords(d.date)}: ${d.count.toLocaleString("en-US")} ${noun}`}</title>
-                </rect>
-              )
-            )}
+            {bars}
           </svg>
           <div
             role="separator"

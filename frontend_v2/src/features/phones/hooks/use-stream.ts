@@ -77,6 +77,9 @@ export interface UseStream {
   total: number
   notice: string | null
   item: (i: number) => StreamItem
+  /** Changes whenever the loaded rows change (a window arrives, fails or is asked again, or the list is re-read):
+   * `item` reads the rows as they are now, so work derived from every item can be kept until this changes. */
+  rowsVersion: number
   ensure: (from: number, to: number) => void
   retry: (windowKey: string) => void
   reload: () => void
@@ -103,7 +106,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
   const [status, setStatus] = useState<UseStream["status"]>("idle")
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [, bump] = useReducer((n: number) => n + 1, 0)
+  const [rowsVersion, bump] = useReducer((n: number) => n + 1, 0)
   const rows = useRef(new Map<string, StreamRow[]>()) // key `${seg}|${start}`
   const wins = useRef(new Map<string, WinState>())
   const focused = useRef<string | null>(null)
@@ -133,6 +136,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
     indexLoading.current = true
     rows.current = new Map()
     wins.current = new Map()
+    bump()
     setStatus("loading")
     setError(null)
     try {
@@ -361,6 +365,7 @@ export function useStream(filter: StreamFilter | null, deps: { onStaleRestore?: 
     total: index?.counts.events ?? 0,
     notice,
     item,
+    rowsVersion,
     ensure,
     retry,
     reload: () => void loadIndex(false),

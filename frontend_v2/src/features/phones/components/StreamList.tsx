@@ -104,9 +104,12 @@ export function StreamList({
   const first = virtualItems[0]?.index ?? 0
   const last = virtualItems[virtualItems.length - 1]?.index ?? 0
 
+  // Asked again when the visible range, the list or its loaded rows change, not on every render of the page (the
+  // stream object is new on every render; what ensure asks for depends only on these).
+  const { ensure, count: streamCount, rowsVersion } = stream
   useEffect(() => {
-    if (stream.count) stream.ensure(first, last)
-  }, [first, last, stream])
+    if (streamCount) ensure(first, last)
+  }, [first, last, ensure, streamCount, rowsVersion])
 
   // Focus is tracked by event, so it stays on the same message when windows load or the list refreshes.
   const focusedRow = useMemo(() => {
@@ -120,6 +123,8 @@ export function StreamList({
   }, [focusedRow, stream, onFocusRow])
 
   const loadedSelection = useCallback((): StreamRow[] | null => {
+    // nothing selected: no row to read (this runs after every render, over every row of the list)
+    if (!allSelected && selected.size === 0) return []
     const out: StreamRow[] = []
     for (let i = 0; i < stream.count; i++) {
       const it = stream.item(i)

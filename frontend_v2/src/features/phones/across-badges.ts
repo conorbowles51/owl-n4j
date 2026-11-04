@@ -45,8 +45,15 @@ export function loadedChunks(stream: Pick<UseStream, "count" | "item">): string[
   return Array.from(windows.values()).filter((w) => w.complete && w.ids.length).map((w) => Array.from(new Set(w.ids)).sort())
 }
 
-export function useAcrossBadges(caseId: string | undefined, stream: Pick<UseStream, "count" | "item">) {
-  const chunks = useMemo(() => loadedChunks(stream), [stream])
+export function useAcrossBadges(caseId: string | undefined, stream: Pick<UseStream, "count" | "item"> & Partial<Pick<UseStream, "rowsVersion">>) {
+  // Every item of the list is read to find the loaded windows: done again only when the rows change (rowsVersion),
+  // not on every render of the page; a stream without a version is read on every new stream object.
+  const { count, item, rowsVersion } = stream
+  const rowsKey = rowsVersion ?? stream
+  const chunks = useMemo(() => {
+    void rowsKey // `item` reads the rows as they are now; the key says when they changed
+    return loadedChunks({ count, item })
+  }, [count, item, rowsKey])
   const qs = useQueries({
     queries: chunks.map((ids) => ({
       queryKey: ["across-badges", caseId, ids.join(",")],

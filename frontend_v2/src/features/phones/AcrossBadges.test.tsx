@@ -48,4 +48,22 @@ describe("Messages across phones badges in Conversations (05 5.4)", () => {
     expect(screen.getByTestId("across-badges-source")).toHaveTextContent("The phones have changed since that run")
     expect(fetchAPI.mock.calls[0][1].body.record_uids).toEqual(["u1", "u1b", "u2", "u3"])
   })
+
+  it("reads every item of the list again only when the loaded rows change, not on each render of the page", async () => {
+    fetchAPI.mockReset().mockResolvedValue({ run: null, items: {} })
+    const items: StreamItem[] = [item(row("u1"), "0|0"), item(row("u2"), "0|0")]
+    const read = vi.fn((i: number) => items[i])
+    function Harness({ version, tick }: { version: number; tick: number }) {
+      useAcrossBadges("c1", { count: items.length, item: read, rowsVersion: version })
+      return <span data-testid="tick">{tick}</span>
+    }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const view = render(<QueryClientProvider client={client}><Harness version={1} tick={0} /></QueryClientProvider>)
+    const afterFirst = read.mock.calls.length
+    expect(afterFirst).toBeGreaterThanOrEqual(items.length)
+    for (let tick = 1; tick <= 5; tick++) view.rerender(<QueryClientProvider client={client}><Harness version={1} tick={tick} /></QueryClientProvider>)
+    expect(read.mock.calls.length).toBe(afterFirst)
+    view.rerender(<QueryClientProvider client={client}><Harness version={2} tick={6} /></QueryClientProvider>)
+    expect(read.mock.calls.length).toBe(afterFirst + items.length)
+  })
 })
