@@ -235,6 +235,40 @@ export interface WorkspaceOverviewResponse {
     needs_link_review: boolean
     href: string
   }>
+  /** Findings, theories and notes, each with its newest entries and true total (older servers omit it). */
+  casework_by_type?: Record<"finding" | "theory" | "note", {
+    entries: WorkspaceOverviewResponse["recent_casework"]
+    total: number
+  }>
+  /** The next deadlines (today onwards) and the open tasks, soonest first, with true totals. */
+  upcoming_work?: {
+    deadlines: Array<{ id: string; name: string; due_date: string; href: string }>
+    upcoming_deadline_total: number
+    past_deadline_total: number
+    tasks: Array<{
+      id: string
+      title: string
+      status: string
+      priority: string
+      due_at?: string | null
+      assignee_name?: string | null
+      href: string
+    }>
+    open_task_total: number
+  }
+  /** Interviews and statements across the case's dossiers, newest first, with the true total. */
+  interviews?: Array<{
+    id: string
+    dossier_id: string
+    dossier_name: string
+    interview_date?: string | null
+    date_value?: string | null
+    participants: Array<Record<string, unknown> | string>
+    status: string
+    summary?: string | null
+    href: string
+  }>
+  interview_total?: number
   pinned_evidence: PinnedItem[]
   bounded: boolean
   limits: Record<string, number>

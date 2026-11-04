@@ -13,6 +13,7 @@ from postgres.models.case_context import CaseContext, CaseMandateVersion
 from postgres.models.case_deadline import CaseDeadline
 from postgres.models.case_membership import CaseMembership
 from postgres.models.case_profile import CaseProfile
+from postgres.models.dossier import DossierInterview
 from postgres.models.enums import CaseMembershipRole
 from postgres.models.evidence import EvidenceFile, EvidenceFolder
 from postgres.models.user import User
@@ -40,6 +41,7 @@ TABLES = [
     EvidenceFolder.__table__,
     EvidenceFile.__table__,
     CaseProfile.__table__,
+    DossierInterview.__table__,
     WorkspaceEntry.__table__,
     WorkspaceEntryEvent.__table__,
     WorkspaceEntryLink.__table__,
@@ -412,3 +414,68 @@ def test_unknown_timezone_is_rejected(db):
             user=viewer,
             timezone_name="Mars/Olympus_Mons",
         )
+
+
+def test_overview_lists_the_cases_interviews_newest_first_with_true_total(db):
+    case, owner, _editor, viewer = _case_with_members(db)
+    witness = CaseProfile(case_id=case.id, profile_type="person", display_name="Witness A")
+    gone = CaseProfile(case_id=case.id, profile_type="person", display_name="Archived B", archived_at=datetime(2026, 9, 1, tzinfo=timezone.utc))
+    db.add_all([witness, gone])
+    db.flush()
+    for day in range(1, 9):
+        db.add(DossierInterview(
+            dossier_id=witness.id, case_id=case.id, status="completed",
+            interview_date=datetime(2026, 8, day, tzinfo=timezone.utc),
+            participants=["Witness A", {"name": "Det. Ruiz", "role": "interviewed_by"}],
+            working_notes=f"Statement {day}",
+        ))
+    db.add(DossierInterview(dossier_id=gone.id, case_id=case.id, status="planned", participants=[]))
+    db.commit()
+
+    result = get_workspace_overview(db, case_id=case.id, user=viewer)
+
+    assert result["interview_total"] == 8
+    assert len(result["interviews"]) == 6
+    first = result["interviews"][0]
+    assert first["summary"] == "Statement 8"
+    assert first["dossier_name"] == "Witness A"
+    assert {"name": "Det. Ruiz", "role": "interviewed_by"} in first["participants"]
+    assert first["href"] == f"/cases/{case.id}/dossiers?dossier={witness.id}"
+
+
+def test_overview_puts_each_casework_kind_and_the_next_work_in_its_own_section(db):
+    case, owner, _editor, viewer = _case_with_members(db)
+    now = datetime(2026, 9, 2, 12, tzinfo=timezone.utc)
+    for index in range(8):
+        db.add(WorkspaceEntry(case_id=case.id, entry_type="note", body=f"Note {index}", author_user_id=owner.id,
+                              updated_at=now - timedelta(minutes=index)))
+    db.add(WorkspaceEntry(case_id=case.id, entry_type="finding", title="Control kept", body="Finding body",
+                          author_user_id=owner.id, updated_at=now - timedelta(days=30)))
+    db.add(WorkspaceEntry(case_id=case.id, entry_type="theory", title="Gone", body="Deleted theory",
+                          author_user_id=owner.id, deleted_at=now))
+    db.add_all([
+        CaseDeadline(case_id=case.id, name="Last month", due_date=date(2026, 8, 1)),
+        CaseDeadline(case_id=case.id, name="Tomorrow", due_date=date(2026, 9, 3)),
+        CaseDeadline(case_id=case.id, name="Today", due_date=date(2026, 9, 2)),
+    ])
+    _task(db, case, owner, title="Open, no date")
+    _task(db, case, owner, title="Open, dated", due_at=now + timedelta(days=2), assignee_user_id=viewer.id)
+    _task(db, case, owner, title="Finished", status="done")
+    db.commit()
+
+    result = get_workspace_overview(db, case_id=case.id, user=viewer, now=now, timezone_name="UTC")
+
+    sections = result["casework_by_type"]
+    # The finding is older than six notes, so the mixed recent list leaves it out; its own section keeps it.
+    assert all(item["entry_type"] == "note" for item in result["recent_casework"])
+    assert [item["title"] for item in sections["finding"]["entries"]] == ["Control kept"]
+    assert sections["finding"]["total"] == 1
+    assert sections["theory"] == {"entries": [], "total": 0}
+    assert len(sections["note"]["entries"]) == 6 and sections["note"]["total"] == 8
+
+    work = result["upcoming_work"]
+    assert [item["name"] for item in work["deadlines"]] == ["Today", "Tomorrow"]
+    assert work["upcoming_deadline_total"] == 2 and work["past_deadline_total"] == 1
+    assert [item["title"] for item in work["tasks"]] == ["Open, dated", "Open, no date"]
+    assert work["tasks"][0]["assignee_name"] == "viewer"
+    assert work["open_task_total"] == 2

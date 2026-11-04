@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, joinedload
 from postgres.models.case_context import CaseContext, CaseMandateVersion
 from postgres.models.case_deadline import CaseDeadline
 from postgres.models.case_profile import CaseProfile
+from postgres.models.dossier import DossierInterview
 from postgres.models.user import User
 from postgres.models.work import CaseTask
 from postgres.models.workspace_attention import WorkspaceAttentionState
@@ -773,6 +774,147 @@ def _dossier_highlights(db: Session, case_id: UUID) -> list[dict[str, Any]]:
     ]
 
 
+CASEWORK_SECTION_LIMIT = 6
+UPCOMING_WORK_LIMIT = 5
+
+
+def _casework_entry(row: WorkspaceEntry, case_id: UUID) -> dict[str, Any]:
+    return {
+        "id": str(row.id),
+        "entry_type": row.entry_type,
+        "title": _entry_title(row),
+        "summary": _short(row.body, 180),
+        "lifecycle_state": row.lifecycle_state,
+        "significance": row.significance,
+        "review_state": row.review_state,
+        "updated_at": _iso(row.updated_at or row.created_at),
+        "href": (
+            f"/cases/{case_id}/workspace?view=casework"
+            f"&kind={row.entry_type}&entry={row.id}"
+        ),
+    }
+
+
+def _casework_by_type(db: Session, case_id: UUID) -> dict[str, dict[str, Any]]:
+    """Findings, theories and notes each with their own newest entries and their true total (Workspace order)."""
+    sections: dict[str, dict[str, Any]] = {}
+    for entry_type in ("finding", "theory", "note"):
+        base = db.query(WorkspaceEntry).filter(
+            WorkspaceEntry.case_id == case_id,
+            WorkspaceEntry.deleted_at.is_(None),
+            WorkspaceEntry.entry_type == entry_type,
+        )
+        rows = (
+            base.order_by(WorkspaceEntry.updated_at.desc(), WorkspaceEntry.id.asc())
+            .limit(CASEWORK_SECTION_LIMIT)
+            .all()
+        )
+        sections[entry_type] = {
+            "entries": [_casework_entry(row, case_id) for row in rows],
+            "total": base.count(),
+        }
+    return sections
+
+
+def _upcoming_work(
+    db: Session, case_id: UUID, *, now: datetime, zone: ZoneInfo
+) -> dict[str, Any]:
+    """The next deadlines (today onwards) and the open tasks, soonest first, with true totals."""
+    local_today = now.astimezone(zone).date()
+    deadline_base = db.query(CaseDeadline).filter(CaseDeadline.case_id == case_id)
+    upcoming = (
+        deadline_base.filter(CaseDeadline.due_date >= local_today)
+        .order_by(CaseDeadline.due_date.asc(), CaseDeadline.id.asc())
+        .limit(UPCOMING_WORK_LIMIT)
+        .all()
+    )
+    task_base = db.query(CaseTask).filter(
+        CaseTask.case_id == case_id,
+        CaseTask.deleted_at.is_(None),
+        CaseTask.status != "done",
+    )
+    tasks = (
+        task_base.options(joinedload(CaseTask.assignee))
+        .order_by(CaseTask.due_at.is_(None), CaseTask.due_at.asc(), CaseTask.id.asc())
+        .limit(UPCOMING_WORK_LIMIT)
+        .all()
+    )
+    return {
+        "deadlines": [
+            {
+                "id": str(row.id),
+                "name": row.name,
+                "due_date": row.due_date.isoformat(),
+                "href": f"/cases/{case_id}/workspace?view=work&item={row.id}",
+            }
+            for row in upcoming
+        ],
+        "upcoming_deadline_total": deadline_base.filter(
+            CaseDeadline.due_date >= local_today
+        ).count(),
+        "past_deadline_total": deadline_base.filter(
+            CaseDeadline.due_date < local_today
+        ).count(),
+        "tasks": [
+            {
+                "id": str(row.id),
+                "title": row.title,
+                "status": row.status,
+                "priority": row.priority,
+                "due_at": _iso(row.due_at),
+                "assignee_name": row.assignee.name if row.assignee else None,
+                "href": f"/cases/{case_id}/workspace?view=work&item={row.id}",
+            }
+            for row in tasks
+        ],
+        "open_task_total": task_base.count(),
+    }
+
+
+INTERVIEW_LIMIT = 6
+
+
+def _interviews(db: Session, case_id: UUID) -> tuple[list[dict[str, Any]], int]:
+    """The case's interviews and statements across every dossier, newest first, with the true total."""
+    base = (
+        db.query(DossierInterview, CaseProfile.display_name)
+        .join(CaseProfile, CaseProfile.id == DossierInterview.dossier_id)
+        .filter(
+            DossierInterview.case_id == case_id,
+            CaseProfile.archived_at.is_(None),
+            CaseProfile.status != "deleted",
+        )
+    )
+    total = base.count()
+    rows = (
+        base.order_by(
+            DossierInterview.interview_date.is_(None),
+            DossierInterview.interview_date.desc(),
+            DossierInterview.updated_at.desc(),
+            DossierInterview.id.asc(),
+        )
+        .limit(INTERVIEW_LIMIT)
+        .all()
+    )
+    return (
+        [
+            {
+                "id": str(row.id),
+                "dossier_id": str(row.dossier_id),
+                "dossier_name": name,
+                "interview_date": _iso(row.interview_date),
+                "date_value": row.date_value,
+                "participants": list(row.participants or []),
+                "status": row.status,
+                "summary": _short(row.working_notes, 180),
+                "href": f"/cases/{case_id}/dossiers?dossier={row.dossier_id}",
+            }
+            for row, name in rows
+        ],
+        total,
+    )
+
+
 def get_workspace_overview(
     db: Session,
     *,
@@ -802,6 +944,7 @@ def get_workspace_overview(
         limit=6,
         offset=0,
     )
+    interviews, interview_total = _interviews(db, case_id)
     return {
         "case_id": str(case_id),
         "as_of": observed_at.isoformat(),
@@ -816,14 +959,21 @@ def get_workspace_overview(
         ],
         "context": _context_summary(db, case_id),
         "recent_casework": _recent_casework(db, case_id),
+        "casework_by_type": _casework_by_type(db, case_id),
+        "upcoming_work": _upcoming_work(db, case_id, now=observed_at, zone=zone),
         "dossier_highlights": _dossier_highlights(db, case_id),
+        "interviews": interviews,
+        "interview_total": interview_total,
         "pinned_evidence": pins,
         "bounded": True,
         "limits": {
             "shared_attention": ATTENTION_LIMIT,
             "personal_attention": ATTENTION_LIMIT,
             "recent_casework": 6,
+            "casework_by_type": CASEWORK_SECTION_LIMIT,
+            "upcoming_work": UPCOMING_WORK_LIMIT,
             "dossier_highlights": 4,
+            "interviews": INTERVIEW_LIMIT,
             "pinned_evidence": 6,
         },
     }

@@ -228,4 +228,51 @@ describe("CanonicalWorkspaceOverview", () => {
     expect(screen.getByRole("heading", { name: "Case files" })).toBeInTheDocument()
     expect(screen.getByTestId("case-file-summaries")).toHaveTextContent("case-1")
   })
+
+  it("lays the Workspace out in the users' order (FEAT-011): deadlines and tasks, Findings, then the rest", () => {
+    mocks.overview.mockReturnValue({
+      data: {
+        ...overview,
+        casework_by_type: {
+          finding: { entries: overview.recent_casework, total: 9 },
+          theory: { entries: [{ id: "t1", entry_type: "theory", title: "Nominee director", href: "/t1" }], total: 1 },
+          note: { entries: [{ id: "n1", entry_type: "note", title: "Call with bank", href: "/n1" }], total: 1 },
+        },
+        upcoming_work: {
+          deadlines: [{ id: "d1", name: "Disclosure response", due_date: "2026-09-05", href: "/d1" }],
+          upcoming_deadline_total: 3,
+          past_deadline_total: 2,
+          tasks: [{ id: "k1", title: "Chase bank", status: "todo", priority: "urgent", assignee_name: "Owner", href: "/k1" }],
+          open_task_total: 1,
+        },
+        interviews: [{
+          id: "i1", dossier_id: "dossier-1", dossier_name: "Henry Example", interview_date: null, date_value: "2026-08",
+          participants: ["Henry Example", { name: "Det. Ruiz", role: "interviewed_by" }], status: "completed",
+          summary: "Denied signing.", href: "/cases/case-1/dossiers?dossier=dossier-1",
+        }],
+        interview_total: 4,
+      },
+      isLoading: false,
+      isError: false,
+    })
+    renderOverview()
+    const order = [
+      "Case deadlines and tasks", "Findings", "Case right now", "Your work", "case-brief-panel",
+      "Client profile and exposure", "Investigative theories", "Notes", "Snapshots",
+      "Witnesses: interviews and statements", "Entity summary", "Pinned Evidence", "Case files", "Graph · Timeline · Map",
+    ]
+    const nodes = order.map((label) =>
+      label === "case-brief-panel" ? screen.getByTestId(label) : screen.getAllByText(label, { exact: true })[0])
+    for (let i = 1; i < nodes.length; i++) {
+      expect(nodes[i - 1].compareDocumentPosition(nodes[i]) & Node.DOCUMENT_POSITION_FOLLOWING, order[i]).toBeTruthy()
+    }
+    // True counts, never a clipped list shown as whole
+    expect(screen.getByText(/Newest 1 of 9 findings/)).toBeInTheDocument()
+    expect(screen.getByText(/3 upcoming deadlines · 2 past · 1 open task/)).toBeInTheDocument()
+    expect(screen.getByText("Next deadlines (1 of 3)")).toBeInTheDocument()
+    expect(screen.getByText(/Newest 1 of 4 interviews and statements/)).toBeInTheDocument()
+    expect(screen.getByText(/Interviewed by Det\. Ruiz/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open Timeline" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open Map" })).toBeInTheDocument()
+  })
 })
