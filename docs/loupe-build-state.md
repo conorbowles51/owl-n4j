@@ -1,14 +1,16 @@
 ## 4 November: shared devices, plans against location and near-identical pictures, no count gate (cb-gated-spread)
 
 - **Devices and accounts across phones (05 9, approach 6).** `backend/services/phone_analysis/other_devices.py`
-  (approach code `other_devices`, version 6.1): every key two or more phones share (BSSID, Bluetooth address and
+  (approach code `other_devices`, version 6.2): every key two or more phones share (BSSID, Bluetooth address and
   name, SSID, web service domain, and approach 5's owner number, ICCID, IMSI, account and saved login via
   `device_users.markers`), graded strong / moderate / weak / faint with reasons `{match, substantiation}`; per phone
   an inventory, services without an app (not compared on a phone with no app records, stated) and remote sessions.
   Screen `/cases/:id/phone-analyses/devices-accounts`.
-- **Plans and check-ins against location (05 13, approach 10).** `plans.py` (version 10.2): every calendar entry,
-  check-in and note; repeats expanded (`occurrences`, start always included); a phone-placed item (04's `planned` /
-  `declared` observations) compared with presence observations in its window. Text places are not geocoded.
+- **Plans and check-ins against location (05 13, approach 10).** `plans.py` (version 10.4): every calendar entry,
+  check-in and note, an undated item listed with that reason; repeats expanded (`occurrences`, start always included);
+  an item placed by the phone or by a person (04's `planned` / `declared` observations) compared with presence
+  observations in its window. A person's placement (04 6.5 text places, `person_placed`) is named as theirs, is at
+  most moderate, and is a run input through `input_manifest`, so a rerun compares again.
   Screen `/cases/:id/phone-analyses/plans`.
 - **Near-identical pictures (05 11.3 step 3).** `perceptual_hash.py` hashes population pictures (pHash + dHash,
   Pillow) of cases with 2+ phones in the derive after-pass (`derive._loop`), table `phone_file_perceptual_hashes`
@@ -165,7 +167,7 @@ built; numbers, reverse-ifs and decisions are in 05. Screens are checked signed 
   its keys when a pair is shown to be one device (none on live: 6 pairs, 2 cases). Links to a record of a replaced
   report say "From a replaced copy" and offer the equal-key record (CO-9a, CO-9b): CO-9a was not in the code although
   listed under cb-screens; built here, follow-up m110322573227530. The A-C8 control waits for the Mac copy.
-- **Recorded do-not-build:** 6 cross-phone devices (2 of 5 strong keys), 10 plans and places (3 of 20), F link edges
+- **Recorded do-not-build:** F link edges
   in approach screens (no live case holds a reviewed phone-to-counterparty link).
 - **Exports (J-14b):** an analysis result, a kept result, a statement check and an incident window export their
   messages and calls; the offer appears only when records stand behind the result. **CO-1 cells for analyses:** a
