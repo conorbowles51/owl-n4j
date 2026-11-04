@@ -91,6 +91,7 @@ from services.financial.quarantine_row import (
 from services.financial.references import RowReading
 from services.financial.runs import open_ingestion_run
 from services.financial.transactions import TransactionDraft, record_transactions
+from tests.sqlite_schema_template import copy_empty_schema
 
 TABLES = [
     User.__table__,
@@ -235,7 +236,7 @@ class QuarantineRowTestCase(unittest.TestCase):
             cursor.execute("PRAGMA synchronous=OFF")
             cursor.close()
 
-        Base.metadata.create_all(self.engine, tables=TABLES)
+        copy_empty_schema(Path(self._directory) / 'ledger.db', Base.metadata, TABLES)  # empty schema built once per process, copied per test
         self.SessionLocal = sessionmaker(
             bind=self.engine, autoflush=False, autocommit=False
         )

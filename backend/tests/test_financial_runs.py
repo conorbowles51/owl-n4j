@@ -69,6 +69,7 @@ from services.financial.version import (
     reset_caches,
     ruleset_version,
 )
+from tests.sqlite_schema_template import copy_empty_schema
 
 
 # Creation order.  ``evidence_folders`` and ``financial_statement_periods`` are
@@ -117,7 +118,7 @@ class RunTestCase(unittest.TestCase):
             cursor.execute("PRAGMA synchronous=OFF")
             cursor.close()
 
-        Base.metadata.create_all(self.engine, tables=TABLES)
+        copy_empty_schema(Path(self._directory) / 'ledger.db', Base.metadata, TABLES)  # empty schema built once per process, copied per test
         self.SessionLocal = sessionmaker(
             bind=self.engine, autoflush=False, autocommit=False
         )

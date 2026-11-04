@@ -49,6 +49,7 @@ from services.financial.run_query import (
     to_run_view,
 )
 from services.financial.runs import open_ingestion_run
+from tests.sqlite_schema_template import copy_empty_schema
 
 TABLES = [
     User.__table__,
@@ -76,7 +77,7 @@ class RunQueryTestCase(unittest.TestCase):
             cursor.execute("PRAGMA synchronous=OFF")
             cursor.close()
 
-        Base.metadata.create_all(self.engine, tables=TABLES)
+        copy_empty_schema(Path(self._directory) / 'runs.db', Base.metadata, TABLES)  # empty schema built once per process, copied per test
         self.SessionLocal = sessionmaker(
             bind=self.engine, autoflush=False, autocommit=False
         )

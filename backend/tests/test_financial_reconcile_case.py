@@ -95,6 +95,7 @@ from services.financial.reconcile_case import (
     to_reconciliation_view,
 )
 from services.financial.runs import open_ingestion_run
+from tests.sqlite_schema_template import copy_empty_schema
 
 # ``services.financial`` re-exports a *function* named ``reconcile_case``, which
 # shadows the submodule of the same name.  So ``from services.financial import
@@ -433,7 +434,7 @@ class ReconcileCaseTestCase(unittest.TestCase):
             cursor.execute("PRAGMA synchronous=OFF")
             cursor.close()
 
-        Base.metadata.create_all(self.engine, tables=TABLES)
+        copy_empty_schema(Path(self._directory) / 'ledger.db', Base.metadata, TABLES)  # empty schema built once per process, copied per test
         self.SessionLocal = sessionmaker(
             bind=self.engine, autoflush=False, autocommit=False
         )

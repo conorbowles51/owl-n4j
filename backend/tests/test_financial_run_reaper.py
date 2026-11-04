@@ -49,6 +49,7 @@ from postgres.models.financial import FinancialIngestionRun
 from postgres.models.user import User
 from services.financial import run_reaper
 from services.financial.run_reaper import reap_stale_runs_forever
+from tests.sqlite_schema_template import copy_empty_schema
 
 TABLES = [User.__table__, Case.__table__, FinancialIngestionRun.__table__]
 
@@ -106,7 +107,7 @@ class ReaperLoopTestCase(unittest.IsolatedAsyncioTestCase):
             cursor.execute("PRAGMA synchronous=OFF")
             cursor.close()
 
-        Base.metadata.create_all(self.engine, tables=TABLES)
+        copy_empty_schema(Path(self._directory) / 'ledger.db', Base.metadata, TABLES)  # empty schema built once per process, copied per test
         self.SessionLocal = sessionmaker(
             bind=self.engine, autoflush=False, autocommit=False
         )

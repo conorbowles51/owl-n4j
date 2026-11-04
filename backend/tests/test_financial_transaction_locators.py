@@ -49,6 +49,7 @@ from services.financial import (
 )
 from services.financial.locators import Locator, SourceRectangle
 from services.financial.transactions import LOCATOR_PROVENANCE_KEY
+from tests.sqlite_schema_template import copy_empty_schema
 
 PAGE_WIDTH = 612_000
 PAGE_HEIGHT = 792_000
@@ -504,7 +505,7 @@ class TheAttachedTransactions(unittest.TestCase):
             cursor.execute("PRAGMA synchronous=OFF")
             cursor.close()
 
-        Base.metadata.create_all(self.engine, tables=TABLES)
+        copy_empty_schema(Path(self._directory) / 'ledger.db', Base.metadata, TABLES)  # empty schema built once per process, copied per test
         self.SessionLocal = sessionmaker(
             bind=self.engine, autoflush=False, autocommit=False
         )

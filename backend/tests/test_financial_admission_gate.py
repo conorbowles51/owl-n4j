@@ -85,6 +85,7 @@ from services.financial.admission_gate import (
 from services.financial.admit_file import admit_case_file
 
 from tests import test_financial_camt053 as camt
+from tests.sqlite_schema_template import copy_empty_schema
 
 TABLES = [
     User.__table__,
@@ -144,7 +145,7 @@ class AdmissionGateTestCase(unittest.TestCase):
             cursor.execute("PRAGMA synchronous=OFF")
             cursor.close()
 
-        Base.metadata.create_all(self.engine, tables=TABLES)
+        copy_empty_schema(self.root / 'ledger.db', Base.metadata, TABLES)  # empty schema built once per process, copied per test
         self.SessionLocal = sessionmaker(
             bind=self.engine, autoflush=False, autocommit=False
         )

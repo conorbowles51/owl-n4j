@@ -64,6 +64,7 @@ from services.financial.admission import (
 from services.financial.decisions import Actor, DecisionError
 from services.financial.duplicates import CrossCaseError
 from services.financial.route_check import FileRouteCheck
+from tests.sqlite_schema_template import copy_empty_schema
 
 TABLES = [
     User.__table__,
@@ -96,7 +97,7 @@ class AdmissionTestCase(unittest.TestCase):
             cursor.execute("PRAGMA synchronous=OFF")
             cursor.close()
 
-        Base.metadata.create_all(self.engine, tables=TABLES)
+        copy_empty_schema(Path(self._directory) / 'ledger.db', Base.metadata, TABLES)  # empty schema built once per process, copied per test
         self.SessionLocal = sessionmaker(
             bind=self.engine, autoflush=False, autocommit=False
         )
