@@ -25,6 +25,7 @@ import { MessageTranslation } from "@/features/phones/components/MessageTranslat
 import { AcrossBadges, AcrossBadgesSource } from "@/features/phones/AcrossBadges"
 import { useAcrossBadges } from "@/features/phones/across-badges"
 import { PhoneRecordPanel } from "@/features/phones/components/RecordPanel"
+import { FindInResults } from "@/features/phones/components/FindInResults"
 import { StreamList } from "@/features/phones/components/StreamList"
 import { useCollectTargets, useUsedIn } from "@/features/phones/hooks/use-collect"
 import { useStream } from "@/features/phones/hooks/use-stream"
@@ -155,6 +156,7 @@ export function ConversationsPage() {
   const [exporting, setExporting] = useState(false)
   const [splitting, setSplitting] = useState(false)
   const [jump, setJump] = useState<{ day: string | null; seq: number; offset?: number } | null>(null)
+  const [findHl, setFindHl] = useState<string | null>(null)
   const listRoot = useRef<HTMLDivElement>(null)
 
   // ---- a search hit: the whole thread, its matches marked, stepped through (03 S-8) -------------------------------
@@ -599,6 +601,10 @@ export function ConversationsPage() {
                 title={selection.rows.length === 0 ? "Select messages to ask about them" : undefined}>
                 {selection.rows.length === 0 ? "Select messages to ask about them" : "Ask about these messages"}
               </Button>
+              {streamFilter && (
+                <FindInResults filter={streamFilter} snapshot={stream.index?.snapshot} onQuery={setFindHl}
+                  onGo={(m) => setJump({ day: m.day, offset: m.offset, seq: Date.now() })} />
+              )}
               <AddToMenu
                 caseId={caseId}
                 links={links}
@@ -681,7 +687,7 @@ export function ConversationsPage() {
               zoneBasis={stream.index?.zone.basis}
               globalKeys
               jumpTo={jump}
-              highlight={view.hl ? { query: view.hl, exact: view.hlExact } : null}
+              highlight={findHl ? { query: findHl, exact: false } : view.hl ? { query: view.hl, exact: view.hlExact } : null}
               onOpenRecord={(row) => setRecordUid(row.record_uid)}
               onFocusRow={setFocused}
               onSelectionChange={onSelectionChange}

@@ -88,6 +88,16 @@ export async function streamWindow(
   }
 }
 
+/** Find in these results (03 section 3.1 rule 4): every match in the whole result, in list order, with the total. */
+export async function streamFind(filter: StreamFilter, snapshot: string, query: string, exact = false): Promise<{ total: number; matches: { day: string | null; offset: number; event_uid: string }[] }> {
+  try {
+    return await fetchAPI("/api/phones/streams/find", { method: "POST", body: { filter, snapshot, query, exact }, read: true })
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) throw new StaleSnapshotError()
+    throw e
+  }
+}
+
 export async function streamLocate(filter: StreamFilter, snapshot: string, eventUid: string): Promise<{ day: string | null; offset: number }> {
   try {
     return await fetchAPI("/api/phones/streams/locate", { method: "POST", body: { filter, snapshot, event_uid: eventUid }, read: true })

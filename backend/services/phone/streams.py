@@ -462,6 +462,52 @@ def locate_comm_event(conn, f: StreamFilter, *, snapshot_token, event_uid) -> di
     return {"day": day.isoformat() if day else None, "offset": int(n)}
 
 
+# ---- find in these results (03 section 3.1 rule 4, 07 section 4.8, test UX-2) ------------------------------------
+
+FIND_MAX = 10_000
+
+
+class FindTooLarge(ValueError):
+    def __init__(self, total):
+        super().__init__("%s matches is more than one search lists (%s). Add a word or a filter to narrow it; nothing "
+                         "was listed." % ("{:,}".format(total), "{:,}".format(FIND_MAX)))
+        self.total = total
+
+
+def find_in_results(conn, f: StreamFilter, *, snapshot_token, query, exact=False) -> dict:
+    """Every row of the whole result (not only the rows in view) whose text holds ``query``, as ``(day, offset)`` in
+    exactly the order the windows list, with the true total. The search is the stream's own text search (folded, or
+    exact characters), applied on top of the list's filter; a result with more than ``FIND_MAX`` matches is refused
+    with its count rather than cut."""
+    import re
+    if snapshot(conn, f) != snapshot_token:
+        raise StaleSnapshot()
+    q, _ = _query(conn, f)
+    zone = resolve_zone(conn, f)
+    zn = "UTC" if T.is_utc(zone["name"]) else zone["name"]
+    fx = f.model_copy(update={"text": f.text.model_copy(update={"query": query, "exact_characters": bool(exact)})})
+    qx, _ = _query(conn, fx)
+    sx = re.sub(r":p(\d+)\b", r":fx\1", qx.matched_sql())
+    params = dict(q.params, zone=zn, **{re.sub(r"^p(\d+)$", r"fx\1", k): v for k, v in qx.params.items()
+                                         if re.fullmatch(r"p\d+", k)})
+    d = "DESC" if f.sort == "newest_first" else "ASC"
+    day = "CASE WHEN sort_instant IS NULL THEN NULL ELSE (sort_instant AT TIME ZONE :zone)::date END"
+    order = "CASE WHEN sort_instant IS NULL THEN NULL ELSE sort_instant END %s, CASE WHEN sort_instant IS NULL THEN " \
+            "event_uid END ASC, CASE WHEN sort_instant IS NOT NULL THEN event_uid END %s" % (d, d)
+    base = ("WITH m AS (%s), r AS (SELECT event_uid, %s AS day, row_number() OVER (PARTITION BY %s ORDER BY %s) - 1 "
+            "AS offset_in_day FROM m WHERE %s), x AS (SELECT event_uid FROM (%s) mx) "
+            % (q.matched_sql(), day, day, order, _shown(f), sx))
+    total = int(conn.execute(text(base + "SELECT count(*) FROM r JOIN x USING (event_uid)"), params).scalar() or 0)
+    if total > FIND_MAX:
+        raise FindTooLarge(total)
+    nulls = "FIRST" if f.sort == "newest_first" else "LAST"
+    rows = conn.execute(text(base + "SELECT r.day, r.offset_in_day, r.event_uid FROM r JOIN x USING (event_uid) "
+                                    "ORDER BY r.day %s NULLS %s, r.offset_in_day" % (d, nulls)), params).fetchall()
+    return {"query": query, "exact": bool(exact), "total": total,
+            "matches": [{"day": r.day.isoformat() if r.day else None, "offset": int(r.offset_in_day),
+                         "event_uid": str(r.event_uid)} for r in rows]}
+
+
 # ---- rows ----------------------------------------------------------------------------------------------------------
 
 def call_words(row) -> str | None:

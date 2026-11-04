@@ -1415,6 +1415,30 @@ def stream_locate(body: LocateBody, db: Session = Depends(get_db), user: User = 
         raise HTTPException(status_code=404, detail="This message is not in the current list.")
 
 
+class FindBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    filter: dict
+    snapshot: str = Field(min_length=1, max_length=64)
+    query: str = Field(min_length=1, max_length=2000)
+    exact: bool = False
+
+
+@router.post("/streams/find")
+def stream_find(body: FindBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Find in these results (03 section 3.1 rule 4, 07 section 4.8): every match in the whole result, in list order,
+    with the true total ("Match 3 of 214"). Too many matches is refused with the count, never cut."""
+    f = _filter(body.filter, db, user)
+    if not body.query.strip():
+        raise HTTPException(status_code=422, detail="Type something to find.")
+    try:
+        return streams.find_in_results(db.connection(), f, snapshot_token=body.snapshot, query=body.query,
+                                       exact=body.exact)
+    except streams.StaleSnapshot:
+        raise HTTPException(status_code=409, detail="stale_snapshot")
+    except streams.FindTooLarge as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 def _lens_filter(body: dict, db, user):
     from services.phone.timeline_lens import TimelineLensFilter
     try:
