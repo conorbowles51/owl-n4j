@@ -42,6 +42,8 @@ export interface CaseBrief {
       phone_unresolved_change: number
       phone_contradicted_change: number
       phone_corroborated_change: number
+      /** 05 4.3.8: phone alerts paired with payments, by strength, rejected ones left out */
+      phone_matches_after?: { by_level: Record<string, number>; confirmed: number; rejected: number } | null
     }
     totals: {
       before_revision: string | null
@@ -195,6 +197,12 @@ export function CaseBriefPanel({ caseId, canEdit }: { caseId: string; canEdit: b
         <p className="text-xs text-muted-foreground">
           Open now{c.open_leads.accounts_not_read ? ` (${plural(c.open_leads.accounts_not_read, "account")} could not be read and ${c.open_leads.accounts_not_read === 1 ? "is" : "are"} not counted)` : ""}: {plural(c.open_leads.missing_periods, "missing statement period")} ({plural(c.open_leads.missing_days, "day")}), {plural(c.open_leads.missing_accounts, "account")} named in payments with no statement in the case{cov.phones ? `, ${plural(c.open_leads.phone_leads, "phone account lead")}` : ""}.
         </p>
+
+        {c.newly_testable.phone_matches_after && (
+          <p className="text-xs text-muted-foreground" data-testid="brief-phone-matches">
+            Phone alerts paired with payments: strong {c.newly_testable.phone_matches_after.by_level.strong ?? 0}, moderate {c.newly_testable.phone_matches_after.by_level.moderate ?? 0}, weak {c.newly_testable.phone_matches_after.by_level.weak ?? 0}, faint {c.newly_testable.phone_matches_after.by_level.faint ?? 0}; {c.newly_testable.phone_matches_after.confirmed} confirmed by a person, {c.newly_testable.phone_matches_after.rejected} rejected by a person and not counted. Each is listed with its reasons on Money on the phones.
+          </p>
+        )}
 
         <List
           title={`Now testable (${plural(c.newly_testable.days, "newly covered day")})`}

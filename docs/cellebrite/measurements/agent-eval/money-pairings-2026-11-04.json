@@ -1,0 +1,41 @@
+{
+ "measured": "2026-11-04T04:56:45Z",
+ "cases": [
+  {
+   "case": "d9945277-6c80-4a39-82c7-93a95d420384",
+   "title": "Phone training (synthetic)",
+   "phones": 5,
+   "ledger_rows": 65,
+   "readings": 16,
+   "before_offered": 16,
+   "before_by_outcome": {
+    "corroborated": 16
+   },
+   "after_readings_with_a_pairing": 16,
+   "after_pairings_by_strength": {
+    "strong": 18,
+    "moderate": 0,
+    "weak": 10,
+    "faint": 41
+   },
+   "after_readings_by_best_strength": {
+    "strong": 16,
+    "moderate": 0,
+    "weak": 0,
+    "faint": 0
+   },
+   "left_out_by_search_bound": {
+    "beyond_days": 355,
+    "beyond_amount": 96,
+    "other_direction": 520,
+    "other_currency": 0,
+    "beyond_cap": 0
+   },
+   "decided": {
+    "rejected": 1,
+    "confirmed": 1
+   },
+   "seconds": 4.53
+  }
+ ]
+}

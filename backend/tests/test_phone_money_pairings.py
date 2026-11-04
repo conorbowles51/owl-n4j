@@ -248,6 +248,13 @@ def test_the_agent_lists_every_pairing_with_strength_and_who_decided_and_leaves_
         assert lines["weak"][0].endswith("| confirmed by Synthetic Reviewer %s" % lines["weak"][0][-10:])
         assert lines["rejected"][0].endswith("rejected by Synthetic Reviewer: Refund, not the purchase")
         assert "never call a rule-found pairing confirmed" in after["note"]
+        # the case brief: the rejected rule match is not corroboration, and matches are counted by strength
+        from services.agent import briefs
+        with engine.connect() as c:
+            ph = briefs._phone(c, case)
+        assert ph["outcomes"] == {"rule_match_rejected": 1}
+        assert ph["matches"] == {"by_level": {"strong": 0, "moderate": 0, "weak": 1, "faint": 0}, "confirmed": 1,
+                                 "rejected": 1}
         assert "1 confirmed by a person, 1 rejected by a person" in after["coverage"]
 
 

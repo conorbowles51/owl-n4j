@@ -59,6 +59,15 @@ describe("What changed brief", () => {
     expect(mocks.fetchAPI).toHaveBeenCalledWith("/api/case-briefs/latest?case_id=case-1")
   })
 
+  it("counts phone alerts paired with payments by strength, rejected ones left out (05 4.3.8)", async () => {
+    const b = brief()
+    b.changes.newly_testable.phone_matches_after = { by_level: { strong: 18, moderate: 0, weak: 9, faint: 41 }, confirmed: 1, rejected: 1 }
+    mocks.fetchAPI.mockResolvedValue({ brief: b, requested_at: null })
+    show()
+    expect((await screen.findByTestId("brief-phone-matches")).textContent).toBe(
+      "Phone alerts paired with payments: strong 18, moderate 0, weak 9, faint 41; 1 confirmed by a person, 1 rejected by a person and not counted. Each is listed with its reasons on Money on the phones.")
+  })
+
   it("says plainly when a brief could not read something", async () => {
     mocks.fetchAPI.mockResolvedValue({ brief: brief({ coverage: { ...brief().coverage, not_read: ["1 account whose statement run could not be read"] } }), requested_at: null })
     show()

@@ -193,6 +193,20 @@ def _phone(conn, case_id) -> dict:
            "parameters": run.parameters if run else None, "leads": {}, "outcomes": {}}
     if run is None:
         return out
+    from services.phone_analysis import money_pairings
+    # 05 4.3.8: a rule match a person rejected is not corroboration, and the matches are counted by strength with
+    # rejected pairings left out (the matches screen lists every one)
+    rejected = money_pairings.rejected_links(conn, case_id)
+    readings = [{"kind": "money_reading", "measures": dict(r.measures or {})} for r in conn.execute(text(
+        "SELECT measures FROM phone_analysis_results WHERE run_id = :r AND kind = 'money_reading'"), {"r": run.id})]
+    matches = {"by_level": {lv: 0 for lv in money_pairings.LEVELS}, "confirmed": 0, "rejected": 0}
+    for it in money_pairings.overlay(conn, case_id, readings):
+        c = (it["measures"].get("pair_counts") or {})
+        for lv, n in (c.get("by_level") or {}).items():
+            matches["by_level"][lv] = matches["by_level"].get(lv, 0) + n
+        matches["confirmed"] += c.get("confirmed", 0)
+        matches["rejected"] += c.get("rejected", 0)
+    out["matches"] = matches
     for r in conn.execute(text(
             "SELECT result_key, kind, measures FROM phone_analysis_results WHERE run_id = :r AND kind IN "
             "('account_lead', 'money_reading')"), {"r": run.id}):
@@ -205,6 +219,9 @@ def _phone(conn, case_id) -> dict:
         else:
             # counted by outcome: a reading's result key changes when it gains its ledger match, so keys do not follow it
             o = m.get("outcome") or "none"
+            if o in ("corroborated", "near_amount") and any((m.get("record_uid"), x.get("transaction_id")) in rejected
+                                                            for x in m.get("matched") or []):
+                o = "rule_match_rejected"
             out["outcomes"][o] = out["outcomes"].get(o, 0) + 1
     return out
 
@@ -488,6 +505,7 @@ def diff(prev: dict | None, cur: dict) -> dict:
     out["newly_testable"] = {"spans": _clip([] if first else testable),
                              "days": 0 if first else sum(t["days"] for t in testable),
                              "phone_outcomes_before": po if compare_phone else None, "phone_outcomes_after": co,
+                             "phone_matches_after": c_ph.get("matches"),
                              "phone_unresolved_change": (co.get("unresolved", 0) - po.get("unresolved", 0))
                              if compare_phone else 0,
                              "phone_contradicted_change": (co.get("contradicted", 0) - po.get("contradicted", 0))
