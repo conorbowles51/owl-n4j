@@ -8,13 +8,15 @@ const lookUp = vi.fn()
 const confirm = vi.fn()
 const fetchSpy = vi.fn()
 
-const flagged = Array.from({ length: 12 }, (_, i) => ({
-  key: `loc-${i}`,
-  name: `Place ${i}`,
-  type: "Location",
-  location_raw: `${i} Main St`,
-  geocoding_status: i % 2 ? "failed" : "ambiguous",
-}))
+const makeFlagged = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({
+    key: `loc-${i}`,
+    name: `Place ${i}`,
+    type: "Location",
+    location_raw: `${i} Main St`,
+    geocoding_status: i % 2 ? "failed" : "ambiguous",
+  }))
+let flagged = makeFlagged(12)
 
 vi.mock("../hooks/use-map-data", () => ({
   useMapReviewQueue: () => ({ data: flagged }),
@@ -42,6 +44,7 @@ function renderPanel(locations: MapLocation[] = []) {
 
 describe("NeedsReviewPanel address lookups", () => {
   beforeEach(() => {
+    flagged = makeFlagged(12)
     lookUp.mockReset()
     confirm.mockReset()
     fetchSpy.mockReset()
@@ -58,10 +61,26 @@ describe("NeedsReviewPanel address lookups", () => {
 
   it("sends nothing until a person clicks", () => {
     renderPanel()
-    expect(screen.getByText(/Nothing is looked up until you ask/)).toBeInTheDocument()
+    expect(screen.getByText(/^12 flagged addresses not placed\. Nothing is looked up until you ask/)).toBeInTheDocument()
     expect(screen.getAllByRole("button", { name: /^Look up$/ })).toHaveLength(12)
     expect(lookUp).not.toHaveBeenCalled()
     expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it("counts one flagged address in the singular", () => {
+    flagged = makeFlagged(1)
+    renderPanel()
+    expect(screen.getByText(/^1 flagged address not placed\./)).toBeInTheDocument()
+    expect(screen.queryByText(/flagged addresses/)).not.toBeInTheDocument()
+  })
+
+  it("counts one address in the singular while it is being looked up", async () => {
+    flagged = makeFlagged(1)
+    lookUp.mockImplementation(() => new Promise(() => {}))
+    renderPanel()
+    fireEvent.click(screen.getByRole("button", { name: "Look up all 1" }))
+    fireEvent.click(screen.getByRole("button", { name: "Send 1" }))
+    await screen.findByText(/^Looking up 0 of 1 address, one a second/)
   })
 
   it("sends exactly the clicked address, once, and says what it found", async () => {

@@ -195,7 +195,7 @@ export function NeedsReviewPanel({ caseId, locations }: NeedsReviewPanelProps) {
           {running ? (
             <div className="flex items-center gap-2" role="status">
               <span>
-                Looking up {progress.done} of {progress.total} addresses, one a second…
+                Looking up {progress.done} of {progress.total} address{progress.total === 1 ? "" : "es"}, one a second…
               </span>
               <button
                 type="button"
