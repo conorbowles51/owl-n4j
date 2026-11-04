@@ -3,6 +3,7 @@ import { Link } from "react-router-dom"
 import type { PhoneMapItem, PhoneMapPoints, PhoneMapSummary } from "@/features/phones/api"
 import { recordPath } from "@/lib/record-links"
 import { phoneSummaryWords } from "./phone-summary-words"
+import { PLACE_LABEL } from "../lib/place-label"
 
 const n = (v: number) => v.toLocaleString("en-US")
 
@@ -18,6 +19,7 @@ export function PhoneLayerPanel({ caseId, summary, points }: { caseId: string; s
   return (
     <section aria-label="Phone positions" className="absolute bottom-3 left-3 z-10 flex max-h-[45%] w-80 flex-col gap-1 overflow-hidden rounded-lg border border-border bg-card/95 p-3 text-xs shadow-md backdrop-blur">
       <h2 className="text-sm font-semibold">Phone positions</h2>
+      <p className="font-medium">{PLACE_LABEL}.</p>
       <p role="status">
         {words.showing}
         {words.unplaced && (

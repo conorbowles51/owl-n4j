@@ -43,6 +43,7 @@ export function PlacesMap({ layers, height = 360 }: { layers: PlacesMapLayers; h
           mapStyle={mapStyle}
           transformRequest={transformRequest}
           onError={onMapError}
+          attributionControl={{ compact: true }}
           onLoad={(e) => { const c = e.target.getCenter(); onMapView(c.lng, c.lat) }}
           onMoveEnd={(e) => { const c = e.target.getCenter(); onMapView(c.lng, c.lat) }}
           style={{ width: "100%", height: "100%" }}

@@ -513,6 +513,8 @@ def draw(engine, export_id, claimed=None) -> dict:
                            "them." % ", ".join(TL.KIND_WORDS[k].lower() for k in TL.KIND_WORDS if k in f.lens_kinds))
         if facts.get("hidden"):
             contains.insert(2, facts["hidden"])
+        if place_words(f.lens_kinds):
+            contains.insert(2, place_words(f.lens_kinds))
     if phones:
         contains.insert(1, "Phones: %s." % ", ".join(phones))
     contains += [lim["message"] for lim in facts["limits"]]
@@ -608,6 +610,16 @@ def _draw_profile(engine, conn, e, export_id, options, claimed) -> dict:
     counts = {"total": p["verdict"]["records"], "messages": None, "calls": None, "unconfirmed": None, "phones": 1,
               "sections": len(sections), "missing_characters": sum(missing.values())}
     return _store(engine, e, export_id, data, "pdf", options, counts, snap, claimed, "phone-summary")
+
+
+def place_words(lens_kinds) -> str | None:
+    """The investigative label on an export that prints places (the investigative-workflows report: "the label on
+    every map, export and agent sentence that uses a place")."""
+    from services.pattern_of_life.places import PLACE_LABEL_WORDS
+    if "locations" in (lens_kinds or ()):
+        return "Locations in this export: %s. A position is what the phone recorded, read by an investigator." % (
+            PLACE_LABEL_WORDS.lower())
+    return None
 
 
 def _rsmf(engine, e, options, contains, out_days):

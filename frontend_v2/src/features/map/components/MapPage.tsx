@@ -3,6 +3,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query"
 import { getPhoneMapNear, getPhoneMapPoints, getPhoneMapSummary, type PhoneMapFilter } from "@/features/phones/api"
 import { PhoneLayerPanel } from "./PhoneLayer"
 import { NearMessageNote } from "./NearMessageNote"
+import { PhonesInArea } from "./PhonesInArea"
 import { useParams, useSearchParams } from "react-router-dom"
 import { MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -62,6 +63,8 @@ export function MapPage() {
       ? { phones: [near.data.extraction_id], from_instant: near.data.from_instant ?? undefined, to_instant: near.data.to_instant ?? undefined, include_no_time: false }
       : undefined
   const phones = usePhoneLayer(caseId, isLoading ? null : safeLocations.length, !!focusPoint || !!nearUid, nearFilter)
+  const shapes = useMapStore((s) => s.boundingShapes)
+  const lastShape = shapes.length ? shapes[shapes.length - 1] : null
 
   // Auto-expand CaseLayout's side panel to detail tab when a node is selected from the map
   const expandGraphPanelTo = useUIStore((s) => s.expandGraphPanelTo)
@@ -167,6 +170,7 @@ export function MapPage() {
         {phones.on && phones.summary.data && phones.summary.data.total > 0 && (
           <PhoneLayerPanel caseId={caseId!} summary={phones.summary.data} points={phones.points.data} />
         )}
+        {phones.on && lastShape && <PhonesInArea caseId={caseId!} shape={lastShape} />}
         <MapLegend locations={safeLocations} />
         <MapControls
           onZoomIn={zoomIn}

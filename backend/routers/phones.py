@@ -298,6 +298,23 @@ def phone_map_near(case_id: UUID = Query(...), record_uid: UUID = Query(...), db
     return out
 
 
+class MapAreaBody(MapSummaryBody):
+    ring: list[list[float]] = Field(min_length=3, max_length=501)
+
+
+@router.post("/map/area")
+def phone_map_area(body: MapAreaBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Phones seen in a drawn area, with their positions there counted exactly (03 13.3, 07 J-10, XF-6)."""
+    from services.phone import map as phone_map
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    if any(len(v) != 2 for v in body.ring):
+        raise HTTPException(status_code=422, detail="Each corner of the area is a longitude and a latitude.")
+    try:
+        return phone_map.area(db.connection(), body.case_id, body.ring, body.filter.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.get("/graph/pair")
 def phone_graph_pair(case_id: UUID = Query(...), a: str = Query(..., max_length=512), b: str = Query(..., max_length=512),
                      from_instant: Optional[str] = Query(None, alias="from"), to_instant: Optional[str] = Query(None, alias="to"),

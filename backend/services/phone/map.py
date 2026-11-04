@@ -198,3 +198,71 @@ def near_record(conn, case_id, record_uid, window_s: int = NEAR_WINDOW_S) -> dic
                       "instant": T.iso(near.instant), "gap_seconds": gap, "gap_words": when}
     out["words"] = "No positioned records within 1 hour of this message. The nearest is %s." % when
     return out
+
+
+# ---- area selection (03 13.3, 07 J-10 and XF-6) ---------------------------------------------------------------------
+
+AREA_MAX_VERTICES = 500
+
+
+def _inside(lon, lat, ring) -> bool:
+    """Ray casting: is (lon, lat) inside the closed ring [[lon, lat], ...]? A point on an edge counts as inside."""
+    hit = False
+    n = len(ring)
+    for i in range(n):
+        x1, y1 = ring[i]
+        x2, y2 = ring[(i + 1) % n]
+        if (y1 > lat) != (y2 > lat):
+            x = x1 + (lat - y1) * (x2 - x1) / (y2 - y1)
+            if x == lon:
+                return True
+            if x > lon:
+                hit = not hit
+        elif y1 == y2 == lat and min(x1, x2) <= lon <= max(x1, x2):
+            return True
+    return hit
+
+
+def area(conn, case_id, ring, f: dict | None = None) -> dict:
+    """The phones with at least one position inside a drawn area (and the map's filters and window), each with its
+    exact count of positions there and their first and last time. Every phone and every position is counted: no
+    cap. ``ring`` is [[lon, lat], ...] (closed or not)."""
+    pts = [(float(x), float(y)) for x, y in ring]
+    if len(pts) > 1 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    if len(pts) < 3:
+        raise ValueError("An area needs at least three corners.")
+    if len(pts) > AREA_MAX_VERTICES:
+        raise ValueError("An area has at most %d corners; this one has %d." % (AREA_MAX_VERTICES, len(pts)))
+    if not all(-180 <= x <= 180 and -90 <= y <= 90 for x, y in pts):
+        raise ValueError("The area is not on the map.")
+    f, p = dict(f or {}), {"c": str(case_id)}
+    p.update({"w": min(x for x, _ in pts), "e": max(x for x, _ in pts), "s": min(y for _, y in pts),
+              "n": max(y for _, y in pts)})
+    where = _where(f, p) + " AND t.lat BETWEEN :s AND :n AND t.lon BETWEEN :w AND :e"
+    from services.pattern_of_life.places import PLACE_LABEL_WORDS
+    from services.phone.readings import phone_labels
+    labels = phone_labels(conn, case_id)
+    per = {}
+    no_time = 0
+    for r in conn.execute(text("SELECT t.extraction_id, t.lat, t.lon, t.instant FROM pv_location_point t WHERE " +
+                               where).execution_options(stream_results=True, yield_per=5000), p):
+        if not _inside(r.lon, r.lat, pts):
+            continue
+        ext = str(r.extraction_id)
+        d = per.setdefault(ext, {"extraction_id": ext, "phone_label": labels.get(ext, "A phone"), "points": 0,
+                                 "points_without_time": 0, "first": None, "last": None})
+        d["points"] += 1
+        if r.instant is None:
+            d["points_without_time"] += 1
+            no_time += 1
+            continue
+        d["first"] = r.instant if d["first"] is None or r.instant < d["first"] else d["first"]
+        d["last"] = r.instant if d["last"] is None or r.instant > d["last"] else d["last"]
+    phones = sorted(per.values(), key=lambda d: (-d["points"], d["phone_label"]))
+    for d in phones:
+        d["first"], d["last"] = T.iso(d["first"]), T.iso(d["last"])
+    return {"case_id": str(case_id), "phones": phones, "phones_total": len(phones),
+            "points_total": sum(d["points"] for d in phones), "points_without_time": no_time,
+            "window": {"from_instant": f.get("from_instant"), "to_instant": f.get("to_instant")},
+            "label": PLACE_LABEL_WORDS}

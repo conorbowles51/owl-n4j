@@ -198,3 +198,42 @@ def test_c_together_items_carry_both_positions_and_the_label(hooks):
         it = out["items"][0]
         assert abs(it["a_lat"] - LAT) < 1e-9 and abs(it["b_lat"] - (LAT + 0.0002)) < 1e-9
         assert it["a_radius_m"] == 20.0 and it["b_radius_m"] == 20.0
+
+
+def test_f_phones_seen_in_an_area_counts_every_position_inside_and_none_outside():
+    """03 13.3 / 07 J-10: drawing an area lists the phones seen in it, each with its exact count there."""
+    from services.phone import map as M
+    from tests.phone_streams_fixture import phone
+    from tests.test_phone_map import _points
+    if not __import__("tests.phone_pg", fromlist=["TEMPLATE_URL"]).TEMPLATE_URL:
+        import pytest
+        pytest.skip("Requires LOUPE_TEST_PHONE_PG_TEMPLATE_URL")
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            a, _ = phone(c, case, label="C1", device_zone="UTC")
+            b, _ = phone(c, case, label="C2", device_zone="UTC")
+            far, _ = phone(c, case, label="C3", device_zone="UTC")
+            _points(c, case, a, [(40.0 + k * 0.0001, -74.0) for k in range(3)])
+            _points(c, case, b, [(40.0002, -74.0001)], start=2000)
+            _points(c, case, b, [(40.5, -74.009)], start=2100)  # in the box around the area, outside the triangle
+            _points(c, case, far, [(41.0, -73.0)], start=3000)
+        triangle = [[-74.01, 39.99], [-73.99, 39.99], [-74.0, 40.6]]
+        with engine.connect() as c:
+            out = M.area(c, case, triangle, {})
+            assert [(p["phone_label"], p["points"]) for p in out["phones"]] == [("C1", 3), ("C2", 1)]
+            assert (out["phones_total"], out["points_total"]) == (2, 4)
+            assert out["label"] == "Investigative location, not cell-site opinion"
+            assert out["phones"][0]["first"] is not None
+            import pytest
+            with pytest.raises(ValueError):
+                M.area(c, case, [[0, 0], [1, 1]], {})
+    assert M._inside(0.5, 0.5, [(0, 0), (1, 0), (1, 1), (0, 1)]) and not M._inside(1.5, 0.5, [(0, 0), (1, 0), (1, 1), (0, 1)])
+
+
+def test_g_an_export_that_prints_locations_carries_the_investigative_label():
+    from services.phone.exports import jobs
+    assert jobs.place_words(["messages", "locations"]) == (
+        "Locations in this export: investigative location, not cell-site opinion. A position is what the phone "
+        "recorded, read by an investigator.")
+    assert jobs.place_words(["messages", "calls"]) is None

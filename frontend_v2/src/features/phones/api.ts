@@ -457,6 +457,21 @@ export async function getThreadAttachments(caseId: string, threadKey: string) {
   return ThreadAttachmentsSchema.parse(await fetchAPI(`/api/phones/threads/attachments?${q}`))
 }
 
+export interface PhoneMapArea {
+  case_id: string
+  phones: { extraction_id: string; phone_label: string; points: number; points_without_time: number; first: string | null; last: string | null }[]
+  phones_total: number
+  points_total: number
+  points_without_time: number
+  window: { from_instant: string | null; to_instant: string | null }
+  label: string
+}
+
+/** Phones seen in a drawn area (03 13.3, 07 J-10): every phone with a position inside, counted exactly. */
+export async function getPhoneMapArea(caseId: string, ring: number[][], filter: PhoneMapFilter = {}, signal?: AbortSignal) {
+  return fetchAPI<PhoneMapArea>("/api/phones/map/area", { method: "POST", body: { case_id: caseId, ring, filter }, read: true, signal })
+}
+
 export interface MediaFilter {
   case_id: string
   phones?: string[]
