@@ -44,7 +44,8 @@ def ensure_identity(c, case, key, subkind=None):
 def phone(c, case, *, label="C3", owner="phone:+12025550100", device_zone=None, events=(), contacts=None,
           threads=None, capture_state="captured", interpreted=True):
     """``events``: dicts with kind, instant, direction, app, body, subject, thread, deleted_state, dup, parties
-    [(identity_key, role, is_owner, name_in_record, identifier_raw[, implied_role])], call_duration_s, call_status.
+    [(identity_key, role, is_owner, name_in_record, identifier_raw[, implied_role[, date_read[, date_played]]])],
+    call_duration_s, call_status, status.
     ``contacts``: {identity_key: name on this phone}. ``threads``: {thread: {"chat_type", "title", "members"}}.
     Returns (extraction_id, [event dicts with record_uid and event_uid])."""
     records = [(i, None, i, model("Call" if e.get("kind") == "call" else "InstantMessage",
@@ -87,24 +88,28 @@ def phone(c, case, *, label="C3", owner="phone:+12025550100", device_zone=None, 
             "INSERT INTO phone_comm_events (case_id, extraction_id, interpretation_level, generation, event_uid, "
             "record_uid, document_index, ordinal, locator, model_type, kind, thread_key, app, direction, sort_instant, "
             "time_field, body, subject, call_duration_s, call_status, video, deleted_state, dup_group_uid, "
-            "dup_rule_version) VALUES (:c, :e, :lvl, :g, :ev, :u, 0, :o, :loc, :mt, :k, :t, :app, :d, :i, "
-            "'TimeStamp', :b, :s, :dur, :cs, :v, :ds, :dup, :dv)"),
+            "dup_rule_version, status) VALUES (:c, :e, :lvl, :g, :ev, :u, 0, :o, :loc, :mt, :k, :t, :app, :d, :i, "
+            "'TimeStamp', :b, :s, :dur, :cs, :v, :ds, :dup, :dv, :st)"),
             dict(base, lvl=e.get("level", "reviewed"), ev=ev_uid, k=e.get("kind", "message"), t=tkey,
                  app=e.get("app", "WhatsApp"), d=e.get("direction", "incoming"), i=e.get("instant"),
                  b=e.get("body"), s=e.get("subject"), dur=e.get("call_duration_s"), cs=e.get("call_status"),
                  v=e.get("video"), ds=e.get("deleted_state", "Intact"), dup=e.get("dup"),
-                 dv=1 if e.get("dup") else None))
+                 dv=1 if e.get("dup") else None, st=e.get("status")))
         for j, p in enumerate(e.get("parties", ())):
             key, role, is_owner, name, raw = p[:5]
             implied = p[5] if len(p) > 5 else None
+            date_read = p[6] if len(p) > 6 else None
+            date_played = p[7] if len(p) > 7 else None
             if key:
                 ensure_identity(c, case, key)
             c.execute(text(
                 "INSERT INTO phone_participations (case_id, extraction_id, document_index, ordinal, record_uid, "
                 "root_record_uid, locator, model_type, generation, participation_uid, role, role_basis, "
-                "is_phone_owner, identifier_raw, name_in_record, identity_key, implied_role) VALUES (:c, :e, 0, :o, "
-                ":u, :u, :loc, :mt, :g, :pu, :r, 'container', :io, :raw, :n, :k, :ir)"),
-                dict(base, pu=uuid.uuid5(uid, "p%d" % j), r=role, io=is_owner, raw=raw, n=name, k=key, ir=implied))
+                "is_phone_owner, identifier_raw, name_in_record, identity_key, implied_role, date_read, date_played) "
+                "VALUES (:c, :e, 0, :o, :u, :u, :loc, :mt, :g, :pu, :r, 'container', :io, :raw, :n, :k, :ir, :dr, "
+                ":dp)"),
+                dict(base, pu=uuid.uuid5(uid, "p%d" % j), r=role, io=is_owner, raw=raw, n=name, k=key, ir=implied,
+                     dr=date_read, dp=date_played))
         for field, value in (("Body", e.get("body")), ("Subject", e.get("subject"))):
             if value:
                 c.execute(text(

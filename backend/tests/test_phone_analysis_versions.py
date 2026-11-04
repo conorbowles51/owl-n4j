@@ -18,7 +18,7 @@ RECORDED = {
     "message_reconciliation": ("2.3", "a53b042ce1e90307"),
     "deletion_timeline": ("3.3", "24a4e51aa9a12535"),
     "relationships": ("11.2", "d2415dadbd83d048"),
-    "awareness": ("4.1-groups", "9cedd74c445622e5"),
+    "awareness": ("4.2-aware", "df94b163fc26e199"),
     "device_users": ("5.2-use", "cd7bf7201f8f4b6b"),
     "typed_words": ("7.3", "e323b05b2b998e4a"),
     "intent": ("9.3", "1eb9c37ead0b9301"),
