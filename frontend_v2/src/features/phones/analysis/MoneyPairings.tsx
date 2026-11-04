@@ -11,7 +11,7 @@ import { amountWords } from "./money-words"
  * its strength by rule (how well matched, how substantiated) and a person's confirm or reject, remembered across
  * reruns. A rule-found match never reads as confirmed; a rejected one stays visible, collapsed, and is not counted.
  */
-export const LEVEL_WORDS: Record<PairLevel, string> = { strong: "Strong", moderate: "Moderate", weak: "Weak", faint: "Faint" }
+const LEVEL_WORDS: Record<PairLevel, string> = { strong: "Strong", moderate: "Moderate", weak: "Weak", faint: "Faint" }
 const LEVEL_CLASS: Record<PairLevel, string> = {
   strong: "border-emerald-600 text-emerald-800",
   moderate: "border-sky-600 text-sky-800",
