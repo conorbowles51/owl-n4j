@@ -60,3 +60,19 @@ it("sorts displayed amounts exactly across currency exponents and large integers
     )
   ).toBe(1)
 })
+describe("payment numbers (FEAT-006)", () => {
+  const numbered = { ...row, txn_number: 412 }
+  it.each(["#412", "no. 412", "No.412"])("finds payment number 412 with %s", (query) =>
+    expect(transactionSearch(query).matches(numbered)).toBe(true)
+  )
+  it("finds only that number, not a longer one that contains it", () => {
+    expect(transactionSearch("#41").matches(numbered)).toBe(false)
+    expect(transactionSearch("#4120").matches(numbered)).toBe(false)
+  })
+  it("searches the number as a field in boolean mode", () =>
+    expect(transactionSearch("number:412 AND loan", "boolean").matches(numbered)).toBe(true)
+  )
+  it("a row not numbered yet is not found by a number", () =>
+    expect(transactionSearch("#412").matches({ ...row, txn_number: null })).toBe(false)
+  )
+})

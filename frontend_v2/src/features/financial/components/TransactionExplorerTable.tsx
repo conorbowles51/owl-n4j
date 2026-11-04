@@ -137,11 +137,12 @@ export function TransactionExplorerTable({
     <div className="min-w-0 max-h-[65vh] overflow-auto rounded border">
       <table
         className="w-full table-fixed text-xs"
-        style={{ minWidth: 640 + columns.length * 120 }}
+        style={{ minWidth: 696 + columns.length * 120 }}
         aria-label="Investigation transactions"
       >
         <colgroup>
           <col style={{ width: 32 }} />
+          <col style={{ width: 56 }} />
           <col style={{ width: 96 }} />
           <col style={{ width: "32%" }} />
           <col style={{ width: "24%" }} />
@@ -156,6 +157,7 @@ export function TransactionExplorerTable({
             <th className="p-2">
               <span className="sr-only">Select</span>
             </th>
+            <th className="p-2" title="Payment number in this case: the same in printouts, exports and after a correction">No.</th>
             <th className="p-2">{header("Date", "oldest", "newest")}</th>
             <th className="p-2">
               {header("Description", "description-asc", "description-desc")}
@@ -199,6 +201,9 @@ export function TransactionExplorerTable({
                       checked={selectedIds.has(row.key)}
                       onChange={(e) => onToggle(row, e.target.checked)}
                     />
+                  </td>
+                  <td className="p-2 font-mono tabular-nums text-muted-foreground" data-testid="payment-number">
+                    {row.txn_number ?? "—"}
                   </td>
                   <td className="p-2">
                     <span className="whitespace-nowrap">
@@ -374,7 +379,7 @@ export function TransactionExplorerTable({
                 </PriorityRow>
                 {open && (
                   <tr className="border-t bg-muted/30">
-                    <td colSpan={6 + columns.length} className="p-3">
+                    <td colSpan={7 + columns.length} className="p-3">
                       <div className="space-y-2 text-xs">
                         <p>{row.description}</p>
                         <dl className="flex flex-wrap gap-x-6 gap-y-2">

@@ -26,3 +26,12 @@ it("exports exact amounts, explicit currency and absent dates/balances with spre
   expect(text).not.toContain("2026-09-01")
   expect(csvCell("  @A1")).toBe('"\'  @A1"')
 })
+it("exports each payment's number first, and notes can still be read back by reference (FEAT-006)", () => {
+  const csv = transactionCsv([{ ...paymentFixture, txn_number: 412, ref_id: "TX-AAAA" }])
+  const [header, line] = csv.replace(/^\uFEFF/, "").split("\r\n")
+  expect(header.startsWith('"number","ref_id",')).toBe(true)
+  expect(line.startsWith('"412","TX-AAAA",')).toBe(true)
+  expect(parseNotesCsv('number,ref_id,notes\n412,TX-AAAA,Client says this was rent')).toEqual([
+    { refId: "TX-AAAA", notes: "Client says this was rent" },
+  ])
+})

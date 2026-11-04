@@ -335,6 +335,12 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
 
 
 
+def payment_number(row) -> str:
+    """The printable per-case payment number (FEAT-006) as printed: '' when the row has none yet."""
+    value = row.get('txn_number')
+    return str(value) if value is not None else ''
+
+
 def ledger_export_archive(export, *, include_pdf=False):
     """Package canonical bytes without reserializing the captured content."""
     import io
@@ -631,7 +637,8 @@ def render_ledger_report(snapshot):
         exclusion_labels = dict(proof_class_not_included='Not source verified', superseded='Replaced',
             quarantined='Held for review', rejected='Rejected', source_not_admitted='Source excluded')
         parts += ['<p>Every captured payment is listed below. Its full original fields, source locations, corrections and processing records are retained in the accompanying <a href="ledger-snapshot.json">ledger-snapshot.json</a>. Keep both files together. Source and transaction identifiers below locate the matching record in that file.</p>',
-            table(['Date', 'Account', 'Description', 'Credit', 'Debit', 'Recorded balance', 'Review', 'Reference / source'], [[
+            table(['No.', 'Date', 'Account', 'Description', 'Credit', 'Debit', 'Recorded balance', 'Review', 'Reference / source'], [[
+                payment_number(r['row']),
                 r['row']['ordering_date'] + (' (statement end; payment date unknown)' if r['row'].get('ordering_date_context') == 'statement_end_ordering_only' else ''),
                 ('Credit card: ' if (r.get('account') or {}).get('account_type') == 'credit_card' else '')
                     + ((r.get('account') or {}).get('label') or r['row']['account_id'])
@@ -643,10 +650,11 @@ def render_ledger_report(snapshot):
                 'In verified totals' if r['included'] else exclusion_labels.get(r['exclusion_reason'], str(r['exclusion_reason'])),
                 str(r['row'].get('ref_id') or r['row']['key']) + ' / ' + source_names.get(r['source'].get('evidence_file_id'), r['source']['id'])
                     + ' / PDF page ' + str((r['row'].get('locator') or {}).get('page') or 'Not recorded')]
-                for r in ordered_readings], widths=[12,14,22,10,10,11,9,12], row_ids=[r['row']['key'] for r in ordered_readings])]
+                for r in ordered_readings], widths=[5,12,14,18,10,10,11,9,11], row_ids=[r['row']['key'] for r in ordered_readings])]
     for reading in ([] if compact else ordered_readings):
         row = reading['row']
-        parts += ['<article><h3>Reading ' + text(row.get('ref_id') or row['key']) + '</h3>',
+        parts += ['<article><h3>' + ('Payment no. ' + text(payment_number(row)) + ' · ' if payment_number(row) else '')
+                  + 'Reading ' + text(row.get('ref_id') or row['key']) + '</h3>',
             table(['Included in verified totals', 'Ordering date', 'Description', 'Direction', 'Currency', 'Amount (exact minor units in brackets)'],
                   [['Yes' if reading['included'] else 'No: ' + {'proof_class_not_included':'Outside verified proof classes', 'superseded':'Superseded reading', 'quarantined':'Held for review', 'rejected':'Rejected reading', 'source_not_admitted':'Source is not admitted'}.get(reading['exclusion_reason'],str(reading['exclusion_reason'])),
                     row['ordering_date'] + (' (statement end; ordering only, transaction date unknown)' if row.get('ordering_date_context') == 'statement_end_ordering_only' else ''), row['description'], row['direction'], row['currency'], money_display(row['amount_minor'], row['currency'])]]),

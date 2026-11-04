@@ -15,6 +15,7 @@ const fields: Record<string, keyof LedgerTransaction> = {
   date: "ordering_date",
   currency: "currency",
   account: "account_label",
+  number: "txn_number",
 }
 export function parseTransactionSearch(query: string): Node | null {
   if (!query.trim()) return null
@@ -65,6 +66,8 @@ export function parseTransactionSearch(query: string): Node | null {
     throw Error("Remove the unmatched closing parenthesis.")
   return result
 }
+/** "#412" or "no. 412" finds payment number 412 and nothing else; a bare number still searches every field. */
+const PAYMENT_NUMBER = /^(#|no\.?\s*)\d+$/
 export function transactionSearch(query: string, mode: string = "text") {
   let tree: Node | null
   try {
@@ -92,6 +95,7 @@ export function transactionSearch(query: string, mode: string = "text") {
     ).split(" ")[0]
     const all = [
       ...Object.values(values),
+      row.txn_number != null ? `#${row.txn_number} no. ${row.txn_number}` : "",
       row.ref_id,
       row.key,
       row.counterparty_raw,
@@ -103,9 +107,11 @@ export function transactionSearch(query: string, mode: string = "text") {
       .toLowerCase()
     const evaluate = (node: Node): boolean =>
       "term" in node
-        ? (node.field ? values[node.field].toLowerCase() : all).includes(
-            node.term
-          )
+        ? !node.field && PAYMENT_NUMBER.test(node.term)
+          ? String(row.txn_number ?? "") === node.term.replace(/^(#|no\.?\s*)/, "")
+          : (node.field ? values[node.field].toLowerCase() : all).includes(
+              node.term
+            )
         : node.op === "NOT"
           ? !evaluate(node.value)
           : node.op === "AND"

@@ -143,6 +143,15 @@ export function PaymentCardList({
                     </span>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-baseline gap-x-2">
+                        {row.txn_number != null && (
+                          <span
+                            className="font-mono text-[12px] font-semibold tabular-nums text-muted-foreground"
+                            title="Payment number in this case: it stays the same in printouts and exports, and after a correction"
+                            data-testid="payment-number"
+                          >
+                            No. {row.txn_number}
+                          </span>
+                        )}
                         <button
                           type="button"
                           className="truncate text-left text-[15px] font-semibold hover:underline"
@@ -253,6 +262,10 @@ export function PaymentCardList({
                         <div>
                           <dt className="text-muted-foreground">Date</dt>
                           <dd>{dayOf(row) || "Not printed"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-muted-foreground">Payment number</dt>
+                          <dd>{row.txn_number ?? "Not numbered yet"}</dd>
                         </div>
                         <div>
                           <dt className="text-muted-foreground">Reference</dt>

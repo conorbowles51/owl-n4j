@@ -287,6 +287,11 @@ export interface LedgerTransaction {
   ingestion_run_id: string
   statement_period_id: string | null
   ref_id: string
+  /**
+   * The payment's printable number in its case (FEAT-006): never changes, never reused, and a corrected version
+   * keeps the number of the payment it replaces. Null until the database has numbered the row.
+   */
+  txn_number?: number | null
   row_index: number
   /**
    * Minor units, always a magnitude and never signed: the ledger keeps the
@@ -374,6 +379,7 @@ export const LEDGER_TRANSACTION_FIELDS: readonly (keyof LedgerTransaction)[] = [
   "ingestion_run_id",
   "statement_period_id",
   "ref_id",
+  "txn_number",
   "row_index",
   "amount_minor",
   "currency",

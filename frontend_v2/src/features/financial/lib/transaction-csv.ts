@@ -87,6 +87,7 @@ function nameBasis(origin: NonNullable<LedgerTransaction["label_sources"]>["to_n
 
 export function transactionCsv(rows: LedgerTransaction[]) {
   const headers = [
+    "number",
     "ref_id",
     "date",
     "description",
@@ -105,6 +106,7 @@ export function transactionCsv(rows: LedgerTransaction[]) {
     "notes",
   ]
   const contents = rows.map((r) => [
+    r.txn_number != null ? String(r.txn_number) : "",
     r.ref_id || r.key,
     r.ordering_date_context === "statement_end_ordering_only"
       ? ""
