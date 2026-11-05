@@ -104,6 +104,12 @@ describe("Needs a decision, readings group", () => {
     await screen.findByRole("button", { name: "The sender is the other party" })
   })
 
+  it("a Not right link opens the choices on a reading that is not first in the list", async () => {
+    page("/cases/case-1/phone-review?reading=r2&answer=not-right")
+    await waitFor(() => expect(api.examples).toHaveBeenCalledWith("case-1", "r2"))
+    expect(await screen.findByRole("group", { name: /What is wrong/ })).toBeInTheDocument()
+  })
+
   it("opens on the first reading still needing a decision when earlier ones are decided", async () => {
     api.list.mockResolvedValue({ ...QUEUE, open: 1, checked: 1, items: [reading({ status: "confirmed", resolved_by: "Synthetic Reviewer",
       resolved_at: "2026-11-02T09:00:00Z", reason_kind: "standard", origin: null, reason: "Confirmed on the review screen" }),

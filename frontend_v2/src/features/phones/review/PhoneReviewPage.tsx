@@ -99,8 +99,10 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
   useEffect(() => {
     shownAt.current = performance.now()
     // A Not right link opens the choices once, on the reading it names; any other reading starts closed.
-    setNotRight(!!r?.id && openNotRightOn.current === r.id)
-    openNotRightOn.current = null
+    // The first render still shows the first reading, so the mark stays until the named reading is on screen.
+    const named = !!r?.id && openNotRightOn.current === r.id
+    setNotRight(named)
+    if (named) openNotRightOn.current = null
     setChoice(null)
     setReason("")
     setNote("")
