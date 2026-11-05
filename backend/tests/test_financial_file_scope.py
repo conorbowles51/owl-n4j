@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy import select
 
 from postgres.base import Base
-from postgres.models.evidence import EvidenceFile, IngestionLog
+from postgres.models.evidence import EvidenceFile, IngestionLog, PendingChunkVector
 from postgres.models.financial import FinancialSourceDocument
 from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialStatementReviewDraft
 from postgres.models.financial_import_batches import FinancialImportBatch
@@ -27,7 +27,7 @@ def f():
     value.setUp()
     # The common ledger fixture also seeds an unrelated, already imported PDF.
     value.seeded_file_ids = set(value.db.scalars(select(EvidenceFile.id))) - {value.file.id}
-    Base.metadata.create_all(value.engine, tables=[FinancialCandidateMapping.__table__,
+    Base.metadata.create_all(value.engine, tables=[FinancialCandidateMapping.__table__, PendingChunkVector.__table__,
         FinancialStatementReviewDraft.__table__, WorkspaceEntry.__table__, WorkspaceEntryLink.__table__,
         IngestionLog.__table__, FinancialRecoveryRun.__table__, FinancialRecoveryItem.__table__])
     yield value
