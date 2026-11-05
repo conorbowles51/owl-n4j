@@ -61,8 +61,8 @@ export function WholeCaseTrace({
   tolerance = 3,
 }: {
   caseId: string
-  start: string
-  end: string
+  start: string | null
+  end: string | null
   population: string
   tolerance?: number
 }) {

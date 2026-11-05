@@ -142,9 +142,21 @@ export function wholeCaseFileUrl(caseId: string, id: string, name: string) {
 }
 
 /** A stored comparison's scenario report: its bytes match its digest and it records exactly what was asked. */
+export type WholeCaseScenarioFigure = {
+  currency: string
+  posting_rows: number
+  paired_transfers: number
+  movement_count: number
+  paired_amount_minor: string
+  unpaired_credits_minor: string
+  unpaired_debits_minor: string
+  movement_volume_minor: string
+}
+
 export async function verifyWholeCaseScenario(
   raw: {
     case_id: string
+    figures: WholeCaseScenarioFigure[]
     scenario_json: string
     scenario_sha256: string
     scenario_byte_count: number
@@ -163,7 +175,10 @@ export async function verifyWholeCaseScenario(
     applied: boolean
     pairings_verified: boolean
     selected_pairs: { debit_id: string; credit_id: string }[]
+    figures: WholeCaseScenarioFigure[]
   }
+  const figures = (list: WholeCaseScenarioFigure[]) =>
+    list.map((f) => [f.currency, f.posting_rows, f.paired_transfers, f.movement_count, f.paired_amount_minor, f.unpaired_credits_minor, f.unpaired_debits_minor, f.movement_volume_minor].join(":")).join(",")
   const names = (list: { debit_id: string; credit_id: string }[]) =>
     list.map((p) => `${p.debit_id}:${p.credit_id}`).join(",")
   if (
@@ -171,7 +186,8 @@ export async function verifyWholeCaseScenario(
     raw.case_id !== caseId ||
     saved.applied !== false ||
     saved.pairings_verified !== false ||
-    names(saved.selected_pairs) !== names(pairs)
+    names(saved.selected_pairs) !== names(pairs) ||
+    figures(saved.figures) !== figures(raw.figures)
   )
     throw Error("Transfer report does not match the selected scope and assumptions.")
   return raw

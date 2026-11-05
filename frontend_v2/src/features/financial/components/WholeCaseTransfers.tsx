@@ -10,6 +10,7 @@ import {
   useWholeCasePage,
   useWholeCaseRun,
   verifyWholeCaseScenario,
+  type WholeCaseScenarioFigure,
   wholeCaseFileUrl,
 } from "../lib/whole-case-run"
 import { Disclosure } from "./Disclosure"
@@ -52,16 +53,6 @@ interface Summary {
   left_out_words: string | null
   date_unavailable_count: number
 }
-interface Figure {
-  currency: string
-  posting_rows: number
-  movement_count: number
-  paired_transfers: number
-  paired_amount_minor: string
-  unpaired_credits_minor: string
-  unpaired_debits_minor: string
-}
-
 /** The comparison of every payment in a scope above one answer's size: stored, paged, with true counts. */
 export function WholeCaseTransfers({
   caseId,
@@ -104,7 +95,7 @@ export function WholeCaseTransfers({
         scenario_json: string
         scenario_sha256: string
         scenario_byte_count: number
-        figures: Figure[]
+        figures: WholeCaseScenarioFigure[]
       }>(candidateUrl(`whole-case-runs/${run!.id}/transfer-scenario`, caseId), {
         method: "POST",
         read: true,
