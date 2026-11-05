@@ -128,18 +128,20 @@ def describe_region(conn, extraction_id, region) -> dict:
     if region not in numbers.regions():
         raise corrections.CorrectionError("Choose a country from the list.")
     now = apply.default_region(conn, extraction_id)[0]
-    raws = {r[0] for r in bare_numbers(conn, extraction_id)}
-    changed = unread = 0
-    for raw in raws:
+    bare = bare_numbers(conn, extraction_id)
+    changed, read, unread = set(), set(), set()  # counted as the box counts them: a number, however it was spelled
+    for raw, key, _was_read in bare:
         a = identifiers.classify(raw, region=now, region_basis="decided")
         b = identifiers.classify(raw, region=region, region_basis="decided")
-        changed += (a.identity_key if a else None) != (b.identity_key if b else None)
-        unread += b is None or b.kind != "phone"
-    return {"numbers": len(raws), "changed": changed, "unread": unread,
+        if (a.identity_key if a else None) != (b.identity_key if b else None):
+            changed.add(key)
+        (read if b is not None and b.kind == "phone" else unread).add(b.identity_key if b else raw)
+    count = len({r[1] for r in bare})
+    return {"numbers": count, "changed": len(changed), "unread": len(unread), "read": len(read),
             "words": "%s numbers on this phone have no country code. Read in %s, %s of them would change and %s would "
                      "not be valid numbers there. The phone is then read again; the report itself does not change."
-                     % ("{:,}".format(len(raws)), numbers.region_name(region), "{:,}".format(changed),
-                        "{:,}".format(unread))}
+                     % ("{:,}".format(count), numbers.region_name(region), "{:,}".format(len(changed)),
+                        "{:,}".format(len(unread)))}
 
 
 def describe_device_zone(conn, extraction_id, zone) -> dict:

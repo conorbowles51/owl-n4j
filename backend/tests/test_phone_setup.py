@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from services.financial.decisions import Actor
-from services.phone import corrections, numbers, phone_setup, readings, registry, sweep
+from services.phone import corrections, identities, numbers, phone_setup, readings, registry, significant, sweep
 from tests.phone_pg import fld, fresh_engine, make_case, make_extraction, model, needs_template, refs
 from tests.test_phone_mappings import _shipped, hooks, stamp  # noqa: F401 (fixture)
 
@@ -58,6 +58,42 @@ def _keys(c, ext):
 def _row(c, ext):
     return c.execute(text("SELECT t.machine_instant, t.instant, t.instant_basis, t.original_text, t.local_wall_time FROM "
                           "pv_time t WHERE t.extraction_id = :e AND t.original_text = :w"), {"e": ext, "w": WALL}).one()
+
+
+@needs_template
+def test_the_preview_counts_numbers_as_the_box_does_and_an_undone_reading_leaves_no_identity(phone):
+    engine, case, ext, actor = phone
+    sweep._hooks["apply"].append(identities.build)  # the production chain's identity step; the fixture restores it
+    with engine.connect() as c:
+        identities.build(c, ext, phone_setup._generation(c, ext))
+        c.execute(text("CREATE TEMP TABLE spelled AS SELECT * FROM phone_participations WHERE extraction_id = :e AND "
+                       "identifier_raw = '2025550143'"), {"e": ext})
+        c.execute(text("UPDATE spelled SET participation_uid = gen_random_uuid(), identifier_raw = '(202) 555-0143'"))
+        c.execute(text("INSERT INTO phone_participations SELECT * FROM spelled"))
+        c.commit()
+        s = phone_setup.region_state(c, ext)
+        d = phone_setup.describe_region(c, ext, "MX")
+        assert d["numbers"] == s["numbers"] + s["unread"] == 2  # two spellings of one number count once
+        total = significant.summary(c, case)["total"]
+        assert total >= 3
+        keys = {r[0] for r in c.execute(text("SELECT identity_key FROM pv_identity WHERE case_id = :c"), {"c": case})}
+    with Session(engine) as db:
+        corrections.set_default_region(db, case_id=case, extraction_id=ext, region="MX", reason="a Mexican phone", actor=actor)
+        db.commit()
+    assert sweep.interpret_one(engine, ext)["status"] == "done"
+    with engine.connect() as c:
+        s = phone_setup.region_state(c, ext)
+        assert (s["numbers"], s["unread"]) == (d["read"], d["unread"])  # what the preview said is what was saved
+    with Session(engine) as db:
+        corrections.set_default_region(db, case_id=case, extraction_id=ext, region=None, reason="Undo of: a Mexican phone",
+                                       actor=actor)
+        db.commit()
+    sweep.interpret_one(engine, ext)
+    with engine.connect() as c:
+        assert significant.summary(c, case)["total"] == total
+        assert {r[0] for r in c.execute(text("SELECT identity_key FROM pv_identity WHERE case_id = :c"), {"c": case})} == keys
+        assert c.execute(text("SELECT sighting_count FROM phone_identities WHERE case_id = :c AND identity_key = "
+                              "'phone:+528112345678'"), {"c": case}).scalar() == 0  # the row stays; older sightings need it
 
 
 @needs_template

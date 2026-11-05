@@ -2,7 +2,8 @@
 
 Significant holds graph keys. A phone identity counts when its own node ``phone-identity:<key>`` is in the case's
 manifest, or when it is linked to a person whose entity is. ``summary`` gives the sentence's two counts; both come
-from the same set the filter narrows by, so the sentence and the list agree.
+from the same set the filter narrows by, so the sentence and the list agree. Both read ``pv_identity``: an identity no
+current reading holds is not counted.
 """
 from __future__ import annotations
 
@@ -16,11 +17,11 @@ PREFIX = "phone-identity:"
 def identity_keys(conn, case_id) -> list:
     """The case's identity keys the Significant manifest covers, sorted."""
     return sorted(r[0] for r in conn.execute(text(
-        "SELECT i.identity_key FROM phone_identities i WHERE i.case_id = CAST(:c AS uuid) AND EXISTS (SELECT 1 FROM "
+        "SELECT i.identity_key FROM pv_identity i WHERE i.case_id = CAST(:c AS uuid) AND EXISTS (SELECT 1 FROM "
         "significant_entities s WHERE s.case_id = i.case_id AND s.removed_at IS NULL AND s.entity_key = CAST(:p AS text) "
         "|| i.identity_key) "
-        "UNION SELECT i.identity_key FROM phone_identities i JOIN phone_identity_links l ON l.identity_id = i.id "
-        "JOIN case_profiles p ON p.id = l.dossier_id JOIN significant_entities s ON s.case_id = i.case_id AND "
+        "UNION SELECT i.identity_key FROM pv_identity i JOIN case_profiles p ON p.id = i.person_id "
+        "JOIN significant_entities s ON s.case_id = i.case_id AND "
         "s.removed_at IS NULL AND s.entity_key = p.canonical_entity_key WHERE i.case_id = CAST(:c AS uuid)"), {"c": case_id, "p": PREFIX}))
 
 
@@ -33,7 +34,7 @@ def manifest_mark(conn, case_id) -> str:
 
 
 def summary(conn, case_id) -> dict:
-    total = conn.execute(text("SELECT count(*) FROM phone_identities WHERE case_id = CAST(:c AS uuid)"),
+    total = conn.execute(text("SELECT count(DISTINCT identity_key) FROM pv_identity WHERE case_id = CAST(:c AS uuid)"),
                          {"c": case_id}).scalar() or 0
     n = len(identity_keys(conn, case_id))
     return {"case_id": str(case_id), "significant": n, "total": int(total),
