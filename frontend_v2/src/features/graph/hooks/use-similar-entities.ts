@@ -5,6 +5,8 @@ import {
 } from "../api"
 import type { SimilarPair } from "@/types/graph.types"
 
+export const SCAN_STOPPED = "The scan stopped before finishing, so no results are shown. Run it again."
+
 interface ScanProgress {
   type: string
   compared: number
@@ -75,7 +77,9 @@ export function useSimilarEntities(caseId: string) {
           setError(err)
           setIsScanning(false)
         },
+        // Only the server sends this (its restart stops the scan); the person's own Cancel closes the stream silently.
         onCancelled: () => {
+          setError(SCAN_STOPPED)
           setIsScanning(false)
           setCurrentType(null)
         },
