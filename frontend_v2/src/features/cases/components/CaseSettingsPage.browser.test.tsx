@@ -10,6 +10,7 @@ const browserHooks = vi.hoisted(() => ({
 }))
 
 // The AI costs card reads its own report; it has its own tests (CaseCostsSection.test.tsx).
+vi.mock("./CasePhonesSection", () => ({ CasePhonesSection: () => null }))
 vi.mock("./CaseCostsSection", () => ({
   CaseCostsSection: () => <div>AI costs</div>,
 }))
