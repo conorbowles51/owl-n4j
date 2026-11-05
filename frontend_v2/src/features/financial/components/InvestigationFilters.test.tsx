@@ -76,7 +76,8 @@ it("selects multiple people and accounts, retains selection during search and ap
   })
 })
 it("keeps restored selections and dates during failure, then reloads the directory", async () => {
-  api.mockRejectedValueOnce(Error("503"))
+  // The whole list is asked for first, then 100 accounts at a time: the failure shows once both have failed.
+  api.mockRejectedValueOnce(Error("503")).mockRejectedValueOnce(Error("503"))
   const apply = mount()
   const error = await screen.findByRole("alert")
   expect(screen.getByLabelText("Transactions from")).toHaveValue("2020-01-01")

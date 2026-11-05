@@ -229,7 +229,7 @@ class PageViews(Captured):
         self.assertEqual(admin, set(rs.ADMIN_ROUTES))
         routes = (BACKEND.parent / 'frontend_v2/src/app/routes.tsx').read_text()
         case_block = routes[routes.index('path="/cases/:id"'):routes.index('{/* Admin routes */}')]
-        live = set(re.findall(r'path="([a-z-]+)" element=\{<LazyPage>|path="([a-z-]+)" element=\{<Evidence', case_block))
+        live = set(re.findall(r'path="([a-z-]+)" element=\{<LazyPage[ >]|path="([a-z-]+)" element=\{<Evidence', case_block))
         live = {a or b for a, b in live}
         # Every case page is timed as itself: the general case routes, or a phone page (07 4.13), never "other".
         self.assertTrue(set(rs.CASE_ROUTES) <= live, set(rs.CASE_ROUTES) - live)
