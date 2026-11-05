@@ -1938,6 +1938,37 @@ def put_own_blur(body: OwnBlur, db: Session = Depends(get_db), user: User = Depe
     return get_settings(case_id=body.case_id, db=db, user=user)
 
 
+STREAM_DENSITIES = ("comfortable", "compact")
+
+
+class ReaderSettings(BaseModel):
+    """A person's own way of reading the stream (07 section 4.4). It follows them across cases and browsers."""
+    model_config = ConfigDict(extra="forbid")
+    stream_density: Literal["comfortable", "compact"]
+
+
+@router.get("/reader-settings")
+def get_reader_settings(db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Comfortable until the person chooses otherwise (07 section 4.4)."""
+    from sqlalchemy import text as sql
+    saved = db.connection().execute(sql("SELECT stream_density FROM phone_reader_settings WHERE user_id = :u"),
+                                    {"u": user.id}).scalar()
+    return {"stream_density": saved or STREAM_DENSITIES[0]}
+
+
+@router.put("/reader-settings")
+def put_reader_settings(body: ReaderSettings, db: Session = Depends(get_db),
+                        user: User = Depends(get_current_db_user)):
+    """The person's own setting, in no case, so a view-only member can keep theirs."""
+    from sqlalchemy import text as sql
+    db.connection().execute(sql(
+        "INSERT INTO phone_reader_settings (user_id, stream_density, updated_at) VALUES (:u, :d, now()) "
+        "ON CONFLICT (user_id) DO UPDATE SET stream_density = EXCLUDED.stream_density, updated_at = now()"),
+        {"u": user.id, "d": body.stream_density})
+    db.commit()
+    return {"stream_density": body.stream_density}
+
+
 @router.get("/significant")
 def phone_significant(case_id: UUID = Query(...), db: Session = Depends(get_db),
                       user: User = Depends(get_current_db_user)):
@@ -1965,6 +1996,18 @@ def stream_index(body: dict, db: Session = Depends(get_db), user: User = Depends
                                    surface="thread" if f.threads else "stream",
                                    hits=(out.get("counts") or {}).get("events"))
     return out
+
+
+@router.post("/streams/apps")
+def stream_apps(body: dict, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The apps in scope with their counts (03 section 6.4), for the Conversations filter."""
+    f = _filter(body, db, user)
+    try:
+        return streams.app_counts(db.connection(), f)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 3.8 error wording with a reference
+        raise _failure(LIST_FAILED, exc)
 
 
 class WindowBody(BaseModel):

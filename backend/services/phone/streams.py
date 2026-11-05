@@ -31,6 +31,7 @@ from sqlalchemy import text
 
 from services.phone import fold as F
 from services.phone import labels as L
+from services.phone import replies as R
 from services.phone import time_display as T
 from services.phone.filters import StreamFilter, snapshot
 
@@ -186,7 +187,11 @@ class Query:
                      "s.id = CAST(%s AS uuid) AND s.case_id = CAST(%s AS uuid))" % (self._p(f.selection),
                                                                                     self._p(f.case_id)))
         if f.apps:
-            w.append("ev.app = ANY(CAST(%s AS text[]))" % self._p(f.apps))
+            named = [a for a in f.apps if a is not None]
+            parts = ["ev.app = ANY(CAST(%s AS text[]))" % self._p(named)] if named else []
+            if None in f.apps:
+                parts.append("ev.app IS NULL")
+            w.append("(%s)" % " OR ".join(parts))
         if f.kinds:
             w.append("ev.kind = ANY(CAST(%s AS text[]))" % self._p(list(f.kinds)))
         if f.directions:
@@ -399,6 +404,18 @@ def index_comm_events(conn, f: StreamFilter) -> dict:
     return out
 
 
+def app_counts(conn, f: StreamFilter) -> dict:
+    """Every app in scope with its count (03 section 6.4), under the whole filter except the apps themselves, so
+    choosing one app leaves the others on offer. ``app`` null is the events whose report names no app."""
+    g = f.model_copy(update={"apps": [], "threads": []})
+    q, _ = _query(conn, g)
+    rows = conn.execute(text("WITH m AS (%s) SELECT app, count(*) AS n FROM m WHERE %s GROUP BY app ORDER BY 2 DESC, 1"
+                             % (q.matched_sql(), _shown(g))), q.params).fetchall()
+    return envelope(conn, g, items=[{"app": r.app, "count": int(r.n)} for r in rows],
+                    counts={"apps": sum(1 for r in rows if r.app is not None),
+                            "events": sum(int(r.n) for r in rows)})
+
+
 def envelope(conn, f, *, counts=None, items=(), limits=None) -> dict:
     lim = limits_for(conn, f) if limits is None else limits
     return {"case_id": f.case_id, "snapshot": snapshot(conn, f), "complete": not lim, "limits": lim,
@@ -579,6 +596,7 @@ def build_rows(conn, ctx: L.LabelContext, rows, zone: str, f: StreamFilter) -> l
     # a translation asked for (05 17.5) travels with its message, under the original
     from services.phone import translate
     translations = translate.latest_for(conn, f.case_id, "message", [r.event_uid for r in rows if r.body])
+    links = R.for_rows(conn, ctx, rows, zone)
     out = []
     for r in rows:
         ext = str(r.extraction_id)
@@ -616,6 +634,8 @@ def build_rows(conn, ctx: L.LabelContext, rows, zone: str, f: StreamFilter) -> l
                            "date_played": T.iso(owner_p.date_played) if owner_p and owner_p.date_played else None},
             "interpretation_level": r.interpretation_level,
             "translation": translations.get(str(r.event_uid)),
+            "replies": links[r.record_uid]["replies"] if r.record_uid in links else [],
+            "forward": links[r.record_uid]["forward"] if r.record_uid in links else None,
         }
         row["line"] = L.line_text(frm, to)
         out.append(row)

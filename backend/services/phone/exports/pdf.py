@@ -14,6 +14,8 @@ import unicodedata
 from collections import Counter
 from functools import lru_cache
 
+from services.phone.labels import label_text
+
 FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
     __file__))))), "assets", "fonts")
 # (family, file, weight): one fallback chain, in this order (03 section 12.3)
@@ -110,11 +112,35 @@ def _translation_html(t, missing) -> list:
     return out
 
 
+def _reply_words(r) -> list:
+    """A forward and a reply as the row states them (03 section 6.6): the sender above stays the sender of this copy."""
+    out = []
+    forward = r.get("forward")
+    if forward:
+        by = forward.get("original_sender")
+        out.append("Forwarded. " + ("First written by %s%s." % (
+            label_text(by), ", %s" % forward["time_created"] if forward.get("time_created") else "")
+            if by else "The report does not say who first wrote it."))
+    for link in r.get("replies") or []:
+        verb = "Quoting" if link["kind"] == "quote" else "Replying to"
+        target = link.get("target")
+        if target:
+            out.append("%s %s, %s: %s" % (verb, label_text(target.get("from")), target["time"],
+                                          target.get("excerpt") or "(no text)"))
+        elif link["state"] == "not_in_extraction":
+            out.append("%s a message that is not in this extraction (the report's id: %s)." % (verb, link["original_id"]))
+        else:
+            out.append("Marked as a reply; the report does not say to which message.")
+    return out
+
+
 def _row_html(r, missing) -> str:
     t = (r.get("time") or {}).get("full") or "No time recorded"
     who = r.get("line") or ""
     head = " · ".join(x for x in (t, r["phone"]["label"], r.get("app") or "", who) if x)
     parts = ['<div class="row">', '<div class="meta">%s</div>' % _e(head, missing)]
+    for word in _reply_words(r):
+        parts.append('<div class="origin">%s</div>' % _e(word, missing))
     if r.get("subject"):
         parts.append('<div class="body"><b>%s</b></div>' % _e(r["subject"], missing))
     if r.get("kind") == "call" and r.get("call"):

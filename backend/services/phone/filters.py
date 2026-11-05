@@ -70,7 +70,8 @@ class StreamFilter(BaseModel):
     participant_mode: Literal["any", "all", "between", "sent_by", "sent_to"] = "any"
     expand_person_identities: bool = False
     group_scope: Literal["direct", "include_groups"] = "direct"
-    apps: List[str] = Field(default_factory=list)
+    # None is "the report records no app" (15.6% of events on 5 Nov), selectable like any app
+    apps: List[Optional[str]] = Field(default_factory=list)
     kinds: List[Kind] = Field(default_factory=list)
     directions: List[Direction] = Field(default_factory=list)
     deleted_states: List[Optional[str]] = Field(default_factory=list)
@@ -138,9 +139,10 @@ class StreamFilter(BaseModel):
 def canonical_json(f: StreamFilter) -> str:
     """Sorted keys; order-free lists sorted. ``participants`` keeps its order: sent_by X to Y is not Y to X."""
     d = f.model_dump(mode="json")
-    for key in ("phones", "threads", "apps", "kinds", "directions"):
+    for key in ("phones", "threads", "kinds", "directions"):
         d[key] = sorted(d[key])
-    d["deleted_states"] = sorted(d["deleted_states"], key=lambda v: (v is None, v or ""))
+    for key in ("apps", "deleted_states"):
+        d[key] = sorted(d[key], key=lambda v: (v is None, v or ""))
     if d["participant_mode"] in ("any", "all", "between"):
         d["participants"] = sorted(d["participants"])
     return json.dumps(d, sort_keys=True, separators=(",", ":"))
