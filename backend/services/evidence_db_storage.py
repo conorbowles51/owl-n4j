@@ -517,7 +517,10 @@ class EvidenceDBStorage:
             })
 
         history = reading_history(db, files)
-        file_dicts = [{**EvidenceDBStorage._file_to_dict(ef), 'reading_versions': history.get(str(ef.id), [])} for ef in files]
+        from services.meaning_search import pending_chunk_counts
+        pending = pending_chunk_counts(db, evidence_ids=[ef.id for ef in files])
+        file_dicts = [{**EvidenceDBStorage._file_to_dict(ef), 'reading_versions': history.get(str(ef.id), []),
+                       'search_pending_chunks': pending.get(str(ef.id), 0)} for ef in files]
 
         return {
             "folders": folder_dicts,
@@ -604,7 +607,10 @@ class EvidenceDBStorage:
                 paths[folder_id] = list(reversed(trail))
             return paths[folder_id]
         history = reading_history(db, files)
-        return {"files": [{**EvidenceDBStorage._file_to_dict(file), 'reading_versions': history.get(str(file.id), []), "folder_path": path(file.folder_id)} for file in files],
+        from services.meaning_search import pending_chunk_counts
+        pending = pending_chunk_counts(db, evidence_ids=[file.id for file in files])
+        return {"files": [{**EvidenceDBStorage._file_to_dict(file), 'reading_versions': history.get(str(file.id), []),
+                           'search_pending_chunks': pending.get(str(file.id), 0), "folder_path": path(file.folder_id)} for file in files],
                 "file_total": total, "file_limit": limit, "file_offset": offset}
 
     @staticmethod

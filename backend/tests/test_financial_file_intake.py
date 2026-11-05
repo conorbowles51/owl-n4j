@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 from unittest.mock import AsyncMock
 from sqlalchemy import select
 from postgres.base import Base
-from postgres.models.evidence import EvidenceFile, EvidenceFolder, EvidenceDocumentText, EvidenceTableGeometry, IngestionLog
+from postgres.models.evidence import EvidenceFile, EvidenceFolder, EvidenceDocumentText, EvidenceTableGeometry, IngestionLog, PendingChunkVector
 from postgres.models.financial_import_batches import FinancialImportBatch as Batch, FinancialImportBatchItem as Item
 from postgres.models.financial_recovery import FinancialRecoveryRun, FinancialRecoveryItem
 from services.financial.decisions import Actor
@@ -21,7 +21,7 @@ from tests.test_financial_duplicates import DuplicateTestCase
 class FinancialFileIntakeTests(DuplicateTestCase):
     def setUp(self):
         super().setUp()
-        Base.metadata.create_all(self.db.connection(), tables=[IngestionLog.__table__, EvidenceDocumentText.__table__, EvidenceTableGeometry.__table__, Batch.__table__, Item.__table__, FinancialRecoveryRun.__table__, FinancialRecoveryItem.__table__])
+        Base.metadata.create_all(self.db.connection(), tables=[IngestionLog.__table__, PendingChunkVector.__table__, EvidenceDocumentText.__table__, EvidenceTableGeometry.__table__, Batch.__table__, Item.__table__, FinancialRecoveryRun.__table__, FinancialRecoveryItem.__table__])
         self.actor = Actor(self.user.name, self.user.email, self.user.id)
         self.file = self.new_file('letter.pdf')
         self.db.commit()

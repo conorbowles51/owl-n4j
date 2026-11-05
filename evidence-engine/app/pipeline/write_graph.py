@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from contextvars import ContextVar
 from typing import Any
 
@@ -17,8 +18,13 @@ from app.pipeline.property_canonicalization import (
 from app.services import chroma_client, neo4j_client
 from app.services.graph_identity import ENTITY_LABEL_EXPRESSION, ensure_identity_indexes
 from app.services.geocoding import build_geocode_request, geocoding_service
+from app.services.embedding_refusal import ENTITY_VECTORS_PENDING, is_embedding_refusal, note_skipped
+from app.services.pending_chunks import request_gap_backfill
 from app.services.openai_client import embed_texts
 from app.utils.text_sanitize import sanitize_json
+
+logger = logging.getLogger(__name__)
+
 
 _ontology = load_ontology()
 ENTITY_CATEGORIES = _ontology.categories
@@ -337,7 +343,15 @@ async def _embed_entities(
                 desc += f" Facts: {'; '.join(fact_snippets)}"
         texts.append(desc)
 
-    embeddings = await embed_texts(texts)
+    try:
+        embeddings = await embed_texts(texts)
+    except Exception as exc:
+        if not is_embedding_refusal(exc):
+            raise
+        logger.warning("Entity vectors wait for the embedding service: %s", exc)
+        await _mark_vectors_pending(entities, case_id)
+        note_skipped(ENTITY_VECTORS_PENDING)
+        return
 
     # Upsert so existing entities get updated embeddings (merged aliases, etc.)
     def upsert_entity_embeddings() -> None:
@@ -360,6 +374,18 @@ async def _embed_entities(
         )
 
     await asyncio.to_thread(upsert_entity_embeddings)
+
+
+async def _mark_vectors_pending(entities: list[ResolvedEntity], case_id: str) -> None:
+    """The backend's gap backfill embeds marked entities when the service answers (services/entity_vectors.py)."""
+    ids = [e.id for e in entities]
+    for start in range(0, len(ids), 500):
+        await _checkpointed_graph_write(
+            f"UNWIND $ids AS entity_id MATCH (n:{ENTITY_LABEL_EXPRESSION} {{id: entity_id, case_id: $case_id}}) "
+            "SET n.vector_pending = true",
+            {"ids": ids[start:start + 500], "case_id": case_id},
+        )
+    await request_gap_backfill()
 
 
 # ---------------------------------------------------------------------------

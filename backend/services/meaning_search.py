@@ -16,7 +16,8 @@ Decisions (LX-DOCSEARCH-STATUS.md; each reversible):
    as not searched, never dropped silently.
 3. A document whose text has no meaning-search vector is never treated as absent: ``vector_gap`` counts them per
    case, the count is shown wherever meaning search is used, and they are embedded by the existing chunk backfill
-   when the service answers again (``record_success`` -> ``run_gap_backfill``).
+   when the service answers again (``record_success`` -> ``run_gap_backfill``). A file ingested during an outage holds
+   its chunks in ``pending_chunk_vectors``; the evidence engine's sweep embeds those, and they count in the gap.
 """
 from __future__ import annotations
 
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 SERVICE = "meaning_search"
 MAX_TERMS = 8
 GAP_CACHE_SECONDS = 600
+PENDING_RECHECK_SECONDS = 600
 BACKFILL_LOCK_KEY = 7310402  # pg advisory lock: one gap backfill at a time across workers
 BACKFILL_PAUSE_SECONDS = 0.5
 BACKFILL_NICE = 15
@@ -291,6 +293,25 @@ def _searchable_vector_refs(collection, case_id: str) -> list[tuple[set[str], st
     return refs
 
 
+def pending_chunk_counts(db, *, evidence_ids: Iterable[Any] | None = None, case_id: str | None = None) -> dict[str, int]:
+    """{evidence file id: published chunks waiting for their vector}. Their file has been ingested; the engine's sweep
+    (evidence-engine app/services/pending_chunks.py) embeds them when the service answers, so a file here is never
+    shown as fully searchable. ``draft`` rows belong to a run that has not published and are not counted."""
+    from sqlalchemy import func, select
+    from postgres.models.evidence import PendingChunkVector as Pending
+    query = (select(Pending.evidence_file_id, func.count())
+             .where(Pending.publication_state == "active", Pending.evidence_file_id.is_not(None))
+             .group_by(Pending.evidence_file_id))
+    if evidence_ids is not None:
+        wanted = [e if isinstance(e, UUID) else UUID(str(e)) for e in evidence_ids]
+        if not wanted:
+            return {}
+        query = query.where(Pending.evidence_file_id.in_(wanted))
+    if case_id is not None:
+        query = query.where(Pending.case_id == str(case_id))
+    return {str(file_id): int(count) for file_id, count in db.execute(query).all()}
+
+
 def vector_gap(case_id: str, *, db=None, collection=None, fresh: bool = False) -> dict[str, Any] | None:
     """Documents of the case with stored text and no searchable meaning-search vector. Phone thread text is left
     out: it is never embedded by design (docs/cellebrite/02 section 9.8). None when it could not be measured."""
@@ -322,17 +343,23 @@ def vector_gap(case_id: str, *, db=None, collection=None, fresh: bool = False) -
             from postgres.session import get_background_session
             with get_background_session() as session:
                 files = rows(session)
+                pending = pending_chunk_counts(session, case_id=case_id)
         else:
             files = rows(db)
+            pending = pending_chunk_counts(db, case_id=case_id)
         refs = _searchable_vector_refs(collection, case_id)
         file_ids = {str(fid) for fid, _ in files}
         ids = set().union(*(r for r, _ in refs)) if refs else set()
         # A chunk names its file by id; only an older chunk whose ids are none of this case's files (a graph
         # document id) is matched by file name, so a repeated name never hides a document with no vector.
         names = {name for r, name in refs if name and not (r & file_ids)}
-        missing = [str(fid) for fid, name in files if str(fid) not in ids and str(name) not in names]
+        # A file with waiting chunks is not fully searchable, whatever else of it has a vector.
+        missing = [str(fid) for fid, name in files
+                   if str(fid) in pending or (str(fid) not in ids and str(name) not in names)]
         gap = {"documents_with_text": len(files), "documents_with_vector": len(files) - len(missing),
                "documents_without_vector": len(missing), "missing_evidence_file_ids": missing,
+               "documents_with_pending_chunks": len(pending), "pending_chunks": sum(pending.values()),
+               "pending_evidence_file_ids": sorted(pending),
                "measured_at": _now().isoformat()}
     except Exception:
         logger.exception("Meaning-search vector gap could not be measured for case %s", case_id)
@@ -358,7 +385,7 @@ def public_gap(gap: dict[str, Any] | None) -> dict[str, Any] | None:
     """The gap without its id list (for results put before a model or a person)."""
     if gap is None:
         return None
-    return {k: v for k, v in gap.items() if k != "missing_evidence_file_ids"}
+    return {k: v for k, v in gap.items() if k not in ("missing_evidence_file_ids", "pending_evidence_file_ids")}
 
 
 # ------------------------------------------------------------------------------------------------- health
@@ -400,9 +427,11 @@ def record_failure(exc: BaseException, *, session_factory: Callable | None = Non
 
 
 def record_success(*, session_factory: Callable | None = None, start_backfill: Callable | None = None) -> None:
-    """Remember that meaning search answered. The call that ends an outage starts the gap backfill (decision 3)."""
+    """Remember that meaning search answered. The call that ends an outage starts the gap backfill (decision 3), and
+    so does the first call after the evidence engine asked for it, which this process would otherwise not see."""
     with _memo_lock:
-        if _memo["status"] == "up" and _memo["checked_pending"]:
+        if (_memo["status"] == "up" and _memo["checked_pending"]
+                and time.monotonic() - _memo.get("checked_at", 0.0) < PENDING_RECHECK_SECONDS):
             return
     now = _now()
     try:
@@ -423,6 +452,7 @@ def record_success(*, session_factory: Callable | None = None, start_backfill: C
         with _memo_lock:
             _memo["status"] = "up"
             _memo["checked_pending"] = True
+            _memo["checked_at"] = time.monotonic()
         if pending:
             (start_backfill or start_gap_backfill)()
     except Exception as err:
@@ -578,7 +608,9 @@ def run_gap_backfill(*, case_ids: Iterable[str] | None = None, backfill: Callabl
         log("info", "Meaning-search gap backfill started over %d case(s)" % len(cases))
         for case_id in cases:
             found = gap(case_id, fresh=True)
-            missing = (found or {}).get("missing_evidence_file_ids") or []
+            # Files with kept chunks are the engine's sweep's to embed: this path would index the same text twice.
+            kept = set((found or {}).get("pending_evidence_file_ids") or [])
+            missing = [fid for fid in (found or {}).get("missing_evidence_file_ids") or [] if fid not in kept]
             if not missing:
                 continue
             summary["cases"] += 1

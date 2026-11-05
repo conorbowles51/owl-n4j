@@ -7,8 +7,10 @@ import re
 
 from app.pipeline.extract_text import ExtractedDocument
 from app.services.chroma_client import get_or_create_collection, upsert_embeddings
+from app.services.embedding_refusal import is_embedding_refusal
 from app.services.evidence_document_text import build_canonical_document_text
 from app.services.openai_client import embed_texts
+from app.services.pending_chunks import drop_embedded_chunks, publish_pending_revision, store_pending_chunks
 
 CHUNK_SIZE = 6000  # ~1500 tokens
 CHUNK_OVERLAP = 800  # ~200 tokens
@@ -46,6 +48,8 @@ class TextChunk:
 class ChunkActivationResult:
     activated_count: int
     retired_count: int
+    pending_count: int = 0
+    activated_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -206,7 +210,22 @@ def chunk_document(
     return chunks
 
 
-@checkpointed("pipeline/chunk_embed.py:chunk_and_embed:v1")
+def _already_active(collection: Any, ids: list[str], case_id: str, document_identity: str, revision_id: str) -> set[str]:
+    """Chunks of this revision that are already published. A repeat must not demote them while the new attempt is
+    still capable of failing before graph/publication commit, nor wait for a vector they hold."""
+    active = set()
+    for offset in range(0, len(ids), 1000):
+        existing = collection.get(ids=ids[offset:offset + 1000], include=['metadatas'])
+        for chunk_id, metadata in zip(existing.get('ids') or [], existing.get('metadatas') or []):
+            if (metadata and metadata.get('case_id') == case_id
+                and metadata.get('evidence_file_id') == document_identity
+                and metadata.get('revision_id') == revision_id
+                and metadata.get('ingestion_state') == 'active'):
+                active.add(chunk_id)
+    return active
+
+
+@checkpointed("pipeline/chunk_embed.py:chunk_and_embed:v2")
 async def chunk_and_embed(
     doc: ExtractedDocument,
     case_id: str,
@@ -220,13 +239,24 @@ async def chunk_and_embed(
 
     Staged chunks are invisible to retrieval until the owning ingestion run
     explicitly activates the revision after successful publication.
+
+    When the embedding service refuses, the chunks are kept in
+    ``pending_chunk_vectors`` instead and marked ``vector_pending``; the
+    ingestion carries on and the sweep embeds them after publication.
     """
     chunks = chunk_document(doc, file_name, job_id)
     if not chunks:
         return chunks
 
     texts = [c.text for c in chunks]
-    embeddings = await embed_texts(texts)
+    embeddings: list[list[float]] | None = None
+    refusal: Exception | None = None
+    try:
+        embeddings = await embed_texts(texts)
+    except Exception as exc:
+        if not is_embedding_refusal(exc):
+            raise
+        refusal = exc
 
     document_identity = evidence_file_id or job_id
     resolved_revision_id = revision_id or get_document_revision_id(doc)
@@ -272,21 +302,34 @@ async def chunk_and_embed(
         for c in chunks
     ]
 
+    if refusal is not None:
+        active = await asyncio.to_thread(
+            lambda: _already_active(
+                get_or_create_collection("chunks"), ids, case_id, document_identity, resolved_revision_id,
+            )
+        )
+        waiting = [index for index, chunk_id in enumerate(ids) if chunk_id not in active]
+        await store_pending_chunks(
+            case_id=case_id,
+            document_id=document_identity,
+            revision_id=resolved_revision_id,
+            job_id=job_id,
+            ids=[ids[index] for index in waiting],
+            texts=[texts[index] for index in waiting],
+            metadatas=[metadatas[index] for index in waiting],
+            reason=str(refusal),
+        )
+        for index in waiting:
+            chunks[index].metadata["vector_pending"] = True
+        return chunks
+
     def stage_embeddings() -> None:
         collection = get_or_create_collection("chunks")
         active = set()
         if doc.metadata.get('transcript_revision_id'):
             # A deliberate repeat can select an already published immutable
-            # revision. Do not demote its active chunks while the new attempt
-            # is still capable of failing before graph/publication commit.
-            for offset in range(0, len(ids), 1000):
-                existing = collection.get(ids=ids[offset:offset + 1000], include=['metadatas'])
-                for chunk_id, metadata in zip(existing.get('ids') or [], existing.get('metadatas') or []):
-                    if (metadata and metadata.get('case_id') == case_id
-                        and metadata.get('evidence_file_id') == document_identity
-                        and metadata.get('revision_id') == resolved_revision_id
-                        and metadata.get('ingestion_state') == 'active'):
-                        active.add(chunk_id)
+            # revision.
+            active = _already_active(collection, ids, case_id, document_identity, resolved_revision_id)
         pending = [index for index, chunk_id in enumerate(ids) if chunk_id not in active]
         if not pending:
             return
@@ -340,6 +383,7 @@ def _activate_chunk_revision_sync(
     evidence_file_id: str,
     revision_id: str,
     file_name: str,
+    pending_count: int = 0,
 ) -> ChunkActivationResult:
     collection = get_or_create_collection("chunks")
     records = _chunk_records(
@@ -350,6 +394,7 @@ def _activate_chunk_revision_sync(
     )
     updated_ids: list[str] = []
     updated_metadatas: list[dict[str, Any]] = []
+    activated_ids: list[str] = []
     activated_count = 0
     retired_count = 0
 
@@ -361,6 +406,7 @@ def _activate_chunk_revision_sync(
         target_state = "active" if is_current else "inactive"
         if is_current:
             activated_count += 1
+            activated_ids.append(chunk_id)
         elif metadata.get("ingestion_state") != "inactive":
             retired_count += 1
         if metadata.get("ingestion_state") == target_state:
@@ -368,7 +414,7 @@ def _activate_chunk_revision_sync(
         updated_ids.append(chunk_id)
         updated_metadatas.append({**metadata, "ingestion_state": target_state})
 
-    if activated_count == 0:
+    if activated_count == 0 and pending_count == 0:
         raise RuntimeError(
             "Cannot activate chunk revision because no staged chunks were found "
             f"for evidence_file_id={evidence_file_id} revision_id={revision_id}."
@@ -394,6 +440,8 @@ def _activate_chunk_revision_sync(
     return ChunkActivationResult(
         activated_count=activated_count,
         retired_count=retired_count,
+        pending_count=pending_count,
+        activated_ids=tuple(activated_ids),
     )
 
 
@@ -404,11 +452,20 @@ async def activate_chunk_revision(
     revision_id: str,
     file_name: str,
 ) -> ChunkActivationResult:
-    """Atomically expose one evidence revision and retire its older chunks."""
-    return await asyncio.to_thread(
+    """Atomically expose one evidence revision and retire its older chunks.
+
+    Chunks kept while the embedding service refused become due for the sweep
+    here, and the file's other waiting revisions are dropped.
+    """
+    pending_count = await publish_pending_revision(document_id=evidence_file_id, revision_id=revision_id)
+    result = await asyncio.to_thread(
         _activate_chunk_revision_sync,
         case_id=case_id,
         evidence_file_id=evidence_file_id,
         revision_id=revision_id,
         file_name=file_name,
+        pending_count=pending_count,
     )
+    if pending_count:
+        await drop_embedded_chunks(result.activated_ids)
+    return result

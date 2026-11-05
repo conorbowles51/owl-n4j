@@ -17,7 +17,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from postgres.base import Base
-from postgres.models.evidence import EvidenceDocumentText, EvidenceFile, EvidenceFolder
+from postgres.models.evidence import EvidenceDocumentText, PendingChunkVector, EvidenceFile, EvidenceFolder
 from services import meaning_search
 
 QUOTA = ("Error code: 429 - {'error': {'message': 'You have no credits remaining.', 'type': "
@@ -42,7 +42,8 @@ class Fixture(unittest.TestCase):
         self.engine = create_engine("sqlite+pysqlite:///:memory:", future=True,
                                     connect_args={"check_same_thread": False}, poolclass=StaticPool)
         Base.metadata.create_all(self.engine, tables=[EvidenceFolder.__table__, EvidenceFile.__table__,
-                                                      EvidenceDocumentText.__table__])
+                                                      EvidenceDocumentText.__table__,
+                                                      PendingChunkVector.__table__])
         with self.engine.begin() as conn:
             conn.execute(text("""CREATE TABLE service_health_states (service varchar PRIMARY KEY, status varchar,
                 reason_code varchar, reason text, down_since timestamp, last_failure_at timestamp,
@@ -246,6 +247,62 @@ class ReviewFindingTests(Fixture):
             gap = meaning_search.vector_gap(str(self.case_id), db=db, collection=Collection(), fresh=True)
         self.assertIn(str(twin.id), gap["missing_evidence_file_ids"])
         self.assertNotIn(tender_id, gap["missing_evidence_file_ids"])
+
+    def _pending(self, db, evidence, state="active"):
+        db.add(PendingChunkVector(chunk_id="%s:r:chunk:0" % evidence.id, case_id=str(self.case_id),
+                                  document_id=str(evidence.id), evidence_file_id=evidence.id, revision_id="r",
+                                  job_id="j", chunk_index=0, content="kept", chunk_metadata={},
+                                  publication_state=state))
+
+    def test_a_file_with_waiting_chunks_counts_in_the_gap_and_the_backfill_leaves_it_to_the_sweep(self):
+        tender_id, receipt_id = str(self.tender.id), str(self.receipt.id)
+        with self.Session() as db:
+            self._pending(db, self.tender)
+            db.commit()
+
+        class Collection:  # part of the file is searchable; it still may not read as fully searchable
+            def get(self, where, include, limit, offset):
+                if offset:
+                    return {"ids": [], "metadatas": []}
+                return {"ids": ["c1"], "metadatas": [{"case_id": where["case_id"], "evidence_file_id": tender_id,
+                                                     "doc_name": "tender-award.pdf"}]}
+
+        with self.Session() as db:
+            gap = meaning_search.vector_gap(str(self.case_id), db=db, collection=Collection(), fresh=True)
+        self.assertIn(tender_id, gap["missing_evidence_file_ids"])
+        self.assertEqual((gap["documents_with_pending_chunks"], gap["pending_chunks"]), (1, 1))
+        self.assertNotIn("pending_evidence_file_ids", meaning_search.public_gap(gap))
+        self.assertIn("2 of 2 documents", meaning_search.gap_sentence(gap))
+
+        embedded = []
+
+        def backfill(**kwargs):
+            embedded.extend(kwargs["evidence_file_ids"])
+            return {"stats": {}}
+
+        meaning_search.run_gap_backfill(case_ids=[str(self.case_id)], backfill=backfill, gap=lambda *_a, **_k: gap,
+                                        session_factory=self.session, log=lambda *_a: None, lock=False)
+        self.assertEqual(embedded, [receipt_id])  # one text is never indexed twice
+
+    def test_a_backfill_the_engine_asked_for_starts_even_when_this_process_saw_no_outage(self):
+        started = []
+        saved = dict(meaning_search._memo)
+        self.addCleanup(lambda: (meaning_search._memo.clear(), meaning_search._memo.update(saved)))
+        meaning_search._memo.update(status="up", checked_pending=True, checked_at=-1e9)
+        with self.Session() as db:
+            db.execute(text("INSERT INTO service_health_states (service, status, backfill_pending) "
+                            "VALUES ('meaning_search', 'up', 1)"))
+            db.commit()
+        meaning_search.record_success(session_factory=self.session, start_backfill=lambda: started.append(1))
+        self.assertEqual(started, [1])
+        meaning_search.record_success(session_factory=self.session, start_backfill=lambda: started.append(2))
+        self.assertEqual(started, [1])  # re-read at most once per PENDING_RECHECK_SECONDS
+
+    def test_a_run_that_has_not_published_is_not_counted(self):
+        with self.Session() as db:
+            self._pending(db, self.tender, state="draft")
+            db.commit()
+            self.assertEqual(meaning_search.pending_chunk_counts(db, case_id=str(self.case_id)), {})
 
     def test_chat_scope_searches_the_selected_documents_themselves(self):
         import services.rag_service as rag

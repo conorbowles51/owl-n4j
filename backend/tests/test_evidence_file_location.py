@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from postgres.base import Base
 from postgres.models.case import Case
-from postgres.models.evidence import EvidenceFile, EvidenceFolder, IngestionLog
+from postgres.models.evidence import EvidenceFile, EvidenceFolder, IngestionLog, PendingChunkVector
 from postgres.models.user import User
 from routers import evidence_folders
 from services.evidence_db_storage import EvidenceDBStorage
@@ -20,7 +20,7 @@ class EvidenceFileLocationTests(unittest.TestCase):
         self.engine = create_engine("sqlite+pysqlite:///:memory:")
         Base.metadata.create_all(self.engine, tables=[
             User.__table__, Case.__table__, EvidenceFolder.__table__,
-            EvidenceFile.__table__, IngestionLog.__table__,
+            EvidenceFile.__table__, IngestionLog.__table__, PendingChunkVector.__table__,
         ])
         self.db = Session(self.engine)
         self.case_id = uuid.uuid4()

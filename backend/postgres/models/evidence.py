@@ -221,6 +221,33 @@ class EvidenceFile(Base, TimestampMixin):
     )
 
 
+class PendingChunkVector(Base):
+    """A document chunk waiting for its vector. Owned by the evidence engine (app/services/pending_chunks.py); read
+    here to say which files are not yet fully searchable."""
+
+    __tablename__ = "pending_chunk_vectors"
+    __table_args__ = (
+        Index("ix_pending_chunk_vectors_document", "document_id", "revision_id"),
+        Index("ix_pending_chunk_vectors_file", "evidence_file_id"),
+        Index("ix_pending_chunk_vectors_state", "publication_state", "created_at"),
+    )
+
+    chunk_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    case_id: Mapped[str] = mapped_column(Text, nullable=False)
+    document_id: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_file_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("evidence_files.id", ondelete="CASCADE"), nullable=True)
+    revision_id: Mapped[str] = mapped_column(Text, nullable=False)
+    job_id: Mapped[str] = mapped_column(Text, nullable=False)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    chunk_metadata: Mapped[dict] = mapped_column(_jsonb_column(), nullable=False)
+    publication_state: Mapped[str] = mapped_column(String(16), server_default="draft", nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class EvidenceDocumentText(Base):
     __tablename__ = "evidence_document_texts"
 

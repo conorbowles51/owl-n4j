@@ -60,6 +60,11 @@ async def test_chunk_embeddings_are_versioned_drafts_and_idempotently_upserted(
 async def test_activation_promotes_current_revision_and_retires_previous_chunks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    async def nothing_waiting(**_kwargs: object) -> int:
+        return 0
+
+    monkeypatch.setattr(chunk_embed, "publish_pending_revision", nothing_waiting)
+
     class FakeCollection:
         def __init__(self) -> None:
             self.updated: dict[str, dict[str, object]] = {}
@@ -208,7 +213,7 @@ async def test_single_file_pipeline_activates_chunks_only_after_graph_publicatio
 
     async def fake_chunk_and_embed(*_args: object, **kwargs: object) -> list[object]:
         chunk_kwargs.update(kwargs)
-        return [object()]
+        return [SimpleNamespace(metadata={})]
 
     async def fake_write_graph(*_args: object, **_kwargs: object) -> None:
         events.append("graph")

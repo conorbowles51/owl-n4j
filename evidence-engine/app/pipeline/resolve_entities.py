@@ -29,6 +29,7 @@ from app.services.chroma_client import (
 from app.ontology.schema_builder import get_resolution_schema
 from app.services import neo4j_client
 from app.services.graph_identity import ENTITY_LABEL_EXPRESSION
+from app.services.embedding_refusal import ENTITY_DEDUP_SKIPPED, is_embedding_refusal, note_skipped
 from app.services.openai_client import chat_completion, embed_texts
 
 logger = logging.getLogger(__name__)
@@ -408,7 +409,15 @@ async def _embedding_candidates(
                 desc += f" — {e.properties['description']}"
             texts.append(desc)
 
-        embeddings = await embed_texts(texts)
+        try:
+            embeddings = await embed_texts(texts)
+        except Exception as exc:
+            if not is_embedding_refusal(exc):
+                raise
+            # Name matching (Phase 1) still ran; only meaning-based candidates are lost.
+            logger.warning("Entity dedup continues without embeddings: %s", exc)
+            note_skipped(ENTITY_DEDUP_SKIPPED)
+            break
 
         # text-embedding-3-small returns L2-normalised vectors, so the dot
         # product equals cosine similarity and 1 - sim equals the cosine
@@ -799,7 +808,15 @@ async def _cross_job_dedup(
                 desc += f" — {e.properties['description']}"
             texts.append(desc)
 
-        embeddings = await embed_texts(texts)
+        try:
+            embeddings = await embed_texts(texts)
+        except Exception as exc:
+            if not is_embedding_refusal(exc):
+                raise
+            # Name matches above still stand; only meaning-based candidates are lost.
+            logger.warning("Cross-job dedup continues without embeddings: %s", exc)
+            note_skipped(ENTITY_DEDUP_SKIPPED)
+            embeddings = []
 
         for k, (emb, entity) in enumerate(zip(embeddings, non_matched)):
             results = await asyncio.to_thread(

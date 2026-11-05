@@ -668,8 +668,11 @@ async def _request_embedding_batch(
     return [item.embedding for item in resp.data]
 
 
-async def embed_texts(texts: list[str]) -> list[list[float]]:
+async def embed_texts(texts: list[str], *, max_retries: int | None = None) -> list[list[float]]:
+    """``max_retries=0`` is one request per batch (the pending-chunk sweep's probe); default is the client's."""
     client = get_openai_client()
+    if max_retries is not None:
+        client = client.with_options(max_retries=max_retries)
     results: list[list[float]] = []
     max_items, max_chars = _embedding_batch_limits()
 

@@ -39,6 +39,7 @@ from app.services.evidence_document_text import upsert_evidence_document_text
 from app.services.evidence_table_geometry import replace_evidence_table_geometry
 from app.services.redis_client import publish_progress
 from app.services.pipeline_run_state import (
+    add_embedding_skips,
     add_verification_quality,
     build_extraction_quality_report,
     transition_chunk_publication,
@@ -53,6 +54,7 @@ from app.services.claim_ledger import (
 from app.pipeline.verify_claims import verify_grounded_claims
 from app.services.ingestion_checkpoints import checkpointed, pause_boundary, IngestionPaused
 from app.services.db_retry import retry_transient
+from app.services.embedding_refusal import chunk_progress_message, start_collecting_skipped
 
 logger = logging.getLogger(__name__)
 
@@ -287,7 +289,7 @@ async def _extract_file(
             job_id,
             JobStatus.CHUNKING,
             0.30,
-            f"Created {len(chunks)} chunks",
+            chunk_progress_message(chunks),
             staged_revision=staged_revision,
         )
 
@@ -347,6 +349,34 @@ async def _extract_file(
             transcription_segments,
             staged_revision,
         )
+
+
+async def _record_embedding_skips(job_ids: list[uuid.UUID], skipped: list[str]) -> None:
+    async def write() -> None:
+        async with async_session() as db:
+            result = await db.execute(select(Job).where(Job.id.in_(job_ids)))
+            for job in result.scalars().all():
+                job.quality_report = add_embedding_skips(job.quality_report, skipped)
+            await db.commit()
+    await retry_transient(write)
+
+
+async def _report_file_failure(ji: dict, failure: Exception) -> None:
+    """One file is over. Written when it happens, not when the slowest file of the batch finishes."""
+    logger.error(
+        "Extraction failed for job %s (%s): %s",
+        ji["id"],
+        ji["file_name"],
+        failure,
+        exc_info=(type(failure), failure, failure.__traceback__),
+    )
+    await _update_job_status(
+        ji["id"],
+        JobStatus.FAILED,
+        0.0,
+        f"Extraction failed: {failure}",
+        error_message=str(failure),
+    )
 
 
 async def _activate_chunk_revisions(
@@ -493,10 +523,12 @@ async def run_batch_pipeline(
 
     logger.info("Starting batch pipeline for %d files in case %s", len(jobs), case_id)
 
+    skipped_steps = start_collecting_skipped()
     try:
         from app.services.graph_identity import ensure_identity_indexes
         await ensure_identity_indexes()
         file_semaphore = asyncio.Semaphore(max(1, settings.batch_file_max_concurrency))
+        reported_failures: set[uuid.UUID] = set()
 
         async def bounded_extract(ji: dict) -> tuple[
             list[RawEntity],
@@ -506,21 +538,26 @@ async def run_batch_pipeline(
             StagedChunkRevision,
         ]:
             async with file_semaphore:
-                return await _extract_file(
-                    ji["id"],
-                    ji["file_path"],
-                    ji["file_name"],
-                    case_id,
-                    ji["llm_profile"],
-                    requested_by_user_id=ji.get("requested_by_user_id"),
-                    source_evidence_file_id=ji.get("source_evidence_file_id"),
-                    folder_context=ji.get("folder_context"),
-                    sibling_files=ji.get("sibling_files"),
-                    effective_context=ji.get("effective_context"),
-                    effective_mandatory_instructions=ji.get("effective_mandatory_instructions"),
-                    effective_special_entity_types=ji.get("effective_special_entity_types"),
-                    transcript_revision_id=ji.get('transcript_revision_id'),
-                )
+                try:
+                    return await _extract_file(
+                        ji["id"],
+                        ji["file_path"],
+                        ji["file_name"],
+                        case_id,
+                        ji["llm_profile"],
+                        requested_by_user_id=ji.get("requested_by_user_id"),
+                        source_evidence_file_id=ji.get("source_evidence_file_id"),
+                        folder_context=ji.get("folder_context"),
+                        sibling_files=ji.get("sibling_files"),
+                        effective_context=ji.get("effective_context"),
+                        effective_mandatory_instructions=ji.get("effective_mandatory_instructions"),
+                        effective_special_entity_types=ji.get("effective_special_entity_types"),
+                        transcript_revision_id=ji.get('transcript_revision_id'),
+                    )
+                except Exception as failure:
+                    await _report_file_failure(ji, failure)
+                    reported_failures.add(ji["id"])
+                    raise
 
         results = await asyncio.gather(
             *(bounded_extract(ji) for ji in job_info),
@@ -540,24 +577,8 @@ async def run_batch_pipeline(
 
         for ji, extraction_result in zip(job_info, results):
             if isinstance(extraction_result, Exception):
-                logger.error(
-                    "Extraction failed for job %s (%s): %s",
-                    ji["id"],
-                    ji["file_name"],
-                    extraction_result,
-                    exc_info=(
-                        type(extraction_result),
-                        extraction_result,
-                        extraction_result.__traceback__,
-                    ),
-                )
-                await _update_job_status(
-                    ji["id"],
-                    JobStatus.FAILED,
-                    0.0,
-                    f"Extraction failed: {extraction_result}",
-                    error_message=str(extraction_result),
-                )
+                if ji["id"] not in reported_failures:
+                    await _report_file_failure(ji, extraction_result)
                 continue
 
             (
@@ -689,6 +710,9 @@ async def run_batch_pipeline(
                 await _update_job_status(jid, JobStatus.WRITING_GRAPH, 0.85, "Writing graph...")
 
             await write_graph(resolved_ents, resolved_rels, case_id, batch_id, **replacement)
+
+        if skipped_steps:
+            await _record_embedding_skips(active_job_ids, skipped_steps)
 
         for jid, fname in zip(active_job_ids, active_file_names):
             ent_count = len([entity for entity in resolved_ents if fname in entity.source_files])

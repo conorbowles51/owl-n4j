@@ -35,12 +35,14 @@ from app.services.evidence_document_text import upsert_evidence_document_text
 from app.services.evidence_table_geometry import replace_evidence_table_geometry
 from app.services.redis_client import publish_progress
 from app.services.pipeline_run_state import (
+    add_embedding_skips,
     add_verification_quality,
     build_extraction_quality_report,
     transition_chunk_publication,
     transition_pipeline_state,
 )
 from app.services.chunk_publication import publish_chunk_revision
+from app.services.embedding_refusal import chunk_progress_message, start_collecting_skipped
 from app.services.claim_ledger import (
     attach_claim_ids,
     compile_grounded_claims,
@@ -89,6 +91,7 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
     job.pipeline_state["ai_runtime"] = get_ai_runtime_snapshot()
     await db.commit()
 
+    skipped_steps = start_collecting_skipped()
     try:
         from app.services.graph_identity import ensure_identity_indexes
         await ensure_identity_indexes()
@@ -241,7 +244,7 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
                     revision_id=chunk_revision_id,
                     file_name=job.file_name,
                 )
-            await _update_job(job, JobStatus.CHUNKING, 0.30, db, f"Created {len(chunks)} chunks")
+            await _update_job(job, JobStatus.CHUNKING, 0.30, db, chunk_progress_message(chunks))
 
             # Stage 3: Entity & relationship extraction -> 30-55%
             await _update_job(job, JobStatus.EXTRACTING_ENTITIES, 0.30, db, "Extracting entities...")
@@ -331,6 +334,8 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
             # Stage 7: Write to Neo4j + embed for RAG -> 85-100%
             await _update_job(job, JobStatus.WRITING_GRAPH, 0.85, db, "Writing graph...")
             await write_graph(resolved_ents, resolved_rels, job.case_id, str(job.id), **replacement)
+            if skipped_steps:
+                job.quality_report = add_embedding_skips(job.quality_report, skipped_steps)
             if not chunks:
                 from app.pipeline.audio_review import publish_audio_document_text
                 await publish_audio_document_text(job, db)

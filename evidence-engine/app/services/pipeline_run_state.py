@@ -95,6 +95,16 @@ def add_verification_quality(
     return enriched
 
 
+def add_embedding_skips(report: dict[str, Any] | None, skipped: list[str]) -> dict[str, Any]:
+    """Name the steps of this run that went without the embedding service."""
+    enriched = deepcopy(report or {})
+    warnings = list(enriched.get("warnings") or [])
+    warnings.extend(step for step in skipped if step not in warnings)
+    enriched["warnings"] = warnings
+    enriched["status"] = "warning"
+    return enriched
+
+
 def _timestamp(value: datetime) -> str:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 

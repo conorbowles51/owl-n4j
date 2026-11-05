@@ -8,6 +8,7 @@ from app.config import settings
 from app.dependencies import async_session
 from app.jobs.janitor import reap_stale_jobs
 from app.services.chunk_publication import recover_chunk_publications
+from app.services.pending_chunks import embed_pending_chunks
 from app.services.batch_dispatch import recover_batch_dispatches
 from app.pipeline.batch_orchestrator import run_batch_pipeline
 from app.pipeline.merge_orchestrator import run_merge_pipeline
@@ -107,6 +108,8 @@ class WorkerSettings:
         cron(reap_stale_jobs, minute=set(range(0, 60, 5))),
         cron(recover_batch_dispatches, minute=set(range(0, 60))),
         cron(recover_chunk_publications, minute=set(range(0, 60))),
+        # One probe of the embedding service per sweep (app/services/pending_chunks.py).
+        cron(embed_pending_chunks, minute=set(range(2, 60, 5))),
     ]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     max_jobs = 4

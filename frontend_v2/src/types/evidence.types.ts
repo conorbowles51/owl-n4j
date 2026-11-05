@@ -28,6 +28,7 @@ export interface EvidenceFile {
   sha256: string
   status: string
   processing_stale?: boolean
+  search_pending_chunks?: number
   duplicate_of?: string | null
   created_at: string
   processed_at?: string | null
@@ -316,6 +317,7 @@ export interface EvidenceFileRecord {
   sha256: string
   status: "unprocessed" | "processing" | "processed" | "failed"
   processing_stale: boolean
+  search_pending_chunks?: number
   is_duplicate: boolean
   duplicate_of: string | null
   is_relevant: boolean

@@ -234,6 +234,15 @@ export function FileRow({
             {typeCategory}
           </Badge>
           <RouteBadge route={route} />
+          {(file.search_pending_chunks ?? 0) > 0 && (
+            <Badge
+              variant="outline"
+              className="text-[10px]"
+              title={`${file.search_pending_chunks} passages are waiting for the search service. Word search finds this file now; search by meaning will find it once the service answers.`}
+            >
+              Search pending
+            </Badge>
+          )}
           {kind && kindTone && kind.kind !== "Document" && route?.outcome !== "native" && (
             <span
               title={kind.basis}

@@ -13,7 +13,7 @@ from sqlalchemy.pool import StaticPool
 
 from postgres.base import Base
 from postgres.models.case import Case
-from postgres.models.evidence import EvidenceFile, EvidenceFolder, IngestionLog
+from postgres.models.evidence import EvidenceFile, EvidenceFolder, IngestionLog, PendingChunkVector
 from postgres.models.user import User
 from routers import evidence_folders
 from services.evidence_db_storage import EvidenceDBStorage as Storage, EvidenceMoveError, evidence_ordering
@@ -23,7 +23,7 @@ from services.evidence_processing_service import process_db_files
 @pytest.fixture
 def fixture():
     engine = create_engine("sqlite+pysqlite:///:memory:", poolclass=StaticPool, connect_args={"check_same_thread": False})
-    Base.metadata.create_all(engine, tables=[User.__table__, Case.__table__, EvidenceFolder.__table__, EvidenceFile.__table__, IngestionLog.__table__])
+    Base.metadata.create_all(engine, tables=[User.__table__, Case.__table__, EvidenceFolder.__table__, EvidenceFile.__table__, PendingChunkVector.__table__, IngestionLog.__table__])
     with Session(engine) as db:
         case_id = uuid4()
         def folder(name, parent=None, case=None):

@@ -661,6 +661,7 @@ class EvidenceRecord(BaseModel):
     financial_visibility_changed_at: Optional[str] = None
     financial_imports_removed: bool = False
     processing_stale: bool = False
+    search_pending_chunks: int = 0  # chunks of this file waiting for their meaning-search vector
     is_duplicate: bool = False
     duplicate_of: Optional[str] = None
     is_relevant: bool = False
@@ -849,9 +850,12 @@ def list_evidence(
         history = reading_history(db, db_files)
         # Financial's full version list may group only validated source families.
         roots = {str(file.id): root for root, versions in case_lineage(db, UUID(case_id)).items() for file in versions} if include_reading_versions else {}
+        from services.meaning_search import pending_chunk_counts
+        pending = pending_chunk_counts(db, case_id=case_id)
         listing = {"files": [{**_evidence_record_from_db(f),
             'statement_root_evidence_id': roots.get(str(f.id), str(f.id)),
-            'reading_versions': history.get(str(f.id), [])} for f in db_files]}
+            'reading_versions': history.get(str(f.id), []),
+            'search_pending_chunks': pending.get(str(f.id), 0)} for f in db_files]}
         # What FastAPI sends for the response model: a saved answer is sent as it is, past the model.
         return ModelOutput(EvidenceListResponse.model_validate(listing).model_dump(mode='json'))
     except Exception as e:
@@ -937,7 +941,9 @@ def get_evidence_record(
     if record is None:
         raise HTTPException(status_code=404, detail="Evidence not found")
     from services.financial.source_lineage import reading_history
-    return {**_evidence_record_from_db(record), 'reading_versions': reading_history(db, [record]).get(str(record.id), [])}
+    from services.meaning_search import pending_chunk_counts
+    return {**_evidence_record_from_db(record), 'reading_versions': reading_history(db, [record]).get(str(record.id), []),
+            'search_pending_chunks': pending_chunk_counts(db, evidence_ids=[record.id]).get(str(record.id), 0)}
 
 
 @router.get("/{evidence_id}/text-matches", response_model=DocumentTextMatchesResponse)

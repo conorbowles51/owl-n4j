@@ -61,6 +61,8 @@ The pipeline runs **sequentially** per file, orchestrated by `pipeline/orchestra
 4. **resolve_entities** → Three-phase dedup: blocking (name/alias matching) → embedding similarity (cosine > 0.85) → LLM confirmation (batches of 20). Uses UnionFind for merge groups. Cross-job dedup against existing `case_{id}_entities` ChromaDB collection
 5. **write_graph** → MERGE with UNWIND (batches of 500) into Neo4j. Geocodes locations. Embeds entities into ChromaDB for RAG
 
+When the embedding service refuses (`app/services/embedding_refusal.py`: quota, rate limit, key, outage; a bad request or a bug still fails the file), an ingestion carries on: chunks wait in `pending_chunk_vectors` with their text and metadata and the `embed_pending_chunks` cron embeds them after publication, one single-try probe per sweep; entities take `vector_pending` for the backend's gap backfill; embedding-based dedup is skipped and named in the quality report.
+
 ## Key Design Decisions
 
 - **Guided open ontology**: 25 fixed categories, including dedicated Company, Bank, DigitalAccount, PhoneNumber, and NetworkIdentifier categories, plus AI-chosen `specific_type`. Dual-labeled in Neo4j

@@ -64,6 +64,19 @@ function renderRow(props: Partial<React.ComponentProps<typeof FileRow>> = {}) {
   )
 }
 
+describe("FileRow search state", () => {
+  it("says a file is not yet fully searchable while its passages wait for the search service", () => {
+    renderRow({ file: { ...file, search_pending_chunks: 3 } })
+    const badge = screen.getByText("Search pending")
+    expect(badge.getAttribute("title")).toContain("3 passages are waiting")
+  })
+
+  it("says nothing when nothing waits", () => {
+    renderRow()
+    expect(screen.queryByText("Search pending")).toBeNull()
+  })
+})
+
 describe("FileRow workspace pin actions", () => {
   beforeEach(() => {
     mocks.openDetail.mockReset()
