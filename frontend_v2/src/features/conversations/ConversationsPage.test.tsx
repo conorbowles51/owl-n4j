@@ -37,14 +37,14 @@ vi.mock("@/features/phones/hooks/use-collect", () => ({
   useUsedIn: () => ({ usedIn: {}, refresh: vi.fn() }),
 }))
 const streamFilters = vi.hoisted(() => [] as unknown[])
-const streamState = vi.hoisted(() => ({ index: null as unknown }))
+const streamState = vi.hoisted(() => ({ index: null as unknown, status: "idle" }))
 const threadMatches = vi.hoisted(() => ({ value: { isLoading: false, data: undefined as unknown } }))
 vi.mock("./use-thread-matches", () => ({ useThreadMatches: () => threadMatches.value }))
 const listProps = vi.hoisted(() => ({ last: null as null | { highlight?: unknown; jumpTo?: unknown; density?: unknown; filterWords?: string; onGoToOriginal?: (t: unknown, r: unknown) => void } }))
 vi.mock("@/features/phones/hooks/use-stream", () => ({
   useStream: (f: unknown) => {
     streamFilters.push(f)
-    return { status: "idle", error: null, index: streamState.index, segments: [], count: 0, total: 0, notice: null, item: () => ({ type: "header", segment: 0 }), ensure: vi.fn(), retry: vi.fn(), reload: vi.fn(), positionOf: () => null, allRows: async () => [], checkSnapshot: async () => true, setFocused: vi.fn() }
+    return { status: streamState.status, error: null, index: streamState.index, segments: [], count: 0, total: 0, notice: null, item: () => ({ type: "header", segment: 0 }), ensure: vi.fn(), retry: vi.fn(), reload: vi.fn(), positionOf: () => null, allRows: async () => [], checkSnapshot: async () => true, setFocused: vi.fn() }
   },
 }))
 const mounts = vi.hoisted(() => ({ n: 0 }))
@@ -115,6 +115,7 @@ describe("Conversations", () => {
     vi.clearAllMocks()
     screenWide.value = true
     streamState.index = null
+    streamState.status = "idle"
     threadMatches.value = { isLoading: false, data: undefined }
   })
 
@@ -158,6 +159,19 @@ describe("Conversations", () => {
   it("moves off an open thread a phone scope leaves out, so the count is never 0 for a thread off the list (07 4.5)", async () => {
     page("/cases/case-1/conversations?thread=gone&phones=e1")
     await waitFor(() => expect(seen.search).toContain("thread=t1"))
+  })
+
+  it("holds the count while a new scope's thread list has not answered, so a thread it leaves out never reads 0 (07 4.5)", async () => {
+    streamState.status = "ready"
+    streamState.index = { snapshot: "s", zone: { label: "UTC" }, items: [], counts: {} }
+    let answer: (v: unknown) => void = () => {}
+    api.getThreads.mockReturnValue(new Promise((resolve) => { answer = resolve }))
+    page("/cases/case-1/conversations?thread=gone&phones=e1")
+    await screen.findByRole("region", { name: "Conversation" })
+    expect(screen.queryByText(/\b0 messages/)).toBeNull()
+    answer({ case_id: "case-1", snapshot: "s", complete: true, limits: [], counts: { threads: 2, threads_total: 2, reviewed: 0, not_reviewed: 2 }, items: [thread("t1", "Synthetic A")], sort: "recent" })
+    await waitFor(() => expect(seen.search).toContain("thread=t1"))
+    expect(await screen.findByText(/\b0 messages/)).toBeInTheDocument()
   })
 
   it("stays on an open thread that is not listed when no filter is set", async () => {

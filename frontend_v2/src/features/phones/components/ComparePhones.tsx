@@ -99,7 +99,7 @@ function Comparison({ data }: { data: PhoneComparison }) {
         .filter((s) => s.no_time > 0)
         .map((s) => (
           <p key={s.extraction_id} className="text-xs">
-            {fmt(s.no_time)} messages and calls on {s.label} have no time and are not compared.
+            {fmt(s.no_time)} {s.no_time === 1 ? "message or call" : "messages and calls"} on {s.label} {s.no_time === 1 ? "has" : "have"} no time and {s.no_time === 1 ? "is" : "are"} not compared.
           </p>
         ))}
     </div>

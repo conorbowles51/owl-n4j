@@ -32,6 +32,14 @@ describe("places on the map (04 8.3)", () => {
     ])
     expect(r.lines.features).toHaveLength(1)
     expect(r.undrawn).toBe(1)
+    expect(r.noPosition).toBe(0)
+    const sightings = togetherLines([
+      { verdict: "compatible", basis: "shared_cell", a_lat: null, a_lon: null, b_lat: null, b_lon: null },
+      { verdict: "compatible", basis: "bluetooth", a_lat: null, a_lon: null, b_lat: null, b_lon: null },
+      { verdict: "separated", basis: "coordinates", a_lat: null, a_lon: null, b_lat: 1, b_lon: 2 },
+    ])
+    expect(sightings.noPosition).toBe(2)
+    expect(sightings.undrawn).toBe(1)
     expect(placeName({ cluster_id: 0, label: null })).toBe("Place 1")
     expect(placeName({ cluster_id: 0, label: "Home" })).toBe("Home")
     expect(PLACE_LABEL).toBe("Investigative location, not cell-site opinion")

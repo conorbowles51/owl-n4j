@@ -169,6 +169,10 @@ export function ConversationsPage() {
   const ready = view.tab === "threads" ? !!view.thread || !!view.record || !!view.selection : view.people.length > 0
   const streamFilter = useMemo(() => (ready && settingsQ.isSuccess ? viewToFilter(caseId, view, zoneName, true) : null), [ready, settingsQ.isSuccess, caseId, view, zoneName])
   const stream = useStream(streamFilter)
+  // A scope can leave out the open thread: until the new thread list has answered, a count read from that thread says
+  // 0 for a view the page is about to move off (07 4.5).
+  const threadUnsure = view.tab === "threads" && !!view.thread && (narrowed || view.phones.length > 0 || !!view.from || !!view.to)
+    && (!threadsQ.isSuccess || threadsQ.isPlaceholderData || !threads.some((t) => t.thread_key === view.thread))
   // the toggle states what it hides (07 XF-11): the same view without it, counted by the same index
   const allRecords = useQuery({
     queryKey: ["phone-stream-all", streamFilter],
@@ -683,7 +687,7 @@ export function ConversationsPage() {
         </nav>}
         <section aria-label="Conversation" className="flex min-w-0 flex-1 flex-col" ref={listRoot}>
           <ScopeBar scope={scope} onChange={onScope} narrowed={narrowed} presets={scopePresets} recent={scopeMemory.recent} restored={scopeMemory.restored}
-            count={stream.status === "ready" && stream.index ? { shown: stream.total, total: stream.total, noun: "messages" } : null}>
+            count={stream.status === "ready" && stream.index && !threadUnsure ? { shown: stream.total, total: stream.total, noun: "messages" } : null}>
             {view.people.length > 0 && (
               <PersonScope
                 caseId={caseId}

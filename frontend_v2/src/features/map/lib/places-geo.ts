@@ -100,26 +100,30 @@ export function routineAreas(places: RoutinePlace[]): FeatureCollection<Polygon>
 
 export interface TogetherItem {
   verdict: string
+  basis?: string
   a_lat: number | null
   a_lon: number | null
   b_lat: number | null
   b_lon: number | null
 }
 
-/** One line per compared pair between the two positions, keyed by verdict; pairs whose positions are no longer held
- * (a phone rebuilt since the run) are counted, not drawn. */
-export function togetherLines(items: TogetherItem[]): { lines: FeatureCollection<LineString>; undrawn: number } {
+/** One line per compared pair between the two positions, keyed by verdict. A pair not drawn is counted: a pair from
+ * recorded positions whose positions are no longer held (a phone rebuilt since the run) in `undrawn`, a pair from a
+ * shared network, cell or Bluetooth sighting, which never had a position of its own, in `noPosition`. */
+export function togetherLines(items: TogetherItem[]): { lines: FeatureCollection<LineString>; undrawn: number; noPosition: number } {
   const features: Feature<LineString>[] = []
   let undrawn = 0
+  let noPosition = 0
   for (const it of items) {
     if (it.a_lat === null || it.a_lon === null || it.b_lat === null || it.b_lon === null) {
-      undrawn += 1
+      if (it.basis && it.basis !== "coordinates") noPosition += 1
+      else undrawn += 1
       continue
     }
     features.push({ type: "Feature", properties: { verdict: it.verdict },
       geometry: { type: "LineString", coordinates: [[it.a_lon, it.a_lat], [it.b_lon, it.b_lat]] } })
   }
-  return { lines: { type: "FeatureCollection", features }, undrawn }
+  return { lines: { type: "FeatureCollection", features }, undrawn, noPosition }
 }
 
 /** [w, s, e, n] around the given positions, or null. */

@@ -288,7 +288,8 @@ export function TogetherView({ caseId, subject, list }: { caseId: string; subjec
           <PlacesMap layers={{ pairs: pairs.lines }} />
           <p className="text-xs text-muted-foreground">
             The map draws {pairs.lines.features.length.toLocaleString()} of {(res.total ?? 0).toLocaleString()} pairs: green compatible, red separated, amber undetermined
-            {pairs.undrawn ? `; ${pairs.undrawn.toLocaleString()} listed pairs have no position held now (a phone was read again since)` : ""}.
+            {pairs.noPosition ? `; ${pairs.noPosition.toLocaleString()} listed ${pairs.noPosition === 1 ? "pair comes" : "pairs come"} from a shared network, cell or Bluetooth sighting and ${pairs.noPosition === 1 ? "has" : "have"} no position to draw` : ""}
+            {pairs.undrawn ? `; ${pairs.undrawn.toLocaleString()} listed ${pairs.undrawn === 1 ? "pair has" : "pairs have"} no position held now (a phone was read again since)` : ""}.
             {res.next_cursor != null && <> <Button size="sm" variant="outline" onClick={() => void more()}>Load the next pairs</Button></>}
           </p>
           <h3 className="font-medium">Episodes ({(res.episodes || []).length.toLocaleString()})</h3>

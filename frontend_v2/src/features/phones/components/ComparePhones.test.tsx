@@ -13,7 +13,7 @@ const side = (id: string, label: string, noTime = 0) => ({ extraction_id: id, la
 describe("Compare phones", () => {
   it("compares the first two phones: on both, only on each with what falls outside the other's period", async () => {
     api.comparePhones.mockResolvedValue({
-      case_id: "case-1", person: null, a: side("e1", "C1", 2), b: side("e2", "C3"), key: "Matched by app, time and text.",
+      case_id: "case-1", person: null, a: side("e1", "C1", 2), b: side("e2", "C3", 1), key: "Matched by app, time and text.",
       kinds: { message: { both: 1204, only_a: 30, only_a_outside: 12, only_b: 1, only_b_outside: 0 }, call: { both: 0, only_a: 0, only_a_outside: 0, only_b: 4, only_b_outside: 0 } },
     })
     render(
@@ -27,5 +27,6 @@ describe("Compare phones", () => {
     expect(screen.getByText("12 outside C3's period")).toBeInTheDocument()
     expect(screen.getByText("4 only on C3")).toBeInTheDocument()
     expect(screen.getByText("2 messages and calls on C1 have no time and are not compared.")).toBeInTheDocument()
+    expect(screen.getByText("1 message or call on C3 has no time and is not compared.")).toBeInTheDocument()
   })
 })
