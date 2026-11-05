@@ -112,6 +112,8 @@ source "${PROJECT_DIR}/deploy/ingestion-safety.sh"
 source "${PROJECT_DIR}/deploy/backend-stop.sh"
 # shellcheck source=deploy/backend-socket.sh
 source "${PROJECT_DIR}/deploy/backend-socket.sh"
+# shellcheck source=deploy/backend-handover.sh
+source "${PROJECT_DIR}/deploy/backend-handover.sh"
 # shellcheck source=deploy/release-plan.sh
 source "${PROJECT_DIR}/deploy/release-plan.sh"
 # shellcheck source=deploy/frontend-release.sh
@@ -120,6 +122,7 @@ source "${PROJECT_DIR}/deploy/frontend-release.sh"
 source "${PROJECT_DIR}/deploy/frontend-server.sh"
 
 FRONTEND_STOPPED=false
+HANDOVER_KEPT_OLD=false
 restore_frontend_on_exit() {
     if [ "${FRONTEND_STOPPED}" = true ] && ! frontend_served_by_nginx; then
         warn "Deployment exited while the frontend was stopped - attempting restart"
@@ -164,6 +167,8 @@ write_deploy_summary() {
 on_deploy_exit() {
     local rc=$?
     trap - EXIT TERM INT HUP
+    # A release that ends between starting the next backend and stopping the old one leaves the old one serving.
+    backend_handover_abort_open || true
     restore_frontend_on_exit
     write_deploy_summary "${rc}"
     exit "${rc}"
@@ -405,6 +410,19 @@ success "Frontend service configured to serve the compiled bundle"
 step "Checking ingestion before migrations and service replacement"
 ingestion_gate
 
+# Whether the old backend may stay up beside the new schema decides how this release replaces it; read before the
+# migrations run (deploy/migration_safety.py).
+BACKEND_REPLACE=restart
+if [ "${STEP_BACKEND}" = run ] && [ "$(backend_handover_wanted)" = handover ]; then
+    MIGRATION_VERDICT="$(cd "${BACKEND_DIR}" && $RUN_AS env PYTHONPATH=. "${VENV_DIR}/bin/python" ../deploy/migration_safety.py 2>&1 | tail -1 || true)"
+    case "${MIGRATION_VERDICT}" in
+        none|additive*)
+            BACKEND_REPLACE=handover
+            success "Pending migrations: ${MIGRATION_VERDICT}; the old backend can stay up beside them" ;;
+        *) warn "This release replaces the backend by a restart: ${MIGRATION_VERDICT}" ;;
+    esac
+fi
+
 if [ "${STEP_BACKEND}" = run ]; then
     step "Running database migrations"
     cd "${BACKEND_DIR}"
@@ -441,10 +459,33 @@ if [ "${STEP_BACKEND}" = run ]; then
     fi
     check_ingestion_idle
     BACKEND_RESTART_AT="$(date +%s)"
-    # Bounded: a backend that will not stop is escalated (SIGINT, then SIGKILL)
-    # and the release always reaches its health check, last-good marker and summary.
-    if ! restart_backend_bounded; then
-        fail "owl-backend-v2 did not restart; the health check will fail and roll back"
+    if [ "${BACKEND_REPLACE}" = handover ] && backend_handover_possible; then
+        # The new backend starts beside the old one; the old one is stopped only once the new one is healthy and the
+        # ingestion gate has passed again (deploy/backend-handover.sh).
+        RELEASE_PLAN="${RELEASE_PLAN} replace=handover"
+        if backend_handover_begin; then
+            # A fatal gate here would leave the old backend running from a checkout it did not start from.
+            HANDOVER_GATE=0
+            check_ingestion_idle || HANDOVER_GATE=$?
+            if [ "${HANDOVER_GATE}" -eq 0 ]; then
+                backend_handover_commit || HANDOVER_KEPT_OLD=true
+            else
+                backend_handover_abort_open || true
+                HANDOVER_KEPT_OLD=true
+                HANDOVER_EXIT="${HANDOVER_GATE}"
+            fi
+        else
+            HANDOVER_KEPT_OLD=true
+        fi
+        if [ "${HANDOVER_KEPT_OLD}" = true ]; then
+            fail "The new backend did not take over; the old one is still serving. The release will be undone."
+        fi
+    else
+        # Bounded: a backend that will not stop is escalated (SIGINT, then SIGKILL)
+        # and the release always reaches its health check, last-good marker and summary.
+        if ! restart_backend_bounded; then
+            fail "owl-backend-v2 did not restart; the health check will fail and roll back"
+        fi
     fi
 else
     success "Backend unchanged; not restarted"
@@ -452,7 +493,7 @@ fi
 # The frontend switches after the backend, so a new frontend never talks to the old backend.
 FRONTEND_CHANGED=false
 FRONTEND_SWITCH_FAILED=false
-if [ "${PREV_FRONTEND_ID}" != "${FRONTEND_ID}" ]; then
+if [ "${HANDOVER_KEPT_OLD}" != true ] && [ "${PREV_FRONTEND_ID}" != "${FRONTEND_ID}" ]; then
     if frontend_switch "${FRONTEND_ID}"; then
         FRONTEND_CHANGED=true
     else
@@ -467,13 +508,14 @@ FRONTEND_STOPPED=false
 success "V2 services restarted"
 
 step "Running health check"
-if [ "${STEP_BACKEND}" = run ]; then
+if [ "${STEP_BACKEND}" = run ] && [ "${HANDOVER_KEPT_OLD}" != true ] && [ "${BACKEND_HANDED_OVER:-}" != true ]; then
     echo "  Waiting 10s for backend initialization..."
     sleep 10
 fi
 
 HEALTHY=false
 [ "${FRONTEND_SWITCH_FAILED}" = true ] && HEALTH_RETRIES=0
+[ "${HANDOVER_KEPT_OLD}" = true ] && HEALTH_RETRIES=0
 for i in $(seq 1 ${HEALTH_RETRIES}); do
     sleep "${HEALTH_DELAY}"
     if release_is_healthy; then
@@ -515,7 +557,11 @@ fi
 
 echo ""
 ROLLBACK_SHORT="$(git rev-parse --short "${ROLLBACK_TARGET}")"
-if [ "${ROLLBACK_TARGET}" = "${NEW_COMMIT}" ]; then
+ROLLBACK_WHY="health check failed"
+if [ "${HANDOVER_KEPT_OLD}" = true ]; then
+    ROLLBACK_WHY="the new backend did not take over"
+    warn "Undoing the release: the old backend, untouched, keeps serving ${ROLLBACK_SHORT}"
+elif [ "${ROLLBACK_TARGET}" = "${NEW_COMMIT}" ]; then
     fail "Health check failed - no distinct known-good commit to roll back to"
     warn "Rebuilding ${ROLLBACK_SHORT} in place (failure may be transient)"
 else
@@ -523,12 +569,14 @@ else
 fi
 
 cd "${PROJECT_DIR}"
-ingestion_gate
+# With the old backend kept, the checkout goes back to the code it runs whatever is in progress: no service changes.
+[ "${HANDOVER_KEPT_OLD}" = true ] || ingestion_gate
 $RUN_AS git reset --hard "${ROLLBACK_TARGET}"
 
 # The rollback serves the previous frontend build again (kept on disk) and reinstalls or restarts only what this
-# release changed. A record of components is not written: the next release does every step.
-rm -f "${COMPONENTS_FILE}"
+# release changed. A record of components is not written: the next release does every step. With the old backend
+# kept, the record still describes what runs (a release that changed only the frontend leaves it naming the backend).
+[ "${HANDOVER_KEPT_OLD}" = true ] || rm -f "${COMPONENTS_FILE}"
 step "Rollback: dependencies"
 if [ "${STEP_PIP}" = run ]; then
     check_ingestion_idle
@@ -550,8 +598,8 @@ fi
 
 step "Rollback: restarting services"
 # A release that did not touch the backend (the plan said so) rolls back the frontend only, unless the backend
-# itself is not answering.
-if [ "${RELEASE_TOUCHES_BACKEND}" = true ] ||
+# itself is not answering. A handover that did not happen left the old backend serving: it is not stopped now.
+if { [ "${RELEASE_TOUCHES_BACKEND}" = true ] && [ "${HANDOVER_KEPT_OLD}" != true ]; } ||
     ! curl -fsS --max-time 5 "${HEALTH_URL}" 2>/dev/null | grep -q '"status":"ok"'; then
     configure_ingestion_shutdown
     # Defined by ingestion-safety.sh, which this run sourced before the update: the
@@ -578,12 +626,12 @@ if echo "${RESPONSE}" | grep -q '"status":"ok"' &&
     ! echo "${RESPONSE}" | grep -Eq '"neo4j":"error:|"evidence_engine":"(error:|unavailable)"' &&
     is_compiled_frontend "${FRONTEND_RESPONSE}"; then
     warn "Rollback successful - running ${ROLLBACK_SHORT}"
-    DEPLOY_OUTCOME="health check failed; rolled back to ${ROLLBACK_SHORT} (healthy)"
+    DEPLOY_OUTCOME="${ROLLBACK_WHY}; rolled back to ${ROLLBACK_SHORT} (healthy)"
     warn "See log: ${LOG_FILE}"
 else
     fail "Rollback also failed"
-    DEPLOY_OUTCOME="health check failed; rollback to ${ROLLBACK_SHORT} also failed"
+    DEPLOY_OUTCOME="${ROLLBACK_WHY}; rollback to ${ROLLBACK_SHORT} also failed"
     fail "Log: ${LOG_FILE}"
 fi
 
-exit 1
+exit "${HANDOVER_EXIT:-1}"

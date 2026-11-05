@@ -107,5 +107,12 @@ restart_backend_bounded() {
     if declare -F backend_socket_apply >/dev/null; then
         backend_socket_apply
     fi
-    $SYSTEMCTL start "${BACKEND_UNIT}"
+    # Then who runs the backend: the unit itself or the supervisor of deploy/backend-handover.sh.
+    if declare -F backend_handover_apply >/dev/null; then
+        backend_handover_apply
+    fi
+    $SYSTEMCTL start "${BACKEND_UNIT}" || return 1
+    if declare -F backend_handover_record_start >/dev/null; then
+        backend_handover_record_start
+    fi
 }

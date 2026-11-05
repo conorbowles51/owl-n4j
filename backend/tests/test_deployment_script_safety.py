@@ -26,7 +26,8 @@ def release_sandbox(tmp_path):
         (project / directory).mkdir(parents=True)
     for name in ('deploy.sh', 'rollback.sh', 'ingestion-safety.sh', 'check_ingestion_idle.py', 'backend-stop.sh', 'git-update.sh',
                  'release-plan.sh', 'frontend-release.sh', 'frontend-server.sh', 'frontend-server.conf',
-                 'nginx-loupe-frontend.conf', 'record_release.py', 'backend-socket.sh', 'backend-socket.conf'):
+                 'nginx-loupe-frontend.conf', 'record_release.py', 'backend-socket.sh', 'backend-socket.conf',
+                 'backend-handover.sh', 'backend-restart.conf', 'backend_supervisor.py'):
         shutil.copy(DEPLOY / name, project / 'deploy' / name)
     # Exercise real install/mv commands, but target a synthetic unit directory.
     helper = project / 'deploy/ingestion-safety.sh'
@@ -108,7 +109,8 @@ elif name == 'curl':
     else:
         print('{"status":"ok"}')
 elif name == 'seq':
-    print('1')
+    if args[-1] != '0':  # one try is enough here; no tries stays no tries
+        print('1')
 elif name == 'npm' and 'build' in args and '--outDir' in args:
     # A build writes its output where it is told (deploy/frontend-release.sh builds beside the served one).
     out = pathlib.Path(args[args.index('--outDir') + 1])
@@ -117,6 +119,17 @@ elif name == 'npm' and 'build' in args and '--outDir' in args:
     (out / 'assets/app.js').write_text('app')
 elif name == 'systemctl' and args[:1] == ['show']:
     print('inactive')  # the bounded stop sees the backend stopped at once
+elif name == 'systemctl' and args[:1] == ['kill'] and os.environ.get('HANDOVER_ANSWER'):
+    state = root / 'deploy/logs/backend-supervisor.json'
+    current = json.loads(state.read_text())
+    if 'SIGUSR2' in args[1] or 'SIGUSR2' in ' '.join(args):
+        current.update(handovers=current['handovers'] + 1,
+                       handover=dict(phase=os.environ['HANDOVER_ANSWER'], reason='it did not start'))
+    elif 'SIGHUP' in ' '.join(args):
+        current['handover']['phase'] = 'done'
+    elif 'SIGQUIT' in ' '.join(args):
+        current['handover']['phase'] = 'failed'
+    state.write_text(json.dumps(current))
 ''')
     stub.chmod(0o755)
     for name in ('git', 'id', 'whoami', 'sudo', 'docker', 'npm', 'systemctl', 'curl', 'sleep', 'seq', 'flock', 'nginx'):
@@ -135,14 +148,17 @@ def run_release(project, script, *, arrives_after=None, initially_active=False, 
            'FRONTEND_NGINX_SITE': str(project / 'nginx/sites-enabled/loupe-frontend'),
            'FRONTEND_NGINX_AVAILABLE': str(project / 'nginx/sites-available/loupe-frontend'),
            # The held API socket's units go to the sandbox, never the host's /etc/systemd/system.
-           'BACKEND_SOCKET_UNIT_DIR': str(project / 'units')}
+           'BACKEND_SOCKET_UNIT_DIR': str(project / 'units'),
+           # This host's own switch and supervisor copy are not under test.
+           'BACKEND_RESTART_SWITCH': str(project / 'no-host-switch'),
+           'BACKEND_SUPERVISOR_DIR': str(project / 'supervisor')}
     if arrives_after:
         env['WORK_ARRIVES_AFTER'] = arrives_after
     if health_failure:
         env['FORCE_HEALTH_FAILURE'] = '1'
     env.update(extra_env or {})
     result = subprocess.run(['bash', str(project / 'deploy' / script), 'previous-safe-revision'],
-                            input='y\n', text=True, capture_output=True, env=env, timeout=180)
+                            input='y\n', text=True, capture_output=True, env=env, timeout=600)
     events = [json.loads(line) for line in (project / 'events').read_text().splitlines()]
     return result, events
 
@@ -342,3 +358,95 @@ def test_nginx_serves_the_site_and_a_frontend_release_then_stops_nothing(release
     assert 'the build switch needed no restart' in second.stdout
     assert not any(event.startswith(('systemctl stop owl-frontend', 'systemctl restart owl-frontend',
                                      'systemctl start owl-frontend', 'systemctl reload nginx')) for event in events), events
+
+
+def _running_under_the_supervisor(project, migrations='none'):
+    """The second backend release after the switch: the unit's main process is the supervisor."""
+    import hashlib
+    (project / 'units').mkdir(exist_ok=True)
+    (project / 'units/owl-backend-v2.service').write_text(
+        "[Service]\nExecStart=/bin/bash -lc 'exec /venv/bin/uvicorn main:app --host 0.0.0.0 --port ${API_PORT:-8002} --workers 2'\n")
+    (project / 'deploy/backend-socket.conf').write_text('held\n')
+    (project / 'deploy/backend-restart.conf').write_text('handover\n')
+    (project / 'deploy/migration_safety.py').write_text(f'print("{migrations}")\n')
+    sha = hashlib.sha256((project / 'deploy/backend_supervisor.py').read_bytes()).hexdigest()
+    (project / 'deploy/logs/backend-supervisor.json').write_text(json.dumps(
+        dict(pid='inactive', script_sha=sha, handovers=0, handover=dict(phase='done'))))
+    (project / 'deploy/logs/.backend-started-unit').write_text(hashlib.sha256((project / '.env').read_bytes()).hexdigest() + '\n')
+
+
+USR2, HUP, QUIT = ('systemctl kill --kill-whom=main --signal=SIG%s owl-backend-v2' % name for name in ('USR2', 'HUP', 'QUIT'))
+
+
+def test_a_release_hands_over_without_stopping_the_backend(release_sandbox):
+    _running_under_the_supervisor(release_sandbox)
+    result, events = run_release(release_sandbox, 'deploy.sh', extra_env={'HANDOVER_ANSWER': 'ready'})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert 'systemctl stop --no-block owl-backend-v2' not in events
+    assert 'systemctl start owl-backend-v2' not in events
+    begin, commit = events.index(USR2), events.index(HUP)
+    assert 'gate' in events[begin:commit]  # the ingestion gate again, right before the old backend stops
+    assert 'The new backend took over' in result.stdout
+
+
+def test_a_new_backend_that_fails_leaves_the_old_one_and_undoes_the_release(release_sandbox):
+    _running_under_the_supervisor(release_sandbox)
+    result, events = run_release(release_sandbox, 'deploy.sh', extra_env={'HANDOVER_ANSWER': 'failed'})
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert HUP not in events
+    assert 'systemctl stop --no-block owl-backend-v2' not in events  # never stopped, not even by the rollback
+    assert 'systemctl start owl-backend-v2' not in events
+    assert any(e.startswith('git reset --hard') for e in events)
+    assert (release_sandbox / 'deploy/logs/.backend-handover-failed').read_text().strip() == 'it did not start'
+    assert 'old one is still serving' in result.stdout
+    assert 'Health check failed' not in result.stdout
+
+
+def test_a_failed_handover_keeps_the_record_of_what_runs(release_sandbox):
+    _running_under_the_supervisor(release_sandbox)
+    components = release_sandbox / 'deploy/logs/.last-good-components'
+    components.write_text('backend_commit=the-old-backend\n')
+    result, _ = run_release(release_sandbox, 'deploy.sh', extra_env={'HANDOVER_ANSWER': 'failed'})
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert components.read_text() == 'backend_commit=the-old-backend\n'
+
+
+def test_after_a_failed_handover_the_next_release_restarts(release_sandbox):
+    _running_under_the_supervisor(release_sandbox)
+    (release_sandbox / 'deploy/logs/.backend-handover-failed').write_text('earlier\n')
+    result, events = run_release(release_sandbox, 'deploy.sh', extra_env={'HANDOVER_ANSWER': 'ready'})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert USR2 not in events
+    assert 'systemctl stop --no-block owl-backend-v2' in events
+    assert not (release_sandbox / 'deploy/logs/.backend-handover-failed').exists()
+
+
+def test_an_upload_arriving_during_the_start_defers_and_keeps_the_old_backend(release_sandbox):
+    _running_under_the_supervisor(release_sandbox)
+    result, events = run_release(release_sandbox, 'deploy.sh', arrives_after=USR2,
+                                 extra_env={'HANDOVER_ANSWER': 'ready'})
+    assert result.returncode == 75, result.stdout + result.stderr
+    assert 'Release deferred' in result.stderr + result.stdout
+    assert QUIT in events and HUP not in events
+    assert 'systemctl stop --no-block owl-backend-v2' not in events
+    # The old backend runs from the checkout it started from, whatever is in progress.
+    assert any(e.startswith('git reset --hard') for e in events)
+    assert not (release_sandbox / 'deploy/logs/.backend-handover-failed').exists()
+
+
+def test_a_migration_the_old_backend_cannot_live_with_uses_a_restart(release_sandbox):
+    _running_under_the_supervisor(release_sandbox, migrations='unsafe r1: op.drop_table')
+    result, events = run_release(release_sandbox, 'deploy.sh', extra_env={'HANDOVER_ANSWER': 'ready'})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert USR2 not in events
+    assert 'systemctl stop --no-block owl-backend-v2' in events
+    assert 'op.drop_table' in result.stdout
+
+
+def test_a_failed_health_check_after_a_handover_rolls_back_with_a_restart(release_sandbox):
+    _running_under_the_supervisor(release_sandbox)
+    result, events = run_release(release_sandbox, 'deploy.sh', health_failure=True,
+                                 extra_env={'HANDOVER_ANSWER': 'ready'})
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert HUP in events
+    assert events.index(HUP) < events.index('systemctl stop --no-block owl-backend-v2')

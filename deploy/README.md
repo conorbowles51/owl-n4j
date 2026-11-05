@@ -210,6 +210,24 @@ PLATFORM_UPDATE_POLL_SECONDS=60
 
 Set `PLATFORM_UPDATE_POLL_SECONDS=3600` later if you want hourly checks.
 
+## Replacing the backend without a wait
+
+A release that changes the backend restarts it, and requests wait in the held API port's queue while the new workers
+start. With `deploy/backend-restart.conf` (or `/etc/default/owl-backend-restart`, which overrides it on the host) set
+to `handover`, the unit's main process is `deploy/backend_supervisor.py`, installed to `/usr/local/lib/loupe`. A release
+then starts the new backend beside the old one on the same socket, so nginx and every client keep the same address;
+the old backend stops only after each new worker has answered `/health` as healthy and the ingestion gate has passed
+again, and it finishes its requests within the usual stop bounds.
+
+- A new backend that does not come up is stopped. The old one keeps serving, the checkout goes back and the release
+  reports NOT RELEASED. `deploy/logs/.backend-handover-failed` says why; the next release uses a restart and clears it.
+- Rule for migrations: a release hands over only when every pending migration is additive
+  (`deploy/migration_safety.py`). Any other migration uses a restart.
+- A changed `.env`, unit file or supervisor also uses a restart: the environment is read once, when the unit starts.
+- Every background loop states its owner in `backend/services/backend_handover.py` (`BACKGROUND_LOOPS`).
+- Way back: set the switch to `restart`; the next restart puts the plain unit back. Rollback always uses a restart.
+- Rehearsal on a throwaway port under real systemd: `deploy/tests/rehearse-handover.sh <python with uvicorn>`.
+
 ## Rolling Back
 
 ```bash
