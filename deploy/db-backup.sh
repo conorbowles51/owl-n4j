@@ -162,7 +162,7 @@ do_dump() {
         alert "dump ${name} has no counts file: the snapshot session failed; the drill cannot check it exactly"
     fi
     printf 'taken_utc=%s\napp_commit=%s\n' "$(date -u -d "@$(now)" +%FT%TZ)" \
-        "$(git -c safe.directory='*' -C "${LIVE_CHECKOUT}" rev-parse HEAD 2>/dev/null || echo unknown)" > "${BACKUP_DIR}/${name%.dump}.meta"
+        "$(sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p' <<<"$(curl -fsS -m 5 "${BACKUP_HEALTH_URL:-http://127.0.0.1:${API_PORT:-8002}/health}" 2>/dev/null)" | grep . || echo unknown)" > "${BACKUP_DIR}/${name%.dump}.meta"
     log "wrote ${name} (${size} bytes, $(( $(date -u +%s) - started )) s)"
     prune
 }

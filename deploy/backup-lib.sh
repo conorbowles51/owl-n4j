@@ -78,10 +78,17 @@ wait_for_memory() {  # <MB the scratch work needs>: 0 once MemAvailable clears i
     done
 }
 
+served_commit() {  # the commit /health reports; the live checkout can be ahead of what is served during a release
+    local body
+    body="$(curl -fsS -m 5 "${BACKUP_HEALTH_URL:-http://127.0.0.1:${API_PORT:-8002}/health}" 2>/dev/null)" || body=""
+    body="$(sed -n 's/.*"commit":"\([0-9a-f]\{40\}\)".*/\1/p' <<<"${body}")"
+    printf '%s\n' "${body:-unknown}"
+}
+
 write_meta() {  # <file> [key=value ...]: the recovery set's application version and image
     {
         printf 'taken_utc=%s\n' "$(date -u -d "@$(now)" +%FT%TZ)"
-        printf 'app_commit=%s\n' "$(git -c safe.directory='*' -C "${LIVE_CHECKOUT}" rev-parse HEAD 2>/dev/null || echo unknown)"
+        printf 'app_commit=%s\n' "$(served_commit)"
         local kv; for kv in "${@:2}"; do printf '%s\n' "${kv}"; done
     } > "$1"
 }

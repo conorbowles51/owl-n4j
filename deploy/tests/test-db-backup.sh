@@ -42,6 +42,9 @@ chmod +x "${fake}"
 alert_cmd="${test_root}/alert"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$1" >> %q\n' "${alerts}" > "${alert_cmd}"; chmod +x "${alert_cmd}"
 
+served=1234567890123456789012345678901234567890
+printf '{"status":"ok","commit":"%s"}' "${served}" > "${test_root}/health.json"
+export BACKUP_HEALTH_URL="file://${test_root}/health.json"
 run() {  # <now-epoch> <dump|check>
     env BACKUP_DIR="${dir}" DOCKER="${fake}" FAKE_MODE="${mode}" BACKUP_ALERT_CMD="${alert_cmd}" \
         NOW_EPOCH="$1" bash "${script}" "$2" >> "${test_root}/log" 2>&1
@@ -61,7 +64,7 @@ run "$(epoch '2026-11-04 01:30')" dump || fail "good dump failed"
 ls -A "${dir}" | grep -q partial && fail "partial left behind"
 [[ -s "${mode}.seen" ]] || fail "pg_dump did not read the session's snapshot"
 grep -q "z_rows.abc.7" "${dir}/owl_db-20261104-0130Z.counts.tsv" || fail "no counts file beside the dump"
-grep -q "app_commit=" "${dir}/owl_db-20261104-0130Z.meta" || fail "no meta file beside the dump"
+grep -q "app_commit=${served}" "${dir}/owl_db-20261104-0130Z.meta" || fail "the meta file does not name the served commit"
 run "$(epoch '2026-11-04 12:00')" check || fail "fresh dump failed the check"
 
 # 2b. The snapshot session fails, or the counts are cut off: the dump is still written, no counts file, and an alert.
