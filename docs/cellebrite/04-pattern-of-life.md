@@ -1702,9 +1702,17 @@ Each is a decision with its reasoning and what would reverse it.
     over a place keeps the earlier row with the decision that ended it. The decision ledger refuses floats in a
     snapshot, so coordinates are stored there as 7-place decimal strings and the radius in whole metres (1 to
     50,000). Each change also writes one corrections-feed line (rule 11). The `claim_text` target lands with claims
-    (U11), where a claim's place is a claim field with the claim's own version history. A gazetteer suggestion over
-    `counterparty_raw` waits for an in-house gazetteer (decision 25). *Reverse if* the ledger gains an
-    account-to-dossier link (then a person's lane is that person's accounts), or a gazetteer is installed.
+    (U11), where a claim's place is a claim field with the claim's own version history. The offline place list (decision 25,
+    GeoNames `cities1000`) suggests a town from the payment's `description`, else `counterparty_raw`, read on the
+    server: a town counts only when the last line ends with its name and the two-letter region it is in, and the
+    longest such name wins. A line with no region code gives no suggestion. Of 32,727 distinct admitted payee texts,
+    the commonest matches on lines without a region code are surnames and months, and on lines with one, towns. A
+    suggestion is shown "Suggested, not confirmed"; using one only fills the form with the town and a 5,000 m radius,
+    and nothing is saved until the person writes why and saves, under their own name. The ledger decision keeps the
+    list's own entry in `after.suggestion` (`GET /{case_id}/places/manual/{transaction_id}/suggestions`; the entry is
+    re-read from the list at save, never taken from the request). *Reverse if* the ledger gains an account-to-dossier
+    link (then a person's lane is that person's accounts), or a reviewed sample shows lines with no region code
+    naming towns.
 
 29. **Statement check as built (04-U11; `services/pattern_of_life/claims.py`, `evaluation.py`, migration
     `20261102_pol_claims`, routes under `/api/pattern/{case}/claims`).** A claim is confirmed only by a signed-in

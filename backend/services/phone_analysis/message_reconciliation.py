@@ -25,8 +25,12 @@ Decisions (05 section 19, 19.S5-a to 19.S5-g):
   phone's owner and the other phone's owner is a recipient or participant); a message to a third person is not
   expected on the other phone.
 - 19.S5-f Copies of one message on one phone (02's duplicate group) count once: the first record of the group.
-- 19.S5-g Reasons not computed yet: the counterpart's gap (approach 3 holes) and leaving a group before the time
-  (ChatActivity parties are "participant named", 19.S7-b, so who left is not established).
+- 19.S5-g The counterpart's gap: the message time, on the other phone's clock where the pair has an established
+  offset for the family, lies inside a hole (approach 3's rule, ``conversation_gaps``, at its default threshold) of a
+  conversation linked to this message's by a strong match (the link of 19.S6-c). Read from records, never from a run
+  of approach 3, so neither approach waits on the other. A gap is a reason to look, not an account of the absence, so
+  it does not make a message "explained". Leaving a group before the time stays unbuilt: ChatActivity parties are
+  "participant named", 19.S7-b, so who left is not established.
 """
 from __future__ import annotations
 
@@ -35,16 +39,19 @@ import math
 import statistics
 import unicodedata
 from collections import Counter, defaultdict
+from datetime import timedelta
 from itertools import combinations
 
 from sqlalchemy import text
 
 from services.phone import identities
 from services.phone.fold import STYLED, _WS, _strip_format
+from services.phone_analysis import conversation_gaps as G
 from services.phone_analysis import fields as FV
 
 CODE = "message_reconciliation"
-VERSION = "2.3"
+VERSION = "2.4"  # 2.4: the other phone's conversation gap as a reason (19.S5-g)
+VERSION_SOURCES = ("conversation_gaps",)
 PARAMETERS = {
     "tau_s": {"type": "number", "default": 120, "min": 1, "max": 3600,
               "label": "Seconds two copies may differ after the clock offset"},
@@ -55,7 +62,7 @@ KINDS = ("both_sides", "deleted_one_side", "one_side_only", "ambiguous_pair", "c
 SUPPORTS = ("content_equal", "attachment_equal", "time_agrees", "participants_agree", "reviewed_merge")
 UNDERCUTS = ("identity_unreviewed", "server_stamped", "clock_offset_unknown", "multi_device_account",
              "edited_or_recalled", "media_recompressed", "counterpart_extraction_ended", "counterpart_app_no_data",
-             "counterpart_owner_unknown")
+             "counterpart_owner_unknown", "counterpart_conversation_gap")
 DIRECTION_CODES = SUPPORTS + UNDERCUTS
 SIGNALS = [
     {"code": "messages", "label": "Messages with a time"},
@@ -333,6 +340,18 @@ def match_pair(px, py, ox, oy, params) -> dict:
     return {"matched": matched, "ambiguous": ambiguous, "offsets": offsets, "used_x": used_x, "used_y": used_y}
 
 
+def strong_links(matched, px, py) -> dict:
+    """``{(side, thread): threads on the other side}``: two conversations are linked when a message of each is a
+    strong match of the other (19.S6-c)."""
+    links = defaultdict(set)
+    for c in matched:
+        tx, ty = px["msgs"][c[1]]["thread"], py["msgs"][c[2]]["thread"]
+        if c[3] == "matched_strong" and tx and ty:
+            links[(0, tx)].add(ty)
+            links[(1, ty)].add(tx)
+    return links
+
+
 DEVICE_ITEMS = ("IMEI", "Serial", "Factory number", "DeviceInfoAndroidID", "DeviceInfoSerial")
 
 
@@ -421,12 +440,29 @@ def _absent_reasons(m, py, start_y):
     return reasons
 
 
+def gap_over(m, threads, holes, shift_s=0.0):
+    """The hole of a linked conversation on the other phone that the message time falls in, or None (19.S5-g).
+    ``shift_s`` moves the time onto the other phone's clock."""
+    t = m["t"] + timedelta(seconds=shift_s)
+    for th in sorted(threads, key=str):
+        for h in holes.get(th, ()):
+            if h["start"] < t < h["end"]:
+                return h
+    return None
+
+
+def _gap_reason(hole):
+    return _d("counterpart_conversation_gap", "The other phone's conversation has a gap here: nothing intact for %.0f "
+              "days around this time, while the same app was recording other conversations on that phone."
+              % ((hole["end"] - hole["start"]).total_seconds() / 86400), [hole["before"], hole["after"]])
+
+
 def analyse(conn, case_id, params, ctx=None) -> tuple:
     params = {k: (params or {}).get(k, v["default"]) for k, v in PARAMETERS.items()}
     labels = FV.active_phones(conn, case_id)
     people = _people(conn, case_id)
     exts = sorted(labels, key=lambda e: (labels[e], e))
-    data, owners, starts, devices = {}, {}, {}, {}
+    data, owners, starts, devices, holes = {}, {}, {}, {}, {}
     counts = Counter()
     out = []
     for n, ext in enumerate(exts):
@@ -439,6 +475,7 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
         from services.pattern_of_life.availability import extraction_start
         starts[ext] = extraction_start(conn, ext)
         devices[ext] = device_ids(conn, ext)
+        holes[ext] = G.phone_holes(conn, ext)
     pairs = list(combinations(exts, 2))
     for n, (x, y) in enumerate(pairs):
         if ctx is not None:
@@ -497,6 +534,7 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                         "period_start": None, "period_end": None,
                         "records": [_rec(x, px["msgs"][anchor[1]]["uid"], "anchor", "offset:%s:%s" % (fam, y)),
                                     _rec(y, py["msgs"][anchor[2]]["uid"], "anchor", "offset:%s:%s" % (fam, x))]})
+        links = strong_links(res["matched"], px, py)
         for side, (a, b, pa, pb, oa, ob, used) in enumerate(((x, y, px, py, ox, oy, res["used_x"]),
                                                               (y, x, py, px, oy, ox, res["used_y"]))):
             if not ob:
@@ -505,11 +543,19 @@ def analyse(conn, case_id, params, ctx=None) -> tuple:
                 if idx in used or not between_owners(m, oa, ob):
                     continue
                 reasons = _absent_reasons(m, pb, starts[b])
+                measures = {"phones": [labels[a], labels[b]], "on": labels[a], "not_on": labels[b],
+                            "family": m["family"], "deleted": m["deleted"]}
+                offset = res["offsets"].get(m["family"], {}).get("offset_s") or 0.0
+                hole = gap_over(m, links.get((side, m["thread"]), ()), holes[b], offset if side == 0 else -offset)
+                gap = []
+                if hole:
+                    counts["one_side_only_in_gap"] += 1
+                    gap = [_gap_reason(hole)]
+                    measures.update(gap_start=hole["start"], gap_end=hole["end"])
                 counts["one_side_only"] += 1
                 out.append({"kind": "one_side_only", "strength": "explained" if reasons else "unexplained",
-                            "measures": {"phones": [labels[a], labels[b]], "on": labels[a], "not_on": labels[b],
-                                         "family": m["family"], "deleted": m["deleted"]},
-                            "directions": {"supports": [], "undercuts": reasons},
+                            "measures": measures,
+                            "directions": {"supports": [], "undercuts": reasons + gap},
                             "period_start": m["t"], "period_end": m["t"],
                             "records": [_rec(a, m["uid"], "message", "absent_on:%s" % b)]})
     if ctx is not None:

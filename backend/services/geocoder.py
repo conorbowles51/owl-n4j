@@ -554,6 +554,61 @@ def forward_candidates(text: str, limit: int = FORWARD_LIMIT) -> Dict[str, Any]:
             "attribution": GEONAMES_ATTRIBUTION}
 
 
+_PAYEE_SPLIT = _re.compile(r"[\s,]+")
+PAYEE_MAX_WORDS = 3
+
+
+def payee_tail(text: str) -> tuple:
+    """(names longest first, region code) from a payment's written payee: a card line ends with a town and a two-letter
+    region ("FOOD LION #1234 BATTLEBORO NC"). Only the last line is read, and only the words after the last one that
+    holds a digit, ``#``, ``*`` or ``/`` (store numbers, phone numbers and dates end the merchant's name). A line with no
+    trailing region code gives nothing: on 32,727 real payee texts, the commonest matches on lines without one were
+    surnames and months (gonzalez, hernandez, vazquez, may, nov), and on lines with one, towns."""
+    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
+    if not lines:
+        return [], None
+    words = [w for w in _PAYEE_SPLIT.split(lines[-1].strip()) if w]
+    if len(words) < 2 or not (len(words[-1]) == 2 and words[-1].isalpha() and words[-1].isupper()):
+        return [], None
+    region = words[-1]
+    tail = []
+    for w in reversed(words[:-1]):
+        if any(ch.isdigit() or ch in "#*/" for ch in w):
+            break
+        tail.insert(0, w)
+    names = []
+    for n in range(min(PAYEE_MAX_WORDS, len(tail)), 0, -1):
+        name = fold_place_name(" ".join(tail[-n:]))
+        if len(name) >= 3 and name not in names:
+            names.append(name)
+    return names, region
+
+
+def payee_candidates(text: str, limit: int = FORWARD_LIMIT) -> Dict[str, Any]:
+    """GeoNames places a payment's written payee names, in the shape of ``forward_candidates``: a place of the name at
+    the end of the text in the region code that closes it. The longest name that matches wins, so "SAN DIEGO CA" never
+    offers a town called Diego. Raises ``LookupError`` when the index is not installed."""
+    src = forward_source()
+    if not src["available"]:
+        raise LookupError(src["reason"])
+    names, region = payee_tail(text)
+    out = []
+    with _sqlite3.connect(_ro_uri(src["path"]), uri=True) as db:
+        countries, _ = _countries(db, src["path"])
+        for name in names:
+            rows = db.execute(
+                "SELECT geonameid, name, lat, lon, cc, admin1_code, admin1, population FROM place WHERE fold = ? AND "
+                "(admin1_code = ? OR cc = ?)", (name, region, region)).fetchall()
+            if rows:
+                rows.sort(key=lambda r: (r[5] != region, -(r[7] or 0), r[0]))
+                out = [{"name": n, "lat": lat, "lon": lon, "country_code": cc, "country": countries.get(cc or ""),
+                        "admin1": a1, "population": pop, "geonameid": gid, "matched": "%s %s" % (name, region)}
+                       for gid, n, lat, lon, cc, _a1c, a1, pop in rows]
+                break
+    return {"total": len(out), "returned": min(len(out), limit), "limit": limit, "candidates": out[:limit],
+            "attribution": GEONAMES_ATTRIBUTION}
+
+
 if __name__ == "__main__":  # pragma: no cover - operator command
     if _sys.argv[1:2] == ["build-forward-index"]:
         print(build_forward_index(*(_sys.argv[2:4])))

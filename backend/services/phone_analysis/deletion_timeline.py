@@ -43,14 +43,17 @@ from datetime import timedelta
 from sqlalchemy import text
 
 from services.phone import ids
+from services.phone_analysis import conversation_gaps as G
 from services.phone_analysis import fields as FV
+from services.phone_analysis.conversation_gaps import holes_in  # noqa: F401 - the rule's public name here
 
 CODE = "deletion_timeline"
 VERSION = "3.3"  # 3.3: holes confirmed by the counterpart phone (19.S6-c)
+VERSION_SOURCES = ("conversation_gaps",)
 PARAMETERS = {
     "clearing_min_messages": {"default": 20, "min": 5, "max": 1000},
     "clearing_q": {"default": 0.05, "min": 0.001, "max": 0.2},
-    "hole_min_days": {"default": 7, "min": 1, "max": 365},
+    "hole_min_days": {"default": G.HOLE_MIN_DAYS, "min": 1, "max": 365},
 }
 KINDS = ("deleted_record", "referenced_message_absent", "selective_clearing", "hole", "hole_confirmed_by_counterpart",
          "concealment_app",
@@ -63,7 +66,7 @@ UNDERCUTS = ("bounded_by_extraction_only", "auto_delete_setting", "view_once", "
              "reference_id_local", "wipe_scope_unknown", "explained_excluded", "time_not_recorded",
              "synced_attribution")
 DIRECTION_CODES = SUPPORTS + UNDERCUTS
-DELETED = ("Deleted", "Trash")
+DELETED = G.DELETED
 CONCEALMENT_CATEGORIES = ("HideFilesPictures", "FakeGPS", "CleanMobile")
 EXPLANATIONS = ("explained_by_setting", "explained_by_view_once", "user_deleted", "recalled_by_sender", "unexplained")
 SIGNALS = [
@@ -149,31 +152,6 @@ def benjamini_hochberg(pvalues: list) -> list:
     return q
 
 
-def _percentile(values, pct):
-    """Nearest-rank percentile."""
-    if not values:
-        return None
-    s = sorted(values)
-    return s[max(0, math.ceil(pct / 100.0 * len(s)) - 1)]
-
-
-def holes_in(times: list, min_gap: timedelta) -> list:
-    """Gaps between consecutive intact message times longer than ``min_gap`` and longer than the 99th percentile of
-    the conversation's other gaps (19.S6-a). ``times`` sorted. Returns [(start, end)]."""
-    gaps = [(times[i], times[i + 1]) for i in range(len(times) - 1)]
-    if len(gaps) < 2:
-        return []
-    secs = [(b - a).total_seconds() for a, b in gaps]
-    out = []
-    for i, (a, b) in enumerate(gaps):
-        if secs[i] <= min_gap.total_seconds():
-            continue
-        others = secs[:i] + secs[i + 1:]
-        if secs[i] > _percentile(others, 99):
-            out.append((a, b))
-    return out
-
-
 # ---- reading -----------------------------------------------------------------------------------------------------
 
 def _extraction_start(conn, ext):
@@ -182,9 +160,7 @@ def _extraction_start(conn, ext):
 
 
 def _messages(conn, ext) -> list:
-    return conn.execute(text(
-        "SELECT record_uid::text AS uid, thread_key, coalesce(app, '') AS app, sort_instant, deleted_state FROM "
-        "pv_comm_event WHERE extraction_id = :e AND kind = 'message'"), {"e": ext}).mappings().all()
+    return G.phone_messages(conn, ext)
 
 
 def _deleted_records(conn, ext) -> list:
@@ -303,10 +279,7 @@ def analyse_phone(conn, ext, label, params, counts, counterpart=None) -> list:
                         _rec(ext, ref_uid, "reference", "OriginalMessageID")]})
 
     # 4. selective clearing and holes, per conversation, against the phone's baseline for the app
-    convs = defaultdict(list)
-    for m in msgs:
-        if m["thread_key"]:
-            convs[(m["app"], m["thread_key"])].append(m)
+    convs = G.conversations(msgs)
     per_app = defaultdict(lambda: [0, 0])  # app -> [unexplained deleted, considered]
     stats = {}
     for key, ms in convs.items():
@@ -361,56 +334,42 @@ def analyse_phone(conn, ext, label, params, counts, counterpart=None) -> list:
                         [_rec(ext, deleted_uids[0], "conversation", "thread:" + key[1])])})
 
     # holes: gaps between intact messages, inside the app's own recording on the phone (19.S6-b)
-    app_times = defaultdict(list)
-    for m in msgs:
-        if m["sort_instant"]:
-            app_times[m["app"]].append((m["sort_instant"], m["thread_key"]))
-    min_gap = timedelta(days=params["hole_min_days"])
-    for key, ms in convs.items():
-        intact = sorted((m["sort_instant"], m["uid"]) for m in ms if m["sort_instant"] and m["deleted_state"] not in
-                        DELETED)
-        if len(intact) < 3:
-            continue
-        uid_at = {}
-        for t, u in intact:
-            uid_at.setdefault(t, u)
-        for a, b in holes_in([t for t, _ in intact], min_gap):
-            elsewhere = sum(1 for t, th in app_times[key[0]] if a < t < b and th != key[1])
-            if not elsewhere:
-                counts["gaps_without_app_data"] += 1
-                continue
-            copies = [c for c in (counterpart or {}).get((ext, key[1]), ()) if a < c["t"] < b]
-            measures = {"phone_label": label, "app": key[0], "thread_key": key[1], "gap_start": a, "gap_end": b,
-                        "gap_days": round((b - a).total_seconds() / 86400, 2),
-                        "app_messages_elsewhere_in_gap": elsewhere}
-            supports = [_d("bounded_by_intact", "Intact messages sit on both sides of the gap.",
-                           [uid_at[a], uid_at[b]]),
-                        _d("app_recording_in_gap", "The same app holds %d messages in other conversations on this "
-                           "phone during the gap." % elsewhere)]
-            if copies:
-                counts["holes_confirmed_by_counterpart"] += 1
-                names = sorted({c["phone_label"] for c in copies})
-                absent = sum(1 for c in copies if not c["deleted_here"])
-                measures.update(counterpart_messages_in_gap=len(copies), counterpart_phones=names,
-                                counterpart_absent_here=absent, counterpart_deleted_here=len(copies) - absent,
-                                counterpart_linked=min(len(copies), COUNTERPART_LINKS))
-                supports.append(_d("counterpart_copy_in_gap", "%s %s %d %s of this conversation inside the gap: %d "
-                                   "not on this phone, %d deleted here.%s" % (
-                                       " and ".join(names), "holds" if len(names) == 1 else "hold", len(copies),
-                                       "message" if len(copies) == 1 else "messages", absent, len(copies) - absent,
-                                       "" if len(copies) <= COUNTERPART_LINKS else " %d of them are linked."
-                                       % COUNTERPART_LINKS), [c["uid"] for c in copies[:COUNTERPART_LINKS]]))
-            else:
-                counts["holes"] += 1
-            out.append({
-                "kind": "hole_confirmed_by_counterpart" if copies else "hole",
-                "strength": "confirmed_by_counterpart" if copies else "unconfirmed",
-                "measures": measures,
-                "directions": {"supports": supports,
-                               "undercuts": [_d("no_data_period", "A quiet period in a conversation is not by itself "
-                                                "a deletion; no message has to have existed.")]},
-                "period_start": a, "period_end": b,
-                "records": [_rec(ext, uid_at[a], "before_gap"), _rec(ext, uid_at[b], "after_gap")]})
+    holes, without_data = G.conversation_holes(msgs, timedelta(days=params["hole_min_days"]), convs)
+    counts["gaps_without_app_data"] += without_data
+    for hole in holes:
+        key, a, b, elsewhere = hole["key"], hole["start"], hole["end"], hole["elsewhere"]
+        copies = [c for c in (counterpart or {}).get((ext, key[1]), ()) if a < c["t"] < b]
+        measures = {"phone_label": label, "app": key[0], "thread_key": key[1], "gap_start": a, "gap_end": b,
+                    "gap_days": round((b - a).total_seconds() / 86400, 2),
+                    "app_messages_elsewhere_in_gap": elsewhere}
+        supports = [_d("bounded_by_intact", "Intact messages sit on both sides of the gap.",
+                       [hole["before"], hole["after"]]),
+                    _d("app_recording_in_gap", "The same app holds %d messages in other conversations on this "
+                       "phone during the gap." % elsewhere)]
+        if copies:
+            counts["holes_confirmed_by_counterpart"] += 1
+            names = sorted({c["phone_label"] for c in copies})
+            absent = sum(1 for c in copies if not c["deleted_here"])
+            measures.update(counterpart_messages_in_gap=len(copies), counterpart_phones=names,
+                            counterpart_absent_here=absent, counterpart_deleted_here=len(copies) - absent,
+                            counterpart_linked=min(len(copies), COUNTERPART_LINKS))
+            supports.append(_d("counterpart_copy_in_gap", "%s %s %d %s of this conversation inside the gap: %d "
+                               "not on this phone, %d deleted here.%s" % (
+                                   " and ".join(names), "holds" if len(names) == 1 else "hold", len(copies),
+                                   "message" if len(copies) == 1 else "messages", absent, len(copies) - absent,
+                                   "" if len(copies) <= COUNTERPART_LINKS else " %d of them are linked."
+                                   % COUNTERPART_LINKS), [c["uid"] for c in copies[:COUNTERPART_LINKS]]))
+        else:
+            counts["holes"] += 1
+        out.append({
+            "kind": "hole_confirmed_by_counterpart" if copies else "hole",
+            "strength": "confirmed_by_counterpart" if copies else "unconfirmed",
+            "measures": measures,
+            "directions": {"supports": supports,
+                           "undercuts": [_d("no_data_period", "A quiet period in a conversation is not by itself "
+                                            "a deletion; no message has to have existed.")]},
+            "period_start": a, "period_end": b,
+            "records": [_rec(ext, hole["before"], "before_gap"), _rec(ext, hole["after"], "after_gap")]})
 
     # 5. concealment context
     apps = FV.field_values(conn, ext, ("InstalledApplication",), ("Categories", "Name", "Identifier"))
@@ -508,7 +467,7 @@ def counterpart_copies(conn, case_id, phones) -> dict:
         if R.same_device(devices[x], devices[y]) or not R.candidate_pair(px, py, owners[x], owners[y]):
             continue
         res = R.match_pair(px, py, owners[x], owners[y], params)
-        links = defaultdict(set)   # (side, thread) -> threads on the other side
+        links = R.strong_links(res["matched"], px, py)
         copy_of = ({}, {})         # message index on one side -> its matched index on the other
         tied = (set(), set())      # messages with two equally close copies: neither side is said to lack them
         for ties in res["ambiguous"]:
@@ -518,9 +477,6 @@ def counterpart_copies(conn, case_id, phones) -> dict:
         for c in res["matched"]:
             i, j = c[1], c[2]
             copy_of[0][i], copy_of[1][j] = j, i
-            if c[3] == "matched_strong" and px["msgs"][i]["thread"] and py["msgs"][j]["thread"]:
-                links[(0, px["msgs"][i]["thread"])].add(py["msgs"][j]["thread"])
-                links[(1, py["msgs"][j]["thread"])].add(px["msgs"][i]["thread"])
         for side, (here, there, ph, pt) in enumerate(((x, y, px, py), (y, x, py, px))):
             theirs = copy_of[1 - side]    # there-index -> here-index
             by_thread = defaultdict(list)

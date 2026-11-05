@@ -700,10 +700,15 @@ export interface SpreadCopy {
   messages: { message_record_uid: string; kind: string | null; direction: string | null; role: string; instant: string | null; full: string; app: string | null; deleted: boolean; line: string | null }[]
   note: string | null; camera: { make: string | null; model: string | null } | null; in_camera_folder: boolean
   camera_original_candidate: boolean | null; camera_original_words: string | null
-  place: { latitude: string | null; longitude: string | null; combined: string | null; source: string; words: string } | null
+  place: {
+    latitude: string | null; longitude: string | null; combined: string | null; source: string; words: string
+    taken_on_this_phone?: boolean
+    model?: { kind: string; presence_basis: string | null; lat: number; lon: number; radius_m: number | null; flags: string[] } | null
+  } | null
 }
 export interface SpreadPhone {
   extraction_id: string; phone_label: string; position: number | null; earliest: SpreadTime | null; roles: string[]
+  clock_shift_s?: number | null
   camera_original_candidate: boolean; copy_count: number; copies_shown: number; copies_words: string | null; copies: SpreadCopy[]
 }
 export interface SpreadGroup {
@@ -711,6 +716,7 @@ export interface SpreadGroup {
   common_file: boolean; common_words: string | null; sha256_disagrees: boolean; sha256_words: string | null
   category: string | null; filename: string; size: number | null; thumbnail_file_uid: string | null
   clock_offset_unknown: boolean; clock_words: string; camera_original_candidates: number; phones: SpreadPhone[]; tier: "exact"
+  clock_offsets?: { phones: string[]; family: string | null; timestamp_class: string | null; offset_s: number | null; pairs: number | null; spread_s: number | null; words: string }[]
 }
 export interface SpreadFilter { phones?: string[]; common?: "all" | "hide" | "only" }
 export async function getMediaSpreadIndex(caseId: string) {

@@ -407,6 +407,7 @@ class ManualPlaceRequest(BaseModel):
     lon: float = Field(ge=-180, le=180)
     radius_m: int = Field(ge=1, le=50000)
     reason: str = Field(min_length=1, max_length=4000)
+    suggestion: dict | None = None
 
 
 class ManualPlaceRemoval(BaseModel):
@@ -430,7 +431,8 @@ def post_manual_place(body: ManualPlaceRequest, case_id: UUID = Depends(require_
     from services.pattern_of_life import money
     try:
         out = money.attach(db, case_id, body.target.transaction_id, lat=body.lat, lon=body.lon,
-                           radius_m=body.radius_m, reason=body.reason, actor=_place_actor(user))
+                           radius_m=body.radius_m, reason=body.reason, actor=_place_actor(user),
+                           suggestion=body.suggestion)
     except money.MoneyError as exc:
         raise HTTPException(status_code=exc.status, detail=str(exc))
     db.commit()
@@ -455,6 +457,17 @@ def get_manual_place_history(transaction_id: UUID, case_id: UUID = Depends(requi
     from services.pattern_of_life import money
     rows = money.history(db.connection(), case_id, transaction_id)
     return _jsonable({"total": len(rows), "items": rows})
+
+
+@router.get("/{case_id}/places/manual/{transaction_id}/suggestions")
+def get_manual_place_suggestions(transaction_id: UUID, case_id: UUID = Depends(require_case_view),
+                                 db: Session = Depends(get_db)):
+    """Towns the payment's payee text names, from the offline list: suggestions only, nothing is saved (04 8.5)."""
+    from services.pattern_of_life import money
+    try:
+        return _jsonable(money.suggest_place(db, case_id, transaction_id))
+    except money.MoneyError as exc:
+        raise HTTPException(status_code=exc.status, detail=str(exc))
 
 
 # ---- text places (04 section 6.5) ----------------------------------------------------------------------------------

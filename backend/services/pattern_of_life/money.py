@@ -41,6 +41,11 @@ SUBJECT_WORDS = ("Bank accounts are not linked to phones or people in the ledger
                  "payments, narrowed only by the accounts chosen.")
 
 
+SUGGESTION_WORDS = ("A town the payment's own text names, from the offline place list. A card line can name a head "
+                    "office or the card's billing town rather than where the money was spent. Nothing is saved until "
+                    "a person attaches a place.")
+
+
 class MoneyError(ValueError):
     def __init__(self, message, status=400):
         super().__init__(message)
@@ -143,7 +148,58 @@ def _place_view(p):
     return {"lat": "%.7f" % p["lat"], "lon": "%.7f" % p["lon"], "radius_m": int(round(p["radius_m"]))}
 
 
-def attach(session, case_id, transaction_id, *, lat, lon, radius_m, reason, actor):
+def _payee_texts(t) -> list:
+    """The payment's written payee as the ledger holds it, the fuller field first. Never sent in a request."""
+    return [x for x in (t.description, t.counterparty_raw) if x and x.strip()]
+
+
+def _payee_offers(t) -> dict:
+    from services import geocoder
+    for written in _payee_texts(t):
+        out = geocoder.payee_candidates(written)
+        if out["candidates"]:
+            return out
+    return {"total": 0, "returned": 0, "limit": geocoder.FORWARD_LIMIT, "candidates": [],
+            "attribution": geocoder.GEONAMES_ATTRIBUTION}
+
+
+def suggest_place(session, case_id, transaction_id) -> dict:
+    """Towns the payment's own payee text names, from the offline place list, labelled as suggestions. Nothing is saved
+    here: a place exists on a payment only when a person attaches one (``attach``)."""
+    from services.pattern_of_life import text_places
+    t = _txn(session, case_id, transaction_id)
+    st = text_places.suggestion_status()
+    off = {"enabled": False, "reason": st["reason"], "total": 0, "returned": 0, "candidates": []}
+    if not st["enabled"]:
+        return off
+    try:
+        out = _payee_offers(t)
+    except LookupError as exc:
+        return dict(off, reason="Suggestions are off: %s" % exc)
+    return dict(out, enabled=True, reason=st["reason"], label="Suggested, not confirmed", words=SUGGESTION_WORDS)
+
+
+def _offered_suggestion(t, sug):
+    """What the ledger keeps of a suggestion the person used, taken from the list and not the request: a placement keeps
+    only a candidate the list really offered for this payment's text."""
+    if sug is None:
+        return None
+    from services.pattern_of_life import text_places
+    try:
+        wanted = text_places._clean_suggestion(sug)
+    except text_places.TextPlaceError as exc:
+        raise MoneyError(str(exc))
+    try:
+        offered = _payee_offers(t)["candidates"] if text_places.suggestion_status()["enabled"] else []
+    except LookupError:
+        offered = []
+    for c in offered:
+        if str(c["geonameid"]) == str(wanted["geonameid"]):
+            return text_places._sug_snapshot(text_places._clean_suggestion(c))
+    raise MoneyError("The suggestion is not one the list offered for this payment.")
+
+
+def attach(session, case_id, transaction_id, *, lat, lon, radius_m, reason, actor, suggestion=None):
     if not (-90 <= lat <= 90 and -180 <= lon <= 180):
         raise MoneyError("The point is not on the map.")
     if radius_m != int(radius_m) or not (1 <= radius_m <= MAX_RADIUS_M):
@@ -155,9 +211,13 @@ def attach(session, case_id, transaction_id, *, lat, lon, radius_m, reason, acto
     conn = session.connection()
     old = current_places(conn, case_id, [t.id]).get(t.id)
     after = {"place": _place_view({"lat": lat, "lon": lon, "radius_m": radius_m})}
+    before = {"place": _place_view(old)}
+    used = _offered_suggestion(t, suggestion)
+    if used:   # the ledger reads a pair as a diff, so both sides name the field
+        after["suggestion"], before["suggestion"] = used, None
     row = decisions.record(session, case_id=t.case_id, subject=t, subject_type=AdjudicationSubject.transaction,
                            decision=AdjudicationDecision.attach_transaction_place, reason=reason.strip(), actor=actor,
-                           before={"place": _place_view(old)}, after=after)
+                           before=before, after=after)
     if old:
         conn.execute(text("UPDATE pol_manual_place SET removed_decision_id = :d WHERE id = :i"),
                      {"d": row.id, "i": old["id"]})

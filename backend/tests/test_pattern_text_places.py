@@ -446,3 +446,24 @@ def test_with_no_event_time_a_records_start_field_is_its_time_not_its_earliest_t
         again = [i for i in _items(engine, case)["items"] if i["group"] == "calendar"][0]
         assert again["start_utc"] == DAY + timedelta(hours=9)
         assert again["end_utc"] == DAY + timedelta(hours=11)
+
+
+# ---- a payment's written payee (04 8.5; the same offline list) -------------------------------------------------------
+
+@pytest.mark.parametrize("written,ids", [
+    ("Withdrawal Debit Card\n01/02 3 1234567890 4 SYNTHETIC SHOP #1234 SPRINGFIELD IL", [1]),   # the last line, the town
+    ("SYNTHETIC SHOP SPRINGFIELD MO", [2]),                                                      # the region decides
+    ("SYNTHETIC SHOP 555-555-0100 DC", []),                                                      # no town after the number
+    ("PAGO SPEI SPRINGFIELD", []),                                                               # no region code: nothing
+    ("SYNTHETIC SHOP SPRINGFIELD ZZ", []),                                                       # not in that region
+    ("", []),
+])
+def test_a_payee_line_offers_its_town_only_in_the_region_that_closes_it(place_list, written, ids):
+    out = geocoder.payee_candidates(written)
+    assert [c["geonameid"] for c in out["candidates"]] == ids and out["total"] == len(ids)
+
+
+def test_a_payee_line_tries_the_longest_name_and_stops_at_a_store_number():
+    assert geocoder.payee_tail("SHOP #12 NEW SALEM IL") == (["new salem", "salem"], "IL")
+    assert geocoder.payee_tail("BIG SYNTHETIC SHOP NEW SALEM IL")[0][0] == "shop new salem"
+    assert geocoder.payee_tail("SHOP SALEM") == ([], None)

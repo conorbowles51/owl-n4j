@@ -176,3 +176,62 @@ def test_the_whole_day_window_holds_that_days_payments_and_not_the_next_days():
             t = client.get("/api/pattern/%s/window" % case, params={"at": "2026-03-04T23:00:00+00:00", "span": "1h",
                                                                     "zone": "UTC"}).json()
             assert t["money_total"] == 1
+
+
+def _town(monkeypatch, tmp_path):
+    from services import geocoder
+    from tests.test_pattern_text_places import _place_list
+    monkeypatch.setenv("LOUPE_REFERENCE_DATA_DIR", str(tmp_path / "ref"))
+    _place_list(tmp_path / "ref" / "geonames")
+    return geocoder
+
+
+@needs_template
+def test_a_payment_text_gives_a_suggestion_that_is_saved_only_when_a_person_attaches_it(monkeypatch, tmp_path):
+    from services.pattern_of_life import text_places
+    _town(monkeypatch, tmp_path)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            ids = ledger(c, case)
+            t = txn(c, case, ids, 0, tdate=date(2026, 3, 4))
+            plain = txn(c, case, ids, 1, tdate=date(2026, 3, 4))
+            c.execute(text("UPDATE financial_transactions SET description = 'SYNTHETIC SHOP #12 SPRINGFIELD IL' WHERE "
+                           "id = :t"), {"t": t})
+            c.execute(text("UPDATE financial_transactions SET description = 'PAGO SPEI' WHERE id = :t"), {"t": plain})
+        with Session(engine) as s:
+            monkeypatch.setattr(text_places, "suggestion_status",
+                                lambda: {"enabled": True, "places": 6, "reason": "Offline."})
+            out = money.suggest_place(s, case, t)
+            assert out["label"] == "Suggested, not confirmed" and [c["geonameid"] for c in out["candidates"]] == [1]
+            assert s.execute(text("SELECT count(*) FROM pol_manual_place")).scalar() == 0     # asking saves nothing
+            assert money.suggest_place(s, case, plain)["candidates"] == []
+            with pytest.raises(money.MoneyError):       # a point the list did not offer for this payment
+                money.attach(s, case, plain, lat=38.9, lon=-77.0, radius_m=100, reason="r", actor=ACTOR,
+                             suggestion=out["candidates"][0])
+            town = out["candidates"][0]
+            money.attach(s, case, t, lat=town["lat"], lon=town["lon"], radius_m=5000, reason="The line names the town",
+                         actor=ACTOR, suggestion=dict(town, name="Invented"))
+            s.commit()
+            row = s.execute(text("SELECT actor_email, after FROM adjudications WHERE subject_id = :t"), {"t": t}).one()
+            assert row.actor_email == "t@x.test"     # the person, never the list
+            assert row.after["suggestion"]["name"] == "Springfield"     # the list's own, not the request's
+            assert row.after["suggestion"]["source"] == "GeoNames (offline)"
+
+
+@needs_template
+def test_suggestions_off_are_said_and_a_superseded_row_is_refused(monkeypatch, tmp_path):
+    monkeypatch.setenv("LOUPE_REFERENCE_DATA_DIR", str(tmp_path / "nothing"))
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            ids = ledger(c, case)
+            t = txn(c, case, ids, 0, tdate=date(2026, 3, 4))
+            gone = txn(c, case, ids, 1, tdate=date(2026, 3, 4))
+            supersede(c, gone, t)
+        with Session(engine) as s:
+            out = money.suggest_place(s, case, t)
+            assert out["enabled"] is False and "not installed" in out["reason"] and out["candidates"] == []
+            with pytest.raises(money.MoneyError) as exc:
+                money.suggest_place(s, case, gone)
+            assert exc.value.status == 409

@@ -347,6 +347,16 @@ export interface KeyDate {
 const base = (caseId: string) => `/api/pattern/${encodeURIComponent(caseId)}`
 const subj = (s: Subject) => encodeURIComponent(JSON.stringify(s))
 
+/** A town the payment's own text names, from the offline place list: a suggestion, never a place until a person attaches one. */
+export interface PlaceSuggestion {
+  name: string; lat: number; lon: number; country_code: string | null; country: string | null; admin1: string | null
+  population: number | null; geonameid: number; matched: string
+}
+export interface PlaceSuggestions {
+  enabled: boolean; reason: string; total: number; returned: number; candidates: PlaceSuggestion[]
+  label?: string; words?: string; attribution?: string
+}
+
 export const patternAPI = {
   subjects: (caseId: string) => fetchAPI<SubjectList>(`${base(caseId)}/subjects`),
   day: (caseId: string, s: Subject, date: string, zone = "device") =>
@@ -375,9 +385,11 @@ export const patternAPI = {
       { method: "POST", body: { subject: JSON.stringify(s), cluster_id, label, reason, zone, ...(at ?? {}) } as never }),
   manualPlaces: (caseId: string, transactionId: string) =>
     fetchAPI<{ total: number; items: ManualPlace[] }>(`${base(caseId)}/places/manual/${encodeURIComponent(transactionId)}`),
-  attachPlace: (caseId: string, transactionId: string, lat: number, lon: number, radius_m: number, reason: string) =>
+  attachPlace: (caseId: string, transactionId: string, lat: number, lon: number, radius_m: number, reason: string, suggestion: PlaceSuggestion | null = null) =>
     fetchAPI<{ place_id: string; decision_id: string }>(`${base(caseId)}/places/manual`, { method: "POST",
-      body: { target: { kind: "transaction", transaction_id: transactionId }, lat, lon, radius_m, reason } as never }),
+      body: { target: { kind: "transaction", transaction_id: transactionId }, lat, lon, radius_m, reason, suggestion } as never }),
+  placeSuggestions: (caseId: string, transactionId: string) =>
+    fetchAPI<PlaceSuggestions>(`${base(caseId)}/places/manual/${encodeURIComponent(transactionId)}/suggestions`),
   removePlace: (caseId: string, transactionId: string, reason: string) =>
     fetchAPI<{ decision_id: string }>(`${base(caseId)}/places/manual/remove`, { method: "POST",
       body: { target: { kind: "transaction", transaction_id: transactionId }, reason } as never }),

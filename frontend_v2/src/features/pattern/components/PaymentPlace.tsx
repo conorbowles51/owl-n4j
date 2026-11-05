@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react"
-import { patternAPI, type ManualPlace } from "../api"
+import { patternAPI, type ManualPlace, type PlaceSuggestion, type PlaceSuggestions } from "../api"
 import { PLACE_LABEL } from "@/features/map/lib/place-label"
 
+const TOWN_RADIUS_M = "5000"
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 function errWords(e: unknown) {
@@ -13,7 +14,9 @@ function errWords(e: unknown) {
 /**
  * Attach a place to a payment (04 section 8.5): a map point and radius a person records, through the case decision
  * log with them as Actor. The payment itself is never changed; the place then counts as a payment place for that
- * whole day on the Patterns screen. Every earlier place stays listed with the decision that ended it.
+ * whole day on the Patterns screen. Every earlier place stays listed with the decision that ended it. Where the
+ * payment's own text names a town, the offline list offers it as a suggestion; using one only fills the point in, and
+ * nothing is saved until the person writes why and saves.
  */
 export function PaymentPlace({ caseId, transactionId }: { caseId?: string; transactionId: string }) {
   const ok = !!caseId && UUID.test(transactionId)
@@ -27,6 +30,16 @@ export function PaymentPlace({ caseId, transactionId }: { caseId?: string; trans
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [reload, setReload] = useState(0)
+  const [offers, setOffers] = useState<PlaceSuggestions | null>(null)
+  const [used, setUsed] = useState<PlaceSuggestion | null>(null)
+  useEffect(() => {
+    if (!ok || open !== "attach") return
+    let live = true
+    patternAPI.placeSuggestions(caseId!, transactionId)
+      .then((d) => { if (live) setOffers(d) })
+      .catch(() => { if (live) setOffers(null) })
+    return () => { live = false }
+  }, [ok, caseId, transactionId, open])
   useEffect(() => {
     if (!ok) return
     let live = true
@@ -45,9 +58,9 @@ export function PaymentPlace({ caseId, transactionId }: { caseId?: string; trans
   const save = async () => {
     setBusy(true); setError(null)
     try {
-      if (open === "attach") await patternAPI.attachPlace(caseId!, transactionId, latN, lonN, radN, reason.trim())
+      if (open === "attach") await patternAPI.attachPlace(caseId!, transactionId, latN, lonN, radN, reason.trim(), used)
       else await patternAPI.removePlace(caseId!, transactionId, reason.trim())
-      setOpen(null); setReason(""); setReload((n) => n + 1)
+      setOpen(null); setReason(""); setUsed(null); setReload((n) => n + 1)
     } catch (e) { setError(errWords(e)) } finally { setBusy(false) }
   }
   return (
@@ -74,13 +87,32 @@ export function PaymentPlace({ caseId, transactionId }: { caseId?: string; trans
       )}
       {open && (
         <form className="mt-2 flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); void save() }}>
+          {open === "attach" && offers && (offers.enabled ? offers.candidates.length > 0 : !!offers.reason) && (
+            <div className="flex flex-col gap-1 text-xs" aria-label="Suggested places">
+              {!offers.enabled && <p className="text-muted-foreground">{offers.reason}</p>}
+              {offers.enabled && (
+                <>
+                  <p className="font-medium">{offers.label}{offers.total > offers.returned ? ` (${offers.returned.toLocaleString()} of ${offers.total.toLocaleString()} shown)` : ""}</p>
+                  <ul className="flex flex-col gap-1">
+                    {offers.candidates.map((c) => (
+                      <li key={c.geonameid} className="flex flex-wrap items-baseline gap-2">
+                        <span>{[c.name, c.admin1, c.country].filter(Boolean).join(", ")}</span>
+                        <button type="button" className="underline" aria-pressed={used?.geonameid === c.geonameid} onClick={() => { setUsed(c); setLat(String(c.lat)); setLon(String(c.lon)); setRadius(TOWN_RADIUS_M) }}>Use this town</button>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-muted-foreground">{offers.words} {offers.attribution}</p>
+                </>
+              )}
+            </div>
+          )}
           {open === "attach" && (
             <div className="flex flex-wrap gap-2">
               <label className="flex flex-col text-xs">Latitude
-                <input aria-label="Latitude" className="rounded border bg-background px-2 py-1" value={lat} onChange={(e) => setLat(e.target.value)} inputMode="decimal" />
+                <input aria-label="Latitude" className="rounded border bg-background px-2 py-1" value={lat} onChange={(e) => { setUsed(null); setLat(e.target.value) }} inputMode="decimal" />
               </label>
               <label className="flex flex-col text-xs">Longitude
-                <input aria-label="Longitude" className="rounded border bg-background px-2 py-1" value={lon} onChange={(e) => setLon(e.target.value)} inputMode="decimal" />
+                <input aria-label="Longitude" className="rounded border bg-background px-2 py-1" value={lon} onChange={(e) => { setUsed(null); setLon(e.target.value) }} inputMode="decimal" />
               </label>
               <label className="flex flex-col text-xs">Radius (metres)
                 <input aria-label="Radius (metres)" className="w-28 rounded border bg-background px-2 py-1" value={radius} onChange={(e) => setRadius(e.target.value)} inputMode="numeric" />
@@ -98,7 +130,7 @@ export function PaymentPlace({ caseId, transactionId }: { caseId?: string; trans
             <button type="submit" className="rounded border px-2 py-1" disabled={busy || !reason.trim() || (open === "attach" && !valid)}>
               {open === "attach" ? "Save the place" : "Remove"}
             </button>
-            <button type="button" className="rounded border px-2 py-1" onClick={() => { setOpen(null); setError(null) }}>Cancel</button>
+            <button type="button" className="rounded border px-2 py-1" onClick={() => { setOpen(null); setError(null); setUsed(null) }}>Cancel</button>
           </p>
           <p className="text-xs text-muted-foreground">Recorded in the case decision log under your name. The payment itself is not changed.</p>
         </form>

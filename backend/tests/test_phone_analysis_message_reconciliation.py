@@ -316,3 +316,72 @@ def test_reviewed_support_needs_the_matched_sender_to_be_a_reviewed_person():
     codes = [d["code"] for d in r["directions"]["undercuts"]]
     assert "identity_unreviewed" in codes
     assert "reviewed_merge" not in [d["code"] for d in r["directions"]["supports"]]
+
+
+def _gap_world(engine, *, recording_elsewhere=True, offset=timedelta(0)):
+    """X and Y's conversation: Y's copy has nothing from 11 January to 10 February, X holds one message there that Y lacks."""
+    def both(month, day, n):
+        body = "shared message number %d" % n
+        sx = dict(_msg(at(2023, month, day), body, X_OWNER, [Y_OWNER], X_OWNER), thread="t-xy")
+        sy = dict(_msg(at(2023, month, day) + offset, body, X_OWNER, [Y_OWNER], Y_OWNER), thread="t-yx")
+        return sx, sy
+    pairs = [both(1, d, d) for d in range(1, 12)] + [both(2, d, 30 + d) for d in (10, 11, 12)]
+    x = [p[0] for p in pairs] + [dict(_msg(at(2023, 1, 20), "only on the first phone", X_OWNER, [Y_OWNER], X_OWNER),
+                                      thread="t-xy")]
+    y = [p[1] for p in pairs]
+    if recording_elsewhere:
+        y.append(dict(_msg(at(2023, 1, 25), "another conversation here", "phone:+12025550199", [Y_OWNER], Y_OWNER),
+                      thread="t-other"))
+    case, ex, ey, _ = _pair(engine, x, y)
+    with engine.connect() as c:
+        return R.analyse(c, case, PARAMS)
+
+
+def test_the_other_phones_gap_is_a_reason_and_makes_nothing_explained(engine):
+    results, counts = _gap_world(engine)
+    one = [r for r in _of(results, "one_side_only") if r["measures"]["on"] == "C1"]
+    assert len(one) == 1
+    codes = [d["code"] for d in one[0]["directions"]["undercuts"]]
+    assert codes == ["counterpart_conversation_gap"]
+    reason = one[0]["directions"]["undercuts"][0]
+    assert reason["detail"].startswith("The other phone's conversation has a gap here") and len(reason["locators"]) == 2
+    assert one[0]["strength"] == "unexplained"   # a join raises nothing: the gap is a reason to look, not an account
+    assert counts["one_side_only_in_gap"] == 1
+
+
+def test_a_gap_while_the_app_recorded_nothing_is_no_hole_and_no_reason(engine):
+    results, counts = _gap_world(engine, recording_elsewhere=False)
+    one = [r for r in _of(results, "one_side_only") if r["measures"]["on"] == "C1"]
+    assert one and not [d for r in one for d in r["directions"]["undercuts"]
+                        if d["code"] == "counterpart_conversation_gap"]
+    assert counts.get("one_side_only_in_gap", 0) == 0
+
+
+def test_the_gap_is_read_on_the_other_phones_clock():
+    day = at(2023, 1, 10)
+    hole = {"start": day, "end": day + timedelta(days=10), "before": "a", "after": "b"}
+    m = {"t": day - timedelta(seconds=30)}
+    assert R.gap_over(m, ["t"], {"t": [hole]}) is None
+    assert R.gap_over(m, ["t"], {"t": [hole]}, 60.0) is hole
+
+
+def test_reconciliation_reads_no_result_of_approach_3_and_the_rule_sits_beneath_both():
+    """19.S6-c: approach 3 reads approach 2's matches, so approach 2 may not read approach 3, in code or in results."""
+    import ast
+    import inspect
+
+    from services.phone_analysis import conversation_gaps as G
+    from services.phone_analysis import deletion_timeline as D
+
+    def imports(mod):
+        tree = ast.parse(inspect.getsource(mod))
+        names = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+        for n in ast.walk(tree):
+            if isinstance(n, ast.ImportFrom):
+                names |= {"%s.%s" % (n.module, a.name) for a in n.names}
+        return names
+
+    assert not [n for n in imports(R) if "deletion_timeline" in n]
+    assert not [n for n in imports(G) if "deletion_timeline" in n or "message_reconciliation" in n]
+    assert "phone_analysis_results" not in inspect.getsource(R)
+    assert D.holes_in is G.holes_in and D.PARAMETERS["hole_min_days"]["default"] == G.HOLE_MIN_DAYS

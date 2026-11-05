@@ -105,7 +105,8 @@ def clock_offsets(conn, case_id) -> dict:
         return {"run": None, "items": []}
     items = [{"phones": (r.measures or {}).get("phones"), "family": (r.measures or {}).get("family"),
               "timestamp_class": r.strength, "offset_s": (r.measures or {}).get("offset_s"),
-              "pairs": (r.measures or {}).get("n"), "words": (r.measures or {}).get("words")}
+              "pairs": (r.measures or {}).get("n"), "words": (r.measures or {}).get("words"),
+              "spread_s": (r.measures or {}).get("spread_s"), "too_few": bool((r.measures or {}).get("too_few"))}
              for r in conn.execute(text(
                  "SELECT strength, measures FROM phone_analysis_results WHERE run_id = :r AND kind = 'clock_offset' "
                  "ORDER BY measures->>'phones', measures->>'family'"), {"r": run.id})]

@@ -247,3 +247,131 @@ def test_the_routes_need_view_permission_and_answer(world):
         # the other case's owner is not this user: no access
         r = client.get("/api/phones/media-spread/index", params={"case_id": str(world["other"])})
         assert r.status_code in (403, 404), r.text
+
+
+# ---- approach 2's clock offsets in the order (11.3 step 4) -----------------------------------------------------------
+
+def _offsets(monkeypatch, items, current=True):
+    from services.phone_analysis import across_badges as B
+    run = {"id": "r", "finished_at": None, "current": current}
+    monkeypatch.setattr(B, "clock_offsets", lambda conn, case_id: {"run": run, "items": items})
+
+
+def _reading(offset_s, *, cls="device_stamped", pairs=12, family="whatsapp", too_few=False, phones=("C1", "C2")):
+    return {"phones": list(phones), "family": family, "timestamp_class": cls, "offset_s": offset_s, "pairs": pairs,
+            "spread_s": 4.0, "too_few": too_few, "words": "C2's clock reads %.0f seconds ahead of C1's (spread 4 s, "
+                                                           "%d pairs)." % (offset_s, pairs)}
+
+
+def test_no_run_says_so_and_stays_on_each_phones_own_clock(world):
+    from services.phone import media_spread
+    win = _all(world)
+    assert win["clock_words"] == media_spread.CLOCK_NOT_RUN and "not been run" in win["clock_words"]
+    g = _group(win, SENT)
+    assert g["clock_offset_unknown"] is True and g["clock_offsets"] == [] and "C1 and C2" in g["clock_words"]
+
+
+def test_an_established_offset_orders_the_phones_and_moves_no_time(world, monkeypatch):
+    # C1 holds it 12:00, C2 12:05 by their own clocks; C2's clock is ten minutes ahead, so C2 held it first
+    _offsets(monkeypatch, [_reading(600.0)])
+    g = _group(_all(world), SENT)
+    assert [p["phone_label"] for p in g["phones"]] == ["C2", "C1"] and [p["position"] for p in g["phones"]] == [1, 2]
+    by = {p["phone_label"]: p for p in g["phones"]}
+    assert by["C1"]["earliest"]["instant"] == "2023-03-14T12:00:00Z"      # the times shown are the phones' own
+    assert by["C2"]["earliest"]["instant"] == "2023-03-14T12:05:00Z"
+    assert g["clock_offset_unknown"] is False
+    used = g["clock_offsets"]
+    assert len(used) == 1 and used[0]["offset_s"] == 600.0 and used[0]["pairs"] == 12 and used[0]["spread_s"] == 4.0
+    assert "600 seconds ahead of C1's (spread 4 s, 12 pairs)" in g["clock_words"]
+
+
+def test_the_offset_applies_the_other_way_round(world, monkeypatch):
+    _offsets(monkeypatch, [_reading(-60.0)])   # C2 a minute behind: it held the file later still
+    g = _group(_all(world), SENT)
+    assert [p["phone_label"] for p in g["phones"]] == ["C1", "C2"]
+    assert {p["phone_label"]: p["clock_shift_s"] for p in g["phones"]} in ({"C1": None, "C2": 60.0},
+                                                                          {"C1": -60.0, "C2": None})
+
+
+@pytest.mark.parametrize("reading", [_reading(0.0, cls="server_stamped"), _reading(600.0, too_few=True, pairs=3)])
+def test_a_service_time_or_too_few_pairs_establishes_no_offset(world, monkeypatch, reading):
+    _offsets(monkeypatch, [reading])
+    win = _all(world)
+    g = _group(win, SENT)
+    assert g["clock_offset_unknown"] is True and g["clock_offsets"] == []
+    assert [p["phone_label"] for p in g["phones"]] == ["C1", "C2"]
+    assert reading["words"] in g["clock_words"] and "no clock difference" in win["clock_words"]
+
+
+def test_a_group_with_a_pair_without_an_offset_keeps_own_clocks_and_names_the_pair(world, monkeypatch):
+    _offsets(monkeypatch, [_reading(600.0)])
+    g = _group(_all(world), STICKER)   # on C1, C2 and C3: only C1 and C2 have a reading
+    assert g["clock_offset_unknown"] is True and g["clock_offsets"] == []
+    assert "C3" in g["clock_words"] and all(p["clock_shift_s"] is None for p in g["phones"])
+
+
+def test_phones_changed_since_the_run_is_said(world, monkeypatch):
+    _offsets(monkeypatch, [_reading(600.0)], current=False)
+    win = _all(world)
+    assert "changed since that run" in win["clock_words"] and "changed since" in _group(win, SENT)["clock_words"]
+
+
+# ---- 04's place model (11.3 step 6, 04 decision 48) ---------------------------------------------------------------
+
+def _point(world, ext, record_ordinal, file_ordinal, *, kind, basis, flags):
+    """A ``Media Locations`` point of the place model for one file."""
+    record_uid, coordinate = uuid.uuid4(), uuid.uuid4()
+    with world["engine"].begin() as c:
+        c.execute(text(
+            "INSERT INTO phone_file_references (extraction_id, document_index, record_ordinal, body_path, mechanism, "
+            "reference_text, file_document_index, file_ordinal, resolution, ambiguous) VALUES (:e, 0, :r, 'p', "
+            "'extracted_path_value', 'p', 0, :o, 'tagged_file', false)"), {"e": ext, "r": record_ordinal,
+                                                                           "o": file_ordinal})
+        gen = c.execute(text("SELECT generation FROM phone_interpretation_state WHERE extraction_id = :e"),
+                        {"e": ext}).scalar()
+        c.execute(text(
+            "INSERT INTO phone_location_points (case_id, extraction_id, document_index, ordinal, record_uid, "
+            "root_record_uid, locator, model_type, generation, point_uid, coordinate_record_uid, lat, lon, "
+            "accuracy_basis, source_kind) VALUES (:c, :e, 0, :r, :u, :u, 'l', 'Location', :g, :p, :cu, 1.5, 2.5, "
+            "'none', 'device_location')"), {"c": world["case"], "e": ext, "r": record_ordinal, "u": record_uid,
+                                            "g": gen, "p": uuid.uuid4(), "cu": coordinate})
+        c.execute(text(
+            "INSERT INTO pol_place_observation (case_id, extraction_id, record_uid, record_type, kind, source_kind, "
+            "lat, lon, radius_basis, start_utc, end_utc, offset_status, time_semantics, presence_basis, "
+            "attribution_flags) VALUES (:c, :e, :u, 'Location', :k, 'media_exif', 1.5, 2.5, 'unknown', now(), now(), "
+            "'explicit', 'instant', :b, :f)"), {"c": world["case"], "e": ext, "u": record_uid, "k": kind, "b": basis,
+                                                "f": flags})
+
+
+def _copy(g, label):
+    return next(c for p in g["phones"] if p["phone_label"] == label for c in p["copies"])
+
+
+def test_a_photo_the_model_counts_as_taken_here_says_the_phone_was_there(world):
+    _point(world, world["x"], 0, 9002, kind="presence", basis="camera_matches_device", flags=["media_taken_on_device"])
+    place = _copy(_group(_all(world), CAMERA), "C1")["place"]
+    assert place["taken_on_this_phone"] is True and place["source"] == "photo EXIF"
+    assert place["model"]["presence_basis"] == "camera_matches_device" and "10.5, -20.25" in place["words"]
+    assert "the phone was there" in place["words"]
+
+
+def test_received_media_in_the_model_is_never_where_the_phone_was(world):
+    _point(world, world["x"], 0, 9002, kind="media", basis=None, flags=["received_media"])
+    place = _copy(_group(_all(world), CAMERA), "C1")["place"]
+    assert place["taken_on_this_phone"] is False and place["model"]["flags"] == ["received_media"]
+    assert "nothing shows the phone was there" in place["words"]
+
+
+def test_a_copy_received_in_a_message_is_not_presence_whatever_the_model_says(world):
+    # the join may not raise a reading: this copy on C2 arrived in a message
+    _point(world, world["y"], 1, 9002, kind="presence", basis="camera_folder", flags=["media_taken_on_device"])
+    g = _group(_all(world), CAMERA)
+    place = _copy(g, "C2")["place"]
+    assert place["taken_on_this_phone"] is False and "not where the phone was" in place["words"]
+    assert place["model"]["kind"] == "presence"      # what the model holds stays visible
+
+
+def test_exif_with_no_point_in_the_model_keeps_the_written_place_and_claims_nothing(world):
+    place = _copy(_group(_all(world), CAMERA), "C1")["place"]
+    assert place["model"] is None and place["taken_on_this_phone"] is False
+    assert "as written: 10.5, -20.25" in place["words"] and "nothing shows the phone was there" in place["words"]

@@ -153,6 +153,7 @@ export default function MediaSpreadPage() {
                 <ol aria-label="Order the phones held it" className="flex flex-col gap-1">
                   {g.phones.map((p) => <PhoneRow key={p.extraction_id} caseId={caseId} p={p} onOpen={setOpen} />)}
                 </ol>
+                {g.clock_words && <span role="note" className="text-muted-foreground">{g.clock_words}</span>}
               </div>
             </li>
           ))}

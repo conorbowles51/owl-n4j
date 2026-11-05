@@ -16,8 +16,10 @@ Rules carried here:
 - **Order (step 4).** Per copy and per phone, the earliest of the message time, the file-system modify time and
   the EXIF capture time that has a real instant, with the field named. A time the report wrote without an offset
   is shown as written and never placed in a zone (01 decision D17), so it does not take part in the order.
-  No clock difference between phones is established (approach 2's offsets are not built), so every group says the
-  order across phones is by each phone's own clock (``clock_offset_unknown``).
+  Across phones the order allows for approach 2's clock offsets where every phone of the group has an established
+  (device-stamped, enough pairs) offset to the first phone. The times shown never move, and the group says which
+  offset it used and how strong that reading is. Where any pair has none, the order stays by each phone's own clock,
+  the group says which pair, and it carries ``clock_offset_unknown``.
 - **Sent and received (step 5)** come from the direction of the message that carried the copy. A copy whose
   carrying message is marked deleted, or a copy in a messaging app's media folder that no message carries, says so.
 - **Camera original candidate (step 5).** A copy with a camera make or model in its EXIF, in a camera folder, whose
@@ -25,7 +27,10 @@ Rules carried here:
   widest bounds (every real offset lies between UTC-12 and UTC+14): it counts as earlier only if it is earlier
   whatever the zone, as not earlier only if it is not earlier whatever the zone; otherwise the answer is "cannot
   tell", in words.
-- **Place (step 6).** EXIF GPS items as written, source "photo EXIF". 04's place model is not joined here.
+- **Place (step 6).** EXIF GPS items as written, source "photo EXIF", joined to 04's place model through the file's
+  ``Media Locations`` point. Only a photo the model counts as taken on this phone (04 decision 48) is said to show
+  the phone there, and never a copy this phone received in a message; a picture's position otherwise is where it
+  was taken, not where the phone was.
 - **Common file (11.5).** A hash found on more than half the case's phones (any copy, not only the population)
   carries the "common file" flag: stickers and forwarded images are common across unrelated people.
 
@@ -36,7 +41,7 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 
@@ -71,8 +76,17 @@ SOURCE_WORDS = {"message_time": "time of the message that carried it",
                 "exif_capture": "photo capture time (EXIF)"}
 REASON_WORDS = {"attachment": "carried by a message", "camera_path": "in a camera or screenshot folder",
                 "exif_camera": "the photo's EXIF names a camera"}
-CLOCK_WORDS = ("Times are each phone's own clock. No clock difference between these phones has been established, "
-               "so the order across phones can be off by any such difference.")
+CLOCK_OWN = "Times are each phone's own clock."
+CLOCK_NOT_RUN = ("Times are each phone's own clock. Messages across phones has not been run, so no clock difference "
+                 "between these phones is known and the order across phones can be off by any such difference.")
+CLOCK_NONE = ("Times are each phone's own clock. The latest run of Messages across phones established no clock "
+              "difference between these phones, so the order across phones can be off by any such difference.")
+CLOCK_SOME = ("Times are shown by each phone's own clock. The order across phones allows for the {n} clock "
+              "{differences} the latest run of Messages across phones established; each file says which it used.")
+CLOCK_CHANGED = " The phones have changed since that run."
+PLACE_RECEIVED_WORDS = "Received on this phone, so this is where the picture was taken, not where the phone was."
+PLACE_NOT_SHOWN_WORDS = "This is where the picture was taken; nothing shows the phone was there."
+PLACE_TAKEN_WORDS = "The picture counts as taken on this phone (%s), so the phone was there."
 COMMON_WORDS = ("Common file: the same file is on {n} of the case's {total} phones. Stickers and forwarded images "
                 "are often shared by people with no link to each other.")
 SHA_WORDS = "The copies have the same MD5 but different SHA-256 values. They may not be the same file."
@@ -189,7 +203,7 @@ def index(conn, case_id) -> dict:
     return {"case_id": str(case_id), "case_phone_count": p["case_phones"], "total_groups": int(total),
             "total_copies": int(copies), "common_file_groups": int(common), "sha256_disagreement_groups": int(sha),
             "by_phone": by_phone, "by_pair": by_pair, "population_words": POPULATION_WORDS,
-            "clock_words": CLOCK_WORDS, "tier": "exact"}
+            "clock_words": clock_offsets(conn, case_id)["words"], "tier": "exact"}
 
 
 def window(conn, case_id, f: dict | None = None, offset: int = 0, limit: int = 50) -> dict:
@@ -202,9 +216,10 @@ def window(conn, case_id, f: dict | None = None, offset: int = 0, limit: int = 5
     rows = conn.execute(text(
         base + "SELECT g.* FROM grp g WHERE " + where +
         " ORDER BY g.phone_count DESC, g.copy_count DESC, g.md5 OFFSET :o LIMIT :l"), p).fetchall()
-    items = _groups(conn, case_id, rows, p["case_phones"]) if rows else []
+    clocks = clock_offsets(conn, case_id)
+    items = _groups(conn, case_id, rows, p["case_phones"], clocks) if rows else []
     return {"case_id": str(case_id), "total": total, "offset": p["o"], "limit": p["l"], "items": items,
-            "clock_words": CLOCK_WORDS}
+            "clock_words": clocks["words"]}
 
 
 def _items(body, names) -> dict:
@@ -227,7 +242,7 @@ def _filename(path) -> str:
     return (path or "").replace("\\", "/").rsplit("/", 1)[-1] or "File not named in the report"
 
 
-def _groups(conn, case_id, grows, case_phones) -> list:
+def _groups(conn, case_id, grows, case_phones, clocks) -> list:
     from services.phone.readings import phone_labels
     labels = phone_labels(conn, case_id)
     zone = case_zone(conn, case_id)["name"]
@@ -240,6 +255,7 @@ def _groups(conn, case_id, grows, case_phones) -> list:
     uids = [c["file_uid"] for c in copies]
     messages = _messages(conn, case_id, uids)
     times = _times(conn, case_id, copies)
+    places = _model_places(conn, uids)
     ctx = L.LabelContext(conn, case_id)
     lines = _lines(conn, ctx, [m for ms in messages.values() for m in ms])
     by_md5 = defaultdict(list)
@@ -247,7 +263,7 @@ def _groups(conn, case_id, grows, case_phones) -> list:
         by_md5[c["md5"]].append(c)
     out = []
     for g in grows:
-        out.append(_group(g, by_md5[g.md5], messages, times, lines, labels, zone, case_phones))
+        out.append(_group(g, by_md5[g.md5], messages, times, lines, labels, zone, case_phones, clocks, places))
     return out
 
 
@@ -340,6 +356,119 @@ def _time(source, field, instant, zone, wall=None) -> dict:
             "has_offset": instant is not None}
 
 
+def clock_offsets(conn, case_id) -> dict:
+    """Approach 2's clock readings as this screen uses them: ``{"pairs": {frozenset of two labels: reading},
+    "unusable": {same key: its words}, "words", "changed"}``. A pair's reading is its device-stamped offset of the
+    most pairs (an offset from too few pairs, or a service's times, establishes nothing about the phones' clocks)."""
+    from services.phone_analysis import across_badges as B
+    got = B.clock_offsets(conn, case_id)
+    if got["run"] is None:
+        return {"pairs": {}, "unusable": {}, "words": CLOCK_NOT_RUN, "changed": False}
+    pairs, unusable = {}, {}
+    for o in got["items"]:
+        names = o.get("phones") or []
+        if len(names) != 2:
+            continue
+        key = frozenset(names)
+        if o.get("timestamp_class") == "device_stamped" and not o.get("too_few"):
+            old = pairs.get(key)
+            if old is None or ((o.get("pairs") or 0), str(o.get("family"))) > ((old.get("pairs") or 0), str(old.get("family"))):
+                pairs[key] = o
+        else:
+            unusable.setdefault(key, o.get("words"))
+    changed = not got["run"]["current"]
+    n = len(pairs)
+    words = CLOCK_SOME.format(n=n, differences="difference" if n == 1 else "differences") if n else CLOCK_NONE
+    return {"pairs": pairs, "unusable": unusable, "words": words + (CLOCK_CHANGED if changed else ""),
+            "changed": changed}
+
+
+def _shift(reading, phone, reference) -> float:
+    """Seconds to add to a time on ``phone``'s clock to read it on ``reference``'s. A reading's offset is how far its
+    second phone's clock is ahead of its first's."""
+    return float(reading["offset_s"]) * (-1 if reading["phones"][1] == phone else 1)
+
+
+def _offset_words(o) -> str:
+    spread = o.get("spread_s")
+    return "%s: %s" % (o.get("family") or "messages", o.get("words") or "%.0f s, %s pairs%s" % (
+        o.get("offset_s") or 0, o.get("pairs"), "" if spread is None else ", spread %.0f s" % spread))
+
+
+def _clock(names, clocks) -> dict:
+    """What the order of one group rests on. ``names`` are the group's phones with a time, in own-clock order."""
+    if len(names) < 2:
+        return {"unknown": False, "shift": {}, "used": [], "words": CLOCK_OWN}
+    pairs = clocks["pairs"]
+    missing = []
+    for i, a in enumerate(names):
+        missing.extend((a, b) for b in names[i + 1:] if frozenset((a, b)) not in pairs)
+    reference = next((a for a in names if all(frozenset((a, b)) in pairs for b in names if b != a)), None)
+    used = [pairs[frozenset((reference, b))] for b in names if b != reference] if reference else []
+    shift = {b: _shift(pairs[frozenset((reference, b))], b, reference) for b in names if b != reference} \
+        if reference else {}
+    readings = [{"phones": o["phones"], "family": o.get("family"), "timestamp_class": o.get("timestamp_class"),
+                 "offset_s": o.get("offset_s"), "pairs": o.get("pairs"), "spread_s": o.get("spread_s"),
+                 "words": _offset_words(o)} for o in used]
+    changed = CLOCK_CHANGED if clocks.get("changed") else ""
+    if reference:
+        words = "The order allows for each phone's clock against %s. The times shown are each phone's own. %s." % (
+            reference, " ".join(r["words"].rstrip(".") + "." for r in readings).rstrip("."))
+    else:
+        none = "; ".join("%s and %s" % p for p in missing[:3]) + (
+            " and %d more pairs" % (len(missing) - 3) if len(missing) > 3 else "")
+        words = "The order is by each phone's own clock: no clock difference between %s has been established, so " \
+                "it can be off by any such difference." % none
+        said = sorted({w for k, w in clocks.get("unusable", {}).items() if k in {frozenset(p) for p in missing} and w})
+        words = " ".join([words] + said)
+    return {"unknown": reference is None, "shift": shift, "used": readings, "words": words + changed}
+
+
+def _model_places(conn, uids) -> dict:
+    """{file uid: [row]}: 04's place observations of the ``Media Locations`` points whose file is this one."""
+    if not uids:
+        return {}
+    out = defaultdict(list)
+    for r in conn.execute(text(
+            "SELECT pf.file_uid::text AS file_uid, o.kind, o.presence_basis, o.lat, o.lon, o.radius_m, "
+            "o.attribution_flags FROM phone_files pf JOIN phone_file_references fr ON fr.extraction_id = "
+            "pf.extraction_id AND fr.file_document_index = pf.document_index AND fr.file_ordinal = pf.ordinal AND "
+            "fr.resolution = 'tagged_file' AND NOT fr.ambiguous JOIN phone_interpretation_state s ON s.extraction_id "
+            "= pf.extraction_id JOIN phone_location_points p ON p.extraction_id = fr.extraction_id AND "
+            "p.document_index = fr.document_index AND p.ordinal = fr.record_ordinal AND p.generation = s.generation "
+            "JOIN pol_place_observation o ON o.extraction_id = p.extraction_id AND o.record_uid = p.record_uid "
+            "WHERE pf.file_uid = ANY(:u) AND o.source_kind = 'media_exif' ORDER BY o.id"),
+            {"u": [str(u) for u in uids]}).mappings():
+        out[r["file_uid"]].append(dict(r))
+    return out
+
+
+def _place(exif, rows, roles) -> dict | None:
+    """Step 6. The EXIF as written, then what 04's place model says the point is. A join never raises a reading: a
+    copy that arrived in a message is never presence, whatever its folder says."""
+    written = exif.get("MetaDataLatitudeAndLongitude") or ", ".join(
+        x for x in (exif.get("ExifEnumGPSLatitude"), exif.get("ExifEnumGPSLongitude")) if x)
+    row = next((r for r in rows if r["kind"] == "presence"), None) or (rows[0] if rows else None)
+    if not written and row is None:
+        return None
+    taken = bool(row and row["kind"] == "presence" and "received" not in roles)
+    if "received" in roles:
+        says = PLACE_RECEIVED_WORDS
+    elif taken:
+        from services.pattern_of_life.places import MEDIA_BASIS_WORDS
+        says = PLACE_TAKEN_WORDS % MEDIA_BASIS_WORDS.get(row["presence_basis"], "the place model")
+    else:
+        says = PLACE_NOT_SHOWN_WORDS
+    where = written or "%.5f, %.5f" % (row["lat"], row["lon"])
+    return {"latitude": exif.get("ExifEnumGPSLatitude"), "longitude": exif.get("ExifEnumGPSLongitude"),
+            "combined": exif.get("MetaDataLatitudeAndLongitude"), "source": "photo EXIF",
+            "words": "Place in the photo's EXIF%s: %s. %s" % (", as written" if written else "", where, says),
+            "model": None if row is None else {
+                "kind": row["kind"], "presence_basis": row["presence_basis"], "lat": row["lat"], "lon": row["lon"],
+                "radius_m": row["radius_m"], "flags": list(row["attribution_flags"] or ())},
+            "taken_on_this_phone": taken}
+
+
 def _candidate(c, exif_times, group_msg_instants):
     """(candidate True/False/None, words) per 11.3 step 5 from captured fields only."""
     if not c["camera"]:
@@ -375,7 +504,7 @@ def _candidate(c, exif_times, group_msg_instants):
                   "group to say which came first.")
 
 
-def _group(g, copies, messages, times, lines, labels, zone, case_phones) -> dict:
+def _group(g, copies, messages, times, lines, labels, zone, case_phones, clocks=None, places=None) -> dict:
     group_msg_instants = [m["instant"] for c in copies for m in messages.get(str(c["file_uid"]), ())
                           if m["instant"] is not None]
     phones = defaultdict(list)
@@ -405,13 +534,7 @@ def _group(g, copies, messages, times, lines, labels, zone, case_phones) -> dict
             note = DELETED_MESSAGE_WORDS
         elif not msgs and re.search(MESSAGING_RE, path):
             note = NO_MESSAGE_WORDS
-        place = None
-        if any(k in exif for k in GPS_ITEMS):
-            place = {"latitude": exif.get("ExifEnumGPSLatitude"), "longitude": exif.get("ExifEnumGPSLongitude"),
-                     "combined": exif.get("MetaDataLatitudeAndLongitude"), "source": "photo EXIF",
-                     "words": "Place in the photo's EXIF, as written: %s" % (
-                         exif.get("MetaDataLatitudeAndLongitude") or ", ".join(
-                             x for x in (exif.get("ExifEnumGPSLatitude"), exif.get("ExifEnumGPSLongitude")) if x))}
+        place = _place(exif, (places or {}).get(uid, ()), roles)
         copy = {
             "file_uid": uid, "extraction_id": ext, "phone_label": labels.get(ext, "A phone"),
             "filename": _filename(c["local_path"] or c["original_path"]), "local_path": c["local_path"],
@@ -452,14 +575,26 @@ def _group(g, copies, messages, times, lines, labels, zone, case_phones) -> dict
             "copies": cs[:COPIES_PER_PHONE]})
     order.sort(key=lambda o: (o["earliest"] is None, o["earliest"]["instant"] if o["earliest"] else "",
                               o["phone_label"]))
+    clock = _clock([o["phone_label"] for o in order if o["earliest"]], clocks or {"pairs": {}})
+    for o in order:
+        o["clock_shift_s"] = clock["shift"].get(o["phone_label"])
+
+    def at(o):
+        """The sort value: the phone's own time, on the first phone's clock where the group has offsets."""
+        t = datetime.fromisoformat(o["earliest"]["instant"].replace("Z", "+00:00"))
+        return t + timedelta(seconds=o["clock_shift_s"] or 0)
+
+    if clock["shift"]:
+        order.sort(key=lambda o: (o["earliest"] is None, at(o) if o["earliest"] else None, o["phone_label"]))
     pos, last = 0, object()
     for o in order:
         if o["earliest"] is None:
             o["position"] = None
             continue
-        if o["earliest"]["instant"] != last:
+        moment = at(o)
+        if moment != last:
             pos += 1
-            last = o["earliest"]["instant"]
+            last = moment
         o["position"] = pos
     thumb = next((c for c in shown if not c["missing"] and (
         "image" in (c["category"] or "").lower())), None) or next((c for c in shown if not c["missing"]), None)
@@ -473,7 +608,7 @@ def _group(g, copies, messages, times, lines, labels, zone, case_phones) -> dict
         "sha256_disagrees": int(g.sha256_count) > 1, "sha256_words": SHA_WORDS if int(g.sha256_count) > 1 else None,
         "category": first["category"], "filename": first["filename"], "size": first["size"],
         "thumbnail_file_uid": thumb["file_uid"] if thumb else None,
-        "clock_offset_unknown": True, "clock_words": CLOCK_WORDS,
+        "clock_offset_unknown": clock["unknown"], "clock_words": clock["words"], "clock_offsets": clock["used"],
         "camera_original_candidates": sum(1 for c in shown if c["camera_original_candidate"] is True),
         "phones": order, "tier": "exact",
     }
@@ -641,4 +776,4 @@ def perceptual(conn, case_id, strength=None, offset=0, limit=50) -> dict:
             "items": shown, "by_strength": allp["by_strength"], "total_all": len(allp["items"]),
             "hashing": PH.describe(conn, case_id), "pictures_compared": allp["pictures_compared"],
             "stopped_words": allp["stopped_words"], "words": PERCEPTUAL_WORDS, "rule_words": PERCEPTUAL_RULE_WORDS,
-            "clock_words": CLOCK_WORDS}
+            "clock_words": clock_offsets(conn, case_id)["words"]}
