@@ -183,7 +183,8 @@ function SidebarLink({
       {!expanded && item.isNew && (
         <span className="absolute right-1 top-1 size-1.5 rounded-full bg-brand-600 dark:bg-brand-400" aria-hidden="true" />
       )}
-      {expanded && item.shortcut && (
+      {/* the mark takes the hint's room for its 7 days, so the name is not cut; the hint stays in the tooltip */}
+      {expanded && item.shortcut && !item.isNew && (
         <ShortcutHint value={item.shortcut} active={active} />
       )}
     </Link>

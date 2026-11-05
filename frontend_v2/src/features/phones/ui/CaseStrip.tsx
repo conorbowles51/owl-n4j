@@ -17,6 +17,7 @@ import { useBindings } from "./use-bindings"
 
 // The guide (markdown and its renderer) loads when Guide is pressed, not with every case page.
 const GuideDialog = lazy(() => import("@/components/ui/guide-dialog").then((m) => ({ default: m.GuideDialog })))
+const ReportProblem = lazy(() => import("@/components/ui/report-problem").then((m) => ({ default: m.ReportProblem })))
 
 const n = (v: number) => v.toLocaleString("en-US")
 
@@ -102,18 +103,18 @@ function GuideButton() {
 }
 
 /**
- * The thin strip above a phone case's screens: the job tray, the Guide at this screen's part, and the keys. It sits
- * outside the scrolling content so it stays in view (07 4.7, 4.9, 9), and shows only for a case with a phone or a
+ * The thin strip above a phone case's screens: the job tray, the Guide at this screen's part, the keys and Report a
+ * problem. It sits outside the scrolling content so it stays in view (07 4.7, 4.9, 9), and shows only for a case with a phone or a
  * phone job: other cases keep their whole screen.
  */
-export default function CaseStrip({ caseId }: { caseId: string }) {
+export default function CaseStrip({ caseId, problemScreen }: { caseId: string; problemScreen: string | null }) {
   const phones = useQuery({ ...phonesQuery(caseId), staleTime: 60_000 })
   const [jobs, setJobs] = useState(0)
   const [keys, setKeys] = useState(false)
   const bindings = useBindings()
   useEffect(() => installKeymap(), [])
   const hasPhones = (phones.data?.phones.length ?? 0) > 0
-  const shown = hasPhones || jobs > 0
+  const shown = hasPhones || jobs > 0 || !!problemScreen
   return (
     <>
       {/* always mounted, so a new first phone's job is seen; hidden until there is something to say */}
@@ -122,6 +123,11 @@ export default function CaseStrip({ caseId }: { caseId: string }) {
         aria-label="Phone help and jobs"
         className={shown ? "flex shrink-0 items-center justify-end gap-2 border-b border-border bg-card px-3 py-1" : "hidden"}
       >
+        {problemScreen && (
+          <Suspense fallback={null}>
+            <ReportProblem key={problemScreen} caseId={caseId} screen={problemScreen} components={[problemScreen]} />
+          </Suspense>
+        )}
         {hasPhones && bindings.length > 0 && (
           <Button variant="ghost" size="sm" onClick={() => setKeys(true)}>
             <Keyboard className="size-4" aria-hidden="true" />

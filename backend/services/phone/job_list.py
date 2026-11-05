@@ -16,6 +16,8 @@ from sqlalchemy import text
 logger = logging.getLogger(__name__)
 
 KEEP_FINISHED = timedelta(hours=12)
+# Phones are read again by themselves after a decision or a release: their finished lines stay only a short while.
+KEEP_READING = timedelta(hours=1)
 MOST_FINISHED = 30
 # A bulk add is sent from the page; a page that goes this long without reporting is gone (closed or reloaded).
 COLLECT_SILENT = timedelta(seconds=120)
@@ -71,8 +73,8 @@ def _reading(conn, case_id, since, user):
     for p in readings.progress(conn, case_id):
         name = p["phone"] or "a phone"
         ended = _when(p.get("finished_at"))
-        if p["state"] == "done" and (ended is None or ended < since):
-            continue  # a phone read long ago is not a job
+        if p["state"] == "done" and (ended is None or ended < since + KEEP_FINISHED - KEEP_READING):
+            continue  # a phone read a while ago is not a job
         state = "done" if p["state"] == "done" else "running"
         out.append(_job(
             "interpretation", p["extraction_id"], "Reading %s" % name, state,

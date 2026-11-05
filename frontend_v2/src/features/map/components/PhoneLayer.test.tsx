@@ -56,19 +56,24 @@ describe("Map phone layer (03 13.3, G-2)", () => {
     const flyTo = vi.fn()
     useMapStore.setState({ flyTo })
     resetKeymapForTest()
-    render(
+    const panel = (items: ReturnType<typeof point>[]) => (
       <MemoryRouter>
-        <PhoneLayerPanel caseId="c" summary={summary} points={{ case_id: "c", total: 2, clustered: false, limits: [], items: [point("a", null), point("b", 25)] }} />
-      </MemoryRouter>,
+        <PhoneLayerPanel caseId="c" summary={summary} points={{ case_id: "c", total: items.length, clustered: false, limits: [], items }} />
+      </MemoryRouter>
     )
+    const { rerender } = render(panel([point("a", null), point("b", 25)]))
     act(() => void dispatchKey(new KeyboardEvent("keydown", { key: "ArrowDown" })))
     expect(flyTo).toHaveBeenCalledTimes(1)
     await screen.findByText("Position 1 of 2")
+    // the map moved, so the points in view changed: the list holds, and the next step is the next position
+    rerender(panel([point("z", 25)]))
     act(() => void dispatchKey(new KeyboardEvent("keydown", { key: "ArrowDown" })))
     await screen.findByText("Position 2 of 2")
     fireEvent.click(screen.getByRole("button", { name: "Previous position" }))
     await screen.findByText("Position 1 of 2")
     expect(document.querySelector('[aria-current="true"]')).toHaveAttribute("data-point", "a")
+    fireEvent.click(screen.getByRole("button", { name: "Back to what is in view" }))
+    await screen.findByText("1 in the list. Arrow keys step through them.")
   })
 
   it("shows the clustering limit when the view holds too many points (G-1)", () => {

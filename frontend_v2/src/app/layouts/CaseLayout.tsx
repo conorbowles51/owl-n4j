@@ -23,19 +23,7 @@ const LazyEvidenceContextSidebar = lazy(() =>
   import("@/features/evidence/components/EvidenceContextSidebar").then((m) => ({ default: m.EvidenceContextSidebar }))
 )
 
-const ReportProblem = lazy(() => import("@/components/ui/report-problem").then((m) => ({ default: m.ReportProblem })))
-
-/** Report a problem on every phone screen (07 section 9), above the page so it stays on screen as the page scrolls. */
-function PhoneProblemBar({ caseId, screen }: { caseId: string; screen: string }) {
-  return (
-    <div className="flex shrink-0 justify-end border-b px-2 py-1" data-testid="phone-problem-bar">
-      <Suspense fallback={null}>
-        <ReportProblem key={screen} caseId={caseId} screen={screen} components={[screen]} />
-      </Suspense>
-    </div>
-  )
-}
-// The job tray, Guide and keys above a phone case's screens; its code loads with the case page, not with the shell.
+// The job tray, Guide, keys and Report a problem above a phone case's screens; its code loads with the case page, not with the shell.
 const CaseStrip = lazy(() => import("@/features/phones/ui/CaseStrip"))
 
 function EvidenceContextSidebar({ caseId }: { caseId: string }) {
@@ -77,7 +65,7 @@ export function CaseLayout() {
         {caseId && (
           <ErrorBoundary fallback={<></>}>
             <Suspense fallback={null}>
-              <CaseStrip caseId={caseId} />
+              <CaseStrip caseId={caseId} problemScreen={screen} />
             </Suspense>
           </ErrorBoundary>
         )}
@@ -101,7 +89,6 @@ export function CaseLayout() {
                     }
                   >
                     <div className="flex h-full min-h-0 flex-col">
-                      {screen && caseId && <PhoneProblemBar caseId={caseId} screen={screen} />}
                       <div className="min-h-0 flex-1">
                         <ErrorBoundary level="page">
                           <Outlet />

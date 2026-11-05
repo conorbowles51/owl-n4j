@@ -179,3 +179,23 @@ def test_has_position_keeps_only_files_whose_metadata_names_a_place(world):
         rest = media.index(c, case, {"phones": [ext], "has_position": False})["total"]
         rows = media.window(c, case, {"phones": [ext], "has_position": True})["items"]
     assert placed == 1 and whole == placed + rest and len(rows) == 1
+    # batch reading of the same scope takes the filter too: the Media page sends it (live 422 on the first release)
+    from routers.phones import BatchScope
+    from services.phone import derive_batch
+    scope = BatchScope(has_position=True).model_dump(mode="json", exclude_defaults=True)
+    with engine.connect() as c:
+        assert derive_batch.describe(c, case, "ocr", scope)["in_scope"] <= placed
+
+
+def test_a_phone_read_a_while_ago_leaves_the_tray_sooner_than_a_persons_job(world):
+    from services.phone import job_list
+    engine, case, _, ext = world
+    with engine.begin() as c:
+        me = _person(c, "a@synthetic.invalid")
+        c.execute(text("INSERT INTO phone_interpretation_progress (extraction_id, records_total, records_done, started_at, "
+                       "updated_at, finished_at) VALUES (:e, 5, 5, now(), now(), now() - interval '2 hours') ON CONFLICT "
+                       "(extraction_id) DO UPDATE SET finished_at = now() - interval '2 hours'"), {"e": ext})
+    assert "interpretation" not in _ids(_read(engine, case, me))
+    with engine.begin() as c:
+        c.execute(text("UPDATE phone_interpretation_progress SET finished_at = now() - interval '10 minutes'"))
+    assert "interpretation" in _ids(_read(engine, case, me))

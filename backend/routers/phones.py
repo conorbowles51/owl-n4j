@@ -930,6 +930,7 @@ class BatchScope(BaseModel):
     linked_to_message: Optional[bool] = None
     thread_key: Optional[str] = Field(None, max_length=512)  # Media opened from a thread's Attachments (N)
     significant_only: bool = False
+    has_position: Optional[bool] = None
 
 
 class BatchBody(BaseModel):

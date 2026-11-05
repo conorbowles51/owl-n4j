@@ -20,18 +20,21 @@ export function PhoneLayerPanel({ caseId, summary, points, addDisabled }: { case
   const [why, setWhy] = useState(false)
   const shown = points?.total ?? 0
   const words = phoneSummaryWords(summary, shown)
-  const items = (points?.items ?? []).filter((i): i is Extract<PhoneMapItem, { type: "point" }> => i.type === "point")
+  const inView = (points?.items ?? []).filter((i): i is Extract<PhoneMapItem, { type: "point" }> => i.type === "point")
   const flyTo = useMapStore((s) => s.flyTo)
   const [current, setCurrent] = useState<string | null>(null)
+  // Stepping moves the map, which changes what is in view: the list is held while stepping, so no position is skipped.
+  const [held, setHeld] = useState<typeof inView | null>(null)
+  const items = held ?? inView
   const listRef = useRef<HTMLUListElement>(null)
   const index = items.findIndex((p) => p.point_uid === current)
-  // kept by id: the map moves to each position, so the list in view can change under it
   const step = useRef<(by: number) => void>(() => undefined)
   useEffect(() => {
     step.current = (by: number) => {
       if (!items.length) return
       const at = index < 0 ? (by > 0 ? 0 : items.length - 1) : Math.min(items.length - 1, Math.max(0, index + by))
       const p = items[at]
+      setHeld(items)
       setCurrent(p.point_uid)
       flyTo({ longitude: p.lon, latitude: p.lat })
       listRef.current?.querySelector(`[data-point="${CSS.escape(p.point_uid)}"]`)?.scrollIntoView?.({ block: "nearest" })
@@ -82,6 +85,7 @@ export function PhoneLayerPanel({ caseId, summary, points, addDisabled }: { case
           <Button size="sm" variant="outline" className="h-6 px-2 text-xs" aria-label="Previous position" onClick={() => step.current(-1)}>↑</Button>
           <Button size="sm" variant="outline" className="h-6 px-2 text-xs" aria-label="Next position" onClick={() => step.current(1)}>↓</Button>
           <span role="status">{index >= 0 ? `Position ${n(index + 1)} of ${n(items.length)}` : `${n(items.length)} in the list. Arrow keys step through them.`}</span>
+          {held && <button type="button" className="underline" onClick={() => { setHeld(null); setCurrent(null) }}>Back to what is in view</button>}
         </div>
       )}
       {items.length > 0 && (

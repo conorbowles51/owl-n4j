@@ -43,7 +43,9 @@ vi.mock("./CaseSidePanel", () => ({
   CaseSidePanelRail: () => <div>Panel rail</div>,
   CaseSidePanelContent: () => <div>Panel content</div>,
 }))
-vi.mock("@/features/phones/ui/CaseStrip", () => ({ default: () => null }))
+vi.mock("@/features/phones/ui/CaseStrip", () => ({
+  default: ({ problemScreen }: { problemScreen: string | null }) => (problemScreen ? <button type="button">Report a problem on {problemScreen}</button> : null),
+}))
 vi.mock("@/features/search/components/SearchDialog", () => ({ SearchDialog: () => null }))
 vi.mock("@/features/evidence/components/EvidenceContextSidebar", () => ({
   EvidenceContextSidebar: () => null,
