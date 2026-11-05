@@ -1227,8 +1227,8 @@ def _surface_words(surface, cover, census) -> tuple[Optional[str], Optional[str]
     if not cover.get('reachable'):
         return None, f"{surface}: {cover.get('reason')}"
     if surface == 'ledger':
-        return (f"ledger: {cover['searches']} searches of {census.get('ledger', '?')} rows, {cover['rows_found']} rows "
-                'matched'), None
+        return (f"ledger: {cover['searches']} searches over all {census.get('ledger', '?')} rows, {cover['rows_found']} "
+                'rows matched the words'), None
     if surface == 'phones':
         held = census.get('messages')
         return (f"phones: {cover['searches']} searches on {cover['phones']} phones ({held if held is not None else '?'} "

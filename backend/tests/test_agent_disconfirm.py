@@ -610,3 +610,9 @@ def test_the_read_prompt_refuses_what_the_controls_showed_as_false():
     assert 'tell against the theory itself' in D.READ_PROMPT
     assert 'something not appearing among the items' in D.READ_PROMPT
     assert 'shares only a number' in D.READ_PROMPT
+
+
+def test_the_ledger_line_says_every_row_was_searched():
+    """The agent read '15 searches of 49 rows, 38 matched' as a sweep that reached 38 of 49 rows."""
+    did, _ = D._surface_words('ledger', dict(reachable=True, searches=15, rows_found=38), dict(ledger=49))
+    assert did == 'ledger: 15 searches over all 49 rows, 38 rows matched the words'

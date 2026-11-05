@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -33,6 +34,8 @@ from pathlib import Path
 
 CASE = 'd9945277-6c80-4a39-82c7-93a95d420384'
 RELEASE_CAP = 3600
+WATERMARK = re.compile(r'invented data|(statements?|data|records?) (is|are|as) synthetic|(labell?ed|marked|flagged) (as )?synthetic'
+                       r'|synthetic[,/ ]+(not real|invented)', re.I)  # the check files' own printed notice
 RUN = os.environ.get('DISCONFIRM_EVAL_RUN', '2')  # each evaluation has its own theories: a rerun would be all repeats
 THEORIES = [
     dict(id='T1', title='Juniper never paid Ashdown',
@@ -245,7 +248,7 @@ def score(api, theory, t):
             loose.append(dict(title=p['content'].get('title'), body=p['content'].get('body'), strength=p['content'].get('strength'),
                               expectation=p['content'].get('expectation'), citations=sorted(cites)))
     for row in loose:
-        row['watermark'] = 'invented data' in (row['body'] or '') or 'synthetic' in (row['body'] or '').lower()
+        row['watermark'] = bool(WATERMARK.search(row['body'] or ''))
     return dict(id=theory['id'], control=bool(theory.get('control')), planted=len(keys), planted_cited=len(cited),
                 caught=bool(cited) if keys else None, proposals=len(mine), not_on_planted=loose)
 
