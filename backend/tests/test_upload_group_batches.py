@@ -4,7 +4,9 @@ registered as its own evidence row; a mismatched file is refused by name; repeat
 a file."""
 import hashlib
 import json
+import os
 from pathlib import Path
+import resource
 from uuid import UUID
 
 from sqlalchemy import select
@@ -30,6 +32,93 @@ def by_path(state):
 
 CONTENT = {'Phone/a.txt': b'first small file', 'Phone/b.txt': b'second', 'Phone/empty.txt': b'',
            'Phone/sub/c.txt': b'third, still one part', 'Phone/big.bin': b'more than one part ' * 4}
+
+
+def many(count):
+    return {f'Phone/{i}.txt': b'file %d' % i for i in range(count)}
+
+
+def open_files():
+    return len(os.listdir('/proc/self/fd'))
+
+
+def test_a_batch_of_more_files_than_the_worker_may_hold_open_is_saved_whole(groups):
+    # Live 4 Nov 22:50: 500-file batches sent side by side ran a worker out of open files (limit 1024), a 500 for the
+    # batch and for anything else that worker was doing. The limit here is lowered so one batch alone would reach it.
+    f = groups
+    content = many(api.BATCH_OPEN_FILES + 100)
+    state, _ = start(f, content)
+    members = by_path(state)
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    resource.setrlimit(resource.RLIMIT_NOFILE, (open_files() + api.BATCH_OPEN_FILES + 50, hard))
+    try:
+        response = batch(f, state, [(members[p], v) for p, v in content.items()])
+    finally:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
+    assert response.status_code == 200, response.text
+    assert [r['status'] for r in response.json()['files']] == ['staged'] * len(content)
+    listed = f.client.get(f"/api/evidence-upload-groups/{state['id']}").json()
+    assert {m['path']: m['status'] for m in listed['members']} == {p: 'staged' for p in content}
+    for member in listed['members']:
+        with Session(f.engine) as db:
+            row = db.get(EvidenceUploadSession, UUID(member['id']))
+        assert api.uploads.assembled_path(row).read_bytes() == content[member['path']]
+
+
+def test_a_batch_holds_its_files_open_in_bounded_groups_under_the_workers_slots(groups, monkeypatch):
+    f = groups
+    content = many(api.BATCH_OPEN_FILES * 2 + 1)
+    state, _ = start(f, content)
+    members = by_path(state)
+    before = open_files()
+    assert api.BATCH_OPEN_FILES * api.BATCH_SLOTS <= 1024 / 2
+    seen = []
+    fsync = os.fsync
+
+    def counted(fd):
+        seen.append((open_files() - before, api._batch_slots._value))
+        return fsync(fd)
+    monkeypatch.setattr(api.os, 'fsync', counted)
+    assert batch(f, state, [(members[p], v) for p, v in content.items()]).status_code == 200
+    assert len(seen) == len(content)
+    # the request's own connections may come and go; 20 is their room
+    assert max(held for held, _ in seen) <= api.BATCH_OPEN_FILES + 20
+    assert {slots for _, slots in seen} == {api.BATCH_SLOTS - 1}
+    assert api._batch_slots._value == api.BATCH_SLOTS
+
+
+def test_a_failed_write_leaves_no_open_file_and_no_temporary_file(groups, monkeypatch):
+    f = groups
+    state, _ = start(f, CONTENT)
+    members = by_path(state)
+    fdopen, calls = os.fdopen, []
+
+    def full(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 2: raise OSError(28, 'No space left on device')
+        return fdopen(*args, **kwargs)
+    client = api.os  # the disk fills on the second file of the batch
+    monkeypatch.setattr(client, 'fdopen', full)
+    before = open_files()
+    try:
+        response = batch(f, state, [(members['Phone/a.txt'], CONTENT['Phone/a.txt']),
+                                    (members['Phone/b.txt'], CONTENT['Phone/b.txt'])])
+    except OSError as error:  # the test client hands the server's error on
+        assert error.errno == 28
+    else:
+        assert response.status_code == 500
+    monkeypatch.setattr(client, 'fdopen', fdopen)
+    assert open_files() <= before
+    for path in ('Phone/a.txt', 'Phone/b.txt'):
+        with Session(f.engine) as db:
+            row = db.get(EvidenceUploadSession, UUID(members[path]['id']))
+            assert row.status == 'uploading'
+        target = api.uploads.assembled_path(row)
+        assert [p.name for p in target.parent.iterdir() if p.name.startswith('tmp')] == []
+    # the page's retry saves the batch whole
+    response = batch(f, state, [(members['Phone/a.txt'], CONTENT['Phone/a.txt']),
+                                (members['Phone/b.txt'], CONTENT['Phone/b.txt'])])
+    assert [r['status'] for r in response.json()['files']] == ['staged'] * 2
 
 
 def test_batch_saves_every_small_file_as_its_own_member_and_registers_one_evidence_row_each(groups):

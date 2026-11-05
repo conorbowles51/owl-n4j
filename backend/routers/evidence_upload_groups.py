@@ -14,6 +14,7 @@ import re
 import shutil
 import stat
 import tempfile
+import threading
 import time
 from types import SimpleNamespace
 from typing import Literal
@@ -581,6 +582,14 @@ def discard_group(db, identity, user):
 BATCH_MAX_FILES = 1000
 BATCH_MAX_BYTES = 8 * 1024 * 1024
 BATCH_MAX_HEADER = 256 * 1024
+# Files held open between write and flush. Measured on the evidence disk at load 36 (500 files of 720 bytes, median
+# ms a file, sizes interleaved): 16.0 flushed one at a time, 12.4 in groups of 64, 9.1 in groups of 128, 9.7 in one
+# group of 500. Open files are one limit for the whole worker (soft limit 1024 on live; four 500-file batches ran it
+# out, and every other request of that worker fails then too), so a worker runs at most BATCH_SLOTS groups at once:
+# 512 files, leaving the rest of the limit to its other requests.
+BATCH_OPEN_FILES = 128
+BATCH_SLOTS = 4
+_batch_slots = threading.BoundedSemaphore(BATCH_SLOTS)
 BATCH_MISMATCH = ('{name} does not match the fingerprint taken when it was chosen, so it was not saved. Select the '
                   'original folder again; files already saved are kept.')
 
@@ -607,45 +616,24 @@ def _write_flushed(path, content):
     """``content`` at ``path`` through a temporary file in the same folder; the caller flushes ``fd`` and replaces."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=path.parent)
-    with os.fdopen(fd, 'wb', closefd=False) as output:
-        output.write(content)
+    try:
+        with os.fdopen(fd, 'wb', closefd=False) as output:
+            output.write(content)
+    except BaseException:
+        os.close(fd)
+        os.unlink(temporary)
+        raise
     return fd, temporary
 
 
-def save_batch(db, identity, user, body):
-    spec, offset = _batch_spec(body)
-    group = get_group(db, identity, user, lock='share')
-    if group.status != 'uploading':
-        raise HTTPException(409, 'Resume this selection before sending more files')
-    S = EvidenceUploadSession
-    rows = {row.id: row for row in db.scalars(select(S).where(S.group_id == group.id, S.id.in_([i for i, _ in spec]))
-                                              .order_by(S.id).with_for_update())}
-    if len(rows) != len(spec):
-        raise HTTPException(404, 'A file in this batch is not part of this selection. Nothing in it was saved.')
-    view = memoryview(body)
-    pending, results = [], []
+def _save_files(files):
+    """Write ``files`` ([(row, content, target)]) and then flush them, each marked staged on its row. Every file is
+    written first and flushed after, which lets the disk take the flushes together."""
+    pending = []
     try:
-        for identity_, size in spec:
-            row, content = rows[identity_], view[offset:offset + size]
-            offset += size
-            if row.size != size or size > uploads.CHUNK_SIZE or len(row.chunks) != (1 if size else 0):
-                raise HTTPException(400, 'A file in this batch is not a one-part file of its chosen size. Nothing '
-                                         'in it was saved.')
-            if row.status in STAGED:  # a repeat after a lost response: saved already, kept as it is
-                results.append(dict(id=str(row.id), status=row.status))
-                continue
-            if row.status != 'uploading':
-                raise HTTPException(409, 'Resume this selection before sending more files')
-            digest = hashlib.sha256(content).hexdigest()
-            if digest != row.sha256 or (size and digest != row.chunks[0]):
-                results.append(dict(id=str(row.id), status=row.status, error=BATCH_MISMATCH.format(name=row.filename)))
-                continue
-            target = uploads.assembled_path(row)
+        for row, content, target in files:
             fd, temporary = _write_flushed(target, content)
             pending.append((row, fd, temporary, target))
-            results.append(dict(id=str(row.id), status='staged'))
-        # Every file is written first and flushed after, which lets the disk take the flushes together (measured on
-        # the evidence disk: 10.4 ms a file against 17.4 ms written and flushed one at a time).
         while pending:
             row, fd, temporary, target = pending.pop(0)
             try:
@@ -674,6 +662,40 @@ def save_batch(db, identity, user, body):
         for _, fd, temporary, _ in pending:
             os.close(fd)
             if os.path.exists(temporary): os.unlink(temporary)
+
+
+def save_batch(db, identity, user, body):
+    spec, offset = _batch_spec(body)
+    group = get_group(db, identity, user, lock='share')
+    if group.status != 'uploading':
+        raise HTTPException(409, 'Resume this selection before sending more files')
+    S = EvidenceUploadSession
+    rows = {row.id: row for row in db.scalars(select(S).where(S.group_id == group.id, S.id.in_([i for i, _ in spec]))
+                                              .order_by(S.id).with_for_update())}
+    if len(rows) != len(spec):
+        raise HTTPException(404, 'A file in this batch is not part of this selection. Nothing in it was saved.')
+    view = memoryview(body)
+    accepted, results = [], []
+    for identity_, size in spec:
+        row, content = rows[identity_], view[offset:offset + size]
+        offset += size
+        if row.size != size or size > uploads.CHUNK_SIZE or len(row.chunks) != (1 if size else 0):
+            raise HTTPException(400, 'A file in this batch is not a one-part file of its chosen size. Nothing '
+                                     'in it was saved.')
+        if row.status in STAGED:  # a repeat after a lost response: saved already, kept as it is
+            results.append(dict(id=str(row.id), status=row.status))
+            continue
+        if row.status != 'uploading':
+            raise HTTPException(409, 'Resume this selection before sending more files')
+        digest = hashlib.sha256(content).hexdigest()
+        if digest != row.sha256 or (size and digest != row.chunks[0]):
+            results.append(dict(id=str(row.id), status=row.status, error=BATCH_MISMATCH.format(name=row.filename)))
+            continue
+        accepted.append((row, content, uploads.assembled_path(row)))
+        results.append(dict(id=str(row.id), status='staged'))
+    for start in range(0, len(accepted), BATCH_OPEN_FILES):
+        with _batch_slots:
+            _save_files(accepted[start:start + BATCH_OPEN_FILES])
     db.commit()
     return dict(files=results)
 
