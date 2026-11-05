@@ -12,6 +12,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { basename, join } from "node:path"
 import { chromium } from "playwright"
 import { CASES, PHONE_REFERENCE_CASES, readLogin, signIn } from "./lib.mjs"
+import { releaseRunning, stalled } from "./upload-stall.mjs"
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(`--${name}`)
@@ -44,8 +45,22 @@ let t0 = Date.now()
 const secs = () => ((Date.now() - t0) / 1000).toFixed(1)
 const seen = []
 let failed = null
+// A browser call with no timeout of its own held try 3 of P07 silent for 7 h 30 min (5 Nov): its log stayed empty and
+// the watch loop never ran. Every step below moves `beat`; a run with no beat for this long ends itself, with words.
+const quietMinutes = 90
+let beat = Date.now()
+const step = (words) => {
+  beat = Date.now()
+  console.log(`step ${new Date().toISOString().slice(11, 19)} ${words}`)
+}
+setInterval(() => {
+  if (Date.now() - beat < quietMinutes * 60_000) return
+  console.log(`SUMMARY ${label} FAILED the browser did not answer for ${quietMinutes} min ${JSON.stringify(seen.map(({ stage, at }) => ({ stage, at })))}`)
+  process.exit(1)
+}, 60_000).unref()
 try {
   const { context } = await signIn(browser, login)
+  step("signed in")
   const page = await context.newPage()
   await page.goto(`${login.url}/cases/${caseId}/evidence`, { waitUntil: "domcontentloaded" })
   if ((await page.evaluate(() => window.isSecureContext)) !== false) throw new Error("isSecureContext was not false")
@@ -65,14 +80,19 @@ try {
   }
   // the innermost element holding both the text and the upload card's title
   const uploadCard = (re) => page.locator("div").filter({ has: page.getByText(re) }).filter({ hasText: /(upload|ZIP) \(|upload/i }).last()
+  step("evidence page open")
   await page.getByRole("button", { name: "Add phone report (folder or ZIP)" }).click()
   const chooser = page.waitForEvent("filechooser")
   await page.getByRole("menuitem", { name: kind === "folder" ? "Phone report folder" : "Phone report ZIP file" }).click()
   // a folder of 200,000 files takes Playwright minutes to hand to the page; the default 30 s stopped P07 and P03
   await (await chooser).setFiles(path, { timeout: 60 * 60_000 })
+  step("selection handed to the page")
   // until the menu closes itself on a pick (3765860e), close it so the page is not left hidden
-  if (await page.getByRole("menu").count()) await page.keyboard.press("Escape")
+  // count() has no timeout of its own: this line held P07 try 3 for 7 h 30 min, so it gets one and the watch goes on
+  const menuOpen = await Promise.race([page.getByRole("menu").count(), new Promise((done) => setTimeout(() => done(0), 60_000))])
+  if (menuOpen) await page.keyboard.press("Escape")
   t0 = Date.now() // the clock starts at the pick
+  step("watching")
   const watch = [
     ["hashing", /Checking files before upload: [\d,]+ of [\d,]+|Checking the file before upload: [\d.]+ of [\d.]+ [KMG]?B/],
     ["sending", /Sending [\d.]+ (?:[KMG]B )?of [\d.]+ [KMG]B/],
@@ -88,11 +108,13 @@ try {
   const deadline = Date.now() + minutes * 60_000
   let last = ""
   // A selection left paused with nobody to resume it shows a frozen line for ever (P07, 4 Nov: 6 h 8 min silent until
-  // a scheduled check found it). A release pause moves on within minutes; a stall ends the run, and the next try's
-  // fresh page resumes the selection through the app's own path.
+  // a scheduled check found it): a stall ends the run, and the next try's fresh page resumes the selection through the
+  // app's own path. Time while a release runs does not count: releases one after another froze the line for 3 h 24 min
+  // on 5 Nov, the page would have carried on by itself, and a fresh page has to read every file again.
   const stallMinutes = 90
   let moved = { line: "", at: Date.now() }
   while (Date.now() < deadline) {
+    beat = Date.now()
     for (const [stage, re] of watch) {
       if (seen.some((s) => s.stage === stage)) continue
       if (await scope(stage).getByText(re).first().isVisible().catch(() => false)) {
@@ -110,7 +132,9 @@ try {
       ? await card.locator('[aria-live="polite"]').first().textContent({ timeout: 1000 }).catch(() => "")
       : await page.getByText(watch[0][1]).or(page.getByText(watch[1][1])).first().textContent({ timeout: 1000 }).catch(() => "")
     if (line && line !== moved.line) moved = { line, at: Date.now() }
-    if (seen.at(-1)?.stage === "sending" && Date.now() - moved.at > stallMinutes * 60_000) {
+    if (seen.at(-1)?.stage === "sending" && Date.now() - moved.at > stallMinutes * 60_000 && releaseRunning())
+      moved.at = Date.now()
+    if (stalled(seen.at(-1)?.stage, moved.at, stallMinutes)) {
       failed = `no change on the page for ${stallMinutes} min while sending`
       console.log(`${secs()} s ${failed}`)
       break
