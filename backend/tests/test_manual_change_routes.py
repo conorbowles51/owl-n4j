@@ -31,7 +31,7 @@ ROUTE_KINDS = {
     'duplicate_disposition', 'not_payment_statement', 'payment_document_review', 'manual_payment',
     'record_withdrawal', 'record_restore', 'record_completion', 'row_assignment', 'review_recovery_ack',
     'statement_currency', 'file_currency', 'layout_memory_confirm', 'layout_memory_withdraw', 'field_proposal_group',
-    'statement_save', 'page_review', 'statement_review_confirm', 'page_image_offer_accept', 'page_image_offer_decline',
+    'statement_save', 'page_review', 'page_review_undo', 'statement_review_confirm', 'page_image_offer_accept', 'page_image_offer_decline',
     'page_rows_confirm', 'batch_item_skip', 'transaction_category', 'transaction_from_to', 'transaction_details',
     'transaction_amount', 'transaction_bulk_correct', 'sub_transaction_link', 'sub_transaction_unlink',
     'entity_property_edit', 'entity_location_correct', 'entity_location_remove', 'insight_confirm', 'insight_reject',
@@ -39,7 +39,7 @@ ROUTE_KINDS = {
     'entity_restore', 'transcript_speaker_correct', 'evidence_relevance_set',
     'significant_entity_add', 'significant_entity_remove', 'significant_entity_clear', 'workspace_ai_accept',
     'workspace_ai_reject', 'attention_dismiss', 'attention_clear', 'timeline_event_add', 'statement_draft_edit',
-    'security_row_correct', 'security_row_confirm',
+    'security_row_correct', 'security_row_confirm', 'glossary_term_withdraw', 'monitoring_app_list_edit',
 }
 
 

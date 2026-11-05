@@ -405,7 +405,7 @@ def put_page_review(evidence_file_id: UUID, page_number: Annotated[int, Path(ge=
 
 
 @router.post('/{evidence_file_id}/page-reviews/{page_number}/undo', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
-@records('page_review', 'undo', field='undo')
+@records('page_review_undo', 'set_aside', field='undo')
 def post_page_review_undo(evidence_file_id: UUID, page_number: Annotated[int, Path(ge=1, le=1000000)], body: PageReviewUndoRequest,
         case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
     from services.financial.page_reviews import undo_page_review

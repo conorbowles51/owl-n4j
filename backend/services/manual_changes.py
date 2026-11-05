@@ -37,6 +37,7 @@ DELIVERED_ELSEWHERE = {'judgement_correct': 'judgement-lessons',
                        'judgement_reopen': 'not a lesson: undoes a person\'s decision',
                        'merge_suggestion_unreject': 'not a lesson: undoes a person\'s decision',
                        'account_consolidation_undo': 'not a lesson: undoes a person\'s decision',
+                       'page_review_undo': 'not a lesson: undoes a person\'s decision',
                        'phone_money_match_undo': 'not a lesson: undoes a person\'s decision',
                        'attention_dismiss': 'not a lesson: a personal view setting',
                        'attention_clear': 'not a lesson: a personal view setting'}
