@@ -103,6 +103,7 @@ function page(entry = "/cases/case-1/conversations") {
 describe("Conversations", () => {
   beforeEach(() => {
     resetKeymapForTest()
+    sessionStorage.clear()
     streamFilters.length = 0
     api.getPhones.mockResolvedValue({ case_id: "case-1", phones: [{ extraction_id: "e1", label: "C1" }] })
     api.getSettings.mockResolvedValue({ case_id: "case-1", time_zone: null, effective: { name: "UTC", basis: "default", note: null }, updated_at: null, updated_by: null })

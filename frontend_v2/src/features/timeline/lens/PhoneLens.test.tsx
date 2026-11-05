@@ -50,7 +50,8 @@ vi.mock("@/features/phones/components/StreamList", () => ({
 import { PhoneLens } from "./PhoneLens"
 import { usePhoneLens } from "./usePhoneLens"
 
-const wrap = (ui: React.ReactNode) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{ui}</QueryClientProvider>)
+const wrap = (ui: React.ReactNode, at = "/cases/c/timeline") =>
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter initialEntries={[at]}>{ui}</MemoryRouter></QueryClientProvider>)
 
 beforeEach(() => {
   net.calls = []
@@ -64,10 +65,19 @@ describe("Timeline phone lens (03 section 9)", () => {
   it("T-7: asks for messages, calls, emails, media and locations by default and states the hidden device events, one click away", async () => {
     wrap(<PhoneLens caseId="c" caseName="Synthetic case" />)
     expect(await screen.findByText("4 device events and sensor readings hidden.")).toBeInTheDocument()
-    expect(net.calls[0].body.lens_kinds).toEqual(["messages", "calls", "emails", "media", "locations"])
+    expect(net.calls.find((c) => c.url.endsWith("/timeline/index"))!.body.lens_kinds).toEqual(["messages", "calls", "emails", "media", "locations"])
     fireEvent.click(screen.getByRole("button", { name: "Show" }))
     await waitFor(() => expect(net.calls.at(-1)!.body.lens_kinds).toEqual(["messages", "calls", "emails", "media", "locations", "device", "sensor"]))
     expect(await screen.findByText("Device events and sensor readings are shown.")).toBeInTheDocument()
+  })
+
+  it("07 4.5: a scope carried in the address filters the lens and shows the same chips", async () => {
+    wrap(<PhoneLens caseId="c" caseName="Synthetic case" />, "/cases/c/timeline?people=phone%3A%2B1&phones=e1&mode=sent-by")
+    await waitFor(() => expect(net.calls.some((c) => (c.body as { participants?: string[] })?.participants?.[0] === "phone:+1")).toBe(true))
+    const sent = net.calls.find((c) => (c.body as { participants?: string[] })?.participants)!.body as Record<string, unknown>
+    expect(sent).toMatchObject({ phones: ["e1"], participant_mode: "sent_by" })
+    expect(screen.getByRole("region", { name: "Scope" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Remove +1" })).toBeInTheDocument()
   })
 
   it("T-2: a result of 4,000 entries is fetched whole in windows of 1,000, with no load-more control", async () => {
@@ -81,7 +91,7 @@ describe("Timeline phone lens (03 section 9)", () => {
 
   it("T-6 and T-4: lanes draw No data apart from no matching entries, and a bucket opens in the same phone list", async () => {
     wrap(<PhoneLens caseId="c" caseName="Synthetic case" />)
-    await screen.findByText("6 phone entries")
+    await screen.findAllByText("6 phone entries") // the scope bar and the lens summary state the same total
     fireEvent.click(screen.getByRole("button", { name: "Lanes" }))
     const c1 = await screen.findByRole("region", { name: "Lane: C1" })
     expect(within(c1).getByTitle("No data")).toBeInTheDocument()
@@ -96,13 +106,13 @@ describe("Timeline phone lens (03 section 9)", () => {
   })
 
   it("05 4.4: phone money readings sit on their own lane, labelled p4 from the phone, and in no count of the phones", async () => {
-    wrap(<MemoryRouter><PhoneLens caseId="c" caseName="Synthetic case" /></MemoryRouter>)
-    await screen.findByText("6 phone entries")
+    wrap(<PhoneLens caseId="c" caseName="Synthetic case" />)
+    await screen.findAllByText("6 phone entries") // the scope bar and the lens summary state the same total
     fireEvent.click(screen.getByRole("button", { name: "Lanes" }))
     const lane = await screen.findByRole("region", { name: "Lane: Money: readings from the phone (p4)" })
     expect(lane).toHaveTextContent("Readings are never added to any total.")
     expect(lane).toHaveTextContent("1 with no time is not drawn.")
-    expect(await screen.findByText("6 phone entries")).toBeInTheDocument() // the phones' total is the same with readings on screen
+    expect((await screen.findAllByText("6 phone entries")).length).toBeGreaterThan(0) // the phones' total is the same with readings on screen
     expect(within(lane).getByRole("button", { name: /^\w{3} \d+, \d{4} · 2 p4 readings from the phone/ })).toBeInTheDocument()
     fireEvent.click(within(lane).getByRole("button", { name: /2 p4 readings from the phone/ }))
     const list = await screen.findByRole("region", { name: "Phone money readings" })
@@ -113,7 +123,7 @@ describe("Timeline phone lens (03 section 9)", () => {
   it("an All span over ten years asks for weekly lanes, which the server answers, not daily lanes it refuses", async () => {
     net.lastDay = "2036-11-30"
     wrap(<PhoneLens caseId="c" caseName="Synthetic case" />)
-    await screen.findByText("6 phone entries")
+    await screen.findAllByText("6 phone entries") // the scope bar and the lens summary state the same total
     fireEvent.click(screen.getByRole("button", { name: "Lanes" }))
     await screen.findByRole("region", { name: "Lane: C1" })
     const asked = net.calls.filter((c) => c.url.endsWith("/timeline/buckets")).map((c) => c.body.bucket)

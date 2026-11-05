@@ -122,6 +122,7 @@ def test_u4_panel_counts_equal_conversations_for_every_link(world):
 def test_a_dossier_with_no_link_says_so_and_another_case_is_refused(world):
     out = P.dossier_phones(world["conn"], world["case"], world["unlinked"])
     assert out["identities"] == [] and out["total"] == 0 and out["conversations_href"] is None
+    assert out["phones_in_case"] == 2
     with pytest.raises(P.NotInCase):
         P.dossier_phones(world["conn"], world["case"], uuid.uuid4())
 

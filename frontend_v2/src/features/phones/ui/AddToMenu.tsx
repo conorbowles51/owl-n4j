@@ -63,6 +63,7 @@ export function AddToMenu({
   onAdded,
   disabledReason,
   keys = true,
+  noDossierWhy,
 }: {
   caseId: string
   /** What is selected, as links (a selection over 500 arrives as one phone_selection link, 07 6.1). */
@@ -78,6 +79,8 @@ export function AddToMenu({
   /** Set when the person may not add here: the control is disabled and states why (07 4.11). */
   disabledReason?: string
   keys?: boolean
+  /** Why this item does not go straight into a dossier (07 6.1): shown in place of the list of dossiers. */
+  noDossierWhy?: string
 }) {
   const [open, setOpen] = useState(false)
   const [kind, setKind] = useState<TargetKind | null>(null)
@@ -205,8 +208,8 @@ export function AddToMenu({
           {kind && (
             <div className="flex flex-col gap-1 text-sm">
               <p className="font-medium">{KIND_KEYS.find((k) => k.kind === kind)!.words}</p>
-              {ordered.length === 0 && <p>No {KIND_KEYS.find((k) => k.kind === kind)!.words.toLowerCase()} in this case yet. Create one from Workspace or Dossiers first.</p>}
-              {ordered.length > 0 && (
+              {kind === "dossier" && noDossierWhy ? <p>{noDossierWhy}</p> : ordered.length === 0 && <p>No {KIND_KEYS.find((k) => k.kind === kind)!.words.toLowerCase()} in this case yet. Create one from Workspace or Dossiers first.</p>}
+              {ordered.length > 0 && !(kind === "dossier" && noDossierWhy) && (
                 // choosing a target adds to it (07 J-12: one item in 3 actions); the reply offers Undo
                 <div role="listbox" aria-label={`Choose where to add: ${KIND_KEYS.find((k) => k.kind === kind)!.words}`} className="flex flex-col gap-0.5">
                   {ordered.map((t) => (

@@ -73,7 +73,7 @@ export function MapPage() {
   const carried = useUrlScope(caseId ?? "", { window: true })
   const { canEdit } = useCasePermissions(useCase(caseId ?? "").data)
   const settings = useQuery({ ...phoneSettingsQuery(caseId ?? ""), enabled: !!caseId })
-  const zoneName = settings.data?.effective.name ?? "UTC"
+  const zoneName = settings.data?.effective?.name ?? "UTC"
   const carriedFilter = useMemo<PhoneMapFilter | undefined>(() => {
     const { phones: picked, window: span } = carried.scope
     if (!picked.length && !span) return undefined

@@ -23,7 +23,6 @@ export const SELECTION_AS_ONE = 500
 /** What a target kind cannot take for this group (07 6.1: an identity reaches a dossier only through a link decision). */
 export function dossierRefused(group: string): string | null {
   if (group === "people") return "A person's numbers and accounts join a dossier through a link decision in Phone identities, so dossiers are not offered here."
-  if (group === "payments") return "Payments are collected into findings, theories and notes, so dossiers are not offered here."
   return null
 }
 

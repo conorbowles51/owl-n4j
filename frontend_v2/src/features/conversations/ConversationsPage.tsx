@@ -344,7 +344,8 @@ export function ConversationsPage() {
     const selected = selection.all && stream.status === "ready" ? stream.total : selection.rows.length
     const linked = links.length === 1 && links[0].target_type === "phone_selection" ? (freeze.data?.event_count ?? 0) : selection.rows.length
     useNotebookStore.getState().startDraft(
-      links.map((l) => ({ target_type: l.target_type, target_id: l.target_id, target_label: l.label ?? null })),
+      // links here are phone messages; the narrowing is for the type a Search hit's link shares
+      links.flatMap((l) => (l.target_type === "financial_transaction" ? [] : [{ target_type: l.target_type, target_id: l.target_id, target_label: l.label ?? null }])),
       { caseId, selected, linked, recordIds: ids },
     )
     useUIStore.getState().expandGraphPanelTo("notebook")

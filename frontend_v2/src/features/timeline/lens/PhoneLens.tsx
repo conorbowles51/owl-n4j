@@ -189,7 +189,7 @@ export function PhoneLens({ caseId, caseName, note, focusRecord }: { caseId: str
   // the phone scope carried in the address (07 4.5), read by the lens's own stream filter; its kinds are the lens's own
   const carried = useUrlScope(caseId, { people: true, window: true })
   const settings = useQuery({ ...phoneSettingsQuery(caseId), enabled: !!caseId })
-  const zoneName = settings.data?.effective.name ?? "UTC"
+  const zoneName = settings.data?.effective?.name ?? "UTC"
   const scopeSignature = scopeToSearch(carried.scope)
   const scoped = useMemo<Partial<LensFilter>>(() => {
     const { people, mode, phones, window: span } = carried.scope

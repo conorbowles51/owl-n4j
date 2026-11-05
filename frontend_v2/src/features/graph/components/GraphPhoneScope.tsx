@@ -46,7 +46,7 @@ function Carried({ caseId, nodes, edges }: { caseId: string; nodes: GraphNode[];
     addToSubgraph(keys)
     setSpotlightVisible(true)
   }, [nodes.length, keys, signature, addToSubgraph, clearSubgraph, setSpotlightVisible])
-  const zone = settings.data?.effective.name
+  const zone = settings.data?.effective?.name
   const from = scope.window?.from
   const to = scope.window?.to
   useEffect(() => {

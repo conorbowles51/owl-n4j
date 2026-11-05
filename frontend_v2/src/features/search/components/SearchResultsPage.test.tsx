@@ -93,9 +93,9 @@ describe("Add to… on Search results", () => {
     const user = userEvent.setup()
     open("people")
     await user.click(await screen.findByRole("checkbox", { name: "Every hit (1)" }))
-    expect(screen.getByText(/through a link decision in Phone identities/)).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Add to…" }))
     await user.click(await screen.findByRole("button", { name: /Dossier/ }))
+    expect(screen.getByText(/through a link decision in Phone identities/)).toBeInTheDocument()
     expect(screen.queryByRole("option", { name: /Ana/ })).not.toBeInTheDocument()
   })
 

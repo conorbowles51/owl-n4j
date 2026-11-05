@@ -72,8 +72,6 @@ export function PhoneSummaryPage() {
   const missing = p.files.verification.missing ?? 0
   const notAllowed = canEdit ? undefined : "A case member who can edit can add."
   const targets = collect.data ?? []
-  // a phone reaches a dossier as a device dossier, an identity through a link decision (07 6.1); both go to the rest
-  const notDossiers = targets.filter((t) => t.kind !== "dossier")
   const ownerKey = p.owner.label?.identity_key
   return (
     <div className="flex flex-col gap-3 p-4">
@@ -97,7 +95,8 @@ export function PhoneSummaryPage() {
       </p>
       <div aria-label="Add this phone" className="flex flex-wrap items-start gap-2">
         <AddToMenu caseId={caseId} links={[{ target_type: "phone_extraction", target_id: extraction, label: p.phone.label, source_anchor: { extraction_id: extraction } }]}
-          noun="phones" targets={notDossiers} client={liveCollectClient} origin="Added from the Phone summary" keys={false} disabledReason={notAllowed}
+          noun="phones" targets={targets} client={liveCollectClient} origin="Added from the Phone summary" keys={false} disabledReason={notAllowed}
+          noDossierWhy="A phone goes into a device dossier: use Add to a device dossier beside this button."
           onUndo={(t, r) => void undoCollect(caseId, t, r)} />
         <TypedDossierAdd caseId={caseId} type="device" suggestedName={p.phone.label} origin="Added from the Phone summary" disabledReason={notAllowed}
           link={{ target_type: "phone_extraction", target_id: extraction, label: p.phone.label, source_anchor: { extraction_id: extraction } }} />
@@ -191,7 +190,8 @@ export function PhoneSummaryPage() {
                   )}
                   {t.label.identity_key && (
                     <AddToMenu caseId={caseId} links={[{ target_type: "phone_identity", target_id: t.label.identity_key, label: t.text, source_anchor: { extraction_id: extraction } }]}
-                      noun="people" targets={notDossiers} client={liveCollectClient} origin="Added from the Phone summary" keys={false} disabledReason={notAllowed}
+                      noun="people" targets={targets} client={liveCollectClient} origin="Added from the Phone summary" keys={false} disabledReason={notAllowed}
+                      noDossierWhy="A person's number or account joins a dossier through a link decision in Phone identities."
                       onUndo={(u, r) => void undoCollect(caseId, u, r)} />
                   )}
                 </li>

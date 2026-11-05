@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { Link, useParams, useSearchParams } from "react-router-dom"
 import { useCase } from "@/features/cases/hooks/use-cases"
 import { useCasePermissions } from "@/features/cases/hooks/use-case-permissions"
@@ -68,22 +68,18 @@ export function SearchResultsPage() {
     retry: false,
     staleTime: Infinity,
   })
-  const chosen = useMemo(() => {
-    const out: CollectLink[] = []
-    let none = 0
-    ;(items ?? []).forEach((h, i) => {
-      if (!all && !picked.has(i)) return
-      const link = hitLink(h, q)
-      if (link) out.push(link)
-      else none += 1
-    })
-    return { links: out, none }
-  }, [items, all, picked, q])
+  const chosen: { links: CollectLink[]; none: number } = { links: [], none: 0 }
+  ;(items ?? []).forEach((h, i) => {
+    if (!all && !picked.has(i)) return
+    const link = hitLink(h, q)
+    if (link) chosen.links.push(link)
+    else chosen.none += 1
+  })
   const links: CollectLink[] = asOne
     ? frozen.data ? [{ target_type: "phone_selection", target_id: frozen.data.id, label: frozen.data.words, source_anchor: { origin: "search", query: q } }] : []
     : chosen.links
   const refused = dossierRefused(group)
-  const targets = (collect.data ?? []).filter((t) => !(refused && t.kind === "dossier"))
+  const targets = collect.data ?? []
   const notAllowed = !canEdit ? "A case member who can edit can add." : asOne && frozen.isError ? failureText(frozen.error, "The whole result could not be prepared for adding.") : undefined
   const addNoun = asOne ? "selection" : noun(group)
   return (
@@ -124,6 +120,7 @@ export function SearchResultsPage() {
                 origin="Added from Search"
                 keys={false}
                 disabledReason={notAllowed}
+                noDossierWhy={refused ?? undefined}
                 onUndo={(target, result) => {
                   setUndoNote("Undoing the add")
                   undoCollect(caseId, target, result)
@@ -133,7 +130,6 @@ export function SearchResultsPage() {
               />
             </div>
           )}
-          {(all || picked.size > 0) && refused && <p className="text-xs">{refused}</p>}
           {undoNote && <p role="status" className="text-xs">{undoNote}</p>}
           {!asOne && chosen.none > 0 && (
             <p role="note" className="text-xs">{chosen.none.toLocaleString("en-US")} of the hits chosen {chosen.none === 1 ? "has" : "have"} nothing that can be saved and will be left out.</p>

@@ -1,9 +1,18 @@
 import { act, fireEvent, render, screen } from "@testing-library/react"
-import { MemoryRouter } from "react-router-dom"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import type { ReactNode } from "react"
+import { MemoryRouter as Router, type MemoryRouterProps } from "react-router-dom"
 import { describe, expect, it, vi } from "vitest"
 import { dispatchKey, resetKeymapForTest } from "@/lib/keymap"
 import { useMapStore } from "../stores/map.store"
 import { PhoneLayerPanel } from "./PhoneLayer"
+
+/** Each position offers an address dossier, which reads the dossier list when opened. */
+const MemoryRouter = ({ children, ...rest }: MemoryRouterProps & { children: ReactNode }) => (
+  <QueryClientProvider client={new QueryClient()}>
+    <Router {...rest}>{children}</Router>
+  </QueryClientProvider>
+)
 
 const summary = {
   case_id: "c", positioned: 2, total: 6, by_source: { device_location: 2 }, bbox: [-74, 40, -73, 41],

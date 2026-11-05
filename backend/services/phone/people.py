@@ -188,7 +188,9 @@ def dossier_phones(conn, case_id, dossier_id) -> dict:
     history, history_total = _history(conn, case_id, dossier_id)
     base = {"case_id": str(case_id), "dossier": {"id": person.id, "name": person.name, "type": person.type},
             "suggested_identities": suggested, "history": history, "history_total": history_total,
-            "phones_in_case": len(labels), "review_href": "/cases/%s/phone-review" % case_id}
+            "phones_in_case": int(conn.execute(text(
+                "SELECT count(*) FROM phone_extractions WHERE case_id = :c AND standing = 'active'"),
+                {"c": str(case_id)}).scalar()), "review_href": "/cases/%s/phone-review" % case_id}
     if not keys:
         return dict(base, identities=[], phones=[], total=0, conversations_href=None,
                     expected_revision=None)

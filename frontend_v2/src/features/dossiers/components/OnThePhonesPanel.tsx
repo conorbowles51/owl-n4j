@@ -33,6 +33,8 @@ export function OnThePhonesPanel({ caseId, dossierId, canEdit }: { caseId: strin
     queryFn: () => peopleAPI.dossierPhones(caseId, dossierId),
     staleTime: 30_000,
   })
+  // a case with no phone has nothing to say here, and no empty box on every dossier
+  if (q.data?.phones_in_case === 0) return null
   return (
     <section aria-label="On the phones" className="space-y-3 rounded-xl border border-border p-4 text-sm">
       <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">On the phones</h3>
