@@ -185,6 +185,48 @@ def test_merge_result_says_when_the_entity_waits_for_its_vector() -> None:
     assert state["merge_result"]["vector_pending"] is True
 
 
+def _embed_run(monkeypatch, *, embed_fails, write_fails=False):
+    import asyncio
+
+    from app.pipeline import merge_orchestrator as M
+    writes = []
+
+    async def embed(*a):
+        if embed_fails:
+            raise RuntimeError("429 insufficient_quota")
+
+    async def write(query, params):
+        writes.append(query)
+        if write_fails and "SET" in query:
+            raise RuntimeError("graph down")
+    monkeypatch.setattr(M, "_embed_merged_entity", embed)
+    monkeypatch.setattr(M.neo4j_client, "execute_write", write)
+    run = asyncio.run(M._embed_or_mark({}, "k", "c", [], "Person", "job")) if not write_fails else None
+    return run, writes
+
+
+def test_a_refused_embedding_keeps_the_merged_entity_and_marks_it(monkeypatch) -> None:
+    pending, writes = _embed_run(monkeypatch, embed_fails=True)
+    assert pending is True and len(writes) == 1 and "vector_pending" in writes[0]
+    assert not any("DELETE" in q for q in writes)
+
+
+def test_an_embedded_merge_writes_no_mark(monkeypatch) -> None:
+    pending, writes = _embed_run(monkeypatch, embed_fails=False)
+    assert pending is False and writes == []
+
+
+def test_a_mark_that_cannot_be_written_rolls_the_entity_back(monkeypatch) -> None:
+    import asyncio
+
+    import pytest
+
+    from app.pipeline import merge_orchestrator as M
+    _, _ = _embed_run(monkeypatch, embed_fails=True, write_fails=True)
+    with pytest.raises(RuntimeError):
+        asyncio.run(M._embed_or_mark({}, "k", "c", [], "Person", "job"))
+
+
 def test_relationship_write_properties_replace_stale_endpoint_ids() -> None:
     original = {"case_id": "case-1", "detail": "Named director"}
 

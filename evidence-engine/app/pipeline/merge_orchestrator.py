@@ -349,6 +349,49 @@ async def _embed_merged_entity(
 # Pipeline entry point
 # ---------------------------------------------------------------------------
 
+async def _embed_or_mark(
+    merged: dict[str, Any],
+    new_key: str,
+    case_id: str,
+    entities: list[dict],
+    category: str,
+    job_id: str,
+) -> bool:
+    """Embed the merged entity; True when it waits for its vector.
+
+    A refused embedding must not undo a merge the person asked for: the entity stays, marked
+    ``vector_pending``, and the backend's gap backfill embeds it when the service answers
+    (backend/services/entity_vectors.py). Until then it is missing from meaning search and cross-job
+    dedup, the same as every entity read in the outage. Only when the mark cannot be written is the
+    entity rolled back, because nothing would ever fill its vector.
+    """
+    try:
+        await _embed_merged_entity(merged, new_key, case_id, entities, category)
+        return False
+    except Exception:
+        logger.exception(
+            "Embedding failed for merge job %s; keeping the entity, vector pending", job_id,
+        )
+    try:
+        await neo4j_client.execute_write(
+            "MATCH (n {id: $id, case_id: $case_id}) SET n.vector_pending = true",
+            {"id": new_key, "case_id": case_id},
+        )
+        return True
+    except Exception:
+        logger.exception("Could not mark merged entity %s; rolling back", new_key)
+        try:
+            await neo4j_client.execute_write(
+                "MATCH (n {id: $id, case_id: $case_id}) DETACH DELETE n",
+                {"id": new_key, "case_id": case_id},
+            )
+        except Exception:
+            logger.exception(
+                "Compensating delete failed for merged entity %s in case %s", new_key, case_id,
+            )
+        raise
+
+
 async def run_merge_pipeline(job_id: str, db: AsyncSession) -> None:
     await load_ai_model_policy(db)
     result = await db.execute(select(Job).where(Job.id == job_id))
@@ -427,39 +470,8 @@ async def run_merge_pipeline(job_id: str, db: AsyncSession) -> None:
                 f"Entity created with {rel_count} relationships",
             )
 
-            # Stage 3: Embed for RAG (85–100%). A refused embedding must not undo
-            # a merge the person asked for: the entity stays, marked vector_pending,
-            # and the backend's gap backfill embeds it when the service answers
-            # (services/entity_vectors.py). Until then it is missing from meaning
-            # search and cross-job dedup, the same as every entity read in the
-            # outage. Only when the mark cannot be written is the entity rolled
-            # back, because nothing would ever fill its vector.
-            try:
-                await _embed_merged_entity(merged, new_key, case_id, entities, category)
-            except Exception:
-                logger.exception(
-                    "Embedding failed for merge job %s; keeping the entity, vector pending",
-                    job_id,
-                )
-                try:
-                    await neo4j_client.execute_write(
-                        "MATCH (n {id: $id, case_id: $case_id}) SET n.vector_pending = true",
-                        {"id": new_key, "case_id": case_id},
-                    )
-                    vector_pending = True
-                except Exception:
-                    logger.exception("Could not mark merged entity %s; rolling back", new_key)
-                    try:
-                        await neo4j_client.execute_write(
-                            "MATCH (n {id: $id, case_id: $case_id}) DETACH DELETE n",
-                            {"id": new_key, "case_id": case_id},
-                        )
-                    except Exception:
-                        logger.exception(
-                            "Compensating delete failed for merged entity %s in case %s",
-                            new_key, case_id,
-                        )
-                    raise
+            # Stage 3: Embed for RAG (85–100%).
+            vector_pending = await _embed_or_mark(merged, new_key, case_id, entities, category, job_id)
 
         # Complete
         job.pipeline_state = build_merge_result_state(
