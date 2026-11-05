@@ -10,6 +10,7 @@ import {
   updatingAsOf,
 } from "./financial-view-updates"
 import { answerRequest, bodyLength, endRequest, readJSON, startRequest } from "./request-progress"
+import { JOB_STARTED_EVENT, startsJob } from "./job-started"
 
 export class ApiError extends Error {
   status: number
@@ -118,6 +119,7 @@ export async function fetchAPI<T>(
     const requestId = response.headers?.get?.("X-Request-ID")
     if (requestId && /^[0-9a-f-]{8,64}$/.test(requestId)) lastRequest = requestId
     if (response.ok && isOwnWrite(endpoint, init.method, read)) noteOwnWrite()
+    if (response.ok && startsJob(endpoint, init.method)) window.dispatchEvent(new Event(JOB_STARTED_EVENT))
 
     if (!response.ok) {
       let errorData: unknown

@@ -36,6 +36,7 @@ export function GuideDialog({
   preloaded,
   anchor,
   onOpenChange,
+  noTrigger = false,
 }: {
   guides: GuideSource[]
   trigger?: string
@@ -46,6 +47,8 @@ export function GuideDialog({
   /** A heading to land on in the initial guide, e.g. a glossary term ("Learn more" links). */
   anchor?: string
   onOpenChange?: (open: boolean) => void
+  /** The caller has its own button and mounts this already open. */
+  noTrigger?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
   const [active, setActive] = useState(initial ?? guides[0].id)
@@ -95,12 +98,14 @@ export function GuideDialog({
         onOpenChange?.(value)
       }}
     >
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <BookOpen className="size-4" aria-hidden="true" />
-          {trigger}
-        </Button>
-      </DialogTrigger>
+      {!noTrigger && (
+        <DialogTrigger asChild>
+          <Button variant="outline" size="sm">
+            <BookOpen className="size-4" aria-hidden="true" />
+            {trigger}
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="flex h-[92dvh] w-[96vw] max-w-none flex-col overflow-hidden p-4 sm:max-w-6xl sm:p-6">
         <DialogHeader className="shrink-0 pr-8 text-left">
           <DialogTitle>{guide.title}</DialogTitle>

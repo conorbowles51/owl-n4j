@@ -83,6 +83,16 @@ def with_significant(conn, case_id, f: dict) -> dict:
     return dict(f, significant_keys=significant.identity_keys(conn, case_id))
 
 
+# A position in the file's own metadata, as the report states it: EXIF GPS, or the location the report associates.
+POSITION_ITEMS = ("ExifEnumGPSLatitude", "ExifEnumGPSLongitude", "MetaDataLatitudeAndLongitude",
+                  "Associated Location Latitude", "Associated Location Longitude")
+HAS_POSITION_SQL = (
+    "EXISTS (SELECT 1 FROM phone_files pf, jsonb_array_elements(CASE WHEN jsonb_typeof(pf.body -> 3) = 'array' THEN "
+    "pf.body -> 3 ELSE '[]'::jsonb END) m, jsonb_array_elements(CASE WHEN jsonb_typeof(m -> 3) = 'array' THEN m -> 3 "
+    "ELSE '[]'::jsonb END) it WHERE pf.extraction_id = f.extraction_id AND pf.file_uid = f.file_uid AND m ->> 0 = "
+    "'metadata' AND it ->> 0 = 'item' AND it -> 1 ->> 'name' = ANY(:position_items) AND coalesce(it ->> 2, '') <> '')")
+
+
 def _where(f: dict, p: dict) -> str:
     w = ["f.case_id = :c"]
     if f.get("phones"):
@@ -123,6 +133,9 @@ def _where(f: dict, p: dict) -> str:
     if f.get("to_instant"):
         w.append("c.first_at < CAST(:mto AS timestamptz)")
         p["mto"] = f["to_instant"]
+    if f.get("has_position") is not None:  # the file's own metadata names a place (03 Files filters: geotag)
+        w.append(("" if f["has_position"] else "NOT ") + HAS_POSITION_SQL)
+        p["position_items"] = list(POSITION_ITEMS)
     if f.get("linked_to_message") is True:
         w.append("c.file_uid IS NOT NULL")
     elif f.get("linked_to_message") is False:

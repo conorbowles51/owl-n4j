@@ -639,7 +639,10 @@ def progress(conn, case_id) -> list:
             left = int(max(0, r.records_total - r.records_done) / rate) if rate > 0 else None
         out.append({"extraction_id": str(r.id), "phone": labels.get(str(r.id)), "state": "waiting" if pending else
                     ("re-reading" if running else "done"), "records_total": int(r.records_total or 0),
-                    "records_done": int(r.records_done or 0), "seconds_left": left})
+                    "records_done": int(r.records_done or 0), "seconds_left": left,
+                    "started_at": r.started_at.isoformat() if r.started_at else None,
+                    "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+                    "finished_at": r.finished_at.isoformat() if r.finished_at else None})
     return out
 
 

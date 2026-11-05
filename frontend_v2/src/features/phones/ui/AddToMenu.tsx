@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ProgressPanel } from "@/components/ui/progress-panel"
 import { register } from "@/lib/keymap"
 import { CONFIRM_OVER } from "@/stores/phone-selection.store"
+import { trackBulkAdd } from "../job-list"
 import { orderTargets } from "../lib/order-targets"
 import {
   addInParts,
@@ -110,9 +111,18 @@ export function AddToMenu({
     if (confirmBig || progress) return
     const t0 = performance.now()
     setProgress({ done: 0, total: count, startedAt: t0, movedAt: t0 })
+    // more than one part takes a while: the job tray keeps its true counts through a reload
+    const report = count > PART_SIZE ? await trackBulkAdd(caseId, target.label, noun, count) : null
+    let sent = 0
+    let sofar: CollectResult = { added: 0, skipped: 0, refused: 0 }
     try {
       const result = await addInParts(client, caseId, target, links, { relationship, role, origin }, (done, total) =>
-        setProgress((p) => ({ done, total, startedAt: p?.startedAt ?? t0, movedAt: performance.now() }))
+        setProgress((p) => ({ done, total, startedAt: p?.startedAt ?? t0, movedAt: performance.now() })),
+        (done, r) => {
+          sent = done
+          sofar = r
+          void report?.(done, r, done >= count, null)
+        }
       )
       setReply({ text: resultSentence(result, noun, target), target, result })
       setOpen(false)
@@ -120,6 +130,7 @@ export function AddToMenu({
       trackUx(caseId, { event: "collect", target_kind: target.kind, count, added: result.added, skipped: result.skipped,
         refused: result.refused, ms: performance.now() - t0 })
     } catch (e) {
+      void report?.(sent, sofar, true, e instanceof Error ? e.message : "The add stopped")
       setError(`${e instanceof Error ? e.message : "The add stopped"}. Your ${count.toLocaleString("en-US")} ${noun} are still selected. Add them again.`)
     } finally {
       setProgress(null)

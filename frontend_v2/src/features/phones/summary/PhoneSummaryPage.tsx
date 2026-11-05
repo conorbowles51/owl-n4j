@@ -18,6 +18,7 @@ import { PhoneSetup } from "./PhoneSetup"
 import { ExportHistory, ExportProfile, SinceYouLastLooked } from "./SummaryExtras"
 import { flagKindWords, flagSubjectWords, type FlagSubject } from "@/features/admin/phone-registry"
 import type { Profile } from "../schemas"
+import { FirstPhoneCard } from "./FirstPhoneCard"
 
 /**
  * Phone summary (03 section 7; 07 J-2, J-11, J-15): the verdict, what needs a decision, the triage block (coverage
@@ -73,6 +74,7 @@ export function PhoneSummaryPage() {
           </Button>
         </span>
       </header>
+      <FirstPhoneCard caseId={caseId} />
       <p className="text-sm font-medium">
         {p.verdict.sentence}
         {soFar}

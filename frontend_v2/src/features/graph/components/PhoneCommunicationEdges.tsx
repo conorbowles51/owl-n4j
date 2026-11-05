@@ -11,6 +11,7 @@ import { useFinancialPresence } from "@/features/phones/financial-presence"
 import type { GraphEdge, GraphNode } from "@/types/graph.types"
 import { pairConversationsHref } from "@/features/graph/lib/pair-href"
 import { edgeKey, useEdgeWindow } from "@/features/graph/stores/edge-window.store"
+import { PhoneFlowView } from "./PhoneFlowView"
 
 const PREFIX = "phone-identity:"
 const SHOWN = 8
@@ -152,6 +153,7 @@ function EdgeWindowControls() {
 export function PhoneCommunicationEdges({ caseId, nodes, edges }: { caseId: string; nodes: GraphNode[]; edges: GraphEdge[] }) {
   const [all, setAll] = useState(false)
   const [picked, setPicked] = useState<string[]>([])
+  const [flow, setFlow] = useState(false)
   const presence = useFinancialPresence(caseId)
   const pairs = edges.filter((e) => e.type === "COMMUNICATED" && e.source.startsWith(PREFIX) && e.target.startsWith(PREFIX))
   if (!pairs.length) return null
@@ -171,20 +173,29 @@ export function PhoneCommunicationEdges({ caseId, nodes, edges }: { caseId: stri
         <p className="text-xs text-muted-foreground">{presence.data.phone_sentence}</p>
       )}
       <EdgeWindowControls />
-      <ul className="mt-1 flex flex-wrap gap-1.5">
-        {shown.map((e) => {
-          const p = asPair(e)
-          const k = pairKey(p)
-          return <PairEdge key={k} caseId={caseId} {...p} picked={picked.includes(k)}
-            onPick={(on) => setPicked((was) => (on ? [...was.filter((x) => x !== k), k] : was.filter((x) => x !== k)))} />
-        })}
-      </ul>
-      {pairs.length > SHOWN && (
-        <Button size="sm" variant="ghost" className="mt-1 text-xs" onClick={() => setAll(!all)}>
-          {all ? `Show the first ${SHOWN}` : `Show all ${fmt(pairs.length)} pairs`}
-        </Button>
+      <Button size="sm" variant="outline" className="mt-1 text-xs" aria-pressed={flow} onClick={() => setFlow(!flow)}>
+        {flow ? "List of pairs" : "Flow view"}
+      </Button>
+      {flow ? (
+        <PhoneFlowView caseId={caseId} pairs={pairs.map(asPair)} />
+      ) : (
+        <>
+          <ul className="mt-1 flex flex-wrap gap-1.5">
+            {shown.map((e) => {
+              const p = asPair(e)
+              const k = pairKey(p)
+              return <PairEdge key={k} caseId={caseId} {...p} picked={picked.includes(k)}
+                onPick={(on) => setPicked((was) => (on ? [...was.filter((x) => x !== k), k] : was.filter((x) => x !== k)))} />
+            })}
+          </ul>
+          {pairs.length > SHOWN && (
+            <Button size="sm" variant="ghost" className="mt-1 text-xs" onClick={() => setAll(!all)}>
+              {all ? `Show the first ${SHOWN}` : `Show all ${fmt(pairs.length)} pairs`}
+            </Button>
+          )}
+          <GraphEdgeCollect caseId={caseId} pairs={chosen} />
+        </>
       )}
-      <GraphEdgeCollect caseId={caseId} pairs={chosen} />
     </section>
   )
 }

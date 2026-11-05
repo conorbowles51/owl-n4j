@@ -1,26 +1,15 @@
-import { useEffect, useState, useSyncExternalStore } from "react"
+import { useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { activeBindings, register, subscribeKeymap } from "@/lib/keymap"
+import { register } from "@/lib/keymap"
 import { keyLabel } from "./key-label"
-
-let snapshot = activeBindings()
-let snapshotKey = JSON.stringify(snapshot)
-function readBindings() {
-  const next = activeBindings()
-  const key = JSON.stringify(next)
-  if (key !== snapshotKey) {
-    snapshot = next
-    snapshotKey = key
-  }
-  return snapshot
-}
+import { useBindings } from "./use-bindings"
 
 /** The `?` overlay (07 4.9): the keys for the current screen, generated from the registry. */
 export function KeymapOverlay({ open: controlled, onOpenChange }: { open?: boolean; onOpenChange?: (open: boolean) => void }) {
   const [own, setOwn] = useState(false)
   const open = controlled ?? own
   const setOpen = onOpenChange ?? setOwn
-  const bindings = useSyncExternalStore(subscribeKeymap, readBindings, readBindings)
+  const bindings = useBindings()
   useEffect(() => register("Keys", [{ key: "?", label: "Show keys", run: () => setOpen(true), hidden: true }]), [setOpen])
   return (
     <Dialog open={open} onOpenChange={setOpen}>

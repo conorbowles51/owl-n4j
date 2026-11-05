@@ -54,7 +54,8 @@ export async function addInParts(
   target: CollectTarget,
   links: CollectLink[],
   opts: { relationship: Relationship; role: DossierRole; origin: string },
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  onPart?: (sent: number, sofar: CollectResult) => void
 ): Promise<CollectResult> {
   const out: CollectResult = { added: 0, skipped: 0, refused: 0 }
   onProgress?.(0, links.length)
@@ -68,6 +69,7 @@ export async function addInParts(
     if (r.linkIds) out.linkIds = [...(out.linkIds ?? []), ...r.linkIds]
     if (r.version !== undefined) out.version = r.version
     onProgress?.(Math.min(links.length, i + part.length), links.length)
+    onPart?.(Math.min(links.length, i + part.length), out)
   }
   return out
 }

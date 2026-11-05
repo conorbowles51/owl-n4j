@@ -35,6 +35,8 @@ function PhoneProblemBar({ caseId, screen }: { caseId: string; screen: string })
     </div>
   )
 }
+// The job tray, Guide and keys above a phone case's screens; its code loads with the case page, not with the shell.
+const CaseStrip = lazy(() => import("@/features/phones/ui/CaseStrip"))
 
 function EvidenceContextSidebar({ caseId }: { caseId: string }) {
   return (
@@ -72,6 +74,13 @@ export function CaseLayout() {
         </ErrorBoundary>
       )}
       <div className="flex flex-1 flex-col overflow-hidden">
+        {caseId && (
+          <ErrorBoundary fallback={<></>}>
+            <Suspense fallback={null}>
+              <CaseStrip caseId={caseId} />
+            </Suspense>
+          </ErrorBoundary>
+        )}
         <div className="flex flex-1 overflow-hidden">
           {showCaseSidePanel ? (
             <div className="relative flex min-w-0 flex-1 overflow-hidden">

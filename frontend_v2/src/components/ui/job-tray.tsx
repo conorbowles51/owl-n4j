@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { CheckCircle2, CircleAlert, Loader } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -19,6 +20,10 @@ export interface TrayJob {
   progress: ProgressState
   /** Where the result or the job's card is. */
   href?: string
+  /** What came of it, said after "Done.": what it holds or what was left out. */
+  note?: string
+  /** Why it stopped, named. */
+  error?: string
   /** What is kept if it is cancelled, when it can be cancelled. */
   onCancel?: () => void
   cancelWords?: string
@@ -35,9 +40,9 @@ export function JobLine({ job, now }: { job: TrayJob; now: number }) {
       </span>
       <span className="text-sm">
         {job.state === "done"
-          ? "Done."
+          ? `Done.${job.note ? ` ${job.note}` : ""}`
           : job.state === "failed"
-            ? `${p.step} stopped.${p.failed ? ` Reference: ${p.failed.referenceId}.` : ""}`
+            ? `${p.step} stopped.${job.error ? ` ${job.error}` : ""}${job.note ? ` ${job.note}` : ""}${p.failed ? ` Reference: ${p.failed.referenceId}.` : ""}`
             : `${p.step}${p.done !== undefined && p.total !== undefined ? `: ${p.done.toLocaleString("en-US")} of ${p.total.toLocaleString("en-US")}${p.unit ? ` ${p.unit}` : ""}` : ""}, ${timeLeft(p, now)}`}
       </span>
       <span className="flex gap-3 text-sm">
@@ -56,7 +61,7 @@ export function JobLine({ job, now }: { job: TrayJob; now: number }) {
   )
 }
 
-export function JobTray({ jobs, now, defaultOpen }: { jobs: TrayJob[]; now: number; defaultOpen?: boolean }) {
+export function JobTray({ jobs, now, defaultOpen, footer }: { jobs: TrayJob[]; now: number; defaultOpen?: boolean; footer?: ReactNode }) {
   return (
     <Popover defaultOpen={defaultOpen}>
       <PopoverTrigger asChild>
@@ -64,12 +69,13 @@ export function JobTray({ jobs, now, defaultOpen }: { jobs: TrayJob[]; now: numb
           {trayLabel(jobs)}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-96" aria-label="Jobs">
+      <PopoverContent className="max-h-[70vh] w-96 overflow-auto" aria-label="Jobs">
         {jobs.length === 0 ? (
           <p className="text-sm">No jobs are running. Long work such as adding a phone or an export appears here.</p>
         ) : (
           <ul aria-label="Jobs">{jobs.map((j) => <JobLine key={j.id} job={j} now={now} />)}</ul>
         )}
+        {footer}
       </PopoverContent>
     </Popover>
   )

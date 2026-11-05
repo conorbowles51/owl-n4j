@@ -1,6 +1,8 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
+import { dispatchKey, resetKeymapForTest } from "@/lib/keymap"
+import { useMapStore } from "../stores/map.store"
 import { PhoneLayerPanel } from "./PhoneLayer"
 
 const summary = {
@@ -27,6 +29,37 @@ describe("Map phone layer (03 13.3, G-2)", () => {
     expect(screen.getAllByRole("link", { name: "Open the record behind this" })[0]).toHaveAttribute("href", "/cases/c/records/r-a")
     fireEvent.click(screen.getByRole("button", { name: "why" }))
     expect(screen.getByText(/never sent to a lookup service/)).toBeInTheDocument()
+  })
+
+  it("offers Show on Timeline for a dated point only", () => {
+    const undated = { ...point("b", 25), instant: null, time: null }
+    render(
+      <MemoryRouter>
+        <PhoneLayerPanel caseId="c" summary={summary} points={{ case_id: "c", total: 2, clustered: false, limits: [], items: [point("a", null), undated] }} />
+      </MemoryRouter>,
+    )
+    const links = screen.getAllByRole("link", { name: "Show on Timeline" })
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAttribute("href", "/cases/c/timeline?phone_record=r-a")
+  })
+
+  it("steps through the list with the arrow keys and the buttons, and moves the map", async () => {
+    const flyTo = vi.fn()
+    useMapStore.setState({ flyTo })
+    resetKeymapForTest()
+    render(
+      <MemoryRouter>
+        <PhoneLayerPanel caseId="c" summary={summary} points={{ case_id: "c", total: 2, clustered: false, limits: [], items: [point("a", null), point("b", 25)] }} />
+      </MemoryRouter>,
+    )
+    act(() => void dispatchKey(new KeyboardEvent("keydown", { key: "ArrowDown" })))
+    expect(flyTo).toHaveBeenCalledTimes(1)
+    await screen.findByText("Position 1 of 2")
+    act(() => void dispatchKey(new KeyboardEvent("keydown", { key: "ArrowDown" })))
+    await screen.findByText("Position 2 of 2")
+    fireEvent.click(screen.getByRole("button", { name: "Previous position" }))
+    await screen.findByText("Position 1 of 2")
+    expect(document.querySelector('[aria-current="true"]')).toHaveAttribute("data-point", "a")
   })
 
   it("shows the clustering limit when the view holds too many points (G-1)", () => {

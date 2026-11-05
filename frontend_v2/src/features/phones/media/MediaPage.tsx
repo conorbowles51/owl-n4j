@@ -491,6 +491,7 @@ export default function MediaPage() {
   }, [open])
   const blurred = (it: MediaItem) => blur.on && !revealedPhones.has(it.extraction_id) && !revealed.has(it.file_uid)
   const significant = params.get("significant") === "1"
+  const hasPosition = params.get("position") === "1"
   const setSignificant = (on: boolean) => setFilter(() => setParams((p) => {
     const next = new URLSearchParams(p)
     if (on) next.set("significant", "1")
@@ -505,8 +506,9 @@ export default function MediaPage() {
     ...(app ? { apps: [app] } : {}), ...(person ? { participants: [person] } : {}),
     ...(from ? { from_instant: from } : {}), ...(to ? { to_instant: to } : {}),
     ...(significant ? { significant_only: true } : {}),
+    ...(hasPosition ? { has_position: true } : {}),
   })
-  const filtered = !!(category || state || thread || app || person || from || to || significant)
+  const filtered = !!(category || state || thread || app || person || from || to || significant || hasPosition)
   const scope = mediaFilter(caseId, onPhone, thread, "", "")
   const facets = useQuery({ queryKey: ["phone-media-facets", scope], queryFn: () => getMediaFacets(scope), enabled: !!caseId })
   const casePhones = useQuery({ queryKey: ["phones", caseId], queryFn: () => getPhones(caseId), enabled: !!caseId })
@@ -596,6 +598,15 @@ export default function MediaPage() {
           hiddenWords={significant && idx.data && all.data ? `${n(Math.max(0, all.data.total - total))} of ${n(all.data.total)} files are hidden.` : null}
         />
         <div className="flex flex-wrap items-center gap-2 text-xs">
+          <label className="flex items-center gap-1" title="Only files whose own details, such as a photo's GPS tags, name a place">
+            <input type="checkbox" checked={hasPosition} onChange={(e) => setFilter(() => setParams((p) => {
+              const next = new URLSearchParams(p)
+              if (e.target.checked) next.set("position", "1")
+              else next.delete("position")
+              return next
+            }, { replace: true }))} />
+            Has position
+          </label>
           <label className="flex items-center gap-1">Phones
             <select value={phone} onChange={(e) => setFilter(() => { setPhone(e.target.value); setApp(""); setPerson("") })} className="max-w-48 rounded border bg-background px-1 py-0.5">
               <option value="">This phone</option>

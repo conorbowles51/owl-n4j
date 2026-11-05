@@ -607,6 +607,8 @@ export interface MediaFilter {
   to_instant?: string
   /** Files carried by messages with a significant identity (07 XF-11). */
   significant_only?: boolean
+  /** Only files whose own metadata names a place. */
+  has_position?: boolean
 }
 export interface MediaIndex {
   total: number; no_time_count: number; no_message_count?: number; missing: number; by_category: Record<string, number>; verification: Record<string, number>
@@ -906,6 +908,18 @@ export async function getLinkEdges(caseId: string, subjects: EdgeSubject[], opts
       ...(opts.fromInstant ? { from_instant: opts.fromInstant } : {}), ...(opts.toInstant ? { to_instant: opts.toInstant } : {}) },
     read: true,
   })
+}
+
+/** Everyone one identity was in contact with, busiest first (the Graph flow view). */
+export interface FlowPartners {
+  anchor: string
+  partners: { key: string; name: string | null; volume: number }[]
+  total: number
+}
+
+export function getFlowPartners(caseId: string, anchor: string) {
+  const q = new URLSearchParams({ case_id: caseId, anchor })
+  return fetchAPI<FlowPartners>(`/api/phones/graph/flow-partners?${q}`)
 }
 
 /** 07 section 8: whether the case holds financial evidence, and the sentence each money part shows when not. */

@@ -420,6 +420,24 @@ def install():
     sweep.register_after_pass(project_stale)
 
 
+def flow_partners(case_id, anchor: str, graph_session=None) -> dict:
+    """Every identity with a stored COMMUNICATED edge to ``anchor``, busiest first, for the Graph flow view. Volume
+    orders the list only: the counts a person reads come from ``pair_counts``' one implementation."""
+    from contextlib import nullcontext
+
+    from services.neo4j.driver import driver
+    key = "phone-identity:%s" % anchor
+    with (nullcontext(graph_session) if graph_session is not None else driver.session()) as session:
+        rows = session.run(
+            "MATCH (a:PhoneIdentity {case_id: $case, key: $key})-[r:COMMUNICATED]-(b:PhoneIdentity {case_id: $case}) "
+            "RETURN b.key AS key, b.name AS name, coalesce(r.messages_ab, 0) + coalesce(r.messages_ba, 0) + "
+            "coalesce(r.calls_ab, 0) + coalesce(r.calls_ba, 0) + coalesce(r.emails_ab, 0) + coalesce(r.emails_ba, 0) + "
+            "coalesce(r.undirected, 0) AS volume ORDER BY volume DESC, key", case=str(case_id), key=key)
+        partners = [{"key": r["key"].removeprefix("phone-identity:"), "name": r["name"], "volume": r["volume"]}
+                    for r in rows]
+    return {"case_id": str(case_id), "anchor": anchor, "partners": partners, "total": len(partners)}
+
+
 def pair_counts(conn, case_id, a: str, b: str, from_instant=None, to_instant=None) -> dict:
     """03 R-3: a pair edge's counts for a time slice, read as Conversations reads Between A and B in that window
     (every copy, direct and group-free as the edge counts them), so the sliced edge equals the list it opens. Counted

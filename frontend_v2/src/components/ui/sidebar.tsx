@@ -1,8 +1,9 @@
-import { useQuery } from "@tanstack/react-query"
-import { useEffect, type ReactNode } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useEffect, useState, type ReactNode } from "react"
 import { Link, useLocation, useParams } from "react-router-dom"
 import { preloadRouteIntent } from "@/lib/route-preload"
 import { phonesQuery } from "@/features/phones/phones-query"
+import { HELP_PARAM, hideNewMarks, marksQuery, newMarksUntil } from "@/features/phones/marks"
 import {
   Banknote,
   FolderOpen,
@@ -30,6 +31,7 @@ import {
   type LucideIcon,
   Search as SearchIcon,
   ListChecks,
+  CircleHelp,
 } from "lucide-react"
 import { cn } from "@/lib/cn"
 import { LoupeLogo } from "@/components/brand/LoupeLogo"
@@ -51,6 +53,8 @@ interface NavItem {
   to: string
   end?: boolean
   shortcut?: string
+  /** Carries the "New" mark (07 section 9). */
+  isNew?: boolean
 }
 
 const mainNav: NavItem[] = [
@@ -132,6 +136,10 @@ function ShortcutHint({ value, active = false }: { value: string; active?: boole
   )
 }
 
+function NewMark() {
+  return <span className="rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-semibold text-brand-700 dark:bg-brand-400/15 dark:text-brand-200">New</span>
+}
+
 function SidebarLink({
   item,
   expanded,
@@ -147,7 +155,7 @@ function SidebarLink({
       onPointerEnter={() => preloadRouteIntent(item.to)}
       onFocus={() => preloadRouteIntent(item.to)}
       aria-current={active ? "page" : undefined}
-      aria-label={!expanded ? item.label : undefined}
+      aria-label={!expanded ? `${item.label}${item.isNew ? ", new" : ""}` : undefined}
       className={cn(
         "group relative flex items-center rounded-lg text-sm font-medium outline-none",
         "transition-[background-color,color,box-shadow,transform] duration-150 ease-[var(--ease-loupe)]",
@@ -170,6 +178,10 @@ function SidebarLink({
       />
       {expanded && (
         <span className="min-w-0 flex-1 truncate">{item.label}</span>
+      )}
+      {expanded && item.isNew && <NewMark />}
+      {!expanded && item.isNew && (
+        <span className="absolute right-1 top-1 size-1.5 rounded-full bg-brand-600 dark:bg-brand-400" aria-hidden="true" />
       )}
       {expanded && item.shortcut && (
         <ShortcutHint value={item.shortcut} active={active} />
@@ -290,6 +302,14 @@ export function AppSidebar() {
   // The phones API module (and its schema library) loads with this query, not with the shell.
   const phones = useQuery({ ...phonesQuery(caseId), enabled: !!caseId, staleTime: 60_000 })
   const hasPhones = (phones.data?.phones.length ?? 0) > 0
+  // The "New" mark (07 section 9): its window is worked out here, so after it closes nothing more is asked.
+  const client = useQueryClient()
+  const [renderedAt] = useState(() => Date.now())
+  const markWindow = newMarksUntil(phones.data?.phones.map((p) => p.ingested_at) ?? [])
+  const inWindow = hasPhones && renderedAt < markWindow
+  const marks = useQuery({ ...marksQuery, enabled: inWindow })
+  const showNew = inWindow && !!marks.data && !marks.data.marks.phones_new_hidden
+  const hideNew = useMutation({ mutationFn: hideNewMarks, onSuccess: (data) => client.setQueryData(marksQuery.queryKey, data) })
 
   const toggleButton = (
     <Button
@@ -416,11 +436,26 @@ export function AppSidebar() {
             {getPhonesNav(caseId).map((item) => (
               <SidebarLink
                 key={item.to}
-                item={item}
+                item={showNew ? { ...item, isNew: true } : item}
                 expanded={sidebarExpanded}
                 active={isItemActive(pathname, item) || (item.label === "Conversations" && /\/phones\/[^/]+\/records\/conversations/.test(pathname))}
               />
             ))}
+            <SidebarLink
+              item={{ label: "Help", icon: CircleHelp, to: `/cases/${caseId}/phones?${HELP_PARAM}=phones` }}
+              expanded={sidebarExpanded}
+              active={false}
+            />
+            {showNew && sidebarExpanded && (
+              <button
+                type="button"
+                className="px-3 py-0.5 text-left text-[11px] text-sidebar-muted underline underline-offset-2 hover:text-sidebar-foreground"
+                disabled={hideNew.isPending}
+                onClick={() => hideNew.mutate()}
+              >
+                Hide the New marks
+              </button>
+            )}
           </SidebarSection>
         )}
 

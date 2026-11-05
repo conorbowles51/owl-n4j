@@ -7,6 +7,7 @@ import { ComparePhones } from "@/features/phones/components/ComparePhones"
 import { phoneQueryTarget } from "./phone-query"
 import { phonesQuery } from "@/features/phones/phones-query"
 import { RecordListPage } from "@/features/phones/records/RecordListPage"
+import { FirstPhoneCard } from "@/features/phones/summary/FirstPhoneCard"
 
 /**
  * The phone addresses Workspace, dossiers and Notebook links use (07 section 4.13; phone-links.ts). Each one lands
@@ -40,6 +41,7 @@ export function PhonesIndexPage() {
   return (
     <div className="flex flex-col gap-3 p-6">
       <h1 className="text-lg font-semibold">Phones</h1>
+      {phones.data && phones.data.phones.length > 0 && <FirstPhoneCard caseId={caseId} />}
       {viewId && saved.isLoading && <p role="status" className="text-sm">Opening the saved view</p>}
       {viewId && saved.isError && <p role="alert">{failureText(saved.error, "This saved view is not in this case.")}</p>}
       {fileUid && file.isLoading && <p role="status" className="text-sm">Opening the file</p>}

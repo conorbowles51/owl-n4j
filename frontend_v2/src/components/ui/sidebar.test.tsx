@@ -31,6 +31,17 @@ vi.mock("@/features/phones/phones-query", () => ({
 
 vi.mock("@/lib/route-preload", () => ({ preloadRouteIntent: vi.fn(() => true) }))
 
+const marks = vi.hoisted(() => ({ until: 0, hidden: false, saved: 0 }))
+vi.mock("@/features/phones/marks", () => ({
+  HELP_PARAM: "help",
+  marksQuery: { queryKey: ["marks"], queryFn: async () => ({ marks: marks.hidden ? { phones_new_hidden: "t" } : {} }) },
+  newMarksUntil: () => marks.until,
+  hideNewMarks: async () => {
+    marks.saved += 1
+    return { marks: { phones_new_hidden: "t" } }
+  },
+}))
+
 function sidebar() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -87,10 +98,37 @@ describe("AppSidebar case navigation", () => {
     await screen.findByText("Phone summary", undefined, { timeout: 15_000 })
     const group = screen.getByRole("region", { name: "Phones" })
     expect(within(group).getAllByRole("link").map((l) => l.textContent?.replace(/Ctrl\+\d/, ""))).toEqual([
-      "Phone summary", "Conversations", "Patterns", "Money on the phones", "Analyses", "Needs a decision",
+      "Phone summary", "Conversations", "Patterns", "Money on the phones", "Analyses", "Needs a decision", "Help",
     ])
     expect(within(group).getByRole("link", { name: /Conversations/ })).toHaveAttribute("href", "/cases/case-1/conversations")
     expect(screen.queryByText("Phones (prototype)")).not.toBeInTheDocument()
+  })
+})
+
+describe("AppSidebar New marks (07 section 9)", () => {
+  const withPhone = () => {
+    phones.list = [{ extraction_id: "e1", label: "Phone 1" }]
+    sidebar()
+  }
+  it("marks the phone items inside the 7 days, and hiding them is saved", async () => {
+    Object.assign(marks, { until: Date.now() + 60_000, hidden: false, saved: 0 })
+    withPhone()
+    const hide = await screen.findByRole("button", { name: "Hide the New marks" }, { timeout: 15_000 })
+    expect(screen.getAllByText("New")).toHaveLength(6)
+    fireEvent.click(hide)
+    await vi.waitFor(() => expect(screen.queryByText("New")).not.toBeInTheDocument())
+    expect(marks.saved).toBe(1)
+  })
+  it("shows no mark once the 7 days have passed, or once this person hid them", async () => {
+    Object.assign(marks, { until: Date.now() - 1, hidden: false })
+    withPhone()
+    await screen.findByText("Phone summary", undefined, { timeout: 15_000 })
+    expect(screen.queryByText("New")).not.toBeInTheDocument()
+  })
+  it("reopens the first-phone card from Help", async () => {
+    Object.assign(marks, { until: 0 })
+    withPhone()
+    expect(await screen.findByRole("link", { name: /Help/ }, { timeout: 15_000 })).toHaveAttribute("href", "/cases/case-1/phones?help=phones")
   })
 })
 

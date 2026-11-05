@@ -385,6 +385,16 @@ def phone_map_area(body: MapAreaBody, db: Session = Depends(get_db), user: User 
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+@router.get("/graph/flow-partners")
+def phone_graph_flow_partners(case_id: UUID = Query(...), anchor: str = Query(..., max_length=512),
+                              db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """Everyone one identity was in contact with, busiest first (03 14.3 flow view): the order comes from the case
+    graph's stored edges; the screen's counts come from the pair edge, so they match Conversations."""
+    from services.phone import graph_projection
+    authorize_case(db, case_id, user, ("case", "view"))
+    return graph_projection.flow_partners(case_id, anchor)
+
+
 @router.get("/graph/pair")
 def phone_graph_pair(case_id: UUID = Query(...), a: str = Query(..., max_length=512), b: str = Query(..., max_length=512),
                      from_instant: Optional[str] = Query(None, alias="from"), to_instant: Optional[str] = Query(None, alias="to"),
@@ -487,6 +497,7 @@ class MediaFilter(BaseModel):
     from_instant: Optional[datetime] = None
     to_instant: Optional[datetime] = None
     significant_only: bool = False
+    has_position: Optional[bool] = None
 
 
 class MediaDownloadBody(BaseModel):
@@ -1283,6 +1294,75 @@ def list_readings(case_id: UUID = Query(...), db: Session = Depends(get_db), use
     """The system's readings of the case's phones as plain sentences, most records first (07 J-8)."""
     authorize_case(db, case_id, user, ("case", "view"))
     return readings.queue(db.connection(), case_id)
+
+
+class CollectStart(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    target_words: str = Field(min_length=1, max_length=300)
+    noun: str = Field(min_length=1, max_length=60)
+    total: int = Field(gt=0)
+
+
+class CollectReport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    sent: int = Field(ge=0)
+    added: int = Field(ge=0)
+    skipped: int = Field(ge=0)
+    refused: int = Field(ge=0)
+    refused_reason: Optional[str] = Field(default=None, max_length=1000)
+    finished: bool = False
+    error: Optional[str] = Field(default=None, max_length=1000)
+
+
+@router.get("/jobs")
+def phone_jobs(case_id: UUID = Query(...), db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The header job tray's one list (07 section 4.7): every long phone job of the case, in words and true counts."""
+    from services.phone import job_list
+    authorize_case(db, case_id, user, ("case", "view"))
+    return job_list.read(db.connection(), case_id, user)
+
+
+@router.post("/jobs/collect", status_code=201)
+def phone_collect_start(body: CollectStart, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """A bulk add in parts begins: its row keeps the true counts through a reload. The links go through the dossier
+    and Workspace routes, which check their own permission; this row adds nothing to the case."""
+    from services.phone import job_list
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    run = job_list.start_collect(db.connection(), case_id=body.case_id, user_id=user.id,
+                                 target_words=body.target_words, noun=body.noun, total=body.total)
+    db.commit()
+    return {"id": run}
+
+
+@router.post("/jobs/collect/{run_id}")
+def phone_collect_report(run_id: UUID, body: CollectReport, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_db_user)):
+    """One sent part's true counts, from the person's own page."""
+    from services.phone import job_list
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    if not job_list.report_collect(db.connection(), run_id=run_id, case_id=body.case_id, user_id=user.id,
+                                   **body.model_dump(exclude={"case_id"})):
+        raise HTTPException(status_code=404, detail="That bulk add is not running.")
+    db.commit()
+    return {"ok": True}
+
+
+@router.get("/my-marks")
+def phone_my_marks(db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """What this person has already seen of the phone screens (07 section 9): it follows them to any browser."""
+    from services.phone import job_list
+    return {"marks": job_list.marks(db.connection(), user.id)}
+
+
+@router.put("/my-marks/{mark}")
+def phone_set_my_mark(mark: Literal["phones_new_hidden", "first_phone_card_seen"], db: Session = Depends(get_db),
+                      user: User = Depends(get_current_db_user)):
+    from services.phone import job_list
+    out = job_list.set_mark(db.connection(), user.id, mark)
+    db.commit()
+    return {"marks": out}
 
 
 @router.get("/readings/progress")

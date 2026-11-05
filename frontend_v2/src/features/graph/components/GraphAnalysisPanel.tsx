@@ -6,6 +6,7 @@ import { Separator } from "@/components/ui/separator"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { BarChart3, Network, Route, Crown } from "lucide-react"
+import { PATH_MAX_HOPS, pathResultWords } from "@/features/graph/lib/path-words"
 import { useGraphStore } from "@/stores/graph.store"
 import {
   usePageRank,
@@ -73,9 +74,11 @@ export function GraphAnalysisPanel({ caseId, scope }: GraphAnalysisPanelProps) {
     })
   }
 
+  const [pairsAsked, setPairsAsked] = useState(0)
   const runShortestPaths = () => {
     const keys = Array.from(selectedNodeKeys)
     if (keys.length < 2) return
+    setPairsAsked((keys.length * (keys.length - 1)) / 2)
     shortestPaths.mutate({ nodeKeys: keys, scope }, {
       onSuccess: (data) => {
         const pathNodes = new Set<string>()
@@ -204,9 +207,13 @@ export function GraphAnalysisPanel({ caseId, scope }: GraphAnalysisPanelProps) {
             Select 2+ nodes to find shortest paths
           </p>
         )}
+        <p className="text-[10px] text-muted-foreground">
+          Up to {PATH_MAX_HOPS} hops between each pair of selected nodes. One shortest path per pair. Every link at each
+          hop is followed, with no limit per hop.
+        </p>
         {shortestPaths.data && (
           <p className="text-xs text-muted-foreground">
-            Found {shortestPaths.data.paths.length} path(s) — shown in spotlight
+            {pathResultWords(shortestPaths.data.paths, pairsAsked, PATH_MAX_HOPS)}
           </p>
         )}
       </div>

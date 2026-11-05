@@ -11,6 +11,7 @@ import type {
   ShortestPathResult,
 } from "@/types/graph.types"
 import type { CaseLayer } from "@/features/significant/types"
+import { PATH_MAX_HOPS } from "./lib/path-words"
 
 // POST /api/query in case mode: read only, every node bound to $case_id (supplied by the server),
 // with a row limit and time limit the response states.
@@ -255,7 +256,7 @@ export const graphAPI = {
   getShortestPaths: (
     caseId: string,
     nodeKeys: string[],
-    maxDepth = 10,
+    maxDepth = PATH_MAX_HOPS,
     scope: "all" | "significant" = "all"
   ) =>
     fetchAPI<ShortestPathResult>("/api/graph/shortest-paths", {
