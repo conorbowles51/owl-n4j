@@ -1,5 +1,5 @@
 import { useQueries } from "@tanstack/react-query"
-import { useState } from "react"
+import { useCallback, useState, type UIEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { shareFailure } from "../review-share"
 import { fmt } from "../ui/count-sentence"
@@ -9,8 +9,8 @@ import { readingsAPI, type ConfirmKindResult, type Reading } from "./readings.ap
 /**
  * "Looks right for all 12 rows of this kind on this phone" (07 J-8 step 6): every row is listed with its examples
  * first, and only the rows and example kinds on the screen are sent. Each row becomes a decision of its own under
- * this person; a row the server refuses is named with the reason. The button waits until every row's examples are on
- * the screen.
+ * this person, recorded as shown in a list rather than opened one by one; a row the server refuses is named with the
+ * reason. The button waits until every row's examples are on the screen and the list has been read to its end.
  */
 export function ConfirmKindPanel({ caseId, phone, rows, note, onClose, onDone }: { caseId: string; phone: string; rows: Reading[]; note: string; onClose: () => void; onDone: () => void }) {
   const [listed] = useState(rows)
@@ -18,6 +18,10 @@ export function ConfirmKindPanel({ caseId, phone, rows, note, onClose, onDone }:
     queries: listed.map((r) => ({ queryKey: ["phone-reading-examples", caseId, r.id], queryFn: () => readingsAPI.examples(caseId, r.id) })),
   })
   const [busy, setBusy] = useState(false)
+  const [atEnd, setAtEnd] = useState(false)
+  const measure = useCallback((el: HTMLElement | null) => {
+    if (el && el.scrollTop + el.clientHeight >= el.scrollHeight - 8) setAtEnd(true)
+  }, [])
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<ConfirmKindResult | null>(null)
   const ready = examples.filter((e) => e.data).length
@@ -27,8 +31,7 @@ export function ConfirmKindPanel({ caseId, phone, rows, note, onClose, onDone }:
     setError(null)
     try {
       const body = listed.map((r, i) => {
-        const kinds = examples[i].data!.kinds.map((k) => k.id)
-        return { id: r.id, viewed: kinds, opened: kinds }
+        return { id: r.id, viewed: examples[i].data!.kinds.map((k) => k.id) }
       })
       setDone(await readingsAPI.confirmKind(caseId, body, note.trim() || undefined))
       onDone()
@@ -53,7 +56,7 @@ export function ConfirmKindPanel({ caseId, phone, rows, note, onClose, onDone }:
   return (
     <section aria-label="Every row of this kind" className="flex flex-col gap-2 rounded border p-2 text-sm">
       <p className="font-medium">{fmt(listed.length)} rows of this kind on {phone}. Each one is listed with its examples.</p>
-      <ol className="flex max-h-[60vh] flex-col gap-3 overflow-auto">
+      <ol ref={ready === listed.length ? measure : undefined} onScroll={(e: UIEvent<HTMLOListElement>) => measure(e.currentTarget)} className="flex max-h-[60vh] flex-col gap-3 overflow-auto">
         {listed.map((r, i) => (
           <li key={r.id} data-testid="kind-row" className="rounded border bg-card p-2">
             <p>{r.sentence}</p>
@@ -66,9 +69,10 @@ export function ConfirmKindPanel({ caseId, phone, rows, note, onClose, onDone }:
       {error && <p role="alert">{error}</p>}
       {failed > 0 && <p role="status">{fmt(failed)} of these rows could not show their examples, so they cannot be confirmed here. Open them one at a time.</p>}
       <div className="flex gap-2">
-        <Button size="sm" disabled={busy || ready < listed.length} onClick={() => void confirm()}>Looks right for all {fmt(listed.length)} rows</Button>
+        <Button size="sm" disabled={busy || ready < listed.length || !atEnd} onClick={() => void confirm()}>Looks right for all {fmt(listed.length)} rows</Button>
         <Button size="sm" variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>
         {ready < listed.length && !failed && <span role="status">Examples shown for {fmt(ready)} of {fmt(listed.length)} rows.</span>}
+        {ready === listed.length && !atEnd && <span role="status">Read to the end of the list to confirm.</span>}
       </div>
     </section>
   )

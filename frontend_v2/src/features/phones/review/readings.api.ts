@@ -170,7 +170,7 @@ export const readingsAPI = {
   correctionPreview: (caseId: string, id: string, body: { choice: string; scope: "this_phone" | "same_format" }) =>
     fetchAPI<CorrectionPreview>(`/api/phones/readings/${id}/correct/preview`, { method: "POST", body: { case_id: caseId, ...body } }),
   /** Looks right for the listed rows of one kind on one phone, each its own decision (07 J-8 step 6). */
-  confirmKind: (caseId: string, rows: { id: string; viewed: string[]; opened: string[] }[], note?: string) =>
+  confirmKind: (caseId: string, rows: { id: string; viewed: string[] }[], note?: string) =>
     fetchAPI<ConfirmKindResult>("/api/phones/readings/confirm-kind", { method: "POST", body: { case_id: caseId, rows, note } }),
   rechecks: (caseId: string) => fetchAPI<RecheckSummary>(`/api/phones/readings/rechecks?${q(caseId)}`),
   drawRecheck: (caseId: string, reviewer: string) =>

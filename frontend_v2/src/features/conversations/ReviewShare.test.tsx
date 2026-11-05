@@ -191,6 +191,21 @@ describe("An assigned review's position and Hand over (07 J-15)", () => {
     expect(readingSpots("case-1")).toEqual([expect.objectContaining({ thread: "k1", extraction: "e1", record: "ev-9" })])
   })
 
+  it("a failed save is tried again on the next beat, and a task no longer theirs keeps the position in the browser", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    localStorage.clear()
+    open()
+    share.saveReviewPosition.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ saved: 0 })
+    const readRow = { current: { event_uid: "ev-first", instant: null } as { event_uid: string; instant: string | null } | null }
+    wrap(<Bar readRow={readRow} />)
+    await vi.waitFor(() => expect(screen.getByText(/In review task/)).toBeInTheDocument())
+    await act(async () => { await vi.advanceTimersByTimeAsync(POSITION_BEAT_MS) })
+    readRow.current = { event_uid: "ev-9", instant: null }
+    await act(async () => { await vi.advanceTimersByTimeAsync(POSITION_BEAT_MS * 2 + 100) })
+    expect(share.saveReviewPosition).toHaveBeenCalledTimes(2)
+    expect(readingSpots("case-1")[0]).toEqual(expect.objectContaining({ thread: "k1", record: "ev-9" }))
+  })
+
   it("a colleague can go on from the stored position", async () => {
     open({ mine: false, position: { event_uid: "ev-5", instant: "2023-03-14T09:00:00Z", by_name: "Bea Synthetic", at: "2026-11-04T00:00:00Z" } })
     const onResume = vi.fn()

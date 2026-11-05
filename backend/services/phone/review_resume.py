@@ -103,8 +103,7 @@ def _thread_state(conn, case_id, links) -> dict:
 def continue_work(conn, case_id, user, threads: list) -> dict:
     """The person's assigned reviews with their positions, then the casual threads the browser named that are still
     not finished. ``threads``: ``[{"thread": key, "record": event id or None}]``."""
-    from services.phone import streams
-    from services.phone.filters import StreamFilter
+    from services.phone import review_marks, streams
     links = _task_links(conn, case_id, assignee=user.id)
     state = _thread_state(conn, case_id, links)
     phones = _thread_phones(conn, case_id, [r.target_id for r in links if r.target_type == "phone_thread"])
@@ -113,34 +112,41 @@ def continue_work(conn, case_id, user, threads: list) -> dict:
         a = r.source_anchor or {}
         t = tasks.setdefault(str(r.task_id), {"task_id": str(r.task_id), "title": r.title, "total": 0, "open": 0,
                                               "kind": "readings" if "reading_recheck" in a else "threads",
-                                              "items": [], "next": None})
+                                              "phones": [], "items": [], "next": []})
         if r.target_type != "phone_thread":
             items = a.get("items") or []
             t["total"] += len(items)
             t["open"] += sum(1 for i in items if not i.get("result"))
+            t["phones"].append(r.target_id)
             continue
         t["total"] += 1
-        if state[r.id] is None or r.target_id not in phones and not r.target_id.startswith(streams.NO_THREAD_PREFIX):
+        if state[r.id] is None:
             continue
-        t["open"] += 1
-        row = {"thread_key": r.target_id, "title": r.label, "extraction_id": phones.get(r.target_id) or
-               r.target_id[len(streams.NO_THREAD_PREFIX):], "open": state[r.id], "position": a.get("position")}
+        t["open"] += 1  # a thread gone with a replaced report stays open, as the hand-over note lists it
+        ext = phones.get(r.target_id) or (r.target_id[len(streams.NO_THREAD_PREFIX):]
+                                          if r.target_id.startswith(streams.NO_THREAD_PREFIX) else None)
+        if ext is None:
+            continue
+        if ext not in t["phones"]:
+            t["phones"].append(ext)
+        row = {"thread_key": r.target_id, "title": r.label, "extraction_id": ext, "open": state[r.id],
+               "position": a.get("position")}
         if a.get("position"):
             t["items"].append(row)
-        elif t["next"] is None:
-            t["next"] = row
-    mine = {i["thread_key"] for t in tasks.values() for i in t["items"] + ([t["next"]] if t["next"] else [])}
-    reading = []
+        elif not any(n["extraction_id"] == ext for n in t["next"]):
+            t["next"].append(row)  # where to start, one per phone so each Phone summary can show its own
+    mine = {i["thread_key"] for t in tasks.values() for i in t["items"] + t["next"]}
     wanted = {x["thread"]: x.get("record") for x in threads if x["thread"] not in mine}
+    reading = []
     if wanted:
-        for t in streams.thread_list(conn, StreamFilter(case_id=str(case_id)), sort="name")["items"]:
-            k = t["thread_key"]
-            if k not in wanted or (t["review"] and not t["review"]["added_since"]):
-                continue
-            reading.append({"thread_key": k, "title": t["title"], "phone": t["phone"]["label"],
-                            "extraction_id": t["phone"]["extraction_id"], "record": wanted[k]})
-        order = list(wanted)
-        reading.sort(key=lambda x: order.index(x["thread_key"]))
+        titles = streams.thread_titles(conn, case_id, list(wanted))
+        marks = review_marks.marks(conn, case_id)
+        totals = _totals(conn, case_id, list(titles))
+        for k, record in wanted.items():
+            m = marks.get(k)
+            if k not in titles or (m and int(totals.get(k, 0)) <= int(m.get("record_count") or 0)):
+                continue  # not a current thread of the case, or fully reviewed: nothing to continue
+            reading.append({"thread_key": k, **titles[k], "record": record})
     return {"assigned": list(tasks.values()), "reading": reading}
 
 

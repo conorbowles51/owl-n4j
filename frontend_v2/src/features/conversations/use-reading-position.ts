@@ -21,6 +21,7 @@ export function useReadingPosition(caseId: string, threadKey: string, extraction
   useEffect(() => {
     let start: string | null = null
     let saved: string | null = null
+    let sending: string | null = null
     const save = () => {
       const row = readRow.current
       if (!row) return
@@ -29,10 +30,20 @@ export function useReadingPosition(caseId: string, threadKey: string, extraction
         return
       }
       if (row.event_uid === start && saved === null) return
-      if (row.event_uid === saved) return
-      saved = row.event_uid
-      if (assigned) saveReviewPosition(caseId, threadKey, row).catch(() => undefined) // the next beat is the retry for a later row; reading is never interrupted
-      else if (extraction) rememberSpot(caseId, { thread: threadKey, extraction, record: row.event_uid, at: new Date().toISOString() })
+      if (row.event_uid === saved || row.event_uid === sending) return
+      const inBrowser = () => {
+        if (extraction) rememberSpot(caseId, { thread: threadKey, extraction, record: row.event_uid, at: new Date().toISOString() })
+        saved = row.event_uid
+      }
+      if (!assigned) return inBrowser()
+      sending = row.event_uid
+      saveReviewPosition(caseId, threadKey, row)
+        .then((r) => {
+          if (r.saved > 0) saved = row.event_uid
+          else inBrowser() // no longer this person's task: the position is not lost
+        })
+        .catch(() => undefined) // saved stays as it was, so the next beat tries again; reading is never interrupted
+        .finally(() => { sending = null })
     }
     const look = () => {
       if (typeof document === "undefined" || !document.hidden) save()

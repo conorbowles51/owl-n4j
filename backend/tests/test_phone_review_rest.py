@@ -89,7 +89,7 @@ def row(rv, item):
     r = rv["client"].get("/api/phones/readings/%s/examples" % item["id"], params={"case_id": rv["case"]})
     assert r.status_code == 200, r.text
     kinds = [k["id"] for k in r.json()["kinds"]]
-    return {"id": item["id"], "viewed": kinds, "opened": kinds}
+    return {"id": item["id"], "viewed": kinds}
 
 
 def confirm_kind(rv, rows, **kw):
@@ -119,6 +119,9 @@ def test_every_listed_row_of_a_kind_is_its_own_decision_by_that_person(rv):
     assert {(x.actor_name, x.uid, x.reason_kind) for x in rows} == {("Ann Owner", rv["owner"], "standard")}
     assert all(x.after["listed_with_rows"] == 2 and x.after["note"] == "both sides read right" for x in rows)
     assert all(x.reason.startswith("Confirmed on the review screen after viewing") for x in rows)
+    assert all(x.reason.endswith(", listed with 2 rows of this kind") for x in rows)
+    # shown in the list, not opened one by one: the decision says which
+    assert all(not e["opened"] for x in rows for e in x.after["examples"])
     assert {reading(rv, "Call.role.From")["status"], reading(rv, "Call.role.To")["status"]} == {"confirmed"}
 
 
@@ -234,6 +237,12 @@ def test_the_first_person_cannot_recheck_and_the_counts_are_true_with_no_rate_on
         from services.phone import review_share
         lines = review_share.cover_lines(review_share.coverage(c, rv["case"]))
     assert any(x.startswith("Re-check of confirmed readings: 2 of 2 checked") for x in lines)
+    # a cover scoped to threads, or to a phone with no sample, does not print the case's figures
+    with rv["engine"].connect() as c:
+        assert review_share.coverage(c, rv["case"], thread_keys=set())["reading_rechecks"] is None
+        one = review_share.coverage(c, rv["case"], phones=[rv["sibling"]])["reading_rechecks"]
+        n_there = sum(1 for i in s["items"] if i["extraction_id"] == rv["sibling"])
+        assert one["sampled"] == n_there
 
 
 def test_a_rate_shows_only_with_its_base():
@@ -493,7 +502,8 @@ def test_continue_reading_lists_open_assigned_threads_and_casual_ids_get_their_t
     as_who(api, "bea")
     work = continue_work(api)
     t = next(x for x in work["assigned"] if x["task_id"] == task)
-    assert t["open"] == t["total"] == len(bea_keys) and t["items"] == [] and t["next"]["thread_key"] == bea_keys[0]
+    assert t["open"] == t["total"] == len(bea_keys) and t["items"] == [] and t["phones"] == [api["ext"]]
+    assert [n["thread_key"] for n in t["next"]] == [bea_keys[0]]  # one place to start per phone
     save_position(api, bea_keys[0])
     t = next(x for x in continue_work(api)["assigned"] if x["task_id"] == task)
     assert [i["thread_key"] for i in t["items"]] == [bea_keys[0]] and t["items"][0]["extraction_id"] == api["ext"]
@@ -501,9 +511,37 @@ def test_continue_reading_lists_open_assigned_threads_and_casual_ids_get_their_t
     # a thread reviewed in full leaves the list; a key not in the case is dropped; a title comes from the server
     done, kept = all_keys[0], all_keys[1]
     mark(api, done)
-    assign = {i["thread_key"] for x in continue_work(api)["assigned"] for i in x["items"] + ([x["next"]] if x["next"] else [])}
+    assign = {i["thread_key"] for x in continue_work(api)["assigned"] for i in x["items"] + x["next"]}
     casual = [{"thread": kept, "record": "ev-9"}, {"thread": done}, {"thread": "not-in-this-case"}]
     out = continue_work(api, casual)["reading"]
     assert [r["thread_key"] for r in out] == ([] if kept in assign else [kept])
     if out:
         assert out[0]["title"] and out[0]["record"] == "ev-9" and out[0]["extraction_id"] == api["ext"]
+        listed = next(t for t in threads(api)["items"] if t["thread_key"] == kept)
+        assert out[0]["title"] == listed["title"] and out[0]["phone"] == listed["phone"]["label"]
+
+
+def test_the_assignee_on_the_task_decides_whose_position_it_is(api):  # noqa: F811
+    """Reassigned with the ordinary assignee field, the task is the new person's, whatever its links were told."""
+    task, bea_keys, _ = mine_split(api)
+    with api["engine"].begin() as c:
+        c.execute(text("UPDATE case_tasks SET assignee_user_id = :o WHERE id = :t"), {"o": api["owner"], "t": task})
+    k = bea_keys[0]
+    t = next(x for x in thread_state(api, k)["tasks"] if x["task_id"] == task)
+    assert t["mine"] and t["assigned_to_name"]
+    assert save_position(api, k)["saved"] == 1
+    as_who(api, "bea")
+    assert not next(x for x in thread_state(api, k)["tasks"] if x["task_id"] == task)["mine"]
+    assert save_position(api, k, "ev-2")["saved"] == 0
+
+
+def test_a_thread_gone_from_the_current_phones_still_counts_as_open(api):  # noqa: F811
+    task, bea_keys, _ = mine_split(api)
+    with api["engine"].begin() as c:
+        c.execute(text("UPDATE case_task_links SET target_id = 'gone-with-a-replaced-report' WHERE task_id = :t AND "
+                       "target_id = :k"), {"t": task, "k": bea_keys[0]})
+    as_who(api, "bea")
+    t = next(x for x in continue_work(api)["assigned"] if x["task_id"] == task)
+    assert t["open"] == t["total"] == len(bea_keys)
+    out = hand_over(api, task, api["owner"]).json()
+    assert out["open_items"] == t["open"]

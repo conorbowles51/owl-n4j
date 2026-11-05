@@ -81,6 +81,8 @@ function WorkItemDialog({
   const members = useCaseMembers(caseId).data ?? []
   // A phone review task is passed on with a note of where it stands (07 J-15 step 4), not by changing the assignee.
   const [handingOver, setHandingOver] = useState(false)
+  // This form still holds the old assignee: it closes after a hand-over, so a later Save cannot put the task back.
+  const [handedOver, setHandedOver] = useState(false)
   const canHandOver =
     canEdit &&
     task?.status !== "done" &&
@@ -385,7 +387,8 @@ function WorkItemDialog({
             taskId={task.id}
             title={task.title}
             open
-            onClose={() => setHandingOver(false)}
+            onHandedOver={() => setHandedOver(true)}
+            onClose={() => (handedOver ? onClose() : setHandingOver(false))}
           />
         )}
       </DialogContent>

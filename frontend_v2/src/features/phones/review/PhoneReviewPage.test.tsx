@@ -195,7 +195,11 @@ describe("Needs a decision, readings group", () => {
     api.list.mockResolvedValue(KIND)
     let release: (value: ReadingExamples) => void = () => undefined
     api.examples.mockImplementation((_c: string, id: string) => id === "r3" ? new Promise((res) => { release = res }) : Promise.resolve(EXAMPLES))
-    api.confirmKind.mockResolvedValue({ confirmed: [{ id: "r1" }], refused: [{ id: "r3", sentence: "On C1, calls: the party marked from is the caller. Affects 9 calls.", reason: "Ann confirmed this just now. Your view is updated." }], not_listed: 0, resolved_by: "Bea", words: "Confirmed 1 row under your name, each as its own decision. 1 row was refused." })
+    api.confirmKind.mockImplementation(async () => {
+      api.list.mockResolvedValue({ ...KIND, items: KIND.items.map((x) => (x.id === "r1" ? { ...x, status: "confirmed", resolved_by: "Bea" } : x)) })
+      return KIND_RESULT
+    })
+    const KIND_RESULT = { confirmed: [{ id: "r1" }], refused: [{ id: "r3", sentence: "On C1, calls: the party marked from is the caller. Affects 9 calls.", reason: "Ann confirmed this just now. Your view is updated." }], not_listed: 0, resolved_by: "Bea", words: "Confirmed 1 row under your name, each as its own decision. 1 row was refused." }
     page()
     fireEvent.click(await screen.findByRole("button", { name: /Looks right for all 2 rows of this kind on this phone/ }))
     const panel = await screen.findByRole("region", { name: "Every row of this kind" })
@@ -207,8 +211,10 @@ describe("Needs a decision, readings group", () => {
     expect(within(panel).getAllByText("Incoming. 10 of the affected records are of this kind.")).toHaveLength(2)
     fireEvent.click(go)
     const kinds = ["direction:incoming", "direction:outgoing"]
-    await waitFor(() => expect(api.confirmKind).toHaveBeenCalledWith("case-1", [{ id: "r1", viewed: kinds, opened: kinds }, { id: "r3", viewed: kinds, opened: kinds }], undefined))
+    await waitFor(() => expect(api.confirmKind).toHaveBeenCalledWith("case-1", [{ id: "r1", viewed: kinds }, { id: "r3", viewed: kinds }], undefined))
+    // the refetch shows the reading confirmed; the outcome stays on the screen until the person closes it
     expect(await screen.findByText(/1 row was refused/)).toBeInTheDocument()
+    await waitFor(() => expect(api.list.mock.calls.length).toBeGreaterThan(1))
     expect(within(screen.getByRole("list", { name: "Refused rows" })).getByRole("listitem")).toHaveTextContent("Ann confirmed this just now")
   })
 

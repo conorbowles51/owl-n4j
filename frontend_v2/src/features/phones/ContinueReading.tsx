@@ -25,14 +25,15 @@ function useContinueWork(caseId: string) {
     queryFn: () => getContinueWork(caseId, spots),
     enabled: !!caseId,
     retry: false,
+    staleTime: 60_000,
   })
 }
 
 function only(work: ContinueWork, extraction?: string): ContinueWork {
   if (!extraction) return work
-  const mine = (t: ContinueThread | null) => t?.extraction_id === extraction
+  const mine = (t: ContinueThread) => t.extraction_id === extraction
   return {
-    assigned: work.assigned.map((a) => ({ ...a, items: a.items.filter(mine), next: mine(a.next) ? a.next : null })).filter((a) => a.items.length || a.next),
+    assigned: work.assigned.filter((a) => a.phones.includes(extraction)).map((a) => ({ ...a, items: a.items.filter(mine), next: a.next.filter(mine) })),
     reading: work.reading.filter((r) => r.extraction_id === extraction),
   }
 }
@@ -53,11 +54,11 @@ function WorkList({ caseId, work }: { caseId: string; work: ContinueWork }) {
                   {t.position ? ` ${t.position.by_name} stopped ${t.position.instant ? `at ${instantWords(t.position.instant, "UTC")}` : "at a saved message"}.` : ""}
                 </li>
               ))}
-              {a.next && (
-                <li>
-                  Next: <Link className="underline underline-offset-2" to={threadLink(caseId, a.next.extraction_id, a.next.thread_key)}>{a.next.title ?? "Open this thread"}</Link>
+              {a.next.map((t) => (
+                <li key={t.thread_key}>
+                  Next: <Link className="underline underline-offset-2" to={threadLink(caseId, t.extraction_id, t.thread_key)}>{t.title ?? "Open this thread"}</Link>
                 </li>
-              )}
+              ))}
             </ul>
           )}
         </li>

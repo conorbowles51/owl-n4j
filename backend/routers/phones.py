@@ -1165,7 +1165,6 @@ class ConfirmKindRow(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: UUID
     viewed: list[str] = Field(default_factory=list, max_length=200)
-    opened: Optional[list[str]] = Field(default=None, max_length=200)
 
 
 class ConfirmKind(BaseModel):

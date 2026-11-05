@@ -229,7 +229,7 @@ describe("Phone summary", () => {
 
   it("Continue reading shows an assigned review of this phone with its server position, and not another phone's", async () => {
     const thread = (key: string, ext: string) => ({ thread_key: key, title: `Thread ${key}`, extraction_id: ext, open: "not yet reviewed, 3 messages", position: { event_uid: "ev-1", instant: "2023-03-14T09:00:00Z", by_name: "Bea Synthetic", at: "2026-11-04T00:00:00Z" } })
-    share.getContinueWork.mockResolvedValue({ assigned: [{ task_id: "t1", title: "Review phone conversations, part 1 of 2", kind: "threads", total: 4, open: 3, items: [thread("a", "e1"), thread("b", "e2")], next: null }], reading: [] })
+    share.getContinueWork.mockResolvedValue({ assigned: [{ task_id: "t1", title: "Review phone conversations, part 1 of 2", kind: "threads", total: 4, open: 3, phones: ["e1", "e2"], items: [thread("a", "e1"), thread("b", "e2")], next: [] }], reading: [] })
     page()
     const region = await screen.findByRole("region", { name: "Continue reading" })
     expect(await within(region).findByRole("link", { name: "Thread a" })).toHaveAttribute("href", `${conv}?thread=a&at=ev-1`)

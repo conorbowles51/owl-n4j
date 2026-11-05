@@ -257,7 +257,7 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
             )}
             {!allSeen && r.status === "open" && <span className="text-sm text-muted-foreground">Looks right is available once every kind of example has been opened.</span>}
           </div>
-          {kindOpen && r.status === "open" && (
+          {kindOpen && (
             <ConfirmKindPanel caseId={caseId} phone={r.phone} rows={sameKind} note={note}
               onClose={() => setKindOpen(false)} onDone={() => void refresh()} />
           )}

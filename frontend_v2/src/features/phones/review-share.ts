@@ -131,7 +131,7 @@ export interface ContinueThread {
 }
 
 export interface ContinueWork {
-  assigned: { task_id: string; title: string; kind: "threads" | "readings"; total: number; open: number; items: ContinueThread[]; next: ContinueThread | null }[]
+  assigned: { task_id: string; title: string; kind: "threads" | "readings"; total: number; open: number; phones: string[]; items: ContinueThread[]; next: ContinueThread[] }[]
   reading: { thread_key: string; title: string; phone: string; extraction_id: string; record: string | null }[]
 }
 
@@ -205,7 +205,7 @@ export interface ReviewCoverageSummary {
     pending: number
     disagreements: { thread_key: string; title: string; by: string; first_by: string | null; note: string }[]
   }[]
-  reading_rechecks?: { sampled: number; agrees: number; disagrees: number; pending: number; rate_percent: number | null; too_few: boolean; words: string }
+  reading_rechecks?: null | { sampled: number; agrees: number; disagrees: number; pending: number; rate_percent: number | null; too_few: boolean; words: string }
   searches: { query: string; exact: boolean; runs: number; people: string[]; surfaces: string[]; last_hits: number | null; last_run_at: string }[]
   keyword_lists: { name: string; terms: string[] }[]
   terms: string[]

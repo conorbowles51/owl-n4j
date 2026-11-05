@@ -130,7 +130,7 @@ export function StreamList({
     if (topIndex === null || !onTopRow) return
     for (let i = topIndex; i < Math.min(topIndex + 3, stream.count); i++) {
       const it = stream.item(i)
-      if (it.type === "row") return onTopRow(it.row)
+      if (it.type === "row" && it.row) return onTopRow(it.row) // a row of a window not loaded yet has no record
     }
   }, [topIndex, stream, onTopRow, rowsVersion])
 

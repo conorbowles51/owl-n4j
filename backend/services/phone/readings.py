@@ -312,8 +312,9 @@ def _key(call):
     return "reading:%s@%s" % (call.rule_id, call.mapping_version_id)
 
 
-def standard_reason(n_examples, n_kinds):
-    return "Confirmed on the review screen after viewing %d examples across %d kinds" % (n_examples, n_kinds)
+def standard_reason(n_examples, n_kinds, listed_with=None):
+    words = "Confirmed on the review screen after viewing %d examples across %d kinds" % (n_examples, n_kinds)
+    return words + (", listed with %d rows of this kind" % listed_with if listed_with else "")
 
 
 def _check_current(call, expected_status):
@@ -354,7 +355,7 @@ def confirm(db, case_id, judgement_id, *, viewed, actor, note=None, opened=None,
         raise ReadingError("Open every kind of example first: %s." % ", ".join(missing))
     opened_set = set(opened if opened is not None else viewed)
     examples_record = [{"kind": k["id"], "record_uid": k["record_uid"], "opened": k["id"] in opened_set} for k in shown]
-    reason = standard_reason(len(shown), len(shown))
+    reason = standard_reason(len(shown), len(shown), listed_with)
     ext = db.get(PhoneExtraction, call.extraction_id)
     after = {_key(call): "reviewed", "examples": examples_record, "rule_part": call.rule_part,
              "note": note.strip() if note and note.strip() else None}
@@ -400,7 +401,8 @@ def confirm_kind(db, case_id, rows, *, actor, note=None) -> dict:
             continue
         try:
             with db.begin_nested():
-                out = confirm(db, case_id, rid, viewed=r.get("viewed"), opened=r.get("opened"), note=note, actor=actor,
+                # shown together in the list, not opened one by one: the decision says so (opened is false)
+                out = confirm(db, case_id, rid, viewed=r.get("viewed"), opened=[], note=note, actor=actor,
                               listed_with=len(rows))
             done.append({"id": rid, "sentence": item["sentence"], "decision_id": out["decision_id"],
                          "reason": out["reason"]})

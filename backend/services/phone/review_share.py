@@ -349,7 +349,7 @@ def start_second_pass(db, case_id, *, reviewer_id, user, percent: int = SECOND_P
 
 
 def _open_samples(conn, case_id, thread_key=None):
-    q = ("SELECT l.id, l.task_id, l.target_id, l.source_anchor, t.title, t.status FROM case_task_links l JOIN case_tasks t ON "
+    q = ("SELECT l.id, l.task_id, l.target_id, l.source_anchor, t.title, t.status, t.assignee_user_id FROM case_task_links l JOIN case_tasks t ON "
          "t.id = l.task_id WHERE l.case_id = :c AND l.target_type = 'phone_thread' AND t.deleted_at IS NULL AND "
          "l.source_anchor ? 'second_pass'")
     p = {"c": str(case_id)}
@@ -420,11 +420,12 @@ def second_pass_words(anchor: dict) -> dict:
 
 def thread_review_state(conn, case_id, thread_key: str, user_id) -> dict:
     """For the open thread's header: its split task and its second-pass samples, each with its words."""
-    tasks = [{"task_id": str(r.task_id), "title": r.title, "assigned_to_name": (r.source_anchor or {}).get(
-        "assigned_to_name"), "mine": (r.source_anchor or {}).get("assigned_to") == str(user_id),
-        "status": r.status, "position": (r.source_anchor or {}).get("position")}
+    tasks = [{"task_id": str(r.task_id), "title": r.title, "assigned_to_name": r.who,
+              "mine": r.assignee_user_id is not None and str(r.assignee_user_id) == str(user_id),
+              "status": r.status, "position": (r.source_anchor or {}).get("position")}
         for r in conn.execute(text(
-            "SELECT l.task_id, l.source_anchor, t.title, t.status FROM case_task_links l JOIN case_tasks t ON t.id = l.task_id "
+            "SELECT l.task_id, l.source_anchor, t.title, t.status, t.assignee_user_id, coalesce(u.name, u.email) AS who "
+            "FROM case_task_links l JOIN case_tasks t ON t.id = l.task_id LEFT JOIN users u ON u.id = t.assignee_user_id "
             "WHERE l.case_id = :c AND l.target_type = 'phone_thread' AND l.target_id = :k AND t.deleted_at IS NULL "
             "AND l.source_anchor ? 'review_split' ORDER BY l.created_at"), {"c": str(case_id), "k": thread_key})]
     samples = []
@@ -432,7 +433,7 @@ def thread_review_state(conn, case_id, thread_key: str, user_id) -> dict:
         w = second_pass_words(r.source_anchor or {})
         w.update({"task_id": str(r.task_id), "title": r.title, "status": r.status,
                   "position": (r.source_anchor or {}).get("position"),
-                  "mine": (r.source_anchor or {}).get("assigned_to") == str(user_id)})
+                  "mine": r.assignee_user_id is not None and str(r.assignee_user_id) == str(user_id)})
         samples.append(w)
     return {"thread_key": thread_key, "tasks": tasks, "second_pass": samples}
 
@@ -615,7 +616,7 @@ def coverage(conn, case_id, *, phones=None, thread_keys=None) -> dict:
             "not_reviewed": [row(t) for t in never], "partly_reviewed": [row(t) for t in partly],
             "reviewed": [row(t) for t in reviewed],
             "splits": splits if thread_keys is None else [], "second_pass": list(samples.values()),
-            "reading_rechecks": reading_recheck.counts(conn, case_id),
+            "reading_rechecks": reading_recheck.counts(conn, case_id, phones=phones) if thread_keys is None else None,
             "searches": runs, "keyword_lists": lists, "terms": terms, "limits": tl.get("limits") or []}
 
 

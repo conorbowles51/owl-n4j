@@ -189,9 +189,12 @@ def rate_words(agrees: int, disagrees: int, pending: int) -> dict:
     return {"rate_percent": rate, "too_few": too_few, "words": words}
 
 
-def counts(conn, case_id) -> dict:
+def counts(conn, case_id, phones=None) -> dict:
     agrees = disagrees = pending = 0
+    only = {str(p) for p in phones or []}
     for r in _links(conn, case_id):
+        if only and r.target_id not in only:
+            continue
         for i in (r.source_anchor or {}).get("items") or []:
             res = i.get("result")
             if not res:

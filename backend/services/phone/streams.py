@@ -640,6 +640,30 @@ UNREADABLE_SQL = ("EXISTS (SELECT 1 FROM phone_record_summaries s WHERE s.parent
                   "s.generation = m.generation AND s.model_type = 'ScrambledMessageData')")
 
 
+def thread_titles(conn, case_id, keys) -> dict:
+    """``{thread_key: {title, extraction_id, phone}}`` for named threads, with the titles ``thread_list`` gives them,
+    without reading the case's events. A key that is not a current thread of the case is left out."""
+    _, ctx = _query(conn, StreamFilter(case_id=str(case_id)))
+    rows = conn.execute(text(
+        "SELECT thread_key, extraction_id, title_in_record, party_identity_keys FROM pv_thread WHERE case_id = :c AND "
+        "thread_key = ANY(:k)"), {"c": str(case_id), "k": [k for k in keys if not k.startswith(NO_THREAD_PREFIX)]}).fetchall()
+    ctx.load({k for t in rows for k in (t.party_identity_keys or [])[:5]})
+    out = {}
+    for t in rows:
+        ext = str(t.extraction_id)
+        labels = [ctx.label(ext, identity_key=k) for k in (t.party_identity_keys or [])[:5]]
+        names = [lab["name"] or L.identifier_text(lab["identifier"]) or L.NO_NAME for lab in labels
+                 if not lab["is_owner"]]
+        out[t.thread_key] = {"title": t.title_in_record or ", ".join(n for n in names if n) or "(untitled)",
+                             "extraction_id": ext, "phone": ctx.phone_label(ext)}
+    loose = [k[len(NO_THREAD_PREFIX):] for k in keys if k.startswith(NO_THREAD_PREFIX)]
+    if loose:
+        for ext in conn.execute(text("SELECT id::text FROM phone_extractions WHERE case_id = :c AND standing = 'active' "
+                                     "AND id::text = ANY(:e)"), {"c": str(case_id), "e": loose}).scalars():
+            out[NO_THREAD_PREFIX + ext] = {"title": NO_THREAD_TITLE, "extraction_id": ext, "phone": ctx.phone_label(ext)}
+    return out
+
+
 def thread_list(conn, f: StreamFilter, *, sort: str = "recent") -> dict:
     """Every thread with events under the filter, in one response (03 section 6.3; C-5). ``threads`` in the filter is
     ignored. Each row: phone, app, chat type, title, the first five participants and their count, first and last

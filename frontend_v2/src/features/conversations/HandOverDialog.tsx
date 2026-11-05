@@ -10,7 +10,7 @@ import { handOverReview, shareFailure, type HandedOver } from "@/features/phones
  * lists the positions and open items. Only people who can do the review are offered; the server refuses anyone else,
  * and says why.
  */
-export function HandOverDialog({ caseId, taskId, title, open, onClose }: { caseId: string; taskId: string; title: string; open: boolean; onClose: () => void }) {
+export function HandOverDialog({ caseId, taskId, title, open, onClose, onHandedOver }: { caseId: string; taskId: string; title: string; open: boolean; onClose: () => void; onHandedOver?: () => void }) {
   const qc = useQueryClient()
   const membersQ = useQuery({ queryKey: ["case-members", caseId], queryFn: () => caseMembersAPI.list(caseId), enabled: open && !!caseId })
   const members = (membersQ.data ?? []).filter((m) => m.preset !== "viewer")
@@ -27,7 +27,9 @@ export function HandOverDialog({ caseId, taskId, title, open, onClose }: { caseI
       void qc.invalidateQueries({ queryKey: ["phone-review-coverage"] })
       void qc.invalidateQueries({ queryKey: ["phone-continue-reading"] })
       void qc.invalidateQueries({ queryKey: ["phone-reading-rechecks"] })
-      void qc.invalidateQueries({ queryKey: ["work", caseId] })
+      void qc.invalidateQueries({ queryKey: ["workspace", caseId, "tasks"] })
+      void qc.invalidateQueries({ queryKey: ["workspace", caseId, "work"] })
+      onHandedOver?.()
     },
     onError: (e) => setError(shareFailure(e, "The task could not be handed over.")),
   })

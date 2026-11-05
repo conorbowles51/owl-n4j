@@ -154,7 +154,7 @@ describe("CanonicalWorkspaceOverview", () => {
   it("Your work shows Continue reading: assigned reviews from the server, casual reading sent as ids only (07 J-15)", async () => {
     localStorage.setItem("loupe.continue-reading.case-1", JSON.stringify([{ thread: "t9", extraction: "e1", record: "ev-4", at: "2026-11-02T00:00:00Z" }]))
     mocks.getContinueWork.mockResolvedValue({
-      assigned: [{ task_id: "t1", title: "Review phone conversations, part 1 of 2", kind: "threads", total: 4, open: 3, next: null,
+      assigned: [{ task_id: "t1", title: "Review phone conversations, part 1 of 2", kind: "threads", total: 4, open: 3, phones: ["e1"], next: [],
         items: [{ thread_key: "a", title: "Thread a", extraction_id: "e1", open: "not yet reviewed, 3 messages", position: { event_uid: "ev-1", instant: "2023-03-14T09:00:00Z", by_name: "Bea Synthetic", at: "2026-11-04T00:00:00Z" } }] }],
       reading: [{ thread_key: "t9", title: "Casual thread", phone: "C2", extraction_id: "e1", record: "ev-4" }],
     })
