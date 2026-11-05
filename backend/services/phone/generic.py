@@ -25,9 +25,13 @@ from services.phone import fold as F
 from services.phone import identifiers, ids
 from services.phone import values as V
 
-GENERIC_VERSION = "generic-1"
+GENERIC_VERSION = "generic-2"  # 2: records under RelatedModels carry the related_copy flag (02 decision 39)
 BATCH = 5000
 FLUSH_ROWS = 20000
+# A copy of a record from another source (``isrelated="True"`` under ``RelatedModels``, 02 decision 39) and everything
+# nested inside it: interpreted like any record, flagged on every row it derives so it can be marked and not counted
+# as a second source of the same fact.
+RELATED_COPY = "related_copy"
 
 SENSITIVE_DEFAULT = frozenset({
     ("Password", "Data"), ("Password", "GenericAttribute"), ("WirelessNetwork", "Password"),
@@ -219,9 +223,12 @@ class Interpreter:
                                                             "offsetless_zone")
         self.ctx = {}
         self.subtree = []
+        self.copies = set()  # (document, ordinal) of the current subtree's related copies and what they hold
         self.stats = defaultdict(int)
 
     def _common(self, doc, ordinal, uid, root_uid, model_type, deleted_state, dc, flags=(), suffix=""):
+        if (doc, ordinal) in self.copies:
+            flags = [*flags, RELATED_COPY]
         return {"case_id": self.case, "extraction_id": self.ext, "document_index": doc, "ordinal": ordinal,
                 "record_uid": uid, "root_record_uid": root_uid,
                 "locator": "%s/%d/r%d%s" % (self.ext, doc, ordinal, suffix), "model_type": model_type,
@@ -262,6 +269,7 @@ class Interpreter:
             self.w.add("phone_record_summaries", s)
         self.subtree = []
         self.ctx = {}
+        self.copies = set()
 
     def record(self, doc, ordinal, parent, top, model_type, body, stamps):
         uid = ids.record_uid(self.ext, doc, ordinal)
@@ -271,6 +279,9 @@ class Interpreter:
         pctx = self.ctx.get(parent) if parent is not None else None
         if parent is not None and pctx is None:
             self.stats["orphan_records"] += 1
+        if attrs.get("isrelated") == "True" or (parent is not None and (doc, parent) in self.copies):
+            self.copies.add((doc, ordinal))
+            self.stats["related_copies"] += 1
         container = pctx.container.get(ordinal) if pctx else None  # (field, kind, index)
         prefix = (pctx.prefix + "%s[%d]." % (container[0], container[2])) if container else ""
         fields = list(B.fields(body))

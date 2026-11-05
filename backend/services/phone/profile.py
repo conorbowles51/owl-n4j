@@ -296,17 +296,29 @@ def profile(conn, case_id, extraction_id) -> dict:
         deleted.append({"model_type": r.model_type, "intact": int(r.intact), "deleted": int(r.deleted),
                         "trash": int(r.trash), "unknown": int(r.unknown)})
     comm_deleted = listed(deleted_states=["Deleted", "Trash"])
+    # records standing on their own, records held inside another record, and the copies from another source among
+    # those (02 decision 39): three figures, each opening its own list (03 section 7.5), so a nested type has a row too
     cov = {}
     for r in conn.execute(text(
-            "SELECT model_type, interpretation_level, count(*) AS n FROM phone_record_summaries WHERE "
-            "extraction_id::text = :e AND generation = :g AND is_top_level GROUP BY 1, 2"), {"e": ext, "g": gen}):
-        t = cov.setdefault(r.model_type, {"model_type": r.model_type, "records": 0, "levels": {}})
-        t["records"] += int(r.n)
-        t["levels"][r.interpretation_level or "captured_only"] = int(r.n)
+            "SELECT model_type, is_top_level, interpretation_level, count(*) AS n, count(*) FILTER (WHERE "
+            "'related_copy' = ANY(flags)) AS copies FROM phone_record_summaries WHERE extraction_id::text = :e AND "
+            "generation = :g GROUP BY 1, 2, 3"), {"e": ext, "g": gen}):
+        t = cov.setdefault(r.model_type, {"model_type": r.model_type, "records": 0, "nested": 0, "copies": 0,
+                                          "levels": {}, "nested_levels": {}})
+        level = r.interpretation_level or "captured_only"
+        t["copies"] += int(r.copies)
+        if r.is_top_level:
+            t["records"] += int(r.n)
+            t["levels"][level] = int(r.n)
+        else:
+            t["nested"] += int(r.n)
+            t["nested_levels"][level] = int(r.n)
     coverage_rows = []
-    for t in sorted(cov.values(), key=lambda t: (-t["records"], t["model_type"])):
-        main = max(t["levels"].items(), key=lambda kv: kv[1])[0]
-        coverage_rows.append({**t, "level": main, "level_words": LEVEL_WORDS.get(main, main)})
+    for t in sorted(cov.values(), key=lambda t: (-t["records"], -t["nested"], t["model_type"])):
+        levels = t["levels"] or t.pop("nested_levels")
+        t.pop("nested_levels", None)
+        main = max(levels.items(), key=lambda kv: kv[1])[0]
+        coverage_rows.append({**t, "levels": levels, "level": main, "level_words": LEVEL_WORDS.get(main, main)})
 
     # ---- months, people, continue -------------------------------------------------------------------------------
     months = {}
@@ -477,8 +489,11 @@ def profile_sections(p: dict) -> list:
     out.append(("Deleted and recovered", ["%s deleted messages and calls" % n(p["deleted"]["comm_events"])] +
                 ["%s: %s deleted, %s in the trash" % (d["model_type"], n(d["deleted"]), n(d["trash"]))
                  for d in p["deleted"]["by_type"]]))
-    out.append(("What Loupe reads", ["%s: %s records, %s" % (t["model_type"], n(t["records"]), t["level_words"])
-                                     for t in p["coverage"]]))
+    def read_line(t):
+        inside = ", %s inside other records" % n(t["nested"]) if t.get("nested") else ""
+        copies = " (%s copies from another source)" % n(t["copies"]) if t.get("copies") else ""
+        return "%s: %s records%s%s, %s" % (t["model_type"], n(t["records"]), inside, copies, t["level_words"])
+    out.append(("What Loupe reads", [read_line(t) for t in p["coverage"]]))
     out.append(("When there is data", ["%s: %s%s" % (d["signal"], n(d["records"]), ", %s to %s" % (
         d["first_words"], d["last_words"]) if d.get("first_words") else "") for d in p["data_periods"]]))
     return out

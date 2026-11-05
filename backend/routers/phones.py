@@ -2597,6 +2597,36 @@ def record_not_a_copy(record_uid: UUID, body: CopyDecisionBody, db: Session = De
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+@router.get("/record-lists/{model_type}")
+def record_list(model_type: str, case_id: UUID = Query(...), phones: List[UUID] = Query(default=[]),
+                placement: Literal["all", "top", "nested"] = Query("all"),
+                deleted: Literal["any", "only", "hide"] = Query("any"), copies: Literal["any", "only", "hide"] = Query("any"),
+                day_from: Optional[date] = Query(None, alias="from"), day_to: Optional[date] = Query(None, alias="to"),
+                sort: Literal["time", "report", "title", "deleted"] = Query("time"),
+                direction: Literal["asc", "desc"] = Query("asc"), cursor: Optional[str] = Query(None, max_length=512),
+                limit: int = Query(200, ge=1, le=500), zone: Optional[str] = Query(None, max_length=64),
+                db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """One window of the list for a record type (03 section 7.5): the exact total for the filters, keyset paging, and
+    the columns the type's mapping or field names give. No phone chosen means every active phone of the case."""
+    from services.phone import type_lists
+    authorize_case(db, case_id, user, ("case", "view"))
+    if day_from and day_to and day_from > day_to:
+        raise HTTPException(status_code=422, detail="The start date is after the end date.")
+    conn = db.connection()
+    z = zone if zone and time_display.valid_zone(zone) else streams.case_zone(conn, case_id)["name"]
+    try:
+        return type_lists.page(conn, case_id, model_type, extraction_ids=phones, placement=placement, deleted=deleted,
+                               copies=copies, day_from=day_from, day_to=day_to, sort=sort, direction=direction,
+                               cursor=cursor, limit=limit, zone=z)
+    except type_lists.NotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except type_lists.BadCursor as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except type_lists.StaleWindow:
+        raise HTTPException(status_code=409, detail={"code": "stale_snapshot", "text": (
+            "This list changed because the phone was read again. It starts again from the top.")})
+
+
 @router.get("/records/{record_uid}")
 def record_detail(record_uid: UUID, case_id: UUID = Query(...), zone: Optional[str] = Query(None, max_length=64),
                   db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):

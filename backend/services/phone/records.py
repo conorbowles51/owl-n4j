@@ -41,7 +41,7 @@ class NotFound(LookupError):
 def _locate(conn, case_id, record_uid):
     return conn.execute(text(
         "SELECT s.extraction_id, s.document_index, s.ordinal, s.model_type, s.deleted_state, s.decoding_confidence, "
-        "s.source_index, s.interpretation_level, s.parent_record_uid, s.root_record_uid, s.title FROM "
+        "s.source_index, s.interpretation_level, s.parent_record_uid, s.root_record_uid, s.title, s.flags FROM "
         "phone_record_summaries s JOIN phone_interpretation_state st ON st.extraction_id = s.extraction_id AND "
         "st.generation = s.generation JOIN phone_extractions e ON e.id = s.extraction_id AND e.standing = 'active' "
         "WHERE s.record_uid = CAST(:u AS uuid) AND s.case_id = CAST(:c AS uuid)"),
@@ -189,7 +189,22 @@ def record_detail(conn, case_id, record_uid, zone="UTC") -> dict:
         "message_dated": _message_dated(conn, case_id, record_uid),
         "correctable": correctable_values(conn, record_uid),
         "readings": _open_readings(conn, case_id, ext, loc.model_type, label),
+        **_related(conn, ext, record_uid, loc, parents),
     }
+
+
+def _related(conn, ext, record_uid, loc, parents) -> dict:
+    """02 decision 39: a record under ``RelatedModels`` is a copy from another source, shown under its owner and marked.
+    ``copy_of`` is the owner of a copy, ``related_copies`` the copies held by an owner."""
+    from services.phone import type_lists
+    copy = type_lists.COPY_FLAG in (loc.flags or [])
+    copies = [{"record_uid": str(r.record_uid), "model_type": r.model_type, "title": r.title,
+               "source_index": r.source_index} for r in conn.execute(text(
+                   "SELECT s.record_uid, s.model_type, s.title, s.source_index FROM phone_record_summaries s JOIN "
+                   "phone_interpretation_state st ON st.extraction_id = s.extraction_id AND st.generation = s.generation "
+                   "WHERE s.parent_record_uid = CAST(:u AS uuid) AND s.extraction_id = :e AND :f = ANY(s.flags) ORDER BY "
+                   "s.document_index, s.ordinal"), {"u": str(record_uid), "e": ext, "f": type_lists.COPY_FLAG})]
+    return {"is_copy": copy, "copy_of": parents[0] if copy and parents else None, "related_copies": copies}
 
 
 def _position(conn, case_id, record_uid):
