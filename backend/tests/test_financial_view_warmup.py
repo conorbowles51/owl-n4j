@@ -730,7 +730,8 @@ def test_the_child_ends_when_its_worker_is_killed(tmp_path):
     import pathlib
     backend = str(pathlib.Path(view_warmup.__file__).resolve().parents[2])
     process = subprocess.Popen([sys.executable, '-c', worker, str(pid_file), backend], cwd=backend)
-    for _ in range(600):
+    deadline = time.monotonic() + 900  # the worker imports the backend first: 130 s measured at load 43, more at 100
+    while time.monotonic() < deadline and process.poll() is None:
         if pid_file.exists() and pid_file.read_text():
             break
         time.sleep(0.1)
