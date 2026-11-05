@@ -107,12 +107,11 @@ if run "$(epoch '2026-11-05 02:17')" dump; then fail "a last try with a checkpoi
 [[ "$(count)" -eq "${n}" ]] || fail "torn copy became a set"
 
 # 5c. A command that stops the script is heard at once, not at the next freshness check.
-reset; mv "${store}/transactions/neo4j/checkpoint.0" "${store}/moved"
-find "${store}/transactions" -name 'checkpoint.*' -exec mv {} {}.gone \;
+reset; mkdir "${test_root}/held"; mv "${store}"/transactions/neo4j/checkpoint.0 "${test_root}/held/n"
+mv "${store}"/transactions/system/checkpoint.0 "${test_root}/held/s"
 if run "$(epoch '2026-11-05 02:18')" dump; then fail "unreadable checkpoint log accepted"; fi
 grep -q "stopped unexpectedly" "${alerts}" || fail "no alert when the script stopped: $(cat "${alerts}")"
-find "${store}/transactions" -name '*.gone' -exec sh -c 'mv "$0" "${0%.gone}"' {} \;
-mv "${store}/moved" "${store}/transactions/neo4j/checkpoint.0"
+mv "${test_root}/held/n" "${store}/transactions/neo4j/checkpoint.0"; mv "${test_root}/held/s" "${store}/transactions/system/checkpoint.0"
 
 # 6. Writes during every try: the set is still written, marked as counted from the recovered copy.
 reset; printf '"case-a", 10, 20\n"case-a", 11, 20\n"case-a", 12, 20\n"case-a", 13, 20\n"case-a", 14, 20\n"case-a", 15, 20\n' > "${state}/live"
