@@ -60,7 +60,8 @@ mk 2026-11-05T06:00:00Z 0; run A=1 || fail "run with an unproven key failed"
 [[ "$(state encryption)" == OFF ]] || fail "unproven custody shown as ok"
 grep -q 'custody not proven' "${status}" || fail "custody gap not said"
 bash "${test_root}/backup-crypt.sh" confirm-key < "${test_root}/private.asc" > /dev/null
-run A=1 || fail "run with proven custody failed"
+mkdir "${test_root}/empty"
+run BACKUP_ROOT="${test_root}/empty" || fail "run with proven custody failed"
 [[ "$(state encryption)" == ok ]] || fail "proven custody not ok"
 grep -q 'no drill key' "${status}" || fail "missing drill key not said"
 # Custody proven but the newest dump has no sealed file: a seal failed. Not ok, and said.
