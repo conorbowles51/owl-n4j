@@ -16,14 +16,16 @@ export function secondsWords(ms: number): string {
   return `${m} min`
 }
 
-/** Time left in words, or the first-run sentence. Never invented. */
+/** Time left in words, the late sentence for a step past its last time, or the first-run sentence. Never invented. */
 export function timeLeft(p: ProgressState, now: number): string {
   const elapsed = now - p.startedAt
   if (p.done !== undefined && p.total !== undefined && p.total > 0) {
     if (p.done >= p.total) return "finishing"
     if (p.done > 0 && elapsed > 0) return `about ${secondsWords(((p.total - p.done) * elapsed) / p.done)} left`
     if (p.lastRateMsPerUnit) return `about ${secondsWords((p.total - p.done) * p.lastRateMsPerUnit)} left`
-  } else if (p.lastDurationMs && elapsed < p.lastDurationMs) {
+  }
+  if (p.lastDurationMs) {
+    if (elapsed >= p.lastDurationMs) return `Taking longer than last time (${secondsWords(p.lastDurationMs)})`
     return `about ${secondsWords(p.lastDurationMs - elapsed)} left (this took ${secondsWords(p.lastDurationMs)} last time)`
   }
   return "Working out time left (first run of this step)"

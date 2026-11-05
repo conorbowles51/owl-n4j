@@ -29,6 +29,9 @@ describe("progress panel (07 4.7)", () => {
   it("never invents a time left and never shows 100% before drawn", () => {
     expect(timeLeft({ ...base, done: 0, total: 186787 }, 2000)).toBe("Working out time left (first run of this step)")
     expect(timeLeft({ ...base, done: 98000, total: 186787 }, 10000)).toBe("about 9 s left")
+    expect(timeLeft({ ...base, startedAt: 0, lastDurationMs: 4000 }, 1000)).toBe("about 3 s left (this took 4 s last time)")
+    expect(timeLeft({ ...base, startedAt: 0, lastDurationMs: 4000 }, 9000)).toBe("Taking longer than last time (4 s)")
+    expect(timeLeft({ ...base, startedAt: 0, done: 0, total: 50, lastDurationMs: 4000 }, 9000)).toBe("Taking longer than last time (4 s)")
     expect(timeLeft({ ...base, done: 0, total: 1000, lastRateMsPerUnit: 40 }, 500)).toBe("about 40 s left")
     expect(percentShown({ ...base, done: 186787, total: 186787 })).toBe(99)
     expect(percentShown({ ...base, done: 186787, total: 186787, drawn: true })).toBe(100)
