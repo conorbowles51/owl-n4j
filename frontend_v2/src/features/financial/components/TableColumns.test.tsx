@@ -4,6 +4,7 @@ import type { LedgerTransaction } from "../api"
 import { TableColumnPicker, TransactionExplorerTable } from "./TransactionExplorerTable"
 import { readTableColumns, storeTableColumns, type OptionalColumn } from "../lib/table-columns"
 import { useState } from "react"
+import { patternAPI } from "@/features/pattern/api"
 
 vi.mock("./JudgementCalls", () => ({ RowJudgementMarkers: () => null }))
 afterEach(() => {
@@ -44,4 +45,13 @@ it("adds optional columns from the picker, remembers them, and resets to the def
   fireEvent.click(screen.getByRole("button", { name: "Reset to default" }))
   expect(screen.queryByRole("columnheader", { name: "Statement" })).toBeNull()
   expect(readTableColumns()).toEqual([])
+})
+
+it("an open payment shows the place section, so a place can be attached where the payment is read (04 8.5)", async () => {
+  const key = "11111111-2222-3333-4444-555555555555"
+  vi.spyOn(patternAPI, "manualPlaces").mockResolvedValue({ total: 0, items: [] })
+  render(<TransactionExplorerTable caseId="c" rows={[{ ...row, key }]} selected={[]} expanded={[key]} sort="newest" onSort={vi.fn()}
+    onExpand={vi.fn()} onToggle={vi.fn()} onParty={vi.fn()} columns={[]} statementNames={new Map()} amountAllowed={false} />)
+  expect(await screen.findByRole("button", { name: "Attach a place" })).toBeTruthy()
+  vi.restoreAllMocks()
 })

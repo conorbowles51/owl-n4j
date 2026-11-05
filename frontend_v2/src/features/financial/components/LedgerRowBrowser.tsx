@@ -1887,6 +1887,7 @@ export function LedgerRowBrowser({
         </p>
       ) : investigation && exportContext && !tableView ? (
         <PaymentCardList
+          caseId={exportContext?.caseId}
           findings={findings.data}
           categoryColors={categoryColors}
           rows={pageRows}
@@ -1929,6 +1930,7 @@ export function LedgerRowBrowser({
         />
       ) : investigation && exportContext ? (
         <TransactionExplorerTable
+          caseId={exportContext?.caseId}
           columns={tableColumns}
           statementNames={tableStatementNames}
           findings={findings.data}

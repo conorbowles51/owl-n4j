@@ -1,3 +1,4 @@
+import { PaymentPlace } from "@/features/pattern/components/PaymentPlace"
 import { needsName, otherSide } from "../lib/payment-naming"
 import { Fragment, useState } from "react"
 import { readProofClass } from "../lib/ledger-format"
@@ -73,6 +74,7 @@ export function TableColumnPicker({
 }
 
 export function TransactionExplorerTable({
+  caseId,
   rows,
   selected,
   expanded,
@@ -93,6 +95,8 @@ export function TransactionExplorerTable({
   columns = [],
   statementNames,
 }: {
+  /** The case, so the open payment can show and change its place (04 section 8.5). */
+  caseId?: string
   columns?: OptionalColumn[]
   statementNames?: Map<string, string>
   amountAllowed?: boolean
@@ -414,6 +418,7 @@ export function TransactionExplorerTable({
                         {rowFindings.map((f, i) => (
                           <p key={i}>Finding: {f.title || "Untitled"}</p>
                         ))}
+                        {caseId && <PaymentPlace caseId={caseId} transactionId={row.key} />}
                         <div className="flex flex-wrap gap-4">
                           <button
                             className="underline"

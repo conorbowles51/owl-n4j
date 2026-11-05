@@ -13,6 +13,7 @@ import { PaymentLabelOrigin } from "./PaymentLabelOrigin"
 import { DescriptionCorrectionNote } from "./DescriptionCorrectionNote"
 import { MONEY, SourceTag } from "@/lib/data-colour"
 import { dayTotals } from "./day-totals"
+import { PaymentPlace } from "@/features/pattern/components/PaymentPlace"
 
 /** A payment card; in a list of judgement calls it carries its tier's tint and left border. */
 function PriorityCard({ row, className, children }: { row: LedgerTransaction; className: string; children: ReactNode }) {
@@ -50,6 +51,7 @@ const dayHeading = (day: string) => {
  * category, judgement calls and amount readable at a glance and every table field one click away in Details.
  */
 export function PaymentCardList({
+  caseId,
   rows,
   selected,
   expanded,
@@ -65,6 +67,8 @@ export function PaymentCardList({
   nameAction = "Name it",
   findings = [],
 }: {
+  /** The case, so the open payment can show and change its place (04 section 8.5). */
+  caseId?: string
   rows: LedgerTransaction[]
   selected: string[]
   expanded: string[]
@@ -289,6 +293,7 @@ export function PaymentCardList({
                       {rowFindings.map((f, i) => (
                         <p key={i}>Finding: {f.title || "Untitled"}</p>
                       ))}
+                      {caseId && <PaymentPlace caseId={caseId} transactionId={row.key} />}
                       <div className="flex flex-wrap gap-2">
                         <button type="button" className="rounded-md border bg-background px-3 py-1.5 font-medium hover:bg-muted" onClick={() => onOpen?.(row)}>
                           Open original statement
