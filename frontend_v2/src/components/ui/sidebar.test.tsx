@@ -115,6 +115,8 @@ describe("AppSidebar New marks (07 section 9)", () => {
     withPhone()
     const hide = await screen.findByRole("button", { name: "Hide the New marks" }, { timeout: 15_000 })
     expect(screen.getAllByText("New")).toHaveLength(6)
+    // the mark takes room from the row: a marked name wraps, it is never cut
+    expect(screen.getByText("Money on the phones")).not.toHaveClass("truncate")
     fireEvent.click(hide)
     await vi.waitFor(() => expect(screen.queryByText("New")).not.toBeInTheDocument())
     expect(marks.saved).toBe(1)

@@ -177,7 +177,8 @@ function SidebarLink({
         )}
       />
       {expanded && (
-        <span className="min-w-0 flex-1 truncate">{item.label}</span>
+        // a marked name may be too long to share the row with the mark, so it wraps rather than being cut
+        <span className={cn("min-w-0 flex-1", item.isNew ? "leading-tight [overflow-wrap:anywhere]" : "truncate")}>{item.label}</span>
       )}
       {expanded && item.isNew && <NewMark />}
       {!expanded && item.isNew && (
