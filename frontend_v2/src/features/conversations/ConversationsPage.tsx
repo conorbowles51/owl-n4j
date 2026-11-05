@@ -159,10 +159,10 @@ export function ConversationsPage() {
   // A filter that leaves the open thread with no message moves to the first thread that has one; with none matching
   // the list says so. Only once the list of this filter has arrived, and never away from a thread opened with no filter.
   useEffect(() => {
-    if (view.tab !== "threads" || !narrowed || !view.thread || !threadsQ.isSuccess || threadsQ.isPlaceholderData) return
+    if (view.tab !== "threads" || !(narrowed || view.phones.length > 0 || view.from || view.to) || !view.thread || !threadsQ.isSuccess || threadsQ.isPlaceholderData) return
     if (threads.some((t) => t.thread_key === view.thread)) return
     setView({ thread: threads[0]?.thread_key ?? null, at: null }, true)
-  }, [view.tab, view.thread, narrowed, threads, threadsQ.isSuccess, threadsQ.isPlaceholderData, setView])
+  }, [view.tab, view.thread, view.phones.length, view.from, view.to, narrowed, threads, threadsQ.isSuccess, threadsQ.isPlaceholderData, setView])
 
   // A link to one record (?record=) reads every message of the phones in scope with that record open beside it; a
   // saved selection (?selection=) reads its frozen records.
@@ -357,7 +357,7 @@ export function ConversationsPage() {
   const onUndoAdd = useCallback(
     (target: CollectTarget, result: CollectResult) => {
       setUndoNote("Undoing the add")
-      undoCollect(caseId, target, result)
+      undoCollect(caseId, target, result, (done, all) => setUndoNote(`Undoing the add: ${done.toLocaleString("en-US")} of ${all.toLocaleString("en-US")} removed. Stay on this page until it finishes.`))
         .then((n) => setUndoNote(`Undone: removed ${fmt(n)} ${n === 1 ? "link" : "links"} from ${target.label}.`))
         .catch((e) => setUndoNote(e instanceof Error ? e.message : "The undo failed. Nothing more was removed."))
         .finally(() => void refreshUsedIn())

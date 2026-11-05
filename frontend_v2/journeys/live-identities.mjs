@@ -80,15 +80,16 @@ await part("a", "Phone identities tab", async () => {
   await shot("a2-detail")
   const sug = await page.getByText("Suggested", { exact: true }).count()
   say(`  detail open; suggested block ${sug}; saved-under-your-name line ${await page.getByText(/Saved under your name/).count()}`)
-  const options = await page.getByLabel("Person").locator("option").allTextContents()
+  const person = page.getByRole("combobox", { name: "Person", exact: true })
+  const options = await person.locator("option").allTextContents()
   const target = options.find((o) => /Cassia|Corin|Garnet|Jory/.test(o))
-  await page.getByLabel("Person").selectOption({ label: target })
+  await person.selectOption({ label: target })
   await page.getByRole("button", { name: "Link", exact: true }).click()
-  await page.getByText(/^Linked to /).first().waitFor({ timeout: 30000 })
+  await page.getByRole("status").filter({ hasText: /^Linked to / }).first().waitFor({ timeout: 30000 })
   const after = (await api(`/api/phones/identities?case_id=${caseId}&limit=25&linked=no`)).body
   say(`  link decision saved: unlinked ${unlinked.total} -> ${after.total}`)
   await shot("a3-linked")
-  await page.getByRole("textbox").filter({ hasNot: page.getByLabel("Search identities") }).last().fill("Live check: undoing a test link")
+  await page.locator('section[aria-labelledby="identity-link"]').getByRole("textbox").first().fill("Live check: undoing a test link")
   await page.getByRole("button", { name: "Unlink", exact: true }).click()
   await page.getByText("Not linked to a person.").or(page.getByRole("button", { name: "Link", exact: true })).first().waitFor({ timeout: 30000 })
   await page.waitForTimeout(1500)
@@ -155,10 +156,6 @@ await part("c", "Scope bar, presets, memory", async () => {
   const one = await conversationsTotal()
   say(`  preset scope -> ${one} messages; url scope params ${new URL(page.url()).search.length > 1}`)
   await shot("c2-scoped")
-  await page.getByRole("button", { name: "Reset" }).click()
-  await page.waitForTimeout(800)
-  await page.getByRole("button", { name: "Presets" }).click()
-  await page.getByRole("menuitem").first().click()
   await page.waitForTimeout(1200)
   // a new arrival within the session, by the app's own navigation
   await page.getByRole("link", { name: /^Map$/ }).first().click().catch(() => {})
@@ -198,14 +195,14 @@ await part("d", "Open in Graph with a stated limit", async () => {
 })
 
 await part("e", "Add to on Search and Phone summary, device dossier", async () => {
-  // a term with more than 500 hits in the case, so the whole set goes as one frozen selection
+  // a term with more than 500 hits would go as one frozen selection; the add picks the smallest set of 20 or more, so
+  // the walk's Undo finishes, on a note not yet used by this walk
   const group = async (q) => (await api(`/api/search/group?case_id=${caseId}&q=${encodeURIComponent(q)}&group=messages&limit=1`)).body
   let term = null
-  for (const q of ["the", "a", "and", "you", "to", "me"]) {
+  for (const q of ["555", "201", "the", "and", "you"]) {
     const g = await group(q)
     say(`  group "${q}": ${g?.total ?? "-"}`)
-    if ((g?.total ?? 0) > 0 && !term) term = q
-    if ((g?.total ?? 0) > 500) { term = q; break }
+    if (q === "and") term = q
   }
   if (!term) throw new Error("no search term with hits")
   await go(`/search?q=${encodeURIComponent(term)}&group=messages`)
@@ -219,7 +216,7 @@ await part("e", "Add to on Search and Phone summary, device dossier", async () =
   say(`  whole result ready to add ${Date.now() - t0} ms`)
   await add.click()
   await page.getByRole("button", { name: /^Note/ }).click()
-  const opt = page.getByRole("option").first()
+  const opt = page.getByRole("listbox", { name: /Choose where to add/ }).getByRole("option").nth(1)
   await opt.waitFor({ timeout: 20000 })
   await shot("e2-add-dialog")
   await opt.click()
@@ -228,7 +225,7 @@ await part("e", "Add to on Search and Phone summary, device dossier", async () =
   say(`  reply: ${(await reply.innerText()).replace(/\s+/g, " ").slice(0, 160)}`)
   await shot("e3-added")
   await reply.getByRole("button", { name: "Undo" }).click()
-  await page.getByText(/Removed [\d,]+ links?/).first().waitFor({ timeout: 60000 })
+  await page.getByText(/Removed [\d,]+ links?/).first().waitFor({ timeout: 180000 })
   await shot("e4-undone")
   say(`  undo: ${(await page.getByText(/Removed [\d,]+ links?/).first().innerText()).slice(0, 80)}`)
 

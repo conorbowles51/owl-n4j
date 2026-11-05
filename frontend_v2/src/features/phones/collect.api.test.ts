@@ -11,6 +11,13 @@ const note = { kind: "note" as const, id: "n1", label: "Synthetic note" }
 describe("Undo of Add to… (07 J-12; review of 03-3)", () => {
   afterEach(() => fetchAPI.mockReset())
 
+  it("says how many are removed so far: an undo of hundreds takes minutes", async () => {
+    fetchAPI.mockResolvedValue({ version: 2 })
+    const seen: string[] = []
+    await undoCollect("c1", dossier, { added: 2, skipped: 0, refused: 0, linkIds: ["l1", "l2"] }, (done, all) => seen.push(`${done}/${all}`))
+    expect(seen).toEqual(["1/2", "2/2"])
+  })
+
   it("removes exactly the links the add created", async () => {
     fetchAPI.mockResolvedValue({})
     expect(await undoCollect("c1", dossier, { added: 2, skipped: 5, refused: 0, linkIds: ["l1", "l2"] })).toBe(2)

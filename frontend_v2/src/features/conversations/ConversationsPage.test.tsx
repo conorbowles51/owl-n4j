@@ -155,6 +155,11 @@ describe("Conversations", () => {
     expect(await screen.findByTestId("thread-count")).toHaveTextContent("0 of 2 threads have messages matching these filters")
   })
 
+  it("moves off an open thread a phone scope leaves out, so the count is never 0 for a thread off the list (07 4.5)", async () => {
+    page("/cases/case-1/conversations?thread=gone&phones=e1")
+    await waitFor(() => expect(seen.search).toContain("thread=t1"))
+  })
+
   it("stays on an open thread that is not listed when no filter is set", async () => {
     page("/cases/case-1/conversations?thread=gone")
     await threadOptions()

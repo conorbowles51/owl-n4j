@@ -114,7 +114,7 @@ export const liveCollectClient: CollectClient = {
  * Undo an add: remove exactly the links that add created; links that were already there stay. Returns how many
  * were removed. A failure part way states how many were removed before it.
  */
-export async function undoCollect(caseId: string, target: CollectTarget, result: CollectResult): Promise<number> {
+export async function undoCollect(caseId: string, target: CollectTarget, result: CollectResult, onProgress?: (removed: number, total: number) => void): Promise<number> {
   const ids = result.linkIds ?? []
   let version = result.version
   let removed = 0
@@ -130,6 +130,7 @@ export async function undoCollect(caseId: string, target: CollectTarget, result:
         version = r.version
       }
       removed += 1
+      onProgress?.(removed, ids.length)
     } catch (e) {
       const why = e instanceof Error ? e.message : "the request failed"
       throw new Error(`Undo stopped after removing ${removed.toLocaleString("en-US")} of ${ids.length.toLocaleString("en-US")}: ${why}`)

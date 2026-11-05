@@ -123,7 +123,7 @@ export function SearchResultsPage() {
                 noDossierWhy={refused ?? undefined}
                 onUndo={(target, result) => {
                   setUndoNote("Undoing the add")
-                  undoCollect(caseId, target, result)
+                  undoCollect(caseId, target, result, (done, all) => setUndoNote(`Undoing the add: ${done.toLocaleString("en-US")} of ${all.toLocaleString("en-US")} removed. Stay on this page until it finishes.`))
                     .then((n) => setUndoNote(`Removed ${n.toLocaleString("en-US")} ${n === 1 ? "link" : "links"} that add made.`))
                     .catch((e) => setUndoNote(e instanceof Error ? e.message : "The add could not be undone."))
                 }}
