@@ -136,6 +136,17 @@ class FindingPaymentTests(DuplicateTestCase):
             with self.assertRaises(WorkspaceEntryValidationError):
                 self.add(self.finding(tags=tags), [self.rows[0].id])
 
+    def test_a_selection_carrying_an_analysis_keeps_what_the_analysis_read(self):
+        entry = self.finding(cited=[self.rows[0]], metadata={"schema": SCHEMA, "analysis": {"summary": "One payment"},
+                                                             "transactions": [self.snapshot(self.rows[0])]})
+        before = deepcopy(entry["links"][0])
+        result = self.add(entry, [self.rows[1].id])
+        kept = next(l for l in result["entry"]["links"] if l["id"] == before["id"])
+        self.assertEqual(kept["source_anchor"], before["source_anchor"])
+        self.assertEqual(kept["metadata"], before["metadata"])
+        added = next(l for l in result["entry"]["links"] if l["id"] != before["id"])
+        self.assertEqual((added["target_type"], added["target_id"]), ("financial_transaction", str(self.rows[1].id)))
+
     def test_a_saved_analysis_on_the_same_file_keeps_its_own_anchor(self):
         entry = self.finding(cited=[self.rows[0]], metadata={"schema": "loupe.financial.saved_trace/1", "envelope": {}})
         before = deepcopy(entry["links"][0])

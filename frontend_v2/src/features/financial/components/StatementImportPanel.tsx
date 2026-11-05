@@ -1781,7 +1781,7 @@ function EditableStatement({
           .object({
             review_revision: z.string(),
             saved_at: z.string(),
-            saved_by: z.object({ name: z.string().nullish() }),
+            saved_by: z.object({ name: z.string().nullish(), origin: z.record(z.string(), z.unknown()).nullish() }),
             request: z.record(z.string(), z.unknown()),
           })
           .nullable(),

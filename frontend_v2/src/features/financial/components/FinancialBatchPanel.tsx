@@ -2163,7 +2163,7 @@ export function BatchStatementReview({
                 })
                 if (!latest?.review_request) return null
                 const shared = z
-                  .object({ saved_review: z.object({ saved_at: z.string(), saved_by: z.object({ name: z.string().nullish() }) }).nullable() })
+                  .object({ saved_review: z.object({ saved_at: z.string(), saved_by: z.object({ name: z.string().nullish(), origin: z.record(z.string(), z.unknown()).nullish() }) }).nullable() })
                   .parse(
                     await fetchAPI(
                       `/api/financial/statement-import/${latest.file_id}/saved-review?${new URLSearchParams({

@@ -1656,6 +1656,8 @@ FINDING_PAYMENT_SOURCE_BATCH = 500
 def _cited_payment_ids(links: list[WorkspaceEntryLink]) -> set[str]:
     cited: set[str] = set()
     for link in links:
+        if link.target_type == "financial_transaction":
+            cited.add(str(link.target_id))
         ids = (link.source_anchor or {}).get("financial_transaction_ids")
         if isinstance(ids, list):
             cited.update(value for value in ids if isinstance(value, str))
@@ -1733,7 +1735,7 @@ def add_financial_payments(
                 "source_anchor": {"financial_transaction_ids": ids, "financial_ref_ids": refs},
                 "metadata": {"schema": FINDING_PAYMENT_SELECTION_SCHEMA, "transactions": rows},
             })
-        elif schema in (None, FINDING_PAYMENT_SELECTION_SCHEMA):
+        elif schema in (None, FINDING_PAYMENT_SELECTION_SCHEMA) and not (link.link_metadata or {}).get("analysis"):
             # New objects, so the JSON columns are written; the saved items are carried over untouched.
             anchor, metadata = dict(link.source_anchor or {}), dict(link.link_metadata or {})
             anchor["financial_transaction_ids"] = [*(anchor.get("financial_transaction_ids") or []), *ids]

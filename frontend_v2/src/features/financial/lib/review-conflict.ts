@@ -4,7 +4,10 @@ import { ApiError } from "@/lib/api-client"
 export interface SavedReview {
   review_revision: string
   saved_at?: string | null
-  saved_by?: { name?: string | null } | null
+  saved_by?: {
+    name?: string | null
+    origin?: Record<string, unknown> | null
+  } | null
   request: Record<string, unknown>
 }
 

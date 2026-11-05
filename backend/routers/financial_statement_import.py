@@ -676,7 +676,7 @@ def saved_statement_review(evidence_file_id: UUID, case_id: UUID = Query(...), s
         raise HTTPException(status_code=404, detail='Statement not found in this case.')
     saved = review_progress(file, statement_id)
     return dict(case_id=str(case_id), evidence_file_id=str(evidence_file_id), saved_review=saved and dict(
-        review_revision=saved['review_revision'], saved_at=saved['saved_at'], saved_by=dict(name=saved['saved_by'].get('name')),
+        review_revision=saved['review_revision'], saved_at=saved['saved_at'], saved_by=dict(name=saved['saved_by'].get('name'), origin=saved['saved_by'].get('origin')),
         request=saved['request']))
 
 

@@ -197,6 +197,24 @@ class ImportHold(unittest.TestCase):
             self.f.confirm(decided)
         self.assertTrue(self.payments())
 
+    def test_a_held_statement_can_be_left_unimported_naming_the_statement_it_repeats(self):
+        from services.financial import pending_statement_duplicates as pending
+        candidate = self.candidate()
+        proposal = dict(revision="r", statement_id=None, current_import=None)
+        with self.f.SessionLocal() as db, \
+                patch("services.financial.repeated_activity.repeated_candidates", return_value=[candidate]), \
+                patch("services.financial.statement_import.read_statement_import", return_value=proposal), \
+                patch.object(pending, "_requires_review_comparison", return_value=False), \
+                patch.object(pending, "_raw", return_value=self.f.request()), \
+                patch.object(pending, "_persist", side_effect=lambda file, p, r, decision, actor: decision) as persist, \
+                patch("services.financial.import_batches.refresh_file_readiness"):
+            pending.decide_duplicate_disposition(db, case_id=self.f.case.id, evidence_file_id=self.f.file.id,
+                action="ignore", expected_reading_revision="r")
+        decision = persist.call_args.args[3]
+        self.assertEqual(decision["status"], "ignored")
+        self.assertEqual(decision["retained"]["evidence_file_id"], candidate["file_id"])
+        self.assertEqual(self.payments(), [])
+
     def test_with_no_candidate_the_import_is_as_before(self):
         with patch("services.financial.repeated_activity.repeated_candidates", return_value=[]):
             self.f.confirm()

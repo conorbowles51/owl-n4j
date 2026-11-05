@@ -55,7 +55,9 @@ export function ReviewSaveConflict({
       {saved && (
         <>
           <p>
-            Saved by {saved.saved_by?.name || "someone not recorded"}
+            {saved.saved_by?.origin
+              ? `Saved by ${String(saved.saved_by.origin.model || "a model")} · not confirmed`
+              : `Saved by ${saved.saved_by?.name || "someone not recorded"}`}
             {saved.saved_at
               ? ` on ${new Date(saved.saved_at).toLocaleString()}`
               : ""}
