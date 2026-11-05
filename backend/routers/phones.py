@@ -484,20 +484,25 @@ def phone_link_edge_records(body: EdgeRecordsBody, db: Session = Depends(get_db)
         raise HTTPException(status_code=422, detail=str(exc))
 
 
-class MediaFilter(BaseModel):
+class MediaScope(BaseModel):
+    """What the Media screen narrows by, one definition for every route that takes it: a batch reading offered under
+    a filter must take that filter (unknown keys are refused, never ignored)."""
     model_config = ConfigDict(extra="forbid")
-    case_id: UUID
     phones: list[UUID] = Field(default_factory=list)
     categories: list[str] = Field(default_factory=list)
     verification: list[str] = Field(default_factory=list)
     linked_to_message: Optional[bool] = None
-    thread_key: Optional[str] = Field(None, max_length=512)
+    thread_key: Optional[str] = Field(None, max_length=512)  # Media opened from a thread's Attachments (N)
     apps: list[str] = Field(default_factory=list, max_length=200)
     participants: list[str] = Field(default_factory=list, max_length=200)
     from_instant: Optional[datetime] = None
     to_instant: Optional[datetime] = None
     significant_only: bool = False
     has_position: Optional[bool] = None
+
+
+class MediaFilter(MediaScope):
+    case_id: UUID
 
 
 class MediaDownloadBody(BaseModel):
@@ -921,27 +926,15 @@ def phone_media_derived_accept(derived_id: UUID, body: AcceptBody, db: Session =
         raise HTTPException(status_code=422, detail=str(exc))
 
 
-class BatchScope(BaseModel):
-    """The Media filter without its case (the case is the body's): unknown keys are refused, never ignored."""
-    model_config = ConfigDict(extra="forbid")
-    phones: list[UUID] = Field(default_factory=list)
-    categories: list[str] = Field(default_factory=list)
-    verification: list[str] = Field(default_factory=list)
-    linked_to_message: Optional[bool] = None
-    thread_key: Optional[str] = Field(None, max_length=512)  # Media opened from a thread's Attachments (N)
-    significant_only: bool = False
-    has_position: Optional[bool] = None
-
-
 class BatchBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     case_id: UUID
     kind: Literal["ocr", "transcript"]
-    filter: BatchScope = Field(default_factory=BatchScope)
+    filter: MediaScope = Field(default_factory=MediaScope)
     scope_words: str = Field(default="", max_length=500)
 
 
-def _batch_scope(case_id, body_filter: BatchScope):
+def _batch_scope(case_id, body_filter: MediaScope):
     return body_filter.model_dump(mode="json", exclude_defaults=True)
 
 

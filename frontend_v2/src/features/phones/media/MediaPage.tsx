@@ -7,6 +7,7 @@ import { recordPath } from "@/lib/record-links"
 import { useCollectTargets } from "../collect-targets"
 import { translationKey } from "../lib/translation-key"
 import { BatchReading } from "./BatchReading"
+import { batchScopeWords } from "./batch-words"
 import { ImageSearch } from "./ImageSearch"
 import { OriginalsJobs } from "./OriginalsJobs"
 import { MachineTextPrompt } from "./MachineTextPrompt"
@@ -714,7 +715,7 @@ export default function MediaPage() {
         {downloadError && <p role="alert" className="text-xs">{downloadError}</p>}
         <OriginalsJobs caseId={caseId} />
         {pages.isError && <p role="alert" className="text-sm">The files could not be loaded.</p>}
-        <BatchReading caseId={caseId} filter={filter} scopeWords={[category && `${category === NONE ? "uncategorised" : category} files`, state && `${state === NONE ? "unchecked" : state} files`].filter(Boolean).join(", ") || (phone === EVERY_PHONE ? "every phone in the case" : "this phone")} />
+        <BatchReading caseId={caseId} filter={filter} scopeWords={batchScopeWords({ everyPhone: phone === EVERY_PHONE, thread: !!thread, category: category === NONE ? "uncategorised" : category, state: state === NONE ? "unchecked" : state, app, person: facets.data?.participants.find((p) => p.key === person)?.label ?? person, fromDay, toDay, significant, hasPosition })} />
         <ImageSearch caseId={caseId} blur={blur.on} onOpen={setOpen} />
         <ul aria-label="Files" className={`grid ${THUMB_SIZES[size].grid} gap-2`}>
           {items.map((it) => (

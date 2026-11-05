@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest"
 const api = vi.hoisted(() => ({ describeDeriveBatch: vi.fn(), createDeriveBatch: vi.fn(), getDeriveBatches: vi.fn(), cancelDeriveBatch: vi.fn() }))
 vi.mock("../api", async (orig) => ({ ...(await orig<object>()), ...api }))
 import { BatchReading } from "./BatchReading"
-import { batchJob } from "./batch-words"
+import { batchJob, batchScopeWords } from "./batch-words"
 
 const facts = (kind: string, eligible: number) => ({ kind, in_scope: eligible + 3, eligible, noun: kind === "transcript" ? "voice notes and videos" : "images", left_out: { already_read: 1, not_in_production: 2, empty_placeholder: 0, uncategorised: 3 } })
 const batch = (over: object) => ({ id: "b1", kind: "transcript", scope_words: "this phone", total: 3, done: 0, failed: 0, queued: 3, running: 0, cancelled: false, cancelled_count: 0, state: "running", created_at: "2026-11-03T08:00:00Z", first_started_at: null, last_finished_at: null, noun: "voice notes and videos", left_out: {}, ...over })
@@ -30,6 +30,25 @@ describe("Batch reading (M-5)", () => {
     const tray = await screen.findByRole("list", { name: "Jobs" })
     expect(within(tray).getByText("Transcribing 3 voice notes and videos (this phone)")).toBeInTheDocument()
     expect(within(tray).getByText(/^Read: 1 of 3 voice notes and videos, /)).toBeInTheDocument()
+  })
+
+  it("says so when the count of a scope is refused, rather than dropping the offer in silence", async () => {
+    api.describeDeriveBatch.mockRejectedValue(new Error("refused"))
+    api.getDeriveBatches.mockResolvedValue({ case_id: "c", items: [] })
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <BatchReading caseId="c" filter={{ case_id: "c", apps: ["WhatsApp"] }} scopeWords="this phone: WhatsApp" />
+      </QueryClientProvider>,
+    )
+    expect(await screen.findByRole("alert")).toHaveTextContent("Batch reading cannot be offered for this scope: the count of files to read failed. Nothing was queued.")
+  })
+
+  it("names every filter that narrows a batch, so a filtered batch never reads as the whole phone", () => {
+    expect(batchScopeWords({ everyPhone: false })).toBe("this phone")
+    expect(batchScopeWords({ everyPhone: true })).toBe("every phone in the case")
+    expect(batchScopeWords({ everyPhone: false, category: "Audio", app: "WhatsApp", person: "Synthetic Person", fromDay: "2023-01-01", toDay: "2023-02-01", significant: true, hasPosition: true }))
+      .toBe("this phone: Audio files, WhatsApp, with Synthetic Person, from 2023-01-01, to 2023-02-01, significant people only, files with a location")
+    expect(batchScopeWords({ everyPhone: true, thread: true })).toBe("every phone in the case: one conversation")
   })
 
   it("words a stopped batch and a finished one with failures", () => {

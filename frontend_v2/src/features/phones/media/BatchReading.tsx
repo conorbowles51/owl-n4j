@@ -70,6 +70,7 @@ export function BatchReading({ caseId, filter, scopeWords }: { caseId: string; f
       {offer(ocr.data, "ocr")}
       {(transcript.data?.eligible || ocr.data?.eligible) ? <span className="self-center text-muted-foreground">Read on this server; nothing is sent anywhere. Each text is marked machine-generated until a person confirms it.</span> : null}
       {jobs.length > 0 && <JobTray jobs={jobs} now={now} />}
+      {(transcript.isError || ocr.isError) && <p role="alert">Batch reading cannot be offered for this scope: the count of files to read failed. Nothing was queued.</p>}
       {error && <p role="alert">{error}</p>}
     </div>
   )

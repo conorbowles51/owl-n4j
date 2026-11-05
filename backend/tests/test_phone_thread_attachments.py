@@ -44,9 +44,9 @@ def test_thread_header_counts_and_the_thread_scoped_media_grid_agree(world):  # 
 def test_a_batch_reading_offered_on_the_thread_scoped_grid_takes_the_thread_scope(world):  # noqa: F811
     """The Media grid opened from a thread asks what a batch reading of its scope would read; the batch scope must
     take every key of the Media filter (it refuses unknown keys), and count only the thread's files."""
-    from routers.phones import BatchBody, BatchScope, MediaFilter
+    from routers.phones import BatchBody, MediaFilter, MediaScope
     from services.phone import derive_batch
-    assert set(MediaFilter.model_fields) - {"case_id"} <= set(BatchScope.model_fields)
+    assert set(MediaFilter.model_fields) - {"case_id"} <= set(MediaScope.model_fields)
     engine, case, _, ext = world
     body = BatchBody.model_validate({"case_id": str(case), "kind": "ocr", "filter": {"thread_key": "synthetic-thread"}})
     assert body.filter.thread_key == "synthetic-thread"
@@ -54,3 +54,40 @@ def test_a_batch_reading_offered_on_the_thread_scoped_grid_takes_the_thread_scop
         whole = derive_batch.describe(c, case, "ocr", {})["in_scope"]
         none = derive_batch.describe(c, case, "ocr", {"thread_key": "no-such-thread"})["in_scope"]
     assert none == 0 and whole >= none
+
+
+def test_a_batch_reading_takes_the_app_person_and_date_filters_of_the_media_grid_and_reads_only_those_files(world):  # noqa: F811
+    """The grid offers a batch under whatever it is filtered by, so each filter reaches the count and the queue through
+    the request model and its stored JSON: before, apps, participants and dates were refused and the offer vanished."""
+    from datetime import datetime, timedelta
+
+    from routers.phones import BatchBody, _batch_scope
+    from services.phone import derive_batch, media
+    from tests.test_places_rest import _carrier
+    engine, case, _, _ext = world
+    with engine.begin() as c:
+        app, key = _carrier(c, case)
+        c.execute(text("UPDATE phone_files SET tags = 'Image', disk_relpath = 'synthetic-a.jpg', disk_size = 15 WHERE file_uid = :f"),
+                  {"f": LINKED})
+
+    def scope(**f):
+        body = BatchBody.model_validate({"case_id": str(case), "kind": "ocr", "filter": f})
+        return _batch_scope(case, body.filter)
+
+    with engine.connect() as c:
+        when = media.window(c, case, {"phones": [_ext], "linked_to_message": True})["items"][0]["taken_or_sent"]
+        at = datetime.fromisoformat((when.get("instant") or when["utc"]).replace("Z", "+00:00"))
+        count = lambda s: derive_batch.describe(c, case, "ocr", s)["in_scope"]
+        for hit, miss in (({"apps": [app]}, {"apps": ["NoSuchApp"]}),
+                          ({"participants": [key]}, {"participants": ["nobody"]}),
+                          ({"from_instant": (at - timedelta(minutes=1)).isoformat()},
+                           {"from_instant": (at + timedelta(minutes=1)).isoformat()}),
+                          ({"to_instant": (at + timedelta(minutes=1)).isoformat()},
+                           {"to_instant": (at - timedelta(minutes=1)).isoformat()})):
+            assert (count(scope(**hit)), count(scope(**miss))) == (1, 0), hit
+        assert count({}) == 3
+    with engine.begin() as c:
+        made = derive_batch.create(c, case_id=case, kind="ocr", scope=scope(apps=[app]), scope_words="this phone: x",
+                                   user_id=None)
+        queued = c.execute(text("SELECT file_uid FROM phone_derived_texts WHERE batch_id = :b"), {"b": made["id"]}).scalars().all()
+    assert made["total"] == 1 and [str(u) for u in queued] == [LINKED]

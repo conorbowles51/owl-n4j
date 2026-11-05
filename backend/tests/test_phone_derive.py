@@ -79,7 +79,7 @@ def test_m3_a_photos_text_is_read_labelled_searchable_and_the_original_is_unchan
     assert hits["messages"]["total"] == 0  # the derived text is its own kind, never a message
     assert hashlib.sha256(target.read_bytes()).hexdigest() == before
     with engine.connect() as c:
-        assert S.search(c, world[2], "harbour")["groups"][-1]["total"] == 0  # another case sees nothing
+        assert S.search(c, world[2], "harbour", groups=("machine_text",))["groups"][0]["total"] == 0  # another case sees nothing
 
 
 def test_m3_audio_is_refused_in_words_when_no_model_is_on_this_server(world, tmp_path, monkeypatch):

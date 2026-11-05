@@ -3,6 +3,24 @@ import type { DeriveBatch, DeriveBatchFacts } from "../api"
 
 const n = (v: number) => v.toLocaleString("en-US")
 
+/** The scope a batch is recorded and shown under: every filter that narrows it, so a batch of one app's files is
+ * never named as the whole phone. */
+export function batchScopeWords(s: { everyPhone: boolean; thread?: boolean; category?: string; state?: string; app?: string; person?: string; fromDay?: string; toDay?: string; significant?: boolean; hasPosition?: boolean }): string {
+  const parts = [
+    s.thread && "one conversation",
+    s.category && `${s.category} files`,
+    s.state && `${s.state} files`,
+    s.app,
+    s.person && `with ${s.person}`,
+    s.fromDay && `from ${s.fromDay}`,
+    s.toDay && `to ${s.toDay}`,
+    s.significant && "significant people only",
+    s.hasPosition && "files with a location",
+  ].filter(Boolean)
+  const phones = s.everyPhone ? "every phone in the case" : "this phone"
+  return parts.length ? `${phones}: ${parts.join(", ")}` : phones
+}
+
 /** What a batch leaves out, in words, or "" when it leaves nothing out. */
 export function leftOutWords(f: DeriveBatchFacts): string {
   const parts: string[] = []

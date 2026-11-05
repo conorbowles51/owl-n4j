@@ -247,7 +247,7 @@ def test_a_corrected_message_shows_its_translation_as_made_from_an_earlier_text_
     first = _request(world, ev)
     translate.run_pending(world["engine"])
     with world["engine"].connect() as c:
-        assert S.search(c, world["case"], "blue package")["groups"][-1]["total"] == 1
+        assert S.search(c, world["case"], "blue package", groups=("machine_text",))["groups"][0]["total"] == 1
     # a person's correction re-reads the phone: the event's body is the corrected text from then on
     corrected = "Nos vemos mañana en la plaza sintética. Trae el paquete verde."
     with world["engine"].begin() as c:
