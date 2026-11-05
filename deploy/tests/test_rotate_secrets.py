@@ -20,9 +20,9 @@ def _root(tmp_path: Path) -> Path:
     return root
 
 
-def _run(root: Path, mode: str):
+def _run(root: Path, mode: str, *, release: str | None = None, key_check: str = "true"):
     environment = {**os.environ, "ROOT_DIR": str(root), "PYTHON_BIN": sys.executable,
-                   "RELEASE_COMMAND": f"touch {root}/released"}
+                   "RELEASE_COMMAND": release or f"touch {root}/released", "KEY_CHECK_COMMAND": key_check}
     return subprocess.run(["bash", str(REPO / "deploy" / "rotate-secrets.sh"), mode], env=environment,
                           capture_output=True, text=True, timeout=120)
 
@@ -65,3 +65,31 @@ def test_a_second_apply_keeps_the_values_in_place(tmp_path):
     done = _run(root, "--apply")
     assert done.returncode == 0, done.stderr
     assert _values(root) == first
+
+
+def test_a_release_that_did_not_go_out_stops_before_any_credential_moves_and_a_rerun_finishes(tmp_path):
+    root = _root(tmp_path)
+    done = _run(root, "--apply", release="false")
+    assert done.returncode == 1
+    assert "Run --apply again" in done.stderr
+    assert "--apply" not in (root / "rekey.log").read_text().splitlines()
+    first = _values(root)
+    assert _run(root, "--apply").returncode == 0
+    assert _values(root) == first
+    assert (root / "rekey.log").read_text().splitlines()[-1] == "--apply"
+
+
+def test_a_release_that_left_the_old_key_running_moves_no_credential(tmp_path):
+    root = _root(tmp_path)
+    done = _run(root, "--apply", key_check="false")
+    assert done.returncode == 1
+    assert "not running the new key" in done.stderr
+    assert "--apply" not in (root / "rekey.log").read_text().splitlines()
+
+
+def test_a_new_server_with_placeholders_is_read_as_development(tmp_path):
+    root = _root(tmp_path)
+    script = root / "backend" / "scripts" / "rekey_ai_credentials.py"
+    script.write_text("import os\nassert os.environ['LOUPE_ENV'] == 'development'\nprint('read')\n")
+    (root / ".env").write_text("LOUPE_ENV=production\nAUTH_SECRET_KEY=replace-with-a-long-random-signing-secret\n")
+    assert _run(root, "--check").returncode == 0

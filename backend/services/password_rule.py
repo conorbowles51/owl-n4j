@@ -10,9 +10,11 @@ from fastapi import HTTPException
 MINIMUM_LENGTH = 12
 # bcrypt refuses anything longer.
 MAXIMUM_BYTES = 72
+MINIMUM_DIFFERENT_CHARACTERS = 5
 _LIST = Path(__file__).with_name("common_passwords.txt")
 _SEQUENCES = ("abcdefghijklmnopqrstuvwxyz", "01234567890", "qwertyuiopasdfghjklzxcvbnm")
 _LOOK_ALIKES = str.maketrans("@$!0134578", "asioleastb")
+_WORDS = re.compile(r"[a-z0-9]+")
 _ENDS = re.compile(r"^[^a-z]+|[^a-z]+$")
 TOO_COMMON = "This password is too common or too easy to guess. Choose something longer and less predictable."
 
@@ -39,8 +41,12 @@ def _in_sequence(text: str) -> bool:
 
 
 def _personal_parts(email: str | None, name: str | None) -> list[str]:
-    parts = re.split(r"[^a-z0-9]+", (email or "").lower().split("@")[0]) + re.split(r"[^a-z0-9]+", (name or "").lower())
-    return [part for part in parts if len(part) >= 4]
+    """Each word of the name and of the email's local part, and each of those run together."""
+    found = []
+    for text in ((email or "").lower().split("@")[0], (name or "").lower()):
+        words = _WORDS.findall(text)
+        found += [*words, "".join(words)]
+    return [part for part in found if len(part) >= 4]
 
 
 def refusal(password: str, *, email: str | None = None, name: str | None = None) -> str | None:
@@ -53,14 +59,17 @@ def refusal(password: str, *, email: str | None = None, name: str | None = None)
     whole, words = _common()
     if lowered in whole or _repeats(lowered) or _in_sequence(lowered):
         return TOO_COMMON
+    if len(set(lowered)) < MINIMUM_DIFFERENT_CHARACTERS or len(set(_WORDS.findall(lowered))) == 1 < len(_WORDS.findall(lowered)):
+        return TOO_COMMON
     # What is left once digits and symbols at the ends go, then with look-alikes (p@ssw0rd) read as letters.
     bare = _ENDS.sub("", lowered)
     core = bare.translate(_LOOK_ALIKES)
-    if bare in words or core in words or core in whole or _repeats(core or lowered):
+    readings = {bare, core, bare.replace("1", "i").translate(_LOOK_ALIKES)}  # 1 stands for l or i
+    if readings & words or core in whole or _repeats(core or lowered):
         return TOO_COMMON
-    for part in _personal_parts(email, name):
-        if bare == part or core == part:
-            return "Do not use your own name or email as the password."
+    joined = re.sub(r"[^a-z0-9]", "", bare)
+    if lowered == (email or "").lower() or any(joined == part or core == part for part in _personal_parts(email, name)):
+        return "Do not use your own name or email as the password."
     return None
 
 

@@ -305,7 +305,7 @@ await part("s", "Dossiers page speed", async () => {
     const out = []
     for (let i = 0; i < 5; i += 1) out.push(await page.evaluate(async (p) => {
       const t0 = performance.now()
-      await fetch(p, { credentials: "include", headers: { Authorization: `Bearer ${localStorage.getItem("authToken") ?? ""}` } })
+      await fetch(p, { credentials: "include" })
       return Math.round(performance.now() - t0)
     }, path))
     return out.join(", ")

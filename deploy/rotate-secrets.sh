@@ -12,7 +12,7 @@
 # Undo: put the kept copy back as .env and release again. Stored AI credentials moved in the last step are then
 # unreadable, so keep AI_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS set to the new key in that case.
 #
-# ROOT_DIR, RELEASE_COMMAND and PYTHON_BIN are overridable for tests.
+# ROOT_DIR, RELEASE_COMMAND, KEY_CHECK_COMMAND and PYTHON_BIN are overridable for tests.
 set -euo pipefail
 
 MODE="${1:---check}"
@@ -38,8 +38,26 @@ for line in secret_check.problems(os.environ):
 ' )
 }
 
+# Run as development: a new server's .env is still placeholders here, and config would refuse them.
 rekey() {
-    ( cd "${ROOT_DIR}/backend" && set -a && . "${ENV_FILE}" && set +a && "${PYTHON_BIN}" scripts/rekey_ai_credentials.py "$@" )
+    ( cd "${ROOT_DIR}/backend" && set -a && . "${ENV_FILE}" && set +a && LOUPE_ENV=development \
+        "${PYTHON_BIN}" scripts/rekey_ai_credentials.py "$@" )
+}
+
+# Exit 0 only when the backend and every engine container hold the key now in .env. A release can answer success and
+# leave them running (nothing to do for the code, or the engine busy), and credentials moved then would be unreadable.
+new_key_is_running() {
+    local want pid containers name
+    want="$(value_of AI_CREDENTIAL_ENCRYPTION_KEY)"
+    pid="$(systemctl show -p MainPID --value owl-backend-v2)"
+    [ -n "${pid}" ] && [ "${pid}" != 0 ] || return 1
+    tr '\0' '\n' < "/proc/${pid}/environ" | grep -Fxq "AI_CREDENTIAL_ENCRYPTION_KEY=${want}" || return 1
+    containers="$(docker ps --format '{{.Names}}' | grep '^owl-v2-evidence' || true)"
+    [ -n "${containers}" ] || return 1
+    for name in ${containers}; do
+        docker inspect "${name}" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | grep -Fxq "AI_CREDENTIAL_ENCRYPTION_KEY=${want}" || return 1
+    done
 }
 
 NAMES="$(unusable)"
@@ -77,7 +95,15 @@ mv -f "${NEW}" "${ENV_FILE}"
 trap - EXIT
 echo "Written. The old file is kept as ${COPY}. Releasing."
 
-${RELEASE_COMMAND}
+STOPPED="Stored AI credentials were not moved and still work. Run --apply again once the release has gone out: it keeps the new values and finishes."
+if ! ${RELEASE_COMMAND}; then
+    echo "The release did not go out (see deploy-now.log). ${STOPPED}" >&2
+    exit 1
+fi
+if ! ${KEY_CHECK_COMMAND:-new_key_is_running}; then
+    echo "The release answered, but the backend or the document engine is not running the new key yet. ${STOPPED}" >&2
+    exit 1
+fi
 
 rekey --apply
 echo "Done. Everyone signs in again once."

@@ -214,6 +214,9 @@ PLATFORM_UPDATE_REPO_DIR = (
 DELETED_ITEMS_ENABLED = os.getenv("DELETED_ITEMS_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
 
 
-from secret_check import refuse_unsafe_start  # noqa: E402
+try:  # noqa: E402
+    from secret_check import refuse_unsafe_start
+except ModuleNotFoundError:  # imported as backend.config, from the repository root
+    from backend.secret_check import refuse_unsafe_start
 
 refuse_unsafe_start(os.environ)

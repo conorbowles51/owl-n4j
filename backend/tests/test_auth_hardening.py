@@ -190,7 +190,7 @@ def test_login_is_refused_before_the_password_is_hashed_with_the_wait_and_audite
 @pytest.mark.parametrize("password", [
     "short-one", "passwordpassword", "Password1234!", "p@ssw0rd12345", "qwerty123456", "1q2w3e4r5t6y", "123456789012",
     "aaaaaaaaaaaa", "abcabcabcabc", "abcdefghijkl", "qwertyuiopas", "administrator", "Administrator1", "loupe12345678",
-    "owlinvestigates", "sunshine12345", "iloveyou1234",
+    "owlinvestigates", "sunshine12345", "iloveyou1234", "adm1n1234567", "111111111111a", "sunshine sunshine",
 ])
 def test_weak_passwords_are_refused(password):
     assert password_rule.refusal(password)
@@ -205,6 +205,9 @@ def test_the_person_s_own_name_or_email_is_refused():
     assert password_rule.refusal("merrickson2024", email="merrickson@example.org")
     assert password_rule.refusal("Archibald1234!", name="Archibald Smith")
     assert password_rule.refusal("merrickson2024", email="other@example.org") is None
+    assert password_rule.refusal("jo.merrickson@example.org", email="jo.merrickson@example.org")
+    assert password_rule.refusal("jomerrickson1234", email="jo.merrickson@example.org")
+    assert password_rule.refusal("Jo Merrickson 99", name="Jo Merrickson")
 
 
 def test_a_password_bcrypt_cannot_take_is_refused_with_a_reason_not_a_crash():
