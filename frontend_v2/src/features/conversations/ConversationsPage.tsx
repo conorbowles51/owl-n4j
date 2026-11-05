@@ -36,6 +36,7 @@ import { useStream } from "@/features/phones/hooks/use-stream"
 import { ExportDialog } from "./ExportDialog"
 import { phoneSettingsQuery, phoneThreadsQuery } from "@/features/phones/phone-queries"
 import { SplitForReview } from "./SplitForReview"
+import { ThreadList } from "./ThreadList"
 import { ThreadReviewBar } from "./ThreadReviewBar"
 import type { ReadRow } from "./use-reading-position"
 import { ThreadAttachments } from "./ThreadAttachments"
@@ -198,6 +199,7 @@ export function ConversationsPage() {
   }, [caseId, current])
 
   // ---- record panel, focus, selection --------------------------------------------------------------------------
+  const pickThread = useCallback((thread: string) => { setRailOpen(false); setView({ thread, record: null }) }, [setView])
   const [recordUid, setRecordUid] = useState<string | null>(view.record)
   const [focused, setFocused] = useState<StreamRow | null>(null)
   const [selection, setSelection] = useState<{ rows: StreamRow[]; all: boolean }>({ rows: [], all: false })
@@ -631,32 +633,7 @@ export function ConversationsPage() {
                   </Button>
                 </div>
               )}
-              <ul role="listbox" aria-label={`Threads (${fmt(threads.length)})`} className="min-h-0 flex-1 overflow-auto">
-                {shownThreads.map((t, k) => (
-                  <li key={t.thread_key} role="presentation">
-                    {multiPhone && (k === 0 || shownThreads[k - 1].phone.extraction_id !== t.phone.extraction_id) && view.threadSort === "name" && (
-                      <p className="px-2 pt-2 text-xs font-semibold">{t.phone.label}</p>
-                    )}
-                    <div
-                      role="option"
-                      tabIndex={0}
-                      aria-selected={t.thread_key === view.thread}
-                      onClick={() => { setRailOpen(false); setView({ thread: t.thread_key, record: null }) }}
-                      onKeyDown={(e) => { if (e.key === "Enter") { setRailOpen(false); setView({ thread: t.thread_key, record: null }) } }}
-                      className="cursor-pointer border-b px-2 py-1.5 text-sm hover:bg-muted aria-selected:bg-accent"
-                    >
-                      <span className="block truncate font-medium">{t.title}</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {multiPhone ? `${t.phone.label} · ` : ""}
-                        {t.app ?? "app not recorded"} · {fmt(t.event_count)} {t.event_count === 1 ? "message" : "messages"}
-                        {t.deleted_count ? ` · ${fmt(t.deleted_count)} deleted` : ""}
-                        {t.has_unreadable ? " · has unreadable content" : ""}
-                      </span>
-                      <span className="block text-xs">{t.review ? t.review.words : "Not yet reviewed"}</span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <ThreadList threads={shownThreads} total={threads.length} open={view.thread} multiPhone={multiPhone} byName={view.threadSort === "name"} onPick={pickThread} />
             </>
           ) : (
             <ul role="listbox" aria-label={`People (${fmt(peopleQ.data?.items.length ?? 0)})`} className="min-h-0 flex-1 overflow-auto">

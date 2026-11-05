@@ -191,6 +191,18 @@ describe("Conversations", () => {
     await waitFor(() => expect(seen.search).toContain("thread=t2"))
   })
 
+  it("keeps a phone's whole thread list out of the page, and finds a thread that is not in view (lx-convspeed budget)", async () => {
+    const items = Array.from({ length: 942 }, (_, i) => thread(`t${i}`, `Synthetic ${i}`))
+    api.getThreads.mockResolvedValue({ case_id: "case-1", snapshot: "s", complete: true, limits: [], counts: { threads: 942, threads_total: 942, reviewed: 0, not_reviewed: 942 }, items })
+    page("/cases/case-1/conversations?thread=t0")
+    const rows = await threadOptions()
+    expect(rows.length).toBeLessThanOrEqual(40)
+    expect(screen.getByRole("listbox", { name: "Threads (942)" })).toBeInTheDocument()
+    expect(screen.queryByRole("option", { name: /Synthetic 900/ })).toBeNull()
+    fireEvent.change(screen.getByPlaceholderText(/^Name, n/), { target: { value: "Synthetic 900" } })
+    expect(await screen.findByRole("option", { name: /Synthetic 900/ })).toBeInTheDocument()
+  })
+
   it("reads the person's saved density and saves a new choice (07 4.4)", async () => {
     api.getReaderSettings.mockResolvedValue({ stream_density: "compact" })
     api.saveReaderSettings.mockResolvedValue({ stream_density: "comfortable" })
