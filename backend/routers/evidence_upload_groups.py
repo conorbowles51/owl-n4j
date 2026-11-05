@@ -5,6 +5,7 @@ phone-processing requests have stable identities across lost acknowledgements.
 Original evidence is never overwritten by a later upload with the same name.
 """
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import math
@@ -397,6 +398,19 @@ def outside_report(source, root, found, container_path):
     return extract_archive(source, root, keep)
 
 
+# Files read and checked at once in registration. Cold reads of the 2.0 GB, 5,000-file live folder on the evidence disk
+# (3 interleaved rounds): one at a time 77.5, 75.7, 60.4 s; four 32.8, 34.3, 30.0 s; eight 35.9, 32.5 s; sixteen 32.7,
+# 36.0 s. Registering that folder spent 65 of its 90 s here.
+CHECK_AT_ONCE = 4
+ROW_FIELDS = ('id', 'case_id', 'filename', 'size', 'sha256', 'chunks', 'chunk_size')
+
+
+def checked(manifest, copies):
+    """Each member with its verified source, in order, as they are ready (the page's count moves with them)."""
+    with ThreadPoolExecutor(CHECK_AT_ONCE) as checkers:
+        yield from zip(manifest, checkers.map(verified_source, copies))
+
+
 def prepare_payload(group, rows, detect, progress=None):
     """Verified copy into the payload root. ``detect(case_relative_path)`` is the engine's phone classification
     (01 section 2.5). A phone container is never unpacked here: a zip or UFDR holding a phone report, readable or
@@ -408,9 +422,11 @@ def prepare_payload(group, rows, detect, progress=None):
     remove_partials(root)
     prepared = []
     by_id = {row.id: row for row in rows}
-    for member in group.manifest:
-        row = by_id[uuid5(group.id, member['path'])]
-        source = verified_source(row)
+    # Each file's bytes are read and checked by CHECK_AT_ONCE workers, in the manifest's order. A plain copy of the
+    # row's fields goes to each: the session stays on this thread.
+    copies = [SimpleNamespace(**{name: getattr(row, name) for name in ROW_FIELDS})
+              for row in (by_id[uuid5(group.id, member['path'])] for member in group.manifest)]
+    for member, source in checked(group.manifest, copies):
         if group.kind == 'archive':
             found = detect(case_relative(group, source))
             if found.get('outcome', NOT_A_PHONE_REPORT) == NOT_A_PHONE_REPORT:

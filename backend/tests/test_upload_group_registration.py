@@ -1,6 +1,7 @@
 """Folder registration writes its rows together (lx-uploadfollow B): the same evidence rows, folders and activity
 events as one registration call per file, which made 10 database round trips a file (measured on the live schema)."""
 from pathlib import Path, PurePosixPath
+import threading
 import time
 from uuid import UUID
 
@@ -135,3 +136,33 @@ def test_registration_writes_the_same_rows_and_events_as_one_call_per_file(group
     # Far fewer round trips: about 10 a file before. SQLite cannot batch an insert with an autoincrement key, so the
     # activity events still count one each here; on PostgreSQL 500 files took 196 statements against 5,016.
     assert before_statements > 1500 and after_statements * 4 < before_statements, (before_statements, after_statements)
+
+
+def test_files_are_checked_side_by_side_and_a_changed_file_still_stops_registration(groups, monkeypatch):
+    f = groups
+    content = {f'Folder/{i}.txt': b'file %d' % i for i in range(6)}
+    state, _ = start(f, content)
+    response = batch(f, state, [(m, content[m['path']]) for m in state['members']])
+    assert [r['status'] for r in response.json()['files']] == ['staged'] * 6
+    # Two checks must be inside at once to pass this barrier: one at a time times out and breaks it.
+    together = threading.Barrier(2, timeout=30)
+    original = api.matches
+
+    def side_by_side(path, expected_hash, expected_size):
+        together.wait()
+        return original(path, expected_hash, expected_size)
+    monkeypatch.setattr(api, 'matches', side_by_side)
+    member = state['members'][3]
+    with Session(f.engine) as db:
+        row = db.get(api.EvidenceUploadSession, UUID(member['id']))
+        stored = api.uploads.assembled_path(row)
+    stored.chmod(0o644)
+    stored.unlink()  # hard links share bytes: a new file, so the part it was saved with stays as it was
+    stored.write_bytes(b'changed')
+    (stored.parent.parent.parent.parent.parent / 'pending' / str(f.case) / member['id'] / '0.part').write_bytes(b'changed')
+    with Session(f.engine) as db:
+        before = len(list(db.scalars(select(EvidenceFile))))
+    answer = control(f, state, 'complete')
+    assert answer.status_code == 409, answer.text
+    with Session(f.engine) as db:
+        assert len(list(db.scalars(select(EvidenceFile)))) == before == 0
