@@ -284,11 +284,15 @@ def test_a_failed_graph_round_is_logged_and_retried(monkeypatch, fresh, caplog):
 
     def fail(factory, graph, stop):
         calls.append(1)
+        if len(calls) >= 2:  # the retry itself ends the test: a 0.2 s timer saw one round at load 110
+            stop.set()
         raise RuntimeError('graph down')
     monkeypatch.setattr(graph_followup, 'serve_round', fail)
     monkeypatch.setattr(batch_rounds, 'GRAPH_FOLLOW_UP_SECONDS', 0.01)
     stop = threading.Event()
-    threading.Timer(0.2, stop.set).start()
+    guard = threading.Timer(60, stop.set)  # a loop that never retries still ends, and the assert below fails
+    guard.daemon = True
+    guard.start()
     batch_rounds.graph_follow_up_forever(stop, 'factory')
     assert len(calls) >= 2
     assert any('graph follow-up round failed' in r.getMessage() for r in caplog.records)

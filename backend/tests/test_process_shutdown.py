@@ -349,10 +349,10 @@ class UvicornStopTests(unittest.TestCase):
             cwd=workdir, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         try:
             # Start-up is not what these tests measure (the stop after SIGTERM is), so its wait is a hang guard:
-            # 180 s, as for the other subprocess tests (one interpreter per worker imports FastAPI and the backend;
+            # 600 s, as for the other subprocess tests (one interpreter per worker imports FastAPI and the backend;
             # over 60 s at load 34-44, lx-tiles 4 Nov). Every worker must have finished its lifespan start-up,
             # not only the first to answer, or the SIGTERM lands on a worker still importing.
-            deadline = time.monotonic() + 180
+            deadline = time.monotonic() + 600
             while True:
                 try:
                     if (len(list(Path(workdir).glob("ready-*"))) >= workers

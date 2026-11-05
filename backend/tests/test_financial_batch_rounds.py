@@ -326,7 +326,8 @@ def test_the_real_child_stops_on_sigterm_after_its_running_step(tmp_path):
             "b.GROUPS = (('g', lambda: 60, 0, (slow, after), 'failed'),)\n"
             "b.main()\n")
     child = subprocess.Popen([sys.executable, '-c', stub, str(log)], cwd=BACKEND)
-    for _ in range(1200):
+    deadline = time.monotonic() + 600  # hang guard: at load 110 the child's imports passed 120 s, and a SIGTERM before
+    while time.monotonic() < deadline:  # the handler is set ends it with -15; nothing here asserts wall time
         if log.exists() and 'start' in log.read_text():
             break
         time.sleep(0.1)

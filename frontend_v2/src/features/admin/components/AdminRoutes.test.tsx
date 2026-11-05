@@ -21,7 +21,9 @@ const task = {
   created_at: "2026-11-05T12:00:00Z", started_at: null, progress: { total: 4, completed: 1, failed: 0 }, error: null,
 }
 
-beforeEach(() => vi.mocked(fetchAPI).mockReset())
+beforeEach(() => {
+  vi.mocked(fetchAPI).mockReset()
+})
 afterEach(cleanup)
 
 describe("System Logs reads the server's route and row", () => {
