@@ -47,25 +47,7 @@ export interface WholeCasePage<Item> {
   items: Item[]
 }
 
-/**
- * A workbench's answer above its size limit: the server's stated refusal, which a stored whole-case run replaces.
- * Other refusals (a date tolerance, a missing date) stay on the page as they are.
- */
-export function isSizeRefusal(message: string | undefined) {
-  return /^More than ?[0-9][0-9,]*.*(match|share|comparisons|extensions)|^A threshold candidate contains more than/i.test(
-    message ?? ""
-  )
-}
-
-/** The PDF refusals that numbered parts replace. */
-export function isPdfSizeRefusal(message: string | undefined) {
-  return /PDF reports support up to|PDF report exceeds|complete ledger record exceeds|Export timed out/i.test(message ?? "")
-}
-
-/** A trace or account comparison above one answer's size. */
-export function isTraceSizeRefusal(message: string | undefined) {
-  return /Tracing requires between 1 and 1000|Cross-account tracing needs 1|complete ledger record exceeds/i.test(message ?? "") || isSizeRefusal(message)
-}
+export { isPdfSizeRefusal, isSizeRefusal, isTraceSizeRefusal, opensWholeCaseRun } from "./run-refusals"
 
 function runUrl(id: string, caseId: string, rest = "") {
   return candidateUrl(`whole-case-runs/${encodeURIComponent(id)}${rest}`, caseId)
@@ -191,9 +173,4 @@ export async function verifyWholeCaseScenario(
   )
     throw Error("Transfer report does not match the selected scope and assumptions.")
   return raw
-}
-
-/** A refusal the page answers with a stored run: the size of one answer, not a failed read. */
-export function opensWholeCaseRun(message: string | null) {
-  return !!message && (isSizeRefusal(message) || isPdfSizeRefusal(message) || isTraceSizeRefusal(message))
 }
