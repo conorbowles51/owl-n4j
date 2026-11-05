@@ -20,6 +20,7 @@ before changes were recorded says the phone was read again and that what changed
 """
 from __future__ import annotations
 
+import heapq
 import json
 import uuid
 from collections import defaultdict
@@ -293,38 +294,42 @@ def _collected_generations(link) -> Any:
     return versions.get("generation")
 
 
-def _after_collection(link, row) -> bool:
-    held = _collected_generations(link)
-    generation = held.get(str(row.extraction_id)) if isinstance(held, dict) else held
+def _after_collection(link, row, held) -> bool:
+    generation = held.get(row.extraction_id) if isinstance(held, dict) else held
     if isinstance(generation, int):
         return row.to_generation > generation
     return bool(link.created_at and row.changed_at > link.created_at)
 
 
-def _item_order(item):
-    return (item["record_uid"], list(FIELD_WORDS).index(item["field"]))
+FIELD_ORDER = {name: n for n, name in enumerate(FIELD_WORDS)}
+
+
+def _item_order(key):
+    return (key[0], FIELD_ORDER[key[1]])
 
 
 def _reading_items(link, rows) -> dict:
-    """``{(record, field): item}``: from the reading at collection to the reading now. A change undone by a later one
-    leaves nothing."""
-    grouped = defaultdict(list)
+    """``{(record, field): (first row, last row)}``: from the reading at collection to the reading now. A change undone
+    by a later one leaves nothing."""
+    grouped = {}
+    held = _collected_generations(link)
     for row in rows:
-        if _after_collection(link, row):
-            grouped[(str(row.record_uid), row.field)].append(row)
-    out = {}
-    for key, seq in grouped.items():
-        first, last = seq[0], seq[-1]
-        if first.was_text == last.now_text:
-            continue
-        by = last.decided_by
-        tail = ("by %s on %s" % (by, _day(last.changed_at))) if by else (
-            "when the phone was read again on %s" % _day(last.changed_at))
-        out[key] = {"record_uid": key[0], "field": key[1], "was": first.was_text, "now": last.now_text, "by": by,
-                    "at": last.changed_at.isoformat(), "seq": last.seq,
-                    "words": "%s %s, now %s, %s." % (FIELD_WORDS[key[1]], first.was_text or NOT_RECORDED,
-                                                         last.now_text or NOT_RECORDED, tail)}
-    return out
+        if _after_collection(link, row, held):
+            key = (row.record_uid, row.field)
+            grouped[key] = (grouped[key][0], row) if key in grouped else (row, row)
+    return {key: pair for key, pair in grouped.items() if pair[0].was_text != pair[1].now_text}
+
+
+def _reading_words(pair) -> dict:
+    """One change as shown: built only for what is listed, so a selection of thousands costs its counts alone."""
+    first, last = pair
+    by = last.decided_by
+    tail = ("by %s on %s" % (by, _day(last.changed_at))) if by else (
+        "when the phone was read again on %s" % _day(last.changed_at))
+    return {"record_uid": first.record_uid, "field": first.field, "was": first.was_text, "now": last.now_text, "by": by,
+            "at": last.changed_at.isoformat(), "seq": last.seq,
+            "words": "%s %s, now %s, %s." % (FIELD_WORDS[first.field], first.was_text or NOT_RECORDED,
+                                             last.now_text or NOT_RECORDED, tail)}
 
 
 def _corrected_items(link, rows, masked) -> list:
@@ -353,21 +358,22 @@ def _corrected_items(link, rows, masked) -> list:
 
 
 def _bulk(conn, case_id, links) -> dict:
-    uids = sorted({u for l in links for u in l.records})
+    uids = list({u for l in links for u in l.records})
     empty = {"changes": defaultdict(list), "corrections": defaultdict(list), "masked": set(), "choices": defaultdict(list),
              "aside": {}, "phones": {}, "state": {}}
     if not uids:
         return empty
     out = empty
     for r in conn.execute(text(
-            "SELECT seq, extraction_id, record_uid, field, was_text, now_text, to_generation, decided_by, changed_at "
-            "FROM phone_reading_changes WHERE case_id = :c AND record_uid::text = ANY(:u) ORDER BY seq"),
-            {"c": case_id, "u": uids}):
-        out["changes"][str(r.record_uid)].append(r)
+            "SELECT seq, extraction_id::text AS extraction_id, record_uid::text AS record_uid, field, was_text, now_text, "
+            "to_generation, decided_by, changed_at FROM phone_reading_changes WHERE case_id = :c AND record_uid = "
+            "ANY(CAST(:u AS uuid[])) ORDER BY seq"), {"c": case_id, "u": uids}):
+        out["changes"][r.record_uid].append(r)
     for r in conn.execute(text(
             "SELECT c.record_uid, c.field_path, c.value_index, c.machine_text, c.corrected_text, c.created_at, "
             "a.actor_name, a.reason FROM phone_value_corrections c JOIN adjudications a ON a.id = c.decision_id WHERE "
-            "c.case_id = :c AND c.record_uid::text = ANY(:u) ORDER BY c.created_at, c.id"), {"c": case_id, "u": uids}):
+            "c.case_id = :c AND c.record_uid = ANY(CAST(:u AS uuid[])) ORDER BY c.created_at, c.id"),
+            {"c": case_id, "u": uids}):
         out["corrections"][str(r.record_uid)].append(r)
     if out["corrections"]:
         out["masked"] = {(str(r[0]), r[1], r[2]) for r in conn.execute(text(
@@ -384,8 +390,8 @@ def _bulk(conn, case_id, links) -> dict:
     for r in conn.execute(text(
             "SELECT s.record_uid::text AS uid, st.extraction_id::text AS ext, st.generation, st.reading_changes_since, "
             "st.interpreted_at FROM phone_record_summaries s JOIN phone_interpretation_state st ON st.extraction_id = "
-            "s.extraction_id AND st.generation = s.generation WHERE s.case_id = :c AND s.record_uid::text = ANY(:u)"),
-            {"c": case_id, "u": uids}):
+            "s.extraction_id AND st.generation = s.generation WHERE s.record_uid = ANY(CAST(:u AS uuid[])) AND s.case_id "
+            "= :c"), {"c": case_id, "u": uids}):
         out["phones"][r.uid] = r.ext
         out["state"][r.ext] = r
     return out
@@ -409,20 +415,21 @@ def _set_aside(conn, case_id, records) -> dict:
 
 def _state_of(link, bulk, viewer_id) -> dict:
     changes = [r for u in link.records for r in bulk["changes"].get(u, ())]
-    items = sorted(_reading_items(link, changes).values(), key=_item_order)
-    corrected = [c for u in link.records for c in _corrected_items(link, bulk["corrections"].get(u, ()), bulk["masked"])]
+    reading = _reading_items(link, changes)
+    items = [_reading_words(reading[k]) for k in heapq.nsmallest(LIST_MAX, reading, key=_item_order)]
+    corrected = [c for u in link.records if u in bulk["corrections"]
+                 for c in _corrected_items(link, bulk["corrections"][u], bulk["masked"])]
     aside = None
     if link.target_type == "phone_record":
         shown = bulk["aside"].get(str(link.target_id).lower())
         if shown:
             aside = {"shown_record_uid": shown, "words": SET_ASIDE}
     last_keep = next((c for c in reversed(bulk["choices"].get(link.id, ())) if c.choice == "keep"), None)
-    through = max((i["seq"] for i in items), default=0)
-    needs_choice = bool(items) and (last_keep is None or through > last_keep.through_seq)
+    through = max((pair[1].seq for pair in reading.values()), default=0)
+    needs_choice = bool(reading) and (last_keep is None or through > last_keep.through_seq)
     reread = None
     held = _collected_generations(link)
-    for uid in link.records:
-        ext = bulk["phones"].get(uid)
+    for ext in {bulk["phones"].get(u) for u in link.records} - {None}:
         st = bulk["state"].get(ext)
         generation = (held.get(ext) if isinstance(held, dict) else held) if held is not None else None
         if st is not None and isinstance(generation, int) and generation < st.reading_changes_since:
@@ -433,7 +440,7 @@ def _state_of(link, bulk, viewer_id) -> dict:
     names = []
     if corrected:
         names.append("corrected")
-    if items:
+    if reading:
         names.append("reading_changed")
     if aside:
         names.append("set_aside")
@@ -441,15 +448,16 @@ def _state_of(link, bulk, viewer_id) -> dict:
             "states": names, "records": len(link.records),
             "corrected": {"count": len(corrected), "records": len({c["record_uid"] for c in corrected}),
                           "items": corrected[:LIST_MAX], "clipped": len(corrected) > LIST_MAX},
-            "reading_changed": {"count": len(items), "records": len({i["record_uid"] for i in items}),
-                                "items": items[:LIST_MAX], "clipped": len(items) > LIST_MAX},
+            "reading_changed": {"count": len(reading), "records": len({k[0] for k in reading}),
+                                "items": items, "clipped": len(reading) > LIST_MAX},
+            "latest_at": max((pair[1].changed_at for pair in reading.values()), default=None),
             "set_aside": aside, "reread": reread, "added_by": link.adder, "through_seq": through,
             "needs_choice": needs_choice,
             "can_choose": needs_choice and (link.adder_id is None or str(link.adder_id) == str(viewer_id)),
             "can_remove": link.kind != "assessment",
             "kept": {"by": last_keep.chosen_by, "at": last_keep.chosen_at.isoformat(),
                      "words": "Kept by %s on %s." % (last_keep.chosen_by, _day(last_keep.chosen_at))}
-            if last_keep and items else None}
+            if last_keep and reading else None}
 
 
 def states(conn, case_id, links, viewer_id=None) -> dict:
@@ -472,6 +480,8 @@ def of_container(conn, case_id, container, container_id, viewer_id) -> dict:
     else:
         raise LinkStateError("Link states are read for a finding or a dossier.")
     out = states(conn, case_id, links, viewer_id)
+    for state in out.values():
+        state.pop("latest_at")
     uids = sorted({str(l.target_id).lower() for l in links if l.target_type == "phone_record"})
     replaced = {}
     for i in range(0, len(uids), replaced_links.MAX_RECORDS):
@@ -497,7 +507,7 @@ def outstanding(conn, case_id, user_id) -> dict | None:
     return {"links": len(waiting), "records": sum(s["reading_changed"]["records"] for _, s in waiting),
             "through_seq": max(s["through_seq"] for _, s in waiting), "first_kind": first_link.kind,
             "first_container": first_link.container_id, "first_words": first["reading_changed"]["items"][0]["words"],
-            "at": max(i["at"] for _, s in waiting for i in s["reading_changed"]["items"])}
+            "at": max(s["latest_at"] for _, s in waiting).isoformat()}
 
 
 def _link(conn, case_id, kind, link_id):
@@ -591,7 +601,8 @@ def export_notes(conn, case_id, selection_id) -> dict:
     notes = defaultdict(list)
     for link in links:
         changes = [r for u in link.records for r in bulk["changes"].get(u, ())]
-        reading = sorted(_reading_items(link, changes).values(), key=_item_order)
+        pairs = _reading_items(link, changes)
+        reading = [_reading_words(pairs[k]) for k in sorted(pairs, key=_item_order)]
         for item in reading:
             notes[item["record_uid"]].append("Reading changed since collected. " + item["words"])
         for uid in link.records:
