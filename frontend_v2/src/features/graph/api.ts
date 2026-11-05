@@ -211,7 +211,7 @@ export const graphAPI = {
   /* --- Node CRUD --- */
 
   createNode: (nodeData: Record<string, unknown>, caseId: string) =>
-    fetchAPI<{ key: string }>("/api/graph/create-node", {
+    fetchAPI<{ success: boolean; node_key: string; error?: string | null }>("/api/graph/create-node", {
       method: "POST",
       body: { ...nodeData, case_id: caseId },
     }),
@@ -572,7 +572,15 @@ export function findSimilarEntitiesStream(
     es.close()
   })
   es.addEventListener("error", (e) => {
-    callbacks.onError?.((e as MessageEvent).data ?? "Stream error")
+    // The server's own error event carries {message}; a dropped connection carries nothing.
+    let message: string | undefined
+    try {
+      message = JSON.parse((e as MessageEvent).data).message
+    } catch {
+      message = undefined
+    }
+    if (message) callbacks.onError?.(message)
+    else callbacks.onCancelled?.()
     es.close()
   })
 

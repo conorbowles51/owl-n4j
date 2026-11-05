@@ -21,19 +21,27 @@ export function AddNodeDialog({ open, onOpenChange, caseId, onCreated }: AddNode
   const [type, setType] = useState("person")
   const [summary, setSummary] = useState("")
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleCreate = async () => {
     if (!name.trim()) return
     setSaving(true)
+    setError(null)
     try {
       const result = await graphAPI.createNode(
         { name, type, summary: summary || undefined, case_id: caseId },
         caseId
       )
-      onCreated?.(result.key)
+      if (!result.success) {
+        setError(result.error || "The entity was not created.")
+        return
+      }
+      onCreated?.(result.node_key)
       onOpenChange(false)
       setName("")
       setSummary("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The entity was not created.")
     } finally {
       setSaving(false)
     }
@@ -65,6 +73,11 @@ export function AddNodeDialog({ open, onOpenChange, caseId, onCreated }: AddNode
             <label className="mb-1 block text-xs font-medium">Summary (optional)</label>
             <Textarea value={summary} onChange={(e) => setSummary(e.target.value)} placeholder="Brief description..." />
           </div>
+          {error && (
+            <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {error}
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>

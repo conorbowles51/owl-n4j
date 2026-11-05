@@ -981,10 +981,22 @@ def create_node(request: CreateNodeRequest, user: dict = Depends(get_current_use
         raise HTTPException(status_code=400, detail="case_id is required")
 
     try:
-        from services.graph_entities import create_case_entity
-        node_key, node_cypher = create_case_entity(
-            case_id=request.case_id, name=request.name, entity_type=request.type, summary=request.summary,
-            notes=request.description, properties=request.properties)
+        from services.graph_entities import EntityExists, create_case_entity
+        try:
+            node_key, node_cypher = create_case_entity(
+                case_id=request.case_id, name=request.name, entity_type=request.type, summary=request.summary,
+                notes=request.description, properties=request.properties)
+        except EntityExists as refused:
+            system_log_service.log(
+                log_type=LogType.GRAPH_OPERATION,
+                origin=LogOrigin.FRONTEND,
+                action=f"Create Node Refused: {request.name}",
+                details={"node_name": request.name, "node_type": request.type, "node_key": refused.key},
+                user=user.get("username", "unknown"),
+                success=False,
+                error=str(refused),
+            )
+            return CreateNodeResponse(success=False, node_key=refused.key, cypher="", error=str(refused))
 
         # Log the operation
         system_log_service.log(

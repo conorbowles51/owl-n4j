@@ -26,7 +26,12 @@ def generate_cypher_from_graph(graph_data: Dict, case_id: str) -> str:
 
     nodes = graph_data.get("nodes", [])
     links = graph_data.get("links", [])
-    
+
+    # A key is only unique inside a case: every MERGE and MATCH below names the case, so a write
+    # here can never touch a node of another case.
+    escaped_case = str(case_id).replace("\\", "\\\\").replace("'", "\\'")
+    case_literal = f"'{escaped_case}'"
+
     cypher_queries = []
     
     # Generate node creation queries
@@ -89,7 +94,7 @@ def generate_cypher_from_graph(graph_data: Dict, case_id: str) -> str:
             
             # Create MERGE statement
             cypher_queries.append(
-                f"MERGE (n:`{escaped_type}` {{key: '{escaped_key}'}})\n"
+                f"MERGE (n:`{escaped_type}` {{key: '{escaped_key}', case_id: {case_literal}}})\n"
                 f"SET n = {props_str}"
             )
     
@@ -143,7 +148,7 @@ def generate_cypher_from_graph(graph_data: Dict, case_id: str) -> str:
             escaped_key = node_key.replace("\\", "\\\\").replace("'", "\\'") if isinstance(node_key, str) else str(node_key).replace("\\", "\\\\").replace("'", "\\'")
 
             node_queries.append(
-                f"MERGE (n:`{escaped_type}` {{key: '{escaped_key}'}})\n"
+                f"MERGE (n:`{escaped_type}` {{key: '{escaped_key}', case_id: {case_literal}}})\n"
                 f"SET n = {props_str}"
             )
 
@@ -187,7 +192,7 @@ def generate_cypher_from_graph(graph_data: Dict, case_id: str) -> str:
 
             props_str = format_properties(rel_properties)
             rel_queries.append(
-                f"MATCH (a {{key: '{escaped_source_key}'}}), (b {{key: '{escaped_target_key}'}})\n"
+                f"MATCH (a {{key: '{escaped_source_key}', case_id: {case_literal}}}), (b {{key: '{escaped_target_key}', case_id: {case_literal}}})\n"
                 f"MERGE (a)-[r:`{escaped_rel_type}`]->(b)\n"
                 f"SET r += {props_str}"
             )
@@ -235,7 +240,7 @@ def generate_cypher_from_graph(graph_data: Dict, case_id: str) -> str:
 
             props_str = format_properties(rel_properties)
             cypher_queries.append(
-                f"MATCH (a {{key: '{escaped_source_key}'}}), (b {{key: '{escaped_target_key}'}})\n"
+                f"MATCH (a {{key: '{escaped_source_key}', case_id: {case_literal}}}), (b {{key: '{escaped_target_key}', case_id: {case_literal}}})\n"
                 f"MERGE (a)-[r:`{escaped_rel_type}`]->(b)\n"
                 f"SET r += {props_str}"
             )

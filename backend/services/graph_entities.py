@@ -1,13 +1,23 @@
 """The one way a case entity is written to the graph: the graph screen's Create node and an accepted agent proposal.
 
-``create_case_entity`` is the route's own path, moved here so a proposal a person accepted cannot take another. A
-proposal passes ``key_suffix`` so its key cannot meet another entity's: the generated Cypher MERGEs on type and key,
-and a shared key would overwrite that entity. ``same_name`` is the check a proposal makes first.
+``create_case_entity`` is the route's own path, moved here so a proposal a person accepted cannot take another. The
+write replaces every property of the node it finds, so a key in use in this case is refused (``EntityExists``) and a
+key in use in another case is given a suffix. A proposal passes its own ``key_suffix`` as well. ``same_name`` is the
+check a proposal makes first.
 """
 from __future__ import annotations
 
 import re
 from typing import Any, Mapping
+from uuid import uuid4
+
+
+class EntityExists(Exception):
+    """The key made from this name is already an entity of the case; nothing was written."""
+
+    def __init__(self, name: str, key: str):
+        super().__init__(f'"{name}" is already in this case; nothing was changed.')
+        self.key = key
 
 
 def entity_key(name: str, *, key_suffix: str | None = None) -> str:
@@ -24,6 +34,13 @@ def create_case_entity(*, case_id: str, name: str, entity_type: str, summary: st
     from services.cypher_generator import generate_cypher_from_graph
     from services.neo4j_service import neo4j_service
     key = entity_key(name, key_suffix=key_suffix)
+    in_use = neo4j_service.run_cypher_read("MATCH (n {key: $key}) RETURN n.case_id AS case_id, n.name AS name",
+                                           {"key": key})
+    same_case = next((row for row in in_use if row.get("case_id") == str(case_id)), None)
+    if same_case:
+        raise EntityExists(same_case.get("name") or name.strip(), key)
+    if in_use:
+        key = f"{key}-{uuid4().hex[:8]}"
     node = {"key": key, "name": name.strip(), "type": entity_type.strip(), "id": key,
             "summary": summary.strip() if summary else None, "notes": notes.strip() if notes else None}
     if properties:
