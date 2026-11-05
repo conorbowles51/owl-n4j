@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { authAPI } from "../api"
+import type { SignedIn } from "../auth.types"
 import { useAuthStore } from "../hooks/use-auth"
+import { ResetWithCodeForm } from "./ResetWithCodeForm"
+import { SecondStepForm } from "./SecondStepForm"
 
 function LoginBackdrop() {
   return (
@@ -30,39 +33,55 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
+  const [secondStepToken, setSecondStepToken] = useState<string | null>(null)
+  const [resetting, setResetting] = useState(false)
+  const [notice, setNotice] = useState("")
   const login = useAuthStore((state) => state.login)
   const navigate = useNavigate()
   const location = useLocation()
 
+  const finishSignIn = (response: SignedIn) => {
+    login({
+      username: response.username,
+      name: response.name,
+      role: response.role,
+    })
+    if (response.two_step_setup_required) {
+      navigate("/settings/security", { replace: true })
+      return
+    }
+    const from = location.state?.from
+    const path = from?.pathname
+    const returnTo =
+      typeof path === "string" &&
+      path.startsWith("/") &&
+      !path.startsWith("//") &&
+      !path.includes("\\") &&
+      !/^\/login(?:\/|$)/.test(path)
+        ? path +
+          (typeof from.search === "string" && from.search.startsWith("?")
+            ? from.search
+            : "") +
+          (typeof from.hash === "string" && from.hash.startsWith("#")
+            ? from.hash
+            : "")
+        : "/cases"
+    navigate(returnTo, { replace: true })
+  }
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     setError("")
+    setNotice("")
     setLoading(true)
 
     try {
       const response = await authAPI.login({ username, password })
-      login({
-        username: response.username,
-        name: response.name,
-        role: response.role,
-      })
-      const from = location.state?.from
-      const path = from?.pathname
-      const returnTo =
-        typeof path === "string" &&
-        path.startsWith("/") &&
-        !path.startsWith("//") &&
-        !path.includes("\\") &&
-        !/^\/login(?:\/|$)/.test(path)
-          ? path +
-            (typeof from.search === "string" && from.search.startsWith("?")
-              ? from.search
-              : "") +
-            (typeof from.hash === "string" && from.hash.startsWith("#")
-              ? from.hash
-              : "")
-          : "/cases"
-      navigate(returnTo, { replace: true })
+      if ("two_step_required" in response) {
+        setSecondStepToken(response.two_step_token)
+      } else {
+        finishSignIn(response)
+      }
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Login failed. Please try again."
@@ -98,6 +117,26 @@ export function LoginPage() {
             </p>
           </header>
 
+          {secondStepToken ? (
+            <SecondStepForm
+              token={secondStepToken}
+              onSignedIn={finishSignIn}
+              onCancel={() => {
+                setSecondStepToken(null)
+                setPassword("")
+              }}
+            />
+          ) : resetting ? (
+            <ResetWithCodeForm
+              initialEmail={username}
+              onDone={(message) => {
+                setResetting(false)
+                setPassword("")
+                setNotice(message)
+              }}
+              onCancel={() => setResetting(false)}
+            />
+          ) : (
           <form onSubmit={handleSubmit} className="mt-7 space-y-5">
             <div className="space-y-2">
               <label
@@ -154,6 +193,15 @@ export function LoginPage() {
               </div>
             </div>
 
+            {notice && (
+              <div
+                role="status"
+                className="rounded-md border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-xs leading-5 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300"
+              >
+                {notice}
+              </div>
+            )}
+
             {error && (
               <div
                 role="alert"
@@ -179,7 +227,19 @@ export function LoginPage() {
                 "Sign in"
               )}
             </Button>
+
+            <button
+              type="button"
+              className="block w-full text-center text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              onClick={() => {
+                setError("")
+                setResetting(true)
+              }}
+            >
+              I have a reset code
+            </button>
           </form>
+          )}
 
           <div className="mt-7 flex items-start justify-center gap-2.5 border-t border-border pt-5">
             <ShieldCheck

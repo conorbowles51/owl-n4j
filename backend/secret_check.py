@@ -32,18 +32,22 @@ def required_names(environment: Mapping[str, str | None]) -> tuple[str, ...]:
     return tuple(names)
 
 
+def problem(name: str, value: str | None) -> str | None:
+    """Why this secret cannot be used, in one plain line, or None. The name and the reason, never the value."""
+    value = (value or "").strip()
+    if not value:
+        return f"{name} is not set"
+    if value in SHIPPED or any(word in value.lower() for word in PLACEHOLDER_WORDS):
+        return f"{name} is still the value shipped with the code"
+    if len(value) < MINIMUM_LENGTH:
+        return f"{name} is shorter than {MINIMUM_LENGTH} characters"
+    return None
+
+
 def problems(environment: Mapping[str, str | None]) -> list[str]:
-    """One plain line per unusable secret. The name and the reason, never the value."""
-    found = []
-    for name in required_names(environment):
-        value = (environment.get(name) or "").strip()
-        if not value:
-            found.append(f"{name} is not set")
-        elif value in SHIPPED or any(word in value.lower() for word in PLACEHOLDER_WORDS):
-            found.append(f"{name} is still the value shipped with the code")
-        elif len(value) < MINIMUM_LENGTH:
-            found.append(f"{name} is shorter than {MINIMUM_LENGTH} characters")
-    return found
+    """One plain line per unusable secret."""
+    found = (problem(name, environment.get(name)) for name in required_names(environment))
+    return [line for line in found if line]
 
 
 def refuse_unsafe_start(environment: Mapping[str, str | None]) -> None:

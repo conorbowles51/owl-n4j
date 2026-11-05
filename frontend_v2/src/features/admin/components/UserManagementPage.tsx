@@ -24,6 +24,7 @@ import { authAPI } from "@/features/auth/api"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { fetchAPI } from "@/lib/api-client"
 import { toast } from "sonner"
+import { UserRecoveryActions } from "./UserRecoveryActions"
 
 type UserRole = "super_admin" | "admin" | "user" | "guest"
 
@@ -73,6 +74,19 @@ export function UserManagementPage() {
     queryKey: ["users"],
     queryFn: () => authAPI.getUsers(),
   })
+
+  const { data: twoStep } = useQuery({
+    queryKey: ["users", "two-step"],
+    queryFn: () =>
+      fetchAPI<{
+        required_for_admins: boolean
+        people: { user_id: string; enrolled_at: string; recovery_codes_left: number }[]
+      }>("/api/users/two-step"),
+  })
+  const enrolledPeople = useMemo(
+    () => new Map(twoStep?.people.map((person) => [person.user_id, person])),
+    [twoStep]
+  )
 
   const createMutation = useMutation({
     mutationFn: (data: { email: string; name: string; password: string; role: UserRole }) =>
@@ -161,6 +175,13 @@ export function UserManagementPage() {
                   <p className="text-sm font-medium">{user.name}</p>
                   <p className="text-xs text-muted-foreground">{user.email ?? user.username}</p>
                 </div>
+                {user.id && (
+                  <UserRecoveryActions
+                    user={user}
+                    enrolled={enrolledPeople.get(user.id)}
+                    currentUser={currentUser}
+                  />
+                )}
                 {(() => {
                   const role = (user.global_role ?? user.role) as UserRole | undefined
                   const userId = user.id ?? user.username

@@ -275,6 +275,45 @@ again, and it finishes its requests within the usual stop bounds.
 - Way back: set the switch to `restart`; the next restart puts the plain unit back. A rollback always restarts into the plain unit.
 - Rehearsal on a throwaway port under real systemd: `deploy/tests/rehearse-handover.sh <python with uvicorn>`.
 
+## Signing in: two-step, and getting an account back
+
+Two-step sign-in needs `MFA_ENCRYPTION_KEY` in the server's `.env` (`openssl rand -hex 32`). It has no default. While it
+is unset nobody can enrol and the Security page says why. It is backed up with `.env` by the keys bundle: losing it means
+authenticator codes stop working, and each enrolled person signs in with a recovery code and enrols again.
+
+A person enrols in Settings, Security. An administrator sees who has enrolled in User Management.
+
+There is no email in this app, so nothing is sent to anyone. Reset by email waits for a mail sender.
+
+| Lost | What to do |
+|---|---|
+| Password | An administrator opens User Management and issues a reset code, then gives it to the person. It works once, for one hour. The person chooses "I have a reset code" on the sign-in page. Every sign-in of theirs ends |
+| Authenticator, with recovery codes kept | The person signs in with a recovery code. In Settings, Security, their password and another recovery code turn two-step off, so they can enrol the new device |
+| Authenticator and recovery codes | An administrator chooses Remove two-step. The person signs in with their password and enrols again |
+| An administrator's account | A super admin does the same for them. Only a super admin can recover an administrator, and nobody can recover themselves in the app |
+| The last administrator's account | On the box: `sudo bash deploy/account-recovery.sh reset <email>`, with `--remove-two-step` if the authenticator is lost too. The code prints once, to that terminal |
+
+Every issue, use and removal is in the activity trail. A code or secret is never logged.
+
+**Requiring two-step for administrators** is off until someone turns it on:
+
+```bash
+sudo bash deploy/account-recovery.sh require --check   # who is ready; nothing is written
+sudo bash deploy/account-recovery.sh require --on      # refused until the check is clean
+sudo bash deploy/account-recovery.sh require --off
+```
+
+`--on` is refused while the signing key is the shipped one (a forged sign-in would walk past any second step), while the
+encryption key is unset, and until every active administrator is enrolled and holds at least one recovery code. Once on,
+an administrator who has not enrolled is refused on the administrator screens, and on every other route that reads their
+account, until they do; Settings, Security stays open. An enrolled administrator cannot turn two-step off: one with a new
+device gets it removed by a super admin, or by the box command.
+Accounts that are not administrators are untouched, and scripts that sign in with a password keep working unless the
+account they use has enrolled; `--check` lists administrators' sign-ins from scripts in the last 30 days.
+
+To change the key: set the old value as `MFA_ENCRYPTION_KEY_PREVIOUS` and the new one as `MFA_ENCRYPTION_KEY`, restart,
+run `sudo bash deploy/account-recovery.sh rekey`, then remove the old value.
+
 ## Rolling Back
 
 ```bash

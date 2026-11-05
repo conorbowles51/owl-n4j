@@ -161,6 +161,10 @@ AI_CREDENTIAL_ENCRYPTION_KEY = os.getenv(
 # (secret_check, called at the end of this file).
 # Still read, never written with, while stored credentials move to a new key (deploy/rotate-secrets.sh).
 AI_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS = os.getenv("AI_CREDENTIAL_ENCRYPTION_KEY_PREVIOUS", "")
+# Encrypts authenticator secrets at rest. No default on purpose: while unset, nobody can enrol (services.two_step says so).
+MFA_ENCRYPTION_KEY = os.getenv("MFA_ENCRYPTION_KEY", "")
+# Still read, never written with, while stored secrets move to a new key (services.account_recovery rekey).
+MFA_ENCRYPTION_KEY_PREVIOUS = os.getenv("MFA_ENCRYPTION_KEY_PREVIOUS", "")
 AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
 AUTH_TOKEN_EXPIRE_MINUTES = int(os.getenv("AUTH_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours default
 # On only when the site is served over HTTPS: sets the Secure cookie flag and HSTS. On a plain http address a Secure

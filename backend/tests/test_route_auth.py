@@ -20,6 +20,8 @@ from routers import auth, profiles, users
 PUBLIC = {
     ("POST", "/api/auth/login"): "signing in",
     ("POST", "/api/auth/logout"): "signing out; reads the token only to name the person in the activity trail",
+    ("POST", "/api/auth/login/second-step"): "the code after the password; needs the pending token the password gave",
+    ("POST", "/api/auth/reset-with-code"): "a person who cannot sign in sets a new password; needs a one-time reset code",
     ("GET", "/api/setup/status"): "the first-run screen asks whether any user exists",
     ("POST", "/api/setup/initial-user"): "first-run only: refused with 403 once any user exists",
     ("WS", "/api/evidence/ws/jobs/{job_id}"): "checks the sign-in cookie and case access inside the handler "

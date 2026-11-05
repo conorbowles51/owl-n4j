@@ -174,6 +174,11 @@ const SettingsPage = lazy(() =>
     default: m.SettingsPage,
   }))
 )
+const SecurityPage = lazy(() =>
+  import("@/features/settings/components/SecurityPage").then((m) => ({
+    default: m.SecurityPage,
+  }))
+)
 const AISettingsPage = lazy(() =>
   import("@/features/settings/components/AISettingsPage").then((m) => ({
     default: m.AISettingsPage,
@@ -269,6 +274,7 @@ export function AppRoutes() {
           </Route>
 
           <Route path="/settings" element={<LazyPage><SettingsPage /></LazyPage>} />
+          <Route path="/settings/security" element={<LazyPage><SecurityPage /></LazyPage>} />
           <Route path="/settings/ai" element={<LazyPage><AISettingsPage /></LazyPage>} />
           <Route path="/guide/phones" element={<LazyPage><PhoneGuidePage /></LazyPage>} />
         </Route>

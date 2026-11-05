@@ -188,6 +188,8 @@ __all__ += ["RemovedRecord"]
 from postgres.models.financial_transaction_number import FinancialTransactionNumber, FinancialTransactionNumberCounter
 from postgres.models.financial_page_review import FinancialPageReview
 __all__ += ["FinancialTransactionNumber", "FinancialTransactionNumberCounter"]
+from postgres.models.two_step import AccountResetCode, LoginPolicy, UserRecoveryCode, UserTwoStep
+__all__ += ["AccountResetCode", "LoginPolicy", "UserRecoveryCode", "UserTwoStep"]
 
 # Deleted cases and evidence files are hidden from every ORM read (postgres/soft_delete.py).
 from postgres.soft_delete import install as _install_soft_delete

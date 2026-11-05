@@ -15,11 +15,38 @@ export interface LoginRequest {
   password: string
 }
 
-export interface LoginResponse {
+export interface SignedIn {
   access_token: string
   username: string
   name: string
   role: string | null
+  /** An administrator who must turn on two-step sign-in before the administrator screens answer. */
+  two_step_setup_required?: boolean
+}
+
+/** The password was right and this person has two-step sign-in: nothing is open until the code. */
+export interface SecondStepNeeded {
+  two_step_required: true
+  two_step_token: string
+  username: string
+}
+
+export type LoginResponse = SignedIn | SecondStepNeeded
+
+export interface TwoStepStatus {
+  enrolled: boolean
+  enrolled_at: string | null
+  recovery_codes_left: number
+  /** Why this server cannot enrol anyone yet, or null. */
+  unavailable_reason: string | null
+  required: boolean
+}
+
+export interface TwoStepStart {
+  secret: string
+  uri: string
+  /** The QR code as rows of 0 and 1, dark being 1. */
+  qr: string[]
 }
 
 export interface AuthState {

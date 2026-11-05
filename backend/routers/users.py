@@ -9,15 +9,16 @@ from uuid import UUID
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from postgres.models.enums import GlobalRole
 from postgres.models.user import User
 from postgres.session import get_db
 from routers.auth import get_current_user
-from services import password_rule
+from services import account_recovery, activity_trail, password_rule, password_sessions, two_step
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -96,6 +97,9 @@ def get_current_db_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is deactivated",
         )
+
+    if two_step.must_enrol(db, user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=two_step.MUST_ENROL)
 
     return user
 
@@ -184,6 +188,61 @@ def list_users(
     return UserListResponse(users=users, total=total)
 
 
+@router.get("/two-step")
+def two_step_overview(db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """Who has enrolled, and how many recovery codes each has left. One read of each table, whatever the user count."""
+    from postgres.models.two_step import UserRecoveryCode, UserTwoStep
+
+    enrolled = dict(db.execute(select(UserTwoStep.user_id, UserTwoStep.confirmed_at)
+                               .where(UserTwoStep.confirmed_at.is_not(None))).all())
+    left = dict(db.execute(select(UserRecoveryCode.user_id, func.count(UserRecoveryCode.id))
+                           .where(UserRecoveryCode.used_at.is_(None)).group_by(UserRecoveryCode.user_id)).all())
+    return {
+        "required_for_admins": two_step.required_for_admins(),
+        "people": [{"user_id": str(user_id), "enrolled_at": confirmed.isoformat(),
+                    "recovery_codes_left": left.get(user_id, 0)} for user_id, confirmed in enrolled.items()],
+    }
+
+
+def _recoverable(db: Session, user_id: UUID, current_user: User) -> User:
+    """The person an administrator may recover. Never themselves: a stolen sign-in must not be able to replace its
+    own password without the current one. An administrator nobody else can reach has the box command."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if target.id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="You cannot recover your own account here. Use change password, or the box command.")
+    if current_user.global_role != GlobalRole.super_admin and target.global_role in two_step.ADMIN_ROLES:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only a super admin can recover an administrator's account.")
+    if not target.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This account is deactivated.")
+    return target
+
+
+@router.post("/{user_id}/reset-code")
+def issue_reset_code(user_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """A one-time, expiring code for this person to set a new password. It is shown here once and held only as a hash."""
+    target = _recoverable(db, user_id, current_user)
+    code, expires = account_recovery.issue_reset_code(db, target, current_user.email)
+    activity_trail.record("reset_code_issued", db=db, user=current_user,
+                          details=dict(person=target.email, expires_at=expires.isoformat()))
+    db.commit()
+    return JSONResponse({"code": code, "expires_at": expires.isoformat()}, headers={"Cache-Control": "no-store"})
+
+
+@router.post("/{user_id}/two-step/remove")
+def remove_two_step(user_id: UUID, db: Session = Depends(get_db), current_user: User = Depends(require_admin)):
+    """For a person who lost their device and their recovery codes. They sign in with the password alone until they
+    enrol again."""
+    target = _recoverable(db, user_id, current_user)
+    two_step.remove(db, target.id)
+    activity_trail.record("two_step_removed", db=db, user=current_user, details=dict(person=target.email))
+    db.commit()
+    return {"success": True}
+
+
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user(
     user_id: UUID,
@@ -262,6 +321,13 @@ def update_user(
                 )
 
     if user_data.password is not None:
+        # The same rules as a reset code. No screen sets a password here; it stays for an administrator's script.
+        if target_user.id == current_user.id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail="Change your own password in Settings, Security: it needs the current one.")
+        if current_user.global_role != GlobalRole.super_admin and target_user.global_role in two_step.ADMIN_ROLES:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Only a super admin can set an administrator's password.")
         password_rule.require_acceptable(user_data.password, email=target_user.email,
                                          name=user_data.name or target_user.name)
 
@@ -275,12 +341,11 @@ def update_user(
     if user_data.password is not None:
         target_user.password_hash = hash_password(user_data.password)
         # The user's existing sign-ins end (password_sessions).
-        from services import password_sessions
         password_sessions.stamp(target_user)
+        activity_trail.record("password_set_by_admin", db=db, user=current_user, details=dict(person=target_user.email))
 
     db.commit()
     if user_data.password is not None:
-        from services import password_sessions
         password_sessions.forget(target_user.email)
     db.refresh(target_user)
 
