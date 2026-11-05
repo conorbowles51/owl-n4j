@@ -6,7 +6,9 @@ from services.financial.ledger_snapshot import view_capture
 MAX_TIMELINE_ROWS = 1000
 
 
-def ledger_timeline(export, *, population="working"):
+def ledger_timeline(export, *, population="working", whole_case=False):
+    """``whole_case``: no row limit, for the stored background run, which pages its result. The limit bounds one
+    synchronous answer (Erica: 9,804 rows take 0.1 s of CPU and 23.9 MB of JSON, measured)."""
     if population not in ("working", "verified"):
         raise LedgerSummaryError("Choose working or verified readings.")
     document, stamp = view_capture(export)
@@ -17,7 +19,7 @@ def ledger_timeline(export, *, population="working"):
         r["exclusion_reason"] in (None, "proof_class_not_included")
         if population == "working" else r["included"]
     )]
-    if len(eligible) > MAX_TIMELINE_ROWS:
+    if not whole_case and len(eligible) > MAX_TIMELINE_ROWS:
         raise LedgerSummaryError("More than 1,000 payments match these filters. Choose an account or a shorter date range, then run this check again.")
     rows = []
     for reading in eligible:

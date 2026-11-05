@@ -24,6 +24,8 @@ import {
 } from "../stores/investigation-scope"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
+import { isSizeRefusal } from "../lib/whole-case-run"
+import { WholeCasePatterns } from "./WholeCasePatterns"
 function PatternScreen({ caseId }: { caseId: string | undefined }) {
   const [params, setParams] = useInvestigationScope(caseId)
   const [population, setPopulation] = useAnalysisPopulation(caseId)
@@ -231,7 +233,31 @@ function PatternScope({
           Enter a whole number of days from 0 to 30 to find patterns.
         </p>
       )}
-      {load.isError && <p role="alert">{load.error.message}</p>}
+      {load.isError && !isSizeRefusal(load.error.message) && (
+        <p role="alert">{load.error.message}</p>
+      )}
+      {load.isError && isSizeRefusal(load.error.message) && (
+        <WholeCasePatterns
+          caseId={caseId}
+          request={{
+            population,
+            window_days: Number(days),
+            cross_account: crossAccount,
+            ...(threshold.trim()
+              ? {
+                  threshold_minor: correctionMinor(threshold, currency) ?? undefined,
+                  threshold_currency: currency,
+                }
+              : {}),
+            ...(params.accountId ? { account_id: params.accountId } : {}),
+            ...(params.accountIds?.length ? { account_ids: params.accountIds } : {}),
+            ...(params.accountHolders?.length ? { account_holders: params.accountHolders } : {}),
+            ...(params.startDate ? { start_date: params.startDate } : {}),
+            ...(params.endDate ? { end_date: params.endDate } : {}),
+          }}
+          onSource={setSource}
+        />
+      )}
       {freshness.stale && (
         <p role="status">
           Payments may have changed. Select Find patterns again before saving a
@@ -292,15 +318,16 @@ function PatternScope({
     </div>
   )
 }
-function PatternCard({
+export function PatternCard({
   scope,
   hypothesis: h,
   onSource,
 }: {
   scope: PatternReview
-  hypothesis: PatternReview["hypotheses"][number]
+  hypothesis: PatternReview["hypotheses"][number] & { sources_total?: number }
   onSource: (id: string) => void
 }) {
+  const payments = h.sources_total ?? h.sources.length
   const [title, setTitle] = useFinancialDraft(
       scope.case_id,
       "pattern-title:" + h.id,
@@ -346,8 +373,7 @@ function PatternCard({
       <p>{h.explanation}</p>
       {h.kind === "repeated_counterparty" && (
         <p className="text-sm">
-          The amount above is the total of the {h.sources.length} payments shown
-          below.
+          The amount above is the total of these {payments} payments.
         </p>
       )}
       {h.transfer_pairs && (
@@ -420,7 +446,8 @@ function PatternCard({
               disabled={
                 !title.trim() ||
                 !reason.trim() ||
-                h.sources.some((s) => !s.source.evidence_file_id)
+                h.sources.some((s) => !s.source.evidence_file_id) ||
+                payments > h.sources.length
               }
               onClick={submit}
             >

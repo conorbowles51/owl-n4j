@@ -9,7 +9,16 @@ from services.financial.ledger_snapshot import view_capture
 MAX_HYPOTHESES = 200
 
 
-def screen_ledger_patterns(export, *, population='working', window_days=3, threshold_minor=None, threshold_currency=None, cross_account=False):
+def _other_party(row):
+    """The recorded name of a payment's other side: the statement's own counterparty field, else the name the
+    Transactions table shows for it (from_name on money in, to_name on money out; a correction is already applied)."""
+    label = row.get('counterparty_raw') or (row.get('from_name') if row.get('direction') == 'credit' else row.get('to_name'))
+    return label if isinstance(label, str) and label.strip() else None
+
+
+def screen_ledger_patterns(export, *, population='working', window_days=3, threshold_minor=None, threshold_currency=None, cross_account=False, whole_case=False):
+    """``whole_case``: the stored background run, which pages its result, so none of the answer-size refusals below
+    apply; only the path search keeps a work limit, and what it did not search is counted in ``paths_not_searched``."""
     if type(cross_account) is not bool:raise LedgerSummaryError('Cross-account screening must be selected explicitly.')
     if type(window_days) is not int or not 0 <= window_days <= 30:
         raise LedgerSummaryError('Choose a screening window from 0 to 30 days.')
@@ -20,17 +29,18 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
             raise LedgerSummaryError('The threshold must be a positive exact amount within the ledger range.')
         if not isinstance(threshold_currency, str) or len(threshold_currency) != 3 or not threshold_currency.isascii() or not threshold_currency.isalpha() or not threshold_currency.isupper():
             raise LedgerSummaryError('Choose a three-letter currency for the threshold.')
-    timeline = ledger_timeline(export, population=population)
+    timeline = ledger_timeline(export, population=population, whole_case=whole_case)
     document, stamp = view_capture(export)
     readings = {r['row']['key']: r for r in document['ledger']['readings']}
     usable = [r for r in timeline['rows'] if r['chronology_basis'] not in ('ordering_date', 'statement_end_ordering_only')]
-    excluded_dates = [r['key'] for r in timeline['rows'] if r not in usable]
+    usable_keys = {r['key'] for r in usable}
+    excluded_dates = [r['key'] for r in timeline['rows'] if r['key'] not in usable_keys]
     if cross_account and timeline['account_id'] is not None:
         raise LedgerSummaryError('Clear the account filter to screen paths between accounts.')
     hypotheses = []
 
     def add(kind, left, right, days, explanation, *, group=None):
-        if len(hypotheses) >= MAX_HYPOTHESES:
+        if not whole_case and len(hypotheses) >= MAX_HYPOTHESES:
             raise LedgerSummaryError('More than 200 screening candidates match. Narrow the account or dates; no partial result was returned.')
         group = group or [left, right]
         keys = [r['key'] for r in group]
@@ -47,9 +57,11 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
             amount_minor=str(sum(int(r['amount_minor']) for r in group)) if kind in ('split_payment_threshold', 'repeated_counterparty') else left['amount_minor'], sources=sources, explanation=explanation,
             limitation='Screening candidate only. Amounts and nearby dates do not establish common funds, purpose, identity or misconduct. Same-day order is unknown.'))
 
+    ordinals = [date.fromisoformat(r['chronology_date']).toordinal() for r in usable]
     for i, left in enumerate(usable):
-        for right in usable[i + 1:]:
-            days = (date.fromisoformat(right['chronology_date']) - date.fromisoformat(left['chronology_date'])).days
+        for j in range(i + 1, len(usable)):
+            right = usable[j]
+            days = ordinals[j] - ordinals[i]
             if days > window_days:
                 break
             if left['account_id'] != right['account_id'] or left['currency'] != right['currency'] or left['amount_minor'] != right['amount_minor']:
@@ -66,14 +78,14 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
     # Match the recorded name exactly; never claim that a label establishes identity.
     relationships = {}
     for row in usable:
-        label = readings[row['key']]['row'].get('counterparty_raw')
-        if isinstance(label, str) and label.strip():
+        label = _other_party(readings[row['key']]['row'])
+        if label:
             relationships.setdefault((row['account_id'], row['currency'], row['direction'], label), []).append(row)
     for (*_, label), group in relationships.items():
         distinct_dates = sorted({r['chronology_date'] for r in group})
         if len(group) < 3 or len(distinct_dates) < 3:
             continue
-        if len(group) > 50:
+        if not whole_case and len(group) > 50:
             raise LedgerSummaryError('More than 50 payments share one recorded name. Narrow the dates to inspect that relationship; no partial result was returned.')
         gaps = [(date.fromisoformat(b)-date.fromisoformat(a)).days for a,b in zip(distinct_dates, distinct_dates[1:])]
         elapsed = (date.fromisoformat(distinct_dates[-1])-date.fromisoformat(distinct_dates[0])).days
@@ -100,7 +112,7 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
                 selected = group[start:end + 1]
                 if len(selected) < 2 or sum(int(r['amount_minor']) for r in selected) < threshold_minor:
                     continue
-                if len(selected) > 50:
+                if not whole_case and len(selected) > 50:
                     raise LedgerSummaryError('A threshold candidate contains more than 50 readings. Narrow the dates or window; no partial result was returned.')
                 right = selected[-1]
                 days = (date.fromisoformat(right['chronology_date']) - date.fromisoformat(left['chronology_date'])).days
@@ -109,7 +121,7 @@ def screen_ledger_patterns(export, *, population='working', window_days=3, thres
     if cross_account:
         from services.financial.ledger_transfers import ledger_transfer_candidates
         by_id = {r['key']:r for r in usable}
-        transfers = ledger_transfer_candidates(export,population=population,tolerance_days=min(window_days,7))
+        transfers = ledger_transfer_candidates(export,population=population,tolerance_days=min(window_days,7),whole_case=whole_case)
         outgoing = {}
         for pair in transfers['candidates']:
             debit,credit=by_id.get(pair['debit_id']),by_id.get(pair['credit_id'])

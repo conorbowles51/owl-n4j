@@ -34,7 +34,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, File, UploadFile
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from fastapi.responses import FileResponse
 from services.financial.amount_assessment import AmountAssessmentError, assess_source_amount, read_amount_source_text
 from services.financial.ledger_source import LedgerSourceError, ledger_source, ledger_sources, statement_source
 from services.financial.candidate_store import CandidateStoreError, read_candidate_mapping, list_candidate_mappings, list_candidate_accounts
@@ -1512,6 +1513,88 @@ def get_candidate_page_scan(evidence_file_id: UUID, case_id: UUID = Query(...), 
     except Exception:
         logger.exception("PDF page scan failed")
         raise HTTPException(status_code=500,detail="PDF page scan could not be completed.")
+
+
+from services.financial import whole_case_runs
+from services.financial.trace_walk import TraceWalkInput
+
+
+class WholeCaseRunRequest(BaseModel):
+    """A workbench's inputs; what its answer would have refused for size runs here, stored and paged."""
+    model_config = ConfigDict(extra='forbid')
+    kind: Literal['transfers', 'timeline', 'patterns']
+    population: Literal['working', 'verified'] = 'working'
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    account_id: Optional[UUID] = None
+    account_ids: Optional[list[UUID]] = None
+    account_holders: Optional[list[str]] = None
+    tolerance_days: int = Field(3, ge=0, le=7)
+    window_days: int = Field(3, ge=0, le=30)
+    threshold_minor: Optional[int] = Field(None, ge=1, le=9223372036854775807)
+    threshold_currency: Optional[str] = Field(None, pattern='^[A-Z]{3}$')
+    cross_account: bool = False
+
+    def parameters(self):
+        """Only what this analysis reads, so equal inputs name the same run."""
+        keep = dict(transfers=('population', 'start_date', 'end_date', 'tolerance_days'),
+                    timeline=('population', 'start_date', 'end_date', 'account_id', 'account_ids', 'account_holders'),
+                    patterns=('population', 'start_date', 'end_date', 'account_id', 'account_ids', 'account_holders', 'window_days',
+                              'threshold_minor', 'threshold_currency', 'cross_account'))[self.kind]
+        values = self.model_dump(mode='json')
+        result = {name: values[name] for name in keep if values[name] not in (None, [])}
+        if 'threshold_minor' in result:
+            result['threshold_minor'] = str(result['threshold_minor'])
+        return result
+
+
+def _whole_case(call):
+    """A stated refusal is a 422; a run of another case, or an unknown file, is simply absent."""
+    try:
+        return call()
+    except (LedgerSummaryError, ValidationError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail='Whole-case run not found.') from exc
+
+
+@router.post('/whole-case-runs')
+def start_whole_case_run(body: WholeCaseRunRequest, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    if (body.threshold_minor is None) != (body.threshold_currency is None):
+        raise HTTPException(status_code=422, detail='Provide both an amount threshold and its currency.')
+    if body.cross_account and body.account_id:
+        raise HTTPException(status_code=422, detail='Clear the account filter to screen paths between accounts.')
+    return _whole_case(lambda: whole_case_runs.start_run(db.get_bind(), kind=body.kind, case_id=case_id, params=body.parameters()))
+
+
+@router.post('/whole-case-runs/trace')
+def start_whole_case_trace(body: TraceWalkInput, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    return _whole_case(lambda: whole_case_runs.start_run(db.get_bind(), kind='trace', case_id=case_id, params=body.model_dump(mode='json')))
+
+
+@router.get('/whole-case-runs/{run_id}')
+def get_whole_case_run(run_id: str, case_id: UUID = Query(...)):
+    return _whole_case(lambda: whole_case_runs.read_run(case_id, run_id))
+
+
+@router.get('/whole-case-runs/{run_id}/pages/{section}')
+def get_whole_case_page(run_id: str, section: str, case_id: UUID = Query(...), offset: int = Query(0, ge=0),
+        limit: int = Query(50, ge=1, le=whole_case_runs.PAGE_LIMIT), search: Optional[str] = Query(None, max_length=200)):
+    total, start, size, items = _whole_case(lambda: whole_case_runs.read_page(case_id, run_id, section, offset=offset, limit=limit, search=search))
+    # The stored lines are already JSON: a page costs a seek, not a parse of the result.
+    return Response(content=b'{"total":%d,"offset":%d,"limit":%d,"items":[' % (total, start, size) + b','.join(items) + b']}',
+                    media_type='application/json')
+
+
+@router.get('/whole-case-runs/{run_id}/files/{name}')
+def get_whole_case_file(run_id: str, name: str, case_id: UUID = Query(...)):
+    path = _whole_case(lambda: whole_case_runs.read_file(case_id, run_id, name))
+    return FileResponse(path, filename=name, media_type='application/x-ndjson' if name.endswith('.jsonl') else 'application/json' if name.endswith('.json') else 'application/zip')
+
+
+@router.post('/whole-case-runs/{run_id}/transfer-scenario')
+def whole_case_transfer_scenario(run_id: str, body: LedgerTransferScenario, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    return _whole_case(lambda: whole_case_runs.transfer_scenario(db.get_bind(), case_id=case_id, identifier=run_id, request=body))
 
 
 from services.financial.network_tracing import NetworkTraceInput, network_trace_inputs, evaluate_network_trace

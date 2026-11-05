@@ -17,8 +17,12 @@ MAX_TRANSFER_ROWS = 500
 MAX_TRANSFER_PAIRS = 1000
 
 
-def ledger_transfer_candidates(export, *, population='working', tolerance_days=3, grade=False):
-    """``grade`` adds every possible pair on the strength scale (the workbench's list); ``graded`` is None without it."""
+def ledger_transfer_candidates(export, *, population='working', tolerance_days=3, grade=False, whole_case=False):
+    """``grade`` adds every possible pair on the strength scale (the workbench's list); ``graded`` is None without it.
+
+    The row and pair limits bound the size of one synchronous answer, not the comparison: amounts are compared within
+    their own block (linkage._blocks), so the work stays near linear (Erica: 9,804 rows in 1.9 s of CPU, measured).
+    ``whole_case`` is for the stored background run (services.financial.whole_case_runs), which pages its result."""
     if population not in ('working', 'verified') or type(tolerance_days) is not int or not 0 <= tolerance_days <= 7:
         raise LedgerSummaryError('Choose working or verified readings and a date tolerance from 0 to 7 days.')
     from services.financial.ledger_snapshot import view_capture
@@ -32,7 +36,7 @@ def ledger_transfer_candidates(export, *, population='working', tolerance_days=3
     rows = [r['row'] for r in ledger['readings'] if (r['exclusion_reason'] in (None, 'proof_class_not_included') if population == 'working' else r['included'])]
     labels = {r['row']['account_id']: r.get('account', {}).get('label') for r in ledger['readings']}
     rows = [{**r, 'account_label': labels.get(r['account_id']) or 'Account ' + r['account_id'][:8]} for r in rows]
-    if len(rows) > MAX_TRANSFER_ROWS:
+    if not whole_case and len(rows) > MAX_TRANSFER_ROWS:
         raise LedgerSummaryError('More than 500 current rows match. Narrow the date scope; no partial transfer comparison was made.')
     parsers = {r["row"]["key"]: r["source"].get("parser_name") for r in ledger["readings"]}
     observations = []
@@ -118,7 +122,7 @@ def ledger_transfer_candidates(export, *, population='working', tolerance_days=3
     for conflict in exact.conflicts:
         evidence.append(dict(left_id=str(conflict.left_id), right_id=str(conflict.right_id),
             reference=reference_json(conflict.reference), relation='conflict', amounts_agree=False, reason=conflict.reason))
-    if len(evidence) > MAX_TRANSFER_PAIRS:
+    if not whole_case and len(evidence) > MAX_TRANSFER_PAIRS:
         raise LedgerSummaryError('More than 1,000 identifier comparisons. Narrow the date scope; no partial comparison was returned.')
     # An identifier may span intermediaries. Preserve every possible partner,
     # and do not let the stronger label conceal ambiguity in the selected pairs.
@@ -130,7 +134,7 @@ def ledger_transfer_candidates(export, *, population='working', tolerance_days=3
         if partners[pair['debit_id']] > 1 or partners[pair['credit_id']] > 1:
             pair['outcome'] = 'ambiguous'
     pairs.sort(key=lambda p: (p['debit_id'], p['credit_id']))
-    if len(pairs) > MAX_TRANSFER_PAIRS:
+    if not whole_case and len(pairs) > MAX_TRANSFER_PAIRS:
         raise LedgerSummaryError('More than 1,000 transfer candidates match. Narrow the date scope; no truncated comparison was returned.')
     return dict(case_id=ledger['case_id'], start_date=ledger['start_date'], end_date=ledger['end_date'],
         population=population, tolerance_days=tolerance_days, **stamp,
@@ -156,6 +160,26 @@ class LedgerTransferScenario(BaseModel):
     basis: str = Field(min_length=1, max_length=4096)
 
 
+SCENARIO_LIMITATION = 'Conditional pairing only. Selected debit/credit pairs count once in this scenario; unpaired postings remain separate. This is not a deduplication decision, ownership conclusion or change to the ledger. Missing records and date scope can change candidate matches.'
+
+
+def scenario_figures(selected, currencies):
+    """Per currency: the postings, and what they become when each selected pair counts once."""
+    matched = {}
+    for pair in selected:
+        group = matched.setdefault(pair['currency'], dict(amount=0, count=0))
+        group['amount'] += int(pair['amount_minor']); group['count'] += 1
+    figures = []
+    for group in currencies:
+        paired = matched.get(group['currency'], dict(amount=0, count=0))
+        credits, debits = int(group['credits_minor']), int(group['debits_minor'])
+        figures.append(dict(currency=group['currency'], posting_rows=group['rows'],
+            paired_transfers=paired['count'], movement_count=group['rows']-paired['count'],
+            paired_amount_minor=str(paired['amount']), unpaired_credits_minor=str(credits-paired['amount']),
+            unpaired_debits_minor=str(debits-paired['amount']), movement_volume_minor=str(credits+debits-paired['amount'])))
+    return figures
+
+
 def evaluate_transfer_scenario(export, request):
     request = LedgerTransferScenario.model_validate(request)
     if not request.basis.strip(): raise LedgerSummaryError('Record a reason for the selected pairings.')
@@ -169,27 +193,18 @@ def evaluate_transfer_scenario(export, request):
     if result['start_date'] != (request.start_date.isoformat() if request.start_date else None) or result['end_date'] != (request.end_date.isoformat() if request.end_date else None):
         raise LedgerSummaryError('Transfer scenario date scope differs from its captured ledger.')
     indexed = {(p['debit_id'], p['credit_id']): p for p in result['candidates']}
-    used, selected, matched = set(), [], {}
+    used, selected = set(), []
     for choice in request.pairs:
         key = (str(choice.debit_id), str(choice.credit_id))
         if key not in indexed or any(value in used for value in key):
             raise LedgerSummaryError('Choose proposed pairs without using a reading more than once.')
-        used.update(key); pair = indexed[key]; selected.append(pair)
-        group = matched.setdefault(pair['currency'], dict(amount=0, count=0))
-        group['amount'] += int(pair['amount_minor']); group['count'] += 1
-    figures = []
-    for group in result['currencies']:
-        paired = matched.get(group['currency'], dict(amount=0, count=0))
-        credits, debits = int(group['credits_minor']), int(group['debits_minor'])
-        figures.append(dict(currency=group['currency'], posting_rows=group['rows'],
-            paired_transfers=paired['count'], movement_count=group['rows']-paired['count'],
-            paired_amount_minor=str(paired['amount']), unpaired_credits_minor=str(credits-paired['amount']),
-            unpaired_debits_minor=str(debits-paired['amount']), movement_volume_minor=str(credits+debits-paired['amount'])))
+        used.update(key); selected.append(indexed[key])
+    figures = scenario_figures(selected, result['currencies'])
     document = dict(schema='loupe.financial.transfer_scenario/1', case_id=result['case_id'], applied=False,
         pairings_verified=False, inputs=request.model_dump(mode='json'), selected_pairs=selected, figures=figures,
         **({} if covers == FULL_DOCUMENT_COVERS else dict(expected_snapshot_digest_covers=covers)),
         ledger_snapshot=json.loads(export.snapshot.content), ledger_manifest=json.loads(export.manifest),
-        limitation='Conditional pairing only. Selected debit/credit pairs count once in this scenario; unpaired postings remain separate. This is not a deduplication decision, ownership conclusion or change to the ledger. Missing records and date scope can change candidate matches.')
+        limitation=SCENARIO_LIMITATION)
     content = json.dumps(document, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
     encoded = content.encode('utf-8')
     if len(encoded) > MAX_EXPORT_BYTES: raise LedgerSummaryError('Transfer report exceeds 16 MiB; no partial report was returned.')

@@ -2390,3 +2390,6 @@ __all__ += ["SecurityRowError", "holdings_from_tables", "trade_from_cash_row"]
 
 from services.financial.transaction_numbers import attach_numbers, number_of, numbers_for_case
 __all__ += ["attach_numbers", "number_of", "numbers_for_case"]
+
+from services.financial.whole_case_runs import read_run as read_whole_case_run, start_run as start_whole_case_run
+__all__ += ["read_whole_case_run", "start_whole_case_run"]

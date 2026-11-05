@@ -25,6 +25,8 @@ import { RequestedCoveragePanel } from "./RequestedCoveragePanel"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import type { TimelineResponse } from "@/features/timeline/api"
+import { isSizeRefusal } from "../lib/whole-case-run"
+import { WholeCaseTimeline } from "./WholeCaseTimeline"
 
 export function FinancialCaseTimeline({
   caseId,
@@ -84,7 +86,9 @@ function TimelineScope({
     [search, setSearch] = useState(""),
     [page, setPage] = useState(0),
     [kind, setKind] = useState("both"),
-    [selected, setSelected] = useState<string[]>([])
+    [selected, setSelected] = useState<string[]>([]),
+    [refused, setRefused] = useState(false),
+    [wholeEvents, setWholeEvents] = useState<TimelineResponse | null>(null)
   const selectNodes = useGraphStore((s) => s.selectNodes),
     expand = useUIStore((s) => s.expandGraphPanelTo)
   const load = useMutation({
@@ -95,6 +99,8 @@ function TimelineScope({
       if (params.accountId) query.set("account_id", params.accountId)
       if (params.startDate) query.set("start_date", params.startDate)
       if (params.endDate) query.set("end_date", params.endDate)
+      setRefused(false)
+      setWholeEvents(null)
       const [ledgerResult, eventResult] = await Promise.allSettled([
         fetchAPI(`${candidateUrl("ledger-timeline", caseId)}&${query}`, {
           timeout: 120000,
@@ -107,7 +113,12 @@ function TimelineScope({
           scope: "all",
         }),
       ])
-      if (ledgerResult.status === "rejected") throw ledgerResult.reason
+      if (eventResult.status === "fulfilled") setWholeEvents(eventResult.value)
+      if (ledgerResult.status === "rejected") {
+        if (isSizeRefusal((ledgerResult.reason as Error)?.message))
+          setRefused(true)
+        throw ledgerResult.reason
+      }
       const ledger = ledgerTimeline.parse(ledgerResult.value)
       if (
         ledger.case_id !== caseId ||
@@ -201,7 +212,16 @@ function TimelineScope({
       >
         {load.isPending ? "Loading…" : "Load payments and case events"}
       </Button>
-      {load.isError && <p role="alert">{load.error.message}</p>}
+      {load.isError && !refused && <p role="alert">{load.error.message}</p>}
+      {load.isError && refused && (
+        <WholeCaseTimeline
+          caseId={caseId}
+          params={params}
+          population={population}
+          events={wholeEvents}
+          onSource={setSource}
+        />
+      )}
       {data && (
         <>
           <Disclosure label="How the timeline was assembled">

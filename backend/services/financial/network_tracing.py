@@ -60,6 +60,59 @@ def network_trace_inputs(export, *, population='verified', tolerance_days=3):
         'network_limitation':'Forward conditional tracing is the default. An explicit backward assumption can relate an earlier receiving credit to a later debit only for acyclic account dependencies. Select a currency, declare opening funds and root claims, choose transfer pairings and review the movement order. Each selected receiving credit must follow its debit unless backward timing is explicitly enabled with a basis. No graph-path assumption, exchange conversion or verified ownership conclusion is made.'}
 
 
+def network_results(request,*,rows,accounts,openings,ordered,positions,links,backward_pairs,account_order,roots,root_totals):
+    """Per method: every account's trace, the hops taken and each claim's position. Reads only the rows it is given."""
+    classes=DEFAULT_TOTAL_CLASSES | ({ProofClass.p3} if request.population=='working' else set())
+    results={}
+    for method in request.doctrines:
+        seen={account:[] for account in accounts};attributed={account:[] for account in accounts};pending={};hops=[]
+        def account_trace(account):
+            return trace(seen[account],attributed[account],doctrine=method,
+                opening_balance=Money(int(openings[account].amount_minor),request.currency),proof_classes=classes)
+        def add_movement(key,sequence):
+            row=rows[key];account=row['account_id']
+            seen[account].append(Movement(transaction_id=UUID(key),ordering_date=date.fromisoformat(row['ordering_date']),row_index=sequence,
+                amount=Money(int(row['amount_minor']),request.currency),direction=TransactionDirection(row['direction']),proof_class=ProofClass(row['proof_class']),description=row['description']))
+            for root in roots.get(key,[]):
+                attributed[account].append(Attribution(transaction_id=UUID(key),claim_id=root.claim_id,amount=Money(int(root.amount_minor),request.currency),basis=root.basis))
+            attributed[account].extend(pending.pop(key,[]))
+        def propagate(key,draw):
+            row=rows[key];account=row['account_id'];credit=links[key]
+            pending[credit]=[Attribution(transaction_id=UUID(credit),claim_id=claim,amount=share,
+                basis='Conditional propagation from selected debit '+key+' under '+method.value+(' with explicit backward timing: '+request.backward_basis if (key,credit) in backward_pairs else '')) for claim,share in draw.by_claim.items() if share.minor_units>0]
+            hops.append(dict(debit_id=key,credit_id=credit,from_account=account,to_account=rows[credit]['account_id'],
+                backward_timing=(key,credit) in backward_pairs,
+                amount_minor=row['amount_minor'],propagated_by_claim={claim:str(m.minor_units) for claim,m in draw.by_claim.items()},
+                unattributed_or_unidentified_minor=str(int(row['amount_minor'])-sum(m.minor_units for m in draw.by_claim.values())),unidentified_minor=str(draw.unidentified.minor_units),unfunded_minor=str(draw.unfunded.minor_units)))
+        if backward_pairs:
+            # Account dependencies, not global dates, determine calculation order.
+            # Every account retains its original chronological movement order.
+            # Acyclic dependencies ensure all incoming allocations are known first.
+            for account in account_order:
+                keys=[key for key in ordered if rows[key]['account_id']==account]
+                for key in keys:add_movement(key,positions[key])
+                calculation=account_trace(account)
+                draws={str(d.transaction_id):d for d in calculation.draws}
+                for key in keys:
+                    if key in links:propagate(key,draws[key])
+        else:
+            for sequence,key in enumerate(ordered):
+                add_movement(key,sequence)
+                if key in links:
+                    propagate(key,next(d for d in account_trace(rows[key]['account_id']).draws if str(d.transaction_id)==key))
+        if pending:raise LedgerSummaryError('A selected transfer was not received within the supplied order.')
+        final={account:account_trace(account) for account in sorted(accounts)}
+        claims={}
+        for claim,root_amount in sorted(root_totals.items()):
+            remaining=sum(result.outcomes[claim].surviving.minor_units for result in final.values() if claim in result.outcomes)
+            outside=sum(draw.by_claim.get(claim,Money.zero(request.currency)).minor_units for result in final.values() for draw in result.draws if str(draw.transaction_id) not in links)
+            if remaining+outside!=root_amount:raise LedgerSummaryError('Cross-account claim allocations failed conservation; no result was produced.')
+            claims[claim]=dict(root_attributed_minor=str(root_amount),reported_remaining_minor=str(remaining),withdrawn_without_selected_transfer_minor=str(outside))
+        results[method.value]=dict(accounts=_exact_json(final),hops=hops,claims=claims,asset_uses=trace_asset_uses(request.asset_uses,rows,final.values()),
+            unidentified_withdrawals_minor=str(sum(r.total_unidentified().minor_units for r in final.values())))
+    return results
+
+
 def evaluate_network_trace(export, request):
     request=NetworkTraceInput.model_validate(request)
     if not request.basis.strip() or not request.order_basis.strip():
@@ -109,54 +162,8 @@ def evaluate_network_trace(export, request):
             raise LedgerSummaryError('Root attributions must name selected-currency credits that are not receiving sides of selected transfers.')
         roots.setdefault(key,[]).append(attribution)
         root_totals[attribution.claim_id]=root_totals.get(attribution.claim_id,0)+int(attribution.amount_minor)
-    classes=DEFAULT_TOTAL_CLASSES | ({ProofClass.p3} if request.population=='working' else set())
-    results={}
-    for method in request.doctrines:
-        seen={account:[] for account in accounts};attributed={account:[] for account in accounts};pending={};hops=[]
-        def account_trace(account):
-            return trace(seen[account],attributed[account],doctrine=method,
-                opening_balance=Money(int(openings[account].amount_minor),request.currency),proof_classes=classes)
-        def add_movement(key,sequence):
-            row=rows[key];account=row['account_id']
-            seen[account].append(Movement(transaction_id=UUID(key),ordering_date=date.fromisoformat(row['ordering_date']),row_index=sequence,
-                amount=Money(int(row['amount_minor']),request.currency),direction=TransactionDirection(row['direction']),proof_class=ProofClass(row['proof_class']),description=row['description']))
-            for root in roots.get(key,[]):
-                attributed[account].append(Attribution(transaction_id=UUID(key),claim_id=root.claim_id,amount=Money(int(root.amount_minor),request.currency),basis=root.basis))
-            attributed[account].extend(pending.pop(key,[]))
-        def propagate(key,draw):
-            row=rows[key];account=row['account_id'];credit=links[key]
-            pending[credit]=[Attribution(transaction_id=UUID(credit),claim_id=claim,amount=share,
-                basis='Conditional propagation from selected debit '+key+' under '+method.value+(' with explicit backward timing: '+request.backward_basis if (key,credit) in backward_pairs else '')) for claim,share in draw.by_claim.items() if share.minor_units>0]
-            hops.append(dict(debit_id=key,credit_id=credit,from_account=account,to_account=rows[credit]['account_id'],
-                backward_timing=(key,credit) in backward_pairs,
-                amount_minor=row['amount_minor'],propagated_by_claim={claim:str(m.minor_units) for claim,m in draw.by_claim.items()},
-                unattributed_or_unidentified_minor=str(int(row['amount_minor'])-sum(m.minor_units for m in draw.by_claim.values())),unidentified_minor=str(draw.unidentified.minor_units),unfunded_minor=str(draw.unfunded.minor_units)))
-        if backward_pairs:
-            # Account dependencies, not global dates, determine calculation order.
-            # Every account retains its original chronological movement order.
-            # Acyclic dependencies ensure all incoming allocations are known first.
-            for account in account_order:
-                keys=[key for key in ordered if rows[key]['account_id']==account]
-                for key in keys:add_movement(key,positions[key])
-                calculation=account_trace(account)
-                draws={str(d.transaction_id):d for d in calculation.draws}
-                for key in keys:
-                    if key in links:propagate(key,draws[key])
-        else:
-            for sequence,key in enumerate(ordered):
-                add_movement(key,sequence)
-                if key in links:
-                    propagate(key,next(d for d in account_trace(rows[key]['account_id']).draws if str(d.transaction_id)==key))
-        if pending:raise LedgerSummaryError('A selected transfer was not received within the supplied order.')
-        final={account:account_trace(account) for account in sorted(accounts)}
-        claims={}
-        for claim,root_amount in sorted(root_totals.items()):
-            remaining=sum(result.outcomes[claim].surviving.minor_units for result in final.values() if claim in result.outcomes)
-            outside=sum(draw.by_claim.get(claim,Money.zero(request.currency)).minor_units for result in final.values() for draw in result.draws if str(draw.transaction_id) not in links)
-            if remaining+outside!=root_amount:raise LedgerSummaryError('Cross-account claim allocations failed conservation; no result was produced.')
-            claims[claim]=dict(root_attributed_minor=str(root_amount),reported_remaining_minor=str(remaining),withdrawn_without_selected_transfer_minor=str(outside))
-        results[method.value]=dict(accounts=_exact_json(final),hops=hops,claims=claims,asset_uses=trace_asset_uses(request.asset_uses,rows,final.values()),
-            unidentified_withdrawals_minor=str(sum(r.total_unidentified().minor_units for r in final.values())))
+    results=network_results(request,rows=rows,accounts=accounts,openings=openings,ordered=ordered,positions=positions,links=links,
+        backward_pairs=backward_pairs,account_order=account_order,roots=roots,root_totals=root_totals)
     document=dict(schema='loupe.financial.network_trace/1',case_id=scope['case_id'],applied=False,assumptions_verified=False,
         inputs=request.model_dump(mode='json'),backward_timing_used=bool(backward_pairs),calculation_account_order=account_order,results=results,ledger_snapshot=json.loads(export.snapshot.content),ledger_manifest=json.loads(export.manifest),
         limitations=[('Conditional backward timing enabled: selected earlier receiving credits are attributed from later debit allocations. This is an investigator assumption, not a legal conclusion or a finding about payment causation.' if backward_pairs else 'Conditional forward trace.'), 'All openings, root attributions, transfer pairings and same-day order are investigator assumptions.',

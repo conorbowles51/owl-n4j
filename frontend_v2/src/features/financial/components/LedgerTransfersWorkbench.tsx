@@ -17,6 +17,8 @@ import { correctionMoney } from "../lib/correction-contract"
 import { transferInputs, verifyTransferScenario } from "../lib/ledger-transfers"
 import { LedgerSourceDialog } from "./LedgerSourceDialog"
 import { GradedTransferPairs } from "./GradedTransferPairs"
+import { isSizeRefusal } from "../lib/whole-case-run"
+import { WholeCaseTransfers } from "./WholeCaseTransfers"
 
 export function LedgerTransfersWorkbench({
   caseId,
@@ -288,10 +290,20 @@ function TransferScope({
           </p>
         )}
       {load.isPending && <p role="status">Comparing payments…</p>}
-      {load.isError && (
+      {load.isError && !isSizeRefusal(load.error.message) && (
         <p role="alert">
           Transfer comparison unavailable. {load.error.message}
         </p>
+      )}
+      {load.isError && isSizeRefusal(load.error.message) && (
+        <WholeCaseTransfers
+          caseId={caseId}
+          start={start}
+          end={end}
+          population={population}
+          tolerance={tolerance}
+          onSource={setSource}
+        />
       )}
       {load.data && !load.isPending && !freshness.stale && (
         <>
