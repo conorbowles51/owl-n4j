@@ -76,6 +76,15 @@ describe("Plans and check-ins against location (AP-1, 05 13.8)", () => {
     expect(screen.getByTestId("strength-line")).toHaveTextContent(PL_OLD)
   })
 
+  it("writes the entry's time with the app's formatter, not the raw timestamp", () => {
+    const w = plansWords({ ...base, id: "p3", kind: "no_place", strength: "faint",
+      measures: { phone_label: "C1", source: "calendar", subject: "Lunch", start: "2024-01-20T03:51:51.117000+00:00", reasons: { match: [], substantiation: [] } } })
+    expect(w.when).toBe("Sat, Jan 20, 2024, 3:51:51 AM UTC")
+    const wall = plansWords({ ...base, id: "p4", kind: "no_place", strength: "faint",
+      measures: { phone_label: "C1", source: "calendar", subject: "Lunch", start: "2024-01-20T03:51:51", reasons: { match: [], substantiation: [] } } })
+    expect(wall.when).toBe("Sat, Jan 20, 2024, 3:51:51 AM, no offset in report")
+  })
+
   it("words a repeating unplaced entry with its occurrences", () => {
     const w = plansWords({ ...base, id: "p2", kind: "no_place", strength: "faint",
       measures: { phone_label: "C1", source: "calendar", subject: "Weekly", occurrences: 5, repeat_rule: "Weekly", last_occurrence: "2023-01-30", occurrence_count: 1, reasons: { match: ["No place is recorded, so nothing is compared."], substantiation: [] } } })

@@ -568,6 +568,13 @@ attribution mapping kind (spec 02 format), initial content:
 | `latest_only` | B | semantics `latest_of_many` | "Latest occurrence only. Earlier ones are not kept." |
 | `bucketed` | B | semantics `aggregate_bucket` | "Happened somewhere in this period." |
 | `counterpart` | none | actor `counterpart` | "Action by the other person." |
+| `mcc_inferred` | none (place) | tower country code taken from the SIM (6.2) | "Country code taken from the phone's SIM card; the tower record does not state it." |
+| `media_device_not_established` | none (place) | a `Media Locations` place with no camera match (6.2) | "Not established that this phone took the photo or video." |
+| `media_exif` | none (place) | a place read from media metadata | "Place read from the location stored in a photo or video." |
+| `media_taken_on_device` | none (place) | camera match to this phone (6.2) | "Taken with this phone's camera, so the phone was there." |
+| `received_media` | none (place) | media with no camera match (6.2) | "Received on this phone, so the place is where the photo or video was taken, not where the phone was." |
+| `reference_sparse` | none (place) | tower reference with fewer than 3 samples (6.4) | "Few samples behind this tower's position, so its range is set wide." |
+| `zero_zero` | none (place) | both coordinates exactly 0 | "The record's coordinates are exactly 0, 0, which is rarely a real place." |
 
 Group A flags demote an `interaction` event to `weak`; one group-B flag demotes it to `moderate`; two or
 more group-B flags demote it to `weak` (3.1).

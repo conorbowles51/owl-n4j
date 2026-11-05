@@ -195,3 +195,13 @@ def test_an_hour_holding_only_a_notification_never_reads_no_data_and_the_item_sa
         assert hours[20]["words"] == "No data" and hours[20]["has_records"] is False
         note = [i for i in out["lanes"]["passive"] if i["record_type"] == "Notification"]
         assert len(note) == 1 and note[0]["family"] == "notifications"
+
+
+def test_every_flag_a_place_can_carry_has_words():
+    import pathlib
+    import re
+    from services.pattern_of_life import attribution, places
+    source = pathlib.Path(places.__file__).read_text()
+    raised = set(re.findall(r'(?:append\(|flags \+ \[|\(\[|, \[)"([a-z_]+)"', source)) | {"media_exif", "zero_zero"}
+    assert {"media_taken_on_device", "received_media", "reference_sparse", "mcc_inferred"} <= raised
+    assert raised - set(attribution.UI_COPY) == set()

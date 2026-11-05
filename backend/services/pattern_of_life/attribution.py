@@ -32,6 +32,14 @@ UI_COPY = {
     "bucketed": "Happened somewhere in this period.",
     "counterpart": "Action by the other person.",
     "after_extraction_time": "Stamped after the extraction started (clock or time zone problem).",
+    # flags of a place (04 section 6)
+    "mcc_inferred": "Country code taken from the phone's SIM card; the tower record does not state it.",
+    "media_device_not_established": "Not established that this phone took the photo or video.",
+    "media_exif": "Place read from the location stored in a photo or video.",
+    "media_taken_on_device": "Taken with this phone's camera, so the phone was there.",
+    "received_media": "Received on this phone, so the place is where the photo or video was taken, not where the phone was.",
+    "reference_sparse": "Few samples behind this tower's position, so its range is set wide.",
+    "zero_zero": "The record's coordinates are exactly 0, 0, which is rarely a real place.",
 }
 
 LATEST_SEMANTICS = ("latest_of_many", "last_modified")
