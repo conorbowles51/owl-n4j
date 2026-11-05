@@ -697,7 +697,7 @@ a claim about intent or plans, never about presence.
 | Source | Records (CAT / POL-N) | Radius rule | Basis | Notes |
 |---|---|---|---|---|
 | Location with Coordinate and GpsHorizontalAccuracy | Coordinate.GpsHorizontalAccuracy 28,656 values on 5 phones; Location.GpsHorizontalAccuracy 12,728 on 1 phone | `radius_m = 2 × accuracy` for comparisons; `radius_reported = accuracy` shown | Android documents horizontal accuracy as a 68 percent radius; doubling gives roughly 95 percent under a normal error model | Reverse if M5 shows accuracy values cluster in a way that indicates a different convention for a Source |
-| Location with Precision | Precision String on 52,653 records, 5 phones | per value, reviewed rows (M5 lists the values) | not established | |
+| Location with Precision | Precision String on 52,653 records, 5 phones (`measurements/m5-precision.json`): 28,603 read `Horizontal: <n>`, the number the record's own `GpsHorizontalAccuracy` holds (equal within 0.1 percent on 28,602; the other is written with an exponent), so those take the GPS row; 24,050 are a bare whole number on records with no GPS accuracy | the bare number gives no radius (section 15) | not established | |
 | Location with Confidence | Int32 on 24,054 records, 5 phones | not used for radius until M5 shows its scale | not established | shown beside the point |
 | Location, no accuracy | the rest | null | | shown as a point with "accuracy not stated"; compared only under an assumed radius chosen in the analysis and printed with every result (8.4) |
 | Location Type `Searched` | C3 7, C8 4, C9 6 (POL-S) | as above | | kind `searched` |
@@ -1918,7 +1918,14 @@ Each is a decision with its reasoning and what would reverse it.
   the samples). M1.
 - The full `UserMapping` value set and what non-`Decoding` values mean. M2.
 - What `DeviceLocationAffiliation = Synced` and `Extracted` mean precisely, and the meaning of
-  `Location.Precision` and `Location.Confidence`. M5; Cellebrite documentation not located.
+  `Location.Confidence`. M5; Cellebrite documentation not located.
+- The unit of a bare `Location.Precision`. `Horizontal: <n>` is settled: it repeats `GpsHorizontalAccuracy`, so it adds
+  nothing to the radius. The 24,050 bare numbers are not: 24,048 sit on `Type = Harvested` records (`Wireless Networks`
+  22,948, `Cell Towers` 1,100), positions of a network or tower the phone heard rather than of the phone, so no
+  independent fix tests them (against a GPS fix of at most 20 m within 15 s, 4.5 percent of the 10 to 99 numbers lie
+  within their number, median distance 192 m, 2,191 pairs on P04). 122 are negative, which a radius cannot be. The
+  radius stays unset and the accuracy unstated (`radius_of`, basis `precision_value`). *Reverse if* Cellebrite
+  documentation or a reviewed comparison against a surveyed network position gives the unit.
 - What `WirelessNetwork.TimeStamp` (25,356 values) and `CellTower.TimeStamp` record. M5.
 - NetworkUsage and ApplicationUsage bucket widths. M4.
 - Whether `DeviceConnectivity` `Paired` times are pairing moments. M4.

@@ -1993,7 +1993,7 @@ Each with its reason and what would reverse it.
   `projectConfigurations`, `extraInfos` were not inspected for this file.
 - A record-level carving marker: `pv_record.is_carved` is false until one is found; candidates
   `source_index`, `labels`, `deleted_state`.
-- The unit of `Location.Precision`.
+- The unit of a bare `Location.Precision` (04 section 15). `Horizontal: <n>` repeats `GpsHorizontalAccuracy`.
 - What `ApplicationUsage.LastScreenshot` (Guid) refers to.
 - What `nodeField` and `dataField` children contain beyond being present (C3: 278 and 456).
 - Owner tier results for C9, C8 and the 14 server phones (v1's memory note records three phones of the

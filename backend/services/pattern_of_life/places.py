@@ -69,7 +69,10 @@ def radius_of(accuracy_m, accuracy_basis, source_kind):
     if source_kind == "wifi_position":
         return DEFAULT_WIFI_POSITION_M, acc, "default_wifi_position"
     if accuracy_basis == "precision_field":
-        return None, None, "precision_value"  # no reviewed Precision rows yet (M5): accuracy not stated
+        # Reached only by a bare number: every "Horizontal: <n>" record also has GpsHorizontalAccuracy, the same number
+        # (measurements/m5-precision.json). A bare number's unit is not established and 122 of 24,050 are negative, so
+        # accuracy is not stated (04 section 15).
+        return None, None, "precision_value"
     return None, acc, "unknown"
 
 
