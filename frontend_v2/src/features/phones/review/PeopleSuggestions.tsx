@@ -6,7 +6,7 @@ import { register } from "@/lib/keymap"
 import { recordPath } from "@/lib/record-links"
 import { LevelBadge } from "../analysis/MoneyPairings"
 import { identitiesAPI, type IdentitySuggestion, type MatchLevel } from "./identities.api"
-import { REASON_WORDS, standardReason } from "./suggestion-reasons"
+import { REASON_WORDS, standardReason, type LinkOrigin } from "./suggestion-reasons"
 const fmt = (n: number) => n.toLocaleString("en-US")
 
 function errorWords(e: unknown) {
@@ -19,7 +19,7 @@ function errorWords(e: unknown) {
  * by a stated rule and the reasons for it (how well matched, how substantiated). Each shows the name saved on each phone with its number, the reasons and
  * up to 3 example records per reason with their counts. Keys: y Link, x Not the same person, s Skip, j/k move.
  */
-export function PeopleSuggestions({ caseId }: { caseId: string }) {
+export function PeopleSuggestions({ caseId, origin = "review" }: { caseId: string; origin?: LinkOrigin }) {
   const client = useQueryClient()
   const sugg = useQuery({ queryKey: ["phone-identity-suggestions", caseId], queryFn: () => identitiesAPI.suggestions(caseId) })
   const [reason, setReason] = useState("")
@@ -88,6 +88,7 @@ export function PeopleSuggestions({ caseId }: { caseId: string }) {
         identity_keys: s.identities.map((i) => i.identity_key),
         ...(s.dossier_id ? { dossier_id: s.dossier_id } : { new_person_name: name.trim() }),
         reasons_shown: s.reasons.map((r) => ({ reason: r.reason })),
+        origin,
         note: note.trim() || undefined,
         expected_revision: s.expected_revision,
       },
@@ -215,7 +216,7 @@ export function PeopleSuggestions({ caseId }: { caseId: string }) {
             Note (optional)
             <input value={note} onChange={(e) => setNote(e.target.value)} className="rounded border bg-background px-2 py-1" />
           </label>
-          <p className="text-xs text-muted-foreground">The link stores this reason: {standardReason(s)}.</p>
+          <p className="text-xs text-muted-foreground">The link stores this reason: {standardReason(s, origin)}.</p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={link} disabled={busy}>Link (y)</Button>
             <Button size="sm" variant="outline" onClick={reject} disabled={busy}>Not the same person (x)</Button>

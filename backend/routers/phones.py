@@ -1479,6 +1479,7 @@ class IdentityDecision(BaseModel):
     reason: Optional[str] = Field(default=None, max_length=4000)
     note: Optional[str] = Field(default=None, max_length=4000)
     reasons_shown: Optional[list[dict]] = Field(default=None, max_length=20)
+    origin: Optional[Literal["review", "dossier", "number_switching"]] = None
     expected_revision: Optional[str] = Field(default=None, max_length=64)
 
 
@@ -1552,7 +1553,7 @@ def identity_decision(body: IdentityDecision, db: Session = Depends(get_db), use
         out = identity_decisions.decide(
             db, case_id=body.case_id, decision=body.decision, identity_keys=body.identity_keys, actor=_actor(user),
             user=user, dossier_id=body.dossier_id, new_person_name=body.new_person_name, reason=body.reason,
-            note=body.note, reasons_shown=body.reasons_shown, expected_revision=body.expected_revision,
+            note=body.note, reasons_shown=body.reasons_shown, origin=body.origin, expected_revision=body.expected_revision,
             target_identity_key=body.target_identity_key)
     except identity_decisions.IdentityDecisionError as exc:
         db.rollback()

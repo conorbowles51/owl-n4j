@@ -399,11 +399,11 @@ def decided_count(conn, case_id) -> int:
 # ---- deciding --------------------------------------------------------------------------------------------------
 
 def decide(db, *, case_id, decision, identity_keys, actor, user, dossier_id=None, new_person_name=None, reason=None,
-           note=None, reasons_shown=None, expected_revision=None, target_identity_key=None) -> dict:
+           note=None, reasons_shown=None, expected_revision=None, target_identity_key=None, origin=None) -> dict:
     """``decision``: ``link_phone_identity``, ``unlink_phone_identity``, ``split`` (unlink each, one reason, one
     transaction), ``reject_phone_identity_link`` or ``restore_phone_identity_link`` (against ``dossier_id`` or
-    ``target_identity_key``). Links take a standard reason built from the reasons shown; Unlink and Split need a
-    typed reason (8.8)."""
+    ``target_identity_key``). Links take a standard reason built from the reasons shown and the screen they were
+    made on (``origin``); Unlink and Split need a typed reason (8.8)."""
     from postgres.models.enums import AdjudicationDecision, AdjudicationSubject
     from postgres.models.phone_identity import PhoneIdentity
     from services import manual_changes
@@ -445,7 +445,7 @@ def decide(db, *, case_id, decision, identity_keys, actor, user, dossier_id=None
                               {"d": dossier_id, "c": case_id}).scalar()
         if not exists:
             raise IdentityDecisionError("That person is not in this case.")
-        words = typed or standard_link_reason(reasons_shown or [])
+        words = typed or standard_link_reason(reasons_shown or [], origin)
         for r in rows:
             if current.get(str(r.id)) == str(dossier_id):
                 continue
@@ -520,13 +520,19 @@ def standard_reason_kinds(reasons_shown):
 
 
 READING = {"same_card": "listed together on one contact card", "owner_accounts": "the phone's own account",
-           "dossier_contact": "a contact detail on this person's dossier", "name_support": "the same name",
+           "dossier_contact": "a contact detail on this person's dossier", "name_support": "the same name", "name_only": "the same name only (nothing else links them)",
            "financial_identifier": "an account identifier on a statement",
            "number_change": "a possible number change, one stopping as the other starts"}
 
 
-def standard_link_reason(reasons_shown):
+LINK_ORIGINS = {"review": "on the review screen", "dossier": "on Phone identities in Dossiers",
+                "number_switching": "on Number switching"}
+
+
+def standard_link_reason(reasons_shown, origin=None):
+    """The stored words; a call that names no screen is the review screen, where links began."""
+    where = "Linked %s" % LINK_ORIGINS.get(origin or "review", LINK_ORIGINS["review"])
     kinds = [READING.get(k, k) for k in standard_reason_kinds(reasons_shown)]
     if not kinds:
-        return "Linked on the review screen"
-    return "Linked on the review screen after seeing: %s" % "; ".join(kinds)
+        return where
+    return "%s after seeing: %s" % (where, "; ".join(kinds))

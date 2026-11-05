@@ -124,7 +124,7 @@ export function PhoneIdentitiesTab({ caseId, canEdit, onOpenDossier }: { caseId:
           <div className="mb-2 flex justify-end">
             <Button size="sm" variant="ghost" onClick={() => set({ identity: null, idpanel: null })}>Close</Button>
           </div>
-          {open ? <IdentityLinkGroup key={open} caseId={caseId} identityKey={open} canEdit={canEdit} /> : <PeopleSuggestions caseId={caseId} />}
+          {open ? <IdentityLinkGroup key={open} caseId={caseId} identityKey={open} canEdit={canEdit} origin="dossier" /> : <PeopleSuggestions caseId={caseId} origin="dossier" />}
         </aside>
       )}
     </div>

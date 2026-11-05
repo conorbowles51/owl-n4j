@@ -50,8 +50,16 @@ describe("Link to a person", () => {
     fireEvent.click(screen.getByRole("button", { name: "Link" }))
     await waitFor(() => expect(api.decide).toHaveBeenCalledWith("case-1", {
       decision: "link_phone_identity", identity_keys: [KEY], dossier_id: "d1",
-      reasons_shown: [{ reason: "dossier_contact" }], note: undefined, expected_revision: "rev-1" }))
+      reasons_shown: [{ reason: "dossier_contact" }], origin: "review", note: undefined, expected_revision: "rev-1" }))
     await screen.findByText("Linked to Synthetic Person.")
+  })
+
+  it("from Dossiers the stored reason names Phone identities, not the review screen", async () => {
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><IdentityLinkGroup caseId="case-1" identityKey={KEY} origin="dossier" /></QueryClientProvider>)
+    fireEvent.click(await screen.findByRole("button", { name: "Choose" }))
+    await screen.findByText(/standard reason: Linked on Phone identities in Dossiers after seeing: a contact detail on this person's dossier\./)
+    fireEvent.click(screen.getByRole("button", { name: "Link" }))
+    await waitFor(() => expect(api.decide).toHaveBeenCalledWith("case-1", expect.objectContaining({ origin: "dossier" })))
   })
 
   it("a new person needs a name, and with no suggestion shown the reason claims nothing seen", async () => {

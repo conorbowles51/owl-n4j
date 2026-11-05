@@ -62,6 +62,7 @@ export interface IdentityDecisionBody {
   reason?: string
   note?: string
   reasons_shown?: { reason: string }[]
+  origin?: "review" | "dossier" | "number_switching"
   expected_revision?: string
 }
 

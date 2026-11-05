@@ -30,7 +30,7 @@ describe("Link these two to one person", () => {
     await userEvent.selectOptions(await screen.findByLabelText("Person"), await screen.findByRole("option", { name: "Ana" }))
     await userEvent.click(screen.getByRole("button", { name: "Link" }))
     await waitFor(() => expect(api.decide).toHaveBeenCalledWith("c", expect.objectContaining({
-      decision: "link_phone_identity", identity_keys: [X, Y], dossier_id: "d1", reasons_shown: [{ reason: "number_change" }], expected_revision: "rev1" })))
+      decision: "link_phone_identity", identity_keys: [X, Y], dossier_id: "d1", reasons_shown: [{ reason: "number_change" }], origin: "number_switching", expected_revision: "rev1" })))
     expect(await screen.findByRole("status")).toHaveTextContent("Linked old number and new number to Ana.")
   })
 

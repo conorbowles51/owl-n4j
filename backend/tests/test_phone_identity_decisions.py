@@ -124,6 +124,9 @@ def test_link_then_unlink_restores_and_both_decisions_are_in_order(people):
                 ("link_phone_identity", "standard", "Synthetic Reviewer", 1),
                 ("unlink_phone_identity", "typed", "Synthetic Reviewer", 2)]
             assert hist[0][4] == "Linked on the review screen after seeing: listed together on one contact card"
+            assert idd.standard_link_reason([{"reason": "same_card"}], "dossier") == (
+                "Linked on Phone identities in Dossiers after seeing: listed together on one contact card")
+            assert idd.standard_link_reason([], "number_switching") == "Linked on Number switching"
             assert c.execute(text("SELECT count(*) FROM phone_identity_links WHERE case_id = :c"), {"c": case}).scalar() == 0
             assert c.execute(text("SELECT count(*) FROM case_profiles WHERE id = :d"), {"d": out["dossier_id"]}).scalar() == 1
             feed = c.execute(text("SELECT kind FROM manual_changes WHERE case_id = :c"), {"c": case}).fetchall()

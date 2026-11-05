@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { dossiersAPI } from "@/features/dossiers/api"
 import { fmt } from "../ui/count-sentence"
 import { errorWords, identitiesAPI, type IdentitySuggestion } from "./identities.api"
+import { REASON_WORDS, standardReason, type LinkOrigin } from "./suggestion-reasons"
 
 /**
  * Needs a decision, link to a person (02 sections 8.7 and 8.8; 07 J-7). Opened from the graph's "Add to Dossiers"
@@ -12,20 +13,6 @@ import { errorWords, identitiesAPI, type IdentitySuggestion } from "./identities
  * reason built from the reasons shown, an unlink needs the person's own reason. A change made by someone else
  * meanwhile is refused and shown.
  */
-const REASON_WORDS: Record<string, string> = {
-  same_card: "listed together on one contact card",
-  owner_accounts: "the phone's own account",
-  dossier_contact: "a contact detail on this person's dossier",
-  name_support: "the same name",
-  financial_identifier: "an account identifier on a statement",
-}
-
-/** The words the ledger stores (services/phone/identity_decisions.standard_link_reason): reason kinds sorted. */
-function standardReason(s: IdentitySuggestion | undefined) {
-  const kinds = [...new Set((s?.reasons ?? []).map((r) => r.reason))].sort().map((k) => REASON_WORDS[k] ?? k)
-  return kinds.length ? `Linked on the review screen after seeing: ${kinds.join("; ")}` : "Linked on the review screen"
-}
-
 function SuggestionLine({ s }: { s: IdentitySuggestion }) {
   return (
     <span>
@@ -35,7 +22,7 @@ function SuggestionLine({ s }: { s: IdentitySuggestion }) {
   )
 }
 
-export function IdentityLinkGroup({ caseId, identityKey, canEdit = true }: { caseId: string; identityKey: string; canEdit?: boolean }) {
+export function IdentityLinkGroup({ caseId, identityKey, canEdit = true, origin = "review" }: { caseId: string; identityKey: string; canEdit?: boolean; origin?: LinkOrigin }) {
   const client = useQueryClient()
   const detail = useQuery({ queryKey: ["phone-identity", caseId, identityKey], queryFn: () => identitiesAPI.get(caseId, identityKey) })
   const sugg = useQuery({ queryKey: ["phone-identity-suggestions", caseId], queryFn: () => identitiesAPI.suggestions(caseId) })
@@ -88,6 +75,7 @@ export function IdentityLinkGroup({ caseId, identityKey, canEdit = true }: { cas
         identity_keys: [d.identity_key],
         ...(target === "new" ? { new_person_name: newName.trim() } : { dossier_id: target }),
         reasons_shown: shown ? shown.reasons.map((r) => ({ reason: r.reason })) : undefined,
+        origin,
         note: note.trim() || undefined,
         expected_revision: d.expected_revision,
       },
@@ -195,7 +183,7 @@ export function IdentityLinkGroup({ caseId, identityKey, canEdit = true }: { cas
             Note (optional)
             <input className="rounded border bg-background px-2 py-1" maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)} />
           </label>
-          <p className="text-xs text-muted-foreground">Saved under your name with the standard reason: {standardReason(shown)}.</p>
+          <p className="text-xs text-muted-foreground">Saved under your name with the standard reason: {standardReason(shown, origin)}.</p>
           <div>
             <Button size="sm" onClick={link} disabled={!target || (target === "new" && !newName.trim()) || busy}>Link</Button>
           </div>

@@ -51,7 +51,7 @@ function Panel({ caseId, sides, words, onClose }: { caseId: string; sides: strin
     setError(null)
     try {
       await identitiesAPI.decide(caseId, {
-        decision: "link_phone_identity", identity_keys: keys, reasons_shown: [{ reason: "number_change" }],
+        decision: "link_phone_identity", identity_keys: keys, reasons_shown: [{ reason: "number_change" }], origin: "number_switching",
         ...(chosen === "new" ? { new_person_name: newName.trim() } : { dossier_id: chosen }),
         note: note.trim() || undefined, expected_revision: pair.data?.expected_revision,
       })
