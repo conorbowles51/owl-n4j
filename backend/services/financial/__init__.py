@@ -2362,6 +2362,9 @@ __all__ += ["transactions_first_page"]
 # The Trends page's comparison, built from the saved ledger copy; aliased so the submodule stays reachable.
 from services.financial.trends_first_view import trends_view as trends_comparison
 __all__ += ["trends_comparison"]
+# The People & businesses list, built from the saved ledger copy; aliased so the submodule stays reachable.
+from services.financial.people_first_view import people_view as people_and_businesses_list
+__all__ += ["people_and_businesses_list"]
 # Manual changes recorded inside a financial save (a review-queue save names only the fields it changed).
 from services.financial.manual_change_kinds import record_review_edit, request_diff
 __all__ += ["record_review_edit", "request_diff"]
