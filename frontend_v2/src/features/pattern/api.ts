@@ -185,11 +185,27 @@ export interface Claim {
   window_end: string | null
   window_zone: string | null
   window_text: string | null
-  place: { lat?: number; lon?: number; radius_m?: number; text?: string } | null
-  counterpart: Record<string, unknown> | null
+  place: ClaimPlace | null
+  activity?: { tolerance_minutes?: number; [k: string]: unknown } | null
+  counterpart: ClaimCounterpart | null
   origin: "manual" | "ai_draft"
   ai_model: string | null
   missing_for_confirm: string[]
+  /** What the model wrote, from the claim's first version; it stays on show however a person edits the claim. */
+  as_drafted?: { kind: ClaimKind; window_text: string | null; place_text: string | null; counterpart_text: string | null; quote: string | null }
+}
+
+export interface ClaimPlace { lat?: number; lon?: number; radius_m?: number; text?: string; cluster_id?: number; label?: string }
+export type ClaimCounterpart = Subject | { identity_ids: string[]; label?: string }
+
+export interface PickedIdentity {
+  identity_id: string
+  identity_key: string
+  kind: string
+  value_display: string | null
+  names: { phone_label: string | null; name: string; basis: string }[]
+  person: { id: string; display_name: string | null } | null
+  event_count: number
 }
 
 export interface EvaluationItem {
@@ -393,10 +409,12 @@ export const patternAPI = {
   removePlace: (caseId: string, transactionId: string, reason: string) =>
     fetchAPI<{ decision_id: string }>(`${base(caseId)}/places/manual/remove`, { method: "POST",
       body: { target: { kind: "transaction", transaction_id: transactionId }, reason } as never }),
-  together: (caseId: string, a: Subject, b: Subject, start: string, end: string) =>
-    fetchAPI<TogetherResponse>(`${base(caseId)}/together`, { method: "POST", body: { subjects: [a, b], start, end } as never }),
+  together: (caseId: string, a: Subject, b: Subject, start: string, end: string, params?: { assumed_radius_m: number; max_speed_mps: number }) =>
+    fetchAPI<TogetherResponse>(`${base(caseId)}/together`, { method: "POST", body: { subjects: [a, b], start, end, ...(params ? { params } : {}) } as never }),
   togetherRun: (caseId: string, runId: string, cursor = 0) =>
     fetchAPI<TogetherResponse>(`${base(caseId)}/together/${runId}?cursor=${cursor}`),
+  identities: (caseId: string, q: string, limit = 20) =>
+    fetchAPI<{ items: PickedIdentity[]; total: number }>(`/api/phones/identities?case_id=${encodeURIComponent(caseId)}&q=${encodeURIComponent(q)}&limit=${limit}`),
   claims: (caseId: string) => fetchAPI<{ total: number; items: Claim[] }>(`${base(caseId)}/claims`),
   createClaim: (caseId: string, fields: Record<string, unknown>) =>
     fetchAPI<Claim>(`${base(caseId)}/claims`, { method: "POST", body: fields as never }),

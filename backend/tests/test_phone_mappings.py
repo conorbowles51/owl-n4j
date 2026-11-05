@@ -457,3 +457,38 @@ def test_read_times_and_device_event_times_take_their_meaning_from_the_record(ho
             assert calls == {P + "tm-instantmessage-timestamp": 1, P + "tm-party-dateread-owner": 1,
                              P + "tm-party-dateread-other": 1, P + "tm-deviceevent-starttime-noend": 1,
                              P + "tm-deviceevent-starttime": 1, P + "tm-deviceevent-endtime": 1}
+
+
+def test_a_timespan_compares_in_seconds():
+    """04 decision 51: ApplicationUsage ``ActiveTime > 0`` is a numeric predicate on a TimeSpan."""
+    from services.phone.mappings import rows as R
+    p = {"field": "ActiveTime", "op": "gt", "value": 0}
+    assert R._holds(p, {"fields": {"ActiveTime": ["00:00:01"]}}) is True
+    assert R._holds(p, {"fields": {"ActiveTime": ["1.00:00:00"]}}) is True
+    assert R._holds(p, {"fields": {"ActiveTime": ["00:00:00"]}}) is False
+    assert R._holds(p, {"fields": {}}) is False
+    assert R._holds({"field": "Level", "op": "lt", "value": 5}, {"fields": {"Level": ["not a time"]}}) is False
+
+
+def test_email_drafts_and_app_summaries_take_the_measured_rows():
+    """cb-statements-rest E: sent mail and app use count as phone use (04 section 3.2, M2)."""
+    from services.phone.mappings import rows as R
+    body = json.load(open(os.path.join(os.path.dirname(loader.__file__), "data", "activity_strength", "catalogue.json")))
+    rows = body["body"]["rows"]
+
+    def row(t, f, fields=None, **ctx):
+        m = R.match(rows, t, f, {"fields": fields or {}, "context": ctx})
+        return m and m["row_id"]
+
+    assert row("Email", "TimeStamp", {"Folder": ["[Gmail]/Sent Mail"], "Status": ["Sent"]}) == "email-sent"
+    assert row("Email", "TimeStamp", {"Folder": ["Enviados"], "Status": ["Sent"]}) == "email-sent"
+    assert row("Email", "TimeStamp", {"Folder": ["Outbox"]}) == "email-composed"
+    assert row("Email", "TimeStamp", {"Folder": ["[Gmail]/Drafts"]}) == "email-composed"
+    assert row("Email", "TimeStamp", {"Folder": ["INBOX"], "Status": ["Unread"]}) == "email-other-folders"
+    assert row("Email", "TimeStamp", {}) == "email-nofolder"
+    assert row("Email", "TimeStamp", {"Status": ["Default"]}) == "email-nofolder-default"
+    assert row("ApplicationUsage", "StartTime", {"ActiveTime": ["00:04:10"]}) == "appusage-summary-active"
+    assert row("ApplicationUsage", "StartTime", {"ActiveTime": ["00:00:00"]}) is None
+    assert row("ApplicationUsage", "LastLaunch", {"ActiveTime": ["00:04:10"]}) == "appusage-lastlaunch-active"
+    assert row("InstantMessage", "TimeStamp", {"Folder": ["Draft"]}, direction="unknown") == "im-draft"
+    assert row("InstantMessage", "TimeStamp", {"Folder": ["Draft"]}, direction="outgoing") == "im-out-noplatform"

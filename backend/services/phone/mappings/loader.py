@@ -247,7 +247,7 @@ def registry_problems(conn, m, requirements=True) -> list:
                 if not rows:
                     problems.append("%s: %s.%s is not in the registry" % (r["row_id"], ftype, p["field"]))
                     continue
-                if p["op"] in ("lt", "le", "gt", "ge") and not any(vt in NUMERIC_TYPES for vt, _ in rows):
+                if p["op"] in ("lt", "le", "gt", "ge") and not any(vt in NUMERIC_TYPES + ("TimeSpan",) for vt, _ in rows):
                     problems.append("%s: %s on %s.%s, which is not numeric" % (r["row_id"], p["op"], r["type"], p["field"]))
                 if p["op"] in ("eq", "in") and all(ns for _, ns in rows):
                     sets = [vt for vt, _ in rows]

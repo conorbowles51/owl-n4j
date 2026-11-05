@@ -89,7 +89,7 @@ def registry(conn, case_id, *, q="", phone=None, linked=None, cursor=0, limit=50
         firsts = [v[1] for v in per.values() if v[1]]
         lasts = [v[2] for v in per.values() if v[2]]
         items.append({
-            "identity_key": r.identity_key, "kind": r.kind, "subkind": r.subkind, "value_display": r.value_display,
+            "identity_id": str(r.identity_id), "identity_key": r.identity_key, "kind": r.kind, "subkind": r.subkind, "value_display": r.value_display,
             "names": [{"phone_label": labels.get(str(n.extraction_id)), "extraction_id": str(n.extraction_id),
                        "name": n.name, "basis": n.basis} for n in names.get(r.identity_id, []) if n.is_phone_name],
             "person": {"id": str(r.person_id), "display_name": r.person_name} if r.person_id else None,

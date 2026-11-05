@@ -32,7 +32,7 @@ def ts(ordinal, body_path, field, mt, text_value="2023-03-14T15:07:12-04:00", of
             "off": -240 if offset == "explicit" else None, "ft": None, "lw": wall}
 
 
-def message(top, *, platform=None, deleted="Intact", confidence="High", other_reads=False, source=None):
+def message(top, *, platform=None, deleted="Intact", confidence="High", other_reads=False, source=None, folder=None):
     """An outgoing message: From party is the owner. Records top..top+2."""
     f = [fld("TimeStamp", ("TimeStamp", "2023-03-14T15:07:12-04:00")), refs("From", top + 1, kind="modelField"),
          refs("To", top + 2)]
@@ -40,6 +40,8 @@ def message(top, *, platform=None, deleted="Intact", confidence="High", other_re
         f.append(fld("Platform", ("Platform", platform)))
     if source:
         f.append(fld("Source", ("String", source)))
+    if folder:
+        f.append(fld("Folder", ("String", folder)))
     msg = model("InstantMessage", f, deleted_state=deleted, decoding_confidence=confidence)
     sender = model("Party", [fld("Identifier", ("String", OWNER)), fld("Role", ("PartyRole", "From")),
                              fld("IsPhoneOwner", ("Boolean", "True"))])
@@ -531,3 +533,62 @@ def test_a_location_with_no_affiliation_from_a_source_known_to_sync_is_not_known
             assert ev[("Location", "TimeStamp", 2)].attribution_flags == []  # the device's own location store
             unknown = ev[("Location", "TimeStamp", 4)]  # an affiliation of Unknown keeps its own row
             assert unknown.attribution_mapping_rows == ["attribution/catalogue/attr-location-unknown"]
+
+
+def _email(top, folder=None, status=None):
+    f = [fld("TimeStamp", ("TimeStamp", "2023-03-14T15:07:12-04:00"))]
+    if folder is not None:
+        f.append(fld("Folder", ("String", folder)))
+    if status is not None:
+        f.append(fld("Status", ("MessageStatus", status)))
+    return [(top, None, top, model("Email", f))], [ts(top, "0.0", "TimeStamp", "Email")]
+
+
+def _app_usage(top, active):
+    f = [fld("StartTime", ("TimeStamp", "2023-03-14T15:00:00-04:00")), fld("EndTime", ("TimeStamp", "2023-03-14T16:00:00-04:00")),
+         fld("ActiveTime", ("TimeSpan", active))]
+    return [(top, None, top, model("ApplicationUsage", f))], [ts(top, "0.0", "StartTime", "ApplicationUsage"),
+                                                              ts(top, "1.0", "EndTime", "ApplicationUsage")]
+
+
+@needs_template
+def test_sent_mail_and_app_use_count_as_use_and_mail_in_the_inbox_does_not(hooks):
+    """04 sections 3.2 and M2. Fails on the old code: every Email and ApplicationUsage fell to default_unknown."""
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = phone(c, case, [_email(0, "[Gmail]/Sent Mail", "Sent"), _email(1, "INBOX", "Unread"), _email(2, "Outbox"),
+                                  _email(3), _email(4, "[Gmail]/Drafts"), _app_usage(5, "00:12:40"), _app_usage(6, "00:00:00")])
+        run(engine, ext)
+        with engine.connect() as c:
+            ev = events(c, ext)
+        got = {k[2]: (v.activity_class, v.actor, v.strength, v.activity_mapping_row.rsplit("/", 1)[1] if v.activity_mapping_row else None)
+               for k, v in ev.items()}
+    assert got[0] == ("interaction", "owner", "strong", "email-sent")
+    assert got[1] == ("passive", "owner", "none", "email-other-folders")
+    assert got[2] == ("interaction", "owner", "strong", "email-composed")
+    assert got[3][0] == "unknown" and got[3][3] == "email-nofolder"
+    assert got[4] == ("interaction", "owner", "none", "email-composed")  # a draft's time is not established
+    assert got[5] == ("interaction", "owner", "weak", "appusage-summary-active")  # a summary period, so weak
+    assert got[6] == ("unknown", "unknown", "none", None)
+    assert len(ev) == 7  # EndTime is the end of the StartTime event, not an event of its own
+
+
+@needs_template
+def test_a_message_draft_is_composed_by_the_owner_at_a_time_not_established(hooks):
+    """04 section 3.2 Folder Draft. Fails on the old code: a draft read as a strong sent message."""
+    setup(hooks)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext = phone(c, case, [message(0, platform="Mobile"), message(3, platform="Mobile", folder="Draft")])
+        run(engine, ext)
+        with engine.connect() as c:
+            ev = events(c, ext)
+        sent, draft = ev[("InstantMessage", "TimeStamp", 0)], ev[("InstantMessage", "TimeStamp", 3)]
+        assert (sent.activity_class, sent.actor, sent.strength) == ("interaction", "owner", "strong")
+        assert (draft.activity_class, draft.actor, draft.strength) == ("interaction", "owner", "none")
+        assert draft.time_semantics == "unknown"

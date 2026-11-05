@@ -1,13 +1,13 @@
 {
  "kind": "timestamp_meaning",
  "name": "catalogue",
- "version": 1,
+ "version": 2,
  "status": "applied_unconfirmed",
  "origin": "ai_draft",
  "review": {
   "reviewed_by": null,
   "reviewed_on": null,
-  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row.",
+  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row. Version 2 (04 decision 51): M2 shows ApplicationUsage periods are whole hours, so they are summaries; a draft's time is not established as creation or last edit. A build job wrote these rows; no person has reviewed them yet.",
   "registry_requirements": []
  },
  "body": {
@@ -103,12 +103,12 @@
     "predicates": [],
     "context": [],
     "outputs": {
-     "semantics": "unknown",
-     "meaning": "End of the app usage period (not established whether this is a single use or a summary period)"
+     "semantics": "aggregate_bucket",
+     "meaning": "End of a usage summary period; the use happened somewhere in the period"
     },
-    "basis": "not_established",
-    "reasoning": "Not settled by any measurement or document read so far; shown, never used to support or contradict a claim.",
-    "would_change": "M4 shows EndTime minus StartTime is a constant period (then aggregate_bucket)."
+    "basis": "corpus_measured",
+    "reasoning": "M2 on the 14 server reports (measurements/m2-enums.json): EndTime minus StartTime is a whole number of hours on all 2,521 records with both, one hour on 2,477.",
+    "would_change": "A Source whose periods are not whole hours."
    },
    {
     "row_id": "tm-applicationusage-lastlaunch",
@@ -145,12 +145,12 @@
     "predicates": [],
     "context": [],
     "outputs": {
-     "semantics": "unknown",
-     "meaning": "Start of the app usage period (not established whether this is a single use or a summary period)"
+     "semantics": "aggregate_bucket",
+     "meaning": "Start of a usage summary period; the use happened somewhere in the period"
     },
-    "basis": "not_established",
-    "reasoning": "Not settled by any measurement or document read so far; shown, never used to support or contradict a claim.",
-    "would_change": "M4 shows EndTime minus StartTime is a constant period (then aggregate_bucket)."
+    "basis": "corpus_measured",
+    "reasoning": "M2 on the 14 server reports (measurements/m2-enums.json): EndTime minus StartTime is a whole number of hours on all 2,521 records with both, one hour on 2,477.",
+    "would_change": "A Source whose periods are not whole hours."
    },
    {
     "row_id": "tm-appsusagelog-endtime",
@@ -1340,6 +1340,51 @@
     "basis": "corpus_measured",
     "reasoning": "M1: EndTime is absent on part of the starts, which are then single moments.",
     "would_change": "M1 shows a start without an end is a cut interval."
+   },
+   {
+    "row_id": "tm-instantmessage-timestamp-draft",
+    "type": "InstantMessage",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Folder",
+      "op": "in",
+      "value": [
+       "Draft",
+       "Drafts"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "A draft's time; whether it was first written or last edited then is not established"
+    },
+    "basis": "not_established",
+    "reasoning": "04 section 3.2: no field separates creation from last edit, and M2's value sets do not settle it.",
+    "would_change": "A Source documenting which time a draft stores."
+   },
+   {
+    "row_id": "tm-email-timestamp-draft",
+    "type": "Email",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Folder",
+      "op": "contains_any",
+      "value": [
+       "draft"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "semantics": "unknown",
+     "meaning": "A draft's time; whether it was first written or last edited then is not established"
+    },
+    "basis": "not_established",
+    "reasoning": "As for a message draft: no field separates creation from last edit.",
+    "would_change": "A Source documenting which time a draft stores."
    }
   ]
  }

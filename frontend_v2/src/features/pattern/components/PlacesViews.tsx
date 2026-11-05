@@ -5,7 +5,7 @@ import { PLACE_LABEL } from "@/features/map/lib/place-label"
 import { placeName, positionFeatures, routineAreas, togetherLines, trajectory, type PlacePoint } from "@/features/map/lib/places-geo"
 import { patternAPI, type PlaceObservation, type RoutinePlaceRow, type Subject, type SubjectList, type TogetherResponse } from "../api"
 import { errorWords, usualLast } from "../lanes-lib"
-import { evidenceWords, towerMccWords } from "../together-words"
+import { allowanceWords, evidenceWords, towerMccWords } from "../together-words"
 import { KeepResult } from "./CollectBar"
 
 // The map code loads only when a map view opens (the Patterns route's other views and the layouts never pull it).
@@ -218,6 +218,9 @@ export function TogetherView({ caseId, subject, list }: { caseId: string; subjec
     return { start: addDays(end, -6), end }
   }
   const [win, setWin] = useState(defaultWindow)
+  const [radius, setRadius] = useState("1000")
+  const [kmh, setKmh] = useState("144")
+  const allowed = Number(radius) > 0 && Number(radius) <= 100000 && Number(kmh) > 0 && Number(kmh) <= 1440
   const [res, setRes] = useState<TogetherResponse | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -232,7 +235,8 @@ export function TogetherView({ caseId, subject, list }: { caseId: string; subjec
     setErr(null); setRes(null)
     setBusy("Comparing pairs of points…")
     try {
-      let r = await patternAPI.together(caseId, subject, subjectOf(other), `${win.start}T00:00:00Z`, `${addDays(win.end, 1)}T00:00:00Z`)
+      let r = await patternAPI.together(caseId, subject, subjectOf(other), `${win.start}T00:00:00Z`, `${addDays(win.end, 1)}T00:00:00Z`,
+        { assumed_radius_m: Number(radius), max_speed_mps: Math.round(Number(kmh) / 3.6 * 1000) / 1000 })
       const runId = r.run_id
       if (runId && r.status !== "done") {
         setBusy(`Comparing ${(r.estimated_pairs || 0).toLocaleString()} pairs of points…`)
@@ -261,14 +265,22 @@ export function TogetherView({ caseId, subject, list }: { caseId: string; subjec
         </select>
       </div>
       <WindowPicker idPrefix="together" start={win.start} end={win.end} onChange={(s, e) => setWin({ start: s, end: e })} />
-      <div><Button size="sm" onClick={run} disabled={!other || !!busy}>Compare {win.start} to {win.end}</Button></div>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col">Radius to assume for a position with no accuracy (m)
+          <input type="number" min={1} max={100000} className="w-36 rounded border bg-background px-2 py-1" value={radius} onChange={(e) => setRadius(e.target.value)} /></label>
+        <label className="flex flex-col">Fastest travel to allow (km/h)
+          <input type="number" min={1} max={1440} className="w-36 rounded border bg-background px-2 py-1" value={kmh} onChange={(e) => setKmh(e.target.value)} /></label>
+        <Button size="sm" variant="outline" onClick={() => setKmh("900")}>Allow for air travel (900 km/h)</Button>
+      </div>
+      {!allowed && <p role="alert" className="text-destructive">The radius is 1 m to 100,000 m and the speed 1 to 1,440 km/h.</p>}
+      <div><Button size="sm" onClick={run} disabled={!other || !!busy || !allowed}>Compare {win.start} to {win.end}</Button></div>
       {options.length === 0 && <p>Together needs a second phone or person in the case.</p>}
       {busy && <p aria-live="polite">{busy}</p>}
       {err && <p role="alert" className="text-destructive">{err}</p>}
       {res && (
         <>
           <p>{(res.total ?? c.pairs ?? 0).toLocaleString()} pairs compared: {(c.compatible || 0).toLocaleString()} compatible, {(c.separated || 0).toLocaleString()} separated, {(c.undetermined || 0).toLocaleString()} undetermined.
-            A position with no accuracy uses an assumed radius of 1,000 m and is marked. A broad overlap is never called together.</p>
+            {" "}{allowanceWords(res.params).join(" ")} A broad overlap is never called together.</p>
           {evidenceWords(c).length > 0 && <ul aria-label="Kinds of evidence">{evidenceWords(c).map((w) => <li key={w}>{w}</li>)}</ul>}
           <PlacesMap layers={{ pairs: pairs.lines }} />
           <p className="text-xs text-muted-foreground">

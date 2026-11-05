@@ -38,6 +38,7 @@ all-models figure above.
 | `catalogue-14-phones.json` | Per phone: `model_types` {type: count, nested included}; `catalog` [[type, field, field kind, {value data type: count}]]; `enums` {named set: values, at most 50 kept per set} | `scripts/catalog_remote.py`, run on the server at lowest priority |
 | `catalogue-local-samples.json` | The same for local C3, C9 and C8 (C8 from the `.xmlModel` section) | `scripts/catalog.py` |
 | `v1-ingest-reconciliation.json` | v1's per-phone `owl_ingest_report.json`: ingest duration in minutes and v1's per-type reconciliation (XML count, persisted count, status). Report key, case id and report name removed | copied from the server |
+| `m2-enums.json` | M2 (04 section 13): per report, the guarded value sets the mapping rows depend on | `scripts/pol_m2_enums.py`, then `scripts/pol_m2_commit.py` |
 | `scripts/` | Every measurement script used by the research and the specifications. Paths and identifiers are replaced by placeholders such as `<C3_REPORT_PATH>`, `<CASE_A_ID>`, `<REPO>`, `<SCRATCH>`; the real paths come from the reference corpus manifest built in unit 01-0.1, which stays on the server in `/mnt/owl-data/cellebrite-corpus/manifest.json` and is never committed | research session and spec writers |
 | `scripts/s05/` | Spec 05's measurements (M1 to M16, X1 to X11): counts and salted hashes only | spec 05 |
 | `scripts/spec02/` | Spec 02's registry, coordinate, fold and nesting checks; `nest_c*.txt` are nesting counts per sample | spec 02 |

@@ -1,13 +1,13 @@
 {
  "kind": "activity_strength",
  "name": "catalogue",
- "version": 2,
+ "version": 3,
  "status": "applied_unconfirmed",
  "origin": "ai_draft",
  "review": {
   "reviewed_by": null,
   "reviewed_on": null,
-  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row. Version 2 (04 decision 22): sensor records from a wearable are recorded by another device (3.2), from M9.",
+  "basis": "Spec 04 sections 2.3, 3.2 and 4.2; DeviceEvent values from cb-ground's M1 on the 14 server reports. Written by a build job: applied at once and shown as not yet confirmed until a person confirms each row. Version 2 (04 decision 22): sensor records from a wearable are recorded by another device (3.2), from M9. Version 3 (04 decision 51): Email by Status and Folder, a message Draft whose direction is unknown, and ApplicationUsage with ActiveTime above zero, from M2 on the 14 server reports. A build job wrote these rows; no person has reviewed them yet.",
   "registry_requirements": []
  },
  "body": {
@@ -1651,6 +1651,194 @@
     "basis": "not_established",
     "reasoning": "Meaning per Source is not established.",
     "would_change": "A measurement or source shows the event happens without the stated actor."
+   },
+   {
+    "row_id": "email-sent",
+    "type": "Email",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Status",
+      "op": "in",
+      "value": [
+       "Sent",
+       "Unsent"
+      ]
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "M2 on the 14 server reports (measurements/m2-enums.json): all 47 Emails with Status Sent or Unsent have the owner as the From party, whatever the folder is called. Sending mail needs a person.",
+    "would_change": "Scheduled or automatic sending shown by Source."
+   },
+   {
+    "row_id": "email-composed",
+    "type": "Email",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Folder",
+      "op": "contains_any",
+      "value": [
+       "outbox",
+       "draft"
+      ]
+     },
+     {
+      "field": "Status",
+      "op": "absent"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "M2 on the 14 server reports (measurements/m2-enums.json): 10 of the 11 Emails in an Outbox or draft folder with no Status have the owner as the From party; composing mail needs a person.",
+    "would_change": "An Outbox filled by an automatic reply."
+   },
+   {
+    "row_id": "email-other-folders",
+    "type": "Email",
+    "field": "TimeStamp",
+    "predicates": [],
+    "context": [],
+    "outputs": {
+     "class": "passive",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "field_name",
+    "reasoning": "Mail in any other folder arrives without action (04 section 3.2).",
+    "would_change": "A mail client that files sent mail under another name with no Status."
+   },
+   {
+    "row_id": "email-nofolder",
+    "type": "Email",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Folder",
+      "op": "absent"
+     },
+     {
+      "field": "Status",
+      "op": "absent"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "unknown",
+     "actor": "unknown",
+     "physical": false
+    },
+    "basis": "not_established",
+    "reasoning": "M2 on the 14 server reports (measurements/m2-enums.json): 79 Emails with neither Folder nor Status; whether the owner sent them is not established.",
+    "would_change": "A Source that states direction."
+   },
+   {
+    "row_id": "email-nofolder-default",
+    "type": "Email",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Folder",
+      "op": "absent"
+     },
+     {
+      "field": "Status",
+      "op": "eq",
+      "value": "Default"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "unknown",
+     "actor": "unknown",
+     "physical": false
+    },
+    "basis": "not_established",
+    "reasoning": "M2 on the 14 server reports (measurements/m2-enums.json): 13 Emails from Spotlight Knowledge with no Folder and Status Default; whether the owner sent them is not established.",
+    "would_change": "A Source that states direction."
+   },
+   {
+    "row_id": "im-draft",
+    "type": "InstantMessage",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Folder",
+      "op": "in",
+      "value": [
+       "Draft",
+       "Drafts"
+      ]
+     }
+    ],
+    "context": [
+     {
+      "name": "direction",
+      "op": "eq",
+      "value": "unknown"
+     }
+    ],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "M2 on the 14 server reports (measurements/m2-enums.json): 177 messages in Draft or Drafts. Composing needs a person. A draft with a stated direction takes the direction rows, with the same class and actor.",
+    "would_change": "Evidence of drafts written by an app."
+   },
+   {
+    "row_id": "appusage-summary-active",
+    "type": "ApplicationUsage",
+    "field": "StartTime",
+    "predicates": [
+     {
+      "field": "ActiveTime",
+      "op": "gt",
+      "value": 0
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "M2 on the 14 server reports (measurements/m2-enums.json): every ApplicationUsage period is a whole number of hours (2,477 of 2,521 are one hour), so it is a usage summary; active time above zero means the app was in use during it.",
+    "would_change": "A Source whose active time counts background work."
+   },
+   {
+    "row_id": "appusage-lastlaunch-active",
+    "type": "ApplicationUsage",
+    "field": "LastLaunch",
+    "predicates": [
+     {
+      "field": "ActiveTime",
+      "op": "gt",
+      "value": 0
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "interaction",
+     "actor": "owner",
+     "physical": false
+    },
+    "basis": "corpus_measured",
+    "reasoning": "M2 on the 14 server reports (measurements/m2-enums.json): 27 records carry LastLaunch and active time above zero; the app was opened and used.",
+    "would_change": "A Source whose active time counts background work."
    }
   ]
  }

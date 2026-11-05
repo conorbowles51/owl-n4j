@@ -35,6 +35,15 @@ export function evidenceWords(counts: Record<string, number> | undefined): strin
   return out
 }
 
+/** The allowances a Together run used, from the run itself; a run that does not state one says nothing about it. */
+export function allowanceWords(params: Record<string, unknown> | undefined): string[] {
+  const radius = Number(params?.assumed_radius_m), speed = Number(params?.max_speed_mps)
+  const out: string[] = []
+  if (radius > 0) out.push(`A position with no accuracy uses an assumed radius of ${radius.toLocaleString("en-US")} m and is marked.`)
+  if (speed > 0) out.push(`Two positions are separated only if travelling between them would take more than ${(Math.round(speed * 36) / 10).toLocaleString("en-US")} km/h.`)
+  return out
+}
+
 /** Unplaced cell towers whose country code came from the SIM, said once. */
 export function towerMccWords(towers: { mcc_inferred?: boolean }[], words?: string | null): string | null {
   const n = towers.filter((t) => t.mcc_inferred).length

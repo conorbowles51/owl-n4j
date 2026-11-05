@@ -155,6 +155,7 @@ def test_identity_picker_finds_by_digits_and_by_a_phone_name(api):
     c = api["client"]
     by_digits = c.get("/api/phones/identities", params={"case_id": api["case"], "q": "2025550143"}).json()
     assert [i["identity_key"] for i in by_digits["items"]] == [ANA] and by_digits["total"] == 1
+    assert by_digits["items"][0]["identity_id"]  # a statement names the other side by this id (claims.identity_ids)
     assert by_digits["items"][0]["names"][0]["name"] == "Maria Lopez"
     by_name = c.get("/api/phones/identities", params={"case_id": api["case"], "q": "maria"}).json()
     assert by_name["total"] == 1

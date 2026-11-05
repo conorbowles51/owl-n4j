@@ -4,8 +4,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { phoneLinkHref } from "@/features/phones/phone-links"
-import { patternAPI, type Claim, type ClaimKind, type Evaluation, type EvaluationItem, type GroupEvents, type SavedCheck, type Subject } from "../api"
+import { patternAPI, type Claim, type Evaluation, type EvaluationItem, type GroupEvents, type SavedCheck, type Subject, type SubjectList } from "../api"
+import { BLANK_INPUT, changedFields, counterpartWords, fieldsFromInput, inputFromClaim, KIND_WORDS, MISSING_WORDS, placeWords, toleranceWords, type ClaimInput } from "../claim-form-lib"
 import { errorWords } from "../lanes-lib"
+import { ClaimFieldsEditor } from "./ClaimFieldsEditor"
 import { CollectBar } from "./CollectBar"
 import { DraftPanel } from "./DraftPanel"
 
@@ -16,11 +18,6 @@ import { DraftPanel } from "./DraftPanel"
  * group of context events lists its events on request). "This item is wrong" marks
  * an item with a typed reason; the computed outcome never changes by hand. A stale result shows Check again.
  */
-const KIND_WORDS: Record<ClaimKind, string> = {
-  inactive: "Not using the phone (for example asleep)", active: "Using the phone", at_place: "At a place",
-  not_at_place: "Not at a place", with_subject: "With someone", apart_from_subject: "Apart from someone",
-  no_contact: "No contact with someone", contact: "In contact with someone",
-}
 const GROUPS: { role: EvaluationItem["role"]; title: string }[] = [
   { role: "supporting", title: "Supports" }, { role: "contradicting", title: "Undercuts" },
   { role: "gap", title: "Gaps" }, { role: "context", title: "Context" },
@@ -49,6 +46,8 @@ export function StatementCheckPanel({ caseId, subject, saved }: { caseId: string
   const [ev, setEv] = useState<Evaluation | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [editing, setEditing] = useState<{ id: string; focus?: string } | null>(null)
+  const list = useQuery({ queryKey: ["pattern-subjects", caseId], queryFn: () => patternAPI.subjects(caseId) })
 
   useEffect(() => {
     let live = true
@@ -80,16 +79,27 @@ export function StatementCheckPanel({ caseId, subject, saved }: { caseId: string
         <h3 className="font-medium">Statements for this phone or person ({mine.length.toLocaleString()})</h3>
         <ul className="flex flex-col gap-1">
           {mine.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-center gap-2">
-              <button className={`underline-offset-2 hover:underline ${claim?.id === c.id ? "font-medium" : ""}`} onClick={() => choose(c.id)}>
-                {KIND_WORDS[c.kind]}{c.window_text ? `: "${c.window_text}"` : ""}
-              </button>
-              <span className="text-xs text-muted-foreground">{c.status_words}</span>
-              {c.status === "draft" && c.missing_for_confirm.length === 0 && (
-                <Button size="sm" variant="outline" disabled={!!busy} onClick={() => act("Confirming…", () => patternAPI.confirmClaim(caseId, c.id, c.version))}>Confirm</Button>
-              )}
-              {c.status === "draft" && c.missing_for_confirm.length > 0 && (
-                <span className="text-xs">Settle before confirming: {c.missing_for_confirm.join(", ").replace(/_/g, " ")}</span>
+            <li key={c.id} className="flex flex-col gap-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <button className={`underline-offset-2 hover:underline ${claim?.id === c.id ? "font-medium" : ""}`} onClick={() => choose(c.id)}>
+                  {KIND_WORDS[c.kind]}{c.window_text ? `: "${c.window_text}"` : ""}
+                </button>
+                <span className="text-xs text-muted-foreground">{c.status_words}</span>
+                {c.status === "draft" && c.missing_for_confirm.length === 0 && (
+                  <Button size="sm" variant="outline" disabled={!!busy} onClick={() => act("Confirming…", () => patternAPI.confirmClaim(caseId, c.id, c.version))}>Confirm</Button>
+                )}
+                {c.status === "draft" && c.missing_for_confirm.length > 0 && (
+                  <span className="text-xs">Settle before confirming: {c.missing_for_confirm.map((f) => MISSING_WORDS[f] ?? f.replace(/_/g, " ")).join(", ")}.</span>
+                )}
+                {c.status === "draft" && c.missing_for_confirm.length > 0
+                  ? <Button size="sm" variant="outline" onClick={() => { choose(c.id); setEditing({ id: c.id, focus: c.missing_for_confirm[0] }) }}>Fill these in</Button>
+                  : <button className="text-xs underline" onClick={() => { choose(c.id); setEditing({ id: c.id }) }}>Edit</button>}
+              </div>
+              <ClaimFacts claim={c} list={list.data} />
+              {editing?.id === c.id && (
+                <ClaimEditor key={`${c.id}:${c.version}`} caseId={caseId} subject={subject} claim={c} focus={editing.focus} onClose={() => setEditing(null)}
+                  onSaved={() => { setErr(null); setEditing(null); void qc.invalidateQueries({ queryKey: ["pattern-claims", caseId] }) }}
+                  onRefused={(e) => { setErr(errorWords(e)); void qc.invalidateQueries({ queryKey: ["pattern-claims", caseId] }) }} />
               )}
             </li>
           ))}
@@ -219,42 +229,61 @@ function GroupEventsList({ caseId, claimId, evaluationId, item }: { caseId: stri
   )
 }
 
+/** What is settled on a statement, and what the model wrote: its words stay on show after a person edits the claim. */
+function ClaimFacts({ claim, list }: { claim: Claim; list?: SubjectList }) {
+  const facts = [
+    claim.window_start && claim.window_end ? `${utc(claim.window_start)} to ${utc(claim.window_end)}` : null,
+    toleranceWords(claim),
+    placeWords(claim.place),
+    counterpartWords(claim.counterpart, list),
+  ].filter(Boolean)
+  const d = claim.as_drafted
+  const drafted = d && [d.quote ? `"${d.quote}"` : null, d.window_text ? `time "${d.window_text}"` : null,
+    d.place_text ? `place "${d.place_text}"` : null, d.counterpart_text ? `other person "${d.counterpart_text}"` : null].filter(Boolean)
+  return (
+    <>
+      {facts.length > 0 && <p className="text-xs text-muted-foreground">{facts.join("; ")}.</p>}
+      {drafted && drafted.length > 0 && <p className="text-xs text-muted-foreground">Drafted by {claim.ai_model || "a model"} as: {KIND_WORDS[d.kind]}; {drafted.join("; ")}.</p>}
+    </>
+  )
+}
+
+/** Edits a statement through PATCH, naming the version it was opened on: a change by someone else since is refused
+ * (409), and the row then reopens on their version. Saving returns a confirmed statement to not confirmed. */
+function ClaimEditor({ caseId, subject, claim, focus, onClose, onSaved, onRefused }: {
+  caseId: string; subject: Subject; claim: Claim; focus?: string; onClose: () => void; onSaved: () => void; onRefused: (e: unknown) => void
+}) {
+  const [value, setValue] = useState<ClaimInput>(() => inputFromClaim(claim))
+  const [saving, setSaving] = useState(false)
+  async function save() {
+    const fields = changedFields(claim, value)
+    if (!Object.keys(fields).length) { onClose(); return }
+    setSaving(true)
+    try { await patternAPI.editClaim(caseId, claim.id, fields, claim.version); onSaved() } catch (e) { onRefused(e) } finally { setSaving(false) }
+  }
+  return (
+    <div className="rounded border p-2">
+      <ClaimFieldsEditor caseId={caseId} subject={subject} value={value} onChange={setValue} drafted={claim.as_drafted} focus={focus} />
+      {claim.status === "confirmed" && <p className="mt-2 text-xs">Saving returns this statement to not confirmed, because the confirmation was of the earlier words.</p>}
+      <div className="mt-2 flex gap-2">
+        <Button size="sm" disabled={saving} onClick={save}>Save changes</Button>
+        <Button size="sm" variant="outline" disabled={saving} onClick={onClose}>Cancel</Button>
+      </div>
+    </div>
+  )
+}
+
 function ClaimForm({ caseId, subject, onMade }: { caseId: string; subject: Subject; onMade: (c: Claim) => void }) {
-  const [kind, setKind] = useState<ClaimKind>("inactive")
-  const [start, setStart] = useState("")
-  const [end, setEnd] = useState("")
-  const [zone, setZone] = useState("UTC")
-  const [words, setWords] = useState("")
-  const [place, setPlace] = useState({ lat: "", lon: "", radius_m: "100" })
+  const [value, setValue] = useState<ClaimInput>(BLANK_INPUT)
   const [err, setErr] = useState<string | null>(null)
   async function save() {
     setErr(null)
-    const toIso = (v: string) => v ? new Date(`${v}:00Z`).toISOString() : undefined
-    const fields: Record<string, unknown> = { kind, subject, window_text: words || undefined, window_zone: zone,
-      window_start: toIso(start), window_end: toIso(end) }
-    if (kind === "at_place" || kind === "not_at_place") fields.place = place.lat && place.lon ? { lat: Number(place.lat), lon: Number(place.lon), radius_m: Number(place.radius_m) } : { text: words }
-    try { onMade(await patternAPI.createClaim(caseId, fields)) } catch (e) { setErr(errorWords(e)) }
+    try { onMade(await patternAPI.createClaim(caseId, { ...fieldsFromInput(value), subject })); setValue(BLANK_INPUT) } catch (e) { setErr(errorWords(e)) }
   }
   return (
     <details className="rounded border p-2">
       <summary className="cursor-pointer font-medium">Enter a statement</summary>
-      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
-        <label className="flex flex-col">What the statement says
-          <select value={kind} onChange={(e) => setKind(e.target.value as ClaimKind)} className="rounded border bg-background px-2 py-1">
-            {Object.entries(KIND_WORDS).map(([k, w]) => <option key={k} value={k}>{w}</option>)}
-          </select></label>
-        <label className="flex flex-col">The statement's own words<input value={words} onChange={(e) => setWords(e.target.value)} className="rounded border bg-background px-2 py-1" /></label>
-        <label className="flex flex-col">From (UTC)<input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} className="rounded border bg-background px-2 py-1" /></label>
-        <label className="flex flex-col">Until (UTC)<input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} className="rounded border bg-background px-2 py-1" /></label>
-        <label className="flex flex-col">Zone the statement uses<input value={zone} onChange={(e) => setZone(e.target.value)} className="rounded border bg-background px-2 py-1" /></label>
-        {(kind === "at_place" || kind === "not_at_place") && (
-          <div className="flex gap-1">
-            <input aria-label="Latitude" placeholder="Latitude" value={place.lat} onChange={(e) => setPlace({ ...place, lat: e.target.value })} className="w-24 rounded border bg-background px-2 py-1" />
-            <input aria-label="Longitude" placeholder="Longitude" value={place.lon} onChange={(e) => setPlace({ ...place, lon: e.target.value })} className="w-24 rounded border bg-background px-2 py-1" />
-            <input aria-label="Radius in metres" value={place.radius_m} onChange={(e) => setPlace({ ...place, radius_m: e.target.value })} className="w-20 rounded border bg-background px-2 py-1" />
-          </div>
-        )}
-      </div>
+      <ClaimFieldsEditor caseId={caseId} subject={subject} value={value} onChange={setValue} />
       <Button size="sm" className="mt-2" onClick={save}>Save as not confirmed</Button>
       {err && <p role="alert" className="text-destructive">{err}</p>}
     </details>

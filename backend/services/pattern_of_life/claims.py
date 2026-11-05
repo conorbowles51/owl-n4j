@@ -177,11 +177,29 @@ def get(conn, case_id, claim_id, raw=False):
     row = dict(row)
     if raw:
         return row
-    return view(row)
+    return view(row, _first_versions(conn, [claim_id]).get(str(claim_id)) if row["origin"] == "ai_draft" else None)
 
 
-def view(row) -> dict:
+def _as_drafted(snapshot) -> dict:
+    """What the model wrote, from the claim's first version: it stays on show however a person edits the claim."""
+    anchor = snapshot.get("source_anchor") or {}
+    place = snapshot.get("place") or {}
+    return {"kind": snapshot.get("kind"), "window_text": snapshot.get("window_text"), "place_text": place.get("text"),
+            "counterpart_text": anchor.get("counterpart_text"), "quote": anchor.get("quote")}
+
+
+def _first_versions(conn, claim_ids) -> dict:
+    if not claim_ids:
+        return {}
+    return {str(r.claim_id): r.snapshot for r in conn.execute(text(
+        "SELECT DISTINCT ON (claim_id) claim_id, snapshot FROM pol_claim_revision "
+        "WHERE claim_id = ANY(CAST(:i AS uuid[])) ORDER BY claim_id, version"), {"i": [str(x) for x in claim_ids]})}
+
+
+def view(row, first_version=None) -> dict:
     out = dict(row)
+    if first_version is not None:
+        out["as_drafted"] = _as_drafted(first_version)
     out["status_words"] = STATUS_WORDS[row["status"]]
     if row["origin"] == "ai_draft" and row["status"] == "draft":
         out["status_words"] = "Drafted by %s, not confirmed" % (row.get("ai_model") or "a model")
@@ -191,9 +209,11 @@ def view(row) -> dict:
 
 def list_claims(conn, case_id, status=None) -> dict:
     q = "SELECT * FROM pol_claim WHERE case_id = :c" + (" AND status = :s" if status else "")
-    rows = [view(dict(r)) for r in conn.execute(text(q + " ORDER BY created_at, id"),
-                                                 {"c": case_id, "s": status}).mappings()]
-    return {"total": len(rows), "items": rows}
+    rows = [dict(r) for r in conn.execute(text(q + " ORDER BY created_at, id"),
+                                          {"c": case_id, "s": status}).mappings()]
+    first = _first_versions(conn, [r["id"] for r in rows if r["origin"] == "ai_draft"])
+    items = [view(r, first.get(str(r["id"]))) for r in rows]
+    return {"total": len(items), "items": items}
 
 
 def _expect(row, expected_version):

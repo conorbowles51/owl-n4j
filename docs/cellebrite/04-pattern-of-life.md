@@ -302,7 +302,7 @@ per plan 6.5):
 | DeviceEvent.StartTime / EndTime | interval_start / interval_end; event_instant where EndTime is absent | field_name | M1 (EndTime present on 68,441 of 134,342 starts, 5 phones) |
 | PoweringEvent.TimeStamp | event_instant | field_name | |
 | AppsUsageLog.StartTime / EndTime | interval_start / interval_end | field_name | M4 duration distribution |
-| ApplicationUsage.StartTime / EndTime | aggregate_bucket | not_established | M4: if EndTime minus StartTime is a constant period, the record is a usage summary |
+| ApplicationUsage.StartTime / EndTime | aggregate_bucket | corpus_measured | M2: EndTime minus StartTime is a whole number of hours on all 2,521 records with both, one hour on 2,477, so the record is a usage summary |
 | ApplicationUsage.LastLaunch | latest_of_many | field_name | |
 | ApplicationUsage.ActiveTime / BackgroundTime / LastUsageDuration | duration | field_name | |
 | NetworkUsage.DateStarted / DateEnded | aggregate_bucket | not_established | M4 bucket-width histogram |
@@ -320,7 +320,7 @@ per plan 6.5):
 | DeviceConnectivity.StartTime | event_instant of the connectivity change named by ConnectivityNature | not_established for `Paired` (pairing time or last seen) | M4 per ConnectivityNature |
 | Notification.TimeStamp | event_instant (posted) | field_name | |
 | LogEntry.TimeStamp / EndTime | event_instant / interval_end | field_name | |
-| Email.TimeStamp | event_instant (sent or received per folder) | field_name | M2 Folder values |
+| Email.TimeStamp | event_instant (sent or received); `unknown` in a draft folder | field_name; not_established for a draft | M2 Folder values |
 | Chat.StartTime / LastActivity | first_record / latest_of_many | field_name | derived from messages; not used as activity |
 | Contact.TimeCreated / TimeModified | first_record / last_modified | field_name | |
 | Password.DateCreated / DateModified | first_record / last_modified | field_name | |
@@ -436,7 +436,7 @@ that EventType falls to `unknown`.
 | AppsUsageLog | Action Launch | interaction | owner | launching an app is a user action in the common case | M2 shows Launch emitted for system-started apps (Source and Identifier patterns) |
 | AppsUsageLog | Action Close | device_state | owner | apps close on timeout or system kill | |
 | AppsUsageLog | Action absent (26,446 of 67,723 records, 2 phones) | unknown | owner | the record kind depends on Source | M2 by Source; reviewer adds rows per Source |
-| ApplicationUsage | ActiveTime > 0 | interaction | owner | an app was in use in the period; `aggregate_bucket`, so `weak` | |
+| ApplicationUsage.StartTime, LastLaunch | ActiveTime > 0 (a TimeSpan, compared in seconds) | interaction | owner | an app was in use in the period; `aggregate_bucket`, so `weak` (`latest_of_many` for LastLaunch, so `moderate`) | a Source whose active time counts background work |
 | InstalledApplication.InstallDate / DeletedDate | any | interaction | owner | install and removal are normally user actions | restore from backup or management (Source evidence) |
 | InstalledApplication.PurchaseDate | any | passive | account | account purchase, possibly on another device | |
 
@@ -451,7 +451,7 @@ values Inbox, Sent, Draft); else Status `Sent` or `Unsent`. The rule used is rec
 | InstantMessage.TimeStamp | outgoing, Platform Mobile or Unknown | interaction | owner | composing and sending needs a person | scheduled send or auto-reply evidence |
 | InstantMessage.TimeStamp | outgoing, Platform Web | interaction | other_device | sent from a web client on the same account, not from this phone (Platform enum: Mobile, Web, Unknown) | |
 | InstantMessage.TimeStamp | incoming | passive | owner | arrives without action | |
-| InstantMessage.TimeStamp | Folder Draft | interaction | owner | `unknown` time semantics until M2 settles whether it is creation or last edit | |
+| InstantMessage.TimeStamp | Folder Draft or Drafts | interaction | owner | `unknown` time semantics: no field separates creation from last edit, and M2's value sets do not settle it. A draft with a stated direction takes the direction rows, with the same class and actor; `im-draft` serves a draft whose direction is unknown | |
 | InstantMessage.DateDelivered | any | passive | owner | network delivery | |
 | Party.DateRead / DatePlayed | party IsPhoneOwner True | interaction | owner | reading or playing by the owner; read receipts can sync from the owner's other devices, so flag `account_level_sync` (group B) applies on apps known to sync read state | M6 |
 | Party.DateRead / DatePlayed | party IsPhoneOwner False | interaction | counterpart | the recipient read the owner's message on their own device | |
@@ -460,8 +460,10 @@ values Inbox, Sent, Draft); else Status `Sent` or `Unsent`. The rule used is rec
 | Call.TimeStamp | Incoming, Established | interaction | owner | answering needs a person; auto-answer exists but is rare | Source shows auto-answer |
 | Call.TimeStamp | Incoming, Rejected | interaction | owner | declining is usually manual, but focus modes reject automatically; shown `moderate` | |
 | Call.TimeStamp | Incoming, Missed, Voicemail, Unknown, NotEstablishedUnknownReason | passive | owner | no action needed | |
-| Email.TimeStamp | sent folder (M2 pending) | interaction | owner | | |
-| Email.TimeStamp | other folders | passive | owner | | |
+| Email.TimeStamp | Status Sent or Unsent, in any folder | interaction | owner | sending mail needs a person; all 47 such records on the 14 reports have the owner as the From party, and the folder's name varies by language and client | scheduled or automatic sending shown by Source |
+| Email.TimeStamp | no Status, Folder holds "outbox" or "draft" | interaction | owner | composing mail needs a person; `unknown` time semantics for a draft | an Outbox filled by an automatic reply |
+| Email.TimeStamp | other folders | passive | owner | mail arrives without action | |
+| Email.TimeStamp | no Folder, Status absent or Default | unknown | unknown | not_established: 92 records, nothing says whether the owner sent them | a Source that states direction |
 | Notification.TimeStamp | any | passive | owner | posting needs no person | |
 | SocialMediaActivity.TimeStamp | Post, Comment, Update, CheckIn | interaction | account | could be posted from any device on the account | IsFromActivityLog values (Boolean, 993 values) or Platform show the device |
 | ChatActivity.SystemMessageTimeStamp | any | unknown | unknown | whether the owner performed the action is not established | |
@@ -1471,6 +1473,13 @@ phone pairs (`scripts/a3_cross.py`), under the guards above; results per report 
   (P07, P14) Locations. Native Locations carries `Extracted` on the device side (P03 276, P04 13,537, P11 7, P13
   2,648, P14 12,728). Timed Locations with no affiliation from those seven sources: P11 1,237, P12 49, P13 8,
   P08 4, P04 3, none elsewhere (1,301).
+- M2 (`scripts/pol_m2_enums.py`, `scripts/pol_m2_commit.py`, `measurements/m2-enums.json`): on the 14 reports
+  UserMapping is `Decoding` or absent on every type. Email (25,727 records on 12 reports): INBOX 21,667; a Status of
+  Sent or Unsent on 47, all with the owner as the From party, in folders whose names differ by client and language;
+  Outbox 8 and draft folders 3 with no Status; 92 with no Folder. InstantMessage Folder: absent on 285,521, Sent
+  52,012, Inbox 39,035, Outbox 354, Spam 240, Recents 183, Draft 172, Drafts 5. ApplicationUsage: ActiveTime reads
+  `HH:MM:SS`, above zero on 2,548 and zero on 16; every period with both ends is a whole number of hours. The
+  committed file keeps a folder name only when it is a mail system's own or on reports of two different cases.
 - M9 (`scripts/pol_m9_sensors.py`, `measurements/m9-sensors.json`): sensor records on P11 (17,082), P13 (15,311)
   and P14 (13,125), always ActivitySensorData.Measurements -> Measurement.Samples -> Sample, Source `Health`.
   SourceDeviceType is absent on P11 and P13 and `Unknown` on every P14 record; DeviceName is on P13 only (15,310
@@ -1556,11 +1565,9 @@ Each is a decision with its reasoning and what would reverse it.
     `not_established`. Attribution: 3 rows that depend on a record's own fields (Location affiliation Synced and
     Unknown, message Platform Web); the context flags of 4.2 (deleted, decoding confidence, offset absent,
     latest only, bucketed, counterpart, account level) are computed by U3 from the event's context, not as rows
-    per type. Not written as rows: Email by folder (M2 has not measured folder values), a message Draft row (it
-    would tie with the direction rows at equal specificity; a draft follows them), `user_mapping_other` (the only
-    value measured is `Decoding`) and ApplicationUsage `ActiveTime > 0` (a TimeSpan; numeric predicates take
-    numbers only). Activity and attribution rows are evaluated by U2 and U3, which open their judgement calls.
-    *Reverse if* M2 measures folder values or a second UserMapping value.
+    per type. Not written as a row: `user_mapping_other` (the only value measured is `Decoding`). Activity and
+    attribution rows are evaluated by U2 and U3, which open their judgement calls. *Reverse if* M2 measures a
+    second UserMapping value.
 
 19. **04-U2 and U3 as built** (`backend/services/pattern_of_life/activity.py`, `attribution.py`; migration
     `20261102_pol_activity`). The projection reads the current interpretation generation's time values (their
@@ -1911,6 +1918,28 @@ Each is a decision with its reasoning and what would reverse it.
     drawn on the Places, Together and Case Map phone layer maps and in Phones seen in this area. It is printed on
     the cover of every phone export whose kinds include locations. Built in cb-places-rest (8949ecd8, 3ed6c605),
     live 2485efd1.
+
+51. **Sent mail, drafts and app use count as phone use, from M2 (3.2, 2.3).** Activity strength version 3 and
+    timestamp meaning version 2. Email is classified by Status first, because Status Sent or Unsent marks the owner's
+    mail whatever the folder is called and the phone's Email records carry no direction; a Status-less Outbox or
+    draft folder is composed by the owner; every other folder is passive; a record with no Folder and a Status that
+    says nothing is `unknown`. A draft's time is `unknown`, so a draft is listed as context and never undercuts or
+    supports a statement at a time. An ApplicationUsage period is a whole number of hours, so it is a summary and
+    its use is `weak`. A numeric predicate on a TimeSpan compares seconds. These rows are written by a build job and
+    read "not confirmed" until a person confirms them. *Reverse if* a client files sent mail with no Status (then a
+    Folder list per client), or a Source documents which time a draft stores.
+
+52. **Settling a statement on screen (9.1, 9.2, 8.4).** The statement form and the editor are one set of fields. A
+    routine place is stored as its point and radius with `cluster_id` and `label` beside them, so a statement keeps
+    the place it was checked against when the routine is recomputed. A place the statement gave in words keeps its
+    `text` when a point is set. `with_subject` and `apart_from_subject` take a phone or person of the case;
+    `no_contact` and `contact` take a person or one identity found by search, stored as `identity_ids` with the label
+    the person chose. An edit sends only the fields that changed, with the version it opened on. `as_drafted` on a
+    drafted claim is read from its first version, so what the model wrote stays on show after any edit; it is never
+    written over. `tolerance_minutes` is offered on `inactive`, the only kind evaluation applies it to. Together
+    sends `assumed_radius_m` and `max_speed_mps` from the screen (144 km/h by default, 900 km/h for air travel) and
+    states the values the run used. No agent tool edits claims. *Reverse if* a contact statement must name several
+    identities at once (the field already holds a list), or the allowances should live on the case.
 
 ## 15. Not yet established
 

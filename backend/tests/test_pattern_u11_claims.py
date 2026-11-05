@@ -386,3 +386,52 @@ def test_no_contact_runs_when_an_owner_party_has_no_identity(hooks):
             ev = evaluation.evaluate(c, case, cl["id"], me.name)
         assert ev["outcome"] in ("contradicted", "contradicted_weakly")
         assert len([i for i in ev["items"] if i["role"] == "contradicting"]) == 3
+
+
+@needs_template
+def test_every_kind_settled_from_a_draft_reaches_confirm_and_the_model_words_stay(hooks):
+    """cb-statements-rest C: each kind goes draft to confirmed through PATCH's fields, the way the form sends them."""
+    setup(hooks)
+    night = DAY + timedelta(hours=23)
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            registry.apply_seed(c)
+            case = make_case(c)
+            ext, other = night_phone().make(c, case), night_phone().make(c, case)
+            identity = uuid.uuid4()
+            c.execute(text("INSERT INTO phone_identities (id, case_id, identity_key, kind, value_normalised, "
+                           "value_display) VALUES (:i, :c, 'phone:+15550100', 'phone', '+15550100', '+1 555 0100')"),
+                      {"i": identity, "c": case})
+        with engine.begin() as c:
+            me = person(c, case)
+            subj = {"kind": "extraction", "extraction_id": str(ext)}
+            second = {"kind": "extraction", "extraction_id": str(other)}
+            routine_place = {"lat": LAT, "lon": LON, "radius_m": 80, "cluster_id": 3, "label": "Home", "text": "the flat"}
+            settle = {"inactive": {"activity": {"tolerance_minutes": 10}}, "active": {},
+                      "at_place": {"place": routine_place}, "not_at_place": {"place": routine_place},
+                      "with_subject": {"counterpart": second}, "apart_from_subject": {"counterpart": second},
+                      "no_contact": {"counterpart": {"identity_ids": [str(identity)], "label": "the other number"}},
+                      "contact": {"counterpart": {"identity_ids": [str(identity)], "label": "the other number"}}}
+            assert set(settle) == set(claims.KINDS)
+            aid = uuid.uuid4()
+            for kind, fields in settle.items():
+                d = claims.create(c, case, {"kind": kind, "subject": subj, "window_text": "that night",
+                                            "place": {"text": "the flat"} if kind in claims.PLACE_KINDS else None,
+                                            "source_anchor": {"quote": "I was asleep that night",
+                                                              "counterpart_text": "my brother"}},
+                                  me, origin="ai_draft", ai_output_id=aid, ai_model="deepseek-chat")
+                assert "window_start" in d["missing_for_confirm"]
+                e = claims.edit(c, case, d["id"], dict(fields, window_start=night.isoformat(), window_text="my words",
+                                                       window_end=(night + timedelta(hours=8)).isoformat(),
+                                                       window_zone="UTC"), d["version"], me)
+                assert e["missing_for_confirm"] == [] and e["status_words"] == "Drafted by deepseek-chat, not confirmed"
+                got = claims.confirm(c, case, e["id"], e["version"], me)
+                assert got["status"] == "confirmed" and got["confirmed_by_name"] == me.name
+                drafted = claims.get(c, case, got["id"])["as_drafted"]
+                assert drafted == {"kind": kind, "window_text": "that night", "quote": "I was asleep that night",
+                                   "place_text": "the flat" if kind in claims.PLACE_KINDS else None,
+                                   "counterpart_text": "my brother"}
+            listed = claims.list_claims(c, case)["items"]
+            assert len(listed) == 8 and all(x["as_drafted"]["window_text"] == "that night" for x in listed)
+            typed = claims.create(c, case, {"kind": "active", "subject": subj}, me)
+            assert "as_drafted" not in typed

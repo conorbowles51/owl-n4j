@@ -447,6 +447,12 @@ Branch `cb/cb-pol`. Spec 04 units in the brief's order (A to M). Status for read
 - **04-U12 (825873e3):** `drafting.py`: model drafts of claims under workload `statement_claim_drafting` (DeepSeek
   default, full phone visibility, conversation bounds stated); every draft cited, `origin='ai_draft'`, never sets an
   instant. Decision 30, section 9.2 step 4 and decision 12 rewritten.
+- **cb-statements-rest:** every statement kind reaches Confirm on screen: `ClaimFieldsEditor` is the form and the editor
+  (routine place picker, phone or person picker, identity search, tolerance), "Settle before confirming" names the
+  field in words with Fill these in, and an edit goes through PATCH with its version. `as_drafted` keeps what the model
+  wrote on show. Together sends its radius and speed and states the run's own values. M2 is measured
+  (`measurements/m2-enums.json`); activity strength v3 and timestamp meaning v2 add Email, draft and ApplicationUsage
+  rows. Decisions 51 and 52.
 - **04-U6 (77b601fa API, caf08445 screen):** `day.py`: Day view, the window around a moment (lanes per phone, case
   events, payments; passive over 5,000 shown as hourly counts with the limit stated), every event paged.
   Frontend `src/features/pattern/`: Patterns screen at `/cases/:id/phone-patterns` (Day view, Pattern grid, Places

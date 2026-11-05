@@ -108,6 +108,6 @@ describe("Together", () => {
     await waitFor(() => expect(button).not.toBeDisabled())  // the comparison started by choosing the person has ended
     fireEvent.click(button)
     await waitFor(() => expect(together).toHaveBeenLastCalledWith("c", { kind: "extraction", extraction_id: "e1" }, { kind: "dossier", dossier_id: "d1" },
-      "2023-01-01T00:00:00Z", expect.any(String)))
+      "2023-01-01T00:00:00Z", expect.any(String), { assumed_radius_m: 1000, max_speed_mps: 40 }))
   })
 })

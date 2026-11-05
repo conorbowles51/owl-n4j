@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 from itertools import product
 
 from services.phone.mappings.loader import LoadError
+from services.phone.values import parse_timespan
 
 NUMERIC_OPS = ("lt", "le", "gt", "ge")
 
@@ -73,6 +74,8 @@ def _canon(v):
 
 def _in_range(x, r):
     n = _num(x) if not isinstance(x, bool) else None
+    if n is None and isinstance(x, str):
+        n = parse_timespan(x)[0]  # a TimeSpan compares in seconds
     if n is None:
         return False
     _, lo, lo_in, hi, hi_in = r
