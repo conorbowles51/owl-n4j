@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs"
-import { resolve } from "node:path"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { MemoryRouter } from "react-router-dom"
@@ -9,7 +7,7 @@ import { addInParts, PART_SIZE, type CollectClient } from "./collect.api"
 import { justFinished, trackBulkAdd, trayJob, type ServerJob } from "./job-list"
 import { NEW_MARK_DAYS, newMarksUntil, PHONES_FEATURE_DATE } from "./marks"
 import { FirstPhoneCard } from "./summary/FirstPhoneCard"
-import { GUIDE_SCREENS, guideAnchor } from "./ui/screen-guide"
+import { guideAnchor } from "./ui/screen-guide"
 
 vi.mock("@/lib/api-client", () => ({ fetchAPI: vi.fn() }))
 const api = vi.mocked(fetchAPI)
@@ -32,11 +30,6 @@ describe("New mark window", () => {
 })
 
 describe("guide links", () => {
-  it("every screen's link lands on a heading of the served guide", () => {
-    const text = readFileSync(resolve(__dirname, "../../../public/docs/phone-guide/phone-user-guide.md"), "utf8")
-    const slugs = new Set([...text.matchAll(/^## (.+)$/gm)].map((m) => m[1].toLowerCase().replace(/[^a-z0-9\s-]/g, "").trim().replace(/\s+/g, "-")))
-    for (const anchor of GUIDE_SCREENS) expect(slugs, anchor).toContain(anchor)
-  })
   it("reads the screen from the address", () => {
     expect(guideAnchor("/cases/c1/conversations")).toBe("read-a-conversation-around-a-date")
     expect(guideAnchor("/cases/c1/phones/e1/records/media")).toBe("first-look-at-a-phone")

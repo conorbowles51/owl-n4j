@@ -55,6 +55,9 @@ Phones are part of the case, not a separate tool. Phone records appear in the sa
 - A person's dossier has an **On the phones** panel with every number and account linked to them.
 - The **scope bar** at the top of each phone screen says, in words, what you are looking at: which people, which phones, which dates. Copy its address to send the same view to a colleague.
 
+- The strip above each screen of a phone case holds **Guide**, which opens this guide at that screen's part, **Keys**, which lists the keys for the screen (or press `?`), and **Jobs**, which lists every long job with true counts and time left. The list comes from the server, so a reload keeps it. A finished job gives a notice with a link; a stopped one says why.
+- **Help** in the sidebar reopens the card that says what each phone screen is for.
+
 When a case holds only phones, every phone screen works on its own: no ledger or other evidence is needed.
 
 ## Marks, times and counts

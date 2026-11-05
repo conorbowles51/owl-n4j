@@ -3,6 +3,7 @@ import { resolve } from "node:path"
 import { describe, expect, it } from "vitest"
 import { GLOSSARY, glossaryMarkdown } from "./glossary"
 import { PHONE_GUIDES } from "./guide"
+import { GUIDE_SCREENS } from "./ui/screen-guide"
 
 // 07 9: the guide and checklist live in docs/user-guide and are served to the Guide button from
 // public/docs/phone-guide. The copies must be identical; the glossary page is the glossary list itself.
@@ -63,5 +64,12 @@ describe("phone guide documents", () => {
       expect(text, name).not.toContain("—")
       expect(text, name).not.toMatch(/\bJ-\d+\b|cb-[a-z]+|UXD-|Cellebrite|cded78d0/)
     }
+  })
+})
+
+describe("per-screen Guide links (07 9)", () => {
+  it("every screen's link lands on a heading of the served user guide", () => {
+    const headings = new Set([...served("phone-user-guide.md").matchAll(/^## (.+)$/gm)].map((m) => slug(m[1])))
+    for (const anchor of GUIDE_SCREENS) expect(headings, anchor).toContain(anchor)
   })
 })
