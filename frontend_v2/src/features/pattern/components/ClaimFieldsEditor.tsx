@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { patternAPI, type Claim, type ClaimKind, type PickedIdentity, type RoutinePlaceRow, type Subject } from "../api"
 import { counterpartWords, isContactKind, isPlaceKind, isSubjectKind, KIND_WORDS, type ClaimInput } from "../claim-form-lib"
 import { errorWords } from "../lanes-lib"
+import { placeName } from "@/features/map/lib/places-geo"
 
 const TextPlacePicker = lazy(() => import("./TextPlacePicker"))
 const INPUT = "rounded border bg-background px-2 py-1"
@@ -46,7 +47,7 @@ export function ClaimFieldsEditor({ caseId, subject, value, onChange, drafted, f
 }
 
 function placeOption(p: RoutinePlaceRow) {
-  const name = p.label || `Unnamed place ${p.cluster_id}`
+  const name = placeName(p)
   return `${name}: ${p.day_count.toLocaleString("en-US")} days, within ${Math.round(p.radius_m).toLocaleString("en-US")} m${p.routine ? "" : " (not part of the routine)"}`
 }
 

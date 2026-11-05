@@ -125,13 +125,14 @@ export function PatternsPage() {
       )}
       {savedSnap.data && <SavedResult snap={savedSnap.data} last={snapOpen!.last} />}
       {subjects.data && !subject && <p className="text-sm">This case has no phones to show yet.</p>}
-      {!opening && subject && view === "day" && (
+      {/* Each view opens on the subject's last day, so it waits for the list that says which day that is */}
+      {!opening && subject && subjects.data && view === "day" && (
         // ?day=YYYY-MM-DD opens that day (a payment's day from the ledger, 07 XF-1); else the subject's last day
         <DayView key={`${subjectKey(subject)}|${params.get("day") ?? ""}`} caseId={caseId} subject={subject}
           initial={/^\d{4}-\d{2}-\d{2}$/.test(params.get("day") ?? "") ? params.get("day")! : last(subject)} />
       )}
-      {!opening && subject && view === "grid" && <GridView caseId={caseId} subject={subject} last={last(subject)} />}
-      {!opening && subject && view === "places" && <PlacesView caseId={caseId} subject={subject} last={last(subject)} />}
+      {!opening && subject && subjects.data && view === "grid" && <GridView caseId={caseId} subject={subject} last={last(subject)} />}
+      {!opening && subject && subjects.data && view === "places" && <PlacesView key={subjectKey(subject)} caseId={caseId} subject={subject} last={last(subject)} />}
       {!opening && subject && view === "places" && <TextPlaces caseId={caseId} extractionIds={phonesOf(subjects.data, subject).map((e) => e.extraction_id)} />}
       {!opening && subject && view === "together" && subjects.data && <TogetherView caseId={caseId} subject={subject} list={subjects.data} />}
       {!opening && subject && view === "check" && <StatementCheckPanel caseId={caseId} subject={subject}

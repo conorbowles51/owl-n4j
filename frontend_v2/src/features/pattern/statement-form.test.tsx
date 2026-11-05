@@ -100,6 +100,14 @@ describe("every kind of statement can be completed", () => {
     expect(screen.queryByText(/Settle before confirming/)).toBeNull()
   })
 
+  it("calls an unnamed routine place what Places over time calls it", async () => {
+    vi.mocked(patternAPI.routine).mockResolvedValue({ ...routine, places: [{ ...routine.places[0], cluster_id: 0, label: null }] })
+    open()
+    const form = screen.getByText("Enter a statement").closest("details") as HTMLElement
+    fireEvent.change(within(form).getByLabelText("What the statement says"), { target: { value: "at_place" } })
+    expect(await within(form).findByRole("option", { name: /^Place 1: 21 days/ })).toBeTruthy()
+  })
+
   it("sends a routine place as a point that keeps its cluster and name", async () => {
     open()
     const form = screen.getByText("Enter a statement").closest("details") as HTMLElement

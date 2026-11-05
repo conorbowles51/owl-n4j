@@ -2,6 +2,7 @@
 // cb-statements-rest live check, second part. Signed in once with the jobs login over plain http.
 //   node journeys/live-statement-draft.mjs draft <phone id> <shots dir>   drafts from the phones-only case's interview, settles one draft, confirms it
 //   node journeys/live-statement-draft.mjs places <case id> <phone A> <phone B> <shots dir>   a routine place, and Together with two sets of allowances
+//     (phone A with a routine place: the seeded phone of docs/check-case-seed.md)
 // Every statement it makes is withdrawn at the end.
 import { mkdirSync } from "node:fs"
 import { chromium } from "playwright"
@@ -32,7 +33,7 @@ try {
     await box.locator("summary").click()
     const who = box.getByLabel("The person whose statement it is")
     await who.locator("option").nth(1).waitFor({ state: "attached" })
-    // the check cases hold no document with text, so the model reads a synthetic conversation, through the same route
+    // the model reads a synthetic conversation here; live-check-seed.mjs drafts from an interview on the screen
     const dossiers = (await who.locator("option").evaluateAll((o) => o.map((x) => x.value))).filter(Boolean).slice(0, 4)
     let drafted = 0
     for (const dossier of dossiers) {
@@ -72,9 +73,6 @@ try {
     console.log("WITHDRAWN", await withdraw(page, CASES.phonesOnly, "\"quote\""))
   } else {
     const [kase, a, b] = rest
-    // no live phone has a routine place (0 of 14), so the list alone is supplied here; saving and confirming are real
-    await page.route(/\/routine\?/, (r) => r.fulfill({ json: { places: [{ cluster_id: 1, lat: 40.7128, lon: -74.006, radius_m: 80, stay_count: 40, day_count: 21, routine: true,
-      label: "Check place (supplied by this check)", place_id: null, label_by: null, first_utc: "2024-01-01T00:00:00Z", last_utc: "2024-02-01T00:00:00Z" }], routine_places: [1] } }))
     await page.goto(`${login.url}/cases/${kase}/phone-patterns?view=check&subject=e:${a}`, { waitUntil: "domcontentloaded" })
     const panel = page.getByRole("region", { name: "Statement check" })
     await panel.waitFor()

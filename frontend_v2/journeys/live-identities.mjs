@@ -2,7 +2,9 @@
 // Live walk of phones in People and dossiers (07 J-3, J-10, J-16, 4.5): signed in once with the jobs login over plain
 // http, in the synthetic Phones-only case. Prints counts, states and milliseconds; screenshots stay in --shots.
 // Every write is undone through the app (Unlink with a reason, the Add to reply's Undo).
-//   node journeys/live-identities.mjs --shots <dir> [--only a,b,c,d,e,f]
+//   node journeys/live-identities.mjs --shots <dir> [--only a,b,c,d,e,f] [--term lantern]
+// --term sets the whole-result add's search word: "lantern" is over 500 hits (docs/check-case-seed.md), so it goes as one
+// frozen selection.
 import { mkdirSync } from "node:fs"
 import { chromium } from "playwright"
 import { CASES, readLogin, signIn } from "./lib.mjs"
@@ -215,10 +217,10 @@ await part("e", "Add to on Search and Phone summary, device dossier", async () =
   // the walk's Undo finishes, on a note not yet used by this walk
   const group = async (q) => (await api(`/api/search/group?case_id=${caseId}&q=${encodeURIComponent(q)}&group=messages&limit=1`)).body
   let term = null
-  for (const q of ["555", "201", "the", "and", "you"]) {
+  for (const q of ["555", "201", "the", "and", "you", ...(arg("term") ? [arg("term")] : [])]) {
     const g = await group(q)
     say(`  group "${q}": ${g?.total ?? "-"}`)
-    if (q === "and") term = q
+    if (q === (arg("term") ?? "and")) term = q
   }
   if (!term) throw new Error("no search term with hits")
   await go(`/search?q=${encodeURIComponent(term)}&group=messages`)

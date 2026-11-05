@@ -2,7 +2,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { describe, expect, it, vi } from "vitest"
 import { patternAPI, type PlacesResponse, type RoutineResponse, type SubjectList } from "./api"
-import { PlacesView } from "./components/PatternsPage"
+import { MemoryRouter, Route, Routes } from "react-router-dom"
+import { PatternsPage, PlacesView } from "./components/PatternsPage"
 import { TogetherView } from "./components/PlacesViews"
 
 // MapLibre needs WebGL; the map's layers are checked in places-geo.test.ts. Here the map is a stand-in that shows
@@ -40,6 +41,23 @@ function wrap(node: React.ReactNode) {
 }
 
 describe("Places over time", () => {
+  it("opens on the phone's own last days on a direct link, not on today, once the list of phones is in", async () => {
+    let answer: (v: SubjectList) => void = () => undefined
+    vi.spyOn(patternAPI, "subjects").mockReturnValue(new Promise<SubjectList>((ok) => { answer = ok }))
+    vi.spyOn(patternAPI, "keyDates").mockResolvedValue({ items: [] } as never)
+    const places = vi.spyOn(patternAPI, "places").mockResolvedValue({ ...body, total: 0, returned: 0, next_cursor: null, observations: [], positions_no_time: 0 })
+    vi.spyOn(patternAPI, "routine").mockResolvedValue(routine)
+    vi.spyOn(patternAPI, "deviations").mockResolvedValue({ threshold: 2, days_scored: 0, label: "x", flagged: [] })
+    wrap(<MemoryRouter initialEntries={["/cases/c/phone-patterns?view=places&subject=e:e1"]}><Routes>
+      <Route path="/cases/:id/phone-patterns" element={<PatternsPage />} /></Routes></MemoryRouter>)
+    await new Promise((ok) => setTimeout(ok, 20))
+    expect(places).not.toHaveBeenCalled()
+    answer({ extractions: [{ extraction_id: "e1", label: "Phone 7", first: "2023-12-24", last: "2024-06-18", usual_span: { first: "2023-12-24", last: "2024-06-18", set_apart: 0, set_apart_first: null, set_apart_last: null } }],
+      dossiers: [], total_extractions: 1, total_dossiers: 0 } as unknown as SubjectList)
+    await waitFor(() => expect(places).toHaveBeenCalled())
+    expect(places.mock.calls[0].slice(2, 4)).toEqual(["2024-06-12T00:00:00Z", "2024-06-19T00:00:00Z"])
+  })
+
   it("draws the positions, routine places and trajectory on the map and states the totals", async () => {
     vi.spyOn(patternAPI, "places").mockResolvedValue(body)
     vi.spyOn(patternAPI, "routine").mockResolvedValue(routine)
