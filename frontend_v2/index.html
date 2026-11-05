@@ -25,9 +25,14 @@
     <meta name="theme-color" content="#0b0c0f" />
     <meta name="description" content="Loupe enterprise investigations platform" />
     <title>Loupe Investigation Console</title>
+    <style>
+      /* Shown from the first paint until the app replaces it, so the wait has words before any script has run. */
+      #boot-note { font: 14px system-ui, sans-serif; padding: 24px; color: #6b7280; }
+      html.dark, html.dark body { background: #0b0c0f; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><p id="boot-note" role="status">Opening Loupe</p></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

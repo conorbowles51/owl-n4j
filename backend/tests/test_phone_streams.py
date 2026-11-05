@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import timezone
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from services.phone import labels as L
 from services.phone import streams as S
@@ -336,6 +336,42 @@ def test_a_record_kept_from_the_previous_reading_does_not_list_an_attachment_twi
         {"e": ext})
     _, rows = _all_rows(db, F(case))
     assert [a["filename"] for a in rows[0]["attachments"]] == ["a.jpg"]
+
+
+def test_a_window_asks_for_its_attachments_by_record_and_each_stays_with_its_message(db):
+    """lx-convspeed: the attachments of a window are read by record id. Joined to the records in one statement,
+    Postgres read every file reference of every phone for any window (222 ms of a 280 ms window on the largest
+    reference phone). A child's attachment is its message's; a row listed itself keeps its own."""
+    case = make_case(db)
+    ext, evs = phone(db, case, events=[msg(at(2023, 3, 14), ANA, [OWNER]), msg(at(2023, 3, 14), ANA, [OWNER])])
+    first, second = evs[0]["record_uid"], evs[1]["record_uid"]
+    db.execute(text(
+        "INSERT INTO phone_record_summaries (case_id, extraction_id, document_index, ordinal, record_uid, "
+        "root_record_uid, parent_record_uid, locator, model_type, generation, is_top_level, title, has_time, "
+        "has_point) VALUES (:c, :e, 0, 900, '00000000-0000-0000-0000-0000000000a1', :p, :p, 'x/0/r900', "
+        "'Attachment', 1, false, 'synthetic', false, false)"), {"c": case, "e": ext, "p": first})
+    db.execute(text("UPDATE phone_record_summaries SET parent_record_uid = :p WHERE record_uid = :r"),
+               {"p": first, "r": second})  # a row of the list that is also a child record of another row
+    ordinal = {str(r.record_uid): r.ordinal for r in db.execute(text(
+        "SELECT record_uid, ordinal FROM phone_record_summaries WHERE record_uid = :r"), {"r": second})}[str(second)]
+    db.execute(text(
+        "INSERT INTO phone_file_references (extraction_id, document_index, record_ordinal, body_path, mechanism, "
+        "reference_text, resolution) VALUES (:e, 0, 900, 'f', 'file_id_attribute', 'chat/child.jpg', 'unresolved'), "
+        "(:e, 0, :o, 'f', 'file_id_attribute', 'chat/own.jpg', 'unresolved')"), {"e": ext, "o": ordinal})
+    seen = []
+
+    def note(_conn, _cursor, statement, *_rest):
+        seen.append(statement)
+
+    event.listen(db.engine, "before_cursor_execute", note)
+    try:
+        _, rows = _all_rows(db, F(case))
+    finally:
+        event.remove(db.engine, "before_cursor_execute", note)
+    by_uid = {r["record_uid"]: [a["filename"] for a in r["attachments"]] for r in rows}
+    assert by_uid == {str(first): ["child.jpg"], str(second): ["own.jpg"]}
+    reads = [s for s in seen if "pv_attachment_link" in s]
+    assert reads and not any("phone_record_summaries" in s for s in reads)
 
 
 def test_a_report_zone_that_is_not_a_zone_name_shows_utc_and_says_so(db):

@@ -576,21 +576,32 @@ def build_rows(conn, ctx: L.LabelContext, rows, zone: str, f: StreamFilter) -> l
         parties[p.record_uid].append(p)
     ctx.load([p.identity_key for ps in parties.values() for p in ps])
     atts = defaultdict(list)
-    for a in conn.execute(text(
-            "SELECT coalesce(s.parent_record_uid, a.record_uid) AS owner_uid, a.record_uid, a.file_uid, a.mechanism, "
-            "a.reference_text, a.resolved, f.local_path, f.category, f.verification FROM pv_attachment_link a "
-            "LEFT JOIN (SELECT s.record_uid, s.parent_record_uid FROM phone_record_summaries s JOIN "
-            "phone_interpretation_state st ON st.extraction_id = s.extraction_id AND st.generation = s.generation) s "
-            "ON s.record_uid = a.record_uid AND s.record_uid <> ALL(:u) AND s.parent_record_uid = ANY(:u) "
-            "LEFT JOIN pv_file f ON f.file_uid = a.file_uid "
-            # one IN list of the rows and their child records: as an OR, Postgres read every record summary
+    shown = set(uids)
+    # The rows and their child records are named first and asked for by id. Asked in one statement, Postgres cannot
+    # see how few they are and joins every file reference to every record of every phone: 222 ms for any window, of
+    # about 270 ms of database time (lx-convspeed, 5 Nov); by id it is 4 ms.
+    children = {c.record_uid: c for c in conn.execute(text(
+        "SELECT s.record_uid, s.parent_record_uid, s.document_index, s.ordinal FROM phone_record_summaries s JOIN "
+        "phone_interpretation_state st ON st.extraction_id = s.extraction_id AND st.generation = s.generation WHERE "
+        "s.parent_record_uid = ANY(:u)"), {"u": uids})}
+
+    def report_order(a):
+        """The message's own attachments, then its child records' in report order. Stated here: with no order asked
+        for, the plan decided it, and 19 of 19,814 rows changed order between two reads of the same data."""
+        child = children.get(a.record_uid)
+        return ((child.document_index, child.ordinal) if child is not None and a.record_uid not in shown else (-1, -1),
+                a.body_path or "", a.reference_text or "", str(a.file_uid))
+
+    for a in sorted(conn.execute(text(
+            "SELECT a.record_uid, a.file_uid, a.mechanism, a.body_path, a.reference_text, a.resolved, f.local_path, "
+            "f.category, f.verification FROM pv_attachment_link a LEFT JOIN pv_file f ON f.file_uid = a.file_uid "
             # a jump target to another record is not a file, so it is not listed as an attachment
-            "WHERE a.resolution <> 'model' AND a.record_uid IN (SELECT unnest(CAST(:u AS uuid[])) UNION ALL SELECT "
-            "s2.record_uid FROM phone_record_summaries s2 JOIN "
-            "phone_interpretation_state st2 ON st2.extraction_id = s2.extraction_id AND st2.generation = s2.generation "
-            "WHERE s2.parent_record_uid = ANY(:u))"), {"u": uids}):
+            "WHERE a.resolution <> 'model' AND a.record_uid = ANY(CAST(:w AS uuid[]))"),
+            {"w": sorted({*uids, *children}, key=str)}), key=report_order):
         path = a.local_path or a.reference_text or ""
-        atts[a.owner_uid].append({"file_uid": str(a.file_uid) if a.file_uid else None,
+        # a row in the list keeps its own attachments, even when it is also another row's child record
+        child = children.get(a.record_uid)
+        atts[child.parent_record_uid if child is not None and a.record_uid not in shown else a.record_uid].append({"file_uid": str(a.file_uid) if a.file_uid else None,
                                   "filename": path.replace("\\", "/").rsplit("/", 1)[-1] or None,
                                   "category": a.category, "verification": a.verification if a.file_uid else
                                   ("missing" if not a.resolved else None), "mechanism": a.mechanism})
