@@ -29,7 +29,9 @@ FONTS = [
     ("Noto Sans Math", "NotoSansMath-Regular.ttf", 400),
     ("Noto Sans Symbols", "NotoSansSymbols-Regular.ttf", 400),
     ("Noto Sans Symbols 2", "NotoSansSymbols2-Regular.ttf", 400),
-    ("Noto Emoji", "NotoEmoji-Regular.ttf", 400),
+    # Under its own name: fontconfig sorts any family it knows as emoji ahead of the whole chain, and digits then print
+    # from the system's color emoji font, wide apart and gray, in every PDF.
+    ("Loupe Mono Pictographs", "NotoEmoji-Regular.ttf", 400),
     ("Noto Sans Fullwidth", "NotoSansFullwidth-Regular.ttf", 400),  # Noto Sans JP, the fullwidth forms only
     ("Noto Sans SC", "NotoSansSC-Variable.ttf", 400),  # Han (unified and Extension A) and kana
     ("Noto Sans Hangul", "NotoSansHangul-Regular.ttf", 400),  # Noto Sans KR, the Hangul blocks only

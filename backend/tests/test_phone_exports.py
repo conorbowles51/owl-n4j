@@ -108,6 +108,18 @@ def test_e3_decorative_letters_and_emoji_are_drawn_and_an_uncovered_code_point_i
     assert "1 character that no bundled font can draw prints as [U+...]" in " ".join(txt.split())
 
 
+def test_e3_digits_print_in_the_text_font_and_emoji_still_draw():
+    import fitz
+    from services.phone.exports import pdf
+    body = "<body><p>Call 2026-11-05 05:38 +1 201 555 0106 #1 * \u00a9</p><p>\U0001f600</p></body>"
+    doc = "<!doctype html><html><head><meta charset='utf-8'><style>%s\nbody { font-family: %s; }</style></head>%s</html>" % (
+        pdf.font_faces(), pdf.FAMILY_CHAIN, body)
+    spans = [s for b in fitz.open(stream=pdf.render(doc), filetype="pdf")[0].get_text("dict")["blocks"]
+             for line in b.get("lines", []) for s in line["spans"]]
+    assert {s["font"] for s in spans if "2026" in s["text"]} == {"Noto-Sans"}
+    assert any("\U0001f600" in s["text"] and "Emoji" in s["font"] for s in spans)
+
+
 def test_e4_the_printed_rows_equal_the_stated_total_and_the_screen_total(world):
     state, _, txt = _export(world)
     with world["engine"].connect() as c:
