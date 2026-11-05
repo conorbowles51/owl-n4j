@@ -340,7 +340,8 @@ A case can contain more payments than one analysis permits. These are separate l
 | Combined reports | No 20-finding or 20-PDF count restriction; 32 MB saved report data and 64 MB supporting files | Include findings from several pages and check that the saved report and download retain all of them. |
 | Transfers | 500 payments in one answer | Above that the whole comparison runs in the background, stored and paged, with true counts. |
 | Payments and case events | 1,000 payments in one answer | Above that the whole timeline runs in the background; each month opens to its payments. |
-| Patterns | 1,000 input payments; also 200 proposed matches, 50 payments per repeated-name group, and 10,000 examined steps between accounts | Narrow the account/dates, select Apply and Find patterns again. |
+| Patterns | 1,000 input payments, 200 proposed matches, 50 payments per repeated-name group and 10,000 examined steps between accounts in one answer | Above that the whole screen runs in the background, stored and paged, with true counts. The search for paths between accounts has a work limit of 2,000,000 steps; if it is reached, the result says how many starting transfers were not searched. |
+| PDF reports | One PDF up to the stated reading limit | Above that the report is written in the background as numbered parts that together cover every reading, downloaded as one archive. |
 
 The larger imports, selections, graph and reports were checked locally with a 5,000-payment statement, a 2,700-payment case and a 50-finding report. These figures describe earlier development checks, not results your team has already obtained on the deployed server. General response and file-size bounds still apply.
 

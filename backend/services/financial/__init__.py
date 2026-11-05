@@ -2393,3 +2393,5 @@ __all__ += ["attach_numbers", "number_of", "numbers_for_case"]
 
 from services.financial.whole_case_runs import read_run as read_whole_case_run, start_run as start_whole_case_run
 __all__ += ["read_whole_case_run", "start_whole_case_run"]
+from services.financial.trace_walk import TraceWalkInput
+__all__ += ["TraceWalkInput"]

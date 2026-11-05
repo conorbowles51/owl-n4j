@@ -66,6 +66,7 @@ def _definitions(path: pathlib.Path) -> list[str]:
 # name stays the submodule: ``mock.patch('services.financial.journal.X')`` resolves by attribute on Python 3.10 and
 # would otherwise patch an attribute of the function.
 ALIASED_EXPORTS = {
+    "whole_case_runs": "start_whole_case_run",
     "journal": "journal_logger",
     "account_parties": "list_account_parties",
     "category_breakdown": "payment_category_breakdown",

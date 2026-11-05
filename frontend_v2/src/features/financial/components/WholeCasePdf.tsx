@@ -35,8 +35,9 @@ export function WholeCasePdf({
   return (
     <div className="space-y-2 rounded border p-3 text-sm">
       <p>
-        {summary.parts.toLocaleString("en-US")} numbered PDF parts cover all {summary.readings.toLocaleString("en-US")}{" "}
-        captured readings, in date order, up to {summary.part_limit.toLocaleString("en-US")} in each.
+        {summary.parts === 1 ? "One PDF covers" : `${summary.parts.toLocaleString("en-US")} numbered PDF parts cover`} all{" "}
+        {summary.readings.toLocaleString("en-US")} captured readings, in date order, up to{" "}
+        {summary.part_limit.toLocaleString("en-US")} in each.
       </p>
       <ul>
         {summary.listed.map((part) => (
@@ -44,7 +45,7 @@ export function WholeCasePdf({
         ))}
       </ul>
       <a className="underline" href={wholeCaseFileUrl(caseId, run.id, "ledger-report-parts.zip")} download>
-        Download all parts ({(summary.archive_bytes / 1024 / 1024).toFixed(1)} MB)
+        {summary.parts === 1 ? "Download the report" : "Download all parts"} ({(summary.archive_bytes / 1024 / 1024).toFixed(1)} MB)
       </a>
     </div>
   )

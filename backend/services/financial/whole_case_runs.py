@@ -328,6 +328,7 @@ class _Run:
     def __init__(self, directory, state):
         self.directory, self.state = directory, state
         self.lock = threading.Lock()
+        self.after_publish = None
 
     def write(self, **changes):
         with self.lock:
@@ -401,7 +402,7 @@ def _write_sections(directory, sections, run, step, steps):
     return counts, digest.hexdigest()
 
 
-def _capture(connection, case_id, params, kind):
+def _capture(connection, case_id, params, kind, identifier):
     from services.financial.ledger_snapshot import capture_ledger_export, capture_ledger_scope
     def day(name):
         from datetime import date
@@ -412,7 +413,7 @@ def _capture(connection, case_id, params, kind):
                  account_holders=params.get('account_holders') or None, start_date=day('start_date'), end_date=day('end_date'))
     if kind == 'pdf':
         return capture_ledger_export(connection, generated_by=params.get('generated_by'), privilege_marking=params.get('privilege_marking', 'unmarked'),
-                                     size_limit=False, **scope)
+                                     size_limit=False, generated_at=_export_time(identifier), **scope)
     return capture_ledger_scope(connection, **scope)
 
 
@@ -495,6 +496,21 @@ def compute_trace(capture, params, run):
     return summary, dict(files={'trace-report.json': report})
 
 
+def _resume_dir(identifier):
+    """What a stopped report keeps for its next run; removed when the report is finished."""
+    directory = root() / 'resume' / identifier
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    return directory
+
+
+def _export_time(identifier):
+    """The report's generation time, the same across a restart, so a part already written stays the same part."""
+    path = _resume_dir(identifier) / 'generated_at'
+    if not path.exists():
+        path.write_text(_now())
+    return datetime.fromisoformat(path.read_text())
+
+
 def compute_pdf(capture, params, run):
     """Numbered PDF parts covering every captured reading, in one archive, with a manifest of each part's digest."""
     import io
@@ -504,10 +520,19 @@ def compute_pdf(capture, params, run):
     parts = list(numbered_report_parts(capture.snapshot))
     listed, members = [], []
     run.phase(2, 3, 'Writing the PDF parts', done=0, total=len(parts))
+    resume = _resume_dir(params['run_id'])
     for number, of, document, words in parts:
         content = json.dumps(document, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
         part = LedgerSnapshot(content, hashlib.sha256(content.encode()).hexdigest(), len(content.encode()))
-        pdf = render_ledger_pdf(part, render_ledger_report(part), part_words=words)
+        # A part already written from these same bytes is kept across a restart: a release does not start the report over.
+        finished = resume / (part.sha256 + '.pdf')
+        if finished.exists():
+            pdf = finished.read_bytes()
+        else:
+            pdf = render_ledger_pdf(part, render_ledger_report(part), part_words=words)
+            waiting = resume / (part.sha256 + '.tmp')
+            waiting.write_bytes(pdf)
+            os.replace(waiting, finished)
         name = 'ledger-report-part-%03d-of-%03d.pdf' % (number, of)
         keys = sorted(reading['row']['key'] for reading in document['ledger']['readings'])
         listed.append(dict(part=number, of=of, filename=name, readings=len(keys), sha256=hashlib.sha256(pdf).hexdigest(), byte_count=len(pdf),
@@ -528,6 +553,7 @@ def compute_pdf(capture, params, run):
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, pdf)
     data = stream.getvalue()
+    run.after_publish = lambda: shutil.rmtree(resume, ignore_errors=True)
     summary = dict(case_id=str(params['case_id']), snapshot_sha256=capture.snapshot.sha256, readings=len(readings), parts=len(listed),
                    part_limit=max(item['readings'] for item in listed), archive_sha256=hashlib.sha256(data).hexdigest(), archive_bytes=len(data),
                    filename='ledger-report-parts.zip', listed=[{key: item[key] for key in ('part', 'of', 'filename', 'readings', 'byte_count', 'words')} for item in listed])
@@ -563,9 +589,9 @@ def _execute(run):
             recording = view_cache._Recording(owner=view_cache._dbapi(owner), snapshot=snapshot, connection=owner, view='whole-case-' + kind)
             token = view_cache._recording.set(recording)
             try:
-                capture = _capture(owner, case_id, params, kind)
+                capture = _capture(owner, case_id, params, kind, state['id'])
                 run.phase(2, steps, COMPUTE_LABEL[kind])
-                summary, sections = COMPUTE[kind](capture, {**params, 'case_id': state['case_id']}, run)
+                summary, sections = COMPUTE[kind](capture, {**params, 'case_id': state['case_id'], 'run_id': state['id']}, run)
             finally:
                 recording.paused = True
                 view_cache._recording.reset(token)
@@ -585,11 +611,16 @@ def _execute(run):
               fingerprint=json.loads(json.dumps(fingerprint)) if fingerprint is not None else None,
               phase='Finished', step=steps, steps=steps, done=sum(len(v) for v in sections.values()),
               total=sum(len(v) for v in sections.values()))
+    if run.after_publish:
+        run.after_publish()
 
 
 def _prune(base, keep):
     """Oldest finished runs go first, past 14 days or 4 GiB; they can always be run again."""
     entries = []
+    for path in (base / 'resume').iterdir() if (base / 'resume').is_dir() else ():
+        if time.time() - path.stat().st_mtime > KEEP_SECONDS:
+            shutil.rmtree(path, ignore_errors=True)
     for path in base.iterdir():
         state = _read_state(path) if path.is_dir() else None
         if path == keep or state is None or view(state)['status'] in ('queued', 'running'):

@@ -1,3 +1,19 @@
+## 5 November: financial analyses run on the whole case (lx-wholecase)
+
+- **What closes.** The capacity gaps recorded on 16 September (transfers above 500 payments, timelines above 1,000,
+  pattern inputs, results and name groups) are built. The synchronous routes keep their refusals for one answer; above
+  them the screen opens a stored run. `headless/LX-WHOLECASE-STATUS.md` has the measurements and decisions.
+- **Stored runs.** `services/financial/whole_case_runs.py`: kinds transfers, timeline, patterns, trace, pdf. A short-lived
+  child at background priority, one at a time (`host.lock`), one read-only REPEATABLE READ snapshot; JSONL plus byte
+  offset indexes, one rename to publish, `result_sha256`, identity from kind, case, parameters and code version. Files
+  live under the view memo folder in `whole-case/`, pruned at 14 days or 4 GiB. Routes under
+  `/api/financial/.../whole-case-runs`. A restart marks a run stopped; a PDF keeps its finished parts for the next run.
+- **Step-bounded trace.** `services/financial/trace_walk.py`, up to 25 steps from a start account; it names where and why
+  it stopped and how to continue. It offers no backward timing or asset uses and is not replayable by `trace_replay`.
+- **Pattern changes that reach the small route too.** `_other_party` falls back to the Transactions names, so repeated
+  counterparty candidates fire (0 of 1,788 Keny rows had `counterparty_raw`). The quadratic loop in the screen is gone.
+- **What a fresh session needs:** a new whole-case kind goes in `KINDS` and `COMPUTE` and gets a size-refusal route in
+  `lib/whole-case-run.ts`. A subclass of the store test re-runs inherited tests, so select with `-k`.
 ## 5 November: the missing controls inside phone screens (cb-screen-rest)
 
 - **Participant menu.** `ParticipantMenu.tsx` on every stream row (03 6.7): Show all with this person, Show this pair,

@@ -304,6 +304,33 @@ class TraceWalk(_network.NetworkTracingTests):
 
 
 class NumberedPdfParts(TestCase):
+    def test_a_stopped_report_keeps_its_finished_parts(self):
+        import zipfile
+        from services.financial.ledger_pdf import MAX_PDF_READINGS
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, FINANCIAL_VIEW_MEMO_DIR=folder):
+            capture = SimpleNamespace(snapshot=self.snapshot(MAX_PDF_READINGS + 5), ledger_scope_sha256='0' * 64)
+            run = SimpleNamespace(phase=lambda *a, **k: None, after_publish=None)
+            calls = []
+            def render(part, html, part_words):
+                calls.append(part_words)
+                if len(calls) == 2:
+                    raise RuntimeError('the server restarted')
+                return b'%PDF-' + part_words.encode()
+            params = dict(case_id='case', run_id='a' * 32)
+            with patch('services.financial.ledger_snapshot.render_ledger_report', return_value='<h1>x</h1>'), patch('services.financial.ledger_pdf.render_ledger_pdf', render):
+                with self.assertRaises(RuntimeError):
+                    W.compute_pdf(capture, params, run)
+                summary, sections = W.compute_pdf(capture, params, run)
+            self.assertEqual(len(calls), 3)  # part 1 once, part 2 failed then written; never part 1 again
+            self.assertEqual((summary['parts'], summary['readings']), (2, MAX_PDF_READINGS + 5))
+            stream = __import__('io').BytesIO(sections['files']['ledger-report-parts.zip'])
+            with zipfile.ZipFile(stream) as archive:
+                manifest = json.loads(archive.read('parts-manifest.json'))
+                self.assertTrue(manifest['covers_every_reading'])
+                self.assertEqual(sorted(archive.namelist())[0], 'ledger-report-part-001-of-002.pdf')
+            run.after_publish()
+            self.assertFalse((W.root() / 'resume' / params['run_id']).exists())
+
     def snapshot(self, count):
         from services.financial.ledger_snapshot import LedgerSnapshot
         readings = [dict(row=dict(key='k%05d' % n, ordering_date='2024-%02d-01' % (n % 12 + 1))) for n in range(count)]
