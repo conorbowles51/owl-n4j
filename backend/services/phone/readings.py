@@ -14,7 +14,8 @@ transaction:
 
 Both are case-scoped decisions on (case, extraction, rule, mapping version). The applier reads them through
 ``apply.register_reading_decisions`` and the sweep re-derives the extraction because its decision revision
-changed; rows already written take the confirmed level at once.
+changed; rows already written take the confirmed level at once. A decision outlives its mapping version
+(``apply._carried``): unchanged content keeps it, changed content lists it as needing review.
 """
 from __future__ import annotations
 
@@ -119,7 +120,8 @@ def queue(conn, case_id, include_resolved=True) -> dict:
     rows = conn.execute(text(
         "SELECT j.id, j.extraction_id, j.rule_id, j.rule_part, j.type_name, j.summary, j.records_touched, j.status, "
         "j.resolved_by, j.resolved_at, j.resolution_reason, j.adjudication_id, j.mapping_version_id, j.mapping_kind, "
-        "j.mapping_name, a.reason_kind, a.after FROM phone_mapping_judgements j "
+        "j.mapping_name, a.reason_kind, a.after, j.evidence -> 'earlier_decision' AS earlier "
+        "FROM phone_mapping_judgements j "
         "JOIN phone_interpretation_state s ON s.extraction_id = j.extraction_id AND s.generation = j.generation "
         "JOIN phone_extractions e ON e.id = j.extraction_id AND e.standing = 'active' "
         "LEFT JOIN adjudications a ON a.id = j.adjudication_id "
@@ -137,11 +139,52 @@ def queue(conn, case_id, include_resolved=True) -> dict:
             "resolved_by": r.resolved_by, "resolved_at": r.resolved_at.isoformat() if r.resolved_at else None,
             "reason": r.resolution_reason, "reason_kind": r.reason_kind,
             "note": (r.after or {}).get("note") if r.after else None,
+            "earlier_decision": earlier_words(r.earlier),
             "choices": [{"id": c["id"], "label": c["label"]} for c in choices(conn, r)],
         })
     open_n = sum(1 for i in items if i["status"] == "open")
     return {"case_id": str(case_id), "total": len(items), "open": open_n, "checked": len(items) - open_n,
-            "items": items}
+            "items": items, "detached": _detached(conn, case_id, labels)}
+
+
+def earlier_words(e) -> dict | None:
+    """A decision made on an earlier version of the rule, in words. ``needs_review``: the rule changed since, so the
+    decision no longer settles the reading; a correction stays in use until a person decides again."""
+    if not e:
+        return None
+    when = str(e.get("at") or "")[:10]
+    who = e.get("by") or "A person"
+    verb = "confirmed" if e["decision"] == "confirm" else "corrected"
+    if not e.get("needs_review"):
+        words = "%s %s this on %s, on version %s of the rule. The rule has not changed since." % (
+            who, verb, when, e.get("version"))
+    elif e["decision"] == "correct":
+        words = ("%s corrected this on %s, on version %s of the rule. The rule has changed since, so it needs a new "
+                 "look. Their correction stays in use until someone decides." % (who, when, e.get("version")))
+    else:
+        words = ("%s confirmed this on %s, on version %s of the rule. The rule has changed since, so it needs a new "
+                 "look." % (who, when, e.get("version")))
+    return {"needs_review": bool(e.get("needs_review")), "decision": e["decision"], "by": e.get("by"),
+            "at": e.get("at"), "reason": e.get("reason"), "version": e.get("version"), "words": words}
+
+
+def _detached(conn, case_id, labels) -> list:
+    """Decisions on a rule the system no longer holds: no reading to attach them to, so they are listed on their own."""
+    out = []
+    ids = [r[0] for r in conn.execute(text(
+        "SELECT DISTINCT a.subject_id FROM adjudications a JOIN phone_extractions e ON e.id = a.subject_id WHERE "
+        "a.subject_type = 'phone_extraction' AND e.case_id = :c AND e.standing = 'active' AND a.decision = "
+        "ANY(CAST(:d AS text[]))"), {"c": case_id, "d": list(READING_DECISIONS)})]
+    for ext in ids:
+        for d in apply.detached_decisions(conn, ext):
+            verb = "confirmed" if d["decision"] == "confirm" else "corrected"
+            out.append({"extraction_id": str(ext), "phone": labels.get(str(ext), "Phone"), "rule_id": d["rule_id"],
+                        "by": d.get("by"), "at": d["at"].isoformat() if d.get("at") else None,
+                        "reason": d.get("reason"), "decision": d["decision"], "version": d["carried_from_version"],
+                        "words": "%s %s a rule that version %s held; the system no longer has that rule, so the "
+                                 "decision applies to nothing now." % (d.get("by") or "A person", verb,
+                                                                       d["carried_from_version"])})
+    return out
 
 
 def _call(conn, case_id, judgement_id, lock=False):

@@ -17,12 +17,19 @@ Runs inside the sweep's transaction after the generic rows of generation n+1 are
 A person's correction (``correct_phone_reading``, 8.8) replaces the rule's choice for that extraction; the
 applier reads it through ``register_reading_decisions`` and re-derives from the generic rows, never from a new
 capture. Nothing here reads ``phone_mapping_proposals``.
+
+A decision is made on one version of a rule, and survives a new version of the mapping (``_carried``): a rule or
+row whose content is unchanged keeps the decision as it stands, and a changed one keeps it visible as needing review.
+A person's correction stays in force on a changed rule until a person decides again, so a catalogue change can never
+silently put the catalogue's value back.
 """
 from __future__ import annotations
 
 import json
 import re
 import uuid
+from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from sqlalchemy import text
 
@@ -39,9 +46,103 @@ def register_reading_decisions(fn):
     _hooks["reading_decisions"] = fn
 
 
-def reading_decisions(conn, extraction_id):
+def reading_decisions(conn, extraction_id, mappings=None):
+    """The phone's decisions by (rule id, mapping version id), each also under the rule's current version when it was
+    made on an earlier one (``_carried``)."""
     fn = _hooks["reading_decisions"]
-    return fn(conn, extraction_id) if fn else {}
+    raw = fn(conn, extraction_id) if fn else {}
+    if not raw:
+        return raw
+    return {**raw, **_carried(conn, raw, loader.loaded() if mappings is None else mappings)[0]}
+
+
+def detached_decisions(conn, extraction_id, mappings=None) -> list:
+    """Decisions on a rule the current version no longer holds: nothing to apply them to, still shown (rule 1)."""
+    fn = _hooks["reading_decisions"]
+    raw = fn(conn, extraction_id) if fn else {}
+    return _carried(conn, raw, loader.loaded() if mappings is None else mappings)[1] if raw else []
+
+
+# ---- a decision across versions ------------------------------------------------------------------------------------
+
+_earlier_versions = {}  # version id -> (kind, name, version, {rule id: content}); a version's content never changes
+
+
+def rule_contents(m) -> dict:
+    """{rule id: what a person decided on} of one mapping version: a type mapping's rules, a row table's rows."""
+    if m.kind == "type":
+        return {r["rule_id"]: r for r in rules_of(m)[2]}
+    if m.kind in loader.ROW_KINDS:
+        prefix = row_rule_prefix(m)
+        return {prefix + r["row_id"]: r for r in m.body["rows"]}
+    return {}
+
+
+def _earlier(conn, version_ids):
+    missing = [v for v in version_ids if v not in _earlier_versions]
+    if missing:
+        for r in conn.execute(text("SELECT id, kind, name, version, content FROM phone_mapping_versions WHERE id = "
+                                   "ANY(CAST(:v AS uuid[]))"), {"v": missing}):
+            try:
+                rules = rule_contents(SimpleNamespace(kind=r.kind, name=r.name, body=r.content["body"]))
+            except ValueError:  # a shape the loader no longer reads: its rules cannot be shown to be unchanged
+                rules = {}
+            _earlier_versions[str(r.id)] = (r.kind, r.name, r.version, rules)
+    return {v: _earlier_versions[v] for v in version_ids if v in _earlier_versions}
+
+
+def _carried(conn, raw, ms):
+    """``({(rule id, current version id): decision}, [detached])`` for decisions made on an earlier version. The
+    latest decision on a rule counts; one made on the current version always stands.
+
+    Content is compared whole (a type rule's choice, fields and sentence; a row's match, outputs and reasoning), so a
+    reworded row needs a look again rather than passing for what the person read."""
+    current = {str(m.id): m for m in ms}
+    by_mapping = {(m.kind, m.name): m for m in ms}
+    earlier = _earlier(conn, sorted({mv for _, mv in raw} - set(current)))
+    latest = {}
+    for (rule, mv), d in raw.items():
+        if mv in earlier:
+            kept = latest.get(rule)
+            if kept is None or (d.get("at") or _EPOCH) >= (kept[1].get("at") or _EPOCH):
+                latest[rule] = (mv, d)
+    carried, detached = {}, []
+    for rule, (mv, d) in latest.items():
+        kind, name, version, before = earlier[mv]
+        m = by_mapping.get((kind, name))
+        now = rule_contents(m) if m is not None else {}
+        was = {"carried_from_version": version, "carried_from_id": mv, "mapping_kind": kind, "mapping_name": name}
+        if rule not in now:
+            detached.append(dict(d, rule_id=rule, **was))
+        elif (rule, str(m.id)) not in raw:
+            carried[(rule, str(m.id))] = dict(d, needs_review=rule not in before or before[rule] != now[rule], **was)
+    return carried, detached
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def earlier_decision(d) -> dict | None:
+    """What a judgement call shows of a decision made on an earlier version."""
+    if not d or "carried_from_version" not in d:
+        return None
+    return {"decision": d["decision"], "by": d.get("by"), "at": d.get("at"), "reason": d.get("reason"),
+            "version": d["carried_from_version"], "needs_review": bool(d.get("needs_review")),
+            "choice": d.get("choice") if d["decision"] == "correct" else None,
+            "decision_id": d.get("decision_id"), "rule_id": d.get("rule_id")}
+
+
+def resolved_by(d):
+    """The decision that resolves a call, or ``{}``: one that needs review is shown and resolves nothing."""
+    return {} if not d or d.get("needs_review") else d
+
+
+def reading_status(m, d) -> str:
+    if d and d.get("needs_review"):
+        return "open"
+    if d:
+        return "confirmed" if d["decision"] == "confirm" else "corrected"
+    return "confirmed" if m.status == "reviewed" else "open"
 
 
 def words(name):
@@ -165,8 +266,11 @@ def judgement_id(extraction_id, rule_id, version_id):
     return uuid.uuid5(JUDGEMENT_NS, "%s|%s|%s" % (extraction_id, rule_id, version_id))
 
 
-def _level(m, d):
-    return "reviewed" if (m.status == "reviewed" or d) else "applied_unconfirmed"
+def decision_level(m, d):
+    return "reviewed" if (m.status == "reviewed" or (d and not d.get("needs_review"))) else "applied_unconfirmed"
+
+
+_level = decision_level
 
 
 _region_hook = {"decided": None}
@@ -207,7 +311,7 @@ def plan(conn, extraction_id, mappings=None) -> dict:
     rule's (possibly corrected) choice and level, and the marks the generic pass stamps on rows as it writes."""
     ms = loader.loaded() if mappings is None else mappings
     present = _present_types(conn, extraction_id)
-    decisions = reading_decisions(conn, extraction_id)
+    decisions = reading_decisions(conn, extraction_id, ms)
     out = {"present": present, "applied": [], "suspended": [], "levels": {}, "row_mappings": [],
            "marks": {"time": {}, "text": {}, "party": {}, "record": {}, "region": default_region(conn, extraction_id)}}
     marks = out["marks"]
@@ -310,14 +414,12 @@ def apply_extraction(conn, extraction_id, generation, the_plan) -> dict:
                                       rule, t, m.id)
             else:
                 n, samples = counts.get(rule["rule_id"], (0, []))
-            status = "open"
-            if m.status == "reviewed":
-                status = "confirmed"
-            if d:
-                status = "confirmed" if d["decision"] == "confirm" else "corrected"
+            status = reading_status(m, d)
             evidence = {"fields": _evidence(conn, t, rule["fields"], extraction_id), "choice": rule["choice"],
                         "mapping": {"kind": m.kind, "name": m.name, "version": m.version, "status": m.status,
-                                    "origin": m.origin, "basis": m.content["review"]["basis"]}}
+                                    "origin": m.origin, "basis": m.content["review"]["basis"]},
+                        "earlier_decision": earlier_decision(d)}
+            res = resolved_by(d)
             conn.execute(text(
                 "INSERT INTO phone_mapping_judgements (id, case_id, extraction_id, mapping_version_id, mapping_kind, "
                 "mapping_name, rule_id, type_name, rule_part, summary, strength, records_touched, sample_record_uids, "
@@ -334,8 +436,8 @@ def apply_extraction(conn, extraction_id, generation, the_plan) -> dict:
                  "mv": m.id, "k": m.kind, "n": m.name, "r": rule["rule_id"], "t": t, "p": rule["part"],
                  "s": rule["summary"], "cnt": n, "samples": [str(x) for x in samples],
                  "ev": json.dumps(evidence, default=str), "st": status,
-                 "rb": (d or {}).get("by"), "rbe": (d or {}).get("by_email"), "ra": (d or {}).get("at"),
-                 "rr": (d or {}).get("reason"), "adj": (d or {}).get("decision_id"), "g": generation})
+                 "rb": res.get("by"), "rbe": res.get("by_email"), "ra": res.get("at"),
+                 "rr": res.get("reason"), "adj": res.get("decision_id"), "g": generation})
             if status == "open":
                 stats["judgements_open"] += 1
         conn.execute(text(
@@ -371,9 +473,8 @@ def _meaning_calls(conn, m, prefix, decisions, case_id, extraction_id, generatio
         if r is None:
             continue
         d = decisions.get((rid, str(m.id)))
-        status = "confirmed" if m.status == "reviewed" else "open"
-        if d:
-            status = "confirmed" if d["decision"] == "confirm" else "corrected"
+        status = reading_status(m, d)
+        res = resolved_by(d)
         cond = "" if not (r.get("predicates") or r.get("context")) else " when %s" % ", ".join(
             "%s %s%s" % (words(p.get("field") or p.get("name")), p["op"],
                          "" if p.get("value") is None else " %s" % p["value"]) for p in (r["predicates"] + r["context"]))
@@ -384,7 +485,8 @@ def _meaning_calls(conn, m, prefix, decisions, case_id, extraction_id, generatio
                                         extraction_id),
                     "row": {k: r[k] for k in ("predicates", "context", "outputs", "basis", "reasoning", "would_change")},
                     "mapping": {"kind": m.kind, "name": m.name, "version": m.version, "status": m.status,
-                                "origin": m.origin, "basis": m.content["review"]["basis"]}}
+                                "origin": m.origin, "basis": m.content["review"]["basis"]},
+                    "earlier_decision": earlier_decision(d)}
         conn.execute(text(
             "INSERT INTO phone_mapping_judgements (id, case_id, extraction_id, mapping_version_id, mapping_kind, "
             "mapping_name, rule_id, type_name, rule_part, summary, strength, records_touched, sample_record_uids, "
@@ -399,8 +501,8 @@ def _meaning_calls(conn, m, prefix, decisions, case_id, extraction_id, generatio
             "generation = EXCLUDED.generation, updated_at = now()"),
             {"id": judgement_id(extraction_id, rid, m.id), "c": case_id, "e": extraction_id, "mv": m.id, "k": m.kind,
              "n": m.name, "r": rid, "t": r["type"], "s": summary, "cnt": n, "samples": [str(x) for x in samples],
-             "ev": json.dumps(evidence, default=str), "st": status, "rb": (d or {}).get("by"),
-             "rbe": (d or {}).get("by_email"), "ra": (d or {}).get("at"), "rr": (d or {}).get("reason"),
-             "adj": (d or {}).get("decision_id"), "g": generation})
+             "ev": json.dumps(evidence, default=str), "st": status, "rb": res.get("by"),
+             "rbe": res.get("by_email"), "ra": res.get("at"), "rr": res.get("reason"),
+             "adj": res.get("decision_id"), "g": generation})
         n_calls += 1
     return n_calls

@@ -14,7 +14,7 @@ import { IdentityLinkGroup } from "./IdentityLinkGroup"
 import { PeopleSuggestions } from "./PeopleSuggestions"
 import { ReadingRechecks } from "./ReadingRechecks"
 import { identitiesAPI } from "./identities.api"
-import { readingsAPI, type CorrectionPreview, type ExampleKind, type PhoneProgress, type Reading, type ReadingExamples } from "./readings.api"
+import { readingsAPI, type CorrectionPreview, type DetachedDecision, type ExampleKind, type PhoneProgress, type Reading, type ReadingExamples } from "./readings.api"
 
 /**
  * Needs a decision, readings group (02 sections 6.8 and 6.10; 07 J-8 and section 5). Each reading is one rule the
@@ -25,6 +25,18 @@ import { readingsAPI, type CorrectionPreview, type ExampleKind, type PhoneProgre
  */
 const ZONE = "UTC"
 const ORIGIN = "Mapped by the system, not yet confirmed"
+
+function DetachedDecisions({ items }: { items: DetachedDecision[] }) {
+  if (items.length === 0) return null
+  return (
+    <section aria-label="Decisions on rules the system no longer has" className="text-sm">
+      <h3 className="font-semibold">Decisions on rules the system no longer has</h3>
+      <ul className="list-disc pl-5">
+        {items.map((d) => <li key={`${d.extraction_id}-${d.rule_id}`}>{d.phone}: {d.words}{d.reason ? ` Reason then: ${d.reason}.` : ""}</li>)}
+      </ul>
+    </section>
+  )
+}
 
 function dateWords(iso: string | null) {
   if (!iso) return ""
@@ -195,7 +207,12 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
 
   if (queue.isLoading) return <p role="status" className="text-sm">Loading the readings to check.</p>
   if (queue.isError) return <p role="alert" className="text-sm">The readings could not be loaded. {errorWords(queue.error)} <Button size="sm" variant="outline" onClick={() => void queue.refetch()}>Try again</Button></p>
-  if (!r) return <p className="text-sm">Nothing needs a decision. New items appear when a phone is added or a reading changes.</p>
+  if (!r) return (
+    <>
+      <p className="text-sm">Nothing needs a decision. New items appear when a phone is added or a reading changes.</p>
+      <DetachedDecisions items={queue.data?.detached ?? []} />
+    </>
+  )
   const checked = queue.data?.checked ?? 0
   // The rows of this kind on this phone that a person can still confirm: one rule part on one phone (UXD-58).
   const sameKind = items.filter((x) => x.status === "open" && x.extraction_id === r.extraction_id && x.part === r.part)
@@ -203,6 +220,7 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
     <section aria-labelledby="readings-group" className="flex flex-col gap-3">
       <h2 id="readings-group" className="text-base font-semibold">Readings to check</h2>
       <p role="status" className="text-sm">{fmt(checked)} of {fmt(items.length)} checked. {fmt(queue.data?.open ?? 0)} are {ORIGIN.toLowerCase()}.</p>
+      <DetachedDecisions items={queue.data?.detached ?? []} />
       <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
         <nav aria-label="Readings to check" className="max-h-[70vh] overflow-auto rounded border bg-card p-2 text-sm">
           <ol className="flex flex-col gap-1" aria-label={`${items.length} readings`}>
@@ -210,7 +228,7 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
               <li key={x.id}>
                 <button type="button" aria-current={x.id === r.id ? "true" : undefined} onClick={() => setIndex(i)} className="w-full rounded px-1.5 py-1 text-left hover:bg-muted aria-[current=true]:bg-accent">
                   <span>{x.sentence}</span>
-                  <span className="block text-xs text-muted-foreground">{x.status === "open" ? ORIGIN : x.status === "confirmed" ? `Confirmed by ${x.resolved_by}` : `Corrected by ${x.resolved_by}`}</span>
+                  <span className="block text-xs text-muted-foreground">{x.earlier_decision?.needs_review ? "An earlier decision needs a new look" : x.status === "open" ? ORIGIN : x.status === "confirmed" ? `Confirmed by ${x.resolved_by}` : `Corrected by ${x.resolved_by}`}</span>
                 </button>
               </li>
             ))}
@@ -228,6 +246,11 @@ export function ReadingsGroup({ caseId }: { caseId: string }) {
           {r.status === "corrected" && (
             <p role="status" className="text-sm">
               Corrected by {r.resolved_by} on {dateWords(r.resolved_at)}. Reason: {r.reason}. The system's reading stays visible in the record history.
+            </p>
+          )}
+          {r.earlier_decision && (
+            <p role={r.earlier_decision.needs_review ? "alert" : "status"} className="text-sm">
+              {r.earlier_decision.words}{r.earlier_decision.reason ? ` Reason then: ${r.earlier_decision.reason}.` : ""}
             </p>
           )}
           {watching === r.extraction_id && watched && <ProgressLine p={watched} records={r.records} />}

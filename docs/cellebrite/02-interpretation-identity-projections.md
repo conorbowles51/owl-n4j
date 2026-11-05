@@ -876,6 +876,21 @@ phone and type; confirming a whole rule on a phone is one action.
 *Reverse if* a confirmed-only mode is wanted for a case: rows at `applied_unconfirmed` would then be left out
 of that case's views until confirmed.
 
+**A decision across versions.** A person's decision is recorded on one version of a rule, and a new version of the
+mapping does not end it (`apply._carried`). The content of the rule (a type rule's choice, fields and sentence) or the
+row (its match, outputs, basis, reasoning and what would change it) is compared whole between the version decided on
+and the current one:
+
+- unchanged: the decision applies to the new version, its original author and reason standing, and the reading says
+  which version it was made on;
+- changed: the reading is open and listed as needing a new look, with the earlier decision shown. Rows read
+  "not yet confirmed". A correction stays in use until a person decides on the new version, so a catalogue change
+  never puts the catalogue's value back in silence;
+- the rule is gone from the new version: the decision is listed under "Decisions on rules the system no longer has".
+
+The latest decision on a rule counts, and a decision on the current version always stands. *Reverse if* a changed
+rule should take the catalogue's value at once, with the correction only shown.
+
 ### 6.9 Initial `type` mappings (to be reviewed; field names are the catalogue's)
 
 | Type | Event time | End / duration | Participants (container: role) | Thread | Place | Text | Other fields carried |

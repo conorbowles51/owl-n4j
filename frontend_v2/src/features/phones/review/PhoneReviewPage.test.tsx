@@ -92,6 +92,15 @@ describe("Needs a decision, readings group", () => {
     expect(screen.getAllByText(/Mapped by the system, not yet confirmed/).length).toBeGreaterThan(0)
   })
 
+  it("shows a decision from an earlier version beside the reading, and one whose rule is gone", async () => {
+    api.list.mockResolvedValue({ ...QUEUE, detached: [{ extraction_id: "e1", phone: "C1", rule_id: "x", by: "Sam Example", at: null, reason: "seen on the handset", decision: "correct", version: 1, words: "Sam Example corrected a rule that version 1 held; the system no longer has that rule, so the decision applies to nothing now." }],
+      items: [reading({ earlier_decision: { needs_review: true, decision: "correct", by: "Sam Example", at: "2026-11-01T10:00:00Z", reason: "the far end", version: 1, words: "Sam Example corrected this on 2026-11-01, on version 1 of the rule. The rule has changed since, so it needs a new look. Their correction stays in use until someone decides." } })] })
+    page()
+    expect(await screen.findByRole("alert")).toHaveTextContent(/stays in use until someone decides\. Reason then: the far end\./)
+    expect(screen.getByText("An earlier decision needs a new look")).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: /no longer has/ })).toHaveTextContent(/C1: Sam Example corrected a rule/)
+  })
+
   it("opens on the reading a record panel link names (07 J-8b)", async () => {
     page("/cases/case-1/phone-review?reading=r2")
     await waitFor(() => expect(api.examples).toHaveBeenCalledWith("case-1", "r2"))

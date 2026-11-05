@@ -210,9 +210,9 @@ def counts(conn, case_id, phones=None) -> dict:
 def summary(conn, case_id, user) -> dict:
     """The counts, each draw, and every sampled confirmation with the reading it is on now (``reading_id`` is None
     when the phone was replaced, or the rule no longer applies, so there is nothing current to look at)."""
-    now = {(r.extraction_id, r.rule_id, r.mapping_version_id): r for r in conn.execute(text(
-        "SELECT j.id, j.extraction_id::text AS extraction_id, j.rule_id, j.mapping_version_id::text AS "
-        "mapping_version_id, j.status, j.resolved_by FROM phone_mapping_judgements j JOIN phone_interpretation_state "
+    # by rule, not rule and version: a confirmation carried to a new version is on the same reading
+    now = {(r.extraction_id, r.rule_id): r for r in conn.execute(text(
+        "SELECT j.id, j.extraction_id::text AS extraction_id, j.rule_id, j.status, j.resolved_by FROM phone_mapping_judgements j JOIN phone_interpretation_state "
         "s ON s.extraction_id = j.extraction_id AND s.generation = j.generation WHERE j.case_id = :c"),
         {"c": str(case_id)})}
     passes: dict = {}
@@ -225,7 +225,7 @@ def summary(conn, case_id, user) -> dict:
             "sampled": 0})
         for i in a.get("items") or []:
             p["sampled"] += 1
-            cur = now.get((r.target_id, i.get("rule_id"), i.get("mapping_version_id")))
+            cur = now.get((r.target_id, i.get("rule_id")))
             first = {k: v for k, v in (i.get("first") or {}).items() if k != "by_email"}
             items.append({"task_id": str(r.task_id), "confirmation_id": i["confirmation_id"], "phone": i.get("phone"),
                           "extraction_id": r.target_id, "sentence": i.get("sentence"), "first": first,

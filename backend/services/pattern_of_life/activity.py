@@ -78,7 +78,7 @@ class RowIndex:
     def __init__(self, conn, extraction_id, mappings=None):
         from services.phone.mappings import apply, loader
         ms = loader.loaded() if mappings is None else mappings
-        decisions = apply.reading_decisions(conn, extraction_id) if conn is not None else {}
+        decisions = apply.reading_decisions(conn, extraction_id, ms) if conn is not None else {}
         self.kinds = {"activity_strength": [], "attribution": []}
         self.versions = {}
         self.fields = defaultdict(set)
@@ -92,7 +92,7 @@ class RowIndex:
                 by_key[(r["type"], r["field"])].append(r)
                 rid = prefix + r["row_id"]
                 d = decisions.get((rid, str(m.id)))
-                levels[rid] = "reviewed" if (m.status == "reviewed" or d) else "applied_unconfirmed"
+                levels[rid] = apply.decision_level(m, d)
                 if d and d["decision"] == "correct":
                     corrected[rid] = d["choice"]
                 for p in r.get("predicates") or []:
@@ -284,7 +284,7 @@ def build(conn, extraction_id, mappings=None) -> dict:
             source = _first(fvals.get("Source"))
         if source is not None:
             fvals["Source"] = [source]
-        ctx = {"direction": direction.get(str(first.record_uid)) if t in COMM_TYPES else None,
+        ctx = {"direction": direction.get(str(first.record_uid)) or "unknown" if t in COMM_TYPES else None,
                "party_is_owner": _party_owner(first.body) if t == "Party" else None,
                "deleted_state": first.deleted_state, "decoding_confidence": first.decoding_confidence}
         by_field = {}
@@ -512,14 +512,14 @@ def _judgement_calls(conn, idx, extraction_id, case_id, gen) -> int:
                         continue
                     cnt, samples = touched[rid]
                     d = decisions.get((rid, str(m.id)))
-                    status = "confirmed" if m.status == "reviewed" else "open"
-                    if d:
-                        status = "confirmed" if d["decision"] == "confirm" else "corrected"
+                    status = apply.reading_status(m, d)
+                    res = apply.resolved_by(d)
                     summary = _summary(kind, r)
                     evidence = {"row": {k: r.get(k) for k in ("predicates", "context", "outputs", "basis", "reasoning",
                                                               "would_change")},
                                 "mapping": {"kind": m.kind, "name": m.name, "version": m.version, "status": m.status,
-                                            "origin": m.origin, "basis": m.content["review"]["basis"]}}
+                                            "origin": m.origin, "basis": m.content["review"]["basis"]},
+                                "earlier_decision": apply.earlier_decision(d)}
                     conn.execute(text(
                         "INSERT INTO phone_mapping_judgements (id, case_id, extraction_id, mapping_version_id, "
                         "mapping_kind, mapping_name, rule_id, type_name, rule_part, summary, strength, records_touched, "
@@ -537,9 +537,9 @@ def _judgement_calls(conn, idx, extraction_id, case_id, gen) -> int:
                          "mv": m.id, "k": m.kind, "n": m.name, "r": rid, "t": r["type"],
                          "part": "activity" if kind == "activity_strength" else "attribution", "s": summary,
                          "cnt": cnt, "samples": [str(x) for x in samples], "ev": json.dumps(evidence, default=str),
-                         "st": status, "rb": (d or {}).get("by"), "rbe": (d or {}).get("by_email"),
-                         "ra": (d or {}).get("at"), "rr": (d or {}).get("reason"),
-                         "adj": (d or {}).get("decision_id"), "g": gen})
+                         "st": status, "rb": res.get("by"), "rbe": res.get("by_email"),
+                         "ra": res.get("at"), "rr": res.get("reason"),
+                         "adj": res.get("decision_id"), "g": gen})
                     written.append(apply.judgement_id(extraction_id, rid, m.id))
                     n_calls += 1
     # a call this projection wrote earlier (an older mapping version, or a row that no longer touches any event) is

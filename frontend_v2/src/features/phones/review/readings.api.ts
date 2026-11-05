@@ -25,7 +25,32 @@ export interface Reading {
   reason: string | null
   reason_kind: "typed" | "standard" | null
   note: string | null
+  /** A decision made on an earlier version of this rule, kept across the version. */
+  earlier_decision?: EarlierDecision | null
   choices: ReadingChoice[]
+}
+
+export interface EarlierDecision {
+  needs_review: boolean
+  decision: "confirm" | "correct"
+  by: string | null
+  at: string | null
+  reason: string | null
+  version: number
+  words: string
+}
+
+/** A decision on a rule the system no longer holds, so it applies to nothing now. */
+export interface DetachedDecision {
+  extraction_id: string
+  phone: string
+  rule_id: string
+  by: string | null
+  at: string | null
+  reason: string | null
+  decision: "confirm" | "correct"
+  version: number
+  words: string
 }
 
 export interface ReadingQueue {
@@ -34,6 +59,7 @@ export interface ReadingQueue {
   open: number
   checked: number
   items: Reading[]
+  detached?: DetachedDecision[]
 }
 
 export interface ExampleParty {
