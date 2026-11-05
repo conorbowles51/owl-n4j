@@ -6,6 +6,7 @@ Invented data only (the synthetic institution and ledger of the approach 1 tests
 """
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timezone
 
 import pytest
@@ -245,8 +246,11 @@ def test_the_agent_lists_every_pairing_with_strength_and_who_decided_and_leaves_
         assert len(lines["weak"]) == 1 and lines["strong"] == [] and len(lines["rejected"]) == 1
         assert lines["weak"][0].startswith("Weak | notification $50.00 out on ")
         assert "payment 8 days after the phone record" in lines["weak"][0]
-        assert lines["weak"][0].endswith("| confirmed by Synthetic Reviewer %s" % lines["weak"][0][-10:])
-        assert lines["rejected"][0].endswith("rejected by Synthetic Reviewer: Refund, not the purchase")
+        # who decided, then the base rate beside the pairing: both rows are USD 50.00 out, so 2 of 2 (the rule's own count)
+        assert re.search(r"\| confirmed by Synthetic Reviewer \d{4}-\d{2}-\d{2} \| "
+                         r"This amount occurs on 2 of 2 USD money-out rows on this account\.$", lines["weak"][0])
+        assert lines["rejected"][0].endswith("rejected by Synthetic Reviewer: Refund, not the purchase | This amount "
+                                             "occurs on 2 of 2 USD money-out rows on this account.")
         assert "never call a rule-found pairing confirmed" in after["note"]
         # the case brief: the rejected rule match is not corroboration, and matches are counted by strength
         from services.agent import briefs
