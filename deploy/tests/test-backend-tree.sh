@@ -53,15 +53,19 @@ git checkout -q "${two}"
 backend_tree_stage "${two}"
 check "the next stage takes green" "${BACKEND_TREE_STAGED}" green
 check "blue did not move" "$(cat "${BACKEND_TREES}/blue/backend/code.py")" 1
+check "the old backend is told a release is staged" "$([ -e "${BACKEND_TREES}/.release-staged" ] && echo there || echo gone)" there
 check "green holds the new code" "$(cat "${BACKEND_TREES}/green/backend/code.py")" 2
 backend_tree_stage "${two}"
 check "staging again changes nothing" "${BACKEND_TREE_STAGED}" green
 backend_tree_apply >/dev/null
 check "the link moved under the running process" "$(backend_tree_current)" green
+check "the switch clears the staged mark" "$([ -e "${BACKEND_TREES}/.release-staged" ] && echo there || echo gone)" gone
 check "the process stays where it started" "$(backend_tree_in_use)" blue
 
 # The old backend is still up and the release ends here (interrupted, or a handover undone).
+touch "${BACKEND_TREES}/.release-staged"
 backend_tree_settle
+check "a release that ended clears the staged mark" "$([ -e "${BACKEND_TREES}/.release-staged" ] && echo there || echo gone)" gone
 check "current goes back to what runs" "$(backend_tree_current)" blue
 
 # A release stopped before its switch, then the next: the same free tree is used again.

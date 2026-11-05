@@ -128,6 +128,8 @@ backend_tree_stage() {
     BACKEND_TREE_STAGED="${name}"
     LOUPE_PREPARE_BACKEND_DIR="${BACKEND_TREES}/${name}/backend"
     export LOUPE_PREPARE_BACKEND_DIR
+    # The running backend sees no new code on disk: this says its views are about to be replaced (view_warmup.py).
+    $RUN_AS touch "${BACKEND_TREES}/.release-staged"
 }
 
 backend_tree_point() {  # <name>: `current` moves in one step
@@ -155,6 +157,7 @@ backend_tree_apply() {
     [ -n "${BACKEND_TREE_STAGED}" ] || return 1
     BACKEND_TREE_PREVIOUS="$(backend_tree_current)"
     backend_tree_point "${BACKEND_TREE_STAGED}" || return 1
+    $RUN_AS rm -f "${BACKEND_TREES}/.release-staged"
     BACKEND_TREE_APPLIED=true
     changed="$(backend_socket_install_file "$(backend_tree_dropin)" \
         "$(printf '# deploy/backend-tree.sh: the backend runs from a tree a release never moves under it.\n[Service]\nWorkingDirectory=%s/current/backend\n' "${BACKEND_TREES}")")" || return 1
@@ -184,6 +187,7 @@ backend_tree_rollback() {
 # the unit gets that code.
 backend_tree_settle() {
     local used
+    $RUN_AS rm -f "${BACKEND_TREES}/.release-staged"
     used="$(backend_tree_in_use)"
     if [ -n "${used}" ] && [ "$(echo "${used}" | wc -l)" -eq 1 ] && [ "${used}" != "$(backend_tree_current)" ]; then
         backend_tree_point "${used}"

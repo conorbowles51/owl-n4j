@@ -290,6 +290,15 @@ def test_a_pass_is_due_only_after_a_write_to_a_table_its_views_read(periods, mon
         # (This test changed the environment, which the identity includes: the code on disk is pinned as unchanged.)
         monkeypatch.setattr(view_cache, '_identity_now', lambda: view_cache.code_identity())
         assert view_warmup._rewarm_due(now=later) is True
+        # A backend running from its tree sees no new code on disk: the release says so.
+        staged = os.path.join(view_cache._memo_dir(), '.release-staged')
+        monkeypatch.setattr(view_warmup, 'RELEASE_STAGED', staged)
+        open(staged, 'w').close()
+        assert view_warmup._rewarm_due(now=later) is False
+        ancient = clock.time() - view_warmup.RELEASE_STAGED_MAX_AGE_SECONDS - 1
+        os.utime(staged, (ancient, ancient))
+        assert view_warmup._rewarm_due(now=later) is True  # a killed release left it behind
+        os.unlink(staged)
         monkeypatch.setattr(view_cache, '_identity_now', lambda: 'the next release, written to disk')
         assert view_warmup._rewarm_due(now=later) is False  # this process's code is about to be replaced
         monkeypatch.setattr(view_cache, '_identity_now', lambda: view_cache.code_identity())
@@ -336,6 +345,22 @@ def test_the_after_start_pass_stops_when_a_release_starts_preparing(periods):
     assert calls == [] and not (directory / view_warmup.REWARM_STATE).exists()
     view_warmup.warm_account_history(lock_held=True)
     assert len(calls) == PER_CASE
+
+
+def test_a_staged_release_counts_until_its_mark_is_too_old(tmp_path, monkeypatch):
+    staged = tmp_path / '.release-staged'
+    monkeypatch.setattr(view_warmup, 'RELEASE_STAGED', str(staged))
+    assert view_warmup._release_staged() is False
+    staged.touch()
+    assert view_warmup._release_staged() is True
+    ancient = time.time() - view_warmup.RELEASE_STAGED_MAX_AGE_SECONDS - 1
+    os.utime(staged, (ancient, ancient))
+    assert view_warmup._release_staged() is False
+
+
+def test_the_staged_mark_is_read_beside_the_trees():
+    # services/financial/view_warmup.py in <trees>/<tree>/backend: deploy/backend-tree.sh writes <trees>/.release-staged
+    assert view_warmup.RELEASE_STAGED.endswith(os.path.join('financial', '..', '..', '..', '..', '.release-staged'))
 
 
 @needs_pg

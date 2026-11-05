@@ -42,6 +42,8 @@ CHILD_FLAG = '--lock-held'
 REWARM_CHECK_SECONDS = 60
 REWARM_MIN_SECONDS = 300
 REWARM_STATE = 'rewarm-state.json'
+RELEASE_STAGED = os.path.join(os.path.dirname(os.path.abspath(__file__)), *['..'] * 4, '.release-staged')
+RELEASE_STAGED_MAX_AGE_SECONDS = 3 * 3600
 
 
 async def warm_views_once():
@@ -163,8 +165,11 @@ def _rewarm_due(now=None):
         now_graph = _graph_now()
         if now_graph is None or now_graph == graph:
             return False
-    # A release writes the next code to disk before preparing it: this process's views are about to be replaced
-    # (seen live 2026-10-31 02:57: a pass began 3 s after a prepare ended, before the restart).
+    # A release has the next code ready: this process's views are about to be replaced (seen live 2026-10-31 02:57: a pass
+    # began 3 s after a prepare ended, before the restart). The code on disk never changes under a backend running from
+    # its tree, so deploy/backend-tree.sh says so; it still changes under a backend running from the checkout.
+    if _release_staged():
+        return False
     on_disk = view_cache._identity_now()
     if on_disk == view_cache.code_identity():
         return True
@@ -174,6 +179,15 @@ def _rewarm_due(now=None):
         logger.info('Financial view re-warm skipped: the code on disk (%s) is not the code this process runs (%s)',
                     (on_disk or 'unreadable')[:12], (view_cache.code_identity() or 'unreadable')[:12])
     return False
+
+
+def _release_staged():
+    """deploy/backend-tree.sh leaves this file beside the trees until the switch. One a killed release left behind stops
+    counting after RELEASE_STAGED_MAX_AGE_SECONDS: the longest release of 5 Nov took 71 min from the stage to the switch."""
+    try:
+        return time.time() - os.stat(RELEASE_STAGED).st_mtime < RELEASE_STAGED_MAX_AGE_SECONDS
+    except OSError:
+        return False
 
 
 _skipped_for = None  # the disk identity last reported as skipped (one journal line per change)
