@@ -45,7 +45,8 @@ class WorkspaceAIOutput(Base, TimestampMixin):
         CheckConstraint(
             "output_type IN ('statement_summary', 'statement_comparison', 'theory_analysis', 'statement_claims', "
             "'entry_draft', 'lead_card', 'timeline_addition', 'link_proposal', 'alternative_explanation', "
-            "'control_claim', 'payment_purpose', 'statement_claim', 'entity_proposal', 'glossary_term')",
+            "'control_claim', 'payment_purpose', 'statement_claim', 'entity_proposal', 'glossary_term', "
+            "'counter_argument', 'disconfirm_sweep')",
             name="ck_workspace_ai_outputs_output_type",
         ),
         CheckConstraint(

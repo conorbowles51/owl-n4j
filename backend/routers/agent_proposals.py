@@ -9,7 +9,7 @@ from datetime import date, datetime
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -101,6 +101,54 @@ def run_red_cell(case_id: UUID, body: RedCell, db: Session = Depends(get_db),
     finds is a proposal pending review; nothing else changes."""
     from services.agent.red_cell import sweep
     return _call(db, lambda: sweep(db, case_id=case_id, theory_id=body.theory_id, requested_by=current_user))
+
+
+class Disconfirm(BaseModel):
+    theory_id: UUID
+
+
+class DisconfirmStart(BaseModel):
+    limit: int | None = Field(default=None, ge=1)
+
+
+@router.post("/{case_id}/proposals/disconfirm", dependencies=[Depends(require_case_edit)])
+def plan_disconfirm(case_id: UUID, body: Disconfirm, background: BackgroundTasks, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_db_user)):
+    """Look across the whole case for what breaks a theory. One model call derives what the theory leads you to
+    expect, code searches for it, and the sweep stops with the exact number of model reads stated."""
+    from services.agent import disconfirm
+    result = _call(db, lambda: disconfirm.create(db, case_id=case_id, theory_id=body.theory_id, requested_by=current_user))
+    if result.get('created'):
+        background.add_task(disconfirm.plan_in_background, UUID(result['id']))
+    return result
+
+
+@router.get("/{case_id}/proposals/disconfirm", dependencies=[Depends(require_case_view)])
+def read_disconfirm(case_id: UUID, theory_id: UUID, db: Session = Depends(get_db)):
+    """The theory's latest sweep (null when none has run), its counter-arguments, and the counts by what people
+    decided, beside the red cell's."""
+    from services.agent import disconfirm
+    return _call(db, lambda: dict(sweep=disconfirm.latest_view(db, case_id=case_id, theory_id=theory_id),
+                                  tally=disconfirm.tally(db, case_id, theory_id),
+                                  counter_arguments=disconfirm.counter_arguments(db, case_id=case_id,
+                                                                                 theory_id=theory_id)))
+
+
+@router.post("/{case_id}/proposals/disconfirm/{sweep_id}/start", dependencies=[Depends(require_case_edit)])
+def start_disconfirm(case_id: UUID, sweep_id: UUID, body: DisconfirmStart, background: BackgroundTasks,
+                     db: Session = Depends(get_db)):
+    """Start the reads the plan counted, or only the first ``limit`` of them, or the ones left after a stop."""
+    from services.agent import disconfirm
+    result = _call(db, lambda: disconfirm.start(db, case_id=case_id, sweep_id=sweep_id, limit=body.limit))
+    if result['job_status'] == 'queued':
+        background.add_task(disconfirm.read_in_background, UUID(result['id']))
+    return result
+
+
+@router.post("/{case_id}/proposals/disconfirm/{sweep_id}/stop", dependencies=[Depends(require_case_edit)])
+def stop_disconfirm(case_id: UUID, sweep_id: UUID, db: Session = Depends(get_db)):
+    from services.agent import disconfirm
+    return _call(db, lambda: disconfirm.stop(db, case_id=case_id, sweep_id=sweep_id))
 
 
 @router.get("/{case_id}/glossary", dependencies=[Depends(require_case_view)])

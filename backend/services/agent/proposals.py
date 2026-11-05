@@ -54,6 +54,7 @@ KIND_LABELS = {
     'timeline_addition': 'Timeline addition',
     'link_proposal': 'Link to evidence',
     'alternative_explanation': 'Alternative explanation (red cell)',
+    'counter_argument': 'Counter-argument (disconfirm sweep)',
     'control_claim': 'Means to operate an account (phones)',
     'payment_purpose': 'Stated purpose of a payment (phones)',
     'statement_claim': 'Statement claim',

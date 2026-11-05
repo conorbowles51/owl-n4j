@@ -47,6 +47,19 @@ function ProposalBody({ item }: { item: AgentProposal }) {
       </div>
     )
   }
+  if (item.output_type === "counter_argument") {
+    return (
+      <div className="space-y-1" data-testid="counter-argument-proposal">
+        <p className="text-sm font-semibold">{text(c.title)}</p>
+        <p className="text-xs text-muted-foreground">
+          The model's reading of what tells against the theory “{text(c.theory_title)}”:{" "}
+          {text(c.strength) === "contradicts" ? "contradicts" : "undercuts"} what it expects. Accepting links the cited
+          sources to the theory as contradicting it; a source a person already linked keeps that link.
+        </p>
+        <p className="whitespace-pre-wrap text-sm">{text(c.body)}</p>
+      </div>
+    )
+  }
   if (item.output_type === "control_claim" || item.output_type === "payment_purpose") {
     return (
       <div className="space-y-1">

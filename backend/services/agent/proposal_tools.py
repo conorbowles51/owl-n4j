@@ -51,6 +51,16 @@ class EntryProposalArgs(BaseModel):
     citations: list[str] = Field(..., min_length=1, max_length=20)
 
 
+class SweepPlanArgs(BaseModel):
+    theory_id: str = Field(..., description='The Workspace theory to test, from get_casework.')
+
+
+class SweepReadArgs(BaseModel):
+    sweep_id: str = Field(..., description='The sweep_id plan_theory_sweep returned.')
+    limit: int | None = Field(None, ge=1, description='Only the first N reads. The result says what was left unread. '
+                                                      'Leave empty to run all that the plan counted.')
+
+
 class LeadCardArgs(BaseModel):
     lead_result_id: str = Field(..., description='The id of an account lead from the phone money signals.')
     why: str = Field('', max_length=1200)
@@ -151,6 +161,14 @@ def _claim_subject(session, case_id, person, phone) -> dict:
         return dict(kind='dossier', dossier_id=str(X._dossier(conn, case_id, person).id))
     except X._Missing as exc:
         raise ProposalError('Not in this case.', 404) from exc
+
+
+def _as_uuid(value):
+    import uuid
+    try:
+        return uuid.UUID(str(value))
+    except ValueError:
+        return None
 
 
 def make_proposal_tools(context) -> list[StructuredTool]:
@@ -291,9 +309,57 @@ def make_proposal_tools(context) -> list[StructuredTool]:
                         status=mine.get('status'), used_in_result=False)
         return call('propose_assumption', 'the proceeds calculation', work)
 
+    def sweep(name, work):
+        """The disconfirm sweep is a write like a proposal: the same refusals, the screen's own counts."""
+        from services.agent import disconfirm as D
+        who = context.proposer or {}
+        if not who or not who.get('can_propose'):
+            message = ('The person this run is for cannot change this case, so no sweep was run. A person can run it '
+                       'on the theory in Workspace.')
+            return context.result(name, {'error': message}, summary=f'{name}: not run.', status='error', error=message)
+        try:
+            with _write_session() as session:
+                data = D.agent_summary(work(session, D, who))
+        except ProposalError as exc:
+            return context.result(name, {'error': str(exc)}, summary=f'{name} refused: {exc}', status='error',
+                                  error=str(exc))
+        return context.result(name, data, summary=f"{name}: {data.get('headline') or data.get('step')}")
+
+    def plan_theory_sweep(**kw):
+        args = SweepPlanArgs(**kw)
+
+        def work(session, D, who):
+            from postgres.models.user import User
+            user = session.get(User, _as_uuid(who.get('for_user_id')))
+            if user is None:
+                raise ProposalError('The person this run is for is not known.', 403)
+            made = D.create(session, case_id=context.case_id, theory_id=args.theory_id, requested_by=user,
+                            run_id=who.get('run_id'))
+            return D.plan(session, sweep_id=made['id'])
+        return sweep('plan_theory_sweep', work)
+
+    def propose_counter_arguments(**kw):
+        args = SweepReadArgs(**kw)
+
+        def work(session, D, who):
+            started = D.start(session, case_id=context.case_id, sweep_id=args.sweep_id, limit=args.limit)
+            return D.read(session, sweep_id=started['id'])
+        return sweep('propose_counter_arguments', work)
+
     rule = (' Records a proposal only: nothing changes until a person accepts it after opening a cited source. Use '
             'it when the user asks you to propose, draft or suggest work, never to answer a question.')
     return [
+        StructuredTool.from_function(
+            func=plan_theory_sweep, name='plan_theory_sweep', args_schema=SweepPlanArgs,
+            description=('Plan a whole-case sweep for what breaks a Workspace theory: one model call derives what the '
+                         'theory leads you to expect, code searches the ledger, phones, documents and graph, and '
+                         'checks what the case lacks. Returns the exact count of model reads a run would take, and '
+                         'stops. State that count to the user in your answer before or with propose_counter_arguments.')),
+        StructuredTool.from_function(
+            func=propose_counter_arguments, name='propose_counter_arguments', args_schema=SweepReadArgs,
+            description=('Run the reads plan_theory_sweep counted. Each item found against the theory is recorded as a '
+                         'proposal for a person to decide. Takes minutes. Report each expectation with what was '
+                         'searched and what was out of reach; nothing found is never support for the theory.')),
         StructuredTool.from_function(
             func=propose_judgement_call, name='propose_judgement_call', args_schema=JudgementProposalArgs,
             description=('Propose a judgement call on the ledger: a missing statement month for an account (checked '

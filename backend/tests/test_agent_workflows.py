@@ -26,8 +26,8 @@ def test_ten_scenarios_and_seven_more():
     main = [w for w in W.WORKFLOWS if not w.extra]
     extra = [w for w in W.WORKFLOWS if w.extra]
     assert [w.number for w in main] == list(range(1, 11))
-    assert len(extra) == 7 and all(w.adds_requirement and w.requirement_met_by for w in extra)
-    assert len(W.BY_ID) == 17
+    assert len(extra) == 8 and all(w.adds_requirement and w.requirement_met_by for w in extra)
+    assert len(W.BY_ID) == 18
     for w in W.WORKFLOWS:
         assert w.steps and w.proposals and w.person_confirms and w.starting_question
 
@@ -121,7 +121,7 @@ def test_case_counts_read_only_and_missing_tables_count_zero(tmp_path):
 
 def test_catalogue_shape():
     cat = W.catalogue(ALL, W.registered_tool_names())
-    assert cat["total"] == 17 and cat["schema"] == W.SCHEMA
+    assert cat["total"] == 18 and cat["schema"] == W.SCHEMA
     assert {"id", "title", "starting_question", "readiness", "steps", "proposals"} <= set(cat["workflows"][0])
     assert W.catalogue()["workflows"][0].get("readiness") is None
 

@@ -12,6 +12,7 @@ export type AgentProposalKind =
   | "statement_claim"
   | "entity_proposal"
   | "glossary_term"
+  | "counter_argument"
 
 export interface LeadAlert {
   cite: string
@@ -118,6 +119,91 @@ export interface RedCellResult {
   refused: { title: string | null; why: string }[]
 }
 
+export interface DisconfirmAbsence {
+  kind: string
+  what: string
+  reason: string
+  why?: string | null
+  expectation?: string | null
+  basis?: string
+  tied?: boolean
+}
+
+/** One sweep of a theory across the whole case (backend services/agent/disconfirm.py). */
+export interface DisconfirmSweep {
+  id: string
+  case_id?: string
+  theory_id: string
+  theory_title: string
+  stage: "planning" | "planned" | "reading" | "done"
+  step: string
+  job_status: "queued" | "running" | "completed" | "failed" | "cancelled"
+  progress: number
+  error: string | null
+  cancel_requested: boolean
+  started_at: string | null
+  completed_at: string | null
+  model: { provider: string; model_id: string; others_configured: string[]; words: string }
+  expectations: { id: string; claim: string; would_contradict: string }[]
+  reads: {
+    total: number
+    done: number
+    running: number
+    pending: number
+    failed: number
+    items: number
+    items_read: number
+    failures: { id: string; expectation: string; error: string | null }[]
+    seconds_per_read: number | null
+    slowest_running_seconds: number | null
+    slow: boolean
+  }
+  calls_stated: number | null
+  time_left: { seconds: number; label: string } | null
+  cost: { usd: number; tokens: number; calls: number }
+  proposals: { id: string; title: string; expectation: string; strength: string; citations: number }[]
+  refused: { title: string | null; expectation: string; why: string }[]
+  repeats: { title: string; expectation: string }[]
+  absences: { items: DisconfirmAbsence[]; not_checked: string[]; needs: number; limitation: string } | null
+  outcome: {
+    headline: string
+    complete: boolean
+    findings: number
+    not_read: number
+    absences: number
+    not_support: string
+    expectations: {
+      id: string
+      claim: string
+      reads: number
+      unread: number
+      findings: number
+      repeats: number
+      searched: string[]
+      out_of_reach: string[]
+      sentence: string | null
+    }[]
+  }
+}
+
+export interface ProposalTally {
+  total: number
+  accepted: number
+  rejected: number
+  waiting: number
+  precision: number | null
+}
+
+export interface DisconfirmState {
+  sweep: DisconfirmSweep | null
+  tally: { counter_arguments: ProposalTally; red_cell: ProposalTally }
+  counter_arguments: (AgentProposal & {
+    accepted_by: string | null
+    model_text: string
+    person_text: string | null
+  })[]
+}
+
 export const AGENT_PROPOSAL_LABELS: Record<AgentProposalKind, string> = {
   entry_draft: "Drafted note or finding",
   lead_card: "Lead card",
@@ -129,6 +215,7 @@ export const AGENT_PROPOSAL_LABELS: Record<AgentProposalKind, string> = {
   statement_claim: "Statement claim",
   entity_proposal: "Entity for the graph",
   glossary_term: "Code-word meaning",
+  counter_argument: "Counter-argument (disconfirm sweep)",
 }
 
 const base = (caseId: string) => `/api/workspace/${encodeURIComponent(caseId)}/proposals`
@@ -169,6 +256,25 @@ export function rejectAgentProposal(caseId: string, id: string, reason: string) 
 
 export function runRedCell(caseId: string, theoryId: string) {
   return fetchAPI<RedCellResult>(`${base(caseId)}/red-cell`, { method: "POST", body: { theory_id: theoryId } })
+}
+
+export function fetchDisconfirm(caseId: string, theoryId: string) {
+  return fetchAPI<DisconfirmState>(`${base(caseId)}/disconfirm?theory_id=${encodeURIComponent(theoryId)}`)
+}
+
+export function planDisconfirm(caseId: string, theoryId: string) {
+  return fetchAPI<DisconfirmSweep>(`${base(caseId)}/disconfirm`, { method: "POST", body: { theory_id: theoryId } })
+}
+
+export function startDisconfirm(caseId: string, sweepId: string, limit?: number) {
+  return fetchAPI<DisconfirmSweep>(`${base(caseId)}/disconfirm/${sweepId}/start`, {
+    method: "POST",
+    body: limit ? { limit } : {},
+  })
+}
+
+export function stopDisconfirm(caseId: string, sweepId: string) {
+  return fetchAPI<DisconfirmSweep>(`${base(caseId)}/disconfirm/${sweepId}/stop`, { method: "POST" })
 }
 
 /** The red cell's alternatives for one theory, counted by what people decided (latest 100 in the case). */

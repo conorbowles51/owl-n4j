@@ -16,6 +16,8 @@ citations until a person accepts or rejects it. Nothing is written to the Worksp
   with no window; a person sets the window and confirms it, and only then is it evaluated.
 * ``entity_proposal``: an entity for the graph. Accepting creates it through the graph's own entity path.
 * ``glossary_term``: a code word and the meaning a model reads. A person confirms the meaning term by term.
+* ``counter_argument``: one item the disconfirm sweep found against a theory (services.agent.disconfirm). Accepting
+  links its sources to the theory as ``contradicts``; the argument stays on the proposal, under the model's name.
 
 Accepting needs a person; what the person opened first is recorded (``model_metadata.review``) and the work it
 creates carries the model origin (``actor_origin``) so it always shows a model drafted it.
@@ -37,7 +39,8 @@ from services.agent.proposals import (NOT_IN_CASE, ProposalError, _checked_citat
 log = logging.getLogger(__name__)
 
 AGENT_OUTPUT_TYPES = ('entry_draft', 'lead_card', 'timeline_addition', 'link_proposal', 'alternative_explanation',
-                      'control_claim', 'payment_purpose', 'statement_claim', 'entity_proposal', 'glossary_term')
+                      'control_claim', 'payment_purpose', 'statement_claim', 'entity_proposal', 'glossary_term',
+                      'counter_argument')
 # The phones' two drafts (agent-phones, phone_cross_tools): the deterministic check is re-run when stored.
 PHONE_DRAFTS = ('control_claim', 'payment_purpose')
 ENTRY_KINDS = ('note', 'finding')
@@ -553,6 +556,8 @@ def _apply(session, item, content, action, reviewer, provenance, due_at, edits):
                        lifecycle_state='proposed' if kind == 'alternative_explanation' else None,
                        links=_citation_links(content))
         return [dict(target_type='workspace_entry', target_id=entry['id'])]
+    if kind == 'counter_argument':
+        return _accept_counter_argument(session, item, content, action, reviewer, provenance)
     if kind == 'lead_card':
         return _accept_lead(session, item, content, reviewer, provenance, due_at, edits)
     if kind == 'statement_claim':
@@ -599,6 +604,40 @@ def _apply(session, item, content, action, reviewer, provenance, due_at, edits):
                 entry.event_snapshot = dict(entry.event_snapshot or {}, actor_origin=provenance)
         return [dict(target_type='timeline_entry', target_id=k) for k in keys]
     raise ProposalError('This proposal cannot be accepted.', 409)
+
+
+def _accept_counter_argument(session, item, content, action, reviewer, provenance):
+    """Each cited source becomes a ``contradicts`` link on the theory, carrying the model origin. A source a person
+    has already linked keeps that person's relationship: a proposal never rewrites someone's link."""
+    from postgres.models.workspace_entry import WorkspaceEntry
+    from services.workspace_entry_service import add_entry_links
+    theory = session.get(WorkspaceEntry, _uuid(action.get('theory_id')))
+    if theory is None or theory.case_id != item.case_id or theory.deleted_at is not None:
+        raise ProposalError('The theory is no longer in this case.', 409)
+    origin = provenance.get('origin') or {}
+    model = origin.get('model') or 'the case agent'
+    meta = dict(counter_argument=str(item.id), title=content.get('title'), strength=content.get('strength'),
+                actor_origin=provenance)
+    links = []
+    for cite in content.get('citations') or []:
+        scheme, _, rest = str(cite).partition('://')
+        if scheme == 'doc':
+            parts = rest.split('/')
+            anchor = dict(page=int(parts[1])) if len(parts) > 1 and parts[1].isdigit() else {}
+            links.append(dict(target_type='evidence', target_id=parts[0], relationship='contradicts',
+                              source_anchor=anchor, metadata=meta))
+        elif scheme == 'txn':
+            links.append(dict(target_type='financial_transaction', target_id=rest, relationship='contradicts',
+                              metadata=meta))
+        elif scheme == 'rec':
+            links.append(dict(target_type='phone_record', target_id=rest.split('#')[0], relationship='contradicts',
+                              metadata=meta))
+    result = add_entry_links(session, case_id=item.case_id, entry_id=theory.id, current_user=reviewer,
+                             expected_version=theory.version, links=links,
+                             rationale=f'Counter-argument proposed by {model} (disconfirm sweep), accepted by '
+                                       f'{reviewer.name}',
+                             ignore_existing=True, commit=False)
+    return [dict(target_type='workspace_entry_link', target_id=i) for i in result['added_link_ids']]
 
 
 def _accept_lead(session, item, content, reviewer, provenance, due_at, edits):

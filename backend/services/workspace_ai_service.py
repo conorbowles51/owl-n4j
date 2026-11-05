@@ -1021,7 +1021,8 @@ def list_outputs(
     limit: int = 50,
     offset: int = 0,
 ) -> dict[str, Any]:
-    conditions = [WorkspaceAIOutput.case_id == case_id]
+    # A disconfirm sweep is a run record with its own screen (services.agent.disconfirm), not a reviewable output.
+    conditions = [WorkspaceAIOutput.case_id == case_id, WorkspaceAIOutput.output_type != "disconfirm_sweep"]
     if target_type:
         conditions.append(WorkspaceAIOutput.target_type == target_type)
     if target_id:

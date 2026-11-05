@@ -1,4 +1,5 @@
-"""Guided investigative workflows: the ten scenarios of the agent report, and seven more (agent-workflows A).
+"""Guided investigative workflows: the ten scenarios of the agent report, seven more (agent-workflows A), and the
+sweep for what breaks a theory (agent-disconfirm A).
 
 Source: ``headless/reports/Loupe agent investigative workflows.md``, "Ten scenarios show the joined platform at work"
 and "Seven more scenarios". Each workflow is a named starting question, the tool sequence the scenario lists (by the
@@ -469,6 +470,33 @@ WORKFLOWS: tuple[Workflow, ...] = (
     ),
 )
 
+# Added beside the report's seventeen (agent-disconfirm A): Neil, 26 Jul 2026, "Loupe looks for what breaks your theory".
+WORKFLOWS = WORKFLOWS + (
+    Workflow(
+        id="disconfirm-theory", number=18, title="What breaks this theory", extra=True,
+        question="What in this case tells against the theory, and what does the theory need that the case lacks?",
+        starting_question=("Sweep the whole case for what breaks the theory \"{theory}\": what it leads us to expect, "
+                           "what tells against each expectation, and what the case lacks."),
+        steps=(
+            S("get_casework", "find the Workspace theory the user names, and its id", ()),
+            S("plan_theory_sweep", "derive the theory's expectations, search every part of the case, count the reads", ()),
+            S("propose_counter_arguments", "read what the searches matched, after stating the count of reads", ()),
+            S("red_cell", "a person runs Red cell on the theory in Workspace: other explanations of the same facts",
+              (), optional=True, by_person=True),
+        ),
+        proposals=(("propose_counter_arguments", "each item found against the theory, cited, waiting for a person"),),
+        person_confirms="each counter-argument, after opening a cited source",
+        rules=("State the count of model reads before starting them.",
+               "Nothing found is reported with what was searched and what was out of reach, with counts; it is never "
+               "support for the theory. Never say the theory holds, is confirmed or survives.",
+               "List what the case lacks with each reason; a gap means the case holds no record, not that the thing "
+               "does not exist.",
+               "Name the model that read it, and that no second model checked it when that is so."),
+        needs=(),
+        adds_requirement="Sweep the whole case against a theory, and state what could not be searched.",
+        requirement_met_by=("plan_theory_sweep", "propose_counter_arguments"),
+    ),
+)
 BY_ID = {w.id: w for w in WORKFLOWS}
 
 # Scenario 12's requirement (built here): the dates the coercive-control offence counts from (CPS CCB guidance).
