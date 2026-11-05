@@ -6,6 +6,7 @@ import { ImagePreview } from "./previews/ImagePreview"
 import { AudioPreview } from "./previews/AudioPreview"
 import { VideoPreview } from "./previews/VideoPreview"
 import { PdfPreview } from "./previews/PdfPreview"
+import { fileMissingText } from "../utils/file-missing"
 
 const TEXT_EXTS = new Set(["txt", "md", "json", "xml", "csv", "log", "rtf", "sri"])
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "bmp", "svg", "webp"])
@@ -24,6 +25,14 @@ interface FilePreviewPanelProps {
 
 export function FilePreviewPanel({ file, caseId }: FilePreviewPanelProps) {
   const ext = getExt(file.original_filename)
+
+  if (file.file_missing_since) {
+    return (
+      <div role="alert" className="rounded border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+        {fileMissingText(file.file_missing_since)}
+      </div>
+    )
+  }
 
   if (TEXT_EXTS.has(ext)) {
     return <TextPreview file={file} caseId={caseId} />

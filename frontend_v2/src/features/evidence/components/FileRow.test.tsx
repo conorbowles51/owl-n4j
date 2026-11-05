@@ -109,6 +109,21 @@ describe("FileRow workspace pin actions", () => {
     expect(screen.queryByText("Pin to workspace")).not.toBeInTheDocument()
   })
 
+  it("says a file is gone and offers no processing for it", async () => {
+    renderRow({ file: { ...file, file_missing_since: "2026-11-05T20:00:00Z" } })
+    expect(screen.getByText("File missing")).toHaveAttribute("title", expect.stringContaining("record is kept"))
+    fireEvent.pointerDown(
+      screen.getByRole("button", { name: "Actions for bank-statement.pdf" }),
+      { button: 0, ctrlKey: false },
+    )
+    expect((await screen.findByText("Process")).closest('[role="menuitem"]')).toHaveAttribute("data-disabled")
+  })
+
+  it("shows no missing badge while the file is there", () => {
+    renderRow()
+    expect(screen.queryByText("File missing")).not.toBeInTheDocument()
+  })
+
   it("renders no pin mutation when the caller is read-only", async () => {
     renderRow({ isPinned: false })
     fireEvent.pointerDown(

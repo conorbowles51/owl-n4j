@@ -709,3 +709,30 @@ describe("no unannounced hold", () => {
     expect(silent).toEqual([])
   })
 })
+
+describe("a file with nothing on disk", () => {
+  beforeEach(() => {
+    resetMocks(); apiMocks.planningEnabled = true
+    apiMocks.routeCheck.mockResolvedValue(response([fileCheck({ file_id: "1" }), fileCheck({ file_id: "2" })]))
+    apiMocks.createProcessingPlan.mockResolvedValue({ id: "plan-1", case_id: "case-1",
+      eligible_count: 2, audio_count: 0, document_count: 2, unreviewed_audio_count: 0, files: [] })
+  })
+
+  it("reports failure, not a start, when nothing could be sent", async () => {
+    apiMocks.executeProcessingPlan.mockResolvedValue({ job_ids: [], missing_on_disk: 1, message: "1 file(s) not sent: gone" })
+    const { result } = renderGate()
+    let outcome: unknown
+    await act(async () => { outcome = await result.current.start({ fileIds: ["1"] }) })
+    expect(outcome).toBe("failed")
+    expect(toastMocks.error).toHaveBeenCalledWith("1 file(s) not sent: gone")
+  })
+
+  it("warns when the rest of the selection went", async () => {
+    apiMocks.executeProcessingPlan.mockResolvedValue({ job_ids: ["job-1"], missing_on_disk: 1, message: "Processing 1 file(s); 1 file(s) not sent: gone" })
+    const { result } = renderGate()
+    let outcome: unknown
+    await act(async () => { outcome = await result.current.start({ fileIds: ["1", "2"] }) })
+    expect(outcome).toBe("started")
+    expect(toastMocks.warning).toHaveBeenCalledWith("Processing 1 file(s); 1 file(s) not sent: gone")
+  })
+})

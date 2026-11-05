@@ -6,7 +6,7 @@ trap 'rm -rf -- "${test_root:?}"' EXIT
 export SEAL_DIR="${test_root}/seal"   # never the box's real keys
 source_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cp "${source_dir}/backup-check.sh" "${source_dir}/backup-lib.sh" "${source_dir}/backup-crypt.sh" "${test_root}/"
-for s in db-backup neo4j-backup chroma-backup keys-bundle restore-drill; do
+for s in db-backup neo4j-backup chroma-backup keys-bundle restore-drill evidence-file-check; do
     printf '#!/usr/bin/env bash\nif [[ -f %q/break-%s ]]; then echo "now x: ALERT: %s is broken"; exit 1; fi\necho "2026 %s: ok: fine"\n' \
         "${test_root}" "$s" "$s" "$s" > "${test_root}/$s.sh"
 done
@@ -18,7 +18,7 @@ state() { awk -F'\t' -v s="$1" '$1 == s {print $2}' "${status}"; }
 
 # All well, no destination: every store ok, the copy OFF and named as a gap, no alert, exit 0.
 run A=1 || fail "healthy run failed"
-for s in postgres neo4j chroma keys restore-drill; do [[ "$(state "$s")" == ok ]] || fail "$s not ok"; done
+for s in postgres neo4j chroma keys restore-drill evidence-files; do [[ "$(state "$s")" == ok ]] || fail "$s not ok"; done
 [[ "$(state evidence-copy)" == OFF ]] || fail "copy not OFF"
 grep -q 'no copy off their disk' "${status}" || fail "the gap is not said"
 [[ "$(state encryption)" == OFF ]] || fail "encryption gap not shown"

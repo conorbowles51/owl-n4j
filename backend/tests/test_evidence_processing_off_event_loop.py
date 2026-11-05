@@ -19,6 +19,7 @@ from postgres.models.case import Case
 from postgres.models.evidence import EvidenceFile, EvidenceFolder, IngestionLog
 from postgres.models.user import User
 from services import evidence_processing_service as processing
+from services.evidence_file_check import FILE_MISSING_DETAIL
 
 
 @pytest.fixture()
@@ -117,6 +118,6 @@ def test_files_missing_on_disk_are_reported_and_nothing_is_sent(world, tmp_path)
         path.unlink()
     upload = AsyncMock()
     result, _ = _send(db, case_id, file_ids, watching, upload=upload)
-    assert result["message"] == "No files found on disk" and result["missing_on_disk"] == 2
+    assert result["message"] == f"2 file(s) not sent: {FILE_MISSING_DETAIL}" and result["missing_on_disk"] == 2
     upload.assert_not_awaited()
     assert loop_sql == []

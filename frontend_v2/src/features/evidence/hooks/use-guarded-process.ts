@@ -272,7 +272,16 @@ export function useGuardedProcess(caseId: string) {
             if (!(error instanceof ApiError) || error.status !== 404) throw error
           }
         }
-        await processMutation.mutateAsync({ request, requestCaseId: caseId })
+        const result = await processMutation.mutateAsync({ request, requestCaseId: caseId })
+        // A file with nothing on disk is not sent. When nothing went there is nothing to announce; when
+        // some went, this stands beside whatever the screen says about the rest.
+        if (result?.missing_on_disk) {
+          if (!result.job_ids?.length) {
+            toast.error(result.message ?? "The stored files are missing from the server")
+            return "failed"
+          }
+          toast.warning(result.message ?? `${result.missing_on_disk} file(s) not sent: the stored file is missing`)
+        }
         return "started"
       } catch (error) {
         const refusal = readAdmissionRefusal(error)

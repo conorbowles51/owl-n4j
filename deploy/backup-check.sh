@@ -99,6 +99,7 @@ store neo4j bash "${HERE}/neo4j-backup.sh" check
 store chroma bash "${HERE}/chroma-backup.sh" check
 store keys bash "${HERE}/keys-bundle.sh" check
 store restore-drill bash "${HERE}/restore-drill.sh" check
+store evidence-files bash "${HERE}/evidence-file-check.sh"
 evidence_copy
 encryption
 chmod 644 "${tmp}"

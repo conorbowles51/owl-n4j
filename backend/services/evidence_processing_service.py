@@ -17,6 +17,7 @@ from services.evidence_db_storage import EvidenceDBStorage
 from services.evidence_job_sync import reconcile_case_jobs
 from services.financial.admission_gate import gate_document_processing
 from services.folder_context_service import build_processing_snapshot
+from services.evidence_file_check import FILE_MISSING_DETAIL
 from services.job_status_subscriber import get_subscriber
 
 logger = logging.getLogger(__name__)
@@ -212,7 +213,8 @@ async def process_db_files(
         "file_count": len(valid_files),
         "skipped_count": skipped_processing,
         "missing_on_disk": missing_on_disk,
-        "message": f"Processing {len(valid_files)} file(s)",
+        "message": f"Processing {len(valid_files)} file(s)" + (
+            f"; {missing_on_disk} file(s) not sent: {FILE_MISSING_DETAIL}" if missing_on_disk else ""),
     }
 
 
@@ -417,7 +419,7 @@ def _prepare_files(
             "file_count": 0,
             "skipped_count": skipped_processing,
             "missing_on_disk": missing_on_disk,
-            "message": "No files found on disk",
+            "message": f"{missing_on_disk} file(s) not sent: {FILE_MISSING_DETAIL}" if missing_on_disk else "No files found on disk",
         }
 
     # Nothing above this line has changed anything.  The gate is the last thing

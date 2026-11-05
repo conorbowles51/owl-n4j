@@ -32,6 +32,7 @@ import { useEvidenceStore } from "../evidence.store"
 import { useGuardedProcess } from "../hooks/use-guarded-process"
 import { getFileTypeCategory } from "../utils/file-types"
 import { getDisplayStatus } from "../utils/display-status"
+import { fileMissingText } from "../utils/file-missing"
 import { canonicalName } from '../utils/transcript-status'
 import { RouteBadge } from "./RouteBadge"
 import { ProcessHoldDialog } from "./ProcessHoldDialog"
@@ -269,6 +270,14 @@ export function FileRow({
         >
           {displayStatus}
         </span>
+        {file.file_missing_since && (
+          <span
+            title={fileMissingText(file.file_missing_since)}
+            className="ml-1 inline-flex items-center rounded-full border border-destructive/40 bg-destructive/10 px-2 py-0.5 text-[10px] font-medium text-destructive"
+          >
+            File missing
+          </span>
+        )}
         {typeCategory === 'Audio' && <button className="mt-1 block text-left text-[10px] text-muted-foreground hover:underline"
           onClick={() => openDetail(file.id, { startSeconds: 0 })}>{file.transcript_review?.revision_id ? canonicalName(file.transcript_review) : file.status === 'processed' ? 'Processed · Transcript not reviewed' : 'Not transcribed'}</button>}
       </TableCell>
@@ -318,7 +327,7 @@ export function FileRow({
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={handleProcess}
-                disabled={file.status === "processing" || isChecking || isProcessing}
+                disabled={file.status === "processing" || isChecking || isProcessing || !!file.file_missing_since}
               >
                 <Play className="size-4" />
                 Process

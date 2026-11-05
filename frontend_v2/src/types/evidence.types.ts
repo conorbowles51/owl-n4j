@@ -24,6 +24,8 @@ export interface EvidenceFile {
   id: string
   original_filename: string
   stored_path: string
+  /** When the daily check found the stored file gone; absent or null while it is there. */
+  file_missing_since?: string | null
   size: number
   sha256: string
   status: string
@@ -313,6 +315,8 @@ export interface EvidenceFileRecord {
   folder_id: string | null
   original_filename: string
   stored_path: string
+  /** When the daily check found the stored file gone; absent or null while it is there. */
+  file_missing_since?: string | null
   size: number
   sha256: string
   status: "unprocessed" | "processing" | "processed" | "failed"

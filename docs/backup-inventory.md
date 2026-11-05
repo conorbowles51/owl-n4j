@@ -46,3 +46,10 @@ in the copy because no check shows its files exist anywhere else. Removing its `
 `deploy/backup-check.sh` runs hourly and writes `/mnt/owl-data/backups/status.tsv`. The status board shows it under
 Backups. A failed or stale backup of any store alerts the coordinator inbox through `headless/db-backup-alert.sh`, once
 per reason per 12 hours.
+
+Once a day the same run checks that every live evidence row naming a file still has it (`deploy/evidence-file-check.sh`,
+board line `evidence-files`). A row newly without its file alerts, and shows as "File missing" in the app; the row stays.
+The check marks nothing when the evidence root is absent or empty, or when more than 50 rows and more than 1 % of rows are
+newly missing, which means a disk is unmounted, not that the files are gone. A missing file comes back with
+`python -m scripts.evidence_file_check restore <case id> --search <folder>` from the backend folder: a dry run until
+`--apply`, and it takes only a copy whose sha256 equals the row's.

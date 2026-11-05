@@ -390,7 +390,7 @@ class EndpointTests(unittest.TestCase):
         source = self.lookup_and_endpoint_source()
         self.assertIn("_evidence_record_for_id", source)
         self.assertIn("'Evidence not found'", source)
-        self.assertIn("'File not found on disk'", source)
+        self.assertIn("detail=FILE_MISSING_DETAIL", source)
 
     def test_only_pdfs_are_rendered(self):
         source = self.lookup_and_endpoint_source()

@@ -1099,12 +1099,14 @@ class EvidenceDBStorage:
 
     @staticmethod
     def _file_to_dict(ef: EvidenceFile) -> Dict[str, Any]:
+        from services.evidence_file_check import file_missing_since
         return {
             "id": str(ef.id),
             "case_id": str(ef.case_id),
             "folder_id": str(ef.folder_id) if ef.folder_id else None,
             "original_filename": ef.original_filename,
             "stored_path": ef.stored_path,
+            "file_missing_since": file_missing_since(ef),
             "size": ef.size,
             "sha256": ef.sha256,
             "status": ef.status,

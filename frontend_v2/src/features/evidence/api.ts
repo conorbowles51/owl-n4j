@@ -38,7 +38,7 @@ export interface EvidenceUploadOptions {
 export const evidenceAPI = {
   createProcessingPlan: transcriptsAPI.plan,
   executeProcessingPlan: (planId: string, mode: import('./transcripts.api').AudioMode | undefined, requestKey: string) =>
-    fetchAPI<{ job_ids: string[]; message?: string }>(`/api/evidence/processing-plans/${planId}/executions`, {
+    fetchAPI<{ job_ids: string[]; missing_on_disk?: number; message?: string }>(`/api/evidence/processing-plans/${planId}/executions`, {
       method: 'POST', body: { request_key: requestKey, audio_mode: mode },
     }),
   get: (evidenceId: string) =>
@@ -150,6 +150,7 @@ export const evidenceAPI = {
     fetchAPI<{
       task_id?: string | null
       job_ids?: string[] | null
+      missing_on_disk?: number
       message?: string
     }>("/api/evidence/process/background", {
       method: "POST",

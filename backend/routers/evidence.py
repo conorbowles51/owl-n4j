@@ -148,6 +148,7 @@ def _authorize_evidence_objects(db: Session, current_user: User, permission, evi
         authorize_case(db, record.case_id, current_user, permission)
 
 
+from services.evidence_file_check import FILE_MISSING_DETAIL, file_missing_since, resolve_stored_path  # noqa: E402
 from services.financial.view_cache import BATCH_FILES_UNSTAMPED, ModelOutput, cached_view  # noqa: E402
 
 router = APIRouter(
@@ -163,32 +164,7 @@ router = APIRouter(
 
 def _resolve_stored_path(stored_path: str | None) -> Optional[Path]:
     """Resolve DB stored_path across host and Docker evidence-engine layouts."""
-    if not stored_path:
-        return None
-
-    direct = Path(stored_path)
-    if direct.exists():
-        return direct
-
-    normalised = str(stored_path).replace("\\", "/")
-    markers = (
-        "evidence-data/",
-        "/evidence-data/",
-        "data/evidence/",
-        "/data/evidence/",
-        "ingestion/data/",
-        "/ingestion/data/",
-    )
-    for marker in markers:
-        marker_index = normalised.find(marker)
-        if marker_index == -1:
-            continue
-        relative = normalised[marker_index + len(marker):].lstrip("/")
-        candidate = EVIDENCE_ROOT_DIR / PurePosixPath(relative)
-        if candidate.exists():
-            return candidate
-
-    return direct
+    return resolve_stored_path(stored_path, EVIDENCE_ROOT_DIR)
 
 
 def _evidence_record_from_db(record) -> dict:
@@ -202,6 +178,7 @@ def _evidence_record_from_db(record) -> dict:
         "case_id": str(record.case_id),
         "original_filename": record.original_filename,
         "stored_path": record.stored_path or "",
+        "file_missing_since": file_missing_since(record),
         "folder_id": str(record.folder_id) if record.folder_id else None,
         "size": record.size,
         "sha256": record.sha256,
@@ -649,6 +626,7 @@ class EvidenceRecord(BaseModel):
     case_id: str
     original_filename: str
     stored_path: str = ""
+    file_missing_since: Optional[str] = None  # when the daily check found the file gone (services/evidence_file_check)
     folder_id: Optional[str] = None
     size: int
     sha256: str
@@ -1498,6 +1476,7 @@ async def process_evidence_background(
         messages = []
         job_ids = []
         copies = []
+        missing_on_disk = 0
         user_id = current_user.id  # read before the Financial intake commits (a load on the event loop after)
 
         if db_backed_ids and request.preparation_mode == "pdf_review" and request.case_id:
@@ -1526,10 +1505,12 @@ async def process_evidence_background(
             job_ids = engine_result.get("job_ids", [])
             if engine_result.get("message"):
                 messages.append(engine_result["message"])
+            missing_on_disk = engine_result.get("missing_on_disk") or 0
 
         return {
             "task_id": None,
             "job_ids": job_ids or None,
+            "missing_on_disk": missing_on_disk,
             "message": "; ".join(messages) if messages else "No files to process",
             **({"copies": copies} if copies else {}),
         }
@@ -2525,7 +2506,7 @@ def get_evidence_file(
 
         file_path = _resolve_stored_path(stored_path)
         if not file_path or not file_path.exists():
-            raise HTTPException(status_code=404, detail="File not found on disk")
+            raise HTTPException(status_code=404, detail=FILE_MISSING_DETAIL)
 
         content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         return FileResponse(
@@ -2647,7 +2628,7 @@ def _page_image_source(db: Session, evidence_id: str):
 
     file_path = _resolve_stored_path(record.stored_path)
     if not file_path or not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found on disk")
+        raise HTTPException(status_code=404, detail=FILE_MISSING_DETAIL)
 
     if file_path.suffix.lower() != ".pdf":
         raise HTTPException(status_code=400, detail="File is not a PDF")
@@ -2732,7 +2713,7 @@ async def get_video_frames(
 
     video_path = _resolve_stored_path(stored_path) or Path(stored_path)
     if not video_path.exists():
-        raise HTTPException(status_code=404, detail="Video file not found on disk")
+        raise HTTPException(status_code=404, detail=FILE_MISSING_DETAIL)
 
     video_exts = {".mp4", ".webm", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
     if video_path.suffix.lower() not in video_exts:
