@@ -150,3 +150,21 @@ def test_a_large_run_answers_202_and_finishes_in_the_background(hooks, monkeypat
                     break
                 time.sleep(0.1)
             assert page["status"] == "done" and page["total"] == 80
+
+
+def test_the_radius_and_speed_allowed_decide_a_pair():
+    """cb-statements-rest D: the screen's allowances change the verdict; air travel can undo a 'separated'."""
+    from datetime import datetime, timedelta, timezone
+
+    from services.pattern_of_life import colocation
+    t = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    deg_km = 1 / 111.195
+    near = {"lat": 51.0, "lon": 0.0, "radius_m": None, "start": t, "end": t, "offset_status": "explicit"}
+    a = dict(near)
+    b = dict(near, lat=51.0 + 1.5 * deg_km, radius_m=None)
+    assert colocation.verdict(a, b)["verdict"] == "compatible"  # 1.5 km apart, 1,000 m assumed on each side
+    assert colocation.verdict(a, b, {"assumed_radius_m": 500.0})["verdict"] == "separated"
+    far = dict(near, lat=51.0 + 20 * deg_km, radius_m=50.0, start=t + timedelta(seconds=120), end=t + timedelta(seconds=120))
+    here = dict(near, radius_m=50.0)
+    assert colocation.verdict(here, far)["verdict"] == "separated"  # 20 km in 2 minutes is over 144 km/h
+    assert colocation.verdict(here, far, {"max_speed_mps": 250.0})["verdict"] == "undetermined"  # not over 900 km/h
