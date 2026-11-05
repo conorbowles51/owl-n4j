@@ -1951,7 +1951,9 @@ Each is a decision with its reasoning and what would reverse it.
     `harvested`, with no presence basis, and enter no stay, routine, Together, statement check or WiFi anchor. They stay
     on the Places map and list with the words "A network or tower the phone heard, not the phone's position", and
     the map's note counts them. `PLACES_VERSION` 3 rebuilds each phone through the projection. Measured on the 14
-    reports with `pol_readcarry_gate.py`: see `measurements/readcarry-gate.json` for the stays with and without them.
+    reports (`measurements/readcarry-gate.json`): 23,838 positioned Harvested records, all on P04 and none with a GPS
+    accuracy, so they had no radius and no stay rested on them: 115 stays with them, 115 without, none lost. What they
+    entered is Together and the statement checks, under an assumed radius.
     *Reverse if* Cellebrite documents a Harvested record as the phone's own fix.
 
 54. **Email direction reads the owner's mark on either side (3.2).** The Email type mapping version 2 names
@@ -1960,6 +1962,8 @@ Each is a decision with its reasoning and what would reverse it.
     which is incoming; else `unknown`. The rule used is recorded in `direction_basis`. On the reference phones no From
     party states the mark and the To party does (243 of 328 stored mails), so a mail's own To party decides it. On the
     14 reports every inbox mail that states its From party is from someone else (21,657 of 21,657, `m2-enums.json`).
+    Measured on the 14 reports (`measurements/readcarry-gate.json`): of 25,727 mails, `unknown` falls from 2,819 to 118 and
+    no mail that had a direction changes it.
     Activity strength version 4 reads `direction` first: outgoing is interaction by the owner, incoming is passive, and
     Status and Folder rows apply only when the direction is `unknown`. *Reverse if* an inbox folder is shown to hold
     the owner's own sent mail with no mark on it.
