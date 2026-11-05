@@ -1,4 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual"
+import { useTopRow } from "./use-top-row"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { copyInGesture, readyToCopySentence, type CopyPayload } from "@/lib/copy-text"
@@ -125,14 +126,7 @@ export function StreamList({
     onFocusRow?.(focusedRow)
   }, [focusedRow, stream, onFocusRow])
 
-  const topIndex = virtualizer.range?.startIndex ?? null
-  useEffect(() => {
-    if (topIndex === null || !onTopRow) return
-    for (let i = topIndex; i < Math.min(topIndex + 3, stream.count); i++) {
-      const it = stream.item(i)
-      if (it.type === "row" && it.row) return onTopRow(it.row) // a row of a window not loaded yet has no record
-    }
-  }, [topIndex, stream, onTopRow, rowsVersion])
+  useTopRow(stream, virtualizer.range?.startIndex ?? null, rowsVersion, onTopRow)
 
   const loadedSelection = useCallback((): StreamRow[] | null => {
     // nothing selected: no row to read (this runs after every render, over every row of the list)
