@@ -14,6 +14,19 @@
   counterparty candidates fire (0 of 1,788 Keny rows had `counterparty_raw`). The quadratic loop in the screen is gone.
 - **What a fresh session needs:** a new whole-case kind goes in `KINDS` and `COMPUTE` and gets a size-refusal route in
   `lib/whole-case-run.ts`. A subclass of the store test re-runs inherited tests, so select with `-k`.
+
+## 5 November: Conversations filters, replies and forwards, density, rail (cb-convfilters)
+
+- **Filters.** `conversations/ConversationFilters.tsx`, words in `phones/lib/filter-url.ts` (`filterChips`, `NO_FILTERS`,
+  `filterWordsOf`). `setView` in `ConversationsPage` builds each change on the last one asked for (`latestView`), because
+  under load a change built on the last render dropped the one before it.
+- **Replies and forwards.** `services/phone/replies.py`, read per window from existing rows, no re-read of any phone.
+  225 of 225 replies on the reference phones resolve to one message.
+- **Has an attachment** is two key lookups (over 120 s to 217 ms) and leaves out `resolution = 'model'`. Rows follow the
+  same rule: 1,460 to 406 events with an attachment line on the largest reference phone.
+- **Density.** `GET`/`PUT /api/phones/reader-settings`, table `phone_reader_settings`, one row per person in no case.
+- **Rail.** Below 1440 px by `useMediaQuery`; picking a thread collapses it again.
+
 ## 5 November: the missing controls inside phone screens (cb-screen-rest)
 
 - **Participant menu.** `ParticipantMenu.tsx` on every stream row (03 6.7): Show all with this person, Show this pair,

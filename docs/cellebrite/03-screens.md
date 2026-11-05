@@ -826,6 +826,15 @@ All in the filter bar, all reflected in the URL (`filter-url.ts`), all shown as 
 | Text | contains, folded per 11.3; `Exact characters` toggle | matches body, subject, attachment filename |
 | Copies | `Show every copy` | 3.4 |
 
+**Built (`cb-convfilters`).** `ConversationFilters.tsx` holds a control for every row above except Participants (the
+People tab and scope bar) and Copies (the stream toolbar). State offers Deleted (deleted or in trash, deleted only, in
+trash only, leave them out) and Unreadable. Carved and May come from another device have no control: no production marks
+carving, and no event on any phone carries a `Sync` user mapping (0 of 18,849, 5 Nov), so either control could only
+answer zero. `apps` takes null for an event whose report names no app (2,972 of 18,751). `POST /api/phones/streams/apps`
+counts each app as the list that app alone gives, so an app holding one copy of a message found in two apps still
+counts it. Has an attachment leaves out a jump target to another record, as `media.thread_attachments` does; a row's
+attachment line follows the same rule. Undated messages stay in a dated view, are counted, and can be left out.
+
 ### 6.5 Sorting
 
 Threads: last activity (default; "recent"), first activity, message count ("volume"), unreviewed, name. Stream: oldest first (default,
@@ -850,6 +859,15 @@ Group activity: `Name (+1...) added Name (+1...)` from `ChatActivityAction`.
 
 Replies, quotes and forwards are shown: a reply or a quote shows as an indented block linked to the
 original (07 section 4.4); a forwarded message is marked as forwarded.
+
+**Built (`cb-convfilters`).** `services/phone/replies.py` reads the links per window from what each generation already
+writes, so nothing is projected twice and a re-read carries them: the child record in `phone_record_summaries`,
+`OriginalMessageID` and the message `Identifier` in `phone_texts` (index `ix_phone_texts_message_identifier`), and a
+forward's `OriginalSender` and `TimeCreated` in `phone_participations` and `phone_time_values`. An original is a message
+on the same phone only. A row shows `found`, `not_in_extraction` (with the report's id) or `not_recorded`. A forward's
+author sits on the child record, so it can never be the row's sender. Go to this message jumps in place when the list
+holds the original; otherwise it opens the original's own conversation with the filters cleared and says so, and Back
+returns. Copy and the PDF export state the same words; the RSMF export does not carry them.
 
 Media plays and displays inline: images as thumbnails (opens `DocumentViewer`), audio with a play control
 that fetches bytes only on play (v1 checklist `media-voice-preload`). Missing or mismatched files show the
