@@ -11,5 +11,5 @@ describe("search feature lint", () => {
       r.messages.filter((m) => m.severity === 2).map((m) => `${r.filePath}:${m.line} ${m.ruleId} ${m.message}`),
     )
     expect(errors).toEqual([])
-  }, 60_000)
+  }, 300_000) // a hang guard, nothing here asserts speed: 41 s at load ~35, past 60 s in the head suite (5 Nov)
 })

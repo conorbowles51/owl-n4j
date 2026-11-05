@@ -94,4 +94,4 @@ it("imports every ready statement, not only the ones on the page", async () => {
   expect(await screen.findByLabelText("Result of importing ready statements")).toHaveTextContent("2 imported")
   const save = vi.mocked(fetchAPI).mock.calls.find(([url]) => String(url).includes("/review/save?"))!
   expect((save[1] as { body: { item_ids: string[] } }).body.item_ids).toEqual(["i900", "i901"])
-})
+}, 900_000) // a hang guard, nothing here asserts speed: 113 s at load ~35, 442 s in the head suite (5 Nov)

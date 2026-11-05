@@ -7,8 +7,10 @@ import { configure } from "@testing-library/react"
 // on a busy box. The 1 s default cannot fit even one check, so findBy and
 // waitFor failed on load alone. With the job fleet running (load average
 // 24-40, 2026-10-29) one check on the review queue's 50-item page took over
-// 10 s, failing a passing journey; 30 s fits at least two checks there.
-configure({ asyncUtilTimeout: 30_000 })
+// 10 s, failing a passing journey. On 5 Nov two checks that take 14-30 s at load
+// ~35 ran out of 30 s in the head suite (41 s in all) and passed alone. Nothing
+// here asserts speed: this only says how long a check waits before it gives up.
+configure({ asyncUtilTimeout: 60_000 })
 
 if (typeof Element.prototype.scrollIntoView !== "function") {
   Element.prototype.scrollIntoView = () => undefined

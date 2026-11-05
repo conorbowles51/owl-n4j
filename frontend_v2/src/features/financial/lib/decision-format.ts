@@ -146,6 +146,10 @@ const SUBJECT_COPY: Record<AdjudicationSubject, TermCopy> = {
     label: "Brokerage statement row",
     description: "One trade or holding read from a brokerage statement, corrected or confirmed by a person.",
   },
+  place_cluster: {
+    label: "Routine place",
+    description: "A place someone keeps returning to, found from a phone's locations. Not part of the financial ledger.",
+  },
 }
 
 export function readDecisionSubject(
@@ -378,6 +382,11 @@ const DECISION_COPY: Record<AdjudicationDecision, TermCopy> = {
     description:
       "A place a person had put on the map for a written place on a phone record was removed. The earlier placement stays in the history.",
   },
+  label_place: {
+    label: "Routine place named",
+    description:
+      "A person named a routine place or cleared its name. The earlier name stays in the history.",
+  },
   dispute_check_item: {
     label: "Statement check item marked wrong",
     description:
@@ -463,6 +472,7 @@ const DECISION_VARIANT: Record<AdjudicationDecision, BadgeVariant> = {
   remove_transaction_place: "slate",
   place_text_place: "info",
   remove_text_place: "slate",
+  label_place: "info",
   dispute_check_item: "amber",
   withdraw_check_item_dispute: "slate",
   correct_machine_text: "info",
@@ -530,6 +540,7 @@ const CHANGED_STORED_STATE: Record<AdjudicationDecision, boolean> = {
   remove_transaction_place: true,
   place_text_place: true,
   remove_text_place: true,
+  label_place: true,
   dispute_check_item: false,
   withdraw_check_item_dispute: false,
   correct_machine_text: true,

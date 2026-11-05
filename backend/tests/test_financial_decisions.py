@@ -105,6 +105,7 @@ TABLES = [
     __import__("postgres.models.phone_analysis", fromlist=["x"]).PhoneAnalysisResultSubject.__table__,
     PhoneDerivedText.__table__,
     __import__("postgres.models.financial_securities", fromlist=["x"]).FinancialSecurityRow.__table__,
+    __import__("postgres.models.pattern_places", fromlist=["x"]).PolPlaceCluster.__table__,
 ]
 
 USD = "USD"
@@ -380,8 +381,14 @@ class TheSubject(DecisionTestCase):
                                         trade_date_source="absent", ledger_status="admitted")
         self.db.add_all([identity, record, result, derived, security])
         self.db.flush()
+        from postgres.models.pattern_places import PolPlaceCluster
+        place = PolPlaceCluster(id=uuid.uuid4(), case_id=self.case.id, subject_key="phone:+12025550143", lat=51.5,
+                                lon=-0.1, radius_m=120.0, stay_count=4, day_count=3)
+        self.db.add(place)
+        self.db.flush()
         subjects = {
             AdjudicationSubject.security_row: security,
+            AdjudicationSubject.place_cluster: place,
             AdjudicationSubject.phone_derived_text: derived,
             AdjudicationSubject.transaction: self.row,
             AdjudicationSubject.statement_period: self.period,

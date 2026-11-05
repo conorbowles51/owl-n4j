@@ -868,6 +868,7 @@ export const ADJUDICATION_SUBJECTS = [
   "phone_analysis_result",
   "phone_derived_text",
   "security_row",
+  "place_cluster",
 ] as const
 export type AdjudicationSubject = (typeof ADJUDICATION_SUBJECTS)[number]
 
@@ -922,6 +923,7 @@ export const ADJUDICATION_DECISIONS = [
   "remove_transaction_place",
   "place_text_place",
   "remove_text_place",
+  "label_place",
   "dispute_check_item",
   "withdraw_check_item_dispute",
   "correct_machine_text",
