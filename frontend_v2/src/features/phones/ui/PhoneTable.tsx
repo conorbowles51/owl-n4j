@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react"
 import { cn } from "@/lib/cn"
 import { usePhoneSelection } from "@/stores/phone-selection.store"
 import { ResultCount } from "./ResultCount"
@@ -17,7 +17,17 @@ export interface Column<Row> {
   cell: (row: Row) => ReactNode
   /** Sort value; omit for an unsortable column. */
   sortValue?: (row: Row) => string | number | null
+  /** The server's sort key: the table asks for it through `serverSort` and keeps the rows in the order they arrive. */
+  serverKey?: string
 }
+
+export interface ServerSort {
+  sort: { key: string; dir: "ascending" | "descending" } | null
+  onChange: (sort: { key: string; dir: "ascending" | "descending" }) => void
+}
+
+/** Rows that ask for the next window this many rows before the end of what is held. */
+const NEAR_END = 20
 
 export const ROW_PX = 36
 const MIN_COL = 60
@@ -28,10 +38,13 @@ export function PhoneTable<Row>({
   columns,
   rowId,
   noun,
+  singular,
   label,
   height = 360,
   onOpen,
   unconfirmed,
+  serverSort,
+  onNearEnd,
 }: {
   rows: Row[]
   /** The exact total for the scope; equals rows.length unless the server still sends rows (then "(so far)"). */
@@ -39,10 +52,15 @@ export function PhoneTable<Row>({
   columns: Column<Row>[]
   rowId: (row: Row) => string
   noun: string
+  singular?: string
   label: string
   height?: number
   onOpen?: (row: Row) => void
   unconfirmed?: number
+  /** The list is sorted by the server: it may hold more rows than the browser has. */
+  serverSort?: ServerSort
+  /** Called when the reader nears the last row held, while rows.length < total. */
+  onNearEnd?: () => void
 }) {
   const [sort, setSort] = useState<{ id: string; dir: "ascending" | "descending" } | null>(null)
   const [widths, setWidths] = useState(() => Object.fromEntries(columns.map((c) => [c.id, c.width])))
@@ -69,6 +87,10 @@ export function PhoneTable<Row>({
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtual = useVirtualizer({ count: sorted.length, getScrollElement: () => parent.current, estimateSize: () => ROW_PX, overscan: 8, scrollMargin: ROW_PX })
   const focusIndex = Math.max(0, selection.focus ? order.indexOf(selection.focus) : 0)
+  const lastShown = virtual.getVirtualItems().at(-1)?.index ?? 0
+  useEffect(() => {
+    if (onNearEnd && rows.length < total && lastShown >= rows.length - NEAR_END) onNearEnd()
+  }, [lastShown, rows.length, total, onNearEnd])
 
   const move = (to: number, extend: boolean) => {
     const i = Math.min(sorted.length - 1, Math.max(0, to))
@@ -100,11 +122,11 @@ export function PhoneTable<Row>({
   const template = columns.map((c) => `${widths[c.id]}px`).join(" ")
   return (
     <div className="flex flex-col gap-1 text-foreground" data-testid="phone-table">
-      <ResultCount shown={rows.length} total={total} noun={noun} soFar={rows.length < total} unconfirmed={unconfirmed} />
+      <ResultCount shown={rows.length} total={total} noun={noun} singular={singular} soFar={rows.length < total && !onNearEnd} unconfirmed={unconfirmed} />
       <div
         role="grid"
         aria-label={label}
-        aria-rowcount={sorted.length + 1}
+        aria-rowcount={total + 1}
         aria-colcount={columns.length}
         aria-multiselectable
         tabIndex={0}
@@ -116,14 +138,18 @@ export function PhoneTable<Row>({
       >
         <div role="row" aria-rowindex={1} className="sticky top-0 z-10 grid border-b bg-muted font-medium" style={{ gridTemplateColumns: template, height: ROW_PX }}>
           {columns.map((c, ci) => {
-            const state = sort?.id === c.id ? sort.dir : "none"
+            const sortable = !!c.sortValue || !!c.serverKey
+            const state = (serverSort ? serverSort.sort?.key === c.serverKey : sort?.id === c.id) ? ((serverSort ? serverSort.sort?.dir : sort?.dir) ?? "none") : "none"
             return (
-              <div key={c.id} role="columnheader" aria-colindex={ci + 1} aria-sort={c.sortValue ? state : undefined} className="relative flex items-center px-2 py-1.5">
-                {c.sortValue ? (
+              <div key={c.id} role="columnheader" aria-colindex={ci + 1} aria-sort={sortable ? state : undefined} className="relative flex items-center px-2 py-1.5">
+                {sortable ? (
                   <button
                     type="button"
                     className="text-left underline-offset-2 hover:underline"
-                    onClick={() => setSort((s) => (s?.id === c.id ? { id: c.id, dir: s.dir === "ascending" ? "descending" : "ascending" } : { id: c.id, dir: "ascending" }))}
+                    onClick={() => {
+                      if (serverSort && c.serverKey) serverSort.onChange({ key: c.serverKey, dir: state === "ascending" ? "descending" : "ascending" })
+                      else setSort((s) => (s?.id === c.id ? { id: c.id, dir: s.dir === "ascending" ? "descending" : "ascending" } : { id: c.id, dir: "ascending" }))
+                    }}
                   >
                     {c.header}
                     <span className="sr-only">{state === "none" ? ", not sorted" : `, sorted ${state}`}</span>

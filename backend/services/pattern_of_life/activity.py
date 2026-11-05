@@ -247,7 +247,8 @@ def build(conn, extraction_id, mappings=None) -> dict:
         "  AND r.ordinal = t.ordinal "
         "LEFT JOIN phone_records root ON root.extraction_id = r.extraction_id AND root.document_index = r.document_index "
         "  AND root.ordinal = r.top_ordinal AND r.parent_ordinal IS NOT NULL "
-        "WHERE t.extraction_id = :e AND t.generation = :g "
+        # a copy from another source repeating its owner's time is one event, not two (02 decision 39)
+        "WHERE t.extraction_id = :e AND t.generation = :g AND NOT ('same_as_owner' = ANY(t.flags)) "
         "ORDER BY t.document_index, t.ordinal, t.field_path, t.value_index").execution_options(
         stream_results=True, yield_per=5000), {"e": extraction_id, "g": gen})
     w = generic.Writer(conn, {"pol_activity_event": COLUMNS})

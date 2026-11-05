@@ -159,6 +159,29 @@ export function RecordDetailView({
           </ol>
         </section>
       )}
+      {d.is_copy && (
+        <p role="note" className="rounded border border-status-review bg-status-review-soft p-2 text-xs" data-testid="record-copy">
+          A copy from another source{d.state.source_index ? ` (source index ${d.state.source_index})` : ""}. The report lists it under the record above; it is not a second source of the same fact.
+        </p>
+      )}
+      {d.related_copies && d.related_copies.length > 0 && (
+        <section aria-label="Copies from another source" className="text-xs">
+          <h3 className="font-semibold">Copies from another source ({d.related_copies.length.toLocaleString("en-US")})</h3>
+          <ol>
+            {d.related_copies.map((c) => (
+              <li key={c.record_uid}>
+                {caseId ? (
+                  <button type="button" className="underline" onClick={() => navigate(`/cases/${caseId}/records/${c.record_uid}`)}>
+                    {c.title ?? c.model_type}{c.source_index ? `, source index ${c.source_index}` : ""}
+                  </button>
+                ) : (
+                  <span>{c.title ?? c.model_type}{c.source_index ? `, source index ${c.source_index}` : ""}</span>
+                )}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
       {d.attributes && Object.keys(d.attributes).length > 0 && (
         <details className="text-xs" data-testid="record-attributes">
           <summary>Everything the report says about this record</summary>
@@ -287,12 +310,14 @@ export function PhoneRecordPanel({
   zone,
   onClose,
   onShowInConversations,
+  title = "Record behind this message",
 }: {
   caseId: string
   recordUid: string | null
   zone?: string
   onClose: () => void
   onShowInConversations?: () => void
+  title?: string
 }) {
   const q = useQuery({
     queryKey: ["phone-record", caseId, recordUid, zone],
@@ -300,7 +325,7 @@ export function PhoneRecordPanel({
     enabled: !!recordUid,
   })
   return (
-    <DockedPanel title="Record behind this message" open={!!recordUid} onClose={onClose}>
+    <DockedPanel title={title} open={!!recordUid} onClose={onClose}>
       {q.isLoading && <p className="text-sm text-muted-foreground">Loading the record</p>}
       {q.isError && (
         <div role="alert" className="text-sm">

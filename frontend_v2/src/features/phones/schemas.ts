@@ -267,6 +267,10 @@ export const RecordDetailSchema = lazySchema(() => z.object({
     source_index: z.string().nullable(),
     interpretation_level: z.string().nullable(),
   }),
+  // a copy from another source under RelatedModels (02 decision 39): which record holds it, or the copies this one holds
+  is_copy: z.boolean().optional(),
+  copy_of: z.object({ record_uid: z.string(), model_type: z.string().nullable(), title: z.string().nullable() }).nullable().optional(),
+  related_copies: z.array(z.object({ record_uid: z.string(), model_type: z.string(), title: z.string().nullable(), source_index: z.string().nullable() })).optional(),
   fields: z.array(FieldSchema),
   times: z.array(
     z.object({
@@ -433,7 +437,7 @@ export const ProfileSchema = lazySchema(() => z.object({
   }),
   files: z.object({ total: z.number(), by_category: z.record(z.string(), z.number()), verification: z.record(z.string(), z.number()), link: z.string() }),
   deleted: z.object({ comm_events: z.number(), link: z.string(), by_type: z.array(z.object({ model_type: z.string(), intact: z.number(), deleted: z.number(), trash: z.number(), unknown: z.number() })) }),
-  coverage: z.array(z.object({ model_type: z.string(), records: z.number(), level: z.string(), level_words: z.string() })),
+  coverage: z.array(z.object({ model_type: z.string(), records: z.number(), nested: z.number().default(0), copies: z.number().default(0), level: z.string(), level_words: z.string() })),
   // flags an admin marked "waiting for a mapping" that touch this phone (02 3.4: the backlog in the coverage map)
   mapping_backlog: z
     .object({
@@ -441,8 +445,8 @@ export const ProfileSchema = lazySchema(() => z.object({
       items: z.array(z.object({ flag_id: z.number(), flag_kind: z.string(), subject: z.record(z.string(), z.unknown()) })),
     })
     .optional(),
-  data_periods: z.array(z.object({ signal: z.string(), records: z.number(), dated: z.number(), first_words: z.string().nullable(), last_words: z.string().nullable() })),
-  months: z.array(z.object({ month: z.string(), messages: z.number(), calls: z.number(), other: z.number() })),
+  data_periods: z.array(z.object({ signal: z.string(), records: z.number(), dated: z.number(), first_words: z.string().nullable(), last_words: z.string().nullable(), link: z.string().optional(), listed: z.number().optional() })),
+  months: z.array(z.object({ month: z.string(), messages: z.number(), calls: z.number(), other: z.number(), link: z.string().optional() })),
   apps: z.array(z.object({ app: z.string(), events: z.number() })),
   top_people: z.array(z.object({ label: ParticipantLabelSchema, text: z.string(), events: z.number(), link: z.string().nullable() })),
   needs: z.array(LinkWords.extend({ kind: z.string() })),
@@ -498,3 +502,31 @@ export const SourceDatabaseSchema = lazySchema(() => z.object({
 }))
 export type SourceDatabase = z.infer<typeof SourceDatabaseSchema>
 export type RawValue = z.infer<typeof RawValueSchema>
+
+
+/** One window of the list for a record type (03 section 7.5). `total` is the exact count for the filters. */
+export const RecordListSchema = lazySchema(() => z.object({
+  model_type: z.string(),
+  total: z.number(),
+  no_time: z.number(),
+  next: z.string().nullable(),
+  more_fields: z.number(),
+  zone: z.string(),
+  columns: z.array(z.object({ id: z.string(), header: z.string(), sensitive: z.boolean(), mapped: z.boolean() })),
+  items: z.array(z.object({
+    record_uid: z.string(),
+    extraction_id: z.string(),
+    title: z.string(),
+    time: z.string().nullable(),
+    deleted_state: z.string().nullable(),
+    interpretation_level: z.string().nullable(),
+    nested: z.boolean(),
+    copy: z.boolean(),
+    source_index: z.string().nullable(),
+    owner: z.object({ record_uid: z.string(), model_type: z.string(), title: z.string() }).nullable(),
+    open_in: z.enum(["panel", "conversations"]),
+    cells: z.record(z.string(), z.object({ text: z.string(), more: z.number(), masked: z.boolean().optional(), original: z.string().nullable().optional() })),
+  })),
+}))
+export type RecordList = z.infer<typeof RecordListSchema>
+export type RecordListRow = RecordList["items"][number]

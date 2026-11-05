@@ -25,7 +25,8 @@ function phonePage(rest: string[]): string | null {
   if (view === "phones") {
     if (!sub) return "case/phones"
     if (!kind) return "case/phones/summary"
-    if (kind === "records" && type && rest.length === 4 && PHONE_RECORD_TYPES.has(type)) return `case/phones/records/${type}`
+    // the list for a record type carries the report's type name, never part of a page name (03 section 7.5)
+    if (kind === "records" && type && rest.length === 4) return `case/phones/records/${PHONE_RECORD_TYPES.has(type) ? type : "other"}`
     return null
   }
   if ((view === "phone-review" || view === "phone-patterns" || view === "phone-money") && rest.length === 1) return `case/${view}`

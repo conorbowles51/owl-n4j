@@ -57,8 +57,10 @@ def input_manifest(conn, case_id) -> dict:
 def coverage(conn, case_id) -> dict:
     counts = defaultdict(dict)
     for r in conn.execute(text(
-            "SELECT extraction_id, model_type, count(*) FROM pv_record WHERE case_id = :c AND model_type IN "
-            "('SearchedItem', 'VisitedPage') GROUP BY 1, 2"), {"c": str(case_id)}):
+            "SELECT s.extraction_id, s.model_type, count(*) FROM phone_record_summaries s JOIN "
+            "phone_interpretation_state st ON st.extraction_id = s.extraction_id AND st.generation = s.generation "
+            "WHERE s.case_id = :c AND s.model_type IN ('SearchedItem', 'VisitedPage') AND NOT ('related_copy' = "
+            "ANY(s.flags)) GROUP BY 1, 2"), {"c": str(case_id)}):
         counts[str(r[0])][r[1]] = int(r[2])
     phones = {}
     for ext, label in FV.active_phones(conn, case_id).items():
@@ -82,6 +84,7 @@ def _read(conn, ext, vocab):
     hits = {}
     for r in conn.execute(text(
             "SELECT record_uid, model_type, field_path, value FROM pv_text WHERE extraction_id = :e AND "
+            "NOT ('same_as_owner' = ANY(flags)) AND "
             "NOT coalesce(is_sensitive, false) AND ((model_type = 'SearchedItem' AND field_path = 'Value') OR "
             "(model_type = 'VisitedPage' AND field_path IN ('Title', 'Url'))) ORDER BY record_uid, value_index"),
             {"e": ext}):

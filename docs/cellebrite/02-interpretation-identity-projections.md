@@ -1816,6 +1816,11 @@ Each with its reason and what would reverse it.
     the catalogue counts them. They are interpreted like any record and shown under their owner, marked as a copy
     from another source; D-9 does not merge them. *Reverse if* a report shows a `RelatedModels` model whose id
     is also a top-level record (then it is a reference, not a copy).
+    Built (`cb-recordlists`): the interpreter flags a copy and everything inside it `related_copy`, and flags a time or
+    text of a copy `same_as_owner` when it equals its owner's value in the same field. Every record and value stays
+    readable and searchable. A repeated value is one fact: `pv_timeline_entry`, `pol_activity_event`, the approaches'
+    `fields.field_values` and `type_counts`, the search-intent reader and the identity sightings read it once. A copy
+    that says something its owner does not stays in all of them.
 40. **The seed's attribute names and its fields with no typed value come from the element counter on the 14
     server reports.** The catalogue records a field only when a `<value>` sits directly inside it
     (`catalog.py` lines 13-20), so it cannot hold a field that is only ever `<empty/>`, nor `nodeField` and

@@ -11,7 +11,7 @@ vi.mock("@/components/ui/resizable", () => ({
   ),
   ResizableHandle: () => <div />,
 }))
-const state = vi.hoisted(() => ({ narrow: false, collapsed: true }))
+const state = vi.hoisted(() => ({ narrow: false, collapsed: true, path: "/cases/case/workspace" }))
 vi.mock("@/hooks/use-media-query", () => ({
   useMediaQuery: () => state.narrow,
 }))
@@ -22,6 +22,7 @@ vi.mock("@/stores/ui.store", () => ({
 vi.mock("react-router-dom", () => ({
   useParams: () => ({ id: "case" }),
   useMatch: () => null,
+  useLocation: () => ({ pathname: state.path }),
   Outlet: () => {
     const [value, setValue] = useState("")
     return (
@@ -46,6 +47,9 @@ vi.mock("@/features/search/components/SearchDialog", () => ({ SearchDialog: () =
 vi.mock("@/features/evidence/components/EvidenceContextSidebar", () => ({
   EvidenceContextSidebar: () => null,
 }))
+vi.mock("@/components/ui/report-problem", () => ({
+  ReportProblem: ({ screen }: { screen: string }) => <button type="button">Report a problem on {screen}</button>,
+}))
 it("preserves unfinished page state when resizing and toggling the case side panel", () => {
   state.narrow = false
   state.collapsed = true
@@ -64,4 +68,16 @@ it("preserves unfinished page state when resizing and toggling the case side pan
     expect(screen.getByLabelText("Unfinished case work")).toBe(input)
     expect(input).toHaveValue("Unsubmitted review")
   }
+})
+
+it("offers Report a problem on a phone screen and on no other page", async () => {
+  state.narrow = false
+  state.collapsed = true
+  state.path = "/cases/case/phones/x/records/Contact"
+  const { unmount } = render(<CaseLayout />)
+  expect(await screen.findByRole("button", { name: "Report a problem on phone-records" })).toBeInTheDocument()
+  unmount()
+  state.path = "/cases/case/workspace"
+  render(<CaseLayout />)
+  expect(screen.queryByTestId("phone-problem-bar")).toBeNull()
 })

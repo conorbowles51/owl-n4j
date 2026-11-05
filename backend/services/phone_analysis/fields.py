@@ -15,7 +15,7 @@ from services.phone import ids
 
 _FIELDS_SQL = (
     "SELECT r.document_index, r.ordinal, r.parent_ordinal, r.model_type, r.deleted_state, f->1->>'name' AS name, "
-    "v->>2 AS value FROM phone_records r "
+    "v->>2 AS value, r.body->1->>'isrelated' AS related FROM phone_records r "
     "CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(r.body->3) = 'array' THEN r.body->3 ELSE "
     "'[]'::jsonb END) f "
     "CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(f->3) = 'array' THEN f->3 ELSE '[]'::jsonb END) v "
@@ -25,8 +25,10 @@ _FIELDS_SQL = (
 
 def field_values(conn, extraction_id, model_types, names) -> dict:
     """``{record_uid: {"model_type", "deleted_state", "parent_uid", "values": {name: [value, ...]}}}`` for the
-    records of ``model_types`` on one extraction that carry any of ``names``."""
+    records of ``model_types`` on one extraction that carry any of ``names``. A copy from another source that says
+    nothing its owner does not (02 decision 39) is left out: it is the owner's fact, not a second record of it."""
     out = {}
+    copies = []
     for r in conn.execute(text(_FIELDS_SQL), {"e": str(extraction_id), "t": list(model_types), "n": list(names)}):
         uid = str(ids.record_uid(extraction_id, r.document_index, r.ordinal))
         item = out.get(uid)
@@ -35,14 +37,23 @@ def field_values(conn, extraction_id, model_types, names) -> dict:
                       if r.parent_ordinal is not None else None)
             item = out[uid] = {"model_type": r.model_type, "deleted_state": r.deleted_state, "parent_uid": parent,
                                "values": defaultdict(list)}
+            if r.related == "True":
+                copies.append(uid)
         if r.value is not None:
             item["values"][r.name].append(r.value)
+    for uid in copies:
+        owner = out.get(out[uid]["parent_uid"])
+        if owner is not None and all(set(v) <= set(owner["values"].get(k, ())) for k, v in out[uid]["values"].items()):
+            del out[uid]
     return out
 
 
 def type_counts(conn, extraction_id, model_types) -> dict:
+    """Records of each type, a copy from another source not counted as another record (02 decision 39)."""
     return {r[0]: int(r[1]) for r in conn.execute(text(
-        "SELECT model_type, count(*) FROM phone_records WHERE extraction_id = :e AND model_type = ANY(:t) GROUP BY 1"),
+        "SELECT s.model_type, count(*) FROM phone_record_summaries s JOIN phone_interpretation_state st ON "
+        "st.extraction_id = s.extraction_id AND st.generation = s.generation WHERE s.extraction_id = :e AND "
+        "s.model_type = ANY(:t) AND NOT ('related_copy' = ANY(s.flags)) GROUP BY 1"),
         {"e": str(extraction_id), "t": list(model_types)})}
 
 

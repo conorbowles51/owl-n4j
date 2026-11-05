@@ -8,6 +8,8 @@ import { failureText } from "../api"
 import { phoneProfileQuery } from "../phone-queries"
 import { labelText } from "../lib/labels"
 import { ContinueReading } from "../ContinueReading"
+import { NONE } from "../media/media-queries"
+import { recordListHref } from "../records/record-list-url"
 import { fmt } from "../ui/count-sentence"
 import { NamePhone } from "./NamePhone"
 import { SetOwner } from "./SetOwner"
@@ -128,7 +130,13 @@ export function PhoneSummaryPage() {
                   <li key={m.month} className="flex items-center gap-2 text-xs">
                     <span className="w-20 shrink-0">{monthWords(m.month)}</span>
                     <span aria-hidden className="h-2 rounded-sm bg-status-info" style={{ width: `${Math.max(n ? 2 : 0, (n / maxMonth) * 100)}%` }} />
-                    <span>{n ? `${fmt(m.messages)} messages, ${fmt(m.calls)} calls` : "none"}</span>
+                    {n && m.link ? (
+                      <Link className="underline underline-offset-2" to={m.link}>
+                        {fmt(m.messages)} messages, {fmt(m.calls)} calls
+                      </Link>
+                    ) : (
+                      <span>{n ? `${fmt(m.messages)} messages, ${fmt(m.calls)} calls` : "none"}</span>
+                    )}
                   </li>
                 )
               })}
@@ -190,8 +198,17 @@ export function PhoneSummaryPage() {
               </Link>{" "}
               (messages and calls)
             </li>
+            {p.deleted.by_type.map((d) => (
+              <li key={d.model_type}>
+                <Link className="underline underline-offset-2" to={recordListHref(caseId, extraction, d.model_type, { placement: "top", deleted: "only" })}>
+                  {d.model_type}: {fmt(d.deleted + d.trash)} deleted or in trash
+                </Link>
+              </li>
+            ))}
             <li>
-              {fmt(missing)} {missing === 1 ? "file" : "files"} missing
+              <Link className="underline underline-offset-2" to={`${p.files.link}?verification=missing`}>
+                {fmt(missing)} {missing === 1 ? "file" : "files"} missing
+              </Link>
             </li>
           </ul>
         </Section>
@@ -301,7 +318,9 @@ export function PhoneSummaryPage() {
         <ul className="text-xs">
           {Object.entries(p.files.verification).map(([k, v]) => (
             <li key={k}>
-              {k.replace(/_/g, " ")}: {fmt(v)}
+              <Link className="underline underline-offset-2" to={`${p.files.link}?verification=${encodeURIComponent(k === "not checked" ? NONE : k)}`}>
+                {k.replace(/_/g, " ")}: {fmt(v)}
+              </Link>
             </li>
           ))}
         </ul>
@@ -312,6 +331,7 @@ export function PhoneSummaryPage() {
             <tr>
               <th className="pr-3 text-left">Record type</th>
               <th className="pr-3 text-right">Records</th>
+              <th className="pr-3 text-right">Inside other records</th>
               <th className="text-left">State</th>
             </tr>
           </thead>
@@ -319,7 +339,32 @@ export function PhoneSummaryPage() {
             {p.coverage.map((c) => (
               <tr key={c.model_type}>
                 <td className="pr-3">{c.model_type}</td>
-                <td className="pr-3 text-right">{fmt(c.records)}</td>
+                <td className="pr-3 text-right">
+                  {c.records > 0 ? (
+                    <Link className="underline underline-offset-2" aria-label={`${fmt(c.records)} ${c.model_type} records`} to={recordListHref(caseId, extraction, c.model_type, { placement: "top" })}>
+                      {fmt(c.records)}
+                    </Link>
+                  ) : (
+                    "0"
+                  )}
+                </td>
+                <td className="pr-3 text-right">
+                  {c.nested > 0 ? (
+                    <Link className="underline underline-offset-2" aria-label={`${fmt(c.nested)} ${c.model_type} records inside other records`} to={recordListHref(caseId, extraction, c.model_type, { placement: "nested" })}>
+                      {fmt(c.nested)}
+                    </Link>
+                  ) : (
+                    "0"
+                  )}
+                  {c.copies > 0 && (
+                    <>
+                      {" "}
+                      <Link className="underline underline-offset-2" to={recordListHref(caseId, extraction, c.model_type, { copies: "only" })}>
+                        ({fmt(c.copies)} {c.copies === 1 ? "copy" : "copies"} from another source)
+                      </Link>
+                    </>
+                  )}
+                </td>
                 <td>{c.level_words}</td>
               </tr>
             ))}
@@ -331,7 +376,8 @@ export function PhoneSummaryPage() {
         <ul className="text-xs">
           {p.data_periods.map((d) => (
             <li key={d.signal}>
-              {d.signal}: {fmt(d.records)}
+              {d.link ? <Link className="underline underline-offset-2" to={d.link}>{d.signal}: {fmt(d.records)}</Link> : `${d.signal}: ${fmt(d.records)}`}
+              {d.listed !== undefined && d.listed !== d.records ? ` (${fmt(d.listed)} rows once copies of one message are folded together)` : ""}
               {d.first_words ? `, ${d.first_words} to ${d.last_words}` : ""}
               {d.records > d.dated ? `; ${fmt(d.records - d.dated)} with no time` : ""}
             </li>

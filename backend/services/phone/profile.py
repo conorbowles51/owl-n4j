@@ -367,6 +367,11 @@ def profile(conn, case_id, extraction_id) -> dict:
     if open_readings:
         suggestions.append({"words": "Check how the system read this phone", "link": "%s/phone-review" % base})
 
+    from datetime import date
+    for m in month_rows:
+        first_day = date.fromisoformat(m["month"] + "-01")
+        last_day = (first_day + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        m["link"] = "%s?from=%s&to=%s&notime=0" % (conv, first_day.isoformat(), last_day.isoformat())
     return {
         "phone": phone,
         "verdict": {"word": word, "sentence": sentence, "records": records_total, "apps": len(apps),

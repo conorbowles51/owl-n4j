@@ -32,6 +32,9 @@ FLUSH_ROWS = 20000
 # nested inside it: interpreted like any record, flagged on every row it derives so it can be marked and not counted
 # as a second source of the same fact.
 RELATED_COPY = "related_copy"
+# A value of such a copy equal to its owner's value in the same field: the same fact read from a second source. It stays
+# on the record and in search; lists of events and evidence read it once, from the owner.
+SAME_AS_OWNER = "same_as_owner"
 
 SENSITIVE_DEFAULT = frozenset({
     ("Password", "Data"), ("Password", "GenericAttribute"), ("WirelessNetwork", "Password"),
@@ -185,7 +188,7 @@ class _Ctx:
     """What a descendant needs from an ancestor."""
     __slots__ = ("type", "uid", "ordinal", "doc", "prefix", "container", "first_time", "accuracy", "precision",
                  "origin", "affiliation", "direction", "summary", "has_point", "point_problem", "positionable", "deleted_state",
-                 "decoding_confidence", "locator", "root_uid", "source")
+                 "decoding_confidence", "locator", "root_uid", "source", "facts")
 
 
 def _first_text(fmap, name):
@@ -292,6 +295,8 @@ class Interpreter:
         c.type, c.uid, c.ordinal, c.doc, c.prefix = model_type, uid, ordinal, doc, prefix
         c.deleted_state, c.decoding_confidence, c.root_uid = ds, dc, root_uid
         c.container, c.first_time, c.has_point, c.point_problem = {}, None, False, False
+        c.facts = set()  # (field, value) this record states, for a copy of it to compare with
+        copy_of = pctx if pctx is not None and attrs.get("isrelated") == "True" else None
         c.positionable = model_type in self.positionable
         c.accuracy = _first_text(fmap, "GpsHorizontalAccuracy")
         c.precision = _first_text(fmap, "Precision")
@@ -323,9 +328,12 @@ class Interpreter:
                         basis = "zone_and_clock" if moved == "clock_offset" else "zone_decision"
                     if fixed or basis in ("clock_offset", "zone_decision", "zone_and_clock"):
                         self.stats["effective_" + basis] += 1
+                    c.facts.add((f.name, eff))
+                    marks_t = ["format_mismatch"] if mismatch else []
+                    if copy_of is not None and (f.name, eff) in copy_of.facts:
+                        marks_t = marks_t + [SAME_AS_OWNER]
                     row = dict(
-                        self._common(doc, ordinal, uid, root_uid, model_type, ds, dc,
-                                     ["format_mismatch"] if mismatch else [], "/" + v.body_path),
+                        self._common(doc, ordinal, uid, root_uid, model_type, ds, dc, marks_t, "/" + v.body_path),
                         time_uid=uuid.uuid5(uid, v.body_path), body_path=v.body_path, field_name=f.name,
                         field_path=prefix + (f.name or ""), value_index=v.index, instant=st["instant"],
                         local_wall_time=st["local_wall_time"], original_text=st["original_text"],
@@ -356,8 +364,10 @@ class Interpreter:
                     eff_text = fixed[0] if fixed else v.text  # search matches the effective text (10.3)
                     if fixed:
                         self.stats["effective_corrected_text"] += 1
+                    c.facts.add((f.name, eff_text))
+                    marks_x = [SAME_AS_OWNER] if copy_of is not None and (f.name, eff_text) in copy_of.facts else []
                     row = dict(
-                        self._common(doc, ordinal, uid, root_uid, model_type, ds, dc, (), "/" + v.body_path),
+                        self._common(doc, ordinal, uid, root_uid, model_type, ds, dc, marks_x, "/" + v.body_path),
                         text_uid=uuid.uuid5(uid, "text/" + v.body_path), body_path=v.body_path, field_name=f.name,
                         field_path=prefix + (f.name or ""), value_index=v.index, value=v.text,
                         value_folded=F.fold(eff_text), effective_value=eff_text, is_sensitive=sens)

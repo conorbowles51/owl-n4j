@@ -179,8 +179,9 @@ def _row_html(r, missing) -> str:
 
 
 def build_html(*, title, case_name, generated, export_id, contains, days, participants, page="letter", review=None,
-               review_threads=None) -> tuple:
-    """``days``: [(header words, rows)] in screen order; ``contains``: sentences for "What this export contains";
+               review_threads=None, layout_rows=None) -> tuple:
+    """``layout_rows``: lay out only this many rows and no appendix (the first-page preview); every row still goes
+    through the formatter, so the cover's counts are the export's. ``days``: [(header words, rows)] in screen order; ``contains``: sentences for "What this export contains";
     ``participants``: [(label, [identifier, ...])]; ``review``: the cover's "Review coverage" sentences and
     ``review_threads`` the coverage summary whose threads the appendix lists (07 J-13 step 6). Returns
     (html, missing Counter)."""
@@ -195,9 +196,17 @@ def build_html(*, title, case_name, generated, export_id, contains, days, partic
     review_html = (['<h2>Review coverage</h2><ul class="contains">'] + ["<li>%s</li>" % _e(x, missing) for x in review]
                    + ["</ul>"]) if review else []
     body = []
+    left, clipped = layout_rows, False
     for header, rows in days:
-        body.append('<h3 class="day">%s</h3>' % _e(header, missing))
-        body += [_row_html(r, missing) for r in rows]
+        block = ['<h3 class="day">%s</h3>' % _e(header, missing)]
+        block += [_row_html(r, missing) for r in rows]
+        if left is None:
+            body += block
+            continue
+        clipped = clipped or left < len(rows)
+        body += block[:left + 1] if left > 0 else []
+        left = max(0, left - len(rows))
+    kept = len(body)
     body.append('<h2>Participants</h2><table class="appendix">')
     for label, idents in participants:
         body.append("<tr><td>%s</td><td>%s</td></tr>" % (_e(label, missing), _e(", ".join(idents), missing)))
@@ -211,6 +220,8 @@ def build_html(*, title, case_name, generated, export_id, contains, days, partic
                     _e(state, missing), _e("%s (%s)" % (t["title"], t["phone"]), missing),
                     _e(t["review"] or "{:,} messages".format(t["messages"]), missing)))
         body.append("</table>")
+    if clipped:  # the rows run past the first page, so the appendix cannot reach it; its characters are counted above
+        del body[kept:]
     # the missing characters are known only now: the cover counts them and the appendix lists every one
     if missing:
         n = sum(missing.values())

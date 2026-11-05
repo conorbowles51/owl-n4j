@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react"
-import { Outlet, useMatch, useParams } from "react-router-dom"
+import { Outlet, useLocation, useMatch, useParams } from "react-router-dom"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
 import {
   ResizablePanelGroup,
@@ -10,6 +10,7 @@ import { useUIStore } from "@/stores/ui.store"
 import { CaseSidePanelRail, CaseSidePanelContent } from "./CaseSidePanel"
 import { LazyPanel } from "@/components/ui/lazy-panel"
 import { useMediaQuery } from "@/hooks/use-media-query"
+import { phoneScreen } from "@/lib/phone-screen"
 
 // Case search (Ctrl/Cmd+K) has nothing on screen until it is opened, so its code (search, phones and their schema
 // library) loads just after the case page instead of inside the app shell.
@@ -21,6 +22,19 @@ const SearchDialog = lazy(() =>
 const LazyEvidenceContextSidebar = lazy(() =>
   import("@/features/evidence/components/EvidenceContextSidebar").then((m) => ({ default: m.EvidenceContextSidebar }))
 )
+
+const ReportProblem = lazy(() => import("@/components/ui/report-problem").then((m) => ({ default: m.ReportProblem })))
+
+/** Report a problem on every phone screen (07 section 9), above the page so it stays on screen as the page scrolls. */
+function PhoneProblemBar({ caseId, screen }: { caseId: string; screen: string }) {
+  return (
+    <div className="flex shrink-0 justify-end border-b px-2 py-1" data-testid="phone-problem-bar">
+      <Suspense fallback={null}>
+        <ReportProblem key={screen} caseId={caseId} screen={screen} components={[screen]} />
+      </Suspense>
+    </div>
+  )
+}
 
 function EvidenceContextSidebar({ caseId }: { caseId: string }) {
   return (
@@ -37,6 +51,7 @@ export function CaseLayout() {
   const isAgentRoute = !!useMatch("/cases/:id/agent")
   const isEvidenceRoute = !!useMatch("/cases/:id/evidence")
   const narrowViewport = useMediaQuery("(max-width: 767px)")
+  const screen = phoneScreen(useLocation().pathname)
 
   // Graph and Agent routes manage their own full-width workspaces.
   const showCaseSidePanel = !isGraphRoute && !isAgentRoute
@@ -76,9 +91,14 @@ export function CaseLayout() {
                         : "h-full min-w-0 overflow-hidden"
                     }
                   >
-                    <ErrorBoundary level="page">
-                      <Outlet />
-                    </ErrorBoundary>
+                    <div className="flex h-full min-h-0 flex-col">
+                      {screen && caseId && <PhoneProblemBar caseId={caseId} screen={screen} />}
+                      <div className="min-h-0 flex-1">
+                        <ErrorBoundary level="page">
+                          <Outlet />
+                        </ErrorBoundary>
+                      </div>
+                    </div>
                   </div>
                 </ResizablePanel>
                 {!narrowViewport && !graphPanelCollapsed && (

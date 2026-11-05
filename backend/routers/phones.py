@@ -83,6 +83,30 @@ def create_export(body: ExportBody, db: Session = Depends(get_db), user: User = 
     return out
 
 
+class ExportPreviewBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    case_id: UUID
+    source: Literal["stream", "timeline_lens", "collection", "finding", "dossier", "statement_check",
+                    "analysis_result", "incident_window"] = "stream"
+    filter: dict
+    options: dict = Field(default_factory=dict)
+
+
+@router.post("/exports/preview")
+def preview_export(body: ExportPreviewBody, db: Session = Depends(get_db), user: User = Depends(get_current_db_user)):
+    """The first page of the PDF, drawn by the export's own formatter (07 J-14 step 4); nothing is stored."""
+    from services.phone.exports import jobs, pdf
+    authorize_case(db, body.case_id, user, ("case", "view"))
+    try:
+        return jobs.preview(db.get_bind(), body.case_id, user.id, body.source, body.filter, body.options)
+    except jobs.ExportError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc.errors()[0].get("msg")))
+    except pdf.RenderStopped as exc:
+        raise _failure("The preview could not be drawn.", exc)
+
+
 @router.get("/exports")
 def export_history(case_id: UUID = Query(...), db: Session = Depends(get_db),
                    user: User = Depends(get_current_db_user)):

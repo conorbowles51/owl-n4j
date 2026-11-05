@@ -450,8 +450,9 @@ export default function MediaPage() {
   const { id: caseId = "", extraction = "" } = useParams()
   const queryClient = useQueryClient()
   const [category, setCategory] = useState("")
-  const [state, setState] = useState("")
   const [params, setParams] = useSearchParams()
+  // a count on the Phone summary opens the files it counts (test P-4)
+  const [state, setState] = useState(() => params.get("verification") ?? "")
   const open = params.get("file")
   const setOpen = (uid: string | null) => setParams((p) => {
     const next = new URLSearchParams(p)

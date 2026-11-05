@@ -5,6 +5,8 @@ import {
   ProfileSchema,
   PhonesSchema,
   RecordDetailSchema,
+  RecordListSchema,
+  type RecordList,
   SourceDatabaseSchema,
   type SourceDatabase,
   ReviewSchema,
@@ -131,6 +133,28 @@ export async function getRecord(caseId: string, recordUid: string, zone?: string
   const q = new URLSearchParams({ case_id: caseId })
   if (zone) q.set("zone", zone)
   return RecordDetailSchema.parse(await fetchAPI(`/api/phones/records/${encodeURIComponent(recordUid)}?${q}`))
+}
+
+export interface RecordListFilter {
+  phones?: string[]
+  placement?: "all" | "top" | "nested"
+  deleted?: "any" | "only" | "hide"
+  copies?: "any" | "only" | "hide"
+  from?: string
+  to?: string
+  sort?: "time" | "report" | "title" | "deleted"
+  direction?: "asc" | "desc"
+}
+
+/** One window of the list for a record type (03 section 7.5); `cursor` is the `next` of the window before it. */
+export async function getRecordList(caseId: string, modelType: string, filter: RecordListFilter, cursor?: string | null): Promise<RecordList> {
+  const q = new URLSearchParams({ case_id: caseId })
+  for (const [k, v] of Object.entries(filter)) {
+    if (Array.isArray(v)) v.forEach((x) => q.append(k, x))
+    else if (v) q.set(k, v)
+  }
+  if (cursor) q.set("cursor", cursor)
+  return RecordListSchema.parse(await fetchAPI(`/api/phones/record-lists/${encodeURIComponent(modelType)}?${q}`))
 }
 
 /** Correct this value (03 section 3.6, 02 section 10.4): a correct_phone_value decision with the person's reason; the
@@ -384,6 +408,10 @@ export type ExportSource = "stream" | "timeline_lens" | "collection" | "finding"
 export async function describeExport(caseId: string, filter: StreamFilter, source: ExportSource = "stream") {
   const body = source === "timeline_lens" ? { case_id: caseId, filter, source } : { case_id: caseId, filter }
   return ExportFactsSchema.parse(await fetchAPI("/api/phones/exports/describe", { method: "POST", body, read: true }))
+}
+/** The first page of the PDF, drawn by the export's own formatter; nothing is stored (07 J-14, test E-8). */
+export async function previewExport(caseId: string, filter: StreamFilter, options: Record<string, unknown>, source: ExportSource = "stream") {
+  return fetchAPI<{ image: string; text: string; rows: number }>("/api/phones/exports/preview", { method: "POST", body: { case_id: caseId, source, filter, options }, read: true })
 }
 export async function createExport(caseId: string, filter: StreamFilter, options: Record<string, unknown>, format: "pdf" | "rsmf" = "pdf", source: ExportSource = "stream") {
   return fetchAPI<{ export_id: string }>("/api/phones/exports", { method: "POST", body: { case_id: caseId, format, source, filter, options } })

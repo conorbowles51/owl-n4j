@@ -3,7 +3,7 @@ import { useState } from "react"
 import { Link } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { createExport, describeExport, downloadExport, failureText, getExport, type ExportSource, type StreamFilter } from "@/features/phones/api"
+import { createExport, describeExport, downloadExport, failureText, getExport, previewExport, type ExportSource, type StreamFilter } from "@/features/phones/api"
 import { MachineTextPrompt } from "@/features/phones/media/MachineTextPrompt"
 
 const fmt = (n: number) => n.toLocaleString("en-US")
@@ -41,6 +41,8 @@ export function ExportDialog(props: {
     enabled: !!exportId,
     refetchInterval: (q) => (q.state.data && (q.state.data.state === "done" || q.state.data.state === "failed") ? false : 2000),
   })
+  // the first page exactly as the export draws it (07 J-14 step 4, test E-8); asked for, because it reads every row
+  const preview = useMutation({ mutationFn: () => previewExport(caseId, filter, { title: title.trim() || words, words, ...(includeSensitive ? { include_sensitive: true } : {}) }, source) })
   const save = useMutation({ mutationFn: () => downloadExport(caseId, exportId!, job.data?.file?.filename || `phone-messages.${format}`) })
   const f = facts.data
   const kinds = f ? [plural(f.messages, "message", "messages"), ...(f.calls ? [plural(f.calls, "call", "calls")] : []), ...(f.other ? [plural(f.other, "other record", "other records")] : [])].join(" and ") : ""
@@ -106,6 +108,20 @@ export function ExportDialog(props: {
               <span className="font-medium">{format === "pdf" ? "Title on the cover" : "Title"}</span>
               <input className="rounded border bg-background px-2 py-1 text-sm" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} />
             </label>
+          </div>
+        )}
+        {f && format === "pdf" && (
+          <div className="flex flex-col gap-1 text-xs">
+            <Button size="sm" variant="outline" className="self-start" disabled={preview.isPending} onClick={() => preview.mutate()}>
+              {preview.isPending ? "Drawing the first page" : preview.data ? "Draw the first page again" : "Preview the first page"}
+            </Button>
+            {preview.isError && <p role="alert">{failureText(preview.error, "The preview could not be drawn.")}</p>}
+            {preview.data && (
+              <figure className="flex flex-col gap-1">
+                <img src={`data:image/png;base64,${preview.data.image}`} alt={`First page of the PDF: ${preview.data.text}`} className="max-h-96 w-fit rounded border object-contain object-top" data-testid="export-preview" />
+                <figcaption className="text-muted-foreground">Page 1, drawn as the export will draw it. The export id and time are set when the PDF is made.</figcaption>
+              </figure>
+            )}
           </div>
         )}
         {running && (

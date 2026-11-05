@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { ComparePhones } from "@/features/phones/components/ComparePhones"
 import { phoneQueryTarget } from "./phone-query"
 import { phonesQuery } from "@/features/phones/phones-query"
+import { RecordListPage } from "@/features/phones/records/RecordListPage"
 
 /**
  * The phone addresses Workspace, dossiers and Notebook links use (07 section 4.13; phone-links.ts). Each one lands
@@ -87,14 +88,15 @@ export function PhonesIndexPage() {
   )
 }
 
-/** /phones/:extraction/records/:recordType?record= : messages open in Conversations at the record. */
+/** /phones/:extraction/records/:recordType is the list for that record type (03 section 7.5). With ?record= it is a
+ * saved link to one record, which opens in Conversations at the record, as those links always have. */
 export function PhoneRecordsRoute() {
-  const { id: caseId = "", extraction = "" } = useParams()
+  const { id: caseId = "", extraction = "", recordType = "" } = useParams()
   const location = useLocation()
-  const q = new URLSearchParams(location.search)
-  const record = q.get("record")
+  const record = new URLSearchParams(location.search).get("record")
   const base = `/cases/${encodeURIComponent(caseId)}/phones/${encodeURIComponent(extraction)}/records/conversations`
-  return <Navigate to={record ? `${base}?record=${encodeURIComponent(record)}` : base} replace />
+  if (record) return <Navigate to={`${base}?record=${encodeURIComponent(record)}`} replace />
+  return <RecordListPage key={`${caseId}:${recordType}`} caseId={caseId} extraction={extraction} modelType={recordType} />
 }
 
 

@@ -262,3 +262,44 @@ def test_the_route_answers_for_a_member_and_hides_a_phone_of_another_case(world)
     assert api.get("/api/phones/record-lists/VisitedPage", params={**base, "cursor": "nonsense"}).status_code == 422
     stale = api.get("/api/phones/record-lists/VisitedPage", params={**base, "sort": "title", "cursor": r.json()["next"]})
     assert stale.status_code == 409 and stale.json()["detail"]["code"] == "stale_snapshot"
+
+
+def _copy_case(c, case):
+    """A search and its copy from another source: same words and time; a second copy saying something else."""
+    when = day(9)
+    rows = [
+        (0, None, 0, model("SearchedItem", [fld("Value", ("String", "invented words")),
+                                            fld("TimeStamp", ("TimeStamp", when.isoformat())),
+                                            ["RelatedModels", None, None, [["@", 1], ["@", 2]]]])),
+        (1, 0, 0, model("SearchedItem", [fld("Value", ("String", "invented words")),
+                                         fld("TimeStamp", ("TimeStamp", when.isoformat()))], isrelated="True", source_index="1")),
+        (2, 0, 0, model("SearchedItem", [fld("Value", ("String", "other words")),
+                                         fld("TimeStamp", ("TimeStamp", day(10).isoformat()))], isrelated="True", source_index="2")),
+    ]
+    stamps = [stamp(0, "1.0", "TimeStamp", "SearchedItem", when), stamp(1, "1.0", "TimeStamp", "SearchedItem", when),
+              stamp(2, "1.0", "TimeStamp", "SearchedItem", day(10))]
+    return make_extraction(c, case, rows, timestamps=stamps)
+
+
+def test_a_copy_repeating_its_owner_is_one_fact_and_a_copy_saying_more_is_kept():
+    from services.phone_analysis import fields as FV
+    with fresh_engine() as engine:
+        with engine.begin() as c:
+            case = make_case(c)
+            ext = _copy_case(c, case)
+        sweep.interpret_one(engine, ext)
+        with engine.connect() as c:
+            # every record stays readable and listed
+            assert c.execute(text("SELECT count(*) FROM pv_record WHERE extraction_id = :e"), {"e": ext}).scalar() == 3
+            assert c.execute(text("SELECT count(*) FROM pv_time WHERE extraction_id = :e"), {"e": ext}).scalar() == 3
+            # the timeline shows the repeated time once, the different one too
+            got = sorted(r[0].day for r in c.execute(text(
+                "SELECT instant FROM pv_timeline_entry WHERE extraction_id = :e"), {"e": ext}))
+            assert got == [9, 10]
+            # search still finds the copy's text; a reader of evidence sees each fact once
+            texts = c.execute(text("SELECT value, 'same_as_owner' = ANY(flags) FROM pv_text WHERE extraction_id = :e "
+                                   "AND field_path = 'Value' ORDER BY value, 2"), {"e": ext}).fetchall()
+            assert [tuple(t) for t in texts] == [("invented words", False), ("invented words", True), ("other words", False)]
+            vals = FV.field_values(c, ext, ("SearchedItem",), ("Value",))
+            assert sorted(v["values"]["Value"][0] for v in vals.values()) == ["invented words", "other words"]
+            assert FV.type_counts(c, ext, ("SearchedItem",)) == {"SearchedItem": 1}

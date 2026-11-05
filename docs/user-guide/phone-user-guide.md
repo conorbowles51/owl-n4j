@@ -2,7 +2,7 @@
 
 This guide explains how to work with phone reports in Loupe: adding a phone, reading what it holds, deciding who is who, checking the system's readings, and putting what you find into dossiers, findings and the Timeline.
 
-**Updated: 1 November 2026.** Each task below ends with an **Available** line. It says whether the task can be done in this build of Loupe, in the preview only, or not yet. Use the **Team checklist** for a short first test, and the **Glossary** for the meaning of every mark you see on a phone screen.
+**Updated: 5 November 2026.** Each task below ends with an **Available** line. It says whether the task can be done in this build of Loupe, in the preview only, or not yet. Use the **Team checklist** for a short first test, and the **Glossary** for the meaning of every mark you see on a phone screen.
 
 Screenshots and examples use invented phones and invented people only.
 
@@ -30,7 +30,8 @@ Screenshots and examples use invented phones and invented people only.
 20. [Compare phones for a person or a pair](#compare-phones-for-a-person-or-a-pair)
 21. [Explain a finding](#explain-a-finding)
 22. [Report a problem](#report-a-problem)
-23. [The training case](#the-training-case)
+23. [A list for each record type](#a-list-for-each-record-type)
+24. [The training case](#the-training-case)
 
 ## What is in this build
 
@@ -106,6 +107,16 @@ The **Phone summary** opens with one line saying what was read: how many records
 If no owner number was found, the summary says so and offers **Set the owner**. Person-level views stay off until an owner is set.
 
 **Available:** preview only (Phone summary on invented phones).
+
+## A list for each record type
+
+Every count on the Phone summary opens the list it counts. Under **What Loupe reads**, the number in **Records** opens the records that stand on their own, and the number in **Inside other records** opens the records held inside another record, such as a number inside a contact. The list states its exact total. Use the filters above it for the phone, the dates, deleted records and copies. A record with no time cannot match a date, so the line under the list says how many it left out.
+
+Select a record's name to open it. A message or call opens in Conversations at that record, among its thread; anything else opens the record panel beside the list. Passwords and card numbers stay hidden until you press **Reveal** in the record panel.
+
+Some reports list a copy of a record from another source under the record itself. The list marks these **Copy from another source**. Where a copy repeats the record, the timeline, the activity counts and the approaches count that fact once. The copy stays in the list and in search.
+
+**Available:** yes.
 
 ## Everything with one person, or between two
 
@@ -223,7 +234,7 @@ Every finding that holds phone records shows **How this was found**: the scope a
 
 ## Report a problem
 
-Every phone screen has **Report a problem** beside the Guide button.
+Every phone screen has **Report a problem** at the top right.
 
 1. Choose what you were doing from the list, and whether refreshing the page changes it.
 2. Optionally say what you expected.

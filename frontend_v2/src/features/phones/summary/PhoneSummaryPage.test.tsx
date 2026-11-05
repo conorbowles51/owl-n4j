@@ -61,7 +61,11 @@ function profile(over: Partial<Profile> = {}): Profile {
     completeness: { reconciliation: "exact", state: "ingested", documents: [], held: [] },
     files: { total: 4, by_category: { Image: 4 }, verification: { match: 3, missing: 1 }, link: "/m" },
     deleted: { comm_events: 12, link: `${conv}?deleted=only`, by_type: [] },
-    coverage: [{ model_type: "InstantMessage", records: 600, level: "reviewed", level_words: "Interpreted" }],
+    coverage: [
+      { model_type: "InstantMessage", records: 600, nested: 0, copies: 0, level: "reviewed", level_words: "Interpreted" },
+      { model_type: "Party", records: 0, nested: 90, copies: 0, level: "generic", level_words: "Read generically" },
+      { model_type: "SearchedItem", records: 20, nested: 7, copies: 7, level: "generic", level_words: "Read generically" },
+    ],
     data_periods: [{ signal: "messages", records: 600, dated: 594, first_words: "a", last_words: "b" }],
     months: [{ month: "2023-01", messages: 5, calls: 1, other: 0 }, { month: "2023-02", messages: 0, calls: 0, other: 0 }],
     apps: [{ app: "SyntheticApp", events: 6 }],
@@ -179,6 +183,17 @@ describe("Phone summary", () => {
   beforeEach(() => {
     localStorage.clear()
     api.getProfile.mockResolvedValue(profile())
+  })
+
+  it("every count in What Loupe reads opens the list it counts (test P-8)", async () => {
+    api.getProfile.mockResolvedValue(profile())
+    page()
+    const box = await screen.findByRole("region", { name: "What Loupe reads" })
+    const href = (name: string | RegExp) => within(box).getByRole("link", { name }).getAttribute("href")
+    expect(href("600 InstantMessage records")).toMatch(/\/records\/InstantMessage\?placement=top$/)
+    expect(href("90 Party records inside other records")).toMatch(/\/records\/Party\?placement=nested$/)
+    expect(href("20 SearchedItem records")).toMatch(/\/records\/SearchedItem\?placement=top$/)
+    expect(href("(7 copies from another source)")).toMatch(/\/records\/SearchedItem\?copies=only$/)
   })
 
   it("the review coverage counts partly reviewed threads and says what was added since (07 J-13b)", async () => {

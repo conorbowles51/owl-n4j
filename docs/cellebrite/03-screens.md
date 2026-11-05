@@ -1053,6 +1053,15 @@ read generically; filters; the exact total (3.1); the record panel (3.6) for any
 count on the Phone summary (coverage map, deleted and recovered, triage block) opens the list it counts.
 Test P-8 (7.4).
 
+**Built (`cb-recordlists`).** `GET /api/phones/record-lists/{type}` (`services/phone/type_lists.py`): keyset windows of
+200, the exact total for the filters, sort by time, title, deletion state or report order, filters for phone (this
+phone or every phone of the case), date (the count of records with no time is stated), deleted, where the record sits
+and copies from another source. Up to 8 columns show, the mapping's fields first; the response states how many more
+fields the record panel holds. Sensitive values stay masked, and a corrected value shows with its original. The summary
+counts three things per type, each linked: records standing on their own (its `Records` column, as before), records
+inside other records (a type held only inside others now has a row), and copies from another source. A message or call
+opens in Conversations at the record; any other row opens the record panel.
+
 ---
 
 ## 8. Media

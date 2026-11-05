@@ -158,11 +158,21 @@ def build(conn, extraction_id, generation, the_plan=None) -> dict:
                 "field_path": "metadata:" + item, "identifier_raw": raw, "context": "header", "name_alongside": None,
                 "region_basis": None, "instant": None, "generation": generation})
             stats["sightings:header_bluetooth"] += 1
+    # a copy from another source (02 decision 39) repeating an identifier of the record that holds it is one sighting
+    copies = {str(u) for (u,) in conn.execute(text(
+        "SELECT record_uid FROM phone_record_summaries WHERE extraction_id = :e AND generation = :g AND 'related_copy' = "
+        "ANY(flags)"), {"e": extraction_id, "g": generation})}
+    rows = sorted(rows, key=lambda row: str(row[2]) in copies)  # the owners' identifiers first
+    held = set()
     for context, uid, rec, root, path, raw, ctx, card, card_type, name in rows:
         ident = identifiers.classify(raw, context=ctx, region=region[0], region_basis=region[1])
         if ident is None:
             stats["sightings_without_identity:" + context] += 1
             continue
+        if str(rec) in copies and (str(root), ident.identity_key) in held:
+            stats["sightings_same_as_owner"] += 1
+            continue
+        held.add((str(root), ident.identity_key))
         if found.get(ident.identity_key) is None:
             found[ident.identity_key] = ident
         pending.append({
