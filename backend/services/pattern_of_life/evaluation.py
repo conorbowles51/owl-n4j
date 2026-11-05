@@ -142,7 +142,8 @@ def _overlap(cols):
 
 # An event inside the window that is neither the owner's use nor (for "inactive") the phone moving: context, kept
 # by count only (04 decision 37). Mirrors the tests in ``_activity``; the columns it reads are NOT NULL.
-_INSIDE = "x.instant_utc < :b AND coalesce(x.end_utc, x.instant_utc) >= :a"
+# a period is [start, end): one that ends as the window starts is outside it; an instant at the start is inside
+_INSIDE = "x.instant_utc < :b AND (x.instant_utc >= :a OR x.end_utc > :a)"
 _CONTEXT = (_INSIDE + " AND NOT (x.actor = 'owner' AND x.activity_class = 'interaction' AND x.strength <> 'none') "
             "AND NOT (CAST(:inactive AS boolean) AND x.physical)")
 
@@ -178,8 +179,7 @@ def _context_groups(conn, exts, a, b, inactive):
 
 
 def _in_window(start, end, a, b):
-    end = end or start
-    return start < b and end >= a
+    return start < b and (start >= a or (end is not None and end > a))
 
 
 def _event_display(ev):
@@ -201,18 +201,23 @@ def _gap_items(conn, exts, a, b):
 
 
 def _interaction_free_pieces(pieces, owner_int):
-    """Observed pieces with the owner-interaction instants cut out (data_no_interaction)."""
+    """Observed pieces with the owner interaction cut out (data_no_interaction): an instant splits a piece, and a
+    period (an hourly usage summary) takes its whole span out, because the use happened somewhere inside it."""
     out = []
     for e, ps in pieces.items():
-        cuts = sorted(t for x, t in owner_int if x == e)
+        cuts = sorted((t, end or t) for x, t, end in owner_int if x == e)
         for p in ps:
             if p["state"] != "observed":
                 continue
             s = p["start"]
-            for t in [t for t in cuts if p["start"] <= t < p["end"]] + [p["end"]]:
+            for t, end in cuts:
+                if t >= p["end"] or end < p["start"] or (end == p["start"] and t < end):
+                    continue
                 if t > s:
                     out.append((e, s, t, p))
-                s = max(s, t)
+                s = max(s, min(end, p["end"]))
+            if p["end"] > s:
+                out.append((e, s, p["end"], p))
     return out
 
 
@@ -237,7 +242,7 @@ def _activity(conn, claim, a, b, exts, inactive):
             continue
         owner = ev["actor"] == "owner" and ev["activity_class"] == "interaction" and ev["strength"] != "none"
         if owner:
-            owner_int.append((str(ev["extraction_id"]), ev["instant_utc"]))
+            owner_int.append((str(ev["extraction_id"]), ev["instant_utc"], ev["end_utc"]))
             if inactive and tol and (ev["instant_utc"] < a + tol or ev["instant_utc"] >= b - tol):
                 items.append(_item("context", "activity_event", ev["id"], "within_stated_tolerance",
                                    "Use within the tolerance the statement allows.", strength=ev["strength"], **kw))

@@ -41,7 +41,7 @@ const minuteUtc = (t: string | null) => t ? new Date(t).toISOString().slice(0, 1
 export function inputFromClaim(c: Claim): ClaimInput {
   const p = c.place
   return { kind: c.kind, words: c.window_text ?? "", start: minuteUtc(c.window_start), end: minuteUtc(c.window_end),
-    zone: c.window_zone ?? "UTC", tolerance: String(c.activity?.tolerance_minutes ?? 0), lat: p?.lat != null ? String(p.lat) : "",
+    zone: c.window_zone ?? "", tolerance: String(c.activity?.tolerance_minutes ?? 0), lat: p?.lat != null ? String(p.lat) : "",
     lon: p?.lon != null ? String(p.lon) : "", radius: p?.radius_m != null ? String(p.radius_m) : "100",
     clusterId: p?.cluster_id ?? null, placeLabel: p?.label ?? "", placeText: p?.text ?? c.as_drafted?.place_text ?? "",
     counterpart: c.counterpart }
@@ -49,7 +49,7 @@ export function inputFromClaim(c: Claim): ClaimInput {
 
 function placeField(v: ClaimInput): ClaimPlace | null {
   if (!isPlaceKind(v.kind)) return null
-  const text = v.placeText.trim() || v.words.trim()
+  const text = v.placeText.trim()
   if (v.lat.trim() && v.lon.trim()) {
     return { lat: Number(v.lat), lon: Number(v.lon), radius_m: Number(v.radius),
       ...(v.clusterId !== null ? { cluster_id: v.clusterId } : {}), ...(v.placeLabel ? { label: v.placeLabel } : {}), ...(text ? { text } : {}) }
@@ -76,7 +76,7 @@ function sameValue(key: string, a: unknown, b: unknown) {
 /** Only what the person changed, so an edit never rewrites a field it did not touch (a stored time with seconds, a place's words). */
 export function changedFields(c: Claim, v: ClaimInput): Record<string, unknown> {
   const after = fieldsFromInput(v, c.activity)
-  const before: Record<string, unknown> = { ...fieldsFromInput(inputFromClaim(c), c.activity), window_zone: c.window_zone }  // the form offers UTC for a claim with no zone
+  const before: Record<string, unknown> = fieldsFromInput(inputFromClaim(c), c.activity)
   return Object.fromEntries(Object.entries(after).filter(([k, x]) => !sameValue(k, before[k], x)))
 }
 

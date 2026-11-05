@@ -435,3 +435,22 @@ def test_every_kind_settled_from_a_draft_reaches_confirm_and_the_model_words_sta
             assert len(listed) == 8 and all(x["as_drafted"]["window_text"] == "that night" for x in listed)
             typed = claims.create(c, case, {"kind": "active", "subject": subj}, me)
             assert "as_drafted" not in typed
+
+
+def test_a_period_is_its_span_in_a_check():
+    """cb-statements-rest review: a usage summary ending as the window starts is outside it, and its whole span is use.
+    Fails on the old code: an end equal to the window start counted as inside, and a period cut only at its start."""
+    a, b = DAY, DAY + timedelta(hours=4)
+    hour = timedelta(hours=1)
+    assert evaluation._in_window(a - hour, a, a, b) is False
+    assert evaluation._in_window(a - hour, a + timedelta(minutes=1), a, b) is True
+    assert evaluation._in_window(a, None, a, b) is True
+    assert evaluation._in_window(a - hour, None, a, b) is False
+    assert evaluation._in_window(b, None, a, b) is False
+    piece = {"state": "observed", "start": a, "end": b}
+    free = evaluation._interaction_free_pieces({"e": [piece]}, [("e", a + hour, a + 2 * hour), ("e", a + 3 * hour, None)])
+    assert [(s, t) for _, s, t, _p in free] == [(a, a + hour), (a + 2 * hour, a + 3 * hour), (a + 3 * hour, b)]
+    free = evaluation._interaction_free_pieces({"e": [piece]}, [("e", a - hour, a + 30 * timedelta(minutes=1))])
+    assert [(s, t) for _, s, t, _p in free] == [(a + timedelta(minutes=30), b)]
+    free = evaluation._interaction_free_pieces({"e": [piece]}, [("e", a - hour, a), ("e", b, b + hour)])
+    assert [(s, t) for _, s, t, _p in free] == [(a, b)]

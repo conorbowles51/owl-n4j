@@ -1373,7 +1373,11 @@
       "field": "Folder",
       "op": "contains_any",
       "value": [
-       "draft"
+       "draft",
+       "borrador",
+       "brouillon",
+       "entwu",
+       "bozza"
       ]
      }
     ],

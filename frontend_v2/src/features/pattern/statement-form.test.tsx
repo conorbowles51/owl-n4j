@@ -152,13 +152,15 @@ describe("settling a drafted statement", () => {
     const editor = screen.getByText("Save changes").closest("div.rounded") as HTMLElement
     expect(within(editor).getByText(/The draft says: "the flat"/)).toBeTruthy()
     fillWindow(editor)
+    expect((within(editor).getByLabelText("Zone the statement uses") as HTMLInputElement).value).toBe("")  // a person chooses it
+    fireEvent.change(within(editor).getByLabelText("Zone the statement uses"), { target: { value: "Europe/Dublin" } })
     await within(editor).findByRole("option", { name: /^Home/ })
     fireEvent.change(within(editor).getByLabelText("A routine place of this phone or person"), { target: { value: "7" } })
     fireEvent.click(within(editor).getByText("Save changes"))
     await waitFor(() => expect(patternAPI.editClaim).toHaveBeenCalled())
     const [, id, fields, version] = vi.mocked(patternAPI.editClaim).mock.calls[0]
     expect([id, version]).toEqual(["c1", 1])
-    expect(fields).toEqual({ window_zone: "UTC", window_start: "2023-03-14T23:00:00.000Z", window_end: "2023-03-15T07:00:00.000Z",
+    expect(fields).toEqual({ window_zone: "Europe/Dublin", window_start: "2023-03-14T23:00:00.000Z", window_end: "2023-03-15T07:00:00.000Z",
       place: { lat: 51.5, lon: -0.1, radius_m: 80, cluster_id: 7, label: "Home", text: "the flat" } })
     expect(await screen.findByRole("button", { name: "Confirm" })).toBeTruthy()
     expect(screen.getByText(/Drafted by deepseek as: At a place; "I was at the flat that evening"; time "that evening"; place "the flat"\./)).toBeTruthy()
@@ -179,6 +181,34 @@ describe("settling a drafted statement", () => {
 })
 
 describe("an edit sends only what changed", () => {
+  it("does not write a zone nobody chose, or touch a place when only the words change", () => {
+    const c = claim({ kind: "at_place", window_text: "before", place: { lat: 1, lon: 2, radius_m: 30 } })
+    const v = inputFromClaim(c)
+    expect(v.zone).toBe("")
+    expect(changedFields(c, { ...v, words: "after" })).toEqual({ window_text: "after" })
+  })
+
+  it("drops the routine place's name when its radius is changed by hand", async () => {
+    open()
+    await screen.findByText("Statements for this phone or person (0)")
+    const form = screen.getByText("Enter a statement").closest("details") as HTMLElement
+    fireEvent.change(within(form).getByLabelText("What the statement says"), { target: { value: "at_place" } })
+    await within(form).findByRole("option", { name: /^Home/ })
+    fireEvent.change(within(form).getByLabelText("A routine place of this phone or person"), { target: { value: "7" } })
+    fireEvent.change(within(form).getByLabelText("Radius in metres"), { target: { value: "2000" } })
+    fireEvent.click(within(form).getByText("Save as not confirmed"))
+    await waitFor(() => expect(patternAPI.createClaim).toHaveBeenCalled())
+    expect(vi.mocked(patternAPI.createClaim).mock.calls[0][1].place).toEqual({ lat: 51.5, lon: -0.1, radius_m: 2000 })
+  })
+
+  it("hides Confirm while the statement is open with changes not saved", async () => {
+    stored = [claim({ window_start: "2023-03-14T23:00:00Z", window_end: "2023-03-15T07:00:00Z", window_zone: "UTC" })]
+    open()
+    await screen.findByRole("button", { name: "Confirm" })
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+    expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull()
+  })
+
   it("leaves a stored time with seconds and a place's extra words alone", () => {
     const c = claim({ kind: "at_place", window_start: "2023-03-14T23:00:30+00:00", window_end: "2023-03-15T07:00:00+00:00", window_zone: "Europe/Dublin",
       window_text: "words", place: { lat: 1, lon: 2, radius_m: 30, text: "the flat" } })

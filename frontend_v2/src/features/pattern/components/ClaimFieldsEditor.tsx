@@ -32,7 +32,7 @@ export function ClaimFieldsEditor({ caseId, subject, value, onChange, drafted, f
       <label className="flex flex-col">The statement's own words<input value={value.words} onChange={(e) => set({ words: e.target.value })} className={INPUT} /></label>
       <label className="flex flex-col">From (UTC)<input autoFocus={focus === "window_start"} type="datetime-local" value={value.start} onChange={(e) => set({ start: e.target.value })} className={INPUT} /></label>
       <label className="flex flex-col">Until (UTC)<input autoFocus={focus === "window_end"} type="datetime-local" value={value.end} onChange={(e) => set({ end: e.target.value })} className={INPUT} /></label>
-      <label className="flex flex-col">Zone the statement uses<input autoFocus={focus === "window_zone"} value={value.zone} onChange={(e) => set({ zone: e.target.value })} className={INPUT} /></label>
+      <label className="flex flex-col">Zone the statement uses<input autoFocus={focus === "window_zone"} placeholder="For example Europe/Dublin or UTC" value={value.zone} onChange={(e) => set({ zone: e.target.value })} className={INPUT} /></label>
       {value.kind === "inactive" && (
         <label className="flex flex-col">Minutes of use to allow at each end
           <input type="number" min={0} max={120} step={1} value={value.tolerance} onChange={(e) => set({ tolerance: e.target.value })} className={INPUT} />
@@ -58,7 +58,7 @@ function PlaceFields({ caseId, subject, value, set, drafted, focus }: {
   const places = routine.data?.places ?? []
   function pick(id: string) {
     const p = places.find((x) => String(x.cluster_id) === id)
-    if (!p) { set({ clusterId: null, placeLabel: "" }); return }
+    if (!p) { set({ clusterId: null, placeLabel: "", lat: "", lon: "" }); return }
     set({ clusterId: p.cluster_id, placeLabel: p.label ?? "", lat: String(p.lat), lon: String(p.lon), radius: String(Math.max(1, Math.round(p.radius_m))) })
   }
   const typed = (patch: Partial<ClaimInput>) => set({ ...patch, clusterId: null, placeLabel: "" })
@@ -77,7 +77,7 @@ function PlaceFields({ caseId, subject, value, set, drafted, focus }: {
       <div className="flex flex-wrap items-center gap-1">
         <input aria-label="Latitude" placeholder="Latitude" value={value.lat} onChange={(e) => typed({ lat: e.target.value })} className={`w-24 ${INPUT}`} />
         <input aria-label="Longitude" placeholder="Longitude" value={value.lon} onChange={(e) => typed({ lon: e.target.value })} className={`w-24 ${INPUT}`} />
-        <input aria-label="Radius in metres" value={value.radius} onChange={(e) => set({ radius: e.target.value })} className={`w-20 ${INPUT}`} />
+        <input aria-label="Radius in metres" value={value.radius} onChange={(e) => typed({ radius: e.target.value })} className={`w-20 ${INPUT}`} />
         <button type="button" className="text-xs underline" onClick={() => setMap(!map)}>{map ? "Hide the map" : "Place on map"}</button>
       </div>
       {map && (

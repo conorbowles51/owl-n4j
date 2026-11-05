@@ -85,7 +85,7 @@ export function StatementCheckPanel({ caseId, subject, saved }: { caseId: string
                   {KIND_WORDS[c.kind]}{c.window_text ? `: "${c.window_text}"` : ""}
                 </button>
                 <span className="text-xs text-muted-foreground">{c.status_words}</span>
-                {c.status === "draft" && c.missing_for_confirm.length === 0 && (
+                {c.status === "draft" && c.missing_for_confirm.length === 0 && editing?.id !== c.id && (
                   <Button size="sm" variant="outline" disabled={!!busy} onClick={() => act("Confirming…", () => patternAPI.confirmClaim(caseId, c.id, c.version))}>Confirm</Button>
                 )}
                 {c.status === "draft" && c.missing_for_confirm.length > 0 && (
@@ -278,7 +278,8 @@ function ClaimForm({ caseId, subject, onMade }: { caseId: string; subject: Subje
   const [err, setErr] = useState<string | null>(null)
   async function save() {
     setErr(null)
-    try { onMade(await patternAPI.createClaim(caseId, { ...fieldsFromInput(value), subject })); setValue(BLANK_INPUT) } catch (e) { setErr(errorWords(e)) }
+    // a place the form leaves in words takes the statement's words, as a place to settle before confirming
+    try { onMade(await patternAPI.createClaim(caseId, { ...fieldsFromInput({ ...value, placeText: value.placeText || value.words }), subject })); setValue(BLANK_INPUT) } catch (e) { setErr(errorWords(e)) }
   }
   return (
     <details className="rounded border p-2">

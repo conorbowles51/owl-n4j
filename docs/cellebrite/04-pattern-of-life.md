@@ -461,9 +461,9 @@ values Inbox, Sent, Draft); else Status `Sent` or `Unsent`. The rule used is rec
 | Call.TimeStamp | Incoming, Rejected | interaction | owner | declining is usually manual, but focus modes reject automatically; shown `moderate` | |
 | Call.TimeStamp | Incoming, Missed, Voicemail, Unknown, NotEstablishedUnknownReason | passive | owner | no action needed | |
 | Email.TimeStamp | Status Sent or Unsent, in any folder | interaction | owner | sending mail needs a person; all 47 such records on the 14 reports have the owner as the From party, and the folder's name varies by language and client | scheduled or automatic sending shown by Source |
-| Email.TimeStamp | no Status, Folder holds "outbox" or "draft" | interaction | owner | composing mail needs a person; `unknown` time semantics for a draft | an Outbox filled by an automatic reply |
+| Email.TimeStamp | no Status, Folder holds "outbox" or "draft" (with their Spanish, French, German and Italian words) | interaction | owner | composing mail needs a person; `unknown` time semantics for a draft | an Outbox filled by an automatic reply |
 | Email.TimeStamp | other folders | passive | owner | mail arrives without action | |
-| Email.TimeStamp | no Folder, Status absent or Default | unknown | unknown | not_established: 92 records, nothing says whether the owner sent them | a Source that states direction |
+| Email.TimeStamp | no Folder, Status absent or Default; or Folder and Source Recents | unknown | unknown | not_established: 92 and 24 records; nothing says whether the owner sent them, and a Recents entry is a recent address rather than mail | a Source that states direction |
 | Notification.TimeStamp | any | passive | owner | posting needs no person | |
 | SocialMediaActivity.TimeStamp | Post, Comment, Update, CheckIn | interaction | account | could be posted from any device on the account | IsFromActivityLog values (Boolean, 993 values) or Platform show the device |
 | ChatActivity.SystemMessageTimeStamp | any | unknown | unknown | whether the owner performed the action is not established | |
@@ -1921,11 +1921,14 @@ Each is a decision with its reasoning and what would reverse it.
 
 51. **Sent mail, drafts and app use count as phone use, from M2 (3.2, 2.3).** Activity strength version 3 and
     timestamp meaning version 2. Email is classified by Status first, because Status Sent or Unsent marks the owner's
-    mail whatever the folder is called and the phone's Email records carry no direction; a Status-less Outbox or
+    mail whatever the folder is called, and a stored Email's direction is `unknown` (328 of 328 live, the Email type
+    mapping names no owner flag); a Status-less Outbox or
     draft folder is composed by the owner; every other folder is passive; a record with no Folder and a Status that
-    says nothing is `unknown`. A draft's time is `unknown`, so a draft is listed as context and never undercuts or
+    says nothing, or a Recents entry, is `unknown`. A draft's time is `unknown`, so a draft is listed as context and never undercuts or
     supports a statement at a time. An ApplicationUsage period is a whole number of hours, so it is a summary and
-    its use is `weak`. A numeric predicate on a TimeSpan compares seconds. These rows are written by a build job and
+    its use is `weak`, and evaluation treats it as the span `[start, end)`: a period ending as a statement's window
+    starts is outside the window, and its whole span is taken out of "recording and shows no use". A numeric
+    predicate on a TimeSpan compares seconds. These rows are written by a build job and
     read "not confirmed" until a person confirms them. *Reverse if* a client files sent mail with no Status (then a
     Folder list per client), or a Source documents which time a draft stores.
 

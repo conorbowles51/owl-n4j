@@ -484,6 +484,8 @@ def test_email_drafts_and_app_summaries_take_the_measured_rows():
     assert row("Email", "TimeStamp", {"Folder": ["Enviados"], "Status": ["Sent"]}) == "email-sent"
     assert row("Email", "TimeStamp", {"Folder": ["Outbox"]}) == "email-composed"
     assert row("Email", "TimeStamp", {"Folder": ["[Gmail]/Drafts"]}) == "email-composed"
+    assert row("Email", "TimeStamp", {"Folder": ["Borradores"]}) == "email-composed"
+    assert row("Email", "TimeStamp", {"Folder": ["Recents"], "Source": ["Recents"]}) == "email-recents"
     assert row("Email", "TimeStamp", {"Folder": ["INBOX"], "Status": ["Unread"]}) == "email-other-folders"
     assert row("Email", "TimeStamp", {}) == "email-nofolder"
     assert row("Email", "TimeStamp", {"Status": ["Default"]}) == "email-nofolder-default"

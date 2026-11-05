@@ -1686,7 +1686,13 @@
       "op": "contains_any",
       "value": [
        "outbox",
-       "draft"
+       "bandeja de salida",
+       "postausgang",
+       "draft",
+       "borrador",
+       "brouillon",
+       "entwu",
+       "bozza"
       ]
      },
      {
@@ -1701,7 +1707,7 @@
      "physical": false
     },
     "basis": "corpus_measured",
-    "reasoning": "M2 on the 14 server reports (measurements/m2-enums.json): 10 of the 11 Emails in an Outbox or draft folder with no Status have the owner as the From party; composing mail needs a person.",
+    "reasoning": "M2 on the 14 server reports (measurements/m2-enums.json): 10 of the 11 Emails in an Outbox or draft folder (named in English on these reports; the other languages are the same words) with no Status have the owner as the From party; composing mail needs a person.",
     "would_change": "An Outbox filled by an automatic reply."
    },
    {
@@ -1718,6 +1724,36 @@
     "basis": "field_name",
     "reasoning": "Mail in any other folder arrives without action (04 section 3.2).",
     "would_change": "A mail client that files sent mail under another name with no Status."
+   },
+   {
+    "row_id": "email-recents",
+    "type": "Email",
+    "field": "TimeStamp",
+    "predicates": [
+     {
+      "field": "Folder",
+      "op": "eq",
+      "value": "Recents"
+     },
+     {
+      "field": "Source",
+      "op": "eq",
+      "value": "Recents"
+     },
+     {
+      "field": "Status",
+      "op": "absent"
+     }
+    ],
+    "context": [],
+    "outputs": {
+     "class": "unknown",
+     "actor": "unknown",
+     "physical": false
+    },
+    "basis": "not_established",
+    "reasoning": "M2 on the 14 server reports (measurements/m2-enums.json): 24 Emails from Recents, a list of recent addresses rather than mail; 20 have no From party.",
+    "would_change": "A Source explaining what time a Recents entry holds."
    },
    {
     "row_id": "email-nofolder",
