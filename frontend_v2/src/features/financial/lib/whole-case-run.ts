@@ -61,8 +61,10 @@ export function useWholeCaseRun<Summary>(
   enabled = true
 ) {
   const client = useQueryClient()
-  const known = useRef<string | null>(null)
+  // Each set of inputs has its own run: new inputs start or join theirs and never read the run of the last ones.
+  const known = useRef(new Map<string, string>())
   const key = ["whole-case-run", caseId, JSON.stringify(request)]
+  const identity = key.join("|")
   const query = useQuery({
     queryKey: key,
     enabled,
@@ -70,15 +72,16 @@ export function useWholeCaseRun<Summary>(
     refetchOnWindowFocus: false,
     staleTime: Infinity,
     queryFn: async () => {
-      const run = known.current
-        ? await fetchAPI<WholeCaseRun<Summary>>(runUrl(known.current, caseId), {
+      const id = known.current.get(identity)
+      const run = id
+        ? await fetchAPI<WholeCaseRun<Summary>>(runUrl(id, caseId), {
             read: true,
           })
         : await fetchAPI<WholeCaseRun<Summary>>(
             candidateUrl(path, caseId),
             { method: "POST", body: request, read: true }
           )
-      known.current = run.id
+      known.current.set(identity, run.id)
       return run
     },
     refetchInterval: (q) =>
@@ -87,10 +90,10 @@ export function useWholeCaseRun<Summary>(
         : false,
   })
   const again = useCallback(() => {
-    known.current = null
+    known.current.delete(identity)
     void client.resetQueries({ queryKey: key })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, key.join("|")])
+  }, [client, identity])
   return { run: query.data, error: query.error, again }
 }
 

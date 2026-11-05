@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react"
 import type { ReactNode } from "react"
 import { beforeEach, expect, it, vi } from "vitest"
 import { useFinancialDraftStore } from "../stores/financial-drafts"
@@ -8,6 +8,7 @@ import { WholeCaseProgress } from "./WholeCaseProgress"
 import { WholeCaseTimeline } from "./WholeCaseTimeline"
 import { WholeCaseTransfers } from "./WholeCaseTransfers"
 import { WholeCasePdf } from "./WholeCasePdf"
+import { useWholeCaseRun } from "../lib/whole-case-run"
 
 const api = vi.hoisted(() => ({ fetchAPI: vi.fn() }))
 vi.mock("@/lib/api-client", async (importOriginal) => ({
@@ -144,4 +145,23 @@ it("lists every numbered PDF part and the download", async () => {
   wrap(<WholeCasePdf caseId="case" params={{}} marking="unmarked" />)
   expect(await screen.findByText(/6 numbered PDF parts cover all 10,861 captured readings/)).toBeTruthy()
   expect(screen.getByRole("link", { name: /Download all parts \(2\.0 MB\)/ })).toBeTruthy()
+})
+
+it("new inputs start their own run and never read the run of the last inputs", async () => {
+  api.fetchAPI.mockImplementation(async (_url: string, options?: { method?: string; body?: { steps: number } }) => ({
+    id: options?.method === "POST" ? `run-${options.body?.steps}` : "read-of-an-earlier-run",
+    status: "completed",
+  }))
+  const { result, rerender } = renderHook(
+    ({ steps }) => useWholeCaseRun<object>("case", { steps }, "whole-case-runs/trace"),
+    {
+      initialProps: { steps: 0 },
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
+      ),
+    }
+  )
+  await waitFor(() => expect(result.current.run?.id).toBe("run-0"))
+  rerender({ steps: 1 })
+  await waitFor(() => expect(result.current.run?.id).toBe("run-1"))
 })
