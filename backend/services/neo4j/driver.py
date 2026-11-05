@@ -160,6 +160,13 @@ class Neo4jDriver:
                 )
         except Exception:
             pass
+        try:
+            with self._driver.session() as session:
+                session.run(
+                    "CREATE INDEX deleted_item_file IF NOT EXISTS FOR (n:DeletedItem) ON (n.casebin_file_id)"
+                )
+        except Exception:
+            pass
 
     def close(self):
         if self._driver:

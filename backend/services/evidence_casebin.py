@@ -64,10 +64,24 @@ def marker(file_id) -> str:
 # --------------------------------------------------------------------------------------------------------- graph
 
 
-def hide_graph(graph_session, *, case_id: str, file_id, doc_key: str | None, entity_keys) -> dict:
-    """Hide the Document node and the given entities in place. Returns {"nodes": n, "relationships": m}."""
+def _keys_by_label(entities) -> dict:
+    """{label: [key, ...]} of rows carrying key and type. Each label's matches use that label's key index; a match
+    with no label reads every node in the database (0.16-1.1 s on live)."""
+    out = {}
+    for e in entities or []:
+        if e.get("key") and e.get("type"):
+            out.setdefault(e["type"], []).append(e["key"])
+    return out
+
+
+def _label(name: str) -> str:
+    return "`" + str(name).replace("`", "``") + "`"
+
+
+def hide_graph(graph_session, *, case_id: str, file_id, doc_key: str | None, entities) -> dict:
+    """Hide the Document node and the given entities (rows of find_exclusive_entities) in place. Returns
+    {"nodes": n, "relationships": m}."""
     fid = str(file_id)
-    entity_keys = [k for k in (entity_keys or []) if k]
 
     def work(tx):
         nodes = 0
@@ -77,15 +91,15 @@ def hide_graph(graph_session, *, case_id: str, file_id, doc_key: str | None, ent
                 "SET n.casebin_case_id = n.case_id, n.casebin_labels = ls, n.casebin_file_id = $fid, "
                 "n.case_id = $marker REMOVE n:$(ls) SET n:DeletedItem RETURN count(n) AS c",
                 key=doc_key, case_id=case_id, fid=fid, marker=marker(fid)).single()["c"]
-        if entity_keys:
+        for label, keys in _keys_by_label(entities).items():
             nodes += tx.run(
-                "MATCH (n {case_id: $case_id}) WHERE n.key IN $keys "
+                f"MATCH (n:{_label(label)} {{case_id: $case_id}}) WHERE n.key IN $keys "
                 "AND NONE(l IN labels(n) WHERE l IN $never OR l = 'Document') "
                 "AND coalesce(n.system_node, false) <> true AND coalesce(n.financial_identity_managed, false) <> true "
                 "WITH n, labels(n) AS ls "
                 "SET n.casebin_case_id = n.case_id, n.casebin_labels = ls, n.casebin_file_id = $fid, "
                 "n.case_id = $marker REMOVE n:$(ls) SET n:DeletedItem RETURN count(n) AS c",
-                keys=entity_keys, case_id=case_id, fid=fid, marker=marker(fid), never=_NEVER_HIDDEN).single()["c"]
+                keys=keys, case_id=case_id, fid=fid, marker=marker(fid), never=_NEVER_HIDDEN).single()["c"]
         rels = tx.run(
             "MATCH (n:DeletedItem {casebin_file_id: $fid})-[r]-() WITH DISTINCT r WHERE r.casebin_hidden IS NULL "
             "SET r.casebin_hidden = $fid, r.casebin_case_id = r.case_id, r.case_id = $marker RETURN count(r) AS c",
@@ -93,6 +107,16 @@ def hide_graph(graph_session, *, case_id: str, file_id, doc_key: str | None, ent
         return dict(nodes=nodes, relationships=rels)
 
     return graph_session.execute_write(work)
+
+
+def _live_copies(tx, fid: str, case_id: str):
+    """(label, {key, live}) of every hidden node of this file whose key exists again in the case."""
+    hidden = [dict(key=r["key"], type=r["type"]) for r in tx.run(
+        "MATCH (h:DeletedItem {casebin_file_id: $fid}) RETURN h.key AS key, h.casebin_labels[0] AS type", fid=fid)]
+    for label, keys in _keys_by_label(hidden).items():
+        for row in tx.run(f"MATCH (live:{_label(label)} {{case_id: $case_id}}) WHERE live.key IN $keys "
+                          "RETURN live.key AS key, elementId(live) AS live", case_id=case_id, keys=keys):
+            yield label, row
 
 
 def restore_graph(graph_session, *, case_id: str, file_id) -> dict:
@@ -107,24 +131,23 @@ def restore_graph(graph_session, *, case_id: str, file_id) -> dict:
             "SET r.case_id = r.casebin_case_id REMOVE r.casebin_hidden, r.casebin_case_id RETURN count(r) AS c",
             fid=fid).single()["c"]
         # Relationships hidden by this file whose node was later hidden by another file are matched from either end.
+        # One end of such a relationship is always hidden, so only hidden nodes need reading.
         rels += tx.run(
-            "MATCH ()-[r]-() WHERE r.casebin_hidden = $fid WITH DISTINCT r "
+            "MATCH (:DeletedItem {casebin_case_id: $case_id})-[r]-() WHERE r.casebin_hidden = $fid WITH DISTINCT r "
             "SET r.case_id = r.casebin_case_id REMOVE r.casebin_hidden, r.casebin_case_id RETURN count(r) AS c",
-            fid=fid).single()["c"]
+            fid=fid, case_id=case_id).single()["c"]
         # A hidden entity whose key exists again in the case (made since by another file): the live one wins.
-        conflicts = {row["key"]: row["live"] for row in tx.run(
-            "MATCH (h:DeletedItem {casebin_file_id: $fid}) MATCH (live {case_id: $case_id, key: h.key}) "
-            "RETURN h.key AS key, elementId(live) AS live", fid=fid, case_id=case_id)}
+        conflicts = {row["key"]: (row["live"], label) for label, row in _live_copies(tx, fid, case_id)}
         nodes = tx.run(
             "MATCH (h:DeletedItem {casebin_file_id: $fid}) WITH h, h.casebin_labels AS ls "
             "SET h.case_id = h.casebin_case_id SET h:$(ls) REMOVE h:DeletedItem "
             "REMOVE h.casebin_case_id, h.casebin_labels, h.casebin_file_id RETURN count(h) AS c",
             fid=fid).single()["c"]
         merged = 0
-        for key, live in conflicts.items():
+        for key, (live, label) in conflicts.items():
             # mergeNodes keeps the first node's properties ('discard') and moves the others' relationships to it.
             merged += tx.run(
-                "MATCH (live) WHERE elementId(live) = $live MATCH (n {case_id: $case_id, key: $key}) "
+                f"MATCH (live) WHERE elementId(live) = $live MATCH (n:{_label(label)} {{case_id: $case_id, key: $key}}) "
                 "WHERE elementId(n) <> $live WITH live, collect(n) AS others WHERE size(others) > 0 "
                 "CALL apoc.refactor.mergeNodes([live] + others, {properties: 'discard', mergeRels: false}) "
                 "YIELD node RETURN count(node) AS c", live=live, case_id=case_id, key=key).single()["c"]
@@ -141,9 +164,10 @@ def purge_graph(graph_session, *, case_id: str, file_id) -> dict:
     fid = str(file_id)
 
     def work(tx):
+        keys = sorted({row["key"] for _, row in _live_copies(tx, fid, case_id)})
         return [row["key"] for row in tx.run(
-            "MATCH (h:DeletedItem {casebin_file_id: $fid}) WHERE EXISTS { MATCH (live {case_id: $case_id}) "
-            "WHERE live.key = h.key } WITH h, h.key AS key DETACH DELETE h RETURN key", fid=fid, case_id=case_id)]
+            "MATCH (h:DeletedItem {casebin_file_id: $fid}) WHERE h.key IN $keys "
+            "WITH h, h.key AS key DETACH DELETE h RETURN key", fid=fid, keys=keys)]
 
     removed = sorted(set(graph_session.execute_write(work)))
     back = restore_graph(graph_session, case_id=case_id, file_id=file_id)
@@ -315,8 +339,7 @@ def delete_file(db: Session, record: EvidenceFile, user: User, *, delete_exclusi
     try:
         doc_key = find_document_key(gs, filename, case_id)
         exclusive = find_exclusive_entities(gs, doc_key, case_id) if (doc_key and delete_exclusive_entities) else []
-        graph = hide_graph(gs, case_id=case_id, file_id=record.id, doc_key=doc_key,
-                           entity_keys=[e["key"] for e in exclusive])
+        graph = hide_graph(gs, case_id=case_id, file_id=record.id, doc_key=doc_key, entities=exclusive)
     finally:
         if own_session:
             gs.close()
