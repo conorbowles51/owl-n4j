@@ -259,6 +259,22 @@ def test_a_restart_is_stated_and_keeps_the_reads(db):
     assert seen['reads']['pending'] == 2 and seen['reads']['running'] == 0
 
 
+def test_a_queued_sweep_that_lost_its_worker_does_not_hold_the_theory_for_ever(db):
+    made = D.create(db, case_id=db.info['case'].id, theory_id=db.info['theory'].id, requested_by=db.info['owner'])
+    item = db.get(WorkspaceAIOutput, uuid.UUID(made['id']))
+    item.content = dict(item.content, heartbeat_at=(datetime.now(timezone.utc) - timedelta(seconds=600)).isoformat())
+    db.commit()
+    again = D.create(db, case_id=db.info['case'].id, theory_id=db.info['theory'].id, requested_by=db.info['owner'])
+    assert again['id'] != made['id'] and again['created']
+
+
+def test_a_stop_during_the_searches_is_said(db):
+    made = D.create(db, case_id=db.info['case'].id, theory_id=db.info['theory'].id, requested_by=db.info['owner'])
+    D.stop(db, case_id=db.info['case'].id, sweep_id=made['id'])
+    plan = D.plan(db, sweep_id=made['id'], reader=reader_of({}), tools=FakeTools(db.info['doc']))
+    assert plan['job_status'] == 'failed' and 'Stopped by a person during the searches' in plan['error']
+
+
 def test_a_live_heartbeat_is_not_a_restart(db):
     plan = planned(db, reader_of({}))
     D.start(db, case_id=db.info['case'].id, sweep_id=plan['id'])

@@ -294,7 +294,7 @@ def create(session, *, case_id, theory_id, requested_by, run_id=None) -> dict:
 
 def _settle(session, item) -> None:
     """A sweep whose worker died (a release) is marked as stopped, with what it holds kept."""
-    if item.job_status != 'running':
+    if item.job_status not in ('queued', 'running'):
         return
     beat = (item.content or {}).get('heartbeat_at')
     try:
@@ -950,6 +950,9 @@ def plan(session, *, sweep_id, reader: Optional[Reader] = None, tools=None) -> d
         files = {k: str(v) for k, v in files.items()}
         candidates = {}
         for i, exp in enumerate(expectations, 1):
+            session.refresh(item, attribute_names=['cancel_requested'])
+            if item.cancel_requested:
+                raise ProposalError('Stopped by a person during the searches. No read was started.')
             content['step'] = f'Searching the case for expectation {i} of {len(expectations)}: {exp["claim"][:120]}'
             _save(session, item, content, progress=min(90, 5 + int(85 * (i - 1) / len(expectations))))
             items, coverage = search_all(tools, exp, census, files)
@@ -972,7 +975,7 @@ def plan(session, *, sweep_id, reader: Optional[Reader] = None, tools=None) -> d
         item = session.get(W, _uuid(sweep_id))
         content['stage'] = 'planning'
         content['step'] = 'The plan stopped'
-        _save(session, item, content, job_status='failed', progress=100, completed_at=_now(),
+        _save(session, item, content, job_status='failed', progress=100, completed_at=_now(), cancel_requested=False,
               error_message=_failure_words(exc))
     return view(item)
 
