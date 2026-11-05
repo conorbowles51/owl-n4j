@@ -32,6 +32,7 @@ describe("Delete Folder", () => {
       "1,000 files in this folder and its 4 subfolders will be permanently deleted from disk and database.",
     )).toBeTruthy()
     expect(api.fetchAPI).toHaveBeenCalledWith("/api/evidence-folders/folder-1/delete-summary?case_id=case-1")
+    expect(document.body.textContent ?? "").not.toMatch(/Deleted items|restore|30 days/i)
     fireEvent.click(screen.getByRole("button", { name: "Delete Folder" }))
     expect(onConfirm).toHaveBeenCalled()
   })
@@ -68,6 +69,20 @@ describe("Delete Folder", () => {
     )
     expect(folderDeleteRefusal(new ApiError("This folder holds a statement in use.", 409))).toBe(
       "This folder holds a statement in use. The folder and its files were kept.",
+    )
+  })
+
+  it("with Deleted items switched on, says the files are kept and can be restored; off, nothing says so", async () => {
+    api.fetchAPI.mockReset()
+    api.fetchAPI.mockResolvedValue({ file_count: 3, listed_file_count: 3, subfolder_count: 1 })
+    show({ deletedItems: true })
+    expect(await screen.findByText(
+      "3 files in this folder and its 1 subfolder will be moved to Deleted items (the case owner or an admin can restore them for 30 days, then they are removed for good). The folder itself is removed; a restored file goes back to the top of Evidence unless its folder is made again.",
+    )).toBeTruthy()
+    expect(screen.queryByText(/permanently deleted/)).toBeNull()
+    expect(screen.getByText(/hidden with them and comes back with a restore/)).toBeTruthy()
+    expect(describeFolderDelete({ file_count: 3, listed_file_count: 3, subfolder_count: 1 })).not.toMatch(
+      /Deleted items|restore|30 days/,
     )
   })
 })
