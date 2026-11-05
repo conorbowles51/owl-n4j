@@ -12,6 +12,8 @@ const COUNT_WORDS: Record<string, string> = {
   timeline: "timeline entries",
 }
 
+const SLOT_HINTS: Record<string, string> = { date: "e.g. 14 March 2023", theory: "The theory's title in Workspace" }
+
 function statusWords(workflow: AgentWorkflow): { label: string; tone: string } {
   const r = workflow.readiness
   if (!r) return { label: "", tone: "" }
@@ -98,7 +100,7 @@ function WorkflowRow({
                 value={values[slot] ?? ""}
                 onChange={(event) => setValues({ ...values, [slot]: event.target.value })}
                 className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs outline-none focus:border-amber-400"
-                placeholder={slot === "date" ? "e.g. 14 March 2023" : "A name as it appears on People"}
+                placeholder={SLOT_HINTS[slot] ?? "A name as it appears on People"}
                 aria-label={`${workflow.title}: ${SLOTS[slot]}`}
               />
             </label>

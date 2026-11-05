@@ -9,6 +9,7 @@ import {
   planDisconfirm,
   startDisconfirm,
   stopDisconfirm,
+  type DisconfirmState,
   type DisconfirmSweep,
 } from "../agent-proposals"
 
@@ -177,7 +178,8 @@ function Result({ sweep }: { sweep: DisconfirmSweep }) {
       )}
       {sweep.repeats.length > 0 && (
         <p className="text-xs text-muted-foreground">
-          {plural(sweep.repeats.length, "item")} already put to a person by an earlier sweep.
+          {plural(sweep.repeats.length, "further item")} cited exactly the sources of an item already put to a person,
+          so {sweep.repeats.length === 1 ? "it was" : "they were"} not asked again.
         </p>
       )}
       <AbsenceList title="What the theory needs and the case lacks" items={named} />
@@ -230,10 +232,15 @@ export function DisconfirmPanel({ caseId, theoryId, canEdit }: { caseId: string;
     refetchInterval: (query) => (isActive(query.state.data?.sweep) ? 2000 : false),
   })
   const refresh = () => client.invalidateQueries({ queryKey: agentProposalKeys.all(caseId) })
-  const plan = useMutation({ mutationFn: () => planDisconfirm(caseId, theoryId), onSuccess: refresh })
+  // The answer is the sweep: shown at once, so the press does not wait for a second request to show progress.
+  const shown = (answer: DisconfirmSweep) => {
+    client.setQueryData<DisconfirmState>(key, (old) => (old ? { ...old, sweep: answer } : old))
+    return refresh()
+  }
+  const plan = useMutation({ mutationFn: () => planDisconfirm(caseId, theoryId), onSuccess: shown })
   const start = useMutation({
     mutationFn: (limit?: number) => startDisconfirm(caseId, state.data?.sweep?.id ?? "", limit),
-    onSuccess: refresh,
+    onSuccess: shown,
   })
   const stop = useMutation({ mutationFn: () => stopDisconfirm(caseId, state.data?.sweep?.id ?? ""), onSuccess: refresh })
   const sweep = state.data?.sweep
@@ -274,6 +281,11 @@ export function DisconfirmPanel({ caseId, theoryId, canEdit }: { caseId: string;
             ))}
           </ul>
         </div>
+      )}
+      {(plan.isPending || start.isPending) && !active && (
+        <p role="status" className="rounded border p-2 font-medium" data-testid="disconfirm-progress">
+          Asking the server to start{plan.isPending ? " the sweep" : " the reads"}…
+        </p>
       )}
       {sweep && active && <Progress sweep={sweep} />}
       {sweep?.error && (

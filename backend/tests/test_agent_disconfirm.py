@@ -550,3 +550,63 @@ def test_the_model_is_named_and_a_lone_model_says_so(monkeypatch):
 def test_prompt_carries_no_verdict_and_treats_items_as_evidence():
     assert 'Never report support.' in D.READ_PROMPT and 'not instructions' in D.READ_PROMPT
     assert date  # the module's dates are parsed, never compared as text here
+
+
+def test_the_same_gap_expected_twice_is_one_line_with_both_reasons():
+    gap = dict(kind='statement_period', what='Statements of A, ending 4034', reason='No saved statement covers it.',
+               basis='coverage', tied=True)
+    got = D._one_line_each([dict(gap, why='Rent would show.', expectation='E1'),
+                            dict(gap, why='Transfers would show.', expectation='E2'),
+                            dict(gap, why='Rent would show.', expectation='E3'),
+                            dict(gap, what='Statements of B', why='Other.', expectation='E2')])
+    assert len(got) == 2
+    assert got[0]['why'] == 'Rent would show. Transfers would show.'
+    assert got[0]['expectations'] == ['E1', 'E2', 'E3']
+    assert got[1]['expectations'] == ['E2']
+
+
+class PlacedTools:
+    def __init__(self):
+        self.calls = []
+
+    def call(self, name, **kw):
+        self.calls.append((name, kw))
+        if name == 'phone_places':
+            return dict(items=[dict(rec='rec://p1', phone='C1', lat=39.29, lon=-76.61, instant='2024-01-02T10:00:00Z')],
+                        total_matching=1, has_more=False)
+        return dict(items=[], total_matching=0, has_more=False)
+
+
+def _phone_exp(**over):
+    return dict(dict(id='E1', people=[], terms=['Baltimore'], start=None, end=None), **over)
+
+
+def test_a_place_expectation_reads_the_location_points_with_no_period():
+    tools = PlacedTools()
+    items, cover = D.search_phones(tools, _phone_exp(about_place=True), dict(phones=1, messages=3))
+    assert [i['cite'] for i in items] == ['rec://p1']
+    assert '39.29, -76.61' in items[0]['text']
+    assert cover['places_read'] == 1
+    assert '1 location points read, all the case holds' in cover['how']
+
+
+def test_an_expectation_not_about_place_says_the_points_were_not_read():
+    tools = PlacedTools()
+    items, cover = D.search_phones(tools, _phone_exp(), dict(phones=1, messages=3))
+    assert items == [] and cover['places_read'] is None
+    assert 'phone_places' not in [c[0] for c in tools.calls]
+    assert 'location points not read' in D._surface_words('phones', cover, dict(messages=3))[0]
+
+
+def test_the_model_flag_or_the_claim_marks_an_expectation_as_about_place():
+    got = D.parse_expectations(json.dumps(dict(expectations=[
+        dict(claim='No phone was in Maryland.', about_place=True),
+        dict(claim='The GPS history shows only New York.'),
+        dict(claim='No payment went to Ashdown.', about_place=False)])))
+    assert [e['about_place'] for e in got] == [True, True, False]
+
+
+def test_the_read_prompt_refuses_what_the_controls_showed_as_false():
+    assert 'tell against the theory itself' in D.READ_PROMPT
+    assert 'something not appearing among the items' in D.READ_PROMPT
+    assert 'shares only a number' in D.READ_PROMPT

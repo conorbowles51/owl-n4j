@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import { MemoryRouter } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { fetchAPI } from "@/lib/api-client"
@@ -60,12 +60,36 @@ function show(state: Partial<DisconfirmState>) {
 }
 
 describe("DisconfirmPanel", () => {
-  beforeEach(() => vi.mocked(fetchAPI).mockReset())
+  beforeEach(() => {
+    vi.mocked(fetchAPI).mockReset()
+  })
 
   it("states the cost of the first press, and the counts beside the red cell's", async () => {
     show({})
     expect(await screen.findByRole("button", { name: /Look for what breaks it \(one model call\)/ })).toBeTruthy()
     expect((await screen.findByTestId("disconfirm-tally")).textContent).toContain("Red cell: 2 proposed")
+  })
+
+  it("shows progress on the press, before the server answers", async () => {
+    show({})
+    const press = await screen.findByRole("button", { name: /Look for what breaks it/ })
+    vi.mocked(fetchAPI).mockReturnValue(new Promise(() => undefined))
+    fireEvent.click(press)
+    expect((await screen.findByTestId("disconfirm-progress")).textContent).toContain("start the sweep")
+  })
+
+  it("shows the sweep from the press's own answer, with no second request", async () => {
+    show({})
+    const press = await screen.findByRole("button", { name: /Look for what breaks it/ })
+    const running = sweep({ stage: "planning", job_status: "running", step: "Reading the theory", progress: 2 })
+    let answered = false
+    vi.mocked(fetchAPI).mockImplementation(async () => {
+      if (answered) return new Promise(() => undefined)
+      answered = true
+      return running
+    })
+    fireEvent.click(press)
+    expect((await screen.findByTestId("disconfirm-progress")).textContent).toContain("Reading the theory")
   })
 
   it("gives the exact count before any read starts", async () => {
