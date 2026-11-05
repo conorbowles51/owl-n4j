@@ -184,6 +184,10 @@ def test_reopening_an_unchanged_batch_of_d5b330d1_size_computes_nothing(big_batc
             listed = route(**kwargs, db=db)
         assert len(calls) == 1 and b'"queue":{"still_to_finish":7}' in bytes(listed.body)
         assert reopened < 1.0, f'reopening took {reopened:.2f} s'
+        # Another filter or page of the same rows is cut from the same kept copy.
+        with big_batch['Session']() as db:
+            other = route(**{**kwargs, 'offset': 10, 'review_group': 'unfinished'}, db=db)
+        assert len(calls) == 1 and bytes(other.body) != bytes(first.body)
         assert b'"total":%d' % D5_FILES in bytes(first.body).replace(b' ', b'')
         # Any write to a row it read computes it again (never an out-of-date page).
         with big_batch['Session']() as db:
@@ -229,3 +233,36 @@ class QueueListsAddedLater(__import__('unittest').TestCase):
                     self.assertIsNone(part['statement_summary']['queue'])
                     later = import_batches.with_queue_lists(db, self.f.case.id, part)
             self.assertEqual(json.dumps(later, sort_keys=False, default=str), json.dumps(json.loads(json.dumps(whole, default=str)), sort_keys=False))
+
+    def test_each_filter_and_page_is_cut_from_one_whole_batch_view(self):
+        """d5b330d1 30231f0a: every new filter or page computed the same projection again (11-56 s); 0.7-0.9 s of it
+        was the filter's own. The cut gives what batch_status gives, field for field."""
+        import json
+        asks = [dict(), dict(review_group='unfinished'), dict(review_group='saved'), dict(review_group='ready_to_save'),
+                dict(review_group='duplicates'), dict(only_problems=True), dict(offset=1, limit=1),
+                dict(offset=50, limit=10, review_group='unfinished')]
+        for ask in asks:
+            with self.f.SessionLocal() as db:
+                direct = json.loads(json.dumps(import_batches.batch_status(
+                    db, case_id=self.f.case.id, batch_id=self.batch, queue=False, **ask), default=str))
+                whole = json.loads(json.dumps(import_batches.batch_status(
+                    db, case_id=self.f.case.id, batch_id=self.batch, queue=False, limit=import_batches.WHOLE_BATCH),
+                    default=str))
+            self.assertEqual(json.dumps(import_batches.page_of_batch_view(whole, **ask)), json.dumps(direct), ask)
+
+
+def test_every_filter_of_a_batch_reads_one_kept_view():
+    """The kept part's key has no filter or page, so one computation serves them all."""
+    keys = []
+    def kept(**kwargs):
+        keys.append(tuple(sorted(str(name) for name in kwargs)))
+        return {'files': [], 'items': [{'id': 'a', 'status': 'imported'}, {'id': 'b', 'status': 'ready'}]}
+    route = financial_statement_import.get_financial_batch
+    batch, case = uuid.uuid4(), uuid.uuid4()
+    with patch.object(financial_statement_import, 'batch_without_queue_lists', side_effect=kept):
+        saved = route(batch_id=batch, case_id=case, offset=0, limit=100, only_problems=False, review_group='saved', db=None)
+        unfinished = route(batch_id=batch, case_id=case, offset=0, limit=100, only_problems=False, review_group='unfinished', db=None)
+    assert keys == [('batch_id', 'case_id', 'db')] * 2
+    import json
+    assert [item['id'] for item in json.loads(saved.body)['items']] == ['a']
+    assert [item['id'] for item in json.loads(unfinished.body)['items']] == ['b']

@@ -1146,20 +1146,26 @@ it("shows an accepted import that is still saving as progress, not an error", as
   try {
     const base = vi.mocked(fetchAPI).getMockImplementation()!
     vi.mocked(fetchAPI).mockImplementation(async (url, options) =>
-      String(url).includes("/confirm-result?")
-        ? ({
-            receipt: null,
-            operation: { batch_id: "job", status: "in_progress", outcomes: [] },
-          } as never)
-        : String(url).includes("/queue-import?")
+      String(url).includes("/page-reviews?")
+        ? ({ reviews: [], history: [] } as never)
+        : String(url).includes("/confirm-result?")
           ? ({
+              receipt: null,
               operation: {
                 batch_id: "job",
                 status: "in_progress",
                 outcomes: [],
               },
             } as never)
-          : base(url, options)
+          : String(url).includes("/queue-import?")
+            ? ({
+                operation: {
+                  batch_id: "job",
+                  status: "in_progress",
+                  outcomes: [],
+                },
+              } as never)
+            : base(url, options)
     )
     const done = mount()
     await open()

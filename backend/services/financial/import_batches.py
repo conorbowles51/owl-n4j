@@ -1874,6 +1874,26 @@ def batch_status(session, *, case_id, batch_id, offset=0, limit=100, only_proble
             only_problems=only_problems, review_group=review_group, queue=queue)
 
 
+# Every statement of a batch: the page keeps this one view and answers each filter and page from it
+# (page_of_batch_view).
+WHOLE_BATCH = 1_000_000
+
+
+def page_of_batch_view(view, *, offset=0, limit=100, only_problems=False, review_group=None):
+    """``view`` (batch_status with limit=WHOLE_BATCH) narrowed in place to one filter and page, as batch_status gives
+    them: only these five fields depend on the filter, and matches_group reads only an item's status and summary."""
+    from types import SimpleNamespace
+    from services.financial.batch_review_summary import group_label, matches_group
+    if 'items' not in view:
+        return view
+    shown = [item for item in view['items']
+             if matches_group(SimpleNamespace(status=item['status'], summary=item), review_group)
+             and (not only_problems or item.get('problem_count', 0))]
+    view.update(review_group=review_group, review_group_label=group_label(review_group), total=len(shown),
+                offset=offset, items=shown[offset:offset + limit])
+    return view
+
+
 def with_queue_lists(session, case_id, view):
     """``view`` (batch_status(queue=False)) with the review queue's lists added in place, as batch_status gives them."""
     from types import SimpleNamespace

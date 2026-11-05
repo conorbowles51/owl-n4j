@@ -1243,15 +1243,15 @@ def list_financial_batches(case_id: UUID = Query(...), db: Session = Depends(get
         failed_files=sum(f['status'] == 'error' for f in files_by_batch[b.id])) for b in batches])
 
 
-# Everything on the batch review page except the review queue's lists: a function of rows only, so it is kept. Computed
-# from stored projections (no PDF reading, no writes): 14-53 s on d5b330d1 batch 30231f0a on every open (live, 3 Nov);
-# 0.12 s from the kept copy (read-only dry run on the live database, the same bytes). Not a route: the page's route
-# below adds the queue's lists to it on every open.
+# Everything on the batch review page except the review queue's lists, for every statement of the batch: a function of
+# rows only, so it is kept. Computed from stored projections (no PDF reading, no writes): 11-56 s on d5b330d1 batch
+# 30231f0a, of which 0.7-0.9 s belongs to the filter shown, so the page keeps one copy per batch and each filter and
+# page is cut from it (import_batches.page_of_batch_view). Not a route: the page's route below does the cutting and
+# adds the queue's lists on every open.
 @cached_view('batch-detail')
-def batch_without_queue_lists(batch_id: UUID, case_id: UUID, offset: int, limit: int, only_problems: bool,
-                              review_group: str | None, db: Session):
+def batch_without_queue_lists(batch_id: UUID, case_id: UUID, db: Session):
     try:
-        view = import_batches.batch_status(db,case_id=case_id,batch_id=batch_id,offset=offset,limit=limit,only_problems=only_problems,review_group=review_group,queue=False)
+        view = import_batches.batch_status(db,case_id=case_id,batch_id=batch_id,limit=import_batches.WHOLE_BATCH,queue=False)
         return {**view, 'added': _batch_added(db, case_id, batch_id)} if isinstance(view, dict) else view
     except PdfMappingError as exc:
         raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
@@ -1263,12 +1263,15 @@ def get_financial_batch(batch_id: UUID, case_id: UUID = Query(...), offset: int 
     the queue's own cached view (current, or an earlier copy marked updating), read again on every open."""
     import json as _json
     from services.financial import view_cache
+    from services.financial.batch_review_summary import validate_group
     # The kept part as plain JSON: never this browser's 304 or a compressed body (both are for the whole answer).
     gzip_token = view_cache._accepts_gzip.set(False)
     match_token = view_cache._if_none_match.set('')
     try:
-        part = batch_without_queue_lists(batch_id=batch_id, case_id=case_id, offset=offset, limit=limit,
-                                         only_problems=only_problems, review_group=review_group, db=db)
+        validate_group(review_group)
+        part = batch_without_queue_lists(batch_id=batch_id, case_id=case_id, db=db)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code,detail=str(exc)) from exc
     finally:
         view_cache._if_none_match.reset(match_token)
         view_cache._accepts_gzip.reset(gzip_token)
@@ -1279,6 +1282,9 @@ def get_financial_batch(batch_id: UUID, case_id: UUID = Query(...), offset: int 
         view = _json.loads(part.body)
     else:
         headers, view = {}, part
+    if isinstance(view, dict):
+        import_batches.page_of_batch_view(view, offset=offset, limit=limit, only_problems=only_problems,
+                                          review_group=review_group)
     if isinstance(view, dict) and '_queue_items' in view:
         import_batches.with_queue_lists(db, case_id, view)
     # Plain JSON written once, not FastAPI's walk over 1.6 MB; tagged with its bytes, so a browser that holds
