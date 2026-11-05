@@ -1493,11 +1493,14 @@ def _write_statement_import_once(*, session_factory, case_id, evidence_file_id, 
                 coverage_request = {**request.model_dump(mode='json'), 'account_type': proposal['metadata'].get('account_type') or '',
                                     'account_reference_kind': proposal['metadata'].get('account_reference_kind') or ''}
                 coverage = coverage_review(session, case_id=case_id, file_id=evidence_file_id,
-                                           request=coverage_request, sources=case_comparison)
+                                           request=coverage_request, sources=case_comparison, repeated=replacing is None)
                 from services.financial.statement_import_overlap import later_queries_trim_themselves
                 coverage = later_queries_trim_themselves(coverage, coverage_request, file_id=evidence_file_id,
                     statement_id=request.statement_id, summary=dict(statement_form=proposal.get('statement_form')))
                 if duplicate_hold(coverage, coverage_request):
+                    if coverage.get('repeated_activity'):
+                        from services.financial.repeated_activity import HOLD_MESSAGE
+                        raise PdfMappingError(HOLD_MESSAGE, 409)
                     raise PdfMappingError('A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement, then leave this copy unimported or record why both are needed.', 409)
                 coverage['requires_review'] = requires_decision(coverage, request.model_dump(mode='json'))
                 from services.financial.review_arithmetic import check_proposed_rows

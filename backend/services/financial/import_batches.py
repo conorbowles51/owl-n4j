@@ -1157,6 +1157,7 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
         return [], None
     from services.financial.statement_import_overlap import (coverage_review, summary_request, requires_decision,
         comparison_sources, duplicate_hold, ReadingDeferred)
+    from services.financial.repeated_activity import HOLD_MESSAGE as REPEATED_HOLD
     with stage('batch_pending'):
         pending = _pending_with_files(session, case_id)
     target_ids = {item.id for item in items}
@@ -1206,7 +1207,8 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
             if not projected_request and _ProjectionInputs._trims(summary):
                 # The dates of this projection's own reading (a trimmed query's kept dates), not the stored ones.
                 raw.update(period_start=summary.get('period_start', ''), period_end=summary.get('period_end', ''))
-            review = coverage_review(session, case_id=case_id, file_id=item.file_id, request=raw, sources=sources)
+            review = coverage_review(session, case_id=case_id, file_id=item.file_id, request=raw, sources=sources,
+                                     repeated=True)
             from services.financial.statement_import_overlap import later_queries_trim_themselves
             review = later_queries_trim_themselves(review, raw, file_id=item.file_id, statement_id=item.statement_key,
                                                    summary=summary)
@@ -1216,7 +1218,8 @@ def _checked_batch_items(session, case_id, items, *, validate_reviews=False, rea
                 problems.append(dict(kind='coverage_load', row_id=None, message=raw['_coverage_error']))
             if requires_decision(review, raw):
                 problems.append(dict(kind='coverage', matching_statement=duplicate_hold(review, raw), row_id=None,
-                    message=('This file prints another statement for the same bank, full account, holder, currency and statement period on a different page. Compare the two before importing either.'
+                    message=(REPEATED_HOLD if review.get('repeated_activity') else
+                        'This file prints another statement for the same bank, full account, holder, currency and statement period on a different page. Compare the two before importing either.'
                         if duplicate_hold(review, raw) and review.get('same_file_statement') else
                         'A separate file matches this bank, full account, holder, currency and statement period. Compare the existing statement before importing another copy.'
                         if duplicate_hold(review, raw) else 'Another statement covers some of these dates. You can compare their payments now or after importing.'

@@ -74,6 +74,7 @@ RULES = {
     'merrick.summary_order': ('Summary values taken in printed order', 'fin-erica L13', 'inferred'),
     'period.start_derived': ('Period start not printed; taken from the previous statement', 'card periods', 'inferred'),
     'L26.duplicate_set_aside': ('Saved twice: one copy set aside', 'fin-queue3 L26 / r2', 'proved'),
+    'copies.repeated_activity': ('Payments repeated under another card or account number', 'register E26', 'inferred'),
     'L19.unreadable_copy': ('Unreadable copy matched to a saved statement', 'fin-queue3 L19', 'proved'),
     'copies.held_copy': ('Held copy matched to a saved statement', 'saved_copies (fin-queue2)', 'proved'),
     'L20.part_of_saved': ('Leftover split inside a saved statement', 'fin-queue3 L20', 'proved'),
@@ -211,7 +212,7 @@ _CATEGORY_RULES = {
     'holder': ('holder.printed_on_statement',),
     'model_work': ('model.statement_save', 'model.statement_account', 'model.statement_balances',
                    'model.statement_details'),
-    'copies': ('L26.duplicate_set_aside', 'L19.unreadable_copy', 'copies.held_copy', 'L20.part_of_saved',
+    'copies': ('copies.repeated_activity', 'L26.duplicate_set_aside', 'L19.unreadable_copy', 'copies.held_copy', 'L20.part_of_saved',
                'reader.replacement', 'L22.vanished_key', 'erica.receipt_settled'),
 }
 RULE_CATEGORY = {rule: key for key, rules in _CATEGORY_RULES.items() for rule in rules}

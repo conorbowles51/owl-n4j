@@ -3,6 +3,37 @@ import { Button } from "@/components/ui/button"
 import { DocumentViewer } from "@/components/ui/document-viewer"
 import { evidenceAPI } from "@/features/evidence/api"
 import type { CoverageReview } from "../hooks/use-statement-coverage-review"
+import { formatLedgerAmount } from "../lib/ledger-format"
+
+function RepeatedActivityDetail({
+  detail,
+}: {
+  detail: NonNullable<
+    CoverageReview["candidates"][number]["repeated_activity"]
+  >
+}) {
+  return (
+    <div className="mt-1 space-y-1">
+      <p>
+        {detail.repeated} of {detail.own_rows} payments here match this
+        statement under number {detail.other_number}
+        {detail.with_printed_reference
+          ? `, ${detail.with_printed_reference} with the same printed reference`
+          : ""}
+        .
+      </p>
+      {detail.carried_balance && <p>{detail.carried_balance}.</p>}
+      <ul className="list-disc pl-4">
+        {detail.examples.map((row, index) => (
+          <li key={index}>
+            {row.date} · {formatLedgerAmount(row.amount_minor, row.currency).text}{" "}
+            {row.currency} · {row.description}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
 export function StatementCoverageReview({
   caseId,
@@ -31,14 +62,20 @@ export function StatementCoverageReview({
       className="rounded border border-amber-300 bg-amber-50/40 dark:bg-amber-950/20 p-3 space-y-3 text-sm"
     >
       <h3 className="font-semibold">
-        {review.matching_statement
+        {review.repeated_activity
+          ? decided
+            ? "Possible repeated activity — comparison recorded"
+            : "Possible repeated activity — import on hold"
+          : review.matching_statement
           ? decided
             ? "Possible duplicate statement — comparison recorded"
             : "Possible duplicate statement — import on hold"
           : "Another statement covers these dates"}
       </h3>
       <p>
-        {review.matching_statement
+        {review.repeated_activity
+          ? "This statement prints payments that are already in an earlier statement under another card or account number. This is a suggestion from matching printed values, not a finding. Compare the originals: the payments may be a re-presented history or new activity. Nothing has been removed from either statement."
+          : review.matching_statement
           ? "A separate file matches the bank, full account number, account holder, currency and exact statement dates. Compare its original before adding another import. Matching details can also occur on a revised statement, so neither file is deleted."
           : "These files have overlapping dates for the same bank and account reference. A matching account ending or date range alone does not establish that the payments are duplicates."}
       </p>
@@ -56,8 +93,12 @@ export function StatementCoverageReview({
                   ? "Already imported"
                   : "Awaiting import"}
                 {other.matching_statement &&
+                  !other.repeated_activity &&
                   " · Same account, holder, currency and period"}
               </p>
+              {other.repeated_activity && (
+                <RepeatedActivityDetail detail={other.repeated_activity} />
+              )}
             </div>
             <Button size="sm" variant="outline" onClick={() => setFile(other)}>
               Compare original PDF

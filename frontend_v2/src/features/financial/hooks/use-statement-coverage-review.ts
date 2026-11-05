@@ -8,6 +8,7 @@ export const coverageReview = lazySchema(() => z.object({
   revision: z.string().nullable(),
   reason: z.string().optional(),
   matching_statement: z.boolean().optional(),
+  repeated_activity: z.boolean().optional(),
   candidates: z.array(
     z.object({
       file_id: z.string(),
@@ -19,6 +20,28 @@ export const coverageReview = lazySchema(() => z.object({
       period_start: z.string(),
       period_end: z.string(),
       matching_statement: z.boolean().optional(),
+      // Set when this statement repeats that one's payments under another card or account number.
+      repeated_activity: z
+        .object({
+          repeated: z.number(),
+          with_printed_reference: z.number(),
+          own_rows: z.number(),
+          other_rows: z.number(),
+          carried_balance: z.string().nullable(),
+          other_number: z.string(),
+          other_holder: z.string(),
+          examples: z.array(
+            z.object({
+              date: z.string(),
+              amount_minor: z.string(),
+              direction: z.string(),
+              currency: z.string(),
+              description: z.string(),
+              printed_reference_matches: z.boolean(),
+            })
+          ),
+        })
+        .optional(),
     })
   ),
 }))

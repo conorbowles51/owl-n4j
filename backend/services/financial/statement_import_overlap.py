@@ -398,7 +398,9 @@ def _copy_of_retained(session, file, files, other, request):
     return bool(request.get('expected_revision') and own.get('reading_revision') == request['expected_revision'])
 
 
-def coverage_review(session, *, case_id, file_id, request, sources=None):
+def coverage_review(session, *, case_id, file_id, request, sources=None, repeated=False):
+    """``repeated``: also compare the request's rows with admitted statements of other numbers (repeated_activity).
+    Only a statement about to be imported asks; every other caller compares dates as before."""
     # Batch comparison already loaded the case's source lineage. Reuse that
     # request-local snapshot instead of repeating a SQL read for every period.
     files = getattr(sources, 'files', None)
@@ -481,13 +483,20 @@ def coverage_review(session, *, case_id, file_id, request, sources=None):
                     continue
                 candidates[identifier] = {**{k: v for k, v in other.items() if k not in ('key', 'scope')},
                     'matching_statement': True, 'same_file_statement': False, 'other_bank_wording': True}
+    repeats = []
+    if repeated and request.get('rows'):
+        from services.financial.repeated_activity import repeated_candidates
+        repeats = repeated_candidates(session, case_id=case_id, file_id=file_id, request=request)
+        for item in repeats:
+            candidates[(f"repeated:{item['file_id']}", item['source_document_id'])] = item
     ordered = sorted(candidates.items())
     revision = _digest(dict(version='statement-coverage-review-v1', scope=own,
         reading=request.get('expected_revision'), candidates=[dict(key=k, start=v['period_start'], end=v['period_end'],
             matching_statement=v['matching_statement']) for k,v in ordered]))
     return dict(available=True, revision=revision, candidates=[v for _,v in ordered],
                 matching_statement=any(v['matching_statement'] for _, v in ordered),
-                same_file_statement=any(v['same_file_statement'] for _, v in ordered))
+                same_file_statement=any(v['same_file_statement'] for _, v in ordered),
+                **(dict(repeated_activity=True) if repeats else {}))
 
 
 def duplicate_hold(review, request):
