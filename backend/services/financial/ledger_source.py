@@ -4,7 +4,7 @@ Stored locators are retained, not inferred from an amount or row number. Hash
 comparison checks recorded provenance; it does not reread evidence bytes.
 """
 import re
-from sqlalchemy import select
+from sqlalchemy import null, select
 from sqlalchemy.orm import joinedload, load_only
 
 from postgres.models.evidence import EvidenceFile
@@ -42,15 +42,26 @@ def ledger_sources(session, *, case_id, transaction_ids):
     ids = [str(value) for value in transaction_ids]
     if not ids or len(ids) > 500 or len(set(ids)) != len(ids):
         raise LedgerSourceError("Request between 1 and 500 distinct payment references per batch.", 422)
-    sources = session.execute(select(FinancialTransaction, FinancialSourceDocument, EvidenceFile)
+    # The printable number comes in the same query, so a batch of 500 stays one query.
+    from postgres.models.financial_transaction_number import FinancialTransactionNumber as Number
+    from services.financial.transaction_numbers import table_ready
+    numbered = table_ready(session)
+    query = (select(FinancialTransaction, FinancialSourceDocument, EvidenceFile,
+                    Number.number if numbered else null().label('number'))
         .options(joinedload(FinancialTransaction.account),
             load_only(FinancialSourceDocument.id, FinancialSourceDocument.sha256_at_ingestion, FinancialSourceDocument.page_count, raiseload=True),
             load_only(EvidenceFile.id, EvidenceFile.original_filename, EvidenceFile.sha256, raiseload=True))
         .join(FinancialSourceDocument, FinancialTransaction.source_document_id == FinancialSourceDocument.id)
         .join(EvidenceFile, FinancialSourceDocument.evidence_file_id == EvidenceFile.id)
         .where(FinancialTransaction.id.in_(transaction_ids), FinancialTransaction.case_id == case_id,
-               FinancialSourceDocument.case_id == case_id, EvidenceFile.case_id == case_id)).all()
-    by_id = {str(source[0].id): source for source in sources}
+               FinancialSourceDocument.case_id == case_id, EvidenceFile.case_id == case_id))
+    if numbered:
+        query = query.outerjoin(Number, Number.transaction_id == FinancialTransaction.id)
+    sources = session.execute(query).all()
+    by_id = {}
+    for row, document, evidence, number in sources:
+        row._txn_number = number
+        by_id[str(row.id)] = (row, document, evidence)
     if set(by_id) != set(ids):
         raise LedgerSourceError("One or more selected payments are unavailable in this case. Review your selection.", 404)
     return {"case_id": str(case_id), "sources": [_source_view(case_id, by_id[key]) for key in ids]}

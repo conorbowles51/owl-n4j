@@ -23,13 +23,21 @@ def numbers_for_case(session, case_id) -> dict:
 
 
 def attach_numbers(session, rows) -> None:
-    """Keep each row's number on the row (``_txn_number``), one query per case among the rows."""
+    """Keep each row's number on the row (``_txn_number``), one query per case among the rows. Up to 500 rows read
+    only their own numbers; a longer list reads the case's."""
+    from postgres.models.financial_transaction_number import FinancialTransactionNumber as N
     rows = list(rows)
     by_case: dict = {}
     for row in rows:
         by_case.setdefault(row.case_id, []).append(row)
     for case_id, members in by_case.items():
-        found = numbers_for_case(session, case_id)
+        if len(members) > 500:
+            found = numbers_for_case(session, case_id)
+        elif table_ready(session):
+            found = dict(session.execute(select(N.transaction_id, N.number).where(
+                N.case_id == case_id, N.transaction_id.in_([row.id for row in members]))).all())
+        else:
+            found = {}
         for row in members:
             row._txn_number = found.get(row.id)
 

@@ -5,7 +5,9 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from postgres.models.evidence import EvidenceFile
+from postgres.base import Base
 from postgres.models.financial import FinancialTransaction
+from postgres.models.financial_transaction_number import FinancialTransactionNumber
 from services.financial.ledger_source import LedgerSourceError, ledger_source, ledger_sources
 from services.financial.transactions import LOCATOR_PROVENANCE_KEY
 from tests.test_financial_duplicates import DuplicateTestCase
@@ -15,6 +17,7 @@ from routers import financial_ledger
 class LedgerSourceTests(DuplicateTestCase):
     def setUp(self):
         super().setUp()
+        Base.metadata.create_all(self.engine, tables=[FinancialTransactionNumber.__table__])
         self.document = self.make_copy()
         self.row = self.db.scalar(select(FinancialTransaction).where(FinancialTransaction.source_document_id == self.document.id))
         self.file = self.db.get(EvidenceFile, self.document.evidence_file_id)
@@ -95,6 +98,9 @@ class LedgerSourceTests(DuplicateTestCase):
         other = self.make_copy()
         second = self.db.scalar(select(FinancialTransaction).where(FinancialTransaction.source_document_id == other.id))
         ids = [second.id, self.row.id]
+        for number, key in enumerate(ids, 1):
+            self.db.add(FinancialTransactionNumber(case_id=self.case.id, transaction_id=key, number=number))
+        self.db.commit()
         from sqlalchemy import event
         statements = []
         case_id = self.case.id
@@ -107,6 +113,7 @@ class LedgerSourceTests(DuplicateTestCase):
             finally:
                 event.remove(db.get_bind(), 'before_cursor_execute', capture)
         self.assertEqual(len(statements), 1)
+        self.assertEqual([source['transaction']['txn_number'] for source in result['sources']], [1, 2])
         self.assertNotIn('financial_source_documents.metadata', statements[0])
         self.assertEqual([source['transaction_id'] for source in result['sources']], [str(key) for key in ids])
         self.assertEqual(result['sources'][1], self.read())

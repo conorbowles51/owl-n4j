@@ -6,6 +6,29 @@ from tests.test_agent_financial_ledger_tools import LedgerToolFixture
 
 
 class PaymentSearchTests(LedgerToolFixture):
+    def test_the_number_of_queries_does_not_grow_with_the_hits(self):
+        from sqlalchemy import event
+        _, _, rows = self.source(rows=5)
+        rows[0].description = "zzone"
+        for row in rows[1:]:
+            row.description = "zzmany"
+        self.db.commit()
+        conn = self.db.connection()
+        def count(term):
+            statements = []
+            def record(_connection, _cursor, statement, *_):
+                statements.append(statement)
+            event.listen(self.engine, 'before_cursor_execute', record)
+            try:
+                total = search_payments(conn, self.case.id, term)[0]
+            finally:
+                event.remove(self.engine, 'before_cursor_execute', record)
+            return total, len(statements)
+        count("zzone")  # the first search reads the account once; after that, a hit costs no query
+        one, many = count("zzone"), count("zzmany")
+        self.assertEqual((one[0], many[0]), (1, 4))
+        self.assertEqual(one[1], many[1])
+
     def test_description_counterparty_amount_totals_and_case_scope(self):
         _, _, rows = self.source(rows=3, amount=123456)  # EUR 1,234.56, 1,234.57, 1,234.58
         rows[0].description = "Wire to ACME Holdings"

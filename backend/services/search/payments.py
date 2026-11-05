@@ -110,6 +110,8 @@ def search_payments(conn, case_id, q, *, offset=0, limit=20):
             select(T.id).select_from(T).outerjoin(FinancialSourceDocument,
                                                   FinancialSourceDocument.id == T.source_document_id)
             .where(T.id.in_(ids), counted))}
+        from services.financial.transaction_numbers import attach_numbers
+        attach_numbers(session, rows.values())
         items = []
         for identifier in ids:
             row = rows[identifier]
