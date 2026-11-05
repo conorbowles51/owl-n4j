@@ -2,7 +2,6 @@
 events as one registration call per file, which made 10 database round trips a file (measured on the live schema)."""
 from pathlib import Path, PurePosixPath
 import threading
-import time
 from uuid import UUID
 
 from sqlalchemy import event, select
@@ -71,13 +70,10 @@ def register(f, monkeypatch, *, old):
     listener = lambda *args: statements.append(args[2])  # noqa: E731
     event.listen(f.engine, 'before_cursor_execute', listener)
     try:
+        # The answer waits for the end, whatever the box's load: every session here shares one SQLite connection, so
+        # a poll while the registration runs would end its transaction. test_upload_group_registration_job follows a run.
+        monkeypatch.setattr(api, 'COMPLETE_WAIT_SECONDS', 3600)
         receipt = control(f, state, 'complete').json()
-        # A registration longer than the answer's wait is followed as the page does.
-        deadline = time.monotonic() + 600
-        while receipt['status'] != 'completed' and receipt.get('registration', {}).get('state') == 'running':
-            assert time.monotonic() < deadline
-            time.sleep(0.5)
-            receipt = f.client.get(f"/api/evidence-upload-groups/{state['id']}/registration").json()
     finally:
         event.remove(f.engine, 'before_cursor_execute', listener)
     assert receipt['status'] == 'completed', receipt
