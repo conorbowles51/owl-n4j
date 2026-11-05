@@ -25,7 +25,7 @@ record() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${at}" >> "${tmp}"; }
 store() {  # <label> <command...>
     local label="$1" out; shift
     if out="$("$@" 2>&1)"; then
-        record "${label}" ok "$(printf '%s\n' "${out}" | tail -n 1 | sed 's/^[^ ]* [^ ]*: //')"
+        record "${label}" ok "$(printf '%s\n' "${out}" | tail -n 1 | sed 's/^[^ ]* [^ ]*: //; s/^ok: //')"
     else
         record "${label}" FAILED "$(printf '%s\n' "${out}" | grep -m1 'ALERT:' | sed 's/.*ALERT: //' | cut -c1-240)"
         failed=$(( failed + 1 ))
