@@ -12,6 +12,8 @@ import { ImportedStatementRowReview } from "./ImportedStatementRowReview"
 import { useStatementCoverageReview } from "../hooks/use-statement-coverage-review"
 import { StatementCoverageReview } from "./StatementCoverageReview"
 import { useBatchReview } from "../lib/batch-review-context"
+import { PageReviewForm } from "./PageReviewForm"
+import { pagesReviewedOf, usePageReviews } from "../hooks/use-page-reviews"
 import {
   useStatementFiles,
   usesPdfStatementReader,
@@ -1316,6 +1318,7 @@ function EditableStatement({
       data.page_numbers[0] ||
       1
   const [sourcePage, setSourcePage] = useState(initialPage)
+  const pageReviews = usePageReviews(caseId, fileId)
   const client = useQueryClient()
   const baseline = useMemo(() => initialRows(data), [data])
   const hasUnassignedPayments =
@@ -4745,7 +4748,11 @@ function EditableStatement({
             <>
               Inspect another page of the original PDF
               {data.unassigned_page_numbers.length
-                ? ` (${data.unassigned_page_numbers.length} pages need a coverage check)`
+                ? ` (${data.unassigned_page_numbers.length} pages need a coverage check${
+                    pagesReviewedOf(pageReviews.reviews, data.unassigned_page_numbers)
+                      ? `, ${pagesReviewedOf(pageReviews.reviews, data.unassigned_page_numbers)} reviewed`
+                      : ""
+                  })`
                 : ""}
             </>
           }
@@ -4788,7 +4795,9 @@ function EditableStatement({
               {data.page_numbers.map((page) => (
                 <option key={page} value={page}>
                   Page {page}
-                  {data.unassigned_page_numbers.includes(page)
+                  {pageReviews.byPage.get(page)
+                    ? ` · reviewed: ${pageReviews.byPage.get(page)!.label}`
+                    : data.unassigned_page_numbers.includes(page)
                     ? " · needs coverage check"
                     : data.information_pages.some(
                           (item) => item.page_number === page
@@ -4814,6 +4823,16 @@ function EditableStatement({
           >
             Show selected page
           </Button>
+          <PageReviewForm
+            caseId={caseId}
+            fileId={fileId}
+            page={
+              (focus ? originals.get(focus.rowId)?.page_number : undefined) ??
+              sourcePage
+            }
+            reviews={pageReviews}
+            canEdit={canEdit}
+          />
         </Disclosure>
         {!excludedCopy &&
           !importedHere &&

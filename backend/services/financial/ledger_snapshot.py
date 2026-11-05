@@ -172,6 +172,10 @@ def _capture_history(session, document, *, case_id):
     document['export_ready']=True
     from services.financial.ledger_review_history import capture_pdf_review_history
     document['pdf_review_history']=capture_pdf_review_history(session,case_id=case_id,evidence_file_ids=scopes['evidence_file'])
+    from services.financial.page_reviews import capture_page_reviews
+    page_reviews=capture_page_reviews(session,case_id=case_id,evidence_file_ids=scopes['evidence_file'])
+    if page_reviews:
+        document['page_reviews']=page_reviews
     from services.financial.working_totals import working_totals_from_readings
     document['working_totals'] = working_totals_from_readings(document['ledger'])
     document['schema']='loupe.financial.ledger_snapshot/3'
@@ -737,6 +741,14 @@ def render_ledger_report(snapshot):
                 decision['subject_type'] + ': ' + decision['subject_id'], decision['subject_sequence'],
                 decision['recorded_at'], made_by(decision), decision['reason']]]),
             details('Decision reference, original values and changed values', decision), '</article>']
+    if document.get('page_reviews'):
+        parts += ['<h2>Original pages reviewed by a person</h2>', '<p>What a person recorded about a page outside the statement rows. '
+            'A review describes the page; it adds no payment and clears no coverage check. Undone reviews stay listed.</p>',
+            table(['File', 'Page', 'Review', 'Reason', 'Saved by', 'Saved at', 'Undone'], [[
+                item['filename'], item['page_number'], item['label'], item['reason'],
+                (item['saved_by'] or 'Not recorded') + (' (a model, for this person)' if item.get('origin') else ''), item['saved_at'],
+                (str(item['undone_at']) + ' by ' + str(item['undone_by'])) if item['undone_at'] else 'No'] for item in document['page_reviews']],
+                widths=[22, 6, 16, 24, 12, 12, 8])]
     calls = document.get('judgement_calls')
     if calls:
         made = dict(processor='Software rule', agent='Model · not confirmed', person='Person')

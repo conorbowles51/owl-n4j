@@ -6,7 +6,7 @@ from typing import Literal
 from uuid import UUID
 from services.manual_changes import records
 from fastapi.concurrency import run_in_threadpool
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response
 from sqlalchemy.orm import Session
 from postgres.session import get_db
 from routers.case_access import case_access_dependency
@@ -369,6 +369,52 @@ def duplicate_disposition(evidence_file_id: UUID, body: DuplicateDispositionRequ
         db.rollback()
         logger.exception('Statement duplicate decision failed')
         raise HTTPException(status_code=500, detail='The duplicate decision could not be confirmed. Reopen the statement to check its saved result.')
+
+
+class PageReviewRequest(_Contract):
+    disposition: str = Field(max_length=32)
+    reason: str = Field(max_length=4096)
+    expected_review_id: str | None = Field(default=None, max_length=64)
+
+
+class PageReviewUndoRequest(_Contract):
+    expected_review_id: str | None = Field(default=None, max_length=64)
+
+
+@router.get('/{evidence_file_id}/page-reviews')
+def get_page_reviews(evidence_file_id: UUID, case_id: UUID = Query(...), db: Session = Depends(get_db)):
+    from services.financial.page_reviews import read_page_reviews
+    try:
+        return read_page_reviews(db, case_id=case_id, evidence_file_id=evidence_file_id)
+    except PdfMappingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.put('/{evidence_file_id}/page-reviews/{page_number}', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('page_review', field=lambda c: c['body'].get('disposition', ''))
+def put_page_review(evidence_file_id: UUID, page_number: Annotated[int, Path(ge=1, le=1000000)], body: PageReviewRequest,
+        case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.page_reviews import save_page_review
+    try:
+        return save_page_review(db, case_id=case_id, evidence_file_id=evidence_file_id, page_number=page_number,
+            disposition=body.disposition, reason=body.reason, expected_review_id=body.expected_review_id,
+            actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@router.post('/{evidence_file_id}/page-reviews/{page_number}/undo', dependencies=[Depends(case_access_dependency(lambda request, payload: ('case', 'edit')))])
+@records('page_review', 'undo', field='undo')
+def post_page_review_undo(evidence_file_id: UUID, page_number: Annotated[int, Path(ge=1, le=1000000)], body: PageReviewUndoRequest,
+        case_id: UUID = Query(...), user=Depends(get_current_db_user), db: Session = Depends(get_db)):
+    from services.financial.page_reviews import undo_page_review
+    try:
+        return undo_page_review(db, case_id=case_id, evidence_file_id=evidence_file_id, page_number=page_number,
+            expected_review_id=body.expected_review_id, actor=actor_from_user(user))
+    except PdfMappingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 class NotPaymentStatementRequest(_Contract):

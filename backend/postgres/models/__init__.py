@@ -186,6 +186,7 @@ __all__ += ["CaseGlossaryTerm", "PhoneMonitoringAppEntry"]
 from postgres.models.removed_record import RemovedRecord
 __all__ += ["RemovedRecord"]
 from postgres.models.financial_transaction_number import FinancialTransactionNumber, FinancialTransactionNumberCounter
+from postgres.models.financial_page_review import FinancialPageReview
 __all__ += ["FinancialTransactionNumber", "FinancialTransactionNumberCounter"]
 
 # Deleted cases and evidence files are hidden from every ORM read (postgres/soft_delete.py).
