@@ -51,7 +51,7 @@ function WorkList({ caseId, work }: { caseId: string; work: ContinueWork }) {
               {a.items.map((t) => (
                 <li key={t.thread_key}>
                   <Link className="underline underline-offset-2" to={threadLink(caseId, t.extraction_id, t.thread_key, t.position?.event_uid)}>{t.title ?? "Open this thread"}</Link>
-                  {t.position ? ` ${t.position.by_name} stopped ${t.position.instant ? `at ${instantWords(t.position.instant, "UTC")}` : "at a saved message"}.` : ""}
+                  {t.position ? `: ${t.position.by_name} stopped ${t.position.instant ? `at ${instantWords(t.position.instant, "UTC")}` : "at a saved message"}.` : ""}
                 </li>
               ))}
               {a.next.map((t) => (
