@@ -1,7 +1,7 @@
 """Optional case-wide financial review history, separate from ledger totals."""
 from sqlalchemy import select
 from services.financial.custody import capture_case_custody
-from services.financial.audit_chain import capture_financial_audit_chain
+from services.financial.audit_members import capture_audit_members
 from postgres.models.financial import AdjudicationEvent
 from postgres.models.financial_candidates import FinancialCandidateMapping, FinancialCandidateFinalization
 from services.financial.decision_log import to_record, _machine_actor_email
@@ -11,7 +11,8 @@ from services.financial.ledger_summary import LedgerSummaryError
 MAX_CASE_HISTORY_RECORDS = 10000
 
 
-def capture_case_financial_history(session, *, case_id):
+def capture_case_financial_history(session, *, case_id, audit_members, audit_progress=None):
+    """(history, audit member listing): the events go to ``audit_members`` and the history names them."""
     events = list(session.scalars(select(AdjudicationEvent).where(AdjudicationEvent.case_id == case_id)
         .order_by(AdjudicationEvent.subject_type, AdjudicationEvent.subject_id, AdjudicationEvent.subject_sequence)
         .limit(MAX_CASE_HISTORY_RECORDS + 1)))
@@ -33,11 +34,12 @@ def capture_case_financial_history(session, *, case_id):
     reviews = capture_pdf_review_history(session, case_id=case_id, evidence_file_ids=files)
     reviews['scope'] = 'All recorded PDF candidate mappings and finalizations in this case, including pending and rejected readings outside the exported ledger scope.'
     machine_email = _machine_actor_email()
+    chain, listing = capture_audit_members(session, case_id=case_id, members=audit_members, progress=audit_progress)
     return dict(schema_version='loupe.financial.case_review_history/1', case_id=str(case_id),
         scope='All recorded financial adjudication events and saved PDF candidate review history, plus available case audit events at capture time. Account/date/table filters do not limit this appendix.',
         decisions=[to_record(event, machine_email=machine_email).as_dict() for event in events],
         decision_order='Per-subject sequence only; ordering across subjects does not establish chronology.',
         pdf_review_history=reviews,
         custody_reports=capture_case_custody(session, case_id=case_id),
-        audit_chain=capture_financial_audit_chain(session, case_id=case_id),
-        limitation='Separate review context, never additional ledger totals. This does not contain all Workspace, entity-merge, historical custody, or other application history, and does not establish a complete case audit spine.')
+        audit_chain=chain,
+        limitation='Separate review context, never additional ledger totals. This does not contain all Workspace, entity-merge, historical custody, or other application history, and does not establish a complete case audit spine.'), listing

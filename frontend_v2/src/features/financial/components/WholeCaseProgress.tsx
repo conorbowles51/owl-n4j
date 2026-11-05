@@ -10,17 +10,21 @@ export function WholeCaseProgress({
   error,
   noun,
   onAgain,
+  lead,
+  againLabel = "Run the whole case again",
 }: {
   run: WholeCaseRun<unknown> | undefined
   error: Error | null
   noun: string
   onAgain: () => void
+  lead?: string
+  againLabel?: string
 }) {
   if (error)
     return (
       <div role="alert" className="space-y-2">
         <p>The whole-case run could not start. {error.message}</p>
-        <Button onClick={onAgain}>Run the whole case again</Button>
+        <Button onClick={onAgain}>{againLabel}</Button>
       </div>
     )
   if (!run) return <p role="status">Starting the whole-case {noun}…</p>
@@ -28,7 +32,7 @@ export function WholeCaseProgress({
     return (
       <div role="alert" className="space-y-2">
         <p>{run.error}</p>
-        <Button onClick={onAgain}>Run the whole case again</Button>
+        <Button onClick={onAgain}>{againLabel}</Button>
       </div>
     )
   if (run.status === "completed") return null
@@ -38,8 +42,8 @@ export function WholeCaseProgress({
   return (
     <div role="status" className="space-y-1 rounded border p-3">
       <p>
-        This scope is too large for one answer, so the whole {noun} is running
-        in the background. You can keep working; the result stays here.
+        {lead ??
+          `This scope is too large for one answer, so the whole ${noun} is running in the background. You can keep working; the result stays here.`}
       </p>
       <p className="font-medium">
         {run.step ? `Step ${run.step} of ${parts}: ` : ""}

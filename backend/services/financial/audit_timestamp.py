@@ -6,8 +6,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from services.financial.audit_chain import verify_financial_audit_chain
-from services.financial.export_comparison import read_verified_ledger_archive, MAX_ARCHIVE_BYTES
+from services.financial.export_comparison import archive_audit_verification, read_verified_ledger_archive, MAX_ARCHIVE_BYTES
+from services.financial.ledger_summary import LedgerSummaryError
 
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
@@ -27,13 +27,12 @@ def _json(value):
 def checkpoint(archive):
     verified = read_verified_ledger_archive(_read(archive, MAX_ARCHIVE_BYTES))
     document = verified['document']
-    chain = (document.get('case_financial_history') or {}).get('audit_chain')
-    if not chain:
+    try:
+        checked = archive_audit_verification(verified)
+    except LedgerSummaryError as error:
+        raise ValueError('Saved audit verification differs from the recorded chain.') from error
+    if checked is None:
         raise ValueError('Export must include recorded case audit history.')
-    checked = verify_financial_audit_chain(chain['entries'], case_id=document['ledger']['case_id'])
-    if any(chain['verification'].get(key) != checked[key]
-           for key in ('case_id', 'event_count', 'head_sha256', 'status')):
-        raise ValueError('Saved audit verification differs from the recorded chain.')
     return _json(dict(schema_version='loupe.financial.audit_checkpoint/1',
         case_id=checked['case_id'], event_count=checked['event_count'],
         head_sha256=checked['head_sha256'], snapshot_sha256=verified['manifest']['document_sha256'],

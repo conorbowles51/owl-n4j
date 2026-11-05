@@ -5,6 +5,7 @@ from postgres.base import Base
 from postgres.models.financial_custody import FinancialCustodyEvent
 from postgres.models.financial_audit import FinancialAuditEvent
 from postgres.models.financial import AdjudicationEvent
+from services.financial.audit_members import HeldAuditMembers
 from services.financial.case_financial_history import capture_case_financial_history
 from services.financial.ledger_summary import LedgerSummaryError
 from tests import test_financial_candidate_reviews as fixture
@@ -20,7 +21,8 @@ class CaseReviewHistoryTests(unittest.TestCase):
         self.f.tearDown()
 
     def capture(self, **kwargs):
-        return capture_case_financial_history(self.f.fixture.db, case_id=kwargs.get('case_id', self.f.fixture.case))
+        sink = HeldAuditMembers(64 * 1024 * 1024)
+        return capture_case_financial_history(self.f.fixture.db, case_id=kwargs.get('case_id', self.f.fixture.case), audit_members=sink)[0]
 
     def test_pending_and_rejected_readings_are_retained_without_ledger_admission(self):
         before = self.capture()

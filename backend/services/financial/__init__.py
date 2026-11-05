@@ -2003,6 +2003,8 @@ __all__ += ["reconcile_reference_reviews", "evaluation_from_reference_reviews", 
 
 from services.financial.audit_chain import capture_financial_audit_chain, verify_financial_audit_chain
 __all__ += ["capture_financial_audit_chain", "verify_financial_audit_chain"]
+from services.financial.audit_members import capture_audit_members, verify_audit_members
+__all__ += ["capture_audit_members", "verify_audit_members"]
 
 from services.financial.pdf_processing_manifest import validate_pdf_processing_manifest
 __all__ += ["validate_pdf_processing_manifest"]

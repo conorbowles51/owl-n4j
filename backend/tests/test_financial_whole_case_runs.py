@@ -337,6 +337,74 @@ class ComputeTraceRequest(TestCase):
             summary, sections = W.compute_trace(None, {**request, 'case_id': 'case', 'run_id': 'a' * 32}, None)
         self.assertEqual(summary, dict(ok=True))
 
+class ExportRun(Store):
+    def state(self, status, **more):
+        identifier = uuid4().hex
+        directory = W.root() / identifier
+        directory.mkdir()
+        W._write_state(directory, dict(id=identifier, kind='export', case_id=str(self.case), status=status, params={}, heartbeat=time.time(), **more))
+        return identifier, directory
+
+    def test_a_stopped_or_failed_run_offers_nothing(self):
+        for status in ('stopped', 'failed', 'running', 'queued'):
+            identifier, directory = self.state(status, pid=os.getpid())
+            (directory / '.export-x').mkdir()
+            (directory / '.export-x' / W.EXPORT_FILE).write_bytes(b'part of an archive')
+            with self.assertRaises(W.WholeCaseRunError):
+                W.read_file(self.case, identifier, W.EXPORT_FILE)
+
+    def test_a_run_whose_child_is_gone_says_it_stopped_and_offers_nothing(self):
+        identifier, _ = self.state('running', pid=999999999)
+        self.assertEqual(W.read_run(self.case, identifier)['status'], 'stopped')
+        with self.assertRaises(W.WholeCaseRunError):
+            W.read_file(self.case, identifier, W.EXPORT_FILE)
+
+    def test_a_refusal_while_writing_publishes_nothing(self):
+        identifier, directory = self.state('running')
+        run = W._Run(directory, W._read_state(directory))
+        capture = SimpleNamespace(snapshot=SimpleNamespace(sha256='s', byte_count=1), ledger_scope_sha256='l')
+        with patch('services.financial.ledger_snapshot.ledger_export_archive', side_effect=LedgerSummaryError('Readable report exceeds 16 MiB')):
+            with self.assertRaises(LedgerSummaryError):
+                W.compute_export(capture, dict(case_id=str(self.case)), run)
+        self.assertFalse((directory / W.RESULT).exists())
+
+    def test_an_export_keeps_to_its_own_line_and_names_what_a_restart_keeps(self):
+        self.assertIn('export', W.KINDS)
+        self.assertIn('continues from them', W.RESTARTED[True])
+        self.assertNotIn('continues', W.RESTARTED[False])
+        self.assertNotEqual(W.EXPORT_LOCK_NAME, W.LOCK_NAME)
+
+    def test_the_archive_is_described_from_its_own_bytes(self):
+        import zipfile
+        identifier, directory = self.state('running')
+        run = W._Run(directory, W._read_state(directory))
+        capture = SimpleNamespace(snapshot=SimpleNamespace(sha256='s', byte_count=1), ledger_scope_sha256='l')
+        manifest = dict(generated_at='2026-11-05T10:00:00+00:00', included_rows=3, excluded_rows=1,
+                        expert_support=dict(completeness='incomplete_expert_packet', parts=[], sentence='s'))
+        def package(export, *, include_pdf, archive):
+            archive.writestr('manifest.json', '{}')
+            return manifest
+        with patch('services.financial.ledger_snapshot.ledger_export_archive', side_effect=package):
+            summary, sections = W.compute_export(capture, dict(case_id=str(self.case)), run)
+        path = sections['paths'][W.EXPORT_FILE]
+        self.assertEqual(summary['archive_sha256'], hashlib.sha256(path.read_bytes()).hexdigest())
+        self.assertEqual(summary['archive_bytes'], path.stat().st_size)
+        self.assertEqual(summary['audit_events'], None)
+        self.assertEqual(zipfile.ZipFile(path).namelist(), ['manifest.json'])
+
+    def test_a_fresh_reading_replaces_a_stored_run_of_unchanged_rows(self):
+        params = dict(privilege_marking='unmarked')
+        directory = W.root() / W.run_id('export', self.case, params)
+        directory.mkdir()
+        W._write_state(directory, dict(id=directory.name, kind='export', case_id=str(self.case), status='completed', params=params, heartbeat=time.time()))
+        with patch.object(W, '_current', return_value=True), patch.object(W.subprocess, 'Popen') as child:
+            self.assertEqual(W.start_run(None, kind='export', case_id=self.case, params=params)['status'], 'completed')
+            child.assert_not_called()
+            child.return_value.pid = os.getpid()
+            W.start_run(None, kind='export', case_id=self.case, params=params, fresh=True)
+            child.assert_called_once()
+            self.assertNotEqual(W._read_state(directory)['status'], 'completed')
+
 
 class NumberedPdfParts(TestCase):
     def test_a_stopped_report_keeps_its_finished_parts(self):

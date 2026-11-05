@@ -1,10 +1,10 @@
-import { useCallback, useRef } from "react"
+import { useCallback, useRef, useState } from "react"
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query"
 import { fetchAPI } from "@/lib/api-client"
 import { sha256Hex } from "@/lib/browser-crypto"
 import { candidateUrl } from "./candidate-contract"
 
-export type WholeCaseKind = "transfers" | "timeline" | "patterns" | "trace" | "pdf"
+export type WholeCaseKind = "transfers" | "timeline" | "patterns" | "trace" | "pdf" | "export"
 
 export interface WholeCaseRequest {
   kind: WholeCaseKind
@@ -95,6 +95,72 @@ export function useWholeCaseRun<Summary>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, identity])
   return { run: query.data, error: query.error, again }
+}
+
+/** A finished ledger export, as the run stated it. */
+export interface ExportRunSummary {
+  archive_bytes: number
+  snapshot_bytes: number
+  rows: number
+  generated_at: string
+  filename: string
+  packet: unknown
+  audit_events: { event_count: number; head_sha256: string; status: string } | null
+  audit_parts: number
+}
+
+/**
+ * A run a person starts: nothing starts on opening the page. The run's id stays in this browser, so leaving the page
+ * and coming back finds the same run, whichever way it went.
+ */
+export function useStartedRun<Summary>(caseId: string, request: Record<string, unknown>, storageKey: string) {
+  const [id, setId] = useState(() => localStorage.getItem(storageKey))
+  const [startError, setStartError] = useState<Error | null>(null)
+  const [starting, setStarting] = useState(false)
+  const query = useQuery({
+    queryKey: ["started-run", caseId, id],
+    enabled: Boolean(id),
+    retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: 0,
+    gcTime: 0,
+    queryFn: async () => {
+      try {
+        return await fetchAPI<WholeCaseRun<Summary>>(runUrl(id!, caseId), { read: true })
+      } catch (error) {
+        // A run past its keeping time is gone: the page goes back to offering a new one.
+        if ((error as { status?: number })?.status === 404) {
+          localStorage.removeItem(storageKey)
+          setId(null)
+        }
+        throw error
+      }
+    },
+    refetchInterval: (q) => (q.state.data?.status === "queued" || q.state.data?.status === "running" ? 2000 : false),
+  })
+  const start = useCallback(
+    async (fresh = false) => {
+      setStarting(true)
+      setStartError(null)
+      try {
+        const run = await fetchAPI<WholeCaseRun<Summary>>(candidateUrl("whole-case-runs", caseId), {
+          method: "POST",
+          body: { ...request, fresh },
+          read: true,
+        })
+        localStorage.setItem(storageKey, run.id)
+        setId(run.id)
+        query.refetch().catch(() => undefined)
+      } catch (error) {
+        setStartError(error instanceof Error ? error : new Error("The export could not start."))
+      } finally {
+        setStarting(false)
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [caseId, JSON.stringify(request), storageKey]
+  )
+  return { run: id ? query.data : undefined, startError, starting, start }
 }
 
 export function useWholeCasePage<Item>(

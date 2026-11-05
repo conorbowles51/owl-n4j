@@ -16,8 +16,7 @@ from services.financial.ledger_summary import LedgerSummaryError
 from services.financial.trace_replay import replay_trace
 from services.financial.extraction_evaluation import evaluate_extraction
 from services.financial.reference_reviews import evaluation_from_reference_reviews
-from services.financial.export_comparison import read_verified_ledger_archive
-from services.financial.audit_chain import verify_financial_audit_chain
+from services.financial.export_comparison import archive_audit_verification, read_verified_ledger_archive
 
 
 def validation_source_overlap(source_records, corpus):
@@ -94,13 +93,7 @@ def build_trace_support_archive(scenarios, *, validation_corpus=None, reference_
             raise LedgerSummaryError('Captured ledger export belongs to a different case.')
         cases.add(ledger_case)
         history = document.get('case_financial_history')
-        chain = (history or {}).get('audit_chain')
-        verification = None
-        if chain:
-            verification = verify_financial_audit_chain(chain['entries'], case_id=document['ledger']['case_id'])
-            if any(chain['verification'].get(key) != verification[key]
-                   for key in ('case_id', 'event_count', 'head_sha256', 'status')):
-                raise LedgerSummaryError('Captured ledger audit summary differs from its chain.')
+        verification = archive_audit_verification(saved)
         entries['ledger/original-export.zip'] = ledger_archive
         captured_ledger = dict(archive_reference='ledger/original-export.zip',
             archive_sha256=saved['archive_sha256'], snapshot_sha256=saved['manifest']['document_sha256'],

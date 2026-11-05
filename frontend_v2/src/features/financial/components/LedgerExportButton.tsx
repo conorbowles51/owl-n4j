@@ -1,20 +1,17 @@
-import { appendAccountSelection } from "../lib/account-selection"
 import { sha256 } from "@noble/hashes/sha2.js"
-import { sameTableView, type LedgerTableView } from "../lib/ledger-table-view"
-import { useEffect, useRef, useState } from "react"
+import type { LedgerTableView } from "../lib/ledger-table-view"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { isPdfSizeRefusal } from "../lib/whole-case-run"
+import { formatBytes } from "@/features/evidence/upload-progress"
+import { isPdfSizeRefusal, useStartedRun, wholeCaseFileUrl, type ExportRunSummary } from "../lib/whole-case-run"
 import { WholeCasePdf } from "./WholeCasePdf"
-import { candidateUrl } from "../lib/candidate-contract"
+import { WholeCaseProgress } from "./WholeCaseProgress"
 import type { LedgerQueryParams } from "../hooks/use-ledger-transactions"
 import { TraceSupportAssembly } from "./TraceSupportAssembly"
 import { TraceSupportVerification } from "./TraceSupportVerification"
 import { LedgerExportComparison } from "./LedgerExportComparison"
 import { ExpertPacketResult } from "./ExpertPacketResult"
-import { readExpertPacket, type ExpertPacket } from "../lib/expert-packet"
-
-// A 4,672-row account took 250 s on the loaded box; the proxy allows an hour.
-const EXPORT_TIMEOUT_MS = 15 * 60 * 1000
+import { readExpertPacket } from "../lib/expert-packet"
 
 const EXPERT_PACKET_NOTE =
   "Includes recorded review methods and the four parts of the expert packet: custody and decisions, components, measured validation and selected tracing. Each download states which parts are complete for that export."
@@ -54,132 +51,124 @@ function ScopedExport({
   params: LedgerQueryParams
   tableView?: LedgerTableView
 }) {
-  const [busy, setBusy] = useState(false),
-    [message, setMessage] = useState(""),
-    [packet, setPacket] = useState<ExpertPacket | null>(null)
   const [marking, setMarking] = useState("unmarked")
   const [includeCaseHistory, setIncludeCaseHistory] = useState(false)
   const [includePdf, setIncludePdf] = useState(false)
   const [includeSourceFiles, setIncludeSourceFiles] = useState(false)
-  const active = useRef<AbortController | null>(null)
-  useEffect(() => () => active.current?.abort(), [])
-  const download = async () => {
-    if (active.current) return
-    const controller = new AbortController()
-    active.current = controller
-    setBusy(true)
-    setMessage("")
-    setPacket(null)
-    let timedOut = false
-    const timeout = setTimeout(() => {
-      timedOut = true
-      controller.abort()
-    }, EXPORT_TIMEOUT_MS)
-    try {
-      const search = new URLSearchParams()
-      search.set("privilege_marking", marking)
-      const encodedView = tableView ? JSON.stringify(tableView) : ""
-      const useBody = encodeURIComponent(encodedView).length > 2000
-      if (tableView && !useBody) search.set("table_view", encodedView)
-      appendAccountSelection(search, params)
-      if (params.accountId) search.set("account_id", params.accountId)
-      if (params.startDate) search.set("start_date", params.startDate)
-      if (params.endDate) search.set("end_date", params.endDate)
-      if (includeCaseHistory)
-        search.set("include_case_financial_history", "true")
-      if (includePdf) search.set("include_pdf", "true")
-      if (includeSourceFiles) search.set("include_source_files", "true")
-      const response = await fetch(
-        `${candidateUrl("ledger-export", caseId)}&${search}`,
-        {
-          method: useBody ? "POST" : "GET",
-          body: useBody
-            ? JSON.stringify({ table_view: encodedView })
-            : undefined,
-          headers: {
-            ...(useBody ? { "Content-Type": "application/json" } : {}),
-          },
-          credentials: "include",
-          signal: controller.signal,
-        }
-      )
-      if (!response.ok) {
-        const error = await response.json().catch(() => null)
-        throw new Error(
-          typeof error?.detail === "string"
-            ? error.detail
-            : `Export failed (${response.status}).`
-        )
-      }
-      const accountDigest = Array.from(
-        sha256(
-          new TextEncoder().encode(
-            JSON.stringify({
-              account_ids: params.accountIds ?? [],
-              account_holders: params.accountHolders ?? [],
-            })
-          )
-        ),
-        (v) => v.toString(16).padStart(2, "0")
-      ).join("")
-      if (
-        ((params.accountIds?.length || params.accountHolders?.length) &&
-          response.headers.get("X-Loupe-Account-Selection-Sha256") !==
-            accountDigest) ||
-        response.headers.get("X-Loupe-Case-Review-History") !==
-          (includeCaseHistory ? "true" : "false") ||
-        response.headers.get("X-Loupe-Privilege-Marking") !== marking ||
-        !(response.headers.get("X-Loupe-Table-View-Sha256")
-          ? response.headers.get("X-Loupe-Table-View-Sha256") ===
-            Array.from(sha256(new TextEncoder().encode(encodedView)), (v) =>
-              v.toString(16).padStart(2, "0")
-            ).join("")
-          : sameTableView(
-              response.headers.get("X-Loupe-Table-View"),
-              tableView
-            )) ||
-        response.headers.get("content-type")?.split(";")[0] !==
-          "application/zip" ||
-        response.headers.get("X-Loupe-Case-Id") !== caseId ||
-        response.headers.get("X-Loupe-Account-Id") !==
-          (params.accountId ?? "") ||
-        response.headers.get("X-Loupe-Start-Date") !==
-          (params.startDate ?? "") ||
-        response.headers.get("X-Loupe-End-Date") !== (params.endDate ?? "") ||
-        (includePdf && response.headers.get("X-Loupe-PDF-Report") !== "true") ||
-        (includeSourceFiles &&
-          response.headers.get("X-Loupe-Source-Files") !== "true") ||
-        (!includeSourceFiles &&
-          response.headers.get("X-Loupe-Source-Files") === "true")
-      )
-        throw new Error(
-          "Export returned for different filters or in an unexpected format."
-        )
-      const blob = await response.blob()
-      if (controller.signal.aborted) return
-      const url = URL.createObjectURL(blob),
-        link = document.createElement("a")
-      link.href = url
-      link.download = tableView
-        ? "loupe-ledger-table-view.zip"
-        : "loupe-ledger-export.zip"
-      link.click()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
-      setMessage("Download started: ledger snapshot and manifest.")
-      setPacket(readExpertPacket(response.headers.get("X-Loupe-Expert-Packet")))
-    } catch (error) {
-      if (timedOut)
-        setMessage(
-          "Export timed out. Retry with a narrower account/date scope."
-        )
-      else if (!controller.signal.aborted)
-        setMessage(error instanceof Error ? error.message : "Export failed.")
-    } finally {
-      clearTimeout(timeout)
-      active.current = null
-      setBusy(false)
-    }
+  const request = {
+    kind: "export",
+    privilege_marking: marking,
+    include_case_financial_history: includeCaseHistory,
+    include_pdf: includePdf,
+    include_source_files: includeSourceFiles,
+    ...(tableView ? { table_view: JSON.stringify(tableView) } : {}),
+    ...(params.accountId ? { account_id: params.accountId } : {}),
+    ...(params.accountIds?.length ? { account_ids: params.accountIds } : {}),
+    ...(params.accountHolders?.length ? { account_holders: params.accountHolders } : {}),
+    ...(params.startDate ? { start_date: params.startDate } : {}),
+    ...(params.endDate ? { end_date: params.endDate } : {}),
   }
+  const storageKey = `loupe.ledger-export-run.${caseId}.${digest(JSON.stringify(request))}`
+  // Each choice of scope and options has its own run; changing one shows that one's run.
+  return (
+    <ExportForm
+      key={storageKey}
+      caseId={caseId}
+      params={params}
+      tableView={tableView}
+      request={request}
+      storageKey={storageKey}
+      options={{
+        marking,
+        setMarking,
+        includeCaseHistory,
+        setIncludeCaseHistory,
+        includePdf,
+        setIncludePdf,
+        includeSourceFiles,
+        setIncludeSourceFiles,
+      }}
+    />
+  )
+}
+
+function digest(text: string) {
+  return Array.from(sha256(new TextEncoder().encode(text)), (v) => v.toString(16).padStart(2, "0")).join("")
+}
+
+function ExportForm({
+  caseId,
+  params,
+  tableView,
+  request,
+  storageKey,
+  options: {
+    marking,
+    setMarking,
+    includeCaseHistory,
+    setIncludeCaseHistory,
+    includePdf,
+    setIncludePdf,
+    includeSourceFiles,
+    setIncludeSourceFiles,
+  },
+}: {
+  caseId: string
+  params: LedgerQueryParams
+  tableView?: LedgerTableView
+  request: Record<string, unknown>
+  storageKey: string
+  options: {
+    marking: string
+    setMarking: (value: string) => void
+    includeCaseHistory: boolean
+    setIncludeCaseHistory: (value: boolean) => void
+    includePdf: boolean
+    setIncludePdf: (value: boolean) => void
+    includeSourceFiles: boolean
+    setIncludeSourceFiles: (value: boolean) => void
+  }
+}) {
+  const { run, startError, starting, start } = useStartedRun<ExportRunSummary>(caseId, request, storageKey)
+  const busy = starting || run?.status === "queued" || run?.status === "running"
+  const refusal = startError?.message ?? (run?.status === "failed" || run?.status === "stopped" ? run.error : undefined)
+  const finished = run?.status === "completed" && run.summary ? run.summary : null
+  // A PDF over one report's size is not a dead end: the numbered parts below replace the refusal.
+  const numberedPdf = includePdf && isPdfSizeRefusal(refusal)
+  const result = (
+    <>
+      {startError ? (
+        <p role="alert">{startError.message}</p>
+      ) : run && !finished && !numberedPdf ? (
+        <WholeCaseProgress
+          run={run}
+          error={null}
+          noun="ledger export"
+          lead="The export is being prepared in the background. You can leave this page; it carries on and the file is offered here."
+          againLabel="Prepare it again"
+          onAgain={() => void start(true)}
+        />
+      ) : null}
+      {finished && run && (
+        <div className="space-y-1 text-sm" role="status">
+          <p>
+            Ready: {finished.rows.toLocaleString("en-US")} rows
+            {finished.audit_events
+              ? `, ${finished.audit_events.event_count.toLocaleString("en-US")} audit events`
+              : ""}
+            , read at {finished.generated_at.slice(0, 16).replace("T", " ")} UTC.
+          </p>
+          <a className="underline" href={wholeCaseFileUrl(caseId, run.id, finished.filename)} download>
+            Download the export ({formatBytes(finished.archive_bytes)})
+          </a>{" "}
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void start(true)}>
+            Read the rows again
+          </Button>
+          <ExpertPacketResult packet={readExpertPacket(JSON.stringify(finished.packet))} />
+        </div>
+      )}
+    </>
+  )
   const markingControl = (
     <label className="flex items-center gap-2 text-sm">
       {tableView ? "Table export marking" : "Export marking"}
@@ -220,10 +209,8 @@ function ScopedExport({
           <p className="text-sm">
             {EXPERT_PACKET_NOTE}
           </p>
-          <Button disabled={busy} onClick={() => void download()}>
-            {busy
-              ? "Preparing table export… large accounts take minutes"
-              : "Download this table view"}
+          <Button disabled={busy} onClick={() => void start()}>
+            {busy ? "Preparing table export…" : "Download this table view"}
           </Button>
           <label className="flex items-center gap-2 text-sm">
             <input
@@ -256,8 +243,7 @@ function ScopedExport({
             including pages outside the table filters.
           </p>
         )}
-        {message && <p role="status">{message}</p>}
-        <ExpertPacketResult packet={packet} />
+        {result}
       </section>
     )
   return (
@@ -312,12 +298,8 @@ function ScopedExport({
       <p className="text-sm">
         {EXPERT_PACKET_NOTE}
       </p>
-      <Button disabled={busy} onClick={() => void download()}>
-        {busy
-          ? "Preparing ledger export… large accounts take minutes"
-          : tableView
-            ? "Download this table view"
-            : "Download ledger snapshot"}
+      <Button disabled={busy} onClick={() => void start()}>
+        {busy ? "Preparing ledger export…" : "Download ledger snapshot"}
       </Button>
       {tableView && (
         <p>
@@ -337,9 +319,8 @@ function ScopedExport({
         selected above; otherwise source hashes are recorded values rather than
         fresh file checks.
       </p>
-      {message && !(includePdf && isPdfSizeRefusal(message)) && <p role="status">{message}</p>}
-      <ExpertPacketResult packet={packet} />
-      {includePdf && isPdfSizeRefusal(message) && (
+      {result}
+      {numberedPdf && (
         <WholeCasePdf caseId={caseId} params={params} marking={marking} />
       )}
     </section>

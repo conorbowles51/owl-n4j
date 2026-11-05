@@ -2,6 +2,7 @@
 import hashlib
 import io
 import json
+import re
 import os
 import tempfile
 import unittest
@@ -359,10 +360,33 @@ class CapturedRecordsTests(unittest.TestCase):
         self.assertNotIn('private', json.dumps(processing))
 
     def test_the_layout_comes_from_the_saved_reading(self):
-        reading = SimpleNamespace(metadata_=dict(statement_import_statement_id='s', statement_import_original=dict(
-            statement_choices=[dict(id='s', layout_id='capital-one-card')])))
-        self.assertEqual(expert_packet._reader(reading), dict(layout_id='capital-one-card'))
-        self.assertEqual(expert_packet._reader(SimpleNamespace(metadata_={})), dict(layout_id=None))
+        self.assertEqual(expert_packet._reader('s', [dict(id='s', layout_id='capital-one-card')]), dict(layout_id='capital-one-card'))
+        self.assertEqual(expert_packet._reader(None, None), dict(layout_id=None))
+
+    def test_the_layout_is_read_without_loading_each_whole_saved_reading(self):
+        """OPDMD62's 991 saved readings are gigabytes once parsed: the export spent 40 minutes on this one lookup."""
+        from sqlalchemy import event
+        from services.financial.pdf_candidates import _digest
+        self.doc.metadata_ = {**self.doc.metadata_, 'statement_import_statement_id': 's', 'statement_import_original': dict(
+            statement_choices=[dict(id='s', layout_id='capital-one-card')], rows=['a saved reading']),
+            'statement_import_request': dict(confirmed=True), 'statement_import_request_sha256': _digest(dict(confirmed=True))}
+        self.f.db.commit()
+        document = json.loads(capture_ledger_snapshot(self.f.db, case_id=self.f.case.id).content)
+        document = _capture_history(self.f.db, document, case_id=self.f.case.id)
+        document['processing_provenance'] = capture_processing_provenance(self.f.db, case_id=self.f.case.id,
+                                                                          readings=document['ledger']['readings'])
+        statements = []
+        def seen(connection, cursor, statement, parameters, context, many):
+            statements.append(statement)
+        bind = self.f.db.get_bind()
+        event.listen(bind, 'before_cursor_execute', seen)
+        try:
+            processing = capture_packet_records(self.f.db, document, case_id=self.f.case.id)['processing_provenance']
+        finally:
+            event.remove(bind, 'before_cursor_execute', seen)
+        self.assertEqual([item['layout_id'] for item in processing['readers']], ['capital-one-card'])
+        self.assertTrue(any('financial_source_documents' in text for text in statements))
+        self.assertEqual([text for text in statements if 'financial_source_documents.metadata AS' in text], [])
 
     def test_the_default_capture_has_no_packet_records_so_a_trace_fingerprint_survives_audit_writes(self):
         """Tracing compares this fingerprint between two reads; the audit head moves with any write in the case."""

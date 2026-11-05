@@ -7,10 +7,17 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 
-def record_prepared_export(engine, *, case_id, kind, content, scope, actor):
+def record_prepared_export(engine, *, case_id, kind, content=None, scope, actor, stored=None):
+    """``stored``: (sha256, byte count) of a finished run's file, which is never read whole into memory to record it."""
     # Call only after case authorization and successful archive construction.
     case_id=UUID(str(case_id))
-    if kind not in ('ledger_exports','trace_support_exports') or not isinstance(content,bytes) or not content:
+    if stored is not None:
+        digest,size=stored
+    elif isinstance(content,bytes) and content:
+        digest,size=hashlib.sha256(content).hexdigest(),len(content)
+    else:
+        raise ValueError('Invalid prepared export.')
+    if kind not in ('ledger_exports','trace_support_exports') or not isinstance(digest,str) or re.fullmatch(r'[a-f0-9]{64}',digest) is None or type(size) is not int or size<1:
         raise ValueError('Invalid prepared export.')
     if not isinstance(scope,dict) or len(json.dumps(scope,allow_nan=False).encode())>65536:
         raise ValueError('Invalid prepared export scope.')
@@ -23,7 +30,7 @@ def record_prepared_export(engine, *, case_id, kind, content, scope, actor):
     body=dict(capture_policy='20260910_audit_source_exports',source_table=kind,
         source_id=identity,operation='EXPORT_PREPARED',actor_basis='authorized_request',
         actor={'user_id':actor_id,'name':actor['name'],'email':actor['email']},reason=None,before=None,
-        after=dict(artifact_sha256=hashlib.sha256(content).hexdigest(),byte_count=len(content),scope=scope,
+        after=dict(artifact_sha256=digest,byte_count=size,scope=scope,
             delivery_status='prepared_not_delivery_confirmed'))
     # Separate transaction: never commit other pending state in the request's DB
     # session. The captured archive necessarily predates this preparation event.

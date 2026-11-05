@@ -2,13 +2,28 @@
 import hashlib
 import io
 import json
+import os
+import re
 from pathlib import PurePosixPath
 from zipfile import ZipFile, BadZipFile
 
-from services.financial.ledger_snapshot import MAX_EXPORT_BYTES, MAX_LEDGER_SNAPSHOT_BYTES, MAX_LEDGER_ARCHIVE_BYTES
+from services.financial.audit_chain import verify_financial_audit_chain
+from services.financial.audit_members import MAX_AUDIT_MEMBER_BYTES, iter_member_entries, verify_audit_members
+from services.financial.ledger_snapshot import (MAX_EXPORT_BYTES, MAX_LEDGER_SNAPSHOT_BYTES, MAX_LEDGER_ARCHIVE_BYTES,
+    MAX_REPORT_BYTES, MAX_RUN_ARCHIVE_HELD_BYTES)
 from services.financial.ledger_summary import LedgerSummaryError
 
 MAX_ARCHIVE_BYTES = MAX_LEDGER_ARCHIVE_BYTES
+# Audit event members are read one line at a time, so they do not count against the bytes held for a comparison.
+MAX_ARCHIVE_MEMBERS = 4096
+# A comparison runs in a request of the live service, so it holds both documents and re-hashes both chains there.
+MAX_COMPARE_HELD_BYTES = 256 * 1024 * 1024
+MAX_COMPARE_AUDIT_BYTES = 256 * 1024 * 1024
+AUDIT_MEMBER = re.compile(r'audit-events-part-[0-9]{5}\.jsonl\.gz')
+
+
+class TooLargeToCheck(LedgerSummaryError):
+    """Stated to the user as it is; the archive itself is not in question."""
 
 
 def _unique(pairs):
@@ -39,12 +54,26 @@ def read_verified_ledger_archive(content):
     """
     if not isinstance(content, bytes) or len(content) > MAX_ARCHIVE_BYTES:
         raise LedgerSummaryError('Ledger archive exceeds 128 MiB or is not bytes.')
+    return read_verified_ledger_archive_file(io.BytesIO(content), max_held_bytes=MAX_ARCHIVE_BYTES,
+                                             max_snapshot_bytes=MAX_LEDGER_SNAPSHOT_BYTES)
+
+
+def read_verified_ledger_archive_file(source, *, max_held_bytes=MAX_RUN_ARCHIVE_HELD_BYTES, max_snapshot_bytes=MAX_RUN_ARCHIVE_HELD_BYTES,
+                                      max_audit_payload_bytes=None, audit_progress=None):
+    """The same checks over a path or seekable file, for an archive too large to hold: its audit event members are
+    read one at a time, and every other member stays within ``max_held_bytes`` together."""
     expert_support_content = None
+    audit_verification = None
     try:
-        with ZipFile(io.BytesIO(content)) as archive:
+        with ZipFile(source) as archive:
             infos = archive.infolist()
             names = {entry.filename for entry in infos}
-            if len(infos) != len(names) or len(infos) > 128 or sum(entry.file_size for entry in infos) > MAX_ARCHIVE_BYTES:
+            audit_sizes = sum(entry.file_size for entry in infos if AUDIT_MEMBER.fullmatch(entry.filename))
+            held_size = sum(entry.file_size for entry in infos) - audit_sizes
+            if held_size > max_held_bytes:
+                raise TooLargeToCheck('This export holds %d MB of ledger records, more than can be opened on this page (%d MB). '
+                                      'Nothing was compared.' % (held_size // 1024 ** 2, max_held_bytes // 1024 ** 2))
+            if len(infos) != len(names) or len(infos) > MAX_ARCHIVE_MEMBERS:
                 raise ValueError('Archive member count, duplicates or uncompressed size exceeds the limit.')
             for name in names:
                 if PurePosixPath(name).is_absolute() or '..' in PurePosixPath(name).parts or '\\' in name:
@@ -60,7 +89,7 @@ def read_verified_ledger_archive(content):
                 return data
 
             manifest = _json(read('manifest.json'))
-            raw = read('ledger-snapshot.json', MAX_LEDGER_SNAPSHOT_BYTES)
+            raw = read('ledger-snapshot.json', max_snapshot_bytes)
             document = _json(raw)
             if (manifest['schema'] != 'loupe.financial.ledger_export_manifest/1'
                     or manifest['digest_covers'] != 'ledger_snapshot_json_utf8'
@@ -72,10 +101,26 @@ def read_verified_ledger_archive(content):
                     or document['schema'] != manifest['snapshot_schema']):
                 raise ValueError('Captured snapshot or case binding differs from manifest.')
             expected = {'manifest.json', 'ledger-snapshot.json'}
-            entries = [(manifest['report'], 'filename', MAX_EXPORT_BYTES)]
+            listing = manifest.get('audit_events')
+            chain = (document.get('case_financial_history') or {}).get('audit_chain')
+            if (listing is not None) != (chain is not None and 'event_members' in chain):
+                raise ValueError('Audit events and their listing differ.')
+            if listing is not None:
+                listed = [part['filename'] for part in listing['parts']]
+                if chain['event_members'] != listed or len(set(listed)) != len(listed):
+                    raise ValueError('Audit member names differ between the snapshot and the manifest.')
+                if max_audit_payload_bytes is not None and listing['payload_bytes'] > max_audit_payload_bytes:
+                    raise TooLargeToCheck('This export holds %.1f GB of audit events, more than can be verified on this page (%.1f GB). '
+                                        'Nothing was compared.' % (listing['payload_bytes'] / 1e9, max_audit_payload_bytes / 1e9))
+                audit_verification = verify_audit_members(lambda name: read(name, MAX_AUDIT_MEMBER_BYTES), listing,
+                                                          case_id=document['ledger']['case_id'], progress=audit_progress)
+                if any(chain['verification'].get(key) != audit_verification[key] for key in ('case_id', 'event_count', 'head_sha256', 'status')):
+                    raise ValueError('Captured audit summary differs from its members.')
+                expected.update(listed)
+            entries = [(manifest['report'], 'filename', MAX_REPORT_BYTES)]
             for key in ('pdf_report', 'expert_support'):
                 if key in manifest:
-                    entries.append((manifest[key], 'filename', MAX_EXPORT_BYTES))
+                    entries.append((manifest[key], 'filename', MAX_REPORT_BYTES))
             entries.extend((item, 'archive_path', 64 * 1024 * 1024) for item in manifest.get('source_files', []))
             for entry, path_key, limit in entries:
                 name = entry[path_key]
@@ -98,10 +143,62 @@ def read_verified_ledger_archive(content):
                     expert_support_content = data
             if names != expected:
                 raise ValueError('Archive has unlisted or missing members.')
+    except TooLargeToCheck:
+        raise
+    except LedgerSummaryError as exc:
+        raise LedgerSummaryError('Ledger archive audit events do not verify: %s Comparison refused.' % exc) from exc
     except (BadZipFile, KeyError, TypeError, ValueError, UnicodeError, RecursionError, OSError, RuntimeError) as exc:
         raise LedgerSummaryError('Ledger archive is inconsistent or unsupported; comparison refused.') from exc
-    return dict(document=document, manifest=manifest, archive_sha256=hashlib.sha256(content).hexdigest(),
-                expert_support_content=expert_support_content)
+    return dict(document=document, manifest=manifest, archive_sha256=_file_sha256(source),
+                expert_support_content=expert_support_content, audit_verification=audit_verification)
+
+
+def _file_sha256(source):
+    digest = hashlib.sha256()
+    if isinstance(source, (str, os.PathLike)):
+        with open(source, 'rb') as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b''):
+                digest.update(block)
+        return digest.hexdigest()
+    source.seek(0)
+    for block in iter(lambda: source.read(1024 * 1024), b''):
+        digest.update(block)
+    return digest.hexdigest()
+
+
+def archive_audit_verification(saved):
+    """The verified chain of an archive read above, in either layout: events as members, or inside the snapshot of an
+    export made before they moved out. None when no wider history was selected."""
+    if saved['audit_verification'] is not None:
+        return saved['audit_verification']
+    document = saved['document']
+    chain = (document.get('case_financial_history') or {}).get('audit_chain')
+    if not chain:
+        return None
+    verification = verify_financial_audit_chain(chain['entries'], case_id=document['ledger']['case_id'])
+    if any(chain['verification'].get(key) != verification[key] for key in ('case_id', 'event_count', 'head_sha256', 'status')):
+        raise LedgerSummaryError('Captured ledger audit summary differs from its chain.')
+    return verification
+
+
+def archive_entry_hashes(source):
+    """Each captured event's hash in sequence order, from an archive already verified, in either layout."""
+    with ZipFile(source) as archive:
+        listing = _json(archive.read('manifest.json')).get('audit_events')
+        if listing is not None:
+            return [entry['entry_sha256'] for entry in iter_member_entries(archive.read, listing)]
+        chain = _json(archive.read('ledger-snapshot.json'))['case_financial_history']['audit_chain']
+        return [entry['entry_sha256'] for entry in chain['entries']]
+
+
+def _without_event_layout(document):
+    """Where an export keeps its audit events is packaging: the verified count and head are what it captured."""
+    chain = (document.get('case_financial_history') or {}).get('audit_chain')
+    if not chain:
+        return document
+    kept = {key: chain.get('verification', {}).get(key) for key in ('case_id', 'event_count', 'head_sha256', 'status')}
+    return {**document, 'case_financial_history': {**document['case_financial_history'], 'audit_chain': kept,
+                                                   'schema_version': 'case_review_history'}}
 
 
 def _index(records, key):
@@ -158,9 +255,17 @@ def _changes(before, after, key):
                 captured_order_changed=list(a) != list(b))
 
 
+def _read_for_comparison(source):
+    if isinstance(source, bytes):
+        return read_verified_ledger_archive(source)
+    return read_verified_ledger_archive_file(source, max_held_bytes=MAX_COMPARE_HELD_BYTES, max_snapshot_bytes=MAX_COMPARE_HELD_BYTES,
+                                             max_audit_payload_bytes=MAX_COMPARE_AUDIT_BYTES)
+
+
 def compare_ledger_exports(before, after, *, expected_case_id=None):
-    first, second = read_verified_ledger_archive(before), read_verified_ledger_archive(after)
-    a, b = first['document'], second['document']
+    first, second = _read_for_comparison(before), _read_for_comparison(after)
+    archive_audit_verification(first), archive_audit_verification(second)
+    a, b = _without_event_layout(first['document']), _without_event_layout(second['document'])
     if a['ledger']['case_id'] != b['ledger']['case_id']:
         raise LedgerSummaryError('Compare exports from the same case.')
     if expected_case_id is not None and a['ledger']['case_id'] != str(expected_case_id):

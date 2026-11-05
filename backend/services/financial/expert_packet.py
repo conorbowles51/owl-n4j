@@ -24,6 +24,7 @@ NO_MEASUREMENT = ('No independently reviewed measurement. Nobody independent has
     'own tests are not such a measurement.')
 VALIDATION_SETTING = 'FINANCIAL_EXTRACTION_VALIDATION_CORPUS'
 _BATCH = 5000
+_READER_BATCH = 100
 _LABELS = dict(custody_and_decisions='Custody and decisions', components='Component and toolchain manifest',
     validation='Measured validation', tracing='Selected tracing methods')
 
@@ -216,10 +217,12 @@ def _capture_component_records(session, document, *, case_id):
     for run in processing['runs']:
         run['components'] = (configs.get(run['id']) or {}).get('components')
     readers, prepared = [], []
-    for offset in range(0, len(document_ids), _BATCH):
-        for row in session.scalars(select(Source).where(Source.case_id == case_id,
-                Source.id.in_(document_ids[offset:offset + _BATCH]))):
-            readers.append(dict(source_document_id=str(row.id), **_reader(row)))
+    for offset in range(0, len(document_ids), _READER_BATCH):
+        # Only the two values the layout needs: the whole saved reading of a large case is gigabytes.
+        for key, statement, choices in session.execute(select(Source.id, Source.metadata_['statement_import_statement_id'],
+                Source.metadata_['statement_import_original']['statement_choices']).where(Source.case_id == case_id,
+                Source.id.in_(document_ids[offset:offset + _READER_BATCH]))):
+            readers.append(dict(source_document_id=str(key), **_reader(statement, choices)))
     for offset in range(0, len(file_ids), _BATCH):
         prepared.extend(dict(evidence_file_id=str(key), engine_job_id=str(job) if job else None,
             extracted_at=extracted.isoformat() if extracted else None, processing_manifest=manifest)
@@ -229,11 +232,9 @@ def _capture_component_records(session, document, *, case_id):
     processing['prepared_text'] = sorted(prepared, key=lambda item: item['evidence_file_id'])
 
 
-def _reader(document):
+def _reader(statement, choices):
     """The printed layout the saved reading was made with, as that reading recorded it."""
-    original = (document.metadata_ or {}).get('statement_import_original') or {}
-    statement = (document.metadata_ or {}).get('statement_import_statement_id')
-    choices = [item for item in original.get('statement_choices') or [] if isinstance(item, dict)]
+    choices = [item for item in choices or [] if isinstance(item, dict)]
     chosen = next((item for item in choices if item.get('id') == statement), choices[0] if len(choices) == 1 else None)
     return dict(layout_id=(chosen or {}).get('layout_id'))
 

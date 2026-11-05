@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from postgres.models.case import Case
 from services.financial.audit_chain import capture_financial_audit_chain
+from services.financial.export_comparison import archive_entry_hashes
 from services.financial.audit_timestamp import checkpoint, submit_financial_audit_timestamp, verify_financial_audit_timestamp_response
 from services.financial.ledger_snapshot import capture_ledger_export, ledger_export_archive
 
@@ -100,14 +101,13 @@ def anchor_financial_case_once(engine, *, case_id, output, tsa_url, ca_file, ope
             if captured['case_id']!=str(case_id): raise ValueError('Captured export belongs to a different case.')
             # Verify continuity again in the actual later export snapshot, which
             # may contain events appended after the initial read.
-            document=json.loads(export.snapshot.content)
-            captured_chain=document['case_financial_history']['audit_chain']
+            hashes=archive_entry_hashes(directory/'captured-ledger.zip')
             count=current['event_count']
-            if count>captured['event_count'] or (count>0 and captured_chain['entries'][count-1]['entry_sha256']!=current['head_sha256']):
+            if count>captured['event_count'] or (count>0 and hashes[count-1]!=current['head_sha256']):
                 raise ValueError('Captured export does not extend the preflight audit head.')
             if previous is not None:
                 count=previous['event_count']
-                if count>captured['event_count'] or (count>0 and captured_chain['entries'][count-1]['entry_sha256']!=previous['head_sha256']):
+                if count>captured['event_count'] or (count>0 and hashes[count-1]!=previous['head_sha256']):
                     raise ValueError('Captured export does not extend the previously timestamped head.')
             _save(pending,dict(attempt_id=attempt,case_id=str(case_id),status='submission_may_start'))
             submit_financial_audit_timestamp(directory/'captured-ledger.zip',directory/'timestamp',tsa_url=tsa_url,

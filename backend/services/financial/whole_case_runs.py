@@ -38,7 +38,7 @@ from services.financial.ledger_summary import LedgerSummaryError
 
 logger = logging.getLogger(__name__)
 
-KINDS = ('transfers', 'timeline', 'patterns', 'trace', 'pdf')
+KINDS = ('transfers', 'timeline', 'patterns', 'trace', 'pdf', 'export')
 PAGE_LIMIT = 200
 HEARTBEAT_SECONDS = 5
 STALE_HEARTBEAT_SECONDS = 180  # for a run whose child never recorded itself
@@ -49,8 +49,13 @@ MAX_WAITING = 6
 KEEP_SECONDS = 14 * 24 * 3600
 KEEP_BYTES = 4 * 1024 ** 3
 LOCK_NAME = 'host.lock'
+AUDIT_TABLE = 'financial_audit_events'
 # A PDF report takes hours on a large case; it waits only for another report, not a transfer comparison for it.
 PDF_LOCK_NAME = 'pdf.lock'
+# An export of a large case with its audit events takes hours too, and has its own line for the same reason.
+EXPORT_LOCK_NAME = 'export.lock'
+# No read stays open long on the live database: about 5 minutes per read at 40 s a member (load 40).
+PACK_MEMBERS_PER_READ = 8
 STATE = 'state.json'
 RESULT = 'result'
 _ID = re.compile(r'^[a-f0-9]{32}$')
@@ -133,8 +138,9 @@ def _current(engine, state, case_id):
     return now is not None and json.loads(json.dumps(now)) == state['fingerprint']
 
 
-def start_run(engine, *, kind, case_id, params):
-    """The run for these inputs: its stored answer if still current, one already under way, or a new one."""
+def start_run(engine, *, kind, case_id, params, fresh=False):
+    """The run for these inputs: its stored answer if still current, one already under way, or a new one.
+    ``fresh`` asks for a new reading even of unchanged rows; a run under way is still joined."""
     import fcntl
     if kind not in KINDS:
         raise WholeCaseRunError('Unknown whole-case analysis.')
@@ -149,7 +155,7 @@ def start_run(engine, *, kind, case_id, params):
             seen = view(state)
             if seen['status'] in ('queued', 'running'):
                 return seen
-            if seen['status'] == 'completed' and _current(engine, state, case_id):
+            if seen['status'] == 'completed' and not fresh and _current(engine, state, case_id):
                 return seen
             shutil.rmtree(directory, ignore_errors=True)
         waiting = 0
@@ -408,7 +414,7 @@ def _write_sections(directory, sections, run, step, steps):
     return counts, digest.hexdigest()
 
 
-def _capture(connection, case_id, params, kind):
+def _capture(connection, case_id, params, kind, run):
     from services.financial.ledger_snapshot import capture_ledger_export, capture_ledger_scope
     def day(name):
         from datetime import date
@@ -420,7 +426,46 @@ def _capture(connection, case_id, params, kind):
     if kind == 'pdf':
         return capture_ledger_export(connection, generated_by=params.get('generated_by'), privilege_marking=params.get('privilege_marking', 'unmarked'),
                                      size_limit=False, generated_at=_export_time(case_id, params), **scope)
+    if kind == 'export':
+        return _capture_export(connection, params, run, scope)
     return capture_ledger_scope(connection, **scope)
+
+
+def _capture_export(connection, params, run, scope):
+    """The ledger export in this run's one read; audit events are the closed members plus the events since."""
+    from services.financial.ledger_snapshot import capture_ledger_export
+    options = {}
+    if params.get('include_case_financial_history'):
+        options = dict(include_case_financial_history=True, audit_members=_audit_store(run.state['case_id']))
+    if params.get('include_source_files'):
+        from routers.evidence import _resolve_stored_path
+        options.update(include_source_files=True, resolve_path=_resolve_stored_path)
+    if params.get('table_view') is not None:
+        options['table_view'] = params['table_view']
+    return capture_ledger_export(connection, generated_by=params.get('generated_by'), privilege_marking=params.get('privilege_marking', 'unmarked'),
+                                 packet_records=True, size_limit=False, **options, **scope)
+
+
+def _audit_store(case_id):
+    from services.financial.audit_members import StoredAuditMembers
+    return StoredAuditMembers(root() / 'resume' / ('audit-' + case_id))
+
+
+def _pack_audit_events(engine, run, steps):
+    """Close audit members in reads of their own, before the export's read, so a restart continues from the last one."""
+    from sqlalchemy.orm import Session
+    from services.financial.audit_members import pack_audit_members
+    case_id = run.state['case_id']
+    members = _audit_store(case_id)
+    run.phase(1, steps, 'Checking and packing the audit events')
+    more = True
+    while more:
+        with engine.connect().execution_options(isolation_level='REPEATABLE READ') as connection:
+            with connection.begin():
+                connection.exec_driver_sql('SET TRANSACTION READ ONLY')
+                with Session(bind=connection, autoflush=False) as session:
+                    more = pack_audit_members(session, case_id=UUID(case_id), members=members, closes=PACK_MEMBERS_PER_READ,
+                        progress=lambda done, total: run.phase(1, steps, 'Checking and packing the audit events', done=done, total=total))
 
 
 def _pair_side(row):
@@ -580,11 +625,35 @@ def compute_pdf(capture, params, run):
     return summary, dict(files={'ledger-report-parts.zip': data})
 
 
+def compute_export(capture, params, run):
+    """The archive written to disk, and what the page says about it."""
+    import zipfile
+    from services.financial.ledger_snapshot import ledger_export_archive
+    path = Path(tempfile.mkdtemp(dir=run.directory, prefix='.export-')) / EXPORT_FILE
+    with zipfile.ZipFile(path, 'w', compression=zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
+        manifest = ledger_export_archive(capture, include_pdf=bool(params.get('include_pdf')), archive=archive)
+    digest, size = hashlib.sha256(), 0
+    with open(path, 'rb') as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b''):
+            digest.update(block)
+            size += len(block)
+    support, audit = manifest['expert_support'], manifest.get('audit_events')
+    summary = dict(case_id=str(params['case_id']), snapshot_sha256=capture.snapshot.sha256, snapshot_bytes=capture.snapshot.byte_count,
+                   ledger_scope_sha256=capture.ledger_scope_sha256, generated_at=manifest['generated_at'], rows=manifest['included_rows'] + manifest['excluded_rows'],
+                   archive_sha256=digest.hexdigest(), archive_bytes=size, filename=EXPORT_FILE,
+                   packet=dict(completeness=support['completeness'], parts=support['parts'], sentence=support['sentence'], byte_count=size),
+                   audit_events=audit and {key: audit[key] for key in ('event_count', 'head_sha256', 'status', 'payload_bytes')},
+                   audit_parts=len(audit['parts']) if audit else 0)
+    return summary, dict(paths={EXPORT_FILE: path})
+
+
 SOURCES_SHOWN = 50
-COMPUTE = dict(transfers=compute_transfers, timeline=compute_timeline, patterns=compute_patterns, trace=compute_trace, pdf=compute_pdf)
+EXPORT_FILE = 'ledger-export.zip'
+COMPUTE = dict(transfers=compute_transfers, timeline=compute_timeline, patterns=compute_patterns, trace=compute_trace, pdf=compute_pdf,
+               export=compute_export)
 COMPUTE_LABEL = dict(transfers='Comparing every payment by amount and date', timeline='Putting the payments in date order',
                      patterns='Screening the payments for patterns', trace='Following the selected transfers from the start point',
-                     pdf='Writing the PDF parts')
+                     pdf='Writing the PDF parts', export='Writing the report, the manifest and the archive')
 
 
 def _execute(run):
@@ -594,11 +663,14 @@ def _execute(run):
     from services.financial.version import code_version
     state = run.state
     case_id, params, kind = UUID(state['case_id']), state['params'], state['kind']
-    steps = 3
+    packs = kind == 'export' and params.get('include_case_financial_history')
+    steps = 4 if packs else 3
     started = time.time()
-    run.write(status='running', started_at=_now())
-    run.phase(1, steps, 'Reading the payments and their decisions')
+    run.write(status='running', started_at=_now(), steps=steps)
     engine = _get_engine()
+    if packs:
+        _pack_audit_events(engine, run, steps)
+    run.phase(steps - 2, steps, 'Reading the payments and their decisions')
     with engine.connect() as owner:
         owner = owner.execution_options(isolation_level='REPEATABLE READ')
         with owner.begin():
@@ -609,19 +681,24 @@ def _execute(run):
             recording = view_cache._Recording(owner=view_cache._dbapi(owner), snapshot=snapshot, connection=owner, view='whole-case-' + kind)
             token = view_cache._recording.set(recording)
             try:
-                capture = _capture(owner, case_id, params, kind)
-                run.phase(2, steps, COMPUTE_LABEL[kind])
+                capture = _capture(owner, case_id, params, kind, run)
+                run.phase(steps - 1, steps, COMPUTE_LABEL[kind])
                 summary, sections = COMPUTE[kind](capture, {**params, 'case_id': state['case_id'], 'run_id': state['id']}, run)
             finally:
                 recording.paused = True
                 view_cache._recording.reset(token)
-            tables = sorted(recording.tables)
+            # Every action in a case adds an audit event, and reading an export records one: an export keeps saying which
+            # events it holds and when it was made, and the same inputs are read again by asking for a fresh one.
+            tables = sorted(recording.tables - ({AUDIT_TABLE} if kind == 'export' else set()))
             fingerprint = view_cache.fingerprint(owner, tuple(tables), case_id)
     work = tempfile.mkdtemp(dir=run.directory, prefix='.work-')
     files = sections.pop('files', {})
-    counts, digest = _write_sections(Path(work), sections, run, 3, steps)
+    moved = sections.pop('paths', {})
+    counts, digest = _write_sections(Path(work), sections, run, steps, steps)
     for name, content in files.items():
         (Path(work) / name).write_bytes(content)
+    for name, path in moved.items():
+        os.replace(path, Path(work) / name)
     with open(Path(work) / 'summary.json', 'w') as out:
         json.dump(summary, out, sort_keys=True, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
     # Published last, in one rename: no reader ever sees part of a result.
@@ -655,6 +732,11 @@ def _prune(base, keep):
             total -= size
 
 
+RESTARTED = {False: 'The server restarted while this ran. Nothing partial was kept. Run it again.',
+             True: 'The server restarted while this ran. Nothing partial was offered. Run it again: audit events '
+                   'already checked and packed are kept, so it continues from them.'}
+
+
 def main(identifier, parent):
     import fcntl
     from services.financial.view_warmup import _lower_priority
@@ -677,12 +759,12 @@ def main(identifier, parent):
     def beat():
         while not finished.wait(HEARTBEAT_SECONDS):
             if os.getppid() != parent:
-                stop('The server restarted while this ran. Nothing partial was kept. Run it again.')
+                stop(RESTARTED[state['kind'] == 'export'])
             run.write()
     threading.Thread(target=beat, name='whole-case-heartbeat', daemon=True).start()
-    signal.signal(signal.SIGTERM, lambda *_: stop('The server restarted while this ran. Nothing partial was kept. Run it again.'))
+    signal.signal(signal.SIGTERM, lambda *_: stop(RESTARTED[state['kind'] == 'export']))
     try:
-        with open(base / (PDF_LOCK_NAME if state['kind'] == 'pdf' else LOCK_NAME), 'a') as lock:
+        with open(base / dict(pdf=PDF_LOCK_NAME, export=EXPORT_LOCK_NAME).get(state['kind'], LOCK_NAME), 'a') as lock:
             try:
                 fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:

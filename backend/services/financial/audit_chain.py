@@ -44,26 +44,27 @@ AUDIT_COVERAGE = {
 }
 
 
-def verify_financial_audit_chain(entries, *, case_id, expected_head_sha256=None):
-    """A supplied head detects tail removal only if retained independently beforehand."""
-    case_id = str(UUID(str(case_id)))
-    if not isinstance(entries, list) or len(entries) > MAX_AUDIT_EVENTS:
-        raise LedgerSummaryError('Financial audit history exceeds the event limit.')
-    previous = '0' * 64
-    total = 0
-    for sequence, entry in enumerate(entries, 1):
+class AuditChainVerifier:
+    """One event at a time, in sequence order: the same checks for a list in hand and a chain read from a stream."""
+
+    def __init__(self, case_id):
+        self.case_id = str(UUID(str(case_id)))
+        self.previous = '0' * 64
+        self.count = 0
+        self.bytes = 0
+
+    def add(self, entry):
+        sequence = self.count + 1
         if not isinstance(entry, dict) or set(entry) != {'sequence', 'previous_sha256', 'entry_sha256', 'payload_text'}:
             raise LedgerSummaryError('Malformed financial audit event.')
         payload = entry['payload_text']
-        if type(entry['sequence']) is not int or entry['sequence'] != sequence or entry['previous_sha256'] != previous:
+        if type(entry['sequence']) is not int or entry['sequence'] != sequence or entry['previous_sha256'] != self.previous:
             raise LedgerSummaryError('Financial audit history has a sequence or chain gap.')
         if not isinstance(payload, str) or not isinstance(entry['entry_sha256'], str) or not _HASH.fullmatch(entry['entry_sha256']):
             raise LedgerSummaryError('Malformed financial audit hash or payload.')
         content = payload.encode('utf-8')
-        total += len(content)
-        if total > MAX_AUDIT_BYTES:
-            raise LedgerSummaryError('Financial audit history exceeds the byte limit; no partial history was produced.')
-        digest = hashlib.sha256(bytes.fromhex(previous) + content).hexdigest()
+        self.bytes += len(content)
+        digest = hashlib.sha256(bytes.fromhex(self.previous) + content).hexdigest()
         if digest != entry['entry_sha256']:
             raise LedgerSummaryError('Financial audit payload does not match its recorded hash.')
         try:
@@ -71,19 +72,34 @@ def verify_financial_audit_chain(entries, *, case_id, expected_head_sha256=None)
         except (ValueError, TypeError) as error:
             raise LedgerSummaryError('Financial audit payload is not unambiguous JSON.') from error
         if (not isinstance(value, dict) or value.get('schema_version') != 'loupe.financial.audit_event/1'
-            or value.get('case_id') != case_id or type(value.get('sequence')) is not int
+            or value.get('case_id') != self.case_id or type(value.get('sequence')) is not int
             or value['sequence'] != sequence
             or not isinstance(value.get('source_table'), str)
             or value.get('operation') not in AUDIT_COVERAGE.get(value.get('source_table'), [])):
             raise LedgerSummaryError('Financial audit payload scope or sequence is inconsistent.')
-        previous = digest
-    if expected_head_sha256 is not None and (not isinstance(expected_head_sha256, str)
-        or not _HASH.fullmatch(expected_head_sha256) or expected_head_sha256 != previous):
-        raise LedgerSummaryError('Financial audit head differs from the supplied checkpoint.')
-    return dict(schema_version='loupe.financial.audit_verification/1', case_id=case_id,
-        event_count=len(entries), head_sha256=previous,
-        status='verified_recorded_chain' if entries else 'no_recorded_events',
-        checkpoint_status='matches_supplied_head' if expected_head_sha256 is not None else 'not_supplied')
+        self.previous = digest
+        self.count = sequence
+
+    def result(self, *, expected_head_sha256=None):
+        if expected_head_sha256 is not None and (not isinstance(expected_head_sha256, str)
+            or not _HASH.fullmatch(expected_head_sha256) or expected_head_sha256 != self.previous):
+            raise LedgerSummaryError('Financial audit head differs from the supplied checkpoint.')
+        return dict(schema_version='loupe.financial.audit_verification/1', case_id=self.case_id,
+            event_count=self.count, head_sha256=self.previous,
+            status='verified_recorded_chain' if self.count else 'no_recorded_events',
+            checkpoint_status='matches_supplied_head' if expected_head_sha256 is not None else 'not_supplied')
+
+
+def verify_financial_audit_chain(entries, *, case_id, expected_head_sha256=None):
+    """A supplied head detects tail removal only if retained independently beforehand."""
+    verifier = AuditChainVerifier(case_id)
+    if not isinstance(entries, list) or len(entries) > MAX_AUDIT_EVENTS:
+        raise LedgerSummaryError('Financial audit history exceeds the event limit.')
+    for entry in entries:
+        verifier.add(entry)
+        if verifier.bytes > MAX_AUDIT_BYTES:
+            raise LedgerSummaryError('Financial audit history exceeds the byte limit; no partial history was produced.')
+    return verifier.result(expected_head_sha256=expected_head_sha256)
 
 
 def lock_case_audit_chain(session, case_id):
@@ -114,7 +130,12 @@ def capture_financial_audit_chain(session, *, case_id):
             entry_sha256=row.entry_sha256, payload_text=row.payload_text))
     verification = verify_financial_audit_chain(entries, case_id=case_id)
     return dict(schema_version='loupe.financial.audit_chain/1', case_id=str(case_id),
-        verification=verification, entries=entries, coverage=AUDIT_COVERAGE,
+        verification=verification, entries=entries, **audit_chain_terms())
+
+
+def audit_chain_terms():
+    """What a captured chain covers, whichever layout carries its events."""
+    return dict(coverage=AUDIT_COVERAGE,
         installed_by_migration='20260910_financial_audit_chain',
         coverage_migrations=['20260910_financial_audit_chain','20260910_audit_state_changes','20260910_audit_source_exports','20260910_audit_graph_jobs','20260910_custody','20261026_audio_integrity'],
         coverage_conditions={'jobs':'Canonical UUID case IDs only; progress/updated_at-only updates are omitted. Job/recovery records do not prove an atomic cross-database graph commit.'},

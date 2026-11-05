@@ -81,6 +81,9 @@ MAX_EXPORT_BYTES = 16 * 1024 * 1024
 # smaller report/scenario allowance. Keep those allowances independent.
 MAX_LEDGER_SNAPSHOT_BYTES = 64 * 1024 * 1024
 MAX_LEDGER_ARCHIVE_BYTES = 128 * 1024 * 1024
+# One member of a stored background export, and what its reader holds in memory; see LX-EXPORTRUN-STATUS for the sizes.
+MAX_REPORT_BYTES = MAX_EXPORT_BYTES
+MAX_RUN_ARCHIVE_HELD_BYTES = 1024 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -90,6 +93,8 @@ class LedgerExport:
     source_files: tuple = ()
     source_files_requested: bool = False
     ledger_scope_sha256: str | None = None
+    # With the wider case history: where the audit event members are (see audit_members).
+    audit_members: object = None
 
 
 @dataclass(frozen=True)
@@ -256,13 +261,14 @@ def capture_ledger_scope(engine, *, case_id, account_id=None, start_date=None, e
     return LedgerScope(document=dict(ledger=ledger, decisions=decisions, export_ready=True), sha256=sha256)
 
 
-def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None, table_view=None, generated_by=None, privilege_marking="unmarked", include_case_financial_history=False, account_ids=None, account_holders=None, packet_records=False, size_limit=True):
+def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, end_date=None, generated_at=None, include_source_files=False, resolve_path=None, table_view=None, generated_by=None, privilege_marking="unmarked", include_case_financial_history=False, account_ids=None, account_holders=None, packet_records=False, size_limit=True, audit_members=None, audit_progress=None):
     """Own a fresh PostgreSQL repeatable-read read-only transaction for both reads.
 
     ``packet_records`` adds the expert packet's records for a download. Tracing and other callers compare this
     capture's fingerprint between two reads, and the case audit head moves with any write in the case, so those
     records stay out of the default capture. ``size_limit``: the 64 MiB limit of a download built in a request; a
-    stored background report in numbered parts has no such limit."""
+    stored background report in numbered parts has no such limit. ``audit_members`` takes the wider history's audit
+    events as members; by default they are held in memory, up to one request's archive limit."""
     from datetime import datetime, timezone
     from sqlalchemy.engine import Engine
     from sqlalchemy.orm import Session
@@ -278,6 +284,10 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
     if generated_at.tzinfo is None or generated_at.utcoffset() is None:
         raise LedgerSummaryError('Export generation time must carry a timezone.')
     scope_digest=LedgerScopeDigest()
+    audit_listing=None
+    if include_case_financial_history and audit_members is None:
+        from services.financial.audit_members import HeldAuditMembers
+        audit_members=HeldAuditMembers(MAX_LEDGER_ARCHIVE_BYTES)
     with _consistent_connection(engine) as connection:
         with connection.begin() if isinstance(engine, Engine) else nullcontext():
             if isinstance(engine, Engine):
@@ -292,7 +302,7 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
                 document['case_title'] = case.title if case is not None else None
                 if include_case_financial_history:
                     from services.financial.case_financial_history import capture_case_financial_history
-                    document['case_financial_history'] = capture_case_financial_history(session, case_id=case_id)
+                    document['case_financial_history'], audit_listing = capture_case_financial_history(session, case_id=case_id, audit_members=audit_members, audit_progress=audit_progress)
                 if generated_by is not None or privilege_marking != 'unmarked':
                     document['export_context']=dict(generated_by=generated_by,generated_at=generated_at.astimezone(timezone.utc).isoformat(),privilege_marking=privilege_marking,marking_basis='Selected by the exporting user; not a legal privilege determination.')
                 from services.financial.processing_provenance import capture_processing_provenance
@@ -339,8 +349,22 @@ def capture_ledger_export(engine, *, case_id, account_id=None, start_date=None, 
         pdf_finalization_count=len(document['pdf_review_history']['finalizations']),
         decision_count=len(document['decisions']),included_rows=document['ledger']['included_rows'],
         excluded_rows=document['ledger']['excluded_rows'])
-    return LedgerExport(snapshot,json.dumps(manifest,sort_keys=True,separators=(',',':')), source_files, include_source_files, ledger_scope_sha256)
+    if audit_listing is not None:
+        manifest['audit_events']=audit_listing
+    return LedgerExport(snapshot,json.dumps(manifest,sort_keys=True,separators=(',',':')), source_files, include_source_files, ledger_scope_sha256, audit_members if include_case_financial_history else None)
 
+
+
+def _audit_member_names(manifest):
+    return [part['filename'] for part in (manifest.get('audit_events') or {}).get('parts', [])]
+
+
+def _stored_member(name):
+    """Audit members are gzip already, so the archive stores their bytes as they are and their digest holds."""
+    import zipfile
+    info=zipfile.ZipInfo(name,date_time=(1980,1,1,0,0,0))
+    info.compress_type=zipfile.ZIP_STORED
+    return info
 
 
 def payment_number(row) -> str:
@@ -349,8 +373,11 @@ def payment_number(row) -> str:
     return str(value) if value is not None else ''
 
 
-def ledger_export_archive(export, *, include_pdf=False):
-    """Package canonical bytes without reserializing the captured content."""
+def ledger_export_archive(export, *, include_pdf=False, archive=None):
+    """Package canonical bytes without reserializing the captured content.
+
+    Bytes, inside the limits of one request. With ``archive``, an open ZipFile: everything is written there, each
+    member within its own limit and at most one audit member in memory, and the manifest is returned."""
     import io
     import zipfile
     report = render_ledger_report(export.snapshot)
@@ -381,7 +408,7 @@ def ledger_export_archive(export, *, include_pdf=False):
         byte_count=len(support_bytes),derived_from_sha256=export.snapshot.sha256,completeness=packet['completeness'],
         parts=packet['parts'],sentence=packet['sentence'])
     snapshot_bytes = export.snapshot.content.encode('utf-8')
-    if len(snapshot_bytes) > MAX_LEDGER_SNAPSHOT_BYTES:
+    if archive is None and len(snapshot_bytes) > MAX_LEDGER_SNAPSHOT_BYTES:
         raise LedgerSummaryError('The complete ledger record exceeds 64 MiB. Choose one account or a shorter date range to export. No partial export was produced.')
     members = [('ledger-snapshot.json', snapshot_bytes),
         ('manifest.json', json.dumps(manifest, sort_keys=True, separators=(',', ':')).encode('utf-8')),
@@ -389,11 +416,24 @@ def ledger_export_archive(export, *, include_pdf=False):
     if pdf is not None:
         members.append(('ledger-report.pdf', pdf))
     members.extend((item['archive_path'], item['content']) for item in export.source_files)
+    if archive is not None:
+        for name, content in members:
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, content)
+        for name in _audit_member_names(manifest):
+            archive.writestr(_stored_member(name), export.audit_members.read(name))
+        return manifest
+    members.extend((name, export.audit_members.read(name)) for name in _audit_member_names(manifest))
     if sum(len(content) for _, content in members) > MAX_LEDGER_ARCHIVE_BYTES:
         raise LedgerSummaryError('The export and its source files exceed 128 MiB. Choose one account or a shorter date range to export. No partial export was produced.')
     stream=io.BytesIO()
+    audit_names=set(_audit_member_names(manifest))
     with zipfile.ZipFile(stream,'w',compression=zipfile.ZIP_DEFLATED) as archive:
         for name,content in members:
+            if name in audit_names:
+                archive.writestr(_stored_member(name),content)
+                continue
             info=zipfile.ZipInfo(name,date_time=(1980,1,1,0,0,0))
             info.compress_type=zipfile.ZIP_DEFLATED
             archive.writestr(info,content)
@@ -825,6 +865,7 @@ def render_ledger_report(snapshot):
             parts += ['<h3>Recorded financial audit chain</h3>',
                 '<p>Recorded events: ' + text(checked['event_count']) + '. Verification: ' + text('Verified recorded chain' if checked['status'] == 'verified_recorded_chain' else 'No events recorded since audit installation') + '.</p>',
                 '<p>Chain head SHA-256: <code>' + text(checked['head_sha256']) + '</code>.</p>',
+                *(['<p>Every event is in this archive, in ' + text(len(chain['event_members'])) + ' audit-events-part files listed with their digests in manifest.json.</p>'] if 'event_members' in chain else []),
                 '<p>' + text(chain['limitation']) + '</p>']
 
     selected = document.get('selected_tracing')

@@ -1,277 +1,241 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { it, expect, vi, afterEach } from "vitest"
 import { LedgerExportButton } from "./LedgerExportButton"
+
 afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   localStorage.clear()
 })
-function mount(
-  change: Record<string, string> = {},
-  tableView?: import("../lib/ledger-table-view").LedgerTableView
-) {
-  const headers = {
-    "content-type": "application/zip",
-    "X-Loupe-Case-Review-History": "false",
-    "X-Loupe-Privilege-Marking": "unmarked",
-    "X-Loupe-Case-Id": "case-a",
-    "X-Loupe-Account-Id": "account-a",
-    "X-Loupe-Start-Date": "2026-01-01",
-    "X-Loupe-End-Date": "2026-01-31",
-    ...change,
-  }
-  const fetch = vi
-    .spyOn(globalThis, "fetch")
-    .mockResolvedValue(new Response("zip-bytes", { headers }))
-  const makeUrl = vi.fn(() => "blob:export")
-  vi.stubGlobal(
-    "URL",
-    class extends URL {
-      static createObjectURL = makeUrl
-      static revokeObjectURL = vi.fn()
-    }
-  )
-  const click = vi
-    .spyOn(HTMLAnchorElement.prototype, "click")
-    .mockImplementation(() => {})
-  render(
-    <LedgerExportButton
-      caseId="case-a"
-      tableView={tableView}
-      params={{
-        accountId: "account-a",
-        startDate: "2026-01-01",
-        endDate: "2026-01-31",
-      }}
-    />
-  )
-  return { fetch, makeUrl, click }
+
+const packet = {
+  completeness: "incomplete_expert_packet",
+  byte_count: 2097152,
+  sentence: "This export is not a complete expert packet. Complete: Custody and decisions. Incomplete: Measured validation.",
+  parts: [
+    { label: "Custody and decisions", holds: true },
+    { label: "Measured validation", holds: false },
+  ],
 }
-it("downloads binary without parsing and sends authenticated applied scope", async () => {
-  localStorage.setItem("loupeSession", "fixture-token")
-  const { fetch, makeUrl, click } = mount()
-  fireEvent.click(
-    screen.getByRole("button", { name: "Download ledger snapshot" })
-  )
-  expect(await screen.findByText(/Download started/)).toBeInTheDocument()
-  expect(String(fetch.mock.calls[0][0])).toContain(
-    "account_id=account-a&start_date=2026-01-01&end_date=2026-01-31"
-  )
-  expect(fetch.mock.calls[0][1]?.credentials).toBe("include")
-  expect(makeUrl).toHaveBeenCalledTimes(1)
-  expect(click).toHaveBeenCalledTimes(1)
-})
-it("explicitly includes wider review history and checks the returned scope", async () => {
-  const { fetch, click } = mount({ "X-Loupe-Case-Review-History": "true" })
-  fireEvent.click(
-    screen.getByRole("checkbox", {
-      name: /Include wider case financial review history/,
-    })
-  )
-  fireEvent.click(
-    screen.getByRole("button", { name: "Download ledger snapshot" })
-  )
-  await waitFor(() => expect(click).toHaveBeenCalledTimes(1))
-  expect(String(fetch.mock.calls[0][0])).toContain(
-    "include_case_financial_history=true"
-  )
-})
-it.each<Record<string, string>>([
-  { "X-Loupe-Case-Id": "other" },
-  { "X-Loupe-Account-Id": "other" },
-  { "X-Loupe-Start-Date": "" },
-  { "content-type": "text/html" },
-])("refuses mismatched binary response %j", async (change) => {
-  const { makeUrl } = mount(change)
-  fireEvent.click(
-    screen.getByRole("button", { name: "Download ledger snapshot" })
-  )
-  expect(
-    await screen.findByText(/different filters or in an unexpected format/)
-  ).toBeInTheDocument()
-  expect(makeUrl).not.toHaveBeenCalled()
-})
-it("aborts an unfinished download when scope is unmounted", async () => {
-  let signal: AbortSignal | undefined
-  vi.spyOn(globalThis, "fetch").mockImplementation((_url, options) => {
-    signal = options?.signal as AbortSignal
-    return new Promise(() => {})
+const summary = {
+  archive_bytes: 2097152,
+  snapshot_bytes: 5000,
+  rows: 10861,
+  generated_at: "2026-11-05T10:15:00+00:00",
+  filename: "ledger-export.zip",
+  packet,
+  audit_events: { event_count: 262753, head_sha256: "a".repeat(64), status: "verified_recorded_chain" },
+  audit_parts: 90,
+}
+const running = {
+  id: "a".repeat(32),
+  kind: "export",
+  status: "running",
+  phase: "Checking and packing the audit events",
+  step: 1,
+  steps: 4,
+  done: 120000,
+  total: 262753,
+  created_at: "2026-11-05T10:00:00+00:00",
+}
+const completed = { ...running, status: "completed", phase: "Finished", summary }
+
+function server(answers: Record<string, unknown>[], start: { status?: number; body?: unknown } = {}) {
+  const calls: { url: string; method: string; body: Record<string, unknown> | null }[] = []
+  let next = 0
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
+    const method = options?.method ?? "GET"
+    calls.push({ url: String(url), method, body: options?.body ? JSON.parse(options.body as string) : null })
+    if (method === "POST")
+      return new Response(JSON.stringify(start.body ?? answers[0]), {
+        status: start.status ?? 200,
+        headers: { "content-type": "application/json" },
+      })
+    const answer = answers[Math.min(next++, answers.length - 1)]
+    return new Response(JSON.stringify(answer), { headers: { "content-type": "application/json" } })
   })
-  const { unmount } = render(<LedgerExportButton caseId="case-a" params={{}} />)
-  fireEvent.click(
-    screen.getByRole("button", { name: "Download ledger snapshot" })
+  return { calls, fetch }
+}
+
+function mount(
+  tableView?: import("../lib/ledger-table-view").LedgerTableView,
+  params: import("../hooks/use-ledger-transactions").LedgerQueryParams = {
+    accountId: "account-a",
+    startDate: "2026-01-01",
+    endDate: "2026-01-31",
+  }
+) {
+  const client = new QueryClient()
+  return render(
+    <QueryClientProvider client={client}>
+      <LedgerExportButton caseId="case-a" tableView={tableView} params={params} />
+    </QueryClientProvider>
   )
-  await waitFor(() => expect(signal).toBeDefined())
-  unmount()
-  expect(signal?.aborted).toBe(true)
+}
+
+const download = (name = "Download ledger snapshot") => fireEvent.click(screen.getByRole("button", { name }))
+const started = (calls: { method: string; body: Record<string, unknown> | null }[]) =>
+  calls.filter((call) => call.method === "POST")
+
+it("starts nothing on opening the page", async () => {
+  const { calls } = server([running])
+  mount()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(calls).toEqual([])
 })
 
-it("includes original files only when selected and confirmed by the response", async () => {
-  const { fetch, makeUrl } = mount({ "X-Loupe-Source-Files": "true" })
-  fireEvent.click(
-    screen.getByLabelText(
-      "Include original source files with fresh hash checks"
-    )
-  )
-  expect(screen.getByText(/complete referenced files/)).toBeVisible()
-  fireEvent.click(
-    screen.getByRole("button", { name: "Download ledger snapshot" })
-  )
-  expect(await screen.findByText(/Download started/)).toBeInTheDocument()
-  expect(String(fetch.mock.calls[0][0])).toContain("include_source_files=true")
-  expect(makeUrl).toHaveBeenCalledTimes(1)
-})
-it("refuses an export that omitted requested original files", async () => {
-  const { makeUrl } = mount({ "X-Loupe-Source-Files": "false" })
-  fireEvent.click(
-    screen.getByLabelText(
-      "Include original source files with fresh hash checks"
-    )
-  )
-  fireEvent.click(
-    screen.getByRole("button", { name: "Download ledger snapshot" })
-  )
-  expect(
-    await screen.findByText(/different filters or in an unexpected format/)
-  ).toBeVisible()
-  expect(makeUrl).not.toHaveBeenCalled()
-})
-it("refuses an unexpected original-file bundle", async () => {
-  const { makeUrl } = mount({ "X-Loupe-Source-Files": "true" })
-  fireEvent.click(
-    screen.getByRole("button", { name: "Download ledger snapshot" })
-  )
-  expect(
-    await screen.findByText(/different filters or in an unexpected format/)
-  ).toBeVisible()
-  expect(makeUrl).not.toHaveBeenCalled()
+it("starts a background run of the applied scope and shows a stated progress line", async () => {
+  const { calls } = server([running])
+  mount()
+  download()
+  expect(await screen.findByText(/Step 1 of 4: Checking and packing the audit events \(120,000 of 262,753\)/)).toBeVisible()
+  expect(started(calls)[0].body).toMatchObject({
+    kind: "export",
+    account_id: "account-a",
+    start_date: "2026-01-01",
+    end_date: "2026-01-31",
+    privilege_marking: "unmarked",
+    include_case_financial_history: false,
+    fresh: false,
+  })
+  expect(screen.getByRole("button", { name: "Preparing ledger export…" })).toBeDisabled()
+  expect(screen.queryByRole("link")).toBeNull()
 })
 
-it("requests a PDF only when selected and requires the PDF response marker", async () => {
-  const { fetch, makeUrl } = mount()
+it("offers the file when the run is ready, with what it holds", async () => {
+  server([completed])
+  mount()
+  download()
+  const link = await screen.findByRole("link", { name: "Download the export (2.0 MB)" })
+  expect(link.getAttribute("href")).toContain(`whole-case-runs/${running.id}/files/ledger-export.zip`)
+  expect(screen.getByText(/Ready: 10,861 rows, 262,753 audit events, read at 2026-11-05 10:15 UTC/)).toBeVisible()
+})
+
+it("survives leaving the page: the same run is followed, and nothing is started again", async () => {
+  const { calls } = server([running, running, running, completed])
+  const page = mount()
+  download()
+  await screen.findByText(/Step 1 of 4/)
+  page.unmount()
+  const posts = started(calls).length
+  mount()
+  expect(await screen.findByRole("link", { name: /Download the export/ }, { timeout: 8000 })).toBeVisible()
+  expect(started(calls).length).toBe(posts)
+})
+
+it("asks for a fresh reading only when told to", async () => {
+  const { calls } = server([completed])
+  mount()
+  download()
+  fireEvent.click(await screen.findByRole("button", { name: "Read the rows again" }))
+  await waitFor(() => expect(started(calls).length).toBe(2))
+  expect(started(calls)[1].body?.fresh).toBe(true)
+})
+
+it("names a refusal from the run on the page and offers no file", async () => {
+  const words = "Audit event 7 alone exceeds the 64 MiB limit of one archive member. No partial export was produced."
+  server([{ ...running, status: "failed", error: words }])
+  mount()
+  download()
+  expect(await screen.findByRole("alert")).toHaveTextContent(words)
+  expect(screen.queryByRole("link")).toBeNull()
+})
+
+it("names a refusal at the start on the page", async () => {
+  server([], { status: 422, body: { detail: "6 whole-case runs are already waiting on this server." } })
+  mount()
+  download()
+  expect(await screen.findByRole("alert")).toHaveTextContent("already waiting")
+})
+
+it("a stopped run says so, offers nothing, and can be prepared again", async () => {
+  const words = "The server restarted while this ran. Nothing partial was offered. Run it again."
+  const { calls } = server([{ ...running, status: "stopped", error: words }])
+  mount()
+  download()
+  expect(await screen.findByRole("alert")).toHaveTextContent(words)
+  expect(screen.queryByRole("link")).toBeNull()
+  fireEvent.click(screen.getByRole("button", { name: "Prepare it again" }))
+  await waitFor(() => expect(started(calls).length).toBe(2))
+})
+
+it("a run past its keeping time goes back to offering a new one", async () => {
+  const first = server([running])
+  const page = mount()
+  download()
+  await screen.findByText(/Step 1 of 4/)
+  page.unmount()
+  first.fetch.mockImplementation(
+    async () => new Response(JSON.stringify({ detail: "Whole-case run not found." }), { status: 404 })
+  )
+  mount()
+  await waitFor(() => expect(screen.getByRole("button", { name: "Download ledger snapshot" })).toBeEnabled())
+  expect(localStorage.length).toBe(0)
+})
+
+it("sends each option that was chosen, and only those", async () => {
+  const { calls } = server([running])
+  mount()
+  fireEvent.click(screen.getByRole("checkbox", { name: /Include wider case financial review history/ }))
+  fireEvent.click(screen.getByLabelText("Include original source files with fresh hash checks"))
   fireEvent.click(screen.getByLabelText("Include a paginated PDF report"))
-  fireEvent.click(
-    screen.getByRole("button", { name: "Download ledger snapshot" })
-  )
-  await screen.findByText(/different filters or in an unexpected format/)
-  expect(String(fetch.mock.calls[0][0])).toContain("include_pdf=true")
-  expect(makeUrl).not.toHaveBeenCalled()
-})
-
-it("captures the full table settings and rejects a different returned view", async () => {
-  const view = {
-    search: "Office cost",
-    currency: "GBP",
-    direction: "debit",
-    proof: "p3",
-    sort: "amount-desc",
-  }
-  const { fetch, click } = mount(
-    { "X-Loupe-Table-View": JSON.stringify({ ...view, sort: "ledger" }) },
-    view
-  )
-  fireEvent.click(
-    screen.getByRole("button", { name: "Download this table view" })
-  )
-  expect(await screen.findByText(/different filters/)).toBeInTheDocument()
-  expect(
-    JSON.parse(
-      new URL(
-        String(fetch.mock.calls[0][0]),
-        "http://localhost"
-      ).searchParams.get("table_view")!
-    )
-  ).toEqual(view)
-  expect(click).not.toHaveBeenCalled()
-})
-it("downloads a matching recorded table view", async () => {
-  const view = {
-    search: "Office cost",
-    currency: "GBP",
-    direction: "debit",
-    proof: "p3",
-    sort: "amount-desc",
-  }
-  const { click } = mount({ "X-Loupe-Table-View": JSON.stringify(view) }, view)
-  fireEvent.click(
-    screen.getByRole("button", { name: "Download this table view" })
-  )
-  expect(await screen.findByText(/Download started/)).toBeInTheDocument()
-  expect(click).toHaveBeenCalledTimes(1)
-})
-
-it("captures the chosen marking and rejects a differently marked response", async () => {
-  const { fetch, makeUrl } = mount()
-  fireEvent.change(screen.getByLabelText("Export marking"), {
-    target: { value: "confidential" },
+  fireEvent.change(screen.getByLabelText("Export marking"), { target: { value: "confidential" } })
+  expect(screen.getByText(/complete referenced files/)).toBeVisible()
+  download()
+  await screen.findByText(/Step 1 of 4/)
+  expect(started(calls)[0].body).toMatchObject({
+    include_case_financial_history: true,
+    include_source_files: true,
+    include_pdf: true,
+    privilege_marking: "confidential",
   })
-  fireEvent.click(
-    screen.getByRole("button", { name: "Download ledger snapshot" })
-  )
-  await screen.findByText(/different filters or in an unexpected format/)
-  expect(String(fetch.mock.calls[0][0])).toContain(
-    "privilege_marking=confidential"
-  )
-  expect(makeUrl).not.toHaveBeenCalled()
 })
 
-it("posts large name selections and verifies the exact filter digest without relying on oversized headers", async () => {
-  const { sha256 } = await import("@noble/hashes/sha2.js")
-  const view = {
-    search: "",
-    currency: "USD",
-    direction: "",
-    proof: "",
-    sort: "ledger",
-    perspective_names: Array.from(
-      { length: 120 },
-      (_, i) => `name:Company ${i}`
-    ),
-  }
-  const digest = Array.from(
-    sha256(new TextEncoder().encode(JSON.stringify(view))),
-    (v) => v.toString(16).padStart(2, "0")
-  ).join("")
-  const { fetch, click } = mount({ "X-Loupe-Table-View-Sha256": digest }, view)
-  fireEvent.click(
-    screen.getByRole("button", { name: "Download this table view" })
-  )
-  await screen.findByText(/Download started/)
-  expect(fetch.mock.calls[0][1]?.method).toBe("POST")
-  expect(JSON.parse(fetch.mock.calls[0][1]?.body as string)).toEqual({
-    table_view: JSON.stringify(view),
-  })
-  expect(String(fetch.mock.calls[0][0])).not.toContain("table_view=")
-  expect(click).toHaveBeenCalledTimes(1)
+it("a different choice of options has its own run", async () => {
+  server([completed])
+  mount()
+  download()
+  await screen.findByRole("link", { name: /Download the export/ })
+  fireEvent.click(screen.getByRole("checkbox", { name: /Include wider case financial review history/ }))
+  await waitFor(() => expect(screen.queryByRole("link")).toBeNull())
+})
+
+it("captures the full table settings in the run's request", async () => {
+  const view = { search: "Office cost", currency: "GBP", direction: "debit", proof: "p3", sort: "amount-desc" }
+  const { calls } = server([completed])
+  mount(view)
+  download("Download this table view")
+  await screen.findByRole("link", { name: /Download the export/ })
+  expect(JSON.parse(started(calls)[0].body?.table_view as string)).toEqual(view)
+})
+
+it("a PDF over one report's size opens the numbered parts in place of the refusal", async () => {
+  const words = "PDF reports support up to 2,000 captured readings."
+  const { calls } = server([{ ...running, status: "failed", error: words }])
+  mount()
+  fireEvent.click(screen.getByLabelText("Include a paginated PDF report"))
+  download()
+  await waitFor(() => expect(calls.filter((call) => call.method === "POST" && call.body?.kind === "pdf").length).toBe(1))
+  expect(screen.queryByText(words)).toBeNull()
 })
 
 it("states the expert packet parts the server reported for this export, with its size", async () => {
-  mount({
-    "X-Loupe-Expert-Packet": JSON.stringify({
-      completeness: "incomplete_expert_packet",
-      byte_count: 2097152,
-      sentence:
-        "This export is not a complete expert packet. Complete: Custody and decisions. Incomplete: Measured validation.",
-      parts: [
-        { label: "Custody and decisions", holds: true },
-        { label: "Measured validation", holds: false },
-      ],
-    }),
-  })
+  server([completed])
+  mount()
   expect(screen.queryByText(/not a complete expert packet/)).toBeNull()
-  fireEvent.click(screen.getByRole("button", { name: /Download/ }))
-  const result = await screen.findByLabelText(
-    "Expert packet parts in this export"
-  )
+  download()
+  const result = await screen.findByLabelText("Expert packet parts in this export")
   expect(result).toHaveTextContent("not a complete expert packet")
   expect(result).toHaveTextContent("Custody and decisions: complete")
   expect(result).toHaveTextContent("Measured validation: incomplete")
   expect(result).toHaveTextContent("Download size: 2.0 MB")
 })
 
-it("makes no packet claim when a download carries no statement of its parts", async () => {
+it("makes no packet claim when a run carries no statement of its parts", async () => {
+  server([{ ...completed, summary: { ...summary, packet: null } }])
   mount()
-  fireEvent.click(screen.getByRole("button", { name: /Download/ }))
-  await screen.findByText(/Download started/)
+  download()
+  await screen.findByRole("link", { name: /Download the export/ })
   expect(screen.queryByLabelText("Expert packet parts in this export")).toBeNull()
 })

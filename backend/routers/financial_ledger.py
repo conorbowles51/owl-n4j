@@ -298,11 +298,10 @@ class TraceSupportDownload(BaseModel):
 @router.post('/ledger-export-comparison')
 async def compare_saved_ledger_exports(case_id: UUID = Query(...), before: UploadFile = File(...), after: UploadFile = File(...)):
     from starlette.concurrency import run_in_threadpool
-    from services.financial.export_comparison import compare_ledger_exports, MAX_ARCHIVE_BYTES
+    from services.financial.export_comparison import compare_ledger_exports
     try:
-        first = await before.read(MAX_ARCHIVE_BYTES + 1)
-        second = await after.read(MAX_ARCHIVE_BYTES + 1)
-        return await run_in_threadpool(compare_ledger_exports, first, second, expected_case_id=case_id)
+        # The uploads are already spooled to disk; a stored export can be far larger than one request would hold.
+        return await run_in_threadpool(compare_ledger_exports, before.file, after.file, expected_case_id=case_id)
     except LedgerSummaryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception:
@@ -1522,7 +1521,7 @@ from services.financial.trace_walk import TraceWalkInput
 class WholeCaseRunRequest(BaseModel):
     """A workbench's inputs; what its answer would have refused for size runs here, stored and paged."""
     model_config = ConfigDict(extra='forbid')
-    kind: Literal['transfers', 'timeline', 'patterns', 'pdf']
+    kind: Literal['transfers', 'timeline', 'patterns', 'pdf', 'export']
     population: Literal['working', 'verified'] = 'working'
     start_date: Optional[date] = None
     end_date: Optional[date] = None
@@ -1535,6 +1534,11 @@ class WholeCaseRunRequest(BaseModel):
     threshold_currency: Optional[str] = Field(None, pattern='^[A-Z]{3}$')
     cross_account: bool = False
     privilege_marking: Literal['unmarked', 'confidential', 'privileged_confidential'] = 'unmarked'
+    include_case_financial_history: bool = False
+    include_pdf: bool = False
+    include_source_files: bool = False
+    table_view: Optional[Annotated[str, Field(min_length=2, max_length=2 * 1024 * 1024)]] = None
+    fresh: bool = False
 
     def parameters(self):
         """Only what this analysis reads, so equal inputs name the same run."""
@@ -1542,7 +1546,9 @@ class WholeCaseRunRequest(BaseModel):
                     timeline=('population', 'start_date', 'end_date', 'account_id', 'account_ids', 'account_holders'),
                     patterns=('population', 'start_date', 'end_date', 'account_id', 'account_ids', 'account_holders', 'window_days',
                               'threshold_minor', 'threshold_currency', 'cross_account'),
-                    pdf=('start_date', 'end_date', 'account_id', 'account_ids', 'account_holders', 'privilege_marking'))[self.kind]
+                    pdf=('start_date', 'end_date', 'account_id', 'account_ids', 'account_holders', 'privilege_marking'),
+                    export=('start_date', 'end_date', 'account_id', 'account_ids', 'account_holders', 'privilege_marking',
+                            'include_case_financial_history', 'include_pdf', 'include_source_files'))[self.kind]
         values = self.model_dump(mode='json')
         result = {name: values[name] for name in keep if values[name] not in (None, [])}
         if 'threshold_minor' in result:
@@ -1567,9 +1573,15 @@ def start_whole_case_run(body: WholeCaseRunRequest, case_id: UUID = Query(...), 
     if body.cross_account and body.account_id:
         raise HTTPException(status_code=422, detail='Clear the account filter to screen paths between accounts.')
     params = body.parameters()
-    if body.kind == 'pdf':
+    if body.kind in ('pdf', 'export'):
         params['generated_by'] = dict(id=str(current_user.id), name=current_user.name, email=current_user.email) if getattr(current_user, 'id', None) else None
-    return _whole_case(lambda: whole_case_runs.start_run(db.get_bind(), kind=body.kind, case_id=case_id, params=params))
+    if body.kind == 'export' and body.table_view is not None:
+        from services.financial.ledger_table_view import LedgerTableView
+        try:
+            params['table_view'] = LedgerTableView.model_validate_json(body.table_view).model_dump()
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail='Invalid table-view filters.') from exc
+    return _whole_case(lambda: whole_case_runs.start_run(db.get_bind(), kind=body.kind, case_id=case_id, params=params, fresh=body.fresh))
 
 
 @router.post('/whole-case-runs/trace')
@@ -1591,15 +1603,31 @@ def get_whole_case_page(run_id: str, section: str, case_id: UUID = Query(...), o
                     media_type='application/json')
 
 
+def _recorded_run_params(params):
+    """The run's inputs for the export receipt; a table view above the receipt's size is named by its digest."""
+    import hashlib
+    import json
+    recorded = {key: value for key, value in params.items() if key != 'generated_by'}
+    view = recorded.get('table_view')
+    if view is not None and len(json.dumps(view)) > 4096:
+        recorded['table_view'] = dict(sha256=hashlib.sha256(json.dumps(view, sort_keys=True).encode()).hexdigest())
+    return recorded
+
+
 @router.get('/whole-case-runs/{run_id}/files/{name}')
 def get_whole_case_file(run_id: str, name: str, case_id: UUID = Query(...), db: Session = Depends(get_db), current_user=Depends(get_current_db_user)):
     path = _whole_case(lambda: whole_case_runs.read_file(case_id, run_id, name))
     if name.endswith('.zip'):
         # The same receipt as any ledger export: who took this report, and exactly which bytes.
         run = whole_case_runs.read_run(case_id, run_id)
-        record_prepared_export(db.get_bind(), case_id=case_id, kind='ledger_exports', content=path.read_bytes(),
+        summary = run['summary']
+        receipt = record_prepared_export(db.get_bind(), case_id=case_id, kind='ledger_exports', stored=(summary['archive_sha256'], summary['archive_bytes']),
             actor=dict(id=str(current_user.id), name=current_user.name, email=current_user.email),
-            scope=dict(whole_case_run=run_id, snapshot_sha256=run['summary']['snapshot_sha256'], params={k: v for k, v in run['params'].items() if k != 'generated_by'}))
+            scope=dict(whole_case_run=run_id, snapshot_sha256=summary['snapshot_sha256'], params=_recorded_run_params(run['params'])))
+        if run['kind'] == 'export':
+            return FileResponse(path, filename='loupe-ledger-table-view.zip' if run['params'].get('table_view') else 'loupe-ledger-export.zip',
+                media_type='application/zip', headers={'X-Loupe-Export-Id': receipt['export_id'], 'X-Loupe-Export-Event-Sha256': receipt['entry_sha256'],
+                    'X-Loupe-Export-Event-Sequence': str(receipt['sequence']), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
     return FileResponse(path, filename=name, media_type='application/x-ndjson' if name.endswith('.jsonl') else 'application/json' if name.endswith('.json') else 'application/zip')
 
 
