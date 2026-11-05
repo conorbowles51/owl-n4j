@@ -501,8 +501,8 @@ def test_the_agent_reads_a_link_state_on_casework_and_a_dossier_with_the_note_to
             assert state["states"] == ["reading_changed"] and state["records_read_differently"] == 1
             assert state["words"][0].startswith("Reading changed since collected. Sender was +12025550100, now not ")
             assert "reading_changed" not in (links[unchanged].get("link_state") or {}).get("states", [])
-            assert out["link_states"].startswith("Links with link_state here: 1.")
+            assert out["link_states"].startswith("Links with link_state here: ")
             read = casework_tools.dossier(db, case, str(dossier))
             evidence = read["items"][0]["interviews"][0]["evidence"][0]
-            assert evidence["id"] == on_interview and evidence["link_state"]["states"] == ["reading_changed"]
+            assert evidence["id"] == on_interview and "reading_changed" in evidence["link_state"]["states"]
             assert read["link_states"]

@@ -21,8 +21,8 @@ from urllib.parse import quote
 from sqlalchemy import or_, select, text
 
 NOT_IN_CASE = "Not in this case."
-LINK_STATE_NOTE = ("Links with link_state here: %d. What they collected changed after they were made. Say so whenever "
-                   "you cite one, in the words of link_state.")
+LINK_STATE_NOTE = ("Links with link_state here: %d. What they collected was corrected, read differently or set aside "
+                   "since. Say so whenever you cite one, in the words of link_state.")
 RECORD_TEXT_LIMIT = 4000
 SELECTION_RECS = 25
 
